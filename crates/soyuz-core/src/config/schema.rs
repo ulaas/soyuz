@@ -130,6 +130,21 @@ pub struct Appearance {
     pub thumbnail_size: u32,
     pub sidebar_width: f32,
     pub custom_titlebar: bool,
+    /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji).
+    pub fallback_fonts: FallbackFonts,
+}
+
+/// When system fallback fonts (CJK / Hangul / emoji, from the OS font folder) load.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackFonts {
+    /// When a file name needs them (loaded on a background thread).
+    #[default]
+    Auto,
+    /// All of them in the background right after startup (also covers terminal output).
+    Startup,
+    /// Never (missing glyphs render as boxes).
+    Off,
 }
 
 /// `[theme.colors]`: token name (as in PLAN §1.2, e.g. `"accent"`, `"bg.window"`) → hex.
@@ -207,10 +222,30 @@ pub enum SidebarSection {
     Tree,
 }
 
+/// What the sidebar shows: the places sections, the folder tree, or both.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SidebarMode {
+    /// Favorites, devices, cloud, tags … (no folder tree).
+    Places,
+    /// Only the folder tree (drives + home).
+    Tree,
+    /// The places sections with the folder tree as the `tree` section.
+    #[default]
+    Both,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sidebar {
     pub sections: Vec<SidebarSection>,
+    /// `places` | `tree` | `both`.
+    pub mode: SidebarMode,
+    /// Expand the tree to the active pane's folder and highlight it.
+    pub tree_follow: bool,
+    /// Hovering a drag over a collapsed tree folder expands it after this delay
+    /// (milliseconds; 0 = never).
+    pub tree_drag_expand_ms: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

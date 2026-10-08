@@ -76,6 +76,7 @@ impl Default for Appearance {
             thumbnail_size: 96,
             sidebar_width: 220.0,
             custom_titlebar: true,
+            fallback_fonts: FallbackFonts::Auto,
         }
     }
 }
@@ -121,7 +122,12 @@ impl Default for Toolbar {
 impl Default for Sidebar {
     fn default() -> Self {
         use SidebarSection::*;
-        Sidebar { sections: vec![Favorites, Devices, Cloud, Tags, Network, Trash, Tree] }
+        Sidebar {
+            sections: vec![Favorites, Devices, Cloud, Tags, Network, Trash, Tree],
+            mode: SidebarMode::Both,
+            tree_follow: true,
+            tree_drag_expand_ms: 700,
+        }
     }
 }
 
@@ -279,6 +285,7 @@ fn common(km: &mut Keymap) {
     b(G, A::Quit, CTRL, KeyName::Q);
     b(G, A::ToggleHidden, CTRL, KeyName::H);
     b(G, A::ToggleSidebar, CTRL, KeyName::B);
+    b(G, A::ToggleTreeSidebar, CTRL_SHIFT, KeyName::E);
     b(G, A::TogglePreviewPane, ALT, KeyName::P);
     b(G, A::ToggleActivityPanel, CTRL_SHIFT, KeyName::J);
     b(G, A::Undo, CTRL, KeyName::Z);

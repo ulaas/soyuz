@@ -6,7 +6,7 @@ use std::time::SystemTime;
 use egui::{RichText, Ui};
 use soyuz_core::config::{
     ActivityPlacement, DragDefault, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy, PasteConflict, PreserveItem,
-    ReflinkPref, RenameSelects, SidebarSection, TabStripMode, TrashUnsupportedPolicy, TypeAhead,
+    ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode, TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
@@ -166,6 +166,34 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row("Sidebar", "Favorites, devices and the folder tree.", |ui| {
             switch(ui, &mut d.layout.sidebar);
         });
+        r.row_kw(
+            "Sidebar content",
+            "Places sections, the folder tree of your drives and home folder, or both (Ctrl+Shift+E toggles the tree).",
+            "folder tree places navigation pane",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.sidebar.mode,
+                    &[(SidebarMode::Places, "Places"), (SidebarMode::Tree, "Folder tree"), (SidebarMode::Both, "Both")],
+                );
+            },
+        );
+        r.row_kw(
+            "Tree follows the current folder",
+            "Expand the folder tree to the active pane's folder and highlight it.",
+            "sync reveal tree",
+            |ui| {
+                switch(ui, &mut d.sidebar.tree_follow);
+            },
+        );
+        r.row_kw(
+            "Expand tree on drag hover",
+            "Hold a drag over a collapsed folder to open it. 0 turns this off.",
+            "drag drop spring loaded tree",
+            |ui| {
+                number(ui, &mut d.sidebar.tree_drag_expand_ms, 0..=3000, " ms");
+            },
+        );
         r.row("Status bar", "Item counts, selection size and free space.", |ui| {
             switch(ui, &mut d.layout.status_bar);
         });

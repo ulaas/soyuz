@@ -39,6 +39,7 @@ show_thumbnails = true
 thumbnail_size = 96
 sidebar_width = 220
 custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
+fallback_fonts = "auto"          # auto (CJK / emoji system fonts when a name needs them) | startup | off
 
 [theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
 # accent = "#5B8CFF"
@@ -63,6 +64,9 @@ order = []                       # optional explicit order; unknown names ignore
 
 [sidebar]
 sections = ["favorites", "devices", "cloud", "tags", "network", "trash", "tree"]
+mode = "both"                    # places | tree (folder tree only) | both (tree = the "tree" section)
+tree_follow = true               # expand the tree to the active pane's folder
+tree_drag_expand_ms = 700        # drag-hover over a collapsed folder expands it (0 = never)
 
 [columns]
 details = ["name", "size", "kind", "modified"]

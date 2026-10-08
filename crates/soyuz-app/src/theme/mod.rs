@@ -1,6 +1,7 @@
 //! The Soyuz design system: tokens, egui style export, fonts and icons.
 
 pub mod apply;
+pub mod font_fallback;
 pub mod fonts;
 pub mod icons;
 pub mod tokens;
@@ -32,6 +33,7 @@ pub fn install(
     appearance: &Appearance,
     overrides: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
+    font_fallback::configure(ctx, appearance.fallback_fonts, &appearance.font, &appearance.mono_font);
     let font_warnings = fonts::install(ctx, &appearance.font, &appearance.mono_font);
     let (mut dark, mut light) = if appearance.high_contrast {
         (ORBIT_HC_DARK.clone(), ORBIT_HC_LIGHT.clone())

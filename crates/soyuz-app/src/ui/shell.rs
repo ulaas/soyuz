@@ -72,6 +72,21 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             brand: !titlebar,
             settings_open: app.settings.is_open(),
             settings_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::Settings),
+            tree: crate::ui::tree::TreeArgs {
+                state: &mut app.ui.tree,
+                mode: app.config.sidebar.mode,
+                vis: crate::ui::tree::model::Visibility {
+                    show_hidden: app.ui.show_hidden,
+                    show_system: app.ui.show_system,
+                },
+                follow: app.config.sidebar.tree_follow,
+                drag_expand: (app.config.sidebar.tree_drag_expand_ms > 0)
+                    .then(|| std::time::Duration::from_millis(u64::from(app.config.sidebar.tree_drag_expand_ms))),
+                drag_default: app.config.behaviour.drag_default,
+                keyboard: app.ui.focus == crate::app::Focus::Sidebar
+                    && !ctx.memory(|m| m.focused()).is_some_and(|id| egui::TextEdit::load_state(&ctx, id).is_some()),
+                debounce: std::time::Duration::from_millis(app.config.behaviour.watch_debounce_ms.max(50)),
+            },
         };
         sidebar::show(ui, &mut app.ui.sidebar, &mut sctx);
     }

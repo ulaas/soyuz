@@ -41,6 +41,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::Refresh => ops::refresh(app),
         A::ToggleSidebar => app.ui.sidebar_visible = !app.ui.sidebar_visible,
+        A::ToggleTreeSidebar => crate::ui::tree::toggle(app, ctx),
         A::FocusSidebar => {
             app.ui.sidebar_visible = true;
             app.ui.focus = Focus::Sidebar;
@@ -430,9 +431,9 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
 
 /// Actions without an implementation yet: hidden from the command palette and the
 /// keyboard settings (a binding in `config.toml` still answers with a "coming soon").
-pub fn unavailable(a: &Action) -> bool {
-    // The "Folders" tree section of the sidebar is not built yet.
-    matches!(a, Action::ToggleTreeSidebar)
+pub fn unavailable(_a: &Action) -> bool {
+    // Every action is implemented (the folder tree landed with F1).
+    false
 }
 
 fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {
