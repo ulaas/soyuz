@@ -81,3 +81,50 @@ impl Default for TermTheme {
         TermTheme::dark()
     }
 }
+
+impl TermTheme {
+    /// The xterm 256-color palette: ANSI 0-15 from the theme, 6×6×6 cube, 24-step gray ramp.
+    pub(crate) fn palette256(&self) -> [Color32; 256] {
+        let mut p = [Color32::BLACK; 256];
+        p[..16].copy_from_slice(&self.ansi);
+        const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
+        for i in 0..216 {
+            p[16 + i] = Color32::from_rgb(STEPS[i / 36], STEPS[(i / 6) % 6], STEPS[i % 6]);
+        }
+        for i in 0..24u8 {
+            let v = 8 + 10 * i;
+            p[232 + usize::from(i)] = Color32::from_rgb(v, v, v);
+        }
+        p
+    }
+
+    /// Dimmed variant of `c` (SGR 2): blended toward the background.
+    pub(crate) fn dim(&self, c: Color32) -> Color32 {
+        lerp_rgb(self.bg, c, 0.66)
+    }
+}
+
+/// Opaque RGB blend `a + (b - a) * t`.
+pub(crate) fn lerp_rgb(a: Color32, b: Color32, t: f32) -> Color32 {
+    let l = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
+    Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn palette_layout() {
+        let t = TermTheme::dark();
+        let p = t.palette256();
+        assert_eq!(p[1], t.ansi[1]);
+        assert_eq!(p[16], Color32::from_rgb(0, 0, 0));
+        assert_eq!(p[21], Color32::from_rgb(0, 0, 255));
+        assert_eq!(p[196], Color32::from_rgb(255, 0, 0));
+        assert_eq!(p[231], Color32::from_rgb(255, 255, 255));
+        assert_eq!(p[232], Color32::from_rgb(8, 8, 8));
+        assert_eq!(p[255], Color32::from_rgb(238, 238, 238));
+        assert_eq!(lerp_rgb(Color32::BLACK, Color32::WHITE, 0.5), Color32::from_rgb(128, 128, 128));
+    }
+}

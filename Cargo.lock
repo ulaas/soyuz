@@ -3841,6 +3841,7 @@ version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
  "crossbeam-channel",
+ "eframe",
  "egui",
  "log",
  "parking_lot",
