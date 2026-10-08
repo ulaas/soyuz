@@ -29,6 +29,7 @@ pub fn title(a: &Action) -> String {
         A::FocusAddressBar => "Focus address bar",
         A::JumpToFolderDialog => "Go to folder…",
         A::OpenRecent => "Recent folders",
+        A::ConnectToServer => "Connect to server…",
         A::TabToNewWindow => "Move tab to new window",
         A::MirrorPaneToOther => "Mirror folder in other pane",
         A::SyncNavigation => "Toggle synchronized navigation",
@@ -182,6 +183,9 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::PrevTab => (ph::ARROW_FAT_LEFT, "Switch to the previous tab", ""),
         A::JumpToFolderDialog => (ph::FOLDER_OPEN, "Fuzzy-jump to a recent or frequent folder", "frecency recent jump"),
         A::OpenRecent => (ph::CLOCK_COUNTER_CLOCKWISE, "Pick from recently visited folders", "history"),
+        A::ConnectToServer => {
+            (ph::GLOBE, "Browse an SFTP, WebDAV, FTP / FTPS or S3 server", "remote network ssh cloud bucket")
+        }
         A::OpenBookmark(_) => (ph::BOOKMARK_SIMPLE, "Navigate to a configured bookmark", "favorite"),
         A::SelectTab(_) => (ph::BROWSERS, "Switch to a tab by position", ""),
         // ---- tabs & panes ----

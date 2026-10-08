@@ -68,6 +68,7 @@ define_actions! {
         Back, Forward, Up, Home, Root, GoTo, FocusAddressBar, EditPath, Refresh, ToggleSidebar,
         FocusSidebar, FocusList, FocusOtherPane, FocusTerminal, NextTab, PrevTab,
         JumpToFolderDialog, OpenRecent,
+        ConnectToServer,
     ],
     Tabs: [
         NewTab, CloseTab, ReopenClosedTab, DuplicateTab, PinTab, MoveTabLeft, MoveTabRight,

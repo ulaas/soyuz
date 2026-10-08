@@ -10,6 +10,7 @@ publish.workspace = true
 soyuz-core.workspace = true
 soyuz-fs.workspace = true
 soyuz-archive.workspace = true
+soyuz-vfs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 crossbeam-channel.workspace = true

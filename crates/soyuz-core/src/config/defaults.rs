@@ -31,6 +31,7 @@ impl Default for Config {
             editor: Editor::default(),
             git: Git::default(),
             sync: SyncSection::default(),
+            remote: RemoteSection::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
@@ -284,6 +285,20 @@ impl Default for SyncSection {
             scheduled_dry_run: false,
             previous_versions: true,
             shadow_probe_max: 64,
+        }
+    }
+}
+
+impl Default for RemoteSection {
+    fn default() -> Self {
+        RemoteSection {
+            cache_ttl_secs: 30,
+            poll_secs: 0,
+            connect_timeout_secs: 20,
+            io_timeout_secs: 60,
+            preview_cache_mb: 512,
+            preview_max_mb: 64,
+            share_enumeration: true,
         }
     }
 }

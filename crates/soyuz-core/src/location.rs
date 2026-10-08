@@ -12,7 +12,7 @@ use crate::entry::SearchId;
 /// String form (see [`Location::display`] / [`Location::parse`]):
 /// `Dir` → the path itself, `Archive` → `"<archive>!/<inner>"`, `Trash` → `"trash:"`,
 /// `Computer` → `"computer:"`, `Recent` → `"recent:"`, `Tags(t)` → `"tag:<t>"`,
-/// `Search(id)` → `"search:<id>"`.
+/// `Search(id)` → `"search:<id>"`, `Remote(uri)` → the URI (`sftp://user@host/path`).
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Location {
@@ -30,6 +30,10 @@ pub enum Location {
     Computer,
     Recent,
     Tags(String),
+    /// F2: a folder on a remote server, as a normalized URI string
+    /// (`sftp://user@host:port/path`, `webdav(s)://`, `ftp(s)://`, `s3://bucket/…`;
+    /// parsed and normalized by `soyuz-vfs`).
+    Remote(String),
 }
 
 impl Location {
@@ -53,6 +57,9 @@ impl Location {
         if let Some(id) = strip_prefix_ci(s, "search:") {
             return id.trim().parse().ok().map(|n| Location::Search(SearchId(n)));
         }
+        if looks_remote(s) {
+            return Some(Location::Remote(s.to_string()));
+        }
         let expanded = expand_tilde(s);
         if let Some((archive, inner)) = split_vpath(&expanded) {
             return Some(Location::Archive { archive, inner });
@@ -70,6 +77,7 @@ impl Location {
             Location::Computer => "computer:".into(),
             Location::Recent => "recent:".into(),
             Location::Tags(t) => format!("tag:{t}"),
+            Location::Remote(u) => u.clone(),
         }
     }
 
@@ -94,6 +102,7 @@ impl Location {
                     Some(Location::Archive { archive: archive.clone(), inner: parent })
                 }
             }
+            Location::Remote(u) => remote_parent(u).map(Location::Remote),
             Location::Trash | Location::Search(_) | Location::Computer | Location::Recent | Location::Tags(_) => None,
         }
     }
@@ -105,6 +114,32 @@ impl Location {
             _ => None,
         }
     }
+}
+
+/// Whether `s` looks like `scheme://…` (a remote location; drive letters don't count).
+pub fn looks_remote(s: &str) -> bool {
+    match s.find("://") {
+        Some(i) if i >= 2 => s[..i].chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.')),
+        _ => false,
+    }
+}
+
+/// Parent of a normalized remote URI (`None` at the server root). The query string
+/// (connection parameters) is kept.
+pub fn remote_parent(uri: &str) -> Option<String> {
+    let (base, query) = match uri.find('?') {
+        Some(q) => (&uri[..q], &uri[q..]),
+        None => (uri, ""),
+    };
+    let start = base.find("://")? + 3;
+    let path_at = base[start..].find('/').map(|i| start + i)?;
+    let path = base[path_at..].trim_end_matches('/');
+    if path.is_empty() {
+        return None;
+    }
+    let cut = path.rfind('/').unwrap_or(0);
+    let parent = if cut == 0 { "/" } else { &path[..cut] };
+    Some(format!("{}{parent}{query}", &base[..path_at]))
 }
 
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
@@ -228,12 +263,23 @@ mod tests {
             Location::Dir(PathBuf::from("/usr/share")),
             Location::Archive { archive: PathBuf::from("/tmp/a.zip"), inner: "x/y".into() },
             Location::Archive { archive: PathBuf::from("/tmp/a.zip"), inner: String::new() },
+            Location::Remote("sftp://u@h/home/u".into()),
         ] {
             let s = loc.display();
             assert_eq!(Location::parse(&s), Some(loc.clone()), "round trip of {s}");
         }
         assert_eq!(Location::parse("  "), None);
         assert_eq!(Location::parse("TRASH:"), Some(Location::Trash));
+    }
+
+    #[test]
+    fn remote_parents() {
+        assert_eq!(remote_parent("sftp://u@h:22/a/b"), Some("sftp://u@h:22/a".into()));
+        assert_eq!(remote_parent("sftp://u@h/a"), Some("sftp://u@h/".into()));
+        assert_eq!(remote_parent("sftp://u@h/"), None);
+        assert_eq!(remote_parent("s3://b/x/y?endpoint=http://m:9000"), Some("s3://b/x?endpoint=http://m:9000".into()));
+        assert_eq!(Location::parse("webdav://h/x").unwrap().parent(), Some(Location::Remote("webdav://h/".into())));
+        assert!(!looks_remote("C://x") && !looks_remote("/x") && looks_remote("ftp://h"));
     }
 
     #[test]

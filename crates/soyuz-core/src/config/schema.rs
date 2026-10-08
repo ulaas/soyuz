@@ -39,6 +39,8 @@ pub struct Config {
     pub git: Git,
     /// F8: scheduled sync profiles, two-way sync and previous versions.
     pub sync: SyncSection,
+    /// F2: remote locations (SFTP, WebDAV, FTP/FTPS, S3) and network shares.
+    pub remote: RemoteSection,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
@@ -584,6 +586,27 @@ pub struct SyncSection {
     /// Previous versions: probe `HarddiskVolumeShadowCopy1..=N` when the kernel device
     /// directory can't be listed.
     pub shadow_probe_max: u32,
+}
+
+/// `[remote]`: remote locations (F2). Saved connections live in
+/// `remote_connections.json` next to the config; passwords in the OS credential store.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RemoteSection {
+    /// Remote folder listings are reused for this long (Refresh always re-lists).
+    pub cache_ttl_secs: u64,
+    /// Re-list visible remote folders this often to pick up changes (0 = never).
+    pub poll_secs: u64,
+    pub connect_timeout_secs: u64,
+    /// Give up on a server that stops answering mid-operation after this long.
+    pub io_timeout_secs: u64,
+    /// Remote files are downloaded for preview / open into a per-user temp cache of at
+    /// most this size (oldest files are evicted).
+    pub preview_cache_mb: u64,
+    /// Larger remote files are not downloaded just for a preview.
+    pub preview_max_mb: u64,
+    /// Typing `\\server` lists its shares (Windows `NetShareEnum`).
+    pub share_enumeration: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

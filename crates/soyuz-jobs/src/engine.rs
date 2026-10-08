@@ -560,7 +560,10 @@ impl Inner {
         let computed: Vec<(JobId, Lane)> = todo
             .into_iter()
             .map(|(id, roots)| {
-                let real: Vec<&PathBuf> = roots.iter().filter(|r| !crate::job::is_synthetic_root(r)).collect();
+                let real: Vec<&PathBuf> = roots
+                    .iter()
+                    .filter(|r| !crate::job::is_synthetic_root(r) && !crate::job::is_remote_root(r))
+                    .collect();
                 let src = real.first().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
                 let dst = real.last().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
                 (id, Lane::Devices(src, dst))
@@ -1123,7 +1126,13 @@ impl JobEngine {
             (crate::kinds::retry_kind(&he.job, &he.summary)?, he.options.clone())
         };
         let mut spec = JobSpec { kind, options: rerun_options(original) };
-        if matches!(spec.kind, JobKind::Copy { .. } | JobKind::Move { .. } | JobKind::Extract { .. }) {
+        if matches!(
+            spec.kind,
+            JobKind::Copy { .. }
+                | JobKind::Move { .. }
+                | JobKind::Extract { .. }
+                | JobKind::Remote(crate::job::RemoteOp::Transfer { .. })
+        ) {
             spec.options.conflict = Some(soyuz_core::ConflictResolution::Skip);
         }
         Some(self.submit(spec))
@@ -1170,7 +1179,13 @@ impl JobEngine {
     pub fn resume_journaled(&self, job: &crate::journal::JournalJob) -> Option<JobId> {
         let kind = crate::journal::resume_kind(&job.kind)?;
         let mut options = rerun_options(Some(job.options.clone()));
-        if matches!(kind, JobKind::Copy { .. } | JobKind::Move { .. } | JobKind::Extract { .. }) {
+        if matches!(
+            kind,
+            JobKind::Copy { .. }
+                | JobKind::Move { .. }
+                | JobKind::Extract { .. }
+                | JobKind::Remote(crate::job::RemoteOp::Transfer { .. })
+        ) {
             options.conflict = Some(soyuz_core::ConflictResolution::Skip);
         }
         options.label = Some(format!("Resume: {}", job.label));

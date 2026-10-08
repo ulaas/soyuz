@@ -17,6 +17,7 @@ pub mod panels;
 pub mod path_picker;
 pub mod preview;
 pub mod quicklook;
+pub mod remote;
 pub mod search;
 pub mod settings;
 pub mod shell;

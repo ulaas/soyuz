@@ -36,6 +36,7 @@ pub mod mv;
 pub mod os_theme;
 pub mod path;
 pub mod perms;
+pub mod shares;
 pub mod snapshots;
 pub mod sparse;
 pub mod times;

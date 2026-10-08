@@ -44,6 +44,7 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Environment",
     "Win32_System_LibraryLoader",
     "Win32_Graphics_Dwm",
+    "Win32_NetworkManagement_NetManagement",
     "Win32_Graphics_Gdi",
     "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",

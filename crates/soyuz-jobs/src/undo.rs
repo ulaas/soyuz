@@ -55,6 +55,19 @@ pub enum UndoRecord {
         path: PathBuf,
         backup: TrashItem,
     },
+    /// F2: a file or folder created on a remote server (URI). Undo deletes it (remote
+    /// servers have no trash): a file only while its size is unchanged, a non-empty
+    /// folder only after asking.
+    RemoteCreated {
+        path: PathBuf,
+        is_dir: bool,
+        size: u64,
+    },
+    /// F2: a rename / same-server move on a remote server; undo renames back.
+    RemoteRenamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
 }
 
 /// Records in the order they must be undone (last done, first undone).
@@ -76,6 +89,11 @@ pub(crate) fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
             UndoRecord::MetaChanged { path, .. } => out.push(path.clone()),
             UndoRecord::Trashed(item) => out.push(item.original.clone()),
             UndoRecord::Replaced { path, .. } => out.push(path.clone()),
+            UndoRecord::RemoteCreated { path, .. } => out.push(path.clone()),
+            UndoRecord::RemoteRenamed { from, to } => {
+                out.push(from.clone());
+                out.push(to.clone());
+            }
         }
     }
     out
@@ -170,6 +188,10 @@ pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord], stamps: &[UndoStamp
                     false
                 }
             }
+            UndoRecord::RemoteCreated { path, is_dir, size } => {
+                crate::kinds::remote::undo_created(ctx, path, *is_dir, *size)?
+            }
+            UndoRecord::RemoteRenamed { from, to } => crate::kinds::remote::undo_renamed(ctx, from, to)?,
         };
         if undone {
             ctx.mark_undone(r.clone());

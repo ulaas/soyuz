@@ -61,6 +61,21 @@ pub fn start_listing(pane: &mut Pane, services: &mut Services, soft: bool) {
             }
             services.lister.list(pane.id, pane.generation, &path, ctl, soft);
         }
+        Location::Remote(uri) => {
+            // F2: listed on the lister pool through `services::remote` (cached; a soft
+            // relist = Refresh bypasses the cache). No watcher: `[remote] poll_secs`.
+            let ctl = OpControl::new();
+            pane.ctl = Some(ctl.clone());
+            let soft = soft && matches!(pane.status, ListingStatus::Ready);
+            if soft {
+                pane.refreshing = true;
+            } else {
+                pane.clear_listing();
+                pane.status = ListingStatus::Loading { since: Instant::now() };
+            }
+            services.watcher.unwatch(pane.id);
+            services.lister.list(pane.id, pane.generation, Path::new(&uri), ctl, soft);
+        }
         Location::Archive { archive, inner } => {
             pane.clear_listing();
             pane.status = ListingStatus::Loading { since: Instant::now() };
@@ -106,6 +121,13 @@ pub fn dispose_pane(pane: &mut Pane, services: &mut Services) {
 }
 
 pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
+    let loc = match crate::services::remote::normalize(loc) {
+        Ok(l) => l,
+        Err(e) => {
+            app.ui.toasts.push(Toast::error("Can't open this address").body(e));
+            return;
+        }
+    };
     let view = app.view_for(&loc);
     let Some((ti, pi)) = app.ws.locate(id) else { return };
     let old = app.ws.tabs[ti].panes[pi].location.clone();
@@ -164,6 +186,7 @@ pub fn go_up(app: &mut SoyuzApp, id: PaneId) {
             archive.file_name().map(|n| n.to_string_lossy().into_owned())
         }
         Location::Archive { inner, .. } => inner.rsplit('/').next().map(str::to_string),
+        Location::Remote(u) => soyuz_vfs::RemoteUri::parse(u).ok().and_then(|u| u.file_name().map(str::to_string)),
         _ => None,
     };
     navigate(app, id, parent, NavOpts { push_history: true, select, sync: true, ..Default::default() });
@@ -187,6 +210,10 @@ pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
     let is_dir = e.is_dir_like();
     // Archives open as folders; entries inside archives navigate / extract-and-open.
     if crate::ui::archive::open_entry(app, id, &path, is_dir) {
+        return;
+    }
+    // Remote folders navigate; remote files are downloaded to the temp cache and opened.
+    if crate::ui::remote::open_entry(app, id, &path, is_dir) {
         return;
     }
     if is_dir {
@@ -265,6 +292,7 @@ pub fn open_selection(app: &mut SoyuzApp) {
 }
 
 pub fn open_in_new_tab(app: &mut SoyuzApp, loc: Location, activate: bool) {
+    let loc = crate::services::remote::normalize(loc.clone()).unwrap_or(loc);
     let mut pane = Pane::new(loc.clone(), app.view_for(&loc));
     start_listing(&mut pane, &mut app.services, false);
     let idx = app.ws.insertion_index();
@@ -664,6 +692,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::ExtractEntries { archive, items, strip, dest } => {
             crate::ui::archive::extract_entries(app, archive, items, strip, dest)
         }
+        Cmd::Remote(c) => crate::ui::remote::apply(app, c),
         Cmd::RunSavedSearch(i) => crate::ui::search::run_saved(app, i),
         Cmd::RemoveSavedSearch(i) => crate::ui::search::remove_saved(app, i),
         Cmd::RevealPath(path) => {

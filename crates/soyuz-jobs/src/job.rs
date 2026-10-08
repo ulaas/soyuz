@@ -90,6 +90,44 @@ pub struct SyncPlan {
     pub actions: Vec<SyncAction>,
 }
 
+/// F2: operations where at least one side is a remote location. Paths are remote URIs
+/// (`sftp://…`, see `soyuz_vfs::RemoteUri`) or native paths, stored in `PathBuf`s.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteOp {
+    /// Stream copies (local↔remote, remote↔remote) with resume of partial files; `mv`
+    /// removes the sources afterwards (local sources go to the trash).
+    Transfer {
+        sources: Vec<PathBuf>,
+        dest_dir: PathBuf,
+        mv: bool,
+    },
+    /// Permanent delete (remote servers have no trash): not undoable.
+    Delete {
+        paths: Vec<PathBuf>,
+    },
+    Mkdir {
+        path: PathBuf,
+    },
+    Rename {
+        from: PathBuf,
+        to: PathBuf,
+    },
+}
+
+impl RemoteOp {
+    pub fn paths(&self) -> Vec<PathBuf> {
+        match self {
+            RemoteOp::Transfer { sources, dest_dir, .. } => {
+                sources.iter().cloned().chain(std::iter::once(dest_dir.clone())).collect()
+            }
+            RemoteOp::Delete { paths } => paths.clone(),
+            RemoteOp::Mkdir { path } => vec![path.clone()],
+            RemoteOp::Rename { from, to } => vec![from.clone(), to.clone()],
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobKind {
@@ -164,6 +202,8 @@ pub enum JobKind {
         #[serde(default)]
         level: Option<u8>,
     },
+    /// F2: remote locations (`soyuz-vfs` providers).
+    Remote(RemoteOp),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -203,6 +243,11 @@ impl JobKind {
             JobKind::EmptyTrash | JobKind::PurgeTrash { .. } => JobKindBrief::EmptyTrash,
             JobKind::Sync { .. } => JobKindBrief::Sync,
             JobKind::EditArchive { .. } => JobKindBrief::EditArchive,
+            JobKind::Remote(RemoteOp::Transfer { mv: false, .. }) => JobKindBrief::Copy,
+            JobKind::Remote(RemoteOp::Transfer { mv: true, .. }) => JobKindBrief::Move,
+            JobKind::Remote(RemoteOp::Delete { .. }) => JobKindBrief::Delete,
+            JobKind::Remote(RemoteOp::Mkdir { .. }) => JobKindBrief::Create,
+            JobKind::Remote(RemoteOp::Rename { .. }) => JobKindBrief::Rename,
         }
     }
 
@@ -239,6 +284,7 @@ impl JobKind {
                     _ => Vec::new(),
                 }))
                 .collect(),
+            JobKind::Remote(op) => op.paths(),
         }
     }
 }
@@ -251,8 +297,25 @@ pub(crate) fn is_synthetic_root(p: &Path) -> bool {
     p.as_os_str() == TRASH_ROOT
 }
 
-/// Overlap of two touched roots (pseudo roots only overlap themselves).
+/// A remote location (`scheme://…`): never resolved on the local disk.
+pub(crate) fn is_remote_root(p: &Path) -> bool {
+    p.to_str().is_some_and(soyuz_vfs::uri::looks_remote)
+}
+
+/// Overlap of two touched roots (pseudo roots only overlap themselves; remote roots
+/// overlap remote roots on the same server by path prefix).
 pub(crate) fn roots_overlap(a: &Path, b: &Path) -> bool {
+    match (is_remote_root(a), is_remote_root(b)) {
+        (true, true) => {
+            let (Some(x), Some(y)) = (soyuz_vfs::RemoteUri::from_path(a), soyuz_vfs::RemoteUri::from_path(b)) else {
+                return a == b;
+            };
+            let within = |p: &str, q: &str| p == q || q == "/" || p.starts_with(&format!("{q}/"));
+            return x.conn_key() == y.conn_key() && (within(&x.path, &y.path) || within(&y.path, &x.path));
+        }
+        (false, false) => {}
+        _ => return false,
+    }
     match (is_synthetic_root(a), is_synthetic_root(b)) {
         (false, false) => soyuz_fs::path_overlaps(a, b),
         (true, true) => a == b,
@@ -391,6 +454,38 @@ pub(crate) fn default_label(kind: &JobKind) -> String {
         },
         JobKind::Sync { plan } => format!("Sync {} with {}", name(&plan.left), name(&plan.right)),
         JobKind::EditArchive { archive, .. } => format!("Edit {}", name(archive)),
+        JobKind::Remote(op) => remote_label(op),
+    }
+}
+
+/// Labels for remote jobs ("Upload …", "Download …", "Move …").
+fn remote_label(op: &RemoteOp) -> String {
+    fn name(p: &Path) -> String {
+        let n = soyuz_vfs::RemoteUri::from_path(p)
+            .map(|u| u.file_name().map(str::to_string).unwrap_or_else(|| u.server_label()))
+            .unwrap_or_else(|| soyuz_core::entry::display_name(p));
+        format!("\u{201c}{n}\u{201d}")
+    }
+    fn items(paths: &[PathBuf]) -> String {
+        match paths {
+            [one] => name(one),
+            many => format!("{} items", many.len()),
+        }
+    }
+    match op {
+        RemoteOp::Transfer { sources, dest_dir, mv } => {
+            let src_remote = sources.first().is_some_and(|p| is_remote_root(p));
+            let verb = match (mv, src_remote, is_remote_root(dest_dir)) {
+                (true, _, _) => "Move",
+                (false, false, true) => "Upload",
+                (false, true, false) => "Download",
+                _ => "Copy",
+            };
+            format!("{verb} {} to {}", items(sources), name(dest_dir))
+        }
+        RemoteOp::Delete { paths } => format!("Delete {}", items(paths)),
+        RemoteOp::Mkdir { path } => format!("New folder {}", name(path)),
+        RemoteOp::Rename { from, to } => format!("Rename {} to {}", name(from), name(to)),
     }
 }
 
@@ -415,6 +510,22 @@ mod tests {
         assert!(roots_overlap(&t, &t));
         assert!(!roots_overlap(&t, Path::new("/")));
         assert!(!roots_overlap(&std::env::current_dir().unwrap(), &t));
+    }
+
+    #[test]
+    fn remote_roots_and_labels() {
+        let a = PathBuf::from("sftp://u@h/home/u/docs");
+        let b = PathBuf::from("sftp://u@h/home/u");
+        let c = PathBuf::from("sftp://u@other/home/u");
+        assert!(roots_overlap(&a, &b));
+        assert!(!roots_overlap(&a, &c));
+        assert!(!roots_overlap(&a, Path::new("C:/x")));
+        assert!(!roots_overlap(&PathBuf::from("sftp://u@h/home/u2"), &b));
+        let k = JobKind::Remote(RemoteOp::Transfer { sources: vec!["C:/x/a.txt".into()], dest_dir: b, mv: false });
+        assert_eq!(k.brief(), JobKindBrief::Copy);
+        assert_eq!(default_label(&k), "Upload \u{201c}a.txt\u{201d} to \u{201c}u\u{201d}");
+        let json = serde_json::to_string(&JobSpec::new(k.clone())).unwrap();
+        assert_eq!(serde_json::from_str::<JobSpec>(&json).unwrap().kind, k);
     }
 
     #[test]
