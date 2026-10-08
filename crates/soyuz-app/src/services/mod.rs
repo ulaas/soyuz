@@ -37,6 +37,7 @@ pub mod thumb_folder;
 pub mod thumb_video;
 pub mod thumbs;
 pub mod tree;
+pub mod updates;
 pub mod watcher;
 
 use std::collections::HashMap;

@@ -184,6 +184,11 @@ scheduled_dry_run = false        # scheduled runs only write a report of what wo
 previous_versions = true         # list Windows Volume Shadow Copies in "Previous versions"
 shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device can't be listed
 
+[updates]                        # D1: update check (manual; nothing installs without a click, no telemetry)
+repo = ""                        # GitHub "owner/name" or URL; empty = update check disabled
+weekly_check = false             # also check once a week at startup (notification only)
+include_prereleases = false      # offer release candidates / betas too
+
 [ai]                             # AI providers (roadmap Phase A); keys live in the OS credential store
 enabled = true
 default_profile = "claude"       # used when a task names no profile (empty = first profile)

@@ -13,6 +13,7 @@ of the *Explorer* preset; the command palette always shows the active ones.
 - [Search](#search)
 - [Customizing](#customizing)
 - [Accessibility](#accessibility)
+- [Installing, updates and the default file manager](#installing-updates-and-the-default-file-manager)
 - [Portable mode and data files](#portable-mode-and-data-files)
 - [Troubleshooting](#troubleshooting)
 
@@ -217,6 +218,31 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 - **Interface zoom**: `Ctrl+=`, `Ctrl+-`, `Ctrl+0` scale the whole interface (50–300 %),
   stored as `appearance.ui_scale`.
 
+## Installing, updates and the default file manager
+
+- **Installer (MSI)** — installs for your account only (no admin) to
+  `%LOCALAPPDATA%\Programs\Soyuz`, with a Start menu shortcut and an entry in *Installed apps*
+  for uninstalling. `msiexec /i soyuz-<version>-windows-x64.msi ALLUSERS=1` installs for all
+  users instead. Optional features: "Open in Soyuz" on the folder right-click menu, and adding
+  Soyuz to `PATH` so `soyuz C:\some\folder` works in a terminal. Newer MSIs upgrade in place.
+- **Portable zip** — `soyuz-<version>-windows-x64-portable.zip` runs from any folder and keeps
+  its settings beside the exe (see below).
+- **Updates** — Settings → *About & updates*. Enter the GitHub repository Soyuz is released
+  from (`[updates] repo`), then **Check for updates**. Soyuz fetches only the public release
+  list; it sends nothing about you. A newer release shows its notes and a **Download & verify**
+  button: the file goes to your Downloads folder, its SHA-256 must match the release's
+  `SHA256SUMS` file (or GitHub's digest), and installers must carry a valid Authenticode
+  signature or be unsigned (a broken signature deletes the download). Nothing runs until you
+  click **Run installer…** and confirm. *Check once a week* (off by default) only shows a
+  notification.
+- **Default file manager** — Settings → *Advanced* → **Make Soyuz the default** opens folders
+  and drives from other apps, the desktop and Win+R in Soyuz. Soyuz writes an "Open in Soyuz"
+  verb for `Directory` and `Drive` under `HKEY_CURRENT_USER\Software\Classes` (your account
+  only) and remembers what was there before under `HKEY_CURRENT_USER\Software\Soyuz`.
+  **Restore Explorer** removes exactly those entries and restores the previous default.
+  Special folders (This PC, Control Panel, Recycle Bin) always stay with File Explorer.
+  Restore Explorer before moving or deleting a portable copy that is the default.
+
 ## Portable mode and data files
 
 Put an empty file named `portable` next to the executable and Soyuz keeps everything in
@@ -236,6 +262,7 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `sync_profiles.toml` | saved sync profiles and their schedules |
 | `sync_state/*.json` | two-way sync state per folder pair (what both sides looked like after the last sync) |
 | `sync_reports/<profile>/*.json` | run and dry-run reports |
+| `update-check.json` | when the weekly update check last ran |
 
 ## Troubleshooting
 

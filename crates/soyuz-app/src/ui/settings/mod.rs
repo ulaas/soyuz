@@ -11,6 +11,7 @@ mod editor;
 mod keybindings;
 mod lists;
 mod pages;
+mod system;
 mod themes_ui;
 pub mod widgets;
 
@@ -58,10 +59,11 @@ pub enum Section {
     Bookmarks,
     Ai,
     Advanced,
+    About,
 }
 
 impl Section {
-    pub const ALL: [Section; 13] = [
+    pub const ALL: [Section; 14] = [
         Section::General,
         Section::Appearance,
         Section::Views,
@@ -75,6 +77,7 @@ impl Section {
         Section::Bookmarks,
         Section::Ai,
         Section::Advanced,
+        Section::About,
     ];
 
     pub fn title(self) -> &'static str {
@@ -91,7 +94,8 @@ impl Section {
             Section::Commands => "Custom commands",
             Section::Bookmarks => "Bookmarks",
             Section::Ai => "AI assistant",
-            Section::Advanced => "Config file",
+            Section::Advanced => "Advanced",
+            Section::About => "About & updates",
         }
     }
 
@@ -110,6 +114,7 @@ impl Section {
             Section::Bookmarks => ph::BOOKMARK_SIMPLE,
             Section::Ai => ph::SPARKLE,
             Section::Advanced => ph::FILE_CODE,
+            Section::About => ph::PLANET,
         }
     }
 
@@ -127,7 +132,8 @@ impl Section {
             Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
             Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
             Section::Ai => "Model providers, API keys, privacy, scope, budgets and MCP connections.",
-            Section::Advanced => "Edit, export or import config.toml.",
+            Section::Advanced => "Edit, export or import config.toml, and make Soyuz your default file manager.",
+            Section::About => "Version, and checking GitHub Releases for a newer Soyuz (only when you ask).",
         }
     }
 
@@ -186,6 +192,7 @@ impl Section {
                 c.ai.mcp_servers = servers;
             }
             Section::Advanced => *c = d,
+            Section::About => c.updates = d.updates,
         }
     }
 }
@@ -731,7 +738,8 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Commands => lists::commands(ui, app, q),
         Section::Bookmarks => lists::bookmarks(ui, app, q),
         Section::Ai => ai::page(ui, app, q),
-        Section::Advanced => pages::advanced(ui, app, q),
+        Section::Advanced => pages::advanced(ui, app, q) | system::file_manager(ui, app, q),
+        Section::About => system::about(ui, app, q),
     }
 }
 
