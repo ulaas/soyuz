@@ -1,0 +1,38 @@
+[package]
+name = "soyuz-script"
+description = "Soyuz automation: sandboxed Rhai scripting, rule-based automations and the CLI companion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[[bin]]
+# Console-subsystem twin of `soyuz cp|mv|rm|…` (the release `soyuz.exe` is a GUI binary).
+name = "soyuz-cli"
+path = "src/bin/soyuz-cli.rs"
+
+[dependencies]
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+soyuz-mcp.workspace = true
+# Embedded scripting (MIT OR Apache-2.0, pure Rust). `sync`: the engine and compiled
+# scripts are shared with worker threads; `no_module`: no `import` (no file resolver).
+rhai = { version = "1.26.1", default-features = false, features = ["std", "sync", "no_module", "no_custom_syntax"] }
+globset.workspace = true
+regex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+crossbeam-channel.workspace = true
+chrono.workspace = true
+log.workspace = true
+env_logger.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

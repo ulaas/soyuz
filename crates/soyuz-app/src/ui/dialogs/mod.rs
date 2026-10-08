@@ -280,8 +280,12 @@ impl Dialog for ColumnsDialog {
             ) {
                 continue;
             }
+            if col.script_slot().is_some() && crate::automation::scripts::column_label(col).is_none() {
+                continue;
+            }
             let mut on = visible.contains(&col);
-            let r = ui.add_enabled(col != Column::Name, egui::Checkbox::new(&mut on, col.label()));
+            let label = crate::ui::views::columns::header_label(col);
+            let r = ui.add_enabled(col != Column::Name, egui::Checkbox::new(&mut on, label));
             if r.changed() {
                 pane.view.set_column_visible(col, on);
                 pane.layout_sig = None;

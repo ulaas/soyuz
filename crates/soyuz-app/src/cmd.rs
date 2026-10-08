@@ -112,4 +112,6 @@ pub enum Cmd {
     Ai(crate::ai::AiCmd),
     /// Smart folders and the background index (F5): `ui::smart`.
     Smart(crate::ui::smart::SmartCmd),
+    /// Scripts, automations and the CLI companion (F6): `automation`.
+    Automation(crate::automation::AutoCmd),
 }

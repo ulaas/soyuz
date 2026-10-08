@@ -116,6 +116,8 @@ pub struct SoyuzApp {
     pub ai: crate::ai::AiState,
     /// Saved workspaces, the other windows of this process, group editing (F7).
     pub workspaces: crate::ui::workspaces::WorkspacesState,
+    /// Scripts, automation rules and the CLI pipe (roadmap F6).
+    pub automation: crate::automation::AutomationState,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -269,6 +271,7 @@ impl SoyuzApp {
             editors: Default::default(),
             ai: crate::ai::AiState::new(ctx),
             workspaces: crate::ui::workspaces::WorkspacesState::load(),
+            automation: Default::default(),
         };
         crate::ui::workspaces::bind_hotkeys(&mut app);
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
@@ -654,6 +657,7 @@ impl eframe::App for SoyuzApp {
         ops::fileops::begin_frame(self, &ctx);
         crate::services::mcp_bridge::pump(self, &ctx);
         crate::ai::pump(self, &ctx);
+        crate::automation::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);

@@ -412,6 +412,16 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.circle_filled(b, 8.5, p.bg_window);
         painter.circle_filled(b, 7.0, p.warning);
         painter.text(b, Align2::CENTER_CENTER, ph::PLUGS_CONNECTED, ticons::font(8.5), Color32::WHITE);
+    } else if let Some(origin) = meta.origin {
+        // Started by an automation rule, a script or the CLI (F6).
+        let glyph = crate::automation::origin_glyph(origin);
+        let b = pos2(ic.x + 14.0, ic.y + 14.0);
+        painter.circle_filled(b, 8.5, p.bg_window);
+        painter.circle_filled(b, 7.0, p.info);
+        painter.text(b, Align2::CENTER_CENTER, glyph, ticons::font_fill(8.5), Color32::WHITE);
+        let hit = egui::Rect::from_center_size(b, vec2(18.0, 18.0));
+        ui.interact(hit, ui.id().with(("origin", s.id)), egui::Sense::hover())
+            .on_hover_text(crate::automation::origin_label(origin));
     }
 
     // Text block.

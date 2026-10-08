@@ -65,7 +65,15 @@ pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
         Column::Dimensions | Column::Duration | Column::LinkTarget | Column::Checksum | Column::ItemCount => {
             String::new()
         }
+        Column::Script1 | Column::Script2 | Column::Script3 | Column::Script4 => {
+            crate::automation::scripts::cell_text(col, e)
+        }
     }
+}
+
+/// Header label: script columns are named by their provider (F6).
+pub fn header_label(col: Column) -> String {
+    crate::automation::scripts::column_label(col).unwrap_or_else(|| col.label().to_string())
 }
 
 /// `RHSA…` attribute letters.

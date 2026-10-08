@@ -90,6 +90,17 @@ pub enum AfterJob {
     ClearClipboard,
 }
 
+/// Who started a job other than the user directly (a badge on its activity card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobOrigin {
+    /// A rule in `[[automation.rules]]`.
+    Automation,
+    /// A script action (`scripts/*.rhai`).
+    Script,
+    /// `soyuz cp|mv|rm|…` from a terminal.
+    Cli,
+}
+
 /// App-side facts about a submitted job.
 #[derive(Clone, Debug)]
 pub struct JobMeta {
@@ -107,6 +118,8 @@ pub struct JobMeta {
     pub ai_task: Option<u64>,
     /// Started by this MCP client (tags the card with its name).
     pub mcp_client: Option<String>,
+    /// Started by an automation rule, a script or the CLI (F6).
+    pub origin: Option<JobOrigin>,
 }
 
 impl JobMeta {
@@ -121,6 +134,7 @@ impl JobMeta {
             toast: true,
             ai_task: None,
             mcp_client: None,
+            origin: None,
         }
     }
 
@@ -133,6 +147,12 @@ impl JobMeta {
     /// Mark the job as started by an external MCP client.
     pub fn mcp(mut self, client: &str) -> Self {
         self.mcp_client = Some(client.to_string());
+        self
+    }
+
+    /// Mark the job as started by an automation rule, a script or the CLI.
+    pub fn origin(mut self, origin: JobOrigin) -> Self {
+        self.origin = Some(origin);
         self
     }
 

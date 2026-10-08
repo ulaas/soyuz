@@ -20,9 +20,14 @@ use crate::trust::Transport;
 
 /// Pipe name for the current user.
 pub fn pipe_name() -> String {
+    user_pipe_name("soyuz-mcp")
+}
+
+/// `\\.\pipe\<prefix>-<user>`: a per-user pipe name (the CLI companion uses `soyuz-cli`).
+pub fn user_pipe_name(prefix: &str) -> String {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
     let user = crate::trust::sanitize_name(&user);
-    format!(r"\\.\pipe\soyuz-mcp-{}", if user.is_empty() { "user" } else { &user })
+    format!(r"\\.\pipe\{prefix}-{}", if user.is_empty() { "user" } else { &user })
 }
 
 /// The first line on a pipe connection.
@@ -53,17 +58,28 @@ pub struct PipeServer {
 
 impl PipeServer {
     /// Bind `name` and serve each connection with `server` on its own thread.
-    #[cfg(windows)]
     pub fn start(name: &str, server: Arc<Server>) -> std::io::Result<PipeServer> {
+        PipeServer::serve(name, move |stream| serve_connection(server.clone(), stream))
+    }
+
+    /// Bind `name` (current user only, see the DACL in `windows.rs`) and run `handler`
+    /// for each connection on its own thread. Used by the MCP server and the CLI companion.
+    #[cfg(windows)]
+    pub fn serve<F>(name: &str, handler: F) -> std::io::Result<PipeServer>
+    where
+        F: Fn(ClientStream) + Send + Sync + 'static,
+    {
+        let handler = Arc::new(handler);
         let mut listener = windows::PipeListener::bind(name)?;
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = stop.clone();
-        std::thread::Builder::new().name("soyuz-mcp-pipe".into()).spawn(move || {
+        let pipe = name.to_string();
+        std::thread::Builder::new().name("soyuz-pipe".into()).spawn(move || {
             loop {
                 let stream = match listener.accept() {
                     Ok(s) => s,
                     Err(e) => {
-                        log::warn!("mcp pipe: accept failed: {e}");
+                        log::warn!("{pipe}: accept failed: {e}");
                         std::thread::sleep(std::time::Duration::from_millis(500));
                         if stop2.load(Ordering::SeqCst) {
                             break;
@@ -74,18 +90,19 @@ impl PipeServer {
                 if stop2.load(Ordering::SeqCst) {
                     break;
                 }
-                let server = server.clone();
-                let _ = std::thread::Builder::new()
-                    .name("soyuz-mcp-conn".into())
-                    .spawn(move || serve_connection(server, stream));
+                let handler = handler.clone();
+                let _ = std::thread::Builder::new().name("soyuz-pipe-conn".into()).spawn(move || handler(stream));
             }
         })?;
         Ok(PipeServer { stop, name: name.to_string() })
     }
 
     #[cfg(not(windows))]
-    pub fn start(_name: &str, _server: Arc<Server>) -> std::io::Result<PipeServer> {
-        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "the MCP pipe is Windows-only for now"))
+    pub fn serve<F>(_name: &str, _handler: F) -> std::io::Result<PipeServer>
+    where
+        F: Fn(ClientStream) + Send + Sync + 'static,
+    {
+        Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "the local pipe is Windows-only for now"))
     }
 
     pub fn name(&self) -> &str {
@@ -126,8 +143,12 @@ pub fn connect(name: &str) -> std::io::Result<Option<ClientStream>> {
     windows::connect(name)
 }
 
+/// A connected client end (no pipe outside Windows yet).
 #[cfg(not(windows))]
-pub fn connect(_name: &str) -> std::io::Result<Option<std::fs::File>> {
+pub type ClientStream = std::fs::File;
+
+#[cfg(not(windows))]
+pub fn connect(_name: &str) -> std::io::Result<Option<ClientStream>> {
     Ok(None)
 }
 

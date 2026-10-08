@@ -408,6 +408,10 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
         A::Settings => crate::ui::settings::open(app, None),
         A::CustomCommand(name) => crate::commands::run_named(app, &name, ctx),
+        A::RunScript(id) => crate::automation::run_action(app, &id),
+        A::OpenScripts => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Scripts)),
+        A::OpenAutomations => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Automations)),
+        A::ReloadScripts => crate::automation::reload_scripts(app),
         A::EditConfigFile => {
             let path = soyuz_core::config::default_path();
             if !path.exists()

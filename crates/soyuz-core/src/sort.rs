@@ -70,7 +70,11 @@ pub fn compare_entries(a: &EntryInfo, b: &EntryInfo, spec: &SortSpec) -> Orderin
         | Column::Duration
         | Column::LinkTarget
         | Column::Checksum
-        | Column::ItemCount => name(a, b),
+        | Column::ItemCount
+        | Column::Script1
+        | Column::Script2
+        | Column::Script3
+        | Column::Script4 => name(a, b),
     };
     let primary = match spec.dir {
         SortDir::Asc => primary,

@@ -854,9 +854,9 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
             painter.rect_filled(r.shrink2(vec2(2.0, 4.0)), CornerRadius::same(radius::CONTROL), p.bg_surface2);
         }
         let color = if active || resp.hovered() { p.text_primary } else { p.text_secondary };
-        let label = c.column.label();
+        let label = columns::header_label(c.column);
         let font = if active { semibold(12.0) } else { FontId::proportional(12.0) };
-        let galley = trunc_galley(&painter, label, font, color, c.w - 34.0);
+        let galley = trunc_galley(&painter, &label, font, color, c.w - 34.0);
         let gw = galley.size().x;
         let right = columns::right_aligned(c.column);
         let tx = if right {
@@ -935,7 +935,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
                 painter.text(
                     ghost.center(),
                     Align2::CENTER_CENTER,
-                    c.column.label(),
+                    columns::header_label(c.column),
                     FontId::proportional(12.0),
                     p.text_primary,
                 );

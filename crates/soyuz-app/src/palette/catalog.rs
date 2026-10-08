@@ -124,6 +124,9 @@ pub fn title(a: &Action) -> String {
         A::AiAuditLog => "AI: Audit log",
         A::AiRecipes => "AI: Recipes",
         A::AiStop => "AI: Stop the assistant",
+        A::OpenScripts => "Scripts…",
+        A::ReloadScripts => "Reload scripts",
+        A::OpenAutomations => "Automations…",
         A::JobsPauseAll => "Pause all jobs",
         A::JobsResumeAll => "Resume all jobs",
         A::JobsCancelAll => "Cancel all jobs",
@@ -137,6 +140,7 @@ pub fn title(a: &Action) -> String {
         A::SetGroupBy(GroupBy::None) => return "Group by: None".into(),
         A::SetGroupBy(g) => return format!("Group by: {}", group_label(*g)),
         A::CustomCommand(name) => return name.clone(),
+        A::RunScript(id) => return crate::automation::action_title(id),
         _ => return a.title(),
     };
     s.to_string()
@@ -372,6 +376,10 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::AiRecipes => (ph::BOOK_OPEN, "Saved assistant plans you can re-run without a model", "ai macro recipe"),
         A::AiStop => (ph::STOP_CIRCLE, "Cancel the running assistant task", "ai cancel escape"),
         A::CustomCommand(_) => (ph::LIGHTNING, "Custom command", "user"),
+        A::RunScript(_) => (ph::CODE, "Script action", "rhai script user"),
+        A::OpenScripts => (ph::CODE, "Your Rhai scripts: actions, columns, previewers; errors", "rhai plugin"),
+        A::ReloadScripts => (ph::ARROWS_CLOCKWISE, "Load the scripts folder again", "rhai refresh"),
+        A::OpenAutomations => (ph::ROBOT, "Rules that act on new files in watched folders", "rules hazel watch"),
         // ---- jobs ----
         A::JobsPauseAll => (ph::PAUSE, "Pause every running job", ""),
         A::JobsResumeAll => (ph::PLAY, "Resume every paused job", ""),

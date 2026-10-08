@@ -189,6 +189,15 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     }
     let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
     crate::commands::context_items(ui, v.config, cmds, id, &kinds);
+    let paths: Vec<std::path::PathBuf> = sel_paths.iter().map(|(p, _)| p.clone()).collect();
+    crate::automation::menu::context_items(
+        ui,
+        cmds,
+        id,
+        &kinds,
+        pane.location.as_fs_path().map(|p| p.to_path_buf()),
+        &paths,
+    );
     menu_separator(ui);
     let single_file = single && first.as_ref().is_some_and(|(_, dir)| !dir);
     crate::ui::dialogs::properties::context_items(ui, km, cmds, id, sel.len() > 1, single_file);
@@ -264,6 +273,14 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     action_item(ui, km, cmds, id, ph::SELECTION_ALL, "Select all", Action::SelectAll);
     action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     crate::commands::context_items(ui, v.config, cmds, id, &[soyuz_core::config::CommandContext::Background]);
+    crate::automation::menu::context_items(
+        ui,
+        cmds,
+        id,
+        &[soyuz_core::config::CommandContext::Background],
+        pane.location.as_fs_path().map(|p| p.to_path_buf()),
+        &[],
+    );
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
 }
@@ -332,9 +349,13 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         ) {
             continue; // data sources arrive in later milestones
         }
+        if col.script_slot().is_some() && crate::automation::scripts::column_label(col).is_none() {
+            continue; // no script provides this column
+        }
         let on = visible.contains(&col);
         let enabled = col != Column::Name;
-        let r = crate::ui::widgets::menu_item(ui, Some(if on { ph::CHECK } else { "" }), col.label(), None, enabled);
+        let label = crate::ui::views::columns::header_label(col);
+        let r = crate::ui::widgets::menu_item(ui, Some(if on { ph::CHECK } else { "" }), &label, None, enabled);
         if r.clicked() {
             pane.view.set_column_visible(col, !on);
             pane.layout_sig = None;

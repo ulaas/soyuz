@@ -632,6 +632,12 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     if job.is_dir {
         return folder(&job.source);
     }
+    // Script previewers (F6) take precedence for their file types.
+    if let Source::File(p) = &job.source
+        && let Some(r) = crate::automation::scripts::preview(p)
+    {
+        return script_preview(r);
+    }
     let meta = match &job.source {
         Source::File(p) => soyuz_fs::stat(p, true).ok(),
         Source::Entry { .. } => None,
@@ -817,6 +823,39 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
         TextureOptions::LINEAR,
     );
     Loaded { kind: Kind::Image, content: Content::Image(ImageData { tex, width: w, height: h }), facts, meta: None }
+}
+
+/// A script previewer's result as preview content.
+fn script_preview(r: Result<soyuz_script::Preview, soyuz_script::ScriptError>) -> Loaded {
+    use crate::theme::icons::ph;
+    let facts = vec![("Previewer".to_string(), "Script".to_string())];
+    match r {
+        Ok(soyuz_script::Preview::Markdown(md)) => Loaded {
+            kind: Kind::Markdown,
+            content: Content::Markdown { blocks: Arc::new(preview_text::parse_markdown(&md)), truncated: false },
+            facts,
+            meta: None,
+        },
+        Ok(soyuz_script::Preview::Text(t)) => {
+            let fence = if t.contains("```") { "~~~~" } else { "```" };
+            let md = format!(
+                "{fence}
+{t}
+{fence}"
+            );
+            Loaded {
+                kind: Kind::Text,
+                content: Content::Markdown { blocks: Arc::new(preview_text::parse_markdown(&md)), truncated: false },
+                facts,
+                meta: None,
+            }
+        }
+        Err(e) => {
+            let mut l = message(Kind::Text, ph::WARNING_CIRCLE, "The script previewer failed", e.to_string());
+            l.facts = facts;
+            l
+        }
+    }
 }
 
 fn text(opened: &mut Opened, name: &str, kind: Kind, job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
