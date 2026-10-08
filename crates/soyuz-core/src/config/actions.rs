@@ -80,7 +80,7 @@ define_actions! {
         ToggleHidden, ToggleFlatView, ToggleSortDir, ChooseColumns, ResetFolderView,
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
         ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
-        ToggleShelf,
+        ToggleShelf, ToggleEditorPanel,
     ],
     Selection: [
         SelectAll, SelectNone, InvertSelection, SelectByPattern, SelectSameExtension,
@@ -89,7 +89,7 @@ define_actions! {
         TypeAheadToggle,
     ],
     FileOps: [
-        Open, OpenWith, OpenInNewTab, OpenInTerminal, OpenTerminalHere, RunElevated,
+        Open, OpenWith, OpenInEditor, OpenInNewTab, OpenInTerminal, OpenTerminalHere, RunElevated,
         RevealInSystem, Copy, Cut, Paste, PasteAsLink, PasteShortcut, CopyToOtherPane,
         MoveToOtherPane, CopyTo, MoveTo, Duplicate, Rename, BatchRename, NewFolder, NewFile,
         NewSymlink, NewHardlink, NewJunction, Delete, DeletePermanent, SecureWipe, Properties,

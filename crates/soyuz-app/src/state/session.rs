@@ -77,6 +77,8 @@ pub struct Session {
     pub shelf: Vec<PathBuf>,
     /// Expanded folders of the folder tree.
     pub tree_expanded: Vec<PathBuf>,
+    /// Files open in the built-in editor.
+    pub editors: Vec<PathBuf>,
 }
 
 impl Default for Session {
@@ -94,6 +96,7 @@ impl Default for Session {
             welcome_seen: false,
             shelf: Vec::new(),
             tree_expanded: Vec::new(),
+            editors: Vec::new(),
         }
     }
 }

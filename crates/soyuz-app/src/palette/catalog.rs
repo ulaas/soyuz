@@ -52,6 +52,8 @@ pub fn title(a: &Action) -> String {
         A::Filter => "Filter this folder",
         A::TypeAheadToggle => "Toggle type-ahead mode",
         A::OpenWith => "Open with…",
+        A::OpenInEditor => "Edit in Soyuz",
+        A::ToggleEditorPanel => "Toggle editor panel",
         A::OpenInTerminal => "Open in terminal",
         A::RevealInSystem => "Reveal in system file manager",
         A::PasteShortcut => "Paste shortcut",
@@ -237,6 +239,10 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         // ---- file ops ----
         A::Open => (ph::ARROW_SQUARE_OUT, "Open the selection", "launch enter"),
         A::OpenWith => (ph::APP_WINDOW, "Open with a chosen application", "program"),
+        A::ToggleEditorPanel => (ph::NOTE_PENCIL, "Show or hide the built-in editor panel", "edit text hex image"),
+        A::OpenInEditor => {
+            (ph::NOTE_PENCIL, "Open the file in the built-in text, hex or image editor", "edit hex image notepad")
+        }
         A::OpenInNewTab => (ph::BROWSERS, "Open the selected folders in new tabs", ""),
         A::OpenInTerminal => (ph::TERMINAL_WINDOW, "Open the selected folder in the terminal", "shell"),
         A::OpenTerminalHere => (ph::TERMINAL_WINDOW, "Open a terminal in the current folder", "shell console"),

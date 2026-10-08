@@ -99,6 +99,19 @@ and *Retry failed*.
   file list; `Ctrl`+click opens links and paths.
 - **Shelf** (palette: *Toggle shelf*): drop files from anywhere, keep browsing, then drag
   them out or copy / move them all at once. Its contents survive restarts.
+- **Editor** (`F4`, right-click → *Edit in Soyuz*, palette *Toggle editor panel*): files
+  open as tabs in a panel docked right or bottom (or maximized over the panes).
+  - *Text*: syntax highlighting, line numbers, find / replace (`Ctrl+F` / `Ctrl+H`; case,
+    whole word, regex with `$1`), go to line (`Ctrl+G`), undo / redo, `Ctrl+S`. The
+    encoding (UTF-8, UTF-8 BOM, UTF-16) and line endings are kept; click *LF/CRLF* in the
+    status line to switch. Files over `[editor] max_text_mib` open read-only in hex.
+  - *Hex*: any size, overwrite in the hex or text column (`Tab` switches), data
+    inspector, go to offset, find hex bytes or text.
+  - *Image*: zoom (wheel, `+`/`-`/`0`/`1`), rotate (`R`), flip (`H`/`V`), crop (`C`, drag,
+    `Enter`). PNG/BMP/TIFF/WebP/GIF save losslessly; JPEG is re-encoded.
+  - Saving puts the previous version in the trash as `<name>.bak` (`[editor]
+    backup_to_trash`). Files changed on disk reload by themselves, or ask when you have
+    unsaved changes. Closing a modified tab or the window asks first.
 
 ## Tools
 

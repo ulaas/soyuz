@@ -13,6 +13,10 @@
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
+//! * `keys:<spec>` — synthetic keyboard input on the next frame: plain text is typed,
+//!   `{Enter}`, `{Ctrl+S}`, `{Shift+F3}`, `{Copy}`, `{Cut}`, `{Paste:text}` are keys;
+//! * `edit:<path>` — open a file in the built-in editor; `editor:<command>` — drive it
+//!   (see `editors::devscript`);
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -56,6 +60,8 @@ pub struct DevScript {
     frame_log: bool,
     frames: u64,
     frame_start: Option<Instant>,
+    /// Synthetic input for the next frame (`keys:`).
+    events: Vec<egui::Event>,
 }
 
 impl DevScript {
@@ -65,6 +71,58 @@ impl DevScript {
             .unwrap_or_default();
         DevScript { steps, frame_log: std::env::var("SOYUZ_FRAME_LOG").is_ok_and(|v| v == "1"), ..Default::default() }
     }
+}
+
+/// Start of a frame: inject queued synthetic input.
+pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
+    if !app.devscript.events.is_empty() {
+        let events = std::mem::take(&mut app.devscript.events);
+        ctx.input_mut(|i| i.events.extend(events));
+    }
+}
+
+/// `keys:` spec → egui events.
+fn key_events(spec: &str) -> Vec<egui::Event> {
+    let mut out = Vec::new();
+    let mut rest = spec;
+    while !rest.is_empty() {
+        if let Some(body) = rest.strip_prefix('{')
+            && let Some(end) = body.find('}')
+        {
+            let tok = &body[..end];
+            rest = &body[end + 1..];
+            if tok == "Copy" {
+                out.push(egui::Event::Copy);
+            } else if tok == "Cut" {
+                out.push(egui::Event::Cut);
+            } else if let Some(t) = tok.strip_prefix("Paste:") {
+                out.push(egui::Event::Paste(t.to_string()));
+            } else {
+                let mut m = egui::Modifiers::NONE;
+                let mut key = None;
+                for part in tok.split('+') {
+                    match part {
+                        "Ctrl" => {
+                            m.ctrl = true;
+                            m.command = true;
+                        }
+                        "Shift" => m.shift = true,
+                        "Alt" => m.alt = true,
+                        k => key = egui::Key::from_name(k),
+                    }
+                }
+                if let Some(key) = key {
+                    out.push(egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers: m });
+                    out.push(egui::Event::Key { key, physical_key: None, pressed: false, repeat: false, modifiers: m });
+                }
+            }
+            continue;
+        }
+        let c = rest.chars().next().unwrap_or(' ');
+        rest = &rest[c.len_utf8()..];
+        out.push(egui::Event::Text(c.to_string()));
+    }
+    out
 }
 
 /// Start of a frame (frame-time logging).
@@ -173,6 +231,12 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 crate::ui::settings::open(app, sec);
             }
             "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),
+            "keys" => {
+                app.devscript.events.extend(key_events(arg));
+                ctx.request_repaint();
+                return;
+            }
             _ => match step.parse::<Action>() {
                 Ok(a) => app.cmds.push(Cmd::Action(a)),
                 Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),

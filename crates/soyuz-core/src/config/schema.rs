@@ -35,6 +35,7 @@ pub struct Config {
     pub archive: Archive,
     pub search: Search,
     pub preview: Preview,
+    pub editor: Editor,
     pub git: Git,
     pub keys: Keys,
     pub ai: super::ai::Ai,
@@ -469,6 +470,40 @@ pub struct Preview {
     pub thumb_cache_mib: u64,
     /// Memory budget of decoded previews (images, text, media) (MiB).
     pub preview_cache_mib: u64,
+}
+
+/// `[editor]`: the built-in text / hex / image editors ("Edit in Soyuz", F4).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Editor {
+    /// Where the editor panel docks.
+    pub dock: EditorDock,
+    /// Text editor font size (points).
+    pub font_size: f32,
+    /// Columns per tab stop.
+    pub tab_width: u8,
+    /// Soft-wrap long lines.
+    pub wrap: bool,
+    /// Draw spaces and tabs as faint dots / arrows.
+    pub show_whitespace: bool,
+    /// Text files larger than this open read-only in the hex editor.
+    pub max_text_mib: u64,
+    /// Before overwriting a file, put a copy of the previous version (`<name>.bak`) in
+    /// the trash.
+    pub backup_to_trash: bool,
+    /// JPEG quality when an edited JPEG is saved (always a lossy re-encode).
+    pub jpeg_quality: u8,
+    /// Largest image the image editor decodes (megapixels).
+    pub max_image_mp: u32,
+}
+
+/// `editor.dock`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EditorDock {
+    #[default]
+    Right,
+    Bottom,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

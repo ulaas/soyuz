@@ -110,6 +110,8 @@ pub struct SoyuzApp {
     pub secondary: bool,
     /// Close-request handling while jobs are pending.
     pub quit: QuitState,
+    /// Built-in text / hex / image editors (F4).
+    pub editors: crate::editors::Editors,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -260,8 +262,12 @@ impl SoyuzApp {
             devscript: crate::devscript::DevScript::from_env(),
             secondary: startup.secondary,
             quit: QuitState::default(),
+            editors: Default::default(),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
+        if let Some(s) = &session {
+            crate::editors::restore(&mut app, ctx, &s.editors);
+        }
         if restored {
             if let Some((loc, select)) = opened {
                 ops::open_in_new_tab(&mut app, loc, true);
@@ -362,6 +368,7 @@ impl SoyuzApp {
             welcome_seen: self.ui.welcome_seen,
             shelf: crate::ui::tools::shelf_paths(),
             tree_expanded: self.ui.tree.session_expanded(),
+            editors: crate::editors::session_paths(self),
             ..Session::default()
         }
     }
@@ -411,6 +418,10 @@ impl SoyuzApp {
             for a in actions {
                 actions::execute(self, a, ctx);
             }
+            return;
+        }
+        if crate::editors::owns_keyboard(self, ctx) {
+            crate::editors::handle_keys(self, ctx);
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
@@ -512,6 +523,9 @@ impl SoyuzApp {
     /// cancels the jobs). Runs in `logic`, so it also works while the window is minimized.
     fn handle_close_request(&mut self, ctx: &egui::Context) {
         use std::sync::atomic::Ordering;
+        if crate::editors::intercept_close(self, ctx) {
+            return;
+        }
         let pending = self.fileops.jobs.pending().count();
         if self.quit.when_idle && pending == 0 {
             self.quit.when_idle = false;
@@ -653,6 +667,7 @@ impl eframe::App for SoyuzApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         crate::devscript::begin(self);
+        crate::devscript::inject(self, &ctx);
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);

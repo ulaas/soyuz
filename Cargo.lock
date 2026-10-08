@@ -4795,6 +4795,7 @@ dependencies = [
  "env_logger",
  "image",
  "log",
+ "memchr",
  "nucleo-matcher",
  "parking_lot",
  "raw-window-handle",
