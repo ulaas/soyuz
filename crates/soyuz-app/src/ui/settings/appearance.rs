@@ -2,7 +2,7 @@
 //! a live preview card, and per-token color overrides (`[theme.colors]`).
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use soyuz_core::config::{Backdrop, Density, IconStyle};
+use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle};
 
 use super::widgets::{color_swatch, group, number, segmented, small_button, switch, text, to_hex};
 use crate::app::SoyuzApp;
@@ -151,21 +151,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     any |= group(ui, q, ctx, "Density & text", |r| {
-        r.row_kw(
+        r.block(
             "Density",
-            "Row height of lists: 24, 28 or 32 px. Touch enlarges every button and row for fingers.",
-            "compact cozy comfortable spacing touch tablet",
+            "Compact, cozy, comfortable or touch: list rows of 24, 28, 32 or 40 px; touch also enlarges buttons and menus for fingers. Click a preview.",
             |ui| {
-                segmented(
-                    ui,
-                    &mut d.appearance.density,
-                    &[
-                        (Density::Compact, "Compact"),
-                        (Density::Cozy, "Cozy"),
-                        (Density::Comfortable, "Comfortable"),
-                        (Density::Touch, "Touch"),
-                    ],
-                );
+                super::density_gallery::gallery(ui, &mut d.appearance.density);
             },
         );
         r.row_kw("Font size", "Base size of all UI text.", "text scale", |ui| {
@@ -199,6 +189,18 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Monospace font", "Used by the terminal, hex and code previews.", "typeface code", |ui| {
             text(ui, &mut d.appearance.mono_font, "JetBrains Mono", 180.0);
         });
+        r.row_kw(
+            "Fallback fonts",
+            "System fonts for Chinese, Japanese, Korean and emoji names, loaded in the background. Automatic: when a name needs them; at startup: also covers terminal output.",
+            "cjk chinese japanese korean emoji tofu glyph unicode font fallback",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.appearance.fallback_fonts,
+                    &[(FallbackFonts::Auto, "Automatic"), (FallbackFonts::Startup, "At startup"), (FallbackFonts::Off, "Off")],
+                );
+            },
+        );
     });
     any |= group(ui, q, ctx, "Icons & thumbnails", |r| {
         r.row("File icons", "Colored by type, or monochrome.", |ui| {

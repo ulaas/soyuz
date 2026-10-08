@@ -441,6 +441,7 @@ pub fn drain_mailbox(app: &mut SoyuzApp, ctx: &egui::Context) {
 pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
     match msg {
         UiMsg::Listing { pane, generation, chunk, done, err } => {
+            chunk.iter().for_each(|e| crate::theme::font_fallback::note(&e.name));
             if let Some(p) = app.ws.find_pane_mut(pane)
                 && p.generation == generation
             {
@@ -650,6 +651,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
         Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, ctx),
+        Cmd::Tree(c) => crate::ui::tree::apply(app, c),
         Cmd::Quit { when_idle } => app.confirm_quit(ctx, when_idle),
         Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
         Cmd::NewWindow(loc) => {

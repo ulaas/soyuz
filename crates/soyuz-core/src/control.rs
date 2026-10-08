@@ -88,7 +88,7 @@ pub enum Control {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     #[test]
     fn running_and_cancel() {
@@ -104,18 +104,22 @@ mod tests {
 
     #[test]
     fn pause_blocks_until_resume() {
+        // Behavioural, not timing-based: the waiter must not get past the checkpoint
+        // while paused, however late its thread is scheduled.
+        use std::sync::atomic::{AtomicBool, Ordering};
         let c = OpControl::new();
         c.pause();
-        let c2 = c.clone();
+        let passed = std::sync::Arc::new(AtomicBool::new(false));
+        let (c2, p2) = (c.clone(), passed.clone());
         let t = std::thread::spawn(move || {
-            let start = Instant::now();
             c2.checkpoint().unwrap();
-            start.elapsed()
+            p2.store(true, Ordering::SeqCst);
         });
         std::thread::sleep(Duration::from_millis(80));
+        assert!(!passed.load(Ordering::SeqCst), "checkpoint returned while paused");
         c.resume();
-        let waited = t.join().unwrap();
-        assert!(waited >= Duration::from_millis(60), "{waited:?}");
+        t.join().unwrap();
+        assert!(passed.load(Ordering::SeqCst));
     }
 
     #[test]

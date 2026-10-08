@@ -24,6 +24,7 @@ pub mod titlebar;
 pub mod toasts;
 pub mod toolbar;
 pub mod tools;
+pub mod tree;
 pub mod views;
 pub mod welcome;
 pub mod widgets;

@@ -21,6 +21,7 @@ pub mod search;
 pub mod store_file;
 pub mod tags;
 pub mod thumbs;
+pub mod tree;
 pub mod watcher;
 
 use std::collections::HashMap;

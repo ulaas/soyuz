@@ -12,6 +12,7 @@
 //! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `quit`;
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
+//! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -162,6 +163,14 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             "export_picker" => {
                 crate::ui::settings::open(app, Some(crate::ui::settings::Section::Advanced));
                 crate::ui::settings::start_export(app);
+            }
+            "settings" => {
+                // `settings:appearance` opens the window on that section.
+                let want = arg.trim().to_ascii_lowercase();
+                let sec = crate::ui::settings::Section::ALL
+                    .into_iter()
+                    .find(|s| s.title().to_ascii_lowercase().starts_with(&want));
+                crate::ui::settings::open(app, sec);
             }
             "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             _ => match step.parse::<Action>() {

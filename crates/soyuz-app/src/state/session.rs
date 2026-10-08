@@ -75,6 +75,8 @@ pub struct Session {
     pub welcome_seen: bool,
     /// Drop shelf contents (kept across restarts).
     pub shelf: Vec<PathBuf>,
+    /// Expanded folders of the folder tree.
+    pub tree_expanded: Vec<PathBuf>,
 }
 
 impl Default for Session {
@@ -91,6 +93,7 @@ impl Default for Session {
             checkbox_mode: false,
             welcome_seen: false,
             shelf: Vec::new(),
+            tree_expanded: Vec::new(),
         }
     }
 }

@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use egui::{Align2, CursorIcon, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
-use soyuz_core::config::{Bookmark, SidebarSection};
+use soyuz_core::config::{Bookmark, SidebarMode, SidebarSection};
 use soyuz_core::{Location, SizeStyle, format_size};
 use soyuz_fs::VolumeInfo;
 
@@ -152,6 +152,8 @@ pub struct SidebarCtx<'a> {
     pub settings_open: bool,
     /// Shortcut of `Action::Settings`, shown in the footer row.
     pub settings_key: Option<String>,
+    /// Folder tree state and options (`[sidebar] mode` decides where it shows).
+    pub tree: crate::ui::tree::TreeArgs<'a>,
 }
 
 fn section_name(s: SidebarSection) -> &'static str {
@@ -195,10 +197,21 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                 .show_separator_line(false)
                 .frame(Frame::new().inner_margin(Margin { left: 0, right: 0, top: 6, bottom: 0 }))
                 .show(ui, |ui| footer(ui, c));
+            if c.tree.mode == SidebarMode::Tree {
+                // Tree only: the filter stays on top, the rows scroll.
+                crate::ui::tree::filter_box(ui, c.tree.state);
+                ScrollArea::vertical().id_salt("soyuz.sidebar.tree").auto_shrink([false, false]).show(ui, |ui| {
+                    tree_rows(ui, c);
+                    ui.add_space(8.0);
+                });
+                return;
+            }
+            let tree_listed = c.sections.contains(&SidebarSection::Tree);
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 for &sec in c.sections {
                     match sec {
+                        SidebarSection::Tree if c.tree.mode == SidebarMode::Both => tree_section(ui, s, c),
                         SidebarSection::Favorites => favorites(ui, s, c),
                         SidebarSection::Devices => devices(ui, s, c),
                         SidebarSection::Cloud if !c.cloud.is_empty() => cloud(ui, s, c),
@@ -209,10 +222,27 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         _ => {}
                     }
                 }
+                if !tree_listed && c.tree.mode == SidebarMode::Both {
+                    tree_section(ui, s, c);
+                }
                 crate::ui::search::sidebar_section(ui, c.saved_searches, &mut s.collapsed, c.cmds, c.saved_config);
                 ui.add_space(8.0);
             });
         });
+}
+
+/// The "Folders" section: filter box and tree rows.
+fn tree_section(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
+    if !header(ui, s, SidebarSection::Tree) {
+        return;
+    }
+    crate::ui::tree::filter_box(ui, c.tree.state);
+    tree_rows(ui, c);
+}
+
+fn tree_rows(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
+    let mut io = crate::ui::tree::TreeIo { volumes: c.volumes, current: c.current, pane: c.pane, cmds: &mut *c.cmds };
+    crate::ui::tree::show(ui, &mut c.tree, &mut io);
 }
 
 fn brand(ui: &mut Ui) {

@@ -5,6 +5,7 @@
 
 mod ai;
 mod appearance;
+mod density_gallery;
 mod keybindings;
 mod lists;
 mod pages;

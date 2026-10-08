@@ -95,6 +95,8 @@ pub enum Cmd {
     FileOp(crate::ops::fileops::FileOpCmd),
     /// Metadata dialogs (properties, attributes, batch rename, links): `ui::dialogs::properties`.
     Meta(crate::ui::dialogs::properties::MetaCmd),
+    /// Folder tree effects (focus, new folder, properties): `ui::tree`.
+    Tree(crate::ui::tree::TreeCmd),
     /// Close confirmed while jobs are pending: now, or once they have finished.
     Quit {
         when_idle: bool,

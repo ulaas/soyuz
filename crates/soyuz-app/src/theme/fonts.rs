@@ -49,6 +49,8 @@ pub fn definitions() -> FontDefinitions {
     let with_fallbacks = |first: &str| std::iter::once(first.to_string()).chain(fallbacks.iter().cloned()).collect();
     fonts.families.insert(FontFamily::Name(ICONS.into()), with_fallbacks("phosphor"));
     fonts.families.insert(FontFamily::Name(PHOSPHOR_FILL.into()), with_fallbacks(PHOSPHOR_FILL));
+    // System CJK / Hangul / emoji fonts loaded so far (see `font_fallback`).
+    super::font_fallback::append(&mut fonts);
     fonts
 }
 

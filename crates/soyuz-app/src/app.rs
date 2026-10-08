@@ -75,6 +75,8 @@ pub struct UiState {
     pub welcome_seen: bool,
     /// Window frame currently in effect (`[appearance] custom_titlebar`).
     pub chrome: crate::ui::titlebar::Chrome,
+    /// Folder tree sidebar (F1).
+    pub tree: crate::ui::tree::TreeState,
 }
 
 pub struct SoyuzApp {
@@ -191,7 +193,7 @@ impl SoyuzApp {
             .unwrap_or_else(|| theme::preference_from_config(&config.appearance.theme));
         ctx.set_theme(theme_pref);
 
-        let ui = UiState {
+        let mut ui = UiState {
             sidebar,
             toasts: Toasts::default(),
             show_hidden: session.as_ref().and_then(|s| s.show_hidden).unwrap_or(config.general.show_hidden),
@@ -220,7 +222,11 @@ impl SoyuzApp {
             welcome: !welcome_seen,
             welcome_seen,
             chrome: crate::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar),
+            tree: Default::default(),
         };
+        if let Some(s) = &session {
+            ui.tree.restore_expanded(s.tree_expanded.iter().cloned());
+        }
         crate::ui::tools::restore_shelf(shelf);
 
         let opened = startup.open.as_deref().and_then(startup_target);
@@ -355,6 +361,7 @@ impl SoyuzApp {
             checkbox_mode: self.ui.checkbox_mode,
             welcome_seen: self.ui.welcome_seen,
             shelf: crate::ui::tools::shelf_paths(),
+            tree_expanded: self.ui.tree.session_expanded(),
             ..Session::default()
         }
     }
