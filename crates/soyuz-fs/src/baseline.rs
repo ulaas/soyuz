@@ -3,8 +3,8 @@
 //! Real behaviour, but no raw per-OS fast paths and no mid-file progress (except the
 //! chunked loop used when `CopyOptions::throttle_bps` is set). Trash, junctions and ACL
 //! views return `Unsupported`; free space is `Unsupported` (needs raw calls).
-//! The per-OS implementation replaces these bodies module by module; until then the
-//! public modules simply delegate here.
+//! Kept as a reference implementation only: since M1–M3 the public modules use the raw
+//! per-OS code paths and no longer call into this module.
 
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::{Read, Write};

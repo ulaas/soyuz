@@ -3,10 +3,19 @@
 //! All filesystem work goes through kernel32/ntdll/advapi32 on Windows and
 //! rustix/libc on unix — never through a shell or COM shell API (CI enforces this).
 //!
-//! **M0 status:** every public function has a portable `std::fs` implementation in
-//! [`baseline`] (real behaviour, no progress fast paths). Trash, junctions and ACL views
-//! return `Unsupported`. The per-OS raw implementations (in `sys/*`) replace the bodies
-//! of the functions in the public modules without changing any signature (PLAN §2.3).
+//! Per-OS implementations (PLAN §4):
+//! * listing: `FindFirstFileExW(FIND_FIRST_EX_LARGE_FETCH)` / `getdents` + `statx` /
+//!   `readdir` + `fstatat`;
+//! * copy: block clone / `CopyFileExW` (progress callback, pause & cancel inside it) /
+//!   `FICLONE` → `copy_file_range` / `fclonefileat`, sparse-aware, metadata preserved;
+//! * move / delete / links / times / attributes / ACL view via raw calls, junctions with a
+//!   hand-written `REPARSE_DATA_BUFFER`;
+//! * volumes with free space, a `notify` watcher, default-app launching through the
+//!   registry association chain (no shell API), `.lnk` parsing, and hand-written trash
+//!   (freedesktop spec, `~/.Trash` + index, `$Recycle.Bin` `$I`/`$R` pairs).
+//!
+//! `unsafe` is confined to `sys/*`. The M0 portable implementation stays available as
+//! [`baseline`] for reference; the public API no longer uses it.
 #![deny(unsafe_code)]
 
 pub mod attrs;
@@ -14,6 +23,7 @@ pub mod baseline;
 pub mod copy;
 pub mod create;
 pub mod delete;
+mod err;
 pub mod hash;
 pub mod launch;
 pub mod links;

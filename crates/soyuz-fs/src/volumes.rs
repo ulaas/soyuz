@@ -1,12 +1,23 @@
 //! Volumes, free space and the injectable [`FsProbe`].
+//!
+//! * Windows: `GetLogicalDrives` → `GetDriveTypeW` → `GetVolumeInformationW` →
+//!   `GetDiskFreeSpaceExW`, plus mounted folders from `FindFirstVolumeW` /
+//!   `GetVolumePathNamesForVolumeNameW`.
+//! * Linux: `/proc/self/mountinfo` (pseudo filesystems filtered) + `statvfs`, labels from
+//!   `/dev/disk/by-label`.
+//! * macOS: `getfsstat(MNT_NOWAIT)`.
+//!
+//! Per-volume queries run on short-lived threads with a deadline so a dead network share
+//! cannot stall the caller; such volumes are listed without sizes.
 
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use bitflags::bitflags;
 use serde::{Deserialize, Serialize};
-use soyuz_core::{DeviceId, FsResult};
+use soyuz_core::{DeviceId, FsError, FsErrorKind, FsResult};
 
-use crate::baseline;
 use crate::trash::TrashSupport;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -42,7 +53,7 @@ pub struct VolumeInfo {
     /// Filesystem name (`"NTFS"`, `"ext4"`, ...); empty when unknown.
     pub fs: String,
     pub kind: VolumeKind,
-    /// Bytes; 0 when unknown (baseline).
+    /// Bytes; 0 when unknown (e.g. an unreachable network share).
     pub total: u64,
     pub free: u64,
     pub read_only: bool,
@@ -50,19 +61,78 @@ pub struct VolumeInfo {
     pub supports: FsCaps,
 }
 
-/// Mounted volumes (drives on Windows). Baseline: drive letters / `/` + home, no sizes.
+/// Total time budget for per-volume queries in [`volumes`].
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+const QUERY_DEADLINE: Duration = Duration::from_millis(2500);
+
+/// Mounted volumes (drives and mounted folders on Windows), sorted by mount path.
 pub fn volumes() -> Vec<VolumeInfo> {
-    baseline::volumes()
+    let mut v = imp::volumes();
+    v.sort_by(|a, b| a.mount.cmp(&b.mount));
+    v.dedup_by(|a, b| a.mount == b.mount);
+    v
 }
 
-/// `(total, free)` bytes of the volume containing `path`. Baseline: `Unsupported`.
+/// `(total, free)` bytes of the volume containing `path` (free = available to this user).
+/// Non-existing paths use their nearest existing ancestor.
 pub fn space(path: &Path) -> FsResult<(u64, u64)> {
-    baseline::space(path)
+    let p = existing_ancestor(path)?;
+    imp::space(&p)
 }
 
 /// Mount point / drive root containing `path`.
 pub fn volume_root(path: &Path) -> FsResult<PathBuf> {
-    baseline::volume_root(path)
+    let p = existing_ancestor(path)?;
+    imp::volume_root(&p)
+}
+
+fn existing_ancestor(path: &Path) -> FsResult<PathBuf> {
+    let abs = crate::path::normalize(path);
+    let mut cur: &Path = &abs;
+    loop {
+        if crate::list::exists_nofollow(cur) {
+            return Ok(cur.to_path_buf());
+        }
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => return Err(FsError::new(FsErrorKind::NotFound, "volume", Some(path))),
+        }
+    }
+}
+
+/// Run `jobs` on worker threads and collect the results that finish before `deadline`
+/// (`None` for the rest; their threads are left to finish on their own).
+#[cfg_attr(target_os = "macos", allow(dead_code))]
+fn parallel_with_deadline<T: Send + 'static>(
+    jobs: Vec<Box<dyn FnOnce() -> T + Send>>,
+    deadline: Duration,
+) -> Vec<Option<T>> {
+    let n = jobs.len();
+    let (tx, rx) = mpsc::channel();
+    for (i, job) in jobs.into_iter().enumerate() {
+        let tx = tx.clone();
+        let spawned = std::thread::Builder::new().name("soyuz-volume".into()).spawn(move || {
+            let _ = tx.send((i, job()));
+        });
+        if spawned.is_err() {
+            log::warn!("could not spawn a volume query thread");
+        }
+    }
+    drop(tx);
+    let mut out: Vec<Option<T>> = (0..n).map(|_| None).collect();
+    let end = Instant::now() + deadline;
+    let mut got = 0;
+    while got < n {
+        let left = end.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok((i, v)) => {
+                out[i] = Some(v);
+                got += 1;
+            }
+            Err(_) => break,
+        }
+    }
+    out
 }
 
 /// Injectable probe so jobs can fake free space / device ids in tests.
@@ -87,5 +157,640 @@ impl FsProbe for RealProbe {
 
     fn trash_support(&self, p: &Path) -> TrashSupport {
         crate::trash::trash_support(p)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// /proc/self/mountinfo parsing (pure; compiled everywhere for tests)
+// ---------------------------------------------------------------------------
+
+/// One line of `/proc/self/mountinfo`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) struct MountInfo {
+    pub major: u32,
+    pub minor: u32,
+    pub mount: PathBuf,
+    pub options: String,
+    pub fstype: String,
+    pub source: String,
+}
+
+/// `\040` style octal escapes used by the kernel for spaces, tabs, newlines, backslashes.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn unescape_octal(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'\\' && b.get(i + 1..i + 4).is_some_and(|d| d.iter().all(|c| (b'0'..=b'7').contains(c))) {
+            let v = (b[i + 1] - b'0') * 64 + (b[i + 2] - b'0') * 8 + (b[i + 3] - b'0');
+            out.push(v);
+            i += 4;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn parse_mountinfo(text: &str) -> Vec<MountInfo> {
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let fields: Vec<&str> = line.split(' ').collect();
+        let Some(sep) = fields.iter().position(|f| *f == "-") else { continue };
+        if sep < 6 || fields.len() < sep + 3 {
+            continue;
+        }
+        let Some((maj, min)) = fields[2].split_once(':') else { continue };
+        let (Ok(major), Ok(minor)) = (maj.parse(), min.parse()) else { continue };
+        out.push(MountInfo {
+            major,
+            minor,
+            mount: PathBuf::from(unescape_octal(fields[4])),
+            options: fields[5].to_string(),
+            fstype: fields[sep + 1].to_string(),
+            source: unescape_octal(fields[sep + 2]),
+        });
+    }
+    out
+}
+
+/// Filesystems that are never user-visible volumes.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn is_pseudo_mount(m: &MountInfo) -> bool {
+    const PSEUDO: &[&str] = &[
+        "proc",
+        "sysfs",
+        "cgroup",
+        "cgroup2",
+        "devpts",
+        "devtmpfs",
+        "securityfs",
+        "debugfs",
+        "tracefs",
+        "pstore",
+        "bpf",
+        "mqueue",
+        "hugetlbfs",
+        "configfs",
+        "fusectl",
+        "autofs",
+        "binfmt_misc",
+        "efivarfs",
+        "nsfs",
+        "ramfs",
+        "rpc_pipefs",
+        "selinuxfs",
+        "squashfs",
+        "fuse.gvfsd-fuse",
+        "fuse.portal",
+        "fuse.snapfuse",
+        "nfsd",
+        "overlay",
+        "tmpfs",
+        "zram",
+    ];
+    let mount = m.mount.to_string_lossy();
+    if m.mount == Path::new("/") {
+        return false;
+    }
+    if PSEUDO.contains(&m.fstype.as_str()) {
+        return true;
+    }
+    ["/proc", "/sys", "/dev", "/run", "/snap", "/var/lib/docker", "/var/snap", "/boot/efi"]
+        .iter()
+        .any(|p| mount == *p || mount.starts_with(&format!("{p}/")))
+        && !mount.starts_with("/run/media/")
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn kind_for(fstype: &str, source: &str, mount: &Path) -> VolumeKind {
+    let m = mount.to_string_lossy();
+    match fstype {
+        "nfs" | "nfs4" | "cifs" | "smb3" | "smbfs" | "fuse.sshfs" | "sshfs" | "9p" | "afs" | "ceph" | "glusterfs"
+        | "davfs" | "fuse.rclone" => VolumeKind::Network,
+        "iso9660" | "udf" => VolumeKind::Optical,
+        "tmpfs" | "ramfs" => VolumeKind::Ram,
+        _ if source.starts_with("//") => VolumeKind::Network,
+        _ if m.starts_with("/media/") || m.starts_with("/run/media/") || m.starts_with("/mnt/") => {
+            VolumeKind::Removable
+        }
+        _ => VolumeKind::Fixed,
+    }
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn caps_for(fstype: &str) -> FsCaps {
+    match fstype {
+        "btrfs" | "xfs" | "bcachefs" => {
+            FsCaps::REFLINK | FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE
+        }
+        "ext2" | "ext3" | "ext4" | "f2fs" | "zfs" | "jfs" | "reiserfs" | "nilfs2" => {
+            FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE
+        }
+        "apfs" => FsCaps::REFLINK | FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK,
+        "hfs" => FsCaps::HARDLINK | FsCaps::SYMLINK,
+        "ntfs" | "ntfs3" | "fuseblk" => FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::ADS,
+        "nfs" | "nfs4" => FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE,
+        _ => FsCaps::empty(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Windows
+// ---------------------------------------------------------------------------
+
+#[cfg(windows)]
+mod imp {
+    use std::path::{Path, PathBuf};
+
+    use soyuz_core::{DeviceId, FsResult};
+
+    use super::{FsCaps, QUERY_DEADLINE, VolumeInfo, VolumeKind, parallel_with_deadline};
+    use crate::err;
+    use crate::sys::windows::volume::{self as wv, VolInfo};
+
+    const FILE_FILE_COMPRESSION: u32 = 0x10;
+    const FILE_SUPPORTS_SPARSE_FILES: u32 = 0x40;
+    const FILE_SUPPORTS_REPARSE_POINTS: u32 = 0x80;
+    const FILE_NAMED_STREAMS: u32 = 0x0004_0000;
+    const FILE_READ_ONLY_VOLUME: u32 = 0x0008_0000;
+    const FILE_SUPPORTS_HARD_LINKS: u32 = 0x0040_0000;
+    const FILE_SUPPORTS_BLOCK_REFCOUNTING: u32 = 0x0800_0000;
+
+    fn kind_of(drive_type: u32) -> VolumeKind {
+        match drive_type {
+            2 => VolumeKind::Removable,
+            3 => VolumeKind::Fixed,
+            4 => VolumeKind::Network,
+            5 => VolumeKind::Optical,
+            6 => VolumeKind::Ram,
+            _ => VolumeKind::Unknown,
+        }
+    }
+
+    fn default_label(kind: VolumeKind) -> &'static str {
+        match kind {
+            VolumeKind::Fixed => "Local Disk",
+            VolumeKind::Removable => "Removable Disk",
+            VolumeKind::Network => "Network Drive",
+            VolumeKind::Optical => "CD Drive",
+            VolumeKind::Ram => "RAM Disk",
+            VolumeKind::Unknown => "Drive",
+        }
+    }
+
+    pub(super) fn caps(flags: u32, fs: &str) -> FsCaps {
+        let mut c = FsCaps::empty();
+        for (bit, cap) in [
+            (FILE_SUPPORTS_SPARSE_FILES, FsCaps::SPARSE),
+            (FILE_SUPPORTS_BLOCK_REFCOUNTING, FsCaps::REFLINK),
+            (FILE_SUPPORTS_HARD_LINKS, FsCaps::HARDLINK),
+            (FILE_SUPPORTS_REPARSE_POINTS, FsCaps::SYMLINK),
+            (FILE_NAMED_STREAMS, FsCaps::ADS),
+            (FILE_FILE_COMPRESSION, FsCaps::COMPRESSION),
+        ] {
+            if flags & bit != 0 {
+                c |= cap;
+            }
+        }
+        let fs = fs.to_ascii_uppercase();
+        if fs == "NTFS" || fs == "REFS" {
+            c |= FsCaps::TRASH;
+        }
+        c
+    }
+
+    struct Probe {
+        drive_type: u32,
+        info: Option<VolInfo>,
+        space: Option<(u64, u64)>,
+    }
+
+    pub(super) fn volumes() -> Vec<VolumeInfo> {
+        let mask = wv::logical_drives();
+        let mut roots: Vec<PathBuf> = (0..26u8)
+            .filter(|i| mask & (1 << i) != 0)
+            .map(|i| PathBuf::from(format!("{}:\\", (b'A' + i) as char)))
+            .collect();
+        for p in wv::volume_mount_paths() {
+            if p.as_os_str().len() > 3 && !roots.contains(&p) {
+                roots.push(p);
+            }
+        }
+        let jobs: Vec<Box<dyn FnOnce() -> Probe + Send>> = roots
+            .iter()
+            .cloned()
+            .map(|root| {
+                Box::new(move || {
+                    let drive_type = wv::drive_type(&root);
+                    let info = wv::volume_info(&root).ok();
+                    let space = if info.is_some() { wv::disk_free(&root).ok() } else { None };
+                    Probe { drive_type, info, space }
+                }) as Box<dyn FnOnce() -> Probe + Send>
+            })
+            .collect();
+        let results = parallel_with_deadline(jobs, QUERY_DEADLINE);
+        let mut out = Vec::new();
+        for (root, res) in roots.into_iter().zip(results) {
+            let (drive_type, info, space) = match res {
+                Some(p) => (p.drive_type, p.info, p.space),
+                // Timed out: most likely an unreachable network drive.
+                None => (wv::drive_type(&root), None, None),
+            };
+            let kind = kind_of(drive_type);
+            if info.is_none() && matches!(kind, VolumeKind::Removable | VolumeKind::Optical) {
+                continue; // empty card reader / optical drive without media
+            }
+            let info = info.unwrap_or_default();
+            let letter = root.to_string_lossy().len() <= 3;
+            let base = if info.label.is_empty() { default_label(kind).to_string() } else { info.label.clone() };
+            let label =
+                if letter { format!("{base} ({})", root.to_string_lossy().trim_end_matches('\\')) } else { base };
+            let (total, free) = space.unwrap_or((0, 0));
+            out.push(VolumeInfo {
+                mount: root,
+                label,
+                fs: info.fs.clone(),
+                kind,
+                total,
+                free,
+                read_only: info.flags & FILE_READ_ONLY_VOLUME != 0,
+                device: DeviceId(u64::from(info.serial)),
+                supports: caps(info.flags, &info.fs)
+                    & if kind == VolumeKind::Network { !FsCaps::TRASH } else { FsCaps::all() },
+            });
+        }
+        out
+    }
+
+    pub(super) fn space(path: &Path) -> FsResult<(u64, u64)> {
+        wv::disk_free(path).map_err(err::map("space", path))
+    }
+
+    pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        match wv::volume_path_name(path) {
+            Ok(p) => Ok(p),
+            Err(e) => {
+                // Prefix-only fallback (drive letter / UNC share).
+                use std::path::Component;
+                let abs = crate::path::strip_verbatim(&crate::path::normalize(path));
+                let mut out = PathBuf::new();
+                for c in abs.components() {
+                    match c {
+                        Component::Prefix(_) | Component::RootDir => out.push(c.as_os_str()),
+                        _ => break,
+                    }
+                }
+                if out.as_os_str().is_empty() {
+                    return Err(err::io("volume_root", path, e));
+                }
+                if !out.has_root() {
+                    out.push("\\");
+                }
+                Ok(out)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Linux
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "linux")]
+mod imp {
+    use std::collections::HashMap;
+    use std::path::{Path, PathBuf};
+
+    use soyuz_core::{DeviceId, FsResult};
+
+    use super::{
+        FsCaps, MountInfo, QUERY_DEADLINE, VolumeInfo, caps_for, is_pseudo_mount, kind_for, parallel_with_deadline,
+        parse_mountinfo,
+    };
+    use crate::err;
+
+    fn mounts() -> Vec<MountInfo> {
+        std::fs::read_to_string("/proc/self/mountinfo").map(|t| parse_mountinfo(&t)).unwrap_or_default()
+    }
+
+    /// `/dev/sdb1` → label, from the `/dev/disk/by-label` symlinks.
+    fn labels() -> HashMap<PathBuf, String> {
+        let mut out = HashMap::new();
+        if let Ok(rd) = std::fs::read_dir("/dev/disk/by-label") {
+            for e in rd.flatten() {
+                if let Ok(target) = std::fs::canonicalize(e.path()) {
+                    let label = unescape_hex(&e.file_name().to_string_lossy());
+                    out.insert(target, label);
+                }
+            }
+        }
+        out
+    }
+
+    /// udev escapes characters as `\x20`.
+    fn unescape_hex(s: &str) -> String {
+        let mut out = Vec::new();
+        let b = s.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            if b[i] == b'\\'
+                && b.get(i + 1) == Some(&b'x')
+                && let Some(v) = s.get(i + 2..i + 4).and_then(|h| u8::from_str_radix(h, 16).ok())
+            {
+                out.push(v);
+                i += 4;
+                continue;
+            }
+            out.push(b[i]);
+            i += 1;
+        }
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    fn removable(major: u32, minor: u32) -> bool {
+        let base = format!("/sys/dev/block/{major}:{minor}");
+        ["removable", "../removable"]
+            .iter()
+            .any(|f| std::fs::read_to_string(format!("{base}/{f}")).is_ok_and(|s| s.trim() == "1"))
+    }
+
+    pub(super) fn volumes() -> Vec<VolumeInfo> {
+        let all: Vec<MountInfo> = mounts().into_iter().filter(|m| !is_pseudo_mount(m)).collect();
+        let labels = labels();
+        type Job = Box<dyn FnOnce() -> Option<(u64, u64, u64)> + Send>;
+        let jobs: Vec<Job> = all
+            .iter()
+            .map(|m| {
+                let mount = m.mount.clone();
+                Box::new(move || {
+                    let s = rustix::fs::statvfs(&mount).ok()?;
+                    let dev = crate::sys::unix::ustat_at(rustix::fs::CWD, mount.as_os_str(), true).ok()?.dev;
+                    let frsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize };
+                    Some((s.f_blocks.saturating_mul(frsize), s.f_bavail.saturating_mul(frsize), dev))
+                }) as Job
+            })
+            .collect();
+        let results = parallel_with_deadline(jobs, QUERY_DEADLINE);
+        let mut out = Vec::new();
+        for (m, res) in all.into_iter().zip(results) {
+            let (total, free, dev) = res.flatten().unwrap_or((0, 0, rustix::fs::makedev(m.major, m.minor)));
+            let mut kind = kind_for(&m.fstype, &m.source, &m.mount);
+            if kind == super::VolumeKind::Fixed && m.source.starts_with("/dev/") && removable(m.major, m.minor) {
+                kind = super::VolumeKind::Removable;
+            }
+            let src = std::fs::canonicalize(&m.source).unwrap_or_else(|_| PathBuf::from(&m.source));
+            let label = labels.get(&src).cloned().unwrap_or_else(|| {
+                if m.mount == Path::new("/") {
+                    "File System".to_string()
+                } else {
+                    m.mount.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+                }
+            });
+            let mut supports = caps_for(&m.fstype);
+            if crate::trash::trash_support(&m.mount) == crate::trash::TrashSupport::Native {
+                supports |= FsCaps::TRASH;
+            }
+            out.push(VolumeInfo {
+                read_only: m.options.split(',').any(|o| o == "ro"),
+                mount: m.mount,
+                label,
+                fs: m.fstype,
+                kind,
+                total,
+                free,
+                device: DeviceId(dev),
+                supports,
+            });
+        }
+        out
+    }
+
+    pub(super) fn space(path: &Path) -> FsResult<(u64, u64)> {
+        let s = rustix::fs::statvfs(path).map_err(|e| err::io("space", path, e.into()))?;
+        let frsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize };
+        Ok((s.f_blocks.saturating_mul(frsize), s.f_bavail.saturating_mul(frsize)))
+    }
+
+    pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        super::unix_volume_root(path)
+    }
+}
+
+/// Walk up from `path` while the device id stays the same.
+#[cfg(unix)]
+fn unix_volume_root(path: &Path) -> FsResult<PathBuf> {
+    let dev_of = |p: &Path| crate::list::stat(p, true).ok().and_then(|e| e.dev);
+    let mut cur = crate::path::normalize(path);
+    let dev = dev_of(&cur).ok_or_else(|| FsError::new(FsErrorKind::NotFound, "volume_root", Some(path)))?;
+    loop {
+        let Some(parent) = cur.parent().map(Path::to_path_buf) else { return Ok(cur) };
+        if dev_of(&parent) == Some(dev) {
+            cur = parent;
+        } else {
+            return Ok(cur);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// macOS
+// ---------------------------------------------------------------------------
+
+#[cfg(target_os = "macos")]
+mod imp {
+    use std::path::{Path, PathBuf};
+
+    use soyuz_core::{DeviceId, FsResult};
+
+    use super::{FsCaps, VolumeInfo, VolumeKind, caps_for};
+    use crate::err;
+    use crate::sys::macos;
+
+    pub(super) fn volumes() -> Vec<VolumeInfo> {
+        let mut out = Vec::new();
+        for m in macos::mounts() {
+            let root = m.mount == Path::new("/");
+            if !root && (m.flags & macos::MNT_DONTBROWSE != 0 || m.fstype == "devfs" || m.fstype == "autofs") {
+                continue;
+            }
+            let kind = if m.flags & macos::MNT_LOCAL == 0 {
+                VolumeKind::Network
+            } else if m.fstype == "cd9660" || m.fstype == "udf" {
+                VolumeKind::Optical
+            } else if root {
+                VolumeKind::Fixed
+            } else if m.mount.starts_with("/Volumes") {
+                VolumeKind::Removable
+            } else {
+                VolumeKind::Fixed
+            };
+            let label = if root {
+                "Macintosh HD".to_string()
+            } else {
+                m.mount.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+            };
+            let mut supports = caps_for(&m.fstype);
+            if crate::trash::trash_support(&m.mount) == crate::trash::TrashSupport::Native {
+                supports |= FsCaps::TRASH;
+            }
+            let dev = crate::list::stat(&m.mount, true).ok().and_then(|e| e.dev).unwrap_or(DeviceId(0));
+            out.push(VolumeInfo {
+                label,
+                fs: m.fstype.clone(),
+                kind,
+                total: m.total,
+                free: m.free,
+                read_only: m.flags & macos::MNT_RDONLY != 0,
+                device: dev,
+                supports,
+                mount: m.mount,
+            });
+        }
+        out
+    }
+
+    pub(super) fn space(path: &Path) -> FsResult<(u64, u64)> {
+        let s = rustix::fs::statvfs(path).map_err(|e| err::io("space", path, e.into()))?;
+        let frsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize };
+        Ok((s.f_blocks.saturating_mul(frsize), s.f_bavail.saturating_mul(frsize)))
+    }
+
+    pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        super::unix_volume_root(path)
+    }
+}
+
+#[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+mod imp {
+    use std::path::{Path, PathBuf};
+
+    use soyuz_core::{DeviceId, FsResult};
+
+    use super::{FsCaps, VolumeInfo, VolumeKind};
+    use crate::err;
+
+    pub(super) fn volumes() -> Vec<VolumeInfo> {
+        let (total, free) = space(Path::new("/")).unwrap_or((0, 0));
+        let device = crate::list::stat(Path::new("/"), true).ok().and_then(|e| e.dev).unwrap_or(DeviceId(0));
+        vec![VolumeInfo {
+            mount: PathBuf::from("/"),
+            label: "File System".into(),
+            fs: String::new(),
+            kind: VolumeKind::Fixed,
+            total,
+            free,
+            read_only: false,
+            device,
+            supports: FsCaps::HARDLINK | FsCaps::SYMLINK,
+        }]
+    }
+
+    pub(super) fn space(path: &Path) -> FsResult<(u64, u64)> {
+        let s = rustix::fs::statvfs(path).map_err(|e| err::io("space", path, e.into()))?;
+        let frsize = if s.f_frsize > 0 { s.f_frsize } else { s.f_bsize };
+        Ok((s.f_blocks.saturating_mul(frsize), s.f_bavail.saturating_mul(frsize)))
+    }
+
+    pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        super::unix_volume_root(path)
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+mod imp {
+    use std::path::{Path, PathBuf};
+
+    use soyuz_core::{FsError, FsResult};
+
+    use super::VolumeInfo;
+
+    pub(super) fn volumes() -> Vec<VolumeInfo> {
+        Vec::new()
+    }
+    pub(super) fn space(path: &Path) -> FsResult<(u64, u64)> {
+        Err(FsError::unsupported("space", Some(path)))
+    }
+    pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        Ok(path.ancestors().last().unwrap_or(path).to_path_buf())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE: &str = "\
+22 1 8:2 / / rw,relatime shared:1 - ext4 /dev/sda2 rw,errors=remount-ro
+23 22 0:21 / /proc rw,nosuid,nodev,noexec,relatime shared:12 - proc proc rw
+24 22 0:22 / /sys rw,nosuid shared:7 - sysfs sysfs rw
+40 22 8:17 / /media/user/My\\040Disk rw,nosuid,nodev,relatime shared:200 - vfat /dev/sdb1 rw,fmask=0022
+41 22 0:50 / /mnt/share rw,relatime shared:210 - cifs //server/share rw,vers=3.0
+42 22 0:51 / /run/user/1000 rw shared:220 - tmpfs tmpfs rw
+43 22 7:3 / /snap/core/123 ro,nodev shared:230 - squashfs /dev/loop3 ro
+44 22 8:3 / /home rw,relatime shared:2 - btrfs /dev/sda3 rw,space_cache
+";
+
+    #[test]
+    fn mountinfo_parsing_and_filtering() {
+        let all = parse_mountinfo(SAMPLE);
+        assert_eq!(all.len(), 8);
+        assert_eq!(all[3].mount, PathBuf::from("/media/user/My Disk"));
+        assert_eq!(all[3].fstype, "vfat");
+        assert_eq!((all[3].major, all[3].minor), (8, 17));
+        let visible: Vec<_> = all.iter().filter(|m| !is_pseudo_mount(m)).map(|m| m.mount.clone()).collect();
+        assert_eq!(
+            visible,
+            [
+                PathBuf::from("/"),
+                PathBuf::from("/media/user/My Disk"),
+                PathBuf::from("/mnt/share"),
+                PathBuf::from("/home")
+            ]
+        );
+        assert_eq!(kind_for("cifs", "//server/share", Path::new("/mnt/share")), VolumeKind::Network);
+        assert_eq!(kind_for("vfat", "/dev/sdb1", Path::new("/media/user/My Disk")), VolumeKind::Removable);
+        assert_eq!(kind_for("ext4", "/dev/sda2", Path::new("/")), VolumeKind::Fixed);
+        assert!(caps_for("btrfs").contains(FsCaps::REFLINK));
+        assert!(!caps_for("vfat").contains(FsCaps::HARDLINK));
+        assert_eq!(unescape_octal(r"a\040b\134c"), "a b\\c");
+    }
+
+    #[test]
+    fn real_volumes_and_space() {
+        let v = volumes();
+        assert!(!v.is_empty());
+        let d = tempfile::tempdir().unwrap();
+        let (total, free) = space(d.path()).unwrap();
+        assert!(total > 0 && free <= total, "{total} {free}");
+        // Non-existing paths use the nearest existing ancestor.
+        let (t2, _) = space(&d.path().join("no").join("such")).unwrap();
+        assert_eq!(t2, total);
+        let root = volume_root(d.path()).unwrap();
+        let dev = crate::copy::device_of(d.path()).unwrap();
+        assert!(
+            v.iter().any(|vol| vol.device == dev && (vol.mount == root || d.path().starts_with(&vol.mount))),
+            "temp dir's volume {root:?} / {dev:?} not in {v:#?}"
+        );
+    }
+
+    #[test]
+    fn deadline_collects_fast_jobs() {
+        let jobs: Vec<Box<dyn FnOnce() -> u32 + Send>> = vec![
+            Box::new(|| 1),
+            Box::new(|| {
+                std::thread::sleep(Duration::from_secs(5));
+                2
+            }),
+        ];
+        let start = Instant::now();
+        let r = parallel_with_deadline(jobs, Duration::from_millis(200));
+        assert_eq!(r[0], Some(1));
+        assert_eq!(r[1], None);
+        assert!(start.elapsed() < Duration::from_secs(2));
     }
 }
