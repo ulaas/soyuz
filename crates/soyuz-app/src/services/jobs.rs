@@ -103,6 +103,8 @@ pub struct JobMeta {
     pub after: AfterJob,
     /// Show a completion toast (off for tiny interactive ops like rename / new folder).
     pub toast: bool,
+    /// Started by the in-app assistant for this task (`ai::TaskId`); tags the card.
+    pub ai_task: Option<u64>,
 }
 
 impl JobMeta {
@@ -115,7 +117,14 @@ impl JobMeta {
             submitted: Instant::now(),
             after: AfterJob::None,
             toast: true,
+            ai_task: None,
         }
+    }
+
+    /// Mark the job as started by the assistant (`task` = `ai::TaskId`).
+    pub fn ai(mut self, task: u64) -> Self {
+        self.ai_task = Some(task);
+        self
     }
 
     pub fn after(mut self, after: AfterJob) -> Self {
@@ -188,6 +197,11 @@ impl JobsService {
 
     pub fn engine(&self) -> &JobEngine {
         &self.engine
+    }
+
+    /// Shared handle to the engine (the assistant waits for its jobs on a worker thread).
+    pub fn engine_arc(&self) -> Arc<JobEngine> {
+        self.engine.clone()
     }
 
     /// Default options for a new spec (copy settings from the config, journaling on).

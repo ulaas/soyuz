@@ -79,7 +79,7 @@ define_actions! {
         UiZoomIn, UiZoomOut, UiZoomReset, ToggleHighContrast,
         ToggleHidden, ToggleFlatView, ToggleSortDir, ChooseColumns, ResetFolderView,
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
-        ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
+        ToggleAiPanel, ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
         ToggleShelf,
     ],
     Selection: [
@@ -102,6 +102,8 @@ define_actions! {
         CompareFolders, SyncFolders, Settings, EditConfigFile, ReloadConfig, OpenTrash,
         EmptyTrash, RestoreFromTrash, Computer, ShowKeybindings, About, Welcome, Quit, QuickLook,
         QuickLookNext, QuickLookPrev, ToggleHexPreview,
+        AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
+        AiAuditLog, AiRecipes, AiStop,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,

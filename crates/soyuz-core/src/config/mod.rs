@@ -4,6 +4,7 @@
 
 pub mod actions;
 pub mod ai;
+pub mod ai_agent;
 pub mod defaults;
 pub mod keys;
 pub mod migrate;
@@ -17,6 +18,7 @@ pub use actions::{Action, ActionCategory, ParseActionError};
 pub use ai::{
     Ai, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiScope, AiTaskModel, AiTasks, AiToolMode, default_prices,
 };
+pub use ai_agent::{AiAccess, AiAgent, AiApproval, AiFolderRule, AiRiskCeiling, folder_access};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,

@@ -4627,6 +4627,7 @@ dependencies = [
  "parking_lot",
  "regex",
  "serde",
+ "serde_json",
  "soyuz-ai",
  "soyuz-archive",
  "soyuz-core",

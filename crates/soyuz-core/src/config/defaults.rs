@@ -282,6 +282,7 @@ fn common(km: &mut Keymap) {
     b(G, A::ToggleSidebar, CTRL, KeyName::B);
     b(G, A::TogglePreviewPane, ALT, KeyName::P);
     b(G, A::ToggleActivityPanel, CTRL_SHIFT, KeyName::J);
+    b(G, A::ToggleAiPanel, CTRL, KeyName::I);
     b(G, A::Undo, CTRL, KeyName::Z);
     b(G, A::Redo, CTRL, KeyName::Y);
     b(G, A::Redo, CTRL_SHIFT, KeyName::Z);
@@ -307,7 +308,7 @@ fn common(km: &mut Keymap) {
     b(L, A::Paste, CTRL, KeyName::V);
     b(L, A::PasteAsLink, CTRL_SHIFT, KeyName::V);
     b(L, A::SelectAll, CTRL, KeyName::A);
-    b(L, A::InvertSelection, CTRL, KeyName::I);
+    b(L, A::InvertSelection, CTRL_SHIFT, KeyName::I);
     b(L, A::SelectNone, NONE, KeyName::Escape);
     b(L, A::Open, NONE, KeyName::Enter);
     b(L, A::Properties, ALT, KeyName::Enter);

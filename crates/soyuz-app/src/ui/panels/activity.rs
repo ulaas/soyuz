@@ -386,6 +386,13 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         };
         ring(ui, ic, 20.0, 2.5, ring_frac, status, p.border_subtle);
     }
+    if meta.ai_task.is_some() {
+        // Started by the in-app assistant (its task can be undone as a whole).
+        let b = pos2(ic.x + 14.0, ic.y + 14.0);
+        painter.circle_filled(b, 8.5, p.bg_window);
+        painter.circle_filled(b, 7.0, p.accent);
+        painter.text(b, Align2::CENTER_CENTER, ph::SPARKLE, ticons::font_fill(8.5), Color32::WHITE);
+    }
 
     // Text block.
     let tx = card.left() + 60.0;

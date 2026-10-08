@@ -75,6 +75,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         };
         sidebar::show(ui, &mut app.ui.sidebar, &mut sctx);
     }
+    crate::ui::ai::show(ui, app);
     if !titlebar && (app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1) {
         tabstrip::show(ui, app);
     }
@@ -100,7 +101,9 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     crate::ui::quicklook::show(&ctx, app);
     let screen = ctx.content_rect();
     let bottom_offset = if app.ui.status_visible { 30.0 } else { 6.0 };
-    let anchor = Rect::from_min_max(screen.min, pos2(screen.right(), screen.bottom() - bottom_offset));
+    // Toasts stay clear of the assistant panel.
+    let right = screen.right() - if app.ai.panel.open { app.ai.panel.width } else { 0.0 };
+    let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
     for action in app.ui.toasts.show(&ctx, anchor, app.ui.reduced_motion) {
         app.cmds.push(Cmd::Action(action));
     }

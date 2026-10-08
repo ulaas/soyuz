@@ -10,6 +10,9 @@
 //! * `config:<dotted.key>=<toml value>` — change a setting live (`config:appearance.density="touch"`);
 //! * `scroll:<px>` — scroll the focused pane to an offset;
 //! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `quit`;
+//! * `ai:<prompt>` — send a prompt to the assistant; `ai:!approve` approves every
+//!   pending plan, `ai:!smart <text>` opens smart search with `text`, `ai:!save <name>`
+//!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -135,6 +138,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 crate::ui::settings::start_export(app);
             }
             "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            "ai" => crate::ai::state::script(app, ctx, arg),
             _ => match step.parse::<Action>() {
                 Ok(a) => app.cmds.push(Cmd::Action(a)),
                 Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),

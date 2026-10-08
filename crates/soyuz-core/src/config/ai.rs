@@ -218,6 +218,11 @@ pub struct Ai {
     pub budget_warn_percent: u32,
     /// Price table (cost accounting); the first matching row wins.
     pub prices: Vec<AiPrice>,
+    /// In-app agent harness limits and approval policy (A5 / A7).
+    pub agent: super::ai_agent::AiAgent,
+    /// Per-folder AI permissions, inherited down the tree (A7). Folders without a rule use
+    /// `privacy`.
+    pub folders: Vec<super::ai_agent::AiFolderRule>,
 }
 
 impl Default for Ai {
@@ -234,6 +239,8 @@ impl Default for Ai {
             max_retries: 3,
             budget_warn_percent: 80,
             prices: default_prices(),
+            agent: super::ai_agent::AiAgent::default(),
+            folders: Vec::new(),
         }
     }
 }

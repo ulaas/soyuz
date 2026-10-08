@@ -645,6 +645,9 @@ impl PropertiesDialog {
                 kv_row(ui, "Link target", &t);
             }
         }
+        if let Some(e) = self.single().filter(|e| e.kind == EntryKind::Dir) {
+            crate::ui::ai::properties_row(ui, &e.path.clone(), cmds);
+        }
 
         rule(ui);
         ui.horizontal(|ui| {

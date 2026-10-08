@@ -9,7 +9,10 @@ use std::sync::Arc;
 use crossbeam_channel::Receiver;
 use egui::{Align, CornerRadius, Frame, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_ai::{BudgetStatus, PriceTable, ProbeReport, Secret, UsageLedger};
-use soyuz_core::config::{Ai, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiTaskModel, AiToolMode, default_prices};
+use soyuz_core::config::{
+    Ai, AiAccess, AiApproval, AiFolderRule, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiRiskCeiling, AiTaskModel,
+    AiToolMode, default_prices,
+};
 
 use super::widgets::{code, dropdown, group, matches, number, segmented, small_button, subheading, switch};
 use crate::app::SoyuzApp;
@@ -330,6 +333,132 @@ fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Budget warning", "Warn when a profile has used this share of its monthly cap.", "cost spend", |ui| {
             number(ui, &mut d.budget_warn_percent, 10..=100, " %");
         });
+    });
+    any |= agent_settings(ui, &mut s.draft.ai, q);
+    any
+}
+
+/// `[ai.agent]` and `[[ai.folders]]` (in-app assistant: limits, approvals, privacy).
+fn agent_settings(ui: &mut Ui, d: &mut Ai, q: &str) -> bool {
+    let p = palette(ui.ctx());
+    let mut any = group(ui, q, CTX, "Assistant tasks", |r| {
+        let a = &mut d.agent;
+        r.row_kw(
+            "Approvals",
+            "Always ask, or let small conflict-free write plans run unasked. Never after the assistant read file contents; destructive plans always ask.",
+            "approve auto plan confirm",
+            |ui| {
+                segmented(ui, &mut a.approval, &[(AiApproval::Always, "Always ask"), (AiApproval::AutoWrite, "Auto small writes")]);
+            },
+        );
+        r.row_kw("Highest tool class", "What the assistant is offered at all.", "risk destructive delete", |ui| {
+            segmented(
+                ui,
+                &mut a.max_risk,
+                &[
+                    (AiRiskCeiling::Read, "Read only"),
+                    (AiRiskCeiling::Write, "Write"),
+                    (AiRiskCeiling::Destructive, "Trash / delete"),
+                ],
+            );
+        });
+        r.row_kw("Steps per task", "Model turns before a task stops.", "limit", |ui| {
+            number(ui, &mut a.max_steps, 1..=200, "");
+        });
+        r.row_kw(
+            "Token budget per task",
+            "Input + output tokens of all turns (0 = unlimited).",
+            "limit tokens",
+            |ui| {
+                number(ui, &mut a.token_budget, 0..=50_000_000, "");
+            },
+        );
+        r.row_kw("Time limit per task", "Wall clock; Esc stops a task any time.", "limit timeout", |ui| {
+            number(ui, &mut a.time_limit_secs, 10..=86_400, " s");
+        });
+        r.row_kw(
+            "Automatic reads",
+            "Read tools the assistant may run on its own per task.",
+            "limit list search",
+            |ui| {
+                number(ui, &mut a.max_auto_reads, 1..=1000, "");
+            },
+        );
+        r.row_kw(
+            "Compact after",
+            "Older tool results are summarised once the conversation is this large.",
+            "context window",
+            |ui| {
+                number(ui, &mut a.compact_after_kib, 8..=4096, " KiB");
+            },
+        );
+        r.row_kw("Keep recent results", "Newest tool results kept verbatim when compacting.", "context", |ui| {
+            number(ui, &mut a.keep_recent_results, 0..=100, "");
+        });
+        r.row_kw(
+            "Folder entries in context",
+            "Entries of the current folder summarised for the model.",
+            "listing context",
+            |ui| {
+                number(ui, &mut a.listing_entries, 0..=2000, "");
+            },
+        );
+        r.row_kw(
+            "Ask before costly tasks",
+            "Confirm when the estimated cost is above this (0 = never ask).",
+            "cost estimate price",
+            |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut a.confirm_cost_usd)
+                        .range(0.0..=1000.0)
+                        .speed(0.05)
+                        .prefix("$ ")
+                        .max_decimals(2),
+                );
+            },
+        );
+        r.row_kw(
+            "Redact secrets for cloud models",
+            "Mask e-mail addresses, API keys and tokens in file data sent to cloud providers (local models see it unchanged).",
+            "privacy redaction mask email key token",
+            |ui| {
+                switch(ui, &mut a.redact_cloud);
+            },
+        );
+    });
+    any |= group(ui, q, CTX, "Folder permissions", |r| {
+        r.block(
+            "Per-folder access",
+            "Overrides “What the assistant may see” for a folder and everything below it (the deepest rule wins). Also set from the assistant panel or a folder's Properties.",
+            |ui| {
+                let mut remove = None;
+                for (i, rule) in d.folders.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        let mut text = rule.path.to_string_lossy().into_owned();
+                        if code(ui, &mut text, "folder path", (ui.available_width() - 330.0).max(140.0)).changed() {
+                            rule.path = std::path::PathBuf::from(text);
+                        }
+                        segmented(
+                            ui,
+                            &mut rule.access,
+                            &[(AiAccess::None, "None"), (AiAccess::Metadata, "Metadata"), (AiAccess::Contents, "Contents")],
+                        );
+                        if small_button(ui, Some(ph::TRASH), "", true).on_hover_text("Remove this rule").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                }
+                if let Some(i) = remove {
+                    d.folders.remove(i);
+                }
+                if d.folders.is_empty() {
+                    ui.label(RichText::new("No folder rules: every folder uses the default above.").size(11.5).color(p.text_tertiary));
+                }
+                if small_button(ui, Some(ph::PLUS), "Add folder rule", false).clicked() {
+                    d.folders.push(AiFolderRule { path: soyuz_fs::home(), access: AiAccess::None });
+                }
+            },
+        );
     });
     any
 }

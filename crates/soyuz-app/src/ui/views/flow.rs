@@ -259,6 +259,7 @@ fn body(
                         Style::List => paint_list_cell(&painter, &p, r, e, &st, false),
                         Style::Column => paint_list_cell(&painter, &p, r, e, &st, true),
                     }
+                    crate::ai::touch::paint(&painter, &p, r, &e.path, v.config.appearance.reduced_motion);
                 }
             }
         }

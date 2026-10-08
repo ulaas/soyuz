@@ -3,6 +3,7 @@
 //! (`dialogs`) and the bottom terminal / activity panel (`panels`).
 
 pub mod a11y;
+pub mod ai;
 pub mod archive;
 pub mod breadcrumb;
 pub mod context_menu;

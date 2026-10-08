@@ -57,7 +57,7 @@ remembers its view, sort and columns; *View → Apply to all folders* makes it t
 ## Selecting and acting on files
 
 Click, `Shift`+click and `Ctrl`+click select; drag on empty space for a rubber band;
-`Ctrl+A`, `Ctrl+I` (invert) and *Select by pattern* (palette) cover the rest. Checkbox
+`Ctrl+A`, `Ctrl+Shift+I` (invert) and *Select by pattern* (palette) cover the rest. Checkbox
 mode (status bar or palette) adds tick boxes for mouse and touch users.
 
 | | |

@@ -15,6 +15,10 @@ use crate::ui::views::layout::NavDir;
 
 pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
     use Action as A;
+    if crate::ai::handles(&action) {
+        crate::ai::execute_action(app, action, ctx);
+        return;
+    }
     let pane_id = app.ws.pane().id;
     match action {
         // ---- navigation ----
