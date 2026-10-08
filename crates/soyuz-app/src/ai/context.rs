@@ -187,6 +187,8 @@ pub fn conversation_chars(system: &str, msgs: &[Message]) -> usize {
                 Part::ToolUse { args, .. } => args.to_string().len() + 32,
                 Part::ToolResult { content, .. } => content.len(),
                 Part::Opaque { block, .. } => block.to_string().len(),
+                // Roughly what a downscaled image costs in tokens, in "characters".
+                Part::Image { .. } => 4000,
             })
             .sum::<usize>()
 }

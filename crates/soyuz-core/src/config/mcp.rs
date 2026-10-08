@@ -36,6 +36,17 @@ impl AiRisk {
     }
 }
 
+/// Where approval cards for MCP clients appear.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum AiMcpApprovalUi {
+    /// In the assistant panel's approvals area (the panel opens when a request arrives).
+    #[default]
+    Panel,
+    /// A modal card over the window (same plan card, one request at a time).
+    Dialog,
+}
+
 /// `[ai.mcp]`: the Soyuz MCP server.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -54,6 +65,8 @@ pub struct AiMcp {
     pub register_unknown: bool,
     /// Seconds an approval card waits for an answer before the call is refused.
     pub approval_timeout_secs: u64,
+    /// Where MCP approval cards appear.
+    pub approval_ui: AiMcpApprovalUi,
 }
 
 impl Default for AiMcp {
@@ -65,6 +78,7 @@ impl Default for AiMcp {
             allowed_origins: Vec::new(),
             register_unknown: true,
             approval_timeout_secs: 300,
+            approval_ui: AiMcpApprovalUi::Panel,
         }
     }
 }

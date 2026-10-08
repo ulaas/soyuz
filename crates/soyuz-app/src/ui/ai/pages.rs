@@ -1,5 +1,6 @@
 //! Panel pages: saved recipes (re-run without a model, same approvals), the audit log
-//! viewer (`ai-audit.jsonl`, filter by session, client, model and text) and the smart
+//! viewer (`ai-audit.jsonl` shared by the assistant and MCP clients; filter by source —
+//! assistant or MCP client —, session, model and text) and the smart
 //! search card (natural language → editable query pills).
 
 use egui::{
@@ -8,6 +9,7 @@ use egui::{
 };
 
 use super::{PanelAct, Tone, button, chip};
+use crate::ai::audit::{self, AuditRecord};
 use crate::ai::smart_search::{self, Pill, PillKey};
 use crate::app::SoyuzApp;
 use crate::theme::Palette;
@@ -121,21 +123,21 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
         app.ai.load_audit();
     }
     let a = &mut app.ai.audit;
-    let mut sessions: Vec<String> = a.events.iter().map(|e| e.session.clone()).collect();
-    sessions.sort();
-    sessions.dedup();
-    let mut clients: Vec<String> = a.events.iter().map(|e| e.client.clone()).collect();
-    clients.sort();
-    clients.dedup();
-    let mut models: Vec<String> = a.events.iter().map(|e| e.model.clone()).filter(|m| !m.is_empty()).collect();
-    models.sort();
-    models.dedup();
+    let uniq = |f: &dyn Fn(&AuditRecord) -> String| {
+        let mut v: Vec<String> = a.events.iter().map(f).filter(|s| !s.is_empty()).collect();
+        v.sort();
+        v.dedup();
+        v
+    };
+    let sessions = uniq(&|e| e.session.clone());
+    let sources = uniq(&audit::source_label);
+    let models = uniq(&|e| if e.source == audit::SOURCE_MCP { String::new() } else { e.via.clone() });
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         ui.add(TextEdit::singleline(&mut a.filter).hint_text("Filter text").desired_width(140.0));
         for (id, label, value, opts) in [
+            ("ai.audit.source", "Source", &mut a.source, &sources),
             ("ai.audit.session", "Session", &mut a.session, &sessions),
-            ("ai.audit.client", "Client", &mut a.client, &clients),
             ("ai.audit.model", "Model", &mut a.model, &models),
         ] {
             let shown = if value.is_empty() { format!("{label}: all") } else { format!("{label}: {value}") };
@@ -163,18 +165,21 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
         ui.label(RichText::new(e).color(p.danger));
     }
     let f = a.filter.to_lowercase();
-    let rows: Vec<&crate::ai::audit::AuditEvent> = a
+    let rows: Vec<&AuditRecord> = a
         .events
         .iter()
         .rev()
         .filter(|e| a.session.is_empty() || e.session == a.session)
-        .filter(|e| a.client.is_empty() || e.client == a.client)
-        .filter(|e| a.model.is_empty() || e.model == a.model)
+        .filter(|e| a.source.is_empty() || audit::source_label(e) == a.source)
+        .filter(|e| a.model.is_empty() || e.via == a.model)
         .filter(|e| {
             f.is_empty()
                 || e.detail.to_lowercase().contains(&f)
-                || e.kind.contains(&f)
-                || e.tool.as_deref().is_some_and(|t| t.contains(&f))
+                || e.args.to_lowercase().contains(&f)
+                || e.event.contains(&f)
+                || e.outcome.contains(&f)
+                || e.tool.contains(&f)
+                || e.client.to_lowercase().contains(&f)
         })
         .collect();
     ui.label(
@@ -182,7 +187,7 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
             "{} of {} events \u{00b7} {}",
             rows.len(),
             a.events.len(),
-            crate::ai::audit::default_path().display()
+            audit::default_path().display()
         ))
         .size(10.5)
         .color(p.text_tertiary),
@@ -198,15 +203,18 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 if resp.hovered() {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 }
-                let (icon, color) = match e.kind.as_str() {
-                    "prompt" => (ph::CHAT_CIRCLE_DOTS, p.accent),
-                    "tool_call" => (ph::LIGHTNING, p.info),
-                    "plan" => (ph::LIST_CHECKS, p.warning),
-                    "approval" => (ph::CHECK, p.success),
-                    "rejection" | "edit" => (ph::PROHIBIT, p.text_tertiary),
-                    "job" | "job_result" => (ph::PULSE, p.accent),
-                    "error" => (ph::WARNING, p.danger),
-                    "taint" => (ph::SHIELD_WARNING, p.warning),
+                let mcp = e.source == audit::SOURCE_MCP;
+                let (icon, color) = match (e.event.as_str(), e.outcome.as_str()) {
+                    (_, "rejected" | "refused" | "timed_out" | "cancelled") => (ph::PROHIBIT, p.text_tertiary),
+                    (_, "error") => (ph::WARNING, p.danger),
+                    ("prompt", _) => (ph::CHAT_CIRCLE_DOTS, p.accent),
+                    ("tool_call", "plan") | ("plan", _) => (ph::LIST_CHECKS, p.warning),
+                    ("tool_call", _) | ("resource_read", _) => (ph::LIGHTNING, p.info),
+                    ("approval", _) => (ph::CHECK, p.success),
+                    ("rejection" | "edit", _) => (ph::PROHIBIT, p.text_tertiary),
+                    ("job" | "job_result", _) => (ph::PULSE, p.accent),
+                    ("taint", _) => (ph::SHIELD_WARNING, p.warning),
+                    ("client_registered", _) => (ph::PLUGS_CONNECTED, p.warning),
                     _ => (ph::DOT_OUTLINE, p.text_tertiary),
                 };
                 ui.painter().text(
@@ -216,47 +224,76 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                     icons::font(12.5),
                     color,
                 );
+                let tool = if e.tool.is_empty() { String::new() } else { format!(" \u{00b7} {}", e.tool) };
+                let outcome = if e.outcome.is_empty() || e.outcome == "ok" || e.outcome == e.event {
+                    String::new()
+                } else {
+                    format!(" \u{2192} {}", e.outcome)
+                };
                 let head = format!(
-                    "{}  {}{}{}",
-                    e.ts.get(11..19).unwrap_or(&e.ts),
-                    e.kind,
-                    e.tool.as_deref().map(|t| format!(" \u{00b7} {t}")).unwrap_or_default(),
-                    e.job.map(|j| format!(" \u{00b7} job {j}")).unwrap_or_default()
+                    "{}  {}{tool}{outcome}{}",
+                    local_time(&e.ts),
+                    e.event,
+                    e.job_id.map(|j| format!(" \u{00b7} job {j}")).unwrap_or_default()
                 );
-                let meta = format!("{} \u{00b7} {}", e.client, e.model);
-                let mg = crate::ui::widgets::trunc_galley(
+                // Source badge: who did it (the assistant or an external MCP client).
+                let (badge, badge_color) = if mcp {
+                    (format!("MCP \u{00b7} {}", if e.client.is_empty() { "?" } else { &e.client }), p.warning)
+                } else {
+                    (if e.client == "recipe" { "Recipe".to_string() } else { "Assistant".to_string() }, p.accent)
+                };
+                let bg = crate::ui::widgets::trunc_galley(
                     ui.painter(),
-                    &meta,
-                    FontId::proportional(10.5),
-                    p.text_tertiary,
-                    (w * 0.4).max(60.0),
+                    &badge,
+                    FontId::proportional(10.0),
+                    badge_color,
+                    (w * 0.35).max(60.0),
                 );
-                let mw = mg.size().x;
-                ui.painter().galley(
-                    pos2(r.right() - 6.0 - mw, r.top() + 11.0 - mg.size().y / 2.0),
-                    mg,
-                    p.text_tertiary,
-                );
+                let bw = bg.size().x + 12.0;
+                let br = egui::Rect::from_min_size(pos2(r.right() - 4.0 - bw, r.top() + 3.0), vec2(bw, 16.0));
+                ui.painter().rect_filled(br, CornerRadius::same(8), badge_color.gamma_multiply(0.12));
+                ui.painter().galley(pos2(br.left() + 6.0, br.center().y - bg.size().y / 2.0), bg, badge_color);
+                let mw = bw + 6.0;
                 let hg = crate::ui::widgets::trunc_galley(
                     ui.painter(),
                     &head,
                     FontId::proportional(11.5),
                     p.text_primary,
-                    (w - 26.0 - mw - 16.0).max(40.0),
+                    (w - 26.0 - mw - 10.0).max(40.0),
                 );
                 ui.painter().galley(pos2(r.left() + 26.0, r.top() + 11.0 - hg.size().y / 2.0), hg, p.text_primary);
+                let body = if !e.detail.is_empty() {
+                    e.detail.replace('\n', " ")
+                } else if !e.args.is_empty() {
+                    e.args.clone()
+                } else {
+                    e.via.clone()
+                };
                 let g = crate::ui::widgets::trunc_galley(
                     ui.painter(),
-                    &e.detail.replace('\n', " "),
+                    &body,
                     FontId::proportional(11.0),
                     p.text_secondary,
                     w - 32.0,
                 );
                 ui.painter().galley(pos2(r.left() + 26.0, r.top() + 20.0), g, p.text_secondary);
-                resp.on_hover_text(format!("{}\nsession {}\n\n{}", e.ts, e.session, e.detail));
+                let mut tip = format!("{}\n{}", e.ts, badge);
+                for (k, v) in [("session", &e.session), ("via", &e.via), ("args", &e.args), ("detail", &e.detail)] {
+                    if !v.is_empty() {
+                        tip.push_str(&format!("\n{k}: {v}"));
+                    }
+                }
+                resp.on_hover_text(tip);
             }
         },
     );
+}
+
+/// `HH:MM:SS` in local time (records are stamped in UTC).
+fn local_time(ts: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(ts)
+        .map(|t| t.with_timezone(&chrono::Local).format("%H:%M:%S").to_string())
+        .unwrap_or_else(|_| ts.get(11..19).unwrap_or(ts).to_string())
 }
 
 fn pill_ui(ui: &mut Ui, p: &Palette, pill: &Pill) -> bool {

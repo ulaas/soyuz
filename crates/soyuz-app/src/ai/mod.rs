@@ -15,8 +15,10 @@
 //! * [`safety`] — per-folder permissions, redaction, prompt-injection heuristics.
 //! * [`context`] — the task context, the system prompt, compaction and cost estimates.
 //! * [`recipe`] — "save as recipe" and re-running recipes without a model.
-//! * [`audit`] — append-only `ai-audit.jsonl` (local writer until `soyuz_ai::audit` lands).
-//! * [`touch`] — live highlights of the files the assistant reads or changes.
+//! * [`audit`] — the assistant's records in the shared `ai-audit.jsonl` (`soyuz_ai::audit`).
+//! * [`touch`] — live highlights of the files the assistant or MCP clients read or change.
+//! * [`mcp`] — external MCP clients' requests as plan cards, their jobs and undo.
+//! * [`vision`] — "Suggest names" inputs: text excerpts and downscaled pictures.
 //! * [`smart_search`] — natural language → editable structured query pills.
 //! * [`state`] — the UI-side state and the per-frame pump.
 //!
@@ -30,12 +32,14 @@ pub mod context;
 pub mod exec;
 pub mod fake;
 pub mod host;
+pub mod mcp;
 pub mod model;
 pub mod recipe;
 pub mod safety;
 pub mod smart_search;
 pub mod state;
 pub mod touch;
+pub mod vision;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};

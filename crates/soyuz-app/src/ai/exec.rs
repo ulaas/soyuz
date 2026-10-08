@@ -154,11 +154,21 @@ pub fn undo_task(
     engine: &JobEngine,
     task: TaskId,
     cancel: &CancelFlag,
+    on_job: impl FnMut(JobId),
+) -> (usize, Vec<String>) {
+    undo_entries(engine, task_history(engine, task), cancel, on_job)
+}
+
+/// Undo history entries in the given order (newest first), one after another.
+pub fn undo_entries(
+    engine: &JobEngine,
+    entries: Vec<soyuz_jobs::HistoryId>,
+    cancel: &CancelFlag,
     mut on_job: impl FnMut(JobId),
 ) -> (usize, Vec<String>) {
     let mut undone = 0;
     let mut failed = Vec::new();
-    for h in task_history(engine, task) {
+    for h in entries {
         if cancel.is_cancelled() {
             break;
         }

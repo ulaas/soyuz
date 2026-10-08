@@ -437,6 +437,24 @@ impl TreemapWindow {
         painter.add(Shape::mesh(mesh));
         painter.extend(borders);
         painter.extend(labels);
+        // Live highlights of what the assistant / MCP clients read or change. A folder
+        // tile whose contents are not drawn shows the strongest mark inside it.
+        if crate::ai::touch::any() {
+            let shown: std::collections::HashSet<usize> = hits.iter().map(|(_, id)| *id).collect();
+            let reduced = app.ui.reduced_motion;
+            for (r, id) in &hits {
+                let n = &self.tree.nodes[*id];
+                let opened = n.children.iter().any(|c| shown.contains(c));
+                let t = if n.is_dir && !opened {
+                    crate::ai::touch::get_within(&n.path)
+                } else {
+                    crate::ai::touch::get(&n.path)
+                };
+                if let Some(t) = t {
+                    crate::ai::touch::paint_touch(&painter, &p, *r, t, reduced);
+                }
+            }
+        }
 
         let n = &self.tree.nodes[self.current];
         if n.children.is_empty() {

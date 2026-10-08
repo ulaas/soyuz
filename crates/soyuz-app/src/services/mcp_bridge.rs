@@ -6,29 +6,34 @@
 //! * Tool calls that need the app (selection, current folder, tabs, navigation, toasts,
 //!   job status) and approved plans arrive here as requests and are answered on the UI
 //!   thread in [`pump`], so jobs show in the activity panel with normal undo.
-//! * Write / destructive plans from MCP clients queue up as [`PendingMcpApproval`] and are
-//!   shown one at a time in the approval dialog (`ui/dialogs/mcp_approval.rs`).
+//! * Write / destructive plans from MCP clients become the assistant's plan cards
+//!   ([`crate::ai::mcp::McpApprovals`]): in the assistant panel's approvals area (the
+//!   panel opens when a request arrives) or as a modal card (`[ai.mcp] approval_ui`).
+//!   Approved plans run as jobs labelled `MCP <client> · …` with live pane highlights;
+//!   the area offers "Undo everything this client did".
+//! * Every call is appended to the shared `ai-audit.jsonl` (same file and format as the
+//!   assistant's records).
 //! * Unknown stdio clients are added to `[[ai.mcp_clients]]` as pending (read-only until
 //!   approved in Settings → AI assistant → Connections).
 
-use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use serde_json::{Value, json};
 use soyuz_ai::Secret;
 use soyuz_ai::tools::{CallContext, FsToolHost, Plan, PlanAction, Scope, ToolError, ToolHost, ToolInput};
-use soyuz_core::config::{Ai, AiMcpClient};
+use soyuz_core::config::{Ai, AiMcpApprovalUi, AiMcpClient};
 use soyuz_core::{Location, OpControl};
 use soyuz_jobs::{HistoryId, JobEngine, JobId};
 use soyuz_mcp::http::{HttpServer, HttpSettings};
 use soyuz_mcp::pipe::PipeServer;
 use soyuz_mcp::{ApprovalDecision, ApprovalRequest, Backend, Mode, ProgressFn, Server, Transport};
 
+use crate::ai::mcp::{McpApprovals, PendingMcpApproval};
 use crate::app::SoyuzApp;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, OpKind};
@@ -42,28 +47,8 @@ const UI_TIMEOUT: Duration = Duration::from_secs(30);
 /// Longest a tool call waits for its job before answering "still running".
 const MAX_JOB_WAIT: Duration = Duration::from_secs(10 * 60);
 
-/// A plan an MCP client wants to run, waiting for the user.
-pub struct PendingMcpApproval {
-    pub client: String,
-    pub transport: Transport,
-    pub tool: String,
-    pub args: Value,
-    pub plan: Plan,
-    /// Cancelled when the client gives up (the dialog then closes by itself).
-    pub ctl: Arc<OpControl>,
-    pub received: Instant,
-    reply: Sender<ApprovalDecision>,
-}
-
-impl PendingMcpApproval {
-    /// Answer the request (only the first answer counts).
-    pub fn decide(&self, d: ApprovalDecision) {
-        let _ = self.reply.try_send(d);
-    }
-}
-
 /// What a server thread needs from the UI thread.
-enum UiCall {
+pub enum UiCall {
     /// App-state read tools (selection, location, tabs, history).
     Read(ToolInput),
     /// UI control tools.
@@ -71,15 +56,17 @@ enum UiCall {
     /// Job tools (status, cancel).
     Meta(ToolInput),
     /// Submit an approved plan; answers `{"job_id": …}` or the app action's result.
-    Execute(Plan, String),
+    /// `(plan, caller, call key)`; the key links the job to its approval card.
+    Execute(Plan, String, usize),
 }
 
-struct UiRequest {
-    call: UiCall,
-    reply: Sender<Result<Value, ToolError>>,
+pub struct UiRequest {
+    pub call: UiCall,
+    pub reply: Sender<Result<Value, ToolError>>,
 }
 
-enum BridgeMsg {
+/// Messages from server threads to the UI thread.
+pub enum BridgeMsg {
     Approval(PendingMcpApproval),
     Ui(UiRequest),
     Register(String, Transport),
@@ -146,16 +133,40 @@ impl ToolHost for AppHost {
     }
 }
 
+/// The server-call identity shared by `request_approval` and the later `execute`.
+fn call_key(ctl: &OpControl) -> usize {
+    ctl as *const OpControl as usize
+}
+
 /// The [`Backend`] of the window.
-struct GuiBackend {
+pub struct GuiBackend {
     ai: RwLock<Ai>,
     host: RwLock<Arc<AppHost>>,
     tx: Sender<BridgeMsg>,
     wake: Wake,
     engine: Arc<JobEngine>,
+    /// The shared audit log (`ai-audit.jsonl`; a temp file in tests).
+    audit_path: PathBuf,
 }
 
 impl GuiBackend {
+    /// A backend whose UI side is whoever drains `tx`'s receiver (the window's [`pump`],
+    /// or a test).
+    pub fn new(ai: &Ai, engine: Arc<JobEngine>, tx: Sender<BridgeMsg>, wake: Wake, audit_path: PathBuf) -> Arc<Self> {
+        Arc::new(GuiBackend {
+            ai: RwLock::new(ai.clone()),
+            host: RwLock::new(Arc::new(AppHost {
+                fs: FsToolHost::from_config(&ai.scope),
+                tx: tx.clone(),
+                wake: wake.clone(),
+            })),
+            tx,
+            wake,
+            engine,
+            audit_path,
+        })
+    }
+
     fn set_ai(&self, ai: &Ai) {
         let scope_changed = self.ai.read().scope != ai.scope;
         *self.ai.write() = ai.clone();
@@ -184,24 +195,15 @@ impl Backend for GuiBackend {
 
     fn request_approval(&self, req: ApprovalRequest, ctl: &OpControl) -> ApprovalDecision {
         let (reply, rx) = crossbeam_channel::bounded(1);
-        // The dialog watches this control; it is cancelled with the call.
+        // The card watches this control; it is cancelled with the call.
         let watch = OpControl::new();
-        let pending = PendingMcpApproval {
-            client: req.client,
-            transport: req.transport,
-            tool: req.tool,
-            args: req.args,
-            plan: req.plan,
-            ctl: watch.clone(),
-            received: Instant::now(),
-            reply,
-        };
+        let timeout = Duration::from_secs(self.ai.read().mcp.approval_timeout_secs.clamp(10, 3600));
+        let deadline = Instant::now() + timeout;
+        let pending = PendingMcpApproval::new(req, watch.clone(), timeout, call_key(ctl), reply);
         if self.tx.send(BridgeMsg::Approval(pending)).is_err() {
             return ApprovalDecision::Unavailable("Soyuz is closing".into());
         }
         (self.wake)();
-        let timeout = Duration::from_secs(self.ai.read().mcp.approval_timeout_secs.clamp(10, 3600));
-        let deadline = Instant::now() + timeout;
         loop {
             match rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(d) => return d,
@@ -224,7 +226,7 @@ impl Backend for GuiBackend {
 
     fn execute(&self, plan: &Plan, ctx: &CallContext, progress: &ProgressFn<'_>) -> Result<Value, ToolError> {
         let host = self.host.read().clone();
-        let v = host.ask(UiCall::Execute(plan.clone(), ctx.caller.clone()), &ctx.ctl)?;
+        let v = host.ask(UiCall::Execute(plan.clone(), ctx.caller.clone(), call_key(&ctx.ctl)), &ctx.ctl)?;
         match v.get("job_id").and_then(Value::as_u64) {
             Some(id) => {
                 let r = soyuz_mcp::jobs::wait_job(&self.engine, JobId(id), &ctx.ctl, progress, MAX_JOB_WAIT, false);
@@ -241,6 +243,12 @@ impl Backend for GuiBackend {
         self.ai.write().mcp_clients.push(AiMcpClient { name: name.to_string(), pending: true, ..Default::default() });
         let _ = self.tx.send(BridgeMsg::Register(name.to_string(), transport));
         (self.wake)();
+    }
+
+    fn audit(&self, rec: soyuz_ai::audit::AuditRecord) {
+        if let Err(e) = soyuz_ai::audit::append(&self.audit_path, &rec) {
+            log::warn!("ai-audit.jsonl: {e}");
+        }
     }
 }
 
@@ -266,8 +274,10 @@ pub struct McpBridge {
     http_settings: HttpSettings,
     tokens_rx: Option<Receiver<Vec<(String, Secret)>>>,
     applied: Option<Ai>,
-    queue: VecDeque<PendingMcpApproval>,
-    dialog_open: Arc<AtomicBool>,
+    /// Plan cards of MCP requests (shared with the modal card dialog).
+    pub approvals: Arc<Mutex<McpApprovals>>,
+    /// A modal card is open (`approval_ui = "dialog"`).
+    modal_open: Arc<AtomicBool>,
     pub status: BridgeStatus,
     disabled: bool,
 }
@@ -285,8 +295,8 @@ impl Default for McpBridge {
             http_settings: HttpSettings::default(),
             tokens_rx: None,
             applied: None,
-            queue: VecDeque::new(),
-            dialog_open: Arc::new(AtomicBool::new(false)),
+            approvals: Arc::new(Mutex::new(McpApprovals::default())),
+            modal_open: Arc::new(AtomicBool::new(false)),
             status: BridgeStatus::default(),
             disabled: false,
         }
@@ -300,21 +310,10 @@ impl McpBridge {
     }
 
     fn reconfigure(&mut self, ai: &Ai, engine: Arc<JobEngine>, wake: Wake) {
+        let tx = self.tx.clone();
         let backend = self
             .backend
-            .get_or_insert_with(|| {
-                Arc::new(GuiBackend {
-                    ai: RwLock::new(ai.clone()),
-                    host: RwLock::new(Arc::new(AppHost {
-                        fs: FsToolHost::from_config(&ai.scope),
-                        tx: self.tx.clone(),
-                        wake: wake.clone(),
-                    })),
-                    tx: self.tx.clone(),
-                    wake: wake.clone(),
-                    engine,
-                })
-            })
+            .get_or_insert_with(|| GuiBackend::new(ai, engine, tx, wake.clone(), soyuz_ai::audit::default_path()))
             .clone();
         backend.set_ai(ai);
         let server = self.server.get_or_insert_with(|| Server::new(backend.clone())).clone();
@@ -408,7 +407,9 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     let msgs: Vec<BridgeMsg> = app.services.mcp.rx.try_iter().collect();
     for m in msgs {
         match m {
-            BridgeMsg::Approval(p) => app.services.mcp.queue.push_back(p),
+            BridgeMsg::Approval(p) => {
+                app.services.mcp.approvals.lock().push(p);
+            }
             BridgeMsg::Ui(req) => {
                 let r = answer(app, req.call);
                 let _ = req.reply.send(r);
@@ -416,20 +417,39 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             BridgeMsg::Register(name, transport) => register(app, ctx, name, transport),
         }
     }
-    // Approvals: drop the ones whose call went away, show the next.
-    let bridge = &mut app.services.mcp;
-    bridge.queue.retain(|p| !p.ctl.is_cancelled());
-    bridge.status.waiting = bridge.queue.len() + usize::from(bridge.dialog_open.load(Ordering::SeqCst));
-    if !bridge.dialog_open.load(Ordering::SeqCst)
-        && let Some(p) = bridge.queue.pop_front()
+    // Cards: expire the ones whose call went away, follow their jobs.
+    let approvals = app.services.mcp.approvals.clone();
+    let mut a = approvals.lock();
     {
-        bridge.dialog_open.store(true, Ordering::SeqCst);
-        let flag = bridge.dialog_open.clone();
-        app.ui.dialogs.push(crate::ui::dialogs::mcp_approval::McpApprovalDialog::new(p, flag));
+        let jobs = &app.fileops.jobs;
+        a.tick(|id| jobs.engine().snapshot(id).map(|s| s.state));
+    }
+    app.services.mcp.status.waiting = a.pending();
+    let arrived = std::mem::take(&mut a.arrived);
+    let first_pending = a.cards.iter().find(|c| c.is_pending()).map(|c| c.card.id);
+    let busy = a.busy();
+    drop(a);
+    if arrived {
         ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     }
-    if !app.services.mcp.queue.is_empty() || app.services.mcp.dialog_open.load(Ordering::SeqCst) {
+    match app.config.ai.mcp.approval_ui {
+        AiMcpApprovalUi::Panel => {
+            if arrived {
+                crate::ai::state::show_mcp_requests(app);
+            }
+        }
+        AiMcpApprovalUi::Dialog => {
+            if let Some(id) = first_pending
+                && !app.services.mcp.modal_open.load(Ordering::SeqCst)
+            {
+                app.services.mcp.modal_open.store(true, Ordering::SeqCst);
+                let flag = app.services.mcp.modal_open.clone();
+                app.ui.dialogs.push(crate::ui::dialogs::mcp_approval::McpApprovalDialog::new(id, approvals, flag));
+            }
+        }
+    }
+    if busy {
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 }
@@ -582,29 +602,48 @@ fn answer(app: &mut SoyuzApp, call: UiCall) -> Result<Value, ToolError> {
                 other => Err(ToolError::Unsupported(format!("{} over MCP", other.name()))),
             }
         }
-        UiCall::Execute(plan, caller) => execute(app, plan, &caller),
+        UiCall::Execute(plan, caller, key) => {
+            let r = execute(app, &plan, &caller);
+            let mut a = app.services.mcp.approvals.lock();
+            match &r {
+                Ok(v) => a.on_submitted(key, &plan, v.get("job_id").and_then(Value::as_u64).map(JobId)),
+                Err(e) => a.on_failed(key, &e.to_string()),
+            }
+            r
+        }
     }
 }
 
-fn execute(app: &mut SoyuzApp, plan: Plan, caller: &str) -> Result<Value, ToolError> {
-    match plan.action {
+/// The job of an approved MCP plan: the plan's spec with the app's configured copy
+/// options, labelled `MCP <client> · <summary>` (activity tag, "undo everything this
+/// client did").
+pub fn job_spec(base: soyuz_jobs::JobSpec, plan: &Plan, caller: &str) -> soyuz_jobs::JobSpec {
+    let Some(spec) = plan.job() else { return base };
+    let mut full = base;
+    full.options.conflict = spec.options.conflict.clone();
+    full.options.errors = spec.options.errors;
+    full.options.delete = spec.options.delete.clone();
+    full.options.mv = spec.options.mv.clone();
+    full.options.journal = true;
+    let who = caller.strip_prefix("mcp:").unwrap_or(caller);
+    let summary = spec.options.label.clone().unwrap_or_else(|| plan.summary.clone());
+    full.options.label = Some(crate::ai::mcp::job_label(who, &summary));
+    full
+}
+
+fn execute(app: &mut SoyuzApp, plan: &Plan, caller: &str) -> Result<Value, ToolError> {
+    match &plan.action {
         PlanAction::Job(spec) => {
-            let mut full = app.fileops.jobs.spec(spec.kind.clone());
-            full.options.conflict = spec.options.conflict.clone();
-            full.options.errors = spec.options.errors;
-            full.options.delete = spec.options.delete.clone();
-            full.options.mv = spec.options.mv.clone();
+            let full = job_spec(app.fileops.jobs.spec(spec.kind.clone()), plan, caller);
             let who = caller.strip_prefix("mcp:").unwrap_or(caller);
-            full.options.label =
-                Some(format!("{} ({who})", spec.options.label.clone().unwrap_or_else(|| plan.summary.clone())));
             let items: Vec<PathBuf> =
                 plan.items.iter().filter_map(|i| i.src.clone().or_else(|| i.dst.clone())).collect();
             let dest = plan.items.iter().find_map(|i| i.dst.as_ref().and_then(|d| d.parent().map(|p| p.to_path_buf())));
-            let meta = JobMeta::new(OpKind::from_brief(full.kind.brief()), &items, dest);
+            let meta = JobMeta::new(OpKind::from_brief(full.kind.brief()), &items, dest).mcp(who);
             let id = app.fileops.jobs.submit(full, meta);
             Ok(json!({"job_id": id.0}))
         }
-        PlanAction::App { op, args } if op == "undo" => {
+        PlanAction::App { op, args } if op.as_str() == "undo" => {
             let h =
                 args.get("history_id").and_then(Value::as_u64).ok_or_else(|| ToolError::Failed("bad undo".into()))?;
             let id = app
@@ -613,7 +652,8 @@ fn execute(app: &mut SoyuzApp, plan: Plan, caller: &str) -> Result<Value, ToolEr
                 .engine()
                 .undo(HistoryId(h))
                 .ok_or_else(|| ToolError::Failed(format!("history entry {h} cannot be undone")))?;
-            app.fileops.jobs.track(id, JobMeta::new(OpKind::Undo, &[], None));
+            let who = caller.strip_prefix("mcp:").unwrap_or(caller);
+            app.fileops.jobs.track(id, JobMeta::new(OpKind::Undo, &[], None).mcp(who));
             Ok(json!({"job_id": id.0}))
         }
         PlanAction::App { op, .. } => Err(ToolError::Unsupported(format!("“{op}” over MCP (use Soyuz directly)"))),

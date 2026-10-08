@@ -105,6 +105,8 @@ pub struct JobMeta {
     pub toast: bool,
     /// Started by the in-app assistant for this task (`ai::TaskId`); tags the card.
     pub ai_task: Option<u64>,
+    /// Started by this MCP client (tags the card with its name).
+    pub mcp_client: Option<String>,
 }
 
 impl JobMeta {
@@ -118,12 +120,19 @@ impl JobMeta {
             after: AfterJob::None,
             toast: true,
             ai_task: None,
+            mcp_client: None,
         }
     }
 
     /// Mark the job as started by the assistant (`task` = `ai::TaskId`).
     pub fn ai(mut self, task: u64) -> Self {
         self.ai_task = Some(task);
+        self
+    }
+
+    /// Mark the job as started by an external MCP client.
+    pub fn mcp(mut self, client: &str) -> Self {
+        self.mcp_client = Some(client.to_string());
         self
     }
 

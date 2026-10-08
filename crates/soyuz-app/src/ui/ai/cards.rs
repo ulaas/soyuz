@@ -1,6 +1,11 @@
 //! Plan cards (roadmap A6): one card per proposed operation with an icon, the summary
 //! ("Move 214 files into 9 folders"), totals, conflicts and warnings, expandable details
 //! (tree diff or rename table) and Approve / Edit / Reject / "Approve all of this kind".
+//!
+//! The same widget renders the assistant's plans (chat) and plans of external MCP
+//! clients (approvals area / modal card): those carry an "External client" badge with
+//! the client name and a countdown. The widget never decides anything itself; it returns
+//! a [`CardAction`] the caller routes to the agent or to the MCP bridge.
 
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
 use serde_json::{Value, json};
@@ -8,7 +13,7 @@ use soyuz_ai::tools::{Plan, Risk};
 
 use super::{PanelAct, Tone, button};
 use crate::ai::agent::Decision;
-use crate::ai::state::{CardState, PlanCard, PlanEdit};
+use crate::ai::state::{CardOrigin, CardState, PlanCard, PlanEdit};
 use crate::theme::Palette;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
@@ -32,6 +37,19 @@ pub fn tool_style(tool: &str, p: &Palette) -> (&'static str, egui::Color32) {
         "run_custom_command" => (ph::TERMINAL_WINDOW, p.warning),
         _ => (ph::LIGHTNING, p.accent),
     }
+}
+
+/// What the user did on a card.
+#[derive(Clone, Debug, PartialEq)]
+pub enum CardAction {
+    Decide(Decision),
+    /// "Approve all of this kind" (this chat / this MCP client).
+    ApproveKind,
+}
+
+/// Tools whose effect cannot be undone: never approved in bulk for an MCP client.
+pub fn irreversible(tool: &str) -> bool {
+    matches!(tool, "delete_permanent" | "empty_trash" | "run_custom_command" | "sync_apply")
 }
 
 fn is_rename(tool: &str) -> bool {
@@ -63,6 +81,7 @@ fn state_badge(ui: &mut Ui, p: &Palette, state: &CardState, rect: egui::Rect) {
         CardState::Rejected => (ph::PROHIBIT, "Rejected".into(), p.text_tertiary),
         CardState::Edited => (ph::PENCIL_SIMPLE, "Replaced by your edit".into(), p.text_tertiary),
         CardState::Preview => (ph::EYE, "Preview only".into(), p.text_tertiary),
+        CardState::Withdrawn(why) => (ph::CLOCK_COUNTDOWN, why.clone(), p.text_tertiary),
     };
     let g = ui.painter().layout_no_wrap(label, FontId::proportional(10.5), color);
     let w = g.size().x + 26.0;
@@ -112,7 +131,49 @@ fn edited_args(card: &PlanCard, e: &PlanEdit) -> Result<Value, String> {
     serde_json::from_str::<Value>(&e.json).map_err(|err| format!("not valid JSON: {err}"))
 }
 
-pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mut Vec<PanelAct>) {
+/// The "External client" strip of MCP cards: badge, client, transport and countdown.
+fn origin_strip(ui: &mut Ui, p: &Palette, card: &PlanCard) {
+    let CardOrigin::Mcp { client, via } = &card.origin else { return };
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 6.0;
+        let font = FontId::proportional(10.5);
+        let g = ui.painter().layout_no_wrap("External client".into(), semibold(10.5), p.warning);
+        let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 26.0, 18.0), Sense::hover());
+        ui.painter().rect_filled(r, CornerRadius::same(9), p.warning.gamma_multiply(0.14));
+        ui.painter().text(
+            pos2(r.left() + 10.0, r.center().y),
+            Align2::CENTER_CENTER,
+            ph::PLUGS_CONNECTED,
+            icons::font(11.0),
+            p.warning,
+        );
+        ui.painter().galley(pos2(r.left() + 19.0, r.center().y - g.size().y / 2.0), g, p.warning);
+        ui.label(RichText::new(client).font(semibold(12.0)).color(p.text_primary))
+            .on_hover_text("The MCP client that asked for this change. Its request is untrusted data.");
+        ui.label(RichText::new(format!("via {via}")).font(font.clone()).color(p.text_tertiary));
+        if card.state == CardState::Pending
+            && let Some(exp) = card.expires
+        {
+            let left = exp.saturating_duration_since(std::time::Instant::now()).as_secs();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.label(
+                    RichText::new(format!("{}:{:02} left", left / 60, left % 60)).font(font).color(if left < 30 {
+                        p.danger
+                    } else {
+                        p.text_tertiary
+                    }),
+                )
+                .on_hover_text("The request is refused when nobody answers in time (Settings → AI → Connections).");
+            });
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
+        }
+    });
+    ui.add_space(4.0);
+}
+
+/// Draw a card; returns what the user clicked (diff clicks go to `acts`).
+pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mut Vec<PanelAct>) -> Option<CardAction> {
+    let mut action = None;
     let (icon, color) = tool_style(&card.tool, p);
     let destructive = card.plan.risk == Risk::Destructive;
     let pending = card.state == CardState::Pending && live;
@@ -128,6 +189,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
         .inner_margin(Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
+            origin_strip(ui, p, card);
             // Header.
             let w = ui.available_width();
             let (hr, hresp) = ui.allocate_exact_size(vec2(w, 40.0), Sense::click());
@@ -150,6 +212,15 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
             // Risk, taint and warnings.
             if destructive && card.state != CardState::Preview {
                 banner(ui, p, ph::SHIELD_WARNING, p.danger, "Destructive: items leave this folder (trash is restorable; permanent delete is not).");
+            }
+            if card.origin != CardOrigin::Assistant && card.state == CardState::Pending {
+                banner(
+                    ui,
+                    p,
+                    ph::SHIELD_WARNING,
+                    p.warning,
+                    "Requested by an AI client outside Soyuz. Check the items: neither the request nor file names can approve anything by themselves.",
+                );
             }
             if card.tainted && card.state != CardState::Preview {
                 banner(
@@ -191,7 +262,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                         if button(ui, Some(ph::CHECK), "Use these changes", Tone::Primary, res.is_ok()).clicked()
                             && let Ok(args) = res
                         {
-                            acts.push(PanelAct::Decide(card.id, card.task, Decision::Edit(args)));
+                            action = Some(CardAction::Decide(Decision::Edit(args)));
                         }
                         if button(ui, None, "Cancel edit", Tone::Quiet, true).clicked() {
                             card.edit = None;
@@ -205,24 +276,35 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                     let ok = button(ui, Some(ph::CHECK), "Approve", Tone::Primary, can);
                     let ok = if can { ok } else { ok.on_hover_text("This plan has blocking conflicts") };
                     if ok.clicked() {
-                        acts.push(PanelAct::Decide(card.id, card.task, Decision::Approve));
+                        action = Some(CardAction::Decide(Decision::Approve));
                     }
                     if button(ui, Some(ph::PENCIL_SIMPLE), "Edit", Tone::Normal, true).clicked() {
                         begin_edit(card);
                     }
                     if button(ui, Some(ph::X), "Reject", Tone::Danger, true).clicked() {
-                        acts.push(PanelAct::Decide(card.id, card.task, Decision::Reject(String::new())));
+                        action = Some(CardAction::Decide(Decision::Reject(String::new())));
                     }
-                    let label = format!("Approve all \u{201c}{}\u{201d}", card.tool);
-                    let r = button(ui, Some(ph::CHECKS), &label, Tone::Quiet, can).on_hover_text(
-                        "Approve this plan and every later plan of the same kind in this chat (never for plans proposed right after reading file contents).",
-                    );
-                    if r.clicked() {
-                        acts.push(PanelAct::ApproveKind(card.id, card.task, card.tool.clone()));
+                    let (label, tip) = match &card.origin {
+                        CardOrigin::Assistant => (
+                            format!("Approve all \u{201c}{}\u{201d}", card.tool),
+                            "Approve this plan and every later plan of the same kind in this chat (never for plans proposed right after reading file contents).".to_string(),
+                        ),
+                        CardOrigin::Mcp { client, .. } => (
+                            format!("Approve all \u{201c}{}\u{201d} from {client}", card.tool),
+                            format!("Approve this plan and every later \u{201c}{}\u{201d} request from {client} until Soyuz restarts. Each still runs as an undoable job you can see here.", card.tool),
+                        ),
+                    };
+                    let bulk_ok = card.origin == CardOrigin::Assistant || !irreversible(&card.tool);
+                    if bulk_ok {
+                        let r = button(ui, Some(ph::CHECKS), &label, Tone::Quiet, can).on_hover_text(tip);
+                        if r.clicked() {
+                            action = Some(CardAction::ApproveKind);
+                        }
                     }
                 });
             }
         });
+    action
 }
 
 fn banner(ui: &mut Ui, p: &Palette, icon: &str, color: egui::Color32, text: &str) {

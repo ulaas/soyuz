@@ -72,6 +72,8 @@ struct TranscriptFile {
     #[serde(rename = "turn")]
     turns: Vec<FakeTurn>,
     model: String,
+    /// Pretend to accept images.
+    vision: bool,
 }
 
 impl FakeTurn {
@@ -97,6 +99,7 @@ pub struct FakeModel {
     model: String,
     requests: Arc<Mutex<Vec<ChatRequest>>>,
     local: bool,
+    vision: bool,
 }
 
 /// Replace `{var}` placeholders.
@@ -134,7 +137,14 @@ impl FakeModel {
             model: "fake-transcript".into(),
             requests: Arc::new(Mutex::new(Vec::new())),
             local: true,
+            vision: false,
         }
+    }
+
+    /// Pretend to be a vision model (accepts images).
+    pub fn vision(mut self) -> Self {
+        self.vision = true;
+        self
     }
 
     /// Pretend to be a cloud model (redaction applies).
@@ -169,6 +179,7 @@ impl FakeModel {
         if !f.model.is_empty() {
             m.model = f.model;
         }
+        m.vision = f.vision;
         Ok(m)
     }
 
@@ -226,6 +237,10 @@ impl ChatModel for FakeModel {
 
     fn max_tokens(&self) -> u32 {
         4096
+    }
+
+    fn accepts_images(&self) -> bool {
+        self.vision
     }
 
     fn stream(&self, req: ChatRequest, wake: Wake) -> ModelStream {

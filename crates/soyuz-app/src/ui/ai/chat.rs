@@ -28,13 +28,17 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         .show_separator_line(false)
         .frame(Frame::new().inner_margin(Margin { left: 0, right: 0, top: 8, bottom: 0 }))
         .show(ui, |ui| footer(ui, app, p, acts));
+    super::mcp_area::show(ui, app, p, acts);
     let stick = std::mem::take(&mut app.ai.panel.scroll_to_bottom);
     let scroll = ScrollArea::vertical().id_salt("soyuz.ai.chat").auto_shrink([false, false]).stick_to_bottom(true);
     scroll.show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 8.0;
         if app.ai.chat.is_empty() {
-            empty(ui, app, p, acts);
+            // External requests above take the space; the ideas come back afterwards.
+            if !super::mcp_area::visible(app) {
+                empty(ui, app, p, acts);
+            }
             return;
         }
         let running = app.ai.running.as_ref().map(|r| r.task);
@@ -48,7 +52,13 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                     assistant(ui, p, text, reasoning, *streaming, reduced)
                 }
                 ChatItem::Tool { tool, detail, status, .. } => tool_row(ui, p, tool, detail, status),
-                ChatItem::Plan(card) => super::cards::show(ui, p, card, running == Some(card.task), acts),
+                ChatItem::Plan(card) => match super::cards::show(ui, p, card, running == Some(card.task), acts) {
+                    Some(super::cards::CardAction::Decide(d)) => acts.push(PanelAct::Decide(card.id, card.task, d)),
+                    Some(super::cards::CardAction::ApproveKind) => {
+                        acts.push(PanelAct::ApproveKind(card.id, card.task, card.tool.clone()))
+                    }
+                    None => {}
+                },
                 ChatItem::Notice { text, warn } => notice(ui, p, text, *warn),
                 ChatItem::Confirm { estimate, model, .. } => confirm(ui, p, *estimate, model, acts),
                 ChatItem::TaskEnd(t) => task_end(ui, p, t, acts),
@@ -577,9 +587,11 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                 resp.request_focus();
             }
             ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new("Enter to send \u{00b7} Shift+Enter new line").size(10.5).color(p.text_tertiary),
-                );
+                if ui.available_width() > 420.0 {
+                    ui.label(
+                        RichText::new("Enter to send \u{00b7} Shift+Enter new line").size(10.5).color(p.text_tertiary),
+                    );
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if running {
                         if button(ui, Some(ph::STOP), "Stop", Tone::Danger, true).clicked() {
@@ -600,6 +612,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                         app.ai.smart.open = !app.ai.smart.open;
                         app.ai.smart.focus = app.ai.smart.open;
                     }
+                    tools_chip(ui, app, p, acts);
                 });
             });
         })
@@ -635,6 +648,101 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                 app.ai.panel.focus_composer = true;
             }
         }
+    }
+}
+
+/// "Tools" chip: the tool picker with Soyuz's catalog and the connected external MCP
+/// servers (A4). Picking a tool asks the assistant to use it.
+fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
+    let ext = app.ai.external.tools();
+    let status = app.ai.external.status();
+    let label = if ext.is_empty() { "Tools".to_string() } else { format!("Tools \u{00b7} {} connected", ext.len()) };
+    let r = super::chip_menu(ui, Some(ph::PLUGS), &label, !ext.is_empty())
+        .on_hover_text("Tools the assistant can use: Soyuz's own and those of connected MCP servers");
+    let max_risk = crate::ai::agent::Limits::from_config(&app.config.ai.agent).max_risk;
+    let connecting = app.ai.external_connecting();
+    let mut insert: Option<String> = None;
+    egui::Popup::menu(&r).id(Id::new("soyuz.ai.tools")).show(|ui| {
+        ui.set_width(330.0);
+        let builtin = soyuz_ai::tools::catalog().iter().filter(|d| d.risk <= max_risk).count();
+        crate::ui::widgets::menu_caption(ui, "Soyuz");
+        ui.label(
+            RichText::new(format!(
+                "{builtin} built-in tools (files, search, jobs, UI) \u{00b7} up to {max_risk:?} risk"
+            ))
+            .size(11.0)
+            .color(p.text_tertiary),
+        );
+        crate::ui::widgets::menu_separator(ui);
+        crate::ui::widgets::menu_caption(ui, "Connected tools (MCP servers)");
+        if status.is_empty() {
+            ui.label(
+                RichText::new("No external MCP servers. Add one in Settings \u{2192} AI \u{2192} Connections.")
+                    .size(11.0)
+                    .color(p.text_tertiary),
+            );
+        }
+        for (name, st) in &status {
+            let (icon, color, text) = match st {
+                soyuz_mcp::client::ServerStatus::Connected { tools, .. } => {
+                    (ph::PLUGS_CONNECTED, p.success, format!("{tools} tools"))
+                }
+                soyuz_mcp::client::ServerStatus::Failed(e) => (ph::WARNING, p.danger, e.clone()),
+                soyuz_mcp::client::ServerStatus::Disabled => (ph::PROHIBIT, p.text_tertiary, "disabled".into()),
+                soyuz_mcp::client::ServerStatus::NotConnected => (
+                    ph::HOURGLASS,
+                    p.text_tertiary,
+                    if connecting { "connecting\u{2026}".into() } else { "not connected".into() },
+                ),
+            };
+            ui.horizontal(|ui| {
+                ui.label(icons::icon(icon, 12.5).color(color));
+                ui.label(RichText::new(name).font(semibold(12.0)).color(p.text_primary));
+                ui.add(egui::Label::new(RichText::new(text).size(11.0).color(p.text_tertiary)).truncate());
+            });
+            for t in ext.iter().filter(|t| &t.server == name) {
+                let allowed = t.risk <= max_risk;
+                let risk = match t.risk {
+                    soyuz_ai::tools::Risk::Read => "read",
+                    soyuz_ai::tools::Risk::Write => "write",
+                    soyuz_ai::tools::Risk::Destructive => "destructive",
+                };
+                let gate = if !allowed {
+                    "above the assistant's risk ceiling"
+                } else if t.risk == soyuz_ai::tools::Risk::Read || !t.require_approval {
+                    "runs without asking"
+                } else {
+                    "asks for approval"
+                };
+                let icon = if t.risk == soyuz_ai::tools::Risk::Read { ph::EYE } else { ph::LIGHTNING };
+                let tip = format!("{}\n\nRisk: {risk} \u{00b7} {gate}", t.spec.description);
+                let resp = crate::ui::widgets::menu_item(
+                    ui,
+                    Some(icon),
+                    &format!("{}  \u{00b7} {risk}", t.remote),
+                    None,
+                    allowed,
+                )
+                .on_hover_text(tip);
+                if resp.clicked() {
+                    insert = Some(t.name.clone());
+                    ui.close();
+                }
+            }
+        }
+        crate::ui::widgets::menu_separator(ui);
+        if crate::ui::widgets::menu_item(ui, Some(ph::GEAR_SIX), "Manage connections\u{2026}", None, true).clicked() {
+            acts.push(PanelAct::OpenSettings);
+            ui.close();
+        }
+    });
+    if let Some(name) = insert {
+        let c = &mut app.ai.panel.composer;
+        if !c.is_empty() && !c.ends_with(char::is_whitespace) {
+            c.push(' ');
+        }
+        c.push_str(&format!("Use the `{name}` tool to "));
+        app.ai.panel.focus_composer = true;
     }
 }
 

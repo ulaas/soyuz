@@ -179,6 +179,28 @@ impl McpRegistry {
         }
     }
 
+    /// Register an already connected client for `cfg` (in-process servers, tests). Lists
+    /// its tools now (blocking).
+    pub fn add_connected(&self, cfg: AiMcpServer, client: McpClient) -> Result<usize, ClientError> {
+        let remote = client.list_tools(&soyuz_core::OpControl::new())?;
+        let tools = external_tools(&cfg, &remote);
+        let n = tools.len();
+        let status =
+            ServerStatus::Connected { server_name: client.server_name.clone(), tools: n, modern: client.is_modern() };
+        let mut entries = self.entries.write();
+        entries.retain(|e| e.cfg.name != cfg.name);
+        entries.push(Entry { cfg, client: Some(Arc::new(client)), tools, status });
+        Ok(n)
+    }
+
+    /// Whether any enabled server still needs [`connect_all`](Self::connect_all).
+    pub fn needs_connect(&self) -> bool {
+        self.entries
+            .read()
+            .iter()
+            .any(|e| e.cfg.enabled && e.client.is_none() && e.status == ServerStatus::NotConnected)
+    }
+
     pub fn status(&self) -> Vec<(String, ServerStatus)> {
         self.entries.read().iter().map(|e| (e.cfg.name.clone(), e.status.clone())).collect()
     }

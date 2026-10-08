@@ -29,9 +29,12 @@ pub struct AuditRecord {
     pub ts: String,
     /// `mcp` (external client), `assistant` (in-app harness), …
     pub source: String,
-    /// MCP client name / assistant session.
+    /// MCP client name, or `assistant` / `recipe` for the in-app harness.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub client: String,
+    /// Assistant task (`20261008-101500-3`) or MCP connection; empty when unknown.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub session: String,
     /// Transport or model (`stdio`, `pipe`, `http`, a model id …).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub via: String,
@@ -92,6 +95,13 @@ pub fn record(rec: &AuditRecord) {
     if let Err(e) = append(&default_path(), rec) {
         log::warn!("ai-audit.jsonl: {e}");
     }
+}
+
+/// The newest `max` parsable records (oldest first; the in-app viewer).
+pub fn read_tail(path: &Path, max: usize) -> std::io::Result<Vec<AuditRecord>> {
+    let mut all = read_all(path)?;
+    let cut = all.len().saturating_sub(max);
+    Ok(all.split_off(cut))
 }
 
 /// Read every parsable record (for the in-app viewer and tests).

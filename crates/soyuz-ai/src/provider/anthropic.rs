@@ -83,6 +83,9 @@ pub fn encode(req: &ChatRequest) -> Value {
                 })),
                 Part::Opaque { wire: Wire::Anthropic, block } => content.push(block.clone()),
                 Part::Opaque { .. } => {}
+                Part::Image { media_type, data } => content.push(json!({
+                    "type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}
+                })),
             }
         }
         if content.is_empty() {

@@ -130,6 +130,9 @@ pub struct AiProfile {
     /// Extra HTTP headers (custom profiles, proxies). Values are not secret.
     pub headers: std::collections::BTreeMap<String, String>,
     pub max_tokens: u32,
+    /// The model accepts images (vision): "Suggest names" sends downscaled pictures from
+    /// folders whose AI access is "contents".
+    pub vision: bool,
 }
 
 impl Default for AiProfile {
@@ -144,6 +147,7 @@ impl Default for AiProfile {
             monthly_budget_usd: 0.0,
             headers: Default::default(),
             max_tokens: 16_000,
+            vision: false,
         }
     }
 }

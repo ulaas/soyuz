@@ -42,6 +42,8 @@ pub enum UiRequest {
     Submit { task: TaskId, plan: Box<Plan>, reply: Sender<Result<Submitted, String>> },
     /// Register an engine-created job (undo-all) as belonging to `task`.
     Track { job: JobId, task: TaskId },
+    /// Register an undo job of "undo everything this MCP client did".
+    TrackMcp { job: JobId, client: String },
 }
 
 /// Sends [`UiRequest`]s and waits for the answer (never called on the UI thread).

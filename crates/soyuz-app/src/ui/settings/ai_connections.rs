@@ -240,6 +240,21 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             r.row("Approval timeout", "Refuse a change when nobody answers its approval card.", |ui| {
                 number(ui, &mut d.mcp.approval_timeout_secs, 10..=3600, " s");
             });
+            r.row_kw(
+                "Approval cards",
+                "Where a client's plan card appears: in the assistant panel (it opens when a request arrives) or as a modal card over the window.",
+                "approval panel dialog modal plan card",
+                |ui| {
+                    segmented(
+                        ui,
+                        &mut d.mcp.approval_ui,
+                        &[
+                            (soyuz_core::config::AiMcpApprovalUi::Panel, "Assistant panel"),
+                            (soyuz_core::config::AiMcpApprovalUi::Dialog, "Modal card"),
+                        ],
+                    );
+                },
+            );
         });
     }
 
