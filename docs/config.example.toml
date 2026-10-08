@@ -124,22 +124,27 @@ status_column = true
 refresh_secs = 5
 
 [keys]
-preset = "explorer"              # explorer | commander
+preset = "explorer"              # explorer | commander | finder | vim
 cmd_is_ctrl = true
+marks = false                    # ranger-style m<key> / '<key> marks in the file list (always on with vim)
 
-[keys.bindings]                  # action = ["chord", ...]; overrides the preset (and steals the chord)
+[keys.bindings]                  # action = ["chord" or "key sequence", ...]; overrides the preset (and steals the chord)
 "copy" = ["Ctrl+C"]
 "copy_to_other_pane" = ["F5"]
+"settings" = ["Ctrl+,", "Ctrl+K Ctrl+S"]   # a value with spaces is a sequence
 
 [[bookmarks]]
 name = "Projects"
 path = "E:/source"
-hotkey = "Ctrl+1"
+hotkey = "Ctrl+1"                # bookmarks 1..9 also open with Alt+1..9
 icon = "code"
 
 [[custom_commands]]
 name = "Open in VS Code"
 command = "code"
-args = ["%P"]                    # %P path(s), %D dir, %N name, %E ext, %F first selected
-context = ["file", "dir"]        # file | dir | background
+args = ["%s"]                    # %p focused path, %s selected paths, %n names, %d dir, %o other pane, %% literal
+                                 # (an argument that is exactly %s / %n expands to one argument per item;
+                                 #  legacy: %P paths, %D dir, %N name, %E ext, %F first selected)
+context = ["file", "dir"]        # file | dir | background (empty = everywhere)
 hotkey = ""
+terminal = false                 # true = run in the integrated terminal panel instead of detached

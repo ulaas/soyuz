@@ -10,8 +10,10 @@
 pub mod actions;
 pub mod app;
 pub mod cmd;
+pub mod commands;
 pub mod keys;
 pub mod ops;
+pub mod palette;
 pub mod services;
 pub mod state;
 pub mod theme;

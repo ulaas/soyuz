@@ -229,6 +229,30 @@ pub fn open_at(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf) {
     app.ui.terminal.focused = true;
 }
 
+/// Run a shell command line in `dir` with its output in the terminal panel: typed into
+/// the active session when it is idle (after a `cd`), otherwise into a new session.
+pub fn run_command(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf, line: &str) {
+    app.ui.bottom.open = true;
+    app.ui.bottom.tab = BottomTab::Terminal;
+    let owner = TerminalPanel::owner(app.config.terminal.per_tab, app.ws.tab().id.0);
+    let reuse = app.ui.terminal.active_id(owner).filter(|id| {
+        app.ui.terminal.sessions.iter().any(|s| {
+            s.id == *id && s.is_alive() && s.term.as_ref().is_some_and(|t| !t.mode_alt_screen() && t.send_cd(&dir))
+        })
+    });
+    let id = match reuse {
+        Some(id) => id,
+        None => spawn_session(app, ctx, dir.clone()),
+    };
+    if let Some(s) = app.ui.terminal.session_mut(id) {
+        s.last_dir = Some(dir);
+        if let Some(t) = &s.term {
+            t.write(format!("{line}\r").as_bytes());
+        }
+    }
+    app.ui.terminal.focused = true;
+}
+
 fn close_session(app: &mut SoyuzApp, ctx: &egui::Context, id: u64) {
     let t = &mut app.ui.terminal;
     if let Some(i) = t.sessions.iter().position(|s| s.id == id) {

@@ -132,6 +132,8 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     if all_dirs {
         action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     }
+    let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
+    crate::commands::context_items(ui, v.config, cmds, id, &kinds);
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
 }
@@ -201,6 +203,7 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     }
     action_item(ui, km, cmds, id, ph::SELECTION_ALL, "Select all", Action::SelectAll);
     action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
+    crate::commands::context_items(ui, v.config, cmds, id, &[soyuz_core::config::CommandContext::Background]);
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
 }

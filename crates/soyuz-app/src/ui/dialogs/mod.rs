@@ -6,6 +6,7 @@
 pub mod conflict;
 pub mod delete_confirm;
 pub mod error;
+pub mod keybind_record;
 pub mod new_item;
 
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};

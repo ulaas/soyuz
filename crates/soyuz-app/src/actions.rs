@@ -9,7 +9,7 @@ use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
 use crate::ops::{self, NavOpts};
 use crate::state::view_memory::{ZOOM_MAX, ZOOM_MIN};
-use crate::ui::dialogs::{AboutDialog, ConfirmDialog, KeybindingsDialog, PatternDialog};
+use crate::ui::dialogs::{AboutDialog, ConfirmDialog, PatternDialog};
 use crate::ui::toasts::Toast;
 use crate::ui::views::layout::NavDir;
 
@@ -358,7 +358,11 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         // ---- tools ----
         A::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         A::About => app.ui.dialogs.push(AboutDialog::new(app.renderer)),
-        A::ShowKeybindings => app.ui.dialogs.push(KeybindingsDialog::new(&app.keymap)),
+        A::ShowKeybindings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Keyboard)),
+        A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
+        A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
+        A::Settings => crate::ui::settings::open(app, None),
+        A::CustomCommand(name) => crate::commands::run_named(app, &name, ctx),
         A::EditConfigFile => {
             let path = soyuz_core::config::default_path();
             if !path.exists()
@@ -369,7 +373,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             }
             ops::launch(app, &path);
         }
-        A::ReloadConfig => reload_config(app, ctx),
+        A::ReloadConfig => crate::services::config_watch::reload_now(app, ctx),
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
                 crate::ui::quicklook::toggle(app);
@@ -469,26 +473,3 @@ pub const GROUPS: [(GroupBy, &str); 6] = [
     (GroupBy::Extension, "Extension"),
     (GroupBy::FirstLetter, "First letter"),
 ];
-
-fn reload_config(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let path = soyuz_core::config::default_path();
-    match soyuz_core::config::load_or_default(&path) {
-        Ok(loaded) => {
-            app.config = loaded.config;
-            let (km, _) = soyuz_core::config::keymap(&app.config);
-            app.keymap = km;
-            let _ = crate::theme::install(ctx, &app.config.appearance, &app.config.theme.colors);
-            ctx.set_theme(app.ui.theme);
-            app.default_view = crate::state::view_memory::ViewState::from_config(&app.config);
-            let msg = if loaded.warnings.is_empty() {
-                Toast::success("Configuration reloaded")
-            } else {
-                Toast::warning("Configuration reloaded with warnings").body(loaded.warnings.join("\n"))
-            };
-            app.ui.toasts.push(msg);
-        }
-        Err(e) => {
-            app.ui.toasts.push(Toast::error("Configuration not reloaded").body(e.to_string()));
-        }
-    }
-}

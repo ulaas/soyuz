@@ -93,6 +93,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                     app.cmds.push(Cmd::Action(Action::Search));
                 }
             }
+            let palette_on = app.palette.open;
+            if right_btn(ui, ph::COMMAND, &tip(app, "Command palette", &Action::CommandPalette), palette_on).clicked() {
+                app.cmds.push(Cmd::Action(Action::CommandPalette));
+            }
             let sort = right_btn(ui, ph::SORT_ASCENDING, "Sort", false);
             let mode = app.ws.pane().view.mode;
             let mode_glyph = match mode {

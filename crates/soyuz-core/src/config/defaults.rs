@@ -203,7 +203,7 @@ impl Default for Git {
 
 impl Default for Keys {
     fn default() -> Self {
-        Keys { preset: KeyPreset::Explorer, cmd_is_ctrl: true, bindings: BTreeMap::new() }
+        Keys { preset: KeyPreset::Explorer, cmd_is_ctrl: true, bindings: BTreeMap::new(), marks: false }
     }
 }
 
@@ -238,6 +238,11 @@ fn common(km: &mut Keymap) {
 
     // Global
     b(G, A::CommandPalette, CTRL_SHIFT, KeyName::P);
+    b(G, A::CommandPalette, CTRL, KeyName::K);
+    b(G, A::JumpToFolderDialog, CTRL, KeyName::P);
+    for (i, k) in DIGITS.iter().enumerate() {
+        b(G, A::OpenBookmark(i as u8 + 1), ALT, *k);
+    }
     b(G, A::NewTab, CTRL, KeyName::T);
     b(G, A::CloseTab, CTRL, KeyName::W);
     b(G, A::ReopenClosedTab, CTRL_SHIFT, KeyName::T);
@@ -338,6 +343,79 @@ pub fn preset(p: KeyPreset) -> Keymap {
             b(G, A::SwapPanes, CTRL, KeyName::U);
             b(L, A::Up, NONE, KeyName::Backspace);
         }
+        KeyPreset::Finder => {
+            // Finder: Enter renames, Cmd+Down opens, Cmd+Up goes to the parent,
+            // Cmd+Backspace trashes, Cmd+I shows info, Cmd+1..4 switch views.
+            let mut unbind = |ctx: KeyContext, a: Action| {
+                km.bindings.remove(&(ctx, a));
+            };
+            unbind(L, A::Open);
+            unbind(L, A::InvertSelection);
+            for i in 1..=9 {
+                unbind(G, A::SelectTab(i));
+            }
+            for a in [A::ViewDetails, A::ViewGrid, A::ViewList, A::ViewMiller, A::ViewGallery] {
+                unbind(G, a);
+            }
+            let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
+            b(L, A::Rename, NONE, KeyName::Enter);
+            b(L, A::Open, CTRL, KeyName::ArrowDown);
+            b(L, A::Open, CTRL, KeyName::O);
+            b(G, A::Up, CTRL, KeyName::ArrowUp);
+            b(L, A::Delete, CTRL, KeyName::Backspace);
+            b(L, A::Properties, CTRL, KeyName::I);
+            b(L, A::InvertSelection, CTRL_SHIFT, KeyName::I);
+            b(L, A::QuickLook, NONE, KeyName::Space);
+            b(G, A::Back, CTRL, KeyName::OpenBracket);
+            b(G, A::Forward, CTRL, KeyName::CloseBracket);
+            b(G, A::ViewGrid, CTRL, KeyName::Num1);
+            b(G, A::ViewDetails, CTRL, KeyName::Num2);
+            b(G, A::ViewMiller, CTRL, KeyName::Num3);
+            b(G, A::ViewGallery, CTRL, KeyName::Num4);
+            b(G, A::ViewList, CTRL, KeyName::Num5);
+            b(G, A::GoTo, CTRL_SHIFT, KeyName::G);
+            b(G, A::Home, CTRL_SHIFT, KeyName::H);
+            b(G, A::ToggleHidden, CTRL_SHIFT, KeyName::Period);
+            b(L, A::CopyPath, CTRL_ALT, KeyName::C);
+            b(G, A::ToggleDualPane, NONE, KeyName::F9);
+        }
+        KeyPreset::Vim => {
+            let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
+            b(L, A::CursorDown, NONE, KeyName::J);
+            b(L, A::CursorUp, NONE, KeyName::K);
+            b(L, A::Up, NONE, KeyName::H);
+            b(L, A::Up, NONE, KeyName::Backspace);
+            b(L, A::Open, NONE, KeyName::L);
+            b(L, A::CursorEnd, SHIFT, KeyName::G);
+            b(L, A::ExtendDown, SHIFT, KeyName::J);
+            b(L, A::ExtendUp, SHIFT, KeyName::K);
+            b(L, A::Back, SHIFT, KeyName::H);
+            b(L, A::Forward, SHIFT, KeyName::L);
+            b(L, A::Filter, NONE, KeyName::Slash);
+            b(L, A::MarkAndMoveDown, NONE, KeyName::Space);
+            b(L, A::InvertSelection, NONE, KeyName::V);
+            b(L, A::QuickLook, NONE, KeyName::I);
+            b(L, A::Undo, NONE, KeyName::U);
+            b(L, A::Rename, NONE, KeyName::F2);
+            b(L, A::CommandPalette, SHIFT, KeyName::Semicolon);
+            b(G, A::ToggleDualPane, NONE, KeyName::F9);
+            let seq = |a: KeyName, b: KeyName| vec![KeyChord::new(NONE, a), KeyChord::new(NONE, b)];
+            let mut s = |action, sq| km.bind_sequence(L, action, sq);
+            s(A::CursorHome, seq(KeyName::G, KeyName::G));
+            s(A::Home, seq(KeyName::G, KeyName::H));
+            s(A::NextTab, seq(KeyName::G, KeyName::T));
+            s(A::PrevTab, vec![KeyChord::new(NONE, KeyName::G), KeyChord::new(SHIFT, KeyName::T)]);
+            s(A::Copy, seq(KeyName::Y, KeyName::Y));
+            s(A::CopyPath, seq(KeyName::Y, KeyName::P));
+            s(A::CopyName, seq(KeyName::Y, KeyName::N));
+            s(A::Cut, seq(KeyName::D, KeyName::D));
+            s(A::Delete, seq(KeyName::D, KeyName::Delete));
+            s(A::Paste, seq(KeyName::P, KeyName::P));
+            s(A::PasteAsLink, seq(KeyName::P, KeyName::L));
+            s(A::Rename, seq(KeyName::C, KeyName::W));
+            s(A::ToggleHidden, seq(KeyName::Z, KeyName::H));
+            s(A::NewFolder, seq(KeyName::G, KeyName::N));
+        }
     }
     km
 }
@@ -348,9 +426,10 @@ mod tests {
 
     #[test]
     fn presets_have_no_conflicts() {
-        for p in [KeyPreset::Explorer, KeyPreset::Commander] {
+        for p in KeyPreset::ALL {
             let km = preset(p);
             assert!(km.conflicts().is_empty(), "{p:?}: {:?}", km.conflicts());
+            assert!(km.prefix_conflicts().is_empty(), "{p:?}: {:?}", km.prefix_conflicts());
             assert!(km.bindings.len() > 40);
         }
     }
@@ -364,5 +443,23 @@ mod tests {
         assert_eq!(km.lookup(KeyContext::Terminal, ch("Ctrl+Shift+P")), Some(&Action::CommandPalette));
         let cmd = preset(KeyPreset::Commander);
         assert_eq!(cmd.lookup(KeyContext::FileList, ch("F5")), Some(&Action::CopyToOtherPane));
+        assert_eq!(km.lookup(KeyContext::FileList, ch("Ctrl+K")), Some(&Action::CommandPalette));
+        assert_eq!(km.lookup(KeyContext::FileList, ch("Ctrl+P")), Some(&Action::JumpToFolderDialog));
+    }
+
+    #[test]
+    fn finder_and_vim() {
+        let ch = |s: &str| s.parse::<KeyChord>().unwrap();
+        let f = preset(KeyPreset::Finder);
+        assert_eq!(f.lookup(KeyContext::FileList, ch("Enter")), Some(&Action::Rename));
+        assert_eq!(f.lookup(KeyContext::FileList, ch("Ctrl+Down")), Some(&Action::Open));
+        assert_eq!(f.lookup(KeyContext::Global, ch("Ctrl+2")), Some(&Action::ViewDetails));
+        let v = preset(KeyPreset::Vim);
+        assert_eq!(v.lookup(KeyContext::FileList, ch("J")), Some(&Action::CursorDown));
+        let gg = super::super::keys::parse_sequence("g g").unwrap();
+        assert_eq!(
+            v.sequence_match(KeyContext::FileList, &gg),
+            super::super::keys::SeqMatch::Exact(Action::CursorHome)
+        );
     }
 }

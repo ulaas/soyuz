@@ -4,6 +4,9 @@
 //! second time. While a text field has focus only "chorded" shortcuts that are not text
 //! editing keys reach the keymap.
 
+pub mod conflicts;
+pub mod sequence;
+
 use egui::{Event, Key, Modifiers};
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Keymap, Mods};
 
@@ -121,7 +124,7 @@ pub fn mods(m: Modifiers) -> Mods {
 }
 
 /// Text-editing chords a focused text field must keep.
-fn is_text_editing(chord: KeyChord) -> bool {
+pub(crate) fn is_text_editing(chord: KeyChord) -> bool {
     use KeyName as N;
     let plain = chord.mods.is_empty() || chord.mods == Mods::SHIFT;
     if plain {
@@ -154,7 +157,7 @@ pub struct Dispatched {
 
 /// Map a raw input event to a chord (`Copy`/`Cut`/`Paste` come pre-translated from
 /// egui-winit and are mapped back to their chords).
-fn event_chord(ev: &Event, current: Modifiers, cmd_is_ctrl: bool) -> Option<KeyChord> {
+pub(crate) fn event_chord(ev: &Event, current: Modifiers, cmd_is_ctrl: bool) -> Option<KeyChord> {
     let chord = match ev {
         Event::Key { key, pressed: true, modifiers, .. } => KeyChord::new(mods(*modifiers), key_name(*key)?),
         Event::Copy if current.shift && current.command => KeyChord::new(Mods::CTRL | Mods::SHIFT, KeyName::C),

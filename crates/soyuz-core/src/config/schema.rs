@@ -376,8 +376,12 @@ pub struct Git {
 pub struct Keys {
     pub preset: KeyPreset,
     pub cmd_is_ctrl: bool,
-    /// Action string → chord strings; overrides the preset.
+    /// Action string → chord strings; overrides the preset. A value with spaces is a
+    /// key sequence (`"g g"`, `"Ctrl+K Ctrl+S"`).
     pub bindings: BTreeMap<String, Vec<String>>,
+    /// Ranger-style marks in the file list: `m<key>` sets a mark on the current folder,
+    /// `'<key>` jumps to it (always on with the `vim` preset).
+    pub marks: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
@@ -405,8 +409,13 @@ pub enum CommandContext {
 pub struct CustomCommand {
     pub name: String,
     pub command: String,
-    /// Placeholders: `%P` path(s), `%D` dir, `%N` name, `%E` ext, `%F` first selected.
+    /// Placeholders: `%p` focused path, `%n` selected names, `%s` selected paths, `%d`
+    /// current dir, `%o` other pane's dir, `%%` a literal `%` (legacy: `%P` paths, `%D`
+    /// dir, `%N` name, `%E` ext, `%F` first selected). An argument that is exactly `%s` /
+    /// `%n` / `%P` expands to one argument per selected item.
     pub args: Vec<String>,
     pub context: Vec<CommandContext>,
     pub hotkey: String,
+    /// Run in the integrated terminal panel instead of as a detached process.
+    pub terminal: bool,
 }

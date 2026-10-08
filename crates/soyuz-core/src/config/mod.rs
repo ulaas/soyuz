@@ -11,7 +11,10 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub use actions::{Action, ActionCategory, ParseActionError};
-pub use keys::{KeyChord, KeyContext, KeyName, KeyPreset, Keymap, Mods, ParseChordError};
+pub use keys::{
+    KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
+    parse_sequence,
+};
 pub use schema::*;
 
 use crate::error::{FsError, FsErrorKind};
@@ -156,7 +159,34 @@ pub fn config_dir() -> PathBuf {
 /// for invalid override entries.
 pub fn keymap(config: &Config) -> (Keymap, Vec<String>) {
     let mut km = defaults::preset(config.keys.preset);
-    let warnings = km.apply_overrides(&config.keys.bindings, config.keys.cmd_is_ctrl);
+    let mut warnings = km.apply_overrides(&config.keys.bindings, config.keys.cmd_is_ctrl);
+    // Bookmark and custom-command hotkeys (global; they take the chord from other actions).
+    let extra =
+        config
+            .bookmarks
+            .iter()
+            .take(actions::BOOKMARK_SLOTS as usize)
+            .enumerate()
+            .map(|(i, b)| (format!("bookmarks[{i}].hotkey"), &b.hotkey, Action::OpenBookmark(i as u8 + 1)))
+            .chain(config.custom_commands.iter().filter(|c| !c.name.trim().is_empty()).map(|c| {
+                (format!("custom_commands.{}.hotkey", c.name), &c.hotkey, Action::CustomCommand(c.name.clone()))
+            }));
+    for (what, hotkey, action) in extra {
+        if hotkey.trim().is_empty() {
+            continue;
+        }
+        match parse_sequence(hotkey) {
+            Ok(seq) if seq.len() == 1 => {
+                km.bind_stealing(KeyContext::Global, action, seq[0].normalized(config.keys.cmd_is_ctrl))
+            }
+            Ok(seq) => km.bind_sequence(
+                KeyContext::Global,
+                action,
+                seq.into_iter().map(|c| c.normalized(config.keys.cmd_is_ctrl)).collect(),
+            ),
+            Err(e) => warnings.push(format!("{what}: {e}")),
+        }
+    }
     (km, warnings)
 }
 
@@ -263,6 +293,33 @@ mod tests {
         let legacy = tempfile::tempdir().unwrap();
         std::fs::create_dir(legacy.path().join(PORTABLE_MARKER)).unwrap();
         assert_eq!(portable_dir(legacy.path()), Some(legacy.path().join(PORTABLE_MARKER)));
+    }
+
+    #[test]
+    fn bookmark_and_command_hotkeys() {
+        let mut c = Config::default();
+        c.bookmarks.push(Bookmark {
+            name: "P".into(),
+            path: "/p".into(),
+            hotkey: "Ctrl+1".into(),
+            icon: String::new(),
+        });
+        c.bookmarks.push(Bookmark {
+            name: "Q".into(),
+            path: "/q".into(),
+            hotkey: "Nope+1".into(),
+            icon: String::new(),
+        });
+        c.custom_commands.push(CustomCommand { name: "Edit".into(), hotkey: "Ctrl+K E".into(), ..Default::default() });
+        let (km, w) = keymap(&c);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert_eq!(km.lookup(KeyContext::FileList, "Ctrl+1".parse().unwrap()), Some(&Action::OpenBookmark(1)));
+        assert!(km.chords_for(&Action::SelectTab(1)).is_empty(), "the bookmark took Ctrl+1");
+        let seq = parse_sequence("Ctrl+K E").unwrap();
+        assert_eq!(
+            km.sequence_match(KeyContext::FileList, &seq),
+            SeqMatch::Exact(Action::CustomCommand("Edit".into()))
+        );
     }
 
     #[test]

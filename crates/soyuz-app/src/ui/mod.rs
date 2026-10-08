@@ -12,6 +12,7 @@ pub mod panels;
 pub mod preview;
 pub mod quicklook;
 pub mod search;
+pub mod settings;
 pub mod shell;
 pub mod sidebar;
 pub mod statusbar;

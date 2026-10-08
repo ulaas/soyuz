@@ -173,6 +173,34 @@ pub enum KeyContext {
     Dialog,
     Omnibar,
     Rename,
+    /// The sidebar has keyboard focus.
+    Sidebar,
+}
+
+impl KeyContext {
+    /// Every context, in display order.
+    pub const ALL: [KeyContext; 7] = [
+        KeyContext::Global,
+        KeyContext::FileList,
+        KeyContext::Sidebar,
+        KeyContext::Terminal,
+        KeyContext::Dialog,
+        KeyContext::Omnibar,
+        KeyContext::Rename,
+    ];
+
+    /// Human label ("File list").
+    pub fn label(self) -> &'static str {
+        match self {
+            KeyContext::Global => "Global",
+            KeyContext::FileList => "File list",
+            KeyContext::Terminal => "Terminal",
+            KeyContext::Dialog => "Dialogs",
+            KeyContext::Omnibar => "Text fields",
+            KeyContext::Rename => "Rename",
+            KeyContext::Sidebar => "Sidebar",
+        }
+    }
 }
 
 /// Built-in binding presets.
@@ -182,15 +210,147 @@ pub enum KeyPreset {
     #[default]
     Explorer,
     Commander,
+    /// macOS Finder-style (Enter renames, Cmd+Up/Down, Cmd+1..4 views).
+    Finder,
+    /// Vim / ranger-style letter keys and two-key sequences (`g g`, `y y`, `d d`).
+    Vim,
+}
+
+impl KeyPreset {
+    pub const ALL: [KeyPreset; 4] = [KeyPreset::Explorer, KeyPreset::Commander, KeyPreset::Finder, KeyPreset::Vim];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            KeyPreset::Explorer => "Explorer",
+            KeyPreset::Commander => "Commander (F-keys)",
+            KeyPreset::Finder => "Finder",
+            KeyPreset::Vim => "Vim-ish",
+        }
+    }
+}
+
+/// A multi-key sequence (`"g g"`, `"Ctrl+K Ctrl+S"`): chords separated by whitespace.
+pub type KeySequence = Vec<KeyChord>;
+
+/// Parse a chord or a whitespace-separated chord sequence. A lone `"+"`-free key such as
+/// `"g"` is a one-chord sequence.
+pub fn parse_sequence(s: &str) -> Result<KeySequence, ParseChordError> {
+    let parts: Vec<&str> = s.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err(ParseChordError(s.to_string()));
+    }
+    parts.iter().map(|p| p.parse::<KeyChord>()).collect()
+}
+
+/// `"g g"` / `"Ctrl+K Ctrl+S"`.
+pub fn format_sequence(seq: &[KeyChord]) -> String {
+    seq.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")
+}
+
+/// Result of matching typed chords against the sequence bindings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SeqMatch {
+    None,
+    /// The typed chords start at least one longer sequence: wait for more keys.
+    Prefix,
+    Exact(Action),
 }
 
 /// The resolved key map.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Keymap {
     pub bindings: BTreeMap<(KeyContext, Action), Vec<KeyChord>>,
+    /// Multi-chord sequences (two or more chords each).
+    pub sequences: BTreeMap<(KeyContext, Action), Vec<KeySequence>>,
 }
 
 impl Keymap {
+    /// Bind a sequence; a one-chord sequence is a plain [`bind`](Self::bind).
+    pub fn bind_sequence(&mut self, ctx: KeyContext, action: Action, seq: KeySequence) {
+        match seq.len() {
+            0 => {}
+            1 => self.bind(ctx, action, seq[0]),
+            _ => {
+                let v = self.sequences.entry((ctx, action)).or_default();
+                if !v.contains(&seq) {
+                    v.push(seq);
+                }
+            }
+        }
+    }
+
+    /// Bind `chord` in `ctx`, removing it from every other action of that context first.
+    pub fn bind_stealing(&mut self, ctx: KeyContext, action: Action, chord: KeyChord) {
+        for ((bctx, _), v) in self.bindings.iter_mut() {
+            if *bctx == ctx {
+                v.retain(|x| *x != chord);
+            }
+        }
+        self.bindings.retain(|_, v| !v.is_empty());
+        self.bind(ctx, action, chord);
+    }
+
+    /// Match `typed` (≥ 1 chord) against the sequences of `ctx`, then `Global`.
+    /// Single chords are only reported as [`SeqMatch::Prefix`] (use [`lookup`](Self::lookup)).
+    pub fn sequence_match(&self, ctx: KeyContext, typed: &[KeyChord]) -> SeqMatch {
+        if typed.is_empty() {
+            return SeqMatch::None;
+        }
+        let in_ctx = |c: KeyContext| {
+            let mut prefix = false;
+            for ((bc, a), seqs) in &self.sequences {
+                if *bc != c {
+                    continue;
+                }
+                for s in seqs {
+                    if s.as_slice() == typed {
+                        return SeqMatch::Exact(a.clone());
+                    }
+                    if s.len() > typed.len() && s.starts_with(typed) {
+                        prefix = true;
+                    }
+                }
+            }
+            if prefix { SeqMatch::Prefix } else { SeqMatch::None }
+        };
+        match in_ctx(ctx) {
+            SeqMatch::None if ctx != KeyContext::Global => in_ctx(KeyContext::Global),
+            m => m,
+        }
+    }
+
+    /// All sequences bound to `action` in any context.
+    pub fn sequences_for(&self, action: &Action) -> Vec<KeySequence> {
+        self.sequences.iter().filter(|((_, a), _)| a == action).flat_map(|(_, s)| s.iter().cloned()).collect()
+    }
+
+    /// Sequences that can never fire, within one context: a single chord bound to an action
+    /// that also starts a sequence, or a sequence that is a prefix of another one. Returns
+    /// `(context, shorter binding, longer sequence, actions)`.
+    pub fn prefix_conflicts(&self) -> Vec<(KeyContext, KeySequence, KeySequence, Vec<Action>)> {
+        let mut out = Vec::new();
+        for ((ctx, a), seqs) in &self.sequences {
+            for s in seqs {
+                for ((bctx, b), chords) in &self.bindings {
+                    if bctx == ctx && chords.contains(&s[0]) {
+                        out.push((*ctx, vec![s[0]], s.clone(), vec![b.clone(), a.clone()]));
+                    }
+                }
+                for ((cctx, b), others) in &self.sequences {
+                    if cctx != ctx {
+                        continue;
+                    }
+                    for o in others {
+                        if o.len() < s.len() && s.starts_with(o) {
+                            out.push((*ctx, o.clone(), s.clone(), vec![b.clone(), a.clone()]));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Add a binding (no-op if already present).
     pub fn bind(&mut self, ctx: KeyContext, action: Action, chord: KeyChord) {
         let v = self.bindings.entry((ctx, action)).or_default();
@@ -237,9 +397,32 @@ impl Keymap {
                     continue;
                 }
             };
-            let ctx = self.bindings.keys().find(|(_, a)| *a == action).map(|(c, _)| *c).unwrap_or(KeyContext::Global);
+            let ctx = self
+                .bindings
+                .keys()
+                .chain(self.sequences.keys())
+                .find(|(_, a)| *a == action)
+                .map(|(c, _)| *c)
+                .unwrap_or(KeyContext::Global);
             self.bindings.retain(|(_, a), _| *a != action);
+            self.sequences.retain(|(_, a), _| *a != action);
             for c in chords {
+                if c.split_whitespace().count() > 1 {
+                    match parse_sequence(c) {
+                        Ok(seq) => {
+                            let seq: KeySequence = seq.into_iter().map(|ch| ch.normalized(cmd_is_ctrl)).collect();
+                            for ((bctx, _), v) in self.sequences.iter_mut() {
+                                if *bctx == ctx {
+                                    v.retain(|x| *x != seq);
+                                }
+                            }
+                            self.sequences.retain(|_, v| !v.is_empty());
+                            self.bind_sequence(ctx, action.clone(), seq);
+                        }
+                        Err(e) => warnings.push(format!("keys.bindings.{action_str}: {e}")),
+                    }
+                    continue;
+                }
                 match c.parse::<KeyChord>() {
                     Ok(ch) => {
                         let ch = ch.normalized(cmd_is_ctrl);
@@ -320,5 +503,58 @@ mod tests {
         assert_eq!(w.len(), 1);
         assert_eq!(km.chords_for(&Action::Copy), vec![KeyChord::new(Mods::CTRL, KeyName::Insert)]);
         assert_eq!(km.lookup(KeyContext::FileList, KeyChord::new(Mods::CTRL, KeyName::Insert)), Some(&Action::Copy));
+    }
+
+    #[test]
+    fn sequences_parse_and_match() {
+        let seq = parse_sequence("g g").unwrap();
+        assert_eq!(seq.len(), 2);
+        assert_eq!(format_sequence(&seq), "G G");
+        assert_eq!(parse_sequence("Ctrl+K  Ctrl+S").unwrap().len(), 2);
+        assert!(parse_sequence("  ").is_err());
+        assert!(parse_sequence("g Hyper+x").is_err());
+
+        let mut km = Keymap::default();
+        km.bind_sequence(KeyContext::FileList, Action::CursorHome, seq.clone());
+        km.bind_sequence(KeyContext::Global, Action::Settings, parse_sequence("Ctrl+K Ctrl+S").unwrap());
+        let g = seq[0];
+        assert_eq!(km.sequence_match(KeyContext::FileList, &[g]), SeqMatch::Prefix);
+        assert_eq!(km.sequence_match(KeyContext::FileList, &seq), SeqMatch::Exact(Action::CursorHome));
+        assert_eq!(km.sequence_match(KeyContext::Terminal, &seq), SeqMatch::None);
+        let ks = parse_sequence("Ctrl+K Ctrl+S").unwrap();
+        assert_eq!(km.sequence_match(KeyContext::FileList, &ks), SeqMatch::Exact(Action::Settings), "global fallback");
+        assert_eq!(km.sequences_for(&Action::CursorHome), vec![seq.clone()]);
+        assert!(km.prefix_conflicts().is_empty());
+        km.bind(KeyContext::FileList, Action::Refresh, g);
+        assert_eq!(km.prefix_conflicts().len(), 1);
+    }
+
+    #[test]
+    fn sequence_overrides() {
+        let mut km = Keymap::default();
+        km.bind(KeyContext::FileList, Action::CursorHome, "Home".parse().unwrap());
+        let mut o = BTreeMap::new();
+        o.insert("cursor_home".to_string(), vec!["Home".to_string(), "g g".to_string()]);
+        assert!(km.apply_overrides(&o, true).is_empty());
+        assert_eq!(km.chords_for(&Action::CursorHome).len(), 1);
+        assert_eq!(km.sequences_for(&Action::CursorHome), vec![parse_sequence("g g").unwrap()]);
+        // Sequences live in the action's original context.
+        assert!(km.sequences.contains_key(&(KeyContext::FileList, Action::CursorHome)));
+        let mut o = BTreeMap::new();
+        o.insert("cursor_home".to_string(), vec![]);
+        km.apply_overrides(&o, true);
+        assert!(km.sequences_for(&Action::CursorHome).is_empty());
+        assert!(km.chords_for(&Action::CursorHome).is_empty());
+    }
+
+    #[test]
+    fn stealing_bind() {
+        let mut km = Keymap::default();
+        let c: KeyChord = "Ctrl+1".parse().unwrap();
+        km.bind(KeyContext::Global, Action::SelectTab(1), c);
+        km.bind_stealing(KeyContext::Global, Action::OpenBookmark(1), c);
+        assert_eq!(km.lookup(KeyContext::Global, c), Some(&Action::OpenBookmark(1)));
+        assert!(km.chords_for(&Action::SelectTab(1)).is_empty());
+        assert!(km.conflicts().is_empty());
     }
 }

@@ -3990,6 +3990,7 @@ dependencies = [
  "env_logger",
  "image",
  "log",
+ "nucleo-matcher",
  "parking_lot",
  "serde",
  "soyuz-archive",

@@ -88,6 +88,14 @@ pub struct SoyuzApp {
     views_path: PathBuf,
     last_session: Option<String>,
     last_session_check: Instant,
+    /// Command palette / go-to-folder state and persistent palette memory (M11).
+    pub palette: crate::palette::PaletteState,
+    /// Settings window (M11).
+    pub settings: crate::ui::settings::SettingsState,
+    /// `config.toml` hot reload (M11).
+    pub config_watch: crate::services::config_watch::ConfigWatch,
+    /// Pending multi-key sequence / mark (M11).
+    pub keyseq: crate::keys::sequence::Sequencer,
 }
 
 impl SoyuzApp {
@@ -184,6 +192,10 @@ impl SoyuzApp {
             views_path,
             last_session: None,
             last_session_check: Instant::now(),
+            palette: crate::palette::PaletteState::new(dir.join("palette.toml")),
+            settings: Default::default(),
+            config_watch: crate::services::config_watch::ConfigWatch::start(ctx, config::default_path()),
+            keyseq: Default::default(),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if !restored {
@@ -311,13 +323,15 @@ impl SoyuzApp {
             (KeyContext::Omnibar, true)
         } else if self.ui.focus == Focus::List {
             (KeyContext::FileList, false)
+        } else if self.ui.focus == Focus::Sidebar {
+            (KeyContext::Sidebar, false)
         } else {
             (KeyContext::Global, false)
         }
     }
 
     fn handle_input(&mut self, ctx: &egui::Context) {
-        if self.ui.dialogs.is_open() {
+        if self.ui.dialogs.is_open() || crate::palette::owns_keyboard(self) {
             return; // the modal owns the keyboard
         }
         if crate::ui::quicklook::handle_keys(self, ctx) {
@@ -331,10 +345,7 @@ impl SoyuzApp {
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
-        let dispatched = keys::dispatch(ctx, &self.keymap, kctx, text_focused, self.config.keys.cmd_is_ctrl);
-        for d in dispatched {
-            actions::execute(self, d.action, ctx);
-        }
+        keys::sequence::dispatch_all(self, ctx, kctx, text_focused);
         // Mouse back/forward buttons.
         let (back, fwd) = ctx.input(|i| {
             (
@@ -445,6 +456,7 @@ impl eframe::App for SoyuzApp {
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         ops::drain_watcher(self);
+        crate::palette::begin_frame(self, &ctx);
         crate::ui::panels::terminal::pump(self, &ctx);
         crate::ui::search::pump(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
@@ -452,6 +464,8 @@ impl eframe::App for SoyuzApp {
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
         shell::show(ui, self);
+        crate::palette::show(&ctx, self);
+        crate::ui::settings::show(&ctx, self);
         ops::fileops::end_frame(self, &ctx);
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
@@ -465,6 +479,7 @@ impl eframe::App for SoyuzApp {
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_state();
+        self.palette.save_now();
     }
 
     fn auto_save_interval(&self) -> Duration {
