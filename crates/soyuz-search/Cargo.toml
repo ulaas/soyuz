@@ -13,9 +13,17 @@ serde.workspace = true
 toml.workspace = true
 crossbeam-channel.workspace = true
 log.workspace = true
+ignore.workspace = true
+regex.workspace = true
+nucleo-matcher.workspace = true
+memchr.workspace = true
+blake3.workspace = true
+rayon.workspace = true
+parking_lot.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+walkdir.workspace = true
 
 [lints]
 workspace = true

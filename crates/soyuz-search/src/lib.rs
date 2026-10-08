@@ -1,14 +1,15 @@
 //! `soyuz-search`: streaming file search, folder sizes, duplicate finder and folder
 //! compare (PLAN §2.6).
 //!
-//! **M0 status:** queries, handles and result types are final; [`start`] compiles the
-//! patterns and then `todo!()`s; the size / duplicate / compare entry points are
-//! `todo!()` until M6 / M12.
+//! Entry points: [`start`] (streaming search), [`folder_sizes`] / [`size_tree`],
+//! [`find_duplicates`] and [`compare_dirs`]. Fuzzy hits are streamed unsorted; rank them
+//! with [`fuzzy_score`] / [`FuzzyScorer`].
 #![forbid(unsafe_code)]
 
 pub mod compare;
 pub mod content;
 pub mod dupes;
+pub mod matcher;
 pub mod query;
 pub mod sizes;
 pub mod walker;
@@ -22,6 +23,7 @@ use soyuz_core::{EntryInfo, FsError, OpControl, PatternError, SearchId};
 
 pub use compare::{CompareResult, compare_dirs};
 pub use dupes::{DupeEvent, find_duplicates};
+pub use matcher::{FuzzyScorer, fuzzy_score};
 pub use query::{ContentPatternSpec, SavedSearch, SearchQuery};
 pub use sizes::{SizeEvent, TreeNode, folder_sizes, size_tree};
 
@@ -109,21 +111,8 @@ pub fn next_search_id() -> SearchId {
 /// Start a search (`threads` 0 = available parallelism). Patterns are compiled up front
 /// so invalid globs/regexes fail synchronously. Walks with `ignore::WalkBuilder::build_parallel`.
 pub fn start(q: SearchQuery, threads: usize, wake: Arc<dyn Fn() + Send + Sync>) -> Result<SearchHandle, PatternError> {
-    if let Some(spec) = &q.name {
-        spec.compile()?;
-    }
-    if let Some(c) = &q.content
-        && c.regex
-    {
-        soyuz_core::NamePatternSpec {
-            kind: soyuz_core::PatternKind::Regex,
-            text: c.text.clone(),
-            case_sensitive: c.case_sensitive,
-        }
-        .compile()?;
-    }
-    let _ = (threads, wake);
-    todo!("M6: soyuz_search::start")
+    let compiled = matcher::Compiled::new(&q)?;
+    Ok(walker::spawn_search(q, compiled, threads, wake))
 }
 
 #[cfg(test)]
