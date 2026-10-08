@@ -8,6 +8,7 @@ pub mod config_watch;
 pub mod crash;
 pub mod folder_colors;
 pub mod git;
+pub mod index;
 pub mod jobs;
 pub mod lister;
 pub mod mailbox;

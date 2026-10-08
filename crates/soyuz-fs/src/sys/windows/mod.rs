@@ -9,6 +9,7 @@ pub(crate) mod ntdir;
 pub(crate) mod registry;
 pub(crate) mod security;
 pub(crate) mod shadow;
+pub(crate) mod usn;
 pub(crate) mod volume;
 
 use std::ffi::{OsStr, OsString};

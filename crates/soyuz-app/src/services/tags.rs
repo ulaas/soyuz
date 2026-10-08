@@ -499,6 +499,18 @@ pub fn version() -> u64 {
     REG.with_borrow(|r| r.version)
 }
 
+/// Every tagged path with its tag slugs (feeds the index's `tag:` filter).
+pub fn snapshot() -> Vec<(PathBuf, Vec<String>)> {
+    REG.with_borrow(|r| {
+        r.store
+            .map
+            .iter()
+            .filter(|(_, m)| **m != 0)
+            .map(|(p, m)| (p.clone(), mask_tags(*m).map(slug).collect()))
+            .collect()
+    })
+}
+
 /// Columns for a tag listing.
 pub fn listing_columns() -> Vec<ColumnSpec> {
     let mut path = ColumnSpec::new(Column::Path);

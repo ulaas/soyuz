@@ -749,6 +749,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         }
         Cmd::RunSavedSearch(i) => crate::ui::search::run_saved(app, i),
         Cmd::RemoveSavedSearch(i) => crate::ui::search::remove_saved(app, i),
+        Cmd::Smart(c) => crate::ui::smart::apply(app, c),
         Cmd::RevealPath(path) => {
             let select = path.file_name().map(|n| n.to_string_lossy().into_owned());
             if let Some(parent) = path.parent() {

@@ -167,6 +167,20 @@ pub fn config_dir() -> PathBuf {
     }
 }
 
+/// Directory for large machine-local data (the search index): the portable data dir in
+/// portable mode, else the platform's local (non-roaming) data dir.
+pub fn local_data_dir() -> PathBuf {
+    if let Some(dir) =
+        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).and_then(|d| portable_dir(&d))
+    {
+        return dir;
+    }
+    match directories::ProjectDirs::from("", "", "soyuz") {
+        Some(d) => d.data_local_dir().to_path_buf(),
+        None => config_dir(),
+    }
+}
+
 /// Build the effective key map: preset + `[keys.bindings]` overrides. Returns warnings
 /// for invalid override entries.
 pub fn keymap(config: &Config) -> (Keymap, Vec<String>) {

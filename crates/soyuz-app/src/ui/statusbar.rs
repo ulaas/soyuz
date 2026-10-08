@@ -104,6 +104,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                         cmds.push(Cmd::Action(Action::ToggleActivityPanel));
                     }
                     crate::ui::tools::shelf_toggle(ui, cmds);
+                    crate::ui::smart::status_chip(ui, cmds);
                     let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
                         ViewMode::Gallery => 2,
                         _ => 0,

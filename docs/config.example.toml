@@ -84,7 +84,7 @@ hide = []                        # action names to hide
 order = []                       # optional explicit order; unknown names ignored
 
 [sidebar]
-sections = ["favorites", "devices", "cloud", "tags", "network", "trash", "tree"]
+sections = ["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"]
 mode = "both"                    # places | tree (folder tree only) | both (tree = the "tree" section)
 tree_follow = true               # expand the tree to the active pane's folder
 tree_drag_expand_ms = 700        # drag-hover over a collapsed folder expands it (0 = never)
@@ -145,6 +145,24 @@ edit_level = 6                   # deflate level (0 = store, 1-9) for files adde
 threads = 0                      # 0 = auto
 respect_gitignore = false
 content_max_mib = 8
+
+[search.index]                   # background index (SQLite + FTS5): instant search + smart folders
+enabled = false
+roots = ["~"]                    # folders to index
+exclude = ["node_modules", ".git", ".hg", ".svn", "target", "__pycache__", ".cache", "$RECYCLE.BIN",
+           "System Volume Information", "AppData/Local/Temp", "AppData/Local/Packages",
+           "AppData/Local/Microsoft/Windows/INetCache", "AppData/Local/**/Cache", "AppData/Local/**/Code Cache",
+           "AppData/Local/**/GPUCache", "AppData/Local/CrashDumps", "AppData/Roaming/**/Cache", "Library/Caches"]
+                                 # a name (node_modules, *.tmp) or a path ending (AppData/Local/Temp)
+content = false                  # index the words of small text files (content: queries)
+content_max_kib = 1024
+content_extensions = ["txt", "md", "markdown", "rst", "org", "log", "csv", "json", "toml", "yaml", "yml", "ini",
+                      "cfg", "xml", "html", "css", "js", "ts", "tsx", "jsx", "rs", "py", "go", "java", "kt", "c",
+                      "h", "cpp", "hpp", "cs", "rb", "php", "swift", "sh", "ps1", "bat", "sql", "lua", "tex"]
+usn_journal = true               # NTFS: catch up via the change journal (needs administrator rights)
+throttle_ms = 2                  # pause after every 1000 crawled entries
+smart_refresh_secs = 2           # smart folders refresh at most this often while the index changes
+use_for_search = true            # searches inside indexed folders use the index
 
 [[search.saved]]                 # SavedSearch entries; `query` uses soyuz_search::SearchQuery fields
 name = "Large videos"

@@ -311,6 +311,8 @@ pub enum SidebarSection {
     Network,
     Trash,
     Tree,
+    /// Smart folders (saved live searches, F5). Shown last when not listed.
+    Smart,
 }
 
 /// What the sidebar shows: the places sections, the folder tree, or both.
@@ -530,6 +532,35 @@ pub struct Search {
     pub respect_gitignore: bool,
     pub content_max_mib: u64,
     pub saved: Vec<SavedSearchEntry>,
+    /// Background index (F5): `[search.index]`.
+    pub index: SearchIndex,
+}
+
+/// `[search.index]`: the optional background file index (SQLite + FTS5) that makes
+/// searches over the indexed roots instant and powers smart folders.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SearchIndex {
+    pub enabled: bool,
+    /// Folders to index; `~` is the home folder.
+    pub roots: Vec<String>,
+    /// Names (`node_modules`, `*.tmp`) or path endings (`AppData/Local/Temp`) to skip.
+    pub exclude: Vec<String>,
+    /// Also index the words of small text files (`content:` queries).
+    pub content: bool,
+    /// Largest file whose contents are indexed (KiB).
+    pub content_max_kib: u64,
+    /// Extensions whose contents are indexed.
+    pub content_extensions: Vec<String>,
+    /// On NTFS, catch up with changes made while Soyuz was closed by reading the change
+    /// journal (needs administrator rights; otherwise the roots are re-crawled).
+    pub usn_journal: bool,
+    /// Pause after every 1000 crawled entries (ms); higher is gentler on the disk.
+    pub throttle_ms: u64,
+    /// Smart folders refresh at most this often while the index changes (seconds).
+    pub smart_refresh_secs: u64,
+    /// Searches use the index when it covers the folder (off = always walk the disk).
+    pub use_for_search: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

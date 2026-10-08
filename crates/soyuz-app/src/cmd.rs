@@ -110,4 +110,6 @@ pub enum Cmd {
     Workspace(crate::ui::workspaces::WsCmd),
     /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
     Ai(crate::ai::AiCmd),
+    /// Smart folders and the background index (F5): `ui::smart`.
+    Smart(crate::ui::smart::SmartCmd),
 }

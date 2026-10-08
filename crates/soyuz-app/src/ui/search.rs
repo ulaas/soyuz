@@ -126,6 +126,24 @@ pub fn run(app: &mut SoyuzApp) {
     }
     let form = app.ui.search.form.clone();
     let max = app.config.search.content_max_mib.max(1) * 1024 * 1024;
+    if crate::services::index::uses_query_language(&form) || form.everywhere {
+        run_indexed(app, &form, max);
+        return;
+    }
+    if form.content
+        && let Ok(plan) = crate::services::index::plan_from_form(&form)
+        && crate::services::index::can_serve(&plan)
+    {
+        // Content search answered by the content index (FTS5).
+        match form.build(SystemTime::now(), max) {
+            Ok(query) => {
+                app.ui.search.error = None;
+                register_and_show(app, SearchSpec { query, title: form.title(), plan: Some(plan), smart: None });
+            }
+            Err(e) => app.ui.search.error = Some(e),
+        }
+        return;
+    }
     match form.build(SystemTime::now(), max) {
         Ok(query) => {
             app.ui.search.error = None;
@@ -135,9 +153,36 @@ pub fn run(app: &mut SoyuzApp) {
     }
 }
 
+/// Query-language search (F5): the index answers it when it covers the scope, else the
+/// disk walk does (narrowed, every hit checked against the whole query).
+fn run_indexed(app: &mut SoyuzApp, form: &SearchForm, content_max: u64) {
+    let ix = crate::services::index::plan_from_form(form).and_then(|plan| {
+        let live = crate::services::index::live_query(&plan, form.respect_gitignore, content_max);
+        match live {
+            Ok(q) => Ok((plan, q)),
+            Err(_) if crate::services::index::can_serve(&plan) => Ok((plan, soyuz_search::SearchQuery::default())),
+            Err(e) => Err(e),
+        }
+    });
+    match ix {
+        Ok((plan, query)) => {
+            app.ui.search.error = None;
+            register_and_show(app, SearchSpec { query, title: form.title(), plan: Some(plan), smart: None });
+        }
+        Err(e) => app.ui.search.error = Some(e),
+    }
+}
+
+fn register_and_show(app: &mut SoyuzApp, spec: SearchSpec) {
+    let id = svc::register(spec);
+    let pane = app.ws.pane().id;
+    ops::navigate(app, pane, Location::Search(id), NavOpts::user());
+    app.ui.focus = Focus::List;
+}
+
 /// Show the results of `query` in the focused pane (also used by smart search).
 pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) {
-    let id = svc::register(SearchSpec { query, title });
+    let id = svc::register(SearchSpec::new(query, title));
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
     app.ui.focus = Focus::List;
@@ -216,6 +261,7 @@ fn expand_home(p: &Path) -> PathBuf {
 /// Per frame: stream search hits / folder sizes into panes, surface errors.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     svc::init(ctx, app.config.search.threads);
+    crate::ui::smart::pump(app, ctx);
     for n in svc::pump(&mut app.ws) {
         app.ui.toasts.push(Toast::error("Search failed").body(n));
     }
@@ -366,18 +412,46 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
 
     // Left: scope chip.
     let scope = soyuz_fs::strip_verbatim(&app.ui.search.form.root);
+    let everywhere = app.ui.search.form.everywhere;
     let scope_name =
         if scope.as_os_str().is_empty() { "…".to_string() } else { soyuz_core::entry::display_name(&scope) };
-    let scope_label = format!("in {scope_name}");
+    let scope_label = if everywhere { "Everywhere".to_string() } else { format!("in {scope_name}") };
     let sw = pill_width(ui, true, &scope_label).min(180.0);
     let scope_r = Rect::from_min_size(pos2(card.left() + 6.0, cy - 13.0), vec2(sw, 26.0));
-    let tip = format!("Search in {}\nClick to use the current folder", scope.display());
-    if pill(ui, scope_r, Id::new("soyuz.search.scope"), Some(ph::FOLDER_SIMPLE), &trunc(&scope_label, 22), false, &tip)
-        .clicked()
-        && let Some(d) = current_dir(app)
-    {
-        app.ui.search.form.root = d;
-    }
+    let tip =
+        if everywhere { "Search every indexed folder".to_string() } else { format!("Search in {}", scope.display()) };
+    let scope_icon = if everywhere { ph::DATABASE } else { ph::FOLDER_SIMPLE };
+    let sresp =
+        pill(ui, scope_r, Id::new("soyuz.search.scope"), Some(scope_icon), &trunc(&scope_label, 22), everywhere, &tip);
+    let here = current_dir(app);
+    let index_on = crate::services::index::is_enabled();
+    let mut rerun = false;
+    Popup::menu(&sresp).align(RectAlign::BOTTOM_START).show(|ui| {
+        ui.set_width(250.0);
+        let form = &mut app.ui.search.form;
+        let label = match &here {
+            Some(d) => format!("This folder ({})", soyuz_core::entry::display_name(d)),
+            None => "This folder".to_string(),
+        };
+        if menu_check(ui, !form.everywhere, &label, None).clicked() {
+            form.everywhere = false;
+            if let Some(d) = &here {
+                form.root = d.clone();
+            }
+            rerun = true;
+            ui.close();
+        }
+        let r = menu_check(ui, form.everywhere, "All indexed folders", None).on_hover_text(if index_on {
+            "Instant results from the background index"
+        } else {
+            "Turn on the background index in Settings → Preview & search for instant results"
+        });
+        if r.clicked() {
+            form.everywhere = true;
+            rerun = true;
+            ui.close();
+        }
+    });
 
     // Pills from the right edge leftwards.
     let f = app.ui.search.form.clone();
@@ -557,7 +631,15 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let glob_w = if content { (field.width() * 0.32).clamp(70.0, 140.0) } else { 0.0 };
     let inner = Rect::from_min_max(pos2(field.left() + 28.0, cy - 10.0), pos2(field.right() - 8.0 - glob_w, cy + 10.0));
     let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
-    let hint = if content { "Search file contents…" } else { "Search names in this folder and below…" };
+    let indexed = crate::services::index::uses_query_language(&app.ui.search.form)
+        && (app.ui.search.form.everywhere || crate::services::index::covers(&app.ui.search.form.root));
+    let hint = if content {
+        "Search file contents…"
+    } else if indexed {
+        "Search the index…  kind:image  size:>5MB  modified:<7d  tag:red  -draft"
+    } else {
+        "Search names in this folder and below…  (kind:image size:>5MB …)"
+    };
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let resp = child.add(
         TextEdit::singleline(&mut app.ui.search.form.text)
@@ -607,7 +689,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         }
     } else if run_clicked || submit {
         run(app);
-    } else if changed && shown_search(app).is_some() && !app.ui.search.form.is_empty() {
+    } else if (changed || rerun) && shown_search(app).is_some() && !app.ui.search.form.is_empty() {
         // Option changes re-run the visible search.
         run(app);
     }
@@ -703,7 +785,11 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
     ui.painter().galley(pos2(x, cy - hg.size().y / 2.0), hg, p.text_primary);
     x += hw + 12.0;
     let secs = prog.elapsed.as_secs_f32();
-    let mut detail = format!("scanned {} in {:.1} s", crate::ui::preview::render::group_digits(prog.scanned), secs);
+    let mut detail = if prog.indexed {
+        format!("from the index in {} ms", prog.elapsed.as_millis().max(1))
+    } else {
+        format!("scanned {} in {:.1} s", crate::ui::preview::render::group_digits(prog.scanned), secs)
+    };
     if prog.truncated && !prog.cancelled {
         detail.push_str(" · result limit reached");
     }
@@ -746,7 +832,45 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             svc::set_ranked(id, !prog.ranked);
         }
     }
-    if !app.ui.search.open {
+    let spec = svc::spec(id);
+    let smart = spec.as_ref().and_then(|s| s.smart.clone());
+    if let Some(name) = &smart {
+        let w = pill_width(ui, true, "Edit");
+        let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
+        rx = r.left() - 6.0;
+        if pill(
+            ui,
+            r,
+            Id::new("soyuz.search.smart.edit"),
+            Some(ph::PENCIL_SIMPLE),
+            "Edit",
+            false,
+            "Edit this smart folder",
+        )
+        .clicked()
+            && let Some(i) = crate::ui::smart::folders().iter().position(|f| &f.name == name)
+        {
+            app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(Some(i))));
+        }
+    } else if spec.as_ref().is_some_and(|s| s.plan.is_some()) {
+        let w = pill_width(ui, true, "Smart folder");
+        let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
+        rx = r.left() - 6.0;
+        if pill(
+            ui,
+            r,
+            Id::new("soyuz.search.smart.new"),
+            Some(ph::FOLDER_SIMPLE_DOTTED),
+            "Smart folder",
+            false,
+            "Save as a smart folder in the sidebar (stays up to date)",
+        )
+        .clicked()
+        {
+            app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::FromSearch));
+        }
+    }
+    if !app.ui.search.open && smart.is_none() {
         let w = pill_width(ui, true, "Refine");
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;

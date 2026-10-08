@@ -30,9 +30,21 @@ use crate::state::workspace::Workspace;
 /// A registered search: the query plus how to present / rank it.
 #[derive(Clone, Debug)]
 pub struct SearchSpec {
+    /// The disk walk (when the index can't answer `plan`).
     pub query: SearchQuery,
     /// Short title for headers ("“*.rs” in src").
     pub title: String,
+    /// Query-language search (F5): answered by the index when it covers the scope, else
+    /// `query` is walked and every hit is checked against `plan.expr`.
+    pub plan: Option<crate::services::index::IndexPlan>,
+    /// Shown as this smart folder (refreshes live as the index changes).
+    pub smart: Option<String>,
+}
+
+impl SearchSpec {
+    pub fn new(query: SearchQuery, title: impl Into<String>) -> Self {
+        SearchSpec { query, title: title.into(), plan: None, smart: None }
+    }
 }
 
 /// Live progress of a search.
@@ -49,6 +61,8 @@ pub struct Progress {
     pub cancelled: bool,
     /// Fuzzy results are currently ordered by relevance.
     pub ranked: bool,
+    /// Answered by the background index (F5).
+    pub indexed: bool,
 }
 
 struct Active {
@@ -66,6 +80,11 @@ struct Active {
     /// Fuzzy score per hit, computed once when the hit arrives, so re-ranking a large
     /// result set is a plain sort instead of re-scoring every name each time.
     scores: HashMap<PathBuf, u32>,
+    /// Query-language check for walked hits (the walk itself is only narrowed).
+    filter: Option<soyuz_index::Matcher>,
+    /// Soft refresh (smart folders): collect everything, then swap it in at once.
+    soft: bool,
+    buffer: Vec<EntryInfo>,
 }
 
 struct SizeJob {
@@ -168,9 +187,8 @@ pub fn attach(pane: &mut Pane, id: SearchId) {
         r.active.remove(&id);
         r.finished.remove(&id);
         let wake = r.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
-        match soyuz_search::start(spec.query.clone(), r.threads, wake) {
-            Ok(handle) => {
-                let root = spec.query.roots.first().cloned().unwrap_or_default();
+        match start_handle(&spec, r.threads, wake) {
+            Ok((handle, root, filter, indexed)) => {
                 r.active.insert(
                     id,
                     Active {
@@ -179,12 +197,15 @@ pub fn attach(pane: &mut Pane, id: SearchId) {
                         handle,
                         root,
                         started: Instant::now(),
-                        progress: Progress { ranked: fuzzy.is_some(), ..Default::default() },
+                        progress: Progress { ranked: fuzzy.is_some(), indexed, ..Default::default() },
                         fuzzy,
                         ranked_sort: None,
                         rank_dirty: false,
                         last_rank: Instant::now(),
                         scores: HashMap::new(),
+                        filter,
+                        soft: false,
+                        buffer: Vec::new(),
                     },
                 );
             }
@@ -193,12 +214,75 @@ pub fn attach(pane: &mut Pane, id: SearchId) {
                     soyuz_core::FsErrorKind::InvalidName,
                     "search",
                     None,
-                    format!("Invalid pattern: {e}"),
+                    e.clone(),
                 ));
-                r.notices.push(e.to_string());
+                r.notices.push(e);
             }
         }
     });
+}
+
+/// Start the index query or the disk walk behind a spec: `(handle, name root, hit
+/// filter, answered by the index)`.
+fn start_handle(
+    spec: &SearchSpec,
+    threads: usize,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) -> Result<(SearchHandle, PathBuf, Option<soyuz_index::Matcher>, bool), String> {
+    if let Some(plan) = &spec.plan {
+        if let Some(h) = crate::services::index::search(plan, wake.clone()) {
+            return Ok((h, plan.name_root(), None, true));
+        }
+        let filter = soyuz_index::Matcher::new(&plan.expr, SystemTime::now())?;
+        let handle =
+            soyuz_search::start(spec.query.clone(), threads, wake).map_err(|e| format!("Invalid pattern: {e}"))?;
+        let root = match spec.query.roots.as_slice() {
+            [one] => one.clone(),
+            _ => plan.name_root(),
+        };
+        return Ok((handle, root, Some(filter), false));
+    }
+    let handle = soyuz_search::start(spec.query.clone(), threads, wake).map_err(|e| format!("Invalid pattern: {e}"))?;
+    Ok((handle, spec.query.roots.first().cloned().unwrap_or_default(), None, false))
+}
+
+/// Re-run an index-backed search in place (smart folders): the old results stay until
+/// the new ones arrive, then they are swapped in at once, keeping the selection.
+pub fn refresh_soft(pane: &mut Pane, id: SearchId) {
+    let Some(spec) = spec(id) else { return };
+    let Some(plan) = spec.plan.as_ref() else { return };
+    REG.with_borrow_mut(|r| {
+        if r.active.contains_key(&id) {
+            return;
+        }
+        let wake = r.wake.clone().unwrap_or_else(|| Arc::new(|| {}));
+        let Some(handle) = crate::services::index::search(plan, wake) else { return };
+        pane.refreshing = true;
+        r.active.insert(
+            id,
+            Active {
+                pane: pane.id,
+                generation: pane.generation,
+                handle,
+                root: plan.name_root(),
+                started: Instant::now(),
+                progress: Progress { indexed: true, ..Default::default() },
+                fuzzy: None,
+                ranked_sort: None,
+                rank_dirty: false,
+                last_rank: Instant::now(),
+                scores: HashMap::new(),
+                filter: None,
+                soft: true,
+                buffer: Vec::new(),
+            },
+        );
+    });
+}
+
+/// Whether `p` carries the color tag `slug` (query-language `tag:` on walked hits).
+fn has_tag(p: &Path, slug: &str) -> bool {
+    crate::services::tags::from_name(slug).is_some_and(|t| crate::services::tags::tags_of(p) & (1 << t) != 0)
 }
 
 /// Cancel a running search (results so far stay).
@@ -296,6 +380,11 @@ pub fn pump(ws: &mut Workspace) -> Vec<String> {
                 match ev {
                     SearchEvent::Hits(hits) => {
                         for (mut e, _matches) in hits {
+                            if let Some(f) = &a.filter
+                                && !f.matches(&e, &has_tag)
+                            {
+                                continue;
+                            }
                             e.name = relative_name(&a.root, &e.path);
                             if let Some(scorer) = a.fuzzy.as_mut() {
                                 a.scores.insert(e.path.clone(), fuzzy_score(scorer, &e));
@@ -328,7 +417,12 @@ pub fn pump(ws: &mut Workspace) -> Vec<String> {
                 a.progress.truncated = stats.truncated;
                 a.progress.elapsed = stats.elapsed;
             }
-            if !chunk.is_empty() || finished_now {
+            if a.soft {
+                a.buffer.append(&mut chunk);
+                if finished_now {
+                    pane.on_listing(std::mem::take(&mut a.buffer), true, None);
+                }
+            } else if !chunk.is_empty() || finished_now {
                 pane.on_listing(chunk, finished_now, None);
             }
             // Fuzzy relevance ordering (throttled while streaming).
@@ -606,6 +700,8 @@ pub struct SearchForm {
     pub include_hidden: bool,
     pub respect_gitignore: bool,
     pub root: PathBuf,
+    /// Search every indexed folder instead of `root` (F5).
+    pub everywhere: bool,
 }
 
 /// Parse `10`, `512k`, `1.5 MB`, `2GiB` (binary multiples) into bytes.
@@ -711,6 +807,9 @@ impl SearchForm {
     pub fn title(&self) -> String {
         let what =
             if self.text.trim().is_empty() { "Everything".to_string() } else { format!("“{}”", self.text.trim()) };
+        if self.everywhere {
+            return format!("{what} in indexed folders");
+        }
         let r = soyuz_fs::strip_verbatim(&self.root);
         let folder = soyuz_core::entry::display_name(&r);
         format!("{what} in {folder}")
@@ -818,7 +917,7 @@ mod tests {
 
     #[test]
     fn registered_specs_are_bounded() {
-        let mk = || SearchSpec { query: SearchQuery::default(), title: String::new() };
+        let mk = || SearchSpec::new(SearchQuery::default(), String::new());
         let first = register(mk());
         let ids: Vec<SearchId> = (0..MAX_SPECS).map(|_| register(mk())).collect();
         assert!(spec(first).is_none(), "the oldest spec is evicted");
@@ -845,7 +944,7 @@ mod tests {
         let ctx = egui::Context::default();
         init(&ctx, 2);
         let f = SearchForm { text: "needle".into(), root: dir.path().to_path_buf(), ..Default::default() };
-        let id = register(SearchSpec { query: f.build(SystemTime::now(), 1 << 20).unwrap(), title: f.title() });
+        let id = register(SearchSpec::new(f.build(SystemTime::now(), 1 << 20).unwrap(), f.title()));
         let pane = Pane::new(soyuz_core::Location::Search(id), crate::state::view_memory::ViewState::default());
         let mut ws = Workspace::new(crate::state::workspace::Tab::new(pane));
         {

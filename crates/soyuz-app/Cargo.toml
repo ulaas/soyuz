@@ -36,6 +36,7 @@ soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
 soyuz-archive.workspace = true
 soyuz-search.workspace = true
+soyuz-index.workspace = true
 soyuz-term.workspace = true
 soyuz-ai.workspace = true
 soyuz-mcp.workspace = true
