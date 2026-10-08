@@ -14,12 +14,10 @@
 //!   registry association chain (no shell API), `.lnk` parsing, and hand-written trash
 //!   (freedesktop spec, `~/.Trash` + index, `$Recycle.Bin` `$I`/`$R` pairs).
 //!
-//! `unsafe` is confined to `sys/*`. The M0 portable implementation stays available as
-//! [`baseline`] for reference; the public API no longer uses it.
+//! `unsafe` is confined to `sys/*`.
 #![deny(unsafe_code)]
 
 pub mod attrs;
-pub mod baseline;
 pub mod copy;
 pub mod create;
 pub mod delete;
@@ -44,8 +42,8 @@ mod sys;
 
 pub use attrs::{AttrSet, set_attributes};
 pub use copy::{
-    CopyMethod, CopyOptions, CopyOutcome, Preserve, Reflink, SkipReason, copy_dir_metadata, copy_file, copy_symlink,
-    device_of, same_file,
+    CopyMethod, CopyOptions, CopyOutcome, FileIdentity, Preserve, Reflink, SkipReason, copy_dir_metadata, copy_file,
+    copy_symlink, device_of, file_identity, same_file,
 };
 pub use create::{create_dir, create_dir_all, create_file, write_atomic};
 pub use delete::{DeleteOptions, DeleteStats, delete_empty_dir, delete_file, delete_link, remove_tree, secure_wipe};
@@ -56,7 +54,7 @@ pub use list::{
     ListOptions, ListStats, WalkItem, WalkOptions, WalkStats, exists_nofollow, read_dir, read_dir_streaming, stat, walk,
 };
 pub use meta::{MetaSnapshot, meta_snapshot};
-pub use mv::{MoveFast, MoveOptions, RenameMode, rename, rename_case_only, try_rename_or_crossdev};
+pub use mv::{MoveFast, MoveOptions, RenameMode, is_case_variant, rename, rename_case_only, try_rename_or_crossdev};
 pub use path::{expand_env, home, is_root, normalize, path_overlaps, strip_verbatim, to_wide_long};
 pub use perms::{AccessRights, AceLite, SecurityInfo, chown, effective_access, security_info, set_mode};
 pub use times::{TimesSet, set_times};

@@ -19,12 +19,26 @@ pub(crate) struct IFile {
     pub size: u64,
     /// FILETIME ticks (UTC).
     pub deleted: u64,
-    pub path: String,
+    /// Raw UTF-16 path without the NUL (NTFS names need not be valid UTF-16).
+    pub path: Vec<u16>,
+}
+
+impl IFile {
+    #[cfg(windows)]
+    pub(crate) fn path_buf(&self) -> std::path::PathBuf {
+        use std::os::windows::ffi::OsStringExt;
+        std::path::PathBuf::from(std::ffi::OsString::from_wide(&self.path))
+    }
+
+    #[cfg(test)]
+    fn path_lossy(&self) -> String {
+        String::from_utf16_lossy(&self.path)
+    }
 }
 
 /// Encode a version-2 `$I` record.
-pub(crate) fn format_i(size: u64, deleted_ticks: u64, path: &str) -> Vec<u8> {
-    let wide: Vec<u16> = path.encode_utf16().chain(std::iter::once(0)).collect();
+pub(crate) fn format_i(size: u64, deleted_ticks: u64, path: &[u16]) -> Vec<u8> {
+    let wide: Vec<u16> = path.iter().copied().chain(std::iter::once(0)).collect();
     let mut v = Vec::with_capacity(28 + wide.len() * 2);
     v.extend_from_slice(&2u64.to_le_bytes());
     v.extend_from_slice(&size.to_le_bytes());
@@ -56,7 +70,7 @@ pub(crate) fn parse_i(b: &[u8]) -> Option<IFile> {
     let raw = b.get(start..start + units * 2)?;
     let wide: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).collect();
     let end = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
-    let path = String::from_utf16(&wide[..end]).ok()?;
+    let path = wide[..end].to_vec();
     if path.is_empty() {
         return None;
     }
@@ -198,7 +212,11 @@ mod imp {
         let name = abs.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         let ext = if e.kind == EntryKind::Dir { String::new() } else { kept_ext(&name) };
         let now = SystemTime::now();
-        let record = format_i(size, system_to_ticks(now), &abs.to_string_lossy());
+        let wide_path: Vec<u16> = {
+            use std::os::windows::ffi::OsStrExt;
+            abs.as_os_str().encode_wide().collect()
+        };
+        let record = format_i(size, system_to_ticks(now), &wide_path);
         for _ in 0..64 {
             let id6 = random_id();
             let r_name = format!("$R{id6}{ext}");
@@ -247,7 +265,7 @@ mod imp {
             let Ok(payload) = crate::list::stat(&bin.join(&r_name), false) else { continue };
             out.push(TrashItem {
                 id: r_name,
-                original: PathBuf::from(rec.path),
+                original: rec.path_buf(),
                 deleted_at: ticks_to_system(rec.deleted).unwrap_or(SystemTime::UNIX_EPOCH),
                 size: rec.size,
                 kind: payload.kind,
@@ -349,12 +367,16 @@ mod imp {
 mod tests {
     use super::*;
 
+    fn w(s: &str) -> Vec<u16> {
+        s.encode_utf16().collect()
+    }
+
     /// Byte layout of a v2 `$I` record as documented by libyal (dtformats, "Windows
     /// Recycle.Bin file formats") for a 0x1234-byte file `C:\a.txt` deleted at FILETIME
     /// 0x01D9_0000_0000_0000.
     #[test]
     fn i_record_v2_layout() {
-        let b = format_i(0x1234, 0x01D9_0000_0000_0000, r"C:\a.txt");
+        let b = format_i(0x1234, 0x01D9_0000_0000_0000, &w(r"C:\a.txt"));
         let mut expected = vec![2, 0, 0, 0, 0, 0, 0, 0, 0x34, 0x12, 0, 0, 0, 0, 0, 0];
         expected.extend_from_slice(&0x01D9_0000_0000_0000u64.to_le_bytes());
         expected.extend_from_slice(&9u32.to_le_bytes()); // 8 chars + NUL
@@ -363,7 +385,7 @@ mod tests {
         }
         assert_eq!(b, expected);
         let p = parse_i(&b).unwrap();
-        assert_eq!(p, IFile { version: 2, size: 0x1234, deleted: 0x01D9_0000_0000_0000, path: r"C:\a.txt".into() });
+        assert_eq!(p, IFile { version: 2, size: 0x1234, deleted: 0x01D9_0000_0000_0000, path: w(r"C:\a.txt") });
     }
 
     #[test]
@@ -379,13 +401,16 @@ mod tests {
         }
         assert_eq!(v1.len(), 544);
         let p = parse_i(&v1).unwrap();
-        assert_eq!((p.version, p.size, p.path.as_str()), (1, 42, r"D:\old\file.doc"));
+        assert_eq!((p.version, p.size, p.path_lossy().as_str()), (1, 42, r"D:\old\file.doc"));
         assert!(parse_i(&[0; 10]).is_none());
-        assert!(parse_i(&format_i(1, 1, "")).is_none());
-        let mut bad = format_i(1, 1, "x");
+        assert!(parse_i(&format_i(1, 1, &[])).is_none());
+        let mut bad = format_i(1, 1, &w("x"));
         bad[24] = 0xFF;
         bad[25] = 0xFF;
         assert!(parse_i(&bad).is_none());
+        // Unpaired surrogates survive the round trip unchanged.
+        let odd = vec![u16::from(b'C'), u16::from(b':'), u16::from(b'\\'), 0xD800, u16::from(b'x')];
+        assert_eq!(parse_i(&format_i(1, 1, &odd)).unwrap().path, odd);
     }
 
     #[test]
@@ -413,7 +438,7 @@ mod tests {
         let i_name = format!("$I{}", &item.id[2..]);
         let rec = parse_i(&std::fs::read(bin.join(&i_name)).unwrap()).unwrap();
         assert_eq!(rec.size, 7);
-        assert_eq!(std::path::PathBuf::from(&rec.path), f);
+        assert_eq!(rec.path_buf(), f);
 
         let dir = d.path().join("folder");
         std::fs::create_dir(&dir).unwrap();
@@ -429,5 +454,26 @@ mod tests {
         assert!(!bin.join(&i_name).exists());
         purge(&ditem).unwrap();
         assert!(list_bin(&bin).is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn non_utf16_name_round_trips() {
+        use std::os::windows::ffi::OsStringExt;
+        let d = tempfile::tempdir().unwrap();
+        let bin = d.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let name = std::ffi::OsString::from_wide(&[u16::from(b'a'), 0xD800, u16::from(b'b')]);
+        let f = d.path().join(&name);
+        if std::fs::write(&f, b"x").is_err() {
+            return; // the volume rejects unpaired surrogates
+        }
+        let item = trash_into(&f, &bin).unwrap();
+        let listed = list_bin(&bin);
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].original, f, "the exact name is recorded, not a lossy copy");
+        let back = restore(&item, None).unwrap();
+        assert_eq!(back, f);
+        assert!(f.exists());
     }
 }

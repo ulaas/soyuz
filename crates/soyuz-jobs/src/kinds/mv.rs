@@ -157,7 +157,7 @@ fn cross_device_move(
     let planned_transfer = plan.map(|p| p.transfer).unwrap_or(false);
     if !planned_transfer {
         // Planned as a rename: the tree was counted as one item.
-        let (bytes, items) = planner::tree_totals(ctx, &src.path, ctx.opts.copy.follow_symlinks)?;
+        let (bytes, items) = planner::tree_totals(ctx, &src.path, false)?;
         ctx.grow_totals(bytes, items.saturating_sub(1));
         ctx.check_space(bytes, dst.parent().unwrap_or(&dst))?;
     }

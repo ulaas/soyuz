@@ -27,6 +27,10 @@ const AUTO_RETRIES: u32 = 3;
 pub(crate) struct Outcome {
     pub summary: JobSummary,
     pub records: Vec<UndoRecord>,
+    /// Undo jobs: the records that were actually reversed.
+    pub undone: Vec<UndoRecord>,
+    /// Identities of what the records produced (filled by the worker after the job).
+    pub stamps: Vec<crate::history::UndoStamp>,
 }
 
 pub(crate) struct JobCtx {
@@ -182,6 +186,11 @@ impl JobCtx {
         if self.opts.journal {
             self.out.lock().records.push(r);
         }
+    }
+
+    /// Undo jobs: `r` was reversed (the engine drops it from a partially undone entry).
+    pub fn mark_undone(&self, r: UndoRecord) {
+        self.out.lock().undone.push(r);
     }
 
     pub fn note(&self, s: impl Into<String>) {

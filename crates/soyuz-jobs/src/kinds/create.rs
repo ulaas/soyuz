@@ -17,6 +17,22 @@ fn kind_of(k: &CreateKind) -> EntryKind {
     }
 }
 
+/// File vs directory symlink: an existing target's type wins over the requested kind (a
+/// file link to a folder is broken on Windows); `kind` decides for missing targets. Done
+/// here on the worker so callers need not stat the target on the UI thread.
+fn link_kind(link: &Path, target: &Path, kind: soyuz_fs::LinkKind) -> soyuz_fs::LinkKind {
+    let resolved = if target.is_absolute() {
+        target.to_path_buf()
+    } else {
+        link.parent().map(|d| d.join(target)).unwrap_or_else(|| target.to_path_buf())
+    };
+    match soyuz_fs::stat(&resolved, true) {
+        Ok(e) if e.kind == EntryKind::Dir => soyuz_fs::LinkKind::Dir,
+        Ok(_) => soyuz_fs::LinkKind::File,
+        Err(_) => kind,
+    }
+}
+
 pub(crate) fn run_create(ctx: &JobCtx, path: &Path, kind: &CreateKind) -> FsResult<()> {
     ctx.set_totals(0, 1);
     ctx.set_running();
@@ -66,7 +82,7 @@ pub(crate) fn run_create(ctx: &JobCtx, path: &Path, kind: &CreateKind) -> FsResu
             }
             soyuz_fs::create_file(&p, true)
         }
-        CreateKind::Symlink { target, kind } => soyuz_fs::symlink(target, &p, *kind),
+        CreateKind::Symlink { target, kind } => soyuz_fs::symlink(target, &p, link_kind(&p, target, *kind)),
         CreateKind::Hardlink { src } => soyuz_fs::hardlink(src, &p),
         CreateKind::Junction { target } => soyuz_fs::junction(target, &p),
     })?;

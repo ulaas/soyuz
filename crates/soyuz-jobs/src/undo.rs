@@ -6,6 +6,13 @@
 //! (batched through the cycle-aware rename scheduler, cross-device moves fall back to
 //! copy + delete); `MetaChanged` restores the snapshot; `Irreversible` makes the entry
 //! not undoable (the engine refuses to undo it).
+//!
+//! Safety (review 1): a path is only removed when its identity still matches the
+//! [`UndoStamp`] taken when the job finished (same object; same size and modification time
+//! for files), otherwise the record fails with "changed since". A permanent delete (no
+//! trash on that volume) of anything but an empty folder / empty file asks first through
+//! the `TrashUnsupported` prompt. Every record that was actually reversed is reported with
+//! [`JobCtx::mark_undone`] so a partially failed undo can drop exactly those records.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +21,7 @@ use soyuz_core::{ConflictResolution, FsError, FsErrorKind, FsResult};
 use soyuz_fs::{MetaSnapshot, MoveFast, MoveOptions, RenameMode, TrashItem, TrashSupport};
 
 use crate::ctx::JobCtx;
+use crate::history::UndoStamp;
 use crate::kinds::{attrs, copy, delete, rename};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,18 +60,19 @@ pub(crate) fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
     out
 }
 
-/// Execute an undo (records already in undo order).
-pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord]) -> FsResult<()> {
+/// Execute an undo (records already in undo order). `stamps` are the identities taken
+/// when the original job finished (empty for entries written before stamps existed).
+pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord], stamps: &[UndoStamp]) -> FsResult<()> {
     ctx.set_totals(0, records.len() as u64);
     ctx.set_running();
     // Reverse moves/renames as one batch (handles a→b, b→a cycles).
-    let pairs: Vec<(PathBuf, PathBuf)> = records
+    let (pair_recs, pairs): (Vec<&UndoRecord>, Vec<(PathBuf, PathBuf)>) = records
         .iter()
         .filter_map(|r| match r {
-            UndoRecord::Moved { from, to } | UndoRecord::Renamed { from, to } => Some((to.clone(), from.clone())),
+            UndoRecord::Moved { from, to } | UndoRecord::Renamed { from, to } => Some((r, (to.clone(), from.clone()))),
             _ => None,
         })
-        .collect();
+        .unzip();
     if !pairs.is_empty() {
         for (_, back) in &pairs {
             if let Some(parent) = back.parent()
@@ -74,29 +83,57 @@ pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord]) -> FsResult<()> {
             }
         }
         let no_record = |_: &Path, _: &Path| None;
-        rename::run_pairs(ctx, &pairs, &move_prim, &no_record)?;
+        let mut done = Vec::new();
+        let r = rename::run_pairs_tracked(ctx, &pairs, &move_prim, &no_record, &mut done);
+        for (rec, ok) in pair_recs.iter().zip(&done) {
+            if *ok {
+                ctx.mark_undone((*rec).clone());
+            }
+        }
+        r?;
     }
+    let stamp_of = |p: &Path| stamps.iter().rev().find(|s| s.path == p);
     for r in records {
         ctx.checkpoint()?;
-        match r {
-            UndoRecord::Moved { .. } | UndoRecord::Renamed { .. } => {}
-            UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => remove_created(ctx, dst, true)?,
-            UndoRecord::Created(p) => remove_created(ctx, p, false)?,
+        let undone = match r {
+            UndoRecord::Moved { .. } | UndoRecord::Renamed { .. } => false,
+            UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => {
+                remove_created(ctx, dst, true, stamp_of(dst))?
+            }
+            UndoRecord::Created(p) => remove_created(ctx, p, false, stamp_of(p))?,
             UndoRecord::Trashed(item) => {
                 ctx.begin_item(&item.original, 0);
                 match ctx.attempt(&item.original, || soyuz_fs::trash::restore(item, None))? {
-                    Ok(_) => ctx.item_ok(0),
-                    Err(e) => ctx.item_failed(&item.original, e, 0),
+                    Ok(_) => {
+                        ctx.item_ok(0);
+                        true
+                    }
+                    Err(e) => {
+                        ctx.item_failed(&item.original, e, 0);
+                        false
+                    }
                 }
             }
             UndoRecord::MetaChanged { path, before } => {
                 ctx.begin_item(path, 0);
                 match ctx.attempt(path, || attrs::restore_meta(path, before))? {
-                    Ok(()) => ctx.item_ok(0),
-                    Err(e) => ctx.item_failed(path, e, 0),
+                    Ok(()) => {
+                        ctx.item_ok(0);
+                        true
+                    }
+                    Err(e) => {
+                        ctx.item_failed(path, e, 0);
+                        false
+                    }
                 }
             }
-            UndoRecord::Irreversible(p) => ctx.item_skipped(p, 0, "cannot be undone"),
+            UndoRecord::Irreversible(p) => {
+                ctx.item_skipped(p, 0, "cannot be undone");
+                false
+            }
+        };
+        if undone {
+            ctx.mark_undone(r.clone());
         }
     }
     Ok(())
@@ -129,38 +166,93 @@ fn move_prim(ctx: &JobCtx, a: &Path, b: &Path, replace: bool) -> FsResult<()> {
 }
 
 /// Undo of something this job created: trash when supported, else delete permanently
-/// (`allow_tree == false`: a non-empty folder is never deleted permanently).
-fn remove_created(ctx: &JobCtx, p: &Path, allow_tree: bool) -> FsResult<()> {
+/// after asking (`allow_tree == false`: a non-empty folder is never deleted permanently).
+/// Returns `true` when the path is gone afterwards (removed, or already gone).
+fn remove_created(ctx: &JobCtx, p: &Path, allow_tree: bool, stamp: Option<&UndoStamp>) -> FsResult<bool> {
     ctx.begin_item(p, 0);
     if !soyuz_fs::exists_nofollow(p) {
         ctx.item_skipped(p, 0, "already gone");
-        return Ok(());
+        return Ok(true);
     }
-    if ctx.probe().trash_support(p) == TrashSupport::Native {
+    if let Some(s) = stamp
+        && !UndoStamp::take(p).is_some_and(|now| s.matches(&now))
+    {
+        let e = FsError::with_message(
+            FsErrorKind::Io,
+            "undo",
+            Some(p),
+            "it changed after the operation (different item, size or modification time), so undo left it alone",
+        );
+        ctx.item_failed(p, e, 0);
+        return Ok(false);
+    }
+    let support = ctx.probe().trash_support(p);
+    let mut reason = match &support {
+        TrashSupport::Native => None,
+        TrashSupport::Unsupported(r) => Some(r.clone()),
+    };
+    if reason.is_none() {
         match soyuz_fs::trash::trash(p) {
             Ok(_) => {
                 ctx.item_ok(0);
-                return Ok(());
+                return Ok(true);
             }
-            Err(e) if e.kind == FsErrorKind::Unsupported => {}
+            Err(e) if e.kind == FsErrorKind::Unsupported => reason = Some(e.message),
             Err(e) => {
                 ctx.on_error(p, &e)?;
                 ctx.item_failed(p, e, 0);
-                return Ok(());
+                return Ok(false);
             }
         }
     }
-    let r = ctx.attempt(p, || {
-        let e = soyuz_fs::stat(p, false)?;
-        if !allow_tree && e.kind == soyuz_core::EntryKind::Dir {
-            soyuz_fs::delete_empty_dir(p)
-        } else {
-            delete::remove_path_quiet(ctx, p)
+    let entry = match soyuz_fs::stat(p, false) {
+        Ok(e) => e,
+        Err(e) => {
+            ctx.item_failed(p, e, 0);
+            return Ok(false);
         }
+    };
+    let is_dir = entry.kind == soyuz_core::EntryKind::Dir;
+    // Nothing is lost by permanently removing an empty folder or an empty file (and a
+    // `Created` folder is only ever removed when empty).
+    let empty = if !allow_tree && is_dir {
+        true
+    } else if is_dir {
+        soyuz_fs::read_dir(p, &soyuz_fs::ListOptions::default()).is_ok_and(|c| c.is_empty())
+    } else {
+        entry.size == 0 && crate::planner::has_bytes(entry.kind)
+    };
+    if !empty {
+        let why = format!("{} — undo would delete it permanently", reason.unwrap_or_default());
+        if !ctx.trash_unsupported(p, &why)? {
+            ctx.item_skipped(p, 0, "kept: the trash is not available");
+            return Ok(false);
+        }
+    }
+    let r = ctx.attempt(p, || {
+        if !allow_tree && is_dir { soyuz_fs::delete_empty_dir(p) } else { delete::remove_path_quiet(ctx, p) }
     })?;
     match r {
-        Ok(()) => ctx.item_ok(0),
-        Err(e) => ctx.item_failed(p, e, 0),
+        Ok(()) => {
+            ctx.item_ok(0);
+            Ok(true)
+        }
+        Err(e) => {
+            ctx.item_failed(p, e, 0);
+            Ok(false)
+        }
     }
-    Ok(())
+}
+
+/// Identities of what `records` produced (taken on the worker when the job finishes).
+pub(crate) fn stamp_records(records: &[UndoRecord]) -> Vec<UndoStamp> {
+    records
+        .iter()
+        .filter_map(|r| match r {
+            UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => Some(dst),
+            UndoRecord::Created(p) => Some(p),
+            _ => None,
+        })
+        .filter_map(|p| UndoStamp::take(p))
+        .collect()
 }

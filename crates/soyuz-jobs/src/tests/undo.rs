@@ -12,7 +12,8 @@ fn undo_ok(h: &H, idx: usize) {
     let hid = h.engine.history()[idx].id;
     let u = h.engine.undo(hid).expect("undoable");
     assert_eq!(h.snap(u).kind, crate::JobKindBrief::Undo);
-    let s = h.ok(u);
+    // The test volume has no trash: confirm the permanent deletes.
+    let s = settle(h, u, true);
     assert_eq!(s.items_failed, 0, "{s:?}");
     assert!(h.engine.history()[idx].undone);
     assert!(h.engine.undo(hid).is_none(), "already undone");
@@ -145,7 +146,7 @@ fn undo_extracted_record() {
     write(&h.p("out/top/a"), b"1");
     write(&h.p("out/other"), b"keep");
     let u = h.engine.submit_undo_records(vec![UndoRecord::Extracted { dst: h.p("out/top") }]);
-    assert_eq!(h.ok(u).items_ok, 1);
+    assert_eq!(settle(&h, u, true).items_ok, 1);
     assert!(!h.p("out/top").exists());
     assert!(h.p("out/other").exists());
 }
@@ -203,6 +204,7 @@ fn history_persistence_round_trip() {
     let e = JobEngine::new(mk(), Arc::new(FakeProbe::default()), Arc::new(|| {}));
     let h = e.history();
     assert_eq!(h.len(), 2);
+    assert!(h.iter().all(|x| !x.this_session), "entries from a previous session");
     assert_eq!(h[0].records, vec![UndoRecord::Renamed { from: dir.path().join("a"), to: dir.path().join("b") }]);
     assert!(!h[0].undone && h[1].undone);
     assert!(matches!(h[1].job, JobKind::Create { .. }));

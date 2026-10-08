@@ -213,20 +213,38 @@ fn temp_sibling(dst: &Path) -> PathBuf {
 fn replace_with(tmp: &Path, dst: &Path) -> FsResult<()> {
     #[cfg(windows)]
     {
-        // MoveFileExW cannot replace a read-only file.
+        // MoveFileExW cannot replace a read-only file: clear the flag, and put it back
+        // when the rename fails (the old file stays, and must stay read-only).
+        let mut cleared = false;
         if let Ok(e) = stat(dst, false)
             && e.attrs.contains(soyuz_core::Attributes::READONLY)
-        {
-            let _ = crate::attrs::set_attributes(
+            && crate::attrs::set_attributes(
                 dst,
                 &crate::attrs::AttrSet {
                     set: soyuz_core::Attributes::empty(),
                     clear: soyuz_core::Attributes::READONLY,
                 },
+            )
+            .is_ok()
+        {
+            cleared = true;
+        }
+        let r = crate::mv::rename(tmp, dst, crate::mv::RenameMode::Replace);
+        if r.is_err() && cleared {
+            let _ = crate::attrs::set_attributes(
+                dst,
+                &crate::attrs::AttrSet {
+                    set: soyuz_core::Attributes::READONLY,
+                    clear: soyuz_core::Attributes::empty(),
+                },
             );
         }
+        r.map_err(|e| FsError { op: "copy".into(), ..e })
     }
-    crate::mv::rename(tmp, dst, crate::mv::RenameMode::Replace).map_err(|e| FsError { op: "copy".into(), ..e })
+    #[cfg(not(windows))]
+    {
+        crate::mv::rename(tmp, dst, crate::mv::RenameMode::Replace).map_err(|e| FsError { op: "copy".into(), ..e })
+    }
 }
 
 fn remove_partial(path: &Path) {
@@ -324,21 +342,38 @@ pub fn copy_dir_metadata(src: &Path, dst: &Path, preserve: Preserve) -> FsResult
     Ok(())
 }
 
-/// dev+inode / FileIdInfo equality (symlinks followed).
-pub fn same_file(a: &Path, b: &Path) -> FsResult<bool> {
+/// Identity of a filesystem object: device (volume serial on Windows, `st_dev` on unix)
+/// plus file id (128-bit `FILE_ID_INFO` on Windows, inode on unix). Two paths with equal
+/// identities name the same object (hardlinks, case variants, aliases through links).
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+pub struct FileIdentity {
+    pub dev: u64,
+    pub id: u128,
+}
+
+/// [`FileIdentity`] of `path` (`follow == false`: of a link itself, not its target).
+pub fn file_identity(path: &Path, follow: bool) -> FsResult<FileIdentity> {
     #[cfg(windows)]
     {
         use crate::sys::windows::fs::file_id;
-        let ia = file_id(a, true).map_err(err::map("same_file", a))?;
-        let ib = file_id(b, true).map_err(err::map("same_file", b))?;
-        Ok(ia == ib)
+        let (dev, id) = file_id(path, follow).map_err(err::map("file_identity", path))?;
+        Ok(FileIdentity { dev, id: u128::from_le_bytes(id) })
     }
     #[cfg(not(windows))]
     {
-        let ea = stat(a, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
-        let eb = stat(b, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
-        Ok(ea.dev == eb.dev && ea.inode == eb.inode)
+        let e = stat(path, follow).map_err(|e| FsError { op: "file_identity".into(), ..e })?;
+        match (e.dev, e.inode) {
+            (Some(d), Some(i)) => Ok(FileIdentity { dev: d.0, id: u128::from(i) }),
+            _ => Err(FsError::unsupported("file_identity", Some(path))),
+        }
     }
+}
+
+/// dev+inode / FileIdInfo equality (symlinks followed).
+pub fn same_file(a: &Path, b: &Path) -> FsResult<bool> {
+    let ia = file_identity(a, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
+    let ib = file_identity(b, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
+    Ok(ia == ib)
 }
 
 /// Device (volume) of `path`: `st_dev` on unix, the volume serial number on Windows (the
@@ -892,5 +927,42 @@ mod imp {
 
     pub(super) fn dir_metadata(_src: &Path, _dst: &Path, _s: &EntryInfo, _p: Preserve) -> FsResult<()> {
         Ok(())
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failed_replace_keeps_read_only_flag() {
+        let d = tempfile::tempdir().unwrap();
+        let dst = d.path().join("ro.txt");
+        std::fs::write(&dst, b"old").unwrap();
+        let mut perm = std::fs::metadata(&dst).unwrap().permissions();
+        perm.set_readonly(true);
+        std::fs::set_permissions(&dst, perm).unwrap();
+        // The temp copy is missing: the rename fails after the flag was cleared.
+        assert!(replace_with(&d.path().join("missing.part"), &dst).is_err());
+        assert!(std::fs::metadata(&dst).unwrap().permissions().readonly(), "READONLY restored");
+        assert_eq!(std::fs::read(&dst).unwrap(), b"old");
+        let mut perm = std::fs::metadata(&dst).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perm.set_readonly(false);
+        std::fs::set_permissions(&dst, perm).unwrap();
+    }
+
+    #[test]
+    fn identity_of_hardlinks_and_case_variants() {
+        let d = tempfile::tempdir().unwrap();
+        let a = d.path().join("a.txt");
+        std::fs::write(&a, b"x").unwrap();
+        let b = d.path().join("b.txt");
+        std::fs::hard_link(&a, &b).unwrap();
+        assert_eq!(file_identity(&a, false).unwrap(), file_identity(&b, false).unwrap());
+        assert_eq!(file_identity(&a, false).unwrap(), file_identity(&d.path().join("A.TXT"), false).unwrap());
+        let c = d.path().join("c.txt");
+        std::fs::write(&c, b"x").unwrap();
+        assert_ne!(file_identity(&a, false).unwrap(), file_identity(&c, false).unwrap());
     }
 }

@@ -1,9 +1,13 @@
 //! Duplicate finder: size → 4 KiB head blake3 → full blake3.
 //!
-//! 1. One parallel walk over all roots collects regular files ≥ `max(min_size, 1)`
-//!    (symlinks not followed, the same path reached through overlapping roots counted
-//!    once, unix hardlinks of one inode counted once — they are not duplicates).
-//! 2. Files are grouped by size; singletons are dropped.
+//! 0. Roots are canonicalized: a root equal to or nested in another root (also through
+//!    junctions, symlinks, `subst` drives or different spellings) is dropped.
+//! 1. One parallel walk over the remaining roots collects regular files ≥
+//!    `max(min_size, 1)` (symlinks not followed, each path once).
+//! 2. Files are grouped by size; inside each group files are deduplicated by file
+//!    identity (`(dev, inode)` / volume + NTFS file id, on every OS), so one file reached
+//!    through two names (hardlinks, aliased paths) is never its own duplicate — trashing
+//!    "the copy" would otherwise delete the only one. Singletons are dropped.
 //! 3. Size groups are processed in parallel (largest size first): blake3 of the first
 //!    4 KiB splits each group, then (for files > 4 KiB) a full blake3 confirms it. Every
 //!    confirmed group is streamed as a [`DupeEvent::Group`] as soon as it is known.
@@ -22,7 +26,7 @@ use parking_lot::Mutex;
 use rayon::prelude::*;
 use soyuz_core::{EntryInfo, EntryKind, FsResult, OpControl};
 
-use crate::walker::{hardlink_id, raw_builder, send_cancellable};
+use crate::walker::{raw_builder, send_cancellable};
 
 /// Bytes hashed in the partial (head) pass.
 pub const HEAD_BYTES: usize = 4 * 1024;
@@ -77,9 +81,6 @@ pub fn find_duplicates(
     (rx, ctl)
 }
 
-/// `(dev, ino)` of a hardlinked file.
-type FileId = (u64, u64);
-
 struct Cand {
     path: PathBuf,
     size: u64,
@@ -99,6 +100,7 @@ struct Job {
 
 impl Job {
     fn run(&self, roots: Vec<PathBuf>, min_size: u64) {
+        let roots = effective_roots(roots);
         let cands = self.collect(&roots, min_size);
         if self.ctl.is_cancelled() {
             return;
@@ -138,7 +140,7 @@ impl Job {
 
     fn collect(&self, roots: &[PathBuf], min_size: u64) -> Vec<Cand> {
         let Some(builder) = raw_builder(roots, 0) else { return Vec::new() };
-        let found: Mutex<Vec<(Cand, Option<FileId>)>> = Mutex::default();
+        let found: Mutex<Vec<Cand>> = Mutex::default();
         builder.build_parallel().run(|| {
             let found = &found;
             let ctl = &self.ctl;
@@ -154,25 +156,28 @@ impl Job {
                     && md.is_file()
                     && md.len() >= min_size
                 {
-                    found.lock().push((Cand { path: dent.into_path(), size: md.len() }, hardlink_id(&md)));
+                    found.lock().push(Cand { path: dent.into_path(), size: md.len() });
                 }
                 WalkState::Continue
             })
         });
         let mut paths = HashSet::new();
-        let mut inodes = HashSet::new();
-        found
-            .into_inner()
-            .into_iter()
-            .filter(|(c, id)| paths.insert(c.path.clone()) && id.is_none_or(|id| inodes.insert(id)))
-            .map(|(c, _)| c)
-            .collect()
+        found.into_inner().into_iter().filter(|c| paths.insert(c.path.clone())).collect()
     }
 
     fn process_size_group(&self, size: u64, files: &[Cand]) {
+        let unique = dedup_by_identity(files);
+        let dropped = (files.len() - unique.len()) as u64;
+        if dropped > 0 {
+            self.total.fetch_sub(dropped, Ordering::Relaxed);
+        }
+        if unique.len() < 2 {
+            return;
+        }
+        let files = unique;
         // Head pass.
         let mut by_head: HashMap<blake3::Hash, Vec<&Cand>> = HashMap::new();
-        for c in files {
+        for c in files.iter().copied() {
             if self.ctl.is_cancelled() {
                 return;
             }
@@ -246,6 +251,47 @@ impl Job {
             (self.wake)();
         }
     }
+}
+
+/// Identity key of a candidate: file identity, else its canonical path, else the path.
+#[derive(PartialEq, Eq, Hash)]
+enum IdKey {
+    Id(soyuz_fs::FileIdentity),
+    Path(PathBuf),
+}
+
+/// One candidate per filesystem object (first spelling wins).
+fn dedup_by_identity(files: &[Cand]) -> Vec<&Cand> {
+    let mut seen = HashSet::new();
+    files
+        .iter()
+        .filter(|c| {
+            let key = match soyuz_fs::file_identity(&c.path, false) {
+                Ok(id) => IdKey::Id(id),
+                Err(_) => IdKey::Path(std::fs::canonicalize(&c.path).unwrap_or_else(|_| c.path.clone())),
+            };
+            seen.insert(key)
+        })
+        .collect()
+}
+
+/// Roots without duplicates and without roots nested in another root, compared after
+/// resolving links / aliases (`canonicalize`; a root that cannot be resolved is compared
+/// lexically after normalization). Order of the kept roots is preserved.
+pub(crate) fn effective_roots(roots: Vec<PathBuf>) -> Vec<PathBuf> {
+    let canon: Vec<PathBuf> =
+        roots.iter().map(|r| std::fs::canonicalize(r).unwrap_or_else(|_| soyuz_fs::normalize(r))).collect();
+    // Shortest first, so an outer root is kept before anything nested in it.
+    let mut order: Vec<usize> = (0..roots.len()).collect();
+    order.sort_by_key(|&i| (canon[i].components().count(), i));
+    let mut kept: Vec<usize> = Vec::new();
+    for i in order {
+        if !kept.iter().any(|&k| canon[i].starts_with(&canon[k])) {
+            kept.push(i);
+        }
+    }
+    kept.sort_unstable();
+    kept.into_iter().map(|i| roots[i].clone()).collect()
 }
 
 pub(crate) fn hash_file_prefix(

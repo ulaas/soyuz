@@ -6,7 +6,10 @@
 //! `HKCR\SystemFileAssociations\<ext>` → `HKCR\SystemFileAssociations\<PerceivedType>`; for
 //! each ProgId the verb is `shell\(Default)` else `open` else the first verb, and the command
 //! is `shell\<verb>\command`. `DelegateExecute` verbs and `AppX*` ProgIds are COM/UWP-only
-//! (not launchable) — callers fall back to `rundll32 url.dll,FileProtocolHandler`.
+//! (not launchable): opening such a file fails with "no application is associated" instead
+//! of handing it to a shell-execute helper. URLs (`.url` files) resolve their scheme through
+//! `HKCU\...\Shell\Associations\UrlAssociations\<scheme>\UserChoice` and `HKCR\<scheme>`
+//! (`URL Protocol`) the same way.
 //!
 //! The resolution logic is pure (behind the [`Registry`] trait) and unit-tested everywhere.
 #![cfg_attr(not(windows), allow(dead_code))]
@@ -105,6 +108,36 @@ pub(crate) fn default_assoc(reg: &dyn Registry, ext: &str) -> Option<Assoc> {
         }
     }
     fallback
+}
+
+const URL_ASSOC: &str = r"Software\Microsoft\Windows\Shell\Associations\UrlAssociations";
+
+/// The scheme of an absolute URL (`https` of `https://x`); `None` for paths (a drive
+/// letter `C:` is not a scheme) and malformed input.
+pub(crate) fn url_scheme(url: &str) -> Option<String> {
+    let (scheme, _) = url.split_once(':')?;
+    let ok = scheme.len() >= 2
+        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+        && scheme.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
+    ok.then(|| scheme.to_ascii_lowercase())
+}
+
+/// Launchable command registered for URL `scheme`: the user's choice first, then the
+/// `HKCR\<scheme>` protocol key. COM/UWP-only handlers are not launchable (`None`).
+pub(crate) fn url_command(reg: &dyn Registry, scheme: &str) -> Option<String> {
+    let mut progids = Vec::new();
+    if let Some(p) = reg.get(Hive::CurrentUser, &format!(r"{URL_ASSOC}\{scheme}\UserChoice"), Some("ProgId")) {
+        progids.push(p);
+    }
+    if reg.has(Hive::ClassesRoot, scheme, "URL Protocol") {
+        progids.push(scheme.to_string());
+    }
+    progids.into_iter().filter(|p| !p.is_empty() && !(p.len() >= 4 && p[..4].eq_ignore_ascii_case("appx"))).find_map(
+        |p| match verb_command(reg, &p) {
+            Some(Verb { command: Some(cmd), delegate: false }) => Some(cmd),
+            _ => None,
+        },
+    )
 }
 
 /// Split a registry command line into the executable and the raw rest.
@@ -313,7 +346,7 @@ mod imp {
     use std::path::{Path, PathBuf};
     use std::process::Command;
 
-    use soyuz_core::{FsError, FsResult};
+    use soyuz_core::{FsError, FsErrorKind, FsResult};
 
     use super::{AppInfo, Hive, Registry, default_assoc, expand_args, pe_subsystem, split_command};
     use crate::sys::windows::registry::{self as wr, Hive as WHive};
@@ -385,10 +418,27 @@ mod imp {
         super::super::spawn_detached(c, op, path)
     }
 
-    fn protocol_handler(target: &str, op: &'static str, path: &Path) -> FsResult<()> {
-        let mut c = Command::new("rundll32.exe");
-        c.raw_arg(format!("url.dll,FileProtocolHandler {target}"));
-        super::super::spawn_detached(c, op, path)
+    /// Error for a file type / link whose only handler would need the shell.
+    fn no_association(path: &Path, what: &str) -> FsError {
+        FsError::with_message(
+            FsErrorKind::Unsupported,
+            "open",
+            Some(path),
+            format!("no application is associated with {what} (use \u{201c}Open with\u{201d})"),
+        )
+    }
+
+    /// Open `url` with the handler registered for its scheme.
+    fn open_url(url: &str, path: &Path) -> FsResult<()> {
+        let Some(scheme) = super::url_scheme(url) else {
+            return Err(FsError::with_message(FsErrorKind::InvalidName, "open", Some(path), "not a valid URL"));
+        };
+        let Some(cmd) = super::url_command(&RealRegistry, &scheme) else {
+            return Err(no_association(path, &format!("\u{201c}{scheme}:\u{201d} links")));
+        };
+        let (exe, rest) = split_command(&crate::path::expand_env(&cmd));
+        let args = expand_args(&rest, Path::new(url));
+        spawn_raw(Path::new(&exe), &args, None, "open", path)
     }
 
     fn ext_of(p: &Path) -> String {
@@ -431,13 +481,20 @@ mod imp {
                         open_default_depth(&target, depth + 1)
                     }
                 }
-                _ => protocol_handler(&format!("{}", p.display()), "open", path),
+                _ => Err(FsError::with_message(
+                    FsErrorKind::NotFound,
+                    "open",
+                    Some(path),
+                    "the shortcut's target could not be found",
+                )),
             },
             "url" => {
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
                 match text.lines().find_map(|l| l.trim().strip_prefix("URL=")) {
-                    Some(url) if !url.contains(['"', '\r', '\n']) => protocol_handler(url, "open", path),
-                    _ => protocol_handler(&format!("{}", p.display()), "open", path),
+                    Some(url) if !url.contains(['"', '\r', '\n']) => open_url(url.trim(), path),
+                    _ => {
+                        Err(FsError::with_message(FsErrorKind::Corrupt, "open", Some(path), "no URL in this shortcut"))
+                    }
                 }
             }
             ext => {
@@ -449,10 +506,11 @@ mod imp {
                         let (exe, rest) = split_command(&crate::path::expand_env(&cmd));
                         let args = expand_args(&rest, &p);
                         spawn_raw(Path::new(&exe), &args, dir.as_deref(), "open", path)
-                            .or_else(|_| protocol_handler(&format!("{}", p.display()), "open", path))
                     }
-                    // UWP / DelegateExecute / unknown: let the protocol handler decide.
-                    _ => protocol_handler(&format!("{}", p.display()), "open", path),
+                    // UWP / DelegateExecute (COM-only) / unknown: nothing we can start
+                    // without a shell API.
+                    _ if ext.is_empty() => Err(no_association(path, "files without an extension")),
+                    _ => Err(no_association(path, &format!("\u{201c}.{ext}\u{201d} files"))),
                 }
             }
         }
@@ -589,6 +647,27 @@ mod tests {
         let mut r2 = sample();
         r2.values.retain(|(h, _, v), _| !(*h == CurrentUser && v == "progid"));
         assert_eq!(default_assoc(&r2, ".txt").unwrap().progid, "txtfile");
+    }
+
+    #[test]
+    fn url_scheme_association() {
+        assert_eq!(url_scheme("https://example.com/a").as_deref(), Some("https"));
+        assert_eq!(url_scheme("MAILTO:x@y").as_deref(), Some("mailto"));
+        assert_eq!(url_scheme(r"C:\dir\file.txt"), None, "a drive letter is not a scheme");
+        assert_eq!(url_scheme("no scheme"), None);
+        let mut r = FakeReg::default();
+        r.set(CurrentUser, &format!(r"{URL_ASSOC}\https\UserChoice"), "ProgId", "FirefoxURL");
+        r.set(ClassesRoot, r"FirefoxURL\shell\open\command", "", r#""C:\ff\firefox.exe" -osint -url "%1""#);
+        r.set(ClassesRoot, "ftp", "URL Protocol", "");
+        r.set(ClassesRoot, r"ftp\shell\open\command", "", r#""C:\ftp.exe" %1"#);
+        r.set(ClassesRoot, "ms-photos", "URL Protocol", "");
+        r.set(ClassesRoot, r"ms-photos\shell\open\command", "DelegateExecute", "{4ED3A719}");
+        r.set(CurrentUser, &format!(r"{URL_ASSOC}\mailto\UserChoice"), "ProgId", "AppXabc");
+        assert_eq!(url_command(&r, "https").unwrap(), r#""C:\ff\firefox.exe" -osint -url "%1""#);
+        assert_eq!(url_command(&r, "ftp").unwrap(), r#""C:\ftp.exe" %1"#);
+        assert_eq!(url_command(&r, "ms-photos"), None, "COM-only handler: no association");
+        assert_eq!(url_command(&r, "mailto"), None, "UWP-only handler: no association");
+        assert_eq!(url_command(&r, "gopher"), None);
     }
 
     #[test]

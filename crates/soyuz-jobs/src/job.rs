@@ -1,6 +1,6 @@
 //! Job specifications, states and summaries.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -122,6 +122,10 @@ pub enum JobKind {
         to: Option<PathBuf>,
     },
     EmptyTrash,
+    /// Permanently delete these trash items (the trash view's per-item "Delete forever").
+    PurgeTrash {
+        items: Vec<TrashItem>,
+    },
     /// M12.
     Sync {
         plan: SyncPlan,
@@ -161,12 +165,14 @@ impl JobKind {
             JobKind::Extract { .. } => JobKindBrief::Extract,
             JobKind::Compress { .. } => JobKindBrief::Compress,
             JobKind::RestoreTrash { .. } => JobKindBrief::RestoreTrash,
-            JobKind::EmptyTrash => JobKindBrief::EmptyTrash,
+            JobKind::EmptyTrash | JobKind::PurgeTrash { .. } => JobKindBrief::EmptyTrash,
             JobKind::Sync { .. } => JobKindBrief::Sync,
         }
     }
 
-    /// Sources + destination, for overlap serialization (`soyuz_fs::path_overlaps`).
+    /// Sources + destination, for overlap serialization (`soyuz_fs::path_overlaps`). Jobs
+    /// that change the trash itself (restore, purge, empty) also hold [`TRASH_ROOT`], which
+    /// serializes them with each other.
     pub fn touched_roots(&self) -> Vec<PathBuf> {
         match self {
             JobKind::Copy { sources, dest_dir, .. } | JobKind::Move { sources, dest_dir, .. } => {
@@ -187,10 +193,28 @@ impl JobKind {
                     Some(t) => t.clone(),
                     None => i.original.clone(),
                 })
+                .chain(std::iter::once(PathBuf::from(TRASH_ROOT)))
                 .collect(),
-            JobKind::EmptyTrash => Vec::new(),
+            JobKind::EmptyTrash | JobKind::PurgeTrash { .. } => vec![PathBuf::from(TRASH_ROOT)],
             JobKind::Sync { plan } => vec![plan.left.clone(), plan.right.clone()],
         }
+    }
+}
+
+/// Pseudo root (not a filesystem path) held by every job that changes the trash itself.
+pub const TRASH_ROOT: &str = "<soyuz:trash>";
+
+/// A pseudo root such as [`TRASH_ROOT`]: never resolved on disk, and it overlaps only itself.
+pub(crate) fn is_synthetic_root(p: &Path) -> bool {
+    p.as_os_str() == TRASH_ROOT
+}
+
+/// Overlap of two touched roots (pseudo roots only overlap themselves).
+pub(crate) fn roots_overlap(a: &Path, b: &Path) -> bool {
+    match (is_synthetic_root(a), is_synthetic_root(b)) {
+        (false, false) => soyuz_fs::path_overlaps(a, b),
+        (true, true) => a == b,
+        _ => false,
     }
 }
 
@@ -313,6 +337,10 @@ pub(crate) fn default_label(kind: &JobKind) -> String {
             many => format!("Restore {} items", many.len()),
         },
         JobKind::EmptyTrash => "Empty trash".to_string(),
+        JobKind::PurgeTrash { items: it } => match it.as_slice() {
+            [one] => format!("Delete {} forever", name(&one.original)),
+            many => format!("Delete {} items forever", many.len()),
+        },
         JobKind::Sync { plan } => format!("Sync {} with {}", name(&plan.left), name(&plan.right)),
     }
 }
@@ -332,6 +360,12 @@ mod tests {
         assert!(JobState::Running.is_active());
         assert!(!JobState::Paused.is_active());
         assert!(!JobState::WaitingForUser.is_active());
+        // Trash-changing jobs share the pseudo root; it overlaps nothing on disk.
+        assert_eq!(JobKind::EmptyTrash.touched_roots(), vec![PathBuf::from(TRASH_ROOT)]);
+        let t = PathBuf::from(TRASH_ROOT);
+        assert!(roots_overlap(&t, &t));
+        assert!(!roots_overlap(&t, Path::new("/")));
+        assert!(!roots_overlap(&std::env::current_dir().unwrap(), &t));
     }
 
     #[test]

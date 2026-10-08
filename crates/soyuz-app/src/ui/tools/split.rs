@@ -105,9 +105,9 @@ pub fn split_file(
     let mut input = File::open(src).map_err(|e| io_err("Cannot open", src, e))?;
     let total = input.metadata().map(|m| m.len()).unwrap_or(0);
     let n_parts = total.div_ceil(part_size).max(1) as usize;
-    for n in 1..=n_parts {
-        let p = part_path(&base, n);
-        if p.exists() {
+    let ck = checksum_path(&base);
+    for p in (1..=n_parts).map(|n| part_path(&base, n)).chain(std::iter::once(ck.clone())) {
+        if soyuz_fs::exists_nofollow(&p) {
             return Err(format!("{} already exists", soyuz_fs::strip_verbatim(&p).display()));
         }
     }
@@ -141,9 +141,11 @@ pub fn split_file(
     })();
     match result {
         Ok(hash) => {
-            let ck = checksum_path(&base);
+            // Never replaces a checksum file that appeared meanwhile.
             let line = format!("{hash}  {}\n", name.to_string_lossy());
-            soyuz_fs::write_atomic(&ck, line.as_bytes()).map_err(|e| e.to_string())?;
+            File::create_new(&ck)
+                .and_then(|mut f| f.write_all(line.as_bytes()).and_then(|_| f.sync_all()))
+                .map_err(|e| io_err("Cannot create", &ck, e))?;
             Ok(SplitOutcome { parts: written, checksum: ck, hash })
         }
         Err(e) => {
@@ -212,7 +214,11 @@ pub fn join_parts(
             } else {
                 output.to_path_buf()
             };
-            std::fs::rename(&tmp, &target).map_err(|e| io_err("Cannot rename", &tmp, e))?;
+            // No-replace: something that appeared at the target meanwhile is never overwritten.
+            if let Err(e) = soyuz_fs::rename(&tmp, &target, soyuz_fs::RenameMode::NoReplace) {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(format!("Cannot create {}: {e}", soyuz_fs::strip_verbatim(&target).display()));
+            }
             Ok(JoinOutcome { output: target, bytes, verified })
         }
         Err(e) => {
@@ -593,6 +599,38 @@ mod tests {
         assert!(!part_path(&src, 1).exists(), "partial parts removed");
         std::fs::write(part_path(&src, 2), b"x").unwrap();
         assert!(split_file(&src, t.path(), 10_000, &OpControl::new(), &pr).unwrap_err().contains("exists"));
+    }
+
+    #[test]
+    fn split_and_join_never_replace_existing_files() {
+        let t = tempfile::tempdir().unwrap();
+        let src = t.path().join("c.dat");
+        std::fs::write(&src, data(30_000)).unwrap();
+        let ctl = OpControl::new();
+        let pr = AtomicU64::new(0);
+        let out = t.path().join("out");
+        std::fs::create_dir(&out).unwrap();
+        // An existing checksum file is not replaced (and nothing is written).
+        std::fs::write(checksum_path(&out.join("c.dat")), b"mine").unwrap();
+        assert!(split_file(&src, &out, 10_000, &ctl, &pr).unwrap_err().contains("exists"));
+        assert_eq!(std::fs::read(checksum_path(&out.join("c.dat"))).unwrap(), b"mine");
+        assert!(!part_path(&out.join("c.dat"), 1).exists());
+        // A mismatching join whose `.bad` name is taken leaves that file alone.
+        let s = split_file(&src, t.path(), 10_000, &ctl, &pr).unwrap();
+        let mut b = std::fs::read(&s.parts[0]).unwrap();
+        b[0] ^= 0xFF;
+        std::fs::write(&s.parts[0], b).unwrap();
+        let joined = t.path().join("joined.dat");
+        let bad = t.path().join("joined.dat.bad");
+        std::fs::write(&bad, b"earlier result").unwrap();
+        assert!(join_parts(&s.parts, &joined, Some(&s.checksum), &ctl, &pr).is_err());
+        assert_eq!(std::fs::read(&bad).unwrap(), b"earlier result");
+        assert!(!joined.exists());
+        let leftovers = std::fs::read_dir(t.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".soyuz-join.part"));
+        assert_eq!(leftovers.count(), 0, "temp file removed");
     }
 
     #[test]

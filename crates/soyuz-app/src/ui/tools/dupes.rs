@@ -2,7 +2,8 @@
 //! `soyuz_search::find_duplicates` streams groups of identical files (size → head hash →
 //! full BLAKE3) while it runs. Each group offers keep-one helpers (newest, oldest,
 //! shortest path); marked files go to the trash through the jobs engine. A group can
-//! never have all of its copies marked.
+//! never have all of its copies marked. Files leave the list only once the trash job has
+//! finished and they are really gone (failed / skipped items stay, still marked).
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -12,13 +13,13 @@ use std::time::{Instant, SystemTime};
 use crossbeam_channel::Receiver;
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
 use soyuz_core::{EntryInfo, OpControl, SizeStyle, format_size, format_time};
-use soyuz_jobs::DeleteMode;
+use soyuz_jobs::{DeleteMode, JobId, JobKind};
 use soyuz_search::DupeEvent;
 
 use super::{button, plural, progress_bar, text_field, tool_window};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::FileOpCmd;
+use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 use crate::ui::views::icons as file_icons;
@@ -112,6 +113,8 @@ pub struct DupesWindow {
     refused: Option<(usize, usize, Instant)>,
     /// Files sent to the trash from this window.
     removed: usize,
+    /// Trash jobs in flight and the paths each was asked to remove.
+    trashing: Vec<(JobId, Vec<PathBuf>)>,
 }
 
 impl DupesWindow {
@@ -127,6 +130,7 @@ impl DupesWindow {
             confirm: false,
             refused: None,
             removed: 0,
+            trashing: Vec::new(),
         };
         if !w.roots.is_empty() {
             w.start();
@@ -186,6 +190,28 @@ impl DupesWindow {
         }
     }
 
+    /// Drop the files of finished trash jobs that are really gone (one existence check
+    /// per file, once per finished job).
+    fn poll_trash(&mut self, app: &SoyuzApp) {
+        let finished: Vec<usize> = (0..self.trashing.len())
+            .filter(|&i| app.fileops.jobs.snapshot(self.trashing[i].0).is_none_or(|s| s.state.is_terminal()))
+            .collect();
+        for i in finished.into_iter().rev() {
+            let (_, paths) = self.trashing.remove(i);
+            let gone: HashSet<PathBuf> = paths.into_iter().filter(|p| !soyuz_fs::exists_nofollow(p)).collect();
+            self.removed += gone.len();
+            for g in &mut self.groups {
+                let keep: Vec<(EntryInfo, bool)> =
+                    g.files.drain(..).zip(g.marked.drain(..)).filter(|(e, _)| !gone.contains(&e.path)).collect();
+                for (e, m) in keep {
+                    g.files.push(e);
+                    g.marked.push(m);
+                }
+            }
+            self.groups.retain(|g| g.files.len() > 1);
+        }
+    }
+
     fn marked(&self) -> (usize, u64, Vec<PathBuf>) {
         let mut n = 0;
         let mut bytes = 0;
@@ -204,6 +230,7 @@ impl DupesWindow {
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
         self.poll();
+        self.poll_trash(app);
         let sub = match self.roots.as_slice() {
             [] => String::new(),
             [one] => super::tags_ui::show_path(one),
@@ -368,24 +395,13 @@ impl DupesWindow {
             }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.confirm {
-                    if button(ui, Some(ph::TRASH), &format!("Move {n} to trash"), 2, n > 0).clicked() {
-                        app.cmds.push(Cmd::FileOp(FileOpCmd::Delete { paths: paths.clone(), mode: DeleteMode::Trash }));
-                        let gone: HashSet<PathBuf> = paths.into_iter().collect();
-                        for g in &mut self.groups {
-                            let keep: Vec<(EntryInfo, bool)> = g
-                                .files
-                                .drain(..)
-                                .zip(g.marked.drain(..))
-                                .filter(|(e, _)| !gone.contains(&e.path))
-                                .collect();
-                            for (e, m) in keep {
-                                g.files.push(e);
-                                g.marked.push(m);
-                            }
-                        }
-                        self.groups.retain(|g| g.files.len() > 1);
+                    let busy = !self.trashing.is_empty();
+                    if button(ui, Some(ph::TRASH), &format!("Move {n} to trash"), 2, n > 0 && !busy).clicked() {
+                        let spec =
+                            app.fileops.jobs.spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
+                        let id = app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Trash, &paths, None));
+                        self.trashing.push((id, paths));
                         self.confirm = false;
-                        self.removed += n;
                         app.ui
                             .toasts
                             .push(Toast::info(format!("Moving {} to the trash", plural(n, "duplicate", "duplicates"))));

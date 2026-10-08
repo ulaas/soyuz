@@ -3,38 +3,85 @@
 use std::path::{Component, Path, PathBuf};
 
 /// Windows: absolute + `\\?\C:\...` / `\\?\UNC\...`, NUL-terminated UTF-16 (verbatim and
-/// `\\.\` device paths pass through). Other OSes: the lossy path as NUL-terminated UTF-16
+/// `\\.\` device paths pass through; lossless for names that are not valid UTF-16). Other
+/// OSes: the lossy path as NUL-terminated UTF-16
 /// (unused by the unix implementation; present so callers and tests are cross-platform).
 pub fn to_wide_long(path: &Path) -> Vec<u16> {
-    let s = long_form(path);
-    s.encode_utf16().chain(std::iter::once(0)).collect()
+    let mut w = long_form(path);
+    w.push(0);
+    w
+}
+
+/// UTF-16 of `s` (ASCII prefixes).
+#[cfg(windows)]
+fn w(s: &str) -> Vec<u16> {
+    s.encode_utf16().collect()
+}
+
+/// Raw UTF-16 of the path: lossless, NTFS names need not be valid UTF-16.
+#[cfg(windows)]
+fn wide_of(path: &Path) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    path.as_os_str().encode_wide().collect()
 }
 
 #[cfg(windows)]
-fn long_form(path: &Path) -> String {
-    let raw = path.to_string_lossy();
-    if raw.starts_with(r"\\?\") || raw.starts_with(r"\\.\") {
-        return raw.into_owned();
+fn from_wide(v: &[u16]) -> PathBuf {
+    use std::os::windows::ffi::OsStringExt;
+    PathBuf::from(std::ffi::OsString::from_wide(v))
+}
+
+#[cfg(windows)]
+fn long_form(path: &Path) -> Vec<u16> {
+    let raw = wide_of(path);
+    if raw.starts_with(&w(r"\\?\")) || raw.starts_with(&w(r"\\.\")) {
+        return raw;
     }
-    let abs = normalize(path);
-    let s = abs.to_string_lossy().replace('/', "\\");
-    if let Some(unc) = s.strip_prefix(r"\\") { format!(r"\\?\UNC\{unc}") } else { format!(r"\\?\{s}") }
+    let abs: Vec<u16> = wide_of(&normalize(path))
+        .into_iter()
+        .map(|c| if c == u16::from(b'/') { u16::from(b'\\') } else { c })
+        .collect();
+    let mut out;
+    if abs.starts_with(&w(r"\\")) {
+        out = w(r"\\?\UNC\");
+        out.extend_from_slice(&abs[2..]);
+    } else {
+        out = w(r"\\?\");
+        out.extend_from_slice(&abs);
+    }
+    out
 }
 
 #[cfg(not(windows))]
-fn long_form(path: &Path) -> String {
-    path.to_string_lossy().into_owned()
+fn long_form(path: &Path) -> Vec<u16> {
+    path.to_string_lossy().encode_utf16().collect()
 }
 
-/// Remove a `\\?\` / `\\?\UNC\` prefix for display.
+/// Remove a `\\?\` / `\\?\UNC\` prefix for display (lossless on Windows).
 pub fn strip_verbatim(path: &Path) -> PathBuf {
-    let s = path.to_string_lossy();
-    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-        PathBuf::from(format!(r"\\{rest}"))
-    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-        PathBuf::from(rest)
-    } else {
+    #[cfg(windows)]
+    {
+        let raw = wide_of(path);
+        if raw.starts_with(&w(r"\\?\UNC\")) {
+            let mut out = w(r"\\");
+            out.extend_from_slice(&raw[8..]);
+            return from_wide(&out);
+        }
+        if raw.starts_with(&w(r"\\?\")) {
+            return from_wide(&raw[4..]);
+        }
         path.to_path_buf()
+    }
+    #[cfg(not(windows))]
+    {
+        let s = path.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{rest}"))
+        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
+            PathBuf::from(rest)
+        } else {
+            path.to_path_buf()
+        }
     }
 }
 
