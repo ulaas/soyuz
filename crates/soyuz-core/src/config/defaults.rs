@@ -127,7 +127,7 @@ impl Default for Sidebar {
     fn default() -> Self {
         use SidebarSection::*;
         Sidebar {
-            sections: vec![Favorites, Devices, Cloud, Tags, Network, Trash, Tree],
+            sections: vec![Favorites, Smart, Devices, Cloud, Tags, Network, Trash, Tree],
             mode: SidebarMode::Both,
             tree_follow: true,
             tree_drag_expand_ms: 700,
@@ -211,7 +211,54 @@ impl Default for Archive {
 
 impl Default for Search {
     fn default() -> Self {
-        Search { threads: 0, respect_gitignore: false, content_max_mib: 8, saved: Vec::new() }
+        Search {
+            threads: 0,
+            respect_gitignore: false,
+            content_max_mib: 8,
+            saved: Vec::new(),
+            index: SearchIndex::default(),
+        }
+    }
+}
+
+impl Default for SearchIndex {
+    fn default() -> Self {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        SearchIndex {
+            enabled: false,
+            roots: s(&["~"]),
+            exclude: s(&[
+                "node_modules",
+                ".git",
+                ".hg",
+                ".svn",
+                "target",
+                "__pycache__",
+                ".cache",
+                "$RECYCLE.BIN",
+                "System Volume Information",
+                "AppData/Local/Temp",
+                "AppData/Local/Packages",
+                "AppData/Local/Microsoft/Windows/INetCache",
+                "AppData/Local/**/Cache",
+                "AppData/Local/**/Code Cache",
+                "AppData/Local/**/GPUCache",
+                "AppData/Local/CrashDumps",
+                "AppData/Roaming/**/Cache",
+                "Library/Caches",
+            ]),
+            content: false,
+            content_max_kib: 1024,
+            content_extensions: s(&[
+                "txt", "md", "markdown", "rst", "org", "log", "csv", "json", "toml", "yaml", "yml", "ini", "cfg",
+                "xml", "html", "css", "js", "ts", "tsx", "jsx", "rs", "py", "go", "java", "kt", "c", "h", "cpp", "hpp",
+                "cs", "rb", "php", "swift", "sh", "ps1", "bat", "sql", "lua", "tex",
+            ]),
+            usn_journal: true,
+            throttle_ms: 2,
+            smart_refresh_secs: 2,
+            use_for_search: true,
+        }
     }
 }
 

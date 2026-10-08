@@ -13,6 +13,7 @@
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
+//! * `smart:<name>` — open a smart folder (`smart:` alone: the new smart folder dialog);
 //! * `keys:<spec>` — synthetic keyboard input on the next frame: plain text is typed,
 //!   `{Enter}`, `{Ctrl+S}`, `{Shift+F3}`, `{Copy}`, `{Cut}`, `{Paste:text}` are keys;
 //! * `edit:<path>` — open a file in the built-in editor; `editor:<command>` — drive it
@@ -229,6 +230,14 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     .into_iter()
                     .find(|s| s.title().to_ascii_lowercase().starts_with(&want));
                 crate::ui::settings::open(app, sec);
+            }
+            "smart" => {
+                // `smart:<name>` opens a smart folder (F5); `smart:` opens the "new" dialog.
+                if arg.trim().is_empty() {
+                    app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(None)));
+                } else if let Some(index) = crate::ui::smart::folders().iter().position(|f| f.name == arg.trim()) {
+                    app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Open { index, new_tab: false }));
+                }
             }
             "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),

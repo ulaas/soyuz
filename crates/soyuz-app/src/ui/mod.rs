@@ -18,6 +18,8 @@ pub mod search;
 pub mod settings;
 pub mod shell;
 pub mod sidebar;
+pub mod smart;
+pub mod smart_settings;
 pub mod statusbar;
 pub mod tabstrip;
 pub mod titlebar;

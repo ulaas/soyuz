@@ -319,6 +319,7 @@ fn sidebar_sections(ui: &mut Ui, sections: &mut Vec<SidebarSection>) {
         (SidebarSection::Network, "Network"),
         (SidebarSection::Trash, "Trash"),
         (SidebarSection::Tree, "Folder tree"),
+        (SidebarSection::Smart, "Smart folders"),
     ];
     let mut action: Option<(usize, bool)> = None;
     for (i, s) in sections.clone().iter().enumerate() {
@@ -751,6 +752,7 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
         }
     });
+    any |= crate::ui::smart_settings::index_group(ui, q, d);
     any |= group(ui, q, ctx, "Git", |r| {
         r.row_kw("Git status column", "Show modified / untracked markers in repositories.", "vcs", |ui| {
             switch(ui, &mut d.git.status_column);

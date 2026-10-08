@@ -21,6 +21,7 @@ soyuz-archive = { path = "crates/soyuz-archive" }
 soyuz-search = { path = "crates/soyuz-search" }
 soyuz-term = { path = "crates/soyuz-term" }
 soyuz-ai = { path = "crates/soyuz-ai" }
+soyuz-index = { path = "crates/soyuz-index" }
 
 # --- GUI (pinned exactly, see PLAN §7) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
@@ -95,6 +96,9 @@ rustls = { version = "0.23.37", default-features = false, features = ["ring", "s
 tokio = { version = "1.50.0", default-features = false, features = ["rt-multi-thread", "time", "sync", "macros"] }
 futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 schemars = "1.2.2"
+
+# --- index (F5): SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
+rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "functions", "cache"] }
 
 # --- misc ---
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

@@ -135,6 +135,33 @@ name patterns (substring, glob, regex, fuzzy), content search, size / date / kin
 `.gitignore` awareness. Results stream into a normal file view, so every action works on
 them. Save a search to keep it in the sidebar.
 
+In the default **Contains** mode the text is a small query language:
+
+| Example | Meaning |
+|---|---|
+| `annual report`, `"exact phrase"` | the name contains every word / the phrase |
+| `*.pdf`, `ext:pdf,docx` | name pattern, extensions |
+| `kind:image` | `image video audio document archive code file folder` |
+| `size:>5MB`, `size:1k..2M`, `size:empty` | file size (binary units) |
+| `modified:<7d`, `modified:>1y`, `created:2026-01`, `modified:today` | age (`min h d w mo y`), date, keyword |
+| `tag:red`, `path:docs`, `in:"~/Projects"` | color tag, text in the path, below a folder |
+| `content:todo`, `regex:^IMG_\d+` | words inside text files, name regex |
+| `-draft`, `a OR b`, `(a b) OR c` | exclude, either, group |
+
+**Background index** (Settings → Preview & search → Index, off by default): Soyuz keeps
+names, sizes, dates and tags of the indexed folders (default: your home folder, minus
+caches and `node_modules`-style folders) in a local SQLite database, so searches there
+answer in milliseconds; the scope chip of the search bar can then search **all indexed
+folders** at once. The status bar shows what the indexer is doing (click it for the
+settings, right-click to rebuild). File contents can be indexed too (`content:`). On NTFS,
+running Soyuz as administrator lets it read the change journal, so changes made while it
+was closed are applied in seconds; otherwise it re-checks the folders in the background
+after each start.
+
+**Smart folders** are saved queries in the sidebar that stay up to date: create one with
+**Smart folder** in the search status strip or **New smart folder…** in the sidebar;
+right-click one to edit, rename or delete it (deleting only removes the query).
+
 ## Customizing
 
 **Settings** (`Ctrl+,`) covers every section of `config.toml` and applies changes live.
@@ -186,6 +213,8 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `history.jsonl` | job history (for undo) |
 | `palette.toml` | frecency, recent commands, marks |
 | `tags.toml`, `recent.toml` | tags and recent places |
+| `smart_folders.toml` | smart folders (saved live queries) |
+| `index/` | the background search index (machine-local; `%LOCALAPPDATA%\soyuz\data\index` when not portable) |
 
 ## Troubleshooting
 

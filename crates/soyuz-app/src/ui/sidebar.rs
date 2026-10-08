@@ -165,6 +165,7 @@ fn section_name(s: SidebarSection) -> &'static str {
         SidebarSection::Network => "Network",
         SidebarSection::Trash => "Other",
         SidebarSection::Tree => "Folders",
+        SidebarSection::Smart => "Smart folders",
     }
 }
 
@@ -219,11 +220,17 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         SidebarSection::Tags => {
                             crate::ui::tools::tags_ui::sidebar_section(ui, &mut s.collapsed, c.current, c.pane, c.cmds)
                         }
+                        SidebarSection::Smart => {
+                            crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds)
+                        }
                         _ => {}
                     }
                 }
                 if !tree_listed && c.tree.mode == SidebarMode::Both {
                     tree_section(ui, s, c);
+                }
+                if !c.sections.contains(&SidebarSection::Smart) {
+                    crate::ui::smart::sidebar_section(ui, &mut s.collapsed, c.current, c.cmds);
                 }
                 crate::ui::search::sidebar_section(ui, c.saved_searches, &mut s.collapsed, c.cmds, c.saved_config);
                 ui.add_space(8.0);

@@ -38,6 +38,7 @@ pub mod perms;
 pub mod sparse;
 pub mod times;
 pub mod trash;
+pub mod usn;
 pub mod volumes;
 pub mod watch;
 pub mod xattr;

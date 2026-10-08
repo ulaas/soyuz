@@ -105,4 +105,6 @@ pub enum Cmd {
     ChooseOpenWith(PathBuf),
     /// Open a path in a new Soyuz window (a new process; see `ops::new_window`).
     NewWindow(Location),
+    /// Smart folders and the background index (F5): `ui::smart`.
+    Smart(crate::ui::smart::SmartCmd),
 }

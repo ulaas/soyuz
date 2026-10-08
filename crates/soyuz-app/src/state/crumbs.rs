@@ -132,7 +132,10 @@ pub fn location_title(loc: &Location) -> String {
         Location::Computer => "This PC".into(),
         Location::Recent => "Recent".into(),
         Location::Tags(t) => format!("Tag: {}", crate::services::tags::display_name(t)),
-        Location::Search(_) => "Search".into(),
+        // Smart folders show their name (F5).
+        Location::Search(id) => {
+            crate::services::search::spec(*id).and_then(|s| s.smart).unwrap_or_else(|| "Search".into())
+        }
     }
 }
 
