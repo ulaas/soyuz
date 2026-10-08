@@ -67,6 +67,8 @@ pub fn verb(op: OpKind, active: bool) -> &'static str {
         (OpKind::NewFile, false) => "Created file",
         (OpKind::Link, true) => "Creating link",
         (OpKind::Link, false) => "Created link",
+        (OpKind::SetMeta, true) => "Updating properties of",
+        (OpKind::SetMeta, false) => "Updated properties of",
         (OpKind::Restore, true) => "Restoring",
         (OpKind::Restore, false) => "Restored",
         (OpKind::EmptyTrash, true) => "Emptying trash",

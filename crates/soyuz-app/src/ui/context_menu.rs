@@ -38,7 +38,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let single = sel.len() == 1;
     let all_dirs = sel.iter().all(|e| e.is_dir_like());
     let first = sel.first().map(|e| (e.path.clone(), e.is_dir_like()));
-    let has_clip = !v.fileops.clipboard.is_empty();
+    let has_clip = !v.fileops.clipboard.is_empty() || crate::services::os_clipboard::has_files();
     let dual = v.dual;
     let cmds = &mut *v.cmds;
 
@@ -135,13 +135,15 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
     crate::commands::context_items(ui, v.config, cmds, id, &kinds);
     menu_separator(ui);
+    let single_file = single && first.as_ref().is_some_and(|(_, dir)| !dir);
+    crate::ui::dialogs::properties::context_items(ui, km, cmds, id, sel.len() > 1, single_file);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
 }
 
 fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let km = v.keymap;
     let id = pane.id;
-    let has_clip = !v.fileops.clipboard.is_empty();
+    let has_clip = !v.fileops.clipboard.is_empty() || crate::services::os_clipboard::has_files();
     let cmds = &mut *v.cmds;
     submenu(ui, Some(ph::SQUARES_FOUR), "View", |ui| {
         ui.set_width(220.0);

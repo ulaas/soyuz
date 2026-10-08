@@ -5,7 +5,9 @@
 //! (tabs → panes), `services` (lister pool, watcher, thumbnails, places) and UI state.
 //! Widgets push `cmd::Cmd`s; `ops` applies them; `actions::execute` is the single
 //! dispatcher for key bindings, menus and toolbar buttons.
-#![forbid(unsafe_code)]
+// `unsafe` is denied everywhere except the raw OS clipboard shim
+// (`services::os_clipboard::windows`), which opts in locally.
+#![deny(unsafe_code)]
 
 pub mod actions;
 pub mod app;
@@ -14,6 +16,7 @@ pub mod commands;
 pub mod keys;
 pub mod ops;
 pub mod palette;
+pub mod rename;
 pub mod services;
 pub mod state;
 pub mod theme;

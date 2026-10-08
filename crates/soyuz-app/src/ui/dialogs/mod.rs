@@ -3,11 +3,20 @@
 //! [`Dialogs::push`]. The host draws the top-most dialog in a styled modal (fade +
 //! scale-in, backdrop, Esc / click-outside to cancel) and routes results as [`Cmd`]s.
 
+pub mod attributes;
+pub mod batch_rename;
 pub mod conflict;
 pub mod delete_confirm;
 pub mod error;
 pub mod keybind_record;
+pub mod links;
 pub mod new_item;
+pub mod properties;
+pub mod properties_attrs;
+pub mod properties_checksum;
+pub mod properties_details;
+pub mod properties_security;
+pub mod properties_widgets;
 
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};
@@ -56,8 +65,11 @@ impl Dialogs {
 
     /// Draw the top-most dialog.
     pub fn show(&mut self, ctx: &egui::Context, dctx: &mut DialogCtx<'_>) {
-        let id = Id::new("soyuz.dialog").with(self.stack.len());
+        let depth = self.stack.len();
         let Some(top) = self.stack.last_mut() else { return };
+        // Keyed by the dialog's identity too, so a smaller dialog opened after a larger
+        // one doesn't inherit the remembered size of the previous modal.
+        let id = Id::new("soyuz.dialog").with(depth).with((top.icon(), top.width() as i32));
         let p = palette(ctx);
         let t = ctx.animate_bool_with_time(id.with("anim"), true, crate::theme::tokens::motion::MODAL);
         let frame = Frame::new()

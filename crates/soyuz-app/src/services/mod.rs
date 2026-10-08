@@ -7,6 +7,7 @@ pub mod config_watch;
 pub mod jobs;
 pub mod lister;
 pub mod mailbox;
+pub mod os_clipboard;
 pub mod places;
 pub mod preview;
 pub mod preview_media;

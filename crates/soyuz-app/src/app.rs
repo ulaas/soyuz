@@ -345,6 +345,38 @@ impl SoyuzApp {
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
+        if kctx == KeyContext::FileList && !text_focused {
+            // Ctrl+V with only files on the OS clipboard produces no egui event: the
+            // fallback reads raw key state. Feed it this frame's egui Ctrl+V so it can
+            // de-duplicate, and drop the egui event when the fallback already pasted.
+            let cmd_is_ctrl = self.config.keys.cmd_is_ctrl;
+            let is_v = |c: &soyuz_core::config::KeyChord| {
+                c.key == soyuz_core::config::KeyName::V && c.mods.contains(soyuz_core::config::Mods::CTRL)
+            };
+            let mut synth: Vec<keys::Dispatched> = ctx.input(|i| {
+                i.events
+                    .iter()
+                    .filter_map(|ev| keys::event_chord(ev, i.modifiers, cmd_is_ctrl))
+                    .filter(|c| is_v(c))
+                    .filter_map(|c| {
+                        self.keymap.lookup(kctx, c).map(|a| keys::Dispatched { action: a.clone(), chord: c })
+                    })
+                    .collect()
+            });
+            let had_egui = !synth.is_empty();
+            crate::services::os_clipboard::paste_key_fallback(ctx, &self.keymap, &mut synth);
+            if had_egui && synth.is_empty() {
+                ctx.input_mut(|i| {
+                    let m = i.modifiers;
+                    i.events.retain(|ev| !keys::event_chord(ev, m, cmd_is_ctrl).is_some_and(|c| is_v(&c)));
+                });
+            }
+            if !had_egui {
+                for d in synth {
+                    actions::execute(self, d.action, ctx);
+                }
+            }
+        }
         keys::sequence::dispatch_all(self, ctx, kctx, text_focused);
         // Mouse back/forward buttons.
         let (back, fwd) = ctx.input(|i| {
