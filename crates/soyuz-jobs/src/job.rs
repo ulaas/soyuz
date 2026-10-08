@@ -281,6 +281,42 @@ pub struct LogLine {
     pub msg: String,
 }
 
+/// Human label used when `JobOptions::label` is `None` (e.g. `Copy 3 items to “dst”`).
+pub(crate) fn default_label(kind: &JobKind) -> String {
+    fn name(p: &std::path::Path) -> String {
+        format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(p))
+    }
+    fn items(paths: &[PathBuf]) -> String {
+        match paths {
+            [one] => name(one),
+            many => format!("{} items", many.len()),
+        }
+    }
+    match kind {
+        JobKind::Copy { sources, dest_dir, .. } => format!("Copy {} to {}", items(sources), name(dest_dir)),
+        JobKind::Move { sources, dest_dir, .. } => format!("Move {} to {}", items(sources), name(dest_dir)),
+        JobKind::Delete { paths, mode: DeleteMode::Trash } => format!("Move {} to trash", items(paths)),
+        JobKind::Delete { paths, mode: DeleteMode::Permanent } => format!("Delete {}", items(paths)),
+        JobKind::Delete { paths, mode: DeleteMode::Wipe { .. } } => format!("Wipe {}", items(paths)),
+        JobKind::Rename { pairs } => match pairs.as_slice() {
+            [(a, b)] => format!("Rename {} to {}", name(a), name(b)),
+            many => format!("Rename {} items", many.len()),
+        },
+        JobKind::Create { path, kind: CreateKind::Dir } => format!("New folder {}", name(path)),
+        JobKind::Create { path, .. } => format!("Create {}", name(path)),
+        JobKind::SetMeta { paths, .. } => format!("Change properties of {}", items(paths)),
+        JobKind::Hash { paths, algo } => format!("{} checksum of {}", algo.label(), items(paths)),
+        JobKind::Extract { archive, dest_dir, .. } => format!("Extract {} to {}", name(archive), name(dest_dir)),
+        JobKind::Compress { sources, dest, .. } => format!("Compress {} into {}", items(sources), name(dest)),
+        JobKind::RestoreTrash { items: it, .. } => match it.as_slice() {
+            [one] => format!("Restore {}", name(&one.original)),
+            many => format!("Restore {} items", many.len()),
+        },
+        JobKind::EmptyTrash => "Empty trash".to_string(),
+        JobKind::Sync { plan } => format!("Sync {} with {}", name(&plan.left), name(&plan.right)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
