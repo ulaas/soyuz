@@ -7,7 +7,7 @@
 //! the app palette.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+
 use std::time::{Duration, Instant};
 
 use egui::{Align2, Color32, CornerRadius, FontId, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, UiBuilder, pos2, vec2};
@@ -191,7 +191,9 @@ fn spawn_session(app: &mut SoyuzApp, ctx: &egui::Context, cwd: PathBuf) -> u64 {
     t.set_active(owner, id);
     if !t.cjk_requested {
         t.cjk_requested = true;
-        request_cjk_font();
+        // CJK / Hangul fallbacks join every font family (incl. the terminal's).
+        use crate::theme::font_fallback::{Script, request};
+        request(&[Script::Cjk, Script::Hangul]);
     }
     id
 }
@@ -356,24 +358,8 @@ pub fn theme_for(p: &Palette, setting: &str) -> TermTheme {
 }
 
 /// Per frame (even while hidden): drain shell events, follow pane navigation, apply
-/// reverse sync and load the CJK fallback font once it is ready.
+/// reverse sync.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
-    if let Some(bytes) = take_cjk_font() {
-        ctx.add_font(egui::epaint::text::FontInsert::new(
-            "soyuz-cjk-fallback",
-            egui::FontData::from_owned(bytes.to_vec()),
-            vec![
-                egui::epaint::text::InsertFontFamily {
-                    family: egui::FontFamily::Monospace,
-                    priority: egui::epaint::text::FontPriority::Lowest,
-                },
-                egui::epaint::text::InsertFontFamily {
-                    family: egui::FontFamily::Proportional,
-                    priority: egui::epaint::text::FontPriority::Lowest,
-                },
-            ],
-        ));
-    }
     if app.ui.terminal.sessions.is_empty() {
         return;
     }
@@ -773,7 +759,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 let r = TerminalView::new(term)
                     .focused(focused)
                     .theme(&theme)
-                    .font(FontId::monospace(font_size))
+                    .font(crate::theme::fonts::terminal(ui.ctx(), font_size))
                     .show(&mut child);
                 wants = r.wants_focus;
                 link = r.link_clicked;
@@ -956,57 +942,6 @@ fn looks_executable(path: &Path) -> bool {
         }
     }
     ext_hit
-}
-
-// ---- CJK / emoji fallback font -------------------------------------------------------
-
-fn cjk_slot() -> &'static Mutex<Option<Arc<[u8]>>> {
-    static S: OnceLock<Mutex<Option<Arc<[u8]>>>> = OnceLock::new();
-    S.get_or_init(Default::default)
-}
-
-/// Candidate system fonts with CJK coverage.
-fn cjk_candidates() -> &'static [&'static str] {
-    #[cfg(windows)]
-    {
-        &[
-            r"C:\Windows\Fonts\msyh.ttc",
-            r"C:\Windows\Fonts\YuGothR.ttc",
-            r"C:\Windows\Fonts\malgun.ttf",
-            r"C:\Windows\Fonts\simsun.ttc",
-        ]
-    }
-    #[cfg(target_os = "macos")]
-    {
-        &["/System/Library/Fonts/PingFang.ttc", "/System/Library/Fonts/Hiragino Sans GB.ttc"]
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        &[
-            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-            "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
-        ]
-    }
-}
-
-/// Load a CJK-capable system font in the background (optional nicety).
-fn request_cjk_font() {
-    let _ = std::thread::Builder::new().name("soyuz-cjk-font".into()).spawn(|| {
-        for c in cjk_candidates() {
-            if let Ok(bytes) = std::fs::read(c) {
-                if let Ok(mut s) = cjk_slot().lock() {
-                    *s = Some(bytes.into());
-                }
-                return;
-            }
-        }
-    });
-}
-
-fn take_cjk_font() -> Option<Arc<[u8]>> {
-    cjk_slot().lock().ok()?.take()
 }
 
 /// Context-menu rows: integrated + external terminal at `dir`.

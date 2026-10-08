@@ -161,7 +161,7 @@ impl SoyuzApp {
         // Ctrl +/-/0 are our zoom actions, not egui's global UI zoom.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
         apply_live_settings(ctx, &config);
-        for w in theme::install(ctx, &config.appearance, &config.theme.colors) {
+        for w in theme::install(ctx, &config.appearance, &config.fonts, &config.theme.colors) {
             log::warn!("{w}");
         }
         let (keymap, warnings) = config::keymap(&config);

@@ -6,6 +6,7 @@ pub mod actions;
 pub mod ai;
 pub mod ai_agent;
 pub mod defaults;
+pub mod fonts;
 pub mod keys;
 pub mod mcp;
 pub mod migrate;
@@ -20,6 +21,7 @@ pub use ai::{
     Ai, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiScope, AiTaskModel, AiTasks, AiToolMode, default_prices,
 };
 pub use ai_agent::{AiAccess, AiAgent, AiApproval, AiFolderRule, AiRiskCeiling, folder_access};
+pub use fonts::{FontRole, FontRoleKind, Fonts};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
@@ -76,10 +78,14 @@ pub fn load_or_default(path: &Path) -> Result<Loaded, ConfigError> {
 pub fn parse_str(text: &str) -> Result<Loaded, ConfigError> {
     let mut warnings = Vec::new();
     let de = toml::Deserializer::parse(text).map_err(|e| parse_error(text, &e))?;
-    let config: Config = serde_ignored::deserialize(de, |path| {
+    let mut config: Config = serde_ignored::deserialize(de, |path| {
         warnings.push(format!("unknown config key: {path}"));
     })
     .map_err(|e| parse_error(text, &e))?;
+    let a = &mut config.appearance;
+    for note in config.fonts.adopt_legacy(&mut a.font, &mut a.mono_font) {
+        log::info!("{note}");
+    }
     if config.schema > SCHEMA_VERSION {
         return Err(ConfigError::Schema(config.schema));
     }
@@ -274,6 +280,27 @@ mod tests {
         let missing = load_or_default(&dir.path().join("missing.toml")).unwrap();
         assert_eq!(missing.config, Config::default());
         assert!(matches!(load(&dir.path().join("missing.toml")), Err(ConfigError::Io(FsErrorKind::NotFound, _))));
+    }
+
+    #[test]
+    fn legacy_font_keys_migrate_into_roles() {
+        let old = "[appearance]
+font = \"Fira Sans\"   # mine
+mono_font = \"JetBrains Mono\"
+font_size = 14.0
+";
+        let l = parse_str(old).unwrap();
+        assert!(l.warnings.is_empty(), "{:?}", l.warnings);
+        let c = &l.config;
+        assert_eq!(c.fonts.ui.family, "Fira Sans");
+        assert_eq!(c.fonts.terminal.family, fonts::Fonts::DEFAULT_MONO, "old default mono = new default");
+        assert!(c.appearance.font.is_empty() && c.appearance.mono_font.is_empty());
+        let text = to_string_preserving(old, c).unwrap();
+        assert!(!text.contains("mono_font") && !text.contains("font = \"Fira"), "{text}");
+        assert!(text.contains("font_size = 14.0"));
+        let back = parse_str(&text).unwrap().config;
+        assert_eq!(back.fonts, c.fonts);
+        assert!(!to_pretty_string(&Config::default()).unwrap().contains("mono_font"));
     }
 
     #[test]

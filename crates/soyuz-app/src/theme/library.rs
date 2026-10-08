@@ -228,7 +228,7 @@ pub fn sync(ctx: &Context, config: &soyuz_core::config::Config, preference: Them
     if seen != Some(Seen(v)) {
         ctx.data_mut(|d| d.insert_temp(id, Seen(v)));
         if seen.is_some() && depends_on_library(&config.appearance) {
-            for w in super::install(ctx, &config.appearance, &config.theme.colors) {
+            for w in super::install(ctx, &config.appearance, &config.fonts, &config.theme.colors) {
                 log::warn!("{w}");
             }
             ctx.set_theme(preference);

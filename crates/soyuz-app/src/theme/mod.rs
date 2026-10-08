@@ -6,11 +6,12 @@ pub mod font_fallback;
 pub mod fonts;
 pub mod icons;
 pub mod library;
+pub mod sysfonts;
 pub mod themes;
 pub mod tokens;
 
 use egui::{Context, Theme};
-use soyuz_core::config::Appearance;
+use soyuz_core::config::{Appearance, FontRoleKind, Fonts};
 
 pub use apply::{ThemeOptions, preference_from_config};
 pub use tokens::{ORBIT_DARK, ORBIT_HC_DARK, ORBIT_HC_LIGHT, ORBIT_LIGHT, Palette};
@@ -29,16 +30,17 @@ struct Palettes {
     light: Palette,
 }
 
-/// Fonts + styles for both themes from `[appearance]` and `[theme.colors]`. Returns
-/// warnings for invalid color overrides.
+/// Fonts + styles for both themes from `[appearance]`, `[fonts]` and `[theme.colors]`.
+/// Returns warnings for invalid color overrides and missing fonts.
 pub fn install(
     ctx: &Context,
     appearance: &Appearance,
+    font_roles: &Fonts,
     overrides: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
-    font_fallback::configure(ctx, appearance.fallback_fonts, &appearance.font, &appearance.mono_font);
+    font_fallback::configure(ctx, appearance.fallback_fonts, font_roles);
     library::start(ctx);
-    let font_warnings = fonts::install(ctx, &appearance.font, &appearance.mono_font);
+    let font_warnings = fonts::install(ctx, font_roles);
     let (mut dark, mut light, mut warnings) = resolve(appearance);
     warnings.extend(dark.apply_overrides(overrides));
     warnings.extend(font_warnings);
@@ -54,6 +56,9 @@ pub fn install(
         dark: dark.clone(),
         light: light.clone(),
         font_size: appearance.font_size,
+        ui_offset: font_roles.role(FontRoleKind::Ui).offset(),
+        semibold_offset: font_roles.role(FontRoleKind::UiSemibold).offset(),
+        code_offset: font_roles.role(FontRoleKind::Code).offset(),
         reduced_motion: appearance.reduced_motion,
         ui_scale: appearance.ui_scale,
         density: appearance.density,

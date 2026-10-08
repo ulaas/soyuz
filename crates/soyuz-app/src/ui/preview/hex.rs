@@ -113,12 +113,14 @@ impl HexDoc {
 /// Draw the hex view filling `rect`.
 pub fn show(ui: &mut Ui, rect: Rect, doc: &mut HexDoc, client: &PreviewClient, p: &Palette, font_size: f32) {
     // Shrink the font so offset + hex + ASCII fit the pane (down to 8 px).
-    let probe = FontId::monospace(font_size);
+    let hex_family = crate::theme::fonts::family(soyuz_core::config::FontRoleKind::Hex);
+    let font_size = (font_size + crate::theme::fonts::offset(ui.ctx(), soyuz_core::config::FontRoleKind::Hex)).max(6.0);
+    let probe = FontId::new(font_size, hex_family.clone());
     let probe_w = ui.ctx().fonts_mut(|f| f.glyph_width(&probe, '0')).max(1.0);
     let cols = (offset_digits(doc.len) + 2 + 49 + 2 + 16) as f32;
     let fit = ((rect.width() - 30.0) / cols) / probe_w * font_size;
     let font_size = fit.clamp(8.0, font_size);
-    let font = FontId::monospace(font_size);
+    let font = FontId::new(font_size, hex_family);
     let row_h = (font_size * 1.45).round();
     let digits = offset_digits(doc.len);
     let char_w = ui.ctx().fonts_mut(|f| f.glyph_width(&font, '0'));
