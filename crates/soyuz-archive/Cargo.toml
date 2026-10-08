@@ -8,7 +8,14 @@ publish.workspace = true
 
 [features]
 default = []
-# RAR read support via the `unrar` crate (UnRAR licence: no RAR creation). Off by default.
+# Native zstd (libzstd via `zstd-sys`, needs a C compiler for the target): enables writing
+# tar.zst / zstd-compressed zip entries and reading zstd zip entries. Without it, tar.zst is
+# read with the pure-Rust `ruzstd` decoder and zstd writing returns `Unsupported`.
+# Off by default so `cargo check/clippy --target <other-os>` works without a C cross toolchain;
+# the app should enable it for release builds.
+zstd = ["dep:zstd", "zip/zstd"]
+# Declares the RAR format variant only; no pure-Rust / redistributable-friendly RAR decoder is
+# used, so opening RAR returns `Unsupported(Rar)` (see lib docs).
 rar = []
 
 [dependencies]
@@ -16,6 +23,16 @@ soyuz-core.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true
+zip.workspace = true
+tar.workspace = true
+flate2.workspace = true
+zstd = { workspace = true, optional = true }
+ruzstd.workspace = true
+bzip2.workspace = true
+lzma-rust2.workspace = true
+sevenz-rust2.workspace = true
+filetime.workspace = true
+chrono.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

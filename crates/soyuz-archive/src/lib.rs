@@ -1,13 +1,28 @@
 //! `soyuz-archive`: browse, extract, create and test archives (zip, tar.*, 7z; RAR read
 //! behind the `rar` feature).
 //!
-//! **M0 status:** the full public API (PLAN §2.5) is present; format detection by
-//! extension, [`list_dir`], [`find_entry`] and [`total_input_bytes`] work. Opening and
-//! creating archives return `Unsupported` until M7.
+//! Formats: zip (stored / deflate / bzip2 / lzma / xz read; store / deflate
+//! write; ZipCrypto + AES read, AES-256 write), tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z
+//! (read + write, AES-256 with header encryption). The default build is pure Rust (tar.zst
+//! is read with `ruzstd`). The opt-in `zstd` feature links libzstd (`zstd-sys`, needs a C
+//! compiler) and adds tar.zst writing plus zstd-compressed zip entries (read + write).
+//! RAR is not available: the `rar` feature only declares the format variant and opening a
+//! RAR archive returns `Unsupported(Rar)`.
+//!
+//! Safety: extraction rejects absolute paths, `..` escapes and symlinks pointing outside
+//! the destination (`ArchiveError::ZipSlip`), never writes through a symlink, validates
+//! every path segment (Windows reserved names on Windows), writes each file to a temp
+//! name first and streams data in 256 KiB chunks (no entry is ever fully buffered).
+//!
+//! Cost notes: zip and uncompressed tar give O(1) random access; compressed tar has to
+//! decompress up to the entry for [`ArchiveReader::open_entry`], and listing it decodes the
+//! whole stream once. 7z solid blocks decode the preceding entries of the same block.
 #![forbid(unsafe_code)]
 
+mod extract;
 pub mod format;
 pub mod reader;
+mod util;
 pub mod vpath;
 pub mod writer;
 
@@ -15,10 +30,11 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use serde::{Deserialize, Serialize};
 use soyuz_core::{ConflictResolution, Control, ErrorAction, FsError, FsErrorKind, OpControl, Overwrite, ProgressSink};
 
 pub use format::{ArchiveFormat, detect};
-pub use vpath::{find_entry, list_dir};
+pub use vpath::{DirChild, DirIndex, find_entry, list_dir};
 
 /// Archive errors.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -89,6 +105,37 @@ pub trait ArchiveReader: Send {
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError>;
     fn test(&mut self, ctl: &OpControl, sink: &mut dyn ProgressSink) -> Result<TestReport, ArchiveError>;
+    /// Cached directory index (additive, see PLAN §10). The built-in readers build it on
+    /// first use; the default returns `None` and [`list_dir`] falls back to a full scan.
+    fn dir_index(&mut self) -> Result<Option<&DirIndex>, ArchiveError> {
+        Ok(None)
+    }
+}
+
+/// Zip compression method for [`create_with`] (additive, see PLAN §10). `level == 0`
+/// always stores.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZipMethod {
+    #[default]
+    Deflate,
+    Zstd,
+    Store,
+}
+
+/// Extra knobs for [`create_with`] that do not fit the frozen [`CreateOptions`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CreateExtras {
+    pub zip_method: ZipMethod,
+    /// 7z with a password: also encrypt the header (file names). Default `true`.
+    pub encrypt_7z_headers: bool,
+}
+
+impl Default for CreateExtras {
+    fn default() -> Self {
+        CreateExtras { zip_method: ZipMethod::Deflate, encrypt_7z_headers: true }
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -167,7 +214,19 @@ pub fn create(
     ctl: &OpControl,
     sink: &mut dyn ProgressSink,
 ) -> Result<(), ArchiveError> {
-    writer::create(dest, inputs, opts, ctl, sink)
+    writer::create(dest, inputs, opts, &CreateExtras::default(), ctl, sink)
+}
+
+/// [`create`] with [`CreateExtras`] (zip method, 7z header encryption).
+pub fn create_with(
+    dest: &Path,
+    inputs: &[PathBuf],
+    opts: &CreateOptions,
+    extras: &CreateExtras,
+    ctl: &OpControl,
+    sink: &mut dyn ProgressSink,
+) -> Result<(), ArchiveError> {
+    writer::create(dest, inputs, opts, extras, ctl, sink)
 }
 
 /// Total bytes of regular files under `inputs` (symlinks not followed), for jobs' totals.
@@ -208,6 +267,7 @@ mod tests {
     #[test]
     fn open_unknown_and_unimplemented() {
         assert!(matches!(open(Path::new("/x/readme.txt"), None), Err(ArchiveError::Io(_))));
-        assert!(matches!(open(Path::new("/x/a.zip"), None), Err(ArchiveError::Unsupported(ArchiveFormat::Zip))));
+        let missing = open(Path::new("/definitely/missing/a.zip"), None).err();
+        assert!(matches!(missing, Some(ArchiveError::Io(ref e)) if e.kind == FsErrorKind::NotFound), "{missing:?}");
     }
 }
