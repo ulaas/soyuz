@@ -52,11 +52,12 @@ directories = "6.0.0"
 bitflags = { version = "2.11.0", features = ["serde"] }
 
 # --- archives ---
-zip = { version = "8.6.0", default-features = false, features = ["deflate", "bzip2", "zstd", "lzma", "time", "aes-crypto"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate", "bzip2", "lzma", "xz", "time", "aes-crypto"] }
 tar = "0.4.46"
 flate2 = "1.1.10"
 zstd = "0.13.3"
-liblzma = "0.4"
+ruzstd = "0.8.3"
+lzma-rust2 = { version = "0.16.2", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bzip2 = "0.6.1"
 sevenz-rust2 = "0.23.0"
 infer = "0.22.0"
