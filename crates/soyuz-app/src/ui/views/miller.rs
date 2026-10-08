@@ -137,7 +137,13 @@ fn aux_column(
                 icons::color(e, &p).gamma_multiply(a),
             );
             let color = p.text_primary.gamma_multiply(a);
-            let g = trunc_galley(ui.painter(), &e.name, FontId::proportional(13.0), color, r.width() - 56.0);
+            let g = trunc_galley(
+                ui.painter(),
+                &super::display_name(e),
+                FontId::proportional(13.0),
+                color,
+                r.width() - 56.0,
+            );
             ui.painter().galley(pos2(r.left() + 30.0, r.center().y - g.size().y / 2.0), g, color);
             if e.is_dir_like() {
                 ui.painter().text(

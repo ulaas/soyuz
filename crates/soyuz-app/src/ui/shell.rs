@@ -73,6 +73,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     toolbar::show(ui, app);
     crate::ui::search::bar(ui, app);
     crate::ui::preview::show(ui, app);
+    panels::show_activity(ui, app);
     crate::ui::tools::show_panels(ui, app);
 
     CentralPanel::default()

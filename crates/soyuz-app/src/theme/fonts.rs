@@ -52,8 +52,98 @@ pub fn definitions() -> FontDefinitions {
     fonts
 }
 
-pub fn install(ctx: &Context) {
-    ctx.set_fonts(definitions());
+/// Install the fonts with `[appearance] font` / `mono_font` in front of the bundled ones
+/// (which stay as fallbacks). Returns warnings for fonts that could not be found.
+pub fn install(ctx: &Context, font: &str, mono_font: &str) -> Vec<String> {
+    let mut fonts = definitions();
+    let mut warnings = Vec::new();
+    for (setting, name, bundled, family) in [
+        ("font", font, "Inter", FontFamily::Proportional),
+        ("mono_font", mono_font, "JetBrains Mono", FontFamily::Monospace),
+    ] {
+        if is_bundled(name, bundled) {
+            continue;
+        }
+        match find_font(name) {
+            Some(bytes) => {
+                let key = format!("user-{setting}");
+                fonts.font_data.insert(key.clone(), FontData::from_owned(bytes).into());
+                fonts.families.entry(family).or_default().insert(0, key);
+            }
+            None => warnings.push(format!(
+                "[appearance] {setting} = \"{name}\": font not found (use a font file name or path); using {bundled}"
+            )),
+        }
+    }
+    ctx.set_fonts(fonts);
+    warnings
+}
+
+/// Normalized font name for matching: lowercase alphanumerics only.
+fn norm(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+fn is_bundled(name: &str, bundled: &str) -> bool {
+    let n = norm(name);
+    n.is_empty() || n == norm(bundled)
+}
+
+/// Whether a font file name (stem) matches the configured family `want` (normalized):
+/// `Cascadia Mono` ↔ `CascadiaMono.ttf`, `Fira Code` ↔ `FiraCode-Regular.otf`.
+fn stem_matches(stem: &str, want: &str) -> bool {
+    let s = norm(stem);
+    s == want || s == format!("{want}regular")
+}
+
+/// A font by path, or by family name searched in the system / user font folders.
+fn find_font(name: &str) -> Option<Vec<u8>> {
+    let path = std::path::Path::new(name.trim());
+    if path.is_absolute() {
+        return std::fs::read(path).ok();
+    }
+    let want = norm(name);
+    let mut stack: Vec<(std::path::PathBuf, u8)> = font_dirs().into_iter().map(|d| (d, 0)).collect();
+    while let Some((dir, depth)) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() {
+                if depth < 4 {
+                    stack.push((p, depth + 1));
+                }
+                continue;
+            }
+            let ext = p.extension().map(|x| x.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            if matches!(ext.as_str(), "ttf" | "otf")
+                && p.file_stem().is_some_and(|s| stem_matches(&s.to_string_lossy(), &want))
+            {
+                return std::fs::read(&p).ok();
+            }
+        }
+    }
+    None
+}
+
+fn font_dirs() -> Vec<std::path::PathBuf> {
+    let mut v = Vec::new();
+    let home = soyuz_fs::home();
+    if cfg!(windows) {
+        let windir = std::env::var_os("WINDIR").map(std::path::PathBuf::from);
+        v.push(windir.unwrap_or_else(|| "C:\\Windows".into()).join("Fonts"));
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            v.push(std::path::PathBuf::from(local).join("Microsoft\\Windows\\Fonts"));
+        }
+    } else if cfg!(target_os = "macos") {
+        v.extend(["/System/Library/Fonts", "/Library/Fonts"].map(std::path::PathBuf::from));
+        v.push(home.join("Library/Fonts"));
+    } else {
+        v.extend(["/usr/share/fonts", "/usr/local/share/fonts"].map(std::path::PathBuf::from));
+        v.push(home.join(".local/share/fonts"));
+        v.push(home.join(".fonts"));
+    }
+    v
 }
 
 #[cfg(test)]
@@ -70,5 +160,17 @@ mod tests {
         assert_eq!(f.families[&FontFamily::Name(SEMIBOLD.into())][0], "Inter-SemiBold");
         assert_eq!(f.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(f.families[&FontFamily::Name(PHOSPHOR_FILL.into())][0], PHOSPHOR_FILL);
+    }
+
+    #[test]
+    fn font_name_matching() {
+        assert!(is_bundled("JetBrains Mono", "JetBrains Mono"));
+        assert!(is_bundled("  ", "Inter"));
+        assert!(!is_bundled("Fira Code", "JetBrains Mono"));
+        let want = norm("Cascadia Mono");
+        assert!(stem_matches("CascadiaMono", &want));
+        assert!(stem_matches("cascadia-mono-regular", &want));
+        assert!(!stem_matches("CascadiaMono-Bold", &want));
+        assert!(find_font("No Such Font Family 1234").is_none());
     }
 }

@@ -266,6 +266,8 @@ pub struct SplitWindow {
     custom: String,
     size: Option<u64>,
     parts: Option<Result<(PathBuf, Vec<PathBuf>), String>>,
+    /// A `.blake3` checksum file sits next to the parts (checked once, not per frame).
+    has_checksum: bool,
     task: Option<Task>,
     result: Option<Result<String, String>>,
 }
@@ -283,6 +285,7 @@ impl SplitWindow {
             custom: "250 MB".into(),
             size,
             parts: None,
+            has_checksum: false,
             task: None,
             result: None,
         }
@@ -290,6 +293,7 @@ impl SplitWindow {
 
     pub fn join(path: PathBuf) -> Self {
         let parts = Some(find_parts(&path));
+        let has_checksum = matches!(&parts, Some(Ok((base, _))) if checksum_path(base).is_file());
         let out = path.parent().map(super::tags_ui::show_path).unwrap_or_default();
         SplitWindow {
             open: true,
@@ -300,6 +304,7 @@ impl SplitWindow {
             custom: String::new(),
             size: None,
             parts,
+            has_checksum,
             task: None,
             result: None,
         }
@@ -443,7 +448,8 @@ impl SplitWindow {
                 label(ui, "PARTS");
                 match &self.parts {
                     Some(Ok((base, parts))) => {
-                        let has_ck = checksum_path(base).is_file();
+                        let has_ck = self.has_checksum;
+
                         ui.label(
                             RichText::new(format!("{} parts → {}", parts.len(), soyuz_core::entry::display_name(base)))
                                 .color(p.text_primary),

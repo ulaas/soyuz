@@ -34,6 +34,7 @@ use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::TermMode;
 use egui::{FontId, Ui};
 
+pub use pty::has_control_chars;
 pub use theme::TermTheme;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -149,8 +150,12 @@ impl Terminal {
     }
 
     /// Types `cd "<dir>"` when the shell is idle at a prompt (PLAN §2.7 rule); `false`
-    /// when refused.
+    /// when refused. Paths containing control characters are always refused: typed into a
+    /// shell, a newline or escape sequence in a (crafted) folder name would run commands.
     pub fn send_cd(&self, dir: &Path) -> bool {
+        if has_control_chars(&dir.to_string_lossy()) {
+            return false;
+        }
         if !self.is_alive() || self.idle_for() < CD_IDLE {
             return false;
         }

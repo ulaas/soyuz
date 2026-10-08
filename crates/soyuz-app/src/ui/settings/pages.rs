@@ -220,9 +220,8 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.block("Hidden context-menu entries", "Action names to hide from right-click menus. One per line.", |ui| {
             lines_editor(ui, "ctx_hide", &mut d.context_menu.hide, 3);
         });
-        r.block("Context-menu order", "Optional explicit order of action names. One per line.", |ui| {
-            lines_editor(ui, "ctx_order", &mut d.context_menu.order, 3);
-        });
+        // `[context_menu] order` is not offered: the menus have a fixed, grouped layout
+        // and don't read it yet (the key stays accepted in config.toml).
     });
     any
 }

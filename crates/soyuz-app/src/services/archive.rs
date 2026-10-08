@@ -186,31 +186,109 @@ pub fn open_in_app(archive: &Path, inner: &str, postman: Postman) {
     let _ = worker().send(Req::Open { archive: archive.to_path_buf(), inner: inner.to_string(), postman });
 }
 
-/// Temp folder used for entries opened from archives.
-pub fn temp_root() -> PathBuf {
-    std::env::temp_dir().join("soyuz-archive")
+/// Unpredictable 64-bit value (std's per-process random hash keys + time + counter).
+fn random_u64() -> u64 {
+    use std::hash::{BuildHasher, Hasher};
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u64(SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+    h.write_u128(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0));
+    h.write_u32(std::process::id());
+    h.finish()
+}
+
+/// Create a fresh directory that did not exist before (never reuses or follows an
+/// existing path), private to the user on Unix (0700).
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(path)
+    }
+}
+
+/// This session's private temp folder for entries opened from archives
+/// (`<tmp>/soyuz-archive-<random>`), created on first use. Because we create it
+/// ourselves with a random name (`create`, not `create_dir_all`), nothing another
+/// local user planted in a shared `/tmp` can be reused or followed.
+pub fn temp_root() -> Result<PathBuf, String> {
+    static ROOT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
+    ROOT.get_or_init(|| {
+        let base = std::env::temp_dir();
+        let mut last = String::new();
+        for _ in 0..8 {
+            let dir = base.join(format!("soyuz-archive-{:016x}", random_u64()));
+            match create_private_dir(&dir) {
+                Ok(()) => return Ok(dir),
+                Err(e) => last = e.to_string(),
+            }
+        }
+        Err(format!("cannot create a temporary folder: {last}"))
+    })
+    .clone()
+}
+
+/// Validate an archive entry's last path segment as a file name we may create in the
+/// temp folder. Entry names are attacker-controlled: reject separators (`\` is a
+/// separator on Windows), drive / stream syntax (`C:evil`, `a:stream`), `.`/`..`,
+/// control characters, Windows device names (`CON`, `nul.txt`, `COM1`) and names
+/// Windows silently rewrites (trailing dot / space).
+pub fn temp_entry_name(name: &str) -> Result<&str, String> {
+    let bad = || Err(format!("“{name}” is not a safe file name"));
+    if name.is_empty() || name == "." || name == ".." || name.len() > 255 {
+        return bad();
+    }
+    if name.chars().any(|c| matches!(c, '/' | '\\' | ':' | '<' | '>' | '"' | '|' | '?' | '*') || c.is_control()) {
+        return bad();
+    }
+    if name.ends_with('.') || name.ends_with(' ') {
+        return bad();
+    }
+    let base = name.split('.').next().unwrap_or(name).trim_end().to_ascii_uppercase();
+    let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$")
+        || ((base.starts_with("COM") || base.starts_with("LPT"))
+            && base.chars().count() == 4
+            && base[3..].chars().all(|c| c.is_ascii_digit() || matches!(c, '¹' | '²' | '³')));
+    if reserved {
+        return bad();
+    }
+    Ok(name)
 }
 
 fn open_entry(archive: &Path, inner: &str) -> Result<(), String> {
-    let name = inner.rsplit('/').next().unwrap_or(inner);
-    let stem = soyuz_core::entry::display_name(archive);
-    let dir = temp_root().join(format!("{stem}-{:x}", hash(&archive.to_string_lossy())));
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = temp_entry_name(inner.rsplit('/').next().unwrap_or(inner))?;
+    // A fresh per-open subfolder: the same entry can be opened twice, and a stale file
+    // from an earlier open is never overwritten while an app may still hold it.
+    let stem: String = soyuz_core::entry::display_name(archive)
+        .chars()
+        .map(|c| if c.is_alphanumeric() || matches!(c, '-' | '_' | '.') { c } else { '_' })
+        .take(40)
+        .collect();
+    let dir = temp_root()?.join(format!("{}-{:016x}", stem.trim_end_matches('.'), random_u64()));
+    create_private_dir(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join(name);
-    let bytes = with_reader(archive, |r| {
+    // `create_new`: never open an existing file or follow a symlink at `dest`.
+    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&dest).map_err(|e| e.to_string())?;
+    let copied = with_reader(archive, |r| {
         let idx = soyuz_archive::find_entry(r, inner).ok_or(ArchiveError::Corrupt("entry not found".into()))?;
         let mut rd = r.open_entry(idx)?;
-        let mut buf = Vec::new();
-        std::io::Read::read_to_end(&mut rd, &mut buf)?;
-        Ok(buf)
+        // Stream to disk; large entries are not held in memory.
+        std::io::copy(&mut rd, &mut file)?;
+        Ok(())
     })
-    .map_err(|e| e.to_string())?;
-    std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())
+    .and_then(|()| file.sync_all().map_err(|e| e.to_string()));
+    drop(file);
+    if let Err(e) = copied {
+        let _ = std::fs::remove_file(&dest);
+        let _ = std::fs::remove_dir(&dir);
+        return Err(e);
+    }
     soyuz_fs::launch::open_default(&dest).map_err(|e| e.to_string())
-}
-
-fn hash(s: &str) -> u64 {
-    s.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
 }
 
 // ---- jobs hand-off -----------------------------------------------------------------
@@ -260,6 +338,51 @@ mod tests {
         assert_eq!(format_by_name("zip"), None);
         assert_eq!(format_by_name("notes.txt"), None);
         assert!(is_browsable(Path::new("C:/d/b.tar.xz")));
+    }
+
+    #[test]
+    fn temp_entry_names_are_validated() {
+        for ok in ["a.txt", "report 2024.pdf", "Ünïcødé.md", ".hidden", "console.txt", "COM10", "LPT0x"] {
+            assert_eq!(temp_entry_name(ok), Ok(ok), "{ok}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "a/b",
+            "..\\evil.exe",
+            "C:evil",
+            "file.txt:stream",
+            "CON",
+            "nul.txt",
+            "con.d",
+            "Com1",
+            "lpt9.log",
+            "aux .txt",
+            "trailing.",
+            "trailing ",
+            "tab\there",
+            "new\nline",
+            "q?.txt",
+            "COM¹",
+        ] {
+            assert!(temp_entry_name(bad).is_err(), "{bad:?} must be rejected");
+        }
+        assert!(temp_entry_name(&"x".repeat(300)).is_err());
+    }
+
+    #[test]
+    fn temp_root_is_fresh_and_private() {
+        let root = temp_root().unwrap();
+        assert!(root.is_dir());
+        assert!(root.file_name().unwrap().to_string_lossy().starts_with("soyuz-archive-"));
+        assert_eq!(temp_root().unwrap(), root, "one folder per session");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&root).unwrap().permissions().mode() & 0o777, 0o700);
+        }
+        assert_ne!(random_u64(), random_u64());
     }
 
     #[test]

@@ -105,16 +105,14 @@ impl Memory {
         push_front(&mut self.shell, line, MAX_RECENT_SHELL);
     }
 
+    /// A broken file is backed up and protected from being overwritten (`store_file`).
     pub fn load(path: &Path) -> Memory {
-        std::fs::read_to_string(path).ok().and_then(|t| toml::from_str(&t).ok()).unwrap_or_default()
+        crate::services::store_file::load_toml(path).value()
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
-        if let Some(dir) = path.parent() {
-            let _ = soyuz_fs::create_dir_all(dir);
-        }
-        soyuz_fs::write_atomic(path, text.as_bytes()).map_err(|e| e.to_string())
+        crate::services::store_file::save_sync(path, text.as_bytes())
     }
 }
 

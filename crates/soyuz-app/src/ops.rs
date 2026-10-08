@@ -2,6 +2,7 @@
 //! handling, opening entries, tabs/panes management and [`Cmd`] application.
 
 pub mod fileops;
+pub mod window;
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -224,6 +225,21 @@ pub fn launch(app: &mut SoyuzApp, path: &Path) {
     }
 }
 
+/// Run a process launch (`open_with`, reveal, external terminal) on a short-lived
+/// thread: resolving and spawning can block for seconds (cold disk, network paths,
+/// slow association lookups). A failure comes back as an error toast titled `title`.
+fn spawn_launch(app: &mut SoyuzApp, title: String, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
+    let postman = app.services.mailbox.postman();
+    let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
+        if let Err(e) = f() {
+            postman.send(UiMsg::Notice(Toast::error(title).body(e)));
+        }
+    });
+    if let Err(e) = spawned {
+        app.ui.toasts.push(Toast::error("Couldn't start the launcher").body(e.to_string()));
+    }
+}
+
 /// Open the selection (Enter): one entry is activated; several files are all launched
 /// and several folders open in background tabs.
 pub fn open_selection(app: &mut SoyuzApp) {
@@ -322,6 +338,7 @@ pub fn close_tab(app: &mut SoyuzApp, index: usize) {
     for p in &mut tab.panes {
         dispose_pane(p, &mut app.services);
     }
+    app.ui.terminal.drop_tab(tab.id.0);
     if app.ws.active > index || app.ws.active >= app.ws.tabs.len() {
         app.ws.active = app.ws.active.saturating_sub(1);
     }
@@ -525,9 +542,8 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::OpenInNewTab { location, activate } => open_in_new_tab(app, location, activate),
         Cmd::OpenInOtherPane(loc) => open_in_other_pane(app, loc),
         Cmd::OpenWith { path, app: info } => {
-            if let Err(e) = soyuz_fs::launch::open_with(&path, &info) {
-                app.ui.toasts.push(Toast::error(format!("Couldn't open with {}", info.name)).body(e.to_string()));
-            }
+            let title = format!("Couldn't open with {}", info.name);
+            spawn_launch(app, title, move || soyuz_fs::launch::open_with(&path, &info).map_err(|e| e.to_string()));
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
         Cmd::FocusPane(id) => focus_pane(app, id),
@@ -554,15 +570,15 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::ComingSoon(a) => coming_soon(app, &a),
         Cmd::FileOp(c) => fileops::apply(app, c, ctx),
         Cmd::RevealInSystem(p) => {
-            if let Err(e) = soyuz_fs::launch::reveal_in_system(&p) {
-                app.ui.toasts.push(Toast::error("Couldn't reveal in the system file manager").body(e.to_string()));
-            }
+            spawn_launch(app, "Couldn't reveal in the system file manager".into(), move || {
+                soyuz_fs::launch::reveal_in_system(&p).map_err(|e| e.to_string())
+            });
         }
         Cmd::TerminalAt(dir) => {
             let preferred = (!app.config.terminal.shell.is_empty()).then(|| app.config.terminal.shell.clone());
-            if let Err(e) = soyuz_fs::launch::open_terminal_at(&dir, preferred.as_deref()) {
-                app.ui.toasts.push(Toast::error("Couldn't open a terminal").body(e.to_string()));
-            }
+            spawn_launch(app, "Couldn't open a terminal".into(), move || {
+                soyuz_fs::launch::open_terminal_at(&dir, preferred.as_deref()).map_err(|e| e.to_string())
+            });
         }
         Cmd::AddFavorite(path) => {
             let s = &mut app.ui.sidebar;
@@ -633,6 +649,11 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
         Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, ctx),
+        Cmd::Quit { when_idle } => app.confirm_quit(ctx, when_idle),
+        Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
+        Cmd::NewWindow(loc) => {
+            window::spawn_window(app, &loc);
+        }
         Cmd::SubmitJob(spec) => {
             crate::ui::archive::submit_job(app, *spec);
         }

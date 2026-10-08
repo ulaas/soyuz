@@ -31,7 +31,6 @@ use crate::state::pane::PaneId;
 use crate::ui::dialogs::conflict::{PromptDialog, PromptShared};
 use crate::ui::dialogs::delete_confirm::DeleteConfirmDialog;
 use crate::ui::dialogs::new_item::{LinkChoice, LinkDialog, TransferDialog};
-use crate::ui::panels::BottomTab;
 use crate::ui::panels::activity::{ActivityState, ActivityTab};
 use crate::ui::toasts::Toast;
 use crate::ui::views::trash::TrashState;
@@ -332,8 +331,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::JobsCancelAll => app.fileops.jobs.engine().cancel_all(),
         A::JobsClearFinished => app.fileops.jobs.engine().clear_finished(),
         A::JobsShowHistory => {
-            app.ui.bottom.open = true;
-            app.ui.bottom.tab = BottomTab::Activity;
+            app.ui.bottom.open_activity();
             app.fileops.activity.tab = ActivityTab::History;
         }
         _ => {}
@@ -810,9 +808,8 @@ fn auto_open_activity(app: &mut SoyuzApp) {
             open = true;
         }
     }
-    if open && !(app.ui.bottom.open && app.ui.bottom.tab == BottomTab::Activity) {
-        app.ui.bottom.open = true;
-        app.ui.bottom.tab = BottomTab::Activity;
+    if open && !app.ui.bottom.activity_shown() {
+        app.ui.bottom.open_activity();
         app.fileops.activity.tab = ActivityTab::Jobs;
     }
 }

@@ -91,12 +91,13 @@ pub(crate) fn ticks_to_system(t: u64) -> Option<SystemTime> {
 /// `SystemTime` → FILETIME ticks (clamped to the representable range, never 0).
 pub(crate) fn system_to_ticks(t: SystemTime) -> u64 {
     let ticks = match t.duration_since(UNIX_EPOCH) {
-        Ok(d) => {
-            EPOCH_DIFF_TICKS.saturating_add(d.as_secs().saturating_mul(10_000_000) + u64::from(d.subsec_nanos() / 100))
-        }
+        Ok(d) => EPOCH_DIFF_TICKS
+            .saturating_add(d.as_secs().saturating_mul(10_000_000).saturating_add(u64::from(d.subsec_nanos() / 100))),
         Err(e) => {
             let d = e.duration();
-            EPOCH_DIFF_TICKS.saturating_sub(d.as_secs().saturating_mul(10_000_000) + u64::from(d.subsec_nanos() / 100))
+            EPOCH_DIFF_TICKS.saturating_sub(
+                d.as_secs().saturating_mul(10_000_000).saturating_add(u64::from(d.subsec_nanos() / 100)),
+            )
         }
     };
     ticks.max(1)
@@ -117,6 +118,14 @@ mod tests {
         assert_eq!(ft_u64(&ft), ticks);
         let before = UNIX_EPOCH - Duration::from_secs(86_400);
         assert_eq!(ticks_to_system(system_to_ticks(before)), Some(before));
+    }
+
+    #[test]
+    fn filetime_far_future_saturates() {
+        // Seconds near u64::MAX / 1e7 plus sub-second ticks used to overflow the `+`.
+        if let Some(far) = UNIX_EPOCH.checked_add(Duration::new(u64::MAX / 10_000_000, 999_999_900)) {
+            assert_eq!(system_to_ticks(far), u64::MAX);
+        }
     }
 
     #[test]

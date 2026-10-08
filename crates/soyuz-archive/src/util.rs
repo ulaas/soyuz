@@ -64,15 +64,34 @@ pub(crate) fn path_escapes(raw: &str) -> bool {
 
 /// Resolve a symlink `target` relative to the directory containing `link_rel` (both
 /// `/`-separated, relative to the extraction root). `None` when it is absolute or escapes.
+#[cfg(test)]
 pub(crate) fn resolve_link_target(link_rel: &str, target: &str) -> Option<String> {
+    resolve_link_target_via(link_rel, target, &mut |_| false)
+}
+
+/// [`resolve_link_target`], but also `None` when resolving would *traverse* a path for
+/// which `is_link` is true (another symlink in the archive or on disk). A lexical check
+/// alone is beaten by chains: `d/l1 -> ..` is fine on its own, but `l2 -> d/l1/..`
+/// lexically stays at `d` while on disk it resolves to the parent of the destination.
+/// Ending *at* a link is allowed (it is checked on its own); passing through one is not.
+pub(crate) fn resolve_link_target_via(
+    link_rel: &str,
+    target: &str,
+    is_link: &mut dyn FnMut(&str) -> bool,
+) -> Option<String> {
     if target.is_empty() || path_escapes_absolute(target) {
         return None;
     }
     let mut parts: Vec<&str> = link_rel.split('/').filter(|s| !s.is_empty()).collect();
     parts.pop(); // the link itself
     for seg in target.split(['/', '\\']) {
+        if matches!(seg, "" | ".") {
+            continue;
+        }
+        if !parts.is_empty() && is_link(&parts.join("/")) {
+            return None;
+        }
         match seg {
-            "" | "." => {}
             ".." => {
                 parts.pop()?;
             }
@@ -207,6 +226,19 @@ mod tests {
         assert_eq!(resolve_link_target("l", "../c"), None);
         assert_eq!(resolve_link_target("a/l", "/etc/passwd"), None);
         assert_eq!(resolve_link_target("a/l", "x/./y").as_deref(), Some("a/x/y"));
+    }
+
+    #[test]
+    fn link_chains_are_rejected() {
+        let links = ["d/l1", "up"];
+        let mut is_link = |p: &str| links.contains(&p);
+        // Lexically `d`, but `d/l1` is a link: traversing it is refused.
+        assert_eq!(resolve_link_target_via("l2", "d/l1/..", &mut is_link), None);
+        assert_eq!(resolve_link_target_via("x/l3", "../up/../../etc", &mut is_link), None);
+        assert_eq!(resolve_link_target_via("x/l4", "../up/file", &mut is_link), None);
+        // Pointing *at* a link, or around one, is fine.
+        assert_eq!(resolve_link_target_via("l5", "d/l1", &mut is_link).as_deref(), Some("d/l1"));
+        assert_eq!(resolve_link_target_via("d/l6", "../d/real", &mut is_link).as_deref(), Some("d/real"));
     }
 
     #[test]

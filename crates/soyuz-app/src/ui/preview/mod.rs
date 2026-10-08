@@ -27,12 +27,14 @@ use render::{PreviewAction, PreviewState, info_grid, info_rows};
 pub struct PreviewPane {
     pub open: bool,
     pub width: f32,
+    /// Info pane mode (`ToggleInfoPane`): only the metadata section, no content viewer.
+    pub info_only: bool,
     state: Option<PreviewState>,
 }
 
 impl Default for PreviewPane {
     fn default() -> Self {
-        PreviewPane { open: false, width: 340.0, state: None }
+        PreviewPane { open: false, width: 340.0, info_only: false, state: None }
     }
 }
 
@@ -41,12 +43,32 @@ impl PreviewPane {
         PreviewPane { open, ..Default::default() }
     }
 
+    /// `TogglePreviewPane`: from the info pane it switches to the full preview.
     pub fn toggle(&mut self) {
-        self.open = !self.open;
-        if !self.open
-            && let Some(s) = &mut self.state
-        {
-            s.clear();
+        if self.open && self.info_only {
+            self.info_only = false;
+            return;
+        }
+        self.set_open(!self.open);
+    }
+
+    /// `ToggleInfoPane`: the same pane showing metadata only.
+    pub fn toggle_info(&mut self) {
+        if self.open && !self.info_only {
+            self.info_only = true;
+            return;
+        }
+        self.info_only = true;
+        self.set_open(!self.open);
+    }
+
+    fn set_open(&mut self, open: bool) {
+        self.open = open;
+        if !open {
+            self.info_only = false;
+            if let Some(s) = &mut self.state {
+                s.clear();
+            }
         }
     }
 
@@ -86,6 +108,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(&ctx);
     let target = target_entry(app);
     let pane_id = app.ws.pane().id;
+    let info_only = app.ui.preview.info_only;
     let st = app.ui.preview.state.get_or_insert_with(|| PreviewState::new(&ctx, false));
     let limits = st.limits(&app.config, &p);
     st.set_target(target.as_ref(), limits);
@@ -171,7 +194,9 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 st.loaded.as_ref().map(|l| &l.content),
                 Some(Content::Text(_) | Content::Markdown { .. } | Content::Hex(_) | Content::Archive(_))
             );
-            let info_h = if rows.is_empty() {
+            let info_h = if info_only {
+                body.height()
+            } else if rows.is_empty() {
                 0.0
             } else if textual {
                 (rows.len() as f32 * 21.0 + 40.0).min(body.height() * 0.32).min(170.0)
@@ -179,10 +204,12 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 (rows.len() as f32 * 21.0 + 40.0).min(body.height() * 0.5)
             };
             let content_r = Rect::from_min_max(body.min, pos2(body.right(), body.bottom() - info_h));
-            let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
-            child.set_clip_rect(content_r);
-            if let Some(a) = render::content(&mut child, content_r, st, false) {
-                action = Some(a);
+            if !info_only {
+                let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
+                child.set_clip_rect(content_r);
+                if let Some(a) = render::content(&mut child, content_r, st, false) {
+                    action = Some(a);
+                }
             }
             if info_h > 0.0 {
                 let ir = Rect::from_min_max(pos2(body.left(), content_r.bottom()), body.max);

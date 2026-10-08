@@ -72,10 +72,44 @@ type Listing = Bg<Result<Vec<EntryInfo>, String>>;
 #[derive(Clone, Debug, PartialEq)]
 enum TargetState {
     Empty,
+    /// The background probe of the typed target has not finished yet.
+    Checking,
     Missing,
     File,
     Dir,
 }
+
+/// Result of probing a target off the UI thread (`metadata` on a dead UNC share can
+/// block for tens of seconds, so it must never run per frame on the UI thread).
+#[derive(Clone, Debug)]
+struct Probe {
+    state: TargetState,
+    /// Target and link folder are on the same volume (for hard links).
+    same_volume: bool,
+    /// Folder the picker should switch to after a typed edit (target or its parent).
+    browse: Option<PathBuf>,
+}
+
+fn probe_target(target: &Path, dir: &Path) -> Probe {
+    let state = match std::fs::metadata(target) {
+        Ok(m) if m.is_dir() => TargetState::Dir,
+        Ok(_) => TargetState::File,
+        Err(_) => TargetState::Missing,
+    };
+    let same_volume = match state {
+        TargetState::File => soyuz_fs::device_of(target).ok() == soyuz_fs::device_of(dir).ok(),
+        _ => true,
+    };
+    let browse = if state == TargetState::Dir {
+        Some(target.to_path_buf())
+    } else {
+        target.parent().filter(|pp| pp.is_dir()).map(Path::to_path_buf)
+    };
+    Probe { state, same_volume, browse }
+}
+
+/// Typing pause before the target is probed.
+const PROBE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
 
 pub struct LinkDialog {
     dir: PathBuf,
@@ -90,6 +124,12 @@ pub struct LinkDialog {
     browse: Option<PathBuf>,
     listing: Option<(PathBuf, Listing)>,
     picker_open: bool,
+    /// Probe of the target path `.0` (debounced, background).
+    probe: Option<(PathBuf, Bg<Probe>)>,
+    /// When the target text was last edited by typing (debounce start).
+    edited_at: Option<std::time::Instant>,
+    /// Apply the probe's `browse` suggestion once it arrives (typed edits only).
+    follow_browse: bool,
 }
 
 impl LinkDialog {
@@ -111,6 +151,9 @@ impl LinkDialog {
             focus: true,
             listing: None,
             picker_open: target.is_none(),
+            probe: None,
+            edited_at: None,
+            follow_browse: false,
         }
     }
 
@@ -119,16 +162,24 @@ impl LinkDialog {
         if t.is_relative() { self.dir.join(t) } else { t }
     }
 
-    fn state(&self) -> TargetState {
+    /// Current probe result for the typed target, starting a background probe once
+    /// the text has settled (debounced) and differs from the last probed path.
+    fn poll_probe(&mut self, ctx: &egui::Context) -> Option<Probe> {
         if self.target.trim().is_empty() {
-            return TargetState::Empty;
+            return Some(Probe { state: TargetState::Empty, same_volume: true, browse: None });
         }
-        let p = self.target_path();
-        match std::fs::metadata(&p) {
-            Ok(m) if m.is_dir() => TargetState::Dir,
-            Ok(_) => TargetState::File,
-            Err(_) => TargetState::Missing,
+        let tp = self.target_path();
+        let fresh = self.probe.as_ref().is_some_and(|(p, _)| *p == tp);
+        if !fresh {
+            if self.edited_at.is_none_or(|t| t.elapsed() >= PROBE_DEBOUNCE) {
+                let (t2, d2) = (tp.clone(), self.dir.clone());
+                self.probe = Some((tp, Bg::spawn(ctx, move || probe_target(&t2, &d2))));
+            } else {
+                ctx.request_repaint_after(PROBE_DEBOUNCE);
+            }
+            return None;
         }
+        self.probe.as_ref().and_then(|(_, bg)| bg.with(|r| r.cloned()))
     }
 
     fn set_target(&mut self, p: &Path) {
@@ -327,11 +378,8 @@ impl Dialog for LinkDialog {
                     let refs: Vec<&str> = self.existing.iter().map(String::as_str).collect();
                     self.name = crate::ops::fileops::names::link_name(&tp, &refs);
                 }
-                if tp.is_dir() {
-                    self.browse = Some(tp);
-                } else if let Some(parent) = tp.parent().filter(|pp| pp.is_dir()) {
-                    self.browse = Some(parent.to_path_buf());
-                }
+                self.edited_at = Some(std::time::Instant::now());
+                self.follow_browse = true;
             }
             let glyph = if self.picker_open { ph::CARET_UP } else { ph::FOLDER_OPEN };
             if small_icon_button(ui, glyph, "Browse").clicked() {
@@ -342,10 +390,26 @@ impl Dialog for LinkDialog {
             ui.add_space(4.0);
             self.picker(ui);
         }
-        let state = self.state();
+        let probe = self.poll_probe(ui.ctx());
+        if self.follow_browse
+            && let Some(pr) = &probe
+        {
+            self.follow_browse = false;
+            if let Some(b) = pr.browse.clone() {
+                self.browse = Some(b);
+            }
+        }
+        let state = probe.as_ref().map_or(TargetState::Checking, |pr| pr.state.clone());
+        let same_volume = probe.as_ref().is_none_or(|pr| pr.same_volume);
         ui.add_space(4.0);
         ui.horizontal(|ui| match state {
             TargetState::Empty => {}
+            TargetState::Checking => {
+                ui.spinner();
+                ui.label(
+                    RichText::new("Checking target\u{2026}").font(FontId::proportional(11.5)).color(p.text_tertiary),
+                );
+            }
             TargetState::Missing => {
                 badge(ui, Some(ph::WARNING), "Target does not exist", p.warning);
             }
@@ -386,11 +450,10 @@ impl Dialog for LinkDialog {
             Some(format!("\u{201c}{name}\u{201d} already exists here."))
         } else {
             match (self.kind, &state) {
+                (_, TargetState::Checking) => Some("Checking the target\u{2026}".into()),
                 (LinkChoice::Hardlink, TargetState::Dir) => Some("Hard links can only point to files.".into()),
                 (LinkChoice::Hardlink, TargetState::Missing) => Some("A hard link needs an existing file.".into()),
-                (LinkChoice::Hardlink, _)
-                    if soyuz_fs::device_of(&target).ok() != soyuz_fs::device_of(&self.dir).ok() =>
-                {
+                (LinkChoice::Hardlink, _) if !same_volume => {
                     Some("Hard links must be on the same volume as the target.".into())
                 }
                 (LinkChoice::Junction, TargetState::File) => Some("Junctions can only point to folders.".into()),
@@ -400,6 +463,7 @@ impl Dialog for LinkDialog {
         };
         if let Some(e) = &err
             && !self.target.trim().is_empty()
+            && state != TargetState::Checking
         {
             ui.add_space(4.0);
             ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));

@@ -190,6 +190,13 @@ pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
     }
     app.keymap = km;
     app.keyseq.reset();
+    crate::app::apply_live_settings(ctx, c);
+    if old.layout.terminal_height != c.layout.terminal_height {
+        // The panel remembers a size the user dragged; the setting is the default height.
+        app.ui.bottom.height = c.layout.terminal_height.clamp(120.0, 720.0);
+        app.ui.bottom.reset_height = true;
+    }
+    app.ui.bottom.set_activity_placement(c.layout.activity_panel);
     if old.general != c.general
         || old.columns != c.columns
         || old.appearance.thumbnail_size != c.appearance.thumbnail_size

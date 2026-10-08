@@ -94,17 +94,53 @@ impl Quoting {
 
     /// Quote one value when it needs it.
     pub fn quote(self, v: &str) -> String {
+        // `,` and `@` are not plain for PowerShell (array / splatting) or cmd (delimiter).
         let plain = !v.is_empty()
-            && v.chars()
-                .all(|c| c.is_alphanumeric() || matches!(c, '/' | '\\' | '.' | '_' | '-' | ':' | '+' | ',' | '@'));
+            && v.chars().all(|c| {
+                c.is_alphanumeric()
+                    || matches!(c, '/' | '\\' | '.' | '_' | '-' | ':' | '+')
+                    || (self == Quoting::Posix && matches!(c, ',' | '@'))
+            });
         match self {
             Quoting::None => v.to_string(),
             _ if plain => v.to_string(),
             Quoting::Posix => format!("'{}'", v.replace('\'', "'\\''")),
-            Quoting::PowerShell => format!("'{}'", v.replace('\'', "''")),
-            Quoting::Cmd => format!("\"{}\"", v.replace('"', "\"\"")),
+            Quoting::PowerShell => soyuz_fs::launch::powershell_quote(v),
+            Quoting::Cmd => cmd_quote(v),
         }
     }
+}
+
+/// Quote a value for a cmd.exe command line (REVIEW-2 #4). Inside `"…"` cmd leaves
+/// `& | < > ^ ( )` alone, but it still expands `%VAR%`, and `"` toggles its quote state.
+/// Both are therefore emitted *outside* the quotes, caret-escaped: `a%b` becomes
+/// `"a"^%"b"`. The percent phase then only sees names like `"b"^`, which never exist, so
+/// nothing expands, and the caret phase turns `^%` into a literal `%`. Backslashes before
+/// a closing quote are doubled so the target's CRT argv parser does not read `\"` as a
+/// literal quote. (`!` is only special with delayed expansion, which neither `cmd /C`
+/// nor a default interactive cmd enables.)
+pub fn cmd_quote(v: &str) -> String {
+    fn flush(out: &mut String, seg: &mut String) {
+        let trailing = seg.len() - seg.trim_end_matches('\\').len();
+        out.push('"');
+        out.push_str(seg);
+        out.extend(std::iter::repeat_n('\\', trailing));
+        out.push('"');
+        seg.clear();
+    }
+    let mut out = String::with_capacity(v.len() + 2);
+    let mut seg = String::new();
+    for c in v.chars() {
+        if matches!(c, '%' | '"') {
+            flush(&mut out, &mut seg);
+            out.push('^');
+            out.push(c);
+        } else {
+            seg.push(c);
+        }
+    }
+    flush(&mut out, &mut seg);
+    out
 }
 
 /// Expand the placeholders inside one string. List placeholders are joined with spaces
@@ -134,11 +170,12 @@ pub fn expand_str(s: &str, ctx: &PlaceholderCtx, q: Quoting) -> String {
             }
             'n' => Some(list(ctx.selection_or_focused().iter().map(|p| name_of(p)).collect())),
             'N' => Some(ctx.focused.as_deref().map(|p| q.quote(&name_of(p))).unwrap_or_default()),
+            // Quoted like every other value: an extension can hold `&`, `;`, quotes… (#5).
             'E' => Some(
                 ctx.focused
                     .as_deref()
                     .and_then(|p| p.extension())
-                    .map(|e| e.to_string_lossy().into_owned())
+                    .map(|e| q.quote(&e.to_string_lossy()))
                     .unwrap_or_default(),
             ),
             _ => None,
@@ -176,11 +213,9 @@ pub fn command_line(cmd: &CustomCommand, ctx: &PlaceholderCtx, q: Quoting) -> St
         // A command line typed as one string: placeholders are quoted in place.
         return expand_str(cmd.command.trim(), ctx, q);
     }
-    let program = if q == Quoting::PowerShell && program.contains(' ') {
-        format!("& {}", q.quote(&program))
-    } else {
-        q.quote(&program)
-    };
+    let quoted = q.quote(&program);
+    // A quoted string as the first PowerShell token is an expression, not a command.
+    let program = if q == Quoting::PowerShell && quoted != program { format!("& {quoted}") } else { quoted };
     parts.push(program);
     for a in &cmd.args {
         match a.as_str() {
@@ -281,11 +316,19 @@ fn spawn_direct(program: &str, args: &[String], dir: &Path) -> std::io::Result<(
     std::process::Command::new(program).args(args).current_dir(dir).spawn().map(drop)
 }
 
+/// Run a whole command line detached. On Windows the line was quoted for PowerShell
+/// (`Quoting::for_shell("")`), so it runs in PowerShell — previously it went to `cmd /C`
+/// with PowerShell quoting, so `a&calc&.txt` injected a command (REVIEW-2 #4). The script
+/// travels as `-EncodedCommand`, so neither cmd.exe nor the CRT re-parses it.
 fn spawn_shell(line: &str, dir: &Path) -> std::io::Result<()> {
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        std::process::Command::new("cmd").arg("/C").raw_arg(line).current_dir(dir).spawn().map(drop)
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-EncodedCommand"])
+            .arg(soyuz_fs::launch::powershell_encoded_command(line))
+            .current_dir(dir)
+            .spawn()
+            .map(drop)
     }
     #[cfg(not(windows))]
     {
@@ -380,6 +423,87 @@ mod tests {
         assert_eq!(command_line(&cmd, &c, Quoting::PowerShell), "& 'C:/Program Files/x.exe' '/w/my file.txt' /w/b.rs");
         assert_eq!(Quoting::Posix.quote("it's"), "'it'\\''s'");
         assert_eq!(Quoting::PowerShell.quote("it's"), "'it''s'");
+    }
+
+    const HOSTILE: &[&str] = &[
+        "a&calc&.txt",
+        "%PATH%.txt",
+        "it’s.txt",
+        "‘x‛‚.txt",
+        "it's.txt",
+        "$(calc).txt",
+        "`calc`.txt",
+        "a;calc;.txt",
+        "a|calc.txt",
+        "a^b.txt",
+        "!x!.txt",
+        "(a) <b> c.txt",
+        "a,b@c.txt",
+        "C:\\dir with space\\",
+        "a\"&calc&\".txt",
+        "100%",
+    ];
+
+    /// Simulates cmd.exe's tokenizer: no `%` inside quotes, and outside quotes every
+    /// special character is caret-escaped.
+    fn cmd_safe(s: &str) -> bool {
+        let mut in_q = false;
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            match (in_q, c) {
+                (_, '"') => in_q = !in_q,
+                (true, '%') => return false,
+                (false, '^') => {
+                    if it.next().is_none() {
+                        return false;
+                    }
+                }
+                (false, '&' | '|' | '<' | '>' | '%' | '(' | ')' | ' ' | ';' | ',' | '!') => return false,
+                _ => {}
+            }
+        }
+        !in_q
+    }
+
+    #[test]
+    fn hostile_names_quote_safely() {
+        for &name in HOSTILE {
+            let c = cmd_quote(name);
+            assert!(cmd_safe(&c), "cmd: {name:?} -> {c}");
+            let p = Quoting::PowerShell.quote(name);
+            // Inside a PowerShell single-quoted string only (typographic) single quotes are
+            // special, and those must come in pairs.
+            let inner = &p[1..p.len() - 1];
+            let mut run = 0;
+            for ch in inner.chars().chain(std::iter::once('x')) {
+                if matches!(ch, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+                    run += 1;
+                } else {
+                    assert!(run % 2 == 0, "powershell: {name:?} -> {p}");
+                    run = 0;
+                }
+            }
+            assert!(p.starts_with('\'') && p.ends_with('\''), "{p}");
+            let x = Quoting::Posix.quote(name);
+            // `,` and `@` are harmless to POSIX shells, so `a,b@c.txt` may stay bare.
+            assert!(x == "a,b@c.txt" || (x.starts_with('\'') && x.ends_with('\'')), "{x}");
+        }
+        assert_eq!(cmd_quote("a&calc&.txt"), "\"a&calc&.txt\"");
+        assert_eq!(cmd_quote("%PATH%.txt"), "\"\"^%\"PATH\"^%\".txt\"");
+        assert_eq!(cmd_quote(r"C:\dir\"), r#""C:\dir\\""#);
+        assert_eq!(Quoting::PowerShell.quote("it’s.txt"), "'it’’s.txt'");
+        assert_eq!(Quoting::PowerShell.quote("a,b"), "'a,b'", "comma would build an array");
+        assert_eq!(Quoting::Cmd.quote("plain.txt"), "plain.txt");
+    }
+
+    #[test]
+    fn extension_placeholder_is_quoted() {
+        let c = PlaceholderCtx { focused: Some(PathBuf::from("/w/x.a&calc")), ..Default::default() };
+        assert_eq!(expand_str("%E", &c, Quoting::PowerShell), "'a&calc'");
+        assert_eq!(expand_str("%E", &c, Quoting::Cmd), "\"a&calc\"");
+        assert_eq!(expand_str("%E", &c, Quoting::None), "a&calc");
+        let cmd = CustomCommand { command: "C:/x(1).exe".into(), args: vec!["%p".into()], ..Default::default() };
+        assert_eq!(command_line(&cmd, &c, Quoting::PowerShell), "& 'C:/x(1).exe' '/w/x.a&calc'");
     }
 
     #[test]

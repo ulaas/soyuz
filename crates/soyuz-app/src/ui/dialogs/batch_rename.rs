@@ -68,6 +68,8 @@ pub struct BatchRenameDialog {
     pane: PaneId,
     items: Vec<Item>,
     known: HashSet<PathBuf>,
+    /// Lowercased `known`, for O(1) case-insensitive collision checks.
+    known_lower: HashSet<String>,
     listed_dir: Option<PathBuf>,
     windows_rules: bool,
     spec: Spec,
@@ -108,6 +110,7 @@ impl BatchRenameDialog {
             title: format!("Rename {} items", items.len()),
             pane,
             items,
+            known_lower: known.iter().map(|k| k.to_string_lossy().to_lowercase()).collect(),
             known,
             listed_dir,
             windows_rules,
@@ -135,10 +138,8 @@ impl BatchRenameDialog {
             return soyuz_fs::exists_nofollow(p);
         }
         // Case-insensitive file systems: compare names case-insensitively.
-        crate::ops::fileops::names::case_insensitive_fs() && {
-            let lower = p.to_string_lossy().to_lowercase();
-            self.known.iter().any(|k| k.to_string_lossy().to_lowercase() == lower)
-        }
+        crate::ops::fileops::names::case_insensitive_fs()
+            && self.known_lower.contains(&p.to_string_lossy().to_lowercase())
     }
 
     fn ensure_exif(&mut self, ctx: &egui::Context) {

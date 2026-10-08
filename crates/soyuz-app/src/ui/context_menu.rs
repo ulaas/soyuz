@@ -14,8 +14,33 @@ use crate::theme::icons::ph;
 use crate::ui::views::ViewCtx;
 use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, submenu};
 
+/// `[context_menu] hide`: action names left out of the context menus (set from the
+/// config at startup and on every config change).
+static HIDDEN: parking_lot::RwLock<Vec<Action>> = parking_lot::RwLock::new(Vec::new());
+
+/// Parse `[context_menu] hide`; returns warnings for unknown names.
+pub fn set_hidden(names: &[String]) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let mut hidden = Vec::new();
+    for n in names {
+        match n.trim().parse::<Action>() {
+            Ok(a) => hidden.push(a),
+            Err(_) => warnings.push(format!("[context_menu] hide: unknown action '{n}'")),
+        }
+    }
+    *HIDDEN.write() = hidden;
+    warnings
+}
+
+fn is_hidden(a: &Action) -> bool {
+    HIDDEN.read().contains(a)
+}
+
 /// A menu row bound to an action (shortcut hint from the keymap).
 fn action_item(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId, icon: &str, label: &str, action: Action) {
+    if is_hidden(&action) {
+        return;
+    }
     let sc = chord_label(km, &action);
     if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
         cmds.push(Cmd::PaneAction(pane, action));
@@ -53,11 +78,17 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             ui.close();
         }
     }
-    if single && let Some((path, false)) = &first {
+    if single
+        && !is_hidden(&Action::OpenWith)
+        && let Some((path, false)) = &first
+    {
         let path = path.clone();
         submenu(ui, Some(ph::APP_WINDOW), "Open with", |ui| {
             ui.set_width(220.0);
-            let apps = apps_for_cached(ui, &path);
+            let Some(apps) = apps_for_cached(ui.ctx(), &path) else {
+                menu_item(ui, Some(ph::HOURGLASS), "Looking for apps\u{2026}", None, false);
+                return;
+            };
             if apps.is_empty() {
                 menu_item(ui, Some(ph::INFO), "No registered apps found", None, false);
             }
@@ -69,7 +100,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             }
             menu_separator(ui);
             if menu_item(ui, Some(ph::DOTS_THREE), "Choose another app…", None, true).clicked() {
-                cmds.push(Cmd::ComingSoon(Action::OpenWith));
+                cmds.push(Cmd::ChooseOpenWith(path.clone()));
                 ui.close();
             }
         });
@@ -295,14 +326,27 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     }
 }
 
-/// "Open with" candidates, cached per extension for the menu's lifetime.
-fn apps_for_cached(ui: &Ui, path: &std::path::Path) -> Vec<soyuz_fs::AppInfo> {
+/// "Open with" candidates, cached per extension. The lookup (registry / desktop-file
+/// scan, possibly slow) runs on a background thread; `None` while it is in flight, and
+/// the context repaints when the result lands.
+pub fn apps_for_cached(ctx: &egui::Context, path: &std::path::Path) -> Option<Vec<soyuz_fs::AppInfo>> {
+    type Slot = std::sync::Arc<parking_lot::Mutex<Option<Vec<soyuz_fs::AppInfo>>>>;
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     let id = egui::Id::new(("soyuz.openwith", ext));
-    if let Some(v) = ui.ctx().data(|d| d.get_temp::<Vec<soyuz_fs::AppInfo>>(id)) {
-        return v;
+    if let Some(slot) = ctx.data(|d| d.get_temp::<Slot>(id)) {
+        return slot.lock().clone();
     }
-    let apps = soyuz_fs::launch::apps_for(path);
-    ui.ctx().data_mut(|d| d.insert_temp(id, apps.clone()));
-    apps
+    let slot: Slot = Default::default();
+    ctx.data_mut(|d| d.insert_temp(id, slot.clone()));
+    let (path, ctx2) = (path.to_path_buf(), ctx.clone());
+    let spawned = std::thread::Builder::new().name("soyuz-apps-for".into()).spawn(move || {
+        let apps = soyuz_fs::launch::apps_for(&path);
+        *slot.lock() = Some(apps);
+        ctx2.request_repaint();
+    });
+    if spawned.is_err() {
+        ctx.data_mut(|d| d.remove::<Slot>(id));
+        return Some(Vec::new());
+    }
+    None
 }

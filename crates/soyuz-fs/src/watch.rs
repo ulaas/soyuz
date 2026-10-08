@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use notify::RecursiveMode;
 use notify::event::{EventKind, ModifyKind, RemoveKind};
@@ -140,20 +140,57 @@ impl Watcher {
 /// Some backends (ReadDirectoryChangesW keeps a removed directory "delete pending" while
 /// its handle is open) never report the removal of the watched directory itself; a light
 /// existence check every second reports `Lost` for them. Exits when the [`Watcher`] drops.
+///
+/// The registry is only snapshotted under its lock; the stats run outside it, so a dead
+/// network share (a stat can block for tens of seconds) never stalls event dispatch or
+/// `watch`/`unwatch` on the UI thread. Network paths and directories whose stat was slow
+/// are checked less often (exponential back-off up to [`LIVENESS_MAX_INTERVAL`]).
 fn spawn_liveness(
     reg: std::sync::Weak<Mutex<HashMap<WatchId, Watched>>>,
     tx: crossbeam_channel::Sender<WatchEvent>,
     wake: Arc<dyn Fn() + Send + Sync>,
 ) {
     let spawned = std::thread::Builder::new().name("soyuz-watch-alive".into()).spawn(move || {
+        // Per watch: (next check due, current interval).
+        let mut schedule: HashMap<WatchId, (Instant, Duration)> = HashMap::new();
         loop {
             std::thread::sleep(LIVENESS_INTERVAL);
+            let snapshot: Vec<(WatchId, PathBuf)> = {
+                let Some(reg) = reg.upgrade() else { return };
+                let reg = reg.lock();
+                schedule.retain(|id, _| reg.contains_key(id));
+                reg.iter().filter(|(_, w)| !w.lost).map(|(id, w)| (*id, w.dir.clone())).collect()
+            };
+            let mut gone = Vec::new();
+            for (id, dir) in snapshot {
+                let now = Instant::now();
+                let (due, interval) = *schedule.entry(id).or_insert_with(|| {
+                    (now, if is_network_path(&dir) { LIVENESS_REMOTE_INTERVAL } else { LIVENESS_INTERVAL })
+                });
+                if now < due {
+                    continue;
+                }
+                let t = Instant::now();
+                let is_gone = !crate::list::exists_nofollow(&dir);
+                let took = t.elapsed();
+                let next = if took > LIVENESS_SLOW_STAT { (interval * 2).min(LIVENESS_MAX_INTERVAL) } else { interval };
+                schedule.insert(id, (Instant::now() + next, next));
+                if is_gone {
+                    gone.push(id);
+                }
+            }
+            if gone.is_empty() {
+                continue;
+            }
             let Some(reg) = reg.upgrade() else { return };
             let mut lost = Vec::new();
-            for (id, w) in reg.lock().iter_mut() {
-                if !w.lost && w.gone() {
+            for id in gone {
+                // Re-check under the lock: the watch may have been removed meanwhile.
+                if let Some(w) = reg.lock().get_mut(&id)
+                    && !w.lost
+                {
                     w.lost = true;
-                    lost.push(*id);
+                    lost.push(id);
                 }
             }
             drop(reg);
@@ -174,6 +211,19 @@ fn spawn_liveness(
 }
 
 const LIVENESS_INTERVAL: Duration = Duration::from_millis(1000);
+/// Initial liveness interval for network paths.
+const LIVENESS_REMOTE_INTERVAL: Duration = Duration::from_secs(5);
+/// Back-off ceiling for slow / unreachable volumes.
+const LIVENESS_MAX_INTERVAL: Duration = Duration::from_secs(60);
+/// A stat slower than this doubles that watch's interval.
+const LIVENESS_SLOW_STAT: Duration = Duration::from_millis(200);
+
+/// UNC / network-looking path (`\\server\share`, `//server/share`); cheap, lexical.
+fn is_network_path(p: &Path) -> bool {
+    let s = crate::path::strip_verbatim(p);
+    let s = s.to_string_lossy();
+    s.starts_with("\\\\") || s.starts_with("//")
+}
 
 fn notify_err(op: &'static str, path: Option<&Path>, e: notify::Error) -> FsError {
     let kind = match &e.kind {
@@ -277,6 +327,15 @@ fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn network_paths_are_detected_lexically() {
+        assert!(is_network_path(Path::new(r"\\server\share\dir")));
+        assert!(is_network_path(Path::new(r"\\?\UNC\server\share")));
+        assert!(is_network_path(Path::new("//server/share")));
+        assert!(!is_network_path(Path::new(r"C:\data")));
+        assert!(!is_network_path(Path::new("/home/u")));
+    }
 
     fn watcher() -> (Watcher, crossbeam_channel::Receiver<WatchEvent>) {
         let (tx, rx) = crossbeam_channel::unbounded();

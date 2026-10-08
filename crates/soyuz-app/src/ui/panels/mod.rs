@@ -9,6 +9,8 @@ pub mod terminal;
 
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
 
+use soyuz_core::config::ActivityPlacement;
+
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
 
@@ -38,23 +40,163 @@ pub struct BottomPanel {
     pub open: bool,
     pub tab: BottomTab,
     pub height: f32,
+    /// Apply `height` on the next frame even if the user resized the panel before
+    /// (`[layout] terminal_height` changed).
+    pub reset_height: bool,
+    /// `[layout] activity_panel`: a bottom-panel tab, a right side panel or a window.
+    pub activity_placement: ActivityPlacement,
+    /// The activity panel is shown (right / floating placements).
+    pub activity_open: bool,
 }
 
 impl Default for BottomPanel {
     fn default() -> Self {
-        BottomPanel { open: false, tab: BottomTab::Terminal, height: size::TERMINAL_DEFAULT }
+        BottomPanel {
+            open: false,
+            tab: BottomTab::Terminal,
+            height: size::TERMINAL_DEFAULT,
+            reset_height: false,
+            activity_placement: ActivityPlacement::Bottom,
+            activity_open: false,
+        }
     }
 }
 
 impl BottomPanel {
     /// Toggle `tab`: opens the panel on it, switches to it, or closes when already shown.
     pub fn toggle(&mut self, tab: BottomTab) {
+        if tab == BottomTab::Activity && self.activity_placement != ActivityPlacement::Bottom {
+            self.activity_open = !self.activity_open;
+            return;
+        }
         if self.open && self.tab == tab {
             self.open = false;
         } else {
             self.open = true;
             self.tab = tab;
         }
+    }
+
+    /// Show the activity panel wherever it is placed.
+    pub fn open_activity(&mut self) {
+        if self.activity_placement == ActivityPlacement::Bottom {
+            self.open = true;
+            self.tab = BottomTab::Activity;
+        } else {
+            self.activity_open = true;
+        }
+    }
+
+    pub fn activity_shown(&self) -> bool {
+        match self.activity_placement {
+            ActivityPlacement::Bottom => self.open && self.tab == BottomTab::Activity,
+            _ => self.activity_open,
+        }
+    }
+
+    /// Move the activity panel (keeps it visible if it was).
+    pub fn set_activity_placement(&mut self, placement: ActivityPlacement) {
+        if placement == self.activity_placement {
+            return;
+        }
+        let shown = self.activity_shown();
+        if self.activity_placement == ActivityPlacement::Bottom && shown {
+            self.open = false;
+            self.tab = BottomTab::Terminal;
+        }
+        self.activity_placement = placement;
+        self.activity_open = false;
+        if shown {
+            self.open_activity();
+        }
+    }
+
+    fn tabs(&self) -> &'static [BottomTab] {
+        if self.activity_placement == ActivityPlacement::Bottom {
+            &[BottomTab::Terminal, BottomTab::Activity]
+        } else {
+            &[BottomTab::Terminal]
+        }
+    }
+}
+
+/// The activity panel for the right / floating placements (the bottom placement is a
+/// tab of the bottom panel).
+pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
+    let placement = app.ui.bottom.activity_placement;
+    if placement == ActivityPlacement::Bottom || !app.ui.bottom.activity_open {
+        return;
+    }
+    let p = palette(root.ctx());
+    if placement == ActivityPlacement::Floating {
+        let mut open = true;
+        egui::Window::new("Activity")
+            .id(egui::Id::new("soyuz.activity.window"))
+            .open(&mut open)
+            .default_size([440.0, 340.0])
+            .min_size([320.0, 200.0])
+            .resizable(true)
+            .collapsible(false)
+            .frame(
+                Frame::new()
+                    .inner_margin(Margin::same(8))
+                    .fill(p.bg_surface1)
+                    .stroke(Stroke::new(1.0, p.border_strong))
+                    .corner_radius(CornerRadius::same(radius::MODAL)),
+            )
+            .show(root.ctx(), |ui| {
+                let body = ui.available_rect_before_wrap();
+                ui.allocate_rect(body, Sense::hover());
+                activity::show(ui, body, app);
+            });
+        if !open {
+            app.ui.bottom.activity_open = false;
+        }
+        return;
+    }
+    let mut close = false;
+    Panel::right("soyuz.activity")
+        .resizable(true)
+        .default_size(360.0)
+        .size_range(280.0..=720.0)
+        .show_separator_line(false)
+        .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 6 }))
+        .show(root, |ui| {
+            let card = ui.available_rect_before_wrap();
+            ui.painter().rect_filled(card, CornerRadius::same(radius::MODAL), p.bg_surface1);
+            ui.painter().rect_stroke(
+                card,
+                CornerRadius::same(radius::MODAL),
+                Stroke::new(1.0, p.border_subtle),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                pos2(card.left() + 22.0, card.top() + 19.0),
+                Align2::CENTER_CENTER,
+                ph::PULSE,
+                icons::font(14.0),
+                p.text_primary,
+            );
+            ui.painter().text(
+                pos2(card.left() + 36.0, card.top() + 19.0),
+                Align2::LEFT_CENTER,
+                "Activity",
+                FontId::proportional(12.5),
+                p.text_primary,
+            );
+            let x = egui::Rect::from_center_size(pos2(card.right() - 20.0, card.top() + 19.0), vec2(24.0, 24.0));
+            let xr = ui.interact(x, ui.id().with("activity.close"), Sense::click());
+            if xr.hovered() {
+                ui.painter().rect_filled(x, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+            }
+            ui.painter().text(x.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
+            close = xr.clicked();
+            let body = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
+            ui.allocate_rect(card, Sense::hover());
+            activity::show(ui, body, app);
+        });
+    if close {
+        app.ui.bottom.activity_open = false;
     }
 }
 
@@ -63,10 +205,15 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
     if !app.ui.bottom.open {
         return;
     }
+    if !app.ui.bottom.tabs().contains(&app.ui.bottom.tab) {
+        app.ui.bottom.tab = BottomTab::Terminal;
+    }
     let p = palette(root.ctx());
-    let resp = Panel::bottom("soyuz.bottom")
-        .resizable(true)
-        .default_size(app.ui.bottom.height)
+    let mut panel = Panel::bottom("soyuz.bottom").resizable(true).default_size(app.ui.bottom.height);
+    if std::mem::take(&mut app.ui.bottom.reset_height) {
+        panel = panel.exact_size(app.ui.bottom.height);
+    }
+    let resp = panel
         .size_range(120.0..=720.0)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 8, right: 8, top: 0, bottom: 6 }))
         .show(root, |ui| {
@@ -80,7 +227,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             );
             // Tab header.
             let mut x = card.left() + 8.0;
-            for tab in [BottomTab::Terminal, BottomTab::Activity] {
+            for &tab in app.ui.bottom.tabs() {
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(108.0, 26.0));
                 let resp = ui.interact(r, ui.id().with(("bottom.tab", tab.label())), Sense::click());
                 let active = app.ui.bottom.tab == tab;

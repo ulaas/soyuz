@@ -108,11 +108,8 @@ impl Location {
 }
 
 fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
-    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
-        Some(&s[prefix.len()..])
-    } else {
-        None
-    }
+    // `get` (not slicing): the prefix length may fall inside a multibyte character.
+    s.get(..prefix.len()).filter(|h| h.eq_ignore_ascii_case(prefix)).map(|_| &s[prefix.len()..])
 }
 
 fn expand_tilde(s: &str) -> PathBuf {
@@ -259,5 +256,19 @@ mod tests {
         assert_eq!(Location::Dir(PathBuf::from("/")).parent(), Some(Location::Computer));
         assert_eq!(Location::Computer.parent(), None);
         assert_eq!(Location::Trash.as_fs_path(), None);
+    }
+}
+
+#[cfg(test)]
+mod multibyte_tests {
+    use super::*;
+
+    #[test]
+    fn non_ascii_paths_do_not_panic() {
+        for p in ["D:/Ürünler", "D:/Ürün/", "ÇğŞ", "日本語/x", "sé", "tag:ü", "search:ö", "Ürün"] {
+            let _ = Location::parse(p);
+        }
+        assert_eq!(strip_prefix_ci("TAG:red", "tag:"), Some("red"));
+        assert_eq!(strip_prefix_ci("D:/Ürün", "tag:"), None);
     }
 }

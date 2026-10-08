@@ -11,12 +11,14 @@ pub mod error;
 pub mod keybind_record;
 pub mod links;
 pub mod new_item;
+pub mod open_with;
 pub mod properties;
 pub mod properties_attrs;
 pub mod properties_checksum;
 pub mod properties_details;
 pub mod properties_security;
 pub mod properties_widgets;
+pub mod quit;
 
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};

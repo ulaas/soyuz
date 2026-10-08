@@ -41,7 +41,7 @@ pub fn right_aligned(col: Column) -> bool {
 /// Display text of `col` for `e`.
 pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
     match col {
-        Column::Name => e.name.clone(),
+        Column::Name => super::display_name(e).into_owned(),
         Column::Size => {
             if e.is_dir_like() {
                 // Filled in (and animated) by "Calculate folder sizes".

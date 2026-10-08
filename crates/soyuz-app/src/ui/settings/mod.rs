@@ -651,11 +651,21 @@ fn record(app: &mut SoyuzApp, target: RecordTarget, title: String) {
     app.settings.recorder = Some(Recorder::new(target, title));
 }
 
-/// Export the active config to `<Downloads or home>/soyuz-config.toml`.
+/// First free `soyuz-config.toml`, `soyuz-config (2).toml`, … in `dir` (an export never
+/// overwrites an earlier one).
+fn export_path(dir: &std::path::Path) -> PathBuf {
+    (1..1000)
+        .map(|n| dir.join(if n == 1 { "soyuz-config.toml".to_string() } else { format!("soyuz-config ({n}).toml") }))
+        .find(|p| std::fs::symlink_metadata(p).is_err())
+        .unwrap_or_else(|| dir.join(format!("soyuz-config-{}.toml", chrono::Local::now().format("%Y%m%d-%H%M%S"))))
+}
+
+/// Export the active config to `<Downloads or home>/soyuz-config.toml` (numbered when
+/// that name is taken).
 fn export(app: &mut SoyuzApp) -> Option<PathBuf> {
     let dir = soyuz_fs::home().join("Downloads");
     let dir = if dir.is_dir() { dir } else { soyuz_fs::home() };
-    let path = dir.join("soyuz-config.toml");
+    let path = export_path(&dir);
     let text = match config::to_pretty_string(&app.config) {
         Ok(t) => t,
         Err(e) => {
@@ -735,4 +745,16 @@ fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removab
         removed = xresp.clicked();
     }
     (resp.clicked() && !removed, removed)
+}
+
+#[cfg(test)]
+mod export_tests {
+    #[test]
+    fn export_never_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = super::export_path(dir.path());
+        assert_eq!(first, dir.path().join("soyuz-config.toml"));
+        std::fs::write(&first, b"x").unwrap();
+        assert_eq!(super::export_path(dir.path()), dir.path().join("soyuz-config (2).toml"));
+    }
 }

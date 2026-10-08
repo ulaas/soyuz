@@ -231,8 +231,10 @@ fn chord_for(app: &SoyuzApp, a: &Action) -> Option<String> {
 /// bookmark, plus the custom commands.
 fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
     let n_bm = app.config.bookmarks.len();
-    let mut v: Vec<Action> =
-        Action::all().into_iter().filter(|a| !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm)).collect();
+    let mut v: Vec<Action> = Action::all()
+        .into_iter()
+        .filter(|a| !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm) && !crate::actions::unavailable(a))
+        .collect();
     v.extend(
         app.config
             .custom_commands

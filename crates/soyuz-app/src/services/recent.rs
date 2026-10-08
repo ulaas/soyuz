@@ -113,10 +113,8 @@ pub fn pump(wake: &std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
             let path = r.path.clone();
             let wake = wake.clone();
             let _ = std::thread::Builder::new().name("soyuz-recent-load".into()).spawn(move || {
-                let store = std::fs::read_to_string(&path)
-                    .ok()
-                    .and_then(|t| RecentStore::from_toml(&t).ok())
-                    .unwrap_or_default();
+                // A broken file is backed up and never overwritten (store_file).
+                let store = super::store_file::load(&path, RecentStore::from_toml).value();
                 let _ = tx.send(store);
                 wake();
             });
@@ -130,20 +128,26 @@ pub fn pump(wake: &std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
             arrived = true;
         }
         if r.dirty && r.loaded && r.last_change.elapsed() > Duration::from_secs(2) {
-            r.dirty = false;
-            let text = r.store.to_toml();
-            let path = r.path.clone();
-            let _ = std::thread::Builder::new().name("soyuz-recent-save".into()).spawn(move || {
-                if let Some(dir) = path.parent() {
-                    let _ = soyuz_fs::create_dir_all(dir);
-                }
-                if let Err(e) = soyuz_fs::write_atomic(&path, text.as_bytes()) {
-                    log::warn!("cannot save recent items: {e}");
-                }
-            });
+            queue_save(r);
         }
         arrived
     })
+}
+
+/// Hand the current store to the single ordered save worker.
+fn queue_save(r: &mut Registry) {
+    r.dirty = false;
+    super::store_file::save_async(r.path.clone(), r.store.to_toml().into_bytes());
+}
+
+/// Queue pending changes now, skipping the debounce (`App::save` then calls
+/// `store_file::flush`).
+pub fn flush() {
+    REG.with_borrow_mut(|r| {
+        if r.dirty && r.loaded {
+            queue_save(r);
+        }
+    });
 }
 
 pub fn pending_save() -> bool {

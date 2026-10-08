@@ -15,6 +15,7 @@ pub mod preview_media;
 pub mod preview_text;
 pub mod recent;
 pub mod search;
+pub mod store_file;
 pub mod tags;
 pub mod thumbs;
 pub mod watcher;

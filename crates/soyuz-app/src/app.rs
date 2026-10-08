@@ -96,10 +96,34 @@ pub struct SoyuzApp {
     pub config_watch: crate::services::config_watch::ConfigWatch,
     /// Pending multi-key sequence / mark (M11).
     pub keyseq: crate::keys::sequence::Sequencer,
+    /// A secondary window (`--new-window`): never restores or overwrites the session.
+    pub secondary: bool,
+    /// Close-request handling while jobs are pending.
+    pub quit: QuitState,
+}
+
+/// Command-line startup options (see `main.rs`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Startup {
+    /// Folder to open (a file opens its parent with the file under the cursor).
+    pub open: Option<PathBuf>,
+    /// Secondary window: no session restore / save.
+    pub secondary: bool,
+}
+
+/// Window-close state: closing with pending jobs asks first (they would be cancelled).
+#[derive(Default)]
+pub struct QuitState {
+    /// The user confirmed: let the next close request through.
+    pub allowed: bool,
+    /// Close as soon as no job is pending ("Quit when finished").
+    pub when_idle: bool,
+    /// The confirmation dialog is on screen (reset when the dialog is dropped).
+    pub prompting: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl SoyuzApp {
-    pub fn new(cc: &CreationContext<'_>, renderer: &'static str) -> Self {
+    pub fn new(cc: &CreationContext<'_>, renderer: &'static str, startup: Startup) -> Self {
         let path = config::default_path();
         let config = match config::load_or_default(&path) {
             Ok(loaded) => {
@@ -113,14 +137,20 @@ impl SoyuzApp {
                 Config::default()
             }
         };
-        Self::with_config(&cc.egui_ctx, config, renderer)
+        Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
 
     /// Construct with an explicit config (also used by tests).
     pub fn with_config(ctx: &egui::Context, config: Config, renderer: &'static str) -> Self {
+        Self::with_startup(ctx, config, renderer, Startup::default())
+    }
+
+    /// Construct with an explicit config and command-line startup options.
+    pub fn with_startup(ctx: &egui::Context, config: Config, renderer: &'static str, startup: Startup) -> Self {
         egui_extras::install_image_loaders(ctx);
         // Ctrl +/-/0 are our zoom actions, not egui's global UI zoom.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
+        apply_live_settings(ctx, &config);
         for w in theme::install(ctx, &config.appearance, &config.theme.colors) {
             log::warn!("{w}");
         }
@@ -134,7 +164,8 @@ impl SoyuzApp {
         let views_path = dir.join("views.toml");
         let views =
             if config.behaviour.remember_folder_views { ViewMemory::load(&views_path) } else { ViewMemory::default() };
-        let session = if config.behaviour.restore_session { Session::load(&session_path) } else { None };
+        let session =
+            if config.behaviour.restore_session && !startup.secondary { Session::load(&session_path) } else { None };
         let default_view = ViewState::from_config(&config);
 
         let mut sidebar = SidebarState::new();
@@ -165,7 +196,11 @@ impl SoyuzApp {
             volumes: Vec::new(),
             cloud: Vec::new(),
             dialogs: Dialogs::default(),
-            bottom: BottomPanel::default(),
+            bottom: BottomPanel {
+                height: config.layout.terminal_height.clamp(120.0, 720.0),
+                activity_placement: config.layout.activity_panel,
+                ..Default::default()
+            },
             theme: theme_pref,
             reduced_motion: config.appearance.reduced_motion,
             title: String::new(),
@@ -175,7 +210,11 @@ impl SoyuzApp {
             search: crate::ui::search::SearchUi::new(&config),
         };
 
-        let start = start_location(&config);
+        let opened = startup.open.as_deref().and_then(startup_target);
+        let start = match &opened {
+            Some((loc, _)) if session.is_none() => loc.clone(),
+            _ => start_location(&config),
+        };
         let fileops = crate::ops::fileops::FileOps::new(ctx, &config);
         let mut app = SoyuzApp {
             ws: Workspace::new(Tab::new(Pane::new(start.clone(), default_view.clone()))),
@@ -196,11 +235,21 @@ impl SoyuzApp {
             settings: Default::default(),
             config_watch: crate::services::config_watch::ConfigWatch::start(ctx, config::default_path()),
             keyseq: Default::default(),
+            secondary: startup.secondary,
+            quit: QuitState::default(),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
-        if !restored {
+        if restored {
+            if let Some((loc, select)) = opened {
+                ops::open_in_new_tab(&mut app, loc, true);
+                app.ws.pane_mut().pending_cursor = select;
+            }
+        } else {
             let view = app.view_for(&start);
             app.ws.tabs[0].panes[0].view = view;
+            if let Some((_, select)) = opened {
+                app.ws.tabs[0].panes[0].pending_cursor = select;
+            }
             if app.config.layout.dual_pane {
                 let p2 = Pane::new(start.clone(), app.view_for(&start));
                 let t = &mut app.ws.tabs[0];
@@ -293,7 +342,7 @@ impl SoyuzApp {
 
     /// Persist the session and view memory if they changed.
     pub fn save_state(&mut self) {
-        if self.config.behaviour.restore_session {
+        if self.config.behaviour.restore_session && !self.secondary {
             let text = self.session().to_toml();
             if self.last_session.as_deref() != Some(text.as_str()) {
                 match self.session().save(&self.session_path) {
@@ -439,6 +488,43 @@ impl SoyuzApp {
         }
     }
 
+    /// Window close requests: with pending jobs, cancel the close and ask first (quitting
+    /// cancels the jobs). Runs in `logic`, so it also works while the window is minimized.
+    fn handle_close_request(&mut self, ctx: &egui::Context) {
+        use std::sync::atomic::Ordering;
+        let pending = self.fileops.jobs.pending().count();
+        if self.quit.when_idle && pending == 0 {
+            self.quit.when_idle = false;
+            self.quit.allowed = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
+        if self.quit.when_idle {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
+        if !ctx.input(|i| i.viewport().close_requested()) || self.quit.allowed || pending == 0 {
+            return;
+        }
+        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        if !self.quit.prompting.swap(true, Ordering::SeqCst) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            self.ui.dialogs.push(crate::ui::dialogs::quit::QuitDialog::new(pending, self.quit.prompting.clone()));
+        }
+    }
+
+    /// The user answered the close confirmation.
+    pub fn confirm_quit(&mut self, ctx: &egui::Context, when_idle: bool) {
+        if when_idle {
+            self.quit.when_idle = true;
+            self.ui.toasts.push(crate::ui::toasts::Toast::info("Soyuz will close when the operations finish"));
+            ctx.request_repaint();
+        } else {
+            self.quit.allowed = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+
     fn update_title(&mut self, ctx: &egui::Context) {
         let pane = self.ws.pane();
         let t = format!("{} — Soyuz", crate::state::crumbs::location_title(&pane.location));
@@ -468,6 +554,37 @@ pub fn theme_name(p: ThemePreference) -> &'static str {
     }
 }
 
+/// Settings applied to egui itself (startup and every config change).
+pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
+    let delay = f64::from(c.general.double_click_speed_ms.clamp(100, 2000)) / 1000.0;
+    ctx.options_mut(|o| o.input_options.max_double_click_delay = delay);
+    crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);
+    for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
+        log::warn!("{w}");
+    }
+    if let Some(w) = crate::services::preview_text::set_syntax_theme(&c.preview.syntax_theme) {
+        log::warn!("{w}");
+    }
+}
+
+/// The location (and entry to put the cursor on) for a command-line path: a folder
+/// opens itself, a file opens its parent with the file under the cursor.
+pub fn startup_target(path: &std::path::Path) -> Option<(Location, Option<String>)> {
+    let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().ok()?.join(path) };
+    match std::fs::metadata(&abs) {
+        Ok(m) if m.is_dir() => Some((Location::Dir(abs), None)),
+        Ok(_) => {
+            let parent = abs.parent()?.to_path_buf();
+            let name = abs.file_name()?.to_string_lossy().into_owned();
+            Some((Location::Dir(parent), Some(name)))
+        }
+        Err(e) => {
+            log::warn!("{}: {e}; opening the start folder instead", abs.display());
+            None
+        }
+    }
+}
+
 /// `[general] start_location`: `home` | `last` (session handles it) | a path.
 fn start_location(c: &Config) -> Location {
     let s = c.general.start_location.trim();
@@ -483,6 +600,10 @@ pub fn default_favorites() -> Vec<FavoriteEntry> {
 }
 
 impl eframe::App for SoyuzApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_close_request(ctx);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.services.thumbs.begin_frame();
@@ -513,6 +634,13 @@ impl eframe::App for SoyuzApp {
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_state();
         self.palette.save_now();
+        // Debounced tag / recent changes are queued now and written before we return
+        // (eframe calls this on exit too), in order, on the single store worker.
+        crate::services::tags::flush();
+        crate::services::recent::flush();
+        if !crate::services::store_file::flush(Duration::from_secs(3)) {
+            log::warn!("some settings stores were not written in time");
+        }
     }
 
     fn auto_save_interval(&self) -> Duration {

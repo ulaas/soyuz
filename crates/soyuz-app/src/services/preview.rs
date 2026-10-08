@@ -11,6 +11,7 @@
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Cursor, Read, Seek, SeekFrom};
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -424,7 +425,9 @@ fn pool() -> &'static Pool {
         }
         let _ = std::thread::Builder::new().name("soyuz-hex".into()).spawn(move || {
             for job in prx.iter() {
-                let bytes = read_page(&job.path, job.page).ok();
+                // A panic must not kill the only hex worker; answer with "no bytes".
+                let bytes =
+                    std::panic::catch_unwind(AssertUnwindSafe(|| read_page(&job.path, job.page).ok())).ok().flatten();
                 let _ = job.tx.send(Msg::Page { doc: job.doc, page: job.page, bytes });
                 job.ctx.request_repaint();
             }
@@ -505,7 +508,24 @@ fn run_load(job: LoadJob) {
     if stale() {
         return;
     }
-    let loaded = load(&job, &stale);
+    // A parser bug (hostile file) must not kill the worker thread or leave the pane on
+    // "Loading…" forever: turn a panic into an error preview.
+    let loaded = match std::panic::catch_unwind(AssertUnwindSafe(|| load(&job, &stale))) {
+        Ok(l) => l,
+        Err(e) => {
+            let why = e
+                .downcast_ref::<&str>()
+                .map(|s| s.to_string())
+                .or_else(|| e.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "internal error".into());
+            message(
+                Kind::Binary,
+                crate::theme::icons::ph::WARNING_CIRCLE,
+                "Preview failed",
+                format!("The previewer crashed on this file ({why})."),
+            )
+        }
+    };
     if stale() {
         return;
     }
