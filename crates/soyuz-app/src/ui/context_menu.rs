@@ -168,6 +168,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     crate::ui::archive::context_items(ui, cmds, id, &pane.location, any_archive, !sel.is_empty());
     let sel_paths: Vec<(std::path::PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
     crate::ui::tools::tags_ui::items_menu(ui, km, cmds, id, &pane.location, &sel_paths);
+    crate::ui::ai::context_items(ui, km, cmds, id, true, single && all_dirs);
     if all_dirs {
         action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     }
@@ -228,6 +229,7 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             cmds.push(Cmd::AddFavorite(dir.clone()));
             ui.close();
         }
+        crate::ui::ai::context_items(ui, km, cmds, id, false, true);
         menu_separator(ui);
     }
     if matches!(pane.location, Location::Archive { .. }) {

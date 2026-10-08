@@ -200,6 +200,23 @@ trust_annotations = false        # true = tools marked readOnlyHint count as rea
 require_approval = true          # tools above read risk need approval in Soyuz
 timeout_secs = 60
 
+[ai.agent]                       # in-app assistant harness (Ctrl+I)
+max_steps = 24                   # model turns per task
+token_budget = 400000            # tokens per task (input + output; 0 = unlimited)
+time_limit_secs = 600            # wall-clock limit per task (Esc cancels any time)
+max_auto_reads = 60              # read tools the assistant may run on its own per task
+compact_after_kib = 96           # summarise old tool results once the conversation is this large
+keep_recent_results = 6          # newest tool results kept verbatim when compacting
+approval = "always"              # always | auto_write (conflict-free write plans run unasked, never after reading file contents; destructive always asks)
+max_risk = "destructive"         # read | write | destructive: highest tool class offered to the model
+confirm_cost_usd = 0.5           # ask before a task estimated to cost more (0 = never ask)
+listing_entries = 80             # entries of the current folder summarised into the context
+redact_cloud = true              # mask e-mails, API keys and tokens in file data sent to cloud providers
+
+[[ai.folders]]                   # per-folder AI access, inherited by subfolders (deepest rule wins)
+path = "~/Documents/Taxes"
+access = "none"                  # none | metadata | contents (cloud content sharing is opt-in per folder)
+
 [[ai.profiles]]
 name = "claude"
 kind = "anthropic"               # anthropic | openai | openai_responses | gemini | ollama | lm_studio | llama_cpp | vllm | localai | custom

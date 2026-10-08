@@ -17,6 +17,9 @@
 //!   `{Enter}`, `{Ctrl+S}`, `{Shift+F3}`, `{Copy}`, `{Cut}`, `{Paste:text}` are keys;
 //! * `edit:<path>` — open a file in the built-in editor; `editor:<command>` — drive it
 //!   (see `editors::devscript`);
+//! * `ai:<prompt>` — send a prompt to the assistant; `ai:!approve` approves every
+//!   pending plan, `ai:!smart <text>` opens smart search with `text`, `ai:!save <name>`
+//!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -237,6 +240,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 ctx.request_repaint();
                 return;
             }
+            "ai" => crate::ai::state::script(app, ctx, arg),
             _ => match step.parse::<Action>() {
                 Ok(a) => app.cmds.push(Cmd::Action(a)),
                 Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),

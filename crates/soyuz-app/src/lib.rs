@@ -10,6 +10,7 @@
 #![deny(unsafe_code)]
 
 pub mod actions;
+pub mod ai;
 pub mod app;
 pub mod app_icon;
 pub mod cmd;

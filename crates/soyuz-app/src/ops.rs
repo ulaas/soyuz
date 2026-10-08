@@ -652,6 +652,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
         Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, ctx),
         Cmd::Tree(c) => crate::ui::tree::apply(app, c),
+        Cmd::Ai(c) => crate::ai::apply_cmd(app, c, ctx),
         Cmd::Quit { when_idle } => app.confirm_quit(ctx, when_idle),
         Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
         Cmd::NewWindow(loc) => {

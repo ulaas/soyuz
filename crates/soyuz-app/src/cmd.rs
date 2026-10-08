@@ -105,4 +105,6 @@ pub enum Cmd {
     ChooseOpenWith(PathBuf),
     /// Open a path in a new Soyuz window (a new process; see `ops::new_window`).
     NewWindow(Location),
+    /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
+    Ai(crate::ai::AiCmd),
 }

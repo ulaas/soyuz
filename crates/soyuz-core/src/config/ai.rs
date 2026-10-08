@@ -224,6 +224,11 @@ pub struct Ai {
     pub mcp_clients: Vec<super::mcp::AiMcpClient>,
     /// `[[ai.mcp_servers]]`: external MCP servers mounted as assistant tools (A4).
     pub mcp_servers: Vec<super::mcp::AiMcpServer>,
+    /// In-app agent harness limits and approval policy (A5 / A7).
+    pub agent: super::ai_agent::AiAgent,
+    /// Per-folder AI permissions, inherited down the tree (A7). Folders without a rule use
+    /// `privacy`.
+    pub folders: Vec<super::ai_agent::AiFolderRule>,
 }
 
 impl Default for Ai {
@@ -243,6 +248,8 @@ impl Default for Ai {
             mcp: Default::default(),
             mcp_clients: Vec::new(),
             mcp_servers: Vec::new(),
+            agent: super::ai_agent::AiAgent::default(),
+            folders: Vec::new(),
         }
     }
 }

@@ -112,6 +112,8 @@ pub struct SoyuzApp {
     pub quit: QuitState,
     /// Built-in text / hex / image editors (F4).
     pub editors: crate::editors::Editors,
+    /// The in-app assistant (AI panel, agent tasks, highlights; roadmap A5–A7).
+    pub ai: crate::ai::AiState,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -263,6 +265,7 @@ impl SoyuzApp {
             secondary: startup.secondary,
             quit: QuitState::default(),
             editors: Default::default(),
+            ai: crate::ai::AiState::new(ctx),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if let Some(s) = &session {
@@ -617,6 +620,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     let delay = f64::from(c.general.double_click_speed_ms.clamp(100, 2000)) / 1000.0;
     ctx.options_mut(|o| o.input_options.max_double_click_delay = delay);
     crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);
+    crate::ai::state::set_rules(&c.ai);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
         log::warn!("{w}");
     }
@@ -678,6 +682,7 @@ impl eframe::App for SoyuzApp {
         crate::ui::tools::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
         crate::services::mcp_bridge::pump(self, &ctx);
+        crate::ai::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);

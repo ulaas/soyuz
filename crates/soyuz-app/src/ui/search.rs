@@ -135,7 +135,8 @@ pub fn run(app: &mut SoyuzApp) {
     }
 }
 
-fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) {
+/// Show the results of `query` in the focused pane (also used by smart search).
+pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) {
     let id = svc::register(SearchSpec { query, title });
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
