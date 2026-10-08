@@ -3,9 +3,11 @@
 //! [`render`], plus an info section. Everything loads off the UI thread; changing the
 //! selection makes in-flight requests stale.
 
+pub mod diff;
 pub mod hex;
 pub mod markdown;
 pub mod render;
+pub mod rich;
 
 use egui::{
     Align2, CornerRadius, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -30,11 +32,13 @@ pub struct PreviewPane {
     /// Info pane mode (`ToggleInfoPane`): only the metadata section, no content viewer.
     pub info_only: bool,
     state: Option<PreviewState>,
+    /// Two-file diff (roadmap F3) when exactly two text files are selected.
+    diff: diff::DiffView,
 }
 
 impl Default for PreviewPane {
     fn default() -> Self {
-        PreviewPane { open: false, width: 340.0, info_only: false, state: None }
+        PreviewPane { open: false, width: 340.0, info_only: false, state: None, diff: Default::default() }
     }
 }
 
@@ -69,6 +73,7 @@ impl PreviewPane {
             if let Some(s) = &mut self.state {
                 s.clear();
             }
+            self.diff.clear();
         }
     }
 
@@ -107,6 +112,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let ctx = root.ctx().clone();
     let p = palette(&ctx);
     let target = target_entry(app);
+    let pair = diff::pair(app);
+    if pair.is_none() {
+        app.ui.preview.diff.clear();
+    }
     let pane_id = app.ws.pane().id;
     let info_only = app.ui.preview.info_only;
     let st = app.ui.preview.state.get_or_insert_with(|| PreviewState::new(&ctx, false));
@@ -143,6 +152,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 None => (ph::EYE, p.text_tertiary, "Preview".to_string(), String::new()),
             };
             let name = if name.is_empty() { "Preview".into() } else { name };
+            let (glyph, color, name, sub) = match &pair {
+                Some((a, b)) => (ph::GIT_DIFF, p.accent, format!("{} ↔ {}", a.name, b.name), "Diff".to_string()),
+                None => (glyph, color, name, sub),
+            };
             ui.painter().text(
                 pos2(header.left() + 22.0, header.center().y),
                 Align2::CENTER_CENTER,
@@ -193,8 +206,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let textual = matches!(
                 st.loaded.as_ref().map(|l| &l.content),
                 Some(Content::Text(_) | Content::Markdown { .. } | Content::Hex(_) | Content::Archive(_))
-            );
-            let info_h = if info_only {
+            ) || matches!(st.loaded.as_ref().map(|l| &l.content), Some(Content::Rich(r)) if r.is_textual());
+            let info_h = if pair.is_some() && !info_only {
+                0.0
+            } else if info_only {
                 body.height()
             } else if rows.is_empty() {
                 0.0
@@ -207,7 +222,9 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             if !info_only {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
                 child.set_clip_rect(content_r);
-                if let Some(a) = render::content(&mut child, content_r, st, false) {
+                if let Some((a, b)) = &pair {
+                    diff::show(&mut child, content_r, &mut app.ui.preview.diff, a, b, app.config.preview.max_diff_kib);
+                } else if let Some(a) = render::content(&mut child, content_r, st, false) {
                     action = Some(a);
                 }
             }

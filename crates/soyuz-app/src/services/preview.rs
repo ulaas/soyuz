@@ -79,6 +79,13 @@ pub enum Kind {
     Video,
     Pdf,
     Binary,
+    // Rich previews (roadmap F3, `preview_rich`).
+    Document,
+    Spreadsheet,
+    Presentation,
+    Ebook,
+    Font,
+    Model,
 }
 
 impl Kind {
@@ -94,6 +101,12 @@ impl Kind {
             Kind::Video => "Video",
             Kind::Pdf => "PDF document",
             Kind::Binary => "Binary",
+            Kind::Document => "Document",
+            Kind::Spreadsheet => "Spreadsheet",
+            Kind::Presentation => "Presentation",
+            Kind::Ebook => "E-book",
+            Kind::Font => "Font",
+            Kind::Model => "3D model",
         }
     }
 }
@@ -289,6 +302,8 @@ pub struct Limits {
     pub dark: bool,
     pub mono: FontId,
     pub fg: Color32,
+    /// Rich previewer switches and caps (`preview_rich`).
+    pub rich: super::preview_rich::RichLimits,
 }
 
 #[derive(Clone)]
@@ -362,6 +377,8 @@ pub enum Content {
     Media {
         video: bool,
     },
+    /// Office / EPUB / font / 3D / audio / video / PDF (`preview_rich`).
+    Rich(super::preview_rich::Rich),
     /// Nothing to render but a message (e.g. too large, unsupported, error).
     Message {
         icon: &'static str,
@@ -577,7 +594,7 @@ impl Opened {
     }
 }
 
-trait ReadSeek: Read + Seek {}
+pub trait ReadSeek: Read + Seek {}
 impl<T: Read + Seek> ReadSeek for T {}
 
 fn open_source(source: &Source) -> Result<Opened, String> {
@@ -625,6 +642,27 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     };
     let head = opened.head(8192);
     let kind = detect(&name, false, &head, job.force_hex);
+    if !job.force_hex
+        && let Some(rk) = super::preview_rich::route(&name, &head, kind, &job.limits.rich)
+    {
+        let len = opened.len();
+        let mut out = super::preview_rich::load(
+            rk,
+            &job.source,
+            opened.reader(),
+            len,
+            &name,
+            &job.ctx,
+            job.id,
+            &job.limits,
+            stale,
+        );
+        if let Opened::Mem(_, _, true) = opened {
+            out.facts.push(("Note".into(), "Preview limited to the first 64 MiB".into()));
+        }
+        out.meta = out.meta.or(meta);
+        return out;
+    }
     let mut out = match kind {
         Kind::Image => image(&mut opened, &name, job, stale),
         Kind::Svg => {
@@ -657,7 +695,14 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             }
             l
         }
-        Kind::Folder | Kind::Binary => hex(&job.source, &mut opened),
+        Kind::Folder
+        | Kind::Binary
+        | Kind::Document
+        | Kind::Spreadsheet
+        | Kind::Presentation
+        | Kind::Ebook
+        | Kind::Font
+        | Kind::Model => hex(&job.source, &mut opened),
     };
     if let Opened::Mem(_, _, true) = opened {
         out.facts.push(("Note".into(), "Preview limited to the first 64 MiB".into()));
@@ -1005,6 +1050,7 @@ mod tests {
             dark: true,
             mono: FontId::monospace(12.0),
             fg: Color32::WHITE,
+            rich: Default::default(),
         }
     }
 

@@ -216,6 +216,22 @@ impl Default for Preview {
             pdf: true,
             thumb_cache_mib: 128,
             preview_cache_mib: 96,
+            pdfium_dir: String::new(),
+            office: true,
+            epub: true,
+            fonts: true,
+            models: true,
+            model_turntable: true,
+            audio_waveform: true,
+            audio_playback: true,
+            video_ffmpeg: true,
+            ffmpeg_path: "ffmpeg".into(),
+            diff: true,
+            max_document_mib: 64,
+            sheet_rows: 200,
+            max_model_mib: 128,
+            max_audio_mib: 512,
+            max_diff_kib: 1024,
         }
     }
 }

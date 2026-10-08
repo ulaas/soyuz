@@ -74,7 +74,10 @@ pub fn cost(l: &Loaded) -> Option<u64> {
         Content::Markdown { blocks, .. } => blocks.len() as u64 * 256,
         Content::Svg { bytes, .. } => bytes.len() as u64,
         Content::Archive(a) => a.entries.iter().map(|(p, _, _)| p.len() as u64 + 24).sum(),
-        Content::Hex(_) | Content::Folder(_) | Content::Media { .. } | Content::Message { .. } => return None,
+        // Rich previews hold live state (players, page renders) or are cheap to redo.
+        Content::Hex(_) | Content::Folder(_) | Content::Media { .. } | Content::Message { .. } | Content::Rich(_) => {
+            return None;
+        }
     };
     Some(body + facts + 256)
 }

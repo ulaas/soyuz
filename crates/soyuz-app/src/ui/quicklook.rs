@@ -23,6 +23,8 @@ use crate::ui::widgets::{icon_toggle, kbd, trunc_galley};
 pub struct QuickLook {
     pub open: bool,
     state: Option<PreviewState>,
+    /// Two-file diff (roadmap F3) when exactly two text files are selected.
+    diff: crate::ui::preview::diff::DiffView,
 }
 
 impl QuickLook {
@@ -31,6 +33,7 @@ impl QuickLook {
         if let Some(s) = &mut self.state {
             s.clear();
         }
+        self.diff.clear();
     }
 }
 
@@ -128,6 +131,8 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         (pane.cursor_pos().map_or(0, |i| i + 1), pane.visible.len())
     };
     let pane_id = app.ws.pane().id;
+    let pair = crate::ui::preview::diff::pair(app);
+    let diff_cap = app.config.preview.max_diff_kib;
     let st = app.ui.quicklook.state.get_or_insert_with(|| PreviewState::new(ctx, true));
     let limits = st.limits(&app.config, &p);
     st.set_target(Some(&target), limits);
@@ -260,7 +265,9 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         );
         let mut child = ui.new_child(UiBuilder::new().max_rect(body));
         child.set_clip_rect(body);
-        if let Some(a) = render::content(&mut child, body, st, true) {
+        if let Some((a, b)) = &pair {
+            crate::ui::preview::diff::show(&mut child, body, &mut app.ui.quicklook.diff, a, b, diff_cap);
+        } else if let Some(a) = render::content(&mut child, body, st, true) {
             action = Some(a);
         }
     });
