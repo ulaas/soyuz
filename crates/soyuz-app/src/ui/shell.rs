@@ -73,6 +73,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     toolbar::show(ui, app);
     crate::ui::search::bar(ui, app);
     crate::ui::preview::show(ui, app);
+    crate::ui::tools::show_panels(ui, app);
 
     CentralPanel::default()
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
@@ -83,6 +84,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         });
 
     // Overlays.
+    crate::ui::tools::show_windows(&ctx, app);
     let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
     app.ui.dialogs.show(&ctx, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);
@@ -126,6 +128,10 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
         theme: app.ui.theme,
         size_style: app.config.general.size_style,
         activity: panels::activity::indicator(app),
+        git_dir: match &pane.location {
+            Location::Dir(d) => Some(d.clone()),
+            _ => None,
+        },
     }
 }
 

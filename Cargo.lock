@@ -3982,6 +3982,7 @@ dependencies = [
 name = "soyuz-app"
 version = "0.1.0"
 dependencies = [
+ "blake3",
  "chrono",
  "crossbeam-channel",
  "eframe",
@@ -4005,6 +4006,7 @@ dependencies = [
  "tempfile",
  "toml",
  "windows-sys 0.61.2",
+ "xattr",
 ]
 
 [[package]]

@@ -153,6 +153,9 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         SidebarSection::Devices => devices(ui, s, c),
                         SidebarSection::Cloud if !c.cloud.is_empty() => cloud(ui, s, c),
                         SidebarSection::Trash => other(ui, s, c),
+                        SidebarSection::Tags => {
+                            crate::ui::tools::tags_ui::sidebar_section(ui, &mut s.collapsed, c.current, c.pane, c.cmds)
+                        }
                         _ => {}
                     }
                 }
@@ -377,6 +380,7 @@ fn other(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     if !header(ui, s, SidebarSection::Trash) {
         return;
     }
+    crate::ui::tools::tags_ui::recent_row(ui, c.current, c.pane, c.cmds);
     let active = matches!(c.current, Location::Trash);
     let r = NavRow { icon: ph::TRASH, label: "Trash", active, icon_color: None, usage: None }.show(ui);
     crate::ops::fileops::dnd::trash_target(ui, &r, c.cmds);

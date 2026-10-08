@@ -79,6 +79,7 @@ define_actions! {
         ToggleHidden, ToggleFlatView, ToggleSortDir, ChooseColumns, ResetFolderView,
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
         ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
+        ToggleShelf,
     ],
     Selection: [
         SelectAll, SelectNone, InvertSelection, SelectByPattern, SelectSameExtension,

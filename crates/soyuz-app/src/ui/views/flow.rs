@@ -557,11 +557,24 @@ fn paint_details_row(
                 glyph_font,
                 icons::color(e, p).gamma_multiply(a),
             );
+            let deco = crate::ui::tools::decor::Deco::of(e);
+            deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
             let tx = x + 24.0;
-            let color = p.text_primary.gamma_multiply(a);
-            let galley = trunc_galley(painter, &e.name, FontId::proportional(13.0), color, x1 - tx - 8.0);
+            let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
+            let galley = trunc_galley(
+                painter,
+                &e.name,
+                FontId::proportional(13.0),
+                color,
+                x1 - tx - 8.0 - deco.trailing_width(),
+            );
+            let gw = galley.size().x;
             painter.galley(pos2(tx, cy - galley.size().y / 2.0), galley, color);
+            deco.paint_tags(painter, p, tx + gw, cy, p.bg_surface1);
         } else {
+            if crate::ui::tools::decor::paint_cell(painter, p, c.column, e, x0, c.w, cy, a) {
+                continue;
+            }
             let text = columns::cell_text(c.column, e, v.config);
             if text.is_empty() {
                 continue;
@@ -613,7 +626,12 @@ fn paint_grid_cell(
     if st.checkbox && (st.selected || st.hovered) {
         paint_checkbox(painter, p, Rect::from_min_size(r.min + vec2(7.0, 7.0), vec2(CHECK, CHECK)), st.selected);
     }
-    let color = p.text_primary.gamma_multiply(a);
+    let deco = crate::ui::tools::decor::Deco::of(e);
+    deco.paint_badge(painter, p, icon_box.center(), zoom, p.bg_surface1);
+    if deco.tags != 0 {
+        deco.paint_tags(painter, p, r.right() - 8.0 - deco.trailing_width(), r.top() + 10.0, p.bg_surface1);
+    }
+    let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let font = FontId::proportional(if zoom < 48.0 { 12.0 } else { 12.5 });
     let rows = if gallery { 1 } else { 2 };
     let galley = wrapped_galley(painter, &e.name, font, color, r.width() - 10.0, rows);
@@ -644,10 +662,15 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
         glyph_font,
         icons::color(e, p).gamma_multiply(a),
     );
+    let deco = crate::ui::tools::decor::Deco::of(e);
+    deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
     let right_pad = if miller && e.is_dir_like() { 24.0 } else { 8.0 };
-    let color = p.text_primary.gamma_multiply(a);
-    let galley = trunc_galley(painter, &e.name, FontId::proportional(13.0), color, r.right() - x - 24.0 - right_pad);
+    let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
+    let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width();
+    let galley = trunc_galley(painter, &e.name, FontId::proportional(13.0), color, max_w);
+    let gw = galley.size().x;
     painter.galley(pos2(x + 24.0, cy - galley.size().y / 2.0), galley, color);
+    deco.paint_tags(painter, p, x + 24.0 + gw, cy, p.bg_surface1);
     if miller && e.is_dir_like() {
         painter.text(
             pos2(r.right() - 10.0, cy),

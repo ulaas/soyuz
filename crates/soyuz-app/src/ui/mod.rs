@@ -19,5 +19,6 @@ pub mod statusbar;
 pub mod tabstrip;
 pub mod toasts;
 pub mod toolbar;
+pub mod tools;
 pub mod views;
 pub mod widgets;

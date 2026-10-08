@@ -131,7 +131,7 @@ pub fn location_title(loc: &Location) -> String {
         Location::Trash => "Trash".into(),
         Location::Computer => "This PC".into(),
         Location::Recent => "Recent".into(),
-        Location::Tags(t) => format!("Tag: {t}"),
+        Location::Tags(t) => format!("Tag: {}", crate::services::tags::display_name(t)),
         Location::Search(_) => "Search".into(),
     }
 }

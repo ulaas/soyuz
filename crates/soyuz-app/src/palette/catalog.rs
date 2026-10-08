@@ -193,6 +193,7 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::ResetFolderView => (ph::ARROW_U_UP_LEFT, "Forget the view settings of this folder", ""),
         A::ApplyViewToAll => (ph::STACK, "Use this layout for every folder", "default"),
         A::TogglePreviewPane => (ph::SIDEBAR_SIMPLE, "Show or hide the preview pane", "inspector"),
+        A::ToggleShelf => (ph::TRAY, "Show or hide the drop shelf for collecting files", "stash basket collect"),
         A::ToggleInfoPane => (ph::INFO, "Show or hide the info pane", "metadata"),
         A::ToggleTerminal => (ph::TERMINAL_WINDOW, "Show or hide the integrated terminal", "shell console"),
         A::ToggleActivityPanel => (ph::PULSE, "Show or hide running jobs", "progress operations"),

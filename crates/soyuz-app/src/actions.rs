@@ -379,6 +379,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
         A::TestArchive => crate::ui::archive::test_archive(app),
         a if crate::ui::dialogs::properties::handles(app, &a) => crate::ui::dialogs::properties::execute(app, a, ctx),
+        a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, ctx),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, ctx),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {

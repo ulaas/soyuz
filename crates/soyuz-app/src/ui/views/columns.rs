@@ -61,13 +61,10 @@ pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
         Column::Path => {
             e.path.parent().map(|p| soyuz_fs::strip_verbatim(p).to_string_lossy().into_owned()).unwrap_or_default()
         }
-        Column::Tags
-        | Column::GitStatus
-        | Column::Dimensions
-        | Column::Duration
-        | Column::LinkTarget
-        | Column::Checksum
-        | Column::ItemCount => String::new(),
+        Column::Tags | Column::GitStatus => crate::ui::tools::decor::cell_text(col, e).unwrap_or_default(),
+        Column::Dimensions | Column::Duration | Column::LinkTarget | Column::Checksum | Column::ItemCount => {
+            String::new()
+        }
     }
 }
 
