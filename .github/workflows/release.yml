@@ -1,0 +1,193 @@
+# Release artifacts with optional code signing (SECURITY.md, "Release signing").
+#
+# Signing steps are SKELETONS. They need real certificates stored as repository secrets and
+# have never run against a real certificate:
+#   Windows Authenticode: WINDOWS_CERT_PFX_BASE64, WINDOWS_CERT_PASSWORD
+#                         (optional WINDOWS_TIMESTAMP_URL, default DigiCert's RFC 3161 TSA)
+#   macOS notarization:   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY,
+#                         APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
+# Without the Windows secrets the Windows zip is published unsigned, with a warning. The
+# macOS job runs only when all macOS secrets are present.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Job-level `if:` cannot read secrets directly, so expose "is it configured" as outputs.
+  signing-config:
+    name: Detect signing secrets
+    runs-on: ubuntu-latest
+    outputs:
+      windows: ${{ steps.check.outputs.windows }}
+      macos: ${{ steps.check.outputs.macos }}
+    steps:
+      - id: check
+        shell: bash
+        env:
+          WIN_PFX: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WIN_PW: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          MAC_P12: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          MAC_PW: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MAC_ID: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          win=false; mac=false
+          [[ -n "$WIN_PFX" && -n "$WIN_PW" ]] && win=true
+          [[ -n "$MAC_P12" && -n "$MAC_PW" && -n "$MAC_ID" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_PASSWORD" ]] && mac=true
+          echo "windows=$win" >> "$GITHUB_OUTPUT"
+          echo "macos=$mac" >> "$GITHUB_OUTPUT"
+          echo "Windows signing configured: $win; macOS notarization configured: $mac"
+
+  windows:
+    name: Windows x64 (Authenticode ${{ needs.signing-config.outputs.windows == 'true' && 'signed' || 'UNSIGNED' }})
+    needs: signing-config
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and zip
+        shell: pwsh
+        run: ./scripts/package.ps1
+
+      - name: Authenticode-sign soyuz.exe (skeleton, needs a code-signing certificate)
+        if: needs.signing-config.outputs.windows == 'true'
+        shell: pwsh
+        env:
+          CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $tsa = if ($env:TIMESTAMP_URL) { $env:TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
+          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_PFX_BASE64))
+          try {
+            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+              Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $signtool) { throw "signtool.exe not found (Windows SDK missing on runner)" }
+            foreach ($zip in Get-ChildItem dist/*.zip) {
+              $stage = Join-Path $env:RUNNER_TEMP $zip.BaseName
+              Expand-Archive $zip.FullName $stage -Force
+              $exe = Join-Path $stage "soyuz.exe"
+              & $signtool sign /f $pfx /p $env:CERT_PASSWORD /fd SHA256 /tr $tsa /td SHA256 /d "Soyuz" $exe
+              if ($LASTEXITCODE -ne 0) { throw "signtool sign failed ($LASTEXITCODE)" }
+              & $signtool verify /pa /v $exe
+              if ($LASTEXITCODE -ne 0) { throw "signtool verify failed ($LASTEXITCODE)" }
+              Remove-Item $zip.FullName
+              Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip.FullName
+            }
+          } finally {
+            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Warn about unsigned build
+        if: needs.signing-config.outputs.windows != 'true'
+        shell: pwsh
+        run: Write-Host "::warning::WINDOWS_CERT_PFX_BASE64 / WINDOWS_CERT_PASSWORD not set - publishing an UNSIGNED soyuz.exe"
+
+      - name: Checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem dist/*.zip | ForEach-Object {
+            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          } | Set-Content -Encoding ascii dist/SHA256SUMS-windows.txt
+          Get-Content dist/SHA256SUMS-windows.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soyuz-windows-x64
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal (signed + notarized)
+    needs: signing-config
+    # Runs only once Apple Developer ID credentials exist; see SECURITY.md.
+    if: needs.signing-config.outputs.macos == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Install cargo-bundle
+        run: cargo install cargo-bundle --locked
+      - name: Build .app bundle (skeleton)
+        run: |
+          set -euo pipefail
+          cargo build --release --locked -p soyuz-app --target aarch64-apple-darwin
+          cargo build --release --locked -p soyuz-app --target x86_64-apple-darwin
+          cargo bundle --release -p soyuz-app --target aarch64-apple-darwin
+          APP="target/aarch64-apple-darwin/release/bundle/osx/Soyuz.app"
+          lipo -create -output "$APP/Contents/MacOS/soyuz" \
+            target/aarch64-apple-darwin/release/soyuz target/x86_64-apple-darwin/release/soyuz
+          echo "APP=$APP" >> "$GITHUB_ENV"
+
+      - name: Import Developer ID certificate into a temporary keychain
+        env:
+          CERT_P12_BASE64: ${{ secrets.MACOS_CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KC="$RUNNER_TEMP/signing.keychain-db"
+          KC_PW="$(uuidgen)"
+          echo "$CERT_P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KC_PW" "$KC"
+          security set-keychain-settings -lut 21600 "$KC"
+          security unlock-keychain -p "$KC_PW" "$KC"
+          security import "$RUNNER_TEMP/cert.p12" -P "$CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KC"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KC_PW" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: codesign (hardened runtime)
+        env:
+          SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+          codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Notarize and staple
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          mkdir -p dist
+          ZIP="dist/soyuz-$VERSION-macos-universal.zip"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          xcrun notarytool submit "$ZIP" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$APP"
+          rm "$ZIP"
+          ditto -c -k --keepParent "$APP" "$ZIP"
+          spctl --assess --type execute --verbose "$APP"
+          shasum -a 256 dist/*.zip > dist/SHA256SUMS-macos.txt
+
+      - name: Remove temporary keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soyuz-macos-universal
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS-macos.txt
+          if-no-files-found: error

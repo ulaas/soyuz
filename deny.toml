@@ -1,0 +1,101 @@
+# cargo-deny configuration (https://embarkstudios.github.io/cargo-deny/).
+# Run locally with `cargo deny check`; CI runs it in the `deny` job (.github/workflows/ci.yml).
+# See SECURITY.md for why each rule exists.
+
+[graph]
+# Check the dependency graph of every platform Soyuz ships on, not just the host.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+    "x86_64-apple-darwin",
+    "aarch64-apple-darwin",
+]
+all-features = true
+
+[output]
+feature-depth = 1
+
+# ---------------------------------------------------------------------------
+# Security advisories (RustSec). Vulnerabilities always fail; unmaintained crates fail
+# only when they are direct dependencies of a workspace crate.
+# ---------------------------------------------------------------------------
+[advisories]
+version = 2
+db-urls = ["https://github.com/rustsec/advisory-db"]
+yanked = "deny"
+unmaintained = "workspace"
+unsound = "all"
+# Every entry here needs a reason and a tracking note; review on each dependency bump.
+# Known transitive "unmaintained" notices (not failing with `unmaintained = "workspace"`):
+#   RUSTSEC-2025-0141 bincode 1.x and RUSTSEC-2024-0320 yaml-rust, both via syntect 5.3
+#   (precompiled syntax dumps / .sublime-syntax loading). No known vulnerability; drop
+#   when syntect moves off them.
+ignore = []
+
+# ---------------------------------------------------------------------------
+# Licences. Soyuz is MIT OR Apache-2.0; only permissive licences (and the weak,
+# file-level copyleft MPL-2.0) may enter the binary.
+# ---------------------------------------------------------------------------
+[licenses]
+version = 2
+confidence-threshold = 0.9
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Zlib",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "OFL-1.1",
+    "CC0-1.0",
+    "0BSD",
+    "bzip2-1.0.6",
+]
+# Font licences used only by bundled font data (egui's default fonts).
+exceptions = [
+    { crate = "epaint_default_fonts", allow = ["Ubuntu-font-1.0"] },
+]
+
+# Workspace crates are not published; their licence comes from the workspace.
+[licenses.private]
+ignore = true
+
+# ---------------------------------------------------------------------------
+# Banned crates. The hard rule from the project notes: no Windows shell backend, so crates that
+# wrap shell32 / IFileOperation / ShellExecute / Shell COM are banned outright.
+# ---------------------------------------------------------------------------
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+highlight = "all"
+workspace-default-features = "allow"
+external-default-features = "allow"
+deny = [
+    { crate = "trash", reason = "uses SHFileOperation / IFileOperation on Windows; Soyuz implements trash by hand per OS" },
+    { crate = "rfd", reason = "uses the Shell COM file dialogs (IFileDialog) on Windows" },
+    { crate = "open", reason = "uses ShellExecuteW on Windows; use soyuz_fs::launch instead" },
+    { crate = "opener", reason = "uses ShellExecuteW on Windows; use soyuz_fs::launch instead" },
+    { crate = "webbrowser", reason = "uses ShellExecuteW on Windows" },
+    { crate = "that", reason = "wraps ShellExecute / shell helpers" },
+    { crate = "windows-shell", reason = "Shell COM wrapper" },
+    { crate = "native-dialog", reason = "uses Shell COM file dialogs on Windows" },
+    { crate = "tinyfiledialogs", reason = "uses Shell COM / shell32 dialogs on Windows" },
+    { crate = "openssl-sys", reason = "keep the build pure Rust / no system OpenSSL; use rustls if TLS is ever needed" },
+]
+
+# ---------------------------------------------------------------------------
+# Crate sources: crates.io only, no git dependencies.
+# ---------------------------------------------------------------------------
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

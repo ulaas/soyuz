@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -31,7 +34,7 @@ jobs:
       - name: Forbid shell API names in crates/
         shell: bash
         run: |
-          if grep -rnIiE "shell32|IFileOperation|ShellExecute|SHFileOperation|CoInitialize" crates/; then
+          if grep -rnIiE "shell32|IFileOperation|ShellExecute|SHFileOperation|CoInitialize|url\.dll|rundll32|FileProtocolHandler|SHGetFileInfo|IShellItem|IFileDialog" crates/; then
             echo "::error::shell / COM shell APIs are banned in crates/"
             exit 1
           fi
@@ -83,6 +86,22 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (optional features)
         run: cargo clippy -p soyuz-app --features glow --locked -- -D warnings
+      # The pure-Rust build (no zstd C code) must stay warning-free too.
+      - name: Clippy (no default features, Windows)
+        if: runner.os == 'Windows'
+        run: cargo clippy -p soyuz-app --no-default-features --all-targets --locked -- -D warnings
+      # The dependency graph must not pull in a shell-wrapping crate (deny.toml [bans]).
+      - name: Banned crates (Windows target graph)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          for c in trash rfd open opener webbrowser native-dialog tinyfiledialogs; do
+            if cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c" >/dev/null 2>&1; then
+              echo "::error::crate '$c' wraps the Windows shell and is banned (the project notes)"
+              cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c"
+              exit 1
+            fi
+          done
 
   # Release zip of the Windows build (pushes to main and manual runs).
   package:
@@ -90,6 +109,7 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: build
     runs-on: windows-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
