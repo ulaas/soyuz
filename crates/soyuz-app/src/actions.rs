@@ -433,6 +433,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
         A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
         A::TestArchive => crate::ui::archive::test_archive(app),
+        a if crate::ui::remote::handles(app, &a) => crate::ui::remote::execute(app, a, ctx),
         a if crate::ui::dialogs::properties::handles(app, &a) => crate::ui::dialogs::properties::execute(app, a, ctx),
         a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, ctx),
         a if crate::ui::archive::handles_edit(app, &a) => crate::ui::archive::execute_edit(app, a),

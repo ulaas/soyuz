@@ -8,6 +8,7 @@ mod prompts;
 mod props;
 mod queue;
 mod recovery;
+mod remote;
 mod safety;
 mod undo;
 

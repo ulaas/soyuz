@@ -1,0 +1,36 @@
+[package]
+name = "soyuz-vfs"
+description = "Soyuz remote locations: provider trait, URI parsing, SFTP / WebDAV / FTP(S) / S3 providers, streaming transfers"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+soyuz-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+base64.workspace = true
+sha2.workspace = true
+quick-xml.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+futures-util.workspace = true
+tokio = { workspace = true, features = ["net", "io-util"] }
+# SFTP: pure Rust SSH (ring crypto, no aws-lc / OpenSSL).
+russh = { version = "0.64.1", default-features = false, features = ["ring", "flate2"] }
+russh-sftp = "3.0.1"
+# FTP / FTPS (sync client, rustls with ring).
+suppaftp = { version = "12.1.1", default-features = false, features = ["rustls-ring"] }
+# S3 request signing (Sans-IO; requests go through reqwest).
+rusty-s3 = "0.10.2"
+rustls-platform-verifier = "0.7.1"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

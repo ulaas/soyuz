@@ -16,6 +16,8 @@ pub enum CrumbKind {
     Archive,
     /// Trash, Computer, Recent, Tags, Search.
     Virtual,
+    /// The server of a remote location (`user@host`).
+    Server,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -51,6 +53,27 @@ pub fn crumbs(loc: &Location, home: Option<&Path>) -> Vec<Crumb> {
             }
             v
         }
+        Location::Remote(u) => match soyuz_vfs::RemoteUri::parse(u) {
+            Ok(uri) => {
+                let mut v = vec![Crumb {
+                    label: uri.server_label(),
+                    location: Location::Remote(uri.root().display()),
+                    kind: CrumbKind::Server,
+                }];
+                let mut acc = String::new();
+                for seg in uri.path.split('/').filter(|s| !s.is_empty()) {
+                    acc.push('/');
+                    acc.push_str(seg);
+                    v.push(Crumb {
+                        label: seg.to_string(),
+                        location: Location::Remote(uri.with_path(&acc).display()),
+                        kind: CrumbKind::Folder,
+                    });
+                }
+                v
+            }
+            Err(_) => vec![Crumb { label: u.clone(), location: loc.clone(), kind: CrumbKind::Server }],
+        },
         other => vec![Crumb { label: location_title(other), location: other.clone(), kind: CrumbKind::Virtual }],
     }
 }
@@ -137,6 +160,10 @@ pub fn location_title(loc: &Location) -> String {
         Location::Search(id) => {
             crate::services::search::spec(*id).and_then(|s| s.smart).unwrap_or_else(|| "Search".into())
         }
+        Location::Remote(u) => match soyuz_vfs::RemoteUri::parse(u) {
+            Ok(uri) => uri.file_name().map(str::to_string).unwrap_or_else(|| uri.server_label()),
+            Err(_) => u.clone(),
+        },
     }
 }
 

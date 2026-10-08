@@ -114,4 +114,6 @@ pub enum Cmd {
     Smart(crate::ui::smart::SmartCmd),
     /// Scripts, automations and the CLI companion (F6): `automation`.
     Automation(crate::automation::AutoCmd),
+    /// Remote locations (connect dialog, saved connections, host keys): `ui::remote`.
+    Remote(crate::ui::remote::RemoteCmd),
 }

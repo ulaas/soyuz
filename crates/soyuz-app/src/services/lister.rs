@@ -158,6 +158,18 @@ fn run(job: Job, postman: &Postman) {
             if ctl.is_cancelled() {
                 return;
             }
+            // Remote folders and `\server` share lists (F2): one blocking call.
+            if let Some(r) = super::remote::list_blocking(&path, soft) {
+                if ctl.is_cancelled() {
+                    return;
+                }
+                let (chunk, err) = match r {
+                    Ok(v) => (v, None),
+                    Err(e) => (Vec::new(), Some(e)),
+                };
+                postman.send(UiMsg::Listing { pane, generation, chunk, done: true, err });
+                return;
+            }
             let mut buffered: Vec<EntryInfo> = Vec::new();
             let mut alive = true;
             let result = soyuz_fs::read_dir_streaming(&path, &list_options(), &ctl, &mut |chunk| {
@@ -209,7 +221,10 @@ fn run(job: Job, postman: &Postman) {
             postman.send(UiMsg::Patched { pane, generation, updated, removed });
         }
         Job::Aux { path } => {
-            let result = soyuz_fs::read_dir(&path, &list_options());
+            let result = match super::remote::list_blocking(&path, false) {
+                Some(r) => r,
+                None => soyuz_fs::read_dir(&path, &list_options()),
+            };
             postman.send(UiMsg::Aux { path, result });
         }
         Job::Resolve { pane, generation, path } => {

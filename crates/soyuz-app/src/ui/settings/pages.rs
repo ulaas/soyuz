@@ -737,6 +737,78 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
     });
+    any |= group(ui, q, "Remote network sftp ssh webdav ftp s3 server cloud", "Remote locations", |r| {
+        r.row_kw(
+            "Reuse folder listings for",
+            "Remote folders are listed again after this long (Refresh always re-lists).",
+            "cache ttl",
+            |ui| {
+                number(ui, &mut d.remote.cache_ttl_secs, 0..=3600, " s");
+            },
+        );
+        r.row_kw("Check open remote folders every", "0 = only on Refresh.", "poll watch", |ui| {
+            number(ui, &mut d.remote.poll_secs, 0..=3600, " s");
+        });
+        r.row_kw("Connection timeout", "Give up connecting after this long.", "connect", |ui| {
+            number(ui, &mut d.remote.connect_timeout_secs, 1..=300, " s");
+        });
+        r.row_kw("Server timeout", "Give up when a server stops answering mid-operation.", "io stall", |ui| {
+            number(ui, &mut d.remote.io_timeout_secs, 5..=3600, " s");
+        });
+        r.row_kw(
+            "Download cache",
+            "Remote files opened or previewed are kept in a temp folder up to this size.",
+            "preview temp",
+            |ui| {
+                number(ui, &mut d.remote.preview_cache_mb, 16..=65_536, " MB");
+            },
+        );
+        r.row_kw(
+            "Preview files up to",
+            "Larger remote files are not downloaded just to preview them.",
+            "preview",
+            |ui| {
+                number(ui, &mut d.remote.preview_max_mb, 1..=4096, " MB");
+            },
+        );
+        r.row_kw(
+            r"List shares for \\server",
+            "Typing a bare server name lists its shared folders (Windows).",
+            "smb unc netshareenum",
+            |ui| {
+                switch(ui, &mut d.remote.share_enumeration);
+            },
+        );
+        let hosts = soyuz_vfs::registry::known_hosts().entries();
+        r.row_kw(
+            "Trusted SSH servers",
+            &format!(
+                "{} host key{} trusted. Forget one to be asked again.",
+                hosts.len(),
+                if hosts.len() == 1 { "" } else { "s" }
+            ),
+            "known_hosts fingerprint host key",
+            |ui| {
+                ui.vertical(|ui| {
+                    for (host, algo, fp) in &hosts {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new(host).size(12.0)).on_hover_text(format!(
+                                "{algo}
+{fp}"
+                            ));
+                            if small_button(ui, None, "Forget", true).clicked() {
+                                let (h, port) = match host.rsplit_once(':') {
+                                    Some((h, p)) => (h.to_string(), p.parse().unwrap_or(22)),
+                                    None => (host.clone(), 22),
+                                };
+                                let _ = soyuz_vfs::registry::known_hosts().forget(&h, port);
+                            }
+                        });
+                    }
+                });
+            },
+        );
+    });
     any
 }
 

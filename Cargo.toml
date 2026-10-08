@@ -24,6 +24,7 @@ soyuz-ai = { path = "crates/soyuz-ai" }
 soyuz-mcp = { path = "crates/soyuz-mcp" }
 soyuz-index = { path = "crates/soyuz-index" }
 soyuz-script = { path = "crates/soyuz-script" }
+soyuz-vfs = { path = "crates/soyuz-vfs" }
 
 # --- GUI (pinned exactly, see PLAN §7) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }

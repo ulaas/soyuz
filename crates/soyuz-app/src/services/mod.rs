@@ -30,6 +30,7 @@ pub mod preview_text;
 pub mod preview_video;
 pub mod preview_xml;
 pub mod recent;
+pub mod remote;
 pub mod search;
 pub mod store_file;
 pub mod tags;

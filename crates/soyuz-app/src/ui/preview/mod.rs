@@ -89,6 +89,12 @@ impl PreviewPane {
 /// selected entry, else the folder itself.
 pub fn target_entry(app: &SoyuzApp) -> Option<EntryInfo> {
     let pane = app.ws.pane();
+    if matches!(pane.location, Location::Remote(_)) {
+        // Remote files preview from a downloaded copy (F2); folders show nothing.
+        let e =
+            pane.cursor.as_deref().and_then(|c| pane.entry(c)).or_else(|| pane.selected_entries().first().copied())?;
+        return crate::ui::remote::preview_target(app, e);
+    }
     if let Some(e) = pane.cursor.as_deref().and_then(|c| pane.entry(c)) {
         return Some(e.clone());
     }

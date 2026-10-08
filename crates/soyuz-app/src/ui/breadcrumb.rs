@@ -40,6 +40,7 @@ fn kind_glyph(c: &Crumb) -> &'static str {
         CrumbKind::Home => ph::HOUSE,
         CrumbKind::Archive => ph::FILE_ZIP,
         CrumbKind::Folder => ph::FOLDER,
+        CrumbKind::Server => ph::GLOBE,
         CrumbKind::Virtual => match c.location {
             Location::Trash => ph::TRASH,
             Location::Computer => ph::DESKTOP_TOWER,

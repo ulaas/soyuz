@@ -154,6 +154,7 @@ pub fn folder_key(loc: &Location) -> Option<String> {
         Location::Trash | Location::Computer | Location::Recent | Location::Timeline => loc.display(),
         Location::Tags(t) => format!("tag:{t}"),
         Location::Search(_) => return None,
+        Location::Remote(u) => format!("remote:{u}"),
     };
     Some(format!("{:016x}", fnv1a(&ident)))
 }

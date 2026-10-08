@@ -217,6 +217,9 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         SidebarSection::Devices => devices(ui, s, c),
                         SidebarSection::Cloud if !c.cloud.is_empty() => cloud(ui, s, c),
                         SidebarSection::Trash => other(ui, s, c),
+                        SidebarSection::Network => {
+                            crate::ui::remote::sidebar_section(ui, &mut s.collapsed, c.current, c.pane, c.cmds)
+                        }
                         SidebarSection::Tags => {
                             crate::ui::tools::tags_ui::sidebar_section(ui, &mut s.collapsed, c.current, c.pane, c.cmds)
                         }

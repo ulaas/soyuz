@@ -396,6 +396,12 @@ pub fn transfer_with(
     effect: DropEffect,
     verify: bool,
 ) -> Option<JobId> {
+    // F2: remote sources or destination stream through a `JobKind::Remote` job.
+    if crate::services::remote::is_remote_path(&dest)
+        || paths.iter().any(|p| crate::services::remote::is_remote_path(p))
+    {
+        return crate::ui::remote::transfer(app, paths, dest, effect == DropEffect::Move, false);
+    }
     if paths.is_empty() || !dnd::valid_target(&paths, &dest) {
         if !paths.is_empty() {
             app.ui.toasts.push(Toast::warning("Can't drop a folder into itself"));
