@@ -58,6 +58,13 @@ pub fn describe(job: &JobKind) -> (OpKind, String) {
     (op, names::job_title(&meta, false, None, ""))
 }
 
+/// F8: a copy / move / sync that ran with hash verification and had no failures.
+pub fn is_verified(h: &HistoryEntry) -> bool {
+    let verify = h.options.as_ref().is_some_and(|o| o.copy.verify.is_some());
+    let done = soyuz_jobs::JobState::Done(h.summary.clone());
+    super::activity::verify_badge(h.job.brief(), verify, &done).is_some()
+}
+
 fn small_button(ui: &mut Ui, r: Rect, id: Id, label: &str, enabled: bool, p: &Palette) -> bool {
     let resp = ui.interact(r, id, if enabled { Sense::click() } else { Sense::hover() });
     let fill = if !enabled {
@@ -131,7 +138,15 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 ui.painter().text(ic, Align2::CENTER_CENTER, glyph, ticons::font(14.0), color.gamma_multiply(dim));
                 let tx = row.left() + 46.0;
                 let tw = row.width() - 46.0 - 240.0;
-                let tg = trunc_galley(ui.painter(), &title, semibold(12.5), p.text_primary.gamma_multiply(dim), tw);
+                let verified = !h.undone && is_verified(h);
+                let tag_w = if verified { 70.0 } else { 0.0 };
+                let tg = trunc_galley(
+                    ui.painter(),
+                    &title,
+                    semibold(12.5),
+                    p.text_primary.gamma_multiply(dim),
+                    (tw - tag_w).max(40.0),
+                );
                 let tgw = tg.size().x;
                 ui.painter().galley(pos2(tx, row.top() + 8.0), tg, p.text_primary);
                 if h.undone {
@@ -141,6 +156,15 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                         "Undone",
                         p.text_tertiary,
                     );
+                } else if verified {
+                    let at = pos2(tx + tgw + 8.0, row.top() + 16.0);
+                    let w = crate::ui::dialogs::conflict::tag(ui, at, "Verified", p.success);
+                    ui.interact(
+                        Rect::from_min_size(pos2(at.x, at.y - 8.0), vec2(w, 16.0)),
+                        Id::new(("soyuz.hist.verified", h.id.0)),
+                        Sense::hover(),
+                    )
+                    .on_hover_text("Every copied file was hash-compared with its source (BLAKE3)");
                 }
                 let mut sub = format!(
                     "{} \u{b7} {}",
@@ -204,5 +228,35 @@ mod tests {
         assert_eq!(t, "Renamed \u{201c}x\u{201d} to \u{201c}y\u{201d}");
         let (op, _) = describe(&JobKind::Delete { paths: vec!["/a".into()], mode: DeleteMode::Permanent });
         assert_eq!(op, OpKind::Delete);
+    }
+
+    #[test]
+    fn verified_badge_rules() {
+        use super::super::activity::verify_badge;
+        use soyuz_jobs::{JobKindBrief as K, JobState, JobSummary};
+        let ok = JobState::Done(JobSummary::default());
+        let bad = JobState::Done(JobSummary { items_failed: 1, ..JobSummary::default() });
+        assert_eq!(verify_badge(K::Copy, true, &ok), Some("Verified"));
+        assert_eq!(verify_badge(K::Sync, true, &JobState::Running), Some("Verifying"));
+        assert_eq!(verify_badge(K::Copy, true, &bad), None, "failures: no badge");
+        assert_eq!(verify_badge(K::Copy, false, &ok), None);
+        assert_eq!(verify_badge(K::Delete, true, &ok), None, "only copying jobs");
+        let mut h = HistoryEntry {
+            id: soyuz_jobs::HistoryId(1),
+            job: JobKind::Copy { sources: vec!["/a".into()], dest_dir: "/b".into(), rename_to: None },
+            summary: JobSummary::default(),
+            when: std::time::SystemTime::now(),
+            records: Vec::new(),
+            undone: false,
+            undoable: true,
+            stamps: Vec::new(),
+            options: None,
+            this_session: true,
+        };
+        assert!(!is_verified(&h), "old entries without options");
+        let mut o = soyuz_jobs::JobOptions::default();
+        o.copy.verify = Some(soyuz_core::HashAlgo::Blake3);
+        h.options = Some(o);
+        assert!(is_verified(&h));
     }
 }

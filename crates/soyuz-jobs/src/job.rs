@@ -56,6 +56,30 @@ pub enum SyncAction {
     CopyRL(PathBuf),
     DeleteL(PathBuf),
     DeleteR(PathBuf),
+    /// F8: copy `rel` from one side to `to` on a side (possibly the same one); used by the
+    /// two-way sync's "keep both" conflict choice (the losing version is kept under a
+    /// conflict name). Executed with the copies, before deletions.
+    CopyAs {
+        src_left: bool,
+        rel: PathBuf,
+        dst_left: bool,
+        to: PathBuf,
+    },
+}
+
+impl SyncPlan {
+    /// Absolute source and destination of a copy step (`None` for deletions).
+    pub fn copy_paths(&self, a: &SyncAction) -> Option<(PathBuf, PathBuf)> {
+        let side = |left: bool| if left { &self.left } else { &self.right };
+        match a {
+            SyncAction::CopyLR(rel) => Some((self.left.join(rel), self.right.join(rel))),
+            SyncAction::CopyRL(rel) => Some((self.right.join(rel), self.left.join(rel))),
+            SyncAction::CopyAs { src_left, rel, dst_left, to } => {
+                Some((side(*src_left).join(rel), side(*dst_left).join(to)))
+            }
+            SyncAction::DeleteL(_) | SyncAction::DeleteR(_) => None,
+        }
+    }
 }
 
 /// M12; produced by `soyuz_search::compare_dirs` + the app's sync dialog.

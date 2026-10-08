@@ -49,6 +49,7 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Wdk_Storage_FileSystem",
+    "Wdk_Foundation",
 ] }
 
 [target.'cfg(unix)'.dependencies]

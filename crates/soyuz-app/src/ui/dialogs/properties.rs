@@ -222,6 +222,8 @@ pub enum Tab {
     Security,
     Checksums,
     Details,
+    /// F8: earlier versions from shadow copies.
+    Versions,
 }
 
 impl Tab {
@@ -232,6 +234,7 @@ impl Tab {
             Tab::Security => (ph::SHIELD_CHECK, "Security"),
             Tab::Checksums => (ph::FINGERPRINT, "Checksums"),
             Tab::Details => (ph::LIST_BULLETS, "Details"),
+            Tab::Versions => (ph::CLOCK_COUNTER_CLOCKWISE, "Previous versions"),
         }
     }
 }
@@ -392,6 +395,8 @@ pub struct PropertiesDialog {
     /// file id), taken on a worker thread and merged once when it lands.
     fresh: Option<Bg<Option<EntryInfo>>>,
     fresh_merged: bool,
+    /// Previous versions tab (created when first shown).
+    versions: Option<crate::ui::tools::versions::VersionsPanel>,
 }
 
 /// Decode a small thumbnail (worker thread).
@@ -415,6 +420,9 @@ impl PropertiesDialog {
         }
         if single {
             tabs.push(Tab::Details);
+        }
+        if single && crate::ui::tools::versions::enabled() {
+            tabs.push(Tab::Versions);
         }
         let tab = tabs.iter().position(|t| *t == tab).unwrap_or(0);
         let title = if single {
@@ -458,6 +466,7 @@ impl PropertiesDialog {
             link_target: None,
             fresh: None,
             fresh_merged: false,
+            versions: None,
             entries,
         }
     }
@@ -911,6 +920,19 @@ impl Dialog for PropertiesDialog {
                     }
                 }
                 Tab::Details => self.details(ui, ctx.cmds),
+                Tab::Versions => {
+                    let e = &self.entries[0];
+                    let panel = self.versions.get_or_insert_with(|| {
+                        crate::ui::tools::versions::VersionsPanel::new(
+                            e.path.clone(),
+                            e.is_dir_like(),
+                            Some((e.size, e.modified)),
+                        )
+                    });
+                    if let Some(cmd) = panel.show(ui) {
+                        crate::ui::tools::queue(crate::ui::tools::ToolCmd::VersionAction(cmd));
+                    }
+                }
             }
         });
 

@@ -119,7 +119,7 @@ impl Section {
             Section::Appearance => "Theme, accent color, density and fonts. Changes preview live.",
             Section::Views => "Default view, columns, sorting and window layout.",
             Section::Behaviour => "Clicking, confirmations, drag and drop and typing.",
-            Section::Jobs => "Copy / move engine: parallelism, verification, preservation.",
+            Section::Jobs => "Copy / move engine, verification, sync schedules and previous versions.",
             Section::Terminal => "The integrated terminal panel.",
             Section::Preview => "Preview limits, search defaults and git integration.",
             Section::Editor => "The built-in text, hex and image editors (Edit in Soyuz, F4).",
@@ -159,7 +159,10 @@ impl Section {
                 c.general.double_click_speed_ms = d.general.double_click_speed_ms;
                 c.general.open_folders_in = d.general.open_folders_in;
             }
-            Section::Jobs => c.jobs = d.jobs,
+            Section::Jobs => {
+                c.jobs = d.jobs;
+                c.sync = d.sync;
+            }
             Section::Terminal => c.terminal = d.terminal,
             Section::Preview => {
                 c.preview = d.preview;

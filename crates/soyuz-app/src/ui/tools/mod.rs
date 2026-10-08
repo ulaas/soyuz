@@ -16,8 +16,12 @@ pub mod decor;
 pub mod dupes;
 pub mod shelf;
 pub mod split;
+pub mod sync_sched;
+pub mod sync_state;
+pub mod sync_ui;
 pub mod tags_ui;
 pub mod treemap;
+pub mod versions;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -44,9 +48,20 @@ pub enum ToolCmd {
     Duplicates(Vec<PathBuf>),
     Split(PathBuf),
     Join(PathBuf),
-    ToggleTag { paths: Vec<PathBuf>, tag: u8 },
+    ToggleTag {
+        paths: Vec<PathBuf>,
+        tag: u8,
+    },
     ClearTags(Vec<PathBuf>),
     ForgetRecent(Vec<PathBuf>),
+    /// F8: the sync profiles window (schedules, reports).
+    SyncProfiles,
+    /// F8: open Compare & sync with a saved profile.
+    CompareProfile(String),
+    /// F8: "Restore previous version…" for a path (is_dir, current size / modified).
+    Versions(PathBuf, bool, Option<(u64, Option<std::time::SystemTime>)>),
+    /// F8: a previous-versions action from a panel without app access (Properties tab).
+    VersionAction(versions::VersionCmd),
 }
 
 #[derive(Default)]
@@ -56,6 +71,8 @@ pub struct Tools {
     pub dupes: Option<dupes::DupesWindow>,
     pub split: Option<split::SplitWindow>,
     pub shelf: shelf::Shelf,
+    pub sync_profiles: Option<sync_ui::SyncProfilesWindow>,
+    pub versions: Option<versions::VersionsWindow>,
 }
 
 thread_local! {
@@ -115,6 +132,8 @@ pub fn handles(a: &Action) -> bool {
             | A::ClearTags
             | A::OpenRecent
             | A::ToggleShelf
+            | A::SyncProfiles
+            | A::PreviousVersions
     )
 }
 
@@ -196,6 +215,19 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             crate::ops::navigate(app, id, Location::Recent, crate::ops::NavOpts::user());
         }
         A::ToggleShelf => TOOLS.with_borrow_mut(|t| t.shelf.open = !t.shelf.open),
+        A::SyncProfiles => queue(ToolCmd::SyncProfiles),
+        A::PreviousVersions => {
+            let pane = app.ws.pane();
+            match pane.selected_entries().as_slice() {
+                [e] => queue(ToolCmd::Versions(e.path.clone(), e.is_dir_like(), Some((e.size, e.modified)))),
+                _ => match &pane.location {
+                    Location::Dir(d) => queue(ToolCmd::Versions(d.clone(), true, None)),
+                    _ => {
+                        app.ui.toasts.push(Toast::info("Select one file or folder to see its previous versions"));
+                    }
+                },
+            }
+        }
         _ => {}
     }
 }
@@ -227,6 +259,8 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     if git_pending || crate::services::tags::pending_save() || crate::services::recent::pending_save() {
         ctx.request_repaint_after(std::time::Duration::from_millis(500));
     }
+    versions::begin_frame(app);
+    sync_sched::tick(app, ctx);
     // macOS Finder tags for the visible folders.
     if cfg!(target_os = "macos") {
         for p in app.ws.tab().panes.iter() {
@@ -265,6 +299,12 @@ fn debug_open_once() {
             ("shelf", Some(_)) => ToolCmd::ShelfAdd(paths),
             ("split", Some(p)) => ToolCmd::Split(p),
             ("join", Some(p)) => ToolCmd::Join(p),
+            ("profiles", _) => ToolCmd::SyncProfiles,
+            ("profile", _) if !arg.is_empty() => ToolCmd::CompareProfile(arg.to_string()),
+            ("versions", Some(p)) => {
+                let dir = p.is_dir();
+                ToolCmd::Versions(p, dir, None)
+            }
             _ => continue,
         };
         queue(c);
@@ -282,9 +322,33 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             _ => t.treemap = Some(treemap::TreemapWindow::new(path)),
         },
         ToolCmd::Compare(l, r) => {
-            let profiles = compare::load_profiles();
+            let profiles = sync_sched::profiles();
             t.compare = Some(compare::CompareWindow::new(l, r, profiles));
         }
+        ToolCmd::CompareProfile(name) => {
+            let profiles = sync_sched::profiles();
+            match profiles.iter().find(|p| p.name == name).cloned() {
+                Some(pr) => t.compare = Some(compare::CompareWindow::with_profile(&pr, profiles)),
+                None => {
+                    app.ui.toasts.push(Toast::info(format!("No sync profile named \u{201c}{name}\u{201d}")));
+                }
+            }
+        }
+        ToolCmd::SyncProfiles => match &mut t.sync_profiles {
+            Some(w) => w.open = true,
+            None => t.sync_profiles = Some(sync_ui::SyncProfilesWindow::new()),
+        },
+        ToolCmd::Versions(path, is_dir, current) => {
+            if !app.config.sync.previous_versions {
+                app.ui.toasts.push(
+                    Toast::info("Previous versions are turned off")
+                        .body("Turn them on in Settings › Jobs › Sync & versions."),
+                );
+            } else {
+                t.versions = Some(versions::VersionsWindow::new(path, is_dir, current));
+            }
+        }
+        ToolCmd::VersionAction(cmd) => versions::apply(app, cmd),
         ToolCmd::Duplicates(roots) => t.dupes = Some(dupes::DupesWindow::new(roots)),
         ToolCmd::Split(p) => t.split = Some(split::SplitWindow::split(p)),
         ToolCmd::Join(p) => t.split = Some(split::SplitWindow::join(p)),
@@ -360,6 +424,18 @@ pub fn show_windows(ctx: &egui::Context, app: &mut SoyuzApp) {
             t.split = None;
         }
     }
+    if let Some(w) = &mut t.sync_profiles {
+        w.show(ctx, app);
+        if !w.open {
+            t.sync_profiles = None;
+        }
+    }
+    if let Some(w) = &mut t.versions {
+        w.show(ctx, app);
+        if !w.open {
+            t.versions = None;
+        }
+    }
     t.shelf.drag_strip(ctx);
     TOOLS.with_borrow_mut(|slot| restore(slot, t));
 }
@@ -379,6 +455,12 @@ fn restore(slot: &mut Tools, t: Tools) {
     }
     if fresh.split.is_some() {
         slot.split = fresh.split;
+    }
+    if fresh.sync_profiles.is_some() {
+        slot.sync_profiles = fresh.sync_profiles;
+    }
+    if fresh.versions.is_some() {
+        slot.versions = fresh.versions;
     }
 }
 

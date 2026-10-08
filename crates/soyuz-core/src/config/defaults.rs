@@ -30,6 +30,7 @@ impl Default for Config {
             preview: Preview::default(),
             editor: Editor::default(),
             git: Git::default(),
+            sync: SyncSection::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
@@ -271,6 +272,19 @@ impl Default for Editor {
 impl Default for Git {
     fn default() -> Self {
         Git { status_column: true, refresh_secs: 5 }
+    }
+}
+
+impl Default for SyncSection {
+    fn default() -> Self {
+        SyncSection {
+            scheduler: true,
+            reports_kept: 20,
+            change_debounce_secs: 10,
+            scheduled_dry_run: false,
+            previous_versions: true,
+            shadow_probe_max: 64,
+        }
     }
 }
 

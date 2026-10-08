@@ -1345,6 +1345,7 @@ fn make_snapshot(e: &mut JobEntry, queue_pos: Option<usize>, now: Instant) -> Jo
         pending_prompt: e.pending_prompt.clone(),
         warnings: e.warnings,
         log_len: e.log_base + e.log.len(),
+        verify: e.options.copy.verify,
     }
 }
 

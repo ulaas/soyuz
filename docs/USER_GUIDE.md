@@ -143,6 +143,20 @@ All from the palette or the context menu:
 
 - **Disk usage treemap** — where the space went; click to zoom in, sidebar lists the largest items.
 - **Compare folders / Synchronize** — by date & size, size or content; review the plan before syncing.
+  **Two-way sync** remembers the last sync, so a file deleted on one side is deleted on the
+  other and edits on both sides become *conflicts* (keep left, keep right, keep both, skip,
+  or apply one choice to all). Save the folders as a **profile** and give it a schedule in
+  **Sync profiles** (every N minutes, daily at a time, when files change, or at start);
+  scheduled runs are normal jobs, never guess on conflicts, and each run (or *dry run*)
+  leaves a report of what changed or would change. Nothing runs while Soyuz is closed.
+- **Previous versions** — Properties › Previous versions, or *Restore previous version…*
+  in the context menu, lists earlier copies of a file or folder from Windows shadow copies
+  (restore points, Windows Backup). Open, compare, copy out or restore one (an undoable copy
+  job that asks before replacing). Reading shadow copies needs administrator rights; the
+  panel says so and can start an elevated Soyuz.
+- **Paste and verify** — like Paste, then every copy is read back and hash-compared; jobs
+  that verified their copies show a *Verified* badge in the activity panel and history
+  (or turn verification on for every copy in Settings › Jobs).
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
 - **Split / join files**, **checksums** (BLAKE3, SHA-256, SHA-1, MD5, CRC32), **archives**
   (create, extract here / to folder, test; browse zip / 7z / tar / RAR / ISO / CAB / .deb /
@@ -219,6 +233,9 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `folder_colors.toml` | folder colors and emblems |
 | `themes/*.toml` | your color themes |
 | `thumbs/` | thumbnail cache (safe to delete) |
+| `sync_profiles.toml` | saved sync profiles and their schedules |
+| `sync_state/*.json` | two-way sync state per folder pair (what both sides looked like after the last sync) |
+| `sync_reports/<profile>/*.json` | run and dry-run reports |
 
 ## Troubleshooting
 
