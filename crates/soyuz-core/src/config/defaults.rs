@@ -34,6 +34,9 @@ impl Default for Config {
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
             custom_commands: Vec::new(),
+            scripting: Default::default(),
+            automation: Default::default(),
+            cli: Default::default(),
         }
     }
 }

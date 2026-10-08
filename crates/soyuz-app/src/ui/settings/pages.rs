@@ -295,13 +295,17 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
             _ => details.swap(i, i + 1),
         }
     }
-    let hidden: Vec<Column> = Column::ALL.into_iter().filter(|c| !details.contains(c)).collect();
+    let hidden: Vec<Column> = Column::ALL
+        .into_iter()
+        .filter(|c| !details.contains(c))
+        .filter(|c| c.script_slot().is_none() || crate::automation::scripts::column_label(*c).is_some())
+        .collect();
     if !hidden.is_empty() {
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("Add:").size(11.5).color(p.text_tertiary));
             for c in hidden {
-                if small_button(ui, Some(ph::PLUS), c.label(), false).clicked() {
+                if small_button(ui, Some(ph::PLUS), &crate::ui::views::columns::header_label(c), false).clicked() {
                     details.push(c);
                 }
             }

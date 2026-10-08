@@ -4,6 +4,7 @@
 //! `\\?\`-prefixed, NUL-terminated) so long paths and trailing dots/spaces work.
 
 pub(crate) mod chrome;
+pub(crate) mod console;
 pub(crate) mod fs;
 pub(crate) mod ntdir;
 pub(crate) mod registry;

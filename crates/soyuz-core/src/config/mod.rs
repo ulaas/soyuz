@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod ai;
 pub mod ai_agent;
+pub mod automation;
 pub mod defaults;
 pub mod keys;
 pub mod mcp;
@@ -20,6 +21,7 @@ pub use ai::{
     Ai, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiScope, AiTaskModel, AiTasks, AiToolMode, default_prices,
 };
 pub use ai_agent::{AiAccess, AiAgent, AiApproval, AiFolderRule, AiRiskCeiling, folder_access};
+pub use automation::{Automation, AutomationRule, Cli, RuleAction, RuleConflict, RuleKind, Scripting};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
@@ -284,6 +286,8 @@ mod tests {
         assert_eq!(l.config.bookmarks.len(), 1);
         assert_eq!(l.config.custom_commands.len(), 1);
         assert_eq!(l.config.search.saved.len(), 1);
+        assert_eq!(l.config.automation.rules.len(), 1);
+        assert_eq!(l.config.automation.rules[0].actions.len(), 2);
         let (km, w) = keymap(&l.config);
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(km.lookup(KeyContext::FileList, "F5".parse().unwrap()), Some(&Action::CopyToOtherPane));

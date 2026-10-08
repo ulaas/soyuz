@@ -694,7 +694,7 @@ fn spend_row(ui: &mut Ui, st: &AiPageState, prof: &AiProfile, prices: &PriceTabl
             BudgetStatus::Warn { fraction } => (p.warning, format!(" · {:.0}% of cap", fraction * 100.0)),
             BudgetStatus::Exceeded => (p.danger, " · cap reached, requests are blocked".into()),
         };
-        ui.label(RichText::new(line + &extra).size(11.5).color(color));
+        ui.label(RichText::new(line + extra.as_str()).size(11.5).color(color));
     });
 }
 

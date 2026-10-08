@@ -107,4 +107,6 @@ pub enum Cmd {
     NewWindow(Location),
     /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
     Ai(crate::ai::AiCmd),
+    /// Scripts, automations and the CLI companion (F6): `automation`.
+    Automation(crate::automation::AutoCmd),
 }

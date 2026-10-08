@@ -13,6 +13,7 @@ pub mod actions;
 pub mod ai;
 pub mod app;
 pub mod app_icon;
+pub mod automation;
 pub mod cmd;
 pub mod commands;
 pub mod devscript;

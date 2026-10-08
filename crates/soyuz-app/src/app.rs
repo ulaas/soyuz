@@ -114,6 +114,8 @@ pub struct SoyuzApp {
     pub editors: crate::editors::Editors,
     /// The in-app assistant (AI panel, agent tasks, highlights; roadmap A5–A7).
     pub ai: crate::ai::AiState,
+    /// Scripts, automation rules and the CLI pipe (roadmap F6).
+    pub automation: crate::automation::AutomationState,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -266,6 +268,7 @@ impl SoyuzApp {
             quit: QuitState::default(),
             editors: Default::default(),
             ai: crate::ai::AiState::new(ctx),
+            automation: Default::default(),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if let Some(s) = &session {
@@ -684,6 +687,7 @@ impl eframe::App for SoyuzApp {
         ops::fileops::begin_frame(self, &ctx);
         crate::services::mcp_bridge::pump(self, &ctx);
         crate::ai::pump(self, &ctx);
+        crate::automation::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);

@@ -56,12 +56,14 @@ pub enum Section {
     Keyboard,
     Commands,
     Bookmarks,
+    Scripts,
+    Automations,
     Ai,
     Advanced,
 }
 
 impl Section {
-    pub const ALL: [Section; 13] = [
+    pub const ALL: [Section; 15] = [
         Section::General,
         Section::Appearance,
         Section::Views,
@@ -73,6 +75,8 @@ impl Section {
         Section::Keyboard,
         Section::Commands,
         Section::Bookmarks,
+        Section::Scripts,
+        Section::Automations,
         Section::Ai,
         Section::Advanced,
     ];
@@ -90,6 +94,8 @@ impl Section {
             Section::Keyboard => "Keyboard",
             Section::Commands => "Custom commands",
             Section::Bookmarks => "Bookmarks",
+            Section::Scripts => "Scripts",
+            Section::Automations => "Automations",
             Section::Ai => "AI assistant",
             Section::Advanced => "Config file",
         }
@@ -108,6 +114,8 @@ impl Section {
             Section::Keyboard => ph::KEYBOARD,
             Section::Commands => ph::LIGHTNING,
             Section::Bookmarks => ph::BOOKMARK_SIMPLE,
+            Section::Scripts => ph::CODE,
+            Section::Automations => ph::ROBOT,
             Section::Ai => ph::SPARKLE,
             Section::Advanced => ph::FILE_CODE,
         }
@@ -126,6 +134,8 @@ impl Section {
             Section::Keyboard => "Presets and every shortcut. Click a shortcut to change it.",
             Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
             Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
+            Section::Scripts => "Rhai scripts: actions, context-menu entries, columns and previewers.",
+            Section::Automations => "Rules that file new items in watched folders, and the soyuz command line.",
             Section::Ai => "Model providers, API keys, privacy, scope, budgets and MCP connections.",
             Section::Advanced => "Edit, export or import config.toml.",
         }
@@ -172,6 +182,14 @@ impl Section {
             Section::Keyboard => c.keys = d.keys,
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,
+            Section::Scripts => c.scripting = d.scripting,
+            Section::Automations => {
+                // Keep the rules; reset the switches.
+                let rules = std::mem::take(&mut c.automation.rules);
+                c.automation = d.automation;
+                c.automation.rules = rules;
+                c.cli = d.cli;
+            }
             Section::Ai => {
                 // Keep the user's provider profiles and MCP connections; reset everything else.
                 let profiles = std::mem::take(&mut c.ai.profiles);
@@ -200,7 +218,7 @@ struct KeyCache {
 pub struct SettingsState {
     open: bool,
     pub section: Section,
-    draft: Config,
+    pub(crate) draft: Config,
     applied: Config,
     query: String,
     opened_at: f64,
@@ -727,6 +745,8 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Keyboard => keybindings::page(ui, app, q),
         Section::Commands => lists::commands(ui, app, q),
         Section::Bookmarks => lists::bookmarks(ui, app, q),
+        Section::Scripts => crate::ui::automation::scripts_page::page(ui, app, q),
+        Section::Automations => crate::ui::automation::rules_page::page(ui, app, q),
         Section::Ai => ai::page(ui, app, q),
         Section::Advanced => pages::advanced(ui, app, q),
     }

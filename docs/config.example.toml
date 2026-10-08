@@ -273,3 +273,45 @@ args = ["%s"]                    # %p focused path, %s selected paths, %n names,
 context = ["file", "dir"]        # file | dir | background (empty = everywhere)
 hotkey = ""
 terminal = false                 # true = run in the integrated terminal panel instead of detached
+
+[scripting]                      # Rhai scripts in scripts/*.rhai next to this file (Settings → Scripts)
+enabled = true
+approve_writes = true            # show a script action's planned changes before they run
+allow_read = true                # scripts may list / stat / search / read files (capped below)
+timeout_ms = 3000                # per action or rule-script call
+cell_timeout_ms = 250            # per column value / previewer call
+max_operations = 5000000
+max_read_kib = 1024
+max_list_entries = 10000
+disabled = []                    # script file names not loaded, e.g. ["tidy.rhai"]
+
+[automation]                     # rules run while Soyuz is open (Settings → Automations)
+enabled = true
+dry_run = false                  # every rule only logs what it would do
+log_entries = 200                # run-log entries kept per rule
+
+[[automation.rules]]
+name = "File PDFs"
+enabled = true
+watch = "C:/Users/me/Downloads"
+recursive = false
+glob = "*.pdf"                   # ;-separated globs, empty = any name
+regex = ""                       # optional, case-insensitive
+kind = "files"                   # files | folders | any
+min_size_kib = 0                 # 0 = no bound (also max_size_kib)
+max_size_kib = 0
+min_age_minutes = 0              # by modification time, 0 = no bound (also max_age_minutes)
+max_age_minutes = 0
+delay_secs = 3                   # act this long after the item last changed
+apply_to_existing = false        # also act on matching items already there when the rule starts
+dry_run = false
+conflict = "keep_both"           # keep_both | skip | overwrite | ask
+actions = [
+    { action = "move", to = "C:/Users/me/Documents/PDF" },
+    { action = "tag", tag = "blue" },
+    # { action = "copy", to = "…" }, { action = "rename", pattern = "{mdate}-{name}" },
+    # { action = "trash" }, { action = "script", script = "tidy-downloads" }
+]
+
+[cli]                            # soyuz cp | mv | rm | trash | ls | open | reveal | jobs
+server_enabled = true            # jobs from the terminal run in (and show in) the open window

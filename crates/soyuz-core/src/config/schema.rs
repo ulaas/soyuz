@@ -41,6 +41,12 @@ pub struct Config {
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
     pub custom_commands: Vec<CustomCommand>,
+    /// F6: Rhai scripts (`scripts/*.rhai`).
+    pub scripting: super::automation::Scripting,
+    /// F6: rule-based automations.
+    pub automation: super::automation::Automation,
+    /// F6: the `soyuz cp|mv|rm|…` companion.
+    pub cli: super::automation::Cli,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]

@@ -35,6 +35,7 @@ soyuz-search.workspace = true
 soyuz-term.workspace = true
 soyuz-ai.workspace = true
 soyuz-mcp.workspace = true
+soyuz-script.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui_extras.workspace = true

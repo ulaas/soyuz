@@ -19,6 +19,7 @@
 
 pub mod attrs;
 pub mod chrome;
+pub mod console;
 pub mod copy;
 pub mod create;
 pub mod delete;

@@ -250,6 +250,9 @@ pub fn safe_config() -> Config {
     c.git.status_column = false;
     c.layout.preview_pane = false;
     c.appearance.custom_titlebar = false;
+    // No user code or background automation in safe mode (F6).
+    c.scripting.enabled = false;
+    c.automation.enabled = false;
     c
 }
 

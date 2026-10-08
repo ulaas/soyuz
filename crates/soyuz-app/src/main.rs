@@ -21,6 +21,7 @@ enum Cli {
 
 const USAGE: &str = "\
 Usage: soyuz [OPTIONS] [PATH]
+       soyuz <cp|mv|rm|trash|ls|open|reveal|jobs> …   (run `soyuz cp --help`)
 
 Arguments:
   [PATH]                  Folder to open (a file opens its folder with the file selected)
@@ -99,8 +100,26 @@ fn main() -> ExitCode {
     soyuz_app::services::crash::init_logging();
     soyuz_app::services::crash::install_panic_hook();
 
-    // `soyuz --mcp …`: MCP over stdio (attach to the running window or headless); no GUI.
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`: the CLI companion (F6); no GUI.
+    let cwd = std::env::current_dir().unwrap_or_default();
+    match soyuz_script::cli::parse(&args, &cwd) {
+        Ok(Some(cmd)) => {
+            soyuz_fs::console::attach_parent();
+            return ExitCode::from(soyuz_script::cli::run(cmd).clamp(0, 255) as u8);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            soyuz_fs::console::attach_parent();
+            eprintln!(
+                "soyuz: {e}
+
+Run `soyuz <command> --help` for usage."
+            );
+            return ExitCode::from(soyuz_script::cli::exit::USAGE as u8);
+        }
+    }
+    // `soyuz --mcp …`: MCP over stdio (attach to the running window or headless); no GUI.
     match soyuz_mcp::cli::parse(&args) {
         Ok(Some(opts)) => return ExitCode::from(soyuz_mcp::cli::run(opts).clamp(0, 255) as u8),
         Ok(None) => {}

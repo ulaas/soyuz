@@ -54,6 +54,8 @@ macro_rules! define_actions {
             AddTag(u8),
             Checksum(HashAlgo),
             CustomCommand(String),
+            /// A script action (`scripts/<file>.rhai`, id `file/action`; F6).
+            RunScript(String),
         }
 
         /// `(action, CamelCase name, category)` for every unit variant.
@@ -104,6 +106,7 @@ define_actions! {
         QuickLookNext, QuickLookPrev, ToggleHexPreview,
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,
+        OpenScripts, ReloadScripts, OpenAutomations,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,
@@ -154,7 +157,7 @@ impl Action {
         let mut v: Vec<Action> = UNIT_ACTIONS.iter().map(|(a, _, _)| a.clone()).collect();
         v.extend((1..=BOOKMARK_SLOTS).map(Action::OpenBookmark));
         v.extend((1..=TAB_SLOTS).map(Action::SelectTab));
-        v.extend(Column::ALL.into_iter().map(Action::SortBy));
+        v.extend(Column::ALL.into_iter().filter(|c| c.script_slot().is_none()).map(Action::SortBy));
         v.extend(GroupBy::ALL.into_iter().map(Action::SetGroupBy));
         v.extend((1..=TAG_SLOTS).map(Action::AddTag));
         v.extend(HashAlgo::ALL.into_iter().map(Action::Checksum));
@@ -171,6 +174,7 @@ impl Action {
             Action::AddTag(_) => "add_tag",
             Action::Checksum(_) => "checksum",
             Action::CustomCommand(_) => "custom_command",
+            Action::RunScript(_) => "run_script",
             unit => names().by_action.get(unit).map(|(s, _)| s.as_str()).unwrap_or(""),
         }
     }
@@ -180,7 +184,7 @@ impl Action {
             Action::OpenBookmark(_) | Action::SelectTab(_) => ActionCategory::Navigation,
             Action::SortBy(_) | Action::SetGroupBy(_) => ActionCategory::View,
             Action::AddTag(_) | Action::Checksum(_) => ActionCategory::FileOps,
-            Action::CustomCommand(_) => ActionCategory::Tools,
+            Action::CustomCommand(_) | Action::RunScript(_) => ActionCategory::Tools,
             unit => names().by_action.get(unit).map(|(_, c)| *c).unwrap_or(ActionCategory::Tools),
         }
     }
@@ -200,7 +204,7 @@ impl Action {
             Action::SortBy(c) => format!("{base}: {}", c.label()),
             Action::SetGroupBy(g) => format!("{base}: {g}"),
             Action::Checksum(h) => format!("{base}: {}", h.label()),
-            Action::CustomCommand(s) => s.clone(),
+            Action::CustomCommand(s) | Action::RunScript(s) => s.clone(),
             _ => base,
         }
     }
@@ -214,7 +218,7 @@ impl fmt::Display for Action {
             Action::SortBy(c) => write!(f, ":{c}"),
             Action::SetGroupBy(g) => write!(f, ":{g}"),
             Action::Checksum(h) => write!(f, ":{h}"),
-            Action::CustomCommand(s) => write!(f, ":{s}"),
+            Action::CustomCommand(s) | Action::RunScript(s) => write!(f, ":{s}"),
             _ => Ok(()),
         }
     }
@@ -250,6 +254,10 @@ impl FromStr for Action {
                 Some(p) if !p.trim().is_empty() => Ok(Action::CustomCommand(p.trim().to_string())),
                 _ => Err(err()),
             },
+            "run_script" => match payload {
+                Some(p) if !p.trim().is_empty() => Ok(Action::RunScript(p.trim().to_string())),
+                _ => Err(err()),
+            },
             unit if payload.is_none() => names().by_name.get(unit).cloned().ok_or_else(err),
             _ => Err(err()),
         }
@@ -275,6 +283,10 @@ mod tests {
         let cc = Action::CustomCommand("Open in VS Code".into());
         assert_eq!(cc.to_string(), "custom_command:Open in VS Code");
         assert_eq!("custom_command:Open in VS Code".parse::<Action>().unwrap(), cc);
+        let rs = Action::RunScript("tidy/copy-names".into());
+        assert_eq!(rs.to_string(), "run_script:tidy/copy-names");
+        assert_eq!("run_script:tidy/copy-names".parse::<Action>().unwrap(), rs);
+        assert!("run_script".parse::<Action>().is_err());
     }
 
     #[test]

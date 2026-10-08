@@ -242,6 +242,7 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
             .filter(|c| !c.name.trim().is_empty())
             .map(|c| Action::CustomCommand(c.name.clone())),
     );
+    v.extend(crate::automation::menu::palette_actions());
     v
 }
 
@@ -265,6 +266,7 @@ fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
                 if c.terminal { format!("Terminal · {}", line.trim()) } else { line.trim().to_string() }
             })
             .unwrap_or(e.description),
+        Action::RunScript(id) => crate::automation::menu::palette_detail(id).unwrap_or(e.description),
         _ => e.description,
     };
     it.chord = chord_for(app, a);

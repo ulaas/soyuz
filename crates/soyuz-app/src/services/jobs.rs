@@ -90,6 +90,17 @@ pub enum AfterJob {
     ClearClipboard,
 }
 
+/// Who started a job other than the user directly (a badge on its activity card).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobOrigin {
+    /// A rule in `[[automation.rules]]`.
+    Automation,
+    /// A script action (`scripts/*.rhai`).
+    Script,
+    /// `soyuz cp|mv|rm|…` from a terminal.
+    Cli,
+}
+
 /// App-side facts about a submitted job.
 #[derive(Clone, Debug)]
 pub struct JobMeta {
@@ -105,6 +116,8 @@ pub struct JobMeta {
     pub toast: bool,
     /// Started by the in-app assistant for this task (`ai::TaskId`); tags the card.
     pub ai_task: Option<u64>,
+    /// Started by an automation rule, a script or the CLI (F6).
+    pub origin: Option<JobOrigin>,
 }
 
 impl JobMeta {
@@ -118,12 +131,19 @@ impl JobMeta {
             after: AfterJob::None,
             toast: true,
             ai_task: None,
+            origin: None,
         }
     }
 
     /// Mark the job as started by the assistant (`task` = `ai::TaskId`).
     pub fn ai(mut self, task: u64) -> Self {
         self.ai_task = Some(task);
+        self
+    }
+
+    /// Mark the job as started by an automation rule, a script or the CLI.
+    pub fn origin(mut self, origin: JobOrigin) -> Self {
+        self.origin = Some(origin);
         self
     }
 

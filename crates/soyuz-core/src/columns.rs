@@ -27,10 +27,15 @@ pub enum Column {
     LinkTarget,
     Checksum,
     ItemCount,
+    /// Values computed by script column providers (F6), in provider order.
+    Script1,
+    Script2,
+    Script3,
+    Script4,
 }
 
 impl Column {
-    pub const ALL: [Column; 18] = [
+    pub const ALL: [Column; 22] = [
         Column::Name,
         Column::Size,
         Column::Kind,
@@ -49,7 +54,19 @@ impl Column {
         Column::LinkTarget,
         Column::Checksum,
         Column::ItemCount,
+        Column::Script1,
+        Column::Script2,
+        Column::Script3,
+        Column::Script4,
     ];
+
+    /// The script-provided columns (labels come from the provider in the app).
+    pub const SCRIPT: [Column; 4] = [Column::Script1, Column::Script2, Column::Script3, Column::Script4];
+
+    /// Slot of a script column (0-based).
+    pub fn script_slot(self) -> Option<usize> {
+        Column::SCRIPT.iter().position(|c| *c == self)
+    }
 
     /// Header label.
     pub fn label(self) -> &'static str {
@@ -72,6 +89,10 @@ impl Column {
             Column::LinkTarget => "Link target",
             Column::Checksum => "Checksum",
             Column::ItemCount => "Items",
+            Column::Script1 => "Script 1",
+            Column::Script2 => "Script 2",
+            Column::Script3 => "Script 3",
+            Column::Script4 => "Script 4",
         }
     }
 
