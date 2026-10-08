@@ -4013,6 +4013,7 @@ version = "0.1.0"
 dependencies = [
  "bitflags 2.13.2",
  "blake3",
+ "chrono",
  "crc32fast",
  "crossbeam-channel",
  "filetime",
@@ -4024,6 +4025,7 @@ dependencies = [
  "parking_lot",
  "rustix 1.1.5",
  "serde",
+ "serde_json",
  "sha1 0.10.7",
  "sha2 0.10.9",
  "soyuz-core",
