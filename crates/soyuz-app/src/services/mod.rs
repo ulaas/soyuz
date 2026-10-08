@@ -10,6 +10,7 @@ pub mod git;
 pub mod jobs;
 pub mod lister;
 pub mod mailbox;
+pub mod mcp_bridge;
 pub mod os_clipboard;
 pub mod places;
 pub mod preview;
@@ -53,6 +54,8 @@ pub struct Services {
     pub thumbs: Thumbs,
     pub places: PlacesService,
     pub aux: HashMap<PathBuf, AuxState>,
+    /// MCP server of this window (named pipe / HTTP, approvals; roadmap A3).
+    pub mcp: mcp_bridge::McpBridge,
 }
 
 /// Aux listings older than this are refreshed on the next request.
@@ -72,6 +75,7 @@ impl Services {
             places: PlacesService::new(postman),
             mailbox,
             aux: HashMap::new(),
+            mcp: Default::default(),
         }
     }
 

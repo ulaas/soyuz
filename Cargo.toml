@@ -21,6 +21,7 @@ soyuz-archive = { path = "crates/soyuz-archive" }
 soyuz-search = { path = "crates/soyuz-search" }
 soyuz-term = { path = "crates/soyuz-term" }
 soyuz-ai = { path = "crates/soyuz-ai" }
+soyuz-mcp = { path = "crates/soyuz-mcp" }
 
 # --- GUI (pinned exactly, see PLAN §7) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
@@ -95,6 +96,9 @@ rustls = { version = "0.23.37", default-features = false, features = ["ring", "s
 tokio = { version = "1.50.0", default-features = false, features = ["rt-multi-thread", "time", "sync", "macros"] }
 futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 schemars = "1.2.2"
+# MCP (soyuz-mcp): token generation and the `=?base64?…?=` header encoding.
+getrandom = "0.3.4"
+base64 = "0.22.1"
 
 # --- misc ---
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

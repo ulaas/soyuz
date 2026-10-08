@@ -4,6 +4,7 @@
 //! reload) refresh the window. Search filters rows across all sections.
 
 mod ai;
+mod ai_connections;
 mod appearance;
 mod density_gallery;
 mod editor;
@@ -122,7 +123,7 @@ impl Section {
             Section::Keyboard => "Presets and every shortcut. Click a shortcut to change it.",
             Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
             Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
-            Section::Ai => "Model providers, API keys, privacy, scope and budgets.",
+            Section::Ai => "Model providers, API keys, privacy, scope, budgets and MCP connections.",
             Section::Advanced => "Edit, export or import config.toml.",
         }
     }
@@ -169,10 +170,14 @@ impl Section {
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,
             Section::Ai => {
-                // Keep the user's provider profiles; reset everything else.
+                // Keep the user's provider profiles and MCP connections; reset everything else.
                 let profiles = std::mem::take(&mut c.ai.profiles);
+                let clients = std::mem::take(&mut c.ai.mcp_clients);
+                let servers = std::mem::take(&mut c.ai.mcp_servers);
                 c.ai = d.ai;
                 c.ai.profiles = profiles;
+                c.ai.mcp_clients = clients;
+                c.ai.mcp_servers = servers;
             }
             Section::Advanced => *c = d,
         }
@@ -212,6 +217,8 @@ pub struct SettingsState {
     scroll_top: bool,
     /// AI page state (connection tests, credential operations, usage ledger).
     ai: ai::AiPageState,
+    /// AI → Connections (MCP) page state.
+    connections: ai_connections::ConnectionsState,
 }
 
 impl Default for SettingsState {
@@ -236,6 +243,7 @@ impl Default for SettingsState {
             args_text: Vec::new(),
             scroll_top: false,
             ai: ai::AiPageState::default(),
+            connections: Default::default(),
         }
     }
 }

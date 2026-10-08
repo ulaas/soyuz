@@ -677,6 +677,7 @@ impl eframe::App for SoyuzApp {
         crate::ui::search::pump(self, &ctx);
         crate::ui::tools::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
+        crate::services::mcp_bridge::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);

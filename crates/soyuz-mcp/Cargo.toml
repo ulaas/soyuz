@@ -1,0 +1,47 @@
+[package]
+name = "soyuz-mcp"
+description = "Soyuz MCP server (stdio, named-pipe attach, Streamable HTTP) and MCP client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+soyuz-ai.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+log.workspace = true
+blake3.workspace = true
+getrandom.workspace = true
+base64.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Named pipe for `soyuz --mcp` → running window (kernel32 CreateNamedPipeW / ConnectNamedPipe,
+# overlapped I/O) and its DACL (advapi32 token SID + SDDL). No shell, no COM.
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

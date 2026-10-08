@@ -4801,11 +4801,13 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "serde",
+ "serde_json",
  "soyuz-ai",
  "soyuz-archive",
  "soyuz-core",
  "soyuz-fs",
  "soyuz-jobs",
+ "soyuz-mcp",
  "soyuz-search",
  "soyuz-term",
  "syntect",
@@ -4903,6 +4905,32 @@ dependencies = [
  "soyuz-core",
  "soyuz-fs",
  "tempfile",
+]
+
+[[package]]
+name = "soyuz-mcp"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "crossbeam-channel",
+ "futures-util",
+ "getrandom 0.3.4",
+ "log",
+ "parking_lot",
+ "reqwest",
+ "rustls",
+ "serde",
+ "serde_json",
+ "soyuz-ai",
+ "soyuz-core",
+ "soyuz-fs",
+ "soyuz-jobs",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -29,6 +29,9 @@ Options:
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
+  --mcp                   Run as an MCP server on stdin/stdout (attaches to the running window)
+  --mcp-client <NAME>     With --mcp: the client's name in Settings → AI assistant → Connections
+  --mcp-headless          With --mcp: never attach to a running window
   -h, --help              Print help
   -V, --version           Print version";
 
@@ -96,7 +99,21 @@ fn main() -> ExitCode {
     soyuz_app::services::crash::init_logging();
     soyuz_app::services::crash::install_panic_hook();
 
-    let cli = match parse_args(std::env::args().skip(1)) {
+    // `soyuz --mcp …`: MCP over stdio (attach to the running window or headless); no GUI.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match soyuz_mcp::cli::parse(&args) {
+        Ok(Some(opts)) => return ExitCode::from(soyuz_mcp::cli::run(opts).clamp(0, 255) as u8),
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!(
+                "soyuz: {e}
+
+{USAGE}"
+            );
+            return ExitCode::from(2);
+        }
+    }
+    let cli = match parse_args(args) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("soyuz: {e}\n\n{USAGE}");

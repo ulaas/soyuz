@@ -171,6 +171,35 @@ blocked = ["**/secrets/**"]      # extra blocked globs; .ssh, .env, keychains, b
 allow_sensitive = false          # true = also allow the built-in sensitive paths
 max_read_kib = 256               # read_text size cap
 
+[ai.mcp]                         # Soyuz as an MCP server (Claude Desktop / Code, IDEs, local agents)
+server_enabled = true            # `soyuz --mcp` attaches to this running window over a local named pipe (else headless)
+http_enabled = false             # Streamable HTTP on 127.0.0.1 (each client needs a bearer token)
+http_port = 7863
+allowed_origins = []             # extra browser origins; http://localhost:<port> / http://127.0.0.1:<port> always allowed
+register_unknown = true          # unknown stdio clients are added as pending (read-only until approved)
+approval_timeout_secs = 300      # an unanswered approval card refuses the call after this long
+
+[[ai.mcp_clients]]               # one per MCP client; manage in Settings → AI assistant → Connections
+name = "claude-desktop"          # `soyuz --mcp --mcp-client claude-desktop`
+pending = false                  # true = registered on first connect, read-only until approved
+token = ""                       # HTTP bearer token reference (credential:<name>); empty = stdio only
+allowed_roots = []               # empty = [ai.scope] allowed_roots (always narrowed to them)
+max_risk = "write"               # read | write | destructive
+require_approval = true          # write / destructive tools show an approval card in Soyuz first
+
+[[ai.mcp_servers]]               # external MCP servers the in-app assistant may use as tools
+name = "git"
+enabled = false
+command = "uvx"                  # stdio: program + args (no shell); or set `url` for Streamable HTTP
+args = ["mcp-server-git"]
+env = {}
+url = ""
+token = ""                       # bearer token reference for `url` (credential:<name> | env:<VAR>)
+risk = "write"                   # risk class of its tools: read | write | destructive
+trust_annotations = false        # true = tools marked readOnlyHint count as read-only
+require_approval = true          # tools above read risk need approval in Soyuz
+timeout_secs = 60
+
 [[ai.profiles]]
 name = "claude"
 kind = "anthropic"               # anthropic | openai | openai_responses | gemini | ollama | lm_studio | llama_cpp | vllm | localai | custom
