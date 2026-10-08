@@ -102,3 +102,54 @@ jobs:
           name: soyuz-windows-x64
           path: dist/*.zip
           if-no-files-found: error
+
+  # Criterion benchmarks in quick mode (roadmap R5): listing 100k entries, natural sort 1M,
+  # thumbnail decode + downscale, search throughput. Windows only for now. On pull requests
+  # the base branch is benchmarked first and changes over 15% are reported as warnings
+  # (shared runners are too noisy for a hard gate; see docs/INTEGRATION_NOTES.md).
+  bench:
+    name: Benchmarks (quick, windows)
+    needs: no-shell32
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Baseline (pull request base)
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          git worktree add ../soyuz-base "origin/${{ github.base_ref }}"
+          Push-Location ../soyuz-base
+          $env:CARGO_TARGET_DIR = "${{ github.workspace }}/target"
+          cargo bench --workspace --bench "*" --locked -- --quick --save-baseline base
+          if ($LASTEXITCODE -ne 0) { Write-Output "::warning::baseline benches failed on the base branch" }
+          Pop-Location
+          exit 0
+      - name: Benchmarks
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "pull_request") {
+            cargo bench --workspace --bench "*" --locked -- --quick --baseline-lenient base
+          } else {
+            cargo bench --workspace --bench "*" --locked -- --quick
+          }
+      - name: Report changes over 15%
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          Get-ChildItem target/criterion -Recurse -Filter estimates.json |
+            Where-Object { $_.Directory.Name -eq 'change' } |
+            ForEach-Object {
+              $mean = (Get-Content $_.FullName | ConvertFrom-Json).mean.point_estimate
+              $name = $_.Directory.Parent.FullName.Substring((Resolve-Path target/criterion).Path.Length + 1)
+              $pct = [math]::Round($mean * 100, 1)
+              if ($mean -gt 0.15) { Write-Output "::warning::$name regressed by $pct%" } else { Write-Output "$name $pct%" }
+            }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: criterion-windows
+          path: target/criterion
+          if-no-files-found: ignore

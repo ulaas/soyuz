@@ -405,11 +405,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if let (Some(dir), Some(_)) = (navigate, active)
         && let Location::Dir(cur) = &app.ws.pane().location
         && !same_dir(cur, &dir)
-        && dir.is_dir()
     {
+        // The existence check runs on the lister thread; it navigates when `dir` is a folder.
         let pane = app.ws.pane().id;
         app.ui.terminal.last_pane_dir = Some((tab, dir.clone()));
-        app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(dir), select: None });
+        app.services.lister.probe(pane, &dir);
     }
     // Follow navigation: pane → shell.
     if app.config.terminal.follow_navigation
@@ -715,22 +715,30 @@ fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&P
         app.ui.toasts.push(Toast::info("Link target not found").body(url.to_string()));
         return;
     };
-    if path.is_dir() {
-        let pane = app.ws.pane().id;
-        app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
-    } else if path.exists() {
-        if looks_executable(&path) {
-            app.ui
-                .toasts
-                .push(Toast::info("Executable revealed, not run").body(
+    // Classify the target on a worker thread (no disk access on the UI thread).
+    let postman = app.services.mailbox.postman();
+    let url = url.to_string();
+    let spawned = std::thread::Builder::new().name("soyuz-term-link".into()).spawn(move || {
+        use crate::services::mailbox::UiMsg;
+        if path.is_dir() {
+            postman.send(UiMsg::OpenDir(path));
+        } else if path.exists() {
+            if looks_executable(&path) {
+                postman.send(UiMsg::Notice(Toast::info("Executable revealed, not run").body(
                     "Links in terminal output never start programs. Open it from the file list if you trust it.",
-                ));
-            app.cmds.push(Cmd::RevealPath(path));
+                )));
+                if let Err(e) = soyuz_fs::launch::reveal_in_system(&path) {
+                    postman.send(UiMsg::Notice(Toast::error("Couldn't reveal the file").body(e.to_string())));
+                }
+            } else {
+                postman.send(UiMsg::Launch(path));
+            }
         } else {
-            crate::ops::launch(app, &path);
+            postman.send(UiMsg::Notice(Toast::info("Link target not found").body(url)));
         }
-    } else {
-        app.ui.toasts.push(Toast::info("Link target not found").body(url.to_string()));
+    });
+    if let Err(e) = spawned {
+        app.ui.toasts.push(Toast::error("Couldn't open the link").body(e.to_string()));
     }
 }
 

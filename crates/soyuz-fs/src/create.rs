@@ -11,13 +11,17 @@ use crate::err;
 
 /// Create one directory (`AlreadyExists` if anything exists at `path`, `NotFound` when the
 /// parent is missing).
+#[track_caller]
 pub fn create_dir(path: &Path) -> FsResult<()> {
+    let _guard = crate::guard::check("create_dir");
     imp::mkdir(path)
 }
 
 /// Create a directory and all missing parents; existing directories are fine, an existing
 /// non-directory on the way is `NotDirectory`.
+#[track_caller]
 pub fn create_dir_all(path: &Path) -> FsResult<()> {
+    let _guard = crate::guard::check("create_dir_all");
     let path = crate::path::normalize(path);
     let mut missing: Vec<PathBuf> = Vec::new();
     let mut cur = Some(path.as_path());
@@ -54,7 +58,9 @@ pub fn create_dir_all(path: &Path) -> FsResult<()> {
 
 /// Create an empty file; `exclusive` fails with `AlreadyExists` if it exists, otherwise an
 /// existing file is left untouched (not truncated).
+#[track_caller]
 pub fn create_file(path: &Path, exclusive: bool) -> FsResult<()> {
+    let _guard = crate::guard::check("create_file");
     if !exclusive && let Ok(e) = crate::list::stat(path, true) {
         return if e.kind == EntryKind::Dir {
             Err(FsError::new(FsErrorKind::IsDirectory, "create_file", Some(path)))
@@ -74,7 +80,9 @@ pub fn create_file(path: &Path, exclusive: bool) -> FsResult<()> {
 
 /// Temp file + fsync + rename in the same directory; used for config / session files. On
 /// unix the existing file's permission bits are kept.
+#[track_caller]
 pub fn write_atomic(path: &Path, bytes: &[u8]) -> FsResult<()> {
+    let _guard = crate::guard::check("write_atomic");
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
     let tmp =

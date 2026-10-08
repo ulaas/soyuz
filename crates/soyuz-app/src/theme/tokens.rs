@@ -196,6 +196,15 @@ pub const ORBIT_HC_LIGHT: Palette = Palette {
 };
 
 impl Palette {
+    /// Make the window-level fills translucent so a system backdrop (Windows 11 Mica /
+    /// Acrylic) shows through. Popups, cards and text keep their opaque colors.
+    pub fn translucent(&mut self) {
+        let a = if self.dark { 0.62 } else { 0.55 };
+        for c in [&mut self.bg_window, &mut self.bg_surface1, &mut self.bg_sunken] {
+            *c = c.gamma_multiply(a);
+        }
+    }
+
     /// Apply `[theme.colors]` overrides (token name → `#RRGGBB` / `#RRGGBBAA`).
     /// Returns the warnings for unknown tokens / bad colors.
     pub fn apply_overrides(&mut self, overrides: &BTreeMap<String, String>) -> Vec<String> {

@@ -10,6 +10,8 @@
 //! * `config:<dotted.key>=<toml value>` — change a setting live (`config:appearance.density="touch"`);
 //! * `scroll:<px>` — scroll the focused pane to an offset;
 //! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `quit`;
+//! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
+//!   frame-budget test starts counting;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -24,6 +26,26 @@ use soyuz_core::config::{Action, Config};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+
+static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+static STARTUP_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// Remember when `main` started (startup-time measurement, R5).
+pub fn mark_process_start() {
+    let _ = PROCESS_START.set(Instant::now());
+}
+
+/// Milliseconds since [`mark_process_start`] (0 when it was not called).
+pub fn since_start_ms() -> f64 {
+    PROCESS_START.get().map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0)
+}
+
+/// Log a startup milestone (`startup: <what> at <ms> ms`).
+pub fn startup_mark(what: &str) {
+    if PROCESS_START.get().is_some() {
+        log::info!("startup: {what} at {:.1} ms", since_start_ms());
+    }
+}
 
 #[derive(Default)]
 pub struct DevScript {
@@ -46,6 +68,12 @@ impl DevScript {
 
 /// Start of a frame (frame-time logging).
 pub fn begin(app: &mut SoyuzApp) {
+    match STARTUP_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) {
+        0 => startup_mark("first frame (ui start)"),
+        // The second `ui()` starts after the first frame was painted and presented.
+        1 => startup_mark("first frame presented"),
+        _ => {}
+    }
     if app.devscript.frame_log {
         app.devscript.frame_start = Some(Instant::now());
     }
@@ -125,6 +153,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 }
             }
             "welcome" => app.ui.welcome = arg.trim() != "off",
+            "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
             "scroll" => {
                 // Absolute scroll offset of the focused pane (perf probes).
                 let y = arg.trim().parse::<f32>().unwrap_or(0.0);

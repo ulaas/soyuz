@@ -1,8 +1,9 @@
 //! Thumbnail pipeline (PLAN §3): worker threads decode + downscale images and upload the
 //! texture themselves (`egui::Context` is `Send + Sync`), so the UI thread only looks
 //! textures up. Requests are served newest-first and dropped once their rows have been
-//! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps at
-//! most [`CAPACITY`] textures alive.
+//! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps the
+//! decoded textures within a byte budget (`[preview] thumb_cache_mib`, see
+//! [`set_budget_bytes`]); [`memory`] reports the current use for the About dialog.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,7 +15,25 @@ use std::time::SystemTime;
 use egui::{ColorImage, Context, TextureHandle, TextureOptions};
 use parking_lot::{Condvar, Mutex};
 
-pub const CAPACITY: usize = 512;
+/// Default texture budget (bytes) until the config is applied.
+pub const DEFAULT_BUDGET: u64 = 128 * 1024 * 1024;
+/// Textures used within this many frames are never evicted (a budget smaller than one
+/// screen of thumbnails must not thrash).
+const KEEP_FRAMES: u64 = 2;
+
+static BUDGET: AtomicU64 = AtomicU64::new(DEFAULT_BUDGET);
+static USED_BYTES: AtomicU64 = AtomicU64::new(0);
+static READY: AtomicU64 = AtomicU64::new(0);
+
+/// Set the texture memory budget (`[preview] thumb_cache_mib`).
+pub fn set_budget_bytes(bytes: u64) {
+    BUDGET.store(bytes.max(1024 * 1024), Ordering::Relaxed);
+}
+
+/// `(bytes, textures)` of decoded thumbnails currently cached.
+pub fn memory() -> (u64, u64) {
+    (USED_BYTES.load(Ordering::Relaxed), READY.load(Ordering::Relaxed))
+}
 /// Requests not re-requested within this many frames are dropped.
 const STALE_FRAMES: u64 = 20;
 /// Files larger than this are not thumbnailed.
@@ -32,7 +51,7 @@ pub struct ThumbKey {
 #[derive(Clone)]
 enum Slot {
     Pending { wanted: u64 },
-    Ready { tex: TextureHandle, used: u64 },
+    Ready { tex: TextureHandle, used: u64, bytes: u64 },
     Failed,
 }
 
@@ -100,7 +119,7 @@ impl Thumbs {
         let frame = self.shared.frame.load(Ordering::Relaxed);
         let mut slots = self.shared.slots.lock();
         match slots.get_mut(key) {
-            Some(Slot::Ready { tex, used }) => {
+            Some(Slot::Ready { tex, used, .. }) => {
                 *used = frame;
                 return Some(tex.clone());
             }
@@ -157,37 +176,47 @@ fn worker(shared: &Shared, ctx: &Context) {
         let frame = shared.frame.load(Ordering::Relaxed);
         {
             let mut slots = shared.slots.lock();
-            match result {
+            let slot = match result {
                 Some(tex) => {
-                    slots.insert(key, Slot::Ready { tex, used: frame });
+                    let [w, h] = tex.size();
+                    Slot::Ready { tex, used: frame, bytes: (w * h * 4) as u64 }
                 }
-                None => {
-                    slots.insert(key, Slot::Failed);
-                }
-            }
-            evict(&mut slots);
+                None => Slot::Failed,
+            };
+            slots.insert(key, slot);
+            evict(&mut slots, frame, BUDGET.load(Ordering::Relaxed));
         }
         ctx.request_repaint();
     }
 }
 
-/// Drop least-recently-used ready textures above capacity (and stale failures).
-fn evict(slots: &mut HashMap<ThumbKey, Slot>) {
-    let ready = slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count();
-    if ready <= CAPACITY {
-        return;
+/// Drop least-recently-used ready textures while the total exceeds `budget` bytes
+/// (textures used in the last [`KEEP_FRAMES`] frames stay), then publish the totals.
+fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
+    let mut total: u64 = slots.values().map(|s| if let Slot::Ready { bytes, .. } = s { *bytes } else { 0 }).sum();
+    if total > budget {
+        let mut by_age: Vec<(u64, u64, ThumbKey)> = slots
+            .iter()
+            .filter_map(|(k, s)| match s {
+                Slot::Ready { used, bytes, .. } if frame.saturating_sub(*used) > KEEP_FRAMES => {
+                    Some((*used, *bytes, k.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        by_age.sort_by_key(|(u, _, _)| *u);
+        // Free a little extra (1/8 of the budget) so eviction doesn't run on every decode.
+        let target = budget - budget / 8;
+        for (_, bytes, k) in by_age {
+            if total <= target {
+                break;
+            }
+            slots.remove(&k);
+            total -= bytes;
+        }
     }
-    let mut by_age: Vec<(u64, ThumbKey)> = slots
-        .iter()
-        .filter_map(|(k, s)| match s {
-            Slot::Ready { used, .. } => Some((*used, k.clone())),
-            _ => None,
-        })
-        .collect();
-    by_age.sort_by_key(|(u, _)| *u);
-    for (_, k) in by_age.into_iter().take(ready - CAPACITY + CAPACITY / 8) {
-        slots.remove(&k);
-    }
+    USED_BYTES.store(total, Ordering::Relaxed);
+    READY.store(slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count() as u64, Ordering::Relaxed);
 }
 
 fn decode(key: &ThumbKey) -> Option<ColorImage> {
@@ -214,6 +243,28 @@ fn decode(key: &ThumbKey) -> Option<ColorImage> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn eviction_keeps_the_budget_and_recent_textures() {
+        let ctx = egui::Context::default();
+        let mut slots = HashMap::new();
+        let tex = |i: usize| {
+            ctx.load_texture(format!("t{i}"), ColorImage::filled([16, 16], egui::Color32::RED), TextureOptions::LINEAR)
+        };
+        // 10 textures of 1 KiB each, used in frames 0..10.
+        for i in 0..10u64 {
+            let key = ThumbKey { path: format!("/t{i}").into(), mtime: None, size: 1, px: 64 };
+            slots.insert(key, Slot::Ready { tex: tex(i as usize), used: i, bytes: 1024 });
+        }
+        evict(&mut slots, 10, 4 * 1024);
+        let left: Vec<u64> =
+            slots.values().filter_map(|s| if let Slot::Ready { used, .. } = s { Some(*used) } else { None }).collect();
+        assert!(left.iter().all(|u| *u >= 7), "oldest evicted first: {left:?}");
+        assert!(memory().0 <= 4 * 1024);
+        // Everything recent: nothing can go even over budget.
+        evict(&mut slots, 9, 1024);
+        assert_eq!(slots.len(), left.len());
+    }
 
     #[test]
     fn buckets() {

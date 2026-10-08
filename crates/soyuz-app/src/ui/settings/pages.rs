@@ -627,6 +627,22 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row("PDF preview", "Needs a build with the pdf feature.", |ui| {
             switch(ui, &mut d.preview.pdf);
         });
+        r.row_kw(
+            "Thumbnail memory",
+            "Decoded thumbnails kept in memory; the least recently shown go first. Current use is in About.",
+            "cache ram budget",
+            |ui| {
+                number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
+            },
+        );
+        r.row_kw(
+            "Preview memory",
+            "Finished previews kept so going back to a file is instant. Current use is in About.",
+            "cache ram budget",
+            |ui| {
+                number(ui, &mut d.preview.preview_cache_mib, 0..=4096, " MiB");
+            },
+        );
     });
     any |= group(ui, q, ctx, "Search", |r| {
         r.row_kw("Search threads", "0 uses every core.", "parallel", |ui| {

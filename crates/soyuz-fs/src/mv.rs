@@ -38,7 +38,9 @@ pub enum MoveFast {
 }
 
 /// Same-device rename; `CrossDevice` error otherwise.
+#[track_caller]
 pub fn rename(src: &Path, dst: &Path, mode: RenameMode) -> FsResult<()> {
+    let _guard = crate::guard::check("rename");
     match imp::rename(src, dst, mode) {
         Err(e)
             if e.kind == FsErrorKind::AlreadyExists && mode == RenameMode::NoReplace && is_case_variant(src, dst) =>
@@ -84,7 +86,9 @@ pub fn is_case_variant(src: &Path, dst: &Path) -> bool {
 /// The final component of `path` spelled as stored on disk (`None` when it does not
 /// exist). On case-insensitive file systems this differs from the queried spelling after
 /// a case-only rename; listings use it to drop the stale spelling.
+#[track_caller]
 pub fn on_disk_name(path: &Path) -> Option<std::ffi::OsString> {
+    let _guard = crate::guard::check("on_disk_name");
     imp::on_disk_name(path)
 }
 

@@ -38,7 +38,9 @@ pub struct DeleteStats {
 }
 
 /// Delete a file (or a link to a file). Directories → `IsDirectory`.
+#[track_caller]
 pub fn delete_file(path: &Path, o: &DeleteOptions) -> FsResult<()> {
+    let _guard = crate::guard::check("delete_file");
     imp::delete_file(path, o)
 }
 
@@ -54,12 +56,14 @@ pub fn delete_link(path: &Path) -> FsResult<()> {
 
 /// Post-order removal of a tree; `on_item` sees every attempted item and may stop.
 /// Never descends into symlinked or junctioned directories (the link itself is removed).
+#[track_caller]
 pub fn remove_tree(
     root: &Path,
     o: &DeleteOptions,
     ctl: &OpControl,
     on_item: &mut dyn FnMut(&Path, FsResult<()>) -> Control,
 ) -> FsResult<DeleteStats> {
+    let _guard = crate::guard::check("remove_tree");
     imp::remove_tree(root, o, ctl, on_item)
 }
 

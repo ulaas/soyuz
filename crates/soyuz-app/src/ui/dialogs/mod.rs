@@ -312,8 +312,17 @@ impl AboutDialog {
             ("Platform", format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)),
             ("Renderer", self.renderer.to_string()),
             ("Config", soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir()).display().to_string()),
+            ("Memory", memory_line()),
         ]
     }
+}
+
+/// Cache memory for the About dialog: thumbnails and previews (decoded bytes).
+fn memory_line() -> String {
+    let mib = |b: u64| format!("{:.1} MiB", b as f64 / (1024.0 * 1024.0));
+    let (tb, tn) = crate::services::thumbs::memory();
+    let (pb, pn) = crate::services::preview_cache::memory();
+    format!("thumbnails {} ({tn}) \u{00b7} previews {} ({pn})", mib(tb), mib(pb))
 }
 
 impl Dialog for AboutDialog {

@@ -39,6 +39,8 @@ show_thumbnails = true
 thumbnail_size = 96
 sidebar_width = 220
 custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
+backdrop = "none"                # none | mica | acrylic (Windows 11 only; applies at next start)
+snap_layouts = true              # Windows 11 Snap Layouts flyout on the maximize button
 
 [theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
 # accent = "#5B8CFF"
@@ -119,6 +121,8 @@ max_text_kib = 512
 max_image_mp = 40
 syntax_theme = "auto"
 pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
+thumb_cache_mib = 128            # memory budget for decoded thumbnails
+preview_cache_mib = 96           # memory budget for decoded previews
 
 [git]
 status_column = true

@@ -66,7 +66,9 @@ pub struct VolumeInfo {
 const QUERY_DEADLINE: Duration = Duration::from_millis(2500);
 
 /// Mounted volumes (drives and mounted folders on Windows), sorted by mount path.
+#[track_caller]
 pub fn volumes() -> Vec<VolumeInfo> {
+    let _guard = crate::guard::check("volumes");
     let mut v = imp::volumes();
     v.sort_by(|a, b| a.mount.cmp(&b.mount));
     v.dedup_by(|a, b| a.mount == b.mount);
@@ -75,13 +77,17 @@ pub fn volumes() -> Vec<VolumeInfo> {
 
 /// `(total, free)` bytes of the volume containing `path` (free = available to this user).
 /// Non-existing paths use their nearest existing ancestor.
+#[track_caller]
 pub fn space(path: &Path) -> FsResult<(u64, u64)> {
+    let _guard = crate::guard::check("space");
     let p = existing_ancestor(path)?;
     imp::space(&p)
 }
 
 /// Mount point / drive root containing `path`.
+#[track_caller]
 pub fn volume_root(path: &Path) -> FsResult<PathBuf> {
+    let _guard = crate::guard::check("volume_root");
     let p = existing_ancestor(path)?;
     imp::volume_root(&p)
 }

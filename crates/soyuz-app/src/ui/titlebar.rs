@@ -265,6 +265,19 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .inner;
     if chrome.own_frame() {
         controls(&ctx, lay.controls, ws);
+    } else {
+        crate::ui::native_chrome::max_button(&ctx, None, false);
+    }
+}
+
+/// Corner radius for the close button: its top-right corner follows the Windows 11
+/// rounded window corner while the window is floating (else the red hover fill pokes
+/// out of the DWM clip).
+pub fn close_corner(win11: bool, ws_floating: bool) -> CornerRadius {
+    if win11 && ws_floating {
+        CornerRadius { ne: crate::ui::native_chrome::DWM_CORNER_RADIUS, ..CornerRadius::ZERO }
+    } else {
+        CornerRadius::ZERO
     }
 }
 
@@ -381,6 +394,11 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
         .show(ctx, |ui| {
             ui.allocate_exact_size(rect.size(), Sense::hover());
             let [rmin, rmax, rclose] = control_rects(rect);
+            // Snap Layouts: the OS owns the maximize button's hit test, so its hover /
+            // press / click arrive from the window subclass instead of egui.
+            let (os_hover, os_pressed, os_click) = crate::ui::native_chrome::max_button(ctx, Some(rmax), true);
+            let floating = !ws.maximized && !ws.fullscreen;
+            let close_radius = close_corner(crate::ui::native_chrome::is_windows_11(), floating);
             let max_glyph = if ws.maximized { Glyph::Restore } else { Glyph::Maximize };
             let buttons = [
                 (rmin, Glyph::Minimize, "Minimize"),
@@ -390,19 +408,20 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
             for (r, glyph, label) in buttons {
                 let resp = ui.interact(r, Id::new(("soyuz.titlebar.ctl", label)), Sense::click());
                 crate::ui::a11y::button(&resp, label);
-                let hover =
-                    ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(ctx, 0.10));
-                let pressed = resp.is_pointer_button_down_on();
+                let is_max = matches!(glyph, Glyph::Maximize | Glyph::Restore);
+                let hovered = resp.hovered() || (is_max && os_hover);
+                let hover = ctx.animate_bool_with_time(resp.id.with("h"), hovered, crate::theme::anim(ctx, 0.10));
+                let pressed = resp.is_pointer_button_down_on() || (is_max && os_pressed);
                 let painter = ui.painter();
                 let close = glyph == Glyph::Close;
                 let red = Color32::from_rgb(0xC4, 0x2B, 0x1C);
                 let mut fg = if ws.focused { p.text_primary } else { p.text_tertiary };
                 if close {
                     if pressed {
-                        painter.rect_filled(r, CornerRadius::ZERO, red.gamma_multiply(0.85));
+                        painter.rect_filled(r, close_radius, red.gamma_multiply(0.85));
                         fg = Color32::WHITE;
                     } else if hover > 0.0 {
-                        painter.rect_filled(r, CornerRadius::ZERO, red.gamma_multiply(hover));
+                        painter.rect_filled(r, close_radius, red.gamma_multiply(hover));
                         fg = lerp_color(fg, Color32::WHITE, hover);
                     }
                 } else if pressed {
@@ -415,7 +434,7 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
                     focus_ring(ui, r.shrink(4.0));
                 }
                 let resp = resp.on_hover_text(label);
-                if resp.clicked() {
+                if resp.clicked() || (is_max && os_click) {
                     match glyph {
                         Glyph::Minimize => ctx.send_viewport_cmd(ViewportCommand::Minimized(true)),
                         Glyph::Maximize => ctx.send_viewport_cmd(ViewportCommand::Maximized(true)),
@@ -477,10 +496,16 @@ pub fn frame(ctx: &Context, app: &SoyuzApp) {
     }
     let p = palette(ctx);
     let screen = ctx.content_rect();
-    // A subtle 1 px edge so the borderless window stands out on similar backgrounds.
+    // A subtle 1 px edge so the borderless window stands out on similar backgrounds
+    // (rounded like the DWM clip on Windows 11).
+    let corner = if crate::ui::native_chrome::is_windows_11() {
+        CornerRadius::same(crate::ui::native_chrome::DWM_CORNER_RADIUS)
+    } else {
+        CornerRadius::ZERO
+    };
     ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("soyuz.window.border"))).rect_stroke(
         screen,
-        CornerRadius::ZERO,
+        corner,
         Stroke::new(1.0, if ws.focused { p.border_strong } else { p.border_subtle }),
         StrokeKind::Inside,
     );
@@ -603,6 +628,14 @@ mod tests {
         assert_eq!(b.right(), c.left());
         assert_eq!(c.right(), 238.0);
         assert!((a.width() - 46.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn close_button_follows_the_window_corner() {
+        assert_eq!(close_corner(true, true).ne, crate::ui::native_chrome::DWM_CORNER_RADIUS);
+        assert_eq!(close_corner(true, true).nw, 0);
+        assert_eq!(close_corner(true, false), CornerRadius::ZERO, "maximized: square");
+        assert_eq!(close_corner(false, true), CornerRadius::ZERO, "Windows 10 / Linux: square");
     }
 
     #[test]

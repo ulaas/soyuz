@@ -18,10 +18,12 @@
 #![deny(unsafe_code)]
 
 pub mod attrs;
+pub mod chrome;
 pub mod copy;
 pub mod create;
 pub mod delete;
 mod err;
+pub mod guard;
 pub mod hash;
 pub mod launch;
 pub mod links;
@@ -47,6 +49,7 @@ pub use copy::{
 };
 pub use create::{create_dir, create_dir_all, create_file, write_atomic};
 pub use delete::{DeleteOptions, DeleteStats, delete_empty_dir, delete_file, delete_link, remove_tree, secure_wipe};
+pub use guard::{on_ui_thread, register_ui_thread};
 pub use hash::hash_file;
 pub use launch::AppInfo;
 pub use links::{LinkKind, hardlink, junction, read_link, resolve_link, symlink};

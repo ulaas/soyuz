@@ -11,6 +11,7 @@ pub mod mailbox;
 pub mod os_clipboard;
 pub mod places;
 pub mod preview;
+pub mod preview_cache;
 pub mod preview_media;
 pub mod preview_text;
 pub mod recent;

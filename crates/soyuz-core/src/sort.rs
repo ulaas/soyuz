@@ -32,9 +32,11 @@ impl Default for SortSpec {
     }
 }
 
-/// Stable sort of `v` by `spec`.
+/// Sort `v` by `spec`. [`compare_entries`] is a total order (ties fall back to the path),
+/// so an unstable sort gives the same result as a stable one, about 4× faster with the
+/// natural comparator (`cargo bench -p soyuz-core --bench sort`).
 pub fn sort_entries(v: &mut [EntryInfo], spec: &SortSpec) {
-    v.sort_by(|a, b| compare_entries(a, b, spec));
+    v.sort_unstable_by(|a, b| compare_entries(a, b, spec));
 }
 
 /// Total order used by [`sort_entries`] and by the app's incremental merge.

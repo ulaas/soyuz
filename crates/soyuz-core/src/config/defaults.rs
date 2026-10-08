@@ -75,6 +75,8 @@ impl Default for Appearance {
             thumbnail_size: 96,
             sidebar_width: 220.0,
             custom_titlebar: true,
+            backdrop: Backdrop::None,
+            snap_layouts: true,
         }
     }
 }
@@ -192,7 +194,14 @@ impl Default for Search {
 
 impl Default for Preview {
     fn default() -> Self {
-        Preview { max_text_kib: 512, max_image_mp: 40, syntax_theme: "auto".into(), pdf: true }
+        Preview {
+            max_text_kib: 512,
+            max_image_mp: 40,
+            syntax_theme: "auto".into(),
+            pdf: true,
+            thumb_cache_mib: 128,
+            preview_cache_mib: 96,
+        }
     }
 }
 

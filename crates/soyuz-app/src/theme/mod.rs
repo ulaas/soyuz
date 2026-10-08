@@ -42,6 +42,11 @@ pub fn install(
     warnings.extend(font_warnings);
     // The same overrides apply to both palettes; report problems only once.
     let _ = light.apply_overrides(overrides);
+    if crate::ui::native_chrome::backdrop_active() {
+        // A Windows 11 system backdrop shows through the window-level fills.
+        dark.translucent();
+        light.translucent();
+    }
     let opts = ThemeOptions {
         preference: preference_from_config(&appearance.theme),
         dark: dark.clone(),

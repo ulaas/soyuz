@@ -1,7 +1,9 @@
 //! Directory listing, `stat` and tree walking.
 //!
-//! * Windows: `FindFirstFileExW(FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH)` — the entry data
-//!   already carries attributes, times, size and the reparse tag, so no per-entry stat.
+//! * Windows: `NtQueryDirectoryFile(FileIdFullDirectoryInformation)` into a 64→256 KiB buffer
+//!   (falls back to `FindFirstFileExW(FindExInfoBasic, FIND_FIRST_EX_LARGE_FETCH)` when the
+//!   file system refuses it) — the entry data already carries attributes, times, size, file
+//!   id and the reparse tag, so no per-entry stat.
 //! * Linux: `getdents` (rustix `Dir`) + `statx(dirfd, name, AT_SYMLINK_NOFOLLOW)` relative to
 //!   the directory fd (falls back to `fstatat` on kernels without statx).
 //! * macOS: `getdents`-style `readdir` + `fstatat(dirfd, name)`.
@@ -42,7 +44,9 @@ pub struct ListStats {
 }
 
 /// List a directory (all entries at once).
+#[track_caller]
 pub fn read_dir(path: &Path, opts: &ListOptions) -> FsResult<Vec<EntryInfo>> {
+    let _guard = crate::guard::check("read_dir");
     let mut out = Vec::new();
     for e in imp::open_dir(path, opts).map_err(err::map("read_dir", path))? {
         let e = e.map_err(err::map("read_dir", path))?;
@@ -56,12 +60,14 @@ pub fn read_dir(path: &Path, opts: &ListOptions) -> FsResult<Vec<EntryInfo>> {
 /// Streams chunks; `sink` returns `Control::Stop` to abort; `ctl.checkpoint()` between
 /// chunks. Uses FindFirstFileExW(LARGE_FETCH) / getdents+statx / readdir+fstatat.
 /// Unreadable individual entries are skipped (logged at debug level).
+#[track_caller]
 pub fn read_dir_streaming(
     path: &Path,
     opts: &ListOptions,
     ctl: &OpControl,
     sink: &mut dyn FnMut(Vec<EntryInfo>) -> Control,
 ) -> FsResult<ListStats> {
+    let _guard = crate::guard::check("read_dir_streaming");
     let start = Instant::now();
     let chunk = opts.chunk.max(1);
     let mut stats = ListStats::default();
@@ -102,12 +108,16 @@ pub fn read_dir_streaming(
 }
 
 /// Metadata of one path (`follow` = resolve symlinks; a dangling link reports itself).
+#[track_caller]
 pub fn stat(path: &Path, follow: bool) -> FsResult<EntryInfo> {
+    let _guard = crate::guard::check("stat");
     imp::stat(path, follow).map_err(err::map("stat", path))
 }
 
 /// True if something (including a dangling symlink) exists at `path`.
+#[track_caller]
 pub fn exists_nofollow(path: &Path) -> bool {
+    let _guard = crate::guard::check("exists_nofollow");
     imp::exists_nofollow(path)
 }
 
@@ -439,9 +449,16 @@ pub(crate) mod imp {
         e
     }
 
+    /// `NtQueryDirectoryFile` with large buffers, or `FindFirstFileExW` when the file system
+    /// refuses the information class.
+    enum Inner {
+        Nt(crate::sys::windows::ntdir::NtDirIter),
+        Find(wfs::DirIter),
+    }
+
     pub(crate) struct Iter {
         dir: PathBuf,
-        inner: wfs::DirIter,
+        inner: Inner,
         opts: ListOptions,
     }
 
@@ -449,7 +466,11 @@ pub(crate) mod imp {
         type Item = io::Result<EntryInfo>;
 
         fn next(&mut self) -> Option<io::Result<EntryInfo>> {
-            let fe = match self.inner.next()? {
+            let next = match &mut self.inner {
+                Inner::Nt(it) => it.next(),
+                Inner::Find(it) => it.next(),
+            };
+            let fe = match next? {
                 Ok(fe) => fe,
                 Err(e) => return Some(Err(e)),
             };
@@ -460,7 +481,13 @@ pub(crate) mod imp {
     }
 
     pub(crate) fn open_dir(path: &Path, opts: &ListOptions) -> io::Result<Iter> {
-        Ok(Iter { dir: path.to_path_buf(), inner: wfs::read_dir(path)?, opts: opts.clone() })
+        use crate::sys::windows::ntdir::{self, OpenError};
+        let inner = match ntdir::read_dir(path) {
+            Ok(it) => Inner::Nt(it),
+            Err(OpenError::Unsupported) => Inner::Find(wfs::read_dir(path)?),
+            Err(OpenError::Io(e)) => return Err(e),
+        };
+        Ok(Iter { dir: path.to_path_buf(), inner, opts: opts.clone() })
     }
 
     pub(crate) fn stat(path: &Path, follow: bool) -> io::Result<EntryInfo> {
@@ -650,6 +677,53 @@ pub(crate) mod imp {
 
     pub(crate) fn exists_nofollow(path: &Path) -> bool {
         std::fs::symlink_metadata(path).is_ok()
+    }
+}
+
+/// Benchmark hooks (not a stable API).
+#[doc(hidden)]
+pub mod bench_support {
+    use std::path::Path;
+
+    /// Count entries with the raw enumerator only (no `EntryInfo` building). Windows:
+    /// `ntdll` = `NtQueryDirectoryFile`, otherwise `FindFirstFileExW`. Elsewhere: `read_dir`.
+    pub fn count_raw(path: &Path, ntdll: bool) -> std::io::Result<usize> {
+        #[cfg(windows)]
+        {
+            use crate::sys::windows::{fs as wfs, ntdir};
+            if ntdll {
+                return match ntdir::read_dir(path) {
+                    Ok(it) => it.map(|e| e.map(std::hint::black_box)).try_fold(0, |n, e| e.map(|_| n + 1)),
+                    Err(ntdir::OpenError::Io(e)) => Err(e),
+                    Err(ntdir::OpenError::Unsupported) => Err(std::io::ErrorKind::Unsupported.into()),
+                };
+            }
+            wfs::read_dir(path)?.map(|e| e.map(std::hint::black_box)).try_fold(0, |n, e| e.map(|_| n + 1))
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = ntdll;
+            read_dir_find_first_file(path)
+        }
+    }
+
+    /// Windows: list with the `FindFirstFileExW(LARGE_FETCH)` enumerator, the pre-ntdll
+    /// path, building the same `EntryInfo`s. Elsewhere: same as [`super::read_dir`].
+    pub fn read_dir_find_first_file(path: &Path) -> std::io::Result<usize> {
+        #[cfg(windows)]
+        {
+            // Mirrors `read_dir` (collects the entries) so the two are comparable.
+            let mut out = Vec::new();
+            for fe in crate::sys::windows::fs::read_dir(path)? {
+                let fe = fe?;
+                out.push(super::imp::entry_from_raw(path.join(&fe.name), &fe.stat, true));
+            }
+            Ok(std::hint::black_box(out).len())
+        }
+        #[cfg(not(windows))]
+        {
+            super::read_dir(path, &super::ListOptions::default()).map(|v| v.len()).map_err(std::io::Error::other)
+        }
     }
 }
 

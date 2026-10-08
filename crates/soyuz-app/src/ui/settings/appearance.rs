@@ -2,7 +2,7 @@
 //! a live preview card, and per-token color overrides (`[theme.colors]`).
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use soyuz_core::config::{Density, IconStyle};
+use soyuz_core::config::{Backdrop, Density, IconStyle};
 
 use super::widgets::{color_swatch, group, number, segmented, small_button, switch, text, to_hex};
 use crate::app::SoyuzApp;
@@ -223,6 +223,26 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Custom title bar", desc, "titlebar window frame decorations chrome caption", |ui| {
             switch(ui, &mut d.appearance.custom_titlebar);
         });
+        r.row_kw(
+            "Backdrop",
+            "Windows 11: show the system Mica or Acrylic material behind the window. Takes effect after a restart.",
+            "mica acrylic translucent transparent blur material",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.appearance.backdrop,
+                    &[(Backdrop::None, "None"), (Backdrop::Mica, "Mica"), (Backdrop::Acrylic, "Acrylic")],
+                );
+            },
+        );
+        r.row_kw(
+            "Snap layouts",
+            "Windows 11: hovering the maximize button opens the Snap Layouts flyout. Takes effect after a restart.",
+            "snap maximize layouts flyout",
+            |ui| {
+                switch(ui, &mut d.appearance.snap_layouts);
+            },
+        );
     });
     any |= group(ui, q, ctx, "Theme colors", |r| {
         r.block(

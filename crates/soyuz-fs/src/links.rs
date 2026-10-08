@@ -45,13 +45,17 @@ pub fn junction(target: &Path, link: &Path) -> FsResult<()> {
 
 /// The raw link target (may be relative). Works for symlinks, junctions and app
 /// execution aliases on Windows.
+#[track_caller]
 pub fn read_link(path: &Path) -> FsResult<PathBuf> {
+    let _guard = crate::guard::check("read_link");
     imp::read_link(path)
 }
 
 /// The link target made absolute (relative targets resolved against the link's parent),
 /// normalized but not canonicalized.
+#[track_caller]
 pub fn resolve_link(path: &Path) -> FsResult<PathBuf> {
+    let _guard = crate::guard::check("resolve_link");
     let target = crate::path::strip_verbatim(&read_link(path)?);
     let abs = if target.is_absolute() || target.has_root() {
         target

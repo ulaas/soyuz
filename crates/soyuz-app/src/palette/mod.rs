@@ -160,7 +160,7 @@ impl PaletteState {
 
     pub fn save_now(&mut self) {
         if self.dirty {
-            match self.memory.save(&self.memory_path) {
+            match self.memory.save_async(&self.memory_path) {
                 Ok(()) => self.dirty = false,
                 Err(e) => log::warn!("cannot save palette memory: {e}"),
             }
