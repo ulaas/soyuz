@@ -79,6 +79,8 @@ pub struct SoyuzApp {
     pub views: ViewMemory,
     pub ui: UiState,
     pub cmds: Vec<Cmd>,
+    /// Background file operations: jobs engine, clipboard, drag and drop, prompts.
+    pub fileops: crate::ops::fileops::FileOps,
     pub renderer: &'static str,
     /// Default view for folders without memory (from the config).
     pub default_view: ViewState,
@@ -166,8 +168,10 @@ impl SoyuzApp {
         };
 
         let start = start_location(&config);
+        let fileops = crate::ops::fileops::FileOps::new(ctx, &config);
         let mut app = SoyuzApp {
             ws: Workspace::new(Tab::new(Pane::new(start.clone(), default_view.clone()))),
+            fileops,
             config,
             keymap,
             services,
@@ -443,10 +447,12 @@ impl eframe::App for SoyuzApp {
         ops::drain_watcher(self);
         crate::ui::panels::terminal::pump(self, &ctx);
         crate::ui::search::pump(self, &ctx);
+        ops::fileops::begin_frame(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
         shell::show(ui, self);
+        ops::fileops::end_frame(self, &ctx);
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
         // Cheap periodic check: persist when the session text changed (every ~30 s,

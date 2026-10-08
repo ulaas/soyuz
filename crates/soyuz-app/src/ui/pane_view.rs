@@ -32,6 +32,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, with_
     let mut child = ui.new_child(UiBuilder::new().max_rect(content).id_salt(("soyuz.pane", pane.id.0)));
     child.set_clip_rect(content);
     body(&mut child, content, pane, v);
+    crate::ops::fileops::dnd::pane_zone(ui, content, pane, &mut v.fileops.dnd, v.cmds);
     let stroke = if with_header && v.focused {
         Stroke::new(1.0, p.accent.gamma_multiply(0.55))
     } else {
@@ -80,6 +81,8 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         ListingStatus::Virtual => {
             if matches!(pane.location, Location::Computer) {
                 computer::show(ui, rect, pane, v);
+            } else if matches!(pane.location, Location::Trash) {
+                crate::ui::views::trash::show(ui, rect, pane, v);
             } else {
                 let (glyph, title, sub) = match pane.location {
                     Location::Trash => (ph::TRASH, "Trash", "Browsing the trash arrives with the trash milestone."),

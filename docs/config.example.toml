@@ -89,6 +89,7 @@ preserve = ["times", "attrs", "xattr"]   # times | attrs | xattr | acl | owner |
 reflink = "auto"                 # auto | never | always
 history_limit = 500
 trash_unsupported = "ask"        # ask | permanent | skip
+auto_open_activity = true        # open the activity panel when a job runs longer than 1 s
 
 [terminal]
 shell = ""                       # "" = auto

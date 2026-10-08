@@ -149,6 +149,9 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                     }
                 }
                 let resp = resp.on_hover_text(pane.location.display());
+                if let soyuz_core::Location::Dir(d) = &pane.location {
+                    crate::ops::fileops::dnd::target(ui, &resp, d, &mut app.cmds);
+                }
                 if resp.clicked() {
                     app.cmds.push(Cmd::SelectTab(i));
                 }

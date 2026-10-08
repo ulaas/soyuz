@@ -380,6 +380,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
         A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
         A::TestArchive => crate::ui::archive::test_archive(app),
+        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, ctx),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));

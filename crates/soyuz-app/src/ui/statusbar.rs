@@ -28,6 +28,8 @@ pub struct StatusInfo {
     pub zoom: u16,
     pub theme: ThemePreference,
     pub size_style: SizeStyle,
+    /// Jobs indicator (ring + count) shown while operations run.
+    pub activity: crate::ui::panels::activity::Indicator,
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -93,6 +95,11 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
                     theme_switch(ui, info.theme, cmds);
+                    if let Some(r) = crate::ui::panels::activity::status_indicator(ui, &info.activity)
+                        && r.clicked()
+                    {
+                        cmds.push(Cmd::Action(Action::ToggleActivityPanel));
+                    }
                     let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
                         ViewMode::Gallery => 2,
                         _ => 0,

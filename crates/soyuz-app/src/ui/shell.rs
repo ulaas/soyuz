@@ -47,15 +47,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.cmds.push(Cmd::ViewChanged(id));
         }
     }
-    let mut bottom = std::mem::take(&mut app.ui.bottom);
-    panels::show(ui, &mut bottom, |ui, tab, rect| match tab {
-        panels::BottomTab::Terminal => {
-            panels::terminal::body(ui, rect, app);
-            true
-        }
-        _ => false,
-    });
-    app.ui.bottom = bottom;
+    panels::show(ui, app);
     panels::terminal::apply_requests(app);
     if app.ui.sidebar_visible {
         let current = app.ws.pane().location.clone();
@@ -133,6 +125,7 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
         zoom: pane.view.zoom,
         theme: app.ui.theme,
         size_style: app.config.general.size_style,
+        activity: panels::activity::indicator(app),
     }
 }
 
@@ -160,6 +153,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             show_system: app.ui.show_system,
             volumes: &app.ui.volumes,
             dual: false,
+            fileops: &mut app.fileops,
         };
         pane_view::show(ui, area, pane, &mut v, false);
         return;
@@ -217,6 +211,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             show_system: app.ui.show_system,
             volumes: &app.ui.volumes,
             dual: true,
+            fileops: &mut app.fileops,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }

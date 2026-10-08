@@ -1,0 +1,655 @@
+//! Activity panel (bottom panel tab): one card per job with icon + progress ring, title,
+//! current item, progress bar, bytes / items, speed + ETA, a painter-drawn speed
+//! sparkline, pause / resume / cancel / priority / reorder / start-now controls and an
+//! expandable log + error list. The History tab (`activity_history.rs`) lists finished
+//! operations with Undo / Redo / Retry failed. Also provides the compact status-bar
+//! indicator (ring + job count).
+
+use std::collections::HashSet;
+use std::f32::consts::TAU;
+use std::time::Duration;
+
+use egui::{
+    Align2, Color32, CornerRadius, FontId, Id, Mesh, Pos2, Rect, Response, ScrollArea, Sense, Shape, Stroke,
+    StrokeKind, Ui, UiBuilder, pos2, vec2,
+};
+use soyuz_core::config::Action;
+use soyuz_core::{SizeStyle, format_eta, format_size, format_speed};
+use soyuz_jobs::{JobId, JobSnapshot, JobState, LogLevel, Priority};
+
+use crate::app::SoyuzApp;
+use crate::cmd::Cmd;
+use crate::ops::fileops::{FileOpCmd, HistoryAction, names};
+use crate::services::jobs::{JobMeta, OpKind};
+use crate::theme::tokens::radius;
+use crate::theme::{Palette, icons as ticons, icons::ph, palette};
+use crate::ui::statusbar::group_thousands;
+use crate::ui::views::flow::semibold;
+use crate::ui::widgets::{icon_button, menu_check, menu_item, menu_separator, submenu, trunc_galley};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ActivityTab {
+    #[default]
+    Jobs,
+    History,
+}
+
+#[derive(Default)]
+pub struct ActivityState {
+    pub tab: ActivityTab,
+    pub expanded: HashSet<JobId>,
+}
+
+/// Glyph and color for an operation.
+pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
+    match op {
+        OpKind::Copy | OpKind::Duplicate => (ph::COPY, p.accent),
+        OpKind::Move => (ph::ARROW_BEND_DOWN_RIGHT, p.info),
+        OpKind::Trash => (ph::TRASH, p.warning),
+        OpKind::Delete | OpKind::Wipe | OpKind::EmptyTrash => (ph::TRASH_SIMPLE, p.danger),
+        OpKind::Rename => (ph::PENCIL_SIMPLE, p.accent),
+        OpKind::NewFolder => (ph::FOLDER_PLUS, p.glyph_folder),
+        OpKind::NewFile => (ph::FILE_PLUS, p.accent),
+        OpKind::Link => (ph::LINK, p.info),
+        OpKind::Restore => (ph::ARROW_COUNTER_CLOCKWISE, p.success),
+        OpKind::Undo => (ph::ARROW_U_UP_LEFT, p.text_secondary),
+        OpKind::Redo => (ph::ARROW_U_UP_RIGHT, p.text_secondary),
+        OpKind::Retry => (ph::ARROW_CLOCKWISE, p.accent),
+        OpKind::Other => (ph::GEAR_SIX, p.text_secondary),
+    }
+}
+
+/// Overall fraction done, `None` while unknown.
+pub fn fraction(s: &JobSnapshot) -> Option<f32> {
+    if matches!(s.state, JobState::Done(_)) {
+        return Some(1.0);
+    }
+    let pr = &s.progress;
+    if pr.bytes_total > 0 {
+        Some((pr.bytes_done as f64 / pr.bytes_total as f64).clamp(0.0, 1.0) as f32)
+    } else if pr.items_total > 0 && pr.totals_known {
+        Some((pr.items_done as f64 / pr.items_total as f64).clamp(0.0, 1.0) as f32)
+    } else {
+        None
+    }
+}
+
+/// Data for the status-bar indicator.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Indicator {
+    pub pending: usize,
+    pub progress: Option<f32>,
+    pub waiting: bool,
+    pub paused: bool,
+}
+
+pub fn indicator(app: &SoyuzApp) -> Indicator {
+    let mut ind = Indicator::default();
+    let (mut done, mut total) = (0u64, 0u64);
+    for s in app.fileops.jobs.pending() {
+        ind.pending += 1;
+        ind.waiting |= s.pending_prompt.is_some();
+        ind.paused |= s.state == JobState::Paused;
+        done += s.progress.bytes_done;
+        total += s.progress.bytes_total;
+    }
+    ind.progress = (total > 0).then(|| (done as f64 / total as f64) as f32);
+    ind
+}
+
+/// Ring progress arc (or a spinning partial ring when unknown).
+pub fn ring(ui: &Ui, c: Pos2, r: f32, width: f32, frac: Option<f32>, color: Color32, track: Color32) {
+    let painter = ui.painter();
+    painter.circle_stroke(c, r, Stroke::new(width, track));
+    let (start, sweep) = match frac {
+        Some(f) => (-TAU / 4.0, TAU * f.clamp(0.0, 1.0)),
+        None => {
+            let t = ui.input(|i| i.time) as f32;
+            ui.ctx().request_repaint_after(Duration::from_millis(33));
+            (t * 4.0, TAU * 0.28)
+        }
+    };
+    if sweep <= 0.001 {
+        return;
+    }
+    let n = ((sweep / TAU) * 64.0).ceil().max(2.0) as usize;
+    let pts: Vec<Pos2> = (0..=n)
+        .map(|i| {
+            let a = start + sweep * i as f32 / n as f32;
+            pos2(c.x + r * a.cos(), c.y + r * a.sin())
+        })
+        .collect();
+    painter.add(Shape::line(pts, Stroke::new(width, color)));
+}
+
+/// Compact status-bar indicator; returns the response when shown.
+pub fn status_indicator(ui: &mut Ui, ind: &Indicator) -> Option<Response> {
+    if ind.pending == 0 {
+        return None;
+    }
+    let p = palette(ui.ctx());
+    let color = if ind.waiting {
+        p.warning
+    } else if ind.paused {
+        p.text_tertiary
+    } else {
+        p.accent
+    };
+    let text = if ind.waiting {
+        "Needs input".to_string()
+    } else if ind.pending == 1 {
+        "1 job".to_string()
+    } else {
+        format!("{} jobs", ind.pending)
+    };
+    let g = ui.painter().layout_no_wrap(text, FontId::proportional(11.5), p.text_secondary);
+    let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 28.0, 18.0), Sense::click());
+    if resp.hovered() {
+        ui.painter().rect_filled(r.expand2(vec2(2.0, 1.0)), CornerRadius::same(4), p.bg_surface2);
+    }
+    let frac = if ind.paused || ind.waiting { ind.progress.or(Some(0.0)) } else { ind.progress };
+    ring(ui, pos2(r.left() + 9.0, r.center().y), 5.5, 2.0, frac, color, p.border_strong);
+    ui.painter().galley(pos2(r.left() + 20.0, r.center().y - g.size().y / 2.0), g, p.text_secondary);
+    Some(resp.on_hover_text("Show activity (Ctrl+Shift+J)"))
+}
+
+/// Speed sparkline: gradient area + line, last two minutes.
+pub fn sparkline(ui: &Ui, rect: Rect, samples: &[(f32, f64)], color: Color32) {
+    let painter = ui.painter_at(rect.expand(1.0));
+    painter.line_segment(
+        [pos2(rect.left(), rect.bottom() - 0.5), pos2(rect.right(), rect.bottom() - 0.5)],
+        Stroke::new(1.0, color.gamma_multiply(0.18)),
+    );
+    if samples.len() < 2 {
+        return;
+    }
+    let max = samples.iter().map(|s| s.1).fold(0.0f64, f64::max).max(1.0);
+    let t1 = samples.last().map_or(0.0, |s| s.0);
+    let t0 = samples.first().map_or(0.0, |s| s.0).max(t1 - 60.0);
+    let span = (t1 - t0).max(1.0);
+    let pts: Vec<Pos2> = samples
+        .iter()
+        .filter(|s| s.0 >= t0)
+        .map(|s| {
+            let x = rect.left() + (s.0 - t0) / span * rect.width();
+            let y = rect.bottom() - (s.1 / max) as f32 * (rect.height() - 2.0);
+            pos2(x, y)
+        })
+        .collect();
+    if pts.len() < 2 {
+        return;
+    }
+    let mut mesh = Mesh::default();
+    let top = color.gamma_multiply(0.30);
+    let bottom = color.gamma_multiply(0.02);
+    for (i, pt) in pts.iter().enumerate() {
+        mesh.colored_vertex(*pt, top);
+        mesh.colored_vertex(pos2(pt.x, rect.bottom()), bottom);
+        if i > 0 {
+            let b = (i as u32) * 2;
+            mesh.add_triangle(b - 2, b - 1, b);
+            mesh.add_triangle(b - 1, b + 1, b);
+        }
+    }
+    painter.add(Shape::mesh(mesh));
+    painter.add(Shape::line(pts.clone(), Stroke::new(1.5, color)));
+    if let Some(last) = pts.last() {
+        painter.circle_filled(*last, 2.5, color);
+    }
+}
+
+/// Body of the Activity tab (below the bottom panel's tab header).
+pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
+    let p = palette(ui.ctx());
+    let mut child = ui.new_child(UiBuilder::new().max_rect(body.shrink2(vec2(10.0, 4.0))));
+    let ui = &mut child;
+    // ---- toolbar ----
+    let pending = app.fileops.jobs.pending().count();
+    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+    let mut x = bar.left();
+    for (tab, label) in [
+        (ActivityTab::Jobs, if pending > 0 { format!("Jobs \u{b7} {pending}") } else { "Jobs".to_string() }),
+        (ActivityTab::History, "History".to_string()),
+    ] {
+        let g = ui.painter().layout_no_wrap(label, FontId::proportional(12.0), p.text_primary);
+        let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(g.size().x + 20.0, 24.0));
+        let resp = ui.interact(r, Id::new(("soyuz.activity.tab", tab as u8)), Sense::click());
+        let active = app.fileops.activity.tab == tab;
+        if active {
+            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.accent_subtle);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+        }
+        let c = if active { p.accent } else { p.text_secondary };
+        let g = ui.painter().layout_no_wrap(g.text().to_string(), FontId::proportional(12.0), c);
+        ui.painter().galley(r.center() - g.size() / 2.0, g, c);
+        if resp.clicked() {
+            app.fileops.activity.tab = tab;
+        }
+        x = r.right() + 4.0;
+    }
+    if app.fileops.activity.tab == ActivityTab::Jobs {
+        let mut rx = bar.right();
+        let mut btn = |ui: &mut Ui, glyph: &str, tip: &str, enabled: bool| {
+            let r = Rect::from_min_size(pos2(rx - 28.0, bar.top() + 1.0), vec2(28.0, 28.0));
+            rx -= 30.0;
+            icon_button(
+                &mut ui.new_child(UiBuilder::new().max_rect(r).id_salt(("soyuz.act.bar", glyph))),
+                glyph,
+                tip,
+                enabled,
+            )
+        };
+        let any_done = app.fileops.jobs.snapshots().iter().any(|s| s.state.is_terminal());
+        if btn(ui, ph::BROOM, "Clear finished", any_done).clicked() {
+            app.fileops.jobs.engine().clear_finished();
+        }
+        if btn(ui, ph::X_CIRCLE, "Cancel all", pending > 0).clicked() {
+            app.fileops.jobs.engine().cancel_all();
+        }
+        if btn(ui, ph::PLAY, "Resume all", pending > 0).clicked() {
+            app.fileops.jobs.engine().resume_all();
+        }
+        if btn(ui, ph::PAUSE, "Pause all", pending > 0).clicked() {
+            app.fileops.jobs.engine().pause_all();
+        }
+    }
+    ui.add_space(4.0);
+    match app.fileops.activity.tab {
+        ActivityTab::Jobs => jobs_list(ui, app, &p),
+        ActivityTab::History => super::activity_history::show(ui, app, &p),
+    }
+}
+
+fn empty(ui: &mut Ui, p: &Palette, glyph: &str, title: &str, sub: &str) {
+    let r = ui.available_rect_before_wrap();
+    let c = r.center() - vec2(0.0, 12.0);
+    ui.painter().text(c - vec2(0.0, 14.0), Align2::CENTER_CENTER, glyph, ticons::font_fill(26.0), p.text_tertiary);
+    ui.painter().text(c + vec2(0.0, 12.0), Align2::CENTER_CENTER, title, semibold(13.0), p.text_secondary);
+    ui.painter().text(c + vec2(0.0, 30.0), Align2::CENTER_CENTER, sub, FontId::proportional(11.5), p.text_tertiary);
+    ui.allocate_rect(r, Sense::hover());
+}
+
+fn jobs_list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
+    let mut snaps: Vec<JobSnapshot> = app.fileops.jobs.snapshots().to_vec();
+    if snaps.is_empty() {
+        empty(ui, p, ph::PULSE, "No operations", "Copies, moves and deletes show their progress here.");
+        return;
+    }
+    // Active first (by queue position), finished last (newest first).
+    snaps.sort_by_key(|s| {
+        (
+            s.state.is_terminal(),
+            if s.state.is_terminal() {
+                u64::MAX - s.id.0
+            } else {
+                s.queue_pos.map_or(0, |q| q as u64 + 1) * 1_000_000 + s.id.0
+            },
+        )
+    });
+    ScrollArea::vertical().id_salt("soyuz.activity.jobs").auto_shrink([false, false]).show(ui, |ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        for s in &snaps {
+            job_card(ui, app, s, p);
+        }
+    });
+}
+
+fn state_line(s: &JobSnapshot, meta: Option<&JobMeta>) -> (String, Option<Color32>) {
+    let _ = meta;
+    match &s.state {
+        JobState::Queued => (
+            match s.queue_pos {
+                Some(q) => format!("Queued \u{b7} #{} in line", q + 1),
+                None => "Queued".into(),
+            },
+            None,
+        ),
+        JobState::Planning => ("Counting items\u{2026}".into(), None),
+        JobState::Running => (
+            s.progress
+                .current
+                .as_ref()
+                .map(|c| soyuz_core::entry::display_name(c))
+                .unwrap_or_else(|| "Working\u{2026}".into()),
+            None,
+        ),
+        JobState::Paused => ("Paused".into(), None),
+        JobState::WaitingForUser => ("Waiting for your answer".into(), Some(Color32::YELLOW)),
+        JobState::Finishing => ("Finishing\u{2026}".into(), None),
+        JobState::Done(_) | JobState::Failed(_) | JobState::Cancelled => (names::outcome(&s.state), None),
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
+    let meta =
+        app.fileops.jobs.meta(s.id).cloned().unwrap_or_else(|| JobMeta::new(OpKind::from_brief(s.kind), &[], None));
+    let active = !s.state.is_terminal();
+    let total_items = s.progress.totals_known.then_some(s.progress.items_total);
+    let title = names::job_title(&meta, !matches!(s.state, JobState::Done(_)), total_items, &s.label);
+    let expanded = app.fileops.activity.expanded.contains(&s.id);
+    let summary = match &s.state {
+        JobState::Done(sum) => Some(sum.clone()),
+        _ => None,
+    };
+    let failed = summary.as_ref().is_some_and(|x| x.items_failed > 0);
+    let w = ui.available_width();
+    let base_h = 86.0;
+    let extra = if expanded { 168.0 } else { 0.0 };
+    let (card, _) = ui.allocate_exact_size(vec2(w, base_h + extra), Sense::hover());
+    let painter = ui.painter_at(card);
+    painter.rect_filled(card, CornerRadius::same(radius::CARD), p.bg_window);
+    let waiting = s.pending_prompt.is_some();
+    painter.rect_stroke(
+        card,
+        CornerRadius::same(radius::CARD),
+        Stroke::new(1.0, if waiting { p.warning.gamma_multiply(0.6) } else { p.border_subtle }),
+        StrokeKind::Inside,
+    );
+
+    // Status color.
+    let (glyph, op_color) = op_style(meta.op, p);
+    let status = match &s.state {
+        JobState::Failed(_) => p.danger,
+        JobState::Cancelled => p.text_tertiary,
+        JobState::Done(_) if failed => p.warning,
+        JobState::Done(_) => p.success,
+        JobState::Paused => p.text_tertiary,
+        JobState::WaitingForUser => p.warning,
+        _ => p.accent,
+    };
+    let frac = fraction(s);
+
+    // Icon with ring.
+    let ic = pos2(card.left() + 30.0, card.top() + 30.0);
+    painter.circle_filled(ic, 17.0, op_color.gamma_multiply(0.12));
+    let done_glyph = match &s.state {
+        JobState::Done(_) if !failed => Some(ph::CHECK),
+        JobState::Failed(_) => Some(ph::WARNING),
+        JobState::Cancelled => Some(ph::PROHIBIT),
+        _ => None,
+    };
+    painter.text(
+        ic,
+        Align2::CENTER_CENTER,
+        done_glyph.unwrap_or(glyph),
+        ticons::font(16.0),
+        done_glyph.map_or(op_color, |_| status),
+    );
+    if active {
+        let ring_frac = if matches!(s.state, JobState::Paused | JobState::WaitingForUser | JobState::Queued) {
+            frac.or(Some(0.0))
+        } else {
+            frac
+        };
+        ring(ui, ic, 20.0, 2.5, ring_frac, status, p.border_subtle);
+    }
+
+    // Text block.
+    let tx = card.left() + 60.0;
+    let spark_w = if card.width() > 640.0 { 150.0 } else { 0.0 };
+    let buttons_w = 128.0;
+    let text_w = card.right() - tx - spark_w - buttons_w - 16.0;
+    let tg = trunc_galley(&painter, &title, semibold(13.0), p.text_primary, text_w);
+    painter.galley(pos2(tx, card.top() + 12.0), tg, p.text_primary);
+    let (line, _) = state_line(s, Some(&meta));
+    let line_color = match &s.state {
+        JobState::WaitingForUser => p.warning,
+        JobState::Failed(_) => p.danger,
+        JobState::Done(_) if failed => p.warning,
+        _ => p.text_secondary,
+    };
+    let lg = trunc_galley(&painter, &line, FontId::proportional(11.5), line_color, text_w);
+    painter.galley(pos2(tx, card.top() + 31.0), lg, line_color);
+
+    // Progress bar.
+    let bar = Rect::from_min_size(pos2(tx, card.top() + 52.0), vec2(card.right() - tx - 14.0, 5.0));
+    painter.rect_filled(bar, CornerRadius::same(3), p.bg_surface2);
+    match frac {
+        Some(f) => {
+            let mut fill = bar;
+            fill.set_width((bar.width() * f).max(if f > 0.0 { 5.0 } else { 0.0 }));
+            if fill.width() > 0.0 {
+                painter.rect_filled(fill, CornerRadius::same(3), status);
+            }
+        }
+        None if active && s.state != JobState::Paused && s.state != JobState::Queued => {
+            // Indeterminate: a sliding segment.
+            let t = ui.input(|i| i.time) as f32;
+            let seg = bar.width() * 0.25;
+            let x0 = bar.left() + ((t * 0.6).fract() * (bar.width() + seg)) - seg;
+            let r = Rect::from_min_max(
+                pos2(x0.max(bar.left()), bar.top()),
+                pos2((x0 + seg).min(bar.right()), bar.bottom()),
+            );
+            if r.width() > 0.0 {
+                painter.rect_filled(r, CornerRadius::same(3), status);
+            }
+            ui.ctx().request_repaint_after(Duration::from_millis(33));
+        }
+        None => {}
+    }
+
+    // Stats row.
+    let pr = &s.progress;
+    let mut left = Vec::new();
+    if pr.bytes_total > 0 {
+        left.push(format!(
+            "{} of {}",
+            format_size(pr.bytes_done, SizeStyle::Binary),
+            format_size(pr.bytes_total, SizeStyle::Binary)
+        ));
+    } else if let Some(sum) = &summary
+        && sum.bytes > 0
+    {
+        left.push(format_size(sum.bytes, SizeStyle::Binary));
+    }
+    if pr.items_total > 0 {
+        left.push(format!(
+            "{} of {} item{}",
+            group_thousands(pr.items_done as usize),
+            group_thousands(pr.items_total as usize),
+            if pr.items_total == 1 { "" } else { "s" }
+        ));
+    }
+    let sy = card.top() + 70.0;
+    painter.text(pos2(tx, sy), Align2::LEFT_CENTER, left.join(" \u{b7} "), FontId::proportional(11.5), p.text_tertiary);
+    let right = if matches!(s.state, JobState::Running) {
+        let mut r = format_speed(s.speed_bps);
+        if let Some(eta) = s.eta {
+            r.push_str(&format!(" \u{b7} {} left", format_eta(eta.as_secs_f64())));
+        }
+        r
+    } else if let Some(sum) = &summary {
+        let secs = sum.elapsed.as_secs_f64();
+        if sum.bytes > 0 && secs > 0.5 {
+            format!("avg {}", format_speed(sum.bytes as f64 / secs))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+    painter.text(pos2(bar.right(), sy), Align2::RIGHT_CENTER, right, FontId::proportional(11.5), p.text_secondary);
+
+    // Sparkline.
+    if spark_w > 0.0 && (s.samples.len() > 1) {
+        let sr =
+            Rect::from_min_size(pos2(card.right() - buttons_w - spark_w - 8.0, card.top() + 10.0), vec2(spark_w, 34.0));
+        sparkline(ui, sr, &s.samples, if active { p.accent } else { p.text_tertiary });
+    }
+
+    // Buttons (right to left).
+    let engine_id = s.id;
+    let mut bx = card.right() - 8.0;
+    let by = card.top() + 8.0;
+    let mut btn = |ui: &mut Ui, glyph: &str, tip: &str| {
+        let r = Rect::from_min_size(pos2(bx - 28.0, by), vec2(28.0, 28.0));
+        bx -= 30.0;
+        icon_button(
+            &mut ui.new_child(UiBuilder::new().max_rect(r).id_salt(("soyuz.act.btn", engine_id.0, glyph))),
+            glyph,
+            tip,
+            true,
+        )
+    };
+    let exp = btn(
+        ui,
+        if expanded { ph::CARET_UP } else { ph::CARET_DOWN },
+        if expanded { "Hide details" } else { "Show log and errors" },
+    );
+    if exp.clicked() {
+        if expanded {
+            app.fileops.activity.expanded.remove(&engine_id);
+        } else {
+            app.fileops.activity.expanded.insert(engine_id);
+        }
+    }
+    if active {
+        let more = btn(ui, ph::DOTS_THREE, "More");
+        let queued = matches!(s.state, JobState::Queued) || (s.state == JobState::Paused && s.started.is_none());
+        let prio = s.priority;
+        let mut action: Option<u8> = None;
+        egui::Popup::menu(&more).show(|ui| {
+            ui.set_width(200.0);
+            submenu(ui, Some(ph::FLAG), "Priority", |ui| {
+                ui.set_width(150.0);
+                for (pr, label, code) in
+                    [(Priority::High, "High", 1u8), (Priority::Normal, "Normal", 2), (Priority::Low, "Low", 3)]
+                {
+                    if menu_check(ui, prio == pr, label, None).clicked() {
+                        action = Some(code);
+                        ui.close();
+                    }
+                }
+            });
+            if menu_item(ui, Some(ph::ARROW_UP), "Move up", None, queued).clicked() {
+                action = Some(4);
+            }
+            if menu_item(ui, Some(ph::ARROW_DOWN), "Move down", None, queued).clicked() {
+                action = Some(5);
+            }
+            if menu_item(ui, Some(ph::LIGHTNING), "Start now", None, queued).clicked() {
+                action = Some(6);
+            }
+            menu_separator(ui);
+            if menu_item(ui, Some(ph::X), "Cancel", None, true).clicked() {
+                action = Some(7);
+            }
+        });
+        let eng = app.fileops.jobs.engine();
+        match action {
+            Some(1) => eng.set_priority(engine_id, Priority::High),
+            Some(2) => eng.set_priority(engine_id, Priority::Normal),
+            Some(3) => eng.set_priority(engine_id, Priority::Low),
+            Some(4) => eng.move_in_queue(engine_id, -1),
+            Some(5) => eng.move_in_queue(engine_id, 1),
+            Some(6) => eng.start_now(engine_id),
+            Some(7) => eng.cancel(engine_id),
+            _ => {}
+        }
+        if btn(ui, ph::X, "Cancel").clicked() {
+            app.fileops.jobs.engine().cancel(engine_id);
+        }
+        if s.state == JobState::Paused {
+            if btn(ui, ph::PLAY, "Resume").clicked() {
+                app.fileops.jobs.engine().resume(engine_id);
+            }
+        } else if s.state != JobState::WaitingForUser && btn(ui, ph::PAUSE, "Pause").clicked() {
+            app.fileops.jobs.engine().pause(engine_id);
+        }
+        if waiting && app.fileops.prompts.is_deferred(engine_id) {
+            let r = Rect::from_min_size(pos2(bx - 78.0, by + 2.0), vec2(76.0, 24.0));
+            let resp = ui.interact(r, Id::new(("soyuz.activity.resolve", engine_id.0)), Sense::click());
+            ui.painter().rect_filled(
+                r,
+                CornerRadius::same(radius::ROW),
+                if resp.hovered() { p.warning } else { p.warning.gamma_multiply(0.85) },
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                "Resolve\u{2026}",
+                FontId::proportional(12.0),
+                Color32::BLACK,
+            );
+            if resp.clicked() {
+                app.cmds.push(Cmd::FileOp(FileOpCmd::Resolve(engine_id)));
+            }
+        }
+    } else {
+        if btn(ui, ph::X, "Remove from list").clicked() {
+            app.fileops.jobs.engine().remove(engine_id);
+        }
+        if failed {
+            let r = Rect::from_min_size(pos2(bx - 92.0, by + 2.0), vec2(90.0, 24.0));
+            let resp = ui.interact(r, Id::new(("soyuz.activity.retry", engine_id.0)), Sense::click());
+            ui.painter().rect_filled(
+                r,
+                CornerRadius::same(radius::ROW),
+                if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 },
+            );
+            ui.painter().text(
+                r.center(),
+                Align2::CENTER_CENTER,
+                "Retry failed",
+                FontId::proportional(12.0),
+                p.text_primary,
+            );
+            if resp.clicked() {
+                let h = summary
+                    .as_ref()
+                    .and_then(|sum| app.fileops.jobs.history().iter().rev().find(|h| &h.summary == sum).map(|h| h.id));
+                match h {
+                    Some(h) => crate::ops::fileops::history_action(app, h, HistoryAction::Retry),
+                    None => app.cmds.push(Cmd::Action(Action::JobsShowHistory)),
+                }
+            }
+        }
+    }
+
+    // Expanded details: errors + log.
+    if expanded {
+        let dr = Rect::from_min_max(
+            pos2(card.left() + 12.0, card.top() + base_h),
+            pos2(card.right() - 12.0, card.bottom() - 10.0),
+        );
+        ui.painter().rect_filled(dr, CornerRadius::same(6), p.bg_sunken);
+        let mut lines: Vec<(Color32, String)> = Vec::new();
+        if let Some(sum) = &summary {
+            for (path, e) in sum.errors.iter().take(200) {
+                lines.push((p.danger, format!("\u{2715} {}  \u{2014}  {e}", soyuz_fs::strip_verbatim(path).display())));
+            }
+            for n in &sum.notes {
+                lines.push((p.text_tertiary, format!("\u{2139} {n}")));
+            }
+        }
+        if let JobState::Failed(e) = &s.state {
+            lines.push((p.danger, format!("\u{2715} {e}")));
+        }
+        for l in app.fileops.jobs.log(s.id).iter().rev().take(300) {
+            let c = match l.level {
+                LogLevel::Info => p.text_secondary,
+                LogLevel::Warn => p.warning,
+                LogLevel::Error => p.danger,
+            };
+            let path =
+                l.path.as_ref().map(|p| format!("  {}", soyuz_fs::strip_verbatim(p).display())).unwrap_or_default();
+            lines.push((c, format!("{:>6.1}s  {}{path}", l.at.as_secs_f32(), l.msg)));
+        }
+        if lines.is_empty() {
+            lines.push((p.text_tertiary, "No log entries yet.".into()));
+        }
+        let mut child = ui.new_child(UiBuilder::new().max_rect(dr.shrink(8.0)));
+        ScrollArea::vertical().id_salt(("soyuz.activity.log", s.id.0)).auto_shrink([false, false]).show(
+            &mut child,
+            |ui| {
+                ui.spacing_mut().item_spacing.y = 2.0;
+                for (c, t) in lines {
+                    ui.label(egui::RichText::new(t).font(FontId::monospace(11.0)).color(c));
+                }
+            },
+        );
+    }
+}

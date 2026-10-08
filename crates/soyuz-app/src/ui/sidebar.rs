@@ -257,6 +257,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         rects.push(r.rect);
         let r = r.on_hover_text(soyuz_fs::strip_verbatim(&f.path).display().to_string());
         row_clicks(&r, c, &f.path);
+        crate::ops::fileops::dnd::target(ui, &r, &f.path, c.cmds);
         if r.drag_started() {
             s.drag = Some(i);
         }
@@ -303,6 +304,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         row_clicks(&r, c, &b.path);
+        crate::ops::fileops::dnd::target(ui, &r, &b.path, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, &b.path, false));
     }
@@ -336,6 +338,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         row_clicks(&r, c, &v.mount);
+        crate::ops::fileops::dnd::target(ui, &r, &v.mount, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, &v.mount, false));
     }
@@ -364,6 +367,7 @@ fn cloud(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                 .show(ui);
         let r = r.on_hover_text(path.display().to_string());
         row_clicks(&r, c, path);
+        crate::ops::fileops::dnd::target(ui, &r, path, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, path, false));
     }
@@ -375,6 +379,7 @@ fn other(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     }
     let active = matches!(c.current, Location::Trash);
     let r = NavRow { icon: ph::TRASH, label: "Trash", active, icon_color: None, usage: None }.show(ui);
+    crate::ops::fileops::dnd::trash_target(ui, &r, c.cmds);
     if r.clicked() {
         c.cmds.push(Cmd::FocusPane(c.pane));
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Trash, select: None });

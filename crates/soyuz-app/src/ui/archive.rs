@@ -281,9 +281,18 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if let Some((pane, archive, wrong)) = svc::take_password_request() {
         app.ui.dialogs.push(PasswordDialog::new(pane, archive, wrong));
     }
-    for t in svc::pump_jobs() {
-        app.ui.toasts.push(t);
+    for spec in svc::take_pending_jobs() {
+        submit_job(app, spec);
     }
+}
+
+/// Submit an extract / compress job to the app-wide jobs service (activity panel,
+/// prompts and completion toasts come from there).
+pub fn submit_job(app: &mut SoyuzApp, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::JobId {
+    use crate::services::jobs::{JobMeta, OpKind};
+    let roots = spec.kind.touched_roots();
+    let meta = JobMeta::new(OpKind::Other, &roots, None);
+    app.fileops.jobs.submit(spec, meta)
 }
 
 /// Items-menu rows for archives (extract / compress / browse).

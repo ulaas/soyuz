@@ -3,6 +3,8 @@
 //! resizable height; integrations replace the placeholder bodies in [`show`] with their
 //! own widgets (e.g. `soyuz_term::TerminalView`, the job cards).
 
+pub mod activity;
+pub mod activity_history;
 pub mod terminal;
 
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
@@ -56,16 +58,15 @@ impl BottomPanel {
     }
 }
 
-/// Draw the panel (when open) above the status bar. `body` draws a tab's content into
-/// the given rect and returns `false` to fall back to the placeholder.
-pub fn show(root: &mut Ui, panel: &mut BottomPanel, mut body: impl FnMut(&mut Ui, BottomTab, egui::Rect) -> bool) {
-    if !panel.open {
+/// Draw the panel (when open) above the status bar.
+pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
+    if !app.ui.bottom.open {
         return;
     }
     let p = palette(root.ctx());
     let resp = Panel::bottom("soyuz.bottom")
         .resizable(true)
-        .default_size(panel.height)
+        .default_size(app.ui.bottom.height)
         .size_range(120.0..=720.0)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 8, right: 8, top: 0, bottom: 6 }))
         .show(root, |ui| {
@@ -82,7 +83,7 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel, mut body: impl FnMut(&mut Ui
             for tab in [BottomTab::Terminal, BottomTab::Activity] {
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(108.0, 26.0));
                 let resp = ui.interact(r, ui.id().with(("bottom.tab", tab.label())), Sense::click());
-                let active = panel.tab == tab;
+                let active = app.ui.bottom.tab == tab;
                 if active {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 } else if resp.hovered() {
@@ -104,7 +105,7 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel, mut body: impl FnMut(&mut Ui
                     c,
                 );
                 if resp.clicked() {
-                    panel.tab = tab;
+                    app.ui.bottom.tab = tab;
                 }
                 x += 112.0;
             }
@@ -115,36 +116,14 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel, mut body: impl FnMut(&mut Ui
             }
             ui.painter().text(close.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
             if cresp.clicked() {
-                panel.open = false;
+                app.ui.bottom.open = false;
             }
-            // Placeholder body until the terminal / jobs integration lands.
-            let body_rect = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
-            if body(ui, panel.tab, body_rect) {
-                ui.allocate_rect(card, Sense::hover());
-                return;
-            }
-            let body = body_rect;
-            let (glyph, text) = match panel.tab {
-                BottomTab::Terminal => {
-                    (ph::TERMINAL_WINDOW, "The integrated terminal arrives with the terminal milestone.")
-                }
-                BottomTab::Activity => (ph::PULSE, "File operations and their progress will appear here."),
-            };
-            ui.painter().text(
-                body.center() - vec2(0.0, 14.0),
-                Align2::CENTER_CENTER,
-                glyph,
-                icons::font_fill(28.0),
-                p.text_tertiary,
-            );
-            ui.painter().text(
-                body.center() + vec2(0.0, 16.0),
-                Align2::CENTER_CENTER,
-                text,
-                FontId::proportional(12.5),
-                p.text_tertiary,
-            );
+            let body = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
             ui.allocate_rect(card, Sense::hover());
+            match app.ui.bottom.tab {
+                BottomTab::Terminal => terminal::body(ui, body, app),
+                BottomTab::Activity => activity::show(ui, body, app),
+            }
         });
-    panel.height = resp.response.rect.height();
+    app.ui.bottom.height = resp.response.rect.height();
 }

@@ -91,4 +91,6 @@ pub enum Cmd {
     /// Run / remove a saved search (index into the sidebar list).
     RunSavedSearch(usize),
     RemoveSavedSearch(usize),
+    /// File operations (clipboard, drag and drop, rename, prompts, trash): `ops::fileops`.
+    FileOp(crate::ops::fileops::FileOpCmd),
 }

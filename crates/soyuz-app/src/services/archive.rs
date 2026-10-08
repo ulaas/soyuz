@@ -1,18 +1,17 @@
 //! Archive browsing (PLAN M7): `Location::Archive` listings on a worker thread that keeps
 //! a few opened readers cached (their `dir_index` makes nested navigation cheap),
 //! extracting single entries to a temp folder for "open", per-archive passwords, and a
-//! thin job-submission bridge used by extract / compress until the app-wide jobs
-//! service owns a `JobEngine` (see [`submit_job`]).
+//! hand-off queue so worker threads can submit extract jobs to the app's `JobsService`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use crossbeam_channel::{Sender, unbounded};
 use soyuz_archive::{ArchiveError, ArchiveFormat, ArchiveReader};
-use soyuz_core::{ConflictResolution, ErrorAction, FsError, FsErrorKind};
-use soyuz_jobs::{EngineConfig, JobEngine, JobEvent, JobId, JobPrompt, JobSpec, JobState, PromptResponse};
+use soyuz_core::{FsError, FsErrorKind};
+use soyuz_jobs::JobSpec;
 
 use super::mailbox::{Postman, UiMsg};
 use crate::state::pane::PaneId;
@@ -214,36 +213,12 @@ fn hash(s: &str) -> u64 {
     s.bytes().fold(0xcbf2_9ce4_8422_2325u64, |h, b| (h ^ b as u64).wrapping_mul(0x0100_0000_01b3))
 }
 
-// ---- jobs bridge --------------------------------------------------------------------
+// ---- jobs hand-off -----------------------------------------------------------------
 
-struct Bridge {
-    engine: Arc<JobEngine>,
-    /// Labels of submitted jobs (for completion toasts).
-    labels: HashMap<JobId, String>,
-}
-
-fn bridge() -> &'static Mutex<Option<Bridge>> {
-    static B: OnceLock<Mutex<Option<Bridge>>> = OnceLock::new();
-    B.get_or_init(Default::default)
-}
-
-/// Submit a job. Minimal handler for `Cmd::SubmitJob`: lazily creates a `JobEngine`
-/// (until the app-wide jobs service exists — swap this call for it when merging) and
-/// answers prompts conservatively (keep both / skip errors) in [`pump_jobs`].
-pub fn submit_job(ctx: &egui::Context, spec: JobSpec) -> Option<JobId> {
-    let mut guard = bridge().lock().ok()?;
-    let b = guard.get_or_insert_with(|| {
-        let c = ctx.clone();
-        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c.request_repaint());
-        Bridge {
-            engine: JobEngine::new(EngineConfig::default(), Arc::new(soyuz_fs::RealProbe), wake),
-            labels: HashMap::new(),
-        }
-    });
-    let label = spec.options.label.clone().unwrap_or_else(|| "Job".into());
-    let id = b.engine.submit(spec);
-    b.labels.insert(id, label);
-    Some(id)
+/// Jobs submitted from worker threads, drained into the app's `JobsService` each frame.
+fn pending() -> &'static Mutex<Vec<JobSpec>> {
+    static P: OnceLock<Mutex<Vec<JobSpec>>> = OnceLock::new();
+    P.get_or_init(Default::default)
 }
 
 fn ctx_slot() -> &'static OnceLock<egui::Context> {
@@ -251,65 +226,24 @@ fn ctx_slot() -> &'static OnceLock<egui::Context> {
     &C
 }
 
-/// Remember the egui context so worker threads can submit jobs.
+/// Remember the egui context so worker threads can wake the UI after queueing a job.
 pub fn remember_ctx(ctx: &egui::Context) {
     let _ = ctx_slot().set(ctx.clone());
 }
 
-/// [`submit_job`] from a worker thread (uses the remembered context).
-pub fn submit_job_detached(spec: JobSpec) -> Option<JobId> {
-    let ctx = ctx_slot().get()?.clone();
-    submit_job(&ctx, spec)
+/// Queue a job from a worker thread; the UI submits it on its next frame.
+pub fn submit_job_detached(spec: JobSpec) {
+    if let Ok(mut q) = pending().lock() {
+        q.push(spec);
+    }
+    if let Some(ctx) = ctx_slot().get() {
+        ctx.request_repaint();
+    }
 }
 
-/// Per-frame: drain engine events; returns toasts to show.
-pub fn pump_jobs() -> Vec<Toast> {
-    let mut toasts = Vec::new();
-    let Ok(mut guard) = bridge().lock() else { return toasts };
-    let Some(b) = guard.as_mut() else { return toasts };
-    let events: Vec<JobEvent> = b.engine.events().try_iter().collect();
-    for ev in events {
-        match ev {
-            JobEvent::Prompt(id) => {
-                let resp = match b.engine.snapshot(id).and_then(|s| s.pending_prompt) {
-                    Some(JobPrompt::Conflict(_)) => {
-                        PromptResponse::Conflict { resolution: ConflictResolution::KeepBoth, apply_to_all: true }
-                    }
-                    Some(JobPrompt::Error { .. }) => {
-                        PromptResponse::Error { action: ErrorAction::Skip, apply_to_all: true }
-                    }
-                    Some(JobPrompt::NotEnoughSpace { .. }) => PromptResponse::Space { proceed: false },
-                    _ => PromptResponse::Cancelled,
-                };
-                b.engine.respond(id, resp);
-            }
-            JobEvent::StateChanged(id, JobState::Failed(e)) => {
-                let label = b.labels.remove(&id).unwrap_or_default();
-                toasts.push(Toast::error(format!("{label} failed")).body(e.to_string()));
-            }
-            JobEvent::Finished(id, summary) => {
-                let label = b.labels.remove(&id).unwrap_or_default();
-                let t = if summary.items_failed > 0 {
-                    Toast::warning(format!("{label} finished with errors"))
-                        .body(format!("{} failed, {} done", summary.items_failed, summary.items_ok))
-                } else {
-                    Toast::success(format!("{label} — done"))
-                };
-                toasts.push(t);
-            }
-            _ => {}
-        }
-    }
-    toasts
-}
-
-/// Stop running jobs on exit.
-pub fn shutdown() {
-    if let Ok(mut g) = bridge().lock()
-        && let Some(b) = g.take()
-    {
-        b.engine.shutdown(std::time::Duration::from_secs(2));
-    }
+/// Take the jobs queued by [`submit_job_detached`].
+pub fn take_pending_jobs() -> Vec<JobSpec> {
+    pending().lock().map(|mut q| std::mem::take(&mut *q)).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -354,7 +288,7 @@ mod tests {
         let ctl = soyuz_core::OpControl::new();
         soyuz_archive::create(&zip, &[src.join("a.txt"), src.join("inner")], &opts, &ctl, &mut ()).unwrap();
 
-        let mb = super::super::mailbox::Mailbox::new(Arc::new(|| {}));
+        let mb = super::super::mailbox::Mailbox::new(std::sync::Arc::new(|| {}));
         let pane = PaneId(9_999);
         list(pane, 3, &zip, "", mb.postman());
         list(pane, 4, &zip, "inner", mb.postman());

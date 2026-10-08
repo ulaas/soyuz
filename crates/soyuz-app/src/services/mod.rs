@@ -3,6 +3,7 @@
 //! layer; everything here reports through the [`mailbox`].
 
 pub mod archive;
+pub mod jobs;
 pub mod lister;
 pub mod mailbox;
 pub mod places;

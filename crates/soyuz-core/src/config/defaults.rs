@@ -160,6 +160,7 @@ impl Default for Jobs {
             reflink: ReflinkPref::Auto,
             history_limit: 500,
             trash_unsupported: TrashUnsupportedPolicy::Ask,
+            auto_open_activity: true,
         }
     }
 }
@@ -278,6 +279,7 @@ fn common(km: &mut Keymap) {
     b(L, A::Copy, CTRL, KeyName::C);
     b(L, A::Cut, CTRL, KeyName::X);
     b(L, A::Paste, CTRL, KeyName::V);
+    b(L, A::PasteAsLink, CTRL_SHIFT, KeyName::V);
     b(L, A::SelectAll, CTRL, KeyName::A);
     b(L, A::InvertSelection, CTRL, KeyName::I);
     b(L, A::SelectNone, NONE, KeyName::Escape);
@@ -312,6 +314,10 @@ pub fn preset(p: KeyPreset) -> Keymap {
             b(L, A::Rename, NONE, KeyName::F2);
             b(G, A::Search, NONE, KeyName::F3);
             b(G, A::Refresh, NONE, KeyName::F5);
+            // In the file list F5/F6 copy/move to the other pane; without a second pane
+            // the app falls back to Refresh for F5.
+            b(L, A::CopyToOtherPane, NONE, KeyName::F5);
+            b(L, A::MoveToOtherPane, NONE, KeyName::F6);
             b(L, A::QuickLook, NONE, KeyName::Space);
             b(L, A::Up, NONE, KeyName::Backspace);
             b(G, A::ToggleDualPane, NONE, KeyName::F9);

@@ -157,10 +157,12 @@ pub struct Dispatched {
 fn event_chord(ev: &Event, current: Modifiers, cmd_is_ctrl: bool) -> Option<KeyChord> {
     let chord = match ev {
         Event::Key { key, pressed: true, modifiers, .. } => KeyChord::new(mods(*modifiers), key_name(*key)?),
+        Event::Copy if current.shift && current.command => KeyChord::new(Mods::CTRL | Mods::SHIFT, KeyName::C),
         Event::Copy => KeyChord::new(Mods::CTRL, KeyName::C),
         Event::Cut if current.shift && !current.ctrl => KeyChord::new(Mods::SHIFT, KeyName::Delete),
         Event::Cut => KeyChord::new(Mods::CTRL, KeyName::X),
         Event::Paste(_) if current.shift && !current.ctrl => KeyChord::new(Mods::SHIFT, KeyName::Insert),
+        Event::Paste(_) if current.shift && current.command => KeyChord::new(Mods::CTRL | Mods::SHIFT, KeyName::V),
         Event::Paste(_) => KeyChord::new(Mods::CTRL, KeyName::V),
         _ => return None,
     };

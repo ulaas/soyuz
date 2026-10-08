@@ -8,6 +8,7 @@ pub mod flow;
 pub mod icons;
 pub mod layout;
 pub mod miller;
+pub mod trash;
 
 use soyuz_core::config::{Config, Keymap};
 use soyuz_fs::VolumeInfo;
@@ -31,4 +32,6 @@ pub struct ViewCtx<'a> {
     pub volumes: &'a [VolumeInfo],
     /// Dual pane is available (enables "open in other pane").
     pub dual: bool,
+    /// Clipboard (cut dimming), inline rename, drag and drop, trash view state.
+    pub fileops: &'a mut crate::ops::fileops::FileOps,
 }

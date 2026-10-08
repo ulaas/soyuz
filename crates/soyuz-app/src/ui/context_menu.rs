@@ -23,14 +23,6 @@ fn action_item(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId, icon
     }
 }
 
-fn soon_item(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, icon: &str, label: &str, action: Action) {
-    let sc = chord_label(km, &action);
-    if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
-        cmds.push(Cmd::ComingSoon(action));
-        ui.close();
-    }
-}
-
 pub fn pane_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     ui.set_width(260.0);
     match pane.context {
@@ -46,6 +38,8 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let single = sel.len() == 1;
     let all_dirs = sel.iter().all(|e| e.is_dir_like());
     let first = sel.first().map(|e| (e.path.clone(), e.is_dir_like()));
+    let has_clip = !v.fileops.clipboard.is_empty();
+    let dual = v.dual;
     let cmds = &mut *v.cmds;
 
     action_item(ui, km, cmds, id, if all_dirs { ph::FOLDER_OPEN } else { ph::ARROW_SQUARE_OUT }, "Open", Action::Open);
@@ -81,11 +75,25 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         });
     }
     menu_separator(ui);
-    soon_item(ui, km, cmds, ph::SCISSORS, "Cut", Action::Cut);
-    soon_item(ui, km, cmds, ph::COPY, "Copy", Action::Copy);
-    soon_item(ui, km, cmds, ph::PENCIL_SIMPLE, "Rename", Action::Rename);
-    soon_item(ui, km, cmds, ph::COPY_SIMPLE, "Duplicate", Action::Duplicate);
-    soon_item(ui, km, cmds, ph::TRASH, "Move to trash", Action::Delete);
+    action_item(ui, km, cmds, id, ph::SCISSORS, "Cut", Action::Cut);
+    action_item(ui, km, cmds, id, ph::COPY, "Copy", Action::Copy);
+    if single
+        && has_clip
+        && let Some((path, true)) = &first
+        && menu_item(ui, Some(ph::CLIPBOARD), "Paste into folder", None, true).clicked()
+    {
+        cmds.push(Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone())));
+        ui.close();
+    }
+    if dual {
+        action_item(ui, km, cmds, id, ph::COPY_SIMPLE, "Copy to other pane", Action::CopyToOtherPane);
+        action_item(ui, km, cmds, id, ph::ARROW_BEND_DOWN_RIGHT, "Move to other pane", Action::MoveToOtherPane);
+    }
+    action_item(ui, km, cmds, id, ph::PENCIL_SIMPLE, "Rename", Action::Rename);
+    action_item(ui, km, cmds, id, ph::COPY_SIMPLE, "Duplicate", Action::Duplicate);
+    action_item(ui, km, cmds, id, ph::LINK, "Create link…", Action::NewSymlink);
+    action_item(ui, km, cmds, id, ph::TRASH, "Move to trash", Action::Delete);
+    action_item(ui, km, cmds, id, ph::X_CIRCLE, "Delete permanently", Action::DeletePermanent);
     menu_separator(ui);
     action_item(
         ui,
@@ -131,6 +139,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
 fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let km = v.keymap;
     let id = pane.id;
+    let has_clip = !v.fileops.clipboard.is_empty();
     let cmds = &mut *v.cmds;
     submenu(ui, Some(ph::SQUARES_FOUR), "View", |ui| {
         ui.set_width(220.0);
@@ -146,9 +155,15 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     });
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::ARROW_CLOCKWISE, "Refresh", Action::Refresh);
-    soon_item(ui, km, cmds, ph::CLIPBOARD, "Paste", Action::Paste);
-    soon_item(ui, km, cmds, ph::FOLDER_PLUS, "New folder", Action::NewFolder);
-    soon_item(ui, km, cmds, ph::FILE_PLUS, "New file", Action::NewFile);
+    if has_clip {
+        action_item(ui, km, cmds, id, ph::CLIPBOARD, "Paste", Action::Paste);
+        action_item(ui, km, cmds, id, ph::LINK, "Paste as link", Action::PasteAsLink);
+    } else {
+        menu_item(ui, Some(ph::CLIPBOARD), "Paste", chord_label(km, &Action::Paste).as_deref(), false);
+    }
+    action_item(ui, km, cmds, id, ph::FOLDER_PLUS, "New folder", Action::NewFolder);
+    action_item(ui, km, cmds, id, ph::FILE_PLUS, "New file", Action::NewFile);
+    action_item(ui, km, cmds, id, ph::LINK, "New link…", Action::NewSymlink);
     menu_separator(ui);
     if let Location::Dir(dir) = &pane.location {
         action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, "Open terminal here", Action::OpenTerminalHere);

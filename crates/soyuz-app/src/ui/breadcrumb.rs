@@ -180,6 +180,9 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         if resp.middle_clicked() {
             c.cmds.push(Cmd::OpenInNewTab { location: list[i].location.clone(), activate: false });
         }
+        if let soyuz_core::Location::Dir(d) = &list[i].location {
+            crate::ops::fileops::dnd::target(ui, &resp, d, c.cmds);
+        }
         x += r.width();
         if x + SEP_W > right {
             break;

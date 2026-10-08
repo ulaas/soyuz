@@ -1,6 +1,8 @@
 //! Operations that combine state and services: navigation, listing lifecycle, message
 //! handling, opening entries, tabs/panes management and [`Cmd`] application.
 
+pub mod fileops;
+
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -534,6 +536,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             }
         }
         Cmd::ComingSoon(a) => coming_soon(app, &a),
+        Cmd::FileOp(c) => fileops::apply(app, c, ctx),
         Cmd::RevealInSystem(p) => {
             if let Err(e) = soyuz_fs::launch::reveal_in_system(&p) {
                 app.ui.toasts.push(Toast::error("Couldn't reveal in the system file manager").body(e.to_string()));
@@ -614,10 +617,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
         Cmd::SubmitJob(spec) => {
-            // Minimal handler until the app-wide jobs service lands (see services::archive).
-            if crate::services::archive::submit_job(ctx, *spec).is_none() {
-                app.ui.toasts.push(Toast::error("Couldn't start the job"));
-            }
+            crate::ui::archive::submit_job(app, *spec);
         }
         Cmd::ExtractEntries { archive, items, strip, dest } => {
             crate::ui::archive::extract_entries(app, archive, items, strip, dest)
