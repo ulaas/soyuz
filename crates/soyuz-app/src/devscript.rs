@@ -22,6 +22,9 @@
 //!   pending plan, `ai:!smart <text>` opens smart search with `text`, `ai:!save <name>`
 //!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page,
 //!   `ai:!mcp-approve` approves every pending MCP request card;
+//! * `ws:<verb> [arg]` — workspaces (F7): `group`, `add <tab>`, `collapse`, `color <0-7>`,
+//!   `save <name>`, `open <n>`, `layout single|dual|stacked|quad`, `sync`, `tear <tab>`,
+//!   `move <tab> <window>`, `close <window>`, `merge`, `select <tab>`;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
@@ -236,7 +239,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 crate::ui::settings::open(app, sec);
             }
             "appearance" => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Appearance)),
-            "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            "quit" => {
+                app.workspaces.quitting = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            "ws" => crate::ui::workspaces::devscript(app, ctx, arg),
             "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),
             "keys" => {
                 app.devscript.events.extend(key_events(arg));

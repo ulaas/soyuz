@@ -77,8 +77,9 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 app.cmds.push(Cmd::Action(Action::Settings));
             }
             let dual_on = app.ws.tab().dual;
-            let dual =
-                right_btn(ui, ph::SQUARE_SPLIT_HORIZONTAL, &tip(app, "Dual pane", &Action::ToggleDualPane), dual_on);
+            let glyph = if app.ws.tab().shown() == 4 { ph::SQUARES_FOUR } else { ph::SQUARE_SPLIT_HORIZONTAL };
+            let dual_tip = tip(app, "Dual pane (right-click: layouts, sync)", &Action::ToggleDualPane);
+            let dual = right_btn(ui, glyph, &dual_tip, dual_on);
             if dual.clicked() {
                 app.cmds.push(Cmd::Action(Action::ToggleDualPane));
             }
@@ -275,22 +276,17 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
         .align(RectAlign::BOTTOM_END)
         .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
         .show(|ui| {
-            ui.set_width(240.0);
+            ui.set_width(250.0);
             let km = app.keymap.clone();
+            // Single / dual (side by side, stacked) / quad layouts (F7).
+            let mut layout_cmds = Vec::new();
+            crate::ui::workspaces::layout_menu(ui, app, &mut layout_cmds);
+            app.cmds.extend(layout_cmds);
             let tab = app.ws.tab_mut();
             let dual = tab.dual;
-            if menu_check(ui, dual, "Dual pane", chord_label(&km, &Action::ToggleDualPane).as_deref()).clicked() {
-                app.cmds.push(Cmd::Action(Action::ToggleDualPane));
-            }
-            use soyuz_core::config::Orientation;
-            if menu_check(ui, tab.orientation == Orientation::Vertical, "Side by side", None).clicked() {
-                tab.orientation = Orientation::Vertical;
-            }
-            if menu_check(ui, tab.orientation == Orientation::Horizontal, "Stacked", None).clicked() {
-                tab.orientation = Orientation::Horizontal;
-            }
             menu_separator(ui);
-            if menu_check(ui, tab.sync_nav, "Synchronized navigation", None).clicked() {
+            let sync_key = chord_label(&km, &Action::SyncNavigation);
+            if menu_check(ui, tab.sync_nav, "Synchronized browsing", sync_key.as_deref()).clicked() {
                 app.cmds.push(Cmd::Action(Action::SyncNavigation));
             }
             if menu_item(

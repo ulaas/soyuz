@@ -151,7 +151,7 @@ pub fn folder_key(loc: &Location) -> Option<String> {
     let ident = match loc {
         Location::Dir(p) => normalize_key_path(p),
         Location::Archive { archive, inner } => format!("{}!/{inner}", normalize_key_path(archive)),
-        Location::Trash | Location::Computer | Location::Recent => loc.display(),
+        Location::Trash | Location::Computer | Location::Recent | Location::Timeline => loc.display(),
         Location::Tags(t) => format!("tag:{t}"),
         Location::Search(_) => return None,
     };

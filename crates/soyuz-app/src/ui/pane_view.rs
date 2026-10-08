@@ -168,6 +168,18 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         "This folder contains hidden items only.",
                         &[("Ctrl+H", "Show hidden files")],
                     );
+                } else if matches!(pane.location, Location::Timeline) {
+                    empty(
+                        ui,
+                        rect,
+                        pane,
+                        v,
+                        ph::CALENDAR_DOTS,
+                        Some(p.text_secondary),
+                        "No changes this week",
+                        "Files you change in the folders Soyuz knows about show up here, newest first.",
+                        &[],
+                    );
                 } else {
                     empty(
                         ui,

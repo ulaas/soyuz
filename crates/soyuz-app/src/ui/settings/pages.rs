@@ -232,6 +232,74 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             number(ui, &mut d.layout.terminal_height, 120.0..=800.0, " px");
         });
     });
+    any |= group(ui, q, ctx, "Windows & workspaces", |r| {
+        use soyuz_core::config::{CloseWindowTabs, NewWindowMode};
+        r.row_kw(
+            "New window opens",
+            "Ctrl+N: another window of this Soyuz (shares jobs and settings), or a separate process.",
+            "multi window process",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.workspace.new_window,
+                    &[(NewWindowMode::InProcess, "Window"), (NewWindowMode::Process, "Process")],
+                );
+            },
+        );
+        r.row_kw("Tear tabs off", "Drag a tab out of the strip to open it in its own window.", "detach drag", |ui| {
+            switch(ui, &mut d.workspace.tear_off);
+        });
+        r.row_kw("Tear-off distance", "How far a tab has to leave the strip first.", "drag", |ui| {
+            number(ui, &mut d.workspace.tear_off_distance, 16.0..=200.0, " px");
+        });
+        r.row_kw(
+            "Closing a window with tabs",
+            "Move its tabs to another window, close them, or ask each time.",
+            "merge close window",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.workspace.close_window_tabs,
+                    &[
+                        (CloseWindowTabs::Ask, "Ask"),
+                        (CloseWindowTabs::Merge, "Move tabs"),
+                        (CloseWindowTabs::Close, "Close tabs"),
+                    ],
+                );
+            },
+        );
+        r.row_kw("Restore windows", "Reopen the other windows, where they were, with the session.", "session", |ui| {
+            switch(ui, &mut d.workspace.restore_windows);
+        });
+        r.row_kw(
+            "Relative synchronized browsing",
+            "Synced panes follow sibling and multi-level moves, not only into a child folder or up.",
+            "sync navigation follow",
+            |ui| {
+                switch(ui, &mut d.workspace.sync_relative);
+            },
+        );
+        r.row_kw("History graph size", "Places remembered per tab for “Where was I?”.", "history graph", |ui| {
+            number(ui, &mut d.workspace.history_graph_limit, 20..=2000, "");
+        });
+        r.row_kw("Timeline range", "Days of changes the Timeline shows (at least this week).", "timeline", |ui| {
+            number(ui, &mut d.workspace.timeline_days, 1..=60, " days");
+        });
+        r.row_kw("Timeline folders", "Recently visited folders scanned for changed files.", "timeline scan", |ui| {
+            number(ui, &mut d.workspace.timeline_scan_folders, 0..=300, "");
+        });
+        r.row_kw("Timeline items", "The most files the Timeline lists.", "timeline limit", |ui| {
+            number(ui, &mut d.workspace.timeline_max_items, 50..=10_000, "");
+        });
+        r.row_kw(
+            "Timeline uses the search index",
+            "Also ask the search index, when one is available, for changed files.",
+            "timeline index",
+            |ui| {
+                switch(ui, &mut d.workspace.timeline_use_index);
+            },
+        );
+    });
     any |= group(ui, q, ctx, "Sidebar sections", |r| {
         r.block("", "Choose and order the sections of the sidebar.", |ui| {
             sidebar_sections(ui, &mut d.sidebar.sections);

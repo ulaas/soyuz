@@ -25,6 +25,8 @@ pub struct Config {
     pub appearance: Appearance,
     pub theme: ThemeSection,
     pub layout: Layout,
+    /// Windows, tab groups, saved workspaces, sync browsing, history graph, timeline (F7).
+    pub workspace: WorkspaceConfig,
     pub toolbar: Toolbar,
     pub context_menu: ContextMenu,
     pub sidebar: Sidebar,
@@ -228,6 +230,57 @@ pub struct Layout {
     pub tab_strip: TabStripMode,
     pub terminal_height: f32,
     pub activity_panel: ActivityPlacement,
+}
+
+/// What "New window" (Ctrl+N) opens.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum NewWindowMode {
+    /// Another window of this Soyuz (shares jobs, services and settings).
+    #[default]
+    InProcess,
+    /// A separate Soyuz process (`soyuz --new-window`).
+    Process,
+}
+
+/// Closing a window that still has tabs.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseWindowTabs {
+    /// Ask whether to move the tabs to another window or close them.
+    #[default]
+    Ask,
+    /// Move them to another window.
+    Merge,
+    /// Close them.
+    Close,
+}
+
+/// `[workspace]`: windows, tab groups, saved workspaces, synchronized browsing, the
+/// per-tab history graph and the timeline (roadmap F7).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorkspaceConfig {
+    pub new_window: NewWindowMode,
+    /// Drag a tab out of the tab strip to open it in its own window.
+    pub tear_off: bool,
+    /// How far (points) a tab has to be dragged away from the strip to tear off.
+    pub tear_off_distance: f32,
+    pub close_window_tabs: CloseWindowTabs,
+    /// Reopen the other windows (with their positions) when the session is restored.
+    pub restore_windows: bool,
+    /// Synchronized browsing follows any relative move (sibling folders, several levels),
+    /// not only "into a child" / "up one level".
+    pub sync_relative: bool,
+    /// Places remembered per tab in the "where was I" history graph.
+    pub history_graph_limit: usize,
+    /// The timeline covers this many days (today, yesterday, this week, …).
+    pub timeline_days: u32,
+    /// Recently visited folders scanned (one level) for changed files.
+    pub timeline_scan_folders: usize,
+    pub timeline_max_items: usize,
+    /// Ask the search index (when one is available) for changed files too.
+    pub timeline_use_index: bool,
 }
 
 /// Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`,

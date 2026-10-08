@@ -516,7 +516,7 @@ fn answer(app: &mut SoyuzApp, call: UiCall) -> Result<Value, ToolError> {
                             .panes
                             .iter()
                             .enumerate()
-                            .take(if t.dual { 2 } else { 1 })
+                            .take(t.shown())
                             .map(|(j, p)| {
                                 let visible = crate::services::jobs::location_dir(&p.location)
                                     .is_none_or(|d| scope.check_read(&d).is_ok());

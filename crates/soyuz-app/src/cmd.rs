@@ -103,8 +103,11 @@ pub enum Cmd {
     },
     /// Open the "Open with" chooser for a file.
     ChooseOpenWith(PathBuf),
-    /// Open a path in a new Soyuz window (a new process; see `ops::new_window`).
+    /// Open a path in a new Soyuz window (in-process or a new process, see
+    /// `[workspace] new_window` and `ops::window`).
     NewWindow(Location),
+    /// Tab groups, saved workspaces, layouts, windows, history graph: `ui::workspaces`.
+    Workspace(crate::ui::workspaces::WsCmd),
     /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
     Ai(crate::ai::AiCmd),
 }

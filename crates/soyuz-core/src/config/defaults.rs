@@ -18,6 +18,7 @@ impl Default for Config {
             appearance: Appearance::default(),
             theme: ThemeSection::default(),
             layout: Layout::default(),
+            workspace: WorkspaceConfig::default(),
             toolbar: Toolbar::default(),
             context_menu: ContextMenu::default(),
             sidebar: Sidebar::default(),
@@ -103,6 +104,24 @@ impl Default for Layout {
             tab_strip: TabStripMode::Always,
             terminal_height: 260.0,
             activity_panel: ActivityPlacement::Right,
+        }
+    }
+}
+
+impl Default for WorkspaceConfig {
+    fn default() -> Self {
+        WorkspaceConfig {
+            new_window: NewWindowMode::InProcess,
+            tear_off: true,
+            tear_off_distance: 48.0,
+            close_window_tabs: CloseWindowTabs::Ask,
+            restore_windows: true,
+            sync_relative: true,
+            history_graph_limit: 200,
+            timeline_days: 7,
+            timeline_scan_folders: 40,
+            timeline_max_items: 1000,
+            timeline_use_index: true,
         }
     }
 }
@@ -339,6 +358,8 @@ fn common(km: &mut Keymap) {
         b(G, A::SelectTab(i as u8 + 1), CTRL, *k);
     }
     b(G, A::NewWindow, CTRL, KeyName::N);
+    b(G, A::Workspaces, CTRL_ALT, KeyName::W);
+    b(G, A::ToggleQuadPane, SHIFT, KeyName::F9);
     b(G, A::ToggleTerminal, CTRL, KeyName::Backtick);
     b(G, A::FocusAddressBar, CTRL, KeyName::L);
     b(G, A::Back, ALT, KeyName::ArrowLeft);

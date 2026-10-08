@@ -16,7 +16,7 @@ use crate::cmd::Cmd;
 use crate::keys;
 use crate::services::Services;
 use crate::state::pane::Pane;
-use crate::state::session::{FavoriteEntry, PaneSession, Session, TabSession};
+use crate::state::session::{FavoriteEntry, Session};
 use crate::state::view_memory::{ViewMemory, ViewState};
 use crate::state::workspace::{Tab, Workspace};
 use crate::theme;
@@ -114,6 +114,8 @@ pub struct SoyuzApp {
     pub editors: crate::editors::Editors,
     /// The in-app assistant (AI panel, agent tasks, highlights; roadmap A5–A7).
     pub ai: crate::ai::AiState,
+    /// Saved workspaces, the other windows of this process, group editing (F7).
+    pub workspaces: crate::ui::workspaces::WorkspacesState,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -266,8 +268,15 @@ impl SoyuzApp {
             quit: QuitState::default(),
             editors: Default::default(),
             ai: crate::ai::AiState::new(ctx),
+            workspaces: crate::ui::workspaces::WorkspacesState::load(),
         };
+        crate::ui::workspaces::bind_hotkeys(&mut app);
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
+        if let Some(s) = &session
+            && app.config.workspace.restore_windows
+        {
+            app.workspaces.restore = s.windows.clone();
+        }
         if let Some(s) = &session {
             crate::editors::restore(&mut app, ctx, &s.editors);
         }
@@ -304,64 +313,30 @@ impl SoyuzApp {
     }
 
     fn restore_tabs(&mut self, s: &Session) -> bool {
-        let mut tabs = Vec::new();
-        for ts in &s.tabs {
-            let mut panes = Vec::new();
-            for ps in &ts.panes {
-                let Some(loc) = Location::parse(&ps.location) else { continue };
-                let mut pane = Pane::new(loc.clone(), self.view_for(&loc));
-                pane.pending_cursor = ps.cursor.clone();
-                pane.pending_selection = ps.selection.clone();
-                pane.restore_scroll = (ps.scroll > 0.0).then_some(ps.scroll);
-                panes.push(pane);
+        let win = crate::state::session::WindowSession {
+            active_tab: s.active_tab,
+            tabs: s.tabs.clone(),
+            groups: s.groups.clone(),
+            ..Default::default()
+        };
+        // Tabs (up to four panes each, pinned first), groups and layouts.
+        match crate::ui::workspaces::build_workspace(self, &win, false) {
+            Some(ws) => {
+                self.ws = ws;
+                true
             }
-            if panes.is_empty() {
-                continue;
-            }
-            let mut tab = Tab::new(panes.remove(0));
-            tab.panes.extend(panes.into_iter().take(1));
-            tab.dual = ts.dual && tab.panes.len() > 1;
-            tab.focused = ts.focused.min(tab.panes.len() - 1);
-            tab.orientation = ts.orientation;
-            tab.split = ts.split.clamp(0.15, 0.85);
-            tab.pinned = ts.pinned;
-            tab.sync_nav = ts.sync_nav;
-            tabs.push(tab);
+            None => false,
         }
-        if tabs.is_empty() {
-            return false;
-        }
-        // Pinned tabs first.
-        tabs.sort_by_key(|t| !t.pinned);
-        self.ws.tabs = tabs;
-        self.ws.active = s.active_tab.min(self.ws.tabs.len() - 1);
-        true
     }
 
     /// Snapshot of the current session.
     pub fn session(&self) -> Session {
-        let tabs = self
-            .ws
-            .tabs
-            .iter()
-            .map(|t| TabSession {
-                pinned: t.pinned,
-                dual: t.dual,
-                orientation: t.orientation,
-                split: t.split,
-                focused: t.focused,
-                sync_nav: t.sync_nav,
-                panes: t
-                    .panes
-                    .iter()
-                    .filter(|p| !matches!(p.location, Location::Search(_)))
-                    .map(pane_session)
-                    .collect(),
-            })
-            .collect();
+        let main = crate::ui::workspaces::window_session(&self.ws, false);
         Session {
-            active_tab: self.ws.active,
-            tabs,
+            active_tab: main.active_tab,
+            tabs: main.tabs,
+            groups: main.groups,
+            windows: crate::ui::workspaces::windows::session_windows(self),
             favorites: self.ui.sidebar.favorites_customized.then(|| self.ui.sidebar.favorites.clone()),
             show_hidden: Some(self.ui.show_hidden),
             theme: Some(theme_name(self.ui.theme).to_string()),
@@ -409,7 +384,7 @@ impl SoyuzApp {
         }
     }
 
-    fn handle_input(&mut self, ctx: &egui::Context) {
+    pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
         if self.ui.dialogs.is_open() || crate::palette::owns_keyboard(self) {
             return; // the modal owns the keyboard
         }
@@ -526,6 +501,10 @@ impl SoyuzApp {
     /// cancels the jobs). Runs in `logic`, so it also works while the window is minimized.
     fn handle_close_request(&mut self, ctx: &egui::Context) {
         use std::sync::atomic::Ordering;
+        // Other windows open: closing the main window closes just this window.
+        if crate::ui::workspaces::windows::intercept_main_close(self, ctx) {
+            return;
+        }
         if crate::editors::intercept_close(self, ctx) {
             return;
         }
@@ -569,17 +548,6 @@ impl SoyuzApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(t.clone()));
             self.ui.title = t;
         }
-    }
-}
-
-fn pane_session(p: &Pane) -> PaneSession {
-    let mut selection: Vec<String> = p.selection.iter().map(|k| k.to_string()).collect();
-    selection.truncate(500);
-    PaneSession {
-        location: p.location.display(),
-        cursor: p.cursor.as_deref().map(str::to_string).or_else(|| p.pending_cursor.clone()),
-        selection,
-        scroll: p.scroll_y,
     }
 }
 
@@ -630,6 +598,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::services::thumbs::set_budget_bytes(c.preview.thumb_cache_mib.saturating_mul(1024 * 1024));
     crate::ui::looks::apply_settings(c);
     crate::services::preview_cache::set_budget_bytes(c.preview.preview_cache_mib.saturating_mul(1024 * 1024));
+    crate::services::timeline::set_options(crate::services::timeline::TimelineOpts::from_config(c));
 }
 
 /// The location (and entry to put the cursor on) for a command-line path: a folder
@@ -673,6 +642,7 @@ impl eframe::App for SoyuzApp {
         let ctx = ui.ctx().clone();
         crate::devscript::begin(self);
         crate::devscript::inject(self, &ctx);
+        crate::ui::workspaces::windows::begin_main_frame(self, &ctx);
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);
@@ -692,13 +662,22 @@ impl eframe::App for SoyuzApp {
         crate::ui::titlebar::sync(&ctx, self);
         crate::ui::native_chrome::sync_theme(&ctx);
         shell::show(ui, self);
-        crate::palette::show(&ctx, self);
-        crate::ui::settings::show(&ctx, self);
+        // Overlays live in the focused window (the main one unless another has focus).
+        let overlays = crate::ui::workspaces::overlays_here(self);
+        if overlays {
+            crate::palette::show(&ctx, self);
+            crate::ui::settings::show(&ctx, self);
+        }
         crate::ui::titlebar::frame(&ctx, self);
-        ops::fileops::end_frame(self, &ctx);
+        if overlays {
+            ops::fileops::end_frame(self, &ctx);
+        }
         crate::devscript::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
+        // The other in-process windows (F7), drawn as immediate viewports.
+        crate::ui::workspaces::windows::show(self, &ctx);
+
         // Cheap periodic check: persist when the session text changed (every ~30 s,
         // plus eframe's own `save` on exit).
         if self.last_session_check.elapsed() > Duration::from_secs(30) {

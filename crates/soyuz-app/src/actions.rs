@@ -19,6 +19,10 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         crate::ai::execute_action(app, action, ctx);
         return;
     }
+    // Tab groups, workspaces, quad layout, windows, history graph, timeline (F7).
+    if crate::ui::workspaces::action(app, &action, ctx) {
+        return;
+    }
     let pane_id = app.ws.pane().id;
     match action {
         // ---- navigation ----
@@ -60,9 +64,8 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::FocusOtherPane => {
             let tab = app.ws.tab_mut();
-            if tab.dual {
-                tab.focused = 1 - tab.focused.min(1);
-            }
+            // Dual: the other pane; quad: the next one clockwise in reading order.
+            tab.focused = tab.next_visible();
             app.ui.focus = Focus::List;
         }
         A::NextTab => {
@@ -109,7 +112,8 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::ToggleDualPane => {
             if app.ws.tab().dual {
-                app.ws.tab_mut().dual = false;
+                let tab = app.ws.tab_mut();
+                tab.set_layout(crate::state::workspace::PaneLayout::Single);
             } else {
                 ops::ensure_dual(app);
             }
@@ -140,7 +144,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             app.cmds.push(Cmd::NewWindow(loc));
         }
         A::TabToNewWindow => ops::window::tab_to_new_window(app),
-        // Every window is its own process: closing it is quitting (with the job check).
+        // Closes this window (the main window hands over to another one, if any).
         A::CloseWindow => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         A::SyncNavigation => {
             let tab = app.ws.tab_mut();
@@ -374,7 +378,12 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
 
         // ---- tools ----
-        A::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        A::Quit => {
+            // Every window: close the root viewport for real (with the job check).
+            app.workspaces.quitting = true;
+            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+        }
+
         A::About => app.ui.dialogs.push(AboutDialog::new(app.renderer)),
         A::Welcome => app.ui.welcome = true,
         A::UiZoomIn | A::UiZoomOut | A::UiZoomReset => {
