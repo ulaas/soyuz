@@ -1,9 +1,18 @@
-//! UI building blocks. M0 ships the shell (sidebar / toolbar / content / status bar);
-//! later milestones add `tabstrip`, `breadcrumb`, `views/*`, `panels/*`, `dialogs/*`.
+//! UI building blocks: shell layout, tab strip, toolbar + omnibar, sidebar, status bar,
+//! pane cards and views, menus, toasts, and the extension points for dialogs
+//! (`dialogs`) and the bottom terminal / activity panel (`panels`).
 
+pub mod breadcrumb;
+pub mod context_menu;
+pub mod dialogs;
 pub mod empty_state;
+pub mod pane_view;
+pub mod panels;
 pub mod shell;
 pub mod sidebar;
 pub mod statusbar;
+pub mod tabstrip;
+pub mod toasts;
 pub mod toolbar;
+pub mod views;
 pub mod widgets;

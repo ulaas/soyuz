@@ -1,48 +1,170 @@
-//! Bottom status bar: item counts, theme switcher, renderer and version.
+//! Bottom status bar: item / selection counts, free space, view-mode switcher, zoom
+//! slider and theme switcher. Describes the focused pane.
 
-use egui::{Align, Frame, Layout, Margin, Panel, RichText, TextStyle, ThemePreference, Ui};
+use egui::{
+    Align, Align2, CornerRadius, FontId, Frame, Layout, Margin, Panel, Rect, RichText, Sense, ThemePreference, Ui, vec2,
+};
+use soyuz_core::config::Action;
+use soyuz_core::{SizeStyle, ViewMode, format_size};
 
+use crate::cmd::Cmd;
+use crate::state::pane::PaneId;
 use crate::theme::tokens::size;
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::widgets::{mini_slider, segmented, spinner, usage_bar};
 
-pub fn show(root: &mut Ui, left_text: &str, renderer: &str) {
+pub struct StatusInfo {
+    pub pane: PaneId,
+    pub visible: usize,
+    pub total: usize,
+    pub selected: usize,
+    pub selected_bytes: u64,
+    pub loading: bool,
+    pub filtered: bool,
+    /// Entries hidden by the hidden-files setting.
+    pub hidden: usize,
+    pub free: Option<(u64, u64)>,
+    pub mode: ViewMode,
+    pub zoom: u16,
+    pub theme: ThemePreference,
+    pub size_style: SizeStyle,
+}
+
+fn plural(n: usize, one: &str, many: &str) -> String {
+    format!("{} {}", group_thousands(n), if n == 1 { one } else { many })
+}
+
+/// `12345` → `12,345`.
+pub fn group_thousands(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
+const MODES: [(ViewMode, &str, &str, Action); 4] = [
+    (ViewMode::Details, ph::LIST, "Details", Action::ViewDetails),
+    (ViewMode::List, ph::LIST_DASHES, "List", Action::ViewList),
+    (ViewMode::Grid, ph::SQUARES_FOUR, "Icons", Action::ViewGrid),
+    (ViewMode::Miller, ph::COLUMNS, "Columns", Action::ViewMiller),
+];
+
+pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mut Option<u16>) {
     let p = palette(root.ctx());
     Panel::bottom("soyuz.statusbar")
-        .exact_size(size::STATUS_BAR)
-        .frame(Frame::new().fill(p.bg_surface1).inner_margin(Margin::symmetric(12, 0)))
+        .exact_size(size::STATUS_BAR + 4.0)
+        .show_separator_line(false)
+        .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 14, right: 10, top: 0, bottom: 2 }))
         .show(root, |ui| {
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                let small = |s: &str| RichText::new(s).text_style(TextStyle::Small).color(p.text_secondary);
-                ui.label(small(left_text));
+                ui.spacing_mut().item_spacing.x = 8.0;
+                let small = |s: &str| RichText::new(s).font(FontId::proportional(11.5)).color(p.text_secondary);
+                if info.loading {
+                    let (r, _) = ui.allocate_exact_size(vec2(12.0, 12.0), Sense::hover());
+                    spinner(ui, r.center(), 5.0, p.accent);
+                }
+                let items = if info.filtered {
+                    format!("{} of {}", group_thousands(info.visible), plural(info.total, "item", "items"))
+                } else {
+                    plural(info.visible, "item", "items")
+                };
+                ui.label(small(&items));
+                if info.hidden > 0 {
+                    ui.label(
+                        RichText::new(format!("· {} hidden", group_thousands(info.hidden)))
+                            .font(FontId::proportional(11.5))
+                            .color(p.text_tertiary),
+                    );
+                }
+                if info.selected > 0 {
+                    ui.label(RichText::new("·").color(p.text_tertiary));
+                    let mut s = format!("{} selected", group_thousands(info.selected));
+                    if info.selected_bytes > 0 {
+                        s.push_str(&format!("  ({})", format_size(info.selected_bytes, info.size_style)));
+                    }
+                    ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.accent));
+                }
+
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.label(small(&format!("Soyuz {}", env!("CARGO_PKG_VERSION"))));
-                    ui.label(RichText::new("\u{00B7}").color(p.text_tertiary));
-                    ui.label(small(renderer));
-                    ui.label(RichText::new("\u{00B7}").color(p.text_tertiary));
-                    theme_switch(ui);
+                    ui.spacing_mut().item_spacing.x = 10.0;
+                    theme_switch(ui, info.theme, cmds);
+                    let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
+                        ViewMode::Gallery => 2,
+                        _ => 0,
+                    });
+                    let items: Vec<(&str, &str)> = MODES.iter().map(|m| (m.1, m.2)).collect();
+                    if let Some(i) = segmented(ui, &items, current, vec2(26.0, 18.0)) {
+                        cmds.push(Cmd::PaneAction(info.pane, MODES[i].3.clone()));
+                    }
+                    if matches!(info.mode, ViewMode::Grid | ViewMode::Gallery) {
+                        let mut z = info.zoom as f32;
+                        let r = mini_slider(ui, &mut z, 16.0..=256.0, 96.0)
+                            .on_hover_text(format!("Icon size {}", info.zoom));
+                        if r.changed() || r.dragged() || r.clicked() {
+                            *zoom_out = Some(z.round() as u16);
+                        }
+                        ui.label(icons::icon(ph::MAGNIFYING_GLASS_PLUS, 12.0).color(p.text_tertiary));
+                    }
+                    if let Some((total, free)) = info.free
+                        && total > 0
+                    {
+                        let used = 1.0 - free as f32 / total as f32;
+                        let (r, _) = ui.allocate_exact_size(vec2(56.0, 14.0), Sense::hover());
+                        let bar = Rect::from_center_size(r.center(), vec2(56.0, 4.0));
+                        usage_bar(ui, &p, bar, used);
+                        ui.label(small(&format!("{} free", format_size(free, SizeStyle::Decimal)))).on_hover_text(
+                            format!(
+                                "{} free of {}",
+                                format_size(free, SizeStyle::Decimal),
+                                format_size(total, SizeStyle::Decimal)
+                            ),
+                        );
+                    }
                 });
             });
         });
 }
 
-/// Three tiny toggles: system / light / dark.
-fn theme_switch(ui: &mut Ui) {
+/// System / light / dark switch.
+fn theme_switch(ui: &mut Ui, current: ThemePreference, cmds: &mut Vec<Cmd>) {
     let p = palette(ui.ctx());
-    let current = ui.ctx().options(|o| o.theme_preference);
-    ui.spacing_mut().item_spacing.x = 0.0;
-    for (pref, glyph, tip) in [
-        (ThemePreference::Dark, ph::MOON, "Dark theme"),
-        (ThemePreference::Light, ph::SUN, "Light theme"),
+    let items = [
         (ThemePreference::System, ph::CIRCLE_HALF, "Follow system theme"),
-    ] {
-        let active = current == pref;
-        let color = if active { p.accent } else { p.text_tertiary };
-        let b = egui::Button::new(icons::icon(glyph, 12.0).color(color))
-            .frame_when_inactive(false)
-            .min_size(egui::vec2(20.0, 18.0));
-        if ui.add(b).on_hover_text(tip).clicked() {
-            ui.ctx().set_theme(pref);
+        (ThemePreference::Light, ph::SUN, "Light theme"),
+        (ThemePreference::Dark, ph::MOON, "Dark theme"),
+    ];
+    // Right-to-left layout: allocate in reverse so the visual order is system, light, dark.
+    for (pref, glyph, tip) in items.iter().rev() {
+        let (r, resp) = ui.allocate_exact_size(vec2(20.0, 18.0), Sense::click());
+        let active = current == *pref;
+        if active {
+            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
+        } else if resp.hovered() {
+            ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2.gamma_multiply(0.6));
         }
+        let color = if active { p.accent } else { p.text_tertiary };
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, icons::font(12.0), color);
+        if resp.on_hover_text(*tip).clicked() {
+            cmds.push(Cmd::SetTheme(*pref));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn thousands() {
+        assert_eq!(group_thousands(0), "0");
+        assert_eq!(group_thousands(999), "999");
+        assert_eq!(group_thousands(1000), "1,000");
+        assert_eq!(group_thousands(1234567), "1,234,567");
+        assert_eq!(plural(1, "item", "items"), "1 item");
     }
 }

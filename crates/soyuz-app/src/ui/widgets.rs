@@ -1,8 +1,13 @@
 //! Small reusable widgets that follow the design tokens: nav rows, icon buttons,
-//! section headers, keyboard badges, the focus ring and usage bars.
+//! section headers, keyboard badges, the focus ring, usage bars, menu items, segmented
+//! controls, a compact slider, spinners and truncated text.
 
+use std::sync::Arc;
+
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Rect, Response, RichText, Sense, Stroke, StrokeKind, TextStyle, Ui, vec2,
+    Align2, Color32, CornerRadius, FontId, Galley, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, StrokeKind,
+    TextStyle, Ui, pos2, vec2,
 };
 
 use crate::theme::apply::CAPTION;
@@ -38,7 +43,41 @@ pub fn section_header(ui: &mut Ui, text: &str) {
     ui.add_space(space::XS);
 }
 
-/// One sidebar navigation row: icon + label, hover / active fills, optional usage bar.
+/// Collapsible section caption with a chevron that appears on hover. Returns the
+/// header response (click toggles `open`).
+pub fn collapsible_header(ui: &mut Ui, text: &str, open: &mut bool) -> Response {
+    let p = palette(ui.ctx());
+    ui.add_space(space::MD);
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
+    if resp.clicked() {
+        *open = !*open;
+    }
+    if ui.is_rect_visible(rect) {
+        let hovered = resp.hovered();
+        let color = if hovered { p.text_secondary } else { p.text_tertiary };
+        ui.painter().text(
+            pos2(rect.left() + 10.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            text.to_uppercase(),
+            FontId::proportional(11.0),
+            color,
+        );
+        let t = ui.ctx().animate_bool(resp.id.with("open"), *open);
+        let alpha = if hovered { 1.0 } else { 0.0 };
+        let a = ui.ctx().animate_value_with_time(resp.id.with("hover"), alpha, 0.12);
+        if a > 0.01 {
+            let glyph = icons::ph::CARET_RIGHT;
+            let c = pos2(rect.right() - 12.0, rect.center().y);
+            // Rotate by swapping glyphs at the halfway point (cheap and crisp).
+            let g = if t > 0.5 { icons::ph::CARET_DOWN } else { glyph };
+            ui.painter().text(c, Align2::CENTER_CENTER, g, icons::font(11.0), p.text_tertiary.gamma_multiply(a));
+        }
+    }
+    resp
+}
+
+/// One sidebar navigation row: icon + label, hover / active fills, optional usage bar
+/// and right-aligned trailing text.
 pub struct NavRow<'a> {
     pub icon: &'a str,
     pub label: &'a str,
@@ -51,35 +90,28 @@ pub struct NavRow<'a> {
 impl NavRow<'_> {
     pub fn show(self, ui: &mut Ui) -> Response {
         let p = palette(ui.ctx());
-        let height = if self.usage.is_some() { size::ROW_COZY + 6.0 } else { size::ROW_COZY };
-        let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+        let height = if self.usage.is_some() { size::ROW_COZY + 8.0 } else { size::ROW_COZY };
+        let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click_and_drag());
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect.expand(3.0));
             let rounding = CornerRadius::same(radius::ROW);
+            let hover = ui.ctx().animate_bool_with_time(response.id.with("hover"), response.hovered(), 0.10);
             if self.active {
                 painter.rect_filled(rect, rounding, p.accent_subtle);
-            } else if response.hovered() {
-                painter.rect_filled(rect, rounding, p.bg_surface2);
+            } else if hover > 0.0 {
+                painter.rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
             }
             let icon_font = if self.active { icons::font_fill(size::ICON) } else { icons::font(size::ICON) };
             let icon_color = if self.active { p.accent } else { self.icon_color.unwrap_or(p.text_secondary) };
-            let text_y = if self.usage.is_some() { rect.top() + size::ROW_COZY / 2.0 - 1.0 } else { rect.center().y };
-            painter.text(egui::pos2(rect.left() + 10.0, text_y), Align2::LEFT_CENTER, self.icon, icon_font, icon_color);
-            let label_color = if self.active { p.text_primary } else { p.text_primary.gamma_multiply(0.92) };
-            let text_rect = Rect::from_min_max(
-                egui::pos2(rect.left() + 34.0, rect.top()),
-                egui::pos2(rect.right() - 8.0, rect.bottom()),
-            );
-            ui.painter_at(text_rect).text(
-                egui::pos2(text_rect.left(), text_y),
-                Align2::LEFT_CENTER,
-                self.label,
-                FontId::proportional(13.0),
-                label_color,
-            );
+            let text_y = if self.usage.is_some() { rect.top() + size::ROW_COZY / 2.0 } else { rect.center().y };
+            painter.text(pos2(rect.left() + 10.0, text_y), Align2::LEFT_CENTER, self.icon, icon_font, icon_color);
+            let label_color = if self.active { p.text_primary } else { p.text_primary.gamma_multiply(0.9) };
+            let max_w = rect.width() - 34.0 - 8.0;
+            let galley = trunc_galley(&painter, self.label, FontId::proportional(13.0), label_color, max_w);
+            painter.galley(pos2(rect.left() + 34.0, text_y - galley.size().y / 2.0), galley, label_color);
             if let Some(used) = self.usage {
                 let bar = Rect::from_min_size(
-                    egui::pos2(rect.left() + 34.0, rect.bottom() - 8.0),
+                    pos2(rect.left() + 34.0, rect.bottom() - 9.0),
                     vec2((rect.width() - 46.0).max(10.0), 3.0),
                 );
                 usage_bar(ui, &p, bar, used);
@@ -106,23 +138,45 @@ pub fn usage_bar(ui: &Ui, p: &Palette, rect: Rect, used: f32) {
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(2), p.border_subtle);
     let mut fill = rect;
-    fill.set_width(rect.width() * used);
+    fill.set_width((rect.width() * used).max(2.0));
     painter.rect_filled(fill, CornerRadius::same(2), color);
 }
 
-/// Frameless square icon button (frame appears on hover).
+/// Frameless square icon button (fill appears on hover).
 pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool) -> Response {
+    icon_toggle(ui, glyph, tooltip, enabled, false)
+}
+
+/// Icon button with an "on" state (accent glyph on a subtle accent fill).
+pub fn icon_toggle(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: bool) -> Response {
     let p = palette(ui.ctx());
-    let color = if enabled { p.text_secondary } else { p.text_tertiary.gamma_multiply(0.7) };
-    let button = egui::Button::new(icons::icon(glyph, size::ICON_TOOLBAR - 2.0).color(color))
-        .frame_when_inactive(false)
-        .min_size(vec2(30.0, 30.0))
-        .corner_radius(CornerRadius::same(radius::ROW));
-    let r = ui.add_enabled(enabled, button);
-    if r.has_focus() {
-        focus_ring(ui, r.rect);
+    let (rect, resp) = ui.allocate_exact_size(vec2(30.0, 30.0), if enabled { Sense::click() } else { Sense::hover() });
+    if ui.is_rect_visible(rect) {
+        let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), enabled && resp.hovered(), 0.10);
+        let rounding = CornerRadius::same(radius::ROW);
+        if on {
+            ui.painter().rect_filled(rect, rounding, p.accent_subtle);
+        } else if hover > 0.0 {
+            ui.painter().rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
+        }
+        if resp.is_pointer_button_down_on() && enabled {
+            ui.painter().rect_filled(rect, rounding, p.bg_surface3.gamma_multiply(0.6));
+        }
+        let color = if !enabled {
+            p.text_tertiary.gamma_multiply(0.6)
+        } else if on {
+            p.accent
+        } else if hover > 0.5 {
+            p.text_primary
+        } else {
+            p.text_secondary
+        };
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, glyph, icons::font(size::ICON_TOOLBAR - 2.0), color);
+        if resp.has_focus() {
+            focus_ring(ui, rect);
+        }
     }
-    r.on_hover_text(tooltip).on_disabled_hover_text(tooltip)
+    if tooltip.is_empty() { resp } else { resp.on_hover_text(tooltip) }
 }
 
 /// Keyboard shortcut badge (`Ctrl+Shift+P`).
@@ -144,4 +198,224 @@ pub fn vdivider(ui: &mut Ui, height: f32) {
     let p = palette(ui.ctx());
     let (rect, _) = ui.allocate_exact_size(vec2(9.0, height), Sense::hover());
     ui.painter().line_segment([rect.center_top(), rect.center_bottom()], Stroke::new(1.0, p.border_subtle));
+}
+
+/// Single-line galley truncated with an ellipsis at `max_w`.
+pub fn trunc_galley(painter: &Painter, text: &str, font: FontId, color: Color32, max_w: f32) -> Arc<Galley> {
+    let mut job = LayoutJob::simple_singleline(text.to_string(), font, color);
+    job.wrap = TextWrapping::truncate_at_width(max_w.max(8.0));
+    painter.layout_job(job)
+}
+
+/// Text wrapped to at most `rows` lines (grid captions), centered: paint it at the
+/// horizontal *center* of the target area (the galley is anchored at its middle).
+pub fn wrapped_galley(
+    painter: &Painter,
+    text: &str,
+    font: FontId,
+    color: Color32,
+    max_w: f32,
+    rows: usize,
+) -> Arc<Galley> {
+    let mut job = LayoutJob::simple(text.to_string(), font, color, max_w.max(8.0));
+    job.wrap = TextWrapping { max_width: max_w.max(8.0), max_rows: rows, break_anywhere: false, ..Default::default() };
+    job.halign = egui::Align::Center;
+    painter.layout_job(job)
+}
+
+/// A menu row: optional icon, label, right-aligned shortcut. Hover fill, disabled state.
+pub fn menu_item(ui: &mut Ui, icon: Option<&str>, label: &str, shortcut: Option<&str>, enabled: bool) -> Response {
+    let p = palette(ui.ctx());
+    let width = ui.available_width().clamp(160.0, 420.0);
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 28.0), if enabled { Sense::click() } else { Sense::hover() });
+    if ui.is_rect_visible(rect) {
+        let hovered = enabled && resp.hovered();
+        if hovered {
+            ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);
+        }
+        let fg = if enabled { p.text_primary } else { p.text_tertiary };
+        let icon_color = if !enabled {
+            p.text_tertiary
+        } else if hovered {
+            p.accent
+        } else {
+            p.text_secondary
+        };
+        if let Some(g) = icon {
+            ui.painter().text(
+                pos2(rect.left() + 10.0, rect.center().y),
+                Align2::LEFT_CENTER,
+                g,
+                icons::font(15.0),
+                icon_color,
+            );
+        }
+        ui.painter().text(
+            pos2(rect.left() + 34.0, rect.center().y),
+            Align2::LEFT_CENTER,
+            label,
+            FontId::proportional(13.0),
+            fg,
+        );
+        if let Some(s) = shortcut {
+            ui.painter().text(
+                pos2(rect.right() - 10.0, rect.center().y),
+                Align2::RIGHT_CENTER,
+                s,
+                FontId::proportional(11.5),
+                p.text_tertiary,
+            );
+        }
+    }
+    resp
+}
+
+/// A menu row that opens a submenu (caret on the right).
+pub fn submenu<R>(ui: &mut Ui, icon: Option<&str>, label: &str, content: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let p = palette(ui.ctx());
+    let resp = menu_item(ui, icon, label, None, true);
+    ui.painter().text(
+        pos2(resp.rect.right() - 10.0, resp.rect.center().y),
+        Align2::RIGHT_CENTER,
+        icons::ph::CARET_RIGHT,
+        icons::font(11.0),
+        p.text_tertiary,
+    );
+    egui::containers::menu::SubMenu::new().show(ui, &resp, content).map(|r| r.inner)
+}
+
+/// Menu row with a check mark (when `checked`) in the icon slot.
+pub fn menu_check(ui: &mut Ui, checked: bool, label: &str, shortcut: Option<&str>) -> Response {
+    menu_item(ui, Some(if checked { icons::ph::CHECK } else { "" }), label, shortcut, true)
+}
+
+/// Thin separator line inside a menu.
+pub fn menu_separator(ui: &mut Ui) {
+    let p = palette(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+    ui.painter().line_segment(
+        [pos2(rect.left() + 6.0, rect.center().y), pos2(rect.right() - 6.0, rect.center().y)],
+        Stroke::new(1.0, p.border_subtle),
+    );
+}
+
+/// Small caption inside a menu ("SORT BY").
+pub fn menu_caption(ui: &mut Ui, text: &str) {
+    let p = palette(ui.ctx());
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
+    ui.painter().text(
+        pos2(rect.left() + 10.0, rect.center().y + 2.0),
+        Align2::LEFT_CENTER,
+        text.to_uppercase(),
+        FontId::proportional(10.5),
+        p.text_tertiary,
+    );
+}
+
+/// Segmented control of icon buttons; returns the clicked index.
+pub fn segmented(ui: &mut Ui, items: &[(&str, &str)], selected: usize, cell: egui::Vec2) -> Option<usize> {
+    let p = palette(ui.ctx());
+    let total = vec2(cell.x * items.len() as f32 + 4.0, cell.y + 4.0);
+    let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
+    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.bg_surface2);
+    let mut clicked = None;
+    // Animated selection thumb.
+    let target = selected as f32;
+    let id = ui.id().with(("segmented", rect.min.x as i32, rect.min.y as i32));
+    let pos = ui.ctx().animate_value_with_time(id, target, 0.14);
+    let thumb = Rect::from_min_size(pos2(rect.left() + 2.0 + pos * cell.x, rect.top() + 2.0), cell);
+    ui.painter().rect_filled(thumb, CornerRadius::same(radius::CONTROL + 1), p.bg_surface1);
+    ui.painter().rect_stroke(
+        thumb,
+        CornerRadius::same(radius::CONTROL + 1),
+        Stroke::new(1.0, p.border_subtle),
+        StrokeKind::Inside,
+    );
+    for (i, (glyph, tip)) in items.iter().enumerate() {
+        let r = Rect::from_min_size(pos2(rect.left() + 2.0 + i as f32 * cell.x, rect.top() + 2.0), cell);
+        let resp = ui.interact(r, id.with(i), Sense::click()).on_hover_text(*tip);
+        let color = if i == selected {
+            p.text_primary
+        } else if resp.hovered() {
+            p.text_secondary
+        } else {
+            p.text_tertiary
+        };
+        ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, icons::font(13.0), color);
+        if resp.clicked() {
+            clicked = Some(i);
+        }
+    }
+    clicked
+}
+
+/// Compact horizontal slider (track + knob). Returns the response; `value` is updated.
+pub fn mini_slider(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, width: f32) -> Response {
+    let p = palette(ui.ctx());
+    let (rect, resp) = ui.allocate_exact_size(vec2(width, 18.0), Sense::click_and_drag());
+    let (lo, hi) = (*range.start(), *range.end());
+    if (resp.dragged() || resp.clicked())
+        && let Some(pos) = resp.interact_pointer_pos()
+    {
+        let t = ((pos.x - rect.left() - 6.0) / (rect.width() - 12.0)).clamp(0.0, 1.0);
+        *value = lo + t * (hi - lo);
+    }
+    let t = ((*value - lo) / (hi - lo)).clamp(0.0, 1.0);
+    let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 12.0, 3.0));
+    ui.painter().rect_filled(track, CornerRadius::same(2), p.border_strong);
+    let mut filled = track;
+    filled.set_width(track.width() * t);
+    ui.painter().rect_filled(filled, CornerRadius::same(2), p.accent);
+    let knob = pos2(track.left() + track.width() * t, rect.center().y);
+    let hot = resp.hovered() || resp.dragged();
+    ui.painter().circle_filled(knob, if hot { 6.0 } else { 5.0 }, p.text_primary);
+    ui.painter().circle_stroke(knob, if hot { 6.0 } else { 5.0 }, Stroke::new(1.0, p.border_strong));
+    resp
+}
+
+/// Indeterminate spinner (rotating arc). Requests repaints while visible.
+pub fn spinner(ui: &Ui, center: Pos2, r: f32, color: Color32) {
+    let t = ui.input(|i| i.time) as f32;
+    let start = t * 6.0;
+    let n = 24;
+    let pts: Vec<Pos2> = (0..=n)
+        .map(|i| {
+            let a = start + (i as f32 / n as f32) * std::f32::consts::PI * 1.4;
+            pos2(center.x + r * a.cos(), center.y + r * a.sin())
+        })
+        .collect();
+    ui.painter().add(egui::Shape::line(pts, Stroke::new(2.0, color)));
+    ui.ctx().request_repaint();
+}
+
+/// A pill-shaped text button with optional icon (primary = accent filled).
+pub fn pill_button(ui: &mut Ui, icon: Option<&str>, label: &str, primary: bool) -> Response {
+    let p = palette(ui.ctx());
+    let font = FontId::proportional(12.5);
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::WHITE);
+    let icon_w = if icon.is_some() { 20.0 } else { 0.0 };
+    let size = vec2(galley.size().x + 24.0 + icon_w, 26.0);
+    let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    let hover = resp.hovered();
+    let (bg, fg) = if primary {
+        (if hover { p.accent_hover } else { p.accent }, Color32::WHITE)
+    } else {
+        (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary)
+    };
+    ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), bg);
+    if !primary {
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(radius::ROW),
+            Stroke::new(1.0, p.border_subtle),
+            StrokeKind::Inside,
+        );
+    }
+    let mut x = rect.left() + 12.0;
+    if let Some(g) = icon {
+        ui.painter().text(pos2(x, rect.center().y), Align2::LEFT_CENTER, g, icons::font(14.0), fg);
+        x += icon_w;
+    }
+    ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+    resp
 }
