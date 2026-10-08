@@ -1,0 +1,1437 @@
+[
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "List a folder: names, kinds, sizes and modification times.",
+    "dry_run": false,
+    "name": "list_dir",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "include_hidden": {
+          "default": false,
+          "description": "Include hidden files (default false).",
+          "type": "boolean"
+        },
+        "limit": {
+          "default": null,
+          "description": "Maximum entries to return (default 500, max 5000).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Absolute folder path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Metadata of one file or folder.",
+    "dry_run": false,
+    "name": "stat",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Find files by name pattern, extension, size, date or kind; optional text search inside files (needs content access).",
+    "dry_run": false,
+    "name": "search",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "default": null,
+          "description": "Text to find inside files (requires content access in this folder's AI scope).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content_regex": {
+          "default": false,
+          "description": "Treat `content` as a regular expression.",
+          "type": "boolean"
+        },
+        "extensions": {
+          "default": [],
+          "description": "File extensions without the dot.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "include_hidden": {
+          "default": false,
+          "type": "boolean"
+        },
+        "kind": {
+          "default": null,
+          "enum": [
+            "file",
+            "dir",
+            "any",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_depth": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_results": {
+          "default": null,
+          "description": "Maximum hits (default 200, max 2000).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "max_size": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "min_size": {
+          "default": null,
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "modified_after": {
+          "default": null,
+          "description": "RFC 3339 date-time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "modified_before": {
+          "default": null,
+          "description": "RFC 3339 date-time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "default": null,
+          "description": "Name pattern.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name_match": {
+          "default": "substring",
+          "oneOf": [
+            {
+              "enum": [
+                "glob",
+                "regex",
+                "fuzzy"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "substring",
+              "description": "Case-insensitive substring.",
+              "type": "string"
+            }
+          ]
+        },
+        "roots": {
+          "description": "Folders to search (absolute).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "roots"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Total size, file and folder counts of folders.",
+    "dry_run": false,
+    "name": "folder_size",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "description": "Absolute paths.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Groups of identical files (by content hash) under the given folders.",
+    "dry_run": false,
+    "name": "find_duplicates",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "min_size": {
+          "default": null,
+          "description": "Ignore files smaller than this many bytes (default 1).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "roots": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "roots"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Compare two folders: files only on one side, newer on one side, or different.",
+    "dry_run": false,
+    "name": "compare_dirs",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "by_content": {
+          "default": false,
+          "description": "Compare file contents, not just size and date.",
+          "type": "boolean"
+        },
+        "left": {
+          "type": "string"
+        },
+        "right": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": true,
+    "description": "Read a text file (size-capped, optional line range). Needs content access.",
+    "dry_run": false,
+    "name": "read_text",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "end_line": {
+          "default": null,
+          "description": "Last line, inclusive.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "start_line": {
+          "default": null,
+          "description": "First line, 1-based (default 1).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Checksum of a file (blake3, sha256, sha1, md5, crc32).",
+    "dry_run": false,
+    "name": "hash",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "algo": {
+          "default": "blake3",
+          "enum": [
+            "blake3",
+            "sha256",
+            "sha1",
+            "md5",
+            "crc32"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "List the entries of a zip / tar / 7z archive.",
+    "dry_run": false,
+    "name": "archive_list",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": null,
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Git branch and changed files of the repository containing a folder.",
+    "dry_run": false,
+    "name": "git_status",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "The files currently selected in the focused Soyuz pane.",
+    "dry_run": false,
+    "name": "get_selection",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "The folder shown in the focused Soyuz pane.",
+    "dry_run": false,
+    "name": "get_current_location",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Open Soyuz tabs and their folders.",
+    "dry_run": false,
+    "name": "list_tabs",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Items in the trash / Recycle Bin, with ids for restore_from_trash.",
+    "dry_run": false,
+    "name": "trash_list",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": null,
+          "description": "Maximum items (default 200).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
+    "description": "Recent file operations that can be undone, with history ids.",
+    "dry_run": false,
+    "name": "history_list",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "default": null,
+          "description": "Maximum items (default 200).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Copy files / folders into a folder (background job, undoable).",
+    "dry_run": true,
+    "name": "copy",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict": {
+          "default": "ask",
+          "description": "How to resolve a name clash at the destination.",
+          "oneOf": [
+            {
+              "enum": [
+                "skip",
+                "overwrite",
+                "overwrite_if_newer"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (auto-rename the new item).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest_dir": {
+          "description": "Destination folder.",
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Only return the plan, do not request execution.",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources",
+        "dest_dir"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Move files / folders into a folder (background job, undoable).",
+    "dry_run": true,
+    "name": "move",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "description": "Move needs write access to the sources too (they disappear).",
+      "properties": {
+        "conflict": {
+          "default": "ask",
+          "description": "How to resolve a name clash at the destination.",
+          "oneOf": [
+            {
+              "enum": [
+                "skip",
+                "overwrite",
+                "overwrite_if_newer"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (auto-rename the new item).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest_dir": {
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources",
+        "dest_dir"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Rename one file or folder.",
+    "dry_run": true,
+    "name": "rename",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "new_name": {
+          "description": "New file name (no separators).",
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "new_name"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Rename many items: explicit pairs, or paths plus a find/replace/prefix/suffix rule.",
+    "dry_run": true,
+    "name": "batch_rename",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "pairs": {
+          "default": [],
+          "description": "Explicit renames.",
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "new_name": {
+                "type": "string"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "new_name"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "paths": {
+          "default": [],
+          "description": "Or: paths plus a rule.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rule": {
+          "additionalProperties": false,
+          "default": null,
+          "description": "A simple rename rule applied to every path's file name.",
+          "properties": {
+            "find": {
+              "default": "",
+              "type": "string"
+            },
+            "keep_extension": {
+              "default": true,
+              "description": "Apply find/replace and suffix to the stem only, keeping the extension (default true).",
+              "type": "boolean"
+            },
+            "prefix": {
+              "default": "",
+              "type": "string"
+            },
+            "regex": {
+              "default": false,
+              "description": "`find` is a regular expression (`$1` style captures in `replace`).",
+              "type": "boolean"
+            },
+            "replace": {
+              "default": "",
+              "type": "string"
+            },
+            "suffix": {
+              "default": "",
+              "type": "string"
+            }
+          },
+          "type": [
+            "object",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Create a folder.",
+    "dry_run": true,
+    "name": "mkdir",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Absolute path of the new folder / file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Create an empty file.",
+    "dry_run": true,
+    "name": "create_file",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Absolute path of the new folder / file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Add or remove Soyuz tags on items.",
+    "dry_run": true,
+    "name": "tag",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "remove": {
+          "default": false,
+          "description": "Remove these tags instead of adding them.",
+          "type": "boolean"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths",
+        "tags"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Change read-only / hidden attributes, modification time or permissions.",
+    "dry_run": true,
+    "name": "set_attributes",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "hidden": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "mode": {
+          "default": null,
+          "description": "Unix permission bits (e.g. 420 for 0o644); ignored on Windows.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "modified": {
+          "default": null,
+          "description": "RFC 3339 modification time.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "readonly": {
+          "default": null,
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Extract an archive into a folder.",
+    "dry_run": true,
+    "name": "extract",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "type": "string"
+        },
+        "dest_dir": {
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "archive",
+        "dest_dir"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Create an archive from files / folders.",
+    "dry_run": true,
+    "name": "compress",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dest": {
+          "description": "Archive file to create.",
+          "type": "string"
+        },
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "format": {
+          "default": "zip",
+          "enum": [
+            "zip",
+            "tar",
+            "tar_gz",
+            "tar_bz2",
+            "tar_xz",
+            "tar_zst",
+            "seven_z"
+          ],
+          "type": "string"
+        },
+        "level": {
+          "default": null,
+          "description": "0–9 (default 6).",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "sources",
+        "dest"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Restore trash items (ids from trash_list) to their original place or a folder.",
+    "dry_run": true,
+    "name": "restore_from_trash",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "ids": {
+          "description": "Trash item ids from `trash_list`.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "to": {
+          "default": null,
+          "description": "Restore into this folder instead of the original locations.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "ids"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": true,
+    "category": "destructive",
+    "content": false,
+    "description": "Move items to the trash / Recycle Bin (restorable).",
+    "dry_run": true,
+    "name": "trash",
+    "risk": "destructive",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": true,
+    "category": "destructive",
+    "content": false,
+    "description": "Delete items permanently (cannot be undone).",
+    "dry_run": true,
+    "name": "delete_permanent",
+    "risk": "destructive",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": true,
+    "category": "destructive",
+    "content": false,
+    "description": "Synchronize two folders (copies and optional deletions).",
+    "dry_run": true,
+    "name": "sync_apply",
+    "risk": "destructive",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "by_content": {
+          "default": false,
+          "type": "boolean"
+        },
+        "delete_extra": {
+          "default": false,
+          "description": "Delete files that exist only on the target side (one-way sync only).",
+          "type": "boolean"
+        },
+        "direction": {
+          "default": "left_to_right",
+          "oneOf": [
+            {
+              "enum": [
+                "right_to_left"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "left_to_right",
+              "description": "Make `right` match `left`.",
+              "type": "string"
+            },
+            {
+              "const": "both",
+              "description": "Copy newer / missing files both ways, never delete.",
+              "type": "string"
+            }
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        },
+        "left": {
+          "type": "string"
+        },
+        "right": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "left",
+        "right"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": true,
+    "category": "destructive",
+    "content": false,
+    "description": "Permanently delete everything in the trash.",
+    "dry_run": true,
+    "name": "empty_trash",
+    "risk": "destructive",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dry_run": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Show a folder in the focused pane.",
+    "dry_run": false,
+    "name": "navigate",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Open a folder in a new tab.",
+    "dry_run": false,
+    "name": "open_tab",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Select items in the focused pane.",
+    "dry_run": false,
+    "name": "select",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "description": "Absolute paths.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Show an item in its folder and select it.",
+    "dry_run": false,
+    "name": "reveal",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Open the preview of a file for the user.",
+    "dry_run": false,
+    "name": "preview",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Show a short notification to the user.",
+    "dry_run": false,
+    "name": "show_toast",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "message": {
+          "description": "Short message (max 200 characters).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "ui",
+    "content": false,
+    "description": "Open the integrated terminal in a folder.",
+    "dry_run": false,
+    "name": "open_terminal_at",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": true,
+    "category": "ui",
+    "content": false,
+    "description": "Run one of the user's configured custom commands (always needs approval).",
+    "dry_run": false,
+    "name": "run_custom_command",
+    "risk": "destructive",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Name of a custom command configured by the user.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": true,
+    "category": "meta",
+    "content": false,
+    "description": "Undo a past operation by history id.",
+    "dry_run": false,
+    "name": "undo",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "history_id": {
+          "description": "History entry id from `history_list`.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "history_id"
+      ],
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "meta",
+    "content": false,
+    "description": "Progress and state of running / recent jobs.",
+    "dry_run": false,
+    "name": "job_status",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "default": null,
+          "description": "Job id; omit for all active jobs.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "scope": "none"
+  },
+  {
+    "approval": false,
+    "category": "meta",
+    "content": false,
+    "description": "Cancel a running job.",
+    "dry_run": false,
+    "name": "cancel_job",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "job_id"
+      ],
+      "type": "object"
+    },
+    "scope": "none"
+  }
+]

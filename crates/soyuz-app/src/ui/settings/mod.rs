@@ -3,6 +3,7 @@
 //! to `config.toml` shortly after the last change; external edits to the file (hot
 //! reload) refresh the window. Search filters rows across all sections.
 
+mod ai;
 mod appearance;
 mod keybindings;
 mod lists;
@@ -48,11 +49,12 @@ pub enum Section {
     Keyboard,
     Commands,
     Bookmarks,
+    Ai,
     Advanced,
 }
 
 impl Section {
-    pub const ALL: [Section; 11] = [
+    pub const ALL: [Section; 12] = [
         Section::General,
         Section::Appearance,
         Section::Views,
@@ -63,6 +65,7 @@ impl Section {
         Section::Keyboard,
         Section::Commands,
         Section::Bookmarks,
+        Section::Ai,
         Section::Advanced,
     ];
 
@@ -78,6 +81,7 @@ impl Section {
             Section::Keyboard => "Keyboard",
             Section::Commands => "Custom commands",
             Section::Bookmarks => "Bookmarks",
+            Section::Ai => "AI assistant",
             Section::Advanced => "Config file",
         }
     }
@@ -94,6 +98,7 @@ impl Section {
             Section::Keyboard => ph::KEYBOARD,
             Section::Commands => ph::LIGHTNING,
             Section::Bookmarks => ph::BOOKMARK_SIMPLE,
+            Section::Ai => ph::SPARKLE,
             Section::Advanced => ph::FILE_CODE,
         }
     }
@@ -110,6 +115,7 @@ impl Section {
             Section::Keyboard => "Presets and every shortcut. Click a shortcut to change it.",
             Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
             Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
+            Section::Ai => "Model providers, API keys, privacy, scope and budgets.",
             Section::Advanced => "Edit, export or import config.toml.",
         }
     }
@@ -154,6 +160,12 @@ impl Section {
             Section::Keyboard => c.keys = d.keys,
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,
+            Section::Ai => {
+                // Keep the user's provider profiles; reset everything else.
+                let profiles = std::mem::take(&mut c.ai.profiles);
+                c.ai = d.ai;
+                c.ai.profiles = profiles;
+            }
             Section::Advanced => *c = d,
         }
     }
@@ -190,6 +202,8 @@ pub struct SettingsState {
     scale_temp: Option<f32>,
     args_text: Vec<String>,
     scroll_top: bool,
+    /// AI page state (connection tests, credential operations, usage ledger).
+    ai: ai::AiPageState,
 }
 
 impl Default for SettingsState {
@@ -213,6 +227,7 @@ impl Default for SettingsState {
             scale_temp: None,
             args_text: Vec::new(),
             scroll_top: false,
+            ai: ai::AiPageState::default(),
         }
     }
 }
@@ -692,6 +707,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Keyboard => keybindings::page(ui, app, q),
         Section::Commands => lists::commands(ui, app, q),
         Section::Bookmarks => lists::bookmarks(ui, app, q),
+        Section::Ai => ai::page(ui, app, q),
         Section::Advanced => pages::advanced(ui, app, q),
     }
 }

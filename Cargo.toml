@@ -20,6 +20,7 @@ soyuz-jobs = { path = "crates/soyuz-jobs" }
 soyuz-archive = { path = "crates/soyuz-archive" }
 soyuz-search = { path = "crates/soyuz-search" }
 soyuz-term = { path = "crates/soyuz-term" }
+soyuz-ai = { path = "crates/soyuz-ai" }
 
 # --- GUI (pinned exactly, see PLAN §7) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
@@ -82,6 +83,13 @@ crc32fast = "1.5.0"
 
 # --- terminal ---
 alacritty_terminal = "0.26.0"
+
+# --- AI / networking (pure Rust TLS: rustls + ring, no native-tls) ---
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "http2", "stream", "json", "system-proxy"] }
+rustls = { version = "0.23.37", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+tokio = { version = "1.50.0", default-features = false, features = ["rt-multi-thread", "time", "sync", "macros"] }
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
+schemars = "1.2.2"
 
 # --- misc ---
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }

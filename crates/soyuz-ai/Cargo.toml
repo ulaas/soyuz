@@ -1,0 +1,39 @@
+[package]
+name = "soyuz-ai"
+description = "Soyuz AI layer: model providers, credentials, cost accounting and the typed tool catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+soyuz-search.workspace = true
+soyuz-archive.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+schemars.workspace = true
+reqwest.workspace = true
+rustls.workspace = true
+tokio.workspace = true
+futures-util.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+globset.workspace = true
+regex.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Credential Manager through advapi32 (CredWriteW / CredReadW / CredDeleteW); no shell, no COM.
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security_Credentials"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true
