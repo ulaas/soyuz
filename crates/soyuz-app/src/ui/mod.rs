@@ -1,4 +1,4 @@
-//! UI building blocks: shell layout, tab strip, toolbar + omnibar, sidebar, status bar,
+//! UI building blocks: shell layout, custom title bar, tab strip, toolbar + omnibar, sidebar, status bar,
 //! pane cards and views, menus, toasts, and the extension points for dialogs
 //! (`dialogs`) and the bottom terminal / activity panel (`panels`).
 
@@ -19,6 +19,7 @@ pub mod shell;
 pub mod sidebar;
 pub mod statusbar;
 pub mod tabstrip;
+pub mod titlebar;
 pub mod toasts;
 pub mod toolbar;
 pub mod tools;

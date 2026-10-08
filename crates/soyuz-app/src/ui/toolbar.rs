@@ -72,6 +72,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 rx -= bsz + 2.0;
                 ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_toggle(ui, glyph, tip, true, on)).inner
             };
+            let settings_on = app.settings.is_open();
+            if right_btn(ui, ph::GEAR_SIX, &tip(app, "Settings", &Action::Settings), settings_on).clicked() {
+                app.cmds.push(Cmd::Action(Action::Settings));
+            }
             let dual_on = app.ws.tab().dual;
             let dual =
                 right_btn(ui, ph::SQUARE_SPLIT_HORIZONTAL, &tip(app, "Dual pane", &Action::ToggleDualPane), dual_on);

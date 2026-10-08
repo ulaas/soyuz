@@ -73,6 +73,8 @@ pub struct UiState {
     pub welcome: bool,
     /// The welcome card was dismissed at least once (persisted in the session).
     pub welcome_seen: bool,
+    /// Window frame currently in effect (`[appearance] custom_titlebar`).
+    pub chrome: crate::ui::titlebar::Chrome,
 }
 
 pub struct SoyuzApp {
@@ -129,20 +131,9 @@ pub struct QuitState {
 }
 
 impl SoyuzApp {
-    pub fn new(cc: &CreationContext<'_>, renderer: &'static str, startup: Startup) -> Self {
-        let path = config::default_path();
-        let config = match config::load_or_default(&path) {
-            Ok(loaded) => {
-                for w in &loaded.warnings {
-                    log::warn!("{}: {w}", path.display());
-                }
-                loaded.config
-            }
-            Err(e) => {
-                log::error!("{}: {e}; using defaults", path.display());
-                Config::default()
-            }
-        };
+    /// Construct from the configuration loaded by [`load_config`] (the window
+    /// attributes in `main.rs` are derived from the same config).
+    pub fn new(cc: &CreationContext<'_>, config: Config, renderer: &'static str, startup: Startup) -> Self {
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
 
@@ -220,6 +211,7 @@ impl SoyuzApp {
             search: crate::ui::search::SearchUi::new(&config),
             welcome: !welcome_seen,
             welcome_seen,
+            chrome: crate::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar),
         };
         crate::ui::tools::restore_shelf(shelf);
 
@@ -570,6 +562,23 @@ pub fn theme_name(p: ThemePreference) -> &'static str {
     }
 }
 
+/// Load `config.toml` (defaults when missing or invalid; problems are logged).
+pub fn load_config() -> Config {
+    let path = config::default_path();
+    match config::load_or_default(&path) {
+        Ok(loaded) => {
+            for w in &loaded.warnings {
+                log::warn!("{}: {w}", path.display());
+            }
+            loaded.config
+        }
+        Err(e) => {
+            log::error!("{}: {e}; using defaults", path.display());
+            Config::default()
+        }
+    }
+}
+
 /// Settings applied to egui itself (startup and every config change).
 pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     let delay = f64::from(c.general.double_click_speed_ms.clamp(100, 2000)) / 1000.0;
@@ -634,9 +643,11 @@ impl eframe::App for SoyuzApp {
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
+        crate::ui::titlebar::sync(&ctx, self);
         shell::show(ui, self);
         crate::palette::show(&ctx, self);
         crate::ui::settings::show(&ctx, self);
+        crate::ui::titlebar::frame(&ctx, self);
         ops::fileops::end_frame(self, &ctx);
         crate::devscript::pump(self, &ctx);
         self.apply_cmds(&ctx);

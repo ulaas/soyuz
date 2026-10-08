@@ -74,7 +74,7 @@ impl Default for Appearance {
             show_thumbnails: true,
             thumbnail_size: 96,
             sidebar_width: 220.0,
-            custom_titlebar: false,
+            custom_titlebar: true,
         }
     }
 }

@@ -38,7 +38,7 @@ icon_style = "colored"           # colored | mono
 show_thumbnails = true
 thumbnail_size = 96
 sidebar_width = 220
-custom_titlebar = false
+custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
 
 [theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
 # accent = "#5B8CFF"

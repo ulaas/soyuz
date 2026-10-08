@@ -112,14 +112,19 @@ fn main() -> ExitCode {
     };
     let (renderer, startup) = renderer;
     let (renderer, renderer_name) = resolve_renderer(renderer);
+    let config = soyuz_app::app::load_config();
+    let chrome = soyuz_app::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar);
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("Soyuz")
-            .with_app_id("soyuz")
-            .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([720.0, 440.0])
-            .with_icon(soyuz_app::app_icon::icon_data(128)),
+        viewport: soyuz_app::ui::titlebar::configure_viewport(
+            egui::ViewportBuilder::default()
+                .with_title("Soyuz")
+                .with_app_id("soyuz")
+                .with_inner_size([1280.0, 800.0])
+                .with_min_inner_size([720.0, 440.0])
+                .with_icon(soyuz_app::app_icon::icon_data(128)),
+            chrome,
+        ),
         renderer,
         centered: true,
         // eframe's own state (window geometry, egui memory) lives with the rest of the
@@ -130,7 +135,7 @@ fn main() -> ExitCode {
     let result = eframe::run_native(
         "Soyuz",
         options,
-        Box::new(move |cc| Ok(Box::new(soyuz_app::SoyuzApp::new(cc, renderer_name, startup)))),
+        Box::new(move |cc| Ok(Box::new(soyuz_app::SoyuzApp::new(cc, config, renderer_name, startup)))),
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,

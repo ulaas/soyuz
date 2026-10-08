@@ -1,5 +1,6 @@
-//! Root layout: status bar → bottom panel → sidebar → tab strip → toolbar → pane
-//! cards (single or dual with a draggable splitter), then dialogs and toasts on top.
+//! Root layout: custom title bar (logo + tabs + window controls, when enabled) →
+//! status bar → bottom panel → sidebar → tab strip (native title bar only) → toolbar →
+//! pane cards (single or dual with a draggable splitter), then dialogs and toasts on top.
 
 use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
@@ -37,6 +38,10 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         }
     }
 
+    let titlebar = app.ui.chrome.has_titlebar();
+    if titlebar {
+        crate::ui::titlebar::show(ui, app);
+    }
     if app.ui.status_visible {
         let info = status_info(app);
         let mut zoom = None;
@@ -64,10 +69,13 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             pane,
             cmds: &mut app.cmds,
             width: app.config.appearance.sidebar_width,
+            brand: !titlebar,
+            settings_open: app.settings.is_open(),
+            settings_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::Settings),
         };
         sidebar::show(ui, &mut app.ui.sidebar, &mut sctx);
     }
-    if app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1 {
+    if !titlebar && (app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1) {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);

@@ -213,9 +213,16 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row("Sidebar width", "", |ui| {
             number(ui, &mut d.appearance.sidebar_width, 160.0..=420.0, " px");
         });
-        // `custom_titlebar` is not offered here: Soyuz has no own title bar yet (window
-        // dragging / resizing / snap would all need to be reimplemented); the key stays
-        // accepted in config.toml for forward compatibility.
+    });
+    any |= group(ui, q, ctx, "Window", |r| {
+        let desc = if crate::ui::titlebar::Chrome::live_switch() {
+            "Soyuz's own title bar with the logo, the tabs and themed window controls. Off: the system title bar."
+        } else {
+            "Soyuz's title bar with the tabs under the window buttons. Off: the system title bar. Takes effect after a restart."
+        };
+        r.row_kw("Custom title bar", desc, "titlebar window frame decorations chrome caption", |ui| {
+            switch(ui, &mut d.appearance.custom_titlebar);
+        });
     });
     any |= group(ui, q, ctx, "Theme colors", |r| {
         r.block(

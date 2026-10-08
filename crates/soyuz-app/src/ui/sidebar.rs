@@ -121,6 +121,12 @@ pub struct SidebarCtx<'a> {
     /// Saved search names (config ones first) and how many come from the config.
     pub saved_searches: &'a [String],
     pub saved_config: usize,
+    /// Draw the logo row at the top (off when the custom title bar shows it).
+    pub brand: bool,
+    /// The settings window is open (highlights the footer row).
+    pub settings_open: bool,
+    /// Shortcut of `Action::Settings`, shown in the footer row.
+    pub settings_key: Option<String>,
 }
 
 fn section_name(s: SidebarSection) -> &'static str {
@@ -144,7 +150,16 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 8, right: 4, top: 0, bottom: 6 }))
         .show(root, |ui| {
-            brand(ui);
+            if c.brand {
+                brand(ui);
+            } else {
+                ui.add_space(2.0);
+            }
+            Panel::bottom("soyuz.sidebar.footer")
+                .resizable(false)
+                .show_separator_line(false)
+                .frame(Frame::new().inner_margin(Margin { left: 0, right: 0, top: 6, bottom: 0 }))
+                .show(ui, |ui| footer(ui, c));
             ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 for &sec in c.sections {
@@ -179,6 +194,34 @@ fn brand(ui: &mut Ui) {
         semibold(14.0),
         p.text_primary,
     );
+}
+
+/// Bottom of the sidebar: a separator and the Settings row (gear + shortcut).
+fn footer(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
+    let p = palette(ui.ctx());
+    let top = ui.max_rect().top() - 3.0;
+    let x = ui.max_rect().x_range();
+    ui.painter().hline(x.min + 4.0..=x.max - 4.0, top, Stroke::new(1.0, p.border_subtle));
+    let resp = NavRow { icon: ph::GEAR_SIX, label: "Settings", active: c.settings_open, icon_color: None, usage: None }
+        .show(ui);
+    if let Some(k) = &c.settings_key
+        && ui.is_rect_visible(resp.rect)
+    {
+        ui.painter().text(
+            pos2(resp.rect.right() - 10.0, resp.rect.center().y),
+            Align2::RIGHT_CENTER,
+            k,
+            FontId::proportional(11.0),
+            p.text_tertiary,
+        );
+    }
+    let tip = match &c.settings_key {
+        Some(k) => format!("Settings  ({k})"),
+        None => "Settings".to_string(),
+    };
+    if resp.on_hover_text(tip).clicked() {
+        c.cmds.push(Cmd::Action(soyuz_core::config::Action::Settings));
+    }
 }
 
 /// Section header; returns whether the section is open.
