@@ -57,6 +57,13 @@ fn case_variant(src: &Path, dst: &Path) -> bool {
 }
 
 /// Case-only rename that is safe on case-insensitive volumes (two-step on FAT/exFAT).
+/// The final component of `path` spelled as stored on disk (`None` when it does not
+/// exist). On case-insensitive file systems this differs from the queried spelling after
+/// a case-only rename; listings use it to drop the stale spelling.
+pub fn on_disk_name(path: &Path) -> Option<std::ffi::OsString> {
+    imp::on_disk_name(path)
+}
+
 pub fn rename_case_only(src: &Path, new_name: &str) -> FsResult<()> {
     let parent = src.parent().unwrap_or(Path::new(""));
     let dst = parent.join(new_name);
@@ -159,6 +166,10 @@ mod imp {
         actual_path(path).is_some_and(|p| p.file_name().is_some_and(|n| n == name))
     }
 
+    pub(super) fn on_disk_name(path: &Path) -> Option<std::ffi::OsString> {
+        wfs::find_single_name(path).ok()
+    }
+
     /// The path with the final component spelled as stored on disk.
     pub(super) fn actual_path(path: &Path) -> Option<PathBuf> {
         let parent = path.parent()?;
@@ -238,6 +249,15 @@ mod imp {
         actual_path(path).is_some_and(|p| p.file_name().is_some_and(|n| n == name))
     }
 
+    pub(super) fn on_disk_name(path: &Path) -> Option<std::ffi::OsString> {
+        if cfg!(target_os = "macos") {
+            // Case-insensitive by default: look the spelling up in the parent folder.
+            actual_path(path).and_then(|p| p.file_name().map(|n| n.to_os_string()))
+        } else {
+            rustix::fs::lstat(path).ok().and(path.file_name().map(|n| n.to_os_string()))
+        }
+    }
+
     pub(super) fn actual_path(path: &Path) -> Option<PathBuf> {
         let parent = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
         let want = path.file_name()?;
@@ -276,5 +296,8 @@ mod imp {
     }
     pub(super) fn actual_path(_path: &Path) -> Option<PathBuf> {
         None
+    }
+    pub(super) fn on_disk_name(path: &Path) -> Option<std::ffi::OsString> {
+        path.file_name().map(|n| n.to_os_string())
     }
 }

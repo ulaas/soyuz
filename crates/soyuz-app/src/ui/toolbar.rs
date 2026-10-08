@@ -41,11 +41,12 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 let pane = app.ws.pane();
                 (pane.history.can_back(), pane.history.can_forward(), pane.location.parent().is_some())
             };
-            // Navigation buttons.
+            // Navigation buttons (larger in touch mode).
+            let bsz = (ui.spacing().interact_size.y + 6.0).max(30.0);
             let mut x = full.left();
             let nav = |ui: &mut Ui, x: &mut f32, glyph: &str, tip: String, enabled: bool| {
-                let r = Rect::from_min_size(pos2(*x, full.center().y - 15.0), vec2(30.0, 30.0));
-                *x += 32.0;
+                let r = Rect::from_min_size(pos2(*x, full.center().y - bsz / 2.0), vec2(bsz, bsz));
+                *x += bsz + 2.0;
                 ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_button(ui, glyph, &tip, enabled)).inner
             };
             let back = nav(ui, &mut x, ph::ARROW_LEFT, tip(app, "Back", &Action::Back), can_back);
@@ -67,8 +68,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             // Right side controls (laid out right to left).
             let mut rx = full.right();
             let mut right_btn = |ui: &mut Ui, glyph: &str, tip: &str, on: bool| {
-                let r = Rect::from_min_size(pos2(rx - 30.0, full.center().y - 15.0), vec2(30.0, 30.0));
-                rx -= 32.0;
+                let r = Rect::from_min_size(pos2(rx - bsz, full.center().y - bsz / 2.0), vec2(bsz, bsz));
+                rx -= bsz + 2.0;
                 ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_toggle(ui, glyph, tip, true, on)).inner
             };
             let dual_on = app.ws.tab().dual;

@@ -95,9 +95,15 @@ pub fn kv_row_with<R>(ui: &mut Ui, label: &str, value: impl FnOnce(&mut Ui) -> R
 /// Uppercase caption above a group of rows.
 pub fn caption(ui: &mut Ui, text: &str) {
     let p = palette(ui.ctx());
-    ui.add_space(6.0);
+    // Vertical spacing only: inside a horizontal row the space would indent the caption.
+    let vertical = !ui.layout().is_horizontal();
+    if vertical {
+        ui.add_space(6.0);
+    }
     ui.label(RichText::new(text.to_uppercase()).font(FontId::proportional(10.5)).color(p.text_tertiary));
-    ui.add_space(2.0);
+    if vertical {
+        ui.add_space(2.0);
+    }
 }
 
 /// 1 px horizontal rule.

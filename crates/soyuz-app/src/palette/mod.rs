@@ -844,6 +844,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         .show(ctx, |ui| {
             ui.set_width(width);
             ui.set_opacity(ease);
+            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Command palette");
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             input_row(ui, app, &p, width);
             divider(ui, &p);
@@ -1094,7 +1095,11 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                 if !ui.is_rect_visible(outer) {
                     continue;
                 }
-                let sel_t = ui.ctx().animate_bool_with_time(Id::new(("soyuz.palette.row", i)), is_sel, 0.08);
+                let sel_t = ui.ctx().animate_bool_with_time(
+                    Id::new(("soyuz.palette.row", i)),
+                    is_sel,
+                    crate::theme::anim(ui.ctx(), 0.08),
+                );
                 if sel_t > 0.0 {
                     ui.painter().rect_filled(r, CornerRadius::same(9), p.accent_subtle.gamma_multiply(sel_t));
                     let bar = Rect::from_min_size(pos2(r.left(), r.center().y - 9.0), vec2(3.0, 18.0));

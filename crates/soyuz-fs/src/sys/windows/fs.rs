@@ -185,6 +185,25 @@ pub(crate) fn find_single(path: &Path) -> io::Result<RawStat> {
     Ok(find_data_to_stat(&data))
 }
 
+/// The final component of `path` as spelled on disk (one `FindFirstFileExW`, no wildcard).
+pub(crate) fn find_single_name(path: &Path) -> io::Result<OsString> {
+    let w = wide_path(path);
+    // SAFETY: plain-old-data struct.
+    let mut data: WIN32_FIND_DATAW = unsafe { zeroed() };
+    // SAFETY: NUL-terminated name, out-buffer of the type FindExInfoBasic expects.
+    let h = unsafe {
+        FindFirstFileExW(w.as_ptr(), FindExInfoBasic, (&raw mut data).cast(), FindExSearchNameMatch, null(), 0)
+    };
+    if h == INVALID_HANDLE_VALUE {
+        return Err(last_err());
+    }
+    // SAFETY: `h` is a valid search handle returned above.
+    unsafe {
+        FindClose(h);
+    }
+    Ok(super::from_wide_nul(&data.cFileName))
+}
+
 /// One directory entry.
 pub(crate) struct FindEntry {
     pub name: OsString,

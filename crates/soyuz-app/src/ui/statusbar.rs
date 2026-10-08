@@ -153,6 +153,7 @@ fn theme_switch(ui: &mut Ui, current: ThemePreference, cmds: &mut Vec<Cmd>) {
     for (pref, glyph, tip) in items.iter().rev() {
         let (r, resp) = ui.allocate_exact_size(vec2(20.0, 18.0), Sense::click());
         let active = current == *pref;
+        crate::ui::a11y::toggle(&resp, tip, active);
         if active {
             ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface2);
         } else if resp.hovered() {

@@ -581,6 +581,10 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
             _ => {}
         }
     }
+    // Keep tags keyed by path attached to items renamed / moved in the app (and undo).
+    for (from, to) in app.fileops.jobs.take_moves() {
+        crate::services::tags::rename(&from, &to);
+    }
     reconcile_prompts(app);
     auto_open_activity(app);
     external_drops(app, ctx);

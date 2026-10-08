@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod defaults;
 pub mod keys;
+pub mod preserve;
 pub mod schema;
 
 use std::io;
@@ -15,6 +16,7 @@ pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
 };
+pub use preserve::to_string_preserving;
 pub use schema::*;
 
 use crate::error::{FsError, FsErrorKind};

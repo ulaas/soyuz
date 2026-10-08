@@ -76,6 +76,7 @@ define_actions! {
     ],
     View: [
         ViewDetails, ViewGrid, ViewList, ViewMiller, ViewGallery, ZoomIn, ZoomOut, ZoomReset,
+        UiZoomIn, UiZoomOut, UiZoomReset, ToggleHighContrast,
         ToggleHidden, ToggleFlatView, ToggleSortDir, ChooseColumns, ResetFolderView,
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
         ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
@@ -99,7 +100,7 @@ define_actions! {
     Tools: [
         CommandPalette, Search, SearchContent, FolderSize, DiskUsageTreemap, FindDuplicates,
         CompareFolders, SyncFolders, Settings, EditConfigFile, ReloadConfig, OpenTrash,
-        EmptyTrash, RestoreFromTrash, Computer, ShowKeybindings, About, Quit, QuickLook,
+        EmptyTrash, RestoreFromTrash, Computer, ShowKeybindings, About, Welcome, Quit, QuickLook,
         QuickLookNext, QuickLookPrev, ToggleHexPreview,
     ],
     Jobs: [

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Soyuz
+GenericName=File Manager
+Comment=Keyboard-first, non-blocking file explorer
+Exec=soyuz
+Icon=soyuz
+Terminal=false
+Categories=System;FileTools;FileManager;Utility;
+Keywords=files;explorer;folders;
+StartupWMClass=soyuz

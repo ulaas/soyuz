@@ -415,6 +415,14 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
                 painter.rect_filled(fill, CornerRadius::same(3), status);
             }
         }
+        None if active
+            && s.state != JobState::Paused
+            && s.state != JobState::Queued
+            && crate::theme::reduced_motion(ui.ctx()) =>
+        {
+            // Reduced motion: a static, dimmed bar instead of the sliding segment.
+            painter.rect_filled(bar, CornerRadius::same(3), status.gamma_multiply(0.35));
+        }
         None if active && s.state != JobState::Paused && s.state != JobState::Queued => {
             // Indeterminate: a sliding segment.
             let t = ui.input(|i| i.time) as f32;
@@ -431,6 +439,14 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         }
         None => {}
     }
+
+    crate::ui::a11y::progress(
+        ui,
+        Id::new(("soyuz.activity.progress", s.id.0)),
+        card,
+        &format!("{title}: {line}"),
+        frac.or(if matches!(s.state, JobState::Done(_)) { Some(1.0) } else { None }),
+    );
 
     // Stats row.
     let pr = &s.progress;
@@ -486,8 +502,8 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let mut bx = card.right() - 8.0;
     let by = card.top() + 8.0;
     let mut btn = |ui: &mut Ui, glyph: &str, tip: &str| {
-        let r = Rect::from_min_size(pos2(bx - 28.0, by), vec2(28.0, 28.0));
-        bx -= 30.0;
+        let r = Rect::from_min_size(pos2(bx - 30.0, by - 1.0), vec2(30.0, 30.0));
+        bx -= 32.0;
         icon_button(
             &mut ui.new_child(UiBuilder::new().max_rect(r).id_salt(("soyuz.act.btn", engine_id.0, glyph))),
             glyph,
@@ -563,6 +579,10 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         if waiting && app.fileops.prompts.is_deferred(engine_id) {
             let r = Rect::from_min_size(pos2(bx - 78.0, by + 2.0), vec2(76.0, 24.0));
             let resp = ui.interact(r, Id::new(("soyuz.activity.resolve", engine_id.0)), Sense::click());
+            crate::ui::a11y::button(&resp, "Resolve conflict");
+            if resp.has_focus() {
+                crate::ui::widgets::focus_ring(ui, r);
+            }
             ui.painter().rect_filled(
                 r,
                 CornerRadius::same(radius::ROW),
@@ -586,6 +606,10 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         if failed {
             let r = Rect::from_min_size(pos2(bx - 92.0, by + 2.0), vec2(90.0, 24.0));
             let resp = ui.interact(r, Id::new(("soyuz.activity.retry", engine_id.0)), Sense::click());
+            crate::ui::a11y::button(&resp, "Retry failed items");
+            if resp.has_focus() {
+                crate::ui::widgets::focus_ring(ui, r);
+            }
             ui.painter().rect_filled(
                 r,
                 CornerRadius::same(radius::ROW),

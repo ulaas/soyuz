@@ -56,7 +56,7 @@ pub use list::{
     ListOptions, ListStats, WalkItem, WalkOptions, WalkStats, exists_nofollow, read_dir, read_dir_streaming, stat, walk,
 };
 pub use meta::{MetaSnapshot, meta_snapshot};
-pub use mv::{MoveFast, MoveOptions, RenameMode, rename, rename_case_only, try_rename_or_crossdev};
+pub use mv::{MoveFast, MoveOptions, RenameMode, on_disk_name, rename, rename_case_only, try_rename_or_crossdev};
 pub use path::{expand_env, home, is_root, normalize, path_overlaps, strip_verbatim, to_wide_long};
 pub use perms::{AccessRights, AceLite, SecurityInfo, chown, effective_access, security_info, set_mode};
 pub use times::{TimesSet, set_times};

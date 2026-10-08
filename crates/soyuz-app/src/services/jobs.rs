@@ -12,8 +12,8 @@ use soyuz_core::config::{Config, PreserveItem, ReflinkPref};
 use soyuz_core::{HashAlgo, Location};
 use soyuz_fs::{CopyOptions, Preserve, RealProbe, Reflink};
 use soyuz_jobs::{
-    EngineConfig, HistoryEntry, JobEngine, JobEvent, JobId, JobKind, JobKindBrief, JobOptions, JobSnapshot, JobSpec,
-    LogLine, QueueMode,
+    EngineConfig, HistoryEntry, HistoryId, JobEngine, JobEvent, JobId, JobKind, JobKindBrief, JobOptions, JobSnapshot,
+    JobSpec, LogLine, QueueMode, UndoRecord,
 };
 
 use crate::state::pane::PaneId;
@@ -140,6 +140,11 @@ pub struct JobsService {
     copy: CopyOptions,
     /// Debug hook: `SOYUZ_THROTTLE_MBPS` caps copy throughput (to watch progress / pause).
     throttle_bps: Option<u64>,
+    /// Undo state of every history entry seen so far (`None` until the first refresh,
+    /// so entries loaded from disk at startup are not replayed).
+    seen: Option<HashMap<HistoryId, bool>>,
+    /// Renames / moves completed (or undone) since the last [`Self::take_moves`].
+    moves: Vec<(PathBuf, PathBuf)>,
 }
 
 impl JobsService {
@@ -161,6 +166,8 @@ impl JobsService {
             logs: HashMap::new(),
             copy: copy_options(config),
             throttle_bps,
+            seen: None,
+            moves: Vec::new(),
         };
         s.refresh_history();
         s
@@ -244,6 +251,26 @@ impl JobsService {
     fn refresh_history(&mut self) {
         self.history = self.engine.history();
         self.history_dirty = false;
+        let first = self.seen.is_none();
+        let seen = self.seen.get_or_insert_with(HashMap::new);
+        for h in &self.history {
+            let before = seen.insert(h.id, h.undone);
+            if first || before == Some(h.undone) {
+                continue;
+            }
+            // New entry (done) or a redo → forward; an undo → backward.
+            let forward = !h.undone;
+            if before.is_none() && h.undone {
+                continue;
+            }
+            self.moves.extend(path_moves(&h.records, forward));
+        }
+    }
+
+    /// Renames / moves finished since the last call (`from → to`, undo already reversed).
+    /// The app re-keys path-based state (tags) with them.
+    pub fn take_moves(&mut self) -> Vec<(PathBuf, PathBuf)> {
+        std::mem::take(&mut self.moves)
     }
 
     /// Oldest first.
@@ -276,6 +303,15 @@ impl Drop for JobsService {
     fn drop(&mut self) {
         self.shutdown();
     }
+}
+
+/// `from → to` pairs of the renames / moves in `records` (reversed for an undo).
+pub fn path_moves(records: &[UndoRecord], forward: bool) -> Vec<(PathBuf, PathBuf)> {
+    let pairs = records.iter().filter_map(|r| match r {
+        UndoRecord::Moved { from, to } | UndoRecord::Renamed { from, to } => Some((from.clone(), to.clone())),
+        _ => None,
+    });
+    if forward { pairs.collect() } else { pairs.rev().map(|(a, b)| (b, a)).collect() }
 }
 
 /// `[jobs]` → engine configuration (history next to the config file).
@@ -360,6 +396,19 @@ mod tests {
         assert_eq!(o.verify, Some(HashAlgo::Blake3));
         assert_eq!(o.chunk, 4 * 1024 * 1024);
         assert!(journaled().journal);
+    }
+
+    #[test]
+    fn moves_from_records() {
+        let r = vec![
+            UndoRecord::Renamed { from: "/a/x".into(), to: "/a/y".into() },
+            UndoRecord::Created("/a/n".into()),
+            UndoRecord::Moved { from: "/a/z".into(), to: "/b/z".into() },
+        ];
+        let fwd = path_moves(&r, true);
+        assert_eq!(fwd, vec![("/a/x".into(), "/a/y".into()), ("/a/z".into(), "/b/z".into())]);
+        let back = path_moves(&r, false);
+        assert_eq!(back, vec![("/b/z".into(), "/a/z".into()), ("/a/y".into(), "/a/x".into())]);
     }
 
     #[test]

@@ -55,6 +55,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let editing = c.address.editing;
     let field = rect;
     let bg = ui.interact(field, Id::new("soyuz.omnibar.bg"), Sense::click());
+    crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::Navigation, "Address");
     let hover = bg.hovered() && !editing;
     ui.painter().rect_filled(field, CornerRadius::same(radius::CARD), p.bg_surface1);
     let stroke = if editing {
@@ -124,6 +125,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
                 // Overflow dropdown with the collapsed ancestors.
                 let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(28.0, h));
                 let resp = ui.interact(r, Id::new("soyuz.crumb.more"), Sense::click());
+                crate::ui::a11y::button(&resp, "Hidden parent folders");
                 if resp.hovered() {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 }
@@ -163,6 +165,10 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             break;
         }
         let resp = ui.interact(r, Id::new(("soyuz.crumb", i)), Sense::click());
+        crate::ui::a11y::button(
+            &resp,
+            &if last { format!("{} (edit path)", list[i].label) } else { format!("Go to {}", list[i].label) },
+        );
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
         }
@@ -193,6 +199,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     // Refresh button at the right end.
     let rr = Rect::from_center_size(pos2(field.right() - 18.0, cy), vec2(26.0, 26.0));
     let rresp = ui.interact(rr, Id::new("soyuz.omnibar.refresh"), Sense::click());
+    crate::ui::a11y::button(&rresp, "Refresh");
     if rresp.hovered() {
         ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), p.bg_surface2);
     }
@@ -237,6 +244,7 @@ fn sep(
     };
     let id = Id::new(("soyuz.crumb.sep", &dir));
     let resp = ui.interact(r, id, Sense::click());
+    crate::ui::a11y::button(&resp, "Subfolders");
     let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&resp));
     if resp.hovered() || open {
         ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
