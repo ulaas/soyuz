@@ -30,6 +30,8 @@ pub struct StatusInfo {
     pub size_style: SizeStyle,
     /// Jobs indicator (ring + count) shown while operations run.
     pub activity: crate::ui::panels::activity::Indicator,
+    /// Folder shown by the pane (git branch chip).
+    pub git_dir: Option<std::path::PathBuf>,
 }
 
 fn plural(n: usize, one: &str, many: &str) -> String {
@@ -91,6 +93,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     }
                     ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.accent));
                 }
+                crate::ui::tools::git_chip(ui, info.git_dir.as_deref(), info.pane, cmds);
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 10.0;
@@ -100,6 +103,7 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     {
                         cmds.push(Cmd::Action(Action::ToggleActivityPanel));
                     }
+                    crate::ui::tools::shelf_toggle(ui, cmds);
                     let current = MODES.iter().position(|m| m.0 == info.mode).unwrap_or(match info.mode {
                         ViewMode::Gallery => 2,
                         _ => 0,

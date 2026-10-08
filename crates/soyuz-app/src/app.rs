@@ -447,6 +447,7 @@ impl eframe::App for SoyuzApp {
         ops::drain_watcher(self);
         crate::ui::panels::terminal::pump(self, &ctx);
         crate::ui::search::pump(self, &ctx);
+        crate::ui::tools::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);

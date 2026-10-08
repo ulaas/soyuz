@@ -146,7 +146,9 @@ pub fn effect_for(ctx: &egui::Context, payload: &DragPayload, dest: &Path) -> Op
 /// Start an internal drag with the pane's selection.
 pub fn begin(ctx: &egui::Context, pane: &Pane, default: DragDefault) {
     let paths: Vec<PathBuf> = pane.selected_entries().iter().map(|e| e.path.clone()).collect();
-    if paths.is_empty() || !matches!(pane.location, soyuz_core::Location::Dir(_)) {
+    let draggable = matches!(pane.location, soyuz_core::Location::Dir(_))
+        || crate::ui::tools::tags_ui::is_virtual_listing(&pane.location);
+    if paths.is_empty() || !draggable {
         return;
     }
     DEVICES.with(|c| c.borrow_mut().clear());

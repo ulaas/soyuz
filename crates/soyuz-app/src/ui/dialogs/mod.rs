@@ -252,13 +252,7 @@ impl Dialog for ColumnsDialog {
         for col in Column::ALL {
             if matches!(
                 col,
-                Column::Tags
-                    | Column::GitStatus
-                    | Column::Dimensions
-                    | Column::Duration
-                    | Column::Checksum
-                    | Column::ItemCount
-                    | Column::LinkTarget
+                Column::Dimensions | Column::Duration | Column::Checksum | Column::ItemCount | Column::LinkTarget
             ) {
                 continue;
             }

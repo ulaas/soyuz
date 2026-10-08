@@ -71,6 +71,16 @@ pub fn start_listing(pane: &mut Pane, services: &mut Services, soft: bool) {
             services.watcher.unwatch(pane.id);
             crate::services::search::attach(pane, id);
         }
+        Location::Recent => {
+            pane.clear_listing();
+            services.watcher.unwatch(pane.id);
+            crate::services::recent::attach(pane, services.mailbox.postman());
+        }
+        Location::Tags(tag) => {
+            pane.clear_listing();
+            services.watcher.unwatch(pane.id);
+            crate::services::tags::attach(pane, &tag, services.mailbox.postman());
+        }
         _ => {
             pane.clear_listing();
             pane.status = ListingStatus::Virtual;
@@ -113,6 +123,9 @@ pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
         start_listing(pane, &mut app.services, false);
     }
     app.ui.address.editing = false;
+    if let Location::Dir(d) = &loc {
+        crate::services::recent::visit_folder(d);
+    }
     if matches!(loc, Location::Computer) {
         app.services.places.refresh();
     }
@@ -190,6 +203,7 @@ pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
 /// Launch a file with its default application on a short-lived thread (association
 /// lookup and process spawn never block the UI).
 pub fn launch(app: &mut SoyuzApp, path: &Path) {
+    crate::services::recent::opened_file(path);
     let postman = app.services.mailbox.postman();
     let path = path.to_path_buf();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
@@ -469,6 +483,7 @@ pub fn drain_watcher(app: &mut SoyuzApp) {
     for (id, kind) in app.services.watcher.drain() {
         let Some(pane) = app.ws.find_pane_mut(id) else { continue };
         let Location::Dir(dir) = pane.location.clone() else { continue };
+        crate::services::git::invalidate(&dir);
         match kind {
             WatchKind::Changed(paths) => {
                 if matches!(pane.status, ListingStatus::Ready) && !pane.refreshing {
@@ -486,6 +501,7 @@ pub fn refresh(app: &mut SoyuzApp) {
     start_listing(pane, &mut app.services, true);
     app.services.aux.clear();
     app.services.places.refresh();
+    crate::services::git::refresh_all();
 }
 
 fn coming_soon(app: &mut SoyuzApp, action: &Action) {

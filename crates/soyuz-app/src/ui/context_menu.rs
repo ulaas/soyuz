@@ -129,6 +129,8 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     }
     let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
     crate::ui::archive::context_items(ui, cmds, id, &pane.location, any_archive, !sel.is_empty());
+    let sel_paths: Vec<(std::path::PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
+    crate::ui::tools::tags_ui::items_menu(ui, km, cmds, id, &pane.location, &sel_paths);
     if all_dirs {
         action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     }
@@ -191,6 +193,7 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         crate::ui::archive::context_items(ui, cmds, id, &pane.location, false, false);
         menu_separator(ui);
     }
+    crate::ui::tools::tags_ui::background_menu(ui, km, cmds, id, &pane.location, v.dual);
     if menu_check(ui, v.show_hidden, "Show hidden files", chord_label(km, &Action::ToggleHidden).as_deref()).clicked() {
         cmds.push(Cmd::PaneAction(id, Action::ToggleHidden));
         ui.close();
@@ -265,13 +268,7 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     for col in Column::ALL {
         if matches!(
             col,
-            Column::Tags
-                | Column::GitStatus
-                | Column::Dimensions
-                | Column::Duration
-                | Column::Checksum
-                | Column::ItemCount
-                | Column::LinkTarget
+            Column::Dimensions | Column::Duration | Column::Checksum | Column::ItemCount | Column::LinkTarget
         ) {
             continue; // data sources arrive in later milestones
         }
