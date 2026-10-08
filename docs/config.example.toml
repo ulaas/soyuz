@@ -27,12 +27,13 @@ strict_windows_names = false     # apply Windows file-name rules on every OS
 
 [appearance]
 theme = "system"                 # system | dark | light | "<name>" (user theme file in themes/)
-density = "cozy"                 # compact | cozy | comfortable
+density = "cozy"                 # compact | cozy | comfortable | touch (large targets)
 ui_scale = 1.0
 font = "Inter"                   # or any family name / path
 mono_font = "JetBrains Mono"
 font_size = 13.0
 reduced_motion = false
+high_contrast = false            # stronger text, borders and focus rings
 icon_style = "colored"           # colored | mono
 show_thumbnails = true
 thumbnail_size = 96

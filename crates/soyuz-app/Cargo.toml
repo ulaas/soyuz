@@ -5,8 +5,14 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+keywords = ["file-manager", "explorer", "egui"]
+categories = ["filesystem", "gui"]
 
 default-run = "soyuz"
+build = "build.rs"
 
 [[bin]]
 name = "soyuz"
@@ -58,6 +64,36 @@ xattr.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[build-dependencies]
+# Embeds the icon + version info into soyuz.exe (Windows hosts with rc.exe only; no-op elsewhere).
+winresource = { version = "0.1.31", default-features = false }
+
+# `cargo deb -p soyuz-app` (Debian / Ubuntu package).
+[package.metadata.deb]
+name = "soyuz"
+maintainer = "The Soyuz contributors"
+copyright = "The Soyuz contributors, MIT OR Apache-2.0"
+extended-description = "A keyboard-first, non-blocking file explorer with tabs, dual panes, background jobs with undo, an integrated terminal, previews, search and archive browsing."
+section = "utils"
+priority = "optional"
+depends = "$auto, libxkbcommon0, libfontconfig1"
+assets = [
+    ["target/release/soyuz", "usr/bin/", "755"],
+    ["assets/soyuz.desktop", "usr/share/applications/", "644"],
+    ["assets/icon.png", "usr/share/icons/hicolor/512x512/apps/soyuz.png", "644"],
+    ["../../README.md", "usr/share/doc/soyuz/README.md", "644"],
+]
+
+# `cargo bundle -p soyuz-app --release` (macOS .app, also .deb / .msi via cargo-bundle).
+[package.metadata.bundle]
+name = "Soyuz"
+identifier = "dev.soyuz.explorer"
+icon = ["assets/icon.png"]
+category = "public.app-category.utilities"
+short_description = "Keyboard-first, non-blocking file explorer"
+long_description = "Tabs, dual panes, background jobs with undo, an integrated terminal, previews, search and archive browsing."
+copyright = "The Soyuz contributors, MIT OR Apache-2.0"
 
 [lints]
 workspace = true

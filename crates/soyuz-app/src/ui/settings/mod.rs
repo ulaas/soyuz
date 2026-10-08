@@ -26,6 +26,12 @@ use crate::theme::{Palette, icons, palette};
 use crate::ui::dialogs::keybind_record::{RecordOutcome, RecordTarget, Recorder};
 use crate::ui::toasts::Toast;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PickPurpose {
+    Export,
+    Import,
+}
+
 /// Delay between the last edit and writing `config.toml`.
 const SAVE_DELAY: Duration = Duration::from_millis(700);
 const NAV_W: f32 = 216.0;
@@ -179,7 +185,8 @@ pub struct SettingsState {
     keys_filter: String,
     keys_conflicts_only: bool,
     keys_modified_only: bool,
-    import_path: String,
+    /// Export / import file picker (drawn on top of the settings window).
+    picker: Option<(PickPurpose, crate::ui::path_picker::PathPicker)>,
     scale_temp: Option<f32>,
     args_text: Vec<String>,
     scroll_top: bool,
@@ -202,7 +209,7 @@ impl Default for SettingsState {
             keys_filter: String::new(),
             keys_conflicts_only: false,
             keys_modified_only: false,
-            import_path: String::new(),
+            picker: None,
             scale_temp: None,
             args_text: Vec::new(),
             scroll_top: false,
@@ -246,7 +253,9 @@ fn flush_save(app: &mut SoyuzApp) {
         return;
     }
     let path = app.config_watch.path().to_path_buf();
-    match config::to_pretty_string(&app.config) {
+    // Merge into the user's file so comments and formatting survive (toml_edit).
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    match config::to_string_preserving(&existing, &app.config) {
         Ok(text) => {
             if let Some(dir) = path.parent() {
                 let _ = soyuz_fs::create_dir_all(dir);
@@ -290,6 +299,7 @@ fn key_cache(s: &mut SettingsState) -> &KeyCache {
 /// Draw the window when open; applies and saves edits.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     if !app.settings.open {
+        pump_save(ctx, app);
         return;
     }
     // External change (hot reload) while open: start over from the new config.
@@ -323,7 +333,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             Some(RecordOutcome::Cancel) => app.settings.recorder = None,
             _ => {}
         }
-    } else {
+    } else if app.settings.picker.is_none() {
         // Window keys: Esc closes, Ctrl+F searches, Ctrl+PgUp/PgDn switch sections.
         let (esc, find, prev, next) = ctx.input_mut(|i| {
             (
@@ -371,6 +381,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         .backdrop_color(Color32::from_black_alpha(((if p.dark { 130.0 } else { 80.0 }) * ease) as u8))
         .show(ctx, |ui| {
             ui.set_opacity(ease);
+            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Settings");
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let nav = Rect::from_min_size(rect.min, vec2(NAV_W, rect.height()));
             let content = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
@@ -392,6 +403,10 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             // Close button.
             let cr = Rect::from_center_size(pos2(rect.right() - 22.0, rect.top() + 22.0), vec2(26.0, 26.0));
             let cresp = ui.interact(cr, id.with("close"), Sense::click()).on_hover_text("Close (Esc)");
+            crate::ui::a11y::button(&cresp, "Close settings");
+            if cresp.has_focus() {
+                crate::ui::widgets::focus_ring(ui, cr);
+            }
             if cresp.hovered() {
                 ui.painter().rect_filled(cr, CornerRadius::same(6), p.bg_surface3);
             }
@@ -403,10 +418,13 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let s = 0.98 + 0.02 * ease;
     let c = screen.center();
     ctx.set_transform_layer(LayerId::new(Order::Foreground, id), TSTransform::new(c.to_vec2() * (1.0 - s), s));
-    if (resp.backdrop_response.clicked() && app.settings.recorder.is_none()) || close_now {
+    if (resp.backdrop_response.clicked() && app.settings.recorder.is_none() && app.settings.picker.is_none())
+        || close_now
+    {
         close(app);
         return;
     }
+    show_picker(ctx, app);
 
     // Live apply + debounced save.
     if app.settings.draft != app.settings.applied {
@@ -415,6 +433,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         app.settings.applied = draft;
         app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
     }
+    pump_save(ctx, app);
+}
+
+/// Write `config.toml` once the debounce delay has passed.
+fn pump_save(ctx: &egui::Context, app: &mut SoyuzApp) {
     if let Some(due) = app.settings.save_due {
         if Instant::now() >= due {
             flush_save(app);
@@ -422,6 +445,24 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             ctx.request_repaint_after(due - Instant::now());
         }
     }
+}
+
+/// Change the active configuration from outside the settings window (UI zoom keys,
+/// quick toggles): applies live and writes `config.toml` shortly after.
+pub fn update_config(app: &mut SoyuzApp, ctx: &egui::Context, edit: impl FnOnce(&mut Config)) {
+    let mut c = app.config.clone();
+    edit(&mut c);
+    if c == app.config {
+        return;
+    }
+    crate::services::config_watch::apply_config(app, ctx, c);
+    app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
+    ctx.request_repaint_after(SAVE_DELAY);
+}
+
+/// Flush a pending save (on exit).
+pub fn save_now(app: &mut SoyuzApp) {
+    flush_save(app);
 }
 
 fn apply_recorded(s: &mut SettingsState, target: RecordTarget, binding: String) {
@@ -478,7 +519,12 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     for sec in Section::ALL {
         let active = !searching && s.section == sec;
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
-        let hover = ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), 0.1);
+        crate::ui::a11y::tab(&resp, sec.title(), active);
+        if resp.has_focus() {
+            crate::ui::widgets::focus_ring(ui, r);
+        }
+        let hover =
+            ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(ui.ctx(), 0.1));
         if active {
             ui.painter().rect_filled(r, CornerRadius::same(7), p.accent_subtle);
             ui.painter().rect_filled(
@@ -556,8 +602,12 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
 
 fn nav_link(ui: &mut Ui, p: &Palette, glyph: &str, label: &str) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
+    crate::ui::a11y::button(&resp, label);
     if resp.hovered() {
         ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+    }
+    if resp.has_focus() {
+        crate::ui::widgets::focus_ring(ui, r);
     }
     let fg = if resp.hovered() { p.accent } else { p.text_secondary };
     ui.painter().text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, glyph, icons::font(13.0), fg);
@@ -651,12 +701,53 @@ fn record(app: &mut SoyuzApp, target: RecordTarget, title: String) {
     app.settings.recorder = Some(Recorder::new(target, title));
 }
 
-/// Export the active config to `<Downloads or home>/soyuz-config.toml`.
-fn export(app: &mut SoyuzApp) -> Option<PathBuf> {
+/// Default folder for export / import: Downloads, else home.
+fn transfer_dir() -> PathBuf {
     let dir = soyuz_fs::home().join("Downloads");
-    let dir = if dir.is_dir() { dir } else { soyuz_fs::home() };
-    let path = dir.join("soyuz-config.toml");
-    let text = match config::to_pretty_string(&app.config) {
+    if dir.is_dir() { dir } else { soyuz_fs::home() }
+}
+
+/// Open the in-app save picker for exporting the configuration.
+pub fn start_export(app: &mut SoyuzApp) {
+    use crate::ui::path_picker::{PathPicker, PickMode};
+    let picker = PathPicker::new("Export settings", PickMode::Save, transfer_dir(), "soyuz-config.toml", &["toml"]);
+    app.settings.picker = Some((PickPurpose::Export, picker));
+}
+
+/// Open the in-app picker for importing a configuration file.
+fn start_import(app: &mut SoyuzApp) {
+    use crate::ui::path_picker::{PathPicker, PickMode};
+    let picker = PathPicker::new("Import settings", PickMode::Open, transfer_dir(), "", &["toml"]);
+    app.settings.picker = Some((PickPurpose::Import, picker));
+}
+
+/// Draw the export / import picker; act on its result.
+fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
+    use crate::ui::path_picker::PickResult;
+    let Some((purpose, picker)) = app.settings.picker.as_mut() else { return };
+    let purpose = *purpose;
+    match picker.show(ctx) {
+        PickResult::Pending => {}
+        PickResult::Cancelled => {
+            log::debug!("export / import picker cancelled");
+            app.settings.picker = None
+        }
+        PickResult::Picked(path) => {
+            app.settings.picker = None;
+            match purpose {
+                PickPurpose::Export => {
+                    export(app, path);
+                }
+                PickPurpose::Import => import(app, &path),
+            }
+        }
+    }
+}
+
+/// Write the active config to `path` (keeps that file's comments when it exists).
+fn export(app: &mut SoyuzApp, path: PathBuf) -> Option<PathBuf> {
+    let existing = std::fs::read_to_string(&path).unwrap_or_default();
+    let text = match config::to_string_preserving(&existing, &app.config) {
         Ok(t) => t,
         Err(e) => {
             app.ui.toasts.push(Toast::error("Export failed").body(e.to_string()));
@@ -676,13 +767,8 @@ fn export(app: &mut SoyuzApp) -> Option<PathBuf> {
 }
 
 /// Import a config file into the draft (applies live, saved shortly after).
-fn import(app: &mut SoyuzApp, path: &str) {
-    let path = path.trim().trim_matches('"');
-    if path.is_empty() {
-        app.ui.toasts.push(Toast::info("Type the path of a config file to import"));
-        return;
-    }
-    match config::load(std::path::Path::new(path)) {
+fn import(app: &mut SoyuzApp, path: &std::path::Path) {
+    match config::load(path) {
         Ok(loaded) => {
             app.settings.draft = loaded.config;
             let mut t = Toast::success("Settings imported");

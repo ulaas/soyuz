@@ -61,6 +61,7 @@ pub(crate) fn button(ui: &mut Ui, label: &str, kind: Btn) -> egui::Response {
     let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::WHITE);
     let size = vec2((galley.size().x + 26.0).max(72.0), 28.0);
     let (rect, resp) = ui.allocate_exact_size(size, Sense::click());
+    crate::ui::a11y::button(&resp, label);
     let hover = resp.hovered();
     let (bg, fg, stroke) = match kind {
         Btn::Primary => (if hover { p.accent_hover } else { p.accent }, Color32::WHITE, None),

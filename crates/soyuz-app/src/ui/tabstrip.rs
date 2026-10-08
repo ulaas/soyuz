@@ -46,6 +46,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
 
             // Background: double-click empty space → new tab.
             let bg = ui.interact(full, Id::new("soyuz.tabstrip.bg"), Sense::click());
+            crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::TabList, "Tabs");
             if bg.double_clicked() {
                 app.cmds.push(Cmd::Action(Action::NewTab));
             }
@@ -71,7 +72,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                     r
                 };
                 let hovered = resp.hovered() || dragging;
-                let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("h"), hovered, 0.1);
+                let hover_t =
+                    ui.ctx().animate_bool_with_time(resp.id.with("h"), hovered, crate::theme::anim(ui.ctx(), 0.1));
                 if active || dragging {
                     let shadow = egui::epaint::Shadow {
                         offset: [0, 1],
@@ -96,6 +98,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 }
                 let pane = tab.active();
                 let title = location_title(&pane.location);
+                crate::ui::a11y::tab(&resp, &title, active);
                 let glyph = if tab.dual {
                     ph::SQUARE_SPLIT_HORIZONTAL
                 } else if active {
@@ -133,6 +136,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                     if show_close && n > 1 {
                         let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 20.0));
                         let cresp = ui.interact(cr, Id::new(("soyuz.tab.close", tab.id.0)), Sense::click());
+                        crate::ui::a11y::button(&cresp, &format!("Close tab {title}"));
                         if cresp.hovered() {
                             painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
                         }
@@ -191,6 +195,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let plus_x = rects.last().map_or(full.left(), |r| r.right() + 4.0).min(full.right() - plus_w);
             let pr = Rect::from_min_size(pos2(plus_x, full.top() + 2.0), vec2(28.0, 28.0));
             let presp = ui.interact(pr, Id::new("soyuz.tab.new"), Sense::click());
+            crate::ui::a11y::button(&presp, "New tab");
             if presp.hovered() {
                 ui.painter().rect_filled(pr, CornerRadius::same(radius::ROW), p.bg_surface2);
             }

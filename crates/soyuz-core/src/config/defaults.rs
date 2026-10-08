@@ -69,6 +69,7 @@ impl Default for Appearance {
             mono_font: "JetBrains Mono".into(),
             font_size: 13.0,
             reduced_motion: false,
+            high_contrast: false,
             icon_style: IconStyle::Colored,
             show_thumbnails: true,
             thumbnail_size: 96,
@@ -269,10 +270,15 @@ fn common(km: &mut Keymap) {
     b(G, A::Undo, CTRL, KeyName::Z);
     b(G, A::Redo, CTRL, KeyName::Y);
     b(G, A::Redo, CTRL_SHIFT, KeyName::Z);
-    b(G, A::ZoomIn, CTRL, KeyName::Plus);
-    b(G, A::ZoomIn, CTRL, KeyName::Equals);
-    b(G, A::ZoomOut, CTRL, KeyName::Minus);
-    b(G, A::ZoomReset, CTRL, KeyName::Num0);
+    // Ctrl +/-/0 scale the whole UI; Ctrl+Alt +/-/0 (and Ctrl+wheel) size icons.
+    b(G, A::UiZoomIn, CTRL, KeyName::Plus);
+    b(G, A::UiZoomIn, CTRL, KeyName::Equals);
+    b(G, A::UiZoomOut, CTRL, KeyName::Minus);
+    b(G, A::UiZoomReset, CTRL, KeyName::Num0);
+    b(G, A::ZoomIn, CTRL_ALT, KeyName::Plus);
+    b(G, A::ZoomIn, CTRL_ALT, KeyName::Equals);
+    b(G, A::ZoomOut, CTRL_ALT, KeyName::Minus);
+    b(G, A::ZoomReset, CTRL_ALT, KeyName::Num0);
     b(G, A::ViewDetails, CTRL_SHIFT, KeyName::Num1);
     b(G, A::ViewGrid, CTRL_SHIFT, KeyName::Num2);
     b(G, A::ViewList, CTRL_SHIFT, KeyName::Num3);

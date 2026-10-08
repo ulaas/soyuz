@@ -352,6 +352,24 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         // ---- tools ----
         A::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         A::About => app.ui.dialogs.push(AboutDialog::new(app.renderer)),
+        A::Welcome => app.ui.welcome = true,
+        A::UiZoomIn | A::UiZoomOut | A::UiZoomReset => {
+            let cur = if app.config.appearance.ui_scale > 0.25 { app.config.appearance.ui_scale } else { 1.0 };
+            let next = match action {
+                A::UiZoomIn => ui_zoom_step(cur, 1),
+                A::UiZoomOut => ui_zoom_step(cur, -1),
+                _ => 1.0,
+            };
+            crate::ui::settings::update_config(app, ctx, |c| c.appearance.ui_scale = next);
+            let mut t = Toast::info("Interface zoom").body(format!("{:.0} %  ·  Ctrl+0 resets", next * 100.0));
+            t.duration = Some(1.5);
+            app.ui.toasts.push_replacing(t);
+        }
+        A::ToggleHighContrast => {
+            let on = !app.config.appearance.high_contrast;
+            crate::ui::settings::update_config(app, ctx, |c| c.appearance.high_contrast = on);
+            app.ui.toasts.push(Toast::info(if on { "High contrast on" } else { "High contrast off" }));
+        }
         A::ShowKeybindings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Keyboard)),
         A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
         A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
@@ -393,12 +411,17 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
 
 fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {
     let id = app.ws.pane().id;
+    let default_zoom = app.default_view.zoom;
     let pane = app.ws.pane_mut();
     if pane.view.mode != mode {
-        pane.view.mode = mode;
+        let from = std::mem::replace(&mut pane.view.mode, mode);
         // The gallery is about big previews.
         if mode == ViewMode::Gallery && pane.view.zoom < 160 {
             pane.view.zoom = 192;
+        }
+        // …and the grid should not inherit the gallery's giant tiles.
+        if from == ViewMode::Gallery && mode == ViewMode::Grid && pane.view.zoom >= 160 {
+            pane.view.zoom = default_zoom;
         }
         pane.scroll_to_cursor = true;
         app.cmds.push(Cmd::ViewChanged(id));
@@ -469,3 +492,29 @@ pub const GROUPS: [(GroupBy, &str); 6] = [
     (GroupBy::Extension, "Extension"),
     (GroupBy::FirstLetter, "First letter"),
 ];
+
+/// Interface zoom presets (browser-like steps).
+const UI_ZOOM_STEPS: [f32; 13] = [0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+
+/// The next preset above (`dir > 0`) or below the current scale.
+pub fn ui_zoom_step(cur: f32, dir: i32) -> f32 {
+    if dir > 0 {
+        UI_ZOOM_STEPS.iter().copied().find(|s| *s > cur + 0.001).unwrap_or(3.0)
+    } else {
+        UI_ZOOM_STEPS.iter().rev().copied().find(|s| *s < cur - 0.001).unwrap_or(0.5)
+    }
+}
+
+#[cfg(test)]
+mod zoom_tests {
+    use super::ui_zoom_step;
+
+    #[test]
+    fn ui_zoom_steps() {
+        assert_eq!(ui_zoom_step(1.0, 1), 1.1);
+        assert_eq!(ui_zoom_step(1.0, -1), 0.9);
+        assert_eq!(ui_zoom_step(1.05, -1), 1.0);
+        assert_eq!(ui_zoom_step(3.0, 1), 3.0);
+        assert_eq!(ui_zoom_step(0.5, -1), 0.5);
+    }
+}

@@ -6,6 +6,8 @@ use egui::{
     Visuals, vec2,
 };
 
+use soyuz_core::config::Density;
+
 use super::fonts::SEMIBOLD;
 use super::tokens::{Palette, motion, radius, type_scale};
 
@@ -24,15 +26,46 @@ pub struct ThemeOptions {
     pub font_size: f32,
     pub reduced_motion: bool,
     pub ui_scale: f32,
+    /// Control sizes (touch mode enlarges every interactive target).
+    pub density: Density,
+    /// Thicker strokes for widget outlines and focus.
+    pub high_contrast: bool,
 }
 
 /// Install both palettes as egui styles and select the theme preference.
 pub fn apply(ctx: &Context, opts: &ThemeOptions) {
-    ctx.set_style_of(Theme::Dark, style(&opts.dark, opts.font_size, opts.reduced_motion));
-    ctx.set_style_of(Theme::Light, style(&opts.light, opts.font_size, opts.reduced_motion));
+    for (theme, p) in [(Theme::Dark, &opts.dark), (Theme::Light, &opts.light)] {
+        let mut s = style(p, opts.font_size, opts.reduced_motion);
+        tune(&mut s, opts.density, opts.high_contrast);
+        ctx.set_style_of(theme, s);
+    }
     ctx.set_theme(opts.preference);
     if (opts.ui_scale - 1.0).abs() > f32::EPSILON && opts.ui_scale > 0.25 {
         ctx.set_zoom_factor(opts.ui_scale);
+    }
+}
+
+/// Density / contrast adjustments on top of [`style`].
+pub fn tune(s: &mut egui::Style, density: Density, high_contrast: bool) {
+    if density == Density::Touch {
+        let sp = &mut s.spacing;
+        sp.interact_size = vec2(48.0, density.control_height());
+        sp.button_padding = vec2(14.0, 9.0);
+        sp.item_spacing = vec2(10.0, 8.0);
+        sp.icon_width = 22.0;
+        sp.icon_width_inner = 14.0;
+        sp.scroll.bar_width = 14.0;
+        sp.combo_height = 320.0;
+    }
+    if high_contrast {
+        let w = &mut s.visuals.widgets;
+        for v in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+            v.bg_stroke.width = v.bg_stroke.width.max(1.0) + 1.0;
+            v.fg_stroke.width = 1.5;
+        }
+        w.inactive.bg_stroke.color = w.noninteractive.bg_stroke.color;
+        s.visuals.selection.stroke.width = 2.0;
+        s.visuals.striped = false;
     }
 }
 

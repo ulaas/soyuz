@@ -71,6 +71,10 @@ pub struct Session {
     pub collapsed_sections: Vec<String>,
     pub sidebar_visible: Option<bool>,
     pub checkbox_mode: bool,
+    /// The first-run welcome card was dismissed.
+    pub welcome_seen: bool,
+    /// Drop shelf contents (kept across restarts).
+    pub shelf: Vec<PathBuf>,
 }
 
 impl Default for Session {
@@ -85,6 +89,8 @@ impl Default for Session {
             collapsed_sections: Vec::new(),
             sidebar_visible: None,
             checkbox_mode: false,
+            welcome_seen: false,
+            shelf: Vec::new(),
         }
     }
 }

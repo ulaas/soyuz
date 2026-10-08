@@ -160,6 +160,20 @@ fn body(
     let thumbs_on = v.config.appearance.show_thumbnails;
     let ppp = ui.ctx().pixels_per_point();
     let mut rename_at: Option<Rect> = None;
+    let a11y_on = crate::ui::a11y::active(ui.ctx());
+    if a11y_on {
+        let title = crate::state::crumbs::location_title(&pane.location);
+        crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::ListBox, &format!("Files in {title}"));
+        let total = pane.visible.len();
+        let cursor_id = cursor_pos.map(|c| Id::new(("soyuz.flow.row", pane.id.0, c)));
+        crate::ui::a11y::with(ui.ctx(), bg.id, |n| {
+            n.set_size_of_set(total);
+            n.set_multiselectable();
+            if let Some(cid) = cursor_id {
+                n.set_active_descendant(cid.accesskit_id());
+            }
+        });
+    }
     for line in &layout.lines()[layout.lines_in(y0, y1)] {
         match line.kind {
             LineKind::Header(gi) => {
@@ -188,6 +202,18 @@ fn body(
                         checkbox: v.checkbox_mode,
                         cut: v.fileops.clipboard.is_cut(&e.path),
                     };
+                    if a11y_on {
+                        let kind = if e.is_dir_like() { "folder" } else { "file" };
+                        crate::ui::a11y::list_item(
+                            ui,
+                            Id::new(("soyuz.flow.row", pane.id.0, i)),
+                            r.intersect(list_area),
+                            &format!("{}, {kind}", e.name),
+                            st.selected,
+                            i,
+                            pane.visible.len(),
+                        );
+                    }
                     if v.fileops.renaming(pane.id, key) {
                         rename_at =
                             Some(name_rect(style, r, &g.cols, origin.x, v.checkbox_mode, pane.view.zoom as f32));

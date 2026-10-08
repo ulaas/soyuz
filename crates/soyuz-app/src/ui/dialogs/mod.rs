@@ -71,7 +71,11 @@ impl Dialogs {
         // one doesn't inherit the remembered size of the previous modal.
         let id = Id::new("soyuz.dialog").with(depth).with((top.icon(), top.width() as i32));
         let p = palette(ctx);
-        let t = ctx.animate_bool_with_time(id.with("anim"), true, crate::theme::tokens::motion::MODAL);
+        let t = ctx.animate_bool_with_time(
+            id.with("anim"),
+            true,
+            crate::theme::anim(ctx, crate::theme::tokens::motion::MODAL),
+        );
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))
@@ -91,6 +95,8 @@ impl Dialogs {
             .show(ctx, |ui| {
                 ui.set_width(width);
                 ui.set_opacity(t);
+                crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, top.title());
+                crate::ui::a11y::with(ui.ctx(), ui.unique_id(), |n| n.set_modal());
                 ui.horizontal(|ui| {
                     if let Some(g) = top.icon() {
                         ui.label(icons::icon(g, 18.0).color(p.accent));
@@ -284,14 +290,27 @@ impl Dialog for ColumnsDialog {
     }
 }
 
-/// About Soyuz.
+/// About Soyuz: icon, version, build facts, license, and a "Copy info" button for bug
+/// reports.
 pub struct AboutDialog {
     renderer: &'static str,
+    icon: Option<egui::TextureHandle>,
 }
 
 impl AboutDialog {
     pub fn new(renderer: &'static str) -> Self {
-        AboutDialog { renderer }
+        AboutDialog { renderer, icon: None }
+    }
+
+    /// `(label, value)` facts shown in the dialog and copied by "Copy info".
+    pub fn facts(&self) -> Vec<(&'static str, String)> {
+        vec![
+            ("Version", env!("CARGO_PKG_VERSION").to_string()),
+            ("Build", if cfg!(debug_assertions) { "debug".into() } else { "release".into() }),
+            ("Platform", format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)),
+            ("Renderer", self.renderer.to_string()),
+            ("Config", soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir()).display().to_string()),
+        ]
     }
 }
 
@@ -304,14 +323,58 @@ impl Dialog for AboutDialog {
         Some(ph::PLANET)
     }
 
-    fn show(&mut self, ui: &mut Ui, _ctx: &mut DialogCtx<'_>) -> bool {
+    fn width(&self) -> f32 {
+        440.0
+    }
+
+    fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(p.text_primary));
+        let tex = self
+            .icon
+            .get_or_insert_with(|| {
+                ui.ctx().load_texture(
+                    "soyuz.about.icon",
+                    crate::app_icon::color_image(128),
+                    egui::TextureOptions::LINEAR,
+                )
+            })
+            .clone();
+        ui.horizontal(|ui| {
+            ui.add(egui::Image::new((tex.id(), egui::vec2(72.0, 72.0))));
+            ui.add_space(8.0);
+            ui.vertical(|ui| {
+                ui.add_space(6.0);
+                ui.label(RichText::new("Soyuz").font(semibold(22.0)).color(p.text_primary));
+                ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(p.text_secondary));
+                ui.label(
+                    RichText::new("A keyboard-first, non-blocking file explorer.").color(p.text_tertiary).size(12.0),
+                );
+            });
+        });
+        ui.add_space(12.0);
+        let facts = self.facts();
+        egui::Grid::new("soyuz.about.facts").num_columns(2).striped(false).spacing([16.0, 6.0]).show(ui, |ui| {
+            // The version is already in the header.
+            for (k, v) in facts.iter().skip(1) {
+                ui.label(RichText::new(*k).color(p.text_tertiary));
+                ui.add(egui::Label::new(RichText::new(v).color(p.text_primary)).truncate());
+                ui.end_row();
+            }
+        });
+        ui.add_space(10.0);
         ui.label(
-            RichText::new(format!("A keyboard-first, non-blocking file explorer · renderer: {}", self.renderer))
-                .color(p.text_secondary),
+            RichText::new(
+                "Licensed under MIT OR Apache-2.0. Fonts: Inter, JetBrains Mono (OFL). Icons: Phosphor (MIT).",
+            )
+            .color(p.text_tertiary)
+            .size(11.5),
         );
-        !close_footer(ui, "Close")
+        let (close, copy) = footer(ui, "Close", "Copy info");
+        if copy {
+            let text = facts.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n");
+            ctx.cmds.push(Cmd::CopyText(format!("Soyuz\n{text}")));
+        }
+        !close && !ui.input(|i| i.key_pressed(Key::Enter))
     }
 }
 

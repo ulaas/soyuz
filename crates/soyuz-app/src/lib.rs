@@ -11,8 +11,10 @@
 
 pub mod actions;
 pub mod app;
+pub mod app_icon;
 pub mod cmd;
 pub mod commands;
+pub mod devscript;
 pub mod keys;
 pub mod ops;
 pub mod palette;

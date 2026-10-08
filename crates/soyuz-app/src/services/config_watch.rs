@@ -184,6 +184,17 @@ pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
         }
         ctx.set_theme(app.ui.theme);
     }
+    if old.jobs != c.jobs {
+        // Copy options (buffer, verify, reflink, preserve) apply to the next job; the
+        // engine's queue settings are fixed at startup (the settings page says so).
+        app.fileops.jobs.reconfigure(c);
+        let engine = |j: &soyuz_core::config::Jobs| {
+            (j.max_parallel, j.per_device_serial, j.reset_apply_all_between_jobs, j.history_limit)
+        };
+        if engine(&old.jobs) != engine(&c.jobs) && !app.settings.is_open() {
+            app.ui.toasts.push(Toast::info("Queue settings apply after restart"));
+        }
+    }
     let (km, warnings) = config::keymap(c);
     for w in warnings {
         log::warn!("{w}");

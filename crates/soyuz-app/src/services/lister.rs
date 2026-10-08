@@ -71,6 +71,24 @@ impl Lister {
     }
 }
 
+/// `(entry with its on-disk spelling, stale queried spelling)`; see the `Stat` job.
+fn case_fixed(path: &Path, queried: &str, e: EntryInfo) -> (Option<EntryInfo>, Option<String>) {
+    if !cfg!(any(windows, target_os = "macos")) {
+        return (Some(e), None);
+    }
+    match soyuz_fs::on_disk_name(path).map(|n| n.to_string_lossy().into_owned()) {
+        Some(real) if real != queried && real.to_lowercase() == queried.to_lowercase() => {
+            let real_path = path.with_file_name(&real);
+            match soyuz_fs::stat(&real_path, false) {
+                Ok(fixed) => (Some(fixed), Some(queried.to_string())),
+                Err(_) => (Some(e), None),
+            }
+        }
+        Some(_) => (Some(e), None),
+        None => (None, None),
+    }
+}
+
 fn list_options() -> ListOptions {
     ListOptions { include_hidden: true, chunk: 512, ..ListOptions::default() }
 }
@@ -108,10 +126,27 @@ fn run(job: Job, postman: &Postman) {
                     continue;
                 }
                 match soyuz_fs::stat(&p, false) {
-                    Ok(e) => updated.push(e),
+                    Ok(e) => {
+                        // Case-insensitive volumes: after a case-only rename the old
+                        // spelling still stats fine. Report it removed and the on-disk
+                        // spelling updated instead (Windows: one FindFirstFile call).
+                        let queried = soyuz_core::entry::display_name(&p);
+                        match case_fixed(&p, &queried, e) {
+                            (Some(e), None) => updated.push(e),
+                            (Some(e), Some(stale)) => {
+                                updated.push(e);
+                                removed.push(stale);
+                            }
+                            (None, _) => removed.push(queried),
+                        }
+                    }
                     Err(_) => removed.push(soyuz_core::entry::display_name(&p)),
                 }
             }
+            // Old and new spelling of a case-only rename resolve to the same entry.
+            let mut names = std::collections::HashSet::new();
+            updated.retain(|e: &EntryInfo| names.insert(e.name.clone()));
+            removed.retain(|n| !names.contains(n));
             postman.send(UiMsg::Patched { pane, generation, updated, removed });
         }
         Job::Aux { path } => {
@@ -136,5 +171,33 @@ fn run(job: Job, postman: &Postman) {
             let exists = path.is_dir();
             postman.send(UiMsg::Probed { pane, location: Location::Dir(path), exists });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn case_only_rename_reports_the_on_disk_spelling() {
+        let d = tempfile::tempdir().unwrap();
+        let old = d.path().join("Report.TXT");
+        std::fs::write(&old, b"x").unwrap();
+        soyuz_fs::rename_case_only(&old, "report.txt").unwrap();
+        let e = soyuz_fs::stat(&old, false);
+        if cfg!(any(windows, target_os = "macos")) {
+            // The stale spelling still stats on a case-insensitive volume.
+            let Ok(e) = e else { return }; // case-sensitive volume: nothing to fix
+            let (fixed, stale) = case_fixed(&old, "Report.TXT", e);
+            assert_eq!(fixed.map(|f| f.name), Some("report.txt".to_string()));
+            assert_eq!(stale.as_deref(), Some("Report.TXT"));
+        } else {
+            assert!(e.is_err());
+        }
+        let new = d.path().join("report.txt");
+        let e = soyuz_fs::stat(&new, false).unwrap();
+        let (fixed, stale) = case_fixed(&new, "report.txt", e);
+        assert_eq!(fixed.map(|f| f.name), Some("report.txt".to_string()));
+        assert_eq!(stale, None);
     }
 }

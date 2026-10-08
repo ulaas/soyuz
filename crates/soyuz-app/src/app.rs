@@ -69,6 +69,10 @@ pub struct UiState {
     pub preview: crate::ui::preview::PreviewPane,
     pub quicklook: crate::ui::quicklook::QuickLook,
     pub search: crate::ui::search::SearchUi,
+    /// Show the welcome / onboarding card (first run, or `Action::Welcome`).
+    pub welcome: bool,
+    /// The welcome card was dismissed at least once (persisted in the session).
+    pub welcome_seen: bool,
 }
 
 pub struct SoyuzApp {
@@ -96,6 +100,8 @@ pub struct SoyuzApp {
     pub config_watch: crate::services::config_watch::ConfigWatch,
     /// Pending multi-key sequence / mark (M11).
     pub keyseq: crate::keys::sequence::Sequencer,
+    /// `SOYUZ_SCRIPT` automation / `SOYUZ_FRAME_LOG` (debug hooks).
+    pub devscript: crate::devscript::DevScript,
 }
 
 impl SoyuzApp {
@@ -134,7 +140,12 @@ impl SoyuzApp {
         let views_path = dir.join("views.toml");
         let views =
             if config.behaviour.remember_folder_views { ViewMemory::load(&views_path) } else { ViewMemory::default() };
-        let session = if config.behaviour.restore_session { Session::load(&session_path) } else { None };
+        // Small persistent UI state (welcome card, shelf) is read even when tab
+        // restoration is off.
+        let stored = Session::load(&session_path);
+        let welcome_seen = stored.as_ref().is_some_and(|s| s.welcome_seen);
+        let shelf = stored.as_ref().map(|s| s.shelf.clone()).unwrap_or_default();
+        let session = if config.behaviour.restore_session { stored } else { None };
         let default_view = ViewState::from_config(&config);
 
         let mut sidebar = SidebarState::new();
@@ -173,7 +184,10 @@ impl SoyuzApp {
             preview: crate::ui::preview::PreviewPane::new(config.layout.preview_pane),
             quicklook: Default::default(),
             search: crate::ui::search::SearchUi::new(&config),
+            welcome: !welcome_seen,
+            welcome_seen,
         };
+        crate::ui::tools::restore_shelf(shelf);
 
         let start = start_location(&config);
         let fileops = crate::ops::fileops::FileOps::new(ctx, &config);
@@ -196,6 +210,7 @@ impl SoyuzApp {
             settings: Default::default(),
             config_watch: crate::services::config_watch::ConfigWatch::start(ctx, config::default_path()),
             keyseq: Default::default(),
+            devscript: crate::devscript::DevScript::from_env(),
         };
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if !restored {
@@ -287,13 +302,15 @@ impl SoyuzApp {
             collapsed_sections: self.ui.sidebar.collapsed.iter().cloned().collect(),
             sidebar_visible: Some(self.ui.sidebar_visible),
             checkbox_mode: self.ui.checkbox_mode,
+            welcome_seen: self.ui.welcome_seen,
+            shelf: crate::ui::tools::shelf_paths(),
             ..Session::default()
         }
     }
 
     /// Persist the session and view memory if they changed.
     pub fn save_state(&mut self) {
-        if self.config.behaviour.restore_session {
+        {
             let text = self.session().to_toml();
             if self.last_session.as_deref() != Some(text.as_str()) {
                 match self.session().save(&self.session_path) {
@@ -485,6 +502,7 @@ pub fn default_favorites() -> Vec<FavoriteEntry> {
 impl eframe::App for SoyuzApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        crate::devscript::begin(self);
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         ops::drain_watcher(self);
@@ -500,6 +518,7 @@ impl eframe::App for SoyuzApp {
         crate::palette::show(&ctx, self);
         crate::ui::settings::show(&ctx, self);
         ops::fileops::end_frame(self, &ctx);
+        crate::devscript::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
         // Cheap periodic check: persist when the session text changed (every ~30 s,
@@ -512,6 +531,7 @@ impl eframe::App for SoyuzApp {
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_state();
+        crate::ui::settings::save_now(self);
         self.palette.save_now();
     }
 

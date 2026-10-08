@@ -452,12 +452,17 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let ctx = "Jobs file operations copy move";
     let mut any = false;
     any |= group(ui, q, ctx, "Queue", |r| {
-        r.row_kw("Parallel jobs", "How many copy / move / delete jobs run at once.", "parallelism threads", |ui| {
-            number(ui, &mut d.jobs.max_parallel, 1..=16, "");
-        });
+        r.row_kw(
+            "Parallel jobs",
+            "How many copy / move / delete jobs run at once. Applies after restart.",
+            "parallelism threads",
+            |ui| {
+                number(ui, &mut d.jobs.max_parallel, 1..=16, "");
+            },
+        );
         r.row_kw(
             "Queue mode",
-            "Per device runs one job per disk pair at a time, which is fastest on HDDs.",
+            "Per device runs one job per disk pair at a time, which is fastest on HDDs. Applies after restart.",
             "serial",
             |ui| {
                 segmented(ui, &mut d.jobs.per_device_serial, &[(true, "Per device"), (false, "Parallel")]);
@@ -468,13 +473,13 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
         r.row_kw(
             "Reset “apply to all” between jobs",
-            "Conflict answers don't carry over to the next job.",
+            "Conflict answers don't carry over to the next job. Applies after restart.",
             "conflict",
             |ui| {
                 switch(ui, &mut d.jobs.reset_apply_all_between_jobs);
             },
         );
-        r.row("History size", "Completed operations kept for undo.", |ui| {
+        r.row("History size", "Completed operations kept for undo. Applies after restart.", |ui| {
             number(ui, &mut d.jobs.history_limit, 10..=5000, "");
         });
     });
@@ -675,7 +680,6 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut reset_all = false;
     let mut copy = false;
     let mut any = false;
-    let s = &mut app.settings;
     any |= group(ui, q, "Config file advanced", "config.toml", |r| {
         r.block("", "Every setting lives in one TOML file. Edits made in an editor apply within a second; parse errors show where they are and keep the previous settings.", |ui| {
             ui.horizontal(|ui| {
@@ -691,18 +695,12 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     });
     any |= group(ui, q, "Config file advanced", "Export & import", |r| {
-        r.row_kw("Export settings", "Writes soyuz-config.toml to your Downloads folder.", "backup save", |ui| {
-            export = small_button(ui, Some(ph::EXPORT), "Export", false).clicked();
+        r.row_kw("Export settings", "Save a copy of config.toml anywhere you like.", "backup save", |ui| {
+            export = small_button(ui, Some(ph::EXPORT), "Export…", false).clicked();
         });
-        r.row_kw(
-            "Import settings",
-            "Path of a config file to load (replaces the current settings).",
-            "restore load",
-            |ui| {
-                import = small_button(ui, Some(ph::DOWNLOAD_SIMPLE), "Import", false).clicked();
-                text(ui, &mut s.import_path, "C:\\path\\to\\config.toml", 220.0);
-            },
-        );
+        r.row_kw("Import settings", "Load a config file (replaces the current settings).", "restore load", |ui| {
+            import = small_button(ui, Some(ph::DOWNLOAD_SIMPLE), "Import…", false).clicked();
+        });
     });
     any |= group(ui, q, "Config file advanced", "Danger zone", |r| {
         r.row_kw("Reset everything", "Restore every setting to its default.", "defaults factory", |ui| {
@@ -720,11 +718,10 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         app.cmds.push(crate::cmd::Cmd::CopyText(t));
     }
     if export {
-        super::export(app);
+        super::start_export(app);
     }
     if import {
-        let path = app.settings.import_path.clone();
-        super::import(app, &path);
+        super::start_import(app);
     }
     if reset_all {
         app.settings.draft = soyuz_core::config::Config::default();

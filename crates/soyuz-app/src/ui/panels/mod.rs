@@ -84,6 +84,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(108.0, 26.0));
                 let resp = ui.interact(r, ui.id().with(("bottom.tab", tab.label())), Sense::click());
                 let active = app.ui.bottom.tab == tab;
+                crate::ui::a11y::tab(&resp, tab.label(), active);
                 if active {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 } else if resp.hovered() {
@@ -111,6 +112,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             }
             let close = egui::Rect::from_center_size(pos2(card.right() - 20.0, card.top() + 19.0), vec2(24.0, 24.0));
             let cresp = ui.interact(close, ui.id().with("bottom.close"), Sense::click());
+            crate::ui::a11y::button(&cresp, "Close panel");
             if cresp.hovered() {
                 ui.painter().rect_filled(close, CornerRadius::same(radius::CONTROL), p.bg_surface2);
             }

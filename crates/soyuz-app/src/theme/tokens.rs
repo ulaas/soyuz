@@ -130,6 +130,71 @@ pub const ORBIT_LIGHT: Palette = Palette {
     shadow_alpha: 0.12,
 };
 
+/// "Orbit High Contrast" (dark): near-black surfaces, white text, bright borders and a
+/// strong accent. Meets WCAG AAA for body text; borders are clearly visible.
+pub const ORBIT_HC_DARK: Palette = Palette {
+    dark: true,
+    bg_window: hex(0x000000),
+    bg_surface1: hex(0x0A0A0A),
+    bg_surface2: hex(0x161616),
+    bg_surface3: hex(0x1E1E1E),
+    bg_sunken: hex(0x000000),
+    border_subtle: hex(0x8A8A8A),
+    border_strong: hex(0xFFFFFF),
+    text_primary: hex(0xFFFFFF),
+    text_secondary: hex(0xE0E0E0),
+    text_tertiary: hex(0xBDBDBD),
+    accent: hex(0x4DA3FF),
+    accent_hover: hex(0x80BDFF),
+    accent_subtle: rgba(77, 163, 255, 0.34),
+    success: hex(0x5CFF9D),
+    warning: hex(0xFFD24D),
+    danger: hex(0xFF6B6B),
+    info: hex(0x6BD8FF),
+    glyph_folder: hex(0xFFD24D),
+    glyph_image: hex(0x7DFFAF),
+    glyph_video: hex(0xD7AEFF),
+    glyph_audio: hex(0xFFA8C0),
+    glyph_archive: hex(0xFFD24D),
+    glyph_code: hex(0x80BDFF),
+    glyph_doc: hex(0xE0E0E0),
+    glyph_exe: hex(0x6BD8FF),
+    tags: TAGS,
+    shadow_alpha: 0.6,
+};
+
+/// "Orbit High Contrast" (light): white surfaces, black text, dark borders.
+pub const ORBIT_HC_LIGHT: Palette = Palette {
+    dark: false,
+    bg_window: hex(0xFFFFFF),
+    bg_surface1: hex(0xFFFFFF),
+    bg_surface2: hex(0xEDEDED),
+    bg_surface3: hex(0xFFFFFF),
+    bg_sunken: hex(0xE0E0E0),
+    border_subtle: hex(0x6B6B6B),
+    border_strong: hex(0x000000),
+    text_primary: hex(0x000000),
+    text_secondary: hex(0x1F1F1F),
+    text_tertiary: hex(0x3D3D3D),
+    accent: hex(0x0040C0),
+    accent_hover: hex(0x00309A),
+    accent_subtle: rgba(0, 64, 192, 0.20),
+    success: hex(0x006B32),
+    warning: hex(0x8A5A00),
+    danger: hex(0xB00020),
+    info: hex(0x005A8C),
+    glyph_folder: hex(0x9A6200),
+    glyph_image: hex(0x006B32),
+    glyph_video: hex(0x5B21B6),
+    glyph_audio: hex(0xA3164A),
+    glyph_archive: hex(0x8A5A00),
+    glyph_code: hex(0x0040C0),
+    glyph_doc: hex(0x1F1F1F),
+    glyph_exe: hex(0x005A8C),
+    tags: TAGS,
+    shadow_alpha: 0.25,
+};
+
 impl Palette {
     /// Apply `[theme.colors]` overrides (token name → `#RRGGBB` / `#RRGGBBAA`).
     /// Returns the warnings for unknown tokens / bad colors.
@@ -292,6 +357,28 @@ mod tests {
         assert_eq!(w.len(), 2);
         assert_eq!(p.accent, Color32::RED);
         assert_eq!(p.bg_window, Color32::BLACK);
+    }
+
+    #[test]
+    fn high_contrast_text_contrast() {
+        // Relative luminance contrast ≥ 7:1 (WCAG AAA) for primary and secondary text.
+        fn lum(c: Color32) -> f32 {
+            let f = |v: u8| {
+                let v = v as f32 / 255.0;
+                if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+            };
+            0.2126 * f(c.r()) + 0.7152 * f(c.g()) + 0.0722 * f(c.b())
+        }
+        fn ratio(a: Color32, b: Color32) -> f32 {
+            let (x, y) = (lum(a), lum(b));
+            (x.max(y) + 0.05) / (x.min(y) + 0.05)
+        }
+        for p in [&ORBIT_HC_DARK, &ORBIT_HC_LIGHT] {
+            assert!(ratio(p.text_primary, p.bg_window) >= 7.0);
+            assert!(ratio(p.text_secondary, p.bg_surface1) >= 7.0);
+            assert!(ratio(p.text_tertiary, p.bg_surface2) >= 4.5);
+            assert!(ratio(p.border_subtle, p.bg_window) >= 3.0, "visible borders");
+        }
     }
 
     #[test]

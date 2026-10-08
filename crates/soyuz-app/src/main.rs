@@ -70,31 +70,6 @@ fn resolve_renderer(choice: RendererChoice) -> (eframe::Renderer, &'static str) 
     }
 }
 
-/// A small procedural window icon (accent ring with an orbiting dot).
-fn window_icon() -> egui::IconData {
-    const N: u32 = 64;
-    let mut rgba = vec![0u8; (N * N * 4) as usize];
-    let c = (N as f32 - 1.0) / 2.0;
-    let accent = [0x5B, 0x8C, 0xFF];
-    let dot = (c + 17.0 * 0.70, c - 17.0 * 0.70);
-    for y in 0..N {
-        for x in 0..N {
-            let (fx, fy) = (x as f32, y as f32);
-            let r = ((fx - c).powi(2) + (fy - c).powi(2)).sqrt();
-            let ring = (1.0 - ((r - 17.0).abs() - 2.5).clamp(0.0, 1.0)).max(0.0);
-            let core = (1.0 - (r - 7.0).clamp(0.0, 1.0)).max(0.0);
-            let dr = ((fx - dot.0).powi(2) + (fy - dot.1).powi(2)).sqrt();
-            let sat = (1.0 - (dr - 5.0).clamp(0.0, 1.0)).max(0.0);
-            let a = ring.max(core).max(sat);
-            let i = ((y * N + x) * 4) as usize;
-            let color = if sat > 0.0 { [0xF2, 0xB8, 0x4B] } else { accent };
-            rgba[i..i + 3].copy_from_slice(&color);
-            rgba[i + 3] = (a * 255.0) as u8;
-        }
-    }
-    egui::IconData { rgba, width: N, height: N }
-}
-
 fn main() -> ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn")).init();
 
@@ -124,7 +99,7 @@ fn main() -> ExitCode {
             .with_app_id("soyuz")
             .with_inner_size([1280.0, 800.0])
             .with_min_inner_size([720.0, 440.0])
-            .with_icon(window_icon()),
+            .with_icon(soyuz_app::app_icon::icon_data(128)),
         renderer,
         centered: true,
         ..Default::default()
@@ -166,7 +141,7 @@ mod tests {
 
     #[test]
     fn icon_is_square_rgba() {
-        let i = window_icon();
+        let i = soyuz_app::app_icon::icon_data(32);
         assert_eq!(i.rgba.len(), (i.width * i.height * 4) as usize);
         assert!(i.rgba.chunks(4).any(|px| px[3] == 255));
     }

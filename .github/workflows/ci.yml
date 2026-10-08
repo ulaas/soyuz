@@ -83,3 +83,22 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (optional features)
         run: cargo clippy -p soyuz-app --features glow --locked -- -D warnings
+
+  # Release zip of the Windows build (pushes to main and manual runs).
+  package:
+    name: Package (windows)
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build and zip
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soyuz-windows-x64
+          path: dist/*.zip
+          if-no-files-found: error

@@ -141,25 +141,43 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Reduce motion", "Turn off animations (panels, dialogs, toasts).", "animation accessibility", |ui| {
             switch(ui, &mut d.appearance.reduced_motion);
         });
+        r.row_kw(
+            "High contrast",
+            "Black / white surfaces, stronger text, borders and focus rings.",
+            "accessibility a11y contrast vision",
+            |ui| {
+                switch(ui, &mut d.appearance.high_contrast);
+            },
+        );
     });
     any |= group(ui, q, ctx, "Density & text", |r| {
-        r.row_kw("Density", "Row height of lists: 24, 28 or 32 px.", "compact cozy comfortable spacing", |ui| {
-            segmented(
-                ui,
-                &mut d.appearance.density,
-                &[(Density::Compact, "Compact"), (Density::Cozy, "Cozy"), (Density::Comfortable, "Comfortable")],
-            );
-        });
+        r.row_kw(
+            "Density",
+            "Row height of lists: 24, 28 or 32 px. Touch enlarges every button and row for fingers.",
+            "compact cozy comfortable spacing touch tablet",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.appearance.density,
+                    &[
+                        (Density::Compact, "Compact"),
+                        (Density::Cozy, "Cozy"),
+                        (Density::Comfortable, "Comfortable"),
+                        (Density::Touch, "Touch"),
+                    ],
+                );
+            },
+        );
         r.row_kw("Font size", "Base size of all UI text.", "text scale", |ui| {
             number(ui, &mut d.appearance.font_size, 11.0..=17.0, " pt");
         });
         r.row_kw(
             "Interface scale",
-            "Zoom the whole window (applies when you release the slider).",
+            "Zoom the whole window (Ctrl+= / Ctrl+- / Ctrl+0; applies when you release the slider).",
             "ui scale zoom dpi",
             |ui| {
                 let mut v = s.scale_temp.unwrap_or(d.appearance.ui_scale);
-                let resp = number(ui, &mut v, 0.75..=2.0, "×");
+                let resp = number(ui, &mut v, 0.5..=3.0, "×");
                 if resp.dragged() {
                     s.scale_temp = Some(v);
                 } else {

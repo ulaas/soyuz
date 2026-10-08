@@ -79,6 +79,8 @@ pub enum Density {
     #[default]
     Cozy,
     Comfortable,
+    /// Large touch targets (rows, buttons and menu items grow to finger size).
+    Touch,
 }
 
 impl Density {
@@ -88,6 +90,15 @@ impl Density {
             Density::Compact => 24.0,
             Density::Cozy => 28.0,
             Density::Comfortable => 32.0,
+            Density::Touch => 40.0,
+        }
+    }
+
+    /// Height of interactive controls (buttons, menu rows) in points.
+    pub fn control_height(self) -> f32 {
+        match self {
+            Density::Touch => 36.0,
+            _ => 24.0,
         }
     }
 }
@@ -111,6 +122,8 @@ pub struct Appearance {
     pub mono_font: String,
     pub font_size: f32,
     pub reduced_motion: bool,
+    /// High-contrast palette (stronger text, borders and focus rings).
+    pub high_contrast: bool,
     pub icon_style: IconStyle,
     pub show_thumbnails: bool,
     pub thumbnail_size: u32,

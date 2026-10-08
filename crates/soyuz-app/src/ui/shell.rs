@@ -85,6 +85,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
 
     // Overlays.
     crate::ui::tools::show_windows(&ctx, app);
+    crate::ui::welcome::show(&ctx, app, if app.ui.status_visible { 24.0 } else { 0.0 });
     let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
     app.ui.dialogs.show(&ctx, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);

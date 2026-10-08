@@ -99,6 +99,13 @@ impl Toasts {
         id
     }
 
+    /// Push, replacing any live toast with the same title (status-like toasts such as
+    /// the interface zoom level).
+    pub fn push_replacing(&mut self, toast: Toast) -> u64 {
+        self.live.retain(|l| l.toast.title != toast.title);
+        self.push(toast)
+    }
+
     pub fn dismiss(&mut self, id: u64) {
         if let Some(l) = self.live.iter_mut().find(|l| l.id == id) {
             l.closing.get_or_insert(f64::NAN);
@@ -161,6 +168,16 @@ impl Toasts {
             let mut close = false;
             Area::new(id).order(Order::Tooltip).fixed_pos(rect.min).interactable(true).show(ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(rect.size(), Sense::hover());
+                // Screen readers announce toasts as polite live alerts.
+                let spoken = match &l.toast.body {
+                    Some(b) => format!("{}. {b}", l.toast.title),
+                    None => l.toast.title.clone(),
+                };
+                crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
+                    n.set_role(egui::accesskit::Role::Alert);
+                    n.set_label(spoken);
+                    n.set_live(egui::accesskit::Live::Polite);
+                });
                 let painter = ui.painter();
                 let shadow = egui::epaint::Shadow {
                     offset: [0, 6],

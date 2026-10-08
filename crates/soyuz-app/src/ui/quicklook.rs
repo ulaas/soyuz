@@ -133,7 +133,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     st.set_target(Some(&target), limits);
     st.poll(ctx);
 
-    let t = ctx.animate_bool_with_time(Id::new("soyuz.ql.anim"), true, crate::theme::tokens::motion::MODAL);
+    let t = ctx.animate_bool_with_time(
+        Id::new("soyuz.ql.anim"),
+        true,
+        crate::theme::anim(ctx, crate::theme::tokens::motion::MODAL),
+    );
     let screen = ctx.content_rect();
     let dim = Color32::from_black_alpha((if p.dark { 150.0 } else { 90.0 } * t) as u8);
 

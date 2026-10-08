@@ -101,6 +101,7 @@ impl Recorder {
         let mut clear = false;
         let resp = Modal::new(id).frame(frame).backdrop_color(Color32::from_black_alpha(60)).show(ctx, |ui| {
             ui.set_width(420.0);
+            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Record shortcut");
             ui.horizontal(|ui| {
                 ui.label(icons::icon(ph::KEYBOARD, 18.0).color(p.accent));
                 ui.label(

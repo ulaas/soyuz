@@ -165,7 +165,11 @@ pub fn sidebar_section(
         if ui.is_rect_visible(rect) {
             let painter = ui.painter_at(rect.expand(3.0));
             let cr = CornerRadius::same(radius::ROW);
-            let hover = ui.ctx().animate_bool_with_time(resp.id.with("hover"), resp.hovered(), 0.10);
+            let hover = ui.ctx().animate_bool_with_time(
+                resp.id.with("hover"),
+                resp.hovered(),
+                crate::theme::anim(ui.ctx(), 0.10),
+            );
             if active {
                 painter.rect_filled(rect, cr, p.accent_subtle);
             } else if hover > 0.0 {

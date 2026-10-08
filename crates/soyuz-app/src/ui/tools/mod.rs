@@ -84,6 +84,18 @@ pub fn shelf_count() -> usize {
     TOOLS.with_borrow(|t| t.shelf.items.len())
 }
 
+/// Paths on the shelf (persisted in the session).
+pub fn shelf_paths() -> Vec<PathBuf> {
+    TOOLS.with_borrow(|t| t.shelf.items.iter().map(|i| i.path.clone()).collect())
+}
+
+/// Put the saved shelf contents back (closed; missing items show as missing).
+pub fn restore_shelf(paths: Vec<PathBuf>) {
+    if !paths.is_empty() {
+        TOOLS.with_borrow_mut(|t| t.shelf.add(paths));
+    }
+}
+
 pub fn shelf_open() -> bool {
     TOOLS.with_borrow(|t| t.shelf.open)
 }
@@ -458,10 +470,12 @@ pub fn tool_window(
 pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: u8, enabled: bool) -> egui::Response {
     let p = palette(ui.ctx());
     let font = FontId::proportional(12.5);
-    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::WHITE);
+    // PLACEHOLDER so the galley takes `fg` below (secondary buttons are dark in light mode).
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, Color32::PLACEHOLDER);
     let icon_w = if icon.is_some() { 18.0 } else { 0.0 };
     let size = vec2(galley.size().x + 22.0 + icon_w, 26.0);
     let (rect, resp) = ui.allocate_exact_size(size, if enabled { Sense::click() } else { Sense::hover() });
+    crate::ui::a11y::button(&resp, label);
     let hover = enabled && resp.hovered();
     let (bg, fg, stroke) = match (kind, enabled) {
         (_, false) => (p.bg_surface2, p.text_tertiary, Some(p.border_subtle)),
@@ -480,6 +494,9 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, kind: u8, enabled: b
         x += icon_w;
     }
     ui.painter().galley(pos2(x, rect.center().y - galley.size().y / 2.0), galley, fg);
+    if resp.has_focus() {
+        crate::ui::widgets::focus_ring(ui, rect);
+    }
     resp
 }
 

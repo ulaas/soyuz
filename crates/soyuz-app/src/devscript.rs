@@ -1,0 +1,189 @@
+//! Debug / automation hook (like `SOYUZ_THROTTLE_MBPS` and `SOYUZ_OPEN_TOOL`):
+//! `SOYUZ_SCRIPT` runs a list of steps at startup, separated by `;`, and can save
+//! screenshots of the window. Used for visual regression passes and docs screenshots.
+//!
+//! Steps:
+//! * `wait:<ms>` — let the UI settle;
+//! * `shot:<file.png>` — screenshot of this window only;
+//! * `cd:<path>` — navigate the focused pane; `select:<name>` — select one item;
+//! * `theme:dark|light|system`;
+//! * `config:<dotted.key>=<toml value>` — change a setting live (`config:appearance.density="touch"`);
+//! * `scroll:<px>` — scroll the focused pane to an offset;
+//! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `quit`;
+//! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
+//!
+//! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
+//! (to check that an idle window does not repaint and that big folders stay fast).
+
+use std::collections::VecDeque;
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use soyuz_core::Location;
+use soyuz_core::config::{Action, Config};
+
+use crate::app::SoyuzApp;
+use crate::cmd::Cmd;
+
+#[derive(Default)]
+pub struct DevScript {
+    steps: VecDeque<String>,
+    resume_at: Option<Instant>,
+    pending_shot: Option<PathBuf>,
+    frame_log: bool,
+    frames: u64,
+    frame_start: Option<Instant>,
+}
+
+impl DevScript {
+    pub fn from_env() -> Self {
+        let steps = std::env::var("SOYUZ_SCRIPT")
+            .map(|s| s.split(';').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect())
+            .unwrap_or_default();
+        DevScript { steps, frame_log: std::env::var("SOYUZ_FRAME_LOG").is_ok_and(|v| v == "1"), ..Default::default() }
+    }
+}
+
+/// Start of a frame (frame-time logging).
+pub fn begin(app: &mut SoyuzApp) {
+    if app.devscript.frame_log {
+        app.devscript.frame_start = Some(Instant::now());
+    }
+}
+
+/// Run due steps. Called once per frame.
+pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+    if app.devscript.frame_log {
+        app.devscript.frames += 1;
+        let ms = app.devscript.frame_start.map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
+        log::info!("frame {} ui {ms:.2} ms", app.devscript.frames);
+    }
+    if let Some(path) = app.devscript.pending_shot.clone() {
+        let image = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| match e {
+                egui::Event::Screenshot { image, .. } => Some(image.clone()),
+                _ => None,
+            })
+        });
+        match image {
+            Some(img) => {
+                save_png(&path, &img);
+                app.devscript.pending_shot = None;
+            }
+            None => {
+                ctx.request_repaint();
+                return;
+            }
+        }
+    }
+    loop {
+        if let Some(t) = app.devscript.resume_at {
+            let now = Instant::now();
+            if now < t {
+                ctx.request_repaint_after(t - now);
+                return;
+            }
+            app.devscript.resume_at = None;
+        }
+        let Some(step) = app.devscript.steps.pop_front() else { return };
+        log::info!("SOYUZ_SCRIPT: {step}");
+        let (verb, arg) = step.split_once(':').unwrap_or((step.as_str(), ""));
+        match verb {
+            "wait" => {
+                let ms = arg.trim().parse::<u64>().unwrap_or(500);
+                app.devscript.resume_at = Some(Instant::now() + Duration::from_millis(ms));
+            }
+            "shot" => {
+                app.devscript.pending_shot = Some(PathBuf::from(arg.trim()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+                ctx.request_repaint();
+                return;
+            }
+            "cd" => {
+                let pane = app.ws.pane().id;
+                app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(PathBuf::from(arg.trim())), select: None });
+            }
+            "select" => {
+                let pane = app.ws.pane_mut();
+                if let Some(pos) = pane.visible_pos(arg.trim()) {
+                    pane.move_cursor(pos, false, false);
+                }
+            }
+            "theme" => {
+                app.ui.theme = crate::theme::preference_from_config(arg);
+                ctx.set_theme(app.ui.theme);
+            }
+            "config" => match edited(&app.config, arg) {
+                Ok(c) => crate::services::config_watch::apply_config(app, ctx, c),
+                Err(e) => log::warn!("SOYUZ_SCRIPT {step}: {e}"),
+            },
+            "size" => {
+                if let Some((w, h)) = arg.split_once('x')
+                    && let (Ok(w), Ok(h)) = (w.trim().parse::<f32>(), h.trim().parse::<f32>())
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
+                }
+            }
+            "welcome" => app.ui.welcome = arg.trim() != "off",
+            "scroll" => {
+                // Absolute scroll offset of the focused pane (perf probes).
+                let y = arg.trim().parse::<f32>().unwrap_or(0.0);
+                app.ws.pane_mut().restore_scroll = Some(y);
+            }
+            "export_picker" => {
+                crate::ui::settings::open(app, Some(crate::ui::settings::Section::Advanced));
+                crate::ui::settings::start_export(app);
+            }
+            "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+            _ => match step.parse::<Action>() {
+                Ok(a) => app.cmds.push(Cmd::Action(a)),
+                Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),
+            },
+        }
+        ctx.request_repaint();
+    }
+}
+
+/// `config` with one dotted key set to a TOML value.
+fn edited(config: &Config, assignment: &str) -> Result<Config, String> {
+    let (key, value) = assignment.split_once('=').ok_or("expected key=value")?;
+    let mut root: toml::Table =
+        toml::from_str(&soyuz_core::config::to_pretty_string(config).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let value: toml::Value = toml::from_str::<toml::Table>(&format!("v = {value}"))
+        .map_err(|e| e.to_string())?
+        .remove("v")
+        .ok_or("no value")?;
+    let parts: Vec<&str> = key.trim().split('.').collect();
+    let mut t = &mut root;
+    for p in &parts[..parts.len() - 1] {
+        t = t.get_mut(*p).and_then(toml::Value::as_table_mut).ok_or_else(|| format!("no table {p}"))?;
+    }
+    t.insert(parts[parts.len() - 1].to_string(), value);
+    soyuz_core::config::parse_str(&toml::to_string(&root).map_err(|e| e.to_string())?)
+        .map(|l| l.config)
+        .map_err(|e| e.to_string())
+}
+
+fn save_png(path: &std::path::Path, img: &egui::ColorImage) {
+    let [w, h] = img.size;
+    let bytes: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+    match image::save_buffer(path, &bytes, w as u32, h as u32, image::ColorType::Rgba8) {
+        Ok(()) => log::info!("SOYUZ_SCRIPT: saved {}", path.display()),
+        Err(e) => log::warn!("SOYUZ_SCRIPT: cannot save {}: {e}", path.display()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dotted_config_edit() {
+        let c = edited(&Config::default(), "appearance.density=\"touch\"").unwrap();
+        assert_eq!(c.appearance.density, soyuz_core::config::Density::Touch);
+        let c = edited(&c, "appearance.high_contrast=true").unwrap();
+        assert!(c.appearance.high_contrast);
+        assert!(edited(&c, "nope.x=1").is_err());
+    }
+}
