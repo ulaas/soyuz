@@ -102,6 +102,10 @@ pub struct Harness {
     pub audit: Option<Audit>,
     pub redact_cloud: bool,
     pub budget: Option<soyuz_app::ai::agent::Budget>,
+    /// Files attached to the first message ("Suggest names").
+    pub attachments: soyuz_app::ai::agent::Attachments,
+    /// External MCP tools offered to the model (A4).
+    pub external: Option<Arc<dyn soyuz_mcp::client::ExternalTools>>,
 }
 
 impl Harness {
@@ -117,6 +121,8 @@ impl Harness {
             audit: None,
             redact_cloud: true,
             budget: None,
+            external: None,
+            attachments: Default::default(),
         }
     }
 
@@ -137,6 +143,7 @@ impl Harness {
             perms: Arc::new(Permissions::new(&self.rules, self.default_access)),
             audit: self.audit.clone(),
             wake: no_wake(),
+            external: self.external.clone(),
         }
     }
 
@@ -153,7 +160,12 @@ impl Harness {
     ) -> (TaskId, Outcome) {
         let spec = TaskSpec {
             id: TaskId::next(),
-            mode: Mode::Chat { prompt: prompt.into(), context, history: Vec::new() },
+            mode: Mode::Chat {
+                prompt: prompt.into(),
+                context,
+                history: Vec::new(),
+                attachments: self.attachments.clone(),
+            },
             limits: self.limits.clone(),
             budget: self.budget.clone(),
             redact_cloud: self.redact_cloud,

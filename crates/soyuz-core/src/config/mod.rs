@@ -24,7 +24,7 @@ pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
 };
-pub use mcp::{AiMcp, AiMcpClient, AiMcpServer, AiRisk};
+pub use mcp::{AiMcp, AiMcpApprovalUi, AiMcpClient, AiMcpServer, AiRisk};
 pub use migrate::{MigrateOutcome, migrate_file};
 pub use preserve::to_string_preserving;
 pub use schema::*;

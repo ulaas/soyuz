@@ -7,6 +7,7 @@
 pub mod cards;
 pub mod chat;
 pub mod diff;
+pub mod mcp_area;
 pub mod pages;
 
 use std::path::PathBuf;
@@ -58,6 +59,12 @@ pub enum PanelAct {
     ReloadRecipes,
     Prompt(String),
     OpenSettings,
+    /// A card of an external MCP client.
+    Mcp(u64, cards::CardAction),
+    /// "Undo everything this client did in this session".
+    McpUndoClient(String),
+    /// Hide finished MCP requests.
+    McpClear,
 }
 
 /// Small rounded chip; `strong` uses the accent.
@@ -324,7 +331,11 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
                 format!("Working \u{00b7} {}s", r.started.elapsed().as_secs())
             }
         }
-        None => "Plans every change; nothing happens without you".into(),
+        None => match app.services.mcp.approvals.lock().pending() {
+            0 => "Plans every change; nothing happens without you".into(),
+            1 => "1 external request waits for you".into(),
+            n => format!("{n} external requests wait for you"),
+        },
     };
     let sub_w = (r.width() - 34.0 - 100.0).max(40.0);
     let sg = crate::ui::widgets::trunc_galley(ui.painter(), &sub, FontId::proportional(11.0), p.text_tertiary, sub_w);
@@ -571,6 +582,9 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
             PanelAct::ReloadAudit => app.ai.audit.loaded = false,
             PanelAct::ReloadRecipes => app.ai.recipes.loaded = false,
             PanelAct::OpenSettings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Ai)),
+            PanelAct::Mcp(id, act) => mcp_area::apply(app, id, act),
+            PanelAct::McpUndoClient(client) => state::undo_mcp_client(app, client),
+            PanelAct::McpClear => app.services.mcp.approvals.lock().clear_resolved(),
         }
     }
 }

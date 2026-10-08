@@ -392,6 +392,12 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.circle_filled(b, 8.5, p.bg_window);
         painter.circle_filled(b, 7.0, p.accent);
         painter.text(b, Align2::CENTER_CENTER, ph::SPARKLE, ticons::font_fill(8.5), Color32::WHITE);
+    } else if meta.mcp_client.is_some() {
+        // Started by an external MCP client (named next to the title).
+        let b = pos2(ic.x + 14.0, ic.y + 14.0);
+        painter.circle_filled(b, 8.5, p.bg_window);
+        painter.circle_filled(b, 7.0, p.warning);
+        painter.text(b, Align2::CENTER_CENTER, ph::PLUGS_CONNECTED, ticons::font(8.5), Color32::WHITE);
     }
 
     // Text block.
@@ -399,8 +405,21 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let spark_w = if card.width() > 640.0 { 150.0 } else { 0.0 };
     let buttons_w = 128.0;
     let text_w = card.right() - tx - spark_w - buttons_w - 16.0;
-    let tg = trunc_galley(&painter, &title, semibold(13.0), p.text_primary, text_w);
+    // MCP jobs: a "MCP · <client>" tag after the title.
+    let tag = meta.mcp_client.as_ref().map(|c| {
+        let g = painter.layout_no_wrap(format!("MCP \u{00b7} {c}"), FontId::proportional(10.5), p.warning);
+        let w = g.size().x + 14.0;
+        (g, w)
+    });
+    let tag_w = tag.as_ref().map_or(0.0, |(_, w)| w + 8.0);
+    let tg = trunc_galley(&painter, &title, semibold(13.0), p.text_primary, (text_w - tag_w).max(40.0));
+    let title_w = tg.size().x;
     painter.galley(pos2(tx, card.top() + 12.0), tg, p.text_primary);
+    if let Some((g, w)) = tag {
+        let r = Rect::from_min_size(pos2(tx + title_w + 8.0, card.top() + 12.0), vec2(w, 17.0));
+        painter.rect_filled(r, CornerRadius::same(8), p.warning.gamma_multiply(0.14));
+        painter.galley(pos2(r.left() + 7.0, r.center().y - g.size().y / 2.0), g, p.warning);
+    }
     let (line, _) = state_line(s, Some(&meta));
     let line_color = match &s.state {
         JobState::WaitingForUser => p.warning,

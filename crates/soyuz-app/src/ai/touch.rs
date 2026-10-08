@@ -1,7 +1,8 @@
-//! Live highlights (roadmap A6): files the assistant is reading, planning to change or
-//! changing get a subtle animated outline and a badge in the file views. The harness
-//! marks paths through [`mark`]; views call [`paint`] per visible row (a read lock and an
-//! empty check when the assistant is idle).
+//! Live highlights (roadmap A6): files the assistant or an MCP client is reading,
+//! planning to change or changing get a subtle animated outline and a badge in the file
+//! views and the treemap. The harness marks paths through [`mark`], the MCP bridge
+//! through [`mark_mcp`]; views call [`paint`] per visible row (a read lock and an empty
+//! check when nothing is marked). MCP marks carry a plug badge instead of the sparkle.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -49,6 +50,8 @@ impl TouchKind {
 pub struct AiTouch {
     pub kind: TouchKind,
     pub at: Instant,
+    /// Marked for an external MCP client (else the in-app assistant).
+    pub mcp: bool,
 }
 
 static TOUCHES: RwLock<Option<HashMap<PathBuf, AiTouch>>> = RwLock::new(None);
@@ -58,8 +61,17 @@ fn key(p: &Path) -> PathBuf {
     if cfg!(windows) { PathBuf::from(p.to_string_lossy().to_lowercase().replace('/', "\\")) } else { p }
 }
 
-/// Mark paths (a stronger kind is not downgraded to `Reading`).
+/// Mark paths for the assistant (a stronger kind is not downgraded to `Reading`).
 pub fn mark<'a>(paths: impl IntoIterator<Item = &'a PathBuf>, kind: TouchKind) {
+    mark_as(paths, kind, false);
+}
+
+/// Mark paths touched by an external MCP client.
+pub fn mark_mcp<'a>(paths: impl IntoIterator<Item = &'a PathBuf>, kind: TouchKind) {
+    mark_as(paths, kind, true);
+}
+
+fn mark_as<'a>(paths: impl IntoIterator<Item = &'a PathBuf>, kind: TouchKind, mcp: bool) {
     let now = Instant::now();
     let mut g = TOUCHES.write();
     let map = g.get_or_insert_with(HashMap::new);
@@ -70,7 +82,7 @@ pub fn mark<'a>(paths: impl IntoIterator<Item = &'a PathBuf>, kind: TouchKind) {
         {
             continue;
         }
-        map.insert(k, AiTouch { kind, at: now });
+        map.insert(k, AiTouch { kind, at: now, mcp });
         if map.len() > 20_000 {
             break;
         }
@@ -109,6 +121,35 @@ pub fn get(path: &Path) -> Option<AiTouch> {
     map.get(&key(path)).copied()
 }
 
+/// The strongest mark at or below `dir` (treemap folder tiles whose contents are not
+/// drawn). Exact marks are cheap; the subtree scan is skipped for huge mark sets.
+pub fn get_within(dir: &Path) -> Option<AiTouch> {
+    let g = TOUCHES.read();
+    let map = g.as_ref()?;
+    if map.is_empty() {
+        return None;
+    }
+    let k = key(dir);
+    if let Some(t) = map.get(&k) {
+        return Some(*t);
+    }
+    if map.len() > 4000 {
+        return None;
+    }
+    let rank = |t: &AiTouch| match t.kind {
+        TouchKind::Changing => 3,
+        TouchKind::Planned => 2,
+        TouchKind::Done => 1,
+        TouchKind::Reading => 0,
+    };
+    map.iter().filter(|(p, _)| p.starts_with(&k)).map(|(_, t)| *t).max_by_key(rank)
+}
+
+/// Whether anything is marked (views skip per-item lookups otherwise).
+pub fn any() -> bool {
+    TOUCHES.read().as_ref().is_some_and(|m| !m.is_empty())
+}
+
 fn color(kind: TouchKind, p: &Palette) -> Color32 {
     match kind {
         TouchKind::Reading => p.info,
@@ -121,6 +162,11 @@ fn color(kind: TouchKind, p: &Palette) -> Color32 {
 /// Outline + badge on a row / cell of `path` (no-op when untouched).
 pub fn paint(painter: &Painter, p: &Palette, rect: Rect, path: &Path, reduced_motion: bool) {
     let Some(t) = get(path) else { return };
+    paint_touch(painter, p, rect, t, reduced_motion);
+}
+
+/// Outline (+ badge when the rect is big enough) for a known mark.
+pub fn paint_touch(painter: &Painter, p: &Palette, rect: Rect, t: AiTouch, reduced_motion: bool) {
     let age = t.at.elapsed().as_secs_f32();
     let fade = match t.kind {
         TouchKind::Reading | TouchKind::Done => (1.0 - age / t.kind.ttl().as_secs_f32()).clamp(0.0, 1.0),
@@ -129,18 +175,19 @@ pub fn paint(painter: &Painter, p: &Palette, rect: Rect, path: &Path, reduced_mo
     let pulse = if reduced_motion { 0.8 } else { 0.55 + 0.45 * (age * 3.2).sin().abs() };
     let c = color(t.kind, p);
     let r = rect.shrink(1.0);
-    painter.rect_filled(r, CornerRadius::same(6), c.gamma_multiply(0.07 * fade));
-    painter.rect_stroke(r, CornerRadius::same(6), Stroke::new(1.5, c.gamma_multiply(pulse * fade)), StrokeKind::Inside);
-    // Badge: a small sparkle in a pill at the right edge.
+    let small = r.width() < 26.0 || r.height() < 14.0;
+    let round = CornerRadius::same(if small { 2 } else { 6 });
+    painter.rect_filled(r, round, c.gamma_multiply(if small { 0.18 } else { 0.07 } * fade));
+    painter.rect_stroke(r, round, Stroke::new(1.5, c.gamma_multiply(pulse * fade)), StrokeKind::Inside);
+    if small {
+        return;
+    }
+    // Badge at the right edge: a sparkle (assistant) or a plug (MCP client).
     let center = pos2(r.right() - 11.0, r.top() + 10.0_f32.min(r.height() / 2.0));
     painter.circle_filled(center, 7.5, c.gamma_multiply(0.9 * fade));
-    painter.text(
-        center,
-        Align2::CENTER_CENTER,
-        ph::SPARKLE,
-        icons::font_fill(9.5),
-        Color32::WHITE.gamma_multiply(fade),
-    );
+    let glyph = if t.mcp { ph::PLUGS_CONNECTED } else { ph::SPARKLE };
+    let font = if t.mcp { icons::font(9.5) } else { icons::font_fill(9.5) };
+    painter.text(center, Align2::CENTER_CENTER, glyph, font, Color32::WHITE.gamma_multiply(fade));
 }
 
 #[cfg(test)]
@@ -157,7 +204,12 @@ mod tests {
             assert!(get(Path::new("c:\\t\\a.TXT")).is_some(), "case-insensitive on Windows");
         }
         assert!(prune());
+        let dir = p.parent().unwrap().to_path_buf();
+        assert_eq!(get_within(&dir).unwrap().kind, TouchKind::Planned, "folders show what happens inside");
         unmark([&p]);
         assert!(get(&p).is_none());
+        mark_mcp([&p], TouchKind::Changing);
+        assert!(get(&p).unwrap().mcp);
+        unmark([&p]);
     }
 }

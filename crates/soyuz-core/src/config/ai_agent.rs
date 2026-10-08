@@ -87,6 +87,14 @@ pub struct AiAgent {
     pub listing_entries: u32,
     /// Mask e-mail addresses, API keys and tokens in file data sent to cloud providers.
     pub redact_cloud: bool,
+    /// "Suggest names": characters of each text / document file sent to the model (only
+    /// where the folder's AI access is "contents"; 0 = names and metadata only).
+    pub name_excerpt_chars: u32,
+    /// "Suggest names": longest side of the downscaled image sent to vision models (px;
+    /// 0 = never send images).
+    pub vision_max_px: u32,
+    /// "Suggest names": most files looked at per request.
+    pub name_max_files: u32,
 }
 
 impl Default for AiAgent {
@@ -103,6 +111,9 @@ impl Default for AiAgent {
             confirm_cost_usd: 0.5,
             listing_entries: 80,
             redact_cloud: true,
+            name_excerpt_chars: 1500,
+            vision_max_px: 768,
+            name_max_files: 40,
         }
     }
 }

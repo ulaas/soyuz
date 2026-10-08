@@ -20,7 +20,8 @@
 //!   (see `editors::devscript`);
 //! * `ai:<prompt>` — send a prompt to the assistant; `ai:!approve` approves every
 //!   pending plan, `ai:!smart <text>` opens smart search with `text`, `ai:!save <name>`
-//!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page;
+//!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page,
+//!   `ai:!mcp-approve` approves every pending MCP request card;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`

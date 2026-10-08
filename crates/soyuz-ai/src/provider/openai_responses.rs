@@ -83,6 +83,13 @@ pub fn encode(req: &ChatRequest) -> Value {
                     input.push(block.clone());
                 }
                 Part::Opaque { .. } => {}
+                Part::Image { media_type, data } => {
+                    let t = std::mem::take(&mut text);
+                    input.push(json!({"role": role, "content": [
+                        {"type": "input_text", "text": t},
+                        {"type": "input_image", "image_url": format!("data:{media_type};base64,{data}")},
+                    ]}));
+                }
             }
         }
         flush(&mut text, &mut input);

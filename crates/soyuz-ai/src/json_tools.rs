@@ -44,8 +44,10 @@ pub fn lower_request(mut req: ChatRequest) -> ChatRequest {
         .map(|m| {
             let mut text = String::new();
             let mut calls = Vec::new();
+            let mut images = Vec::new();
             for p in m.parts {
                 match p {
+                    image @ Part::Image { .. } => images.push(image),
                     Part::Text { text: t } => text.push_str(&t),
                     Part::ToolUse { name, args, .. } => calls.push(json!({"name": name, "arguments": args})),
                     Part::ToolResult { name, content, is_error, .. } => {
@@ -58,7 +60,9 @@ pub fn lower_request(mut req: ChatRequest) -> ChatRequest {
             if !calls.is_empty() {
                 text = json!({"tool_calls": calls}).to_string();
             }
-            Message { role: m.role, parts: vec![Part::Text { text }] }
+            let mut parts = vec![Part::Text { text }];
+            parts.extend(images);
+            Message { role: m.role, parts }
         })
         .collect();
     req

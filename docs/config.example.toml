@@ -186,6 +186,7 @@ http_port = 7863
 allowed_origins = []             # extra browser origins; http://localhost:<port> / http://127.0.0.1:<port> always allowed
 register_unknown = true          # unknown stdio clients are added as pending (read-only until approved)
 approval_timeout_secs = 300      # an unanswered approval card refuses the call after this long
+approval_ui = "panel"            # panel (assistant panel's approvals area, opens on request) | dialog (modal plan card)
 
 [[ai.mcp_clients]]               # one per MCP client; manage in Settings → AI assistant → Connections
 name = "claude-desktop"          # `soyuz --mcp --mcp-client claude-desktop`
@@ -220,6 +221,9 @@ max_risk = "destructive"         # read | write | destructive: highest tool clas
 confirm_cost_usd = 0.5           # ask before a task estimated to cost more (0 = never ask)
 listing_entries = 80             # entries of the current folder summarised into the context
 redact_cloud = true              # mask e-mails, API keys and tokens in file data sent to cloud providers
+name_excerpt_chars = 1500        # "Suggest names": text sent per document (folders with access = "contents"; 0 = metadata only)
+vision_max_px = 768              # "Suggest names": longest side of images sent to vision profiles (0 = never send images)
+name_max_files = 40              # "Suggest names": most files per request
 
 [[ai.folders]]                   # per-folder AI access, inherited by subfolders (deepest rule wins)
 path = "~/Documents/Taxes"
@@ -234,6 +238,7 @@ key = "credential:anthropic-default"   # credential:<name> (OS credential store)
 tool_mode = "auto"               # auto (probe) | native | json (constrained JSON tool protocol)
 monthly_budget_usd = 20.0        # 0 = no cap
 max_tokens = 16000
+vision = true                    # the model accepts images ("Suggest names" sends downscaled pictures where allowed)
 headers = {}
 
 [[ai.profiles]]

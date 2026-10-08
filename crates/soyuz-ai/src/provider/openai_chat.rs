@@ -62,16 +62,24 @@ pub fn encode(req: &ChatRequest, max_completion_tokens: bool) -> Value {
         match m.role {
             Role::User => {
                 let mut text = String::new();
+                let mut images = Vec::new();
                 for p in &m.parts {
                     match p {
                         Part::Text { text: t } => text.push_str(t),
                         Part::ToolResult { id, content, .. } => {
                             messages.push(json!({"role": "tool", "tool_call_id": id, "content": content}))
                         }
+                        Part::Image { media_type, data } => images.push(json!({
+                            "type": "image_url", "image_url": {"url": format!("data:{media_type};base64,{data}")}
+                        })),
                         _ => {}
                     }
                 }
-                if !text.is_empty() {
+                if !images.is_empty() {
+                    let mut content = vec![json!({"type": "text", "text": text})];
+                    content.extend(images);
+                    messages.push(json!({"role": "user", "content": content}));
+                } else if !text.is_empty() {
                     messages.push(json!({"role": "user", "content": text}));
                 }
             }

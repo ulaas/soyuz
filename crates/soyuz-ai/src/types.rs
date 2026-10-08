@@ -52,6 +52,12 @@ pub enum Part {
         wire: Wire,
         block: Value,
     },
+    /// An image in a user message (vision models only): base64 data of `media_type`
+    /// (`image/jpeg`, `image/png` …).
+    Image {
+        media_type: String,
+        data: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

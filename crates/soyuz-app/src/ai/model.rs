@@ -50,6 +50,10 @@ pub trait ChatModel: Send + Sync {
     fn is_local(&self) -> bool;
     fn protocol(&self) -> ToolProtocol;
     fn max_tokens(&self) -> u32;
+    /// The model accepts images in user messages (the profile's `vision` switch).
+    fn accepts_images(&self) -> bool {
+        false
+    }
     fn stream(&self, req: ChatRequest, wake: Wake) -> ModelStream;
 }
 
@@ -58,11 +62,17 @@ pub struct ProviderModel {
     provider: Provider,
     profile: String,
     local: bool,
+    vision: bool,
 }
 
 impl ProviderModel {
     pub fn new(provider: Provider, profile: &AiProfile) -> Self {
-        ProviderModel { local: profile.kind.is_local(), profile: profile.name.clone(), provider }
+        ProviderModel {
+            local: profile.kind.is_local(),
+            profile: profile.name.clone(),
+            provider,
+            vision: profile.vision,
+        }
     }
 }
 
@@ -88,6 +98,10 @@ impl ChatModel for ProviderModel {
 
     fn max_tokens(&self) -> u32 {
         self.provider.max_tokens.max(256)
+    }
+
+    fn accepts_images(&self) -> bool {
+        self.vision
     }
 
     fn stream(&self, req: ChatRequest, wake: Wake) -> ModelStream {

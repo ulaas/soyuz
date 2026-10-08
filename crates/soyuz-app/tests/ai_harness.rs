@@ -307,10 +307,10 @@ fn audit_log_records_the_task() {
     let (_, out) = h.chat(Arc::new(FakeModel::new(organize_turns(&root))), "organize", Policy::ApproveAll);
     assert_eq!(out.finish, Some(Finish::Done));
     let ev = soyuz_app::ai::audit::read_tail(&log, 100).unwrap();
-    let kinds: Vec<&str> = ev.iter().map(|e| e.kind.as_str()).collect();
+    let kinds: Vec<&str> = ev.iter().map(|e| e.event.as_str()).collect();
     for k in ["prompt", "tool_call", "plan", "approval", "job", "job_result", "finish"] {
         assert!(kinds.contains(&k), "{k} missing in {kinds:?}");
     }
-    assert!(ev.iter().any(|e| e.kind == "job" && e.job.is_some()));
-    assert!(ev.iter().all(|e| e.model == "fake/fake-transcript"));
+    assert!(ev.iter().any(|e| e.event == "job" && e.job_id.is_some()));
+    assert!(ev.iter().all(|e| e.via == "fake/fake-transcript" && e.source == "assistant" && e.session == "t1"));
 }

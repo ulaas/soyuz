@@ -91,6 +91,9 @@ pub fn encode(req: &ChatRequest) -> Value {
                     parts.push(json!({"functionResponse": resp}));
                 }
                 Part::Opaque { wire: Wire::Gemini, block } => parts.push(block.clone()),
+                Part::Image { media_type, data } => {
+                    parts.push(json!({"inline_data": {"mime_type": media_type, "data": data}}))
+                }
                 _ => {}
             }
         }

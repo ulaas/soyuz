@@ -58,6 +58,9 @@ pub enum ApprovalDecision {
     TimedOut,
     /// The call was cancelled while waiting.
     Cancelled,
+    /// The user edited the arguments: the server plans them again (dry run, same client
+    /// policy) and asks for approval of the new plan.
+    Edited(Value),
 }
 
 /// What the server needs from its host process (the app window or the headless runner).
@@ -413,53 +416,92 @@ impl Server {
                 audit("plan", None, "dry run");
                 text_result(r.to_model_text(name), false)
             }
-            Ok(ToolResponse::NeedsApproval(plan)) => {
+            Ok(ToolResponse::NeedsApproval(first)) => {
+                let mut plan = first;
+                let mut edited: Option<Value> = None;
                 if !plan.executable {
                     audit("refused", None, "plan not executable");
                     let v = json!({"status": "not_executable", "reason": "the plan has blocking conflicts or nothing to do", "plan": plan.to_model_value()});
                     return Ok(Some(text_result(frame_untrusted(name, &v), true)));
                 }
                 let must_ask = policy.require_approval || name == "run_custom_command";
+                let mut rounds = 0;
                 if must_ask {
-                    let req = ApprovalRequest {
-                        client: policy.name.clone(),
-                        transport: session.transport,
-                        tool: name.to_string(),
-                        args: args.clone(),
-                        plan: plan.clone(),
-                    };
-                    match self.backend.request_approval(req, ctl) {
-                        ApprovalDecision::Approved => {
-                            self.audit(
-                                session,
-                                &policy.name,
-                                "approval",
-                                name,
-                                &Value::Null,
-                                "approved",
-                                None,
-                                &plan.summary,
-                            );
-                        }
-                        ApprovalDecision::Rejected(why) => {
-                            audit("rejected", None, &why);
-                            let v = json!({"status": "rejected_by_user", "reason": why, "plan": plan.summary});
-                            return Ok(Some(text_result(frame_untrusted(name, &v), true)));
-                        }
-                        ApprovalDecision::Unavailable(msg) => {
-                            audit("refused", None, &msg);
-                            let v =
-                                json!({"status": "approval_unavailable", "reason": msg, "plan": plan.to_model_value()});
-                            return Ok(Some(text_result(frame_untrusted(name, &v), true)));
-                        }
-                        ApprovalDecision::TimedOut => {
-                            audit("timed_out", None, "");
-                            let v = json!({"status": "approval_timed_out", "reason": "nobody answered the approval card in Soyuz"});
-                            return Ok(Some(text_result(frame_untrusted(name, &v), true)));
-                        }
-                        ApprovalDecision::Cancelled => {
-                            audit("cancelled", None, "");
-                            return Ok(None);
+                    loop {
+                        rounds += 1;
+                        let req = ApprovalRequest {
+                            client: policy.name.clone(),
+                            transport: session.transport,
+                            tool: name.to_string(),
+                            args: edited.clone().unwrap_or_else(|| args.clone()),
+                            plan: plan.clone(),
+                        };
+                        match self.backend.request_approval(req, ctl) {
+                            ApprovalDecision::Edited(new_args) if rounds < 5 => {
+                                self.audit(
+                                    session,
+                                    &policy.name,
+                                    "edit",
+                                    name,
+                                    &new_args,
+                                    "edited",
+                                    None,
+                                    "the user edited the arguments",
+                                );
+                                match tools::dispatch(&host, name, new_args.clone(), &ctx) {
+                                    Ok(ToolResponse::NeedsApproval(p)) if p.executable => {
+                                        plan = p;
+                                        edited = Some(new_args);
+                                        continue;
+                                    }
+                                    Ok(_) => {
+                                        audit("refused", None, "the edited plan is not executable");
+                                        let v = json!({"status": "not_executable", "reason": "the user's edit produced a plan with blocking conflicts or nothing to do"});
+                                        return Ok(Some(text_result(frame_untrusted(name, &v), true)));
+                                    }
+                                    Err(e) => {
+                                        audit("error", None, &e.to_string());
+                                        return Ok(Some(text_result(frame_error(name, &e), true)));
+                                    }
+                                }
+                            }
+                            ApprovalDecision::Edited(_) => {
+                                audit("rejected", None, "too many edits");
+                                let v = json!({"status": "rejected_by_user", "reason": "edited too many times"});
+                                return Ok(Some(text_result(frame_untrusted(name, &v), true)));
+                            }
+                            ApprovalDecision::Approved => {
+                                self.audit(
+                                    session,
+                                    &policy.name,
+                                    "approval",
+                                    name,
+                                    &Value::Null,
+                                    "approved",
+                                    None,
+                                    &plan.summary,
+                                );
+                                break;
+                            }
+                            ApprovalDecision::Rejected(why) => {
+                                audit("rejected", None, &why);
+                                let v = json!({"status": "rejected_by_user", "reason": why, "plan": plan.summary});
+                                return Ok(Some(text_result(frame_untrusted(name, &v), true)));
+                            }
+                            ApprovalDecision::Unavailable(msg) => {
+                                audit("refused", None, &msg);
+                                let v = json!({"status": "approval_unavailable", "reason": msg, "plan": plan.to_model_value()});
+                                return Ok(Some(text_result(frame_untrusted(name, &v), true)));
+                            }
+                            ApprovalDecision::TimedOut => {
+                                audit("timed_out", None, "");
+                                let v = json!({"status": "approval_timed_out", "reason": "nobody answered the approval card in Soyuz"});
+                                return Ok(Some(text_result(frame_untrusted(name, &v), true)));
+                            }
+                            ApprovalDecision::Cancelled => {
+                                audit("cancelled", None, "");
+                                return Ok(None);
+                            }
                         }
                     }
                 }
@@ -467,7 +509,11 @@ impl Server {
                     Ok(v) => {
                         let job = v.get("job_id").and_then(Value::as_u64);
                         audit("ok", job, &plan.summary);
-                        let v = json!({"status": "done", "summary": plan.summary, "result": v});
+                        let mut v = json!({"status": "done", "summary": plan.summary, "result": v});
+                        if let Some(a) = edited {
+                            v["edited_by_user"] = json!(true);
+                            v["arguments_used"] = a;
+                        }
                         text_result(frame_untrusted(name, &v), false)
                     }
                     Err(ToolError::Cancelled) => {

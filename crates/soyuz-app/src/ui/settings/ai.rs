@@ -426,6 +426,25 @@ fn agent_settings(ui: &mut Ui, d: &mut Ai, q: &str) -> bool {
                 switch(ui, &mut a.redact_cloud);
             },
         );
+        r.row_kw(
+            "Suggest names: text per file",
+            "Characters of each text or document file sent when suggesting names (only in folders with “contents” access; 0 = names and metadata only).",
+            "rename suggest names contents excerpt",
+            |ui| {
+                number(ui, &mut a.name_excerpt_chars, 0..=20_000, " chars");
+            },
+        );
+        r.row_kw(
+            "Suggest names: image size",
+            "Longest side of the downscaled picture sent to vision models (profiles with “Accepts images”, folders with “contents” access; 0 = never send images).",
+            "rename suggest names vision image photo",
+            |ui| {
+                number(ui, &mut a.vision_max_px, 0..=2048, " px");
+            },
+        );
+        r.row_kw("Suggest names: files", "Most files looked at per request.", "rename suggest names", |ui| {
+            number(ui, &mut a.name_max_files, 1..=500, "");
+        });
     });
     any |= group(ui, q, CTX, "Folder permissions", |r| {
         r.block(
@@ -574,6 +593,18 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
             ui.end_row();
             lbl(ui, "Max output tokens");
             ui.add(egui::DragValue::new(&mut prof.max_tokens).range(256..=128_000).speed(64.0));
+            ui.end_row();
+            lbl(ui, "Accepts images");
+            ui.horizontal(|ui| {
+                switch(ui, &mut prof.vision);
+                ui.label(
+                    RichText::new(
+                        "vision model: “Suggest names” may send downscaled pictures where contents are allowed",
+                    )
+                    .size(11.0)
+                    .color(p.text_tertiary),
+                );
+            });
             ui.end_row();
             lbl(ui, "Monthly budget");
             ui.horizontal(|ui| {
