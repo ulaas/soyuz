@@ -183,7 +183,10 @@ impl Dialog for TransferDialog {
         let p = palette(ui.ctx());
         let n = self.paths.len();
         let what = if n == 1 {
-            format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(&self.paths[0]))
+            format!(
+                "\u{201c}{}\u{201d}",
+                crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&self.paths[0]))
+            )
         } else {
             format!("{n} items")
         };

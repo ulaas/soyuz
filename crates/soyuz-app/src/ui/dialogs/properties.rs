@@ -428,7 +428,11 @@ impl PropertiesDialog {
             tabs.push(Tab::Details);
         }
         let tab = tabs.iter().position(|t| *t == tab).unwrap_or(0);
-        let title = if single { format!("{} properties", first.name) } else { format!("{} items", entries.len()) };
+        let title = if single {
+            format!("{} properties", crate::ui::widgets::shown_name(&first.name))
+        } else {
+            format!("{} items", entries.len())
+        };
         let times = [
             TimeEdit::new("Created", entries.iter().map(|e| e.created).collect()),
             TimeEdit::new("Modified", entries.iter().map(|e| e.modified).collect()),
@@ -527,6 +531,8 @@ impl PropertiesDialog {
                         resp.request_focus();
                         self.focus_name = false;
                     }
+                    // The edit field holds the real name; spell out hidden characters.
+                    crate::ui::widgets::hidden_note(ui, &e.name);
                     let kind = crate::state::listing::kind_label(&e);
                     let mut line = kind;
                     if e.kind == EntryKind::File {

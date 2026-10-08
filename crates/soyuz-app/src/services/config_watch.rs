@@ -184,6 +184,9 @@ pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
         }
         ctx.set_theme(app.ui.theme);
     }
+    if old.archive != c.archive {
+        app.fileops.jobs.reconfigure(c);
+    }
     if old.jobs != c.jobs {
         // Copy options (buffer, verify, reflink, preserve) apply to the next job; the
         // engine's queue settings are fixed at startup (the settings page says so).

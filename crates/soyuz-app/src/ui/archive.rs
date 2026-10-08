@@ -29,7 +29,12 @@ pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -
         if is_dir {
             ops::navigate(app, pane, Location::Archive { archive, inner }, NavOpts::user());
         } else {
-            svc::open_in_app(&archive, &inner, app.services.mailbox.postman());
+            svc::open_in_app(
+                &archive,
+                &inner,
+                crate::services::jobs::extract_limits(&app.config),
+                app.services.mailbox.postman(),
+            );
             app.ui.toasts.push(Toast::info(format!("Opening {}…", soyuz_core::entry::display_name(path))));
         }
         return true;

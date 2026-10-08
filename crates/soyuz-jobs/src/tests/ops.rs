@@ -432,3 +432,46 @@ fn extract_unsupported_archive_fails_cleanly() {
     // M0 archive stub → Unsupported; a real implementation → Corrupt. Either way: Failed, no panic.
     assert!(matches!(h.done(id), JobState::Failed(_)));
 }
+
+#[test]
+fn extract_bomb_limit_asks_continue_or_abort() {
+    let h = H::new();
+    write(&h.p("in/zeros.bin"), &vec![0u8; 512 * 1024]);
+    let id = h.submit(JobKind::Compress {
+        sources: vec![h.p("in")],
+        dest: h.p("x.zip"),
+        format: soyuz_archive::ArchiveFormat::Zip,
+        level: 6,
+        password: None,
+    });
+    h.ok(id);
+    let kind = |out: &str| JobKind::Extract {
+        archive: h.p("x.zip"),
+        entries: None,
+        dest_dir: h.p(out),
+        password: None,
+        strip_components: 0,
+    };
+    let mut spec = JobSpec::new(kind("abort"));
+    spec.options.extract_limits =
+        soyuz_archive::ExtractLimits { max_ratio: 2, min_total_bytes: 1024, ..Default::default() };
+    // A remembered "skip all" must not silently lift a safety limit.
+    spec.options.errors = Some(ErrorAction::SkipAll);
+    let limits = spec.options.extract_limits.clone();
+    let id = h.engine.submit(spec);
+    match h.prompt(id) {
+        JobPrompt::Error { error, .. } => assert_eq!(error.op, crate::kinds::extract::ARCHIVE_LIMIT_OP),
+        other => panic!("unexpected prompt {other:?}"),
+    }
+    h.engine.respond(id, PromptResponse::Error { action: ErrorAction::Abort, apply_to_all: false });
+    assert!(matches!(h.done(id), JobState::Failed(_)));
+    assert!(!h.p("abort/in/zeros.bin").exists());
+
+    let mut spec = JobSpec::new(kind("continue"));
+    spec.options.extract_limits = limits;
+    let id = h.engine.submit(spec);
+    assert!(matches!(h.prompt(id), JobPrompt::Error { .. }));
+    h.engine.respond(id, PromptResponse::Error { action: ErrorAction::Skip, apply_to_all: false });
+    h.ok(id);
+    assert_eq!(read(&h.p("continue/in/zeros.bin")).len(), 512 * 1024);
+}

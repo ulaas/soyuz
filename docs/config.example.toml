@@ -104,6 +104,14 @@ font_size = 12.5
 theme = "auto"                   # auto (derive from app theme) | dark | light
 per_tab = false                  # one terminal set per tab instead of one shared set
 follow_shell = false             # navigate the focused pane when the shell changes directory
+osc52 = "ask"                    # programs setting the clipboard (OSC 52): ask | allow | deny; reads are always denied
+
+[archive]
+preserve_special_bits = false    # keep setuid/setgid/sticky bits from archives (unix); off = mask to 0o777
+bomb_ratio = 100                 # pause extraction past ratio x archive size (0 = no ratio limit) ...
+bomb_floor_mib = 1024            # ... but never below this many MiB
+max_entries = 1000000            # pause past this many entries (0 = unlimited)
+max_entry_mib = 32768            # pause on a single entry larger than this (0 = unlimited)
 
 [search]
 threads = 0                      # 0 = auto

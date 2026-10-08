@@ -178,6 +178,94 @@ fn is_windows_reserved(base: &str) -> bool {
     matches!(rest.as_slice(), [c] if matches!(c, '1'..='9' | '\u{00B9}' | '\u{00B2}' | '\u{00B3}'))
 }
 
+// ---- hidden direction / format characters (display only) --------------------------
+
+/// Whether `c` is an invisible control that can disguise how a name reads: C0/C1
+/// controls, bidi embeddings / overrides / isolates / marks (U+202A–U+202E,
+/// U+2066–U+2069, U+200E/U+200F, U+061C), zero-width and invisible format characters
+/// (U+200B–U+200D, U+2060–U+2064, U+FEFF, U+180E, U+00AD, U+034F, U+115F/U+1160,
+/// U+3164, U+FFA0), interlinear annotation marks and Unicode tag characters.
+///
+/// This is context-free; [`name_parts`] additionally lets ZWJ / ZWNJ through between two
+/// non-ASCII characters (emoji sequences, Persian and Indic scripts use them).
+pub fn is_hidden_control(c: char) -> bool {
+    matches!(c,
+        '\u{0}'..='\u{1F}' | '\u{7F}'..='\u{9F}'
+        | '\u{AD}' | '\u{34F}' | '\u{61C}' | '\u{115F}' | '\u{1160}' | '\u{17B4}' | '\u{17B5}' | '\u{180E}'
+        | '\u{200B}'..='\u{200F}'
+        | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}'
+        | '\u{2066}'..='\u{2069}'
+        | '\u{206A}'..='\u{206F}'
+        | '\u{3164}' | '\u{FEFF}' | '\u{FFA0}'
+        | '\u{FFF9}'..='\u{FFFB}'
+        | '\u{E0000}'..='\u{E007F}')
+}
+
+/// One piece of a name split by [`name_parts`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NamePart<'a> {
+    /// Ordinary text, shown as-is.
+    Text(&'a str),
+    /// A hidden control character, to be shown as a visible token.
+    Control(char),
+}
+
+/// Split `name` into ordinary text and hidden controls (see [`is_hidden_control`]).
+/// ZWJ / ZWNJ between two non-ASCII characters are kept as text.
+pub fn name_parts(name: &str) -> Vec<NamePart<'_>> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut prev: Option<char> = None;
+    let mut it = name.char_indices().peekable();
+    while let Some((i, c)) = it.next() {
+        let next = it.peek().map(|&(_, n)| n);
+        let joiner_ok = matches!(c, '\u{200C}' | '\u{200D}')
+            && prev.is_some_and(|p| !p.is_ascii() && !is_hidden_control(p))
+            && next.is_some_and(|n| !n.is_ascii() && !is_hidden_control(n));
+        if is_hidden_control(c) && !joiner_ok {
+            if start < i {
+                out.push(NamePart::Text(&name[start..i]));
+            }
+            out.push(NamePart::Control(c));
+            start = i + c.len_utf8();
+        }
+        prev = Some(c);
+    }
+    if start < name.len() {
+        out.push(NamePart::Text(&name[start..]));
+    }
+    out
+}
+
+/// Whether `name` contains hidden direction / format characters (see [`name_parts`]).
+pub fn has_hidden_controls(name: &str) -> bool {
+    name_parts(name).iter().any(|p| matches!(p, NamePart::Control(_)))
+}
+
+/// Visible token for a hidden control, e.g. `⟨U+202E⟩`.
+pub fn control_token(c: char) -> String {
+    format!("\u{27E8}U+{:04X}\u{27E9}", c as u32)
+}
+
+/// `name` with every hidden control replaced by a visible `⟨U+XXXX⟩` token, so a
+/// right-to-left override can't make `gpj.exe` read as `exe.jpg`. Display only: never
+/// use the result as a file name. Borrows when there is nothing to reveal.
+pub fn reveal_controls(name: &str) -> std::borrow::Cow<'_, str> {
+    let parts = name_parts(name);
+    if !parts.iter().any(|p| matches!(p, NamePart::Control(_))) {
+        return std::borrow::Cow::Borrowed(name);
+    }
+    let mut s = String::with_capacity(name.len() + 8 * parts.len());
+    for p in parts {
+        match p {
+            NamePart::Text(t) => s.push_str(t),
+            NamePart::Control(c) => s.push_str(&control_token(c)),
+        }
+    }
+    std::borrow::Cow::Owned(s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +350,39 @@ mod tests {
         let long = "x".repeat(256);
         assert_eq!(validate_name_with(&long, false), Err(NameError::TooLong(256)));
         assert!(validate_name("normal name.txt").is_ok());
+    }
+
+    #[test]
+    fn reveal_controls_tokens() {
+        use std::borrow::Cow;
+        assert!(matches!(reveal_controls("plain name.txt"), Cow::Borrowed(_)));
+        assert!(!has_hidden_controls("Ünïcødé 名前.txt"));
+        // The classic RLO spoof: "photo\u{202E}gpj.exe" renders as "photoexe.jpg".
+        assert_eq!(reveal_controls("photo\u{202E}gpj.exe"), "photo\u{27E8}U+202E\u{27E9}gpj.exe");
+        assert!(has_hidden_controls("photo\u{202E}gpj.exe"));
+        for c in ['\u{202A}', '\u{202B}', '\u{202C}', '\u{202D}', '\u{2066}', '\u{2067}', '\u{2068}', '\u{2069}'] {
+            assert!(has_hidden_controls(&format!("a{c}b")), "{c:?}");
+        }
+        assert_eq!(reveal_controls("pay\u{200B}pal"), "pay\u{27E8}U+200B\u{27E9}pal");
+        assert_eq!(reveal_controls("\u{FEFF}x"), "\u{27E8}U+FEFF\u{27E9}x");
+        assert_eq!(reveal_controls("a\nb"), "a\u{27E8}U+000A\u{27E9}b");
+        assert_eq!(reveal_controls("\u{E0041}"), "\u{27E8}U+E0041\u{27E9}");
+        assert_eq!(control_token('\u{200F}'), "\u{27E8}U+200F\u{27E9}");
+    }
+
+    #[test]
+    fn joiners_in_scripts_and_emoji_are_not_flagged() {
+        // Family emoji (ZWJ sequence) and Persian ZWNJ are legitimate.
+        assert!(!has_hidden_controls("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}.png"));
+        assert!(!has_hidden_controls("\u{0645}\u{06CC}\u{200C}\u{062E}\u{0648}\u{0627}\u{0647}\u{0645}"));
+        // ...but a joiner touching ASCII, or at an edge, is.
+        assert!(has_hidden_controls("ab\u{200D}cd"));
+        assert!(has_hidden_controls("\u{200C}\u{0645}"));
+        assert_eq!(
+            name_parts("a\u{202E}b"),
+            vec![NamePart::Text("a"), NamePart::Control('\u{202E}'), NamePart::Text("b")]
+        );
+        assert_eq!(name_parts(""), Vec::<NamePart<'_>>::new());
+        assert_eq!(name_parts("\u{202E}"), vec![NamePart::Control('\u{202E}')]);
     }
 }

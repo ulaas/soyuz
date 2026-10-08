@@ -232,6 +232,12 @@ pub struct JobOptions {
     /// Record for undo.
     pub journal: bool,
     pub label: Option<String>,
+    /// Extract jobs: decompression-bomb limits (exceeding one asks Continue / Abort).
+    #[serde(default)]
+    pub extract_limits: soyuz_archive::ExtractLimits,
+    /// Extract jobs: keep setuid / setgid / sticky bits (default: masked to `0o777`).
+    #[serde(default)]
+    pub preserve_special_bits: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

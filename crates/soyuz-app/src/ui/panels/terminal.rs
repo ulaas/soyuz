@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use egui::{Align2, Color32, CornerRadius, FontId, Id, Key, Rect, Sense, Stroke, TextEdit, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::Location;
-use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Keymap, Mods};
+use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Keymap, Mods, Osc52Policy};
 use soyuz_term::{CursorStyle, TermEvent, TermSettings, TermTheme, Terminal, TerminalView};
 
 use crate::app::{Focus, SoyuzApp};
@@ -91,6 +91,11 @@ pub struct TerminalPanel {
     cjk_requested: bool,
     /// Ask the host to close the bottom panel (the last session went away).
     request_close: bool,
+    /// OSC 52 clipboard write waiting for an answer (`terminal.osc52 = "ask"`); a newer
+    /// request replaces an unanswered one.
+    clip_request: Option<String>,
+    /// "Always for this session" was picked for OSC 52 writes.
+    clip_allow_session: bool,
 }
 
 impl TerminalPanel {
@@ -375,6 +380,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     let mut exited = Vec::new();
     let mut navigate: Option<PathBuf> = None;
     let follow_shell = app.config.terminal.follow_shell;
+    let mut clip_writes = Vec::new();
     for s in &mut app.ui.terminal.sessions {
         let Some(term) = &s.term else { continue };
         for ev in term.events().try_iter() {
@@ -388,8 +394,19 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                         navigate = Some(dir);
                     }
                 }
-                TermEvent::Clipboard(text) => ctx.copy_text(text),
+                // Untrusted (any program's output can ask): see `terminal.osc52`.
+                TermEvent::Clipboard(text) => clip_writes.push(text),
                 TermEvent::Bell => {}
+            }
+        }
+    }
+    for text in clip_writes {
+        match osc52_decision(app.config.terminal.osc52, app.ui.terminal.clip_allow_session) {
+            ClipDecision::Copy => ctx.copy_text(text),
+            ClipDecision::Drop => {}
+            ClipDecision::Ask => {
+                app.ui.terminal.clip_request = Some(text);
+                ctx.request_repaint();
             }
         }
     }
@@ -445,6 +462,132 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         } else {
             ctx.request_repaint_after(Duration::from_millis(150));
         }
+    }
+}
+
+/// What to do with an OSC 52 clipboard write.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipDecision {
+    Copy,
+    Drop,
+    Ask,
+}
+
+pub fn osc52_decision(policy: Osc52Policy, allowed_this_session: bool) -> ClipDecision {
+    match policy {
+        Osc52Policy::Allow => ClipDecision::Copy,
+        Osc52Policy::Deny => ClipDecision::Drop,
+        Osc52Policy::Ask if allowed_this_session => ClipDecision::Copy,
+        Osc52Policy::Ask => ClipDecision::Ask,
+    }
+}
+
+/// Characters of a clipboard request shown in the prompt.
+const CLIP_PREVIEW_CHARS: usize = 80;
+
+/// One-line preview of an OSC 52 payload: the first 80 characters, line breaks and tabs
+/// shown as `⏎` / `⇥`, other hidden controls as `⟨U+XXXX⟩` tokens, `…` when cut.
+pub fn clipboard_preview(text: &str) -> String {
+    let head: String = text.chars().take(CLIP_PREVIEW_CHARS).collect();
+    let cut = text.chars().nth(CLIP_PREVIEW_CHARS).is_some();
+    let head = head.replace("\r\n", "\n").replace(['\n', '\r'], "\u{23CE}").replace('\t', "\u{21E5}");
+    let mut out = soyuz_core::naming::reveal_controls(&head).into_owned();
+    if cut {
+        out.push('\u{2026}');
+    }
+    out
+}
+
+/// Non-blocking prompt for a pending OSC 52 write (drawn over everything, bottom
+/// centre, every frame while a request waits): Allow once / Always for this session /
+/// Deny.
+pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
+    use crate::ui::dialogs::conflict::{Btn, button};
+    let Some(text) = app.ui.terminal.clip_request.clone() else { return };
+    let p = palette(ctx);
+    let screen = ctx.content_rect();
+    let bottom = if app.ui.status_visible { 36.0 } else { 12.0 };
+    let width = 460.0_f32.min(screen.width() - 32.0);
+    let mut answer: Option<ClipDecision> = None;
+    let mut always = false;
+    egui::Area::new(Id::new("soyuz-osc52-prompt"))
+        .order(egui::Order::Foreground)
+        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -bottom))
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(p.bg_surface2)
+                .stroke(Stroke::new(1.0, p.border_strong))
+                .corner_radius(CornerRadius::same(10))
+                .inner_margin(egui::Margin::same(14))
+                .shadow(egui::epaint::Shadow {
+                    offset: [0, 6],
+                    blur: 18,
+                    spread: 0,
+                    color: Color32::from_black_alpha(60),
+                })
+                .show(ui, |ui| {
+                    ui.set_width(width);
+                    ui.horizontal(|ui| {
+                        ui.label(icons::icon(ph::CLIPBOARD_TEXT, 16.0).color(p.warning));
+                        ui.label(
+                            egui::RichText::new("The terminal wants to set your clipboard:")
+                                .font(FontId::proportional(13.0))
+                                .color(p.text_primary),
+                        );
+                    });
+                    ui.add_space(6.0);
+                    egui::Frame::new()
+                        .fill(p.bg_sunken)
+                        .corner_radius(CornerRadius::same(6))
+                        .inner_margin(egui::Margin::symmetric(10, 7))
+                        .show(ui, |ui| {
+                            ui.set_width(ui.available_width());
+                            let preview = clipboard_preview(&text);
+                            let shown = if preview.is_empty() { "(empty)".to_string() } else { preview };
+                            ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(shown).font(FontId::monospace(11.5)).color(p.text_secondary),
+                                )
+                                .truncate(),
+                            );
+                        });
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new(
+                            "Programs can plant commands for you to paste. Allow only if you expect it.",
+                        )
+                        .font(FontId::proportional(11.0))
+                        .color(p.text_tertiary),
+                    );
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if button(ui, "Deny", Btn::Ghost).clicked() {
+                            answer = Some(ClipDecision::Drop);
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            if button(ui, "Allow once", Btn::Primary).clicked() {
+                                answer = Some(ClipDecision::Copy);
+                            }
+                            if button(ui, "Always for this session", Btn::Secondary)
+                                .on_hover_text("Allow clipboard writes from the terminal until Soyuz restarts")
+                                .clicked()
+                            {
+                                answer = Some(ClipDecision::Copy);
+                                always = true;
+                            }
+                        });
+                    });
+                });
+        });
+    match answer {
+        Some(ClipDecision::Copy) => {
+            ctx.copy_text(text);
+            app.ui.terminal.clip_request = None;
+            app.ui.terminal.clip_allow_session |= always;
+        }
+        Some(_) => app.ui.terminal.clip_request = None,
+        None => {}
     }
 }
 

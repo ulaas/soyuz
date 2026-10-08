@@ -178,11 +178,12 @@ impl ArchiveReader for ZipReader {
         ctl: &OpControl,
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError> {
+        let archive_size = std::fs::metadata(&self.path).map_or(0, |m| m.len());
         self.load()?;
         let listing = self.listing.as_ref().expect("listing loaded");
         let zip = &mut self.zip;
         let password = self.password.as_deref();
-        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, opts, ctl, sink)?;
+        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, archive_size, opts, ctl, sink)?;
         // Fail fast on a missing / wrong password before writing anything.
         if let Some(i) = ex.wants_encrypted() {
             let pw = password.ok_or(ArchiveError::PasswordRequired)?;

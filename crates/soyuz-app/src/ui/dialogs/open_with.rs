@@ -22,7 +22,10 @@ pub struct OpenWithDialog {
 
 impl OpenWithDialog {
     pub fn new(path: PathBuf) -> Self {
-        let title = format!("Open \u{201c}{}\u{201d} with", soyuz_core::entry::display_name(&path));
+        let title = format!(
+            "Open \u{201c}{}\u{201d} with",
+            crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&path))
+        );
         OpenWithDialog { path, title, selected: None, custom: String::new(), error: None }
     }
 }

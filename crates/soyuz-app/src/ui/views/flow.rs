@@ -22,7 +22,12 @@ use crate::theme::fonts::SEMIBOLD;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
-use crate::ui::widgets::{trunc_galley, wrapped_galley};
+use crate::ui::widgets::{HIDDEN_CONTROLS_TIP, paint_hidden_badge, trunc_galley, wrapped_galley};
+
+/// Width reserved for the hidden-characters badge after a name.
+fn badge_w(name: &str) -> f32 {
+    if soyuz_core::naming::has_hidden_controls(name) { 14.0 } else { 0.0 }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Style {
@@ -152,6 +157,13 @@ fn body(
     let hover_pos = bg.hover_pos().filter(|pos| list_area.contains(*pos));
     let hovered = if pane.band.is_none() { hover_pos.and_then(|pos| layout.hit(to_layout(pos))) } else { None };
 
+    // Hidden direction / format characters in the hovered name: explain the badge.
+    if let Some(i) = hovered
+        && pane.entry_at(i).is_some_and(|e| soyuz_core::naming::has_hidden_controls(&e.name))
+    {
+        bg.clone().on_hover_text(HIDDEN_CONTROLS_TIP);
+    }
+
     // ---- paint ----
     let painter = ui.painter_at(list_area);
     let y0 = viewport.min.y - g.header_h;
@@ -208,7 +220,7 @@ fn body(
                             ui,
                             Id::new(("soyuz.flow.row", pane.id.0, i)),
                             r.intersect(list_area),
-                            &format!("{}, {kind}", e.name),
+                            &format!("{}, {kind}", soyuz_core::naming::reveal_controls(&e.name)),
                             st.selected,
                             i,
                             pane.visible.len(),
@@ -592,11 +604,12 @@ fn paint_details_row(
                 &super::display_name(e),
                 FontId::proportional(13.0),
                 color,
-                x1 - tx - 8.0 - deco.trailing_width(),
+                x1 - tx - 8.0 - deco.trailing_width() - badge_w(&e.name),
             );
             let gw = galley.size().x;
             painter.galley(pos2(tx, cy - galley.size().y / 2.0), galley, color);
-            deco.paint_tags(painter, p, tx + gw, cy, p.bg_surface1);
+            let bw = paint_hidden_badge(painter, p, pos2(tx + gw, cy), &e.name);
+            deco.paint_tags(painter, p, tx + gw + bw, cy, p.bg_surface1);
         } else {
             if crate::ui::tools::decor::paint_cell(painter, p, c.column, e, x0, c.w, cy, a) {
                 continue;
@@ -663,6 +676,7 @@ fn paint_grid_cell(
     let galley = wrapped_galley(painter, &super::display_name(e), font, color, r.width() - 10.0, rows);
     let gy = icon_box.bottom() + 6.0;
     painter.galley(pos2(r.center().x, gy), galley, color);
+    paint_hidden_badge(painter, p, pos2(icon_box.left() + 2.0, icon_box.top() + 8.0), &e.name);
 }
 
 fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &ItemState, miller: bool) {
@@ -692,11 +706,12 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
     deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
     let right_pad = if miller && e.is_dir_like() { 24.0 } else { 8.0 };
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
-    let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width();
+    let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width() - badge_w(&e.name);
     let galley = trunc_galley(painter, &super::display_name(e), FontId::proportional(13.0), color, max_w);
     let gw = galley.size().x;
     painter.galley(pos2(x + 24.0, cy - galley.size().y / 2.0), galley, color);
-    deco.paint_tags(painter, p, x + 24.0 + gw, cy, p.bg_surface1);
+    let bw = paint_hidden_badge(painter, p, pos2(x + 24.0 + gw, cy), &e.name);
+    deco.paint_tags(painter, p, x + 24.0 + gw + bw, cy, p.bg_surface1);
     if miller && e.is_dir_like() {
         painter.text(
             pos2(r.right() - 10.0, cy),
@@ -745,8 +760,7 @@ fn in_name_extent(
     let Some(e) = pane.entry_at(i) else { return false };
     let Some(r) = layout.item_rect(i) else { return false };
     let x0 = origin_x + name.x + if checkbox { 8.0 + CHECK + 10.0 } else { 10.0 };
-    let w = painter
-        .layout_no_wrap(super::display_name(e).into_owned(), FontId::proportional(13.0), Color32::WHITE)
+    let w = trunc_galley(painter, &super::display_name(e), FontId::proportional(13.0), Color32::WHITE, f32::INFINITY)
         .size()
         .x;
     let x1 = (x0 + 24.0 + w + 6.0).min(origin_x + name.x + name.w);

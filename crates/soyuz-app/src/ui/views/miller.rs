@@ -139,14 +139,25 @@ fn aux_column(
                 icons::color(e, &p).gamma_multiply(a),
             );
             let color = p.text_primary.gamma_multiply(a);
+            let hidden = soyuz_core::naming::has_hidden_controls(&e.name);
             let g = trunc_galley(
                 ui.painter(),
                 &super::display_name(e),
                 FontId::proportional(13.0),
                 color,
-                r.width() - 56.0,
+                r.width() - 56.0 - if hidden { 14.0 } else { 0.0 },
             );
+            let gw = g.size().x;
             ui.painter().galley(pos2(r.left() + 30.0, r.center().y - g.size().y / 2.0), g, color);
+            if hidden {
+                crate::ui::widgets::paint_hidden_badge(
+                    ui.painter(),
+                    &p,
+                    pos2(r.left() + 30.0 + gw, r.center().y),
+                    &e.name,
+                );
+            }
+            let resp = if hidden { resp.on_hover_text(crate::ui::widgets::HIDDEN_CONTROLS_TIP) } else { resp };
             if e.is_dir_like() {
                 ui.painter().text(
                     pos2(r.right() - 10.0, r.center().y),

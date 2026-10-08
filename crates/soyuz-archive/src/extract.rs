@@ -103,14 +103,30 @@ pub(crate) struct Extractor<'a> {
     link_rels: Option<HashSet<String>>,
     buf: Vec<u8>,
     tmp_counter: u64,
+    /// Decompression-bomb limits still in force (`None` = off or lifted by the user).
+    total_cap: Option<u64>,
+    entry_cap: Option<u64>,
+    entries_cap: Option<u64>,
+    /// Bytes actually decompressed so far (counts failed / partial entries too).
+    streamed: u64,
+}
+
+/// Which bomb limit tripped.
+#[derive(Clone, Copy)]
+enum Limit {
+    Total,
+    Entry,
+    Entries,
 }
 
 impl<'a> Extractor<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         entries: &'a [ArchiveEntry],
         extras: &'a [EntryExtra],
         selection: Option<&[usize]>,
         dest: &Path,
+        archive_size: u64,
         opts: &'a ExtractOptions,
         ctl: &'a OpControl,
         sink: &'a mut dyn ExtractSink,
@@ -120,7 +136,7 @@ impl<'a> Extractor<'a> {
         if opts.single_top_folder && single_top_dir(entries, &wanted, strip) {
             strip += 1;
         }
-        let plan = entries
+        let plan: Vec<Option<String>> = entries
             .iter()
             .zip(&wanted)
             .map(|(e, &w)| {
@@ -138,6 +154,8 @@ impl<'a> Extractor<'a> {
         fs::create_dir_all(dest).map_err(|e| fs_err("extract", dest, &e))?;
         let mut safe_dirs = HashSet::new();
         safe_dirs.insert(dest.to_path_buf());
+        let wanted_count = plan.iter().filter(|p| p.is_some()).count() as u64;
+        let entries_cap = opts.limits.entries_cap().filter(|&cap| wanted_count > cap);
         Ok(Extractor {
             entries,
             extras,
@@ -156,6 +174,10 @@ impl<'a> Extractor<'a> {
             link_rels: None,
             buf: vec![0u8; CHUNK],
             tmp_counter: 0,
+            total_cap: opts.limits.total_cap(archive_size),
+            entry_cap: opts.limits.entry_cap(),
+            entries_cap,
+            streamed: 0,
         })
     }
 
@@ -195,6 +217,7 @@ impl<'a> Extractor<'a> {
     pub fn handle(&mut self, idx: usize, data: &mut dyn EntryData) -> Result<(), ArchiveError> {
         let Some(rel) = self.plan.get(idx).cloned().flatten() else { return Ok(()) };
         self.ctl.checkpoint()?;
+        self.check_declared(idx)?;
         loop {
             let mut consumed = false;
             match self.try_entry(idx, &rel, data, &mut consumed) {
@@ -226,13 +249,57 @@ impl<'a> Extractor<'a> {
         }
     }
 
+    /// Bomb checks before an entry is touched: the entry count (asked once, up front) and
+    /// the entry's declared size.
+    fn check_declared(&mut self, idx: usize) -> Result<(), ArchiveError> {
+        let entries = self.entries;
+        let e = &entries[idx];
+        if let Some(cap) = self.entries_cap {
+            let n = self.plan.iter().filter(|p| p.is_some()).count();
+            self.over_limit(e, Limit::Entries, format!("{n} entries, the limit is {cap}"))?;
+        }
+        if e.is_dir || e.is_symlink {
+            return Ok(());
+        }
+        if let Some(cap) = self.entry_cap
+            && e.size > cap
+        {
+            self.over_limit(
+                e,
+                Limit::Entry,
+                format!("{} is {} bytes, the single-entry limit is {cap}", e.path, e.size),
+            )?;
+        }
+        if let Some(cap) = self.total_cap
+            && self.streamed.saturating_add(e.size) > cap
+        {
+            self.over_limit(e, Limit::Total, format!("more than {cap} bytes would be extracted"))?;
+        }
+        Ok(())
+    }
+
+    /// Ask the sink whether to go past a bomb limit (always asked, even after "skip
+    /// all"). `Abort` stops the extraction; any other answer lifts that limit.
+    fn over_limit(&mut self, e: &ArchiveEntry, which: Limit, msg: String) -> Result<(), ArchiveError> {
+        let err = ArchiveError::LimitExceeded(msg);
+        if self.sink.on_error(e, &err) == ErrorAction::Abort {
+            return Err(err);
+        }
+        match which {
+            Limit::Total => self.total_cap = None,
+            Limit::Entry => self.entry_cap = None,
+            Limit::Entries => self.entries_cap = None,
+        }
+        Ok(())
+    }
+
     /// Apply deferred directory metadata and return the summary.
     pub fn finish(mut self) -> ExtractSummary {
         for (path, mtime, mode) in self.dir_meta.drain(..).rev() {
             if self.opts.preserve_mode
                 && let Some(m) = mode
             {
-                set_mode(&path, m);
+                set_mode(&path, effective_mode(m, self.opts.preserve_special_bits));
             }
             if self.opts.preserve_times
                 && let Some(t) = mtime
@@ -408,7 +475,7 @@ impl<'a> Extractor<'a> {
         if self.opts.preserve_mode
             && let Some(m) = e.mode
         {
-            set_mode(&path, m);
+            set_mode(&path, effective_mode(m, self.opts.preserve_special_bits));
         }
         if self.opts.preserve_times
             && let Some(t) = e.modified
@@ -441,7 +508,21 @@ impl<'a> Extractor<'a> {
             };
             out.write_all(&self.buf[..n]).map_err(|err| Fail::Entry(fs_err("write", tmp, &err), true))?;
             total += n as u64;
+            self.streamed += n as u64;
             self.sink.on_bytes(n as u64);
+            // Declared sizes can lie: re-check against what actually came out.
+            if let Some(cap) = self.entry_cap
+                && total > cap
+            {
+                let msg = format!("{} decompresses to more than {cap} bytes", e.path);
+                self.over_limit(e, Limit::Entry, msg).map_err(Fail::Fatal)?;
+            }
+            if let Some(cap) = self.total_cap
+                && self.streamed > cap
+            {
+                let msg = format!("more than {cap} bytes were extracted");
+                self.over_limit(e, Limit::Total, msg).map_err(Fail::Fatal)?;
+            }
         }
         drop(reader);
         if total != e.size {
@@ -719,6 +800,11 @@ fn rename_into_place(tmp: &Path, path: &Path, replace: bool) -> Result<(), Archi
     }
 }
 
+/// Permission bits to apply: setuid / setgid / sticky only when explicitly preserved.
+pub(crate) fn effective_mode(mode: u32, preserve_special_bits: bool) -> u32 {
+    if preserve_special_bits { mode & 0o7777 } else { mode & 0o777 }
+}
+
 #[cfg(unix)]
 fn set_mode(path: &Path, mode: u32) {
     use std::os::unix::fs::PermissionsExt;
@@ -752,4 +838,18 @@ fn make_symlink(target: &str, link: &Path, is_dir: bool) -> io::Result<()> {
 #[cfg(not(any(unix, windows)))]
 fn make_symlink(_target: &str, _link: &Path, _is_dir: bool) -> io::Result<()> {
     Err(io::Error::new(io::ErrorKind::Unsupported, "symlinks are not supported on this platform"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::effective_mode;
+
+    #[test]
+    fn special_bits_are_stripped_unless_preserved() {
+        assert_eq!(effective_mode(0o104755, false), 0o755, "setuid + file type bits dropped");
+        assert_eq!(effective_mode(0o2755, false), 0o755, "setgid dropped");
+        assert_eq!(effective_mode(0o1777, false), 0o777, "sticky dropped");
+        assert_eq!(effective_mode(0o6755, true), 0o6755);
+        assert_eq!(effective_mode(0o100644, true), 0o644);
+    }
 }

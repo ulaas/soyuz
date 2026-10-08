@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use egui::{RichText, Ui};
 use soyuz_core::config::{
-    ActivityPlacement, DragDefault, MiddleClick, OpenFoldersIn, Orientation, PasteConflict, PreserveItem, ReflinkPref,
-    RenameSelects, SidebarSection, TabStripMode, TrashUnsupportedPolicy, TypeAhead,
+    ActivityPlacement, DragDefault, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy, PasteConflict, PreserveItem,
+    ReflinkPref, RenameSelects, SidebarSection, TabStripMode, TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
@@ -448,7 +448,7 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
 pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
-    let ctx = "Jobs file operations copy move";
+    let ctx = "Jobs file operations copy move archive extract";
     let mut any = false;
     any |= group(ui, q, ctx, "Queue", |r| {
         r.row_kw(
@@ -532,6 +532,33 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
         });
     });
+    any |= group(ui, q, ctx, "Archive safety", |r| {
+        r.row_kw(
+            "Expansion limit",
+            "Pause extraction when the output grows past this multiple of the archive's size (0 = off).",
+            "decompression bomb zip ratio extract",
+            |ui| {
+                number(ui, &mut d.archive.bomb_ratio, 0..=1000, "×");
+            },
+        );
+        r.row_kw("…but not below", "The expansion limit never pauses before this much output.", "bomb floor", |ui| {
+            number(ui, &mut d.archive.bomb_floor_mib, 16..=65_536, " MiB");
+        });
+        r.row_kw("Most entries", "Pause extraction past this many entries (0 = no limit).", "bomb files count", |ui| {
+            number(ui, &mut d.archive.max_entries, 0..=10_000_000, "");
+        });
+        r.row_kw("Largest entry", "Pause on a single entry larger than this (0 = no limit).", "bomb size", |ui| {
+            number(ui, &mut d.archive.max_entry_mib, 0..=1_048_576, " MiB");
+        });
+        r.row_kw(
+            "Keep setuid / setgid / sticky bits",
+            "Off strips these special permission bits from extracted files (Linux / macOS).",
+            "permissions mode suid",
+            |ui| {
+                switch(ui, &mut d.archive.preserve_special_bits);
+            },
+        );
+    });
     any |= group(ui, q, ctx, "Trash", |r| {
         r.row_kw("When the trash isn't available", "e.g. network drives and FAT volumes.", "recycle", |ui| {
             segmented(
@@ -606,6 +633,20 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Esc returns focus", "Esc on an empty prompt goes back to the file list.", "escape", |ui| {
             switch(ui, &mut d.terminal.escape_returns_focus);
         });
+    });
+    any |= group(ui, q, ctx, "Security", |r| {
+        r.row_kw(
+            "Programs setting the clipboard",
+            "OSC 52 lets terminal output replace your clipboard, e.g. with a command for you to paste.              Reading the clipboard is always blocked.",
+            "osc52 clipboard paste",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.terminal.osc52,
+                    &[(Osc52Policy::Ask, "Ask"), (Osc52Policy::Allow, "Allow"), (Osc52Policy::Deny, "Deny")],
+                );
+            },
+        );
     });
     any
 }

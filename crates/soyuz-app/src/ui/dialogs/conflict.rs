@@ -129,6 +129,9 @@ impl PromptDialog {
                 ConflictKind::MoveIntoSelf => "Can't move a folder into itself",
                 ConflictKind::CaseOnly => "Name differs only in case",
             },
+            JobPrompt::Error { error, .. } if error.op == soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP => {
+                "Archive expands beyond safety limit"
+            }
             JobPrompt::Error { .. } => "Something went wrong",
             JobPrompt::NotEnoughSpace { .. } => "Not enough space",
             JobPrompt::TrashUnsupported { .. } => "Can't move to the trash",
@@ -215,16 +218,22 @@ impl Dialog for PromptDialog {
 
 impl PromptDialog {
     fn conflict(&mut self, ui: &mut Ui, c: &ConflictInfo, p: &Palette) -> Option<Answer> {
-        let name = &c.dst.name;
+        let name = crate::ui::widgets::shown_name(&c.dst.name);
         let msg = match c.kind {
             ConflictKind::FileExists => format!("The destination already has a file named \u{201c}{name}\u{201d}."),
             ConflictKind::DirExists => format!("The destination already has a folder named \u{201c}{name}\u{201d}."),
             ConflictKind::FileVsDir => format!("\u{201c}{name}\u{201d} exists as a different kind of item."),
             ConflictKind::SameFile => "The source and the destination are the same item.".to_string(),
-            ConflictKind::MoveIntoSelf => format!("\u{201c}{}\u{201d} can't go inside itself.", c.src.name),
+            ConflictKind::MoveIntoSelf => {
+                format!("\u{201c}{}\u{201d} can't go inside itself.", crate::ui::widgets::shown_name(&c.src.name))
+            }
             ConflictKind::CaseOnly => format!("\u{201c}{name}\u{201d} differs only by upper/lower case."),
         };
         ui.label(RichText::new(msg).color(p.text_secondary));
+        crate::ui::widgets::hidden_note(ui, &c.dst.name);
+        if c.src.name != c.dst.name {
+            crate::ui::widgets::hidden_note(ui, &c.src.name);
+        }
         ui.add_space(12.0);
 
         // Side-by-side cards.
@@ -418,8 +427,11 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     preview(ui, thumb, e, p);
     let x = thumb.right() + 12.0;
     let tw = r.right() - x - 10.0;
-    let g = trunc_galley(ui.painter(), &e.name, semibold(13.0), p.text_primary, tw);
+    let badge = if soyuz_core::naming::has_hidden_controls(&e.name) { 14.0 } else { 0.0 };
+    let g = trunc_galley(ui.painter(), &e.name, semibold(13.0), p.text_primary, tw - badge);
+    let (gw, gh) = (g.size().x, g.size().y);
     ui.painter().galley(pos2(x, thumb.top() + 2.0), g, p.text_primary);
+    crate::ui::widgets::paint_hidden_badge(ui.painter(), p, pos2(x + gw, thumb.top() + 2.0 + gh / 2.0), &e.name);
     let dir = e.path.parent().map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned()).unwrap_or_default();
     let g = trunc_galley(ui.painter(), &dir, FontId::proportional(11.0), p.text_tertiary, tw);
     ui.painter().galley(pos2(x, thumb.top() + 20.0), g, p.text_tertiary);

@@ -201,9 +201,10 @@ impl ArchiveReader for TarReader {
         ctl: &OpControl,
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError> {
+        let archive_size = std::fs::metadata(&self.path).map_or(0, |m| m.len());
         self.load()?;
         let listing = self.listing.as_ref().expect("listing loaded");
-        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, opts, ctl, sink)?;
+        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, archive_size, opts, ctl, sink)?;
         // ordinal → entry index (entries are in ordinal order).
         let mut next = 0usize;
         let mut ar = tar::Archive::new(decoder(&self.path, self.format)?);

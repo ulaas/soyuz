@@ -31,7 +31,9 @@ fn count(n: usize) -> String {
 impl DeleteConfirmDialog {
     pub fn new(paths: Vec<PathBuf>, mode: DeleteMode) -> Self {
         let what = match paths.as_slice() {
-            [one] => format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(one)),
+            [one] => {
+                format!("\u{201c}{}\u{201d}", crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(one)))
+            }
             many => count(many.len()),
         };
         let title = match mode {
@@ -110,7 +112,15 @@ impl Dialog for DeleteConfirmDialog {
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     for n in names.iter().take(5) {
-                        ui.label(RichText::new(n).font(FontId::proportional(12.5)).color(p.text_primary));
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 4.0;
+                            ui.label(
+                                RichText::new(crate::ui::widgets::shown_name(n))
+                                    .font(FontId::proportional(12.5))
+                                    .color(p.text_primary),
+                            );
+                            crate::ui::widgets::hidden_badge(ui, n);
+                        });
                     }
                     if names.len() > 5 {
                         ui.label(

@@ -89,7 +89,9 @@ pub enum TermEvent {
     Bell,
     Exited(Option<i32>),
     CwdChanged(PathBuf),
-    /// OSC 52 store.
+    /// OSC 52 store request from program output. Untrusted: the host decides whether it
+    /// reaches the clipboard (Soyuz: `terminal.osc52`, ask by default). OSC 52 loads are
+    /// always answered with an empty string.
     Clipboard(String),
 }
 

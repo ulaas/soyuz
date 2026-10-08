@@ -25,6 +25,7 @@ impl Default for Config {
             behaviour: Behaviour::default(),
             jobs: Jobs::default(),
             terminal: Terminal::default(),
+            archive: Archive::default(),
             search: Search::default(),
             preview: Preview::default(),
             git: Git::default(),
@@ -180,6 +181,19 @@ impl Default for Terminal {
             theme: "auto".into(),
             per_tab: false,
             follow_shell: false,
+            osc52: Osc52Policy::Ask,
+        }
+    }
+}
+
+impl Default for Archive {
+    fn default() -> Self {
+        Archive {
+            preserve_special_bits: false,
+            bomb_ratio: 100,
+            bomb_floor_mib: 1024,
+            max_entries: 1_000_000,
+            max_entry_mib: 32 * 1024,
         }
     }
 }

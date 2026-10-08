@@ -57,6 +57,11 @@ pub enum ArchiveError {
     /// The sink answered a conflict with `Cancel`.
     #[error("conflict at {0}")]
     Conflict(PathBuf),
+    /// A decompression-bomb limit ([`ExtractLimits`]) was exceeded. During extraction it
+    /// is reported through [`ExtractSink::on_error`]: `Abort` stops, any other answer
+    /// lifts that limit for the rest of the extraction.
+    #[error("archive expands beyond safety limit: {0}")]
+    LimitExceeded(String),
 }
 
 impl From<std::io::Error> for ArchiveError {
@@ -146,6 +151,107 @@ pub struct ExtractOptions {
     pub preserve_times: bool,
     /// "Extract to folder" smart mode: avoid a redundant top-level folder.
     pub single_top_folder: bool,
+    /// With `preserve_mode`: keep setuid / setgid / sticky bits (unix). Default `false`:
+    /// modes are masked to `0o777`.
+    pub preserve_special_bits: bool,
+    /// Decompression-bomb limits (on by default).
+    pub limits: ExtractLimits,
+}
+
+/// Decompression-bomb limits. A `0` turns that limit off.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ExtractLimits {
+    /// Total extracted bytes may reach this multiple of the archive's on-disk size ...
+    pub max_ratio: u64,
+    /// ... but the total limit is never below this many bytes.
+    pub min_total_bytes: u64,
+    /// Most entries one extraction may write.
+    pub max_entries: u64,
+    /// Largest single entry in bytes.
+    pub max_entry_bytes: u64,
+}
+
+impl Default for ExtractLimits {
+    fn default() -> Self {
+        ExtractLimits { max_ratio: 100, min_total_bytes: 1 << 30, max_entries: 1_000_000, max_entry_bytes: 32 << 30 }
+    }
+}
+
+impl ExtractLimits {
+    /// No limits at all.
+    pub fn unlimited() -> Self {
+        ExtractLimits { max_ratio: 0, min_total_bytes: 0, max_entries: 0, max_entry_bytes: 0 }
+    }
+
+    /// Total-bytes limit for an archive of `archive_size` bytes (`None` = unlimited).
+    pub fn total_cap(&self, archive_size: u64) -> Option<u64> {
+        (self.max_ratio > 0).then(|| archive_size.saturating_mul(self.max_ratio).max(self.min_total_bytes))
+    }
+
+    /// Single-entry limit (`None` = unlimited).
+    pub fn entry_cap(&self) -> Option<u64> {
+        (self.max_entry_bytes > 0).then_some(self.max_entry_bytes)
+    }
+
+    /// Entry-count limit (`None` = unlimited).
+    pub fn entries_cap(&self) -> Option<u64> {
+        (self.max_entries > 0).then_some(self.max_entries)
+    }
+
+    /// Hard cap for reading one entry outside an extraction job (open / preview): the
+    /// smaller of the total and single-entry limits.
+    pub fn read_cap(&self, archive_size: u64) -> Option<u64> {
+        match (self.total_cap(archive_size), self.entry_cap()) {
+            (Some(a), Some(b)) => Some(a.min(b)),
+            (a, b) => a.or(b),
+        }
+    }
+}
+
+/// Reader that fails with [`ArchiveError::LimitExceeded`] (as an `io::Error`) once more
+/// than `cap` bytes were read.
+struct CappedRead<R> {
+    inner: R,
+    left: u64,
+    cap: u64,
+}
+
+impl<R: Read> Read for CappedRead<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        // Read one byte past the cap so an entry of exactly `cap` bytes still succeeds.
+        let want = buf.len().min(usize::try_from(self.left.saturating_add(1)).unwrap_or(usize::MAX));
+        let n = self.inner.read(&mut buf[..want])?;
+        if n as u64 > self.left {
+            return Err(std::io::Error::other(ArchiveError::LimitExceeded(format!(
+                "entry is larger than {} bytes",
+                self.cap
+            ))));
+        }
+        self.left -= n as u64;
+        Ok(n)
+    }
+}
+
+/// [`ArchiveReader::open_entry`] with a hard size cap: refuses an entry whose declared
+/// size exceeds `cap`, and the returned reader fails once more than `cap` bytes come out
+/// (declared sizes can lie). Use [`ExtractLimits::read_cap`] for `cap`.
+pub fn open_entry_capped(
+    reader: &mut dyn ArchiveReader,
+    index: usize,
+    cap: u64,
+) -> Result<Box<dyn Read + Send + '_>, ArchiveError> {
+    let declared = reader.entries()?.get(index).map(|e| e.size);
+    if let Some(size) = declared
+        && size > cap
+    {
+        return Err(ArchiveError::LimitExceeded(format!("entry is {size} bytes, the limit is {cap}")));
+    }
+    let inner = reader.open_entry(index)?;
+    Ok(Box::new(CappedRead { inner, left: cap, cap }))
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -262,6 +368,18 @@ mod tests {
         assert_eq!(total_input_bytes(&[d.path().to_path_buf()], &ctl).unwrap(), 15);
         ctl.cancel();
         assert_eq!(total_input_bytes(&[d.path().to_path_buf()], &ctl), Err(ArchiveError::Cancelled));
+    }
+
+    #[test]
+    fn capped_read_fails_past_the_cap() {
+        let mut ok = CappedRead { inner: &[7u8; 10][..], left: 10, cap: 10 };
+        let mut v = Vec::new();
+        ok.read_to_end(&mut v).unwrap();
+        assert_eq!(v.len(), 10);
+        // A reader producing more than its (possibly lying) declared size is cut off.
+        let mut over = CappedRead { inner: std::io::repeat(0), left: 1000, cap: 1000 };
+        let err = std::io::copy(&mut over, &mut std::io::sink()).unwrap_err();
+        assert!(err.to_string().contains("safety limit"), "{err}");
     }
 
     #[test]

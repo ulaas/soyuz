@@ -30,6 +30,7 @@ pub struct Config {
     pub behaviour: Behaviour,
     pub jobs: Jobs,
     pub terminal: Terminal,
+    pub archive: Archive,
     pub search: Search,
     pub preview: Preview,
     pub git: Git,
@@ -346,6 +347,38 @@ pub struct Terminal {
     pub per_tab: bool,
     /// Reverse sync: when the shell reports a new cwd, navigate the focused pane there.
     pub follow_shell: bool,
+    /// What to do when a program asks to set the clipboard (OSC 52). Clipboard reads
+    /// are always denied.
+    pub osc52: Osc52Policy,
+}
+
+/// `terminal.osc52`: clipboard writes requested by terminal output.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Osc52Policy {
+    /// Show a prompt (Allow once / Always for this session / Deny).
+    #[default]
+    Ask,
+    Allow,
+    Deny,
+}
+
+/// `[archive]`: extraction safety.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Archive {
+    /// Keep setuid / setgid / sticky bits from archive entries (unix). Off: modes are
+    /// masked to `0o777`.
+    pub preserve_special_bits: bool,
+    /// Decompression-bomb guard: total extracted bytes may reach `bomb_ratio` × the
+    /// archive's size (0 = no ratio limit) ...
+    pub bomb_ratio: u64,
+    /// ... but never less than this many MiB.
+    pub bomb_floor_mib: u64,
+    /// Most entries one extraction may write (0 = unlimited).
+    pub max_entries: u64,
+    /// Largest single entry in MiB (0 = unlimited).
+    pub max_entry_mib: u64,
 }
 
 /// A `[[search.saved]]` entry. `query` is kept as a raw TOML table and deserialized into

@@ -179,11 +179,12 @@ impl ArchiveReader for SevenZReader {
         ctl: &OpControl,
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError> {
+        let archive_size = std::fs::metadata(&self.path).map_or(0, |m| m.len());
         self.load();
         let mut file = self.file_reader()?;
         let listing = self.listing.as_ref().expect("listing loaded");
         let archive = &*self.archive;
-        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, opts, ctl, sink)?;
+        let mut ex = Extractor::new(&listing.entries, &listing.extras, selection, dest, archive_size, opts, ctl, sink)?;
         if ex.wants_encrypted().is_some() && self.password.is_empty() {
             return Err(ArchiveError::PasswordRequired);
         }

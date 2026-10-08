@@ -9,7 +9,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 
 use crossbeam_channel::{Sender, unbounded};
-use soyuz_archive::{ArchiveError, ArchiveFormat, ArchiveReader};
+use soyuz_archive::{ArchiveError, ArchiveFormat, ArchiveReader, ExtractLimits};
 use soyuz_core::{FsError, FsErrorKind};
 use soyuz_jobs::JobSpec;
 
@@ -99,7 +99,7 @@ fn cache() -> &'static ReaderCache {
 
 enum Req {
     List { pane: PaneId, generation: u64, archive: PathBuf, inner: String, postman: Postman },
-    Open { archive: PathBuf, inner: String, postman: Postman },
+    Open { archive: PathBuf, inner: String, limits: ExtractLimits, postman: Postman },
 }
 
 fn worker() -> &'static Sender<Req> {
@@ -124,8 +124,8 @@ fn worker() -> &'static Sender<Req> {
                         };
                         postman.send(msg);
                     }
-                    Req::Open { archive, inner, postman } => {
-                        if let Err(e) = open_entry(&archive, &inner) {
+                    Req::Open { archive, inner, limits, postman } => {
+                        if let Err(e) = open_entry(&archive, &inner, &limits) {
                             let name = inner.rsplit('/').next().unwrap_or(&inner).to_string();
                             postman.send(UiMsg::Notice(Toast::error(format!("Couldn't open {name}")).body(e)));
                         }
@@ -181,9 +181,10 @@ pub fn list(pane: PaneId, generation: u64, archive: &Path, inner: &str, postman:
     });
 }
 
-/// Extract one entry to a temp folder and open it with the default app.
-pub fn open_in_app(archive: &Path, inner: &str, postman: Postman) {
-    let _ = worker().send(Req::Open { archive: archive.to_path_buf(), inner: inner.to_string(), postman });
+/// Extract one entry to a temp folder and open it with the default app. `limits` caps
+/// how much one entry may decompress to (decompression bombs, `[archive]`).
+pub fn open_in_app(archive: &Path, inner: &str, limits: ExtractLimits, postman: Postman) {
+    let _ = worker().send(Req::Open { archive: archive.to_path_buf(), inner: inner.to_string(), limits, postman });
 }
 
 /// Unpredictable 64-bit value (std's per-process random hash keys + time + counter).
@@ -259,7 +260,7 @@ pub fn temp_entry_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-fn open_entry(archive: &Path, inner: &str) -> Result<(), String> {
+fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<(), String> {
     let name = temp_entry_name(inner.rsplit('/').next().unwrap_or(inner))?;
     // A fresh per-open subfolder: the same entry can be opened twice, and a stale file
     // from an earlier open is never overwritten while an app may still hold it.
@@ -275,7 +276,11 @@ fn open_entry(archive: &Path, inner: &str) -> Result<(), String> {
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&dest).map_err(|e| e.to_string())?;
     let copied = with_reader(archive, |r| {
         let idx = soyuz_archive::find_entry(r, inner).ok_or(ArchiveError::Corrupt("entry not found".into()))?;
-        let mut rd = r.open_entry(idx)?;
+        let archive_size = std::fs::metadata(archive).map_or(0, |m| m.len());
+        let mut rd = match limits.read_cap(archive_size) {
+            Some(cap) => soyuz_archive::open_entry_capped(r, idx, cap)?,
+            None => r.open_entry(idx)?,
+        };
         // Stream to disk; large entries are not held in memory.
         std::io::copy(&mut rd, &mut file)?;
         Ok(())

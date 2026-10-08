@@ -4,13 +4,14 @@
 
 use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::{ErrorAction, SizeStyle, format_size};
+use soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP;
 use soyuz_jobs::{JobPrompt, PromptResponse};
 
 use super::conflict::{Answer, Btn, PromptDialog, button};
 use crate::theme::Palette;
 
 fn name(p: &std::path::Path) -> String {
-    format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(p))
+    format!("\u{201c}{}\u{201d}", crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(p)))
 }
 
 /// Path line in a sunken box.
@@ -32,6 +33,38 @@ fn path_box(ui: &mut Ui, path: &std::path::Path, p: &Palette) {
 pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Palette) -> Option<Answer> {
     let mut out = None;
     match prompt {
+        JobPrompt::Error { path, error, .. } if error.op == ARCHIVE_LIMIT_OP => {
+            // Decompression-bomb guard: Continue lifts the limit, Abort (default) stops.
+            ui.label(RichText::new(format!("{} expands beyond the safety limit.", name(path))).color(p.text_primary));
+            ui.add_space(4.0);
+            if !error.message.is_empty() {
+                ui.label(RichText::new(&error.message).font(FontId::proportional(12.0)).color(p.warning));
+            }
+            ui.label(
+                RichText::new("Archives built to fill the disk (decompression bombs) look like this. Limits are in Settings › File operations.")
+                    .font(FontId::proportional(11.5))
+                    .color(p.text_tertiary),
+            );
+            ui.add_space(8.0);
+            path_box(ui, path, p);
+            ui.add_space(16.0);
+            let respond = |a| Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                if button(ui, "Abort", Btn::Primary).on_hover_text("Stop extracting").clicked() {
+                    out = respond(ErrorAction::Abort);
+                }
+                if button(ui, "Continue", Btn::Secondary)
+                    .on_hover_text("Ignore this limit for this extraction")
+                    .clicked()
+                {
+                    out = respond(ErrorAction::Skip);
+                }
+            });
+            if out.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                out = respond(ErrorAction::Abort);
+            }
+        }
         JobPrompt::Error { path, error, retryable } => {
             ui.label(RichText::new(format!("Couldn't process {}.", name(path))).color(p.text_primary));
             ui.add_space(4.0);

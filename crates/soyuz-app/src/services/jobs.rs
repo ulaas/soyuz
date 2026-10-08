@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use soyuz_archive::ExtractLimits;
 use soyuz_core::config::{Config, PreserveItem, ReflinkPref};
 use soyuz_core::{HashAlgo, Location};
 use soyuz_fs::{CopyOptions, Preserve, RealProbe, Reflink};
@@ -138,6 +139,9 @@ pub struct JobsService {
     logs: HashMap<JobId, Vec<LogLine>>,
     /// Copy options derived from `[jobs]` (merged into every copy/move spec).
     copy: CopyOptions,
+    /// `[archive]` safety settings (merged into every extract spec).
+    extract_limits: ExtractLimits,
+    preserve_special_bits: bool,
     /// Debug hook: `SOYUZ_THROTTLE_MBPS` caps copy throughput (to watch progress / pause).
     throttle_bps: Option<u64>,
     /// Undo state of every history entry seen so far (`None` until the first refresh,
@@ -165,6 +169,8 @@ impl JobsService {
             history_dirty: true,
             logs: HashMap::new(),
             copy: copy_options(config),
+            extract_limits: extract_limits(config),
+            preserve_special_bits: config.archive.preserve_special_bits,
             throttle_bps,
             seen: None,
             moves: Vec::new(),
@@ -173,9 +179,11 @@ impl JobsService {
         s
     }
 
-    /// Re-read `[jobs]` copy options (config reload).
+    /// Re-read `[jobs]` copy options and `[archive]` safety settings (config reload).
     pub fn reconfigure(&mut self, config: &Config) {
         self.copy = copy_options(config);
+        self.extract_limits = extract_limits(config);
+        self.preserve_special_bits = config.archive.preserve_special_bits;
     }
 
     pub fn engine(&self) -> &JobEngine {
@@ -190,7 +198,11 @@ impl JobsService {
         spec
     }
 
-    pub fn submit(&mut self, spec: JobSpec, meta: JobMeta) -> JobId {
+    pub fn submit(&mut self, mut spec: JobSpec, meta: JobMeta) -> JobId {
+        if matches!(spec.kind, JobKind::Extract { .. }) {
+            spec.options.extract_limits = self.extract_limits.clone();
+            spec.options.preserve_special_bits = self.preserve_special_bits;
+        }
         let id = self.engine.submit(spec);
         self.meta.insert(id, meta);
         self.refresh_snapshots();
@@ -355,6 +367,18 @@ pub fn copy_options(config: &Config) -> CopyOptions {
     }
 }
 
+/// `[archive]` → decompression-bomb limits for extract jobs and "open entry".
+pub fn extract_limits(config: &Config) -> ExtractLimits {
+    const MIB: u64 = 1024 * 1024;
+    let a = &config.archive;
+    ExtractLimits {
+        max_ratio: a.bomb_ratio,
+        min_total_bytes: a.bomb_floor_mib.saturating_mul(MIB),
+        max_entries: a.max_entries,
+        max_entry_bytes: a.max_entry_mib.saturating_mul(MIB),
+    }
+}
+
 /// Default `JobOptions` with journaling (exposed for tests of option building).
 pub fn journaled() -> JobOptions {
     JobOptions { journal: true, ..JobOptions::default() }
@@ -396,6 +420,18 @@ mod tests {
         assert_eq!(o.verify, Some(HashAlgo::Blake3));
         assert_eq!(o.chunk, 4 * 1024 * 1024);
         assert!(journaled().journal);
+    }
+
+    #[test]
+    fn extract_limits_from_archive_section() {
+        let d = extract_limits(&Config::default());
+        assert_eq!(d, ExtractLimits::default(), "config defaults match the archive crate's");
+        let mut c = Config::default();
+        c.archive.bomb_ratio = 0;
+        c.archive.max_entry_mib = 2;
+        let l = extract_limits(&c);
+        assert_eq!(l.total_cap(1 << 20), None);
+        assert_eq!(l.entry_cap(), Some(2 * 1024 * 1024));
     }
 
     #[test]

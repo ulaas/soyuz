@@ -12,6 +12,9 @@ use crate::ctx::JobCtx;
 use crate::prompt::{ConflictInfo, JobPrompt, PromptResponse};
 use crate::undo::UndoRecord;
 
+/// `FsError::op` of a decompression-bomb limit prompt (the UI shows Continue / Abort).
+pub const ARCHIVE_LIMIT_OP: &str = "archive_limit";
+
 /// Map an archive error to the job error vocabulary.
 pub(crate) fn fs_error(e: &ArchiveError, path: &Path) -> FsError {
     match e {
@@ -30,6 +33,9 @@ pub(crate) fn fs_error(e: &ArchiveError, path: &Path) -> FsError {
         ),
         ArchiveError::Cancelled => FsError::interrupted("archive"),
         ArchiveError::Conflict(p) => FsError::new(FsErrorKind::AlreadyExists, "archive", Some(p)),
+        ArchiveError::LimitExceeded(m) => {
+            FsError::with_message(FsErrorKind::Unsupported, ARCHIVE_LIMIT_OP, Some(path), m.clone())
+        }
     }
 }
 
@@ -85,6 +91,17 @@ impl ExtractSink for Sink<'_> {
     fn on_error(&mut self, e: &ArchiveEntry, err: &ArchiveError) -> ErrorAction {
         let path = soyuz_core::join_vpath(self.archive, &e.path);
         let fe = fs_error(err, &path);
+        if matches!(err, ArchiveError::LimitExceeded(_)) {
+            // Always ask (remembered "skip all" answers don't apply): Abort stops, any
+            // other answer means "Continue" and lifts the limit.
+            let p = JobPrompt::Error { path: self.archive.to_path_buf(), error: fe, retryable: false };
+            return match self.ctx.prompt(p) {
+                PromptResponse::Error { action: ErrorAction::Abort, .. } | PromptResponse::Cancelled => {
+                    ErrorAction::Abort
+                }
+                _ => ErrorAction::Skip,
+            };
+        }
         match self.ctx.on_error(&path, &fe) {
             Ok(ErrorAction::Retry) => ErrorAction::Retry,
             Ok(_) => {
@@ -146,6 +163,8 @@ pub(crate) fn run_extract(
         preserve_mode: true,
         preserve_times: true,
         single_top_folder: false,
+        preserve_special_bits: ctx.opts.preserve_special_bits,
+        limits: ctx.opts.extract_limits.clone(),
     };
     let mut sink = Sink { ctx, archive, dest: dest_dir, tops: HashSet::new() };
     match reader.extract(entries, dest_dir, &opts, ctx.ctl(), &mut sink) {

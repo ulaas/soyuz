@@ -223,9 +223,75 @@ pub fn vdivider(ui: &mut Ui, height: f32) {
 
 /// Single-line galley truncated with an ellipsis at `max_w`.
 pub fn trunc_galley(painter: &Painter, text: &str, font: FontId, color: Color32, max_w: f32) -> Arc<Galley> {
-    let mut job = LayoutJob::simple_singleline(text.to_string(), font, color);
+    let mut job = revealed_job(text, &font, color);
     job.wrap = TextWrapping::truncate_at_width(max_w.max(8.0));
     painter.layout_job(job)
+}
+
+/// Tooltip of the hidden-characters badge.
+pub const HIDDEN_CONTROLS_TIP: &str = "Name contains hidden direction/format characters";
+
+/// Single-line layout of untrusted text (file names): hidden bidi / zero-width / control
+/// characters are shown as dimmed `⟨U+XXXX⟩` tokens instead of silently reordering or
+/// vanishing (`soyuz_core::naming::name_parts`). Display only; names on disk are untouched.
+pub fn revealed_job(text: &str, font: &FontId, color: Color32) -> LayoutJob {
+    use soyuz_core::naming::{NamePart, control_token, name_parts};
+    let mut job = LayoutJob { break_on_newline: false, ..Default::default() };
+    let text_fmt = egui::TextFormat::simple(font.clone(), color);
+    for part in name_parts(text) {
+        match part {
+            NamePart::Text(t) => job.append(t, 0.0, text_fmt.clone()),
+            NamePart::Control(c) => job.append(
+                &control_token(c),
+                1.0,
+                egui::TextFormat::simple(FontId::monospace((font.size * 0.8).max(8.0)), color.gamma_multiply(0.5)),
+            ),
+        }
+    }
+    job
+}
+
+/// `name` for plain labels: hidden controls replaced by visible `⟨U+XXXX⟩` tokens.
+pub fn shown_name(name: &str) -> String {
+    soyuz_core::naming::reveal_controls(name).into_owned()
+}
+
+/// Paint the small warning badge for a name with hidden characters, left-centred at
+/// `pos`; returns its width (0 when `name` is clean and nothing was painted).
+pub fn paint_hidden_badge(painter: &Painter, p: &Palette, pos: Pos2, name: &str) -> f32 {
+    if !soyuz_core::naming::has_hidden_controls(name) {
+        return 0.0;
+    }
+    painter.text(pos2(pos.x + 2.0, pos.y), Align2::LEFT_CENTER, icons::ph::WARNING, icons::font(11.0), p.warning);
+    14.0
+}
+
+/// Dialog line under a name with hidden characters: warning badge (tooltip) plus the
+/// revealed spelling. No-op for clean names.
+pub fn hidden_note(ui: &mut Ui, name: &str) {
+    if !soyuz_core::naming::has_hidden_controls(name) {
+        return;
+    }
+    let p = palette(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        hidden_badge(ui, name);
+        ui.add(
+            egui::Label::new(revealed_job(name, &FontId::proportional(11.5), p.warning))
+                .truncate()
+                .sense(Sense::hover()),
+        )
+        .on_hover_text(HIDDEN_CONTROLS_TIP);
+    });
+}
+
+/// Label-style badge (with tooltip) after a name shown in a dialog; no-op for clean names.
+pub fn hidden_badge(ui: &mut Ui, name: &str) {
+    if soyuz_core::naming::has_hidden_controls(name) {
+        let p = palette(ui.ctx());
+        ui.add(egui::Label::new(icons::icon(icons::ph::WARNING, 12.0).color(p.warning)).sense(Sense::hover()))
+            .on_hover_text(HIDDEN_CONTROLS_TIP);
+    }
 }
 
 /// Text wrapped to at most `rows` lines (grid captions), centered: paint it at the
@@ -238,7 +304,7 @@ pub fn wrapped_galley(
     max_w: f32,
     rows: usize,
 ) -> Arc<Galley> {
-    let mut job = LayoutJob::simple(text.to_string(), font, color, max_w.max(8.0));
+    let mut job = revealed_job(text, &font, color);
     job.wrap = TextWrapping { max_width: max_w.max(8.0), max_rows: rows, break_anywhere: false, ..Default::default() };
     job.halign = egui::Align::Center;
     painter.layout_job(job)
@@ -273,13 +339,9 @@ pub fn menu_item(ui: &mut Ui, icon: Option<&str>, label: &str, shortcut: Option<
                 icon_color,
             );
         }
-        ui.painter().text(
-            pos2(rect.left() + 34.0, rect.center().y),
-            Align2::LEFT_CENTER,
-            label,
-            FontId::proportional(13.0),
-            fg,
-        );
+        // Labels can be folder names: hidden controls are shown as tokens.
+        let g = ui.painter().layout_job(revealed_job(label, &FontId::proportional(13.0), fg));
+        ui.painter().galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, fg);
         if let Some(s) = shortcut {
             ui.painter().text(
                 pos2(rect.right() - 10.0, rect.center().y),

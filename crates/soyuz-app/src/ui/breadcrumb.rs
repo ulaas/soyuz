@@ -18,7 +18,7 @@ use crate::state::pane::PaneId;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{menu_item, spinner, trunc_galley};
+use crate::ui::widgets::{HIDDEN_CONTROLS_TIP, menu_item, paint_hidden_badge, spinner, trunc_galley};
 
 pub struct OmnibarCtx<'a> {
     pub pane: PaneId,
@@ -97,7 +97,10 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         .enumerate()
         .map(|(i, cr)| {
             let f = if i + 1 == list.len() { semibold(13.0) } else { font.clone() };
-            ui.painter().layout_no_wrap(cr.label.clone(), f, Color32::WHITE).size().x.min(220.0) + 2.0 * CRUMB_PAD
+            let badge = if soyuz_core::naming::has_hidden_controls(&cr.label) { 14.0 } else { 0.0 };
+            trunc_galley(ui.painter(), &cr.label, f, Color32::WHITE, f32::INFINITY).size().x.min(220.0)
+                + badge
+                + 2.0 * CRUMB_PAD
         })
         .collect();
     // Collapse the middle when the path does not fit: first crumb, "…", tail.
@@ -174,8 +177,17 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         }
         let color = if last || resp.hovered() { p.text_primary } else { p.text_secondary };
         let f = if last { semibold(13.0) } else { font.clone() };
-        let g = trunc_galley(ui.painter(), &list[i].label, f, color, r.width() - 2.0 * CRUMB_PAD);
+        let hidden = soyuz_core::naming::has_hidden_controls(&list[i].label);
+        let badge = if hidden { 14.0 } else { 0.0 };
+        let g = trunc_galley(ui.painter(), &list[i].label, f, color, r.width() - 2.0 * CRUMB_PAD - badge);
+        let gw = g.size().x;
         ui.painter().galley(pos2(r.left() + CRUMB_PAD, cy - g.size().y / 2.0), g, color);
+        let resp = if hidden {
+            paint_hidden_badge(ui.painter(), &p, pos2(r.left() + CRUMB_PAD + gw, cy), &list[i].label);
+            resp.on_hover_text(HIDDEN_CONTROLS_TIP)
+        } else {
+            resp
+        };
         if resp.clicked() && !last {
             c.cmds.push(Cmd::FocusPane(c.pane));
             c.cmds.push(Cmd::Navigate { pane: c.pane, location: list[i].location.clone(), select: None });

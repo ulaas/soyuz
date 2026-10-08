@@ -359,9 +359,26 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     font,
                     icons::color(&e, &p),
                 );
-                let g =
-                    trunc_galley(ui.painter(), &e.name, FontId::proportional(13.0), p.text_primary, cols[0].2 - 40.0);
+                let g = trunc_galley(
+                    ui.painter(),
+                    &e.name,
+                    FontId::proportional(13.0),
+                    p.text_primary,
+                    cols[0].2 - 40.0 - if soyuz_core::naming::has_hidden_controls(&e.name) { 14.0 } else { 0.0 },
+                );
+                let gw = g.size().x;
                 ui.painter().galley(pos2(cols[0].1 + 32.0, cy - g.size().y / 2.0), g, p.text_primary);
+                let resp = if crate::ui::widgets::paint_hidden_badge(
+                    ui.painter(),
+                    &p,
+                    pos2(cols[0].1 + 32.0 + gw, cy),
+                    &e.name,
+                ) > 0.0
+                {
+                    resp.on_hover_text(crate::ui::widgets::HIDDEN_CONTROLS_TIP)
+                } else {
+                    resp
+                };
                 let origin = name_path
                     .parent()
                     .map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned())

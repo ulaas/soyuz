@@ -54,7 +54,7 @@ impl AttributesDialog {
         let now = Some(SystemTime::now());
         AttributesDialog {
             title: if entries.len() == 1 {
-                format!("Attributes of {}", entries[0].name)
+                format!("Attributes of {}", crate::ui::widgets::shown_name(&entries[0].name))
             } else {
                 format!("Attributes of {} items", entries.len())
             },
