@@ -96,6 +96,28 @@ and *Retry failed*.
 
 - **Preview** (`Alt+P`): syntax-highlighted text, markdown, images, hex for binaries, plus
   file info. *Toggle hex preview* (palette) switches to the hex view.
+  Richer previews (each can be switched off in *Settings → Preview & search*, `[preview]`):
+  - **PDF**: pages render with pdfium (`PgUp` / `PgDn` flip pages in Quick Look; a *Text*
+    tab shows the extracted text). Soyuz does not bundle or download pdfium: get a prebuilt
+    `pdfium.dll` (for example from the *bblanchon/pdfium-binaries* GitHub releases, the
+    `pdfium-win-x64` archive's `bin/pdfium.dll`) and put it next to `soyuz.exe`, in the
+    config folder, or in the folder named by `[preview] pdfium_dir`. No restart is needed.
+    Without it, PDFs show their page count, document info and text (pure-Rust fallback).
+  - **Office / OpenDocument**: docx / odt text with headings, bold, italic and lists;
+    xlsx / ods first sheet as a table (`sheet_rows`); pptx / odp slide titles and bullets.
+  - **EPUB**: cover, title, authors, description and the table of contents.
+  - **Fonts** (ttf, otf, ttc, woff): a specimen, the character set and a glyph grid. WOFF 2
+    is not decoded.
+  - **3D models** (glTF / GLB, STL, OBJ): a shaded quick render; drag to rotate, scroll to
+    zoom in Quick Look, double-click to reset. Models spin slowly unless reduced motion or
+    `model_turntable = false`.
+  - **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause / seek
+    (click the waveform). Playback stops when the preview moves away.
+  - **Video**: container metadata, plus a poster frame when `ffmpeg` is installed (on
+    `PATH`, or set `ffmpeg_path`). Playback inside Soyuz is out of scope; `Enter` opens
+    the file in your player.
+  - **Diff**: select exactly two text files and the preview compares them (older on the
+    left; swap, unified or side by side).
 - **Terminal** (``Ctrl+` ``): your shell in the current folder. It follows navigation (and,
   optionally, navigates the pane when you `cd`). `Esc` on an empty line returns to the
   file list; `Ctrl`+click opens links and paths.

@@ -712,8 +712,91 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw("Syntax theme", "auto follows the app theme, or a syntect theme name.", "highlight code", |ui| {
             text(ui, &mut d.preview.syntax_theme, "auto", 160.0);
         });
-        r.row("PDF preview", "Needs a build with the pdf feature.", |ui| {
-            switch(ui, &mut d.preview.pdf);
+        r.row_kw(
+            "PDF preview",
+            "Pages render with pdfium.dll (not bundled; put it next to soyuz.exe or in the config folder).              Without it, PDFs show their text.",
+            "pdfium document",
+            |ui| {
+                switch(ui, &mut d.preview.pdf);
+            },
+        );
+        r.row_kw(
+            "pdfium folder",
+            "Where pdfium.dll lives. Empty: next to soyuz.exe, then the config folder.",
+            "pdf dll",
+            |ui| {
+                text(ui, &mut d.preview.pdfium_dir, "next to soyuz.exe", 220.0);
+            },
+        );
+        r.row_kw(
+            "Office documents",
+            "Word, Excel, PowerPoint and OpenDocument structure and text.",
+            "docx xlsx pptx odt ods",
+            |ui| {
+                switch(ui, &mut d.preview.office);
+            },
+        );
+        r.row_kw("Spreadsheet rows", "Rows read from the first sheet.", "xlsx ods table", |ui| {
+            number(ui, &mut d.preview.sheet_rows, 10..=100_000, " rows");
+        });
+        r.row_kw("E-books", "EPUB title, author, cover and contents.", "epub book", |ui| {
+            switch(ui, &mut d.preview.epub);
+        });
+        r.row_kw(
+            "Document size limit",
+            "Office, EPUB and PDF files (and the parts inside them) above this aren't parsed.",
+            "max size",
+            |ui| {
+                number(ui, &mut d.preview.max_document_mib, 1..=4096, " MiB");
+            },
+        );
+        r.row_kw("Fonts", "A specimen and glyph grid for TTF, OTF, TTC and WOFF.", "typeface specimen", |ui| {
+            switch(ui, &mut d.preview.fonts);
+        });
+        r.row_kw("3D models", "Quick render of glTF, GLB, STL and OBJ; drag to rotate.", "stl gltf obj 3d", |ui| {
+            switch(ui, &mut d.preview.models);
+        });
+        r.row_kw(
+            "Spin models",
+            "Turn models slowly until you drag them (off with reduced motion).",
+            "turntable rotate",
+            |ui| {
+                switch(ui, &mut d.preview.model_turntable);
+            },
+        );
+        r.row_kw("Model size limit", "Larger model files aren't loaded.", "max size", |ui| {
+            number(ui, &mut d.preview.max_model_mib, 1..=4096, " MiB");
+        });
+        r.row_kw("Audio waveform", "Decode audio files to draw their waveform.", "wave sound music", |ui| {
+            switch(ui, &mut d.preview.audio_waveform);
+        });
+        r.row_kw("Audio size limit", "Larger audio files get no waveform.", "max size", |ui| {
+            number(ui, &mut d.preview.max_audio_mib, 1..=16_384, " MiB");
+        });
+        r.row_kw("Audio playback", "Play, pause and seek inside the preview.", "play music sound", |ui| {
+            switch(ui, &mut d.preview.audio_playback);
+        });
+        r.row_kw(
+            "Video poster frames",
+            "Uses ffmpeg when it is installed. Nothing is downloaded.",
+            "ffmpeg thumbnail",
+            |ui| {
+                switch(ui, &mut d.preview.video_ffmpeg);
+            },
+        );
+        r.row_kw("ffmpeg program", "A name looked up on PATH, or a full path.", "ffmpeg path", |ui| {
+            text(ui, &mut d.preview.ffmpeg_path, "ffmpeg", 220.0);
+        });
+        r.row_kw(
+            "Compare two files",
+            "With exactly two text files selected, the preview shows their diff.",
+            "diff compare",
+            |ui| {
+                switch(ui, &mut d.preview.diff);
+            },
+        );
+        r.row_kw("Diff size limit", "Each file is compared up to this size.", "max size", |ui| {
+            number(ui, &mut d.preview.max_diff_kib, 16..=65_536, " KiB");
         });
         r.row_kw(
             "Thumbnail memory",

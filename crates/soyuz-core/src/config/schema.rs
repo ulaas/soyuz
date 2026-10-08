@@ -489,6 +489,39 @@ pub struct Preview {
     pub thumb_cache_mib: u64,
     /// Memory budget of decoded previews (images, text, media) (MiB).
     pub preview_cache_mib: u64,
+    /// Folder holding `pdfium.dll` / `libpdfium.so` / `libpdfium.dylib`; empty = next to
+    /// the executable, then the config dir. Never downloaded.
+    pub pdfium_dir: String,
+    /// docx / xlsx / pptx / odt / ods / odp structure and text.
+    pub office: bool,
+    /// EPUB title, author, cover and table of contents.
+    pub epub: bool,
+    /// Font specimens (ttf / otf / ttc / woff).
+    pub fonts: bool,
+    /// glTF / GLB / STL / OBJ quick render.
+    pub models: bool,
+    /// Slowly spin 3D models until they are dragged (off with reduced motion too).
+    pub model_turntable: bool,
+    /// Decode audio for a waveform image.
+    pub audio_waveform: bool,
+    /// Play / pause / seek audio in the preview.
+    pub audio_playback: bool,
+    /// Poster frame for videos through an `ffmpeg` executable (when one is found).
+    pub video_ffmpeg: bool,
+    /// The `ffmpeg` program: a name looked up on PATH or a full path.
+    pub ffmpeg_path: String,
+    /// Side-by-side / unified diff when exactly two text files are selected.
+    pub diff: bool,
+    /// Office / EPUB / PDF files (and each part inside them) larger than this are not parsed (MiB).
+    pub max_document_mib: u64,
+    /// Spreadsheet preview: rows read from the first sheet.
+    pub sheet_rows: u32,
+    /// 3D model files larger than this are not loaded (MiB).
+    pub max_model_mib: u64,
+    /// Audio files larger than this get no waveform (MiB).
+    pub max_audio_mib: u64,
+    /// Each side of a diff is read up to this size (KiB).
+    pub max_diff_kib: u64,
 }
 
 /// `[editor]`: the built-in text / hex / image editors ("Edit in Soyuz", F4).

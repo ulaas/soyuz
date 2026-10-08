@@ -73,6 +73,12 @@ fn journal_tracks_running_jobs_and_disappears_after() {
     assert_eq!(job.stamps.len(), job.records.len(), "every copy is identity-stamped");
     j.h.engine.resume(id);
     j.h.ok(id);
+    // The scheduler drops the journal right after the job finishes; allow it a moment
+    // under load instead of racing it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while j.path.exists() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert!(!j.path.exists(), "nothing in flight: no journal");
 }
 

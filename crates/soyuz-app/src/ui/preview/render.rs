@@ -101,6 +101,7 @@ impl PreviewState {
             dark: p.dark,
             mono: FontId::monospace(12.0),
             fg: p.text_primary,
+            rich: crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big),
         }
     }
 
@@ -647,6 +648,11 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     FontId::proportional(11.5),
                     p.text_tertiary,
                 );
+            }
+        }
+        Content::Rich(r) => {
+            if let Some(a) = super::rich::show(ui, rect, r, &entry, interactive) {
+                action = Some(a);
             }
         }
         Content::Message { icon, title, body } => {

@@ -144,6 +144,22 @@ syntax_theme = "auto"
 pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
 thumb_cache_mib = 128            # memory budget for decoded thumbnails
 preview_cache_mib = 96           # memory budget for decoded previews
+pdfium_dir = ""                  # folder with pdfium.dll; "" = next to soyuz.exe, then the config dir
+office = true                    # docx / xlsx / pptx / odt / ods / odp
+epub = true                      # title, author, cover, table of contents
+fonts = true                     # ttf / otf / ttc / woff specimen
+models = true                    # glTF / GLB / STL / OBJ quick render
+model_turntable = true           # spin models until dragged (also off with reduced motion)
+audio_waveform = true            # decode audio for a waveform image
+audio_playback = true            # play / pause / seek in the preview
+video_ffmpeg = true              # poster frame through ffmpeg when it is found
+ffmpeg_path = "ffmpeg"           # name on PATH or a full path
+diff = true                      # two selected text files -> diff
+max_document_mib = 64            # office / epub / pdf parsing limit (per file and per part)
+sheet_rows = 200                 # spreadsheet rows read from the first sheet
+max_model_mib = 128
+max_audio_mib = 512              # no waveform above this size
+max_diff_kib = 1024              # each side of a diff is read up to this size
 
 [editor]                         # "Edit in Soyuz" (F4): text, hex and image editors
 dock = "right"                   # right | bottom

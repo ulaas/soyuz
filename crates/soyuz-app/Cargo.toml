@@ -19,7 +19,11 @@ name = "soyuz"
 path = "src/main.rs"
 
 [features]
-default = ["zstd"]
+default = ["zstd", "pdf"]
+# PDF page rendering through pdfium (loaded at runtime from pdfium.dll next to the exe or
+# in the config dir; see docs/USER_GUIDE.md). Without the library the preview falls back
+# to the pure-Rust text-only view.
+pdf = ["dep:pdfium-render"]
 # Fallback OpenGL renderer (`--renderer glow`).
 glow = ["eframe/glow"]
 # Native zstd (tar.zst writing, zstd zip entries); compiles C. Cross builds without a C
@@ -53,6 +57,18 @@ regex.workspace = true
 memchr.workspace = true
 chrono.workspace = true
 blake3.workspace = true
+pdfium-render = { workspace = true, optional = true }
+lopdf.workspace = true
+quick-xml.workspace = true
+skrifa.workspace = true
+ab_glyph.workspace = true
+gltf.workspace = true
+symphonia.workspace = true
+rodio.workspace = true
+similar.workspace = true
+base64.workspace = true
+zip.workspace = true
+flate2.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # HWND of the eframe window for the DWM / Snap Layouts integration (`ui::native_chrome`).
