@@ -1031,6 +1031,27 @@ mod tests {
     use super::*;
 
     #[test]
+    fn osc52_policy_decisions() {
+        assert_eq!(osc52_decision(Osc52Policy::Ask, false), ClipDecision::Ask);
+        assert_eq!(osc52_decision(Osc52Policy::Ask, true), ClipDecision::Copy);
+        assert_eq!(osc52_decision(Osc52Policy::Deny, true), ClipDecision::Drop);
+        assert_eq!(osc52_decision(Osc52Policy::Deny, false), ClipDecision::Drop);
+        assert_eq!(osc52_decision(Osc52Policy::Allow, false), ClipDecision::Copy);
+        assert_eq!(soyuz_core::config::Config::default().terminal.osc52, Osc52Policy::Ask, "asks by default");
+    }
+
+    #[test]
+    fn clipboard_preview_is_one_short_line() {
+        assert_eq!(clipboard_preview("ls -la"), "ls -la");
+        assert_eq!(clipboard_preview("a\r\nb\tc"), "a\u{23CE}b\u{21E5}c");
+        assert_eq!(clipboard_preview("x\u{1b}[31m"), "x\u{27E8}U+001B\u{27E9}[31m");
+        let p = clipboard_preview(&"y".repeat(200));
+        assert_eq!(p.chars().count(), 81);
+        assert!(p.ends_with('\u{2026}'));
+        assert_eq!(clipboard_preview(&"z".repeat(80)), "z".repeat(80));
+    }
+
+    #[test]
     fn title_labels() {
         assert_eq!(title_label(r"C:\Users\me\src").as_deref(), Some("src"));
         assert_eq!(title_label("/home/me/").as_deref(), Some("me"));

@@ -113,6 +113,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
     app.ui.dialogs.show(&ctx, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);
+    crate::ui::panels::terminal::clipboard_prompt(&ctx, app);
     let screen = ctx.content_rect();
     let bottom_offset = if app.ui.status_visible { 30.0 } else { 6.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(screen.right(), screen.bottom() - bottom_offset));
