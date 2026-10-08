@@ -34,6 +34,7 @@ pub struct Config {
     pub preview: Preview,
     pub git: Git,
     pub keys: Keys,
+    pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
     pub custom_commands: Vec<CustomCommand>,
 }

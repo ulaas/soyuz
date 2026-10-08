@@ -29,6 +29,7 @@ impl Default for Config {
             preview: Preview::default(),
             git: Git::default(),
             keys: Keys::default(),
+            ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
             custom_commands: Vec::new(),
         }

@@ -1,0 +1,4 @@
+data: {"candidates": [{"content": {"parts": [{"text": "Let me look."}],"role": "model"},"index": 0}],"usageMetadata": {"promptTokenCount": 50,"candidatesTokenCount": 3,"totalTokenCount": 53},"modelVersion": "gemini-3.8-flash"}
+
+data: {"candidates": [{"content": {"parts": [{"functionCall": {"name": "list_dir","args": {"path": "/home/u/Downloads"}},"thoughtSignature": "CiQB0e2Kb"}],"role": "model"},"finishReason": "STOP","index": 0}],"usageMetadata": {"promptTokenCount": 50,"candidatesTokenCount": 12,"thoughtsTokenCount": 30,"totalTokenCount": 92},"modelVersion": "gemini-3.8-flash"}
+

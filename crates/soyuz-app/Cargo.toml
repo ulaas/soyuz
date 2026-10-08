@@ -33,6 +33,7 @@ soyuz-jobs.workspace = true
 soyuz-archive.workspace = true
 soyuz-search.workspace = true
 soyuz-term.workspace = true
+soyuz-ai.workspace = true
 eframe.workspace = true
 egui.workspace = true
 egui_extras.workspace = true

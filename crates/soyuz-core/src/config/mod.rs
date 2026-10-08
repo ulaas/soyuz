@@ -3,6 +3,7 @@
 //! Hot reload is *not* here (core has no `notify`); see `soyuz-app/src/services/config_watch.rs`.
 
 pub mod actions;
+pub mod ai;
 pub mod defaults;
 pub mod keys;
 pub mod preserve;
@@ -12,6 +13,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 pub use actions::{Action, ActionCategory, ParseActionError};
+pub use ai::{
+    Ai, AiPrice, AiPrivacy, AiProfile, AiProviderKind, AiScope, AiTaskModel, AiTasks, AiToolMode, default_prices,
+};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
