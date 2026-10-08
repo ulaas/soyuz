@@ -35,6 +35,7 @@ env_logger.workspace = true
 serde.workspace = true
 toml.workspace = true
 image.workspace = true
+syntect.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

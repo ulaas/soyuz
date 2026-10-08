@@ -47,11 +47,23 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.cmds.push(Cmd::ViewChanged(id));
         }
     }
-    panels::show(ui, &mut app.ui.bottom);
+    let mut bottom = std::mem::take(&mut app.ui.bottom);
+    panels::show(ui, &mut bottom, |ui, tab, rect| match tab {
+        panels::BottomTab::Terminal => {
+            panels::terminal::body(ui, rect, app);
+            true
+        }
+        _ => false,
+    });
+    app.ui.bottom = bottom;
+    panels::terminal::apply_requests(app);
     if app.ui.sidebar_visible {
         let current = app.ws.pane().location.clone();
         let pane = app.ws.pane().id;
+        let saved_searches = app.ui.search.names();
         let mut sctx = SidebarCtx {
+            saved_searches: &saved_searches,
+            saved_config: app.ui.search.config_count(),
             bookmarks: &app.config.bookmarks,
             volumes: &app.ui.volumes,
             cloud: &app.ui.cloud,
@@ -67,6 +79,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);
+    crate::ui::search::bar(ui, app);
+    crate::ui::preview::show(ui, app);
 
     CentralPanel::default()
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
@@ -79,6 +93,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     // Overlays.
     let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
     app.ui.dialogs.show(&ctx, &mut dctx);
+    crate::ui::quicklook::show(&ctx, app);
     let screen = ctx.content_rect();
     let bottom_offset = if app.ui.status_visible { 30.0 } else { 6.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(screen.right(), screen.bottom() - bottom_offset));

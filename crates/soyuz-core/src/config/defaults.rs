@@ -176,6 +176,8 @@ impl Default for Terminal {
             scrollback: 10_000,
             font_size: 12.5,
             theme: "auto".into(),
+            per_tab: false,
+            follow_shell: false,
         }
     }
 }
@@ -250,7 +252,8 @@ fn common(km: &mut Keymap) {
     b(G, A::Forward, ALT, KeyName::ArrowRight);
     b(G, A::Up, ALT, KeyName::ArrowUp);
     b(G, A::Refresh, CTRL, KeyName::R);
-    b(G, A::Search, CTRL, KeyName::F);
+    b(G, A::Filter, CTRL, KeyName::F);
+    b(G, A::Search, CTRL_SHIFT, KeyName::F);
     b(G, A::Settings, CTRL, KeyName::Comma);
     b(G, A::Quit, CTRL, KeyName::Q);
     b(G, A::ToggleHidden, CTRL, KeyName::H);

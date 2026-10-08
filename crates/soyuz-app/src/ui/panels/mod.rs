@@ -3,6 +3,8 @@
 //! resizable height; integrations replace the placeholder bodies in [`show`] with their
 //! own widgets (e.g. `soyuz_term::TerminalView`, the job cards).
 
+pub mod terminal;
+
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::theme::tokens::{radius, size};
@@ -54,8 +56,9 @@ impl BottomPanel {
     }
 }
 
-/// Draw the panel (when open) above the status bar.
-pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
+/// Draw the panel (when open) above the status bar. `body` draws a tab's content into
+/// the given rect and returns `false` to fall back to the placeholder.
+pub fn show(root: &mut Ui, panel: &mut BottomPanel, mut body: impl FnMut(&mut Ui, BottomTab, egui::Rect) -> bool) {
     if !panel.open {
         return;
     }
@@ -115,7 +118,12 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
                 panel.open = false;
             }
             // Placeholder body until the terminal / jobs integration lands.
-            let body = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
+            let body_rect = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
+            if body(ui, panel.tab, body_rect) {
+                ui.allocate_rect(card, Sense::hover());
+                return;
+            }
+            let body = body_rect;
             let (glyph, text) = match panel.tab {
                 BottomTab::Terminal => {
                     (ph::TERMINAL_WINDOW, "The integrated terminal arrives with the terminal milestone.")

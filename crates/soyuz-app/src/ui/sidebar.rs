@@ -118,6 +118,9 @@ pub struct SidebarCtx<'a> {
     pub pane: PaneId,
     pub cmds: &'a mut Vec<Cmd>,
     pub width: f32,
+    /// Saved search names (config ones first) and how many come from the config.
+    pub saved_searches: &'a [String],
+    pub saved_config: usize,
 }
 
 fn section_name(s: SidebarSection) -> &'static str {
@@ -153,6 +156,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         _ => {}
                     }
                 }
+                crate::ui::search::sidebar_section(ui, c.saved_searches, &mut s.collapsed, c.cmds, c.saved_config);
                 ui.add_space(8.0);
             });
         });

@@ -2,9 +2,14 @@
 //! (jobs engine, search, folder sizes, terminal) are polled directly by the integration
 //! layer; everything here reports through the [`mailbox`].
 
+pub mod archive;
 pub mod lister;
 pub mod mailbox;
 pub mod places;
+pub mod preview;
+pub mod preview_media;
+pub mod preview_text;
+pub mod search;
 pub mod thumbs;
 pub mod watcher;
 

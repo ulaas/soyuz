@@ -77,4 +77,18 @@ pub enum Cmd {
     ApplyViewToAll(PaneId),
     /// Reveal the given path's parent and select it (path typed into the address bar).
     RevealPath(PathBuf),
+    /// Open a new integrated terminal session in this folder.
+    OpenTerminalPanel(PathBuf),
+    /// Submit a background job (extract / compress, …) to the jobs engine.
+    SubmitJob(Box<soyuz_jobs::JobSpec>),
+    /// Extract selected archive entries (`(inner path, is_dir)`) into `dest`.
+    ExtractEntries {
+        archive: PathBuf,
+        items: Vec<(String, bool)>,
+        strip: usize,
+        dest: PathBuf,
+    },
+    /// Run / remove a saved search (index into the sidebar list).
+    RunSavedSearch(usize),
+    RemoveSavedSearch(usize),
 }

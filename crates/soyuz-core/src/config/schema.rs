@@ -327,6 +327,10 @@ pub struct Terminal {
     pub font_size: f32,
     /// `"auto"` (derive from app theme) | `"<name>"`.
     pub theme: String,
+    /// One terminal set per tab (`true`) or one shared by all tabs (`false`).
+    pub per_tab: bool,
+    /// Reverse sync: when the shell reports a new cwd, navigate the focused pane there.
+    pub follow_shell: bool,
 }
 
 /// A `[[search.saved]]` entry. `query` is kept as a raw TOML table and deserialized into

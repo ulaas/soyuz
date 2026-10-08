@@ -293,6 +293,13 @@ impl Pane {
         self.dirty = true;
     }
 
+    /// Replace the entries keeping the given order (no re-sort), e.g. search relevance.
+    pub fn set_entries_ordered(&mut self, entries: Vec<EntryInfo>) {
+        self.incoming.clear();
+        self.entries = entries;
+        self.after_change();
+    }
+
     /// Re-sort after a sort spec change.
     pub fn resort(&mut self) {
         sort_entries(&mut self.entries, &self.view.sort);

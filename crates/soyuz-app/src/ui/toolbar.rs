@@ -78,6 +78,21 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 app.cmds.push(Cmd::Action(Action::ToggleDualPane));
             }
             dual_menu(ui, &dual, app);
+            let preview_on = app.ui.preview.open;
+            if right_btn(ui, ph::SIDEBAR_SIMPLE, &tip(app, "Preview pane", &Action::TogglePreviewPane), preview_on)
+                .clicked()
+            {
+                app.cmds.push(Cmd::Action(Action::TogglePreviewPane));
+            }
+            let search_on = app.ui.search.open;
+            if right_btn(ui, ph::MAGNIFYING_GLASS, &tip(app, "Search subfolders", &Action::Search), search_on).clicked()
+            {
+                if search_on {
+                    app.ui.search.open = false;
+                } else {
+                    app.cmds.push(Cmd::Action(Action::Search));
+                }
+            }
             let sort = right_btn(ui, ph::SORT_ASCENDING, "Sort", false);
             let mode = app.ws.pane().view.mode;
             let mode_glyph = match mode {
@@ -365,7 +380,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             pane.set_filter("");
         }
     } else if !focused {
-        let hint = chord_label(&app.keymap, &Action::Search).unwrap_or_default();
+        let hint = chord_label(&app.keymap, &Action::Filter).unwrap_or_default();
         ui.painter().text(
             pos2(r.right() - 10.0, r.center().y),
             Align2::RIGHT_CENTER,

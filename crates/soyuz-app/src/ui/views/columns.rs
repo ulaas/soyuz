@@ -44,7 +44,8 @@ pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
         Column::Name => e.name.clone(),
         Column::Size => {
             if e.is_dir_like() {
-                String::new()
+                // Filled in (and animated) by "Calculate folder sizes".
+                crate::services::search::dir_size_text(&e.path, cfg.general.size_style)
             } else {
                 format_size(e.size, cfg.general.size_style)
             }

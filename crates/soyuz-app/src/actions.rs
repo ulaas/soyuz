@@ -210,7 +210,10 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::ToggleStatusBar => app.ui.status_visible = !app.ui.status_visible,
         A::ToggleCheckboxes => app.ui.checkbox_mode = !app.ui.checkbox_mode,
-        A::ToggleTerminal => app.ui.bottom.toggle(crate::ui::panels::BottomTab::Terminal),
+        A::ToggleTerminal => crate::ui::panels::terminal::toggle(app, ctx),
+        A::FocusTerminal => crate::ui::panels::terminal::focus(app, ctx),
+        A::TogglePreviewPane => app.ui.preview.toggle(),
+        A::ToggleHexPreview => app.ui.preview.toggle_hex(),
         A::ToggleActivityPanel => app.ui.bottom.toggle(crate::ui::panels::BottomTab::Activity),
 
         // ---- selection ----
@@ -271,7 +274,10 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::CursorEnd => cursor(app, NavDir::End, false, false),
         A::ExtendUp => cursor(app, NavDir::Up, true, false),
         A::ExtendDown => cursor(app, NavDir::Down, true, false),
-        A::Filter | A::Search => app.ui.filter_focus = true,
+        A::Filter => app.ui.filter_focus = true,
+        A::Search => crate::ui::search::open(app, false),
+        A::SearchContent => crate::ui::search::open(app, true),
+        A::FolderSize => crate::ui::search::folder_sizes(app),
         A::ClearFilter => app.ws.pane_mut().set_filter(""),
         A::TypeAheadToggle => {
             let b = &mut app.config.behaviour;
@@ -303,7 +309,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             }
             .or_else(|| pane.location.as_fs_path().map(|p| p.to_path_buf()));
             if let Some(d) = dir {
-                app.cmds.push(Cmd::TerminalAt(d));
+                app.cmds.push(Cmd::OpenTerminalPanel(d));
             }
         }
         A::RevealInSystem => {
@@ -366,9 +372,14 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ReloadConfig => reload_config(app, ctx),
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
-                app.cmds.push(Cmd::ComingSoon(action));
+                crate::ui::quicklook::toggle(app);
             }
         }
+        A::CreateArchive => crate::ui::archive::create_dialog(app),
+        A::ExtractHere => crate::ui::archive::extract_here(app),
+        A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
+        A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
+        A::TestArchive => crate::ui::archive::test_archive(app),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));

@@ -3998,6 +3998,7 @@ dependencies = [
  "soyuz-jobs",
  "soyuz-search",
  "soyuz-term",
+ "syntect",
  "tempfile",
  "toml",
 ]

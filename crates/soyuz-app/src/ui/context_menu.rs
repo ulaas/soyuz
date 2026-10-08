@@ -110,10 +110,19 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     }
     if single && let Some((path, true)) = &first {
         action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, "Open terminal here", Action::OpenInTerminal);
+        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+            cmds.push(Cmd::TerminalAt(path.clone()));
+            ui.close();
+        }
         if menu_item(ui, Some(ph::STAR), "Add to favorites", None, true).clicked() {
             cmds.push(Cmd::AddFavorite(path.clone()));
             ui.close();
         }
+    }
+    let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
+    crate::ui::archive::context_items(ui, cmds, id, &pane.location, any_archive, !sel.is_empty());
+    if all_dirs {
+        action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     }
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
@@ -143,6 +152,10 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     menu_separator(ui);
     if let Location::Dir(dir) = &pane.location {
         action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, "Open terminal here", Action::OpenTerminalHere);
+        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+            cmds.push(Cmd::TerminalAt(dir.clone()));
+            ui.close();
+        }
         action_item(
             ui,
             km,
@@ -159,6 +172,10 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         }
         menu_separator(ui);
     }
+    if matches!(pane.location, Location::Archive { .. }) {
+        crate::ui::archive::context_items(ui, cmds, id, &pane.location, false, false);
+        menu_separator(ui);
+    }
     if menu_check(ui, v.show_hidden, "Show hidden files", chord_label(km, &Action::ToggleHidden).as_deref()).clicked() {
         cmds.push(Cmd::PaneAction(id, Action::ToggleHidden));
         ui.close();
@@ -168,6 +185,7 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         ui.close();
     }
     action_item(ui, km, cmds, id, ph::SELECTION_ALL, "Select all", Action::SelectAll);
+    action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
 }

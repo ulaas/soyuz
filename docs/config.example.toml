@@ -99,7 +99,9 @@ shell_integration = true         # inject prompt hook so the terminal reports it
 escape_returns_focus = true
 scrollback = 10000
 font_size = 12.5
-theme = "auto"                   # auto (derive from app theme) | <name>
+theme = "auto"                   # auto (derive from app theme) | dark | light
+per_tab = false                  # one terminal set per tab instead of one shared set
+follow_shell = false             # navigate the focused pane when the shell changes directory
 
 [search]
 threads = 0                      # 0 = auto

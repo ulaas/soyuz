@@ -58,6 +58,17 @@ pub fn start_listing(pane: &mut Pane, services: &mut Services, soft: bool) {
             }
             services.lister.list(pane.id, pane.generation, &path, ctl, soft);
         }
+        Location::Archive { archive, inner } => {
+            pane.clear_listing();
+            pane.status = ListingStatus::Loading { since: Instant::now() };
+            services.watcher.unwatch(pane.id);
+            crate::services::archive::list(pane.id, pane.generation, &archive, &inner, services.mailbox.postman());
+        }
+        Location::Search(id) => {
+            pane.clear_listing();
+            services.watcher.unwatch(pane.id);
+            crate::services::search::attach(pane, id);
+        }
         _ => {
             pane.clear_listing();
             pane.status = ListingStatus::Virtual;
@@ -157,7 +168,12 @@ pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
     let Some(pane) = app.ws.find_pane(id) else { return };
     let Some(e) = pane.entry(key) else { return };
     let path = e.path.clone();
-    if e.is_dir_like() {
+    let is_dir = e.is_dir_like();
+    // Archives open as folders; entries inside archives navigate / extract-and-open.
+    if crate::ui::archive::open_entry(app, id, &path, is_dir) {
+        return;
+    }
+    if is_dir {
         let loc = Location::Dir(path);
         if app.config.general.open_folders_in == OpenFoldersIn::NewTab {
             open_in_new_tab(app, loc, true);
@@ -596,6 +612,18 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             }
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
+        Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
+        Cmd::SubmitJob(spec) => {
+            // Minimal handler until the app-wide jobs service lands (see services::archive).
+            if crate::services::archive::submit_job(ctx, *spec).is_none() {
+                app.ui.toasts.push(Toast::error("Couldn't start the job"));
+            }
+        }
+        Cmd::ExtractEntries { archive, items, strip, dest } => {
+            crate::ui::archive::extract_entries(app, archive, items, strip, dest)
+        }
+        Cmd::RunSavedSearch(i) => crate::ui::search::run_saved(app, i),
+        Cmd::RemoveSavedSearch(i) => crate::ui::search::remove_saved(app, i),
         Cmd::RevealPath(path) => {
             let select = path.file_name().map(|n| n.to_string_lossy().into_owned());
             if let Some(parent) = path.parent() {

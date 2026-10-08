@@ -65,6 +65,10 @@ pub struct UiState {
     pub theme: ThemePreference,
     pub reduced_motion: bool,
     pub title: String,
+    pub terminal: crate::ui::panels::terminal::TerminalPanel,
+    pub preview: crate::ui::preview::PreviewPane,
+    pub quicklook: crate::ui::quicklook::QuickLook,
+    pub search: crate::ui::search::SearchUi,
 }
 
 pub struct SoyuzApp {
@@ -155,6 +159,10 @@ impl SoyuzApp {
             theme: theme_pref,
             reduced_motion: config.appearance.reduced_motion,
             title: String::new(),
+            terminal: Default::default(),
+            preview: crate::ui::preview::PreviewPane::new(config.layout.preview_pane),
+            quicklook: Default::default(),
+            search: crate::ui::search::SearchUi::new(&config),
         };
 
         let start = start_location(&config);
@@ -308,6 +316,16 @@ impl SoyuzApp {
         if self.ui.dialogs.is_open() {
             return; // the modal owns the keyboard
         }
+        if crate::ui::quicklook::handle_keys(self, ctx) {
+            return;
+        }
+        if crate::ui::panels::terminal::owns_keyboard(self) {
+            let actions = crate::ui::panels::terminal::dispatch_keys(ctx, &self.keymap, self.config.keys.cmd_is_ctrl);
+            for a in actions {
+                actions::execute(self, a, ctx);
+            }
+            return;
+        }
         let (kctx, text_focused) = self.key_context(ctx);
         let dispatched = keys::dispatch(ctx, &self.keymap, kctx, text_focused, self.config.keys.cmd_is_ctrl);
         for d in dispatched {
@@ -423,6 +441,8 @@ impl eframe::App for SoyuzApp {
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         ops::drain_watcher(self);
+        crate::ui::panels::terminal::pump(self, &ctx);
+        crate::ui::search::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
