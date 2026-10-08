@@ -43,6 +43,8 @@ pub struct Config {
     pub git: Git,
     /// F8: scheduled sync profiles, two-way sync and previous versions.
     pub sync: SyncSection,
+    /// D1: manual update check against GitHub Releases.
+    pub updates: Updates,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
@@ -661,6 +663,21 @@ pub enum EditorDock {
 pub struct Git {
     pub status_column: bool,
     pub refresh_secs: u64,
+}
+
+/// `[updates]`: user-initiated update check against GitHub Releases (roadmap D1). Nothing
+/// is ever downloaded or installed without a click; there is no telemetry. Defaults: no
+/// repo (check disabled), no weekly check, stable releases only.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Updates {
+    /// GitHub repository to check, `owner/name` or `https://github.com/owner/name`.
+    /// Empty disables the update check.
+    pub repo: String,
+    /// Also check once a week at startup (off by default; only shows a notification).
+    pub weekly_check: bool,
+    /// Offer pre-releases (release candidates, betas) too.
+    pub include_prereleases: bool,
 }
 
 /// `[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).

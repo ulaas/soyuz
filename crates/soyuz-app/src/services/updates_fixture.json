@@ -1,0 +1,69 @@
+[
+  {
+    "url": "https://api.github.com/repos/soyuz-dev/soyuz/releases/3",
+    "html_url": "https://github.com/soyuz-dev/soyuz/releases/tag/v0.4.0",
+    "tag_name": "v0.4.0",
+    "name": "Draft 0.4.0",
+    "draft": true,
+    "prerelease": false,
+    "published_at": null,
+    "body": "not yet",
+    "assets": []
+  },
+  {
+    "url": "https://api.github.com/repos/soyuz-dev/soyuz/releases/2",
+    "html_url": "https://github.com/soyuz-dev/soyuz/releases/tag/v0.3.0-rc.1",
+    "tag_name": "v0.3.0-rc.1",
+    "name": "",
+    "draft": false,
+    "prerelease": true,
+    "published_at": "2026-10-05T12:00:00Z",
+    "body": "Release candidate.",
+    "assets": [
+      {
+        "name": "soyuz-0.3.0-rc.1-windows-x64.zip",
+        "browser_download_url": "https://github.com/soyuz-dev/soyuz/releases/download/v0.3.0-rc.1/soyuz-0.3.0-rc.1-windows-x64.zip",
+        "size": 15000000,
+        "content_type": "application/zip"
+      }
+    ]
+  },
+  {
+    "url": "https://api.github.com/repos/soyuz-dev/soyuz/releases/1",
+    "html_url": "https://github.com/soyuz-dev/soyuz/releases/tag/v0.2.0",
+    "tag_name": "v0.2.0",
+    "target_commitish": "main",
+    "name": "Soyuz 0.2.0",
+    "draft": false,
+    "prerelease": false,
+    "created_at": "2026-09-30T08:00:00Z",
+    "published_at": "2026-09-30T09:15:00Z",
+    "author": { "login": "soyuz-bot" },
+    "body": "## Highlights\r\n- MSI installer and portable zip\r\n- Default file manager opt-in\r\n",
+    "assets": [
+      {
+        "name": "soyuz-0.2.0-windows-x64.msi",
+        "browser_download_url": "https://github.com/soyuz-dev/soyuz/releases/download/v0.2.0/soyuz-0.2.0-windows-x64.msi",
+        "size": 16000000,
+        "digest": "sha256:4F2B7A5D0D1C6F4A1C9E3B2A8D7E6F5A4B3C2D1E0F9A8B7C6D5E4F3A2B1C0D9E",
+        "content_type": "application/x-msi"
+      },
+      {
+        "name": "soyuz-0.2.0-windows-x64.msi.sig",
+        "browser_download_url": "https://github.com/soyuz-dev/soyuz/releases/download/v0.2.0/soyuz-0.2.0-windows-x64.msi.sig",
+        "size": 300
+      },
+      {
+        "name": "soyuz-0.2.0-windows-x64.zip",
+        "browser_download_url": "https://github.com/soyuz-dev/soyuz/releases/download/v0.2.0/soyuz-0.2.0-windows-x64.zip",
+        "size": 15500000,
+        "digest": null
+      },
+      {
+        "name": "SHA256SUMS-windows.txt",
+        "browser_download_url": "https://github.com/soyuz-dev/soyuz/releases/download/v0.2.0/SHA256SUMS-windows.txt",
+        "size": 200
+      }
+    ]
+  }
+]

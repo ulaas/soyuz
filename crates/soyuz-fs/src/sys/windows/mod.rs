@@ -12,6 +12,7 @@ pub(crate) mod security;
 pub(crate) mod shadow;
 pub(crate) mod usn;
 pub(crate) mod volume;
+pub(crate) mod wintrust;
 
 use std::ffi::{OsStr, OsString};
 use std::io;

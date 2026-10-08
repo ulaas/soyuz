@@ -12,6 +12,7 @@ mod fonts;
 mod keybindings;
 mod lists;
 mod pages;
+mod system;
 mod themes_ui;
 pub mod widgets;
 
@@ -62,10 +63,11 @@ pub enum Section {
     Automations,
     Ai,
     Advanced,
+    About,
 }
 
 impl Section {
-    pub const ALL: [Section; 16] = [
+    pub const ALL: [Section; 17] = [
         Section::General,
         Section::Appearance,
         Section::Fonts,
@@ -82,6 +84,7 @@ impl Section {
         Section::Automations,
         Section::Ai,
         Section::Advanced,
+        Section::About,
     ];
 
     pub fn title(self) -> &'static str {
@@ -101,7 +104,8 @@ impl Section {
             Section::Scripts => "Scripts",
             Section::Automations => "Automations",
             Section::Ai => "AI assistant",
-            Section::Advanced => "Config file",
+            Section::Advanced => "Advanced",
+            Section::About => "About & updates",
         }
     }
 
@@ -123,6 +127,7 @@ impl Section {
             Section::Automations => ph::ROBOT,
             Section::Ai => ph::SPARKLE,
             Section::Advanced => ph::FILE_CODE,
+            Section::About => ph::PLANET,
         }
     }
 
@@ -143,7 +148,8 @@ impl Section {
             Section::Scripts => "Rhai scripts: actions, context-menu entries, columns and previewers.",
             Section::Automations => "Rules that file new items in watched folders, and the soyuz command line.",
             Section::Ai => "Model providers, API keys, privacy, scope, budgets and MCP connections.",
-            Section::Advanced => "Edit, export or import config.toml.",
+            Section::Advanced => "Edit, export or import config.toml, and make Soyuz your default file manager.",
+            Section::About => "Version, and checking GitHub Releases for a newer Soyuz (only when you ask).",
         }
     }
 
@@ -211,6 +217,7 @@ impl Section {
                 c.ai.mcp_servers = servers;
             }
             Section::Advanced => *c = d,
+            Section::About => c.updates = d.updates,
         }
     }
 }
@@ -759,7 +766,8 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Scripts => crate::ui::automation::scripts_page::page(ui, app, q),
         Section::Automations => crate::ui::automation::rules_page::page(ui, app, q),
         Section::Ai => ai::page(ui, app, q),
-        Section::Advanced => pages::advanced(ui, app, q),
+        Section::Advanced => pages::advanced(ui, app, q) | system::file_manager(ui, app, q),
+        Section::About => system::about(ui, app, q),
     }
 }
 

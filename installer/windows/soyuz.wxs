@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Soyuz MSI (WiX Toolset v4+ / v5 / v6 / v7 schema). Built by installer/windows/build-msi.ps1.
+
+  * Per-user by default: no admin, installs to %LOCALAPPDATA%\Programs\Soyuz.
+    Per-machine (Program Files, admin) with:  msiexec /i soyuz.msi ALLUSERS=1
+  * Start menu shortcut comes from the MSI Shortcut table (Windows Installer itself; Soyuz
+    never calls shell APIs).
+  * Uninstall entry ("Apps > Installed apps") is written by Windows Installer.
+  * Major upgrades: same UpgradeCode, higher ProductVersion replaces the old install.
+  * Optional features (off by default; enable in the feature tree or with ADDLOCAL):
+      ContextMenu  "Open in Soyuz" on folders and drives (non-default verb; Explorer stays
+                   the default — the "default file manager" switch lives in the app).
+      AddToPath    put the install folder on PATH (`soyuz C:\some\folder`).
+    e.g.  msiexec /i soyuz.msi ADDLOCAL=Main,ContextMenu,AddToPath /qn
+
+  Preprocessor variables (passed by build-msi.ps1):
+    Version   numeric x.y.z
+    BinDir    folder with soyuz.exe
+    RootDir   repository root (README, licenses, docs, icon)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Soyuz"
+           Manufacturer="The Soyuz contributors"
+           Version="$(var.Version)"
+           UpgradeCode="4d03f89e-9d28-4139-aa95-0e950320af14"
+           Scope="perUserOrMachine"
+           Compressed="yes"
+           InstallerVersion="500">
+
+    <SummaryInformation Description="Soyuz file explorer" Keywords="Installer;Soyuz;File manager" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Soyuz is already installed." AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <Icon Id="SoyuzIcon" SourceFile="$(var.RootDir)\crates\soyuz-app\assets\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="SoyuzIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+    <Property Id="ARPCOMMENTS" Value="A keyboard-first, non-blocking file explorer." />
+    <!-- Scope="perUserOrMachine" sets ALLUSERS=2 + MSIINSTALLPERUSER=1: per-user unless
+         ALLUSERS=1 (or MSIINSTALLPERUSER="") is passed. -->
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Soyuz">
+        <Directory Id="DocsFolder" Name="docs" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- ===== Main ===== -->
+    <ComponentGroup Id="MainFiles" Directory="INSTALLFOLDER">
+      <Component Id="SoyuzExe" Guid="*">
+        <File Id="SoyuzExeFile" Source="$(var.BinDir)\soyuz.exe" KeyPath="yes" />
+      </Component>
+      <Component Id="Readme" Guid="*">
+        <File Source="$(var.RootDir)\README.md" KeyPath="yes" />
+      </Component>
+      <Component Id="LicenseMit" Guid="*">
+        <File Source="$(var.RootDir)\LICENSE-MIT" KeyPath="yes" />
+      </Component>
+      <Component Id="LicenseApache" Guid="*">
+        <File Source="$(var.RootDir)\LICENSE-APACHE" KeyPath="yes" />
+      </Component>
+      <Component Id="UserGuide" Directory="DocsFolder" Guid="*">
+        <File Source="$(var.RootDir)\docs\USER_GUIDE.md" KeyPath="yes" />
+      </Component>
+      <Component Id="ExampleConfig" Directory="DocsFolder" Guid="*">
+        <File Source="$(var.RootDir)\docs\config.example.toml" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="StartMenu" Directory="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="0f5f8f3e-77d4-4f5c-9a4e-3b9d1a2c6e01">
+        <Shortcut Id="SoyuzStartMenu"
+                  Name="Soyuz"
+                  Description="Keyboard-first file explorer"
+                  Target="[INSTALLFOLDER]soyuz.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="SoyuzIcon" />
+        <RegistryValue Root="HKMU" Key="Software\Soyuz\Installer" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- ===== Optional: "Open in Soyuz" context-menu verb (not the default verb) ===== -->
+    <ComponentGroup Id="ContextMenuKeys" Directory="INSTALLFOLDER">
+      <Component Id="OpenInSoyuzDirectory" Guid="5c2c7c1a-2f43-4f8e-8f0b-6a1d4e9b7a11">
+        <RegistryKey Root="HKMU" Key="Software\Classes\Directory\shell\OpenInSoyuz">
+          <RegistryValue Type="string" Value="Open in Soyuz" KeyPath="yes" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot;,0" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+      <Component Id="OpenInSoyuzBackground" Guid="8e7a2b3d-1c4f-4a6b-9d0e-2f3a4b5c6d12">
+        <RegistryKey Root="HKMU" Key="Software\Classes\Directory\Background\shell\OpenInSoyuz">
+          <RegistryValue Type="string" Value="Open in Soyuz" KeyPath="yes" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot;,0" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot; &quot;%V&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+      <Component Id="OpenInSoyuzDrive" Guid="b1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e13">
+        <RegistryKey Root="HKMU" Key="Software\Classes\Drive\shell\OpenInSoyuz">
+          <RegistryValue Type="string" Value="Open in Soyuz" KeyPath="yes" />
+          <RegistryValue Name="Icon" Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot;,0" />
+          <RegistryKey Key="command">
+            <RegistryValue Type="string" Value="&quot;[INSTALLFOLDER]soyuz.exe&quot; &quot;%1&quot;" />
+          </RegistryKey>
+        </RegistryKey>
+      </Component>
+    </ComponentGroup>
+
+    <!-- ===== Optional: PATH entry ===== -->
+    <ComponentGroup Id="PathEntry" Directory="INSTALLFOLDER">
+      <Component Id="PathUser" Guid="c4e5f6a7-b8c9-4dae-8f01-2b3c4d5e6f14" Condition="NOT (ALLUSERS = 1)">
+        <Environment Id="PathUserEnv" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
+        <RegistryValue Root="HKCU" Key="Software\Soyuz\Installer" Name="PathEntry" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component Id="PathMachine" Guid="d5f6a7b8-c9da-4ebf-9012-3c4d5e6f7a15" Condition="ALLUSERS = 1">
+        <Environment Id="PathMachineEnv" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="yes" Permanent="no" />
+        <RegistryValue Root="HKLM" Key="Software\Soyuz\Installer" Name="PathEntry" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Soyuz" Description="The Soyuz application, licenses, user guide and a Start menu shortcut." Level="1" AllowAbsent="no" Display="expand" ConfigurableDirectory="INSTALLFOLDER">
+      <ComponentGroupRef Id="MainFiles" />
+      <ComponentGroupRef Id="StartMenu" />
+      <Feature Id="ContextMenu" Title="“Open in Soyuz” on folders" Description="Adds an “Open in Soyuz” entry to the right-click menu of folders and drives. File Explorer stays the default; make Soyuz the default file manager in Settings → Advanced." Level="1000">
+        <ComponentGroupRef Id="ContextMenuKeys" />
+      </Feature>
+      <Feature Id="AddToPath" Title="Add to PATH" Description="Lets you start Soyuz from a terminal: soyuz C:\some\folder" Level="1000">
+        <ComponentGroupRef Id="PathEntry" />
+      </Feature>
+    </Feature>
+
+    <?ifdef UseUI ?>
+    <ui:WixUI Id="WixUI_FeatureTree" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+    <?endif?>
+  </Package>
+</Wix>

@@ -115,11 +115,23 @@ cargo test --workspace                    # all tests
 
 **Windows** — MSVC toolchain. The Windows SDK resource compiler (`rc.exe`, installed with
 the Visual Studio build tools) embeds the app icon into `soyuz.exe`; without it the build
-still succeeds. `scripts/package.ps1` builds a release and zips it:
+still succeeds. `scripts/package.ps1` builds a release and packages it (each artifact gets
+a `.sha256`, and `dist/SHA256SUMS-windows.txt` lists them all):
 
 ```powershell
 ./scripts/package.ps1                     # dist/soyuz-<version>-windows-x64.zip
+./scripts/package.ps1 -Portable           # ...-portable.zip with the `portable` marker
+./scripts/package.ps1 -Msi                # + dist/soyuz-<version>-windows-x64.msi (WiX v5)
+./scripts/package.ps1 -DryRun -Msi        # print the plan, build nothing
+./installer/msix/build-msix.ps1           # unsigned MSIX via makeappx (Windows SDK)
 ```
+
+The MSI (`installer/windows/soyuz.wxs`) needs the WiX .NET tool pinned to v5
+(`dotnet tool install --global wix --version 5.0.2`; v6+ requires accepting the OSMF EULA).
+It installs per user to `%LOCALAPPDATA%\Programs\Soyuz` without admin rights
+(`msiexec /i soyuz.msi ALLUSERS=1` installs per machine), adds a Start menu shortcut and an
+uninstall entry, and has two optional features: an "Open in Soyuz" folder context-menu
+entry and a PATH entry (`ADDLOCAL=Main,ContextMenu,AddToPath`).
 
 **Linux** — install the windowing and font headers first:
 

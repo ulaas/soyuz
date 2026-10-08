@@ -6,7 +6,9 @@
 #                         (optional WINDOWS_TIMESTAMP_URL, default DigiCert's RFC 3161 TSA)
 #   macOS notarization:   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY,
 #                         APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
-# Without the Windows secrets the Windows zip is published unsigned, with a warning. The
+# Windows artifacts: soyuz-<v>-windows-x64.zip, ...-portable.zip, ...-windows-x64.msi (WiX v5),
+# one .sha256 per file and SHA256SUMS-windows.txt (what the in-app update check verifies).
+# Without the Windows secrets the Windows artifacts are published unsigned, with a warning. The
 # macOS job runs only when all macOS secrets are present.
 name: Release
 
@@ -56,9 +58,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build and zip
+      - name: Install WiX Toolset v5
+        # Pinned to v5 (MS-RL). WiX v6+ needs the OSMF EULA accepted; see installer/windows/build-msi.ps1.
         shell: pwsh
-        run: ./scripts/package.ps1
+        run: dotnet tool install --global wix --version 5.0.2
+
+      - name: Build soyuz.exe
+        shell: pwsh
+        run: cargo build --release -p soyuz-app --locked
 
       - name: Authenticode-sign soyuz.exe (skeleton, needs a code-signing certificate)
         if: needs.signing-config.outputs.windows == 'true'
@@ -67,40 +74,39 @@ jobs:
           CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
           CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
           TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: ./scripts/sign-windows.ps1 target/release/soyuz.exe
+
+      - name: Package (zip, portable zip, MSI)
+        shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $tsa = if ($env:TIMESTAMP_URL) { $env:TIMESTAMP_URL } else { "http://timestamp.digicert.com" }
-          $pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CERT_PFX_BASE64))
-          try {
-            $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
-              Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
-            if (-not $signtool) { throw "signtool.exe not found (Windows SDK missing on runner)" }
-            foreach ($zip in Get-ChildItem dist/*.zip) {
-              $stage = Join-Path $env:RUNNER_TEMP $zip.BaseName
-              Expand-Archive $zip.FullName $stage -Force
-              $exe = Join-Path $stage "soyuz.exe"
-              & $signtool sign /f $pfx /p $env:CERT_PASSWORD /fd SHA256 /tr $tsa /td SHA256 /d "Soyuz" $exe
-              if ($LASTEXITCODE -ne 0) { throw "signtool sign failed ($LASTEXITCODE)" }
-              & $signtool verify /pa /v $exe
-              if ($LASTEXITCODE -ne 0) { throw "signtool verify failed ($LASTEXITCODE)" }
-              Remove-Item $zip.FullName
-              Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip.FullName
-            }
-          } finally {
-            Remove-Item $pfx -Force -ErrorAction SilentlyContinue
-          }
+          ./scripts/package.ps1 -SkipBuild -Msi
+          ./scripts/package.ps1 -SkipBuild -Portable
+
+      - name: Authenticode-sign the MSI (skeleton)
+        if: needs.signing-config.outputs.windows == 'true'
+        shell: pwsh
+        env:
+          CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+          TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
+        run: Get-ChildItem dist/*.msi | ForEach-Object { ./scripts/sign-windows.ps1 $_.FullName }
 
       - name: Warn about unsigned build
         if: needs.signing-config.outputs.windows != 'true'
         shell: pwsh
-        run: Write-Host "::warning::WINDOWS_CERT_PFX_BASE64 / WINDOWS_CERT_PASSWORD not set - publishing an UNSIGNED soyuz.exe"
+        run: Write-Host "::warning::WINDOWS_CERT_PFX_BASE64 / WINDOWS_CERT_PASSWORD not set - publishing an UNSIGNED soyuz.exe and MSI"
 
       - name: Checksums
+        # Recomputed after signing (signing changes the MSI). The in-app update check
+        # verifies downloads against SHA256SUMS-windows.txt.
         shell: pwsh
         run: |
-          Get-ChildItem dist/*.zip | ForEach-Object {
-            "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+          Remove-Item dist/*.sha256 -ErrorAction SilentlyContinue
+          $files = Get-ChildItem dist/* -Include *.zip, *.msi
+          $files | ForEach-Object {
+            $line = "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name
+            Set-Content -Encoding ascii -NoNewline -LiteralPath "$($_.FullName).sha256" -Value "$line`n"
+            $line
           } | Set-Content -Encoding ascii dist/SHA256SUMS-windows.txt
           Get-Content dist/SHA256SUMS-windows.txt
 
@@ -109,6 +115,8 @@ jobs:
           name: soyuz-windows-x64
           path: |
             dist/*.zip
+            dist/*.msi
+            dist/*.sha256
             dist/SHA256SUMS-windows.txt
           if-no-files-found: error
 

@@ -33,6 +33,7 @@ impl Default for Config {
             editor: Editor::default(),
             git: Git::default(),
             sync: SyncSection::default(),
+            updates: Updates::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
