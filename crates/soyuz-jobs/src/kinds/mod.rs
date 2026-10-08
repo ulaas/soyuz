@@ -7,6 +7,7 @@ pub mod compress;
 pub mod copy;
 pub mod create;
 pub mod delete;
+pub mod edit_archive;
 pub mod extract;
 pub mod hash;
 pub mod mv;
@@ -57,6 +58,7 @@ fn run_kind(ctx: &JobCtx, kind: &JobKind) -> FsResult<()> {
         JobKind::EmptyTrash => trash::run_empty(ctx),
         JobKind::PurgeTrash { items } => trash::run_purge(ctx, items),
         JobKind::Sync { plan } => sync::run_sync(ctx, plan),
+        JobKind::EditArchive { archive, edits, level } => edit_archive::run_edit_archive(ctx, archive, edits, *level),
     }
 }
 

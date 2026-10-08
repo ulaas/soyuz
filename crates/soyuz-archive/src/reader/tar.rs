@@ -88,6 +88,14 @@ fn describe(e: &mut tar::Entry<'_, impl Read>, ordinal: usize) -> io::Result<Opt
     Ok(Some((entry, extra)))
 }
 
+/// [`describe`] for other readers that embed a tar stream (.deb payloads).
+pub(crate) fn describe_entry(
+    e: &mut tar::Entry<'_, impl Read>,
+    ordinal: usize,
+) -> io::Result<Option<(ArchiveEntry, EntryExtra)>> {
+    describe(e, ordinal)
+}
+
 fn tar_err(e: io::Error, ctl: Option<&OpControl>) -> ArchiveError {
     read_err(e, ctl, false)
 }

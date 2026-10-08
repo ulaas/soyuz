@@ -4,8 +4,9 @@
 //! supported, else permanently); `Created` likewise, but a non-empty folder is only ever
 //! trashed, never deleted permanently; `Trashed` restores; `Moved`/`Renamed` reverse
 //! (batched through the cycle-aware rename scheduler, cross-device moves fall back to
-//! copy + delete); `MetaChanged` restores the snapshot; `Irreversible` makes the entry
-//! not undoable (the engine refuses to undo it).
+//! copy + delete); `MetaChanged` restores the snapshot; `Replaced` (an edited archive)
+//! moves the new file to the trash and restores the backup from the trash;
+//! `Irreversible` makes the entry not undoable (the engine refuses to undo it).
 //!
 //! Safety (review 1): a path is only removed when its identity still matches the
 //! [`UndoStamp`] taken when the job finished (same object; same size and modification time
@@ -27,14 +28,33 @@ use crate::kinds::{attrs, copy, delete, rename};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UndoRecord {
-    Moved { from: PathBuf, to: PathBuf },
-    Copied { dst: PathBuf },
-    Renamed { from: PathBuf, to: PathBuf },
+    Moved {
+        from: PathBuf,
+        to: PathBuf,
+    },
+    Copied {
+        dst: PathBuf,
+    },
+    Renamed {
+        from: PathBuf,
+        to: PathBuf,
+    },
     Trashed(TrashItem),
     Created(PathBuf),
-    Extracted { dst: PathBuf },
-    MetaChanged { path: PathBuf, before: MetaSnapshot },
+    Extracted {
+        dst: PathBuf,
+    },
+    MetaChanged {
+        path: PathBuf,
+        before: MetaSnapshot,
+    },
     Irreversible(PathBuf),
+    /// `path` was rewritten in place (F9 archive editing); `backup` is the original, in
+    /// the trash.
+    Replaced {
+        path: PathBuf,
+        backup: TrashItem,
+    },
 }
 
 /// Records in the order they must be undone (last done, first undone).
@@ -55,6 +75,7 @@ pub(crate) fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
             UndoRecord::Created(p) | UndoRecord::Irreversible(p) => out.push(p.clone()),
             UndoRecord::MetaChanged { path, .. } => out.push(path.clone()),
             UndoRecord::Trashed(item) => out.push(item.original.clone()),
+            UndoRecord::Replaced { path, .. } => out.push(path.clone()),
         }
     }
     out
@@ -130,6 +151,24 @@ pub(crate) fn run_undo(ctx: &JobCtx, records: &[UndoRecord], stamps: &[UndoStamp
             UndoRecord::Irreversible(p) => {
                 ctx.item_skipped(p, 0, "cannot be undone");
                 false
+            }
+            UndoRecord::Replaced { path, backup } => {
+                // The edited file goes to the trash (identity-checked), then the backup returns.
+                if remove_created(ctx, path, false, stamp_of(path))? {
+                    ctx.begin_item(path, 0);
+                    match ctx.attempt(path, || soyuz_fs::trash::restore(backup, None))? {
+                        Ok(_) => {
+                            ctx.item_ok(0);
+                            true
+                        }
+                        Err(e) => {
+                            ctx.item_failed(path, e, 0);
+                            false
+                        }
+                    }
+                } else {
+                    false
+                }
             }
         };
         if undone {
@@ -250,7 +289,7 @@ pub(crate) fn stamp_records(records: &[UndoRecord]) -> Vec<UndoStamp> {
         .iter()
         .filter_map(|r| match r {
             UndoRecord::Copied { dst } | UndoRecord::Extracted { dst } => Some(dst),
-            UndoRecord::Created(p) => Some(p),
+            UndoRecord::Created(p) | UndoRecord::Replaced { path: p, .. } => Some(p),
             _ => None,
         })
         .filter_map(|p| UndoStamp::take(p))

@@ -1,6 +1,7 @@
 //! Engine tests (temp dirs, fake `FsProbe`, `throttle_bps` for deterministic timing).
 
 mod concurrency;
+mod edit_archive;
 mod ops;
 mod prompts;
 mod queue;

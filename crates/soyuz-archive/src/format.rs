@@ -17,6 +17,14 @@ pub enum ArchiveFormat {
     /// Read-only.
     #[cfg(feature = "rar")]
     Rar,
+    /// ISO 9660 / Joliet / Rock Ridge / UDF disc image (read-only).
+    Iso,
+    /// Microsoft Cabinet (read-only).
+    Cab,
+    /// Debian package: the `data.tar.*` payload browsed as a folder (read-only).
+    Deb,
+    /// RPM package: the cpio payload browsed as a folder (read-only).
+    Rpm,
 }
 
 impl ArchiveFormat {
@@ -32,29 +40,39 @@ impl ArchiveFormat {
             ArchiveFormat::SevenZ,
             #[cfg(feature = "rar")]
             ArchiveFormat::Rar,
+            ArchiveFormat::Iso,
+            ArchiveFormat::Cab,
+            ArchiveFormat::Deb,
+            ArchiveFormat::Rpm,
         ]
     }
 
     /// File extensions (lower-case, no leading dot), preferred first.
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
-            ArchiveFormat::Zip => &["zip"],
+            // `.zip.001` / `.7z.001`: byte-split volumes (7-Zip "split to volumes").
+            ArchiveFormat::Zip => &["zip", "zip.001"],
             ArchiveFormat::Tar => &["tar"],
             ArchiveFormat::TarGz => &["tar.gz", "tgz"],
             ArchiveFormat::TarBz2 => &["tar.bz2", "tbz2", "tbz"],
             ArchiveFormat::TarXz => &["tar.xz", "txz"],
             ArchiveFormat::TarZst => &["tar.zst", "tzst"],
-            ArchiveFormat::SevenZ => &["7z"],
+            ArchiveFormat::SevenZ => &["7z", "7z.001"],
             #[cfg(feature = "rar")]
             ArchiveFormat::Rar => &["rar"],
+            ArchiveFormat::Iso => &["iso"],
+            ArchiveFormat::Cab => &["cab"],
+            ArchiveFormat::Deb => &["deb", "udeb"],
+            ArchiveFormat::Rpm => &["rpm"],
         }
     }
 
-    /// `TarZst` is writable only with the `zstd` feature; RAR never.
+    /// `TarZst` is writable only with the `zstd` feature; RAR, ISO, CAB, deb and rpm never.
     pub fn can_write(&self) -> bool {
         match self {
             #[cfg(feature = "rar")]
             ArchiveFormat::Rar => false,
+            ArchiveFormat::Iso | ArchiveFormat::Cab | ArchiveFormat::Deb | ArchiveFormat::Rpm => false,
             ArchiveFormat::TarZst => cfg!(feature = "zstd"),
             _ => true,
         }
@@ -72,7 +90,8 @@ impl ArchiveFormat {
 
 /// Magic bytes + extension.
 ///
-/// - The file head is sniffed (zip, 7z, rar, ustar / v7 tar, gzip / bzip2 / xz / zstd).
+/// - The file head is sniffed (zip, 7z, rar, cab, deb, rpm, ustar / v7 tar, gzip / bzip2 /
+///   xz / zstd); ISO 9660 / UDF images are recognized by their volume descriptors at 32 KiB.
 ///   A compressed stream counts as `tar.*` when the extension says so, or when its first
 ///   decompressed block is a valid tar header (so `x.gz` holding a tar is found, a plain
 ///   `x.gz` is not an archive).
@@ -90,8 +109,29 @@ pub fn detect(path: &Path) -> Option<ArchiveFormat> {
             if f == ArchiveFormat::Zip && has_other_ext { None } else { Some(f) }
         }
         Sniff::NotArchive => None,
+        Sniff::Unknown if by_ext.is_none() && is_disc_image(path) => Some(ArchiveFormat::Iso),
         Sniff::Unknown => by_ext,
     }
+}
+
+/// ISO 9660 (`CD001`) or UDF (`BEA01` / `NSR02` / `NSR03`) volume recognition sequence at
+/// sector 16 (2048-byte sectors).
+fn is_disc_image(path: &Path) -> bool {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(path) else { return false };
+    if f.seek(SeekFrom::Start(16 * 2048)).is_err() {
+        return false;
+    }
+    let mut buf = [0u8; 3 * 2048];
+    let mut n = 0;
+    while n < buf.len() {
+        match f.read(&mut buf[n..]) {
+            Ok(0) => break,
+            Ok(k) => n += k,
+            Err(_) => return false,
+        }
+    }
+    buf[..n].chunks(2048).any(|s| s.len() >= 6 && matches!(&s[1..6], b"CD001" | b"BEA01" | b"NSR02" | b"NSR03"))
 }
 
 enum Sniff {
@@ -132,6 +172,15 @@ fn sniff(path: &Path, head: &[u8], by_ext: Option<ArchiveFormat>) -> Sniff {
         return Sniff::Format(ArchiveFormat::Rar);
         #[cfg(not(feature = "rar"))]
         return Sniff::NotArchive;
+    }
+    if head.starts_with(b"MSCF\0\0\0\0") {
+        return Sniff::Format(ArchiveFormat::Cab);
+    }
+    if head.starts_with(b"!<arch>\ndebian-binary") {
+        return Sniff::Format(ArchiveFormat::Deb);
+    }
+    if head.starts_with(&[0xED, 0xAB, 0xEE, 0xDB]) {
+        return Sniff::Format(ArchiveFormat::Rpm);
     }
     let codec = if head.starts_with(&[0x1F, 0x8B]) {
         Some((Codec::Gz, ArchiveFormat::TarGz))

@@ -112,6 +112,7 @@ bomb_ratio = 100                 # pause extraction past ratio x archive size (0
 bomb_floor_mib = 1024            # ... but never below this many MiB
 max_entries = 1000000            # pause past this many entries (0 = unlimited)
 max_entry_mib = 32768            # pause on a single entry larger than this (0 = unlimited)
+edit_level = 6                   # deflate level (0 = store, 1-9) for files added into a zip while browsing it
 
 [search]
 threads = 0                      # 0 = auto

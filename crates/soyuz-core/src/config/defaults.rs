@@ -194,6 +194,7 @@ impl Default for Archive {
             bomb_floor_mib: 1024,
             max_entries: 1_000_000,
             max_entry_mib: 32 * 1024,
+            edit_level: 6,
         }
     }
 }

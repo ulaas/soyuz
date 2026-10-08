@@ -26,17 +26,42 @@ pub(crate) fn write(
     ctl: &OpControl,
     sink: &mut dyn ProgressSink,
 ) -> Result<(), ArchiveError> {
-    let (method, zlevel) = match (method, level) {
+    let (method, zlevel) = method_level(method, level)?;
+    let f = File::create(part).map_err(|e| fs_err("create", part, &e))?;
+    let mut zw = ZipWriter::new(BufWriter::with_capacity(crate::util::CHUNK, f)).set_auto_large_file();
+    for item in items {
+        write_item(&mut zw, item, &item.name, method, zlevel, password, ctl, sink)?;
+    }
+    let mut w = zw.finish().map_err(zip_err)?;
+    io::Write::flush(&mut w).map_err(|e| fs_err("write", part, &e))?;
+    Ok(())
+}
+
+/// zip compression method + level for a UI level (0 = store).
+pub(crate) fn method_level(method: ZipMethod, level: u8) -> Result<(CompressionMethod, Option<i64>), ArchiveError> {
+    Ok(match (method, level.min(9)) {
         (_, 0) | (ZipMethod::Store, _) => (CompressionMethod::Stored, None),
         (ZipMethod::Deflate, l) => (CompressionMethod::Deflated, Some(i64::from(l))),
         #[cfg(feature = "zstd")]
         (ZipMethod::Zstd, l) => (CompressionMethod::Zstd, Some(ZSTD_LEVELS[usize::from(l)])),
         #[cfg(not(feature = "zstd"))]
         (ZipMethod::Zstd, _) => return Err(ArchiveError::Unsupported(crate::ArchiveFormat::Zip)),
-    };
-    let f = File::create(part).map_err(|e| fs_err("create", part, &e))?;
-    let mut zw = ZipWriter::new(BufWriter::with_capacity(crate::util::CHUNK, f)).set_auto_large_file();
-    for item in items {
+    })
+}
+
+/// Store one filesystem item as `name` (also used by the zip editor).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_item<W: io::Write + io::Seek>(
+    zw: &mut ZipWriter<W>,
+    item: &Item,
+    name: &str,
+    method: CompressionMethod,
+    zlevel: Option<i64>,
+    password: Option<&str>,
+    ctl: &OpControl,
+    sink: &mut dyn ProgressSink,
+) -> Result<(), ArchiveError> {
+    {
         ctl.checkpoint()?;
         let mut o: FullFileOptions<'_> =
             FullFileOptions::default().compression_method(method).compression_level(zlevel);
@@ -65,23 +90,21 @@ pub(crate) fn write(
         }
         match &item.kind {
             ItemKind::Dir => {
-                zw.add_directory(format!("{}/", item.name), o.compression_method(CompressionMethod::Stored))
+                zw.add_directory(format!("{name}/"), o.compression_method(CompressionMethod::Stored))
                     .map_err(zip_err)?;
             }
             ItemKind::Symlink { target } => {
-                zw.add_symlink(&item.name, target, o.compression_method(CompressionMethod::Stored)).map_err(zip_err)?;
+                zw.add_symlink(name, target, o.compression_method(CompressionMethod::Stored)).map_err(zip_err)?;
             }
             ItemKind::File { len } => {
                 let o = o.large_file(*len >= u64::from(u32::MAX));
-                zw.start_file(&item.name, o).map_err(zip_err)?;
+                zw.start_file(name, o).map_err(zip_err)?;
                 let src = File::open(&item.src).map_err(|e| fs_err("open", &item.src, &e))?;
                 let mut r = ProgressReader::new(src, *len, ctl, sink);
-                io::copy(&mut r, &mut zw).map_err(|e| copy_err(e, ctl, &item.src))?;
+                io::copy(&mut r, zw).map_err(|e| copy_err(e, ctl, &item.src))?;
             }
         }
     }
-    let mut w = zw.finish().map_err(zip_err)?;
-    io::Write::flush(&mut w).map_err(|e| fs_err("write", part, &e))?;
     Ok(())
 }
 

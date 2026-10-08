@@ -108,7 +108,10 @@ All from the palette or the context menu:
 - **Compare folders / Synchronize** — by date & size, size or content; review the plan before syncing.
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
 - **Split / join files**, **checksums** (BLAKE3, SHA-256, SHA-1, MD5, CRC32), **archives**
-  (create, extract here / to folder, test; browse zip / 7z / tar like folders).
+  (create, extract here / to folder, test; browse zip / 7z / tar / RAR / ISO / CAB / .deb /
+  .rpm like folders, including split `.7z.001` / `.zip.001` sets; inside a zip, paste to
+  add files, Rename and Delete edit the archive, and the original goes to the trash so it
+  can be undone).
 - **Tags** — eight color labels (`Add tag` actions); the sidebar lists tagged items.
   Tags follow files you rename or move inside Soyuz.
 
