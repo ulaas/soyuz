@@ -22,6 +22,9 @@ pub mod copy;
 pub mod create;
 pub mod delete;
 mod err;
+pub mod fault;
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
 pub mod hash;
 pub mod launch;
 pub mod links;

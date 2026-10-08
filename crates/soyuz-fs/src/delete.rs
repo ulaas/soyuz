@@ -151,6 +151,7 @@ mod imp {
     }
 
     pub(super) fn delete_file(path: &Path, o: &DeleteOptions) -> FsResult<()> {
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete", path))?;
         let st = wfs::stat_path(path, false).map_err(err::map("delete", path))?;
         if st.is_reparse() && st.is_dir() {
             return delete_link(path);
@@ -183,6 +184,7 @@ mod imp {
     }
 
     pub(super) fn remove_dir(path: &Path, clear_readonly: bool) -> FsResult<()> {
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete", path))?;
         match wfs::remove_dir(path) {
             Ok(()) => Ok(()),
             Err(e) if e.raw_os_error() == Some(ACCESS_DENIED) && clear_readonly => {
@@ -198,6 +200,7 @@ mod imp {
     }
 
     pub(super) fn delete_link(path: &Path) -> FsResult<()> {
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete_link", path))?;
         let st = wfs::stat_path(path, false).map_err(err::map("delete_link", path))?;
         if !st.is_reparse() {
             return Err(super::not_a_link(path));

@@ -17,6 +17,8 @@ zstd = ["dep:zstd", "zip/zstd"]
 # Declares the RAR format variant only; no pure-Rust / redistributable-friendly RAR decoder is
 # used, so opening RAR returns `Unsupported(Rar)` (see lib docs).
 rar = []
+# Expose format detection / readers to the `fuzz/` targets (`soyuz_archive::fuzzing`).
+fuzzing = []
 
 [dependencies]
 soyuz-core.workspace = true

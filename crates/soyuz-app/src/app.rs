@@ -117,6 +117,9 @@ pub struct Startup {
     pub open: Option<PathBuf>,
     /// Secondary window: no session restore / save.
     pub secondary: bool,
+    /// `--safe-mode`: safe defaults (see `services::crash::safe_config`), no session
+    /// restore or save, settings saved to `safe-mode.toml` instead of `config.toml`.
+    pub safe_mode: bool,
 }
 
 /// Window-close state: closing with pending jobs asks first (they would be cancelled).
@@ -143,7 +146,8 @@ impl SoyuzApp {
     }
 
     /// Construct with an explicit config and command-line startup options.
-    pub fn with_startup(ctx: &egui::Context, config: Config, renderer: &'static str, startup: Startup) -> Self {
+    pub fn with_startup(ctx: &egui::Context, config: Config, renderer: &'static str, mut startup: Startup) -> Self {
+        startup.secondary |= startup.safe_mode;
         egui_extras::install_image_loaders(ctx);
         // Ctrl +/-/0 are our zoom actions, not egui's global UI zoom.
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
@@ -238,7 +242,10 @@ impl SoyuzApp {
             last_session_check: Instant::now(),
             palette: crate::palette::PaletteState::new(dir.join("palette.toml")),
             settings: Default::default(),
-            config_watch: crate::services::config_watch::ConfigWatch::start(ctx, config::default_path()),
+            config_watch: crate::services::config_watch::ConfigWatch::start(
+                ctx,
+                if startup.safe_mode { crate::services::crash::safe_config_path() } else { config::default_path() },
+            ),
             keyseq: Default::default(),
             devscript: crate::devscript::DevScript::from_env(),
             secondary: startup.secondary,
@@ -565,6 +572,13 @@ pub fn theme_name(p: ThemePreference) -> &'static str {
 /// Load `config.toml` (defaults when missing or invalid; problems are logged).
 pub fn load_config() -> Config {
     let path = config::default_path();
+    match config::migrate_file(&path) {
+        Ok(config::MigrateOutcome::Migrated { from, to, backup }) => {
+            log::info!("{}: migrated config schema {from} → {to} (backup: {})", path.display(), backup.display());
+        }
+        Ok(config::MigrateOutcome::UpToDate) => {}
+        Err(e) => log::warn!("{}: config migration skipped: {e}", path.display()),
+    }
     match config::load_or_default(&path) {
         Ok(loaded) => {
             for w in &loaded.warnings {
@@ -634,6 +648,7 @@ impl eframe::App for SoyuzApp {
         crate::devscript::begin(self);
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
+        crate::services::crash::pump(self, &ctx);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, &ctx);
         crate::ui::panels::terminal::pump(self, &ctx);

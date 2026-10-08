@@ -4,6 +4,7 @@
 
 pub mod archive;
 pub mod config_watch;
+pub mod crash;
 pub mod git;
 pub mod jobs;
 pub mod lister;

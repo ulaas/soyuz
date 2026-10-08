@@ -1,9 +1,12 @@
 //! Engine tests (temp dirs, fake `FsProbe`, `throttle_bps` for deterministic timing).
 
+mod chaos;
 mod concurrency;
 mod ops;
 mod prompts;
+mod props;
 mod queue;
+mod recovery;
 mod safety;
 mod undo;
 

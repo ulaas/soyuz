@@ -4,3 +4,6 @@ target/
 /portable/
 /dist/
 .claude/
+/fuzz/corpus/
+/fuzz/artifacts/
+/fuzz/coverage/

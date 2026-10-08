@@ -127,6 +127,7 @@ pub fn copy_file(
     sink: &mut dyn ProgressSink,
 ) -> FsResult<CopyOutcome> {
     ctl.checkpoint()?;
+    crate::fault::hit(crate::fault::FaultOp::Open, src).map_err(err::map("copy", src))?;
     let op_err = |e: FsError| FsError { op: "copy".into(), ..e };
     let src_l = stat(src, false).map_err(op_err)?;
     let is_link = matches!(src_l.kind, EntryKind::Symlink { .. } | EntryKind::Junction);
@@ -168,8 +169,13 @@ pub fn copy_file(
         replacing = true;
     }
 
-    let target = if replacing { temp_sibling(dst) } else { dst.to_path_buf() };
+    // The data always goes to a hidden temp sibling first, so a crash or kill mid-copy
+    // never leaves a truncated file under the final name (only a `.soyuz-part-` file the
+    // recovery scan finds). Names too long for the temp suffix are written in place.
+    let staged = replacing || temp_fits(dst);
+    let target = if staged { temp_sibling(dst) } else { dst.to_path_buf() };
     let result = (|| -> FsResult<CopyMethod> {
+        crate::fault::hit(crate::fault::FaultOp::Create, &target).map_err(err::map("copy", &target))?;
         let method = imp::copy_data(src, &target, &s, opts, ctl, sink)?;
         ctl.checkpoint()?;
         if let Some(algo) = opts.verify {
@@ -186,6 +192,9 @@ pub fn copy_file(
         }
         if replacing {
             replace_with(&target, dst)?;
+        } else if staged {
+            crate::mv::rename(&target, dst, crate::mv::RenameMode::NoReplace)
+                .map_err(|e| FsError { op: "copy".into(), ..e })?;
         }
         Ok(method)
     })();
@@ -194,7 +203,7 @@ pub fn copy_file(
         Err(e) => {
             // `AlreadyExists` here means someone else created the destination after our
             // check (exclusive create failed): that file is not ours to remove.
-            if replacing || e.kind != FsErrorKind::AlreadyExists {
+            if staged || e.kind != FsErrorKind::AlreadyExists {
                 remove_partial(&target);
             }
             Err(e)
@@ -202,11 +211,19 @@ pub fn copy_file(
     }
 }
 
+/// Marker inside the names of the copy engine's temp files (`.<name>.soyuz-part-<pid>-<n>`).
+pub const PART_MARKER: &str = ".soyuz-part-";
+
+/// The temp sibling name of `dst` stays within the usual 255-character name limit.
+fn temp_fits(dst: &Path) -> bool {
+    dst.file_name().is_some_and(|n| n.to_string_lossy().chars().count() + 40 <= 255)
+}
+
 fn temp_sibling(dst: &Path) -> PathBuf {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let name = dst.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    dst.with_file_name(format!(".{name}.soyuz-part-{}-{seq}", std::process::id()))
+    dst.with_file_name(format!(".{name}{PART_MARKER}{}-{seq}", std::process::id()))
 }
 
 /// Atomically move the finished temp copy over `dst`.
@@ -282,6 +299,7 @@ pub(crate) fn pump(
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(e) => return Err(err::io("copy", paths.0, e)),
         };
+        crate::fault::hit(crate::fault::FaultOp::Write, paths.1).map_err(err::map("copy", paths.1))?;
         output.write_all(&buf[..n]).map_err(err::map("copy", paths.1))?;
         done += n as u64;
         copied += n as u64;
@@ -482,6 +500,10 @@ mod imp {
                 return false;
             }
             if done > last {
+                if let Err(e) = crate::fault::hit(crate::fault::FaultOp::Write, target) {
+                    cancelled = Some(err::io("copy", target, e));
+                    return false;
+                }
                 sink.on_progress(ByteProgress { done, total, delta: done - last });
                 last = done;
             }
@@ -625,6 +647,7 @@ mod imp {
             ctl.checkpoint()?;
             let remaining = s.size - off;
             let len = if remaining <= step { remaining.div_ceil(cluster) * cluster } else { step };
+            crate::fault::hit(crate::fault::FaultOp::Write, target).map_err(err::map("copy", target))?;
             wfs::duplicate_extents(&output, &input, off, off, len).map_err(err::map("copy", target))?;
             let advanced = len.min(remaining);
             off += advanced;

@@ -28,6 +28,7 @@ Arguments:
 Options:
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
+  --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
   -h, --help              Print help
   -V, --version           Print version";
 
@@ -61,6 +62,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             "-h" | "--help" => return Ok(Cli::Help),
             "-V" | "--version" => return Ok(Cli::Version),
             "--new-window" => startup.secondary = true,
+            "--safe-mode" => startup.safe_mode = true,
             "--" => {
                 let path = it.next().ok_or("`--` needs a path after it")?;
                 set_path(&mut startup, path)?;
@@ -90,7 +92,8 @@ fn resolve_renderer(choice: RendererChoice) -> (eframe::Renderer, &'static str) 
 }
 
 fn main() -> ExitCode {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info,wgpu=warn,naga=warn")).init();
+    soyuz_app::services::crash::init_logging();
+    soyuz_app::services::crash::install_panic_hook();
 
     let cli = match parse_args(std::env::args().skip(1)) {
         Ok(c) => c,
@@ -112,7 +115,10 @@ fn main() -> ExitCode {
     };
     let (renderer, startup) = renderer;
     let (renderer, renderer_name) = resolve_renderer(renderer);
-    let config = soyuz_app::app::load_config();
+    // Before the job engine exists: claim the crash-journal slot, collect what to recover.
+    soyuz_app::services::crash::startup(startup.safe_mode);
+    let config =
+        if startup.safe_mode { soyuz_app::services::crash::safe_config() } else { soyuz_app::app::load_config() };
     let chrome = soyuz_app::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar);
 
     let options = eframe::NativeOptions {
@@ -172,6 +178,8 @@ mod tests {
         assert!(parse(&["--renderer"]).is_err());
         assert!(parse(&["--renderer", "vulkan"]).is_err());
         assert!(parse(&["--bogus"]).is_err());
+        let Ok(Cli::Run { startup, .. }) = parse(&["--safe-mode"]) else { panic!("parse") };
+        assert!(startup.safe_mode && !startup.secondary);
     }
 
     #[test]

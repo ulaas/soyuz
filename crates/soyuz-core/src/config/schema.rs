@@ -18,6 +18,8 @@ pub const SCHEMA_VERSION: u32 = 1;
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
+    /// Schema version (`version` is accepted as an alias); see `config::migrate`.
+    #[serde(alias = "version")]
     pub schema: u32,
     pub general: General,
     pub appearance: Appearance,

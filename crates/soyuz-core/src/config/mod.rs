@@ -5,6 +5,7 @@
 pub mod actions;
 pub mod defaults;
 pub mod keys;
+pub mod migrate;
 pub mod preserve;
 pub mod schema;
 
@@ -16,6 +17,7 @@ pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
     parse_sequence,
 };
+pub use migrate::{MigrateOutcome, migrate_file};
 pub use preserve::to_string_preserving;
 pub use schema::*;
 

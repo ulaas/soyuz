@@ -12,6 +12,7 @@ use crate::err;
 /// Create one directory (`AlreadyExists` if anything exists at `path`, `NotFound` when the
 /// parent is missing).
 pub fn create_dir(path: &Path) -> FsResult<()> {
+    crate::fault::hit(crate::fault::FaultOp::Create, path).map_err(err::map("create_dir", path))?;
     imp::mkdir(path)
 }
 

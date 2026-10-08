@@ -184,6 +184,9 @@ impl JobCtx {
     /// Journal an undo record (only when `JobOptions::journal`).
     pub fn record(&self, r: UndoRecord) {
         if self.opts.journal {
+            if let Some(j) = &self.inner.journal {
+                j.record(self.id.0, &r);
+            }
             self.out.lock().records.push(r);
         }
     }
