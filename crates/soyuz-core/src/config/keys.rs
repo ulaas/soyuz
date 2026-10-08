@@ -1,0 +1,324 @@
+//! Key chords, contexts and the keymap.
+//!
+//! Core has its own [`KeyName`] enum (no egui dependency); the app maps `egui::Key` ↔
+//! `KeyName` in `soyuz-app/src/keys/bindings.rs`.
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::str::FromStr;
+
+use bitflags::bitflags;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use super::actions::Action;
+
+macro_rules! key_names {
+    ($( $v:ident => $canon:literal $(| $alias:literal)* ),* $(,)?) => {
+        /// A physical/logical key, independent of any GUI toolkit.
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, PartialOrd, Ord)]
+        #[serde(rename_all = "snake_case")]
+        pub enum KeyName { $($v,)* }
+
+        impl KeyName {
+            pub const ALL: &'static [KeyName] = &[$(KeyName::$v,)*];
+
+            /// Canonical chord spelling (`"A"`, `"F5"`, `"Esc"`, `"`"`).
+            pub fn as_str(self) -> &'static str {
+                match self { $(KeyName::$v => $canon,)* }
+            }
+
+            /// Parse a key name, case-insensitively, accepting aliases.
+            pub fn parse(s: &str) -> Option<KeyName> {
+                $(
+                    if s.eq_ignore_ascii_case($canon) $(|| s.eq_ignore_ascii_case($alias))* {
+                        return Some(KeyName::$v);
+                    }
+                )*
+                None
+            }
+        }
+    };
+}
+
+key_names! {
+    A => "A", B => "B", C => "C", D => "D", E => "E", F => "F", G => "G", H => "H", I => "I",
+    J => "J", K => "K", L => "L", M => "M", N => "N", O => "O", P => "P", Q => "Q", R => "R",
+    S => "S", T => "T", U => "U", V => "V", W => "W", X => "X", Y => "Y", Z => "Z",
+    Num0 => "0" | "Num0", Num1 => "1" | "Num1", Num2 => "2" | "Num2", Num3 => "3" | "Num3",
+    Num4 => "4" | "Num4", Num5 => "5" | "Num5", Num6 => "6" | "Num6", Num7 => "7" | "Num7",
+    Num8 => "8" | "Num8", Num9 => "9" | "Num9",
+    F1 => "F1", F2 => "F2", F3 => "F3", F4 => "F4", F5 => "F5", F6 => "F6", F7 => "F7",
+    F8 => "F8", F9 => "F9", F10 => "F10", F11 => "F11", F12 => "F12", F13 => "F13",
+    F14 => "F14", F15 => "F15", F16 => "F16", F17 => "F17", F18 => "F18", F19 => "F19",
+    F20 => "F20", F21 => "F21", F22 => "F22", F23 => "F23", F24 => "F24",
+    Enter => "Enter" | "Return", Escape => "Esc" | "Escape", Tab => "Tab", Space => "Space",
+    Backspace => "Backspace", Delete => "Del" | "Delete", Insert => "Ins" | "Insert",
+    Home => "Home", End => "End", PageUp => "PageUp" | "PgUp", PageDown => "PageDown" | "PgDn",
+    ArrowUp => "Up" | "ArrowUp", ArrowDown => "Down" | "ArrowDown",
+    ArrowLeft => "Left" | "ArrowLeft", ArrowRight => "Right" | "ArrowRight",
+    Backtick => "`" | "Backtick" | "Grave", Minus => "-" | "Minus", Plus => "Plus",
+    Equals => "=" | "Equals", Comma => "," | "Comma", Period => "." | "Period",
+    Slash => "/" | "Slash", Backslash => "\\" | "Backslash", Semicolon => ";" | "Semicolon",
+    Quote => "'" | "Quote", OpenBracket => "[" | "OpenBracket", CloseBracket => "]" | "CloseBracket",
+}
+
+bitflags! {
+    /// Modifier keys. `CMD` is the macOS command key (treated as `CTRL` elsewhere when
+    /// `[keys] cmd_is_ctrl = true`).
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, PartialOrd, Ord, Serialize, Deserialize)]
+    pub struct Mods: u8 {
+        const CTRL = 1;
+        const SHIFT = 2;
+        const ALT = 4;
+        const CMD = 8;
+    }
+}
+
+/// A key plus modifiers, written `"Ctrl+Shift+P"`, `"F5"`, `"Cmd+C"`, `"Ctrl++"`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
+pub struct KeyChord {
+    pub key: KeyName,
+    pub mods: Mods,
+}
+
+impl KeyChord {
+    pub const fn new(mods: Mods, key: KeyName) -> Self {
+        KeyChord { key, mods }
+    }
+
+    /// Replace `CMD` by `CTRL` when `cmd_is_ctrl` (non-mac platforms).
+    pub fn normalized(self, cmd_is_ctrl: bool) -> Self {
+        if cmd_is_ctrl && self.mods.contains(Mods::CMD) {
+            KeyChord { key: self.key, mods: (self.mods - Mods::CMD) | Mods::CTRL }
+        } else {
+            self
+        }
+    }
+}
+
+impl fmt::Display for KeyChord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (m, name) in [(Mods::CTRL, "Ctrl"), (Mods::ALT, "Alt"), (Mods::SHIFT, "Shift"), (Mods::CMD, "Cmd")] {
+            if self.mods.contains(m) {
+                write!(f, "{name}+")?;
+            }
+        }
+        f.write_str(self.key.as_str())
+    }
+}
+
+/// Error parsing a key chord.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("invalid key chord \"{0}\"")]
+pub struct ParseChordError(pub String);
+
+impl FromStr for KeyChord {
+    type Err = ParseChordError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let err = || ParseChordError(s.to_string());
+        let t = s.trim();
+        if t.is_empty() {
+            return Err(err());
+        }
+        // A trailing "+" that is the key itself ("Ctrl++" or "+").
+        let (mods_part, key_part) = if t == "+" {
+            ("", "Plus")
+        } else if let Some(stripped) = t.strip_suffix("++") {
+            (stripped, "Plus")
+        } else {
+            match t.rsplit_once('+') {
+                Some((m, k)) => (m, k),
+                None => ("", t),
+            }
+        };
+        let key = KeyName::parse(key_part.trim()).ok_or_else(err)?;
+        let mut mods = Mods::empty();
+        if !mods_part.is_empty() {
+            for m in mods_part.split('+') {
+                let bit = match m.trim().to_ascii_lowercase().as_str() {
+                    "ctrl" | "control" | "ctl" => Mods::CTRL,
+                    "shift" => Mods::SHIFT,
+                    "alt" | "option" | "opt" => Mods::ALT,
+                    "cmd" | "command" | "super" | "meta" | "win" => Mods::CMD,
+                    _ => return Err(err()),
+                };
+                mods |= bit;
+            }
+        }
+        Ok(KeyChord { key, mods })
+    }
+}
+
+impl Serialize for KeyChord {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyChord {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
+/// Where a binding applies; the most specific context wins over `Global`.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyContext {
+    Global,
+    FileList,
+    Terminal,
+    Dialog,
+    Omnibar,
+    Rename,
+}
+
+/// Built-in binding presets.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyPreset {
+    #[default]
+    Explorer,
+    Commander,
+}
+
+/// The resolved key map.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Keymap {
+    pub bindings: BTreeMap<(KeyContext, Action), Vec<KeyChord>>,
+}
+
+impl Keymap {
+    /// Add a binding (no-op if already present).
+    pub fn bind(&mut self, ctx: KeyContext, action: Action, chord: KeyChord) {
+        let v = self.bindings.entry((ctx, action)).or_default();
+        if !v.contains(&chord) {
+            v.push(chord);
+        }
+    }
+
+    /// Action bound to `chord` in `ctx`, falling back to `Global`.
+    pub fn lookup(&self, ctx: KeyContext, chord: KeyChord) -> Option<&Action> {
+        let find = |c: KeyContext| {
+            self.bindings.iter().find(|((bc, _), chords)| *bc == c && chords.contains(&chord)).map(|((_, a), _)| a)
+        };
+        find(ctx).or_else(|| if ctx == KeyContext::Global { None } else { find(KeyContext::Global) })
+    }
+
+    /// Chords bound to more than one action within the same context.
+    pub fn conflicts(&self) -> Vec<(KeyChord, Vec<Action>)> {
+        let mut map: BTreeMap<(KeyContext, KeyChord), Vec<Action>> = BTreeMap::new();
+        for ((ctx, action), chords) in &self.bindings {
+            for c in chords {
+                map.entry((*ctx, *c)).or_default().push(action.clone());
+            }
+        }
+        map.into_iter().filter(|(_, v)| v.len() > 1).map(|((_, c), v)| (c, v)).collect()
+    }
+
+    /// All chords bound to `action` in any context (for shortcut hints).
+    pub fn chords_for(&self, action: &Action) -> Vec<KeyChord> {
+        self.bindings.iter().filter(|((_, a), _)| a == action).flat_map(|(_, c)| c.iter().copied()).collect()
+    }
+
+    /// Apply `[keys.bindings]` overrides (`action string → chord strings`). An overridden
+    /// action loses all preset bindings and is re-bound in the context the preset used
+    /// for it (else `Global`); an empty list unbinds it. Returns warnings for invalid
+    /// entries.
+    pub fn apply_overrides(&mut self, overrides: &BTreeMap<String, Vec<String>>, cmd_is_ctrl: bool) -> Vec<String> {
+        let mut warnings = Vec::new();
+        for (action_str, chords) in overrides {
+            let action: Action = match action_str.parse() {
+                Ok(a) => a,
+                Err(e) => {
+                    warnings.push(format!("keys.bindings: {e}"));
+                    continue;
+                }
+            };
+            let ctx = self.bindings.keys().find(|(_, a)| *a == action).map(|(c, _)| *c).unwrap_or(KeyContext::Global);
+            self.bindings.retain(|(_, a), _| *a != action);
+            for c in chords {
+                match c.parse::<KeyChord>() {
+                    Ok(ch) => {
+                        let ch = ch.normalized(cmd_is_ctrl);
+                        // The override steals the chord from other actions in the same context.
+                        for ((bctx, _), v) in self.bindings.iter_mut() {
+                            if *bctx == ctx {
+                                v.retain(|x| *x != ch);
+                            }
+                        }
+                        self.bindings.retain(|_, v| !v.is_empty());
+                        self.bind(ctx, action.clone(), ch);
+                    }
+                    Err(e) => warnings.push(format!("keys.bindings.{action_str}: {e}")),
+                }
+            }
+        }
+        warnings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chord_parse_format() {
+        let c: KeyChord = "Ctrl+Shift+P".parse().unwrap();
+        assert_eq!(c, KeyChord::new(Mods::CTRL | Mods::SHIFT, KeyName::P));
+        assert_eq!(c.to_string(), "Ctrl+Shift+P");
+        assert_eq!("shift+ctrl+p".parse::<KeyChord>().unwrap(), c);
+        assert_eq!("F5".parse::<KeyChord>().unwrap(), KeyChord::new(Mods::empty(), KeyName::F5));
+        assert_eq!("Ctrl++".parse::<KeyChord>().unwrap(), KeyChord::new(Mods::CTRL, KeyName::Plus));
+        assert_eq!("Ctrl+`".parse::<KeyChord>().unwrap(), KeyChord::new(Mods::CTRL, KeyName::Backtick));
+        assert_eq!("Alt+Up".parse::<KeyChord>().unwrap(), KeyChord::new(Mods::ALT, KeyName::ArrowUp));
+        assert_eq!("Shift+Del".parse::<KeyChord>().unwrap().to_string(), "Shift+Del");
+        let cmd: KeyChord = "Cmd+C".parse().unwrap();
+        assert_eq!(cmd.normalized(true), KeyChord::new(Mods::CTRL, KeyName::C));
+        assert_eq!(cmd.normalized(false), cmd);
+        assert!("Ctrl+".parse::<KeyChord>().is_err());
+        assert!("Hyper+X".parse::<KeyChord>().is_err());
+        assert!("".parse::<KeyChord>().is_err());
+    }
+
+    #[test]
+    fn all_keys_round_trip() {
+        for &k in KeyName::ALL {
+            for mods in [Mods::empty(), Mods::CTRL | Mods::ALT | Mods::SHIFT | Mods::CMD] {
+                let c = KeyChord::new(mods, k);
+                assert_eq!(c.to_string().parse::<KeyChord>().unwrap(), c, "{c}");
+            }
+        }
+    }
+
+    #[test]
+    fn keymap_lookup_and_conflicts() {
+        let mut km = Keymap::default();
+        let f5 = KeyChord::new(Mods::empty(), KeyName::F5);
+        km.bind(KeyContext::Global, Action::Refresh, f5);
+        km.bind(KeyContext::FileList, Action::CopyToOtherPane, f5);
+        assert_eq!(km.lookup(KeyContext::FileList, f5), Some(&Action::CopyToOtherPane));
+        assert_eq!(km.lookup(KeyContext::Terminal, f5), Some(&Action::Refresh));
+        assert!(km.conflicts().is_empty());
+        km.bind(KeyContext::Global, Action::Search, f5);
+        let c = km.conflicts();
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].0, f5);
+        assert_eq!(c[0].1.len(), 2);
+    }
+
+    #[test]
+    fn overrides() {
+        let mut km = Keymap::default();
+        km.bind(KeyContext::FileList, Action::Copy, "Ctrl+C".parse().unwrap());
+        let mut o = BTreeMap::new();
+        o.insert("copy".to_string(), vec!["Cmd+Insert".to_string()]);
+        o.insert("bogus".to_string(), vec!["F1".to_string()]);
+        let w = km.apply_overrides(&o, true);
+        assert_eq!(w.len(), 1);
+        assert_eq!(km.chords_for(&Action::Copy), vec![KeyChord::new(Mods::CTRL, KeyName::Insert)]);
+        assert_eq!(km.lookup(KeyContext::FileList, KeyChord::new(Mods::CTRL, KeyName::Insert)), Some(&Action::Copy));
+    }
+}

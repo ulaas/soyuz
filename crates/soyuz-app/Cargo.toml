@@ -1,0 +1,40 @@
+[package]
+name = "soyuz-app"
+description = "Soyuz file explorer application"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+default-run = "soyuz"
+
+[[bin]]
+name = "soyuz"
+path = "src/main.rs"
+
+[features]
+default = []
+# Fallback OpenGL renderer (`--renderer glow`).
+glow = ["eframe/glow"]
+
+[dependencies]
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+soyuz-archive.workspace = true
+soyuz-search.workspace = true
+soyuz-term.workspace = true
+eframe.workspace = true
+egui.workspace = true
+egui_extras.workspace = true
+egui-phosphor.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+env_logger.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

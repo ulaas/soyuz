@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # Soyuz never uses shell32 / the COM shell (PLAN §2.1): fail fast if anything sneaks in.
+  no-shell32:
+    name: No shell APIs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Forbid Win32_UI_Shell feature
+        shell: bash
+        run: |
+          if grep -n "Win32_UI_Shell" Cargo.toml crates/*/Cargo.toml; then
+            echo "::error::windows-sys feature Win32_UI_Shell is banned"
+            exit 1
+          fi
+      - name: Forbid shell API names in crates/
+        shell: bash
+        run: |
+          if grep -rnIiE "shell32|IFileOperation|ShellExecute|SHFileOperation|CoInitialize" crates/; then
+            echo "::error::shell / COM shell APIs are banned in crates/"
+            exit 1
+          fi
+
+  fmt:
+    name: rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  build:
+    name: Build, test, clippy (${{ matrix.os }})
+    needs: no-shell32
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libfontconfig1-dev
+      - name: Build
+        run: cargo build --workspace --all-targets --locked
+      - name: Test
+        run: cargo test --workspace --locked
+      - name: Test each crate in isolation
+        shell: bash
+        run: |
+          for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-term soyuz-app; do
+            echo "::group::cargo test -p $c"
+            cargo test -p "$c" --locked
+            echo "::endgroup::"
+          done
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Clippy (optional features)
+        run: cargo clippy -p soyuz-app --features glow --locked -- -D warnings

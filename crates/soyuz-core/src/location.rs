@@ -1,0 +1,263 @@
+//! What a pane can show, and the virtual-path helpers for archive browsing.
+
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
+
+use serde::{Deserialize, Serialize};
+
+use crate::entry::SearchId;
+
+/// A place a pane can display.
+///
+/// String form (see [`Location::display`] / [`Location::parse`]):
+/// `Dir` → the path itself, `Archive` → `"<archive>!/<inner>"`, `Trash` → `"trash:"`,
+/// `Computer` → `"computer:"`, `Recent` → `"recent:"`, `Tags(t)` → `"tag:<t>"`,
+/// `Search(id)` → `"search:<id>"`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Location {
+    Dir(PathBuf),
+    /// `inner` is `/`-separated with no leading/trailing `/` (empty = archive root).
+    Archive {
+        archive: PathBuf,
+        inner: String,
+    },
+    Trash,
+    /// Not persisted: sessions store the `SavedSearch` instead.
+    #[serde(skip)]
+    Search(SearchId),
+    /// Drives / volumes page.
+    Computer,
+    Recent,
+    Tags(String),
+}
+
+impl Location {
+    /// Parse the string form produced by [`Location::display`]. A leading `~` expands to
+    /// the home directory. Returns `None` for empty input.
+    pub fn parse(s: &str) -> Option<Location> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        let lower = s.to_ascii_lowercase();
+        match lower.trim_end_matches('/') {
+            "trash:" => return Some(Location::Trash),
+            "computer:" => return Some(Location::Computer),
+            "recent:" => return Some(Location::Recent),
+            _ => {}
+        }
+        if let Some(tag) = strip_prefix_ci(s, "tag:") {
+            return Some(Location::Tags(tag.to_string()));
+        }
+        if let Some(id) = strip_prefix_ci(s, "search:") {
+            return id.trim().parse().ok().map(|n| Location::Search(SearchId(n)));
+        }
+        let expanded = expand_tilde(s);
+        if let Some((archive, inner)) = split_vpath(&expanded) {
+            return Some(Location::Archive { archive, inner });
+        }
+        Some(Location::Dir(expanded))
+    }
+
+    /// Human-readable string form (round-trips through [`Location::parse`]).
+    pub fn display(&self) -> String {
+        match self {
+            Location::Dir(p) => p.to_string_lossy().into_owned(),
+            Location::Archive { archive, inner } => join_vpath(archive, inner).to_string_lossy().into_owned(),
+            Location::Trash => "trash:".into(),
+            Location::Search(id) => format!("search:{}", id.0),
+            Location::Computer => "computer:".into(),
+            Location::Recent => "recent:".into(),
+            Location::Tags(t) => format!("tag:{t}"),
+        }
+    }
+
+    /// The containing location: parent directory, parent folder inside an archive, the
+    /// directory containing the archive for an archive root, and [`Location::Computer`]
+    /// for a filesystem root. Virtual locations have no parent.
+    pub fn parent(&self) -> Option<Location> {
+        match self {
+            Location::Dir(p) => match p.parent() {
+                Some(parent) if !parent.as_os_str().is_empty() => Some(Location::Dir(parent.to_path_buf())),
+                _ if p.has_root() => Some(Location::Computer),
+                _ => None,
+            },
+            Location::Archive { archive, inner } => {
+                if inner.is_empty() {
+                    archive.parent().map(|p| Location::Dir(p.to_path_buf()))
+                } else {
+                    let parent = match inner.rfind('/') {
+                        Some(i) => inner[..i].to_string(),
+                        None => String::new(),
+                    };
+                    Some(Location::Archive { archive: archive.clone(), inner: parent })
+                }
+            }
+            Location::Trash | Location::Search(_) | Location::Computer | Location::Recent | Location::Tags(_) => None,
+        }
+    }
+
+    /// The real directory behind this location, if it is a plain directory.
+    pub fn as_fs_path(&self) -> Option<&Path> {
+        match self {
+            Location::Dir(p) => Some(p),
+            _ => None,
+        }
+    }
+}
+
+fn strip_prefix_ci<'a>(s: &'a str, prefix: &str) -> Option<&'a str> {
+    if s.len() >= prefix.len() && s[..prefix.len()].eq_ignore_ascii_case(prefix) {
+        Some(&s[prefix.len()..])
+    } else {
+        None
+    }
+}
+
+fn expand_tilde(s: &str) -> PathBuf {
+    if (s == "~" || s.starts_with("~/") || s.starts_with("~\\"))
+        && let Some(dirs) = directories::BaseDirs::new()
+    {
+        let home = dirs.home_dir().to_path_buf();
+        let rest = s[1..].trim_start_matches(['/', '\\']);
+        return if rest.is_empty() { home } else { home.join(rest) };
+    }
+    PathBuf::from(s)
+}
+
+/// Normalize an archive-inner path: `\` → `/`, no empty / `.` segments, no leading or
+/// trailing `/`. `..` segments pop the previous segment (never escaping the root).
+pub fn normalize_inner(inner: &str) -> String {
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in inner.split(['/', '\\']) {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            s => parts.push(s),
+        }
+    }
+    parts.join("/")
+}
+
+/// Build the virtual path `"<archive>!/<inner>"` used by archive browsing.
+pub fn join_vpath(archive: &Path, inner: &str) -> PathBuf {
+    let mut s: OsString = archive.as_os_str().to_owned();
+    s.push("!/");
+    s.push(normalize_inner(inner));
+    PathBuf::from(s)
+}
+
+/// Split a virtual path produced by [`join_vpath`] into `(archive, inner)`.
+///
+/// The separator is the first `!/` or `!\` whose preceding path component has an
+/// extension (so folders with `!` in their name are not mistaken for archives); a
+/// trailing `!` (`"a.zip!"`) also denotes the archive root.
+pub fn split_vpath(p: &Path) -> Option<(PathBuf, String)> {
+    let s = p.to_string_lossy();
+    let bytes = s.as_bytes();
+    let mut candidates = Vec::new();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'!' {
+            let next = bytes.get(i + 1).copied();
+            if matches!(next, None | Some(b'/') | Some(b'\\')) {
+                candidates.push(i);
+            }
+        }
+    }
+    let looks_like_archive = |i: usize| {
+        let prefix = &s[..i];
+        let last = prefix.rsplit(['/', '\\']).next().unwrap_or("");
+        crate::entry::name_extension(last).is_some()
+    };
+    let idx = candidates.iter().copied().find(|&i| i > 0 && looks_like_archive(i))?;
+    let archive = PathBuf::from(&s[..idx]);
+    if archive.components().all(|c| matches!(c, Component::RootDir | Component::Prefix(_))) {
+        return None;
+    }
+    let inner = if idx + 1 >= s.len() { "" } else { &s[idx + 2..] };
+    Some((archive, normalize_inner(inner)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vpath_round_trip() {
+        let a = Path::new("C:/data/a.zip");
+        let v = join_vpath(a, "x/y");
+        assert_eq!(v, PathBuf::from("C:/data/a.zip!/x/y"));
+        assert_eq!(split_vpath(&v), Some((a.to_path_buf(), "x/y".to_string())));
+
+        let root = join_vpath(a, "");
+        assert_eq!(split_vpath(&root), Some((a.to_path_buf(), String::new())));
+        assert_eq!(split_vpath(Path::new("/tmp/b.tar.gz!")), Some((PathBuf::from("/tmp/b.tar.gz"), String::new())));
+        // Messy inner paths are normalized.
+        assert_eq!(join_vpath(a, "/x//y/"), PathBuf::from("C:/data/a.zip!/x/y"));
+        assert_eq!(
+            split_vpath(Path::new(r"C:\data\a.zip!\x\y")),
+            Some((PathBuf::from(r"C:\data\a.zip"), "x/y".to_string()))
+        );
+    }
+
+    #[test]
+    fn vpath_bang_in_folder_name() {
+        assert_eq!(split_vpath(Path::new("/tmp/wow!/plain")), None);
+        assert_eq!(
+            split_vpath(Path::new("/tmp/wow!/x.zip!/a")),
+            Some((PathBuf::from("/tmp/wow!/x.zip"), "a".to_string()))
+        );
+        assert_eq!(split_vpath(Path::new("/tmp/normal/dir")), None);
+    }
+
+    #[test]
+    fn normalize_inner_rules() {
+        assert_eq!(normalize_inner("a/./b/../c"), "a/c");
+        assert_eq!(normalize_inner("../../a"), "a");
+        assert_eq!(normalize_inner(r"\a\b\"), "a/b");
+    }
+
+    #[test]
+    fn location_parse_display() {
+        for loc in [
+            Location::Trash,
+            Location::Computer,
+            Location::Recent,
+            Location::Tags("red".into()),
+            Location::Search(SearchId(42)),
+            Location::Dir(PathBuf::from("/usr/share")),
+            Location::Archive { archive: PathBuf::from("/tmp/a.zip"), inner: "x/y".into() },
+            Location::Archive { archive: PathBuf::from("/tmp/a.zip"), inner: String::new() },
+        ] {
+            let s = loc.display();
+            assert_eq!(Location::parse(&s), Some(loc.clone()), "round trip of {s}");
+        }
+        assert_eq!(Location::parse("  "), None);
+        assert_eq!(Location::parse("TRASH:"), Some(Location::Trash));
+    }
+
+    #[test]
+    fn location_tilde() {
+        let home = directories::BaseDirs::new().unwrap().home_dir().to_path_buf();
+        assert_eq!(Location::parse("~"), Some(Location::Dir(home.clone())));
+        assert_eq!(Location::parse("~/x"), Some(Location::Dir(home.join("x"))));
+    }
+
+    #[test]
+    fn location_parent() {
+        let l = Location::Archive { archive: PathBuf::from("/t/a.zip"), inner: "x/y".into() };
+        let p1 = l.parent().unwrap();
+        assert_eq!(p1, Location::Archive { archive: PathBuf::from("/t/a.zip"), inner: "x".into() });
+        let p2 = p1.parent().unwrap();
+        assert_eq!(p2, Location::Archive { archive: PathBuf::from("/t/a.zip"), inner: String::new() });
+        assert_eq!(p2.parent(), Some(Location::Dir(PathBuf::from("/t"))));
+
+        assert_eq!(Location::Dir(PathBuf::from("/a/b")).parent(), Some(Location::Dir(PathBuf::from("/a"))));
+        assert_eq!(Location::Dir(PathBuf::from("/")).parent(), Some(Location::Computer));
+        assert_eq!(Location::Computer.parent(), None);
+        assert_eq!(Location::Trash.as_fs_path(), None);
+    }
+}

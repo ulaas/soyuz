@@ -1,0 +1,1 @@
+//! sevenz writer (M7).

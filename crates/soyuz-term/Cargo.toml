@@ -1,0 +1,18 @@
+[package]
+name = "soyuz-term"
+description = "Soyuz embedded terminal widget (alacritty_terminal + egui)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+egui.workspace = true
+alacritty_terminal.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+[lints]
+workspace = true

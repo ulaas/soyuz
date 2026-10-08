@@ -1,0 +1,1 @@
+//! sevenz reader (M7).

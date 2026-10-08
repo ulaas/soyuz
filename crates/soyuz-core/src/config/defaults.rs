@@ -1,0 +1,359 @@
+//! Default values for every config section and the built-in key presets.
+
+use std::collections::BTreeMap;
+
+use crate::columns::{Column, ViewMode};
+use crate::size::SizeStyle;
+use crate::time::DateFormat;
+
+use super::actions::Action;
+use super::keys::{KeyChord, KeyContext, KeyName, KeyPreset, Keymap, Mods};
+use super::schema::*;
+
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            schema: SCHEMA_VERSION,
+            general: General::default(),
+            appearance: Appearance::default(),
+            theme: ThemeSection::default(),
+            layout: Layout::default(),
+            toolbar: Toolbar::default(),
+            context_menu: ContextMenu::default(),
+            sidebar: Sidebar::default(),
+            columns: Columns::default(),
+            behaviour: Behaviour::default(),
+            jobs: Jobs::default(),
+            terminal: Terminal::default(),
+            search: Search::default(),
+            preview: Preview::default(),
+            git: Git::default(),
+            keys: Keys::default(),
+            bookmarks: Vec::new(),
+            custom_commands: Vec::new(),
+        }
+    }
+}
+
+impl Default for General {
+    fn default() -> Self {
+        General {
+            start_location: "home".into(),
+            open_folders_in: OpenFoldersIn::SameTab,
+            single_click_open: false,
+            confirm_delete: true,
+            confirm_permanent_delete: true,
+            show_hidden: false,
+            show_system: false,
+            show_extensions: true,
+            natural_sort: true,
+            case_insensitive_sort: true,
+            folders_first: true,
+            size_style: SizeStyle::Binary,
+            date_format: DateFormat::default(),
+            default_view: ViewMode::Details,
+            double_click_speed_ms: 400,
+            language: "en".into(),
+            strict_windows_names: false,
+        }
+    }
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Appearance {
+            theme: "system".into(),
+            density: Density::Cozy,
+            ui_scale: 1.0,
+            font: "Inter".into(),
+            mono_font: "JetBrains Mono".into(),
+            font_size: 13.0,
+            reduced_motion: false,
+            icon_style: IconStyle::Colored,
+            show_thumbnails: true,
+            thumbnail_size: 96,
+            sidebar_width: 220.0,
+            custom_titlebar: false,
+        }
+    }
+}
+
+impl Default for Layout {
+    fn default() -> Self {
+        Layout {
+            sidebar: true,
+            preview_pane: false,
+            dual_pane: false,
+            dual_pane_orientation: Orientation::Vertical,
+            status_bar: true,
+            tab_strip: TabStripMode::Always,
+            terminal_height: 260.0,
+            activity_panel: ActivityPlacement::Right,
+        }
+    }
+}
+
+impl Default for Toolbar {
+    fn default() -> Self {
+        Toolbar {
+            items: [
+                "back",
+                "forward",
+                "up",
+                "|",
+                "breadcrumb",
+                "spacer",
+                "filter",
+                "view_menu",
+                "sort_menu",
+                "toggle_dual_pane",
+                "activity",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        }
+    }
+}
+
+impl Default for Sidebar {
+    fn default() -> Self {
+        use SidebarSection::*;
+        Sidebar { sections: vec![Favorites, Devices, Cloud, Tags, Network, Trash, Tree] }
+    }
+}
+
+impl Default for Columns {
+    fn default() -> Self {
+        let details = vec![Column::Name, Column::Size, Column::Kind, Column::Modified];
+        let widths = details.iter().map(|c| (c.to_string(), c.default_width())).collect();
+        Columns { details, widths }
+    }
+}
+
+impl Default for Behaviour {
+    fn default() -> Self {
+        Behaviour {
+            rename_selects: RenameSelects::Stem,
+            paste_conflict: PasteConflict::Ask,
+            drag_default: DragDefault::Auto,
+            remember_folder_views: true,
+            restore_session: true,
+            auto_refresh: true,
+            watch_debounce_ms: 250,
+            type_ahead: TypeAhead::Jump,
+            middle_click: MiddleClick::NewTab,
+        }
+    }
+}
+
+impl Default for Jobs {
+    fn default() -> Self {
+        Jobs {
+            max_parallel: 4,
+            per_device_serial: true,
+            reset_apply_all_between_jobs: true,
+            verify_after_copy: false,
+            copy_buffer_mib: 8,
+            unbuffered_threshold_mib: 256,
+            preserve: vec![PreserveItem::Times, PreserveItem::Attrs, PreserveItem::Xattr],
+            reflink: ReflinkPref::Auto,
+            history_limit: 500,
+            trash_unsupported: TrashUnsupportedPolicy::Ask,
+        }
+    }
+}
+
+impl Default for Terminal {
+    fn default() -> Self {
+        Terminal {
+            shell: String::new(),
+            args: Vec::new(),
+            follow_navigation: true,
+            cd_on_tab_switch: true,
+            shell_integration: true,
+            escape_returns_focus: true,
+            scrollback: 10_000,
+            font_size: 12.5,
+            theme: "auto".into(),
+        }
+    }
+}
+
+impl Default for Search {
+    fn default() -> Self {
+        Search { threads: 0, respect_gitignore: false, content_max_mib: 8, saved: Vec::new() }
+    }
+}
+
+impl Default for Preview {
+    fn default() -> Self {
+        Preview { max_text_kib: 512, max_image_mp: 40, syntax_theme: "auto".into(), pdf: true }
+    }
+}
+
+impl Default for Git {
+    fn default() -> Self {
+        Git { status_column: true, refresh_secs: 5 }
+    }
+}
+
+impl Default for Keys {
+    fn default() -> Self {
+        Keys { preset: KeyPreset::Explorer, cmd_is_ctrl: true, bindings: BTreeMap::new() }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Key presets
+// ---------------------------------------------------------------------------
+
+const NONE: Mods = Mods::empty();
+const CTRL: Mods = Mods::CTRL;
+const SHIFT: Mods = Mods::SHIFT;
+const ALT: Mods = Mods::ALT;
+const CTRL_SHIFT: Mods = Mods::CTRL.union(Mods::SHIFT);
+const CTRL_ALT: Mods = Mods::CTRL.union(Mods::ALT);
+
+const DIGITS: [KeyName; 9] = [
+    KeyName::Num1,
+    KeyName::Num2,
+    KeyName::Num3,
+    KeyName::Num4,
+    KeyName::Num5,
+    KeyName::Num6,
+    KeyName::Num7,
+    KeyName::Num8,
+    KeyName::Num9,
+];
+
+/// Bindings shared by both presets.
+fn common(km: &mut Keymap) {
+    use Action as A;
+    use KeyContext::{FileList as L, Global as G};
+    let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
+
+    // Global
+    b(G, A::CommandPalette, CTRL_SHIFT, KeyName::P);
+    b(G, A::NewTab, CTRL, KeyName::T);
+    b(G, A::CloseTab, CTRL, KeyName::W);
+    b(G, A::ReopenClosedTab, CTRL_SHIFT, KeyName::T);
+    b(G, A::NextTab, CTRL, KeyName::Tab);
+    b(G, A::PrevTab, CTRL_SHIFT, KeyName::Tab);
+    for (i, k) in DIGITS.iter().enumerate() {
+        b(G, A::SelectTab(i as u8 + 1), CTRL, *k);
+    }
+    b(G, A::NewWindow, CTRL, KeyName::N);
+    b(G, A::ToggleTerminal, CTRL, KeyName::Backtick);
+    b(G, A::FocusAddressBar, CTRL, KeyName::L);
+    b(G, A::Back, ALT, KeyName::ArrowLeft);
+    b(G, A::Forward, ALT, KeyName::ArrowRight);
+    b(G, A::Up, ALT, KeyName::ArrowUp);
+    b(G, A::Refresh, CTRL, KeyName::R);
+    b(G, A::Search, CTRL, KeyName::F);
+    b(G, A::Settings, CTRL, KeyName::Comma);
+    b(G, A::Quit, CTRL, KeyName::Q);
+    b(G, A::ToggleHidden, CTRL, KeyName::H);
+    b(G, A::ToggleSidebar, CTRL, KeyName::B);
+    b(G, A::TogglePreviewPane, ALT, KeyName::P);
+    b(G, A::ToggleActivityPanel, CTRL_SHIFT, KeyName::J);
+    b(G, A::Undo, CTRL, KeyName::Z);
+    b(G, A::Redo, CTRL, KeyName::Y);
+    b(G, A::Redo, CTRL_SHIFT, KeyName::Z);
+    b(G, A::ZoomIn, CTRL, KeyName::Plus);
+    b(G, A::ZoomIn, CTRL, KeyName::Equals);
+    b(G, A::ZoomOut, CTRL, KeyName::Minus);
+    b(G, A::ZoomReset, CTRL, KeyName::Num0);
+    b(G, A::ViewDetails, CTRL_SHIFT, KeyName::Num1);
+    b(G, A::ViewGrid, CTRL_SHIFT, KeyName::Num2);
+    b(G, A::ViewList, CTRL_SHIFT, KeyName::Num3);
+    b(G, A::ViewMiller, CTRL_SHIFT, KeyName::Num4);
+    b(G, A::ViewGallery, CTRL_SHIFT, KeyName::Num5);
+    b(G, A::ShowKeybindings, CTRL, KeyName::Slash);
+
+    // File list
+    b(L, A::Copy, CTRL, KeyName::C);
+    b(L, A::Cut, CTRL, KeyName::X);
+    b(L, A::Paste, CTRL, KeyName::V);
+    b(L, A::SelectAll, CTRL, KeyName::A);
+    b(L, A::InvertSelection, CTRL, KeyName::I);
+    b(L, A::SelectNone, NONE, KeyName::Escape);
+    b(L, A::Open, NONE, KeyName::Enter);
+    b(L, A::Properties, ALT, KeyName::Enter);
+    b(L, A::Delete, NONE, KeyName::Delete);
+    b(L, A::DeletePermanent, SHIFT, KeyName::Delete);
+    b(L, A::NewFolder, CTRL_SHIFT, KeyName::N);
+    b(L, A::NewFile, CTRL_ALT, KeyName::N);
+    b(L, A::Duplicate, CTRL, KeyName::D);
+    b(L, A::CopyPath, CTRL_SHIFT, KeyName::C);
+    b(L, A::CursorUp, NONE, KeyName::ArrowUp);
+    b(L, A::CursorDown, NONE, KeyName::ArrowDown);
+    b(L, A::CursorPageUp, NONE, KeyName::PageUp);
+    b(L, A::CursorPageDown, NONE, KeyName::PageDown);
+    b(L, A::CursorHome, NONE, KeyName::Home);
+    b(L, A::CursorEnd, NONE, KeyName::End);
+    b(L, A::ExtendUp, SHIFT, KeyName::ArrowUp);
+    b(L, A::ExtendDown, SHIFT, KeyName::ArrowDown);
+    b(L, A::OpenInNewTab, CTRL, KeyName::Enter);
+}
+
+/// Build the key map for a preset (before `[keys.bindings]` overrides).
+pub fn preset(p: KeyPreset) -> Keymap {
+    use Action as A;
+    use KeyContext::{FileList as L, Global as G};
+    let mut km = Keymap::default();
+    common(&mut km);
+    let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
+    match p {
+        KeyPreset::Explorer => {
+            b(L, A::Rename, NONE, KeyName::F2);
+            b(G, A::Search, NONE, KeyName::F3);
+            b(G, A::Refresh, NONE, KeyName::F5);
+            b(L, A::QuickLook, NONE, KeyName::Space);
+            b(L, A::Up, NONE, KeyName::Backspace);
+            b(G, A::ToggleDualPane, NONE, KeyName::F9);
+        }
+        KeyPreset::Commander => {
+            b(L, A::QuickLook, NONE, KeyName::F3);
+            b(L, A::Open, NONE, KeyName::F4);
+            b(L, A::CopyToOtherPane, NONE, KeyName::F5);
+            b(L, A::MoveToOtherPane, NONE, KeyName::F6);
+            b(L, A::NewFolder, NONE, KeyName::F7);
+            b(L, A::Delete, NONE, KeyName::F8);
+            b(L, A::FocusOtherPane, NONE, KeyName::Tab);
+            b(L, A::MarkAndMoveDown, NONE, KeyName::Insert);
+            b(L, A::MarkToggle, NONE, KeyName::Space);
+            b(L, A::Filter, CTRL, KeyName::S);
+            b(G, A::Search, ALT, KeyName::F7);
+            b(L, A::Rename, SHIFT, KeyName::F6);
+            b(G, A::SwapPanes, CTRL, KeyName::U);
+            b(L, A::Up, NONE, KeyName::Backspace);
+        }
+    }
+    km
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn presets_have_no_conflicts() {
+        for p in [KeyPreset::Explorer, KeyPreset::Commander] {
+            let km = preset(p);
+            assert!(km.conflicts().is_empty(), "{p:?}: {:?}", km.conflicts());
+            assert!(km.bindings.len() > 40);
+        }
+    }
+
+    #[test]
+    fn explorer_basics() {
+        let km = preset(KeyPreset::Explorer);
+        let ch = |s: &str| s.parse::<KeyChord>().unwrap();
+        assert_eq!(km.lookup(KeyContext::FileList, ch("Ctrl+C")), Some(&Action::Copy));
+        assert_eq!(km.lookup(KeyContext::FileList, ch("F2")), Some(&Action::Rename));
+        assert_eq!(km.lookup(KeyContext::Terminal, ch("Ctrl+Shift+P")), Some(&Action::CommandPalette));
+        let cmd = preset(KeyPreset::Commander);
+        assert_eq!(cmd.lookup(KeyContext::FileList, ch("F5")), Some(&Action::CopyToOtherPane));
+    }
+}

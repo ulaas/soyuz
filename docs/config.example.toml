@@ -1,0 +1,142 @@
+# Soyuz configuration (config.toml). Every key is optional and has a default;
+# unknown keys are reported as warnings. Location: see `soyuz_core::config::default_path()`
+# (Windows: %APPDATA%\soyuz\config\config.toml, Linux: ~/.config/soyuz/config.toml,
+# macOS: ~/Library/Application Support/soyuz/config.toml, or <exe dir>/portable/config.toml
+# when a file named `portable` sits next to the executable). The file is hot-reloaded.
+
+schema = 1
+
+[general]
+start_location = "home"          # "home" | "last" | "<path>"
+open_folders_in = "same_tab"     # same_tab | new_tab
+single_click_open = false
+confirm_delete = true            # trash
+confirm_permanent_delete = true
+show_hidden = false
+show_system = false              # Windows system files
+show_extensions = true
+natural_sort = true
+case_insensitive_sort = true
+folders_first = true
+size_style = "binary"            # binary | decimal | bytes
+date_format = "relative"         # relative | short | long | iso | "%Y-%m-%d %H:%M"
+default_view = "details"         # details | grid | list | miller | gallery
+double_click_speed_ms = 400
+language = "en"
+strict_windows_names = false     # apply Windows file-name rules on every OS
+
+[appearance]
+theme = "system"                 # system | dark | light | "<name>" (user theme file in themes/)
+density = "cozy"                 # compact | cozy | comfortable
+ui_scale = 1.0
+font = "Inter"                   # or any family name / path
+mono_font = "JetBrains Mono"
+font_size = 13.0
+reduced_motion = false
+icon_style = "colored"           # colored | mono
+show_thumbnails = true
+thumbnail_size = 96
+sidebar_width = 220
+custom_titlebar = false
+
+[theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
+# accent = "#5B8CFF"
+# "bg.window" = "#0F1115"
+
+[layout]
+sidebar = true
+preview_pane = false
+dual_pane = false
+dual_pane_orientation = "vertical"   # vertical | horizontal
+status_bar = true
+tab_strip = "always"             # always | multiple
+terminal_height = 260
+activity_panel = "right"         # right | bottom | floating
+
+[toolbar]                        # action names (PLAN §2.10), "|" = separator, "spacer" = flex space
+items = ["back", "forward", "up", "|", "breadcrumb", "spacer", "filter", "view_menu", "sort_menu", "toggle_dual_pane", "activity"]
+
+[context_menu]
+hide = []                        # action names to hide
+order = []                       # optional explicit order; unknown names ignored
+
+[sidebar]
+sections = ["favorites", "devices", "cloud", "tags", "network", "trash", "tree"]
+
+[columns]
+details = ["name", "size", "kind", "modified"]
+widths = { name = 320, size = 90, kind = 120, modified = 150 }
+
+[behaviour]
+rename_selects = "stem"          # stem | all
+paste_conflict = "ask"           # ask | overwrite | skip | keep_both
+drag_default = "auto"            # auto (same device = move) | copy | move | ask
+remember_folder_views = true
+restore_session = true
+auto_refresh = true
+watch_debounce_ms = 250
+type_ahead = "jump"              # jump | filter
+middle_click = "new_tab"         # new_tab | other_pane | nothing
+
+[jobs]
+max_parallel = 4
+per_device_serial = true
+reset_apply_all_between_jobs = true
+verify_after_copy = false
+copy_buffer_mib = 8
+unbuffered_threshold_mib = 256
+preserve = ["times", "attrs", "xattr"]   # times | attrs | xattr | acl | owner | sparse
+reflink = "auto"                 # auto | never | always
+history_limit = 500
+trash_unsupported = "ask"        # ask | permanent | skip
+
+[terminal]
+shell = ""                       # "" = auto
+args = []
+follow_navigation = true
+cd_on_tab_switch = true
+shell_integration = true         # inject prompt hook so the terminal reports its cwd
+escape_returns_focus = true
+scrollback = 10000
+font_size = 12.5
+theme = "auto"                   # auto (derive from app theme) | <name>
+
+[search]
+threads = 0                      # 0 = auto
+respect_gitignore = false
+content_max_mib = 8
+
+[[search.saved]]                 # SavedSearch entries; `query` uses soyuz_search::SearchQuery fields
+name = "Large videos"
+query = { roots = ["~"], extensions = ["mp4", "mkv"], size = [1073741824, 0] }   # size = [min, max], 0 max = unbounded
+
+[preview]
+max_text_kib = 512
+max_image_mp = 40
+syntax_theme = "auto"
+pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
+
+[git]
+status_column = true
+refresh_secs = 5
+
+[keys]
+preset = "explorer"              # explorer | commander
+cmd_is_ctrl = true
+
+[keys.bindings]                  # action = ["chord", ...]; overrides the preset (and steals the chord)
+"copy" = ["Ctrl+C"]
+"copy_to_other_pane" = ["F5"]
+
+[[bookmarks]]
+name = "Projects"
+path = "E:/source"
+hotkey = "Ctrl+1"
+icon = "code"
+
+[[custom_commands]]
+name = "Open in VS Code"
+command = "code"
+args = ["%P"]                    # %P path(s), %D dir, %N name, %E ext, %F first selected
+context = ["file", "dir"]        # file | dir | background
+hotkey = ""
