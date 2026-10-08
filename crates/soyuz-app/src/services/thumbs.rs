@@ -93,6 +93,14 @@ pub fn set_pdf(on: bool, pdfium_dir: &str) {
     }
 }
 
+/// `[appearance] os_thumbnail_cache` (read by the workers).
+static OS_CACHE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Use Explorer's thumbnail cache (`thumbcache_*.db`) first (Windows).
+pub fn set_os_cache(on: bool) {
+    OS_CACHE.store(on && cfg!(windows), Ordering::Relaxed);
+}
+
 /// A PDF that gets a first-page thumbnail (when pdfium turns out to be available).
 pub fn is_pdf_thumbnailable(path: &Path) -> bool {
     PDF_PAGES.load(Ordering::Relaxed) && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
@@ -291,15 +299,24 @@ fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
 fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
     use super::thumb_disk;
     let label = if kind == Kind::Video { super::thumb_video::duration_label(&key.path) } else { None };
+    let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
+    if let Some(img) = thumb_disk::get(disk_key) {
+        return (Some(img), label);
+    }
+    // Explorer's own cache (read-only): no decode, and videos / PDFs get a picture even
+    // without ffmpeg / pdfium.
+    if kind != Kind::Folder
+        && OS_CACHE.load(Ordering::Relaxed)
+        && let Some(img) = os_cached(key)
+    {
+        thumb_disk::put(disk_key, &img);
+        return (Some(img), label);
+    }
     if kind == Kind::Video && !(VIDEO_FRAMES.load(Ordering::Relaxed) && super::thumb_video::ffmpeg_path().is_some()) {
         return (None, label);
     }
     if kind == Kind::Pdf && !pdf_available() {
         return (None, None);
-    }
-    let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
-    if let Some(img) = thumb_disk::get(disk_key) {
-        return (Some(img), label);
     }
     let img = match kind {
         Kind::Image => decode(key),
@@ -314,6 +331,16 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
         thumb_disk::put(disk_key, i);
     }
     (img, label)
+}
+
+/// The picture Explorer cached for `key.path`, fitted into `key.px` (`None` when it has
+/// none at a useful size, or off Windows).
+fn os_cached(key: &ThumbKey) -> Option<ColorImage> {
+    let t = soyuz_fs::thumbcache::lookup(&key.path, key.px)?;
+    let img = image::load_from_memory(&t.data).ok()?;
+    let fit = if img.width() > key.px || img.height() > key.px { img.thumbnail(key.px, key.px) } else { img };
+    let rgba = fit.to_rgba8();
+    Some(ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
 }
 
 /// PDF thumbnails are on and the pdfium library is found (else the PDF icon shows).

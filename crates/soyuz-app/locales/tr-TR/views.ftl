@@ -168,6 +168,7 @@ views-tree-home = Giriş klasörü
 views-tree-filter = Klasörleri filtrele
 views-tree-clear-filter = Filtreyi temizle
 views-tree-a11y = Klasör ağacı
+views-col-resize = { $column } sütununu yeniden boyutlandır
 views-tree-no-matches = Eşleşen klasör yok
 views-tree-open = Aç
 views-tree-open-new-tab = Yeni sekmede aç

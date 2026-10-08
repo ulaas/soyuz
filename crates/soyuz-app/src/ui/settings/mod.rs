@@ -556,7 +556,7 @@ fn apply_recorded(s: &mut SettingsState, target: RecordTarget, binding: String) 
 fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     ui.horizontal(|ui| {
         ui.add_space(6.0);
-        ui.label(icons::icon(ph::GEAR_SIX, 18.0).color(p.accent));
+        crate::ui::widgets::icon_label(ui, icons::icon(ph::GEAR_SIX, 18.0).color(p.accent));
         ui.label(
             RichText::new(tr!("settings-title"))
                 .font(FontId::new(17.0, FontFamily::Name(SEMIBOLD.into())))
@@ -573,7 +573,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         ui.ctx().memory_mut(|m| m.request_focus(search_id));
         s.focus_search = false;
     }
-    ui.add(
+    let search = ui.add(
         TextEdit::singleline(&mut s.query)
             .id(search_id)
             .hint_text(
@@ -583,6 +583,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
             .desired_width(f32::INFINITY)
             .margin(Margin::symmetric(10, 7)),
     );
+    crate::ui::a11y::name(&search, tr!("settings-search-hint"));
     ui.add_space(10.0);
     let searching = !s.query.trim().is_empty();
     // The section list scrolls when the window is too short for it, so it never runs
@@ -669,7 +670,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         };
         ui.horizontal(|ui| {
             ui.add_space(6.0);
-            ui.label(icons::icon(status.0, 12.0).color(status.2));
+            crate::ui::widgets::icon_label(ui, icons::icon(status.0, 12.0).color(status.2));
             ui.label(RichText::new(status.1).size(11.0).color(status.2));
         });
         ui.add_space(6.0);
@@ -708,7 +709,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     .color(p.text_primary),
             );
         } else {
-            ui.label(icons::icon(sec.icon(), 20.0).color(p.accent));
+            crate::ui::widgets::icon_label(ui, icons::icon(sec.icon(), 20.0).color(p.accent));
             ui.label(
                 RichText::new(sec.title())
                     .font(FontId::new(19.0, FontFamily::Name(SEMIBOLD.into())))
@@ -749,7 +750,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
             if !any {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
-                    ui.label(icons::icon(ph::MAGNIFYING_GLASS, 28.0).color(p.text_tertiary));
+                    crate::ui::widgets::icon_label(ui, icons::icon(ph::MAGNIFYING_GLASS, 28.0).color(p.text_tertiary));
                     ui.label(RichText::new(tr!("settings-search-empty")).color(p.text_secondary));
                 });
             }

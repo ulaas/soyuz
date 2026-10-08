@@ -50,9 +50,13 @@ windows-sys = { workspace = true, features = [
     "Win32_Graphics_Dwm",
     # GetUserDefaultUILanguage + LCIDToLocaleName (UI language for `general.language = "auto"`).
     "Win32_Globalization",
+    # FileTimeToDosDateTime / DosDateTimeToFileTime (Explorer thumbnail cache ids).
+    "Win32_System_WindowsProgramming",
     "Win32_NetworkManagement_NetManagement",
     "Win32_Graphics_Gdi",
     "Win32_UI_Controls",
+    # Startup placeholder window: per-thread DPI awareness (user32).
+    "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
     "Wdk_Storage_FileSystem",

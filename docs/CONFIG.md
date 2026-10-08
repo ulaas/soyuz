@@ -122,13 +122,15 @@ written as a list of quoted values is an enumeration: use one of them.
 | `custom_titlebar` | boolean | `true` | Soyuz draws its own title bar with the tabs in it; off = the system title bar. |
 | `backdrop` | `"none"` \| `"mica"` \| `"acrylic"` | `"none"` | Windows 11 window backdrop behind translucent surfaces (no-op elsewhere; read at start). (`none`: Opaque theme colors; `mica`: Mica: the desktop wallpaper, heavily blurred and tinted; `acrylic`: Acrylic: a blur of whatever is behind the window) |
 | `snap_layouts` | boolean | `true` | Windows 11 Snap Layouts flyout when hovering the maximize button (custom title bar). |
-| `fallback_fonts` | `"auto"` \| `"startup"` \| `"off"` | `"auto"` | System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji). (`auto`: When a file name needs them (loaded on a background thread); `startup`: All of them in the background right after startup (also covers terminal output); `off`: Never (missing glyphs render as boxes)) |
+| `fallback_fonts` | `"auto"` \| `"startup"` \| `"off"` | `"auto"` | System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji, Arabic / Hebrew). (`auto`: When a file name needs them (loaded on a background thread); `startup`: All of them in the background right after startup (also covers terminal output); `off`: Never (missing glyphs render as boxes)) |
 | `color_theme` | string | `"orbit"` | Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`, `high-contrast`) or the file stem of a user theme in `themes/*.toml`. Each theme has a dark and a light variant; `theme` picks which one shows. |
 | `accent` | string | `"theme"` | `"theme"` (the theme's own accent) \| `"system"` (the OS accent color, followed live) \| `"#RRGGBB"`. |
 | `extension_badges` | boolean | `true` | Extension label badges on file icons in the grid / gallery views. |
 | `folder_thumbnails` | boolean | `true` | 2×2 mosaic of the first images inside folders (grid / gallery views). |
 | `video_thumbnails` | boolean | `true` | First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found). |
 | `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
+| `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only) before decoding a file ourselves. |
+| `startup_placeholder` | boolean | `true` | Windows: show a native placeholder window (theme background + logo) right away while the GPU renderer starts, replaced by the real window on its first frame. Applies at the next start. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |
 | `thumb_disk_cache_mib` | integer | `256` | On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts. |
 

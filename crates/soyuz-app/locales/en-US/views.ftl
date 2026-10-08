@@ -180,6 +180,7 @@ views-tree-home = Home
 views-tree-filter = Filter folders
 views-tree-clear-filter = Clear filter
 views-tree-a11y = Folder tree
+views-col-resize = Resize the { $column } column
 views-tree-no-matches = No matching folders
 views-tree-open = Open
 views-tree-open-new-tab = Open in new tab

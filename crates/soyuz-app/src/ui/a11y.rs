@@ -48,6 +48,18 @@ pub fn with(ctx: &Context, id: Id, f: impl FnOnce(&mut Node)) {
     ctx.accesskit_node_builder(id, f);
 }
 
+/// Set the accessible name of a widget (text fields, combo boxes and sliders, whose
+/// visible label is drawn separately or is only a placeholder hint).
+pub fn name(resp: &Response, label: &str) {
+    with(&resp.ctx, resp.id, |n| n.set_label(label));
+}
+
+/// Hide a purely decorative widget (an icon glyph next to a text label) from assistive
+/// technology, so screen readers don't announce private-use icon characters.
+pub fn decorative(resp: &Response) {
+    with(&resp.ctx, resp.id, |n| n.set_hidden());
+}
+
 /// Give a container (the file list, a panel, a dialog) a role and a name.
 pub fn container(ctx: &Context, id: Id, role: Role, label: &str) {
     with(ctx, id, |n| {

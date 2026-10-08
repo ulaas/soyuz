@@ -506,7 +506,7 @@ settings-appearance-scale-desc = Tüm pencereyi yakınlaştırır (Ctrl+= / Ctrl
 settings-appearance-fonts-desc = Arayüz, başlık, terminal, kod, onaltılık ve sayı yazı tipleri; boyut farkları ve önizlemelerle.
 settings-appearance-fonts-button = Yazı tipleri…
 settings-appearance-fallback = Yedek yazı tipleri
-settings-appearance-fallback-desc = Çince, Japonca, Korece ve emoji içeren adlar için sistem yazı tipleri; arka planda yüklenir. Otomatik: bir ad gerektirdiğinde; başlangıçta: terminal çıktısını da kapsar.
+settings-appearance-fallback-desc = Çince, Japonca, Korece, Arapça, İbranice ve emoji içeren adlar için sistem yazı tipleri; arka planda yüklenir. Otomatik: bir ad gerektirdiğinde; başlangıçta: terminal çıktısını da kapsar.
 settings-automatic = Otomatik
 settings-appearance-fallback-startup = Başlangıçta
 settings-off = Kapalı
@@ -523,6 +523,10 @@ settings-appearance-folder-thumbs = Klasör küçük resimleri
 settings-appearance-folder-thumbs-desc = Izgara görünümleri her klasörün içindeki ilk resimlerden 2×2 bir mozaik gösterir.
 settings-appearance-video-thumbs = Video küçük resimleri
 settings-appearance-pdf-thumbs = PDF küçük resimleri
+settings-appearance-startup-placeholder = Anında başlangıç penceresi
+settings-appearance-startup-placeholder-desc = Grafik çizici başlarken (yaklaşık 0,3 sn) hemen tema arka planlı sade bir pencere gösterir, ardından tam pencere açılır. Bir sonraki başlangıçta uygulanır.
+settings-appearance-os-thumbs = Windows küçük resim önbelleği
+settings-appearance-os-thumbs-desc = Dosyaları çözmeden önce Gezgin'in hazırladığı küçük resimleri kullanır (thumbcache_*.db, salt okunur). Gezgin'de varsa videolar ve PDF'ler ffmpeg ya da pdfium olmadan da resimle görünür.
 settings-appearance-pdf-thumbs-desc = PDF'lerin ilk sayfası pdfium ile çizilir (pdfium.dll soyuz.exe'nin yanında, yapılandırma klasöründe ya da Önizleme altında belirtilen klasörde). Yoksa PDF'ler simgeleriyle görünür.
 settings-appearance-icon-pack = Simge paketi
 settings-appearance-icon-pack-desc = Dosya türleri ve klasörler için resimler. Kendi paketlerinizi icons klasörüne koyun; her biri pack.toml içeren ayrı bir alt klasör olmalı (kullanım kılavuzuna bakın). Paketin kapsamadığı her şey yerleşik simgesini korur.
@@ -1039,3 +1043,10 @@ settings-unit-chars = karakter
 settings-unit-days = gün
 settings-unit-lines = satır
 settings-unit-rows = satır
+
+## Accessible names of icon-only buttons
+settings-a11y-remove = Kaldır
+settings-a11y-move-up = Yukarı taşı
+settings-a11y-move-down = Aşağı taşı
+settings-a11y-record-key = Kısayol kaydet
+settings-a11y-button = Düğme

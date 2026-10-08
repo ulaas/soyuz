@@ -39,13 +39,15 @@ sidebar_width = 220
 custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
 backdrop = "none"                # none | mica | acrylic (Windows 11 only; applies at next start)
 snap_layouts = true              # Windows 11 Snap Layouts flyout on the maximize button
-fallback_fonts = "auto"          # auto (CJK / emoji system fonts when a name needs them) | startup | off
+fallback_fonts = "auto"          # auto (CJK / emoji / Arabic / Hebrew system fonts when a name needs them) | startup | off
 color_theme = "orbit"            # orbit | nord | solarized | rose-pine | high-contrast | "<file stem in themes/>"
 accent = "theme"                 # theme | system (OS accent color, live) | "#RRGGBB"
 extension_badges = true          # extension labels on file icons (grid / gallery)
 folder_thumbnails = true         # 2x2 mosaic of the first images inside folders
 video_thumbnails = true          # first frame via an `ffmpeg` binary on PATH, when present
 pdf_thumbnails = true            # first page via pdfium.dll (see [preview] pdfium_dir), when present
+os_thumbnail_cache = true        # Windows: reuse Explorer's thumbcache_*.db thumbnails (read-only)
+startup_placeholder = true       # Windows: native placeholder window while the renderer starts (next start)
 icon_pack = ""                   # "" = built-in glyphs | "flat" (built-in) | "<folder in icons/>" with a pack.toml
 thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
 

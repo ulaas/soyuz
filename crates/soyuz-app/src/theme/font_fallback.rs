@@ -1,5 +1,5 @@
 //! System fallback fonts for scripts the bundled Inter / JetBrains Mono lack (CJK,
-//! Hangul, emoji), so file names and terminal output never render as tofu boxes.
+//! Hangul, emoji, right-to-left scripts), so file names and terminal output never render as tofu boxes.
 //!
 //! Windows: `C:\Windows\Fonts` (and the per-user font folder) are scanned directly for a
 //! short list of well-known files per script; the first one present wins. Nothing is
@@ -27,10 +27,14 @@ pub enum Script {
     Cjk,
     Hangul,
     Emoji,
+    /// Hebrew, Arabic (incl. presentation forms), Syriac, Thaana, NKo: one font covers
+    /// them on every platform we look at (Segoe UI / Arial / Tahoma on Windows), and
+    /// the shaper (harfrust, in epaint) does the Arabic joining from its GSUB tables.
+    Rtl,
 }
 
 impl Script {
-    pub const ALL: [Script; 3] = [Script::Cjk, Script::Hangul, Script::Emoji];
+    pub const ALL: [Script; 4] = [Script::Cjk, Script::Hangul, Script::Emoji, Script::Rtl];
 
     /// Font files to try, in order (file names inside the system font folders).
     pub fn candidates(self) -> &'static [&'static str] {
@@ -47,6 +51,16 @@ impl Script {
             ],
             Script::Hangul => &["malgun.ttf", "gulim.ttc", "NotoSansCJK-Regular.ttc", "AppleSDGothicNeo.ttc"],
             Script::Emoji => &["seguiemj.ttf", "seguisym.ttf", "NotoEmoji-Regular.ttf"],
+            Script::Rtl => &[
+                "segoeui.ttf",
+                "arial.ttf",
+                "tahoma.ttf",
+                "NotoSansArabic-Regular.ttf",
+                "NotoSansHebrew-Regular.ttf",
+                "DejaVuSans.ttf",
+                "GeezaPro.ttc",
+                "ArialHB.ttc",
+            ],
         }
     }
 
@@ -55,6 +69,7 @@ impl Script {
             Script::Cjk => "fallback-cjk",
             Script::Hangul => "fallback-hangul",
             Script::Emoji => "fallback-emoji",
+            Script::Rtl => "fallback-rtl",
         }
     }
 }
@@ -63,6 +78,9 @@ impl Script {
 pub fn script_of(c: char) -> Option<Script> {
     let u = c as u32;
     match u {
+        0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF => {
+            Some(Script::Rtl)
+        }
         0x1100..=0x11FF | 0x3130..=0x318F | 0xA960..=0xA97F | 0xAC00..=0xD7FF => Some(Script::Hangul),
         0x2E80..=0x2FDF
         | 0x3000..=0x312F
@@ -83,7 +101,7 @@ pub fn script_of(c: char) -> Option<Script> {
 pub fn scripts_in(text: &str) -> Vec<Script> {
     let mut out = Vec::new();
     for c in text.chars() {
-        if (c as u32) < 0x1100 {
+        if (c as u32) < 0x0590 {
             continue;
         }
         if let Some(s) = script_of(c)
@@ -269,6 +287,9 @@ mod tests {
         assert_eq!(scripts_in("party 🎉 ☀"), [Script::Emoji]);
         assert_eq!(script_of('Ａ'), Some(Script::Cjk), "full-width forms");
         assert_eq!(script_of('a'), None);
+        assert_eq!(scripts_in("تقرير 2024.pdf"), [Script::Rtl]);
+        assert_eq!(scripts_in("שלום.txt"), [Script::Rtl]);
+        assert_eq!(scripts_in("Ωmega Ж"), [], "Greek / Cyrillic stay on Inter");
     }
 
     #[test]

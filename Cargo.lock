@@ -6384,6 +6384,7 @@ dependencies = [
  "reqwest",
  "resvg",
  "rodio",
+ "ron",
  "rustls",
  "serde",
  "serde_json",

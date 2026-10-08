@@ -115,7 +115,7 @@ fn row_label_id() -> egui::Id {
 }
 
 /// Accessible name for a control: the label of the settings row being drawn.
-fn row_label(ui: &Ui) -> String {
+pub(crate) fn row_label(ui: &Ui) -> String {
     ui.ctx().data(|d| d.get_temp::<String>(row_label_id())).unwrap_or_default()
 }
 
@@ -245,14 +245,17 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
 pub fn dropdown<T: PartialEq + Clone>(ui: &mut Ui, id: &str, value: &mut T, options: &[(T, &str)], width: f32) -> bool {
     let current = options.iter().find(|(v, _)| v == value).map(|(_, l)| *l).unwrap_or(tr!("settings-custom"));
     let mut changed = false;
-    egui::ComboBox::from_id_salt(("soyuz.settings.dd", id)).selected_text(current).width(width).show_ui(ui, |ui| {
-        for (v, label) in options {
-            if ui.selectable_label(v == value, *label).clicked() && v != value {
-                *value = v.clone();
-                changed = true;
+    let name = row_label(ui);
+    let combo =
+        egui::ComboBox::from_id_salt(("soyuz.settings.dd", id)).selected_text(current).width(width).show_ui(ui, |ui| {
+            for (v, label) in options {
+                if ui.selectable_label(v == value, *label).clicked() && v != value {
+                    *value = v.clone();
+                    changed = true;
+                }
             }
-        }
-    });
+        });
+    named(&combo.response, &name);
     changed
 }
 
@@ -263,27 +266,50 @@ pub fn number<T: egui::emath::Numeric>(
     range: std::ops::RangeInclusive<T>,
     suffix: &str,
 ) -> Response {
-    let mut s = egui::Slider::new(value, range).show_value(true).trailing_fill(true);
+    // The slider and its value box are separate widgets so both get the row's name
+    // (egui's built-in value box of `Slider::show_value` cannot be named).
+    let name = row_label(ui);
+    let lo = *range.start();
+    let hi = *range.end();
+    let r = ui.add_sized([150.0, 20.0], egui::Slider::new(value, range).show_value(false).trailing_fill(true));
+    named(&r, &name);
+    let speed = ((hi.to_f64() - lo.to_f64()) / 200.0).max(if T::INTEGRAL { 1.0 } else { 0.01 });
+    let mut dv = egui::DragValue::new(value).range(lo..=hi).speed(speed);
     if !suffix.is_empty() {
-        s = s.suffix(suffix);
+        dv = dv.suffix(suffix);
     }
-    ui.add_sized([220.0, 20.0], s)
+    let v = ui.add(dv);
+    named(&v, &name);
+    r | v
+}
+
+/// Accessible name for a control from its settings row (no-op outside rows).
+pub(crate) fn named(r: &Response, name: &str) {
+    if !name.is_empty() {
+        crate::ui::a11y::name(r, name);
+    }
 }
 
 /// Single-line text field.
 pub fn text(ui: &mut Ui, value: &mut String, hint: &str, width: f32) -> Response {
-    ui.add(TextEdit::singleline(value).hint_text(hint).desired_width(width).margin(Margin::symmetric(8, 5)))
+    let name = row_label(ui);
+    let r = ui.add(TextEdit::singleline(value).hint_text(hint).desired_width(width).margin(Margin::symmetric(8, 5)));
+    named(&r, if name.is_empty() { hint } else { &name });
+    r
 }
 
 /// Monospace text field.
 pub fn code(ui: &mut Ui, value: &mut String, hint: &str, width: f32) -> Response {
-    ui.add(
+    let name = row_label(ui);
+    let r = ui.add(
         TextEdit::singleline(value)
             .hint_text(hint)
             .font(egui::TextStyle::Monospace)
             .desired_width(width)
             .margin(Margin::symmetric(8, 5)),
-    )
+    );
+    named(&r, if name.is_empty() { hint } else { &name });
+    r
 }
 
 /// Small text button (secondary style); `danger` paints it red on hover.
@@ -294,7 +320,7 @@ pub fn small_button(ui: &mut Ui, icon: Option<&str>, label: &str, danger: bool) 
     let iw = if icon.is_some() { if label.is_empty() { 14.0 } else { 18.0 } } else { 0.0 };
     let w = g.size().x + iw + if label.is_empty() { 14.0 } else { 20.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
-    crate::ui::a11y::button(&resp, if label.is_empty() { icon.unwrap_or("") } else { label });
+    crate::ui::a11y::button(&resp, if label.is_empty() { icon_name(icon.unwrap_or("")) } else { label });
     let hover = resp.hovered();
     let fg = if danger && hover {
         p.danger
@@ -318,11 +344,28 @@ pub fn small_button(ui: &mut Ui, icon: Option<&str>, label: &str, danger: bool) 
     resp
 }
 
-/// A color swatch that opens egui's picker. Returns `true` when the color changed.
-pub fn color_swatch(ui: &mut Ui, color: &mut Color32, overridden: bool) -> bool {
+/// Accessible name of an icon-only button, from its icon (the icon glyph itself is a
+/// private-use character that screen readers cannot announce).
+fn icon_name(icon: &str) -> &'static str {
+    use crate::theme::icons::ph;
+    match icon {
+        ph::TRASH | ph::X => tr!("settings-a11y-remove"),
+        ph::ARROW_UP => tr!("settings-a11y-move-up"),
+        ph::ARROW_DOWN => tr!("settings-a11y-move-down"),
+        ph::ARROW_COUNTER_CLOCKWISE => tr!("common-reset"),
+        ph::PLUS => tr!("settings-add"),
+        ph::KEYBOARD => tr!("settings-a11y-record-key"),
+        _ => tr!("settings-a11y-button"),
+    }
+}
+
+/// A color swatch that opens egui's picker, named `name` for screen readers. Returns
+/// `true` when the color changed.
+pub fn color_swatch(ui: &mut Ui, color: &mut Color32, overridden: bool, name: &str) -> bool {
     let p = palette(ui.ctx());
     let before = *color;
     let resp = egui::widgets::color_picker::color_edit_button_srgba(ui, color, egui::color_picker::Alpha::OnlyBlend);
+    crate::ui::a11y::name(&resp, name);
     if overridden {
         let dot = pos2(resp.rect.right() + 3.0, resp.rect.top() - 1.0);
         ui.painter().circle_filled(dot, 3.0, p.accent);

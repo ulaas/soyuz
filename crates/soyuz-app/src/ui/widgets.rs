@@ -210,6 +210,15 @@ pub fn icon_toggle(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: b
     if tooltip.is_empty() { resp } else { resp.on_hover_text(tooltip) }
 }
 
+/// An icon glyph as a label, hidden from assistive technology (it sits next to a text
+/// that names the same thing; a screen reader would otherwise read the private-use
+/// character of the icon font).
+pub fn icon_label(ui: &mut Ui, icon: impl Into<egui::WidgetText>) -> Response {
+    let r = ui.label(icon);
+    crate::ui::a11y::decorative(&r);
+    r
+}
+
 /// Keyboard shortcut badge (`Ctrl+Shift+P`).
 pub fn kbd(ui: &mut Ui, text: &str) -> Response {
     let p = palette(ui.ctx());

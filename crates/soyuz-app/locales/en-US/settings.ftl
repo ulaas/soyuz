@@ -519,7 +519,7 @@ settings-appearance-scale-desc = Zoom the whole window (Ctrl+= / Ctrl+- / Ctrl+0
 settings-appearance-fonts-desc = Interface, headings, terminal, code, hex and number fonts, with size offsets and previews.
 settings-appearance-fonts-button = Fonts…
 settings-appearance-fallback = Fallback fonts
-settings-appearance-fallback-desc = System fonts for Chinese, Japanese, Korean and emoji names, loaded in the background. Automatic: when a name needs them; at startup: also covers terminal output.
+settings-appearance-fallback-desc = System fonts for Chinese, Japanese, Korean, Arabic, Hebrew and emoji names, loaded in the background. Automatic: when a name needs them; at startup: also covers terminal output.
 settings-automatic = Automatic
 settings-appearance-fallback-startup = At startup
 settings-off = Off
@@ -536,6 +536,10 @@ settings-appearance-folder-thumbs = Folder thumbnails
 settings-appearance-folder-thumbs-desc = Grid views show a 2×2 mosaic of the first pictures inside each folder.
 settings-appearance-video-thumbs = Video thumbnails
 settings-appearance-pdf-thumbs = PDF thumbnails
+settings-appearance-startup-placeholder = Instant startup window
+settings-appearance-startup-placeholder-desc = Show a plain window with the theme background right away while the graphics renderer starts (about 0.3 s), then the full window. Applies at the next start.
+settings-appearance-os-thumbs = Windows thumbnail cache
+settings-appearance-os-thumbs-desc = Show the thumbnails Explorer already made (thumbcache_*.db, read-only) before decoding files. Also gives videos and PDFs a picture without ffmpeg or pdfium when Explorer has one.
 settings-appearance-pdf-thumbs-desc = First page of PDFs through pdfium (pdfium.dll next to soyuz.exe, in the config folder or in the folder set under Preview). Without it PDFs keep their icon.
 settings-appearance-icon-pack = Icon pack
 settings-appearance-icon-pack-desc = Pictures for file types and folders. Put your own packs in the icons folder, one sub-folder each with a pack.toml (see the user guide); anything a pack leaves out keeps the built-in icon.
@@ -1092,3 +1096,10 @@ settings-unit-chars = chars
 settings-unit-days = days
 settings-unit-lines = lines
 settings-unit-rows = rows
+
+## Accessible names of icon-only buttons
+settings-a11y-remove = Remove
+settings-a11y-move-up = Move up
+settings-a11y-move-down = Move down
+settings-a11y-record-key = Record a shortcut
+settings-a11y-button = Button

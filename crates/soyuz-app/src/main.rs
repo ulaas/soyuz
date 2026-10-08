@@ -208,6 +208,8 @@ Run `soyuz <command> --help` for usage."
     let config =
         if startup.safe_mode { soyuz_app::services::crash::safe_config() } else { soyuz_app::app::load_config() };
     soyuz_app::devscript::startup_mark("config loaded");
+    // Windows: a native placeholder window right away while the GPU renderer starts (R5).
+    soyuz_app::services::splash::open(&config, startup.secondary, (1280.0, 800.0));
     let chrome = soyuz_app::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar);
     // Windows 11 system backdrop: a transparent window presented through a
     // DirectComposition visual (DX12), read once at startup.

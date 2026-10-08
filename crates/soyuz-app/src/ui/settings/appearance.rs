@@ -217,6 +217,24 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.appearance.pdf_thumbnails);
             },
         );
+        if cfg!(windows) {
+            r.row_kw(
+                tr!("settings-appearance-os-thumbs"),
+                tr!("settings-appearance-os-thumbs-desc"),
+                "thumbcache explorer windows cache video",
+                |ui| {
+                    switch(ui, &mut d.appearance.os_thumbnail_cache);
+                },
+            );
+            r.row_kw(
+                tr!("settings-appearance-startup-placeholder"),
+                tr!("settings-appearance-startup-placeholder-desc"),
+                "splash startup launch window fast",
+                |ui| {
+                    switch(ui, &mut d.appearance.startup_placeholder);
+                },
+            );
+        }
         r.row_kw(
             tr!("settings-appearance-thumb-cache"),
             tr!("settings-appearance-thumb-cache-desc"),
@@ -300,7 +318,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     let mut c = d.theme.colors.get(*name).and_then(|h| parse_hex(h)).unwrap_or_else(|| get(&p));
                     ui.horizontal(|ui| {
                         ui.set_min_width(230.0);
-                        if color_swatch(ui, &mut c, overridden) {
+                        if color_swatch(ui, &mut c, overridden, crate::i18n::t_dyn(label)) {
                             d.theme.colors.insert(name.to_string(), to_hex(c));
                         }
                         ui.add_space(4.0);

@@ -178,7 +178,7 @@ pub struct Appearance {
     pub backdrop: Backdrop,
     /// Windows 11 Snap Layouts flyout when hovering the maximize button (custom title bar).
     pub snap_layouts: bool,
-    /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji).
+    /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji, Arabic / Hebrew).
     pub fallback_fonts: FallbackFonts,
     /// Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`,
     /// `high-contrast`) or the file stem of a user theme in `themes/*.toml`. Each theme
@@ -196,6 +196,13 @@ pub struct Appearance {
     /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
     /// `[preview] pdfium_dir`); without it PDFs keep their icon.
     pub pdf_thumbnails: bool,
+    /// Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only)
+    /// before decoding a file ourselves.
+    pub os_thumbnail_cache: bool,
+    /// Windows: show a native placeholder window (theme background + logo) right away
+    /// while the GPU renderer starts, replaced by the real window on its first frame.
+    /// Applies at the next start.
+    pub startup_placeholder: bool,
     /// File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in
     /// generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`.
     pub icon_pack: String,
@@ -216,7 +223,7 @@ pub enum Backdrop {
     Acrylic,
 }
 
-/// When system fallback fonts (CJK / Hangul / emoji, from the OS font folder) load.
+/// When system fallback fonts (CJK / Hangul / emoji / Arabic / Hebrew, from the OS font folder) load.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum FallbackFonts {

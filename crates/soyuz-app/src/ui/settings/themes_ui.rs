@@ -223,7 +223,7 @@ pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
     }
     ui.add_space(4.0);
     let mut custom = current;
-    if color_swatch(ui, &mut custom, matches!(choice, AccentChoice::Custom(_))) {
+    if color_swatch(ui, &mut custom, matches!(choice, AccentChoice::Custom(_)), &super::widgets::row_label(ui)) {
         set(d, AccentChoice::Custom(custom));
     }
 }

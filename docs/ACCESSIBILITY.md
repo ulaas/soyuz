@@ -124,7 +124,12 @@ VoiceOver (`accesskit_macos`, VO+arrow navigation).
 ## Known gaps
 
 - **No screen-reader run has been recorded yet.** The checklist above is the certification
-  script, and its results go into this file.
+  script, and its results go into this file. The automated UIA audit
+  (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader
+  receives (names, roles, states) in six states, but not how NVDA / Narrator announce it or
+  whether navigation feels right; it does not replace this run.
+- Right-to-left layout is deferred (owner decision 2026-10-09); Arabic / Hebrew names render
+  with a system fallback font but are laid out in logical order.
 - egui exposes text runs, not a rich document model. The text editor reads line by line,
   without paragraph or heading semantics.
 - The terminal value is the visible screen only, not the scrollback.

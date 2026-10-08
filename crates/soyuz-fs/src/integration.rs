@@ -367,4 +367,17 @@ mod tests {
             assert_eq!(authenticode(&p), Signature::Valid, "{}", p.display());
         }
     }
+
+    /// `SOYUZ_AUTHENTICODE_PROBE=<file>`: print what the update checker's verifier says
+    /// about a file (used to validate the signing pipeline, docs/RELEASING.md).
+    #[test]
+    #[ignore = "needs SOYUZ_AUTHENTICODE_PROBE"]
+    fn authenticode_probe() {
+        let p = std::path::PathBuf::from(std::env::var("SOYUZ_AUTHENTICODE_PROBE").unwrap());
+        let s = authenticode(&p);
+        match s {
+            Signature::Invalid(hr) => println!("{}: Invalid({:#010x})", p.display(), hr as u32),
+            other => println!("{}: {other:?}", p.display()),
+        }
+    }
 }

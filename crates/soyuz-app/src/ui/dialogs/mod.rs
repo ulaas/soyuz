@@ -107,7 +107,7 @@ impl Dialogs {
                 crate::ui::a11y::dialog(ui.ctx(), ui.unique_id(), top.title(), top.alert(), true);
                 ui.horizontal(|ui| {
                     if let Some(g) = top.icon() {
-                        ui.label(icons::icon(g, 18.0).color(p.accent));
+                        crate::ui::widgets::icon_label(ui, icons::icon(g, 18.0).color(p.accent));
                         ui.add_space(2.0);
                     }
                     ui.label(RichText::new(top.title()).font(semibold(16.0)).color(p.text_primary));

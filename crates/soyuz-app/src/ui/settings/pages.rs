@@ -389,7 +389,9 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
                 }
                 let key = col.to_string();
                 let mut w = widths.get(&key).copied().unwrap_or(col.default_width());
-                if ui.add(egui::DragValue::new(&mut w).range(40.0..=800.0).suffix(" px").speed(1.0)).changed() {
+                let dv = ui.add(egui::DragValue::new(&mut w).range(40.0..=800.0).suffix(" px").speed(1.0));
+                super::widgets::named(&dv, &crate::ui::views::columns::header_label(*col));
+                if dv.changed() {
                     widths.insert(key, w);
                 }
             });

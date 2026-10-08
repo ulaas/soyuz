@@ -880,6 +880,17 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         }
         let color = if active || resp.hovered() { p.text_primary } else { p.text_secondary };
         let label = columns::header_label(c.column);
+        crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
+            n.set_role(egui::accesskit::Role::ColumnHeader);
+            n.set_label(label.as_str());
+            if active {
+                n.set_sort_direction(if sort.dir == SortDir::Asc {
+                    egui::accesskit::SortDirection::Ascending
+                } else {
+                    egui::accesskit::SortDirection::Descending
+                });
+            }
+        });
         let font = if active { semibold(12.0) } else { FontId::proportional(12.0) };
         let galley = trunc_galley(&painter, &label, font, color, c.w - 34.0);
         let gw = galley.size().x;
@@ -926,6 +937,10 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         }
         let handle = Rect::from_center_size(pos2(r.right(), r.center().y), vec2(8.0, HEADER_H));
         let hresp = ui.interact(handle, Id::new(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
+        crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
+            n.set_role(egui::accesskit::Role::Splitter);
+            n.set_label(crate::tr!("views-col-resize", column = columns::header_label(c.column)));
+        });
         if hresp.hovered() || hresp.dragged() {
             ui.ctx().set_cursor_icon(CursorIcon::ResizeColumn);
             painter.line_segment(

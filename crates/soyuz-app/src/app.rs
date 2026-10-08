@@ -594,6 +594,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);
     crate::ui::views::icon_pack::apply(ctx, &c.appearance.icon_pack);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
+    crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
     crate::ai::state::set_rules(&c.ai);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
         log::warn!("{w}");

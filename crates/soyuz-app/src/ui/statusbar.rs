@@ -114,7 +114,10 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                         if r.changed() || r.dragged() || r.clicked() {
                             *zoom_out = Some(z.round() as u16);
                         }
-                        ui.label(icons::icon(ph::MAGNIFYING_GLASS_PLUS, 12.0).color(p.text_tertiary));
+                        crate::ui::widgets::icon_label(
+                            ui,
+                            icons::icon(ph::MAGNIFYING_GLASS_PLUS, 12.0).color(p.text_tertiary),
+                        );
                     }
                     if let Some((total, free)) = info.free
                         && total > 0

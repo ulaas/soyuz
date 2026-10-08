@@ -15,6 +15,9 @@
 //!   (actual …)`; checks: `cwd=<folder name>`, `cursor=<name>`, `settings=open|closed`,
 //!   `palette=open|closed`, `dialog=open|closed`, `exists=<path>`, `missing=<path>`,
 //!   `lang=<tag>` (used by the keyboard-only test, `tests/keyboard_only.rs`);
+//! * `until:<path>` — pause the script until `<path>` exists (at most 120 s); external
+//!   drivers such as `scripts/uia-audit.ps1` use it to hold a state while they inspect
+//!   the window;
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`;
@@ -76,6 +79,8 @@ pub struct DevScript {
     frame_start: Option<Instant>,
     /// Synthetic input for the next frame (`keys:`).
     events: Vec<egui::Event>,
+    /// When the current `until:` step started waiting.
+    until_since: Option<Instant>,
 }
 
 impl DevScript {
@@ -144,7 +149,11 @@ pub fn begin(app: &mut SoyuzApp) {
     match STARTUP_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) {
         0 => startup_mark("first frame (ui start)"),
         // The second `ui()` starts after the first frame was painted and presented.
-        1 => startup_mark("first frame presented"),
+        1 => {
+            startup_mark("first frame presented");
+            // The real window is visible now: drop the startup placeholder (R5).
+            crate::services::splash::close();
+        }
         _ => {}
     }
     if app.devscript.frame_log {
@@ -187,12 +196,23 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             app.devscript.resume_at = None;
         }
         let Some(step) = app.devscript.steps.pop_front() else { return };
-        log::info!("SOYUZ_SCRIPT: {step}");
+        if app.devscript.until_since.is_none() {
+            log::info!("SOYUZ_SCRIPT: {step}");
+        }
         let (verb, arg) = step.split_once(':').unwrap_or((step.as_str(), ""));
         match verb {
             "wait" => {
                 let ms = arg.trim().parse::<u64>().unwrap_or(500);
                 app.devscript.resume_at = Some(Instant::now() + Duration::from_millis(ms));
+            }
+            "until" => {
+                let since = *app.devscript.until_since.get_or_insert_with(Instant::now);
+                if !std::path::Path::new(arg.trim()).exists() && since.elapsed() < Duration::from_secs(120) {
+                    app.devscript.steps.push_front(step.clone());
+                    app.devscript.resume_at = Some(Instant::now() + Duration::from_millis(100));
+                } else {
+                    app.devscript.until_since = None;
+                }
             }
             "shot" => {
                 app.devscript.pending_shot = Some(PathBuf::from(arg.trim()));

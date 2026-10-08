@@ -362,13 +362,15 @@ fn agent_settings(ui: &mut Ui, d: &mut Ai, q: &str) -> bool {
             number(ui, &mut a.listing_entries, 0..=2000, "");
         });
         r.row_kw(tr!("settings-ai-confirm-cost"), tr!("settings-ai-confirm-cost-desc"), "cost estimate price", |ui| {
-            ui.add(
+            let name = super::widgets::row_label(ui);
+            let dv = ui.add(
                 egui::DragValue::new(&mut a.confirm_cost_usd)
                     .range(0.0..=1000.0)
                     .speed(0.05)
                     .prefix("$ ")
                     .max_decimals(2),
             );
+            super::widgets::named(&dv, &name);
         });
         r.row_kw(
             tr!("settings-ai-redact"),
@@ -557,7 +559,8 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
             });
             ui.end_row();
             lbl(ui, tr!("settings-ai-max-tokens"));
-            ui.add(egui::DragValue::new(&mut prof.max_tokens).range(256..=128_000).speed(64.0));
+            let dv = ui.add(egui::DragValue::new(&mut prof.max_tokens).range(256..=128_000).speed(64.0));
+            super::widgets::named(&dv, tr!("settings-ai-max-tokens"));
             ui.end_row();
             lbl(ui, tr!("settings-ai-vision"));
             ui.horizontal(|ui| {
@@ -567,9 +570,10 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
             ui.end_row();
             lbl(ui, tr!("settings-ai-budget"));
             ui.horizontal(|ui| {
-                ui.add(
+                let dv = ui.add(
                     egui::DragValue::new(&mut prof.monthly_budget_usd).range(0.0..=100_000.0).speed(1.0).prefix("$ "),
                 );
+                super::widgets::named(&dv, tr!("settings-ai-budget"));
                 ui.label(RichText::new(tr!("settings-ai-budget-hint")).size(11.0).color(p.text_tertiary));
             });
             ui.end_row();

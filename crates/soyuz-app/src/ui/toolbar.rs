@@ -381,6 +381,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             .vertical_align(egui::Align::Center)
             .desired_width(inner.width()),
     );
+    crate::ui::a11y::name(&resp, tr!("app-toolbar-filter"));
     if app.ui.filter_focus {
         resp.request_focus();
         app.ui.filter_focus = false;

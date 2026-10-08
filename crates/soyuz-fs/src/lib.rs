@@ -43,6 +43,8 @@ pub mod perms;
 pub mod shares;
 pub mod snapshots;
 pub mod sparse;
+pub mod splash;
+pub mod thumbcache;
 pub mod times;
 pub mod trash;
 pub mod usn;

@@ -602,7 +602,8 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 });
                 ui.end_row();
                 lbl(ui, tr!("settings-mcp-timeout"));
-                ui.add(egui::DragValue::new(&mut sv.timeout_secs).range(5..=600).suffix(" s"));
+                let dv = ui.add(egui::DragValue::new(&mut sv.timeout_secs).range(5..=600).suffix(" s"));
+                super::widgets::named(&dv, tr!("settings-mcp-timeout"));
                 ui.end_row();
             });
             ui.add_space(4.0);

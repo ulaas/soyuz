@@ -1063,6 +1063,7 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
         .desired_width(edit_rect.width())
         .margin(Margin::symmetric(0, 4));
     let out = te.show(&mut child);
+    crate::ui::a11y::name(&out.response, hint);
     if app.palette.focus_input {
         out.response.request_focus();
         app.palette.focus_input = false;
@@ -1147,6 +1148,21 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                 let (outer, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
                 let r = outer.shrink2(vec2(8.0, 2.0));
                 let is_sel = i == selected;
+                let total = items.len();
+                crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
+                    n.set_role(egui::accesskit::Role::ListBoxOption);
+                    if it.detail.is_empty() {
+                        n.set_label(it.title.as_str());
+                    } else {
+                        n.set_label(format!("{}, {}", it.title, it.detail));
+                    }
+                    if let Some(k) = &it.chord {
+                        n.set_keyboard_shortcut(k.as_str());
+                    }
+                    n.set_selected(is_sel);
+                    n.set_position_in_set(i + 1);
+                    n.set_size_of_set(total);
+                });
                 if scroll_to && is_sel {
                     ui.scroll_to_rect(outer.expand2(vec2(0.0, 6.0)), None);
                 }
@@ -1246,6 +1262,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
         }
         let resp = ui.interact(r, Id::new(("soyuz.palette.prefix", c)), Sense::click());
         let active = app.palette.mode() == *m;
+        crate::ui::a11y::toggle(&resp, &format!("{c} {}", m.legend()), active);
         let fill = if active {
             p.accent_subtle
         } else if resp.hovered() {
