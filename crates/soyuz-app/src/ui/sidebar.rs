@@ -490,6 +490,7 @@ fn other(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         return;
     }
     crate::ui::tools::tags_ui::recent_row(ui, c.current, c.pane, c.cmds);
+    crate::ui::workspaces::timeline_row(ui, c.current, c.pane, c.cmds);
     let active = matches!(c.current, Location::Trash);
     let r = NavRow { icon: ph::TRASH, label: "Trash", active, icon_color: None, usage: None }.show(ui);
     crate::ops::fileops::dnd::trash_target(ui, &r, c.cmds);

@@ -1,6 +1,8 @@
 //! `session.toml`: tabs, panes, splits, scroll/selection plus small UI preferences
 //! (favorites order, hidden-files toggle, theme, collapsed sidebar sections). Saved
 //! periodically and on exit; restored at startup when `[behaviour] restore_session`.
+//! Tab groups, quad layouts and the other in-process windows (with their positions) are
+//! part of it too (F7); a saved workspace (`workspaces.toml`) is one [`WindowSession`].
 
 use std::path::{Path, PathBuf};
 
@@ -17,11 +19,14 @@ pub struct PaneSession {
     pub cursor: Option<String>,
     pub selection: Vec<String>,
     pub scroll: f32,
+    /// The pane's view (saved workspaces; `None` = the folder's remembered view).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub view: Option<crate::state::view_memory::ViewState>,
 }
 
 impl Default for PaneSession {
     fn default() -> Self {
-        PaneSession { location: String::new(), cursor: None, selection: Vec::new(), scroll: 0.0 }
+        PaneSession { location: String::new(), cursor: None, selection: Vec::new(), scroll: 0.0, view: None }
     }
 }
 
@@ -34,6 +39,13 @@ pub struct TabSession {
     pub split: f32,
     pub focused: usize,
     pub sync_nav: bool,
+    /// 2×2 layout (needs four panes).
+    pub quad: bool,
+    /// Second split fraction (rows of the quad layout).
+    pub split2: f32,
+    /// Index into the window's `groups`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group: Option<usize>,
     pub panes: Vec<PaneSession>,
 }
 
@@ -46,9 +58,37 @@ impl Default for TabSession {
             split: 0.5,
             focused: 0,
             sync_nav: false,
+            quad: false,
+            split2: 0.5,
+            group: None,
             panes: Vec::new(),
         }
     }
+}
+
+/// A named, colored tab group.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct GroupSession {
+    pub name: String,
+    /// Tag color name (`blue`, `green`, …).
+    pub color: String,
+    pub collapsed: bool,
+}
+
+/// One window's tabs and groups (+ where the window was).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct WindowSession {
+    pub active_tab: usize,
+    pub tabs: Vec<TabSession>,
+    pub groups: Vec<GroupSession>,
+    /// Outer position / inner size in points.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pos: Option<[f32; 2]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<[f32; 2]>,
+    pub maximized: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -79,6 +119,10 @@ pub struct Session {
     pub tree_expanded: Vec<PathBuf>,
     /// Files open in the built-in editor.
     pub editors: Vec<PathBuf>,
+    /// Tab groups of the main window (`TabSession::group` indexes them).
+    pub groups: Vec<GroupSession>,
+    /// The other in-process windows.
+    pub windows: Vec<WindowSession>,
 }
 
 impl Default for Session {
@@ -97,6 +141,8 @@ impl Default for Session {
             shelf: Vec::new(),
             tree_expanded: Vec::new(),
             editors: Vec::new(),
+            groups: Vec::new(),
+            windows: Vec::new(),
         }
     }
 }
@@ -150,12 +196,16 @@ mod tests {
                     split: 0.3,
                     focused: 1,
                     sync_nav: true,
+                    quad: false,
+                    split2: 0.5,
+                    group: Some(0),
                     panes: vec![
                         PaneSession {
                             location: "/b".into(),
                             cursor: Some("x.txt".into()),
                             selection: vec!["x.txt".into(), "y.txt".into()],
                             scroll: 240.0,
+                            view: None,
                         },
                         PaneSession { location: "trash:".into(), ..Default::default() },
                     ],
@@ -167,6 +217,20 @@ mod tests {
             collapsed_sections: vec!["cloud".into()],
             sidebar_visible: Some(false),
             checkbox_mode: true,
+            groups: vec![GroupSession { name: "Work".into(), color: "blue".into(), collapsed: true }],
+            windows: vec![WindowSession {
+                active_tab: 0,
+                tabs: vec![TabSession {
+                    quad: true,
+                    split2: 0.4,
+                    panes: (0..4).map(|i| PaneSession { location: format!("/q{i}"), ..Default::default() }).collect(),
+                    ..Default::default()
+                }],
+                groups: Vec::new(),
+                pos: Some([100.0, 80.0]),
+                size: Some([900.0, 600.0]),
+                maximized: false,
+            }],
             ..Default::default()
         }
     }

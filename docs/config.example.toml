@@ -63,6 +63,19 @@ tab_strip = "always"             # always | multiple
 terminal_height = 260
 activity_panel = "right"         # right | bottom | floating
 
+[workspace]                      # windows, tab groups, saved workspaces (workspaces.toml), timeline
+new_window = "in_process"        # in_process (Ctrl+N opens a window of this Soyuz) | process
+tear_off = true                  # drag a tab out of the strip to open it in its own window
+tear_off_distance = 48           # points away from the strip before a tab tears off
+close_window_tabs = "ask"        # closing a window with tabs: ask | merge (move them) | close
+restore_windows = true           # reopen the other windows (and their positions) with the session
+sync_relative = true             # synchronized browsing follows sibling / multi-level moves too
+history_graph_limit = 200        # places kept per tab in the "where was I" history graph
+timeline_days = 7                # timeline: files changed in the last N days
+timeline_scan_folders = 40       # recently visited folders scanned (one level) for changes
+timeline_max_items = 1000
+timeline_use_index = true        # also ask the search index, when one is available
+
 [toolbar]                        # action names (PLAN §2.10), "|" = separator, "spacer" = flex space
 items = ["back", "forward", "up", "|", "breadcrumb", "spacer", "filter", "view_menu", "sort_menu", "toggle_dual_pane", "activity"]
 

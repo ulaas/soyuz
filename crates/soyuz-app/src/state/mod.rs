@@ -9,3 +9,8 @@ pub mod selection;
 pub mod session;
 pub mod view_memory;
 pub mod workspace;
+pub mod workspace_store;
+pub mod workspace_sync;
+pub mod workspace_timeline;
+pub mod workspace_visits;
+pub mod workspace_windows;

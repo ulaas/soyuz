@@ -49,6 +49,8 @@ macro_rules! define_actions {
             $($($v,)*)*
             OpenBookmark(u8),
             SelectTab(u8),
+            /// Restore the n-th saved workspace (`workspaces.toml`, 1-based).
+            OpenWorkspace(u8),
             SortBy(Column),
             SetGroupBy(GroupBy),
             AddTag(u8),
@@ -67,12 +69,13 @@ define_actions! {
     Navigation: [
         Back, Forward, Up, Home, Root, GoTo, FocusAddressBar, EditPath, Refresh, ToggleSidebar,
         FocusSidebar, FocusList, FocusOtherPane, FocusTerminal, NextTab, PrevTab,
-        JumpToFolderDialog, OpenRecent,
+        JumpToFolderDialog, OpenRecent, OpenTimeline, TabHistory,
     ],
     Tabs: [
         NewTab, CloseTab, ReopenClosedTab, DuplicateTab, PinTab, MoveTabLeft, MoveTabRight,
         TabToNewWindow, ToggleDualPane, SwapPanes, MirrorPaneToOther, OpenInOtherPane,
-        SyncNavigation, NewWindow, CloseWindow,
+        SyncNavigation, NewWindow, CloseWindow, ToggleQuadPane, NewTabGroup, UngroupTab,
+        MergeWindows, Workspaces, SaveWorkspace, UpdateWorkspace,
     ],
     View: [
         ViewDetails, ViewGrid, ViewList, ViewMiller, ViewGallery, ZoomIn, ZoomOut, ZoomReset,
@@ -114,6 +117,8 @@ define_actions! {
 pub const BOOKMARK_SLOTS: u8 = 9;
 pub const TAB_SLOTS: u8 = 9;
 pub const TAG_SLOTS: u8 = 8;
+/// Saved workspaces reachable through `open_workspace:<n>` (hotkeys / palette).
+pub const WORKSPACE_SLOTS: u8 = 9;
 
 /// Same conversion as serde's `rename_all = "snake_case"`.
 fn snake_case(camel: &str) -> String {
@@ -154,6 +159,7 @@ impl Action {
         let mut v: Vec<Action> = UNIT_ACTIONS.iter().map(|(a, _, _)| a.clone()).collect();
         v.extend((1..=BOOKMARK_SLOTS).map(Action::OpenBookmark));
         v.extend((1..=TAB_SLOTS).map(Action::SelectTab));
+        v.extend((1..=WORKSPACE_SLOTS).map(Action::OpenWorkspace));
         v.extend(Column::ALL.into_iter().map(Action::SortBy));
         v.extend(GroupBy::ALL.into_iter().map(Action::SetGroupBy));
         v.extend((1..=TAG_SLOTS).map(Action::AddTag));
@@ -166,6 +172,7 @@ impl Action {
         match self {
             Action::OpenBookmark(_) => "open_bookmark",
             Action::SelectTab(_) => "select_tab",
+            Action::OpenWorkspace(_) => "open_workspace",
             Action::SortBy(_) => "sort_by",
             Action::SetGroupBy(_) => "set_group_by",
             Action::AddTag(_) => "add_tag",
@@ -178,6 +185,7 @@ impl Action {
     pub fn category(&self) -> ActionCategory {
         match self {
             Action::OpenBookmark(_) | Action::SelectTab(_) => ActionCategory::Navigation,
+            Action::OpenWorkspace(_) => ActionCategory::Tabs,
             Action::SortBy(_) | Action::SetGroupBy(_) => ActionCategory::View,
             Action::AddTag(_) | Action::Checksum(_) => ActionCategory::FileOps,
             Action::CustomCommand(_) => ActionCategory::Tools,
@@ -196,7 +204,9 @@ impl Action {
             }
         };
         match self {
-            Action::OpenBookmark(n) | Action::SelectTab(n) | Action::AddTag(n) => format!("{base} {n}"),
+            Action::OpenBookmark(n) | Action::SelectTab(n) | Action::AddTag(n) | Action::OpenWorkspace(n) => {
+                format!("{base} {n}")
+            }
             Action::SortBy(c) => format!("{base}: {}", c.label()),
             Action::SetGroupBy(g) => format!("{base}: {g}"),
             Action::Checksum(h) => format!("{base}: {}", h.label()),
@@ -210,7 +220,9 @@ impl fmt::Display for Action {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(self.name())?;
         match self {
-            Action::OpenBookmark(n) | Action::SelectTab(n) | Action::AddTag(n) => write!(f, ":{n}"),
+            Action::OpenBookmark(n) | Action::SelectTab(n) | Action::AddTag(n) | Action::OpenWorkspace(n) => {
+                write!(f, ":{n}")
+            }
             Action::SortBy(c) => write!(f, ":{c}"),
             Action::SetGroupBy(g) => write!(f, ":{g}"),
             Action::Checksum(h) => write!(f, ":{h}"),
@@ -243,6 +255,7 @@ impl FromStr for Action {
             "open_bookmark" => Ok(Action::OpenBookmark(slot(payload, BOOKMARK_SLOTS)?)),
             "select_tab" => Ok(Action::SelectTab(slot(payload, TAB_SLOTS)?)),
             "add_tag" => Ok(Action::AddTag(slot(payload, TAG_SLOTS)?)),
+            "open_workspace" => Ok(Action::OpenWorkspace(slot(payload, WORKSPACE_SLOTS)?)),
             "sort_by" => payload.ok_or_else(err)?.parse().map(Action::SortBy).map_err(|_| err()),
             "set_group_by" => payload.ok_or_else(err)?.parse().map(Action::SetGroupBy).map_err(|_| err()),
             "checksum" => payload.ok_or_else(err)?.parse().map(Action::Checksum).map_err(|_| err()),
@@ -285,6 +298,9 @@ mod tests {
         assert_eq!(Action::Checksum(HashAlgo::Blake3).to_string(), "checksum:blake3");
         assert_eq!("Copy-To-Other-Pane".parse::<Action>().unwrap(), Action::CopyToOtherPane);
         assert!("open_bookmark:0".parse::<Action>().is_err());
+        assert_eq!("open_workspace:3".parse::<Action>().unwrap(), Action::OpenWorkspace(3));
+        assert_eq!(Action::OpenWorkspace(2).category(), ActionCategory::Tabs);
+        assert!("open_workspace:10".parse::<Action>().is_err());
         assert!("sort_by".parse::<Action>().is_err());
         assert!("copy:1".parse::<Action>().is_err());
         assert!("nope".parse::<Action>().is_err());

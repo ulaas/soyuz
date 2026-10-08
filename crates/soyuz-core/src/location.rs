@@ -12,7 +12,7 @@ use crate::entry::SearchId;
 /// String form (see [`Location::display`] / [`Location::parse`]):
 /// `Dir` → the path itself, `Archive` → `"<archive>!/<inner>"`, `Trash` → `"trash:"`,
 /// `Computer` → `"computer:"`, `Recent` → `"recent:"`, `Tags(t)` → `"tag:<t>"`,
-/// `Search(id)` → `"search:<id>"`.
+/// `Search(id)` → `"search:<id>"`, `Timeline` → `"timeline:"`.
 #[derive(Clone, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Location {
@@ -30,6 +30,8 @@ pub enum Location {
     Computer,
     Recent,
     Tags(String),
+    /// Files changed today / this week across the folders Soyuz knows about (F7).
+    Timeline,
 }
 
 impl Location {
@@ -45,6 +47,7 @@ impl Location {
             "trash:" => return Some(Location::Trash),
             "computer:" => return Some(Location::Computer),
             "recent:" => return Some(Location::Recent),
+            "timeline:" => return Some(Location::Timeline),
             _ => {}
         }
         if let Some(tag) = strip_prefix_ci(s, "tag:") {
@@ -69,6 +72,7 @@ impl Location {
             Location::Search(id) => format!("search:{}", id.0),
             Location::Computer => "computer:".into(),
             Location::Recent => "recent:".into(),
+            Location::Timeline => "timeline:".into(),
             Location::Tags(t) => format!("tag:{t}"),
         }
     }
@@ -94,7 +98,12 @@ impl Location {
                     Some(Location::Archive { archive: archive.clone(), inner: parent })
                 }
             }
-            Location::Trash | Location::Search(_) | Location::Computer | Location::Recent | Location::Tags(_) => None,
+            Location::Trash
+            | Location::Search(_)
+            | Location::Computer
+            | Location::Recent
+            | Location::Tags(_)
+            | Location::Timeline => None,
         }
     }
 
@@ -223,6 +232,7 @@ mod tests {
             Location::Trash,
             Location::Computer,
             Location::Recent,
+            Location::Timeline,
             Location::Tags("red".into()),
             Location::Search(SearchId(42)),
             Location::Dir(PathBuf::from("/usr/share")),

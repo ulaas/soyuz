@@ -31,3 +31,4 @@ pub mod tree;
 pub mod views;
 pub mod welcome;
 pub mod widgets;
+pub mod workspaces;

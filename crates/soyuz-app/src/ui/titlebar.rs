@@ -265,7 +265,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .inner;
     if chrome.own_frame() {
         controls(&ctx, lay.controls, ws);
-    } else {
+    } else if ctx.viewport_id() == egui::ViewportId::ROOT {
         crate::ui::native_chrome::max_button(&ctx, None, false);
     }
 }
@@ -335,20 +335,22 @@ fn logo_texture(ctx: &Context, px: u32) -> TextureHandle {
 fn app_menu(ui: &mut Ui, app: &mut SoyuzApp) {
     ui.set_width(230.0);
     let km = app.keymap.clone();
-    let sc = |a: &Action| chord_label(&km, a);
-    let mut item = |ui: &mut Ui, icon: &str, label: &str, action: Action| {
-        if menu_item(ui, Some(icon), label, sc(&action).as_deref(), true).clicked() {
-            app.cmds.push(Cmd::Action(action));
+    let mut cmds = Vec::new();
+    let item = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, action: Action| {
+        if menu_item(ui, Some(icon), label, chord_label(&km, &action).as_deref(), true).clicked() {
+            cmds.push(Cmd::Action(action));
             ui.close();
         }
     };
-    item(ui, ph::APP_WINDOW, "New window", Action::NewWindow);
+    item(ui, &mut cmds, ph::APP_WINDOW, "New window", Action::NewWindow);
+    crate::ui::workspaces::workspaces_menu(ui, app, &mut cmds);
     menu_separator(ui);
-    item(ui, ph::GEAR_SIX, "Settings…", Action::Settings);
-    item(ui, ph::KEYBOARD, "Keyboard shortcuts", Action::ShowKeybindings);
-    item(ui, ph::INFO, "About Soyuz", Action::About);
+    item(ui, &mut cmds, ph::GEAR_SIX, "Settings…", Action::Settings);
+    item(ui, &mut cmds, ph::KEYBOARD, "Keyboard shortcuts", Action::ShowKeybindings);
+    item(ui, &mut cmds, ph::INFO, "About Soyuz", Action::About);
     menu_separator(ui);
-    item(ui, ph::SIGN_OUT, "Quit", Action::Quit);
+    item(ui, &mut cmds, ph::SIGN_OUT, "Quit", Action::Quit);
+    app.cmds.extend(cmds);
 }
 
 fn window_menu(ui: &mut Ui, km: &soyuz_core::config::Keymap, maximized: bool) {
@@ -396,7 +398,13 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
             let [rmin, rmax, rclose] = control_rects(rect);
             // Snap Layouts: the OS owns the maximize button's hit test, so its hover /
             // press / click arrive from the window subclass instead of egui.
-            let (os_hover, os_pressed, os_click) = crate::ui::native_chrome::max_button(ctx, Some(rmax), true);
+            // (Only the main window has the Snap Layouts window subclass.)
+            let (os_hover, os_pressed, os_click) = if ctx.viewport_id() == egui::ViewportId::ROOT {
+                crate::ui::native_chrome::max_button(ctx, Some(rmax), true)
+            } else {
+                (false, false, false)
+            };
+
             let floating = !ws.maximized && !ws.fullscreen;
             let close_radius = close_corner(crate::ui::native_chrome::is_windows_11(), floating);
             let max_glyph = if ws.maximized { Glyph::Restore } else { Glyph::Maximize };

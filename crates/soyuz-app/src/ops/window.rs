@@ -1,6 +1,8 @@
-//! Window-level actions: new window / move tab to a new window (each Soyuz window is its
+//! Window-level actions: new window / move tab to a new window and "Run as
+//! administrator". With `[workspace] new_window = "in_process"` (the default) windows are
+//! viewports of this process (`ui::workspaces::windows`); otherwise each window is its
 //! own process, started as `soyuz --new-window -- <path>` so it neither restores nor
-//! overwrites the primary window's session), and "Run as administrator".
+//! overwrites the primary window's session.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -57,7 +59,17 @@ pub fn spawn_window(app: &mut SoyuzApp, loc: &Location) -> bool {
 /// `TabToNewWindow`: open the active tab's folder in a new window, then close the tab
 /// here (when it is not the only one).
 pub fn tab_to_new_window(app: &mut SoyuzApp) {
+    if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
+        if app.ws.tabs.len() > 1 {
+            let i = app.ws.active;
+            app.cmds.push(crate::cmd::Cmd::Workspace(crate::ui::workspaces::WsCmd::TabToNewWindow(i)));
+        } else {
+            app.ui.toasts.push(Toast::info("A window keeps at least one tab"));
+        }
+        return;
+    }
     let loc = app.ws.pane().location.clone();
+
     if !spawn_window(app, &loc) {
         return;
     }

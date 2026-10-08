@@ -233,7 +233,11 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
     let n_bm = app.config.bookmarks.len();
     let mut v: Vec<Action> = Action::all()
         .into_iter()
-        .filter(|a| !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm) && !crate::actions::unavailable(a))
+        .filter(|a| {
+            !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm)
+                && !crate::actions::unavailable(a)
+                && crate::ui::workspaces::palette_shows(app, a)
+        })
         .collect();
     v.extend(
         app.config
@@ -247,7 +251,8 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
 
 fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
     let e = catalog::entry(a);
-    let mut it = Item::new(Exec::Action(a.clone()), e.title, e.icon, section);
+    let title = crate::ui::workspaces::palette_title(app, a).unwrap_or(e.title);
+    let mut it = Item::new(Exec::Action(a.clone()), title, e.icon, section);
     it.detail = match a {
         Action::OpenBookmark(n) => app
             .config
@@ -309,7 +314,16 @@ pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
         out.extend(rest);
         return out;
     }
-    let entries: Vec<(Action, catalog::Entry)> = actions.iter().map(|a| (a.clone(), catalog::entry(a))).collect();
+    let entries: Vec<(Action, catalog::Entry)> = actions
+        .iter()
+        .map(|a| {
+            let mut e = catalog::entry(a);
+            if let Some(t) = crate::ui::workspaces::palette_title(app, a) {
+                e.title = t;
+            }
+            (a.clone(), e)
+        })
+        .collect();
     for m in score_actions(&entries, &recent, q) {
         let a = &entries[m.index].0;
         let mut it = action_item(app, a, "Commands");

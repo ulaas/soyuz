@@ -26,6 +26,7 @@ pub mod thumb_disk;
 pub mod thumb_folder;
 pub mod thumb_video;
 pub mod thumbs;
+pub mod timeline;
 pub mod tree;
 pub mod watcher;
 

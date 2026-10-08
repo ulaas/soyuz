@@ -32,6 +32,9 @@ pub struct NavOpts {
     pub restore: Option<HistoryEntry>,
     /// Apply synchronized navigation to the other pane.
     pub sync: bool,
+    /// Back / forward / history-graph jump: revisit the existing node of the tab's
+    /// "where was I" graph instead of starting a branch.
+    pub revisit: bool,
 }
 
 impl NavOpts {
@@ -82,6 +85,11 @@ pub fn start_listing(pane: &mut Pane, services: &mut Services, soft: bool) {
             services.watcher.unwatch(pane.id);
             crate::services::tags::attach(pane, &tag, services.mailbox.postman());
         }
+        Location::Timeline => {
+            pane.clear_listing();
+            services.watcher.unwatch(pane.id);
+            crate::services::timeline::attach(pane, services.mailbox.postman());
+        }
         _ => {
             pane.clear_listing();
             pane.status = ListingStatus::Virtual;
@@ -110,6 +118,18 @@ pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
     let Some((ti, pi)) = app.ws.locate(id) else { return };
     let old = app.ws.tabs[ti].panes[pi].location.clone();
     {
+        // "Where was I": record the move in the tab's history graph.
+        use crate::state::workspace_visits::VisitKind;
+        let now = crate::services::recent::unix_now();
+        let visits = &mut app.ws.tabs[ti].visits;
+        visits.set_limit(app.config.workspace.history_graph_limit);
+        if visits.cursor(id).is_none() {
+            visits.visit(id, &old, now, VisitKind::New);
+        }
+        let kind = if opts.revisit || opts.restore.is_some() { VisitKind::Revisit } else { VisitKind::New };
+        visits.visit(id, &loc, now, kind);
+    }
+    {
         let pane = &mut app.ws.tabs[ti].panes[pi];
         if opts.push_history {
             let here = pane.here();
@@ -130,28 +150,35 @@ pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
     if matches!(loc, Location::Computer) {
         app.services.places.refresh();
     }
-    if opts.sync && app.ws.tabs[ti].sync_nav && app.ws.tabs[ti].dual {
-        sync_other(app, ti, pi, &old, &loc);
+    if opts.sync && app.ws.tabs[ti].sync_nav && app.ws.tabs[ti].shown() > 1 {
+        sync_others(app, ti, pi, &old, &loc);
     }
 }
 
-/// Synchronized navigation: entering a child folder enters the same-named child in the
-/// other pane (if it exists); going up goes up there too.
-fn sync_other(app: &mut SoyuzApp, ti: usize, pi: usize, old: &Location, new: &Location) {
-    let Some(other) = app.ws.tabs[ti].panes.get(1 - pi.min(1)) else { return };
-    let other_id = other.id;
-    let Location::Dir(other_dir) = other.location.clone() else { return };
-    if new.parent().as_ref() == Some(old) {
-        if let Location::Dir(p) = new
-            && let Some(name) = p.file_name()
-        {
-            app.services.lister.probe(other_id, &other_dir.join(name));
+/// Synchronized browsing: the other visible panes follow the same relative move (into a
+/// child, up, over to a sibling…) where the resulting folder exists (probed off the UI
+/// thread). `[workspace] sync_relative = false` follows single child / parent steps only.
+fn sync_others(app: &mut SoyuzApp, ti: usize, pi: usize, old: &Location, new: &Location) {
+    use crate::state::workspace_sync::{SyncMove, sync_target};
+    let (Location::Dir(o), Location::Dir(n)) = (old, new) else { return };
+    let relative = app.config.workspace.sync_relative;
+    let tab = &app.ws.tabs[ti];
+    let followers: Vec<(PaneId, std::path::PathBuf)> = tab
+        .panes
+        .iter()
+        .take(tab.shown())
+        .enumerate()
+        .filter(|(i, _)| *i != pi)
+        .filter_map(|(_, p)| p.location.as_fs_path().map(|d| (p.id, d.to_path_buf())))
+        .collect();
+    for (id, dir) in followers {
+        match sync_target(o, n, &dir, relative) {
+            Some(SyncMove::Up { target, select }) => {
+                navigate(app, id, Location::Dir(target), NavOpts { push_history: true, select, ..Default::default() });
+            }
+            Some(SyncMove::Probe(p)) => app.services.lister.probe(id, &p),
+            None => {}
         }
-    } else if old.parent().as_ref() == Some(new)
-        && let Some(parent) = Location::Dir(other_dir.clone()).parent()
-    {
-        let select = other_dir.file_name().map(|n| n.to_string_lossy().into_owned());
-        navigate(app, other_id, parent, NavOpts { push_history: true, select, ..Default::default() });
     }
 }
 
@@ -268,11 +295,22 @@ pub fn open_in_new_tab(app: &mut SoyuzApp, loc: Location, activate: bool) {
     let mut pane = Pane::new(loc.clone(), app.view_for(&loc));
     start_listing(&mut pane, &mut app.services, false);
     let idx = app.ws.insertion_index();
-    app.ws.tabs.insert(idx, Tab::new(pane));
+    // A tab opened next to a grouped tab joins its group.
+    let group = app.ws.insertion_group();
+    let mut tab = Tab::new(pane);
+    let id = tab.id;
+    tab.group = group;
+    app.ws.tabs.insert(idx, tab);
     if activate {
         app.ws.active = idx;
     } else if idx <= app.ws.active {
         app.ws.active += 1;
+    }
+    if group.is_some() {
+        let active = app.ws.tabs.get(app.ws.active).map(|t| t.id);
+        app.ws.normalize_groups();
+        let want = if activate { Some(id) } else { active };
+        app.ws.active = want.and_then(|i| app.ws.tab_index(i)).unwrap_or(app.ws.active);
     }
 }
 
@@ -313,6 +351,9 @@ pub fn tab_session(t: &Tab) -> TabSession {
         split: t.split,
         focused: t.focused,
         sync_nav: t.sync_nav,
+        quad: t.quad,
+        split2: t.split2,
+        group: None,
         panes: t
             .panes
             .iter()
@@ -321,6 +362,7 @@ pub fn tab_session(t: &Tab) -> TabSession {
                 cursor: p.cursor.as_deref().map(str::to_string),
                 selection: Vec::new(),
                 scroll: p.scroll_y,
+                view: None,
             })
             .collect(),
     }
@@ -362,6 +404,8 @@ pub fn reopen_closed_tab(app: &mut SoyuzApp) {
     let mut tab = Tab::new(panes.remove(0));
     tab.panes.extend(panes);
     tab.dual = closed.session.dual && tab.panes.len() > 1;
+    tab.quad = closed.session.quad && tab.panes.len() >= 4;
+    tab.split2 = closed.session.split2;
     tab.focused = closed.session.focused.min(tab.panes.len() - 1);
     tab.orientation = closed.session.orientation;
     tab.split = closed.session.split;
@@ -390,14 +434,20 @@ pub fn duplicate_tab(app: &mut SoyuzApp, index: usize) {
     let mut tab = Tab::new(panes.remove(0));
     tab.panes.extend(panes);
     tab.dual = s.dual;
+    tab.quad = s.quad;
+    tab.split2 = s.split2;
+    tab.group = t.group;
+    tab.visits = t.visits.clone();
     tab.focused = s.focused;
     tab.orientation = s.orientation;
     tab.split = s.split;
     tab.sync_nav = s.sync_nav;
     let pinned = app.ws.tabs.iter().filter(|t| t.pinned).count();
     let idx = (index + 1).max(pinned).min(app.ws.tabs.len());
+    let id = tab.id;
     app.ws.tabs.insert(idx, tab);
-    app.ws.active = idx;
+    app.ws.normalize_groups();
+    app.ws.active = app.ws.tab_index(id).unwrap_or(idx);
 }
 
 pub fn new_tab(app: &mut SoyuzApp) {
@@ -429,12 +479,29 @@ pub fn drain_mailbox(app: &mut SoyuzApp, ctx: &egui::Context) {
     let deadline = Instant::now() + Duration::from_millis(8);
     let mut handled = 0usize;
     while let Some(msg) = app.services.mailbox.try_recv() {
-        handle_msg(app, msg);
+        // Messages for panes of another window are handled with that window swapped in.
+        match msg_pane(&msg) {
+            Some(p) if app.ws.find_pane(p).is_none() => {
+                crate::ui::workspaces::windows::with_pane_window(app, p, move |app| handle_msg(app, msg));
+            }
+            _ => handle_msg(app, msg),
+        }
         handled += 1;
         if handled.is_multiple_of(16) && Instant::now() > deadline {
             ctx.request_repaint();
             break;
         }
+    }
+}
+
+/// The pane a message is about (for routing to the window that has it).
+fn msg_pane(msg: &UiMsg) -> Option<PaneId> {
+    match msg {
+        UiMsg::Listing { pane, .. }
+        | UiMsg::Patched { pane, .. }
+        | UiMsg::Resolved { pane, .. }
+        | UiMsg::Probed { pane, .. } => Some(*pane),
+        _ => None,
     }
 }
 
@@ -495,23 +562,33 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
 }
 
 pub fn drain_watcher(app: &mut SoyuzApp) {
+    let events = app.services.watcher.drain();
+    for (_, kind) in &events {
+        if let WatchKind::Changed(paths) = kind {
+            crate::services::timeline::note_changes(paths);
+        }
+    }
     if !app.config.behaviour.auto_refresh {
-        let _ = app.services.watcher.drain();
         return;
     }
-    for (id, kind) in app.services.watcher.drain() {
-        let Some(pane) = app.ws.find_pane_mut(id) else { continue };
-        let Location::Dir(dir) = pane.location.clone() else { continue };
-        crate::services::git::invalidate(&dir);
-        match kind {
-            WatchKind::Changed(paths) => {
-                if matches!(pane.status, ListingStatus::Ready) && !pane.refreshing {
-                    app.services.lister.stat(id, pane.generation, &dir, paths);
-                }
+    for (id, kind) in events {
+        // Panes of other windows are found with that window swapped in.
+        crate::ui::workspaces::windows::with_pane_window(app, id, move |app| on_watch(app, id, kind));
+    }
+}
+
+fn on_watch(app: &mut SoyuzApp, id: PaneId, kind: WatchKind) {
+    let Some(pane) = app.ws.find_pane_mut(id) else { return };
+    let Location::Dir(dir) = pane.location.clone() else { return };
+    crate::services::git::invalidate(&dir);
+    match kind {
+        WatchKind::Changed(paths) => {
+            if matches!(pane.status, ListingStatus::Ready) && !pane.refreshing {
+                app.services.lister.stat(id, pane.generation, &dir, paths);
             }
-            WatchKind::Rescan => start_listing(pane, &mut app.services, true),
-            WatchKind::Lost => app.services.lister.resolve(id, pane.generation, &dir),
         }
+        WatchKind::Rescan => start_listing(pane, &mut app.services, true),
+        WatchKind::Lost => app.services.lister.resolve(id, pane.generation, &dir),
     }
 }
 
@@ -656,8 +733,14 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::Quit { when_idle } => app.confirm_quit(ctx, when_idle),
         Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
         Cmd::NewWindow(loc) => {
-            window::spawn_window(app, &loc);
+            if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
+                crate::ui::workspaces::windows::open_location(app, ctx, loc);
+            } else {
+                window::spawn_window(app, &loc);
+            }
         }
+        Cmd::Workspace(c) => crate::ui::workspaces::apply(app, c, ctx),
+
         Cmd::SubmitJob(spec) => {
             crate::ui::archive::submit_job(app, *spec);
         }

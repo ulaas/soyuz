@@ -201,6 +201,13 @@ pub fn folders(n: usize) -> Vec<PathBuf> {
     REG.with_borrow(|r| r.store.items.iter().filter(|i| i.dir).take(n).map(|i| i.path.clone()).collect())
 }
 
+/// Files opened at or after `since` (unix seconds) with when, newest first (timeline).
+pub fn files_since(since: u64) -> Vec<(PathBuf, i64)> {
+    REG.with_borrow(|r| {
+        r.store.items.iter().filter(|i| !i.dir && i.when >= since).map(|i| (i.path.clone(), i.when as i64)).collect()
+    })
+}
+
 /// Start listing `Location::Recent` for this pane generation.
 pub fn attach(pane: &mut Pane, postman: Postman) {
     if !pane.view.columns.iter().any(|c| c.column == Column::Accessed && c.visible) {
