@@ -1,29 +1,32 @@
 //! Font roles (`[fonts]`): which font draws the interface, headings, terminal, code
 //! editor, hex view and numbers, plus the Phosphor icon fonts.
 //!
-//! Each role resolves to a *primary* font — a system font read from the OS font folder
-//! (Segoe UI, Consolas, Cascadia, …; never bundled: their licenses forbid
-//! redistribution) or an embedded font — followed by the role's embedded fallback
-//! (Inter / Inter SemiBold / JetBrains Mono, OFL, in `assets/fonts/`), egui's default
-//! fonts and the system CJK / emoji fallbacks (`font_fallback`).
+//! Each role resolves to a *primary* font — one of the [`EMBEDDED`] fonts (screen fonts
+//! under the SIL OFL compiled into the binary, `assets/fonts/<family>/`) or a system font
+//! read from the OS font folder (Segoe UI, Consolas, …; never bundled: their licenses
+//! forbid redistribution) — followed by the role's embedded default, egui's default fonts
+//! and the system CJK / emoji fallbacks (`font_fallback`). A family name that matches an
+//! embedded font always uses the embedded copy (no disk access).
 //!
 //! egui families per role: `Proportional` (ui), [`SEMIBOLD`] (ui_semibold),
 //! `Monospace` (code; also every other monospace text), [`TERMINAL`], [`HEX`] and
 //! [`NUMBERS`]. Icons always use [`ICONS`] / [`PHOSPHOR_FILL`], whose first font is
 //! Phosphor, so a text font with Private Use Area glyphs can never shadow an icon.
 //!
-//! The default system fonts (~2.4 MB: segoeui, seguisb, consola) are read synchronously
-//! at startup — about a millisecond from the OS file cache — so the first frame already
-//! uses them (no font flash). Bytes are cached for the process lifetime, so a later
-//! re-install (settings change, fallback font loaded) does not touch the disk again.
+//! Rendering: egui rasterizes glyphs with grayscale anti-aliasing (no ClearType), so
+//! fonts hinted for ClearType (Segoe UI, Consolas) look thin and soft at 100 % scaling.
+//! The defaults are therefore embedded fonts drawn well by this renderer, with
+//! `[fonts] hinting_strength` (skrifa hinting target) and `text_gamma_*` (coverage →
+//! opacity curve, see `apply.rs`) tuning the result. System font bytes are read once
+//! and cached for the process lifetime.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use egui::epaint::text::{FontTweak, VariationCoords};
+use egui::epaint::text::{FontTweak, HintingTarget, SmoothHinting, VariationCoords};
 use egui::{Context, FontData, FontDefinitions, FontFamily, FontId};
 use parking_lot::Mutex;
-use soyuz_core::config::{FontRoleKind, Fonts};
+use soyuz_core::config::{FontRoleKind, Fonts, HintingStrength};
 
 use super::sysfonts;
 
@@ -42,50 +45,105 @@ pub const ICONS: &str = "icons";
 /// Phosphor Fill variant, used for the active sidebar item.
 pub const PHOSPHOR_FILL: &str = "phosphor-fill";
 
-const INTER_REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
-const INTER_SEMIBOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
-const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMono-Regular.ttf");
-
-/// The fonts compiled into the binary.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Embedded {
-    Inter,
-    InterSemiBold,
-    JetBrainsMono,
+/// One font compiled into the binary.
+#[derive(Debug)]
+pub struct EmbeddedFont {
+    /// Face name a `family` field matches (`IBM Plex Sans SemiBold`).
+    pub name: &'static str,
+    /// The family it belongs to (`IBM Plex Sans`).
+    pub family: &'static str,
+    /// Monospace face.
+    pub mono: bool,
+    /// The face headings use when this face draws the interface (`ui_semibold` empty).
+    heading: Option<Embedded>,
+    bytes: &'static [u8],
 }
 
+macro_rules! font {
+    ($path:literal) => {
+        include_bytes!(concat!("../../assets/fonts/", $path))
+    };
+}
+
+const fn face(
+    name: &'static str,
+    family: &'static str,
+    mono: bool,
+    heading: Option<Embedded>,
+    bytes: &'static [u8],
+) -> EmbeddedFont {
+    EmbeddedFont { name, family, mono, heading, bytes }
+}
+
+/// Every embedded font, in Settings order (index = [`Embedded`]). See
+/// `assets/fonts/README.md` for versions, sources and checksums.
+pub static EMBEDDED: [EmbeddedFont; 10] = [
+    face("Inter", "Inter", false, Some(Embedded::INTER_SEMIBOLD), font!("inter/Inter-Regular.ttf")),
+    face("Inter SemiBold", "Inter", false, None, font!("inter/Inter-SemiBold.ttf")),
+    face("IBM Plex Sans", "IBM Plex Sans", false, Some(Embedded(3)), font!("ibm-plex-sans/IBMPlexSans-Regular.ttf")),
+    face("IBM Plex Sans SemiBold", "IBM Plex Sans", false, None, font!("ibm-plex-sans/IBMPlexSans-SemiBold.ttf")),
+    face("Noto Sans", "Noto Sans", false, Some(Embedded(5)), font!("noto-sans/NotoSans-Regular.ttf")),
+    face("Noto Sans SemiBold", "Noto Sans", false, None, font!("noto-sans/NotoSans-SemiBold.ttf")),
+    face("Cascadia Mono", "Cascadia Mono", true, None, font!("cascadia-mono/CascadiaMono-Regular.ttf")),
+    face("JetBrains Mono", "JetBrains Mono", true, None, font!("jetbrains-mono/JetBrainsMono-Regular.ttf")),
+    face("IBM Plex Mono", "IBM Plex Mono", true, None, font!("ibm-plex-mono/IBMPlexMono-Regular.ttf")),
+    face("Source Code Pro", "Source Code Pro", true, None, font!("source-code-pro/SourceCodePro-Regular.ttf")),
+];
+
+/// Handle of one [`EMBEDDED`] font.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Embedded(usize);
+
 impl Embedded {
+    pub const INTER: Embedded = Embedded(0);
+    pub const INTER_SEMIBOLD: Embedded = Embedded(1);
+    pub const CASCADIA_MONO: Embedded = Embedded(6);
+    pub const JETBRAINS_MONO: Embedded = Embedded(7);
+
+    /// Every embedded font.
+    pub fn all() -> impl Iterator<Item = Embedded> {
+        (0..EMBEDDED.len()).map(Embedded)
+    }
+
+    pub fn font(self) -> &'static EmbeddedFont {
+        &EMBEDDED[self.0]
+    }
+
+    /// The embedded face called `name` (`Regular` suffix and case / spacing ignored).
+    pub fn find(name: &str) -> Option<Embedded> {
+        let want = sysfonts::norm(name);
+        let want = want.strip_suffix("regular").filter(|w| !w.is_empty()).unwrap_or(&want);
+        Embedded::all().find(|e| sysfonts::norm(e.font().name) == want)
+    }
+
+    /// Key in the egui font data map.
     pub fn key(self) -> &'static str {
-        match self {
-            Embedded::Inter => "Inter",
-            Embedded::InterSemiBold => "Inter-SemiBold",
-            Embedded::JetBrainsMono => "JetBrainsMono",
-        }
+        self.font().name
     }
 
     pub fn label(self) -> &'static str {
-        match self {
-            Embedded::Inter => "Inter",
-            Embedded::InterSemiBold => "Inter SemiBold",
-            Embedded::JetBrainsMono => "JetBrains Mono",
-        }
+        self.font().name
     }
 
     fn bytes(self) -> &'static [u8] {
-        match self {
-            Embedded::Inter => INTER_REGULAR,
-            Embedded::InterSemiBold => INTER_SEMIBOLD,
-            Embedded::JetBrainsMono => JETBRAINS_MONO,
-        }
+        self.font().bytes
     }
 
-    /// The embedded fallback of a role.
+    /// The face for headings when this one draws the interface.
+    pub fn heading(self) -> Embedded {
+        self.font().heading.unwrap_or(self)
+    }
+
+    /// The embedded font a role falls back to: the default family of the role when it is
+    /// embedded (it is by default), else Inter / Inter SemiBold / Cascadia Mono.
     pub fn for_role(role: FontRoleKind) -> Embedded {
-        match role {
-            FontRoleKind::UiSemibold => Embedded::InterSemiBold,
-            r if r.is_mono() => Embedded::JetBrainsMono,
-            _ => Embedded::Inter,
-        }
+        let (default, builtin) = if role.is_mono() {
+            (Fonts::DEFAULT_MONO, Embedded::CASCADIA_MONO)
+        } else {
+            (Fonts::DEFAULT_UI, Embedded::INTER)
+        };
+        let e = Embedded::find(default).unwrap_or(builtin);
+        if role == FontRoleKind::UiSemibold { e.heading() } else { e }
     }
 }
 
@@ -146,9 +204,10 @@ pub fn candidates(fonts: &Fonts, role: FontRoleKind) -> Vec<String> {
     let first = |default: &str| if configured.is_empty() { default.to_string() } else { configured.clone() };
     let mut v = match role {
         FontRoleKind::Ui => vec![first(Fonts::DEFAULT_UI)],
-        FontRoleKind::Terminal => vec![first(Fonts::DEFAULT_MONO), "Cascadia Mono".into()],
-        FontRoleKind::Code => vec![first(Fonts::DEFAULT_MONO), "Cascadia Code".into()],
-        FontRoleKind::Hex => vec![first(Fonts::DEFAULT_MONO), "Cascadia Mono".into()],
+        // A missing monospace font falls back to the embedded Cascadia Mono.
+        FontRoleKind::Terminal | FontRoleKind::Code | FontRoleKind::Hex => {
+            vec![first(Fonts::DEFAULT_MONO), "Cascadia Mono".into()]
+        }
         // Derived from the ui font when empty (see `resolve`).
         FontRoleKind::UiSemibold | FontRoleKind::Numbers => {
             if configured.is_empty() {
@@ -166,15 +225,20 @@ pub fn candidates(fonts: &Fonts, role: FontRoleKind) -> Vec<String> {
 pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -> Vec<Resolved> {
     let mut out: Vec<Resolved> = Vec::new();
     let find = |role: FontRoleKind| -> Resolved {
-        let embedded = Source::Embedded(Embedded::for_role(role));
+        let fallback = Embedded::for_role(role);
         if fonts.role(role).embedded {
-            return Resolved { role, source: embedded, notice: None };
+            // Only embedded fonts: the named one when it is embedded, else the default.
+            let e = Embedded::find(&fonts.role(role).family).unwrap_or(fallback);
+            return Resolved { role, source: Source::Embedded(e), notice: None };
         }
         let names = candidates(fonts, role);
         for name in &names {
+            let notice =
+                (name != &names[0]).then(|| tr!("settings-font-not-installed", missing = &names[0], used = name));
+            if let Some(e) = Embedded::find(name) {
+                return Resolved { role, source: Source::Embedded(e), notice };
+            }
             if let Some((path, index)) = locate(name) {
-                let notice =
-                    (name != &names[0]).then(|| tr!("settings-font-not-installed", missing = &names[0], used = name));
                 return Resolved {
                     role,
                     source: Source::System { family: name.clone(), path, index, weight: None },
@@ -182,6 +246,7 @@ pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -
                 };
             }
         }
+        let embedded = Source::Embedded(fallback);
         let notice = names.first().map(|n| tr!("settings-font-not-installed", missing = n, used = embedded.describe()));
         Resolved { role, source: embedded, notice }
     };
@@ -202,12 +267,13 @@ pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -
     out
 }
 
-/// The semibold face that goes with the resolved ui font: `<family> Semibold` when
-/// installed, else the same variable font at weight 600, else the regular face.
+/// The semibold face that goes with the resolved ui font: the embedded family's heading
+/// face, `<family> Semibold` when installed, else the same variable font at weight 600,
+/// else the regular face.
 fn semibold_of(ui: &Resolved, locate: Locate<'_>, is_variable: IsVariable<'_>) -> Resolved {
     let role = FontRoleKind::UiSemibold;
     match &ui.source {
-        Source::Embedded(_) => Resolved { role, source: Source::Embedded(Embedded::InterSemiBold), notice: None },
+        Source::Embedded(e) => Resolved { role, source: Source::Embedded(e.heading()), notice: None },
         Source::System { family, path, index, .. } => {
             for suffix in ["Semibold", "SemiBold", "Demibold", "Medium"] {
                 let name = format!("{family} {suffix}");
@@ -254,9 +320,24 @@ fn is_variable_file(path: &Path, index: u32) -> bool {
     data.variation_axes().iter().any(|a| a.tag.to_be_bytes() == *b"wght")
 }
 
+/// The hinting target for `[fonts] hinting_strength`.
+pub fn hinting_target(strength: HintingStrength) -> HintingTarget {
+    let normal = SmoothHinting::default();
+    HintingTarget::Smooth(match strength {
+        // Horizontal grid-fitting too, and asymmetric rendering for fonts with their own
+        // TrueType instructions: the sharpest stems with grayscale AA at 100 % scaling.
+        HintingStrength::Crisp => {
+            SmoothHinting { light: false, symmetric_rendering: false, preserve_linear_metrics: false }
+        }
+        HintingStrength::Normal => normal,
+        HintingStrength::Light => SmoothHinting { light: true, ..normal },
+    })
+}
+
 fn tweak(fonts: &Fonts) -> FontTweak {
     FontTweak {
         hinting: Some(fonts.hinting),
+        hinting_target: hinting_target(fonts.hinting_strength),
         subpixel_binning: Some(fonts.subpixel_positioning),
         ..FontTweak::default()
     }
@@ -282,14 +363,25 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&
     let mono_defaults = defaults.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
     let mut defs = FontDefinitions { font_data: defaults.font_data.clone(), families: Default::default() };
     let tw = tweak(fonts);
-    for e in [Embedded::Inter, Embedded::InterSemiBold, Embedded::JetBrainsMono] {
-        defs.font_data.insert(e.key().into(), FontData::from_static(e.bytes()).tweak(tw.clone()).into());
+    // Only the embedded fonts a role uses (primary or fallback) are handed to egui.
+    let add_embedded = |defs: &mut FontDefinitions, e: Embedded| {
+        defs.font_data
+            .entry(e.key().into())
+            .or_insert_with(|| FontData::from_static(e.bytes()).tweak(tw.clone()).into());
+    };
+    for r in roles {
+        if let Source::Embedded(e) = r.source {
+            add_embedded(&mut defs, e);
+        }
+        add_embedded(&mut defs, Embedded::for_role(r.role));
     }
     egui_phosphor::add_to_fonts(&mut defs, egui_phosphor::Variant::Regular);
     egui_phosphor::add_font_bytes_as_family(&mut defs, PHOSPHOR_FILL, egui_phosphor::Variant::Fill.font_bytes());
     for r in roles {
         let mut list: Vec<String> = Vec::new();
-        if let Source::System { path, index, weight, .. } = &r.source
+        if let Source::Embedded(e) = r.source {
+            list.push(e.key().to_string());
+        } else if let Source::System { path, index, weight, .. } = &r.source
             && let Some(bytes) = load(path)
         {
             let key = r.source.key();
@@ -415,48 +507,88 @@ mod tests {
         r.iter().find(|x| x.role == role).unwrap().source.clone()
     }
 
-    fn sys_family(s: &Source) -> &str {
+    fn name(s: &Source) -> &str {
         match s {
             Source::System { family, .. } => family,
             Source::Embedded(e) => e.label(),
         }
     }
 
-    #[test]
-    fn windows_defaults_resolve_to_system_fonts() {
-        let loc = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas", "Cascadia Mono", "Cascadia Code"]);
-        let r = resolve(&Fonts::default(), &loc, &|_, _| false);
-        assert_eq!(r.len(), 6);
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Ui)), "Segoe UI");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::UiSemibold)), "Segoe UI Semibold");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Terminal)), "Consolas");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Code)), "Consolas");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Hex)), "Consolas");
-        assert_eq!(src(&r, FontRoleKind::Numbers), src(&r, FontRoleKind::Ui), "numbers follow the ui font");
-        assert!(r.iter().all(|x| x.notice.is_none()));
+    fn system_fonts() -> Fonts {
+        let mut f = Fonts::default();
+        f.ui.family = "Segoe UI".into();
+        for role in [FontRoleKind::Terminal, FontRoleKind::Code, FontRoleKind::Hex] {
+            f.role_mut(role).family = "Consolas".into();
+        }
+        f
     }
 
     #[test]
-    fn missing_fonts_fall_back_in_order() {
-        // No Consolas: terminal → Cascadia Mono, code → Cascadia Code, hex → embedded.
-        let loc = fake_locate(&["Segoe UI", "Cascadia Mono", "Cascadia Code"]);
-        let mut f = Fonts::default();
-        f.hex.family = "Consolas".into();
-        let r = resolve(&f, &loc, &|_, _| false);
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Terminal)), "Cascadia Mono");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Code)), "Cascadia Code");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Hex)), "Cascadia Mono");
+    fn defaults_are_embedded_and_need_no_disk() {
+        let windows = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas", "Cascadia Mono", "Inter"]);
+        let nothing = |_: &str| None;
+        for locate in [&windows as Locate<'_>, &nothing] {
+            let r = resolve(&Fonts::default(), locate, &|_, _| false);
+            assert_eq!(r.len(), 6);
+            assert_eq!(src(&r, FontRoleKind::Ui), Source::Embedded(Embedded::INTER), "embedded wins over installed");
+            assert_eq!(src(&r, FontRoleKind::UiSemibold), Source::Embedded(Embedded::INTER_SEMIBOLD));
+            for role in [FontRoleKind::Terminal, FontRoleKind::Code, FontRoleKind::Hex] {
+                assert_eq!(src(&r, role), Source::Embedded(Embedded::CASCADIA_MONO));
+            }
+            assert_eq!(src(&r, FontRoleKind::Numbers), src(&r, FontRoleKind::Ui), "numbers follow the ui font");
+            assert!(r.iter().all(|x| x.notice.is_none()));
+        }
+        assert_eq!(Embedded::for_role(FontRoleKind::Ui), Embedded::INTER);
+        assert_eq!(Embedded::for_role(FontRoleKind::UiSemibold), Embedded::INTER_SEMIBOLD);
+        assert_eq!(Embedded::for_role(FontRoleKind::Hex), Embedded::CASCADIA_MONO);
+    }
+
+    #[test]
+    fn system_fonts_resolve_and_fall_back_in_order() {
+        let loc = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas"]);
+        let r = resolve(&system_fonts(), &loc, &|_, _| false);
+        assert_eq!(name(&src(&r, FontRoleKind::Ui)), "Segoe UI");
+        assert!(matches!(src(&r, FontRoleKind::Ui), Source::System { .. }));
+        assert_eq!(name(&src(&r, FontRoleKind::UiSemibold)), "Segoe UI Semibold");
+        assert_eq!(name(&src(&r, FontRoleKind::Terminal)), "Consolas");
+        // No Consolas: the embedded Cascadia Mono, with a notice.
+        let loc = fake_locate(&["Segoe UI"]);
+        let r = resolve(&system_fonts(), &loc, &|_, _| false);
+        assert_eq!(src(&r, FontRoleKind::Code), Source::Embedded(Embedded::CASCADIA_MONO));
         let t = r.iter().find(|x| x.role == FontRoleKind::Terminal).unwrap();
         assert!(t.notice.as_deref().unwrap().contains("Consolas is not installed"));
-        // Semibold missing: no variable font → the regular face, with a notice.
+        // Semibold missing: no variable font, so the regular face, with a notice.
         let s = r.iter().find(|x| x.role == FontRoleKind::UiSemibold).unwrap();
-        assert_eq!(sys_family(&s.source), "Segoe UI");
+        assert_eq!(name(&s.source), "Segoe UI");
         assert!(s.notice.is_some());
-        // Nothing installed (non-Windows): embedded fonts everywhere.
-        let none = resolve(&Fonts::default(), &|_| None, &|_, _| false);
-        assert_eq!(src(&none, FontRoleKind::Ui), Source::Embedded(Embedded::Inter));
-        assert_eq!(src(&none, FontRoleKind::UiSemibold), Source::Embedded(Embedded::InterSemiBold));
-        assert_eq!(src(&none, FontRoleKind::Terminal), Source::Embedded(Embedded::JetBrainsMono));
+        // An unknown ui font: the embedded Inter.
+        let mut f = Fonts::default();
+        f.ui.family = "No Such Sans".into();
+        let r = resolve(&f, &|_| None, &|_, _| false);
+        assert_eq!(src(&r, FontRoleKind::Ui), Source::Embedded(Embedded::INTER));
+        assert_eq!(src(&r, FontRoleKind::UiSemibold), Source::Embedded(Embedded::INTER_SEMIBOLD));
+    }
+
+    #[test]
+    fn every_embedded_family_is_selectable() {
+        let mut f = Fonts::default();
+        f.ui.family = "ibm plex sans".into();
+        f.terminal.family = "JetBrains Mono Regular".into();
+        f.code.family = "Source Code Pro".into();
+        f.hex.family = "IBM Plex Mono".into();
+        f.numbers.family = "Noto Sans".into();
+        let r = resolve(&f, &|_| None, &|_, _| false);
+        assert_eq!(name(&src(&r, FontRoleKind::Ui)), "IBM Plex Sans");
+        assert_eq!(name(&src(&r, FontRoleKind::UiSemibold)), "IBM Plex Sans SemiBold", "the family's heading face");
+        assert_eq!(name(&src(&r, FontRoleKind::Terminal)), "JetBrains Mono");
+        assert_eq!(name(&src(&r, FontRoleKind::Code)), "Source Code Pro");
+        assert_eq!(name(&src(&r, FontRoleKind::Hex)), "IBM Plex Mono");
+        assert_eq!(name(&src(&r, FontRoleKind::Numbers)), "Noto Sans");
+        assert!(r.iter().all(|x| matches!(x.source, Source::Embedded(_)) && x.notice.is_none()));
+        for e in Embedded::all() {
+            assert_eq!(Embedded::find(e.font().name), Some(e));
+            assert!(e.font().heading.is_none_or(|h| h.font().family == e.font().family && !h.font().mono));
+        }
     }
 
     #[test]
@@ -477,18 +609,24 @@ mod tests {
     #[test]
     fn embedded_switch_and_explicit_roles() {
         let loc = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas", "Fira Code"]);
-        let mut f = Fonts::default();
+        let mut f = system_fonts();
         f.ui.embedded = true;
         f.code.family = "Fira Code".into();
         f.numbers.family = "Consolas".into();
+        f.hex.family = "IBM Plex Mono".into();
+        f.hex.embedded = true;
+        f.terminal.family = "Fira Code".into();
+        f.terminal.embedded = true;
         let r = resolve(&f, &loc, &|_, _| false);
-        assert_eq!(src(&r, FontRoleKind::Ui), Source::Embedded(Embedded::Inter));
-        assert_eq!(src(&r, FontRoleKind::UiSemibold), Source::Embedded(Embedded::InterSemiBold), "follows ui");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Code)), "Fira Code");
-        assert_eq!(sys_family(&src(&r, FontRoleKind::Numbers)), "Consolas");
-        assert_eq!(candidates(&f, FontRoleKind::Terminal), ["Consolas", "Cascadia Mono"]);
-        f.terminal.family = "cascadia mono".into();
-        assert_eq!(candidates(&f, FontRoleKind::Terminal), ["cascadia mono"], "deduplicated");
+        assert_eq!(src(&r, FontRoleKind::Ui), Source::Embedded(Embedded::INTER), "Segoe UI is not embedded");
+        assert_eq!(src(&r, FontRoleKind::UiSemibold), Source::Embedded(Embedded::INTER_SEMIBOLD), "follows ui");
+        assert_eq!(name(&src(&r, FontRoleKind::Code)), "Fira Code");
+        assert_eq!(name(&src(&r, FontRoleKind::Numbers)), "Consolas");
+        assert_eq!(name(&src(&r, FontRoleKind::Hex)), "IBM Plex Mono", "a named embedded font");
+        assert_eq!(src(&r, FontRoleKind::Terminal), Source::Embedded(Embedded::CASCADIA_MONO));
+        assert_eq!(candidates(&f, FontRoleKind::Code), ["Fira Code", "Cascadia Mono"]);
+        f.code.family = "cascadia mono".into();
+        assert_eq!(candidates(&f, FontRoleKind::Code), ["cascadia mono"], "deduplicated");
     }
 
     #[test]
@@ -497,33 +635,74 @@ mod tests {
         let prop = &f.families[&FontFamily::Proportional];
         assert_eq!(prop[0], "Inter");
         assert_eq!(prop[1], "phosphor");
-        assert_eq!(f.families[&FontFamily::Monospace][0], "JetBrainsMono");
-        assert_eq!(f.families[&FontFamily::Name(TERMINAL.into())][0], "JetBrainsMono");
-        assert_eq!(f.families[&FontFamily::Name(HEX.into())][0], "JetBrainsMono");
+        assert_eq!(f.families[&FontFamily::Monospace][0], "Cascadia Mono");
+        assert_eq!(f.families[&FontFamily::Name(TERMINAL.into())][0], "Cascadia Mono");
+        assert_eq!(f.families[&FontFamily::Name(HEX.into())][0], "Cascadia Mono");
         assert_eq!(f.families[&FontFamily::Name(NUMBERS.into())][0], "Inter");
-        assert_eq!(f.families[&FontFamily::Name(SEMIBOLD.into())][0], "Inter-SemiBold");
+        assert_eq!(f.families[&FontFamily::Name(SEMIBOLD.into())][0], "Inter SemiBold");
         assert_eq!(f.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(f.families[&FontFamily::Name(PHOSPHOR_FILL.into())][0], PHOSPHOR_FILL);
+        // Only the fonts in use are handed to egui.
+        assert!(!f.font_data.contains_key("Noto Sans") && !f.font_data.contains_key("JetBrains Mono"));
     }
 
     #[test]
     fn system_fonts_go_first_and_are_shared() {
         static BYTES: &[u8] = b"not parsed here";
         let loc = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas"]);
-        let fonts = Fonts::default();
+        let fonts = system_fonts();
         let roles = resolve(&fonts, &loc, &|_, _| false);
         let defs = build(&fonts, &roles, &|_| Some(BYTES));
         let prop = &defs.families[&FontFamily::Proportional];
         assert!(prop[0].starts_with("sys:") && prop[0].contains("segoeui"));
         assert_eq!(prop[1], "Inter");
         assert_eq!(prop[2], "phosphor");
-        let mono = &defs.families[&FontFamily::Monospace][0];
-        assert_eq!(&defs.families[&FontFamily::Name(TERMINAL.into())][0], mono, "one Consolas for every mono role");
+        let mono = &defs.families[&FontFamily::Monospace];
+        assert_eq!(&defs.families[&FontFamily::Name(TERMINAL.into())][0], &mono[0], "one Consolas for every mono role");
+        assert_eq!(mono[1], "Cascadia Mono", "then the embedded fallback");
         assert_eq!(defs.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(defs.font_data.keys().filter(|k| k.starts_with("sys:")).count(), 3);
         // Unreadable file: the embedded fallback takes the first slot.
         let defs = build(&fonts, &roles, &|_| None);
         assert_eq!(defs.families[&FontFamily::Proportional][0], "Inter");
+    }
+
+    #[test]
+    fn hinting_strengths_map_to_targets() {
+        let t = |s| match hinting_target(s) {
+            HintingTarget::Smooth(h) => (h.light, h.symmetric_rendering, h.preserve_linear_metrics),
+            HintingTarget::Mono => panic!("mono"),
+        };
+        assert_eq!(t(HintingStrength::Crisp), (false, false, false));
+        assert_eq!(hinting_target(HintingStrength::Normal), HintingTarget::default());
+        assert!(t(HintingStrength::Light).0);
+    }
+
+    /// Every embedded font parses and has the glyphs of the Turkish UI (dotted and
+    /// dotless i, ş, ğ, ç, ö, ü, typographic punctuation) plus, for monospace faces, the
+    /// terminal's box drawing and one advance for every ASCII glyph.
+    #[test]
+    fn embedded_fonts_cover_turkish_and_parse() {
+        use skrifa::MetadataProvider as _;
+        for e in Embedded::all() {
+            let f = e.font();
+            let font = skrifa::FontRef::new(f.bytes).unwrap_or_else(|err| panic!("{}: {err}", f.name));
+            let cmap = font.charmap();
+            let mut need: Vec<char> = "ıİşŞğĞçÇöÖüÜâîû€·…—–“”‘’".chars().collect();
+            need.extend('!'..='~');
+            if f.mono {
+                need.extend("─│┌┐└┘├┤┬┴┼═║▀▄█░▒▓".chars());
+            }
+            for c in need {
+                assert!(cmap.map(c).is_some(), "{} has no glyph for {c:?} (U+{:04X})", f.name, c as u32);
+            }
+            if f.mono {
+                let size = skrifa::instance::Size::unscaled();
+                let metrics = font.glyph_metrics(size, skrifa::instance::LocationRef::default());
+                let adv = |c| metrics.advance_width(cmap.map(c).unwrap());
+                assert!(('!'..='~').all(|c| adv(c) == adv('M')), "{} is not monospaced", f.name);
+            }
+        }
     }
 
     /// Segoe UI must not define glyphs at Phosphor's codepoints (Inter did, in the PUA);

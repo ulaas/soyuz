@@ -63,6 +63,7 @@ pub fn install(
         ui_scale: appearance.ui_scale,
         density: appearance.density,
         high_contrast: appearance.high_contrast,
+        text_gamma: [font_roles.text_gamma(true), font_roles.text_gamma(false)],
     };
     set_reduced_motion(ctx, appearance.reduced_motion);
     apply::apply(ctx, &opts);

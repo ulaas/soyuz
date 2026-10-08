@@ -58,7 +58,9 @@ allow = [
     "0BSD",
     "bzip2-1.0.6",
 ]
-# Font licences used only by bundled font data (egui's default fonts).
+# Font licences used only by bundled font data (egui's default fonts). The OFL fonts in
+# crates/soyuz-app/assets/fonts/ are data files, not crates: cargo-deny does not see them;
+# their licenses, sources and checksums are listed in that folder's README.md.
 exceptions = [
     { crate = "epaint_default_fonts", allow = ["Ubuntu-font-1.0"] },
 ]

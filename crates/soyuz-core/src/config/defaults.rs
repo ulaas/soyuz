@@ -225,7 +225,7 @@ impl Default for Terminal {
             shell_integration: true,
             escape_returns_focus: true,
             scrollback: 10_000,
-            font_size: 12.5,
+            font_size: 13.0,
             theme: "auto".into(),
             per_tab: false,
             follow_shell: false,

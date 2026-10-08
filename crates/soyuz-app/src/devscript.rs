@@ -36,6 +36,9 @@
 //!   `move <tab> <window>`, `close <window>`, `merge`, `select <tab>`;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
+//! `SOYUZ_WINDOW_POS=x,y` (read in `main.rs`) opens the window at that position without
+//! activating it, e.g. `-4000,-4000` keeps scripted screenshot sessions off-screen.
+//!
 //! `SOYUZ_FRAME_LOG=1` logs a line per rendered frame with the time spent in `ui()`
 //! (to check that an idle window does not repaint and that big folders stay fast).
 

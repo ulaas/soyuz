@@ -242,20 +242,27 @@ Run `soyuz <command> --help` for usage."
         });
     }
 
+    // Debug hook (screenshot sessions): `SOYUZ_WINDOW_POS=x,y` opens the window at that
+    // spot without activating it, e.g. off-screen so scripted captures do not flash.
+    let dev_pos = std::env::var("SOYUZ_WINDOW_POS").ok().and_then(|s| {
+        let (x, y) = s.split_once(',')?;
+        Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
+    });
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title("Soyuz")
+        .with_app_id("soyuz")
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([720.0, 440.0])
+        .with_icon(soyuz_app::app_icon::icon_data(128))
+        .with_transparent(backdrop);
+    if let Some(pos) = dev_pos {
+        viewport = viewport.with_position(pos).with_active(false);
+    }
     let options = eframe::NativeOptions {
-        viewport: soyuz_app::ui::titlebar::configure_viewport(
-            egui::ViewportBuilder::default()
-                .with_title("Soyuz")
-                .with_app_id("soyuz")
-                .with_inner_size([1280.0, 800.0])
-                .with_min_inner_size([720.0, 440.0])
-                .with_icon(soyuz_app::app_icon::icon_data(128))
-                .with_transparent(backdrop),
-            chrome,
-        ),
+        viewport: soyuz_app::ui::titlebar::configure_viewport(viewport, chrome),
         renderer,
         wgpu_options,
-        centered: true,
+        centered: dev_pos.is_none(),
         // eframe's own state (window geometry, egui memory) lives with the rest of the
         // configuration, so portable mode keeps it next to the executable as well.
         persistence_path: Some(soyuz_core::config::config_dir().join("app.ron")),

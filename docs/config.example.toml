@@ -51,35 +51,39 @@ startup_placeholder = true       # Windows: native placeholder window while the 
 icon_pack = ""                   # "" = built-in glyphs | "flat" (built-in) | "<folder in icons/>" with a pack.toml
 thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
 
-# Fonts per role. `family` = an installed font as Windows lists it ("Segoe UI",
-# "Cascadia Mono", "Segoe UI Semibold") or a .ttf/.otf/.ttc path. System fonts are read
-# from C:\Windows\Fonts (never bundled); the embedded fallbacks are Inter (ui),
-# Inter SemiBold (headings) and JetBrains Mono (monospace). `embedded = true` skips the
-# system font. `size_offset` adds points to that role's text (-4 … +8).
+# Fonts per role. `family` = an embedded font (Inter, Inter SemiBold, IBM Plex Sans,
+# IBM Plex Sans SemiBold, Noto Sans, Noto Sans SemiBold, Cascadia Mono, JetBrains Mono,
+# IBM Plex Mono, Source Code Pro), an installed font as Windows lists it ("Segoe UI",
+# "Consolas", "Segoe UI Semibold"; read from C:\Windows\Fonts, never bundled) or a
+# .ttf/.otf/.ttc path. A missing font falls back to the role's embedded default.
+# `embedded = true` never reads system fonts. `size_offset` adds points (-4 … +8).
 # (The old [appearance] font / mono_font keys are still read and moved here.)
 [fonts]
 hinting = true                   # TrueType hinting: crisper stems at small sizes
 subpixel_positioning = false     # smoother letter spacing, slightly softer text
+hinting_strength = "crisp"       # crisp (also fits letter widths) | normal (egui's default) | light
+text_gamma_dark = 0.45           # coverage → opacity on dark themes: lower = heavier (0 = egui's curve)
+text_gamma_light = 0.8           # the same on light themes (1.0 = linear)
 
 [fonts.ui]                       # body text, labels, menus, file names
-family = "Segoe UI"
+family = "Inter"
 embedded = false
 size_offset = 0.0
 
 [fonts.ui_semibold]              # headings, dialog titles, tab labels
-family = ""                      # "" = the semibold face of the ui font (Segoe UI Semibold)
+family = ""                      # "" = the semibold face of the ui font (Inter SemiBold)
 
 [fonts.terminal]
-family = "Consolas"              # falls back to Cascadia Mono, then JetBrains Mono
+family = "Cascadia Mono"         # embedded; no ligatures, so `!=` and `->` stay as typed
 
 [fonts.code]                     # text editor, code previews, other monospace text
-family = "Consolas"              # falls back to Cascadia Code, then JetBrains Mono
+family = "Cascadia Mono"
 
 [fonts.hex]
-family = "Consolas"
+family = "Cascadia Mono"
 
 [fonts.numbers]                  # sizes, dates, counters, progress figures
-family = ""                      # "" = the ui font (Segoe UI digits are tabular)
+family = ""                      # "" = the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
 
 [theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
 # accent = "#5B8CFF"
@@ -159,7 +163,7 @@ cd_on_tab_switch = true
 shell_integration = true         # inject prompt hook so the terminal reports its cwd
 escape_returns_focus = true
 scrollback = 10000
-font_size = 12.5
+font_size = 13.0
 theme = "auto"                   # auto (derive from app theme) | dark | light
 per_tab = false                  # one terminal set per tab instead of one shared set
 follow_shell = false             # navigate the focused pane when the shell changes directory
