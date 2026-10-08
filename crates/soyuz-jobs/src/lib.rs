@@ -1,10 +1,12 @@
 //! `soyuz-jobs`: the background operation engine — queue with per-device lanes,
 //! pause/resume/cancel, conflict/error prompts, history and undo (PLAN §2.4).
 //!
-//! **M0 status:** every public type is final; [`JobEngine`] constructs and answers
-//! queries, mutating operations are `todo!()` until M2.
+//! Drive it from the UI with [`JobEngine::submit`], poll [`JobEngine::snapshots`] while
+//! [`JobEngine::has_active`], drain [`JobEngine::events`] each frame, answer
+//! [`JobEvent::Prompt`] with [`JobEngine::respond`], and call [`JobEngine::shutdown`] on exit.
 #![forbid(unsafe_code)]
 
+mod ctx;
 pub mod engine;
 pub mod history;
 pub mod job;
@@ -15,6 +17,9 @@ pub mod progress;
 pub mod prompt;
 pub mod scheduler;
 pub mod undo;
+
+#[cfg(test)]
+mod tests;
 
 pub use engine::{EngineConfig, JobEngine, JobEvent};
 pub use history::{HistoryEntry, HistoryId};
