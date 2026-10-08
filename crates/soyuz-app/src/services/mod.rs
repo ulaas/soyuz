@@ -6,6 +6,7 @@ pub mod ai_service;
 pub mod archive;
 pub mod config_watch;
 pub mod crash;
+pub mod folder_colors;
 pub mod git;
 pub mod jobs;
 pub mod lister;
@@ -20,6 +21,9 @@ pub mod recent;
 pub mod search;
 pub mod store_file;
 pub mod tags;
+pub mod thumb_disk;
+pub mod thumb_folder;
+pub mod thumb_video;
 pub mod thumbs;
 pub mod watcher;
 

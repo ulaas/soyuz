@@ -603,6 +603,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
         log::warn!("{w}");
     }
     crate::services::thumbs::set_budget_bytes(c.preview.thumb_cache_mib.saturating_mul(1024 * 1024));
+    crate::ui::looks::apply_settings(c);
     crate::services::preview_cache::set_budget_bytes(c.preview.preview_cache_mib.saturating_mul(1024 * 1024));
 }
 
@@ -658,6 +659,8 @@ impl eframe::App for SoyuzApp {
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
+        crate::theme::library::sync(&ctx, &self.config, self.ui.theme);
+        crate::ui::looks::begin_frame(&ctx);
         crate::ui::titlebar::sync(&ctx, self);
         crate::ui::native_chrome::sync_theme(&ctx);
         shell::show(ui, self);
@@ -684,6 +687,7 @@ impl eframe::App for SoyuzApp {
         // (eframe calls this on exit too), in order, on the single store worker.
         crate::services::tags::flush();
         crate::services::recent::flush();
+        crate::services::folder_colors::flush();
         if !crate::services::store_file::flush(Duration::from_secs(3)) {
             log::warn!("some settings stores were not written in time");
         }

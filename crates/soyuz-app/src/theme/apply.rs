@@ -69,8 +69,8 @@ pub fn tune(s: &mut egui::Style, density: Density, high_contrast: bool) {
     }
 }
 
-/// Map `[appearance] theme` to a preference (`"system" | "dark" | "light"`; user theme
-/// names resolve to System until user themes land).
+/// Map `[appearance] theme` to a preference (`"system" | "dark" | "light"`; anything
+/// else follows the system).
 pub fn preference_from_config(theme: &str) -> ThemePreference {
     match theme.trim().to_ascii_lowercase().as_str() {
         "dark" => ThemePreference::Dark,
@@ -133,18 +133,13 @@ fn widget(bg: Color32, weak_bg: Color32, stroke: Stroke, fg: Color32, r: u8) -> 
 pub fn visuals(p: &Palette) -> Visuals {
     let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
     let hover_fill = if p.dark { p.bg_surface3 } else { p.bg_sunken };
+    let row = p.radius(radius::ROW);
     v.widgets = Widgets {
-        noninteractive: widget(
-            p.bg_surface1,
-            p.bg_surface1,
-            Stroke::new(1.0, p.border_subtle),
-            p.text_primary,
-            radius::ROW,
-        ),
-        inactive: widget(p.bg_surface2, p.bg_surface2, Stroke::NONE, p.text_primary, radius::ROW),
-        hovered: widget(hover_fill, hover_fill, Stroke::new(1.0, p.border_strong), p.text_primary, radius::ROW),
-        active: widget(p.accent_subtle, p.accent_subtle, Stroke::new(1.0, p.accent), p.text_primary, radius::ROW),
-        open: widget(p.bg_surface3, p.bg_surface3, Stroke::new(1.0, p.border_strong), p.text_primary, radius::ROW),
+        noninteractive: widget(p.bg_surface1, p.bg_surface1, Stroke::new(1.0, p.border_subtle), p.text_primary, row),
+        inactive: widget(p.bg_surface2, p.bg_surface2, Stroke::NONE, p.text_primary, row),
+        hovered: widget(hover_fill, hover_fill, Stroke::new(1.0, p.border_strong), p.text_primary, row),
+        active: widget(p.accent_subtle, p.accent_subtle, Stroke::new(1.0, p.accent), p.text_primary, row),
+        open: widget(p.bg_surface3, p.bg_surface3, Stroke::new(1.0, p.border_strong), p.text_primary, row),
     };
     v.selection = Selection { bg_fill: p.accent_subtle, stroke: Stroke::new(1.0, p.accent) };
     v.weak_text_color = Some(p.text_secondary);
@@ -155,8 +150,8 @@ pub fn visuals(p: &Palette) -> Visuals {
     v.text_edit_bg_color = Some(p.bg_surface2);
     v.warn_fg_color = p.warning;
     v.error_fg_color = p.danger;
-    v.window_corner_radius = CornerRadius::same(radius::MODAL);
-    v.menu_corner_radius = CornerRadius::same(radius::CARD);
+    v.window_corner_radius = CornerRadius::same(p.radius(radius::MODAL));
+    v.menu_corner_radius = CornerRadius::same(p.radius(radius::CARD));
     v.window_fill = p.bg_surface3;
     v.window_stroke = Stroke::new(1.0, p.border_subtle);
     v.window_shadow = Shadow {

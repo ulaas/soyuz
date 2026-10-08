@@ -75,8 +75,7 @@ struct Geometry {
     header_h: f32,
 }
 
-fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32) -> Geometry {
-    let zoom = pane.view.zoom as f32;
+fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32, zoom: f32) -> Geometry {
     let mut cols = Vec::new();
     let mut content_w = avail_w;
     let (cell, gap, pad) = match style {
@@ -108,7 +107,17 @@ fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32) -> Geometry {
 /// Draw the pane's listing into `rect`.
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style: Style) {
     let row_h = v.config.appearance.density.row_height();
-    let g = geometry(style, pane, rect.width(), row_h);
+    // Icon sizes glide between zoom levels (B4); the layout follows the animated size.
+    let zoom = if matches!(style, Style::Grid | Style::Gallery) {
+        ui.ctx().animate_value_with_time(
+            Id::new(("soyuz.flow.zoom", pane.id.0)),
+            f32::from(pane.view.zoom),
+            crate::theme::anim(ui.ctx(), 0.16),
+        )
+    } else {
+        f32::from(pane.view.zoom)
+    };
+    let g = geometry(style, pane, rect.width(), row_h, zoom);
     let sig = LayoutSig { vis_version: pane.vis_version, width: rect.width(), cell: g.cell, mode: style.code() };
     if pane.layout_sig != Some(sig) || pane.layout.is_none() {
         pane.layout =
@@ -125,7 +134,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
     }
     let mut child = ui.new_child(UiBuilder::new().max_rect(rect));
     let out = scroll.show_viewport(&mut child, |ui, viewport| {
-        body(ui, viewport, pane, v, style, &g, &layout);
+        body(ui, viewport, pane, v, style, &g, &layout, zoom);
     });
     pane.scroll_y = out.state.offset.y;
     pane.viewport_h = (out.inner_rect.height() - g.header_h).max(1.0);
@@ -133,7 +142,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
     pane.layout = Some(layout);
 }
 
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::too_many_arguments)]
 fn body(
     ui: &mut Ui,
     viewport: Rect,
@@ -142,6 +151,7 @@ fn body(
     style: Style,
     g: &Geometry,
     layout: &FlowLayout,
+    zoom: f32,
 ) {
     let p = palette(ui.ctx());
     let origin = ui.min_rect().min;
@@ -170,6 +180,7 @@ fn body(
     let y1 = viewport.max.y - g.header_h;
     let cursor_pos = pane.cursor_pos();
     let thumbs_on = v.config.appearance.show_thumbnails;
+    let folder_thumbs = thumbs_on && v.config.appearance.folder_thumbnails;
     let ppp = ui.ctx().pixels_per_point();
     let mut rename_at: Option<Rect> = None;
     let a11y_on = crate::ui::a11y::active(ui.ctx());
@@ -227,34 +238,27 @@ fn body(
                         );
                     }
                     if v.fileops.renaming(pane.id, key) {
-                        rename_at =
-                            Some(name_rect(style, r, &g.cols, origin.x, v.checkbox_mode, pane.view.zoom as f32));
+                        rename_at = Some(name_rect(style, r, &g.cols, origin.x, v.checkbox_mode, zoom));
                     }
                     match style {
                         Style::Details => paint_details_row(&painter, &p, r, e, &st, &g.cols, origin.x, v),
                         Style::Grid | Style::Gallery => {
-                            let tex = if thumbs_on && thumbs::is_thumbnailable(&e.path) {
-                                let px = thumbs::bucket(pane.view.zoom as f32, ppp);
-                                v.services.thumbs.get(&ThumbKey {
-                                    path: e.path.clone(),
-                                    mtime: e.modified,
-                                    size: e.size,
-                                    px,
-                                })
+                            let px = thumbs::bucket(f32::from(pane.view.zoom), ppp);
+                            let key = || ThumbKey { path: e.path.clone(), mtime: e.modified, size: e.size, px };
+                            let visual = if !thumbs_on || !painter.clip_rect().intersects(r) {
+                                CellVisual::default()
+                            } else if matches!(e.kind, soyuz_core::EntryKind::Dir) {
+                                let mosaic = if folder_thumbs { v.services.thumbs.get_folder(&key()) } else { None };
+                                CellVisual { mosaic, ..Default::default() }
+                            } else if thumbs::is_thumbnailable(&e.path)
+                                || crate::services::thumb_video::is_video(&e.path)
+                            {
+                                let (tex, label) = v.services.thumbs.get_labeled(&key());
+                                CellVisual { tex, label, ..Default::default() }
                             } else {
-                                None
+                                CellVisual::default()
                             };
-                            paint_grid_cell(
-                                ui,
-                                &painter,
-                                &p,
-                                r,
-                                e,
-                                &st,
-                                pane.view.zoom as f32,
-                                tex,
-                                style == Style::Gallery,
-                            );
+                            paint_grid_cell(ui, &painter, &p, r, e, &st, zoom, visual, style == Style::Gallery);
                         }
                         Style::List => paint_list_cell(&painter, &p, r, e, &st, false),
                         Style::Column => paint_list_cell(&painter, &p, r, e, &st, true),
@@ -440,7 +444,7 @@ fn body(
     if bg.hovered() && matches!(style, Style::Grid | Style::Gallery) {
         let zd = ui.input(|i| i.zoom_delta());
         if (zd - 1.0).abs() > 0.001 {
-            let z = (pane.view.zoom as f32 * zd).round().clamp(16.0, 256.0) as u16;
+            let z = (f32::from(pane.view.zoom) * zd).round().clamp(16.0, 256.0) as u16;
             if z != pane.view.zoom {
                 pane.view.zoom = z;
                 v.cmds.push(Cmd::ViewChanged(pane.id));
@@ -626,6 +630,17 @@ fn paint_details_row(
     }
 }
 
+/// What a grid cell shows instead of (or on top of) its glyph.
+#[derive(Default)]
+struct CellVisual {
+    /// Picture / video frame.
+    tex: Option<egui::TextureHandle>,
+    /// Folder mosaic of the first pictures inside.
+    mosaic: Option<egui::TextureHandle>,
+    /// Video duration.
+    label: Option<String>,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn paint_grid_cell(
     ui: &Ui,
@@ -635,7 +650,7 @@ fn paint_grid_cell(
     e: &EntryInfo,
     st: &ItemState,
     zoom: f32,
-    tex: Option<egui::TextureHandle>,
+    visual: CellVisual,
     gallery: bool,
 ) {
     if !painter.clip_rect().intersects(r) {
@@ -644,7 +659,7 @@ fn paint_grid_cell(
     paint_item_bg(painter, p, r, st, radius::CARD);
     let a = text_alpha(e, st);
     let icon_box = Rect::from_center_size(pos2(r.center().x, r.top() + 8.0 + zoom / 2.0), vec2(zoom, zoom));
-    match tex {
+    match &visual.tex {
         Some(t) => {
             let size = t.size_vec2();
             let scale = (zoom / size.x).min(zoom / size.y);
@@ -655,11 +670,32 @@ fn paint_grid_cell(
                 .tint(Color32::WHITE.gamma_multiply(a))
                 .paint_at(ui, img);
             painter.rect_stroke(img, rounding, Stroke::new(1.0, p.border_subtle), StrokeKind::Outside);
+            if let Some(l) = &visual.label
+                && zoom >= 48.0
+            {
+                crate::ui::looks::paint_duration(painter, img, l);
+            }
         }
         None => {
             let g = icons::glyph(e);
             let font = ticons::font_fill(zoom * if e.is_dir_like() { 0.86 } else { 0.8 });
-            painter.text(icon_box.center(), Align2::CENTER_CENTER, g, font, icons::color(e, p).gamma_multiply(a));
+            let color = icons::color(e, p);
+            painter.text(icon_box.center(), Align2::CENTER_CENTER, g, font, color.gamma_multiply(a));
+            if let Some(m) = &visual.mosaic {
+                paint_folder_mosaic(ui, painter, p, icon_box, m, color, a);
+            } else if e.is_dir_like() {
+                crate::ui::looks::paint_emblem(painter, &e.path, icon_box.center(), zoom * 0.86, color, a);
+            } else if crate::ui::looks::extension_badges()
+                && let Some(label) = icons::badge_label(e)
+            {
+                let tint = if icons::classify(e) == icons::FileClass::Other { p.text_tertiary } else { color };
+                crate::ui::looks::paint_ext_badge(painter, p, icon_box, &label, tint, a);
+            }
+            if let Some(l) = &visual.label
+                && zoom >= 48.0
+            {
+                crate::ui::looks::paint_duration(painter, icon_box.shrink(zoom * 0.08), l);
+            }
         }
     }
     if st.checkbox && (st.selected || st.hovered) {
@@ -677,6 +713,31 @@ fn paint_grid_cell(
     let gy = icon_box.bottom() + 6.0;
     painter.galley(pos2(r.center().x, gy), galley, color);
     paint_hidden_badge(painter, p, pos2(icon_box.left() + 2.0, icon_box.top() + 8.0), &e.name);
+}
+
+/// A folder mosaic set into the body of the folder glyph drawn in `icon_box`.
+fn paint_folder_mosaic(
+    ui: &Ui,
+    painter: &Painter,
+    p: &Palette,
+    icon_box: Rect,
+    tex: &egui::TextureHandle,
+    folder: Color32,
+    a: f32,
+) {
+    let z = icon_box.width();
+    let body = Rect::from_center_size(icon_box.center() + vec2(0.0, z * 0.075), vec2(z * 0.66, z * 0.46));
+    // Center-crop the square mosaic to the body's aspect.
+    let aspect = body.height() / body.width();
+    let uv = Rect::from_min_max(pos2(0.0, 0.5 - aspect / 2.0), pos2(1.0, 0.5 + aspect / 2.0));
+    let rounding = CornerRadius::same(if z >= 64.0 { 4 } else { 2 });
+    painter.rect_filled(body.expand(1.5), rounding, folder.gamma_multiply(a));
+    egui::Image::from_texture(egui::load::SizedTexture::new(tex.id(), tex.size_vec2()))
+        .uv(uv)
+        .corner_radius(rounding)
+        .tint(Color32::WHITE.gamma_multiply(a))
+        .paint_at(ui, body);
+    painter.rect_stroke(body, rounding, Stroke::new(1.0, p.border_subtle.gamma_multiply(0.6)), StrokeKind::Outside);
 }
 
 fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &ItemState, miller: bool) {

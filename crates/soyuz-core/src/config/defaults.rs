@@ -79,6 +79,12 @@ impl Default for Appearance {
             custom_titlebar: true,
             backdrop: Backdrop::None,
             snap_layouts: true,
+            color_theme: "orbit".into(),
+            accent: "theme".into(),
+            extension_badges: true,
+            folder_thumbnails: true,
+            video_thumbnails: true,
+            thumb_disk_cache_mib: 256,
         }
     }
 }
@@ -148,6 +154,8 @@ impl Default for Behaviour {
             watch_debounce_ms: 250,
             type_ahead: TypeAhead::Jump,
             middle_click: MiddleClick::NewTab,
+            spring_loaded_folders: true,
+            spring_load_delay_ms: 700,
         }
     }
 }

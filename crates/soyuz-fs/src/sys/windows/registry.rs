@@ -4,8 +4,9 @@ use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
 use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_ANY, RRF_RT_REG_EXPAND_SZ,
-    RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegEnumValueW, RegGetValueW, RegLoadMUIStringW, RegOpenKeyExW,
+    HKEY, HKEY_CLASSES_ROOT, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, RRF_RT_ANY, RRF_RT_REG_DWORD,
+    RRF_RT_REG_EXPAND_SZ, RRF_RT_REG_SZ, RegCloseKey, RegEnumKeyExW, RegEnumValueW, RegGetValueW, RegLoadMUIStringW,
+    RegOpenKeyExW,
 };
 
 use super::{from_wide_nul, wide_str};
@@ -75,6 +76,27 @@ pub(crate) fn get_string(h: Hive, subkey: &str, value: Option<&str>) -> Option<S
         }
         return Some(from_wide_nul(&buf).to_string_lossy().into_owned());
     }
+}
+
+/// `REG_DWORD` value.
+pub(crate) fn get_dword(h: Hive, subkey: &str, value: &str) -> Option<u32> {
+    let k = wide_str(subkey);
+    let v = wide_str(value);
+    let mut out = 0u32;
+    let mut bytes = 4u32;
+    // SAFETY: predefined root, NUL-terminated names, a 4-byte output buffer.
+    let rc = unsafe {
+        RegGetValueW(
+            hkey(h),
+            k.as_ptr(),
+            v.as_ptr(),
+            RRF_RT_REG_DWORD,
+            null_mut(),
+            (&mut out as *mut u32).cast(),
+            &mut bytes,
+        )
+    };
+    (rc == 0).then_some(out)
 }
 
 /// Whether a value of any type exists.

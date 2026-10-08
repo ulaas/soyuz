@@ -8,6 +8,7 @@ mod appearance;
 mod keybindings;
 mod lists;
 mod pages;
+mod themes_ui;
 pub mod widgets;
 
 use std::path::PathBuf;
@@ -31,6 +32,8 @@ use crate::ui::toasts::Toast;
 enum PickPurpose {
     Export,
     Import,
+    ThemeExport,
+    ThemeImport,
 }
 
 /// Delay between the last edit and writing `config.toml`.
@@ -748,6 +751,70 @@ fn start_import(app: &mut SoyuzApp) {
     app.settings.picker = Some((PickPurpose::Import, picker));
 }
 
+/// Open the picker for importing a theme file (copied into the themes folder).
+fn start_theme_import(app: &mut SoyuzApp) {
+    use crate::ui::path_picker::{PathPicker, PickMode};
+    let picker = PathPicker::new("Import theme", PickMode::Open, transfer_dir(), "", &["toml"]);
+    app.settings.picker = Some((PickPurpose::ThemeImport, picker));
+}
+
+/// Open the save picker for exporting the current colors as a theme file.
+fn start_theme_export(app: &mut SoyuzApp) {
+    use crate::ui::path_picker::{PathPicker, PickMode};
+    let dir = crate::theme::library::themes_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let base = crate::theme::themes::slug(&app.settings.draft.appearance.color_theme);
+    let name = format!("{base}-custom.toml");
+    let picker = PathPicker::new("Export theme", PickMode::Save, dir, &name, &["toml"]);
+    app.settings.picker = Some((PickPurpose::ThemeExport, picker));
+}
+
+/// Write the draft's resolved palettes (theme + accent + overrides) as a theme file.
+fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
+    let d = &app.settings.draft;
+    let (mut dark, mut light, _) = crate::theme::resolve(&d.appearance);
+    let _ = dark.apply_overrides(&d.theme.colors);
+    let _ = light.apply_overrides(&d.theme.colors);
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "custom".into());
+    let def = crate::theme::themes::ThemeDef::from_palettes(&stem, &stem, &dark, &light);
+    match soyuz_fs::write_atomic(path, def.to_toml().as_bytes()) {
+        Ok(()) => {
+            app.ui.toasts.push(Toast::success("Theme exported").body(path.display().to_string()));
+        }
+        Err(e) => {
+            app.ui.toasts.push(Toast::error("Theme export failed").body(e.to_string()));
+        }
+    }
+}
+
+/// Validate a theme file, copy it into the themes folder and select it.
+fn import_theme(app: &mut SoyuzApp, path: &std::path::Path) {
+    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            app.ui.toasts.push(Toast::error("Theme import failed").body(e.to_string()));
+            return;
+        }
+    };
+    match crate::theme::library::import(&text, &stem) {
+        Ok((t, warnings)) => {
+            app.settings.draft.appearance.color_theme = t.id.clone();
+            app.settings.draft.appearance.high_contrast = false;
+            let toast = if warnings.is_empty() {
+                Toast::success(format!("Theme \u{201c}{}\u{201d} imported", t.name))
+            } else {
+                Toast::warning(format!("Theme \u{201c}{}\u{201d} imported with warnings", t.name))
+                    .body(warnings.join("\n"))
+            };
+            app.ui.toasts.push(toast);
+        }
+        Err(e) => {
+            app.ui.toasts.push(Toast::error("Not a valid theme file").body(e));
+        }
+    }
+}
+
 /// Draw the export / import picker; act on its result.
 fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
     use crate::ui::path_picker::PickResult;
@@ -766,6 +833,8 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
                     export(app, path);
                 }
                 PickPurpose::Import => import(app, &path),
+                PickPurpose::ThemeExport => export_theme(app, &path),
+                PickPurpose::ThemeImport => import_theme(app, &path),
             }
         }
     }

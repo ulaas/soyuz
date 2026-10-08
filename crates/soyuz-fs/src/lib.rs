@@ -33,6 +33,7 @@ pub mod links;
 pub mod list;
 pub mod meta;
 pub mod mv;
+pub mod os_theme;
 pub mod path;
 pub mod perms;
 pub mod sparse;

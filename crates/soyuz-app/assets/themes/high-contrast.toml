@@ -1,0 +1,10 @@
+name = "High Contrast"
+author = "Soyuz"
+base = "high-contrast"
+
+[radii]
+scale = 0.75
+
+[dark]
+
+[light]

@@ -1,0 +1,12 @@
+# Soyuz theme file. Copy it to <config dir>/themes/<id>.toml to make your own; every
+# token is optional (missing ones come from the `base` palette).
+name = "Orbit"
+author = "Soyuz"
+base = "orbit"          # orbit | high-contrast
+
+[radii]
+scale = 1.0             # corner radius multiplier (0 = square, 2 = extra round)
+
+[dark]
+
+[light]

@@ -1,6 +1,8 @@
 //! Browser-style tab strip: pinned tabs (icon only) first, active tab as a raised pill,
 //! close on hover, middle-click close, drag to reorder, double-click empty space or `+`
-//! for a new tab, right-click for tab actions.
+//! for a new tab, right-click for tab actions. While a tab is dragged the others make
+//! room live, each sliding on a spring (B4); hovering a tab during a file drag selects
+//! it (spring-loading).
 
 use egui::{
     Align2, Color32, CornerRadius, CursorIcon, FontId, Frame, Id, Margin, Panel, Rect, Sense, Stroke, StrokeKind, Ui,
@@ -71,16 +73,27 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     }
     let clip = Rect::from_min_max(full.min, pos2(full.right() - plus_w, full.bottom()));
     let painter = ui.painter_at(clip);
+    // Live reordering: the slot each tab moves to while one is dragged.
+    let widths: Vec<f32> = rects.iter().map(|r| r.width()).collect();
+    let order = match (drag, pointer) {
+        (Some(d), Some(pp)) => live_order(n, d.from, drop_index(&rects, d.from, pp.x - d.grab_dx)),
+        _ => (0..n).collect(),
+    };
+    let targets = slot_lefts(&order, &widths, full.left());
     for (i, &r) in rects.iter().enumerate() {
         let tab = &app.ws.tabs[i];
         let active = i == app.ws.active;
         let resp = ui.interact(r, Id::new(("soyuz.tab", tab.id.0)), Sense::click_and_drag());
         let dragging = drag.is_some_and(|d| d.from == i);
+        let spring_id = Id::new(("soyuz.tab.x", tab.id.0));
         let r = if dragging {
             let px = pointer.map_or(r.left(), |pp| pp.x - drag.map_or(0.0, |d| d.grab_dx));
-            Rect::from_min_size(pos2(px.clamp(full.left(), clip.right() - r.width()), r.top()), r.size())
+            let x = px.clamp(full.left(), clip.right() - r.width());
+            crate::ui::motion::spring_set(ui.ctx(), spring_id, x);
+            Rect::from_min_size(pos2(x, r.top()), r.size())
         } else {
-            r
+            let x = crate::ui::motion::spring_to(ui.ctx(), spring_id, targets[i]);
+            Rect::from_min_size(pos2(x, r.top()), r.size())
         };
         let hovered = resp.hovered() || dragging;
         let hover_t = ui.ctx().animate_bool_with_time(resp.id.with("h"), hovered, crate::theme::anim(ui.ctx(), 0.1));
@@ -112,7 +125,16 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         } else {
             ph::FOLDER
         };
-        let gcolor = if active { p.glyph_folder } else { p.text_tertiary };
+        let folder_color = match &pane.location {
+            soyuz_core::Location::Dir(d) => crate::services::folder_colors::color_of(d, &p),
+            _ => None,
+        };
+        let gcolor = match folder_color {
+            Some(c) if active => c,
+            Some(c) => c.gamma_multiply(0.8),
+            None if active => p.glyph_folder,
+            None => p.text_tertiary,
+        };
         let loading = pane.is_loading();
         if tab.pinned {
             painter.text(r.center(), Align2::CENTER_CENTER, glyph, icons::font_fill(15.0), gcolor);
@@ -152,9 +174,24 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                 }
             }
         }
+        if let Some(c) = folder_color
+            && !(loading && active)
+        {
+            let at = if tab.pinned { r.center() } else { pos2(r.left() + 18.0, r.center().y) };
+            crate::ui::looks::paint_dot(
+                &painter,
+                at + vec2(6.0, 5.0),
+                c,
+                if active { p.bg_surface1 } else { p.bg_window },
+            );
+        }
         let resp = resp.on_hover_text(pane.location.display());
         if let soyuz_core::Location::Dir(d) = &pane.location {
-            crate::ops::fileops::dnd::target(ui, &resp, d, &mut app.cmds);
+            if active {
+                crate::ops::fileops::dnd::target(ui, &resp, d, &mut app.cmds);
+            } else {
+                crate::ops::fileops::dnd::target_with(ui, &resp, d, Cmd::SelectTab(i), &mut app.cmds);
+            }
         }
         if resp.clicked() {
             app.cmds.push(Cmd::SelectTab(i));
@@ -179,9 +216,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let down = ui.input(|i| i.pointer.primary_down());
         if !down {
             if let Some(pp) = pointer {
-                let x = pp.x - d.grab_dx + rects[d.from].width() / 2.0;
-                let to = rects.iter().position(|r| x < r.center().x).unwrap_or(n).min(n);
-                let to = if to > d.from { to - 1 } else { to };
+                let to = drop_index(&rects, d.from, pp.x - d.grab_dx);
                 if to != d.from {
                     app.cmds.push(Cmd::MoveTab { from: d.from, to });
                 }
@@ -213,6 +248,33 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     if presp.on_hover_text(tip).clicked() {
         app.cmds.push(Cmd::Action(Action::NewTab));
     }
+}
+
+/// Where the tab `from`, dragged with its left edge at `left`, would be inserted (index
+/// in the order without it, i.e. the `to` of `MoveTab`).
+pub fn drop_index(rects: &[Rect], from: usize, left: f32) -> usize {
+    let n = rects.len();
+    let x = left + rects.get(from).map_or(0.0, |r| r.width() / 2.0);
+    let to = rects.iter().position(|r| x < r.center().x).unwrap_or(n).min(n);
+    if to > from { to - 1 } else { to }
+}
+
+/// The tab order with `from` moved to `to`.
+pub fn live_order(n: usize, from: usize, to: usize) -> Vec<usize> {
+    let mut o: Vec<usize> = (0..n).filter(|&k| k != from).collect();
+    o.insert(to.min(o.len()), from);
+    o
+}
+
+/// Left edge of every tab (indexed by tab) when laid out in `order`.
+pub fn slot_lefts(order: &[usize], widths: &[f32], start: f32) -> Vec<f32> {
+    let mut out = vec![start; widths.len()];
+    let mut x = start;
+    for &k in order {
+        out[k] = x;
+        x += widths[k] + 2.0;
+    }
+    out
 }
 
 fn tab_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, km: &soyuz_core::config::Keymap, i: usize, pinned: bool, n: usize) {
@@ -256,5 +318,36 @@ fn tab_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, km: &soyuz_core::config::Keymap, i
     {
         cmds.push(Cmd::Action(Action::ReopenClosedTab));
         ui.close();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rects(ws: &[f32]) -> Vec<Rect> {
+        let mut x = 0.0;
+        ws.iter()
+            .map(|w| {
+                let r = Rect::from_min_size(pos2(x, 0.0), vec2(*w, 30.0));
+                x += w + 2.0;
+                r
+            })
+            .collect()
+    }
+
+    #[test]
+    fn live_reorder_slots() {
+        let r = rects(&[100.0, 100.0, 100.0, 100.0]);
+        assert_eq!(drop_index(&r, 0, 0.0), 0, "not moved");
+        assert_eq!(drop_index(&r, 0, 160.0), 1, "past the next tab's middle");
+        assert_eq!(drop_index(&r, 0, 1000.0), 3, "to the end");
+        assert_eq!(drop_index(&r, 3, -50.0), 0);
+        assert_eq!(live_order(4, 0, 2), vec![1, 2, 0, 3]);
+        assert_eq!(live_order(4, 3, 0), vec![3, 0, 1, 2]);
+        let widths = [40.0, 100.0, 100.0];
+        // Tab 0 (pinned, narrow) dragged to the end: the others shift left by 42.
+        assert_eq!(slot_lefts(&live_order(3, 0, 2), &widths, 0.0), vec![204.0, 0.0, 102.0]);
+        assert_eq!(slot_lefts(&[0, 1, 2], &widths, 10.0), vec![10.0, 52.0, 154.0]);
     }
 }

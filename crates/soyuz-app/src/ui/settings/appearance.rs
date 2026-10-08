@@ -10,18 +10,6 @@ use crate::theme::icons::ph;
 use crate::theme::tokens::parse_hex;
 use crate::theme::{Palette, icons, palette};
 
-/// Accent presets: (name, hex).
-const ACCENTS: [(&str, &str); 8] = [
-    ("Orbit blue", "#5B8CFF"),
-    ("Violet", "#8B5CF6"),
-    ("Pink", "#EC4899"),
-    ("Red", "#F2555A"),
-    ("Amber", "#F59E0B"),
-    ("Green", "#22C55E"),
-    ("Teal", "#14B8A6"),
-    ("Sky", "#38BDF8"),
-];
-
 /// Token name → getter (same names as `[theme.colors]` / PLAN §1.2).
 /// `(token name, label, getter)`.
 pub type Token = (&'static str, &'static str, fn(&Palette) -> Color32);
@@ -62,82 +50,49 @@ pub const TOKENS: [Token; 33] = [
     ("tag.gray", "Tag gray", |p| p.tags[7]),
 ];
 
-/// Accent plus derived hover / subtle shades as `[theme.colors]` entries.
-pub fn accent_overrides(accent: Color32) -> [(String, String); 3] {
-    let [r, g, b, _] = accent.to_array();
-    let lift = |c: u8| (c as f32 + (255.0 - c as f32) * 0.2).round() as u8;
-    let hover = Color32::from_rgb(lift(r), lift(g), lift(b));
-    let subtle = Color32::from_rgba_unmultiplied(r, g, b, 44);
-    [
-        ("accent".into(), to_hex(accent)),
-        ("accent.hover".into(), to_hex(hover)),
-        ("accent.subtle".into(), to_hex(subtle)),
-    ]
-}
-
-fn set_accent(colors: &mut std::collections::BTreeMap<String, String>, c: Color32) {
-    for (k, v) in accent_overrides(c) {
-        colors.insert(k, v);
-    }
-}
-
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     let s = &mut app.settings;
     let d = &mut s.draft;
     let ctx = "Appearance theme colors";
     let mut any = false;
+    let mut theme_action = None;
     if q.trim().is_empty() {
         preview_card(ui, &p, d.appearance.density.row_height(), d.appearance.icon_style == IconStyle::Colored);
         any = true;
     }
     any |= group(ui, q, ctx, "Theme", |r| {
-        r.row_kw("Theme", "Follow the system, or force dark or light.", "dark light mode", |ui| {
-            let mut v = match d.appearance.theme.to_ascii_lowercase().as_str() {
-                "dark" => 1,
-                "light" => 2,
-                _ => 0,
-            };
-            if segmented(ui, &mut v, &[(0, "System"), (1, "Dark"), (2, "Light")]) {
-                d.appearance.theme = ["system", "dark", "light"][v].to_string();
-            }
-        });
-        r.row_kw("Accent color", "Selection, focus rings, primary buttons and links.", "highlight", |ui| {
-            let current = d.theme.colors.get("accent").and_then(|h| parse_hex(h)).unwrap_or(p.accent);
-            let mut custom = current;
-            if color_swatch(ui, &mut custom, d.theme.colors.contains_key("accent")) {
-                set_accent(&mut d.theme.colors, custom);
-            }
-            ui.add_space(4.0);
-            for (name, hex) in ACCENTS.iter().rev() {
-                let c = parse_hex(hex).unwrap_or(p.accent);
-                let (rect, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-                let selected =
-                    if d.theme.colors.contains_key("accent") { to_hex(current) == *hex } else { *hex == "#5B8CFF" };
-                ui.painter().circle_filled(rect.center(), 9.0, c);
-                if selected {
-                    ui.painter().circle_stroke(rect.center(), 11.0, Stroke::new(2.0, c));
-                    ui.painter().text(
-                        rect.center(),
-                        Align2::CENTER_CENTER,
-                        ph::CHECK,
-                        icons::font(10.0),
-                        Color32::WHITE,
-                    );
-                } else if resp.hovered() {
-                    ui.painter().circle_stroke(rect.center(), 11.0, Stroke::new(1.0, p.border_strong));
+        r.block(
+            "Color theme",
+            "Each theme has a dark and a light variant. Theme files live in the themes folder; edits apply live.",
+            |ui| {
+                if let Some(a) = super::themes_ui::gallery(ui, d, &p) {
+                    theme_action = Some(a);
                 }
-                if resp.on_hover_text(*name).clicked() {
-                    if *hex == "#5B8CFF" {
-                        for k in ["accent", "accent.hover", "accent.subtle"] {
-                            d.theme.colors.remove(k);
-                        }
-                    } else {
-                        set_accent(&mut d.theme.colors, c);
-                    }
+            },
+        );
+        r.row_kw(
+            "Mode",
+            "Follow the system dark / light switch live, or force dark or light.",
+            "dark light mode theme",
+            |ui| {
+                let mut v = match d.appearance.theme.to_ascii_lowercase().as_str() {
+                    "dark" => 1,
+                    "light" => 2,
+                    _ => 0,
+                };
+                if segmented(ui, &mut v, &[(0, "System"), (1, "Dark"), (2, "Light")]) {
+                    d.appearance.theme = ["system", "dark", "light"][v].to_string();
                 }
-            }
-        });
+            },
+        );
+        r.block(
+            "Accent color",
+            "Selection, focus rings, primary buttons and links. System follows the Windows accent color live.",
+            |ui| {
+                ui.horizontal(|ui| super::themes_ui::accent_row(ui, d, &p));
+            },
+        );
         r.row_kw("Reduce motion", "Turn off animations (panels, dialogs, toasts).", "animation accessibility", |ui| {
             switch(ui, &mut d.appearance.reduced_motion);
         });
@@ -204,9 +159,45 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row("File icons", "Colored by type, or monochrome.", |ui| {
             segmented(ui, &mut d.appearance.icon_style, &[(IconStyle::Colored, "Colored"), (IconStyle::Mono, "Mono")]);
         });
+        r.row_kw(
+            "Extension badges",
+            "A small colored label with the file extension on icons in the grid and gallery views.",
+            "icon label type",
+            |ui| {
+                switch(ui, &mut d.appearance.extension_badges);
+            },
+        );
         r.row_kw("Thumbnails", "Show image and video thumbnails instead of icons.", "preview pictures", |ui| {
             switch(ui, &mut d.appearance.show_thumbnails);
         });
+        r.row_kw(
+            "Folder thumbnails",
+            "Grid views show a 2×2 mosaic of the first pictures inside each folder.",
+            "mosaic folder preview",
+            |ui| {
+                switch(ui, &mut d.appearance.folder_thumbnails);
+            },
+        );
+        let ff = crate::services::thumb_video::ffmpeg_path();
+        let video_desc = match &ff {
+            Some(p) => format!("First frame of videos through ffmpeg ({}).", p.display()),
+            None => "First frame of videos through ffmpeg — not found on PATH, so videos show their length instead."
+                .to_string(),
+        };
+        r.row_kw("Video thumbnails", &video_desc, "ffmpeg movie mp4 frame", |ui| {
+            switch(ui, &mut d.appearance.video_thumbnails);
+        });
+        r.row_kw(
+            "Thumbnail disk cache",
+            "Keeps thumbnails in the thumbs folder so they survive restarts (0 = off). Oldest are removed first.",
+            "cache thumbs disk storage",
+            |ui| {
+                if small_button(ui, Some(ph::TRASH), "Clear", false).clicked() {
+                    crate::services::thumb_disk::clear();
+                }
+                number(ui, &mut d.appearance.thumb_disk_cache_mib, 0..=4096, " MiB");
+            },
+        );
         r.row_kw("Default thumbnail size", "Starting zoom of grid views.", "icon size zoom", |ui| {
             number(ui, &mut d.appearance.thumbnail_size, 32..=256, " px");
         });
@@ -299,6 +290,16 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
     });
+    match theme_action {
+        Some(super::themes_ui::ThemeAction::Import) => super::start_theme_import(app),
+        Some(super::themes_ui::ThemeAction::Export) => super::start_theme_export(app),
+        Some(super::themes_ui::ThemeAction::OpenFolder) => {
+            let dir = crate::theme::library::themes_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            app.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
+        }
+        None => {}
+    }
     any
 }
 
@@ -405,14 +406,5 @@ mod tests {
         for (_, _, get) in TOKENS {
             assert_eq!(get(&pal), Color32::from_rgb(0x12, 0x34, 0x56));
         }
-    }
-
-    #[test]
-    fn accent_shades() {
-        let o = accent_overrides(Color32::from_rgb(0x8B, 0x5C, 0xF6));
-        assert_eq!(o[0].1, "#8B5CF6");
-        let hover = parse_hex(&o[1].1).unwrap();
-        assert!(hover.r() > 0x8B && hover.g() > 0x5C);
-        assert_eq!(parse_hex(&o[2].1).unwrap().a(), 44);
     }
 }

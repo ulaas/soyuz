@@ -53,6 +53,9 @@ pub struct Palette {
     pub tags: [Color32; 8],
     /// Popup shadow alpha (0.35 dark / 0.12 light).
     pub shadow_alpha: f32,
+    /// Multiplier of the corner radii of widgets, menus and windows (theme files'
+    /// `[radii] scale`; 1.0 = the token scale).
+    pub radius_scale: f32,
 }
 
 const TAGS: [Color32; 8] = [
@@ -96,6 +99,7 @@ pub const ORBIT_DARK: Palette = Palette {
     glyph_exe: hex(0x4CC2FF),
     tags: TAGS,
     shadow_alpha: 0.35,
+    radius_scale: 1.0,
 };
 
 /// "Orbit Light".
@@ -128,6 +132,7 @@ pub const ORBIT_LIGHT: Palette = Palette {
     glyph_exe: hex(0x1C8ED6),
     tags: TAGS,
     shadow_alpha: 0.12,
+    radius_scale: 1.0,
 };
 
 /// "Orbit High Contrast" (dark): near-black surfaces, white text, bright borders and a
@@ -161,6 +166,7 @@ pub const ORBIT_HC_DARK: Palette = Palette {
     glyph_exe: hex(0x6BD8FF),
     tags: TAGS,
     shadow_alpha: 0.6,
+    radius_scale: 1.0,
 };
 
 /// "Orbit High Contrast" (light): white surfaces, black text, dark borders.
@@ -193,6 +199,7 @@ pub const ORBIT_HC_LIGHT: Palette = Palette {
     glyph_exe: hex(0x005A8C),
     tags: TAGS,
     shadow_alpha: 0.25,
+    radius_scale: 1.0,
 };
 
 impl Palette {
@@ -203,6 +210,32 @@ impl Palette {
         for c in [&mut self.bg_window, &mut self.bg_surface1, &mut self.bg_sunken] {
             *c = c.gamma_multiply(a);
         }
+    }
+
+    /// Replace the accent and derive `accent.hover` / `accent.subtle` from it (lighter
+    /// on dark palettes, darker on light ones).
+    pub fn set_accent(&mut self, accent: Color32) {
+        let (hover, subtle) = accent_shades(accent, self.dark);
+        self.accent = accent;
+        self.accent_hover = hover;
+        self.accent_subtle = subtle;
+    }
+
+    /// Text / icon color on an accent fill: white, or near-black for light accents.
+    pub fn on_accent(&self) -> Color32 {
+        let c = self.accent;
+        let lum = 0.2126 * f32::from(c.r()) + 0.7152 * f32::from(c.g()) + 0.0722 * f32::from(c.b());
+        if lum > 165.0 { hex(0x10131A) } else { Color32::WHITE }
+    }
+
+    /// A token by name (`bg.window`, `tag.red`, …), as accepted by [`Self::apply_overrides`].
+    pub fn token(&self, token: &str) -> Option<Color32> {
+        self.clone().slot_mut(token).map(|c| *c)
+    }
+
+    /// Scale a token radius by the palette's [`Self::radius_scale`].
+    pub fn radius(&self, r: u8) -> u8 {
+        (f32::from(r) * self.radius_scale).round().clamp(0.0, 32.0) as u8
     }
 
     /// Apply `[theme.colors]` overrides (token name → `#RRGGBB` / `#RRGGBBAA`).
@@ -262,6 +295,57 @@ impl Palette {
         })
     }
 }
+
+/// Hover and subtle (selection fill) shades of an accent color.
+pub fn accent_shades(accent: Color32, dark: bool) -> (Color32, Color32) {
+    let [r, g, b, _] = accent.to_array();
+    let hover = if dark {
+        let lift = |c: u8| (f32::from(c) + (255.0 - f32::from(c)) * 0.2).round() as u8;
+        Color32::from_rgb(lift(r), lift(g), lift(b))
+    } else {
+        let sink = |c: u8| (f32::from(c) * 0.86).round() as u8;
+        Color32::from_rgb(sink(r), sink(g), sink(b))
+    };
+    let subtle = Color32::from_rgba_unmultiplied(r, g, b, if dark { 46 } else { 36 });
+    (hover, subtle)
+}
+
+/// Every token name accepted by [`Palette::apply_overrides`] / theme files.
+pub const TOKEN_NAMES: [&str; 33] = [
+    "bg.window",
+    "bg.surface1",
+    "bg.surface2",
+    "bg.surface3",
+    "bg.sunken",
+    "border.subtle",
+    "border.strong",
+    "text.primary",
+    "text.secondary",
+    "text.tertiary",
+    "accent",
+    "accent.hover",
+    "accent.subtle",
+    "success",
+    "warning",
+    "danger",
+    "info",
+    "glyph.folder",
+    "glyph.image",
+    "glyph.video",
+    "glyph.audio",
+    "glyph.archive",
+    "glyph.code",
+    "glyph.doc",
+    "glyph.exe",
+    "tag.red",
+    "tag.orange",
+    "tag.yellow",
+    "tag.green",
+    "tag.cyan",
+    "tag.blue",
+    "tag.purple",
+    "tag.gray",
+];
 
 /// Parse `#RGB`, `#RRGGBB` or `#RRGGBBAA` (leading `#` optional).
 pub fn parse_hex(s: &str) -> Option<Color32> {
@@ -388,6 +472,26 @@ mod tests {
             assert!(ratio(p.text_tertiary, p.bg_surface2) >= 4.5);
             assert!(ratio(p.border_subtle, p.bg_window) >= 3.0, "visible borders");
         }
+    }
+
+    #[test]
+    fn token_names_resolve_and_accent_shades() {
+        for t in TOKEN_NAMES {
+            assert!(ORBIT_DARK.token(t).is_some(), "{t}");
+        }
+        assert_eq!(ORBIT_DARK.token("nope"), None);
+        let mut p = ORBIT_LIGHT.clone();
+        p.set_accent(Color32::from_rgb(200, 100, 50));
+        assert!(p.accent_hover.r() < 200, "light themes darken on hover");
+        let mut d = ORBIT_DARK.clone();
+        d.set_accent(Color32::from_rgb(200, 100, 50));
+        assert!(d.accent_hover.r() > 200, "dark themes lighten on hover");
+        assert!(d.accent_subtle.a() > 0 && d.accent_subtle.a() < 60);
+        assert_eq!(ORBIT_DARK.on_accent(), Color32::WHITE);
+        d.set_accent(Color32::from_rgb(0x88, 0xC0, 0xD0));
+        assert_ne!(d.on_accent(), Color32::WHITE, "light accents get dark text");
+        d.radius_scale = 1.5;
+        assert_eq!(d.radius(radius::ROW), 9);
     }
 
     #[test]

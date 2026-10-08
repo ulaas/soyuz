@@ -331,14 +331,15 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             icon: favorite_glyph(&f.path),
             label: &f.name,
             active: is_current(c, &f.path),
-            icon_color: None,
+            // A folder color (B2) tints the favorite's icon.
+            icon_color: crate::services::folder_colors::color_of(&f.path, &p),
             usage: None,
         }
         .show(ui);
         rects.push(r.rect);
         let r = r.on_hover_text(soyuz_fs::strip_verbatim(&f.path).display().to_string());
         row_clicks(&r, c, &f.path);
-        crate::ops::fileops::dnd::target(ui, &r, &f.path, c.cmds);
+        crate::ops::fileops::dnd::target_open(ui, &r, &f.path, c.pane, c.cmds);
         if r.drag_started() {
             s.drag = Some(i);
         }
@@ -385,7 +386,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         row_clicks(&r, c, &b.path);
-        crate::ops::fileops::dnd::target(ui, &r, &b.path, c.cmds);
+        crate::ops::fileops::dnd::target_open(ui, &r, &b.path, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, &b.path, false));
     }
@@ -419,7 +420,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         row_clicks(&r, c, &v.mount);
-        crate::ops::fileops::dnd::target(ui, &r, &v.mount, c.cmds);
+        crate::ops::fileops::dnd::target_open(ui, &r, &v.mount, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, &v.mount, false));
     }
@@ -448,7 +449,7 @@ fn cloud(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                 .show(ui);
         let r = r.on_hover_text(path.display().to_string());
         row_clicks(&r, c, path);
-        crate::ops::fileops::dnd::target(ui, &r, path, c.cmds);
+        crate::ops::fileops::dnd::target_open(ui, &r, path, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
         r.context_menu(|ui| place_menu(ui, cmds, path, false));
     }

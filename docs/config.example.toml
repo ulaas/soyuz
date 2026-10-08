@@ -26,7 +26,7 @@ language = "en"
 strict_windows_names = false     # apply Windows file-name rules on every OS
 
 [appearance]
-theme = "system"                 # system | dark | light | "<name>" (user theme file in themes/)
+theme = "system"                 # system (follows the OS switch live) | dark | light
 density = "cozy"                 # compact | cozy | comfortable | touch (large targets)
 ui_scale = 1.0
 font = "Inter"                   # or any family name / path
@@ -41,6 +41,12 @@ sidebar_width = 220
 custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
 backdrop = "none"                # none | mica | acrylic (Windows 11 only; applies at next start)
 snap_layouts = true              # Windows 11 Snap Layouts flyout on the maximize button
+color_theme = "orbit"            # orbit | nord | solarized | rose-pine | high-contrast | "<file stem in themes/>"
+accent = "theme"                 # theme | system (OS accent color, live) | "#RRGGBB"
+extension_badges = true          # extension labels on file icons (grid / gallery)
+folder_thumbnails = true         # 2x2 mosaic of the first images inside folders
+video_thumbnails = true          # first frame via an `ffmpeg` binary on PATH, when present
+thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
 
 [theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
 # accent = "#5B8CFF"
@@ -80,6 +86,8 @@ auto_refresh = true
 watch_debounce_ms = 250
 type_ahead = "jump"              # jump | filter
 middle_click = "new_tab"         # new_tab | other_pane | nothing
+spring_loaded_folders = true     # hovering a folder while dragging opens it
+spring_load_delay_ms = 700
 
 [jobs]
 max_parallel = 4

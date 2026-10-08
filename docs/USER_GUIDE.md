@@ -73,7 +73,9 @@ mode (status bar or palette) adds tick boxes for mouse and touch users.
 Drag and drop works between panes, tabs, the sidebar, the shelf and other applications.
 The default drop effect follows the platform convention (move on the same drive, copy
 across drives); hold `Ctrl` to copy, `Shift` to move, or set *Behaviour → Drag and drop*
-to *Ask*.
+to *Ask*. While dragging, rest on a folder, a breadcrumb segment, a sidebar place or
+another tab for a moment and it opens (spring-loaded folders; delay and on/off in
+*Behaviour → Drag and drop*).
 
 ## Background jobs, conflicts and undo
 
@@ -124,8 +126,14 @@ them. Save a search to keep it in the sidebar.
 **Settings** (`Ctrl+,`) covers every section of `config.toml` and applies changes live.
 Search the settings with `Ctrl+F` inside the window.
 
-- *Appearance*: theme (system / dark / light), accent color, density, font size, interface
-  scale, reduced motion, high contrast, icons and thumbnails.
+- *Appearance*: color theme (Orbit, Nord, Solarized, Rosé Pine, High Contrast or your own
+  files in `themes/`, each with a dark and a light variant), mode (system follows the OS
+  switch live / dark / light), accent color (the theme's, the Windows accent, or any color),
+  density, font size, interface scale, reduced motion, high contrast, icons and thumbnails
+  (extension badges, folder mosaics, ffmpeg video frames, the on-disk thumbnail cache).
+  **Import theme…** / **Export current…** share theme files.
+- *Folder colors*: right-click folders → **Folder color** for a color and an emblem; it
+  shows on the folder icon, in the breadcrumb and on tabs.
 - *Keyboard*: presets (Explorer, Commander, Finder, Vim), click any shortcut to record a new
   one, conflict and shadowing warnings, multi-key sequences such as `g g`.
 - *Custom commands*: run programs with placeholders (`%p` focused path, `%s` selected
@@ -170,6 +178,9 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `history.jsonl` | job history (for undo) |
 | `palette.toml` | frecency, recent commands, marks |
 | `tags.toml`, `recent.toml` | tags and recent places |
+| `folder_colors.toml` | folder colors and emblems |
+| `themes/*.toml` | your color themes |
+| `thumbs/` | thumbnail cache (safe to delete) |
 
 ## Troubleshooting
 

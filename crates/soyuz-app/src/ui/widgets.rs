@@ -509,7 +509,7 @@ pub fn pill_button(ui: &mut Ui, icon: Option<&str>, label: &str, primary: bool) 
     crate::ui::a11y::button(&resp, label);
     let hover = resp.hovered();
     let (bg, fg) = if primary {
-        (if hover { p.accent_hover } else { p.accent }, Color32::WHITE)
+        (if hover { p.accent_hover } else { p.accent }, p.on_accent())
     } else {
         (if hover { p.bg_surface3 } else { p.bg_surface2 }, p.text_primary)
     };
