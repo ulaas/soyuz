@@ -11,9 +11,12 @@
 
 <p align="center">
   <a href="docs/USER_GUIDE.md">User guide</a> ·
-  <a href="docs/config.example.toml">Config reference</a> ·
+  <a href="docs/GALLERY.md">Screenshots</a> ·
+  <a href="docs/KEYBOARD.md">Keyboard</a> ·
+  <a href="docs/CONFIG.md">Config reference</a> ·
+  <a href="#install">Install</a> ·
   <a href="#building">Build</a> ·
-  <a href="#architecture">Architecture</a>
+  <a href="CHANGELOG.md">Changelog</a>
 </p>
 
 ---
@@ -29,62 +32,98 @@ smoothly, and a dead network share cannot hang the window.
 > is predictable, cancellable and identical across machines. CI fails the build if a
 > shell API sneaks in.
 
+<p align="center">
+  <img src="docs/screenshots/01-details-preview.png" width="860" alt="Soyuz: details view with the preview pane">
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/02-grid-thumbnails.png" width="280" alt="Grid view with thumbnails and folder mosaics">
+  <img src="docs/screenshots/20-activity-copy.png" width="280" alt="Dual pane with a copy job in the activity panel">
+  <img src="docs/screenshots/21-ai-plan.png" width="280" alt="The assistant proposing a plan">
+</p>
+
+More in the [screenshot gallery](docs/GALLERY.md).
+
+> **Platforms.** Soyuz is built and verified on **Windows 10/11**. The code base keeps its
+> Linux and macOS paths compiling where that is cheap, but those platforms have not been
+> run or tested yet (owner decision; see [docs/ROADMAP.md](docs/ROADMAP.md)).
+
 ## Features
 
 **Browsing**
-- Details, list, grid (thumbnails), gallery and Miller-column views, remembered per folder
-- Tabs (pinning, reorder, reopen closed), dual pane with synchronized navigation
-- Breadcrumb omnibar with path editing and completion, live filter, type-ahead
-- Sidebar with favorites, drives with free-space bars, cloud folders, tags, trash and a folder tree
-- Archives (zip, 7z, tar.\*) browse like folders
+- Details, list, grid (thumbnails, folder mosaics), gallery and Miller-column views, remembered per folder
+- Tabs with groups, pinning and tear-off into windows; dual and quad (2×2) panes with synchronized browsing; saved workspaces
+- Breadcrumb omnibar with path editing and completion, live filter, type-ahead, "Where was I?" history graph, Timeline of recent changes
+- Sidebar with favorites, drives, cloud folders, tags, smart folders, network places, trash and a lazy folder tree
+- Archives browse like folders: zip, 7z, tar.\*, RAR, ISO / UDF, CAB, deb / rpm (zip can be edited in place)
+- Remote locations: SFTP, WebDAV, FTP / FTPS, S3-compatible storage and `\\server` share listing, with cached listings
 
 **File operations**
-- Background jobs engine: per-device queueing, priorities, pause / resume / cancel, speed graph and ETA
+- Background jobs engine: per-device queueing, priorities, pause / resume / cancel, speed graph and ETA, crash-safe journal with resume after a crash
 - Conflict dialog with side-by-side comparison, "apply to all", keep both / replace / skip
-- Undo / redo for copy, move, rename, trash, new items and metadata changes
-- Trash support, secure wipe, batch rename with live preview, bulk attributes, links and junctions
+- Undo / redo for copy, move, rename, trash, new items, archive edits and metadata changes
+- Trash support, secure wipe, batch rename with live preview, bulk attributes, links and junctions, verified copies
 - OS clipboard interop (copy in Soyuz, paste in your other file manager and back)
 
 **Tools**
 - Integrated terminal that follows the current folder (and can drive navigation)
-- Preview pane and Quick Look (Space): text with syntax highlighting, images, hex, markdown
-- Search by name and content, saved searches, folder sizes
-- Disk-usage treemap, folder compare & sync, duplicate finder, split / join, checksums
-- Git status column, color tags, drop shelf (persists across restarts), recent places
+- Preview pane and Quick Look (Space): code with syntax highlighting, images, Markdown, PDF, Office documents, EPUB, fonts, 3D models, audio waveform and playback, video posters, two-file diff
+- Built-in text, hex and image editors
+- Search by name and content, a background index (SQLite FTS5 + NTFS change journal) with a query language and live smart folders
+- Disk-usage treemap, folder compare and two-way sync with scheduled profiles, previous versions from shadow copies, duplicate finder, split / join, checksums
+- Git status column, color tags, folder colors, drop shelf, recent places
+- Automation: sandboxed Rhai scripts, watcher-driven rules, and a `soyuz cp|mv|rm …` CLI that queues jobs in the running window
+
+**AI (optional, off by default)**
+- An assistant panel for Anthropic, OpenAI, Gemini or local OpenAI-compatible models (Ollama, LM Studio, llama.cpp, vLLM)
+- Every change is a dry-run plan you approve; it then runs as a normal, undoable job. Per-folder permissions, redaction, budgets and an audit log
+- An MCP server (`soyuz --mcp`) so other assistants can drive Soyuz under the same approval rules, and an MCP client for external tools
+- API keys live in the Windows Credential Manager, never in `config.toml`
 
 **Make it yours**
 - Command palette (`Ctrl+K`) with every action and its shortcut; go-to-folder (`Ctrl+P`) with frecency
-- Key presets (Explorer, Commander, Finder, Vim), chords and multi-key sequences, conflict detection
-- Settings window plus a hot-reloaded `config.toml` — saving from the UI keeps your comments
-- Custom commands with placeholders, bookmarks with hotkeys
+- Key presets (Explorer, Commander, Finder, Vim), chords and multi-key sequences, conflict detection ([cheat sheet](docs/KEYBOARD.md))
+- Five color themes with dark and light variants, user theme files, the Windows accent color, Mica / Acrylic backdrops
+- Settings window plus a hot-reloaded `config.toml` — saving from the UI keeps your comments ([reference](docs/CONFIG.md))
+- English and Turkish UI with locale-aware dates, sizes and sorting; switches live
 
 **Accessibility**
-- Screen-reader support through AccessKit (named buttons, tabs, list items, progress, dialogs, live toasts)
+- Screen-reader support through AccessKit (named buttons, tabs, list items, progress, dialogs, live toasts) — see [docs/ACCESSIBILITY.md](docs/ACCESSIBILITY.md)
 - High-contrast theme, reduced motion, touch density with large targets
 - Interface zoom (`Ctrl+=` / `Ctrl+-` / `Ctrl+0`), visible focus rings, keyboard access everywhere
 
 ## Keyboard shortcuts
 
-Default preset (*Explorer*). Every binding can be changed in **Settings → Keyboard** or
-`[keys.bindings]`; the palette shows the active shortcut next to each command.
+A few defaults of the *Explorer* preset. The full list for every preset is in
+[docs/KEYBOARD.md](docs/KEYBOARD.md) (generated from the key maps), with a printable
+[one-page version](docs/keyboard.html). Every binding can be changed in **Settings → Keyboard**.
 
 | Action | Shortcut | Action | Shortcut |
 |---|---|---|---|
 | Command palette | `Ctrl+K` / `Ctrl+Shift+P` | Go to folder | `Ctrl+P` |
 | Back / Forward / Up | `Alt+←` / `Alt+→` / `Alt+↑` | Edit path | `Ctrl+L` |
-| New tab / Close tab | `Ctrl+T` / `Ctrl+W` | Reopen closed tab | `Ctrl+Shift+T` |
-| Next / previous tab | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Dual pane | `F9` |
-| Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Paste as link | `Ctrl+Shift+V` |
-| Copy / move to other pane | `F5` / `F6` | Rename | `F2` |
-| Batch rename | `Ctrl+Shift+R` | Duplicate | `Ctrl+D` |
-| New folder / New file | `Ctrl+Shift+N` / `Ctrl+Alt+N` | Properties | `Alt+Enter` |
-| Move to trash / Delete permanently | `Del` / `Shift+Del` | Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
-| Filter / Search | `Ctrl+F` / `Ctrl+Shift+F`, `F3` | Quick Look | `Space` |
+| New tab / Close tab | `Ctrl+T` / `Ctrl+W` | Dual pane / Quad | `F9` / `Shift+F9` |
+| Copy / Cut / Paste | `Ctrl+C` / `Ctrl+X` / `Ctrl+V` | Copy / move to other pane | `F5` / `F6` |
+| Rename / Batch rename | `F2` / `Ctrl+Shift+R` | Move to trash / Delete | `Del` / `Shift+Del` |
+| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` | Quick Look | `Space` |
 | Terminal | ``Ctrl+` `` | Activity panel | `Ctrl+Shift+J` |
-| Preview pane | `Alt+P` | Toggle hidden files | `Ctrl+H` |
-| Views: details / grid / list / Miller / gallery | `Ctrl+Shift+1…5` | Icon size | `Ctrl+Alt+=` / `Ctrl+Alt+-`, `Ctrl+wheel` |
-| Interface zoom | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | Settings | `Ctrl+,` |
-| Keyboard shortcuts | `Ctrl+/` | Quit | `Ctrl+Q` |
+| AI assistant | `Ctrl+I` | Settings | `Ctrl+,` |
+
+## Install
+
+Download from the project's GitHub Releases (every file has a `.sha256`, and
+`SHA256SUMS-windows.txt` lists them all):
+
+| Package | How |
+|---|---|
+| `soyuz-<version>-windows-x64.msi` | Per-user install to `%LOCALAPPDATA%\Programs\Soyuz`, no admin rights. Optional features: "Open in Soyuz" folder context-menu entry and a PATH entry. `msiexec /i soyuz.msi ALLUSERS=1` installs per machine. |
+| `soyuz-<version>-windows-x64.zip` | Unzip anywhere and run `soyuz.exe`. Settings go to `%APPDATA%\soyuz`. |
+| `soyuz-<version>-windows-x64-portable.zip` | Same, plus an empty `portable` file next to the exe: settings stay in `portable-data\` beside it (USB sticks). |
+
+PDF page rendering needs `pdfium.dll` next to `soyuz.exe` or in the config folder (Soyuz
+never downloads it; without it PDFs preview as text). Video posters and thumbnails use an
+`ffmpeg` found on `PATH`. Soyuz can register itself as the default file manager from
+Settings → Advanced (with an exact restore), and checks for updates only when asked.
 
 ## Configuration
 
@@ -100,8 +139,9 @@ Everything lives in one file, `config.toml`:
 Edits made in a text editor apply within a second; a parse error is shown with its line
 and column and the previous settings stay active. The settings window writes the file
 back with [`toml_edit`](https://docs.rs/toml_edit), so your comments and ordering are
-preserved. See [`docs/config.example.toml`](docs/config.example.toml) for every key and
-the [user guide](docs/USER_GUIDE.md) for a tour.
+preserved. [docs/CONFIG.md](docs/CONFIG.md) lists every key with its type, default and
+meaning (generated from the schema); [`docs/config.example.toml`](docs/config.example.toml) is an
+annotated sample, and the [user guide](docs/USER_GUIDE.md) gives a tour.
 
 ## Building
 
@@ -133,7 +173,7 @@ It installs per user to `%LOCALAPPDATA%\Programs\Soyuz` without admin rights
 uninstall entry, and has two optional features: an "Open in Soyuz" folder context-menu
 entry and a PATH entry (`ADDLOCAL=Main,ContextMenu,AddToPath`).
 
-**Linux** — install the windowing and font headers first:
+**Linux** (untested; deferred) — install the windowing and font headers first:
 
 ```sh
 sudo apt-get install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev \
@@ -141,7 +181,7 @@ sudo apt-get install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev \
 cargo install cargo-deb && cargo deb -p soyuz-app   # optional .deb
 ```
 
-**macOS** — Xcode command-line tools. `cargo install cargo-bundle && cargo bundle -p soyuz-app --release`
+**macOS** (untested; deferred) — Xcode command-line tools. `cargo install cargo-bundle && cargo bundle -p soyuz-app --release`
 produces `Soyuz.app`.
 
 **Cargo features** (`soyuz-app`):
@@ -149,36 +189,54 @@ produces `Soyuz.app`.
 | Feature | Default | Effect |
 |---|---|---|
 | `zstd` | yes | Native zstd (writing `.tar.zst`, zstd zip entries). Compiles C; use `--no-default-features` when cross-compiling without a C toolchain (zstd archives stay readable). |
+| `pdf` | yes | PDF page rendering through pdfium, loaded at runtime from `pdfium.dll` (text-only fallback without it). |
 | `glow` | no | OpenGL renderer as a fallback: `cargo run -p soyuz-app --features glow -- --renderer glow`. |
+
+`soyuz-archive` has a `rar` feature (default on) for the pure-Rust RAR reader.
 
 Debug hooks for automation: `SOYUZ_SCRIPT` (scripted actions and screenshots),
 `SOYUZ_FRAME_LOG=1` (per-frame timing; an idle window renders no frames),
-`SOYUZ_THROTTLE_MBPS` (slow copies to watch progress), `SOYUZ_OPEN_TOOL`.
+`SOYUZ_THROTTLE_MBPS` (slow copies to watch progress), `SOYUZ_OPEN_TOOL`, `SOYUZ_AI_FAKE`
+(scripted assistant). `scripts/screenshots.ps1` regenerates the gallery from a generated demo
+tree (`scripts/demo-fixture.ps1`), and `scripts/changelog.ps1` writes `CHANGELOG.md`.
 
 ## Architecture
 
-A Cargo workspace of seven crates with an acyclic dependency graph. Only `soyuz-term` and
+A Cargo workspace of twelve crates with an acyclic dependency graph. Only `soyuz-term` and
 `soyuz-app` depend on egui; everything else is plain Rust and unit-tested in isolation.
 
 | Crate | Role |
 |---|---|
-| [`soyuz-core`](crates/soyuz-core) | Shared vocabulary: entries, locations, errors, sorting, filtering, cancellation, the config schema, actions and key maps. No GUI, no I/O threads. |
-| [`soyuz-fs`](crates/soyuz-fs) | Platform layer over raw OS calls: streaming listings, copy with progress / reflink / sparse, move, delete, trash, links, attributes, ACLs, volumes, watching, launching. |
-| [`soyuz-jobs`](crates/soyuz-jobs) | The operation engine: queue and scheduler, planning, prompts (conflicts / errors), progress snapshots, history journal, undo / redo. |
-| [`soyuz-archive`](crates/soyuz-archive) | Archive readers and writers (zip, 7z, tar + gz / bz2 / xz / zst) with an indexed virtual file system. |
+| [`soyuz-core`](crates/soyuz-core) | Shared vocabulary: entries, locations, errors, sorting, filtering, locale formatting, cancellation, the config schema, actions and key maps. No GUI, no I/O threads. |
+| [`soyuz-fs`](crates/soyuz-fs) | Platform layer over raw OS calls: streaming listings, copy with progress / reflink / sparse, move, delete, trash, links, attributes, ACLs, volumes, watching, launching, shadow copies, USN journal. |
+| [`soyuz-jobs`](crates/soyuz-jobs) | The operation engine: queue and scheduler, planning, prompts (conflicts / errors), progress snapshots, crash journal, history, undo / redo. |
+| [`soyuz-archive`](crates/soyuz-archive) | Archive readers and writers (zip, 7z, tar + gz / bz2 / xz / zst; RAR, ISO / UDF, CAB, deb / rpm read-only) with an indexed virtual file system. |
 | [`soyuz-search`](crates/soyuz-search) | Parallel name / content search, folder sizes, size trees for the treemap, duplicate detection, folder compare. |
+| [`soyuz-index`](crates/soyuz-index) | Background index (SQLite + FTS5), query language, smart-folder queries. |
+| [`soyuz-vfs`](crates/soyuz-vfs) | Remote providers (SFTP, WebDAV, FTP / FTPS, S3) and resumable cross-provider transfers. |
 | [`soyuz-term`](crates/soyuz-term) | Embedded terminal widget (alacritty_terminal + ConPTY / PTY) with selection, links and shell integration. |
-| [`soyuz-app`](crates/soyuz-app) | The `soyuz` binary: egui shell, views, dialogs, palette, settings, services (lister pool, watcher, thumbnails, previews) and the design system. |
+| [`soyuz-ai`](crates/soyuz-ai) | AI providers, credential store, tool catalog with risk classes and dry-run plans, audit log. |
+| [`soyuz-mcp`](crates/soyuz-mcp) | MCP server (stdio, named-pipe attach, localhost HTTP) with a client trust model, and an MCP client. |
+| [`soyuz-script`](crates/soyuz-script) | Sandboxed Rhai scripting for actions, menus, columns, previewers and automation rules. |
+| [`soyuz-app`](crates/soyuz-app) | The `soyuz` binary: egui shell, views, dialogs, palette, settings, services (listers, watcher, thumbnails, previews), the assistant and the design system. |
 
-```
-soyuz-app ──► soyuz-jobs ──► soyuz-fs ──────► soyuz-core
-    │              └───────► soyuz-archive ─► soyuz-core
-    ├──► soyuz-search ─────► soyuz-fs, soyuz-core
-    └──► soyuz-term          (egui + alacritty_terminal only)
-                                         arrows = "depends on"
-```
+## Documentation
 
-Inside the app, widgets never mutate state directly: they push `Cmd`s, `ops` applies
+| Document | What it covers |
+|---|---|
+| [User guide](docs/USER_GUIDE.md) | A tour of the app |
+| [Screenshot gallery](docs/GALLERY.md) | Every major screen |
+| [Keyboard](docs/KEYBOARD.md) / [printable](docs/keyboard.html) | Default shortcuts of all presets (generated) |
+| [Configuration](docs/CONFIG.md) | Every `config.toml` key (generated); [annotated sample](docs/config.example.toml) |
+| [Accessibility](docs/ACCESSIBILITY.md) | Screen readers, keyboard-only use, contrast |
+| [Security](SECURITY.md) | Threat model and reporting |
+| [Roadmap](docs/ROADMAP.md) | Status of every roadmap item and what is next |
+| [Changelog](CHANGELOG.md) | Changes by milestone |
+| [Plan](docs/PLAN.md) / [integration notes](docs/INTEGRATION_NOTES.md) | Architecture and per-crate notes for contributors |
+
+## Inside the app
+
+Widgets never mutate state directly: they push `Cmd`s, `ops` applies
 them, and `actions::execute` is the single dispatcher behind key bindings, menus,
 toolbar buttons and the palette. I/O always happens on worker threads that wake the UI
 when results arrive, so the UI thread only renders — and renders nothing while idle.

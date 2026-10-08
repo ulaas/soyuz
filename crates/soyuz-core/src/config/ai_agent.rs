@@ -60,7 +60,9 @@ impl AiAccess {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AiFolderRule {
+    /// Folder the rule applies to (and everything below it).
     pub path: PathBuf,
+    /// What AI tools may see there.
     pub access: AiAccess,
 }
 

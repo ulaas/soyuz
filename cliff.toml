@@ -1,0 +1,52 @@
+# git-cliff configuration (https://git-cliff.org). Generate the changelog with
+#   git cliff -o CHANGELOG.md
+# Without git-cliff installed, `scripts/changelog.ps1` produces the same grouping.
+#
+# Soyuz commits are not Conventional Commits: they start with a roadmap id
+# (`M7:`, `F2:`, `R4/R5/B1:`, `A5-A8:`) or a type (`fix:`, `fix(app):`, `docs:`, `security:`).
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to Soyuz. Grouped by roadmap phase (see docs/ROADMAP.md): M = the
+original milestones (docs/PLAN.md), R = rigidity, B = looks, F = features, A = AI,
+D = distribution.\n
+"""
+body = """
+{% if version %}\
+## {{ version | trim_start_matches(pat="v") }} ({{ timestamp | date(format="%Y-%m-%d") }})
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }} ({{ commit.id | truncate(length=7, end="") }})\
+{% endfor %}
+{% endfor %}\n
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = false
+filter_unconventional = false
+split_commits = false
+protect_breaking_commits = false
+filter_commits = false
+topo_order = false
+sort_commits = "oldest"
+commit_parsers = [
+  { message = "^Merge ", skip = true },
+  { message = "^M\\d", group = "<!-- 0 -->Milestones (M0–M13)" },
+  { message = "^R\\d", group = "<!-- 1 -->Rigidity (R)" },
+  { message = "^B\\d", group = "<!-- 2 -->Looks (B)" },
+  { message = "^(F\\d|fonts)", group = "<!-- 3 -->Features (F)" },
+  { message = "^(A\\d|AI )", group = "<!-- 4 -->AI (A)" },
+  { message = "^D\\d", group = "<!-- 5 -->Distribution (D)" },
+  { message = "^(feat|feature)", group = "<!-- 6 -->Other features" },
+  { message = "^(fix|security)", group = "<!-- 7 -->Fixes and security" },
+  { message = "^docs", group = "<!-- 8 -->Documentation" },
+  { message = ".*", group = "<!-- 9 -->Other" },
+]

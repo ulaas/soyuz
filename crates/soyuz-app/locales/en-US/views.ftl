@@ -97,6 +97,11 @@ views-computer-title = Devices and drives
 views-computer-free-of = { $free } free of { $total }
 views-computer-drive = Drive
 views-computer-looking = Looking for drives…
+views-volume-fixed = Local Disk
+views-volume-removable = Removable Disk
+views-volume-network = Network Drive
+views-volume-optical = CD Drive
+views-volume-ram = RAM Disk
 
 ## File list (ui/views/flow.rs, miller.rs)
 

@@ -149,7 +149,6 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                         .iter()
                         .filter(|v| path.starts_with(&v.mount))
                         .max_by_key(|v| v.mount.as_os_str().len())
-                        .filter(|v| !v.label.is_empty())
                         .map(volume_label),
                     _ => None,
                 }

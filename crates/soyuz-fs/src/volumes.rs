@@ -49,6 +49,10 @@ bitflags! {
 #[derive(Clone, Debug)]
 pub struct VolumeInfo {
     pub mount: PathBuf,
+    /// The volume's own label. On Windows this is the raw OS label and is empty when the
+    /// volume has none; the app then builds a localized name from [`kind`](Self::kind)
+    /// and the mount (`Local Disk (C:)` / `Yerel Disk (C:)`), so this crate stays
+    /// locale-agnostic.
     pub label: String,
     /// Filesystem name (`"NTFS"`, `"ext4"`, ...); empty when unknown.
     pub fs: String,
@@ -338,17 +342,6 @@ mod imp {
         }
     }
 
-    fn default_label(kind: VolumeKind) -> &'static str {
-        match kind {
-            VolumeKind::Fixed => "Local Disk",
-            VolumeKind::Removable => "Removable Disk",
-            VolumeKind::Network => "Network Drive",
-            VolumeKind::Optical => "CD Drive",
-            VolumeKind::Ram => "RAM Disk",
-            VolumeKind::Unknown => "Drive",
-        }
-    }
-
     pub(super) fn caps(flags: u32, fs: &str) -> FsCaps {
         let mut c = FsCaps::empty();
         for (bit, cap) in [
@@ -412,10 +405,7 @@ mod imp {
                 continue; // empty card reader / optical drive without media
             }
             let info = info.unwrap_or_default();
-            let letter = root.to_string_lossy().len() <= 3;
-            let base = if info.label.is_empty() { default_label(kind).to_string() } else { info.label.clone() };
-            let label =
-                if letter { format!("{base} ({})", root.to_string_lossy().trim_end_matches('\\')) } else { base };
+            let label = info.label.clone();
             let (total, free) = space.unwrap_or((0, 0));
             out.push(VolumeInfo {
                 mount: root,
@@ -685,7 +675,7 @@ mod imp {
         let device = crate::list::stat(Path::new("/"), true).ok().and_then(|e| e.dev).unwrap_or(DeviceId(0));
         vec![VolumeInfo {
             mount: PathBuf::from("/"),
-            label: "File System".into(),
+            label: String::new(),
             fs: String::new(),
             kind: VolumeKind::Fixed,
             total,

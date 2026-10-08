@@ -72,22 +72,33 @@ pub enum OpenFoldersIn {
 pub struct General {
     /// `"home"` | `"last"` | `"<path>"`.
     pub start_location: String,
+    /// Open folders in the `same_tab` or a `new_tab`.
     pub open_folders_in: OpenFoldersIn,
+    /// Open files and folders with a single click instead of a double click.
     pub single_click_open: bool,
     /// Confirm moving to trash.
     pub confirm_delete: bool,
+    /// Confirm before deleting permanently (Shift+Del).
     pub confirm_permanent_delete: bool,
+    /// Show hidden files and folders (also toggled with Ctrl+H).
     pub show_hidden: bool,
     /// Windows system files.
     pub show_system: bool,
+    /// Show file name extensions.
     pub show_extensions: bool,
+    /// Natural sort: `file2` before `file10`.
     pub natural_sort: bool,
+    /// Sort names without regard to letter case.
     pub case_insensitive_sort: bool,
+    /// List folders before files.
     pub folders_first: bool,
     pub size_style: SizeStyle,
     pub date_format: DateFormat,
+    /// View for folders without a remembered view.
     pub default_view: ViewMode,
+    /// Longest gap between the two clicks of a double click (ms).
     pub double_click_speed_ms: u32,
+    /// UI language: `"auto"` (the OS display language), `"en-US"` or `"tr-TR"`. Switches live.
     pub language: String,
     /// Apply Windows file-name rules on every OS (see `validate_name_with`).
     pub strict_windows_names: bool,
@@ -137,7 +148,9 @@ pub enum IconStyle {
 pub struct Appearance {
     /// `"system"` | `"dark"` | `"light"` | `"<name>"` (user theme in `themes/`).
     pub theme: String,
+    /// Row and control height: `compact`, `cozy`, `comfortable` or `touch`.
     pub density: Density,
+    /// Interface zoom factor (Ctrl+= / Ctrl+- / Ctrl+0 change it).
     pub ui_scale: f32,
     /// Legacy (schema 1): read and moved into `[fonts.ui]` on load, never written.
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -145,14 +158,21 @@ pub struct Appearance {
     /// Legacy (schema 1): moved into `[fonts.terminal]` / `code` / `hex` on load.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub mono_font: String,
+    /// Base UI text size in points.
     pub font_size: f32,
+    /// Turn off animations (transitions and springs jump to their end state).
     pub reduced_motion: bool,
     /// High-contrast palette (stronger text, borders and focus rings).
     pub high_contrast: bool,
+    /// `colored` file-type icons or `mono` (single color; folder colors stay).
     pub icon_style: IconStyle,
+    /// Picture and video thumbnails in the grid and gallery views.
     pub show_thumbnails: bool,
+    /// Default thumbnail edge in the grid view (points).
     pub thumbnail_size: u32,
+    /// Sidebar width in points (dragging its edge updates it).
     pub sidebar_width: f32,
+    /// Soyuz draws its own title bar with the tabs in it; off = the system title bar.
     pub custom_titlebar: bool,
     /// Windows 11 window backdrop behind translucent surfaces (no-op elsewhere; read at start).
     pub backdrop: Backdrop,
@@ -238,13 +258,21 @@ pub enum ActivityPlacement {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Layout {
+    /// Show the sidebar.
     pub sidebar: bool,
+    /// Show the preview pane.
     pub preview_pane: bool,
+    /// Start new tabs with two panes.
     pub dual_pane: bool,
+    /// Side by side (`vertical` split) or stacked (`horizontal`).
     pub dual_pane_orientation: Orientation,
+    /// Show the status bar.
     pub status_bar: bool,
+    /// Show the tab strip `always` or only with `multiple` tabs.
     pub tab_strip: TabStripMode,
+    /// Height of the terminal / bottom panel in points (120-720).
     pub terminal_height: f32,
+    /// Where the activity (jobs) panel docks.
     pub activity_panel: ActivityPlacement,
 }
 
@@ -277,11 +305,13 @@ pub enum CloseWindowTabs {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceConfig {
+    /// What "New window" (Ctrl+N) opens.
     pub new_window: NewWindowMode,
     /// Drag a tab out of the tab strip to open it in its own window.
     pub tear_off: bool,
     /// How far (points) a tab has to be dragged away from the strip to tear off.
     pub tear_off_distance: f32,
+    /// Closing a window that still has tabs.
     pub close_window_tabs: CloseWindowTabs,
     /// Reopen the other windows (with their positions) when the session is restored.
     pub restore_windows: bool,
@@ -294,6 +324,7 @@ pub struct WorkspaceConfig {
     pub timeline_days: u32,
     /// Recently visited folders scanned (one level) for changed files.
     pub timeline_scan_folders: usize,
+    /// Most files the timeline lists.
     pub timeline_max_items: usize,
     /// Ask the search index (when one is available) for changed files too.
     pub timeline_use_index: bool,
@@ -304,6 +335,7 @@ pub struct WorkspaceConfig {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Toolbar {
+    /// Toolbar items, left to right.
     pub items: Vec<String>,
 }
 
@@ -347,6 +379,7 @@ pub enum SidebarMode {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sidebar {
+    /// Sidebar sections in display order; leave one out to hide it.
     pub sections: Vec<SidebarSection>,
     /// `places` | `tree` | `both`.
     pub mode: SidebarMode,
@@ -360,6 +393,7 @@ pub struct Sidebar {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Columns {
+    /// Columns of the details view, in order.
     pub details: Vec<Column>,
     /// Column name (`snake_case`) → width in points.
     pub widths: BTreeMap<String, f32>,
@@ -414,14 +448,23 @@ pub enum MiddleClick {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Behaviour {
+    /// Inline rename preselects the name `stem` (without extension) or `all`.
     pub rename_selects: RenameSelects,
+    /// Default answer when a pasted name already exists (`ask` shows the conflict dialog).
     pub paste_conflict: PasteConflict,
+    /// Drag and drop default operation.
     pub drag_default: DragDefault,
+    /// Remember view, sort and columns per folder (`views.toml`).
     pub remember_folder_views: bool,
+    /// Reopen the tabs, panes and windows of the last session at startup.
     pub restore_session: bool,
+    /// Watch open folders and refresh them when files change.
     pub auto_refresh: bool,
+    /// Collect file-system change events for this long before refreshing (ms).
     pub watch_debounce_ms: u64,
+    /// Typing in the file list `jump`s to the first match or `filter`s the list.
     pub type_ahead: TypeAhead,
+    /// Middle-clicking a folder opens it in a `new_tab`, the `other_pane`, or does `nothing`.
     pub middle_click: MiddleClick,
     /// Hovering a folder during a drag opens it (Explorer / Finder "spring-loaded folders").
     pub spring_loaded_folders: bool,
@@ -463,15 +506,25 @@ pub enum TrashUnsupportedPolicy {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Jobs {
+    /// Jobs that may run at the same time.
     pub max_parallel: usize,
+    /// Queue jobs that touch the same drive one after another (faster on spinning disks).
     pub per_device_serial: bool,
+    /// "Apply to all" in a conflict dialog lasts for one job only; off = it carries over to the following jobs.
     pub reset_apply_all_between_jobs: bool,
+    /// Hash-compare every copied file with its source (BLAKE3) after the copy.
     pub verify_after_copy: bool,
+    /// Copy buffer size (MiB).
     pub copy_buffer_mib: u64,
+    /// Files larger than this are copied with unbuffered I/O, bypassing the OS cache (MiB).
     pub unbuffered_threshold_mib: u64,
+    /// Metadata copied along with file data.
     pub preserve: Vec<PreserveItem>,
+    /// Copy-on-write clones (ReFS block cloning, btrfs / APFS reflinks): `auto`, `never` or `always`.
     pub reflink: ReflinkPref,
+    /// Finished jobs kept in the history (for undo / redo).
     pub history_limit: usize,
+    /// When a volume has no trash: `ask`, delete `permanent`ly or `skip`.
     pub trash_unsupported: TrashUnsupportedPolicy,
     /// Open the activity panel when a job runs for more than a second.
     pub auto_open_activity: bool,
@@ -482,12 +535,19 @@ pub struct Jobs {
 pub struct Terminal {
     /// Empty = auto-detect.
     pub shell: String,
+    /// Arguments for the shell.
     pub args: Vec<String>,
+    /// The terminal changes directory when the focused pane navigates.
     pub follow_navigation: bool,
+    /// With one shared terminal, switching tabs also changes its directory.
     pub cd_on_tab_switch: bool,
+    /// Inject prompt hooks so the shell reports its working directory (OSC 7).
     pub shell_integration: bool,
+    /// Esc on an empty prompt line returns keyboard focus to the file list.
     pub escape_returns_focus: bool,
+    /// Lines of scrollback per terminal.
     pub scrollback: usize,
+    /// Terminal font size in points.
     pub font_size: f32,
     /// `"auto"` (derive from app theme) | `"<name>"`.
     pub theme: String,
@@ -536,7 +596,9 @@ pub struct Archive {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct SavedSearchEntry {
+    /// Name shown in the sidebar and palette.
     pub name: String,
+    /// The search query (the fields of the search panel).
     pub query: toml::Table,
 }
 
@@ -545,8 +607,11 @@ pub struct SavedSearchEntry {
 pub struct Search {
     /// 0 = auto.
     pub threads: usize,
+    /// Skip files ignored by `.gitignore` / `.ignore` when searching.
     pub respect_gitignore: bool,
+    /// Content search skips files larger than this (MiB).
     pub content_max_mib: u64,
+    /// Saved searches.
     pub saved: Vec<SavedSearchEntry>,
     /// Background index (F5): `[search.index]`.
     pub index: SearchIndex,
@@ -557,6 +622,7 @@ pub struct Search {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SearchIndex {
+    /// Build and use the background index.
     pub enabled: bool,
     /// Folders to index; `~` is the home folder.
     pub roots: Vec<String>,
@@ -582,8 +648,11 @@ pub struct SearchIndex {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preview {
+    /// Text previews read at most this much of a file (KiB).
     pub max_text_kib: u64,
+    /// Largest image the preview decodes (megapixels).
     pub max_image_mp: u32,
+    /// Syntax highlighting theme for code previews (`auto` follows the app theme).
     pub syntax_theme: String,
     /// Needs cargo feature `pdf`.
     pub pdf: bool,
@@ -663,7 +732,9 @@ pub enum EditorDock {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Git {
+    /// Show the git status column and badges inside repositories.
     pub status_column: bool,
+    /// Re-read git status at most this often (seconds).
     pub refresh_secs: u64,
 }
 
@@ -710,6 +781,7 @@ pub struct RemoteSection {
     pub cache_ttl_secs: u64,
     /// Re-list visible remote folders this often to pick up changes (0 = never).
     pub poll_secs: u64,
+    /// Give up connecting to a server after this long (seconds).
     pub connect_timeout_secs: u64,
     /// Give up on a server that stops answering mid-operation after this long.
     pub io_timeout_secs: u64,
@@ -725,7 +797,9 @@ pub struct RemoteSection {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Keys {
+    /// Key binding preset (see docs/KEYBOARD.md).
     pub preset: KeyPreset,
+    /// Treat `Cmd` in bindings as `Ctrl` (on Windows and Linux).
     pub cmd_is_ctrl: bool,
     /// Action string → chord strings; overrides the preset. A value with spaces is a
     /// key sequence (`"g g"`, `"Ctrl+K Ctrl+S"`).
@@ -738,7 +812,9 @@ pub struct Keys {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct Bookmark {
+    /// Label in menus and the palette.
     pub name: String,
+    /// Folder the bookmark opens.
     pub path: PathBuf,
     /// Chord string, empty = none.
     pub hotkey: String,
@@ -758,14 +834,18 @@ pub enum CommandContext {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct CustomCommand {
+    /// Label in the context menu and palette.
     pub name: String,
+    /// Program to run (no shell is involved unless you start one).
     pub command: String,
     /// Placeholders: `%p` focused path, `%n` selected names, `%s` selected paths, `%d`
     /// current dir, `%o` other pane's dir, `%%` a literal `%` (legacy: `%P` paths, `%D`
     /// dir, `%N` name, `%E` ext, `%F` first selected). An argument that is exactly `%s` /
     /// `%n` / `%P` expands to one argument per selected item.
     pub args: Vec<String>,
+    /// Where the command appears: on a `file`, a `dir`, or the folder `background`. Empty = everywhere.
     pub context: Vec<CommandContext>,
+    /// Chord string that runs it (empty = none).
     pub hotkey: String,
     /// Run in the integrated terminal panel instead of as a detached process.
     pub terminal: bool,

@@ -155,7 +155,9 @@ impl RuleAction {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AutomationRule {
+    /// Rule name (shown in the run log and job titles).
     pub name: String,
+    /// Run this rule.
     pub enabled: bool,
     /// Folder to watch.
     pub watch: PathBuf,
@@ -165,12 +167,15 @@ pub struct AutomationRule {
     pub glob: String,
     /// Optional regular expression on the name (case-insensitive).
     pub regex: String,
+    /// Match files, folders or both.
     pub kind: RuleKind,
-    /// Size bounds in KiB (0 = no bound).
+    /// Lower size bound in KiB (0 = no bound).
     pub min_size_kib: u64,
+    /// Upper size bound in KiB (0 = no bound).
     pub max_size_kib: u64,
-    /// Age bounds by modification time, in minutes (0 = no bound).
+    /// Lower age bound by modification time, in minutes (0 = no bound).
     pub min_age_minutes: u64,
+    /// Upper age bound in minutes (0 = no bound).
     pub max_age_minutes: u64,
     /// Wait this long after the last change before acting (lets downloads finish).
     pub delay_secs: u64,
@@ -180,6 +185,7 @@ pub struct AutomationRule {
     pub dry_run: bool,
     /// Name conflicts at the target.
     pub conflict: RuleConflict,
+    /// Steps run on each match, in order.
     pub actions: Vec<RuleAction>,
 }
 

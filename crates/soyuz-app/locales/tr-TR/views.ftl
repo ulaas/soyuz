@@ -95,6 +95,11 @@ views-computer-title = Aygıtlar ve sürücüler
 views-computer-free-of = { $free } boş, toplam { $total }
 views-computer-drive = Sürücü
 views-computer-looking = Sürücüler aranıyor…
+views-volume-fixed = Yerel Disk
+views-volume-removable = Çıkarılabilir Disk
+views-volume-network = Ağ Sürücüsü
+views-volume-optical = CD Sürücüsü
+views-volume-ram = RAM Diski
 
 ## Dosya listesi (ui/views/flow.rs, miller.rs)
 

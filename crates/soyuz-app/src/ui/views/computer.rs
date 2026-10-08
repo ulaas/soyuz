@@ -21,14 +21,25 @@ pub fn volume_glyph(v: &VolumeInfo) -> &'static str {
     }
 }
 
+/// Localized kind name for a volume without its own label ("Local Disk").
+pub fn volume_kind_label(kind: VolumeKind) -> &'static str {
+    match kind {
+        VolumeKind::Fixed => tr!("views-volume-fixed"),
+        VolumeKind::Removable => tr!("views-volume-removable"),
+        VolumeKind::Network => tr!("views-volume-network"),
+        VolumeKind::Optical => tr!("views-volume-optical"),
+        VolumeKind::Ram => tr!("views-volume-ram"),
+        VolumeKind::Unknown => tr!("views-computer-drive"),
+    }
+}
+
+/// Display name of a volume: its own label, else the localized kind name, followed by
+/// the mount (`Local Disk (C:)`, `Yerel Disk (C:)`, `Backup (D:)`).
 pub fn volume_label(v: &VolumeInfo) -> String {
     let mount = soyuz_fs::strip_verbatim(&v.mount).to_string_lossy().trim_end_matches(['\\', '/']).to_string();
     let mount = if mount.is_empty() { "/".to_string() } else { mount };
-    if v.label.is_empty() || v.label.contains(&mount) {
-        if v.label.is_empty() { mount } else { v.label.clone() }
-    } else {
-        format!("{} ({mount})", v.label)
-    }
+    let base = if v.label.is_empty() { volume_kind_label(v.kind).to_string() } else { v.label.clone() };
+    if base.contains(&mount) { base } else { format!("{base} ({mount})") }
 }
 
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {

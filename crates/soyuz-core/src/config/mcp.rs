@@ -56,6 +56,7 @@ pub struct AiMcp {
     pub server_enabled: bool,
     /// Streamable HTTP transport on 127.0.0.1 (each client needs its own bearer token).
     pub http_enabled: bool,
+    /// Port of the HTTP transport on 127.0.0.1.
     pub http_port: u16,
     /// Extra browser origins allowed to call the HTTP endpoint (`http://localhost:<port>`
     /// and `http://127.0.0.1:<port>` are always allowed; requests without `Origin` too).
@@ -120,11 +121,15 @@ impl Default for AiMcpClient {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiMcpServer {
+    /// Name shown in the assistant's tool list.
     pub name: String,
+    /// Connect to this server.
     pub enabled: bool,
     /// stdio transport: program to start (no shell is involved) and its arguments.
     pub command: String,
+    /// Arguments for `command`.
     pub args: Vec<String>,
+    /// Extra environment variables for `command` (values are not secret).
     pub env: BTreeMap<String, String>,
     /// Streamable HTTP transport: endpoint URL (used instead of `command` when set).
     pub url: String,

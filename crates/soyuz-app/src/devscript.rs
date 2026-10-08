@@ -17,7 +17,8 @@
 //!   `lang=<tag>` (used by the keyboard-only test, `tests/keyboard_only.rs`);
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
-//! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
+//! * `settings:<section>` — open the settings window on a section (`settings:appearance`;
+//!   `settings:close` closes it);
 //! * `smart:<name>` — open a smart folder (`smart:` alone: the new smart folder dialog);
 //! * `keys:<spec>` — synthetic keyboard input on the next frame: plain text is typed,
 //!   `{Enter}`, `{Ctrl+S}`, `{Shift+F3}`, `{Copy}`, `{Cut}`, `{Paste:text}` are keys;
@@ -242,6 +243,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             "settings" => {
                 // `settings:appearance` opens the window on that section.
                 let want = arg.trim().to_ascii_lowercase();
+                if want == "close" {
+                    crate::ui::settings::close(app);
+                    ctx.request_repaint();
+                    continue;
+                }
                 let sec = crate::ui::settings::Section::ALL
                     .into_iter()
                     .find(|s| s.english_title().to_ascii_lowercase().starts_with(&want));

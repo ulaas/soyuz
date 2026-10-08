@@ -117,18 +117,23 @@ pub enum AiPrivacy {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AiProfile {
+    /// Profile name (referenced by `default_profile` and `[ai.tasks]`).
     pub name: String,
+    /// Provider API.
     pub kind: AiProviderKind,
     /// Empty = the kind's default.
     pub base_url: String,
+    /// Model id sent to the provider.
     pub model: String,
     /// `credential:<name>` | `env:<VAR>` | empty (no key).
     pub key: String,
+    /// How tools are offered: `auto` probes the model, else native tool calling or the JSON fallback.
     pub tool_mode: AiToolMode,
     /// Monthly spending cap in USD for this profile; 0 = no cap.
     pub monthly_budget_usd: f64,
     /// Extra HTTP headers (custom profiles, proxies). Values are not secret.
     pub headers: std::collections::BTreeMap<String, String>,
+    /// Most output tokens per model reply.
     pub max_tokens: u32,
     /// The model accepts images (vision): "Suggest names" sends downscaled pictures from
     /// folders whose AI access is "contents".
@@ -157,7 +162,9 @@ impl Default for AiProfile {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AiTaskModel {
+    /// Profile name (empty = `default_profile`).
     pub profile: String,
+    /// Model id override (empty = the profile's model).
     pub model: String,
 }
 
@@ -174,10 +181,15 @@ pub struct AiTasks {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AiPrice {
+    /// Model id glob (`claude-opus-*`).
     pub model: String,
+    /// USD per million input tokens.
     pub input_per_mtok: f64,
+    /// USD per million output tokens.
     pub output_per_mtok: f64,
+    /// USD per million cached input tokens read.
     pub cache_read_per_mtok: f64,
+    /// USD per million input tokens written to the prompt cache.
     pub cache_write_per_mtok: f64,
 }
 
@@ -205,6 +217,7 @@ impl Default for AiScope {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Ai {
+    /// Turn on the AI assistant and AI actions (nothing is sent anywhere while off).
     pub enabled: bool,
     /// Profile name used when a task names none.
     pub default_profile: String,
