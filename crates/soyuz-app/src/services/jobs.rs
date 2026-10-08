@@ -190,6 +190,11 @@ impl JobsService {
         &self.engine
     }
 
+    /// A shared handle to the engine (worker threads that wait on jobs, e.g. the MCP bridge).
+    pub fn engine_arc(&self) -> Arc<JobEngine> {
+        self.engine.clone()
+    }
+
     /// Default options for a new spec (copy settings from the config, journaling on).
     pub fn spec(&self, kind: JobKind) -> JobSpec {
         let mut spec = JobSpec::new(kind);

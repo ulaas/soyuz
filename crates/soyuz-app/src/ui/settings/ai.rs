@@ -221,6 +221,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
 
     any |= prices(ui, app, q);
+    any |= super::ai_connections::page(ui, app, q);
     any
 }
 

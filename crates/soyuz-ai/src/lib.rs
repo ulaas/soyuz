@@ -4,6 +4,7 @@
 //!   Completions and Responses), OpenAI-compatible local servers (Ollama, LM Studio,
 //!   llama.cpp, vLLM, LocalAI, custom) and Gemini; retries, timeouts, cancellation, a
 //!   capability probe and the JSON tool fallback ([`json_tools`]).
+//! * [`audit`] — the append-only `ai-audit.jsonl` log shared by the MCP server and the harness.
 //! * [`credentials`] — API keys in the OS credential store (config holds references only).
 //! * [`pricing`] — price table, usage ledger and monthly budget caps.
 //! * [`tools`] — the typed tool catalog shared by the MCP server (A3) and the in-app
@@ -15,6 +16,7 @@
 //! produce [`tools::Plan`]s holding `JobSpec`s that the host submits after approval.
 #![deny(unsafe_code)]
 
+pub mod audit;
 pub mod credentials;
 pub mod error;
 pub mod json_tools;

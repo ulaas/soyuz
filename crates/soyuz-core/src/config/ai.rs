@@ -218,6 +218,12 @@ pub struct Ai {
     pub budget_warn_percent: u32,
     /// Price table (cost accounting); the first matching row wins.
     pub prices: Vec<AiPrice>,
+    /// `[ai.mcp]`: the Soyuz MCP server (A3).
+    pub mcp: super::mcp::AiMcp,
+    /// `[[ai.mcp_clients]]`: MCP clients allowed to drive Soyuz (A3).
+    pub mcp_clients: Vec<super::mcp::AiMcpClient>,
+    /// `[[ai.mcp_servers]]`: external MCP servers mounted as assistant tools (A4).
+    pub mcp_servers: Vec<super::mcp::AiMcpServer>,
 }
 
 impl Default for Ai {
@@ -234,6 +240,9 @@ impl Default for Ai {
             max_retries: 3,
             budget_warn_percent: 80,
             prices: default_prices(),
+            mcp: Default::default(),
+            mcp_clients: Vec::new(),
+            mcp_servers: Vec::new(),
         }
     }
 }

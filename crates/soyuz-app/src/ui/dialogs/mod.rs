@@ -10,6 +10,7 @@ pub mod delete_confirm;
 pub mod error;
 pub mod keybind_record;
 pub mod links;
+pub mod mcp_approval;
 pub mod new_item;
 pub mod open_with;
 pub mod properties;
