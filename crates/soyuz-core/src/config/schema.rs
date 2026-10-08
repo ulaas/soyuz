@@ -434,6 +434,8 @@ pub struct Archive {
     pub max_entries: u64,
     /// Largest single entry in MiB (0 = unlimited).
     pub max_entry_mib: u64,
+    /// Deflate level (0 = store, 1-9) for files added while editing inside a zip.
+    pub edit_level: u8,
 }
 
 /// A `[[search.saved]]` entry. `query` is kept as a raw TOML table and deserialized into

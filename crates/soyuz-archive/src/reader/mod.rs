@@ -1,7 +1,16 @@
-//! Archive readers (zip, tar.*, 7z).
+//! Archive readers (zip, tar.*, 7z, RAR, ISO / UDF, CAB, deb, rpm).
 
+mod cab;
+mod iso;
+mod pkg;
+mod random;
+#[cfg(feature = "rar")]
+mod rar;
+mod seq;
 mod sevenz;
 mod tar;
+mod udf;
+pub(crate) mod volumes;
 mod zip;
 pub(crate) mod zst;
 
@@ -33,7 +42,10 @@ pub(crate) fn open(
         | ArchiveFormat::TarZst => Ok(Box::new(tar::TarReader::open(path, format)?)),
         ArchiveFormat::SevenZ => Ok(Box::new(sevenz::SevenZReader::open(path, password)?)),
         #[cfg(feature = "rar")]
-        ArchiveFormat::Rar => Err(ArchiveError::Unsupported(format)),
+        ArchiveFormat::Rar => Ok(Box::new(rar::RarReader::open(path, password)?)),
+        ArchiveFormat::Iso => Ok(Box::new(iso::IsoReader::open(path)?)),
+        ArchiveFormat::Cab => Ok(Box::new(cab::CabReader::open(path)?)),
+        ArchiveFormat::Deb | ArchiveFormat::Rpm => Ok(Box::new(pkg::PkgReader::open(path, format)?)),
     }
 }
 

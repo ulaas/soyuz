@@ -7,16 +7,16 @@ rust-version.workspace = true
 publish.workspace = true
 
 [features]
-default = []
+default = ["rar"]
 # Native zstd (libzstd via `zstd-sys`, needs a C compiler for the target): enables writing
 # tar.zst / zstd-compressed zip entries and reading zstd zip entries. Without it, tar.zst is
 # read with the pure-Rust `ruzstd` decoder and zstd writing returns `Unsupported`.
 # Off by default so `cargo check/clippy --target <other-os>` works without a C cross toolchain;
 # the app should enable it for release builds.
 zstd = ["dep:zstd", "zip/zstd"]
-# Declares the RAR format variant only; no pure-Rust / redistributable-friendly RAR decoder is
-# used, so opening RAR returns `Unsupported(Rar)` (see lib docs).
-rar = []
+# RAR read (RAR 1.3 through RAR 7, incl. encrypted RAR) with the pure-Rust `rars` decoder
+# (Apache-2.0, independent implementation, no unrar code; decoding only). On by default.
+rar = ["dep:rars"]
 # Expose format detection / readers to the `fuzz/` targets (`soyuz_archive::fuzzing`).
 fuzzing = []
 
@@ -33,11 +33,16 @@ ruzstd.workspace = true
 bzip2.workspace = true
 lzma-rust2.workspace = true
 sevenz-rust2.workspace = true
+lzxd.workspace = true
+rars = { workspace = true, optional = true }
 filetime.workspace = true
 chrono.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+# Fixture writers for the CAB / RAR reader tests.
+cab.workspace = true
+rars = { workspace = true, features = ["write"] }
 
 [lints]
 workspace = true

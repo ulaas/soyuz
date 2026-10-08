@@ -68,6 +68,11 @@ ruzstd = "0.8.3"
 lzma-rust2 = { version = "0.16.2", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bzip2 = "0.6.1"
 sevenz-rust2 = "0.23.0"
+lzxd = "0.2.7"
+# Test fixtures only (CAB writer); reading uses our own CAB parser + `lzxd`.
+cab = "0.6.0"
+# Pure-Rust RAR decoder (Apache-2.0); reading only: no encoder, recovery or rayon.
+rars = { version = "0.10.0", default-features = false, features = ["encryption"] }
 infer = "0.22.0"
 
 # --- media / preview ---

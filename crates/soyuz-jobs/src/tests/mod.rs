@@ -2,6 +2,7 @@
 
 mod chaos;
 mod concurrency;
+mod edit_archive;
 mod ops;
 mod prompts;
 mod props;

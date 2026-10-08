@@ -285,6 +285,7 @@ pub fn test_archive(app: &mut SoyuzApp) {
 /// Per frame: password prompts and job completion toasts.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     svc::remember_ctx(ctx);
+    pump_edits(app);
     if let Some((pane, archive, wrong)) = svc::take_password_request() {
         app.ui.dialogs.push(PasswordDialog::new(pane, archive, wrong));
     }
@@ -299,7 +300,15 @@ pub fn submit_job(app: &mut SoyuzApp, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::
     use crate::services::jobs::{JobMeta, OpKind};
     let roots = spec.kind.touched_roots();
     let meta = JobMeta::new(OpKind::Other, &roots, None);
-    app.fileops.jobs.submit(spec, meta)
+    let edited = match &spec.kind {
+        JobKind::EditArchive { archive, .. } => Some(archive.clone()),
+        _ => None,
+    };
+    let id = app.fileops.jobs.submit(spec, meta);
+    if let Some(a) = edited {
+        track_edit_job(id, a);
+    }
+    id
 }
 
 /// Items-menu rows for archives (extract / compress / browse).
@@ -329,6 +338,7 @@ pub fn context_items(
                 A::ExtractTo,
             );
             act(ui, cmds, ph::ARROW_LINE_DOWN, "Extract here", A::ExtractHere);
+            edit_context_items(ui, cmds, pane, location, has_selection);
         }
         _ => {
             if any_archive {
@@ -715,5 +725,230 @@ mod tests {
         assert_eq!(unique_dir(d.path(), "x"), d.path().join("x"));
         std::fs::create_dir(d.path().join("x")).unwrap();
         assert_eq!(unique_dir(d.path(), "x"), d.path().join("x (2)"));
+    }
+}
+
+// ---- editing inside a zip (F9) --------------------------------------------------------
+
+/// Whether `archive` (by name) is a zip that can be edited (not a split `.001` set).
+fn is_editable_zip_name(archive: &Path) -> bool {
+    archive.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
+        svc::format_by_name(name) == Some(ArchiveFormat::Zip) && !name.to_ascii_lowercase().ends_with(".001")
+    })
+}
+
+/// The zip browsed in the focused pane, when it can be edited: `(archive, inner dir)`.
+fn editable_zip(app: &SoyuzApp) -> Option<(PathBuf, String)> {
+    browsed(app).filter(|(archive, _)| is_editable_zip_name(archive))
+}
+
+/// Whether `a` edits the browsed zip (Delete / Rename / Paste inside a zip).
+pub fn handles_edit(app: &SoyuzApp, a: &soyuz_core::config::Action) -> bool {
+    use soyuz_core::config::Action as A;
+    matches!(a, A::Delete | A::DeletePermanent | A::Rename | A::Paste) && editable_zip(app).is_some()
+}
+
+type EditJobs = std::sync::Mutex<Vec<(soyuz_jobs::JobId, PathBuf)>>;
+
+/// Edit jobs whose completion refreshes the panes browsing their archive.
+fn edit_jobs() -> &'static EditJobs {
+    static J: std::sync::OnceLock<EditJobs> = std::sync::OnceLock::new();
+    J.get_or_init(Default::default)
+}
+
+fn edit_spec(archive: &Path, edits: Vec<soyuz_archive::ZipEdit>, label: String, level: u8) -> JobSpec {
+    JobSpec {
+        kind: JobKind::EditArchive { archive: archive.to_path_buf(), edits, level: Some(level.min(9)) },
+        options: JobOptions { label: Some(label), ..Default::default() },
+    }
+}
+
+/// Delete / Rename / Paste inside the browsed zip (rewrite job; the original goes to the
+/// trash, so it can be undone).
+pub fn execute_edit(app: &mut SoyuzApp, a: soyuz_core::config::Action) {
+    use soyuz_core::config::Action as A;
+    let Some((archive, inner)) = editable_zip(app) else { return };
+    let zip_name = soyuz_core::entry::display_name(&archive);
+    let level = app.config.archive.edit_level;
+    let selected: Vec<(String, bool)> = app
+        .ws
+        .pane()
+        .selected_entries()
+        .iter()
+        .filter_map(|e| split_vpath(&e.path).map(|(_, i)| (i, e.is_dir_like())))
+        .collect();
+    match a {
+        A::Delete | A::DeletePermanent => {
+            if selected.is_empty() {
+                app.ui.toasts.push(Toast::info("Select entries to delete from the archive"));
+                return;
+            }
+            let n = selected.len();
+            let edits = selected.into_iter().map(|(path, _)| soyuz_archive::ZipEdit::Delete { path }).collect();
+            let label = format!("Delete {n} item{} from {zip_name}", if n == 1 { "" } else { "s" });
+            app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
+        }
+        A::Rename => match selected.as_slice() {
+            [(path, is_dir)] => app.ui.dialogs.push(RenameEntryDialog::new(archive, path.clone(), *is_dir)),
+            _ => {
+                app.ui.toasts.push(Toast::info("Select one entry to rename"));
+            }
+        },
+        A::Paste => {
+            let clip = crate::ops::fileops::clipboard::Clipboard::os_paths_hook()
+                .or_else(|| app.fileops.clipboard.for_paste());
+            let Some((_, sources)) = clip.filter(|(_, p)| !p.is_empty()) else {
+                app.ui.toasts.push(Toast::info("Nothing to add").body("Copy files first (Ctrl+C), then paste here."));
+                return;
+            };
+            let n = sources.len();
+            let edits = vec![soyuz_archive::ZipEdit::Add { sources, dest_dir: inner }];
+            let label = format!("Add {n} item{} to {zip_name}", if n == 1 { "" } else { "s" });
+            app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
+        }
+        _ => {}
+    }
+}
+
+/// Context-menu rows for a browsed zip.
+fn edit_context_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: PaneId, location: &Location, has_selection: bool) {
+    let Location::Archive { archive, .. } = location else { return };
+    if !is_editable_zip_name(archive) {
+        return;
+    }
+    use soyuz_core::config::Action as A;
+    let mut act = |ui: &mut Ui, icon: &str, label: &str, a: A| {
+        if menu_item(ui, Some(icon), label, None, true).clicked() {
+            cmds.push(Cmd::PaneAction(pane, a));
+            ui.close();
+        }
+    };
+    menu_separator(ui);
+    act(ui, ph::FILE_PLUS, "Add copied files here", A::Paste);
+    if has_selection {
+        act(ui, ph::PENCIL_SIMPLE, "Rename in archive\u{2026}", A::Rename);
+        act(ui, ph::TRASH, "Delete from archive", A::DeletePermanent);
+    }
+}
+
+/// Track an edit job so the panes browsing its archive refresh when it ends.
+fn track_edit_job(id: soyuz_jobs::JobId, archive: PathBuf) {
+    if let Ok(mut j) = edit_jobs().lock() {
+        j.push((id, archive));
+    }
+}
+
+/// Per frame: refresh archive panes after their edit job finished.
+fn pump_edits(app: &mut SoyuzApp) {
+    let done: Vec<PathBuf> = {
+        let Ok(mut jobs) = edit_jobs().lock() else { return };
+        if jobs.is_empty() {
+            return;
+        }
+        let mut done = Vec::new();
+        jobs.retain(|(id, archive)| {
+            let finished = app.fileops.jobs.snapshot(*id).is_none_or(|s| s.state.is_terminal());
+            if finished {
+                done.push(archive.clone());
+            }
+            !finished
+        });
+        done
+    };
+    for archive in done {
+        let panes: Vec<PaneId> = app
+            .ws
+            .tabs
+            .iter()
+            .flat_map(|t| t.panes.iter())
+            .filter(|p| matches!(&p.location, Location::Archive { archive: a, .. } if *a == archive))
+            .map(|p| p.id)
+            .collect();
+        for p in panes {
+            app.cmds.push(Cmd::PaneAction(p, soyuz_core::config::Action::Refresh));
+        }
+    }
+}
+
+pub struct RenameEntryDialog {
+    archive: PathBuf,
+    from: String,
+    is_dir: bool,
+    text: String,
+    focus: bool,
+}
+
+impl RenameEntryDialog {
+    pub fn new(archive: PathBuf, from: String, is_dir: bool) -> Self {
+        let text = from.rsplit('/').next().unwrap_or_default().to_string();
+        RenameEntryDialog { archive, from, is_dir, text, focus: true }
+    }
+}
+
+/// A valid single entry name (no separators, not `.` / `..`).
+fn valid_entry_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != ".."
+}
+
+impl Dialog for RenameEntryDialog {
+    fn title(&self) -> &str {
+        "Rename in archive"
+    }
+    fn icon(&self) -> Option<&'static str> {
+        Some(ph::PENCIL_SIMPLE)
+    }
+    fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
+        let p = palette(ui.ctx());
+        let what = if self.is_dir { "folder" } else { "file" };
+        ui.label(
+            RichText::new(format!(
+                "New name for the {what} \u{201c}{}\u{201d} in {}",
+                self.from,
+                soyuz_core::entry::display_name(&self.archive)
+            ))
+            .color(p.text_secondary),
+        );
+        ui.add_space(10.0);
+        let r =
+            ui.add(TextEdit::singleline(&mut self.text).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)));
+        if self.focus {
+            r.request_focus();
+            self.focus = false;
+        }
+        let name = self.text.trim().to_string();
+        let valid = valid_entry_name(&name);
+        if !valid && !name.is_empty() {
+            ui.add_space(4.0);
+            ui.label(RichText::new("A name can't contain slashes.").color(p.danger));
+        }
+        let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+        let (ok, cancel) = footer(ui, "Rename", "Cancel");
+        if (ok || enter) && valid {
+            let to = match self.from.rsplit_once('/') {
+                Some((parent, _)) => format!("{parent}/{name}"),
+                None => name,
+            };
+            if to != self.from {
+                let label = format!("Rename {} in {}", self.from, soyuz_core::entry::display_name(&self.archive));
+                let edits = vec![soyuz_archive::ZipEdit::Rename { from: self.from.clone(), to }];
+                ctx.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&self.archive, edits, label, 0))));
+            }
+            return false;
+        }
+        !cancel
+    }
+}
+
+#[cfg(test)]
+mod edit_tests {
+    use super::*;
+
+    #[test]
+    fn editable_names() {
+        assert!(is_editable_zip_name(Path::new("C:/x/a.zip")));
+        assert!(!is_editable_zip_name(Path::new("C:/x/a.zip.001")));
+        assert!(!is_editable_zip_name(Path::new("C:/x/a.7z")));
+        assert!(valid_entry_name("new name.txt"));
+        assert!(!valid_entry_name("a/b") && !valid_entry_name("..") && !valid_entry_name(""));
     }
 }

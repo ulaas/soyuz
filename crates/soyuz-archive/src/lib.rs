@@ -1,13 +1,16 @@
-//! `soyuz-archive`: browse, extract, create and test archives (zip, tar.*, 7z; RAR read
-//! behind the `rar` feature).
+//! `soyuz-archive`: browse, extract, create and test archives (zip, tar.*, 7z; read-only
+//! RAR, ISO / UDF, CAB, deb and rpm).
 //!
 //! Formats: zip (stored / deflate / bzip2 / lzma / xz read; store / deflate
-//! write; ZipCrypto + AES read, AES-256 write), tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z
-//! (read + write, AES-256 with header encryption). The default build is pure Rust (tar.zst
-//! is read with `ruzstd`). The opt-in `zstd` feature links libzstd (`zstd-sys`, needs a C
-//! compiler) and adds tar.zst writing plus zstd-compressed zip entries (read + write).
-//! RAR is not available: the `rar` feature only declares the format variant and opening a
-//! RAR archive returns `Unsupported(Rar)`.
+//! write; ZipCrypto + AES read, AES-256 write; add / delete / rename entries through
+//! [`rewrite_zip`]), tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z (read + write, AES-256 with
+//! header encryption). Byte-split volumes (`x.7z.001`, `x.zip.001`, …) are read as one
+//! archive. Read-only: RAR 1.3 – 7 (feature `rar`, on by default, pure-Rust `rars`
+//! decoder), ISO 9660 / Joliet / Rock Ridge / UDF disc images, Microsoft CAB (stored /
+//! MSZIP / LZX), `.deb` (the `data.tar.*` tree) and `.rpm` (the cpio payload). The default
+//! build is pure Rust (tar.zst is read with `ruzstd`). The opt-in `zstd` feature links
+//! libzstd (`zstd-sys`, needs a C compiler) and adds tar.zst writing plus zstd-compressed
+//! zip entries (read + write).
 //!
 //! Safety: extraction rejects absolute paths, `..` escapes and symlinks pointing outside
 //! the destination (`ArchiveError::ZipSlip`), never writes through a symlink, validates
@@ -19,6 +22,7 @@
 //! whole stream once. 7z solid blocks decode the preceding entries of the same block.
 #![forbid(unsafe_code)]
 
+pub mod edit;
 mod extract;
 pub mod format;
 #[cfg(any(test, feature = "fuzzing"))]
@@ -35,6 +39,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use soyuz_core::{ConflictResolution, Control, ErrorAction, FsError, FsErrorKind, OpControl, Overwrite, ProgressSink};
 
+pub use edit::{ZipEdit, ZipEditSummary, can_edit, edit_temp_path, rewrite_zip};
 pub use format::{ArchiveFormat, detect};
 pub use vpath::{DirChild, DirIndex, find_entry, list_dir};
 

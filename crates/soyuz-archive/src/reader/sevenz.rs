@@ -1,15 +1,15 @@
 //! 7z reader (sevenz-rust2). Solid blocks are decoded front to back: reading one entry
 //! decodes the preceding entries of its block (documented cost, PLAN §9.6).
 
-use std::fs::File;
-use std::io::{self, BufReader, Read};
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use sevenz_rust2::{Archive, BlockDecoder, EncoderMethod, Password};
 use soyuz_core::{OpControl, ProgressSink};
 
-use super::{Listing, drain_for_test, open_file, spawn_pipe, test_failure};
+use super::volumes::{Source, source_len};
+use super::{Listing, drain_for_test, spawn_pipe, test_failure};
 use crate::extract::{Extractor, OnceData};
 use crate::util::{CHUNK, EntryExtra, normalize_name, read_err};
 use crate::{
@@ -50,7 +50,7 @@ fn block_encrypted(archive: &Archive, block: usize) -> bool {
 
 impl SevenZReader {
     pub fn open(path: &Path, password: Option<&str>) -> Result<Self, ArchiveError> {
-        let mut f = open_file(path)?;
+        let mut f = Source::open(path)?;
         let pw = password.map(Password::new).unwrap_or_else(Password::empty);
         let archive = Archive::read(&mut f, &pw).map_err(|e| match e {
             sevenz_rust2::Error::PasswordRequired => ArchiveError::PasswordRequired,
@@ -103,8 +103,8 @@ impl SevenZReader {
         self.listing.as_mut().expect("listing loaded")
     }
 
-    fn file_reader(&self) -> Result<BufReader<File>, ArchiveError> {
-        open_file(&self.path)
+    fn file_reader(&self) -> Result<Source, ArchiveError> {
+        Source::open(&self.path)
     }
 }
 
@@ -179,7 +179,7 @@ impl ArchiveReader for SevenZReader {
         ctl: &OpControl,
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError> {
-        let archive_size = std::fs::metadata(&self.path).map_or(0, |m| m.len());
+        let archive_size = source_len(&self.path);
         self.load();
         let mut file = self.file_reader()?;
         let listing = self.listing.as_ref().expect("listing loaded");

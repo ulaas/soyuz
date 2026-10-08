@@ -579,6 +579,14 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             number(ui, &mut d.archive.max_entry_mib, 0..=1_048_576, " MiB");
         });
         r.row_kw(
+            "Compression when adding to a zip",
+            "Deflate level for files pasted into a zip you are browsing (0 = store, 9 = smallest).",
+            "edit zip add level compress",
+            |ui| {
+                number(ui, &mut d.archive.edit_level, 0..=9, "");
+            },
+        );
+        r.row_kw(
             "Keep setuid / setgid / sticky bits",
             "Off strips these special permission bits from extracted files (Linux / macOS).",
             "permissions mode suid",

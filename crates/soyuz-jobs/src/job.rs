@@ -130,6 +130,16 @@ pub enum JobKind {
     Sync {
         plan: SyncPlan,
     },
+    /// F9: add / delete / rename entries inside a zip. The archive is rewritten into a
+    /// sibling temp file (unchanged entries copied raw) and swapped in; the original goes
+    /// to the trash as the undo backup.
+    EditArchive {
+        archive: PathBuf,
+        edits: Vec<soyuz_archive::ZipEdit>,
+        /// Deflate level for added files (`None` = 6).
+        #[serde(default)]
+        level: Option<u8>,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -149,6 +159,7 @@ pub enum JobKindBrief {
     EmptyTrash,
     Sync,
     Undo,
+    EditArchive,
 }
 
 impl JobKind {
@@ -167,6 +178,7 @@ impl JobKind {
             JobKind::RestoreTrash { .. } => JobKindBrief::RestoreTrash,
             JobKind::EmptyTrash | JobKind::PurgeTrash { .. } => JobKindBrief::EmptyTrash,
             JobKind::Sync { .. } => JobKindBrief::Sync,
+            JobKind::EditArchive { .. } => JobKindBrief::EditArchive,
         }
     }
 
@@ -197,6 +209,12 @@ impl JobKind {
                 .collect(),
             JobKind::EmptyTrash | JobKind::PurgeTrash { .. } => vec![PathBuf::from(TRASH_ROOT)],
             JobKind::Sync { plan } => vec![plan.left.clone(), plan.right.clone()],
+            JobKind::EditArchive { archive, edits, .. } => std::iter::once(archive.clone())
+                .chain(edits.iter().flat_map(|e| match e {
+                    soyuz_archive::ZipEdit::Add { sources, .. } => sources.clone(),
+                    _ => Vec::new(),
+                }))
+                .collect(),
         }
     }
 }
@@ -348,6 +366,7 @@ pub(crate) fn default_label(kind: &JobKind) -> String {
             many => format!("Delete {} items forever", many.len()),
         },
         JobKind::Sync { plan } => format!("Sync {} with {}", name(&plan.left), name(&plan.right)),
+        JobKind::EditArchive { archive, .. } => format!("Edit {}", name(archive)),
     }
 }
 

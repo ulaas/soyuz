@@ -1,14 +1,14 @@
 //! zip reader (random access via the central directory).
 
-use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use soyuz_core::{OpControl, ProgressSink};
 use zip::ZipArchive;
 use zip::result::ZipError;
 
-use super::{Listing, drain_for_test, open_file, test_failure};
+use super::volumes::{Source, source_len};
+use super::{Listing, drain_for_test, test_failure};
 use crate::extract::{EntryData, Extractor};
 use crate::util::{CHUNK, EntryExtra, local_to_system, normalize_name, read_err, unix_secs_to_time};
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
     TestReport,
 };
 
-type Zip = ZipArchive<BufReader<File>>;
+type Zip = ZipArchive<Source>;
 
 pub(crate) struct ZipReader {
     path: PathBuf,
@@ -38,7 +38,7 @@ pub(crate) fn zip_err(e: ZipError) -> ArchiveError {
 
 impl ZipReader {
     pub fn open(path: &Path, password: Option<&str>) -> Result<Self, ArchiveError> {
-        let zip = ZipArchive::new(open_file(path)?).map_err(|e| match e {
+        let zip = ZipArchive::new(Source::open(path)?).map_err(|e| match e {
             ZipError::Io(io) => crate::util::fs_err("open_archive", path, &io),
             other => zip_err(other),
         })?;
@@ -116,7 +116,7 @@ impl ZipReader {
         ordinal: usize,
         encrypted: bool,
         password: Option<&str>,
-    ) -> Result<zip::read::ZipFile<'a, BufReader<File>>, ArchiveError> {
+    ) -> Result<zip::read::ZipFile<'a, Source>, ArchiveError> {
         match (encrypted, password) {
             (true, None) => Err(ArchiveError::PasswordRequired),
             (true, Some(p)) => zip.by_index_decrypt(ordinal, p.as_bytes()).map_err(zip_err),
@@ -178,7 +178,7 @@ impl ArchiveReader for ZipReader {
         ctl: &OpControl,
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError> {
-        let archive_size = std::fs::metadata(&self.path).map_or(0, |m| m.len());
+        let archive_size = source_len(&self.path);
         self.load()?;
         let listing = self.listing.as_ref().expect("listing loaded");
         let zip = &mut self.zip;

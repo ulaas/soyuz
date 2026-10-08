@@ -2,7 +2,7 @@
 
 mod sevenz;
 mod tar;
-mod zip;
+pub(crate) mod zip;
 
 use std::collections::HashSet;
 use std::ffi::OsString;
@@ -100,7 +100,7 @@ fn entry_name(p: &Path, base: &Path) -> String {
 }
 
 /// Walk `inputs` (depth-first, children sorted by name) into a flat item list.
-fn collect(inputs: &[PathBuf], opts: &CreateOptions, ctl: &OpControl) -> Result<Vec<Item>, ArchiveError> {
+pub(crate) fn collect(inputs: &[PathBuf], opts: &CreateOptions, ctl: &OpControl) -> Result<Vec<Item>, ArchiveError> {
     let mut out = Vec::new();
     let mut seen_names = HashSet::new();
     for input in inputs {
