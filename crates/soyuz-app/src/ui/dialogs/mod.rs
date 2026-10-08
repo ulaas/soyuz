@@ -3,6 +3,11 @@
 //! [`Dialogs::push`]. The host draws the top-most dialog in a styled modal (fade +
 //! scale-in, backdrop, Esc / click-outside to cancel) and routes results as [`Cmd`]s.
 
+pub mod conflict;
+pub mod delete_confirm;
+pub mod error;
+pub mod new_item;
+
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};
 use soyuz_core::{Column, NamePatternSpec, PatternKind};

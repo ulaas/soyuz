@@ -13,9 +13,12 @@ name = "soyuz"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["zstd"]
 # Fallback OpenGL renderer (`--renderer glow`).
 glow = ["eframe/glow"]
+# Native zstd (tar.zst writing, zstd zip entries); compiles C. Cross builds without a C
+# cross compiler use `--no-default-features`.
+zstd = ["soyuz-archive/zstd"]
 
 [dependencies]
 soyuz-core.workspace = true

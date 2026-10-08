@@ -1,0 +1,368 @@
+//! The app-owned [`JobEngine`] (PLAN §2.4, §3): construction from `[jobs]`, the per-frame
+//! drain of engine events, snapshot polling only while something is active (no idle
+//! repaint spin), a per-job metadata side table used for titles / completion handling,
+//! incremental log fetching and shutdown on exit.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use soyuz_core::config::{Config, PreserveItem, ReflinkPref};
+use soyuz_core::{HashAlgo, Location};
+use soyuz_fs::{CopyOptions, Preserve, RealProbe, Reflink};
+use soyuz_jobs::{
+    EngineConfig, HistoryEntry, JobEngine, JobEvent, JobId, JobKind, JobKindBrief, JobOptions, JobSnapshot, JobSpec,
+    LogLine, QueueMode,
+};
+
+use crate::state::pane::PaneId;
+
+/// What the user asked for (drives titles, icons and the completion toast).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OpKind {
+    Copy,
+    Move,
+    Duplicate,
+    Trash,
+    Delete,
+    Wipe,
+    Rename,
+    NewFolder,
+    NewFile,
+    Link,
+    Restore,
+    EmptyTrash,
+    Undo,
+    Redo,
+    Retry,
+    Other,
+}
+
+impl OpKind {
+    pub fn from_brief(b: JobKindBrief) -> OpKind {
+        match b {
+            JobKindBrief::Copy => OpKind::Copy,
+            JobKindBrief::Move => OpKind::Move,
+            JobKindBrief::Delete => OpKind::Delete,
+            JobKindBrief::Trash => OpKind::Trash,
+            JobKindBrief::Rename => OpKind::Rename,
+            JobKindBrief::Create => OpKind::NewFolder,
+            JobKindBrief::RestoreTrash => OpKind::Restore,
+            JobKindBrief::EmptyTrash => OpKind::EmptyTrash,
+            JobKindBrief::Undo => OpKind::Undo,
+            _ => OpKind::Other,
+        }
+    }
+
+    /// Whether a finished job of this kind can be undone from the completion toast.
+    pub fn undoable(self) -> bool {
+        matches!(
+            self,
+            OpKind::Copy
+                | OpKind::Move
+                | OpKind::Duplicate
+                | OpKind::Trash
+                | OpKind::Rename
+                | OpKind::NewFolder
+                | OpKind::NewFile
+                | OpKind::Link
+                | OpKind::Redo
+        )
+    }
+}
+
+/// Follow-up work once a job finishes successfully.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum AfterJob {
+    #[default]
+    None,
+    /// Select the created item in `pane` and start inline rename on it.
+    SelectAndRename { pane: PaneId, path: PathBuf },
+    /// Put the cursor on `name` in `pane` (rename keeps the cursor on the item).
+    Select { pane: PaneId, name: String },
+    /// Clear the internal clipboard (a cut was pasted).
+    ClearClipboard,
+}
+
+/// App-side facts about a submitted job.
+#[derive(Clone, Debug)]
+pub struct JobMeta {
+    pub op: OpKind,
+    /// Number of top-level items the user acted on.
+    pub items: usize,
+    /// First item (for "“report.pdf”" titles when `items == 1`).
+    pub first: Option<PathBuf>,
+    pub dest: Option<PathBuf>,
+    pub submitted: Instant,
+    pub after: AfterJob,
+    /// Show a completion toast (off for tiny interactive ops like rename / new folder).
+    pub toast: bool,
+}
+
+impl JobMeta {
+    pub fn new(op: OpKind, items: &[PathBuf], dest: Option<PathBuf>) -> Self {
+        JobMeta {
+            op,
+            items: items.len(),
+            first: items.first().cloned(),
+            dest,
+            submitted: Instant::now(),
+            after: AfterJob::None,
+            toast: true,
+        }
+    }
+
+    pub fn after(mut self, after: AfterJob) -> Self {
+        self.after = after;
+        self
+    }
+
+    pub fn quiet(mut self) -> Self {
+        self.toast = false;
+        self
+    }
+}
+
+pub struct JobsService {
+    engine: Arc<JobEngine>,
+    /// Latest snapshots, ordered by job id.
+    snapshots: Vec<JobSnapshot>,
+    meta: HashMap<JobId, JobMeta>,
+    history: Vec<HistoryEntry>,
+    history_dirty: bool,
+    logs: HashMap<JobId, Vec<LogLine>>,
+    /// Copy options derived from `[jobs]` (merged into every copy/move spec).
+    copy: CopyOptions,
+    /// Debug hook: `SOYUZ_THROTTLE_MBPS` caps copy throughput (to watch progress / pause).
+    throttle_bps: Option<u64>,
+}
+
+impl JobsService {
+    pub fn new(ctx: &egui::Context, config: &Config) -> Self {
+        let c = ctx.clone();
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c.request_repaint());
+        let engine = JobEngine::new(engine_config(config), Arc::new(RealProbe), wake);
+        let throttle_bps = std::env::var("SOYUZ_THROTTLE_MBPS")
+            .ok()
+            .and_then(|v| v.trim().parse::<u64>().ok())
+            .filter(|v| *v > 0)
+            .map(|mb| mb * 1024 * 1024);
+        let mut s = JobsService {
+            engine,
+            snapshots: Vec::new(),
+            meta: HashMap::new(),
+            history: Vec::new(),
+            history_dirty: true,
+            logs: HashMap::new(),
+            copy: copy_options(config),
+            throttle_bps,
+        };
+        s.refresh_history();
+        s
+    }
+
+    /// Re-read `[jobs]` copy options (config reload).
+    pub fn reconfigure(&mut self, config: &Config) {
+        self.copy = copy_options(config);
+    }
+
+    pub fn engine(&self) -> &JobEngine {
+        &self.engine
+    }
+
+    /// Default options for a new spec (copy settings from the config, journaling on).
+    pub fn spec(&self, kind: JobKind) -> JobSpec {
+        let mut spec = JobSpec::new(kind);
+        spec.options.copy = self.copy.clone();
+        spec.options.copy.throttle_bps = self.throttle_bps;
+        spec
+    }
+
+    pub fn submit(&mut self, spec: JobSpec, meta: JobMeta) -> JobId {
+        let id = self.engine.submit(spec);
+        self.meta.insert(id, meta);
+        self.refresh_snapshots();
+        id
+    }
+
+    /// Register metadata for a job the engine created itself (undo / redo / retry).
+    pub fn track(&mut self, id: JobId, meta: JobMeta) {
+        self.meta.insert(id, meta);
+        self.refresh_snapshots();
+    }
+
+    pub fn meta(&self, id: JobId) -> Option<&JobMeta> {
+        self.meta.get(&id)
+    }
+
+    pub fn snapshots(&self) -> &[JobSnapshot] {
+        &self.snapshots
+    }
+
+    pub fn snapshot(&self, id: JobId) -> Option<&JobSnapshot> {
+        self.snapshots.iter().find(|s| s.id == id)
+    }
+
+    /// Drain engine events and refresh snapshots when anything changed or a job is
+    /// running. Repaints are requested at 10 Hz only while a job is actually working.
+    pub fn poll(&mut self, ctx: &egui::Context) -> Vec<JobEvent> {
+        let events: Vec<JobEvent> = self.engine.events().try_iter().collect();
+        for e in &events {
+            match e {
+                JobEvent::HistoryChanged => self.history_dirty = true,
+                JobEvent::Removed(id) => {
+                    self.logs.remove(id);
+                    self.meta.remove(id);
+                }
+                _ => {}
+            }
+        }
+        let working = self.snapshots.iter().any(|s| s.state.is_active());
+        if !events.is_empty() || working {
+            self.refresh_snapshots();
+        }
+        if self.snapshots.iter().any(|s| s.state.is_active()) {
+            ctx.request_repaint_after(Duration::from_millis(100));
+        }
+        if self.history_dirty {
+            self.refresh_history();
+        }
+        events
+    }
+
+    pub fn refresh_snapshots(&mut self) {
+        let mut s = self.engine.snapshots();
+        s.sort_by_key(|s| s.id);
+        self.snapshots = s;
+    }
+
+    fn refresh_history(&mut self) {
+        self.history = self.engine.history();
+        self.history_dirty = false;
+    }
+
+    /// Oldest first.
+    pub fn history(&self) -> &[HistoryEntry] {
+        &self.history
+    }
+
+    /// Log lines of a job (fetched incrementally).
+    pub fn log(&mut self, id: JobId) -> &[LogLine] {
+        let have = self.logs.get(&id).map_or(0, Vec::len);
+        let want = self.snapshot(id).map_or(have, |s| s.log_len);
+        if want > have {
+            let fresh = self.engine.log(id, have);
+            self.logs.entry(id).or_default().extend(fresh);
+        }
+        self.logs.get(&id).map_or(&[], Vec::as_slice)
+    }
+
+    /// Jobs that are not finished.
+    pub fn pending(&self) -> impl Iterator<Item = &JobSnapshot> {
+        self.snapshots.iter().filter(|s| !s.state.is_terminal())
+    }
+
+    pub fn shutdown(&self) {
+        self.engine.shutdown(Duration::from_secs(2));
+    }
+}
+
+impl Drop for JobsService {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// `[jobs]` → engine configuration (history next to the config file).
+pub fn engine_config(config: &Config) -> EngineConfig {
+    let j = &config.jobs;
+    EngineConfig {
+        max_parallel: j.max_parallel.max(1),
+        default_queue: if j.per_device_serial { QueueMode::PerDevice } else { QueueMode::Parallel },
+        reset_apply_all_between_jobs: j.reset_apply_all_between_jobs,
+        history_limit: j.history_limit.max(1),
+        history_path: Some(soyuz_core::config::config_dir().join("history.jsonl")),
+        ..EngineConfig::default()
+    }
+}
+
+/// `[jobs]` → copy options.
+pub fn copy_options(config: &Config) -> CopyOptions {
+    let j = &config.jobs;
+    let mut preserve = Preserve::empty();
+    for p in &j.preserve {
+        preserve |= match p {
+            PreserveItem::Times => Preserve::TIMES,
+            PreserveItem::Attrs => Preserve::ATTRS,
+            PreserveItem::Xattr => Preserve::XATTR,
+            PreserveItem::Acl => Preserve::ACL,
+            PreserveItem::Owner => Preserve::OWNER,
+            PreserveItem::Sparse => Preserve::SPARSE,
+        };
+    }
+    CopyOptions {
+        preserve,
+        reflink: match j.reflink {
+            ReflinkPref::Auto => Reflink::Auto,
+            ReflinkPref::Never => Reflink::Never,
+            ReflinkPref::Always => Reflink::Always,
+        },
+        unbuffered_threshold: j.unbuffered_threshold_mib.max(1) * 1024 * 1024,
+        chunk: (j.copy_buffer_mib.clamp(1, 256) * 1024 * 1024) as usize,
+        verify: j.verify_after_copy.then_some(HashAlgo::Blake3),
+        ..CopyOptions::default()
+    }
+}
+
+/// Default `JobOptions` with journaling (exposed for tests of option building).
+pub fn journaled() -> JobOptions {
+    JobOptions { journal: true, ..JobOptions::default() }
+}
+
+/// Directory a location refers to on disk, if any.
+pub fn location_dir(loc: &Location) -> Option<PathBuf> {
+    match loc {
+        Location::Dir(p) => Some(p.clone()),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_config_from_jobs_section() {
+        let mut c = Config::default();
+        c.jobs.max_parallel = 0;
+        c.jobs.per_device_serial = false;
+        c.jobs.history_limit = 42;
+        let e = engine_config(&c);
+        assert_eq!(e.max_parallel, 1, "never zero");
+        assert_eq!(e.default_queue, QueueMode::Parallel);
+        assert_eq!(e.history_limit, 42);
+        assert!(e.history_path.unwrap().ends_with("history.jsonl"));
+    }
+
+    #[test]
+    fn copy_options_from_jobs_section() {
+        let mut c = Config::default();
+        c.jobs.preserve = vec![PreserveItem::Times, PreserveItem::Sparse];
+        c.jobs.verify_after_copy = true;
+        c.jobs.copy_buffer_mib = 4;
+        let o = copy_options(&c);
+        assert_eq!(o.preserve, Preserve::TIMES | Preserve::SPARSE);
+        assert_eq!(o.verify, Some(HashAlgo::Blake3));
+        assert_eq!(o.chunk, 4 * 1024 * 1024);
+        assert!(journaled().journal);
+    }
+
+    #[test]
+    fn op_kinds() {
+        assert_eq!(OpKind::from_brief(JobKindBrief::Trash), OpKind::Trash);
+        assert!(OpKind::Copy.undoable());
+        assert!(!OpKind::Delete.undoable());
+        assert!(!OpKind::Undo.undoable());
+    }
+}

@@ -2,6 +2,7 @@
 //! (jobs engine, search, folder sizes, terminal) are polled directly by the integration
 //! layer; everything here reports through the [`mailbox`].
 
+pub mod jobs;
 pub mod lister;
 pub mod mailbox;
 pub mod places;

@@ -369,6 +369,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 app.cmds.push(Cmd::ComingSoon(action));
             }
         }
+        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, ctx),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));

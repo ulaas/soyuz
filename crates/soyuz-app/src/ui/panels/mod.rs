@@ -3,6 +3,9 @@
 //! resizable height; integrations replace the placeholder bodies in [`show`] with their
 //! own widgets (e.g. `soyuz_term::TerminalView`, the job cards).
 
+pub mod activity;
+pub mod activity_history;
+
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui, pos2, vec2};
 
 use crate::theme::tokens::{radius, size};
@@ -55,14 +58,14 @@ impl BottomPanel {
 }
 
 /// Draw the panel (when open) above the status bar.
-pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
-    if !panel.open {
+pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
+    if !app.ui.bottom.open {
         return;
     }
     let p = palette(root.ctx());
     let resp = Panel::bottom("soyuz.bottom")
         .resizable(true)
-        .default_size(panel.height)
+        .default_size(app.ui.bottom.height)
         .size_range(120.0..=720.0)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 8, right: 8, top: 0, bottom: 6 }))
         .show(root, |ui| {
@@ -79,7 +82,7 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
             for tab in [BottomTab::Terminal, BottomTab::Activity] {
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(108.0, 26.0));
                 let resp = ui.interact(r, ui.id().with(("bottom.tab", tab.label())), Sense::click());
-                let active = panel.tab == tab;
+                let active = app.ui.bottom.tab == tab;
                 if active {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 } else if resp.hovered() {
@@ -101,7 +104,7 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
                     c,
                 );
                 if resp.clicked() {
-                    panel.tab = tab;
+                    app.ui.bottom.tab = tab;
                 }
                 x += 112.0;
             }
@@ -112,11 +115,16 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
             }
             ui.painter().text(close.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
             if cresp.clicked() {
-                panel.open = false;
+                app.ui.bottom.open = false;
             }
-            // Placeholder body until the terminal / jobs integration lands.
             let body = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
-            let (glyph, text) = match panel.tab {
+            if app.ui.bottom.tab == BottomTab::Activity {
+                ui.allocate_rect(card, Sense::hover());
+                activity::show(ui, body, app);
+                return;
+            }
+            // Placeholder body until the terminal integration lands.
+            let (glyph, text) = match app.ui.bottom.tab {
                 BottomTab::Terminal => {
                     (ph::TERMINAL_WINDOW, "The integrated terminal arrives with the terminal milestone.")
                 }
@@ -138,5 +146,5 @@ pub fn show(root: &mut Ui, panel: &mut BottomPanel) {
             );
             ui.allocate_rect(card, Sense::hover());
         });
-    panel.height = resp.response.rect.height();
+    app.ui.bottom.height = resp.response.rect.height();
 }

@@ -1,6 +1,8 @@
 //! Operations that combine state and services: navigation, listing lifecycle, message
 //! handling, opening entries, tabs/panes management and [`Cmd`] application.
 
+pub mod fileops;
+
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -518,6 +520,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             }
         }
         Cmd::ComingSoon(a) => coming_soon(app, &a),
+        Cmd::FileOp(c) => fileops::apply(app, c, ctx),
         Cmd::RevealInSystem(p) => {
             if let Err(e) = soyuz_fs::launch::reveal_in_system(&p) {
                 app.ui.toasts.push(Toast::error("Couldn't reveal in the system file manager").body(e.to_string()));

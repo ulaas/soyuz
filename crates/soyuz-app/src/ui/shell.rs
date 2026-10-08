@@ -47,7 +47,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.cmds.push(Cmd::ViewChanged(id));
         }
     }
-    panels::show(ui, &mut app.ui.bottom);
+    panels::show(ui, app);
     if app.ui.sidebar_visible {
         let current = app.ws.pane().location.clone();
         let pane = app.ws.pane().id;
@@ -118,6 +118,7 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
         zoom: pane.view.zoom,
         theme: app.ui.theme,
         size_style: app.config.general.size_style,
+        activity: panels::activity::indicator(app),
     }
 }
 
@@ -145,6 +146,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             show_system: app.ui.show_system,
             volumes: &app.ui.volumes,
             dual: false,
+            fileops: &mut app.fileops,
         };
         pane_view::show(ui, area, pane, &mut v, false);
         return;
@@ -202,6 +204,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             show_system: app.ui.show_system,
             volumes: &app.ui.volumes,
             dual: true,
+            fileops: &mut app.fileops,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }

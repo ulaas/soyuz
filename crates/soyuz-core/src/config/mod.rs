@@ -114,18 +114,37 @@ pub fn to_pretty_string(config: &Config) -> Result<String, ConfigError> {
     toml::to_string_pretty(config).map_err(|e| ConfigError::Parse { line: 0, col: 0, msg: e.to_string() })
 }
 
-/// `<exe_dir>/portable/config.toml` when a `portable` marker file sits next to the
-/// executable, else the platform config dir (`ProjectDirs("", "", "soyuz")`).
+/// `<exe_dir>/portable-data/config.toml` when a `portable` marker file sits next to the
+/// executable (portable mode), else the platform config dir (`ProjectDirs("", "", "soyuz")`).
 pub fn default_path() -> PathBuf {
     config_dir().join("config.toml")
 }
 
+/// Name of the portable-mode marker file next to the executable.
+pub const PORTABLE_MARKER: &str = "portable";
+/// Data directory used in portable mode, next to the executable.
+pub const PORTABLE_DATA_DIR: &str = "portable-data";
+
+/// Portable-mode data directory for an executable living in `exe_dir`: a `portable` marker
+/// *file* selects `<exe_dir>/portable-data`; a `portable` *directory* (older layouts) is used
+/// as the data directory itself. `None` when there is no marker.
+pub fn portable_dir(exe_dir: &Path) -> Option<PathBuf> {
+    let marker = exe_dir.join(PORTABLE_MARKER);
+    if marker.is_file() {
+        Some(exe_dir.join(PORTABLE_DATA_DIR))
+    } else if marker.is_dir() {
+        Some(marker)
+    } else {
+        None
+    }
+}
+
 /// Directory holding `config.toml`, `session.toml`, `views.toml`, `history.jsonl`, `themes/`.
 pub fn config_dir() -> PathBuf {
-    if let Some(exe_dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf))
-        && exe_dir.join("portable").is_file()
+    if let Some(dir) =
+        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).and_then(|d| portable_dir(&d))
     {
-        return exe_dir.join("portable");
+        return dir;
     }
     match directories::ProjectDirs::from("", "", "soyuz") {
         Some(d) => d.config_dir().to_path_buf(),
@@ -226,6 +245,24 @@ mod tests {
         let (km, w) = keymap(&l.config);
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(km.lookup(KeyContext::FileList, "F5".parse().unwrap()), Some(&Action::CopyToOtherPane));
+    }
+
+    #[test]
+    fn portable_mode_marker() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(portable_dir(dir.path()), None, "no marker: platform config dir");
+        std::fs::write(dir.path().join(PORTABLE_MARKER), b"").unwrap();
+        let data = portable_dir(dir.path()).unwrap();
+        assert_eq!(data, dir.path().join(PORTABLE_DATA_DIR));
+        // The data dir lives next to the marker file (they no longer collide).
+        save_pretty(&data.join("config.toml"), &Config::default()).unwrap();
+        assert!(data.join("config.toml").is_file());
+        assert!(dir.path().join(PORTABLE_MARKER).is_file());
+        assert_eq!(load(&data.join("config.toml")).unwrap().config, Config::default());
+
+        let legacy = tempfile::tempdir().unwrap();
+        std::fs::create_dir(legacy.path().join(PORTABLE_MARKER)).unwrap();
+        assert_eq!(portable_dir(legacy.path()), Some(legacy.path().join(PORTABLE_MARKER)));
     }
 
     #[test]

@@ -311,6 +311,8 @@ pub struct Jobs {
     pub reflink: ReflinkPref,
     pub history_limit: usize,
     pub trash_unsupported: TrashUnsupportedPolicy,
+    /// Open the activity panel when a job runs for more than a second.
+    pub auto_open_activity: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

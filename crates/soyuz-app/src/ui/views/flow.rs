@@ -159,6 +159,7 @@ fn body(
     let cursor_pos = pane.cursor_pos();
     let thumbs_on = v.config.appearance.show_thumbnails;
     let ppp = ui.ctx().pixels_per_point();
+    let mut rename_at: Option<Rect> = None;
     for line in &layout.lines()[layout.lines_in(y0, y1)] {
         match line.kind {
             LineKind::Header(gi) => {
@@ -185,7 +186,12 @@ fn body(
                         hovered: hovered == Some(i),
                         focused_pane: v.focused,
                         checkbox: v.checkbox_mode,
+                        cut: v.fileops.clipboard.is_cut(&e.path),
                     };
+                    if v.fileops.renaming(pane.id, key) {
+                        rename_at =
+                            Some(name_rect(style, r, &g.cols, origin.x, v.checkbox_mode, pane.view.zoom as f32));
+                    }
                     match style {
                         Style::Details => paint_details_row(&painter, &p, r, e, &st, &g.cols, origin.x, v),
                         Style::Grid | Style::Gallery => {
@@ -218,6 +224,12 @@ fn body(
                 }
             }
         }
+    }
+
+    // Inline rename editor (registered after the background so it gets the clicks).
+    if let Some(r) = rename_at {
+        let font = FontId::proportional(if matches!(style, Style::Grid | Style::Gallery) { 12.5 } else { 13.0 });
+        crate::ops::fileops::rename::editor(ui, r, font, pane, v);
     }
 
     // ---- interaction ----
@@ -321,6 +333,7 @@ fn body(
                         pane.selection.select_only(key.clone());
                     }
                     pane.cursor = Some(key);
+                    crate::ops::fileops::dnd::begin(ui.ctx(), pane, v.config.behaviour.drag_default);
                 }
                 v.cmds.push(Cmd::FocusPane(pane.id));
             } else {
@@ -375,6 +388,16 @@ fn body(
         }
     }
 
+    // Drag and drop onto folder items.
+    if crate::ops::fileops::dnd::payload(ui.ctx()).is_some() {
+        let hit = ui
+            .input(|i| i.pointer.latest_pos())
+            .filter(|p| list_area.contains(*p))
+            .and_then(|p| layout.hit(to_layout(p)))
+            .and_then(|i| layout.item_rect(i).map(|r| (i, to_screen(r))));
+        crate::ops::fileops::dnd::item_target(ui, pane, hit, &mut v.fileops.dnd, v.cmds);
+    }
+
     // Ctrl + wheel zooms the icon views.
     if bg.hovered() && matches!(style, Style::Grid | Style::Gallery) {
         let zd = ui.input(|i| i.zoom_delta());
@@ -411,6 +434,8 @@ struct ItemState {
     hovered: bool,
     focused_pane: bool,
     checkbox: bool,
+    /// On the clipboard for a move (drawn dimmed with a dashed outline).
+    cut: bool,
 }
 
 fn paint_item_bg(painter: &Painter, p: &Palette, r: Rect, st: &ItemState, rounding: u8) {
@@ -426,10 +451,37 @@ fn paint_item_bg(painter: &Painter, p: &Palette, r: Rect, st: &ItemState, roundi
     if st.cursor {
         painter.rect_stroke(r.shrink(0.5), cr, Stroke::new(1.0, p.accent.gamma_multiply(0.75)), StrokeKind::Inside);
     }
+    if st.cut {
+        let q = r.shrink(1.5);
+        let pts = [q.left_top(), q.right_top(), q.right_bottom(), q.left_bottom(), q.left_top()];
+        painter.extend(egui::Shape::dashed_line(&pts, Stroke::new(1.0, p.text_tertiary), 4.0, 3.0));
+    }
 }
 
-fn text_alpha(e: &EntryInfo) -> f32 {
-    if e.is_hidden() { alpha::HIDDEN } else { 1.0 }
+fn text_alpha(e: &EntryInfo, st: &ItemState) -> f32 {
+    let a = if e.is_hidden() { alpha::HIDDEN } else { 1.0 };
+    if st.cut { a * alpha::CUT } else { a }
+}
+
+/// Where the name is drawn inside an item (screen coordinates) — the inline rename
+/// editor goes there.
+fn name_rect(style: Style, r: Rect, cols: &[ColGeom], origin_x: f32, checkbox: bool, zoom: f32) -> Rect {
+    match style {
+        Style::Details => {
+            let (x0, w) =
+                cols.iter().find(|c| c.column == Column::Name).map_or((r.left(), r.width()), |c| (origin_x + c.x, c.w));
+            let x = if checkbox { x0 + 8.0 + CHECK + 10.0 } else { x0 + 10.0 };
+            Rect::from_min_max(pos2(x + 20.0, r.top() + 2.0), pos2(x0 + w - 6.0, r.bottom() - 2.0))
+        }
+        Style::Grid | Style::Gallery => {
+            let y = r.top() + 8.0 + zoom + 4.0;
+            Rect::from_min_max(pos2(r.left() + 2.0, y), pos2(r.right() - 2.0, y + 22.0))
+        }
+        Style::List | Style::Column => {
+            let x = if checkbox { r.left() + 6.0 + CHECK + 6.0 } else { r.left() + 8.0 };
+            Rect::from_min_max(pos2(x + 20.0, r.top() + 2.0), pos2(r.right() - 6.0, r.bottom() - 2.0))
+        }
+    }
 }
 
 fn paint_checkbox(painter: &Painter, p: &Palette, r: Rect, checked: bool) {
@@ -473,7 +525,7 @@ fn paint_details_row(
         return;
     }
     paint_item_bg(painter, p, r, st, radius::ROW);
-    let a = text_alpha(e);
+    let a = text_alpha(e, st);
     let cy = r.center().y;
     for c in cols {
         let x0 = origin_x + c.x;
@@ -538,7 +590,7 @@ fn paint_grid_cell(
         return;
     }
     paint_item_bg(painter, p, r, st, radius::CARD);
-    let a = text_alpha(e);
+    let a = text_alpha(e, st);
     let icon_box = Rect::from_center_size(pos2(r.center().x, r.top() + 8.0 + zoom / 2.0), vec2(zoom, zoom));
     match tex {
         Some(t) => {
@@ -574,7 +626,7 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
         return;
     }
     paint_item_bg(painter, p, r, st, radius::ROW);
-    let a = text_alpha(e);
+    let a = text_alpha(e, st);
     let cy = r.center().y;
     let mut x = r.left() + 8.0;
     if st.checkbox {

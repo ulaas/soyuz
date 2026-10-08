@@ -77,4 +77,6 @@ pub enum Cmd {
     ApplyViewToAll(PaneId),
     /// Reveal the given path's parent and select it (path typed into the address bar).
     RevealPath(PathBuf),
+    /// File operations (clipboard, drag and drop, rename, prompts, trash): `ops::fileops`.
+    FileOp(crate::ops::fileops::FileOpCmd),
 }
