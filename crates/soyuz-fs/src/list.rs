@@ -161,8 +161,24 @@ struct Frame {
     canon: Option<PathBuf>,
 }
 
-/// Iterative (explicit stack) tree walk used by delete/copy/size. Junctions are never
-/// descended; symlinked directories only with `follow_symlinks` (with loop detection).
+/// Name-surrogate reparse bit (`IsReparseTagNameSurrogate`): the reparse point stands
+/// for another named entity (a link), as opposed to e.g. cloud-file placeholders.
+const REPARSE_NAME_SURROGATE: u32 = 0x2000_0000;
+
+/// A directory whose reparse point is a link of a type other than symlink / junction
+/// (e.g. `LX_SYMLINK`, `WCI_LINK`): like a junction it is never descended or emptied,
+/// only the link itself is removed. Always `false` off Windows.
+pub(crate) fn is_link_dir(e: &EntryInfo) -> bool {
+    // Symlink / mount-point tags on a `Dir` entry mean the link was followed on purpose
+    // (`follow_symlinks`); unfollowed they are reported as `Symlink` / `Junction`.
+    const SYMLINK: u32 = 0xA000_000C;
+    const MOUNT_POINT: u32 = 0xA000_0003;
+    matches!(e.kind, EntryKind::Dir)
+        && e.reparse_tag.is_some_and(|t| t & REPARSE_NAME_SURROGATE != 0 && t != SYMLINK && t != MOUNT_POINT)
+}
+
+/// Iterative (explicit stack) tree walk used by delete/copy/size. Junctions (and other
+/// link-type reparse directories, see [`is_link_dir`]) are never descended; symlinked directories only with `follow_symlinks` (with loop detection).
 pub fn walk(
     root: &Path,
     opts: &WalkOptions,
@@ -199,7 +215,7 @@ pub fn walk(
         let path = entry.path.clone();
         let was_reparse = entry.attrs.contains(Attributes::REPARSE) || entry.reparse_tag.is_some();
         let descend_kind = match entry.kind {
-            EntryKind::Dir => true,
+            EntryKind::Dir => !is_link_dir(&entry),
             EntryKind::Symlink { target: LinkTarget::Dir } => opts.follow_symlinks,
             _ => false,
         };
@@ -647,6 +663,20 @@ mod tests {
         assert!(windows_executable_ext("run.cmd"));
         assert!(!windows_executable_ext(".exe"));
         assert!(!windows_executable_ext("notes.txt"));
+    }
+
+    #[test]
+    fn link_type_reparse_dirs_are_links() {
+        let mut e = EntryInfo::minimal(PathBuf::from("d"), EntryKind::Dir);
+        assert!(!is_link_dir(&e), "plain folder");
+        e.reparse_tag = Some(0x9000_601A); // IO_REPARSE_TAG_CLOUD_6: a real folder (placeholder)
+        assert!(!is_link_dir(&e));
+        e.reparse_tag = Some(0xA000_001D); // IO_REPARSE_TAG_LX_SYMLINK: name surrogate
+        assert!(is_link_dir(&e));
+        e.reparse_tag = Some(0xA000_0027); // IO_REPARSE_TAG_WCI_LINK
+        assert!(is_link_dir(&e));
+        let f = EntryInfo { kind: EntryKind::File, ..e };
+        assert!(!is_link_dir(&f), "files are deleted as files anyway");
     }
 
     #[test]

@@ -225,12 +225,14 @@ mod imp {
         walk(root, &wopts, ctl, &mut |item| {
             let (path, res, counter): (PathBuf, FsResult<()>, Option<&mut u64>) = match item {
                 WalkItem::Entry { entry, .. } => match entry.kind {
-                    EntryKind::Dir => return Control::Continue, // removed on DirDone
-                    EntryKind::Symlink { .. } | EntryKind::Junction => {
+                    // Checked before `Dir`: a folder that is really a link (other
+                    // name-surrogate reparse tags) loses the link, never its target's contents.
+                    _ if crate::list::is_link_dir(&entry) => {
                         let r = delete_link(&entry.path);
                         (entry.path, r, Some(&mut stats.links))
                     }
-                    _ if entry.reparse_tag.is_some() && entry.is_dir_like() => {
+                    EntryKind::Dir => return Control::Continue, // removed on DirDone
+                    EntryKind::Symlink { .. } | EntryKind::Junction => {
                         let r = delete_link(&entry.path);
                         (entry.path, r, Some(&mut stats.links))
                     }

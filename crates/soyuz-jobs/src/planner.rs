@@ -79,12 +79,17 @@ pub(crate) fn plan_transfer(
     let verb = if is_move { "move" } else { "copy" };
     let dest_probe = nearest_existing(dest_dir);
     let dest_dev = ctx.probe().device_of(&dest_probe).ok();
-    let follow = ctx.opts.copy.follow_symlinks;
+    // Moves never follow links (a cross-device move deletes what it copied).
+    let follow = !is_move && ctx.opts.copy.follow_symlinks;
     let mut plans = Vec::new();
     let mut needed = 0u64;
     let mut items_total = 0u64;
     for (path, entry) in stat_all(ctx, sources)? {
-        if entry.is_dir_like() && is_within(dest_dir, &path) {
+        // Lexically inside, or inside once links / junctions / aliases on the destination
+        // path are resolved (copying into a junction that points into the source would
+        // recurse without end). A link source that is not followed is copied as a link.
+        let walks_into = matches!(entry.kind, EntryKind::Dir) || follow;
+        if entry.is_dir_like() && (is_within(dest_dir, &path) || walks_into && resolves_within(dest_dir, &path)) {
             return Err(FsError::with_message(
                 FsErrorKind::InvalidName,
                 "plan",
@@ -128,6 +133,22 @@ pub(crate) fn is_within(child: &Path, ancestor: &Path) -> bool {
     c.len() >= a.len() && c[..a.len()] == a[..]
 }
 
+/// `dest` (or its nearest existing ancestor) resolves to `src` or to a folder inside it:
+/// the canonical destination's ancestors are compared with `src` by file identity, which
+/// also sees through junctions, symlinks, bind mounts and drive aliases.
+pub(crate) fn resolves_within(dest: &Path, src: &Path) -> bool {
+    let Ok(src_id) = soyuz_fs::file_identity(src, true) else { return false };
+    let Ok(canon) = std::fs::canonicalize(nearest_existing(dest)) else { return false };
+    let mut cur = Some(canon.as_path());
+    while let Some(c) = cur {
+        if soyuz_fs::file_identity(c, true).is_ok_and(|id| id == src_id) {
+            return true;
+        }
+        cur = c.parent();
+    }
+    false
+}
+
 /// Same path after normalization (case-folded on Windows/macOS).
 pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     components(a) == components(b)
@@ -150,5 +171,26 @@ mod tests {
         assert!(!is_within(&base.join("a"), &base.join("a").join("b")));
         assert!(!is_within(&base.join("ab"), &base.join("a")));
         assert!(same_path(&base.join("x").join("..").join("y"), &base.join("y")));
+    }
+
+    #[test]
+    fn resolved_within_sees_through_links() {
+        let d = tempfile::tempdir().unwrap();
+        let src = d.path().join("src");
+        std::fs::create_dir_all(src.join("inner")).unwrap();
+        let other = d.path().join("other");
+        std::fs::create_dir(&other).unwrap();
+        assert!(resolves_within(&src.join("inner").join("new"), &src));
+        assert!(!resolves_within(&other.join("x"), &src));
+        let link = d.path().join("link");
+        #[cfg(windows)]
+        let made = soyuz_fs::junction(&src.join("inner"), &link).is_ok();
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(src.join("inner"), &link).is_ok();
+        if made {
+            assert!(!is_within(&link, &src), "lexically outside");
+            assert!(resolves_within(&link, &src));
+            assert!(resolves_within(&link.join("not-yet"), &src));
+        }
     }
 }

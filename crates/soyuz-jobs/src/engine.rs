@@ -29,9 +29,14 @@
 //! * `cancel()` of a paused / waiting job shows `Finishing` until its worker exits
 //!   (milliseconds), then `Cancelled`.
 //! * History: only `Done` jobs with `journal == true` create entries; undo jobs never do.
-//!   A successful undo (no failed item) sets `undone`; `redo()` re-runs the original kind
-//!   and updates the same entry in place. `retry_failed()` re-submits the failed sources /
-//!   paths / pairs (copy, move and extract pre-answer conflicts with `Skip`).
+//!   An undo reports every record it reversed; when all records of the entry are reversed
+//!   it is marked `undone`, otherwise (some failed, were refused or the undo was cancelled)
+//!   exactly the reversed records are dropped from the entry, so the next undo never
+//!   replays them. `redo()` re-runs the original kind with the original options and
+//!   updates the same entry in place. `retry_failed()` re-submits the failed sources /
+//!   paths / pairs with the original options (copy, move and extract pre-answer conflicts
+//!   with `Skip`). Entries record `UndoStamp`s of what they created (taken on the worker
+//!   after the job) and whether they come from this session.
 //! * `log(id, from)` uses absolute line indices (`JobSnapshot::log_len` = next index).
 //!
 //! No channel send, no `wake()` and no filesystem I/O happens while `state` is held:
@@ -51,7 +56,7 @@ use parking_lot::{Condvar, Mutex};
 use soyuz_core::{DeviceId, FsError, FsErrorKind, OpControl};
 use soyuz_fs::FsProbe;
 
-use crate::history::{self, HistoryEntry, HistoryId};
+use crate::history::{self, HistoryEntry, HistoryId, UndoStamp};
 use crate::job::{
     JobId, JobKind, JobKindBrief, JobOptions, JobSpec, JobState, JobSummary, LogLevel, LogLine, Priority, QueueMode,
 };
@@ -114,8 +119,12 @@ const EMA_ALPHA: f64 = 0.3;
 #[derive(Clone, Debug)]
 pub(crate) enum Exec {
     Kind(JobKind),
-    /// Undo of a history entry: records in the order they must be undone.
-    Undo(Vec<UndoRecord>),
+    /// Undo of a history entry: records in the order they must be undone, plus the
+    /// identities of what the original job created.
+    Undo {
+        records: Vec<UndoRecord>,
+        stamps: Vec<UndoStamp>,
+    },
 }
 
 /// Serialization lane of a job.
@@ -426,7 +435,7 @@ impl Inner {
     }
 
     fn finish_job(&self, id: JobId, result: Result<(), FsError>, outcome: crate::ctx::Outcome, cancelled: bool) {
-        let crate::ctx::Outcome { mut summary, records } = outcome;
+        let crate::ctx::Outcome { mut summary, records, undone, stamps } = outcome;
         let mut history_changed = false;
         self.update(|st, ev| {
             let now = Instant::now();
@@ -444,27 +453,36 @@ impl Inner {
             e.pending_prompt = None;
             e.pause_pending = false;
             let (undo_of, redo_of, journal, auto_remove) = (e.undo_of, e.redo_of, e.options.journal, e.auto_remove);
+            let options = e.options.clone();
             let job_kind = match &e.exec {
                 Exec::Kind(k) => Some(k.clone()),
-                Exec::Undo(_) => None,
+                Exec::Undo { .. } => None,
             };
             ev.push(JobEvent::StateChanged(id, final_state.clone()));
             ev.push(JobEvent::Finished(id, summary.clone()));
-            if let JobState::Done(_) = final_state {
-                if let Some(h) = undo_of {
-                    if let Some(he) = st.history.iter_mut().find(|he| he.id == h)
-                        && summary.items_failed == 0
-                    {
+            if let Some(h) = undo_of {
+                // Whatever the final state: records that were reversed are never replayed.
+                if let Some(he) = st.history.iter_mut().find(|he| he.id == h) {
+                    let remaining = without(&he.records, &undone);
+                    if remaining.is_empty() {
                         he.undone = true;
                         history_changed = true;
+                    } else if remaining.len() != he.records.len() {
+                        he.undoable = history::is_undoable(&remaining);
+                        he.records = remaining;
+                        history_changed = true;
                     }
-                } else if let Some(h) = redo_of {
+                }
+            } else if let JobState::Done(_) = final_state {
+                if let Some(h) = redo_of {
                     if let Some(he) = st.history.iter_mut().find(|he| he.id == h) {
                         he.undone = false;
                         he.undoable = history::is_undoable(&records);
                         he.records = records;
+                        he.stamps = stamps;
                         he.summary = summary.clone();
                         he.when = SystemTime::now();
+                        he.this_session = true;
                         history_changed = true;
                     }
                 } else if let (Some(kind), true) = (job_kind, journal) {
@@ -477,6 +495,9 @@ impl Inner {
                         undoable: history::is_undoable(&records),
                         records,
                         undone: false,
+                        stamps,
+                        options: Some(options),
+                        this_session: true,
                     };
                     st.history.push(entry);
                     let limit = self.cfg.history_limit;
@@ -530,8 +551,9 @@ impl Inner {
         let computed: Vec<(JobId, Lane)> = todo
             .into_iter()
             .map(|(id, roots)| {
-                let src = roots.first().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
-                let dst = roots.last().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
+                let real: Vec<&PathBuf> = roots.iter().filter(|r| !crate::job::is_synthetic_root(r)).collect();
+                let src = real.first().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
+                let dst = real.last().map(|p| device_for(&*self.probe, p)).unwrap_or(DeviceId(0));
                 (id, Lane::Devices(src, dst))
             })
             .collect();
@@ -571,7 +593,7 @@ impl Inner {
                     continue; // paused before start: user-held, blocks nothing
                 }
                 let overlaps =
-                    |set: &[PathBuf]| e.roots.iter().any(|r| set.iter().any(|h| soyuz_fs::path_overlaps(r, h)));
+                    |set: &[PathBuf]| e.roots.iter().any(|r| set.iter().any(|h| crate::job::roots_overlap(r, h)));
                 let roots_ok = !overlaps(&held_roots) && !overlaps(&blocked_roots);
                 let (lane_ok, lane) = match e.lane {
                     LaneState::Unknown => (false, None),
@@ -754,7 +776,11 @@ fn worker_main(inner: Arc<Inner>, id: JobId, rt: Arc<JobRt>, exec: Exec, options
         Err(e) if !cancelled && !e.is_cancel() => ctx.log(LogLevel::Error, e.path.clone(), format!("failed: {e}")),
         _ => ctx.log(LogLevel::Warn, None, "cancelled".to_string()),
     }
-    let outcome = ctx.take_outcome();
+    let mut outcome = ctx.take_outcome();
+    if matches!(exec, Exec::Kind(_)) && ctx.opts.journal {
+        // I/O on the worker, never under the engine lock.
+        outcome.stamps = crate::undo::stamp_records(&outcome.records);
+    }
     inner.finish_job(id, result, outcome, cancelled);
 }
 
@@ -1023,7 +1049,7 @@ impl JobEngine {
     /// Submit a job that reverses history entry `h`. `None` if the entry is unknown,
     /// already undone, not undoable, or an undo/redo of it is in flight.
     pub fn undo(&self, h: HistoryId) -> Option<JobId> {
-        let (records, label) = {
+        let (records, stamps, label) = {
             let st = self.inner.state.lock();
             if history_busy(&st, h) {
                 return None;
@@ -1032,17 +1058,22 @@ impl JobEngine {
             if he.undone || !he.undoable {
                 return None;
             }
-            (crate::undo::undo_order(&he.records), format!("Undo: {}", crate::job::default_label(&he.job)))
+            (
+                crate::undo::undo_order(&he.records),
+                he.stamps.clone(),
+                format!("Undo: {}", crate::job::default_label(&he.job)),
+            )
         };
         let roots = crate::undo::touched_roots(&records);
         let options = JobOptions { journal: false, queue: QueueMode::Parallel, ..JobOptions::default() };
-        Some(self.inner.add_job_ext(Exec::Undo(records), JobKindBrief::Undo, label, roots, options, Some(h), None))
+        let exec = Exec::Undo { records, stamps };
+        Some(self.inner.add_job_ext(exec, JobKindBrief::Undo, label, roots, options, Some(h), None))
     }
 
     /// Re-run the original `JobKind` of an undone entry; on success the entry is updated
     /// in place (`undone = false`, fresh records).
     pub fn redo(&self, h: HistoryId) -> Option<JobId> {
-        let kind = {
+        let (kind, original) = {
             let st = self.inner.state.lock();
             if history_busy(&st, h) {
                 return None;
@@ -1051,27 +1082,27 @@ impl JobEngine {
             if !he.undone {
                 return None;
             }
-            he.job.clone()
+            (he.job.clone(), he.options.clone())
         };
         let label = format!("Redo: {}", crate::job::default_label(&kind));
         let roots = kind.touched_roots();
         let brief = kind.brief();
-        let options = JobSpec::new(kind.clone()).options;
+        let options = rerun_options(original);
         Some(self.inner.add_job_ext(Exec::Kind(kind), brief, label, roots, options, None, Some(h)))
     }
 
     /// Re-submit the failed part of entry `h` (conflicts with what already arrived are
     /// skipped). `None` if the entry had no failures.
     pub fn retry_failed(&self, h: HistoryId) -> Option<JobId> {
-        let kind = {
+        let (kind, original) = {
             let st = self.inner.state.lock();
             let he = st.history.iter().find(|he| he.id == h)?;
             if he.summary.items_failed == 0 {
                 return None;
             }
-            crate::kinds::retry_kind(&he.job, &he.summary)?
+            (crate::kinds::retry_kind(&he.job, &he.summary)?, he.options.clone())
         };
-        let mut spec = JobSpec::new(kind);
+        let mut spec = JobSpec { kind, options: rerun_options(original) };
         if matches!(spec.kind, JobKind::Copy { .. } | JobKind::Move { .. } | JobKind::Extract { .. }) {
             spec.options.conflict = Some(soyuz_core::ConflictResolution::Skip);
         }
@@ -1121,7 +1152,8 @@ impl JobEngine {
     pub(crate) fn submit_undo_records(&self, records: Vec<UndoRecord>) -> JobId {
         let roots = crate::undo::touched_roots(&records);
         let options = JobOptions { journal: false, queue: QueueMode::Parallel, ..JobOptions::default() };
-        self.inner.add_job(Exec::Undo(records), JobKindBrief::Undo, "undo".into(), roots, options)
+        let exec = Exec::Undo { records, stamps: Vec::new() };
+        self.inner.add_job(exec, JobKindBrief::Undo, "undo".into(), roots, options)
     }
 }
 
@@ -1131,6 +1163,32 @@ impl Drop for JobEngine {
             self.shutdown(Duration::ZERO);
         }
     }
+}
+
+/// `records` minus `undone` (multiset difference, order kept).
+fn without(records: &[UndoRecord], undone: &[UndoRecord]) -> Vec<UndoRecord> {
+    let mut pool: Vec<&UndoRecord> = undone.iter().collect();
+    records
+        .iter()
+        .filter(|r| match pool.iter().position(|u| *u == *r) {
+            Some(i) => {
+                pool.swap_remove(i);
+                false
+            }
+            None => true,
+        })
+        .cloned()
+        .collect()
+}
+
+/// Options for re-running a history entry (redo / retry): the original ones when known
+/// (older files: the defaults), journaled, not paused, with the default label.
+fn rerun_options(original: Option<JobOptions>) -> JobOptions {
+    let mut o = original.unwrap_or_default();
+    o.journal = true;
+    o.start_paused = false;
+    o.label = None;
+    o
 }
 
 fn history_busy(st: &EngineState, h: HistoryId) -> bool {

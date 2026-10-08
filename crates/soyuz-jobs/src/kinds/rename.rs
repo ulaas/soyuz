@@ -5,6 +5,11 @@
 //! (`a→b, b→a`), one member is parked under a temporary name, which unblocks the rest,
 //! and is renamed to its target afterwards. The same routine reverses `Moved`/`Renamed`
 //! records for undo (with a primitive that can fall back to copy+delete across devices).
+//!
+//! A pair whose dependency failed or was skipped did not get its target vacated: it is
+//! skipped ("target still occupied") instead of resolving a conflict with the file that
+//! stayed — with Overwrite + apply-to-all that would replace it. A parked entry that cannot
+//! be moved back is reported as a failed item and journaled.
 
 use std::path::{Path, PathBuf};
 
@@ -14,7 +19,7 @@ use soyuz_fs::RenameMode;
 use super::copy;
 use crate::ctx::JobCtx;
 use crate::job::LogLevel;
-use crate::planner::{path_key, same_path};
+use crate::planner::path_key;
 use crate::prompt::ConflictKind;
 use crate::undo::UndoRecord;
 
@@ -55,6 +60,17 @@ pub(crate) fn run_pairs(
     prim: &RenamePrim<'_>,
     rec: &RecordFn<'_>,
 ) -> FsResult<()> {
+    run_pairs_tracked(ctx, pairs, prim, rec, &mut Vec::new())
+}
+
+/// [`run_pairs`] that also reports which pairs completed (`done[i]`, also on error).
+pub(crate) fn run_pairs_tracked(
+    ctx: &JobCtx,
+    pairs: &[(PathBuf, PathBuf)],
+    prim: &RenamePrim<'_>,
+    rec: &RecordFn<'_>,
+    done: &mut Vec<bool>,
+) -> FsResult<()> {
     let keys: Vec<Vec<String>> = pairs.iter().map(|(a, _)| path_key(a)).collect();
     let mut ps: Vec<Pair> = pairs
         .iter()
@@ -70,6 +86,7 @@ pub(crate) fn run_pairs(
     for p in ps.iter().filter(|p| p.st == St::Pending && p.cur != p.orig) {
         unpark(ctx, p, prim, rec);
     }
+    *done = ps.iter().map(|p| p.st == St::Done).collect();
     r
 }
 
@@ -82,6 +99,21 @@ fn schedule(ctx: &JobCtx, ps: &mut [Pair], prim: &RenamePrim<'_>, rec: &RecordFn
         }
         let mut progressed = false;
         for i in pending.iter().copied() {
+            // The dependency failed / was skipped: our target was not vacated.
+            if let Some(j) = ps[i].dep
+                && ps[j].st == St::Failed
+                && soyuz_fs::exists_nofollow(&ps[i].to)
+            {
+                let orig = ps[i].orig.clone();
+                ctx.begin_item(&orig, 0);
+                ps[i].st = St::Failed;
+                if ps[i].cur != orig && unpark(ctx, &ps[i], prim, rec) {
+                    ps[i].cur = orig.clone();
+                }
+                ctx.item_skipped(&orig, 0, "target still occupied (the rename it depended on did not happen)");
+                progressed = true;
+                continue;
+            }
             let blocked = match ps[i].dep {
                 // Still occupies our target (pending and not parked).
                 Some(j) => ps[j].st == St::Pending && ps[j].cur == ps[j].orig,
@@ -127,14 +159,31 @@ fn temp_name(orig: &Path, job: u64, n: usize) -> PathBuf {
     orig.with_file_name(format!(".soyuz-rename-{job}-{n}-{nanos}"))
 }
 
-/// Move a parked pair back to its original name (best effort, journaled if it fails).
-fn unpark(ctx: &JobCtx, p: &Pair, prim: &RenamePrim<'_>, rec: &RecordFn<'_>) {
-    if soyuz_fs::exists_nofollow(&p.orig) || prim(ctx, &p.cur, &p.orig, false).is_err() {
-        ctx.log(LogLevel::Warn, Some(p.orig.clone()), format!("left under temporary name {}", p.cur.display()));
-        if let Some(r) = rec(&p.orig, &p.cur) {
-            ctx.record(r);
+/// Move a parked pair back to its original name. When that is impossible the entry stays
+/// under its temporary name: journaled (undo moves it back) and reported as a failed item.
+/// Returns `true` when it is back under its original name.
+fn unpark(ctx: &JobCtx, p: &Pair, prim: &RenamePrim<'_>, rec: &RecordFn<'_>) -> bool {
+    let why = if soyuz_fs::exists_nofollow(&p.orig) {
+        "its original name is taken".to_string()
+    } else {
+        match prim(ctx, &p.cur, &p.orig, false) {
+            Ok(()) => return true,
+            Err(e) => e.to_string(),
         }
+    };
+    if let Some(r) = rec(&p.orig, &p.cur) {
+        ctx.record(r);
     }
+    let name = p.cur.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let err = FsError::with_message(
+        FsErrorKind::Io,
+        "rename",
+        Some(&p.cur),
+        format!("left under the temporary name \u{201c}{name}\u{201d}: {why}"),
+    );
+    ctx.log(LogLevel::Error, Some(p.orig.clone()), err.message.clone());
+    ctx.item_failed(&p.cur, err, 0);
+    false
 }
 
 fn run_one(ctx: &JobCtx, ps: &mut [Pair], i: usize, prim: &RenamePrim<'_>, rec: &RecordFn<'_>) -> FsResult<()> {
@@ -160,8 +209,9 @@ fn run_one(ctx: &JobCtx, ps: &mut [Pair], i: usize, prim: &RenamePrim<'_>, rec: 
         if !soyuz_fs::exists_nofollow(&to) {
             break;
         }
-        // Case-only rename of the same entry (case-insensitive filesystems).
-        if cur == orig && same_path(&orig, &to) && orig.parent() == to.parent() {
+        // Case-only rename of the same entry (identity-based: also right on
+        // case-insensitive mounts of case-sensitive systems).
+        if cur == orig && soyuz_fs::is_case_variant(&orig, &to) {
             let name = to.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
             match ctx.attempt(&orig, || soyuz_fs::rename_case_only(&orig, &name))? {
                 Ok(()) => {

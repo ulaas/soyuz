@@ -429,7 +429,8 @@ fn create_link(app: &mut SoyuzApp, dir: &Path, name: &str, target: PathBuf, kind
     let path = dir.join(name);
     let ck = match kind {
         LinkChoice::Symlink => {
-            CreateKind::Symlink { kind: if target.is_dir() { LinkKind::Dir } else { LinkKind::File }, target }
+            // File vs folder link is resolved by the job (no stat on the UI thread).
+            CreateKind::Symlink { kind: LinkKind::File, target }
         }
         LinkChoice::Hardlink => CreateKind::Hardlink { src: target },
         LinkChoice::Junction => CreateKind::Junction { target },
@@ -458,10 +459,13 @@ fn restore(app: &mut SoyuzApp, items: Vec<TrashItem>) {
     app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Restore, &paths, None));
 }
 
+/// Ctrl+Z: only operations from this session (older ones stay available in the activity
+/// panel's history, where the entry is visible before it is undone).
 fn undo(app: &mut SoyuzApp) {
-    let entry = app.fileops.jobs.history().iter().rev().find(|h| !h.undone && h.undoable).map(|h| h.id);
+    let entry =
+        app.fileops.jobs.history().iter().rev().find(|h| h.this_session && !h.undone && h.undoable).map(|h| h.id);
     let Some(h) = entry else {
-        app.ui.toasts.push(Toast::info("Nothing to undo"));
+        app.ui.toasts.push(Toast::info("Nothing to undo in this session"));
         return;
     };
     match app.fileops.jobs.engine().undo(h) {
@@ -479,7 +483,7 @@ fn redo(app: &mut SoyuzApp) {
     let hist = app.fileops.jobs.history();
     let undone = |id: HistoryId| hist.iter().any(|h| h.id == id && h.undone);
     let from_stack = app.fileops.undo_stack.iter().rev().copied().find(|id| undone(*id));
-    let h = from_stack.or_else(|| hist.iter().rev().find(|h| h.undone).map(|h| h.id));
+    let h = from_stack.or_else(|| hist.iter().rev().find(|h| h.undone && h.this_session).map(|h| h.id));
     let Some(h) = h else {
         app.ui.toasts.push(Toast::info("Nothing to redo"));
         return;
@@ -566,7 +570,13 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _ctx: &egui::Context) {
             }
         }
         FileOpCmd::TrashRestore(items) => restore(app, items),
-        FileOpCmd::TrashPurge(items) => app.fileops.trash.purge(items),
+        FileOpCmd::TrashPurge(items) => {
+            if !items.is_empty() {
+                let paths: Vec<PathBuf> = items.iter().map(|i| i.original.clone()).collect();
+                let spec = app.fileops.jobs.spec(JobKind::PurgeTrash { items });
+                app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Delete, &paths, None));
+            }
+        }
     }
 }
 
@@ -711,7 +721,8 @@ fn on_finished(app: &mut SoyuzApp, id: JobId, summary: &JobSummary) {
         app.fileops.jobs.meta(id).cloned().unwrap_or_else(|| JobMeta::new(OpKind::from_brief(snap.kind), &[], None));
     let total = snap.progress.totals_known.then_some(snap.progress.items_total);
     let title = names::job_title(&meta, false, total, &snap.label);
-    if matches!(meta.op, OpKind::Trash | OpKind::Restore | OpKind::EmptyTrash | OpKind::Undo | OpKind::Redo) {
+    let purge = meta.op == OpKind::Delete && snap.kind == soyuz_jobs::JobKindBrief::EmptyTrash;
+    if purge || matches!(meta.op, OpKind::Trash | OpKind::Restore | OpKind::EmptyTrash | OpKind::Undo | OpKind::Redo) {
         app.fileops.trash.mark_stale();
     }
     match &snap.state {

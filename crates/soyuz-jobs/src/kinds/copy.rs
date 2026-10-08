@@ -116,8 +116,10 @@ pub(crate) fn transfer_tree(
     // dir_map[d] = destination of the directory currently open at depth d:
     // Some((dst, created_new)) or None when that subtree is skipped.
     let mut dir_map: Vec<Option<(PathBuf, bool)>> = Vec::new();
-    let opts =
-        WalkOptions { follow_symlinks: ctx.opts.copy.follow_symlinks, post_order: true, ..WalkOptions::default() };
+    // A move never follows links: the copied sources are deleted afterwards, and deleting
+    // through a followed link would destroy the link target's contents.
+    let follow = mode == TransferMode::Copy && ctx.opts.copy.follow_symlinks;
+    let opts = WalkOptions { follow_symlinks: follow, post_order: true, ..WalkOptions::default() };
     let mut root_res = root_resolution;
     let walk_res = soyuz_fs::walk(src_root, &opts, ctx.ctl(), &mut |item| {
         let step = match item {
@@ -135,7 +137,7 @@ pub(crate) fn transfer_tree(
                                 p.items_done += 1;
                                 p.bytes_done += credit;
                             });
-                            if is_walk_dir(&entry, ctx.opts.copy.follow_symlinks) {
+                            if is_walk_dir(&entry, follow) {
                                 dir_map.push(None);
                             }
                             return Control::Continue;
@@ -143,7 +145,7 @@ pub(crate) fn transfer_tree(
                     }
                 };
                 let pre = if depth == 0 { root_res.take() } else { None };
-                if is_walk_dir(&entry, ctx.opts.copy.follow_symlinks) {
+                if is_walk_dir(&entry, follow) {
                     match transfer_dir(ctx, &entry, dst, parent_new, mode, pre) {
                         Ok(slot) => {
                             dir_map.push(slot);
@@ -333,6 +335,9 @@ fn transfer_file(
     }
     let mut copy_opts = ctx.opts.copy.clone();
     copy_opts.overwrite = overwrite;
+    if mode == TransferMode::Move {
+        copy_opts.follow_symlinks = false;
+    }
     let attempt = ctx.attempt(src, || {
         let mut reported = 0u64;
         let res = {

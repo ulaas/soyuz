@@ -190,14 +190,43 @@ fn duplicate_groups() {
     assert_eq!(groups[0].len(), 2);
 }
 
-#[cfg(unix)]
 #[test]
 fn hardlinks_are_not_duplicates() {
+    // On every OS (NTFS hardlinks too): two names of one file are not two copies.
     let t = tempfile::tempdir().unwrap();
     write(t.path(), "orig", b"payload payload");
     fs::hard_link(t.path().join("orig"), t.path().join("link")).unwrap();
     let (groups, n, _) = dupes(vec![t.path().to_path_buf()], 0);
     assert_eq!((groups.len(), n), (0, 0));
+}
+
+#[test]
+fn nested_and_aliased_roots_yield_no_self_duplicates() {
+    let t = tempfile::tempdir().unwrap();
+    let r = t.path().join("root");
+    write(&r, "sub/only.bin", b"the only copy of this file");
+    write(&r, "x.bin", b"another unique file content");
+    // The same tree through a nested root and a differently spelled root.
+    let spelled = r.join("sub").join("..");
+    let (groups, n, _) = dupes(vec![r.join("sub"), r.clone(), spelled], 0);
+    assert_eq!((groups.len(), n), (0, 0), "{groups:?}");
+    // ... and through a junction / symlink to the root.
+    let alias = t.path().join("alias");
+    #[cfg(windows)]
+    let made = soyuz_fs::junction(&r, &alias).is_ok();
+    #[cfg(unix)]
+    let made = std::os::unix::fs::symlink(&r, &alias).is_ok();
+    if made {
+        let (groups, n, _) = dupes(vec![r.clone(), alias.clone()], 0);
+        assert_eq!((groups.len(), n), (0, 0), "{groups:?}");
+        let (groups, n, _) = dupes(vec![alias.join("sub"), r.clone()], 0);
+        assert_eq!((groups.len(), n), (0, 0), "{groups:?}");
+    }
+    // Real duplicates are still found.
+    write(&r, "sub/copy.bin", b"the only copy of this file");
+    let (groups, n, _) = dupes(vec![r.clone(), r.join("sub")], 0);
+    assert_eq!((groups.len(), n), (1, 1));
+    assert_eq!(groups[0].len(), 2);
 }
 
 fn rel(items: &[&str]) -> Vec<PathBuf> {

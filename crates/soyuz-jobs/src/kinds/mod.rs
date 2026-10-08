@@ -27,7 +27,7 @@ use crate::planner::is_within;
 pub(crate) fn run(ctx: &JobCtx, exec: &Exec) -> FsResult<()> {
     ctx.log(LogLevel::Info, None, "started".to_string());
     match exec {
-        Exec::Undo(records) => crate::undo::run_undo(ctx, records)?,
+        Exec::Undo { records, stamps } => crate::undo::run_undo(ctx, records, stamps)?,
         Exec::Kind(kind) => run_kind(ctx, kind)?,
     }
     ctx.checkpoint()?;
@@ -55,6 +55,7 @@ fn run_kind(ctx: &JobCtx, kind: &JobKind) -> FsResult<()> {
         }
         JobKind::RestoreTrash { items, to } => trash::run_restore(ctx, items, to.as_deref()),
         JobKind::EmptyTrash => trash::run_empty(ctx),
+        JobKind::PurgeTrash { items } => trash::run_purge(ctx, items),
         JobKind::Sync { plan } => sync::run_sync(ctx, plan),
     }
 }
@@ -94,6 +95,13 @@ pub(crate) fn retry_kind(job: &JobKind, summary: &JobSummary) -> Option<JobKind>
                 return None;
             }
             JobKind::RestoreTrash { items: it, to: to.clone() }
+        }
+        JobKind::PurgeTrash { items } => {
+            let it: Vec<_> = items.iter().filter(|i| failed.contains(&i.original)).cloned().collect();
+            if it.is_empty() {
+                return None;
+            }
+            JobKind::PurgeTrash { items: it }
         }
         // Create / Extract / Compress / EmptyTrash / Sync: re-run as a whole (the
         // engine pre-answers conflicts with Skip for extract).

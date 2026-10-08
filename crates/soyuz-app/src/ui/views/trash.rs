@@ -1,7 +1,7 @@
 //! The Trash location (`trash:`): items of every bin via `soyuz_fs::trash::list` (on a
-//! worker thread), with original location, deletion date and size columns. Restore and
-//! Empty trash run as jobs; deleting individual items permanently uses
-//! `soyuz_fs::trash::purge` on a worker (the jobs API has no per-item purge).
+//! worker thread), with original location, deletion date and size columns. Restore,
+//! Empty trash and deleting individual items permanently (`JobKind::PurgeTrash`) run as
+//! jobs, serialized with each other by the engine.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -26,7 +26,6 @@ use crate::ui::widgets::{menu_item, menu_separator, pill_button, spinner, trunc_
 
 enum TrashMsg {
     Listed(Result<Vec<TrashItem>, String>),
-    Purged { ok: usize, failed: Vec<(String, String)> },
 }
 
 pub struct TrashState {
@@ -37,7 +36,6 @@ pub struct TrashState {
     loaded: bool,
     stale: bool,
     error: Option<String>,
-    purging: usize,
     tx: Sender<TrashMsg>,
     rx: Receiver<TrashMsg>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -62,7 +60,6 @@ impl TrashState {
             loaded: false,
             stale: true,
             error: None,
-            purging: 0,
             tx,
             rx,
             wake: Arc::new(move || c.request_repaint()),
@@ -103,27 +100,6 @@ impl TrashState {
         }
     }
 
-    pub fn purge(&mut self, items: Vec<TrashItem>) {
-        if items.is_empty() {
-            return;
-        }
-        self.purging += 1;
-        let tx = self.tx.clone();
-        let wake = self.wake.clone();
-        let _ = std::thread::Builder::new().name("soyuz-trash-purge".into()).spawn(move || {
-            let mut ok = 0;
-            let mut failed = Vec::new();
-            for it in &items {
-                match soyuz_fs::trash::purge(it) {
-                    Ok(()) => ok += 1,
-                    Err(e) => failed.push((soyuz_core::entry::display_name(&it.original), e.to_string())),
-                }
-            }
-            let _ = tx.send(TrashMsg::Purged { ok, failed });
-            wake();
-        });
-    }
-
     pub fn poll(&mut self) {
         while let Ok(m) = self.rx.try_recv() {
             match m {
@@ -139,19 +115,6 @@ impl TrashState {
                     self.loading = false;
                     self.loaded = true;
                     self.error = Some(e);
-                }
-                TrashMsg::Purged { ok, failed } => {
-                    self.purging = self.purging.saturating_sub(1);
-                    self.stale = true;
-                    self.notice = Some(if failed.is_empty() {
-                        crate::ui::toasts::Toast::success(format!(
-                            "Deleted {ok} item{} permanently",
-                            if ok == 1 { "" } else { "s" }
-                        ))
-                    } else {
-                        crate::ui::toasts::Toast::warning(format!("{} item(s) could not be deleted", failed.len()))
-                            .body(failed.iter().map(|(n, e)| format!("{n}: {e}")).collect::<Vec<_>>().join("\n"))
-                    });
                 }
             }
         }
@@ -297,7 +260,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     if refresh.clicked() {
         ts.reload();
     }
-    if ts.loading || ts.purging > 0 {
+    if ts.loading {
         let (r, _) = bar.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
         spinner(&bar, r.center(), 6.0, p.accent);
     }

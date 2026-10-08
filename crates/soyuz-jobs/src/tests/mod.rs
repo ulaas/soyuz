@@ -4,6 +4,7 @@ mod concurrency;
 mod ops;
 mod prompts;
 mod queue;
+mod safety;
 mod undo;
 
 use std::path::{Path, PathBuf};
@@ -120,6 +121,22 @@ impl H {
 impl Drop for H {
     fn drop(&mut self) {
         self.engine.shutdown(Duration::from_secs(5));
+    }
+}
+
+/// Wait for `id` to finish, answering every "no trash here, delete permanently?" prompt
+/// with `permanent`; any other prompt fails the test.
+pub(crate) fn settle(h: &H, id: JobId, permanent: bool) -> crate::JobSummary {
+    loop {
+        let s = h.wait_state(id, |st| st.is_terminal() || *st == JobState::WaitingForUser);
+        match (s.state, s.pending_prompt) {
+            (JobState::Done(sum), _) => return sum,
+            (JobState::WaitingForUser, Some(JobPrompt::TrashUnsupported { .. })) => {
+                h.engine.respond(id, crate::PromptResponse::TrashUnsupported { permanent, apply_to_all: false })
+            }
+            (JobState::WaitingForUser, None) => std::thread::sleep(Duration::from_millis(1)),
+            (other, p) => panic!("job {id:?}: unexpected {other:?} / {p:?}; log: {:#?}", h.engine.log(id, 0)),
+        }
     }
 }
 

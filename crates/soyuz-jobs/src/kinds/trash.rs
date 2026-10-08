@@ -1,4 +1,4 @@
-//! Trash executors: move to trash (with the `TrashUnsupported` flow), restore, empty.
+//! Trash executors: move to trash (with the `TrashUnsupported` flow), restore, purge, empty.
 
 use std::path::{Path, PathBuf};
 
@@ -98,4 +98,22 @@ pub(crate) fn run_empty(ctx: &JobCtx) -> FsResult<()> {
         }
         Control::Continue
     })
+}
+
+/// Permanently delete individual trash items (irreversible; not journaled for undo).
+pub(crate) fn run_purge(ctx: &JobCtx, items: &[TrashItem]) -> FsResult<()> {
+    ctx.set_totals(0, items.len() as u64);
+    ctx.set_running();
+    for item in items {
+        ctx.checkpoint()?;
+        ctx.begin_item(&item.original, 0);
+        match ctx.attempt(&item.original, || soyuz_fs::trash::purge(item))? {
+            Ok(()) => {
+                ctx.record(UndoRecord::Irreversible(item.original.clone()));
+                ctx.item_ok(item.size);
+            }
+            Err(e) => ctx.item_failed(&item.original, e, 0),
+        }
+    }
+    Ok(())
 }

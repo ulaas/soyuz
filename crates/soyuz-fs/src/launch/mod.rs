@@ -2,9 +2,9 @@
 //! (kernel32 `CreateProcessW` under the hood on Windows; `CommandExt::raw_arg` /
 //! `creation_flags` where needed). No shell execution APIs are used in this process.
 //!
-//! * Windows: registry association chain → `CreateProcessW`; UWP / `DelegateExecute`
-//!   associations and unresolvable shortcuts fall back to the external
-//!   `rundll32 url.dll,FileProtocolHandler <path>` process.
+//! * Windows: registry association chain → `CreateProcessW` (also for `.url` schemes);
+//!   UWP / `DelegateExecute` (COM-only) associations and unresolvable shortcuts fail with
+//!   a "no application is associated" error — nothing is handed to a shell helper.
 //! * Linux/BSD: `xdg-open`, then `gio open`; Open-with list from `.desktop` files.
 //! * macOS: `open` / `open -a`.
 
