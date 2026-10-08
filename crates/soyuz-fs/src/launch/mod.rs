@@ -8,7 +8,7 @@
 //! * Linux/BSD: `xdg-open`, then `gio open`; Open-with list from `.desktop` files.
 //! * macOS: `open` / `open -a`.
 
-mod linux;
+pub(crate) mod linux;
 pub(crate) mod lnk;
 mod macos;
 mod windows;

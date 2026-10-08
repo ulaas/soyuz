@@ -4,10 +4,10 @@
 //! [`TrashSupport::Unsupported`] and `trash()` fails with `Unsupported` — an item is never
 //! silently deleted permanently.
 
-mod freedesktop;
+pub(crate) mod freedesktop;
 mod index;
 mod macos;
-mod windows;
+pub(crate) mod windows;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

@@ -90,6 +90,8 @@ pub struct EngineConfig {
     pub history_path: Option<PathBuf>,
     /// Per-job log ring size (default 1000).
     pub log_lines_per_job: usize,
+    /// Crash journal of in-flight jobs (`jobs.journal`, see [`crate::journal`]); `None` = off.
+    pub journal_path: Option<PathBuf>,
 }
 
 impl Default for EngineConfig {
@@ -102,6 +104,7 @@ impl Default for EngineConfig {
             history_limit: 500,
             history_path: None,
             log_lines_per_job: 1000,
+            journal_path: None,
         }
     }
 }
@@ -246,6 +249,8 @@ pub(crate) struct Inner {
     pub shared_policy: Mutex<PolicyMemory>,
     workers: Mutex<usize>,
     workers_cv: Condvar,
+    /// Lock order: its locks are taken with no engine lock held (see `journal.rs`).
+    pub(crate) journal: Option<crate::journal::JournalWriter>,
 }
 
 impl Inner {
@@ -519,6 +524,10 @@ impl Inner {
         if history_changed {
             self.persist_history();
         }
+        // After the history: a crash in between shows the job as interrupted, never lost.
+        if let Some(j) = &self.journal {
+            j.end(id.0);
+        }
         self.kick();
     }
 
@@ -628,12 +637,18 @@ impl Inner {
     }
 
     fn spawn_worker(self: &Arc<Self>, id: JobId) {
-        let Some((rt, exec, options)) = ({
+        let Some((rt, exec, options, label)) = ({
             let st = self.state.lock();
-            st.jobs.get(&id).map(|e| (e.rt.clone(), e.exec.clone(), e.options.clone()))
+            st.jobs.get(&id).map(|e| (e.rt.clone(), e.exec.clone(), e.options.clone(), e.label.clone()))
         }) else {
             return;
         };
+        if let (Some(j), Exec::Kind(kind)) = (&self.journal, &exec)
+            && crate::journal::journals(kind)
+        {
+            // Before the worker starts: a crash from here on is recoverable.
+            j.begin(id.0, label, kind, &options, rt.clone());
+        }
         *self.workers.lock() += 1;
         let inner = self.clone();
         let spawned = std::thread::Builder::new()
@@ -802,6 +817,9 @@ fn scheduler_main(inner: Arc<Inner>, kick_rx: Receiver<()>) {
             last_sample = Instant::now();
             inner.sample();
             inner.reap_threads();
+            if let Some(j) = &inner.journal {
+                j.tick();
+            }
         }
     }
 }
@@ -837,7 +855,9 @@ impl JobEngine {
             history.drain(..drop_n);
         }
         let next_history = history.iter().map(|h| h.id.0).max().unwrap_or(0);
+        let journal = cfg.journal_path.clone().map(crate::journal::JournalWriter::new);
         let inner = Arc::new(Inner {
+            journal,
             cfg,
             probe,
             wake,
@@ -1138,6 +1158,40 @@ impl JobEngine {
             let _ = h.join();
         }
         self.inner.persist_history();
+        if let Some(j) = &self.inner.journal {
+            // Jobs that did not stop in time stay journaled (shown as interrupted next start).
+            j.flush();
+        }
+    }
+
+    /// Resume an interrupted job from a recovered journal: what is left of it
+    /// ([`crate::journal::resume_kind`]) with its original options; copy-like kinds skip
+    /// whatever already arrived. `None` when nothing is left to do.
+    pub fn resume_journaled(&self, job: &crate::journal::JournalJob) -> Option<JobId> {
+        let kind = crate::journal::resume_kind(&job.kind)?;
+        let mut options = rerun_options(Some(job.options.clone()));
+        if matches!(kind, JobKind::Copy { .. } | JobKind::Move { .. } | JobKind::Extract { .. }) {
+            options.conflict = Some(soyuz_core::ConflictResolution::Skip);
+        }
+        options.label = Some(format!("Resume: {}", job.label));
+        Some(self.submit(JobSpec { kind, options }))
+    }
+
+    /// Roll back the completed parts of an interrupted job (an undo of its journaled
+    /// records, identity-checked like any undo). `None` when nothing was journaled.
+    pub fn rollback_journaled(&self, job: &crate::journal::JournalJob) -> Option<JobId> {
+        if !job.can_roll_back() {
+            return None;
+        }
+        let records: Vec<UndoRecord> = crate::undo::undo_order(&job.records)
+            .into_iter()
+            .filter(|r| !matches!(r, UndoRecord::Irreversible(_)))
+            .collect();
+        let roots = crate::undo::touched_roots(&records);
+        let options = JobOptions { journal: false, queue: QueueMode::Parallel, ..JobOptions::default() };
+        let exec = Exec::Undo { records, stamps: job.stamps.clone() };
+        let label = format!("Roll back: {}", job.label);
+        Some(self.inner.add_job(exec, JobKindBrief::Undo, label, roots, options))
     }
 
     /// Live worker threads (test hook for shutdown).

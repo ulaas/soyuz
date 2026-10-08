@@ -17,6 +17,8 @@
 #![deny(unsafe_code)]
 
 mod backend;
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
 mod keys;
 #[allow(unsafe_code)]
 mod pty;

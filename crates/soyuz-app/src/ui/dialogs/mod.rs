@@ -19,6 +19,8 @@ pub mod properties_details;
 pub mod properties_security;
 pub mod properties_widgets;
 pub mod quit;
+pub mod recovery;
+pub mod recovery_crash;
 
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};

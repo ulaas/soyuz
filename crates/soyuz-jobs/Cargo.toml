@@ -18,6 +18,9 @@ log.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+proptest.workspace = true
+# Chaos tests inject faults into the copy / move internals.
+soyuz-fs = { workspace = true, features = ["fault-inject"] }
 
 [lints]
 workspace = true

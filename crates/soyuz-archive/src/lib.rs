@@ -21,6 +21,8 @@
 
 mod extract;
 pub mod format;
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
 pub mod reader;
 mod util;
 pub mod vpath;

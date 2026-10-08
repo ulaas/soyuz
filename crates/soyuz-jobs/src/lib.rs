@@ -10,6 +10,7 @@ mod ctx;
 pub mod engine;
 pub mod history;
 pub mod job;
+pub mod journal;
 pub mod kinds;
 pub mod planner;
 pub mod policy;
@@ -27,6 +28,7 @@ pub use job::{
     CreateKind, DeleteMode, JobId, JobKind, JobKindBrief, JobOptions, JobSpec, JobState, JobSummary, LogLevel, LogLine,
     Priority, QueueMode, SyncAction, SyncPlan,
 };
+pub use journal::{JournalJob, JournalSlot, Recovered};
 pub use progress::{JobSnapshot, Progress};
 pub use prompt::{ConflictInfo, ConflictKind, JobPrompt, PromptResponse};
 pub use undo::UndoRecord;

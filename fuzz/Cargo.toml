@@ -1,0 +1,102 @@
+# cargo-fuzz targets for every parser that reads untrusted data (ROADMAP R2).
+#
+# A separate workspace (excluded from the main one). Running needs nightly + cargo-fuzz:
+#   cargo install cargo-fuzz
+#   cd fuzz && cargo +nightly fuzz run lnk            # or any target below
+#   cargo +nightly fuzz list
+# On stable, `cargo check --manifest-path fuzz/Cargo.toml` verifies the targets compile.
+# The parsers are exposed by the crates' `fuzzing` features (`soyuz_fs::fuzzing`,
+# `soyuz_archive::fuzzing`, `soyuz_term::fuzzing`); the app's media / tag / EXIF parsers
+# are public already.
+[package]
+name = "soyuz-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+soyuz-fs = { path = "../crates/soyuz-fs", features = ["fuzzing"] }
+soyuz-archive = { path = "../crates/soyuz-archive", features = ["fuzzing"] }
+soyuz-term = { path = "../crates/soyuz-term", features = ["fuzzing"] }
+soyuz-app = { path = "../crates/soyuz-app", default-features = false }
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "lnk"
+path = "fuzz_targets/lnk.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "recycle_i"
+path = "fuzz_targets/recycle_i.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "trashinfo"
+path = "fuzz_targets/trashinfo.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "desktop_entry"
+path = "fuzz_targets/desktop_entry.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bplist_tags"
+path = "fuzz_targets/bplist_tags.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media_probe"
+path = "fuzz_targets/media_probe.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "exif"
+path = "fuzz_targets/exif.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archive_detect"
+path = "fuzz_targets/archive_detect.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "term_escapes"
+path = "fuzz_targets/term_escapes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "term_input"
+path = "fuzz_targets/term_input.rs"
+test = false
+doc = false
+bench = false

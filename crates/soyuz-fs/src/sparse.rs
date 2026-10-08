@@ -106,6 +106,7 @@ pub(crate) fn copy_sparse(
             if n == 0 {
                 break;
             }
+            crate::fault::hit(crate::fault::FaultOp::Write, dst_path).map_err(err::map("copy", dst_path))?;
             write_all_at(dst, &buf[..n], off).map_err(err::map("copy", dst_path))?;
             off += n as u64;
             done += n as u64;

@@ -39,6 +39,7 @@ pub enum MoveFast {
 
 /// Same-device rename; `CrossDevice` error otherwise.
 pub fn rename(src: &Path, dst: &Path, mode: RenameMode) -> FsResult<()> {
+    crate::fault::hit(crate::fault::FaultOp::Rename, src).map_err(crate::err::map("rename", src))?;
     match imp::rename(src, dst, mode) {
         Err(e)
             if e.kind == FsErrorKind::AlreadyExists && mode == RenameMode::NoReplace && is_case_variant(src, dst) =>

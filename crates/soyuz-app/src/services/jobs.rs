@@ -323,6 +323,7 @@ pub fn engine_config(config: &Config) -> EngineConfig {
         reset_apply_all_between_jobs: j.reset_apply_all_between_jobs,
         history_limit: j.history_limit.max(1),
         history_path: Some(soyuz_core::config::config_dir().join("history.jsonl")),
+        journal_path: crate::services::crash::journal_path(),
         ..EngineConfig::default()
     }
 }
