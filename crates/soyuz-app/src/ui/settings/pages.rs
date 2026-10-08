@@ -445,6 +445,17 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
             },
         );
+        r.row_kw(
+            "Spring-loaded folders",
+            "While dragging, hovering a folder, breadcrumb or tab opens it so you can drop deeper.",
+            "drag hover open spring",
+            |ui| {
+                switch(ui, &mut d.behaviour.spring_loaded_folders);
+            },
+        );
+        r.row_kw("Spring-load delay", "How long to hover before the folder opens.", "drag hover delay", |ui| {
+            number(ui, &mut d.behaviour.spring_load_delay_ms, 200..=3000, " ms");
+        });
     });
     any |= group(ui, q, ctx, "Typing & renaming", |r| {
         r.row_kw("Typing in the list", "Jump to the first match, or filter the list.", "type ahead", |ui| {

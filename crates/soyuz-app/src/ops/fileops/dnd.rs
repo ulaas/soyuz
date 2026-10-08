@@ -5,6 +5,9 @@
 //! Modifier semantics (Explorer-like): Ctrl = copy, Shift = move, Alt (or Ctrl+Shift) =
 //! link; otherwise `[behaviour] drag_default` (auto = move on the same volume, copy
 //! across volumes; `ask` shows a small menu at the drop point).
+//!
+//! Spring-loaded folders (B4): resting on a folder item, breadcrumb segment, tab or
+//! sidebar row for `[behaviour] spring_load_delay_ms` opens it, so a drag can go deeper.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -190,6 +193,53 @@ pub fn highlight(ui: &Ui, rect: Rect, rounding: u8) {
 /// Handle hover + release of an internal drag over `rect` targeting `dest`. Returns
 /// `true` while this target is hovered.
 pub fn target_rect(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, cmds: &mut Vec<Cmd>) -> bool {
+    target_rect_spring(ui, rect, dest, rounding, cmds, None)
+}
+
+fn spring_id() -> Id {
+    Id::new("soyuz.dnd.spring")
+}
+
+/// Spring-loading: run `open` once the pointer rested on `dest` long enough; paints a
+/// filling hint meanwhile.
+fn spring(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, open: Cmd, cmds: &mut Vec<Cmd>) {
+    let Some(delay) = crate::ui::looks::spring_delay() else { return };
+    let ctx = ui.ctx();
+    let now = ctx.input(|i| i.time);
+    let mut timer: crate::ui::motion::HoverTimer = ctx.data(|d| d.get_temp(spring_id())).unwrap_or_default();
+    let fire = timer.update(dest, now, delay);
+    let progress = timer.progress(now, delay);
+    let fired = timer.fired;
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| {
+        d.insert_temp(spring_id(), timer);
+        d.insert_temp(spring_id().with("pass"), pass);
+    });
+    if fire {
+        cmds.push(open);
+    } else if !fired {
+        ctx.request_repaint();
+        // A fill that grows from the left edge while the timer runs.
+        if progress > 0.15 && !crate::theme::reduced_motion(ctx) {
+            let p = palette(ctx);
+            let r = rect.intersect(ui.clip_rect());
+            let w = r.width() * crate::ui::motion::ease_out((progress - 0.15) / 0.85);
+            let fill = Rect::from_min_size(r.min, vec2(w, r.height()));
+            let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.dnd.hl")));
+            painter.rect_filled(fill, CornerRadius::same(rounding), p.accent.gamma_multiply(0.10));
+        }
+    }
+}
+
+/// [`target_rect`] that also spring-loads: `open` runs after the hover delay.
+pub fn target_rect_spring(
+    ui: &Ui,
+    rect: Rect,
+    dest: &Path,
+    rounding: u8,
+    cmds: &mut Vec<Cmd>,
+    open: Option<Cmd>,
+) -> bool {
     let ctx = ui.ctx();
     let Some(payload) = payload(ctx) else { return false };
     let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else { return false };
@@ -209,6 +259,9 @@ pub fn target_rect(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, cmds: &mut Ve
     }
     ctx.data_mut(|d| d.insert_temp(key, effect));
     highlight(ui, rect, rounding);
+    if !released && let Some(open) = open {
+        spring(ui, rect, dest, rounding, open, cmds);
+    }
     set_hover(ctx, format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(dest)), effect);
     if released && let Some(p) = DragAndDrop::take_payload::<DragPayload>(ctx) {
         ctx.data_mut(|d| d.remove::<Option<DropEffect>>(key));
@@ -220,6 +273,17 @@ pub fn target_rect(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, cmds: &mut Ve
 /// Drop target on any response (sidebar rows, breadcrumb segments, tabs).
 pub fn target(ui: &Ui, resp: &Response, dest: &Path, cmds: &mut Vec<Cmd>) -> bool {
     target_rect(ui, resp.rect, dest, radius::ROW, cmds)
+}
+
+/// [`target`] that spring-loads: hovering opens `dest` in `pane`.
+pub fn target_open(ui: &Ui, resp: &Response, dest: &Path, pane: PaneId, cmds: &mut Vec<Cmd>) -> bool {
+    let open = Cmd::Navigate { pane, location: soyuz_core::Location::Dir(dest.to_path_buf()), select: None };
+    target_rect_spring(ui, resp.rect, dest, radius::ROW, cmds, Some(open))
+}
+
+/// [`target`] that spring-loads with a custom command (tabs: select the tab).
+pub fn target_with(ui: &Ui, resp: &Response, dest: &Path, open: Cmd, cmds: &mut Vec<Cmd>) -> bool {
+    target_rect_spring(ui, resp.rect, dest, radius::ROW, cmds, Some(open))
 }
 
 /// The sidebar Trash row: dropping moves the items to the trash.
@@ -291,7 +355,8 @@ pub fn item_target(ui: &Ui, pane: &Pane, hit: Option<(usize, Rect)>, frame: &mut
         return;
     }
     let path = e.path.clone();
-    if target_rect(ui, rect, &path, radius::ROW, cmds) {
+    let open = Cmd::Navigate { pane: pane.id, location: soyuz_core::Location::Dir(path.clone()), select: None };
+    if target_rect_spring(ui, rect, &path, radius::ROW, cmds, Some(open)) {
         frame.item_claimed = true;
     }
 }
@@ -309,6 +374,10 @@ pub fn external_target(frame: &DndFrame, pointer: Option<Pos2>, focused: PaneId)
 /// Floating badge next to the pointer: item count, effect and target.
 pub fn paint_badge(ctx: &egui::Context) {
     let hover: Option<HoverInfo> = ctx.data_mut(|d| d.remove_temp(hover_id()));
+    let pass = ctx.cumulative_pass_nr();
+    if ctx.data(|d| d.get_temp::<u64>(spring_id().with("pass"))) != Some(pass) {
+        ctx.data_mut(|d| d.remove::<crate::ui::motion::HoverTimer>(spring_id()));
+    }
     let to_trash: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.dnd.trash"))).unwrap_or(false);
     let Some(payload) = payload(ctx) else { return };
     let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else { return };
@@ -360,7 +429,27 @@ pub fn paint_badge(ctx: &egui::Context) {
     painter.rect_stroke(r, CornerRadius::same(radius::CARD), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
     // Stacked-documents glyph with a count bubble.
     let gc = pos2(r.left() + 22.0, r.center().y);
+    if n > 1 {
+        // Two cards peeking out behind the glyph: "many items".
+        for k in [2.0f32, 1.0] {
+            let card = Rect::from_center_size(gc + vec2(k * 2.5, -k * 2.5), vec2(16.0, 19.0));
+            painter.rect_filled(card, CornerRadius::same(3), p.bg_surface2);
+            painter.rect_stroke(card, CornerRadius::same(3), Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
+        }
+    }
     painter.text(gc, Align2::CENTER_CENTER, glyph, icons::font_fill(18.0), accent);
+    // Effect chip (+ copy, ↗ link) at the glyph's bottom-right, like the OS cursors.
+    let chip = match hover.as_ref().and_then(|h| h.effect) {
+        Some(DropEffect::Copy) if !to_trash => Some((ph::PLUS, p.success)),
+        Some(DropEffect::Link) if !to_trash => Some((ph::ARROW_UP_RIGHT, p.info)),
+        _ => None,
+    };
+    if let Some((g, c)) = chip {
+        let cc = gc + vec2(8.0, 8.0);
+        painter.circle_filled(cc, 7.0, p.bg_surface3);
+        painter.circle_filled(cc, 5.8, c);
+        painter.text(cc, Align2::CENTER_CENTER, g, icons::font(9.0), Color32::WHITE);
+    }
     if n > 1 {
         let b = pos2(r.left() + 32.0, r.top() + 9.0);
         let label = if n > 99 { "99+".to_string() } else { n.to_string() };

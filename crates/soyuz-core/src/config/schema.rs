@@ -140,6 +140,21 @@ pub struct Appearance {
     pub snap_layouts: bool,
     /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji).
     pub fallback_fonts: FallbackFonts,
+    /// Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`,
+    /// `high-contrast`) or the file stem of a user theme in `themes/*.toml`. Each theme
+    /// has a dark and a light variant; `theme` picks which one shows.
+    pub color_theme: String,
+    /// `"theme"` (the theme's own accent) | `"system"` (the OS accent color, followed
+    /// live) | `"#RRGGBB"`.
+    pub accent: String,
+    /// Extension label badges on file icons in the grid / gallery views.
+    pub extension_badges: bool,
+    /// 2×2 mosaic of the first images inside folders (grid / gallery views).
+    pub folder_thumbnails: bool,
+    /// First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found).
+    pub video_thumbnails: bool,
+    /// On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts.
+    pub thumb_disk_cache_mib: u64,
 }
 
 /// `[appearance] backdrop`: the system material drawn behind the window (Windows 11).
@@ -335,6 +350,10 @@ pub struct Behaviour {
     pub watch_debounce_ms: u64,
     pub type_ahead: TypeAhead,
     pub middle_click: MiddleClick,
+    /// Hovering a folder during a drag opens it (Explorer / Finder "spring-loaded folders").
+    pub spring_loaded_folders: bool,
+    /// Hover time before a spring-loaded folder opens (ms).
+    pub spring_load_delay_ms: u32,
 }
 
 /// Mirrors `soyuz_fs::Preserve` bits (core cannot depend on fs).

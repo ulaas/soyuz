@@ -169,6 +169,10 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let sel_paths: Vec<(std::path::PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
     crate::ui::tools::tags_ui::items_menu(ui, km, cmds, id, &pane.location, &sel_paths);
     crate::ui::ai::context_items(ui, km, cmds, id, true, single && all_dirs);
+    if all_dirs && matches!(pane.location, Location::Dir(_)) {
+        let dirs: Vec<std::path::PathBuf> = sel_paths.iter().map(|(p, _)| p.clone()).collect();
+        crate::ui::looks::folder_color_menu(ui, &dirs);
+    }
     if all_dirs {
         action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
     }

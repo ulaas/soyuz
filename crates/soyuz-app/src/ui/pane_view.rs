@@ -29,9 +29,14 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, with_
         header(ui, hr, pane, v);
         content.min.y = hr.bottom() + 2.0;
     }
-    let mut child = ui.new_child(UiBuilder::new().max_rect(content).id_salt(("soyuz.pane", pane.id.0)));
-    child.set_clip_rect(content);
-    body(&mut child, content, pane, v);
+    let (dx, alpha) = crate::ui::looks::enter_transition(ui.ctx(), pane.id.0, &pane.location);
+    let shifted = content.translate(vec2(dx, 0.0));
+    let mut child = ui.new_child(UiBuilder::new().max_rect(shifted).id_salt(("soyuz.pane", pane.id.0)));
+    child.set_clip_rect(content.intersect(ui.clip_rect()));
+    if alpha < 1.0 {
+        child.multiply_opacity(alpha);
+    }
+    body(&mut child, shifted, pane, v);
     crate::ops::fileops::dnd::pane_zone(ui, content, pane, &mut v.fileops.dnd, v.cmds);
     let stroke = if with_header && v.focused {
         Stroke::new(1.0, p.accent.gamma_multiply(0.55))
@@ -117,16 +122,21 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             );
         }
         ListingStatus::Loading { since } if pane.entries.is_empty() => {
-            // Avoid a flash for fast listings: show the spinner after a short delay.
+            // Avoid a flash for fast listings: skeleton rows after a short delay (B4).
             if since.elapsed().as_secs_f32() > 0.12 {
-                spinner(ui, rect.center() - vec2(0.0, 20.0), 11.0, p.accent);
-                ui.painter().text(
-                    rect.center() + vec2(0.0, 10.0),
-                    Align2::CENTER_TOP,
-                    "Loading…",
-                    FontId::proportional(12.5),
-                    p.text_tertiary,
-                );
+                let grid = matches!(pane.view.mode, ViewMode::Grid | ViewMode::Gallery);
+                crate::ui::looks::paint_skeleton(ui, rect, grid, v.config.appearance.density.row_height());
+                if since.elapsed().as_secs_f32() > 2.5 {
+                    // Slow folder (network, huge): say so.
+                    spinner(ui, pos2(rect.right() - 24.0, rect.bottom() - 20.0), 6.0, p.accent);
+                    ui.painter().text(
+                        pos2(rect.right() - 36.0, rect.bottom() - 20.0),
+                        Align2::RIGHT_CENTER,
+                        "Loading…",
+                        FontId::proportional(12.0),
+                        p.text_tertiary,
+                    );
+                }
             } else {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(130));
             }

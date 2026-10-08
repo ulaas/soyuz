@@ -4,6 +4,10 @@
 //! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps the
 //! decoded textures within a byte budget (`[preview] thumb_cache_mib`, see
 //! [`set_budget_bytes`]); [`memory`] reports the current use for the About dialog.
+//!
+//! Besides pictures, workers make video thumbnails (ffmpeg, `thumb_video`) with a
+//! duration label, and folder mosaics (`thumb_folder`); every decoded result also goes
+//! through the on-disk cache (`thumb_disk`) so it survives restarts.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -48,15 +52,35 @@ pub struct ThumbKey {
     pub px: u32,
 }
 
+use super::thumb_disk::Kind;
+
 #[derive(Clone)]
 enum Slot {
-    Pending { wanted: u64 },
-    Ready { tex: TextureHandle, used: u64, bytes: u64 },
-    Failed,
+    Pending {
+        wanted: u64,
+    },
+    Ready {
+        tex: TextureHandle,
+        used: u64,
+        bytes: u64,
+        label: Option<String>,
+    },
+    /// No picture; videos may still have a duration label for the placeholder.
+    Failed {
+        label: Option<String>,
+    },
+}
+
+/// `[appearance] video_thumbnails` (read by the workers).
+static VIDEO_FRAMES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turn ffmpeg frame extraction on / off (`[appearance] video_thumbnails`).
+pub fn set_video_frames(on: bool) {
+    VIDEO_FRAMES.store(on, Ordering::Relaxed);
 }
 
 struct Shared {
-    queue: Mutex<Vec<ThumbKey>>,
+    queue: Mutex<Vec<(ThumbKey, Kind)>>,
     cv: Condvar,
     slots: Mutex<HashMap<ThumbKey, Slot>>,
     frame: AtomicU64,
@@ -112,29 +136,47 @@ impl Thumbs {
     }
 
     /// The texture for `key` if ready; otherwise requests it (newest requests first).
+    /// Pictures and videos (by extension).
     pub fn get(&self, key: &ThumbKey) -> Option<TextureHandle> {
+        self.get_labeled(key).0
+    }
+
+    /// Like [`Self::get`], plus the label to show on it (a video's duration). A video
+    /// without a frame (no ffmpeg) returns `(None, Some(duration))`.
+    pub fn get_labeled(&self, key: &ThumbKey) -> (Option<TextureHandle>, Option<String>) {
+        let kind = if super::thumb_video::is_video(&key.path) { Kind::Video } else { Kind::Image };
+        self.request(key, kind)
+    }
+
+    /// A 2x2 mosaic of the pictures inside the folder `key.path` (`key.mtime` = the
+    /// folder's mtime, so adding files refreshes it).
+    pub fn get_folder(&self, key: &ThumbKey) -> Option<TextureHandle> {
+        self.request(key, Kind::Folder).0
+    }
+
+    fn request(&self, key: &ThumbKey, kind: Kind) -> (Option<TextureHandle>, Option<String>) {
         if !self.enabled {
-            return None;
+            return (None, None);
         }
         let frame = self.shared.frame.load(Ordering::Relaxed);
         let mut slots = self.shared.slots.lock();
         match slots.get_mut(key) {
-            Some(Slot::Ready { tex, used, .. }) => {
+            Some(Slot::Ready { tex, used, label, .. }) => {
                 *used = frame;
-                return Some(tex.clone());
+                return (Some(tex.clone()), label.clone());
             }
-            Some(Slot::Failed) => return None,
+            Some(Slot::Failed { label }) => return (None, label.clone()),
             Some(Slot::Pending { wanted }) => {
                 *wanted = frame;
-                return None;
+                return (None, None);
             }
             None => {}
         }
         slots.insert(key.clone(), Slot::Pending { wanted: frame });
         drop(slots);
-        self.shared.queue.lock().push(key.clone());
+        self.shared.queue.lock().push((key.clone(), kind));
         self.shared.cv.notify_one();
-        None
+        (None, None)
     }
 
     /// Number of ready textures (for diagnostics/tests).
@@ -145,7 +187,7 @@ impl Thumbs {
 
 fn worker(shared: &Shared, ctx: &Context) {
     loop {
-        let key = {
+        let (key, kind) = {
             let mut q = shared.queue.lock();
             loop {
                 if let Some(k) = q.pop() {
@@ -168,7 +210,8 @@ fn worker(shared: &Shared, ctx: &Context) {
             continue;
         }
         // Image decoders can panic on hostile input; never lose the worker over it.
-        let decoded = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode(&key))).ok().flatten();
+        let (decoded, label) =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| produce(&key, kind))).unwrap_or((None, None));
         let result = decoded.map(|img| {
             let name = format!("thumb:{}:{}", key.path.display(), key.px);
             ctx.load_texture(name, img, TextureOptions::LINEAR)
@@ -179,9 +222,9 @@ fn worker(shared: &Shared, ctx: &Context) {
             let slot = match result {
                 Some(tex) => {
                     let [w, h] = tex.size();
-                    Slot::Ready { tex, used: frame, bytes: (w * h * 4) as u64 }
+                    Slot::Ready { tex, used: frame, bytes: (w * h * 4) as u64, label }
                 }
-                None => Slot::Failed,
+                None => Slot::Failed { label },
             };
             slots.insert(key, slot);
             evict(&mut slots, frame, BUDGET.load(Ordering::Relaxed));
@@ -219,6 +262,31 @@ fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
     READY.store(slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count() as u64, Ordering::Relaxed);
 }
 
+/// Make one thumbnail (disk cache first): `(picture, label)`.
+fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
+    use super::thumb_disk;
+    let label = if kind == Kind::Video { super::thumb_video::duration_label(&key.path) } else { None };
+    if kind == Kind::Video && !(VIDEO_FRAMES.load(Ordering::Relaxed) && super::thumb_video::ffmpeg_path().is_some()) {
+        return (None, label);
+    }
+    let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
+    if let Some(img) = thumb_disk::get(disk_key) {
+        return (Some(img), label);
+    }
+    let img = match kind {
+        Kind::Image => decode(key),
+        Kind::Video => super::thumb_video::frame(&key.path, key.px),
+        Kind::Folder => super::thumb_folder::mosaic(&key.path, key.px, |p, px| {
+            let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX);
+            decode(&ThumbKey { path: p.to_path_buf(), mtime: None, size, px })
+        }),
+    };
+    if let Some(i) = &img {
+        thumb_disk::put(disk_key, i);
+    }
+    (img, label)
+}
+
 fn decode(key: &ThumbKey) -> Option<ColorImage> {
     if key.size > MAX_FILE_BYTES {
         return None;
@@ -254,7 +322,7 @@ mod tests {
         // 10 textures of 1 KiB each, used in frames 0..10.
         for i in 0..10u64 {
             let key = ThumbKey { path: format!("/t{i}").into(), mtime: None, size: 1, px: 64 };
-            slots.insert(key, Slot::Ready { tex: tex(i as usize), used: i, bytes: 1024 });
+            slots.insert(key, Slot::Ready { tex: tex(i as usize), used: i, bytes: 1024, label: None });
         }
         evict(&mut slots, 10, 4 * 1024);
         let left: Vec<u64> =

@@ -9,7 +9,8 @@
 //! * `theme:dark|light|system`;
 //! * `config:<dotted.key>=<toml value>` — change a setting live (`config:appearance.density="touch"`);
 //! * `scroll:<px>` — scroll the focused pane to an offset;
-//! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `quit`;
+//! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `appearance` (Settings →
+//!   Appearance); `quit`;
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
@@ -233,6 +234,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     .find(|s| s.title().to_ascii_lowercase().starts_with(&want));
                 crate::ui::settings::open(app, sec);
             }
+            "appearance" => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Appearance)),
             "quit" => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
             "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),
             "keys" => {

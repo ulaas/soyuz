@@ -50,6 +50,9 @@ fn kind_glyph(c: &Crumb) -> &'static str {
 }
 
 /// Draw the omnibar inside `rect`.
+/// Width of the folder-color dot before a crumb's name.
+const DOT_W: f32 = 12.0;
+
 pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let p = palette(ui.ctx());
     let editing = c.address.editing;
@@ -92,6 +95,14 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let right = field.right() - 34.0;
     let avail = right - left;
     let font = FontId::proportional(13.0);
+    // Folder colors (B2) show as a dot before the crumb's name.
+    let dots: Vec<Option<Color32>> = list
+        .iter()
+        .map(|cr| match &cr.location {
+            soyuz_core::Location::Dir(d) => crate::services::folder_colors::color_of(d, &p),
+            _ => None,
+        })
+        .collect();
     let widths: Vec<f32> = list
         .iter()
         .enumerate()
@@ -101,6 +112,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             trunc_galley(ui.painter(), &cr.label, f, Color32::WHITE, f32::INFINITY).size().x.min(220.0)
                 + badge
                 + 2.0 * CRUMB_PAD
+                + if dots[i].is_some() { DOT_W } else { 0.0 }
         })
         .collect();
     // Collapse the middle when the path does not fit: first crumb, "…", tail.
@@ -179,11 +191,17 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         let f = if last { semibold(13.0) } else { font.clone() };
         let hidden = soyuz_core::naming::has_hidden_controls(&list[i].label);
         let badge = if hidden { 14.0 } else { 0.0 };
-        let g = trunc_galley(ui.painter(), &list[i].label, f, color, r.width() - 2.0 * CRUMB_PAD - badge);
+        let dot_w = if dots[i].is_some() { DOT_W } else { 0.0 };
+        if let Some(dc) = dots[i] {
+            let ring = if resp.hovered() { p.bg_surface2 } else { p.bg_surface1 };
+            crate::ui::looks::paint_dot(ui.painter(), pos2(r.left() + CRUMB_PAD + 3.5, cy), dc, ring);
+        }
+        let tx = r.left() + CRUMB_PAD + dot_w;
+        let g = trunc_galley(ui.painter(), &list[i].label, f, color, r.width() - 2.0 * CRUMB_PAD - badge - dot_w);
         let gw = g.size().x;
-        ui.painter().galley(pos2(r.left() + CRUMB_PAD, cy - g.size().y / 2.0), g, color);
+        ui.painter().galley(pos2(tx, cy - g.size().y / 2.0), g, color);
         let resp = if hidden {
-            paint_hidden_badge(ui.painter(), &p, pos2(r.left() + CRUMB_PAD + gw, cy), &list[i].label);
+            paint_hidden_badge(ui.painter(), &p, pos2(tx + gw, cy), &list[i].label);
             resp.on_hover_text(HIDDEN_CONTROLS_TIP)
         } else {
             resp
@@ -199,7 +217,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             c.cmds.push(Cmd::OpenInNewTab { location: list[i].location.clone(), activate: false });
         }
         if let soyuz_core::Location::Dir(d) = &list[i].location {
-            crate::ops::fileops::dnd::target(ui, &resp, d, c.cmds);
+            crate::ops::fileops::dnd::target_open(ui, &resp, d, c.pane, c.cmds);
         }
         x += r.width();
         if x + SEP_W > right {

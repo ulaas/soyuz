@@ -1,9 +1,12 @@
 //! The Soyuz design system: tokens, egui style export, fonts and icons.
 
+pub mod accent;
 pub mod apply;
 pub mod font_fallback;
 pub mod fonts;
 pub mod icons;
+pub mod library;
+pub mod themes;
 pub mod tokens;
 
 use egui::{Context, Theme};
@@ -34,13 +37,10 @@ pub fn install(
     overrides: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
     font_fallback::configure(ctx, appearance.fallback_fonts, &appearance.font, &appearance.mono_font);
+    library::start(ctx);
     let font_warnings = fonts::install(ctx, &appearance.font, &appearance.mono_font);
-    let (mut dark, mut light) = if appearance.high_contrast {
-        (ORBIT_HC_DARK.clone(), ORBIT_HC_LIGHT.clone())
-    } else {
-        (ORBIT_DARK.clone(), ORBIT_LIGHT.clone())
-    };
-    let mut warnings = dark.apply_overrides(overrides);
+    let (mut dark, mut light, mut warnings) = resolve(appearance);
+    warnings.extend(dark.apply_overrides(overrides));
     warnings.extend(font_warnings);
     // The same overrides apply to both palettes; report problems only once.
     let _ = light.apply_overrides(overrides);
@@ -64,6 +64,40 @@ pub fn install(
     ctx.data_mut(|d| d.insert_temp(palettes_id(), Palettes { dark, light }));
     warnings.dedup();
     warnings
+}
+
+/// The dark and light palettes for `[appearance]` (color theme, high contrast, accent),
+/// before `[theme.colors]` overrides. Returns warnings for unknown themes / accents.
+pub fn resolve(appearance: &Appearance) -> (Palette, Palette, Vec<String>) {
+    let mut warnings = Vec::new();
+    let (mut dark, mut light) = if appearance.high_contrast {
+        (ORBIT_HC_DARK.clone(), ORBIT_HC_LIGHT.clone())
+    } else {
+        library::ensure_loaded(&appearance.color_theme);
+        match library::find(&appearance.color_theme) {
+            Some(t) => t.palettes(),
+            None => {
+                warnings.push(format!(
+                    "appearance.color_theme: unknown theme \"{}\" (built-ins: {})",
+                    appearance.color_theme,
+                    themes::builtins().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")
+                ));
+                (ORBIT_DARK.clone(), ORBIT_LIGHT.clone())
+            }
+        }
+    };
+    let (choice, w) = accent::AccentChoice::parse(&appearance.accent);
+    warnings.extend(w);
+    let color = match choice {
+        accent::AccentChoice::Theme => None,
+        accent::AccentChoice::System => library::os_accent(),
+        accent::AccentChoice::Custom(c) => Some(c),
+    };
+    if let Some(c) = color {
+        dark.set_accent(c);
+        light.set_accent(c);
+    }
+    (dark, light, warnings)
 }
 
 fn palettes_id() -> egui::Id {
