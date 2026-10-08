@@ -103,6 +103,8 @@ and *Retry failed*.
     `pdfium.dll` (for example from the *bblanchon/pdfium-binaries* GitHub releases, the
     `pdfium-win-x64` archive's `bin/pdfium.dll`) and put it next to `soyuz.exe`, in the
     config folder, or in the folder named by `[preview] pdfium_dir`. No restart is needed.
+    With pdfium present the grid and gallery views also show the first page as the PDF's
+    thumbnail (`[appearance] pdf_thumbnails`).
     Without it, PDFs show their page count, document info and text (pure-Rust fallback).
   - **Office / OpenDocument**: docx / odt text with headings, bold, italic and lists;
     xlsx / ods first sheet as a table (`sheet_rows`); pptx / odp slide titles and bullets.
@@ -210,8 +212,27 @@ Search the settings with `Ctrl+F` inside the window.
   files in `themes/`, each with a dark and a light variant), mode (system follows the OS
   switch live / dark / light), accent color (the theme's, the Windows accent, or any color),
   density, font size, interface scale, reduced motion, high contrast, icons and thumbnails
-  (extension badges, folder mosaics, ffmpeg video frames, the on-disk thumbnail cache).
-  **Import theme…** / **Export current…** share theme files.
+  (icon pack, extension badges, folder mosaics, ffmpeg video frames, PDF first pages
+  through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
+  share theme files.
+- *Icon packs*: *Appearance → Icon pack* switches between the built-in glyphs, the built-in
+  *Flat* pack and your own packs, with a live sample row. A pack is a folder in `icons/`
+  (the **Icons folder** button opens it) with a `pack.toml`; pictures are PNG / JPEG /
+  WebP / BMP / ICO or SVG, relative to the pack folder:
+
+  ```toml
+  name = "My icons"      # shown in Settings (default: the folder name)
+  tint = false           # true: white pictures tinted with the theme's file-type colors
+  [kinds]                # folder, image, video, audio, archive, code, pdf, doc, sheet,
+  folder = "folder.svg"  # slides, text, exe, font, link, file (= everything else)
+  file = "file.png"
+  [extensions]
+  rs = "rust.png"
+  [folders]              # folder names, case-insensitive
+  ".git" = "git.svg"
+  ```
+
+  Anything a pack leaves out keeps the built-in glyph.
 - *Fonts*: one font per role — interface (Segoe UI), headings (its semibold face),
   terminal, code editor and hex view (Consolas, then Cascadia), numbers (the interface
   font) — each with a family field that suggests installed fonts, an *Embedded* switch
@@ -296,6 +317,7 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
 | `tags.toml`, `recent.toml` | tags and recent places |
 | `folder_colors.toml` | folder colors and emblems |
 | `themes/*.toml` | your color themes |
+| `icons/<pack>/pack.toml` | your icon packs |
 | `thumbs/` | thumbnail cache (safe to delete) |
 | `sync_profiles.toml` | saved sync profiles and their schedules |
 | `sync_state/*.json` | two-way sync state per folder pair (what both sides looked like after the last sync) |

@@ -260,6 +260,7 @@ fn body(
                                 CellVisual { mosaic, ..Default::default() }
                             } else if thumbs::is_thumbnailable(&e.path)
                                 || crate::services::thumb_video::is_video(&e.path)
+                                || thumbs::is_pdf_thumbnailable(&e.path)
                             {
                                 let (tex, label) = v.services.thumbs.get_labeled(&key());
                                 CellVisual { tex, label, ..Default::default() }
@@ -600,14 +601,16 @@ fn paint_details_row(
                 }
                 x = x0 + 8.0 + CHECK + 10.0;
             }
-            let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
-            painter.text(
-                pos2(x + 8.0, cy),
-                Align2::CENTER_CENTER,
-                icons::glyph(e),
-                glyph_font,
-                icons::color(e, p).gamma_multiply(a),
-            );
+            if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
+                let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
+                painter.text(
+                    pos2(x + 8.0, cy),
+                    Align2::CENTER_CENTER,
+                    icons::glyph(e),
+                    glyph_font,
+                    icons::color(e, p).gamma_multiply(a),
+                );
+            }
             let deco = crate::ui::tools::decor::Deco::of(e);
             deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
             let tx = x + 24.0;
@@ -694,7 +697,10 @@ fn paint_grid_cell(
             let g = icons::glyph(e);
             let font = ticons::font_fill(zoom * if e.is_dir_like() { 0.86 } else { 0.8 });
             let color = icons::color(e, p);
-            painter.text(icon_box.center(), Align2::CENTER_CENTER, g, font, color.gamma_multiply(a));
+            let size = zoom * if e.is_dir_like() { 0.92 } else { 0.86 };
+            if !super::icon_pack::paint(painter, icon_box.center(), size, e, p, a) {
+                painter.text(icon_box.center(), Align2::CENTER_CENTER, g, font, color.gamma_multiply(a));
+            }
             if let Some(m) = &visual.mosaic {
                 paint_folder_mosaic(ui, painter, p, icon_box, m, color, a);
             } else if e.is_dir_like() {
@@ -769,14 +775,16 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
             x = cb.right() + 6.0;
         }
     }
-    let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
-    painter.text(
-        pos2(x + 8.0, cy),
-        Align2::CENTER_CENTER,
-        icons::glyph(e),
-        glyph_font,
-        icons::color(e, p).gamma_multiply(a),
-    );
+    if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
+        let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
+        painter.text(
+            pos2(x + 8.0, cy),
+            Align2::CENTER_CENTER,
+            icons::glyph(e),
+            glyph_font,
+            icons::color(e, p).gamma_multiply(a),
+        );
+    }
     let deco = crate::ui::tools::decor::Deco::of(e);
     deco.paint_badge(painter, p, pos2(x + 8.0, cy), 16.0, p.bg_surface1);
     let right_pad = if miller && e.is_dir_like() { 24.0 } else { 8.0 };

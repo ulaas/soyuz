@@ -103,6 +103,27 @@ jobs:
             fi
           done
 
+  # Keyboard-only GUI test (roadmap F10): launches the real window on the runner's desktop
+  # session and drives it with synthetic key events only (`SOYUZ_SCRIPT` `keys:` steps),
+  # in English and Turkish. Hosted runners have no GPU, so wgpu is pointed at the WARP
+  # software adapter (DX12). If the window never comes up the test skips with a warning
+  # annotation; set `SOYUZ_GUI_TESTS: require` below to make that a failure once the job
+  # has proven stable on hosted runners.
+  gui-keyboard:
+    name: Keyboard-only GUI test (windows)
+    needs: no-shell32
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      WGPU_BACKEND: dx12
+      WGPU_ADAPTER_NAME: Microsoft Basic Render Driver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Keyboard-only test
+        run: cargo test -p soyuz-app --test keyboard_only --locked -- --ignored --nocapture --test-threads 1
+
   # Release zip of the Windows build (pushes to main and manual runs).
   package:
     name: Package (windows)

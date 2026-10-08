@@ -46,6 +46,7 @@ eframe.workspace = true
 egui.workspace = true
 egui_extras.workspace = true
 egui-phosphor.workspace = true
+resvg.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true

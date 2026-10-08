@@ -6,7 +6,8 @@
 //! [`set_budget_bytes`]); [`memory`] reports the current use for the About dialog.
 //!
 //! Besides pictures, workers make video thumbnails (ffmpeg, `thumb_video`) with a
-//! duration label, and folder mosaics (`thumb_folder`); every decoded result also goes
+//! duration label, PDF first pages (pdfium, when the library is found; otherwise PDFs
+//! keep their icon) and folder mosaics (`thumb_folder`); every decoded result also goes
 //! through the on-disk cache (`thumb_disk`) so it survives restarts.
 
 use std::collections::HashMap;
@@ -79,6 +80,24 @@ pub fn set_video_frames(on: bool) {
     VIDEO_FRAMES.store(on, Ordering::Relaxed);
 }
 
+/// `[appearance] pdf_thumbnails` and `[preview] pdfium_dir` (read by the workers).
+static PDF_PAGES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+static PDFIUM_DIR: Mutex<String> = Mutex::new(String::new());
+
+/// PDF first-page thumbnails on / off and where pdfium is looked for.
+pub fn set_pdf(on: bool, pdfium_dir: &str) {
+    PDF_PAGES.store(on && cfg!(feature = "pdf"), Ordering::Relaxed);
+    let mut d = PDFIUM_DIR.lock();
+    if *d != pdfium_dir {
+        *d = pdfium_dir.to_string();
+    }
+}
+
+/// A PDF that gets a first-page thumbnail (when pdfium turns out to be available).
+pub fn is_pdf_thumbnailable(path: &Path) -> bool {
+    PDF_PAGES.load(Ordering::Relaxed) && path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
 struct Shared {
     queue: Mutex<Vec<(ThumbKey, Kind)>>,
     cv: Condvar,
@@ -144,7 +163,13 @@ impl Thumbs {
     /// Like [`Self::get`], plus the label to show on it (a video's duration). A video
     /// without a frame (no ffmpeg) returns `(None, Some(duration))`.
     pub fn get_labeled(&self, key: &ThumbKey) -> (Option<TextureHandle>, Option<String>) {
-        let kind = if super::thumb_video::is_video(&key.path) { Kind::Video } else { Kind::Image };
+        let kind = if super::thumb_video::is_video(&key.path) {
+            Kind::Video
+        } else if is_pdf_thumbnailable(&key.path) {
+            Kind::Pdf
+        } else {
+            Kind::Image
+        };
         self.request(key, kind)
     }
 
@@ -269,6 +294,9 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
     if kind == Kind::Video && !(VIDEO_FRAMES.load(Ordering::Relaxed) && super::thumb_video::ffmpeg_path().is_some()) {
         return (None, label);
     }
+    if kind == Kind::Pdf && !pdf_available() {
+        return (None, None);
+    }
     let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
     if let Some(img) = thumb_disk::get(disk_key) {
         return (Some(img), label);
@@ -276,6 +304,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
     let img = match kind {
         Kind::Image => decode(key),
         Kind::Video => super::thumb_video::frame(&key.path, key.px),
+        Kind::Pdf => pdf_first_page(key),
         Kind::Folder => super::thumb_folder::mosaic(&key.path, key.px, |p, px| {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX);
             decode(&ThumbKey { path: p.to_path_buf(), mtime: None, size, px })
@@ -285,6 +314,39 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
         thumb_disk::put(disk_key, i);
     }
     (img, label)
+}
+
+/// PDF thumbnails are on and the pdfium library is found (else the PDF icon shows).
+fn pdf_available() -> bool {
+    if !PDF_PAGES.load(Ordering::Relaxed) {
+        return false;
+    }
+    let dirs = super::preview_pdf::pdfium_dirs(&PDFIUM_DIR.lock());
+    super::preview_pdf::find_pdfium(&dirs).is_some()
+}
+
+/// The first page rendered by pdfium, fitted into `key.px` square (on the pdfium thread).
+#[cfg(feature = "pdf")]
+fn pdf_first_page(key: &ThumbKey) -> Option<ColorImage> {
+    use super::preview_pdf::{PdfSrc, pdfium, pdfium_dirs};
+    if key.size > MAX_FILE_BYTES {
+        return None;
+    }
+    let dirs = pdfium_dirs(&PDFIUM_DIR.lock());
+    let src = PdfSrc::File(key.path.clone());
+    let page = pdfium::render(&src, &dirs, MAX_FILE_BYTES, 0, key.px, key.px, &|| false).ok()?;
+    let fit = image::RgbaImage::from_raw(page.width as u32, page.height as u32, page.rgba)?;
+    let fit = if fit.width() > key.px || fit.height() > key.px {
+        image::DynamicImage::ImageRgba8(fit).thumbnail(key.px, key.px).to_rgba8()
+    } else {
+        fit
+    };
+    Some(ColorImage::from_rgba_unmultiplied([fit.width() as usize, fit.height() as usize], fit.as_raw()))
+}
+
+#[cfg(not(feature = "pdf"))]
+fn pdf_first_page(_key: &ThumbKey) -> Option<ColorImage> {
+    None
 }
 
 fn decode(key: &ThumbKey) -> Option<ColorImage> {

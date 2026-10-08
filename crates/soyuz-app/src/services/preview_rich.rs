@@ -560,6 +560,7 @@ fn pdf(
     let width_px = ((lim.width_pt() * ppp) as u32).min(2600);
     let mut no_render: Option<String>;
     let mut info: Option<PdfInfo> = None;
+    #[cfg_attr(not(feature = "pdf"), allow(unused_mut))]
     let mut first = None;
     #[cfg(feature = "pdf")]
     {

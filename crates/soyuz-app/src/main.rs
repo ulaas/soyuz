@@ -95,6 +95,57 @@ fn resolve_renderer(choice: RendererChoice) -> (eframe::Renderer, &'static str) 
     }
 }
 
+/// Rank of an adapter type for a power preference (lower = better); software last.
+fn adapter_rank(t: eframe::wgpu::DeviceType, power: eframe::wgpu::PowerPreference) -> u8 {
+    use eframe::wgpu::{DeviceType, PowerPreference};
+    match (t, power) {
+        (DeviceType::DiscreteGpu, PowerPreference::LowPower) => 1,
+        (DeviceType::IntegratedGpu, PowerPreference::LowPower) => 0,
+        (DeviceType::DiscreteGpu, _) => 0,
+        (DeviceType::IntegratedGpu, _) => 1,
+        (DeviceType::VirtualGpu, _) => 2,
+        (DeviceType::Other, _) => 3,
+        (DeviceType::Cpu, _) => 4,
+    }
+}
+
+/// The adapter to render with: the one named by `WGPU_ADAPTER_NAME` (substring, any case),
+/// else the best type for `power` that can present to the window.
+fn pick_adapter(
+    adapters: &[eframe::wgpu::Adapter],
+    surface: Option<&eframe::wgpu::Surface<'_>>,
+    power: eframe::wgpu::PowerPreference,
+) -> Result<eframe::wgpu::Adapter, String> {
+    let usable: Vec<&eframe::wgpu::Adapter> =
+        adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
+    let infos: Vec<(String, eframe::wgpu::DeviceType)> =
+        usable.iter().map(|a| a.get_info()).map(|i| (i.name, i.device_type)).collect();
+    let wanted = std::env::var("WGPU_ADAPTER_NAME").ok().filter(|s| !s.trim().is_empty());
+    match choose_adapter(&infos, wanted.as_deref(), power) {
+        Some(i) => Ok(usable[i].clone()),
+        None => Err(format!(
+            "no usable GPU adapter (found: {})",
+            adapters.iter().map(|a| a.get_info().name).collect::<Vec<_>>().join(", ")
+        )),
+    }
+}
+
+/// Index into `infos` (`(name, type)`) of the adapter to use.
+fn choose_adapter(
+    infos: &[(String, eframe::wgpu::DeviceType)],
+    wanted: Option<&str>,
+    power: eframe::wgpu::PowerPreference,
+) -> Option<usize> {
+    if let Some(w) = wanted {
+        let w = w.trim().to_lowercase();
+        if let Some(i) = infos.iter().position(|(n, _)| n.to_lowercase().contains(&w)) {
+            return Some(i);
+        }
+        log::warn!("WGPU_ADAPTER_NAME={w}: no such adapter; choosing automatically");
+    }
+    (0..infos.len()).min_by_key(|&i| adapter_rank(infos[i].1, power))
+}
+
 fn main() -> ExitCode {
     soyuz_app::devscript::mark_process_start();
     soyuz_app::services::crash::init_logging();
@@ -174,6 +225,19 @@ Run `soyuz <command> --help` for usage."
             setup.instance_descriptor.backend_options.dx12.presentation_system =
                 eframe::wgpu::Dx12SwapchainKind::DxgiFromVisual;
         }
+        // Pick from the adapters egui-wgpu already enumerated instead of letting
+        // `request_adapter` enumerate them all again (R5), honouring `WGPU_ADAPTER_NAME`
+        // (CI forces the WARP software adapter with it) and `WGPU_POWER_PREF`.
+        let power = setup.power_preference;
+        setup.native_adapter_selector = Some(std::sync::Arc::new(move |adapters, surface| {
+            soyuz_app::devscript::startup_mark("adapters enumerated");
+            pick_adapter(adapters, surface, power)
+        }));
+        let device_descriptor = setup.device_descriptor.clone();
+        setup.device_descriptor = std::sync::Arc::new(move |adapter| {
+            soyuz_app::devscript::startup_mark("adapter chosen");
+            device_descriptor(adapter)
+        });
     }
 
     let options = eframe::NativeOptions {
@@ -218,6 +282,24 @@ Run `soyuz <command> --help` for usage."
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn adapter_choice() {
+        use eframe::wgpu::{DeviceType, PowerPreference};
+        let l = |v: &[(&str, DeviceType)]| v.iter().map(|(n, t)| (n.to_string(), *t)).collect::<Vec<_>>();
+        let set = l(&[
+            ("Microsoft Basic Render Driver", DeviceType::Cpu),
+            ("Intel UHD", DeviceType::IntegratedGpu),
+            ("NVIDIA RTX", DeviceType::DiscreteGpu),
+        ]);
+        assert_eq!(choose_adapter(&set, None, PowerPreference::HighPerformance), Some(2));
+        assert_eq!(choose_adapter(&set, None, PowerPreference::LowPower), Some(1));
+        assert_eq!(choose_adapter(&set, Some("basic render"), PowerPreference::HighPerformance), Some(0));
+        assert_eq!(choose_adapter(&set, Some("missing"), PowerPreference::None), Some(2));
+        let warp_only = l(&[("Microsoft Basic Render Driver", DeviceType::Cpu)]);
+        assert_eq!(choose_adapter(&warp_only, None, PowerPreference::HighPerformance), Some(0));
+        assert_eq!(choose_adapter(&[], None, PowerPreference::HighPerformance), None);
+    }
 
     fn parse(v: &[&str]) -> Result<Cli, String> {
         parse_args(v.iter().map(|s| s.to_string()))

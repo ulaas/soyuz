@@ -59,6 +59,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
     let mut theme_action = None;
     let mut go_fonts = false;
+    let mut open_packs = false;
     if q.trim().is_empty() {
         preview_card(ui, &p, d.appearance.density.row_height(), d.appearance.icon_style == IconStyle::Colored);
         any = true;
@@ -169,6 +170,23 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.block(tr!("settings-appearance-icon-pack"), tr!("settings-appearance-icon-pack-desc"), |ui| {
+            crate::ui::views::icon_pack::scan(ui.ctx());
+            let mut packs = crate::ui::views::icon_pack::available();
+            if !packs.iter().any(|(id, _)| *id == d.appearance.icon_pack) {
+                packs.push((d.appearance.icon_pack.clone(), d.appearance.icon_pack.clone()));
+            }
+            let options: Vec<(String, &str)> = packs.iter().map(|(id, name)| (id.clone(), name.as_str())).collect();
+            ui.horizontal(|ui| {
+                super::widgets::dropdown(ui, "soyuz.settings.icon_pack", &mut d.appearance.icon_pack, &options, 220.0);
+                if small_button(ui, Some(ph::FOLDER_OPEN), tr!("settings-appearance-icon-pack-folder"), false).clicked()
+                {
+                    open_packs = true;
+                }
+            });
+            ui.add_space(6.0);
+            icon_pack_strip(ui, &p);
+        });
         r.row_kw(tr!("settings-appearance-badges"), tr!("settings-appearance-badges-desc"), "icon label type", |ui| {
             switch(ui, &mut d.appearance.extension_badges);
         });
@@ -191,6 +209,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-appearance-video-thumbs"), &video_desc, "ffmpeg movie mp4 frame", |ui| {
             switch(ui, &mut d.appearance.video_thumbnails);
         });
+        r.row_kw(
+            tr!("settings-appearance-pdf-thumbs"),
+            tr!("settings-appearance-pdf-thumbs-desc"),
+            "pdf pdfium page document",
+            |ui| {
+                switch(ui, &mut d.appearance.pdf_thumbnails);
+            },
+        );
         r.row_kw(
             tr!("settings-appearance-thumb-cache"),
             tr!("settings-appearance-thumb-cache-desc"),
@@ -310,11 +336,54 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         }
         None => {}
     }
+    if open_packs {
+        let dir = crate::ui::views::icon_pack::packs_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        app.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
+    }
     if go_fonts {
         app.settings.section = super::Section::Fonts;
         app.settings.scroll_top = true;
     }
     any
+}
+
+/// Sample icons of the active icon pack (glyphs where it has none): the live preview.
+fn icon_pack_strip(ui: &mut Ui, p: &Palette) {
+    use crate::ui::views::icons as vicons;
+    use soyuz_core::{EntryInfo, EntryKind};
+    let samples = [
+        ("Projects", EntryKind::Dir),
+        ("photo.jpg", EntryKind::File),
+        ("clip.mp4", EntryKind::File),
+        ("song.flac", EntryKind::File),
+        ("main.rs", EntryKind::File),
+        ("report.pdf", EntryKind::File),
+        ("notes.docx", EntryKind::File),
+        ("budget.xlsx", EntryKind::File),
+        ("backup.zip", EntryKind::File),
+        ("setup.exe", EntryKind::File),
+        ("readme.txt", EntryKind::File),
+    ];
+    let cell = 46.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(cell * samples.len() as f32, cell + 14.0), Sense::hover());
+    let painter = ui.painter_at(rect);
+    for (i, (name, kind)) in samples.iter().enumerate() {
+        let e = EntryInfo::minimal(std::path::PathBuf::from(name), *kind);
+        let c = pos2(rect.left() + cell * (i as f32 + 0.5), rect.top() + cell / 2.0);
+        if !crate::ui::views::icon_pack::paint(&painter, c, 32.0, &e, p, 1.0) {
+            let font = if e.is_dir_like() { icons::font_fill(28.0) } else { icons::font(28.0) };
+            painter.text(c, Align2::CENTER_CENTER, vicons::glyph(&e), font, vicons::color(&e, p));
+        }
+        let ext = name.rsplit_once('.').map_or("", |(_, x)| x);
+        painter.text(
+            pos2(c.x, rect.bottom() - 6.0),
+            Align2::CENTER_CENTER,
+            ext,
+            FontId::proportional(10.0),
+            p.text_tertiary,
+        );
+    }
 }
 
 /// A miniature window rendered with the live palette.

@@ -48,6 +48,8 @@ pub enum Kind {
     Image,
     Video,
     Folder,
+    /// First page of a PDF (pdfium).
+    Pdf,
 }
 
 /// Stable 64-bit FNV-1a (the std hasher is not stable across Rust releases).

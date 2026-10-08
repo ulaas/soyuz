@@ -6382,6 +6382,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "reqwest",
+ "resvg",
  "rodio",
  "rustls",
  "serde",

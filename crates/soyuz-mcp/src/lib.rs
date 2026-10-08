@@ -26,6 +26,8 @@
 
 pub mod cli;
 pub mod client;
+#[cfg(any(test, feature = "fuzzing"))]
+pub mod fuzzing;
 pub mod headless;
 pub mod http;
 pub mod install;

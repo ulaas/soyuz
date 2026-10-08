@@ -6,7 +6,8 @@
 #   cargo +nightly fuzz list
 # On stable, `cargo check --manifest-path fuzz/Cargo.toml` verifies the targets compile.
 # The parsers are exposed by the crates' `fuzzing` features (`soyuz_fs::fuzzing`,
-# `soyuz_archive::fuzzing`, `soyuz_term::fuzzing`); the app's media / tag / EXIF parsers
+# `soyuz_archive::fuzzing`, `soyuz_term::fuzzing`,
+# `soyuz_mcp::fuzzing`); the app's media / tag / EXIF parsers
 # are public already.
 [package]
 name = "soyuz-fuzz"
@@ -26,6 +27,7 @@ libfuzzer-sys = "0.4.13"
 soyuz-fs = { path = "../crates/soyuz-fs", features = ["fuzzing"] }
 soyuz-archive = { path = "../crates/soyuz-archive", features = ["fuzzing"] }
 soyuz-term = { path = "../crates/soyuz-term", features = ["fuzzing"] }
+soyuz-mcp = { path = "../crates/soyuz-mcp", features = ["fuzzing"] }
 soyuz-app = { path = "../crates/soyuz-app", default-features = false }
 
 [profile.release]
@@ -97,6 +99,27 @@ bench = false
 [[bin]]
 name = "term_input"
 path = "fuzz_targets/term_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_server"
+path = "fuzz_targets/mcp_server.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_client"
+path = "fuzz_targets/mcp_client.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mcp_strings"
+path = "fuzz_targets/mcp_strings.rs"
 test = false
 doc = false
 bench = false

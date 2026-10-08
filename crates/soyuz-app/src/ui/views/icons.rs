@@ -7,7 +7,7 @@ use crate::theme::Palette;
 use crate::theme::icons::ph;
 
 /// Broad file category used for glyph + color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FileClass {
     Folder,
     Image,

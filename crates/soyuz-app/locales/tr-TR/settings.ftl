@@ -522,6 +522,13 @@ settings-appearance-thumbs-desc = Simgeler yerine resim ve video küçük resiml
 settings-appearance-folder-thumbs = Klasör küçük resimleri
 settings-appearance-folder-thumbs-desc = Izgara görünümleri her klasörün içindeki ilk resimlerden 2×2 bir mozaik gösterir.
 settings-appearance-video-thumbs = Video küçük resimleri
+settings-appearance-pdf-thumbs = PDF küçük resimleri
+settings-appearance-pdf-thumbs-desc = PDF'lerin ilk sayfası pdfium ile çizilir (pdfium.dll soyuz.exe'nin yanında, yapılandırma klasöründe ya da Önizleme altında belirtilen klasörde). Yoksa PDF'ler simgeleriyle görünür.
+settings-appearance-icon-pack = Simge paketi
+settings-appearance-icon-pack-desc = Dosya türleri ve klasörler için resimler. Kendi paketlerinizi icons klasörüne koyun; her biri pack.toml içeren ayrı bir alt klasör olmalı (kullanım kılavuzuna bakın). Paketin kapsamadığı her şey yerleşik simgesini korur.
+settings-appearance-icon-pack-default = Yerleşik (Phosphor)
+settings-appearance-icon-pack-flat = Düz (yerleşik)
+settings-appearance-icon-pack-folder = Simge klasörü
 settings-appearance-thumb-cache = Küçük resim disk önbelleği
 settings-appearance-thumb-cache-desc = Yeniden başlatmalardan sonra da kalmaları için küçük resimleri thumbs klasöründe tutar (0 = kapalı). Önce en eskiler silinir.
 settings-clear = Temizle

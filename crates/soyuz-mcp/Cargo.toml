@@ -7,6 +7,10 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+[features]
+# Expose the JSON-RPC / MCP message handling to the `fuzz/` targets (`soyuz_mcp::fuzzing`).
+fuzzing = []
+
 [dependencies]
 soyuz-core.workspace = true
 soyuz-fs.workspace = true

@@ -94,6 +94,8 @@ impl Default for Appearance {
             extension_badges: true,
             folder_thumbnails: true,
             video_thumbnails: true,
+            pdf_thumbnails: true,
+            icon_pack: String::new(),
             thumb_disk_cache_mib: 256,
         }
     }

@@ -193,6 +193,12 @@ pub struct Appearance {
     pub folder_thumbnails: bool,
     /// First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found).
     pub video_thumbnails: bool,
+    /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
+    /// `[preview] pdfium_dir`); without it PDFs keep their icon.
+    pub pdf_thumbnails: bool,
+    /// File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in
+    /// generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`.
+    pub icon_pack: String,
     /// On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts.
     pub thumb_disk_cache_mib: u64,
 }

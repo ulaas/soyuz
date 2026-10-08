@@ -5,8 +5,12 @@
 //!
 //! Launches the GUI in portable mode on a temporary folder (no user settings or folders
 //! are touched; permanent delete is used so the Recycle Bin is never involved). Needs a
-//! desktop session:
+//! desktop session and a GPU adapter (the software WARP adapter is fine; CI forces it with
+//! `WGPU_ADAPTER_NAME`):
 //! `cargo test -p soyuz-app --test keyboard_only -- --ignored --nocapture`.
+//!
+//! When the window never comes up (no desktop session, no adapter) the test is skipped
+//! with a note, unless `SOYUZ_GUI_TESTS=require` (then it fails).
 
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -22,6 +26,8 @@ fn failures(log: &str) -> Vec<&str> {
 fn finds_failed_expectations() {
     let log = "x SOYUZ_SCRIPT: expect ok cwd=a\ny SOYUZ_SCRIPT: expect FAILED cwd=b (actual a)\n";
     assert_eq!(failures(log).len(), 1);
+    assert!(gui_came_up("[INFO soyuz_app::devscript] SOYUZ_SCRIPT: welcome:off"));
+    assert!(!gui_came_up("[ERROR soyuz] soyuz: wgpu error: no suitable adapter found"));
 }
 
 fn script(data: &Path, lang: &str, palette_query: &str) -> String {
@@ -87,6 +93,30 @@ fn script(data: &Path, lang: &str, palette_query: &str) -> String {
     .join(";")
 }
 
+/// The GUI rendered at least one frame (the first script step runs inside a frame).
+fn gui_came_up(log: &str) -> bool {
+    log.contains("SOYUZ_SCRIPT: welcome:off")
+}
+
+/// Skip (with a note, and a GitHub Actions warning) when the GUI cannot start here.
+fn skip_or_fail(lang: &str, why: &str, log: &str) {
+    let required = std::env::var("SOYUZ_GUI_TESTS").is_ok_and(|v| v.eq_ignore_ascii_case("require"));
+    assert!(
+        !required,
+        "{lang}: the GUI did not start ({why}) and SOYUZ_GUI_TESTS=require
+
+log:
+{log}"
+    );
+    eprintln!("keyboard_only ({lang}): skipped, the GUI did not start ({why}). Last log lines:");
+    for l in log.lines().rev().take(15).collect::<Vec<_>>().into_iter().rev() {
+        eprintln!("  {l}");
+    }
+    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+        println!("::warning::keyboard-only GUI test ({lang}) skipped: {why}");
+    }
+}
+
 fn run(lang: &str, palette_query: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
@@ -116,15 +146,37 @@ fn run(lang: &str, palette_query: &str) {
         }
         log
     });
-    let deadline = Instant::now() + Duration::from_secs(90);
-    while child.try_wait().unwrap().is_none() {
+    // Software rendering on a CI runner is slow: allow more time there.
+    let limit = if std::env::var_os("CI").is_some() { 240 } else { 90 };
+    let deadline = Instant::now() + Duration::from_secs(limit);
+    let mut timed_out = false;
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break Some(s);
+        }
         if Instant::now() > deadline {
             let _ = child.kill();
-            panic!("soyuz did not quit within 90 s");
+            let _ = child.wait();
+            timed_out = true;
+            break None;
         }
         std::thread::sleep(Duration::from_millis(100));
-    }
+    };
     let log = reader.join().unwrap();
+    if !gui_came_up(&log) {
+        let why = match status {
+            Some(s) => format!("exited with {s} before the first frame (no desktop session or GPU adapter?)"),
+            None => format!("no frame within {limit} s"),
+        };
+        return skip_or_fail(lang, &why, &log);
+    }
+    assert!(
+        !timed_out,
+        "{lang}: soyuz did not quit within {limit} s
+
+log:
+{log}"
+    );
     let failed = failures(&log);
     assert!(failed.is_empty(), "{lang}: failed expectations:\n{}\n\nlog:\n{log}", failed.join("\n"));
     let names: Vec<String> =

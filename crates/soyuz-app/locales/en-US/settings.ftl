@@ -535,6 +535,13 @@ settings-appearance-thumbs-desc = Show image and video thumbnails instead of ico
 settings-appearance-folder-thumbs = Folder thumbnails
 settings-appearance-folder-thumbs-desc = Grid views show a 2×2 mosaic of the first pictures inside each folder.
 settings-appearance-video-thumbs = Video thumbnails
+settings-appearance-pdf-thumbs = PDF thumbnails
+settings-appearance-pdf-thumbs-desc = First page of PDFs through pdfium (pdfium.dll next to soyuz.exe, in the config folder or in the folder set under Preview). Without it PDFs keep their icon.
+settings-appearance-icon-pack = Icon pack
+settings-appearance-icon-pack-desc = Pictures for file types and folders. Put your own packs in the icons folder, one sub-folder each with a pack.toml (see the user guide); anything a pack leaves out keeps the built-in icon.
+settings-appearance-icon-pack-default = Built-in (Phosphor)
+settings-appearance-icon-pack-flat = Flat (built-in)
+settings-appearance-icon-pack-folder = Icons folder
 settings-appearance-thumb-cache = Thumbnail disk cache
 settings-appearance-thumb-cache-desc = Keeps thumbnails in the thumbs folder so they survive restarts (0 = off). Oldest are removed first.
 settings-clear = Clear

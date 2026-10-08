@@ -5,6 +5,7 @@
 pub mod columns;
 pub mod computer;
 pub mod flow;
+pub mod icon_pack;
 pub mod icons;
 pub mod layout;
 pub mod miller;

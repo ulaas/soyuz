@@ -130,14 +130,16 @@ fn aux_column(
                 ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
             }
             let a = if dim { 0.75 } else { 1.0 } * if e.is_hidden() { 0.6 } else { 1.0 };
-            let gf = if e.is_dir_like() { ticons::font_fill(15.0) } else { ticons::font(15.0) };
-            ui.painter().text(
-                pos2(r.left() + 14.0, r.center().y),
-                Align2::CENTER_CENTER,
-                icons::glyph(e),
-                gf,
-                icons::color(e, &p).gamma_multiply(a),
-            );
+            if !super::icon_pack::paint(ui.painter(), pos2(r.left() + 14.0, r.center().y), 17.0, e, &p, a) {
+                let gf = if e.is_dir_like() { ticons::font_fill(15.0) } else { ticons::font(15.0) };
+                ui.painter().text(
+                    pos2(r.left() + 14.0, r.center().y),
+                    Align2::CENTER_CENTER,
+                    icons::glyph(e),
+                    gf,
+                    icons::color(e, &p).gamma_multiply(a),
+                );
+            }
             let color = p.text_primary.gamma_multiply(a);
             let hidden = soyuz_core::naming::has_hidden_controls(&e.name);
             let g = trunc_galley(
