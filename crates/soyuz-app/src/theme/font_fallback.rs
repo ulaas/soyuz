@@ -1,12 +1,12 @@
 //! System fallback fonts for scripts the bundled Inter / JetBrains Mono lack (CJK,
-//! Hangul, emoji), so file names never render as tofu boxes.
+//! Hangul, emoji), so file names and terminal output never render as tofu boxes.
 //!
 //! Windows: `C:\Windows\Fonts` (and the per-user font folder) are scanned directly for a
 //! short list of well-known files per script; the first one present wins. Nothing is
 //! read on the UI thread: a background thread loads the file and re-installs the fonts
 //! (`Context::set_fonts` is thread-safe), and the loaded fonts are appended to every
-//! family — proportional, semibold, icons and monospace (the terminal) — by
-//! [`append`], which `fonts::definitions` calls.
+//! family — every font role (ui, semibold, terminal, code, hex, numbers) and the icon
+//! families — by [`append`], which `fonts::build` calls.
 //!
 //! `[appearance] fallback_fonts`: `auto` loads a script's font the first time a name
 //! that needs it is seen ([`note`]), `startup` loads all of them in the background
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 use egui::{Context, FontData, FontDefinitions};
 use parking_lot::Mutex;
-use soyuz_core::config::FallbackFonts;
+use soyuz_core::config::{FallbackFonts, Fonts};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Script {
@@ -137,8 +137,8 @@ struct State {
     ctx: Option<Context>,
     requested: HashSet<Script>,
     loaded: Vec<Loaded>,
-    /// `[appearance] font` / `mono_font` of the last install (re-install after a load).
-    names: (String, String),
+    /// `[fonts]` of the last install (re-install after a load).
+    fonts: Fonts,
 }
 
 static STATE: Mutex<Option<State>> = Mutex::new(None);
@@ -152,7 +152,7 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 
 /// Remember the context, the configured fonts and the mode; `startup` starts loading
 /// every script now. Called by `theme::install` (startup and every config change).
-pub fn configure(ctx: &Context, mode: FallbackFonts, font: &str, mono_font: &str) {
+pub fn configure(ctx: &Context, mode: FallbackFonts, fonts: &Fonts) {
     MODE.store(
         match mode {
             FallbackFonts::Auto => 0,
@@ -163,7 +163,7 @@ pub fn configure(ctx: &Context, mode: FallbackFonts, font: &str, mono_font: &str
     );
     with(|s| {
         s.ctx = Some(ctx.clone());
-        s.names = (font.to_string(), mono_font.to_string());
+        s.fonts = fonts.clone();
     });
     if mode == FallbackFonts::Startup {
         request(&Script::ALL);
@@ -181,8 +181,12 @@ pub fn note(text: &str) {
     }
 }
 
-/// Load the fonts of `scripts` that were not requested yet, on a background thread.
-fn request(scripts: &[Script]) {
+/// Load the fonts of `scripts` that were not requested yet, on a background thread
+/// (unless `fallback_fonts = off`).
+pub fn request(scripts: &[Script]) {
+    if MODE.load(Ordering::Relaxed) == 2 {
+        return;
+    }
     let todo: Vec<Script> = with(|s| scripts.iter().copied().filter(|sc| s.requested.insert(*sc)).collect());
     if todo.is_empty() {
         return;
@@ -205,9 +209,9 @@ fn request(scripts: &[Script]) {
             }
         }
         if any {
-            let (ctx, names) = with(|s| (s.ctx.clone(), s.names.clone()));
+            let (ctx, fonts) = with(|s| (s.ctx.clone(), s.fonts.clone()));
             if let Some(ctx) = ctx {
-                let _ = super::fonts::install(&ctx, &names.0, &names.1);
+                let _ = super::fonts::install(&ctx, &fonts);
                 ctx.request_repaint();
             }
         }

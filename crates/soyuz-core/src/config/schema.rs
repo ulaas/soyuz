@@ -23,6 +23,8 @@ pub struct Config {
     pub schema: u32,
     pub general: General,
     pub appearance: Appearance,
+    /// Font roles (`[fonts]`, see `config::fonts`).
+    pub fonts: super::fonts::Fonts,
     pub theme: ThemeSection,
     pub layout: Layout,
     /// Windows, tab groups, saved workspaces, sync browsing, history graph, timeline (F7).
@@ -133,7 +135,11 @@ pub struct Appearance {
     pub theme: String,
     pub density: Density,
     pub ui_scale: f32,
+    /// Legacy (schema 1): read and moved into `[fonts.ui]` on load, never written.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub font: String,
+    /// Legacy (schema 1): moved into `[fonts.terminal]` / `code` / `hex` on load.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub mono_font: String,
     pub font_size: f32,
     pub reduced_motion: bool,

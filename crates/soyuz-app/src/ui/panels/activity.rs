@@ -536,7 +536,8 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         ));
     }
     let sy = card.top() + 70.0;
-    painter.text(pos2(tx, sy), Align2::LEFT_CENTER, left.join(" \u{b7} "), FontId::proportional(11.5), p.text_tertiary);
+    let num_font = crate::theme::fonts::numbers(ui.ctx(), 11.5);
+    painter.text(pos2(tx, sy), Align2::LEFT_CENTER, left.join(" \u{b7} "), num_font.clone(), p.text_tertiary);
     let right = if matches!(s.state, JobState::Running) {
         let mut r = format_speed(s.speed_bps);
         if let Some(eta) = s.eta {
@@ -553,7 +554,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     } else {
         String::new()
     };
-    painter.text(pos2(bar.right(), sy), Align2::RIGHT_CENTER, right, FontId::proportional(11.5), p.text_secondary);
+    painter.text(pos2(bar.right(), sy), Align2::RIGHT_CENTER, right, num_font, p.text_secondary);
 
     // Sparkline.
     if spark_w > 0.0 && (s.samples.len() > 1) {

@@ -162,3 +162,47 @@ pub(crate) fn mui_string(h: Hive, subkey: &str, value: &str) -> Option<String> {
     let s = from_wide_nul(&buf).to_string_lossy().into_owned();
     (!s.is_empty()).then_some(s)
 }
+
+/// Every `REG_SZ` / `REG_EXPAND_SZ` value of a key as `(name, data)` in one enumeration
+/// (unexpanded; the default value and other types are skipped).
+pub(crate) fn string_values(h: Hive, subkey: &str) -> Vec<(String, String)> {
+    use windows_sys::Win32::System::Registry::{REG_EXPAND_SZ, REG_SZ};
+    let Some(key) = open(h, subkey) else { return Vec::new() };
+    let mut out = Vec::new();
+    let mut name = vec![0u16; 16_384];
+    let mut data = vec![0u16; 1024];
+    let mut i = 0u32;
+    loop {
+        let mut name_len = name.len() as u32;
+        let mut data_bytes = (data.len() * 2) as u32;
+        let mut ty = 0u32;
+        // SAFETY: open key; name buffer of `name_len` characters, data buffer of
+        // `data_bytes` bytes, valid type out-pointer.
+        let rc = unsafe {
+            RegEnumValueW(
+                key.0,
+                i,
+                name.as_mut_ptr(),
+                &mut name_len,
+                null(),
+                &mut ty,
+                data.as_mut_ptr().cast(),
+                &mut data_bytes,
+            )
+        };
+        if rc == ERROR_MORE_DATA && data.len() < 1 << 16 {
+            data.resize((data_bytes as usize).div_ceil(2) + 1, 0);
+            continue;
+        }
+        if rc != 0 {
+            break;
+        }
+        i += 1;
+        if name_len > 0 && (ty == REG_SZ || ty == REG_EXPAND_SZ) {
+            let chars = (data_bytes as usize / 2).min(data.len());
+            let value = from_wide_nul(&data[..chars]).to_string_lossy().into_owned();
+            out.push((String::from_utf16_lossy(&name[..name_len as usize]), value));
+        }
+    }
+    out
+}

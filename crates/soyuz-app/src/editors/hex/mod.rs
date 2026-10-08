@@ -560,7 +560,7 @@ impl HexDoc {
     }
 
     fn body(&mut self, ui: &mut Ui, body: Rect, p: &Palette, font_size: f32, focus: &mut Vec<Id>, id: Id) {
-        let font = FontId::monospace(font_size.clamp(6.0, 40.0));
+        let font = crate::theme::fonts::hex(ui.ctx(), font_size.clamp(6.0, 40.0));
         let (cw, row_h) =
             ui.ctx().fonts_mut(|f| (f.glyph_width(&font, '0').max(1.0), (f.row_height(&font) * 1.35).round()));
         let digits = super::super::ui::preview::hex::offset_digits(self.len);

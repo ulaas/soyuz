@@ -170,8 +170,8 @@ pub fn reload_now(app: &mut SoyuzApp, ctx: &egui::Context) {
 pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
     let old = std::mem::replace(&mut app.config, new);
     let c = &app.config;
-    if old.appearance != c.appearance || old.theme != c.theme {
-        for w in crate::theme::install(ctx, &c.appearance, &c.theme.colors) {
+    if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
+        for w in crate::theme::install(ctx, &c.appearance, &c.fonts, &c.theme.colors) {
             log::warn!("{w}");
         }
         let scale = if c.appearance.ui_scale > 0.25 { c.appearance.ui_scale.clamp(0.5, 3.0) } else { 1.0 };

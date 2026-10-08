@@ -1031,7 +1031,7 @@ impl TextDoc {
     fn body(&mut self, ui: &mut Ui, body: Rect, env: &mut TextEnv<'_>, tab: usize) {
         let p = env.p;
         let cfg = env.cfg;
-        let font = FontId::monospace(cfg.font_size.clamp(6.0, 48.0));
+        let font = crate::theme::fonts::code(ui.ctx(), cfg.font_size.clamp(6.0, 48.0));
         let (char_w, row_h) =
             ui.ctx().fonts_mut(|f| (f.glyph_width(&font, 'M').max(1.0), (f.row_height(&font) * 1.3).round().max(8.0)));
         let digits = (self.buf.line_count().max(1).ilog10() as usize + 1).max(3);
@@ -1235,7 +1235,7 @@ impl TextDoc {
             &[]
         };
         let clip = ui.painter_at(text);
-        let num_font = FontId::monospace((cfg.font_size - 1.0).clamp(6.0, 48.0));
+        let num_font = crate::theme::fonts::code(ui.ctx(), (cfg.font_size - 1.0).clamp(6.0, 48.0));
         for i in 0..n_rows {
             let row = first_row + i;
             let y = origin_y + i as f32 * row_h;

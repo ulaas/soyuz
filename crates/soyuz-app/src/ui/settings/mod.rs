@@ -8,6 +8,7 @@ mod ai_connections;
 mod appearance;
 mod density_gallery;
 mod editor;
+mod fonts;
 mod keybindings;
 mod lists;
 mod pages;
@@ -47,6 +48,7 @@ const NAV_W: f32 = 216.0;
 pub enum Section {
     General,
     Appearance,
+    Fonts,
     Views,
     Behaviour,
     Jobs,
@@ -63,9 +65,10 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 15] = [
+    pub const ALL: [Section; 16] = [
         Section::General,
         Section::Appearance,
+        Section::Fonts,
         Section::Views,
         Section::Behaviour,
         Section::Jobs,
@@ -85,6 +88,7 @@ impl Section {
         match self {
             Section::General => "General",
             Section::Appearance => "Appearance",
+            Section::Fonts => "Fonts",
             Section::Views => "Views & layout",
             Section::Behaviour => "Behaviour",
             Section::Jobs => "File operations",
@@ -105,6 +109,7 @@ impl Section {
         match self {
             Section::General => ph::GEAR_SIX,
             Section::Appearance => ph::PALETTE,
+            Section::Fonts => ph::TEXT_AA,
             Section::Views => ph::LAYOUT,
             Section::Behaviour => ph::CURSOR_CLICK,
             Section::Jobs => ph::COPY,
@@ -125,6 +130,7 @@ impl Section {
         match self {
             Section::General => "Startup, hidden files, sizes and dates.",
             Section::Appearance => "Theme, accent color, density and fonts. Changes preview live.",
+            Section::Fonts => "Fonts for the interface, headings, terminal, code, hex view and numbers.",
             Section::Views => "Default view, columns, sorting and window layout.",
             Section::Behaviour => "Clicking, confirmations, drag and drop and typing.",
             Section::Jobs => "Copy / move engine, verification, sync schedules and previous versions.",
@@ -150,6 +156,7 @@ impl Section {
                 c.appearance = d.appearance;
                 c.theme = d.theme;
             }
+            Section::Fonts => c.fonts = d.fonts,
             Section::Views => {
                 c.columns = d.columns;
                 c.layout = d.layout;
@@ -739,6 +746,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
     match sec {
         Section::General => pages::general(ui, app, q),
         Section::Appearance => appearance::page(ui, app, q),
+        Section::Fonts => fonts::page(ui, app, q),
         Section::Views => pages::views(ui, app, q),
         Section::Behaviour => pages::behaviour(ui, app, q),
         Section::Jobs => pages::jobs(ui, app, q),

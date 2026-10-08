@@ -211,6 +211,11 @@ Search the settings with `Ctrl+F` inside the window.
   density, font size, interface scale, reduced motion, high contrast, icons and thumbnails
   (extension badges, folder mosaics, ffmpeg video frames, the on-disk thumbnail cache).
   **Import theme…** / **Export current…** share theme files.
+- *Fonts*: one font per role — interface (Segoe UI), headings (its semibold face),
+  terminal, code editor and hex view (Consolas, then Cascadia), numbers (the interface
+  font) — each with a family field that suggests installed fonts, an *Embedded* switch
+  (Inter / JetBrains Mono, built in), a size offset, a live preview and a notice when the
+  font is not installed. Hinting and sub-pixel positioning are under *Rendering*.
 - *Folder colors*: right-click folders → **Folder color** for a color and an emblem; it
   shows on the folder icon, in the breadcrumb and on tabs.
 - *Keyboard*: presets (Explorer, Commander, Finder, Vim), click any shortcut to record a new

@@ -624,7 +624,12 @@ fn paint_details_row(
                 continue;
             }
             let color = p.text_secondary.gamma_multiply(a);
-            let galley = trunc_galley(painter, &text, FontId::proportional(12.5), color, c.w - 18.0);
+            let font = if columns::numeric(c.column) {
+                crate::theme::fonts::numbers(painter.ctx(), 12.5)
+            } else {
+                FontId::proportional(12.5)
+            };
+            let galley = trunc_galley(painter, &text, font, color, c.w - 18.0);
             let x = if columns::right_aligned(c.column) { x1 - 10.0 - galley.size().x } else { x0 + 10.0 };
             painter.galley(pos2(x, cy - galley.size().y / 2.0), galley, color);
         }

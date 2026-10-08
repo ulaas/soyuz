@@ -4,7 +4,7 @@
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle};
 
-use super::widgets::{color_swatch, group, number, segmented, small_button, switch, text, to_hex};
+use super::widgets::{color_swatch, group, number, segmented, small_button, switch, to_hex};
 use crate::app::SoyuzApp;
 use crate::theme::icons::ph;
 use crate::theme::tokens::parse_hex;
@@ -57,6 +57,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let ctx = "Appearance theme colors";
     let mut any = false;
     let mut theme_action = None;
+    let mut go_fonts = false;
     if q.trim().is_empty() {
         preview_card(ui, &p, d.appearance.density.row_height(), d.appearance.icon_style == IconStyle::Colored);
         any = true;
@@ -134,16 +135,15 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
-            "Interface font",
-            "Font family (matched against installed font files) or a .ttf/.otf path. Bundled: Inter.",
-            "typeface",
+            "Fonts",
+            "Interface, headings, terminal, code, hex and number fonts, with size offsets and previews.",
+            "typeface family segoe consolas monospace",
             |ui| {
-                text(ui, &mut d.appearance.font, "Inter", 180.0);
+                if small_button(ui, Some(ph::TEXT_AA), "Fonts…", false).clicked() {
+                    go_fonts = true;
+                }
             },
         );
-        r.row_kw("Monospace font", "Used by the terminal, hex and code previews.", "typeface code", |ui| {
-            text(ui, &mut d.appearance.mono_font, "JetBrains Mono", 180.0);
-        });
         r.row_kw(
             "Fallback fonts",
             "System fonts for Chinese, Japanese, Korean and emoji names, loaded in the background. Automatic: when a name needs them; at startup: also covers terminal output.",
@@ -301,6 +301,10 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             app.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
         }
         None => {}
+    }
+    if go_fonts {
+        app.settings.section = super::Section::Fonts;
+        app.settings.scroll_top = true;
     }
     any
 }

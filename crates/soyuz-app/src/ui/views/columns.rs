@@ -34,6 +34,14 @@ pub fn geometry(cols: &[ColumnSpec], avail: f32, pad: f32) -> (Vec<ColGeom>, f32
     (out, (x + pad).max(avail))
 }
 
+/// Columns drawn with the `[fonts.numbers]` font (figures that line up row to row).
+pub fn numeric(col: Column) -> bool {
+    matches!(
+        col,
+        Column::Size | Column::ItemCount | Column::Modified | Column::Created | Column::Accessed | Column::Duration
+    )
+}
+
 pub fn right_aligned(col: Column) -> bool {
     matches!(col, Column::Size | Column::ItemCount)
 }

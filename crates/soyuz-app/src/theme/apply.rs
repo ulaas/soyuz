@@ -24,6 +24,12 @@ pub struct ThemeOptions {
     pub light: Palette,
     /// Base body size (13 pt by default); other sizes scale proportionally.
     pub font_size: f32,
+    /// `[fonts.ui] size_offset`: points added to the body / small / button styles.
+    pub ui_offset: f32,
+    /// `[fonts.ui_semibold] size_offset`: points added to headings / titles.
+    pub semibold_offset: f32,
+    /// `[fonts.code] size_offset`: points added to the monospace style.
+    pub code_offset: f32,
     pub reduced_motion: bool,
     pub ui_scale: f32,
     /// Control sizes (touch mode enlarges every interactive target).
@@ -36,12 +42,30 @@ pub struct ThemeOptions {
 pub fn apply(ctx: &Context, opts: &ThemeOptions) {
     for (theme, p) in [(Theme::Dark, &opts.dark), (Theme::Light, &opts.light)] {
         let mut s = style(p, opts.font_size, opts.reduced_motion);
+        offset_text(&mut s, opts.ui_offset, opts.semibold_offset, opts.code_offset);
         tune(&mut s, opts.density, opts.high_contrast);
         ctx.set_style_of(theme, s);
     }
     ctx.set_theme(opts.preference);
     if (opts.ui_scale - 1.0).abs() > f32::EPSILON && opts.ui_scale > 0.25 {
         ctx.set_zoom_factor(opts.ui_scale);
+    }
+}
+
+/// Add the `[fonts]` role size offsets to the text styles of [`style`].
+pub fn offset_text(s: &mut egui::Style, ui: f32, semibold: f32, code: f32) {
+    for (ts, f) in s.text_styles.iter_mut() {
+        let add = match &f.family {
+            FontFamily::Monospace => code,
+            FontFamily::Name(n) if n.as_ref() == SEMIBOLD => semibold,
+            _ if matches!(ts, TextStyle::Small | TextStyle::Body | TextStyle::Button)
+                || f.family == FontFamily::Proportional =>
+            {
+                ui
+            }
+            _ => 0.0,
+        };
+        f.size = (f.size + add).max(4.0);
     }
 }
 
