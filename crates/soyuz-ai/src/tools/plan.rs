@@ -705,6 +705,10 @@ pub fn sync(scope: &Scope, a: &SyncArgs, ctl: &OpControl) -> Result<Plan, ToolEr
             SyncAction::CopyRL(r) => (PlanOp::SyncCopy, Some(a.right.join(r)), Some(a.left.join(r))),
             SyncAction::DeleteL(r) => (PlanOp::SyncDelete, Some(a.left.join(r)), None),
             SyncAction::DeleteR(r) => (PlanOp::SyncDelete, Some(a.right.join(r)), None),
+            SyncAction::CopyAs { src_left, rel, dst_left, to } => {
+                let side = |l: bool| if l { &a.left } else { &a.right };
+                (PlanOp::SyncCopy, Some(side(*src_left).join(rel)), Some(side(*dst_left).join(to)))
+            }
         };
         for p in src.iter().chain(dst.iter()) {
             if scope.is_blocked(p) {

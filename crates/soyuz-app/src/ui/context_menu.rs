@@ -122,6 +122,17 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         cmds.push(Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone())));
         ui.close();
     }
+    if single && v.config.sync.previous_versions && cfg!(windows) && matches!(pane.location, Location::Dir(_)) {
+        action_item(
+            ui,
+            km,
+            cmds,
+            id,
+            ph::CLOCK_COUNTER_CLOCKWISE,
+            "Restore previous version…",
+            Action::PreviousVersions,
+        );
+    }
     if dual {
         action_item(ui, km, cmds, id, ph::COPY_SIMPLE, "Copy to other pane", Action::CopyToOtherPane);
         action_item(ui, km, cmds, id, ph::ARROW_BEND_DOWN_RIGHT, "Move to other pane", Action::MoveToOtherPane);
@@ -201,6 +212,7 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     if has_clip {
         action_item(ui, km, cmds, id, ph::CLIPBOARD, "Paste", Action::Paste);
         action_item(ui, km, cmds, id, ph::LINK, "Paste as link", Action::PasteAsLink);
+        action_item(ui, km, cmds, id, ph::SEAL_CHECK, "Paste and verify", Action::PasteAndVerify);
     } else {
         menu_item(ui, Some(ph::CLIPBOARD), "Paste", chord_label(km, &Action::Paste).as_deref(), false);
     }

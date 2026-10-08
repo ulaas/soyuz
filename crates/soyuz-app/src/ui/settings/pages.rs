@@ -608,6 +608,51 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             );
         });
     });
+    any |= group(ui, q, "Jobs sync schedule backup snapshot shadow copy previous versions", "Sync & versions", |r| {
+        r.row_kw(
+            "Run scheduled sync profiles",
+            "Profiles with a schedule run while Soyuz is open (no background service).",
+            "scheduler automatic",
+            |ui| {
+                switch(ui, &mut d.sync.scheduler);
+            },
+        );
+        r.row_kw(
+            "Scheduled runs are dry runs",
+            "Only write a report of what would change; apply it yourself from Sync profiles.",
+            "preview report",
+            |ui| {
+                switch(ui, &mut d.sync.scheduled_dry_run);
+            },
+        );
+        r.row_kw(
+            "“On change” delay",
+            "Wait this long after the last change before syncing.",
+            "debounce watch",
+            |ui| {
+                number(ui, &mut d.sync.change_debounce_secs, 1..=600, " s");
+            },
+        );
+        r.row_kw("Reports kept per profile", "Run and dry-run reports.", "history log", |ui| {
+            number(ui, &mut d.sync.reports_kept, 1..=200, "");
+        });
+        r.row_kw(
+            "Previous versions",
+            "List earlier copies of files from Windows shadow copies (Properties, context menu).",
+            "vss snapshot restore",
+            |ui| {
+                switch(ui, &mut d.sync.previous_versions);
+            },
+        );
+        r.row_kw(
+            "Shadow copies to probe",
+            "Fallback when the kernel device list can't be read.",
+            "vss globalroot",
+            |ui| {
+                number(ui, &mut d.sync.shadow_probe_max, 1..=512, "");
+            },
+        );
+    });
     any
 }
 

@@ -152,6 +152,14 @@ max_image_mp = 200               # largest image the image editor decodes
 status_column = true
 refresh_secs = 5
 
+[sync]                           # F8: scheduled sync profiles, two-way sync, previous versions
+scheduler = true                 # run profiles on their schedules while Soyuz is open (no OS service)
+reports_kept = 20                # run / dry-run reports kept per profile
+change_debounce_secs = 10        # "on change" schedules wait this long after the last change
+scheduled_dry_run = false        # scheduled runs only write a report of what would change
+previous_versions = true         # list Windows Volume Shadow Copies in "Previous versions"
+shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device can't be listed
+
 [ai]                             # AI providers (roadmap Phase A); keys live in the OS credential store
 enabled = true
 default_profile = "claude"       # used when a task names no profile (empty = first profile)

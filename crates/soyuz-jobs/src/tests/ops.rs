@@ -475,3 +475,35 @@ fn extract_bomb_limit_asks_continue_or_abort() {
     h.ok(id);
     assert_eq!(read(&h.p("continue/in/zeros.bin")).len(), 512 * 1024);
 }
+
+#[test]
+fn sync_copy_as_keeps_both_versions_and_snapshot_reports_verify() {
+    let h = H::new();
+    let (l, r) = (h.p("L"), h.p("R"));
+    std::fs::create_dir_all(&l).unwrap();
+    std::fs::create_dir_all(r.join("sub")).unwrap();
+    std::fs::create_dir_all(l.join("sub")).unwrap();
+    std::fs::write(l.join("sub/f.txt"), b"left").unwrap();
+    std::fs::write(r.join("sub/f.txt"), b"right!").unwrap();
+    // Keep both: the right version is kept as "f (conflict).txt" on both sides, then the
+    // left version wins the original name.
+    let alt = PathBuf::from("sub/f (conflict).txt");
+    let actions = vec![
+        crate::SyncAction::CopyAs { src_left: false, rel: "sub/f.txt".into(), dst_left: false, to: alt.clone() },
+        crate::SyncAction::CopyAs { src_left: false, rel: "sub/f.txt".into(), dst_left: true, to: alt.clone() },
+        crate::SyncAction::CopyLR("sub/f.txt".into()),
+    ];
+    let plan = crate::SyncPlan { left: l.clone(), right: r.clone(), actions };
+    let mut spec = JobSpec::new(JobKind::Sync { plan });
+    spec.options.copy.verify = Some(HashAlgo::Blake3);
+    let id = h.engine.submit(spec);
+    assert_eq!(h.snap(id).verify, Some(HashAlgo::Blake3));
+    h.ok(id);
+    assert_eq!(std::fs::read(l.join(&alt)).unwrap(), b"right!");
+    assert_eq!(std::fs::read(r.join(&alt)).unwrap(), b"right!");
+    assert_eq!(std::fs::read(r.join("sub/f.txt")).unwrap(), b"left");
+    assert_eq!(std::fs::read(l.join("sub/f.txt")).unwrap(), b"left");
+    let hist = h.engine.history();
+    let last = hist.last().expect("history entry");
+    assert!(last.options.as_ref().is_some_and(|o| o.copy.verify.is_some()), "verify recorded in history");
+}

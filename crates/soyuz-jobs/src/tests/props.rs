@@ -152,6 +152,7 @@ proptest! {
                 SyncAction::CopyRL(p) => if let Some(v) = mr.get(&p.to_string_lossy().into_owned()).cloned() { ml.insert(p.to_string_lossy().into_owned(), v); },
                 SyncAction::DeleteL(p) => { ml.remove(&p.to_string_lossy().into_owned()); }
                 SyncAction::DeleteR(p) => { mr.remove(&p.to_string_lossy().into_owned()); }
+                SyncAction::CopyAs { .. } => {}
             }
         }
         let mut spec = JobSpec::new(JobKind::Sync { plan: SyncPlan { left: l.clone(), right: r.clone(), actions: plan_actions } });

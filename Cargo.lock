@@ -4801,6 +4801,7 @@ dependencies = [
  "raw-window-handle",
  "regex",
  "serde",
+ "serde_json",
  "soyuz-ai",
  "soyuz-archive",
  "soyuz-core",

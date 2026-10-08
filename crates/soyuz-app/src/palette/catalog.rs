@@ -83,6 +83,9 @@ pub fn title(a: &Action) -> String {
         A::FindDuplicates => "Find duplicate files",
         A::CompareFolders => "Compare folders",
         A::SyncFolders => "Synchronize folders",
+        A::SyncProfiles => "Sync profiles & schedules",
+        A::PasteAndVerify => "Paste and verify",
+        A::PreviousVersions => "Restore previous version…",
         A::Settings => "Settings",
         A::EditConfigFile => "Edit config file",
         A::ReloadConfig => "Reload config",
@@ -253,6 +256,7 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::Paste => (ph::CLIPBOARD, "Paste the clipboard into this folder", ""),
         A::PasteAsLink => (ph::LINK, "Paste the clipboard as links", "symlink"),
         A::PasteShortcut => (ph::LINK_SIMPLE, "Paste the clipboard as shortcuts", "lnk"),
+        A::PasteAndVerify => (ph::SEAL_CHECK, "Paste, then hash-compare every copy", "verify checksum copy"),
         A::CopyToOtherPane => (ph::COPY_SIMPLE, "Copy the selection to the other pane", "f5"),
         A::MoveToOtherPane => (ph::ARROW_BEND_DOWN_RIGHT, "Move the selection to the other pane", "f6"),
         A::CopyTo => (ph::COPY, "Copy the selection to a chosen folder", ""),
@@ -289,6 +293,11 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::ClearTags => (ph::TAG_SIMPLE, "Remove all tags from the selection", ""),
         A::Undo => (ph::ARROW_U_UP_LEFT, "Undo the last file operation", "revert"),
         A::Redo => (ph::ARROW_U_UP_RIGHT, "Redo the last undone operation", ""),
+        A::PreviousVersions => (
+            ph::CLOCK_COUNTER_CLOCKWISE,
+            "Browse and restore earlier versions from shadow copies",
+            "snapshot vss backup",
+        ),
         // ---- tools ----
         A::CommandPalette => (ph::COMMAND, "Search and run any command", "actions"),
         A::Search => (ph::MAGNIFYING_GLASS, "Search this folder and its subfolders", "find"),
@@ -298,6 +307,9 @@ fn meta(a: &Action) -> (&'static str, String, &'static str) {
         A::FindDuplicates => (ph::COPY, "Find files with identical content", "dupes"),
         A::CompareFolders => (ph::GIT_DIFF, "Compare the contents of two folders", "diff"),
         A::SyncFolders => (ph::ARROWS_CLOCKWISE, "Make two folders identical", "mirror backup"),
+        A::SyncProfiles => {
+            (ph::CALENDAR_CHECK, "Saved sync profiles, schedules and run reports", "backup scheduled two-way")
+        }
         A::Settings => (ph::GEAR_SIX, "Open the settings", "preferences options"),
         A::EditConfigFile => (ph::FILE_CODE, "Open config.toml in your editor", "toml"),
         A::ReloadConfig => (ph::ARROW_CLOCKWISE, "Re-read config.toml from disk", ""),

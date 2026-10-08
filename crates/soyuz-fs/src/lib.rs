@@ -35,6 +35,7 @@ pub mod meta;
 pub mod mv;
 pub mod path;
 pub mod perms;
+pub mod snapshots;
 pub mod sparse;
 pub mod times;
 pub mod trash;

@@ -16,14 +16,13 @@ pub(crate) fn run_sync(ctx: &JobCtx, plan: &SyncPlan) -> FsResult<()> {
     let mut bytes = 0u64;
     let mut items = 0u64;
     for a in &plan.actions {
-        match a {
-            SyncAction::CopyLR(rel) | SyncAction::CopyRL(rel) => {
-                let src = if matches!(a, SyncAction::CopyLR(_)) { plan.left.join(rel) } else { plan.right.join(rel) };
+        match plan.copy_paths(a) {
+            Some((src, _)) => {
                 let (b, i) = planner::tree_totals(ctx, &src, false).unwrap_or((0, 1));
                 bytes += b;
                 items += i;
             }
-            _ => items += 1,
+            None => items += 1,
         }
     }
     ctx.set_totals(bytes, items);
@@ -31,10 +30,13 @@ pub(crate) fn run_sync(ctx: &JobCtx, plan: &SyncPlan) -> FsResult<()> {
     for a in &plan.actions {
         ctx.checkpoint()?;
         match a {
-            SyncAction::CopyLR(rel) => copy_one(ctx, &plan.left.join(rel), &plan.right.join(rel))?,
-            SyncAction::CopyRL(rel) => copy_one(ctx, &plan.right.join(rel), &plan.left.join(rel))?,
             SyncAction::DeleteL(rel) => delete_one(ctx, &plan.left.join(rel))?,
             SyncAction::DeleteR(rel) => delete_one(ctx, &plan.right.join(rel))?,
+            copy => {
+                if let Some((src, dst)) = plan.copy_paths(copy) {
+                    copy_one(ctx, &src, &dst)?;
+                }
+            }
         }
     }
     Ok(())

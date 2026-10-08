@@ -37,6 +37,8 @@ pub struct Config {
     pub preview: Preview,
     pub editor: Editor,
     pub git: Git,
+    /// F8: scheduled sync profiles, two-way sync and previous versions.
+    pub sync: SyncSection,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
@@ -511,6 +513,25 @@ pub enum EditorDock {
 pub struct Git {
     pub status_column: bool,
     pub refresh_secs: u64,
+}
+
+/// `[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SyncSection {
+    /// Run sync profiles on their schedules while the app is open (no OS service).
+    pub scheduler: bool,
+    /// Run reports (dry runs and real runs) kept per profile.
+    pub reports_kept: u32,
+    /// "On change" schedules wait this long after the last change before running.
+    pub change_debounce_secs: u64,
+    /// Scheduled runs only report what they would change (nothing is copied or deleted).
+    pub scheduled_dry_run: bool,
+    /// Previous versions: list Windows Volume Shadow Copies.
+    pub previous_versions: bool,
+    /// Previous versions: probe `HarddiskVolumeShadowCopy1..=N` when the kernel device
+    /// directory can't be listed.
+    pub shadow_probe_max: u32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

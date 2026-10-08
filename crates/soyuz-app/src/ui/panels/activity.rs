@@ -61,6 +61,20 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
 }
 
 /// Overall fraction done, `None` while unknown.
+/// F8: badge for jobs whose copies are hash-verified (copy / move / sync): "Verifying"
+/// while running, "Verified" when done without failures.
+pub fn verify_badge(kind: soyuz_jobs::JobKindBrief, verify: bool, state: &JobState) -> Option<&'static str> {
+    use soyuz_jobs::JobKindBrief as K;
+    if !verify || !matches!(kind, K::Copy | K::Move | K::Sync) {
+        return None;
+    }
+    match state {
+        JobState::Done(sum) if sum.items_failed == 0 => Some("Verified"),
+        JobState::Done(_) | JobState::Failed(_) | JobState::Cancelled => None,
+        _ => Some("Verifying"),
+    }
+}
+
 pub fn fraction(s: &JobSnapshot) -> Option<f32> {
     if matches!(s.state, JobState::Done(_)) {
         return Some(1.0);
@@ -392,6 +406,8 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let spark_w = if card.width() > 640.0 { 150.0 } else { 0.0 };
     let buttons_w = 128.0;
     let text_w = card.right() - tx - spark_w - buttons_w - 16.0;
+    let badge = verify_badge(s.kind, s.verify.is_some(), &s.state);
+    let badge_w = if badge.is_some() { 76.0 } else { 0.0 };
     let tg = trunc_galley(&painter, &title, semibold(13.0), p.text_primary, text_w);
     painter.galley(pos2(tx, card.top() + 12.0), tg, p.text_primary);
     let (line, _) = state_line(s, Some(&meta));
@@ -401,8 +417,21 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         JobState::Done(_) if failed => p.warning,
         _ => p.text_secondary,
     };
-    let lg = trunc_galley(&painter, &line, FontId::proportional(11.5), line_color, text_w);
+    let lg = trunc_galley(&painter, &line, FontId::proportional(11.5), line_color, text_w - badge_w);
+    let lgw = lg.size().x;
     painter.galley(pos2(tx, card.top() + 31.0), lg, line_color);
+    if let Some(b) = badge {
+        // F8: verified copies.
+        let c = if matches!(s.state, JobState::Done(_)) { p.success } else { p.accent };
+        let at = pos2(tx + lgw + 8.0, card.top() + 39.0);
+        let w = crate::ui::dialogs::conflict::tag(ui, at, b, c);
+        ui.interact(
+            Rect::from_min_size(pos2(at.x, at.y - 8.0), vec2(w, 16.0)),
+            Id::new(("soyuz.activity.verified", s.id.0)),
+            Sense::hover(),
+        )
+        .on_hover_text("Every copied file was read back and its BLAKE3 hash compared with the source");
+    }
 
     // Progress bar.
     let bar = Rect::from_min_size(pos2(tx, card.top() + 52.0), vec2(card.right() - tx - 14.0, 5.0));

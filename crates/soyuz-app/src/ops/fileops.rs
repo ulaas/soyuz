@@ -145,6 +145,7 @@ pub fn handles(a: &Action) -> bool {
             | A::Paste
             | A::PasteAsLink
             | A::PasteShortcut
+            | A::PasteAndVerify
             | A::CopyToOtherPane
             | A::MoveToOtherPane
             | A::CopyTo
@@ -219,6 +220,11 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::Paste => {
             if let Some(d) = dir {
                 paste_into(app, d);
+            }
+        }
+        A::PasteAndVerify => {
+            if let Some(d) = dir {
+                paste_into_with(app, d, true);
             }
         }
         A::PasteAsLink | A::PasteShortcut => {
@@ -357,12 +363,18 @@ fn start_rename(app: &mut SoyuzApp, pane_id: PaneId) {
 
 /// Paste the internal clipboard into `dest`.
 pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
+    paste_into_with(app, dest, false);
+}
+
+/// Paste; `verify` hash-compares every copied file (F8 "Copy and verify"), whatever
+/// `jobs.verify_after_copy` says.
+pub fn paste_into_with(app: &mut SoyuzApp, dest: PathBuf, verify: bool) {
     let Some((mode, paths)) = Clipboard::os_paths_hook().or_else(|| app.fileops.clipboard.for_paste()) else {
         app.ui.toasts.push(Toast::info("Nothing to paste").body("Copy or cut files first (Ctrl+C / Ctrl+X)."));
         return;
     };
     let effect = if mode == ClipMode::Cut { DropEffect::Move } else { DropEffect::Copy };
-    let id = transfer(app, paths, dest, effect);
+    let id = transfer_with(app, paths, dest, effect, verify);
     if mode == ClipMode::Cut
         && let Some(id) = id
         && let Some(m) = app.fileops.jobs.meta(id).cloned()
@@ -373,6 +385,17 @@ pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
 
 /// Submit a copy / move / link of `paths` into `dest`.
 pub fn transfer(app: &mut SoyuzApp, paths: Vec<PathBuf>, dest: PathBuf, effect: DropEffect) -> Option<JobId> {
+    transfer_with(app, paths, dest, effect, false)
+}
+
+/// [`transfer`]; `verify` forces hash verification of the copies for this job.
+pub fn transfer_with(
+    app: &mut SoyuzApp,
+    paths: Vec<PathBuf>,
+    dest: PathBuf,
+    effect: DropEffect,
+    verify: bool,
+) -> Option<JobId> {
     if paths.is_empty() || !dnd::valid_target(&paths, &dest) {
         if !paths.is_empty() {
             app.ui.toasts.push(Toast::warning("Can't drop a folder into itself"));
@@ -391,6 +414,9 @@ pub fn transfer(app: &mut SoyuzApp, paths: Vec<PathBuf>, dest: PathBuf, effect: 
                 JobKind::Move { sources: paths.clone(), dest_dir: dest.clone(), rename_to: None }
             };
             let mut spec = app.fileops.jobs.spec(kind);
+            if verify {
+                spec.options.copy.verify.get_or_insert(soyuz_core::HashAlgo::Blake3);
+            }
             spec.options.conflict = if same_dir {
                 Some(ConflictResolution::KeepBoth) // copy into the same folder duplicates
             } else {
