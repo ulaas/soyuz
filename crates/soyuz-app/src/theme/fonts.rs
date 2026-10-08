@@ -108,9 +108,11 @@ impl Source {
     /// Short description for Settings (`Segoe UI`, `Inter (embedded)`).
     pub fn describe(&self) -> String {
         match self {
-            Source::System { family, weight: Some(w), .. } => format!("{family} (weight {w:.0})"),
+            Source::System { family, weight: Some(w), .. } => {
+                tr!("settings-font-source-weight", family = family, weight = format!("{w:.0}"))
+            }
             Source::System { family, .. } => family.clone(),
-            Source::Embedded(e) => format!("{} (embedded)", e.label()),
+            Source::Embedded(e) => tr!("settings-font-source-embedded", font = e.label()),
         }
     }
 
@@ -171,7 +173,8 @@ pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -
         let names = candidates(fonts, role);
         for name in &names {
             if let Some((path, index)) = locate(name) {
-                let notice = (name != &names[0]).then(|| format!("{} is not installed; using {name}", names[0]));
+                let notice =
+                    (name != &names[0]).then(|| tr!("settings-font-not-installed", missing = &names[0], used = name));
                 return Resolved {
                     role,
                     source: Source::System { family: name.clone(), path, index, weight: None },
@@ -179,7 +182,7 @@ pub fn resolve(fonts: &Fonts, locate: Locate<'_>, is_variable: IsVariable<'_>) -
                 };
             }
         }
-        let notice = names.first().map(|n| format!("{n} is not installed; using {}", embedded.describe()));
+        let notice = names.first().map(|n| tr!("settings-font-not-installed", missing = n, used = embedded.describe()));
         Resolved { role, source: embedded, notice }
     };
     let ui = find(FontRoleKind::Ui);
@@ -224,7 +227,7 @@ fn semibold_of(ui: &Resolved, locate: Locate<'_>, is_variable: IsVariable<'_>) -
             Resolved {
                 role,
                 source: ui.source.clone(),
-                notice: Some(format!("{family} has no semibold face; headings use the regular one")),
+                notice: Some(tr!("settings-font-no-semibold", family = family)),
             }
         }
     }

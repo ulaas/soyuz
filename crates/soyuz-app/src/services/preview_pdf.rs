@@ -32,7 +32,7 @@ impl PdfSrc {
             PdfSrc::File(p) => {
                 let len = std::fs::metadata(p).map_err(|e| e.to_string())?.len();
                 if len > cap {
-                    return Err(format!("Larger than the {} MiB document limit", cap >> 20));
+                    return Err(tr!("services-pdf-over-limit", limit = (cap >> 20).to_string()));
                 }
                 std::fs::read(p).map_err(|e| e.to_string())
             }
@@ -148,7 +148,8 @@ fn clean_text(s: &str) -> String {
 pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
     let bytes = src.bytes(cap)?;
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<PdfInfo, String> {
-        let doc = lopdf::Document::load_mem(&bytes).map_err(|e| format!("Can't read this PDF ({e})"))?;
+        let doc =
+            lopdf::Document::load_mem(&bytes).map_err(|e| tr!("services-pdf-cant-read", error = e.to_string()))?;
         let mut info =
             PdfInfo { version: Some(doc.version.clone()), encrypted: doc.is_encrypted(), ..Default::default() };
         let pages = doc.get_pages();
@@ -189,7 +190,7 @@ pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
         }
         Ok(info)
     }));
-    r.unwrap_or_else(|_| Err("The PDF parser failed on this file".into()))
+    r.unwrap_or_else(|_| Err(tr!("services-pdf-parser-failed").into()))
 }
 
 /// Text of the first pages through whichever backend is available (pdfium first).
@@ -285,13 +286,13 @@ pub mod pdfium {
             };
             let _ = tx.send(r);
         });
-        worker().tx.send((dirs.to_vec(), job)).map_err(|_| "The PDF renderer stopped".to_string())?;
+        worker().tx.send((dirs.to_vec(), job)).map_err(|_| tr!("services-pdf-renderer-stopped").to_string())?;
         loop {
             match rx.recv_timeout(Duration::from_millis(50)) {
                 Ok(r) => return r,
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) if stale() => return Err("stale".into()),
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
-                Err(_) => return Err("The PDF renderer failed on this file".into()),
+                Err(_) => return Err(tr!("services-pdf-renderer-failed").into()),
             }
         }
     }
@@ -301,7 +302,7 @@ pub mod pdfium {
             PdfSrc::File(path) => {
                 let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
                 if len > cap.max(1 << 30) {
-                    return Err("This PDF is too large".into());
+                    return Err(tr!("services-pdf-too-large").into());
                 }
                 p.load_pdf_from_file(path, None)
             }
@@ -312,9 +313,9 @@ pub mod pdfium {
         };
         r.map_err(|e| match e {
             PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => {
-                "This PDF is password protected".to_string()
+                tr!("services-pdf-password").to_string()
             }
-            e => format!("Can't open this PDF ({e:?})"),
+            e => tr!("services-pdf-cant-open", error = format!("{e:?}")),
         })
     }
 
@@ -373,16 +374,21 @@ pub mod pdfium {
         run(dirs, stale, move |p| {
             let mut buf = Vec::new();
             let doc = open(p, &src, &mut buf, cap)?;
-            let pg = doc.pages().get(page as PdfPageIndex).map_err(|e| format!("No page {} ({e:?})", page + 1))?;
+            let pg = doc
+                .pages()
+                .get(page as PdfPageIndex)
+                .map_err(|e| tr!("services-pdf-no-page", page = (page + 1).to_string(), error = format!("{e:?}")))?;
             let cfg = PdfRenderConfig::new()
                 .set_target_width(width.clamp(64, 6000) as Pixels)
                 .set_maximum_height(max_h.clamp(64, 8000) as Pixels)
                 .render_form_data(true);
-            let bmp = pg.render_with_config(&cfg).map_err(|e| format!("Can't render this page ({e:?})"))?;
+            let bmp = pg
+                .render_with_config(&cfg)
+                .map_err(|e| tr!("services-pdf-cant-render-page", error = format!("{e:?}")))?;
             let (w, h) = (bmp.width().max(0) as usize, bmp.height().max(0) as usize);
             let rgba = bmp.as_rgba_bytes();
             if rgba.len() < w * h * 4 {
-                return Err("The page rendered empty".into());
+                return Err(tr!("services-pdf-page-empty").into());
             }
             Ok(PageImage { page, width: w, height: h, rgba })
         })
@@ -392,13 +398,7 @@ pub mod pdfium {
 /// "PDF preview needs pdfium" guidance listing the folders searched.
 pub fn missing_message(dirs: &[PathBuf]) -> String {
     let list: Vec<String> = dirs.iter().map(|d| d.display().to_string()).collect();
-    format!(
-        "Page rendering uses pdfium, which isn't bundled. Download a prebuilt {} (e.g. from the \
-         bblanchon/pdfium-binaries releases on GitHub, matching your CPU) and put it in one of these folders:\n\n{}\n\n\
-         Or set [preview] pdfium_dir. No restart is needed.",
-        pdfium_file_name(),
-        list.join("\n\n")
-    )
+    tr!("services-pdf-missing", file = pdfium_file_name(), folders = list.join("\n\n"))
 }
 
 #[cfg(test)]
@@ -469,6 +469,7 @@ mod tests {
         assert_eq!(decode_pdf_string(b"caf\xe9"), "café");
         assert_eq!(pdf_date("D:2023"), "D:2023");
         assert!(missing_message(&[PathBuf::from("C:/x")]).contains("pdfium"));
+        assert!(missing_message(&[PathBuf::from("C:/x")]).contains(":\n\nC:/x\n\nOr set"), "paragraphs kept");
         assert_eq!(find_pdfium(&[PathBuf::from("Z:/definitely/missing")]), None);
         assert_eq!(clean_text("a\n\n\n\nb  \n"), "a\n\nb");
     }

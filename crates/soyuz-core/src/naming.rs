@@ -3,18 +3,46 @@
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
 
+use crate::locale::{Locale, collation_weight, lower_char_in};
+
 /// Default pattern for [`unique_name`].
 pub const DEFAULT_UNIQUE_PATTERN: &str = "{stem} ({n}){ext}";
 
 /// Natural ("human") string comparison: digit runs compare numerically
 /// (`file2` < `file10`), everything else char by char, optionally case-insensitive.
 /// Ties under case folding are broken by the raw comparison so the order is total.
+///
+/// Letters compare by the current [`locale`](crate::locale)'s collation: in Turkish,
+/// `I`/`ı` and `İ`/`i` are case pairs and `ç ğ ı ö ş ü` sort right after their base
+/// letters.
 pub fn natural_cmp(a: &str, b: &str, case_insensitive: bool) -> Ordering {
-    let ord = natural_cmp_inner(a, b, case_insensitive);
+    natural_cmp_in(a, b, case_insensitive, crate::locale::current())
+}
+
+/// [`natural_cmp`] in an explicit locale.
+pub fn natural_cmp_in(a: &str, b: &str, case_insensitive: bool, l: Locale) -> Ordering {
+    let ord = natural_cmp_inner(a, b, case_insensitive, l);
     if ord == Ordering::Equal { a.cmp(b) } else { ord }
 }
 
-fn natural_cmp_inner(a: &str, b: &str, ci: bool) -> Ordering {
+/// Compare two (non-digit) chars in locale `l`.
+#[inline]
+fn char_cmp(ca: char, cb: char, ci: bool, l: Locale) -> Ordering {
+    if ca == cb {
+        return Ordering::Equal;
+    }
+    match l {
+        Locale::EnUs if !ci => ca.cmp(&cb),
+        // Unchanged from before locales existed, except that 'İ' folds to a plain 'i'.
+        Locale::EnUs if ca != 'İ' && cb != 'İ' => ca.to_lowercase().cmp(cb.to_lowercase()),
+        _ => {
+            let (fa, fb) = if ci { (lower_char_in(ca, l), lower_char_in(cb, l)) } else { (ca, cb) };
+            collation_weight(fa, l).cmp(&collation_weight(fb, l))
+        }
+    }
+}
+
+fn natural_cmp_inner(a: &str, b: &str, ci: bool, l: Locale) -> Ordering {
     let mut ai = a.chars().peekable();
     let mut bi = b.chars().peekable();
     loop {
@@ -40,13 +68,7 @@ fn natural_cmp_inner(a: &str, b: &str, ci: bool) -> Ordering {
             (Some(ca), Some(cb)) => {
                 ai.next();
                 bi.next();
-                let ord = if ci {
-                    let la = ca.to_lowercase();
-                    let lb = cb.to_lowercase();
-                    la.cmp(lb)
-                } else {
-                    ca.cmp(&cb)
-                };
+                let ord = char_cmp(ca, cb, ci, l);
                 if ord != Ordering::Equal {
                     return ord;
                 }
@@ -270,6 +292,27 @@ pub fn reveal_controls(name: &str) -> std::borrow::Cow<'_, str> {
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn turkish_natural_sort() {
+        let tr = Locale::TrTr;
+        let mut v = vec!["zeytin", "çay", "Irmak", "istanbul", "ılık", "İzmir", "cam", "Şeker", "su", "öykü", "ozan"];
+        v.sort_by(|a, b| natural_cmp_in(a, b, true, tr));
+        assert_eq!(v, ["cam", "çay", "ılık", "Irmak", "istanbul", "İzmir", "ozan", "öykü", "su", "Şeker", "zeytin"]);
+        // I/ı and İ/i are case pairs in Turkish: these differ only by case.
+        assert_eq!(natural_cmp_inner("IŞIK", "ışık", true, tr), Ordering::Equal);
+        assert_eq!(natural_cmp_inner("İNCE", "ince", true, tr), Ordering::Equal);
+        assert_ne!(natural_cmp_inner("IŞIK", "işik", true, tr), Ordering::Equal);
+        // Digits still compare numerically.
+        let mut v = vec!["Şarkı 10", "şarkı 2", "Şarkı 1"];
+        v.sort_by(|a, b| natural_cmp_in(a, b, true, tr));
+        assert_eq!(v, ["Şarkı 1", "şarkı 2", "Şarkı 10"]);
+        // English: 'İ' folds to a plain 'i'; code point order otherwise.
+        assert_eq!(natural_cmp_inner("İzmir", "izmir", true, Locale::EnUs), Ordering::Equal);
+        let mut v = vec!["zebra", "çay", "apple"];
+        v.sort_by(|a, b| natural_cmp_in(a, b, true, Locale::EnUs));
+        assert_eq!(v, ["apple", "zebra", "çay"]);
+    }
 
     #[test]
     fn natural_order_table() {

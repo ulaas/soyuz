@@ -32,13 +32,23 @@ pub fn focus_ring(ui: &Ui, rect: Rect) {
     );
 }
 
+/// Upper-case for captions in the current UI language (Turkish maps `i` to `İ`, which
+/// `str::to_uppercase` does not).
+pub fn caption_upper(s: &str) -> String {
+    if crate::i18n::current() == soyuz_core::Locale::TrTr {
+        s.chars().map(|c| if c == 'i' { "\u{130}".to_string() } else { c.to_uppercase().collect() }).collect()
+    } else {
+        s.to_uppercase()
+    }
+}
+
 /// Uppercase section caption ("FAVORITES").
 pub fn section_header(ui: &mut Ui, text: &str) {
     let p = palette(ui.ctx());
     ui.add_space(space::LG);
     ui.horizontal(|ui| {
         ui.add_space(space::MD);
-        ui.label(RichText::new(text.to_uppercase()).text_style(TextStyle::Name(CAPTION.into())).color(p.text_tertiary));
+        ui.label(RichText::new(caption_upper(text)).text_style(TextStyle::Name(CAPTION.into())).color(p.text_tertiary));
     });
     ui.add_space(space::XS);
 }
@@ -63,7 +73,7 @@ pub fn collapsible_header(ui: &mut Ui, text: &str, open: &mut bool) -> Response 
         ui.painter().text(
             pos2(rect.left() + 10.0, rect.center().y),
             Align2::LEFT_CENTER,
-            text.to_uppercase(),
+            caption_upper(text),
             FontId::proportional(11.0),
             color,
         );
@@ -229,7 +239,9 @@ pub fn trunc_galley(painter: &Painter, text: &str, font: FontId, color: Color32,
 }
 
 /// Tooltip of the hidden-characters badge.
-pub const HIDDEN_CONTROLS_TIP: &str = "Name contains hidden direction/format characters";
+pub fn hidden_controls_tip() -> &'static str {
+    tr!("app-hidden-controls-tip")
+}
 
 /// Single-line layout of untrusted text (file names): hidden bidi / zero-width / control
 /// characters are shown as dimmed `⟨U+XXXX⟩` tokens instead of silently reordering or
@@ -281,7 +293,7 @@ pub fn hidden_note(ui: &mut Ui, name: &str) {
                 .truncate()
                 .sense(Sense::hover()),
         )
-        .on_hover_text(HIDDEN_CONTROLS_TIP);
+        .on_hover_text(hidden_controls_tip());
     });
 }
 
@@ -290,7 +302,7 @@ pub fn hidden_badge(ui: &mut Ui, name: &str) {
     if soyuz_core::naming::has_hidden_controls(name) {
         let p = palette(ui.ctx());
         ui.add(egui::Label::new(icons::icon(icons::ph::WARNING, 12.0).color(p.warning)).sense(Sense::hover()))
-            .on_hover_text(HIDDEN_CONTROLS_TIP);
+            .on_hover_text(hidden_controls_tip());
     }
 }
 
@@ -391,7 +403,7 @@ pub fn menu_caption(ui: &mut Ui, text: &str) {
     ui.painter().text(
         pos2(rect.left() + 10.0, rect.center().y + 2.0),
         Align2::LEFT_CENTER,
-        text.to_uppercase(),
+        caption_upper(text),
         FontId::proportional(10.5),
         p.text_tertiary,
     );
@@ -466,7 +478,7 @@ pub fn mini_slider(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive
         }
     }
     let v = f64::from(*value);
-    resp.widget_info(|| WidgetInfo::slider(true, v, "Icon size"));
+    resp.widget_info(|| WidgetInfo::slider(true, v, tr!("app-icon-size")));
     let t = ((*value - lo) / (hi - lo)).clamp(0.0, 1.0);
     let track = Rect::from_center_size(rect.center(), vec2(rect.width() - 12.0, 3.0));
     ui.painter().rect_filled(track, CornerRadius::same(2), p.border_strong);

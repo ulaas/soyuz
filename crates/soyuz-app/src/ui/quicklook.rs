@@ -193,7 +193,9 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         painter.galley(pos2(header.left() + 44.0, header.center().y - tg.size().y / 2.0), tg, p.text_primary);
         let close_r = Rect::from_min_size(pos2(header.right() - 42.0, header.center().y - 15.0), vec2(30.0, 30.0));
         if ui
-            .scope_builder(UiBuilder::new().max_rect(close_r), |ui| icon_toggle(ui, ph::X, "Close  (Esc)", true, false))
+            .scope_builder(UiBuilder::new().max_rect(close_r), |ui| {
+                icon_toggle(ui, ph::X, tr!("views-quicklook-close"), true, false)
+            })
             .inner
             .clicked()
         {
@@ -203,7 +205,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         let hex_on = st.force_hex;
         if ui
             .scope_builder(UiBuilder::new().max_rect(hex_r), |ui| {
-                icon_toggle(ui, ph::BINARY, "Show as hex", !target.is_dir_like(), hex_on)
+                icon_toggle(ui, ph::BINARY, tr!("views-preview-show-hex"), !target.is_dir_like(), hex_on)
             })
             .inner
             .clicked()
@@ -213,7 +215,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         painter.text(
             pos2(hex_r.left() - 12.0, header.center().y),
             Align2::RIGHT_CENTER,
-            format!("{pos} of {count}"),
+            tr!("views-quicklook-position", pos = pos, count = count),
             FontId::proportional(12.0),
             p.text_tertiary,
         );
@@ -253,7 +255,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
                 .max_rect(footer.shrink2(vec2(14.0, 8.0)))
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
-        for (k, label) in [("Esc", "close"), ("↑↓", "browse"), ("Enter", "open")] {
+        for (k, label) in [
+            ("Esc", tr!("views-quicklook-hint-close")),
+            ("↑↓", tr!("views-quicklook-hint-browse")),
+            ("Enter", tr!("views-quicklook-hint-open")),
+        ] {
             hints.label(egui::RichText::new(label).size(11.0).color(p.text_tertiary));
             kbd(&mut hints, k);
             hints.add_space(8.0);

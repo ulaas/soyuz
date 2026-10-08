@@ -162,9 +162,9 @@ pub fn origin_glyph(o: JobOrigin) -> &'static str {
 
 pub fn origin_label(o: JobOrigin) -> &'static str {
     match o {
-        JobOrigin::Automation => "Started by an automation rule",
-        JobOrigin::Script => "Started by a script",
-        JobOrigin::Cli => "Started from the soyuz command line",
+        JobOrigin::Automation => tr!("automation-origin-rule"),
+        JobOrigin::Script => tr!("automation-origin-script"),
+        JobOrigin::Cli => tr!("automation-origin-cli"),
     }
 }
 
@@ -172,7 +172,7 @@ pub fn origin_label(o: JobOrigin) -> &'static str {
 pub fn action_title(id: &str) -> String {
     scripts::current()
         .and_then(|s| s.action(id).map(|(_, a)| a.title.clone()))
-        .unwrap_or_else(|| format!("Script: {id}"))
+        .unwrap_or_else(|| tr!("automation-script-fallback-title", id = id))
 }
 
 fn wake_of(ctx: &egui::Context) -> Wake {
@@ -232,7 +232,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     if app.secondary {
-        app.automation.rules_note = Some("Rules run in the main Soyuz window, not in secondary windows.".into());
+        app.automation.rules_note = Some(tr!("automation-secondary-note").into());
         return;
     }
     pump_rules(app, ctx);
@@ -274,11 +274,11 @@ fn bind_hotkeys(app: &mut SoyuzApp) {
 /// Run the script action `id` against the focused pane (off the UI thread).
 pub fn run_action(app: &mut SoyuzApp, id: &str) {
     let Some(set) = scripts::current() else {
-        app.ui.toasts.push(Toast::warning("Scripts are still loading"));
+        app.ui.toasts.push(Toast::warning(tr!("automation-scripts-still-loading")));
         return;
     };
     let Some((_, a)) = set.action(id) else {
-        app.ui.toasts.push(Toast::warning(format!("No script action “{id}”")).body("Check Settings → Scripts."));
+        app.ui.toasts.push(Toast::warning(tr!("automation-no-action", id = id)).body(tr!("automation-no-action-body")));
         return;
     };
     let title = a.title.clone();
@@ -297,7 +297,7 @@ pub fn run_action(app: &mut SoyuzApp, id: &str) {
     });
     if let Err(e) = spawned {
         app.automation.running -= 1;
-        app.ui.toasts.push(Toast::error("Couldn't start the script").body(e.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("automation-start-failed")).body(e.to_string()));
     }
 }
 
@@ -332,7 +332,7 @@ fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
     let (jobs, ui) = match d.result {
         Ok(r) => r,
         Err(e) => {
-            app.ui.toasts.push(Toast::error(format!("Script “{}” failed", d.title)).body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("automation-script-failed", title = &d.title)).body(e.to_string()));
             app.automation.runtime_errors.insert(d.title.clone(), e.to_string());
             return;
         }
@@ -350,7 +350,7 @@ fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
                 app.ws.pane_mut().pending_selection = names;
             }
             UiStep::Toast(t) => {
-                app.ui.toasts.push(Toast::info(format!("{}: {t}", d.title)));
+                app.ui.toasts.push(Toast::info(tr!("automation-script-toast", title = &d.title, text = t)));
             }
             UiStep::CopyText(t) => app.cmds.push(crate::cmd::Cmd::CopyText(t)),
             UiStep::Tag(paths, tag) => add_tag(app, &paths, &tag),
@@ -369,7 +369,7 @@ fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
 /// Add a color tag (name or 1..8) to `paths` (never removes it).
 pub fn add_tag(app: &mut SoyuzApp, paths: &[PathBuf], tag: &str) {
     let Some(t) = crate::services::tags::from_name(tag) else {
-        app.ui.toasts.push(Toast::warning(format!("Unknown tag color “{tag}”")));
+        app.ui.toasts.push(Toast::warning(tr!("automation-unknown-tag", tag = tag)));
         return;
     };
     let missing: Vec<PathBuf> =
@@ -408,7 +408,7 @@ pub fn apply(app: &mut SoyuzApp, c: AutoCmd, _ctx: &egui::Context) {
         AutoCmd::SubmitPlanned { title, jobs } => submit_planned(app, &title, jobs),
         AutoCmd::RunRule(name) => {
             if app.automation.worker.is_none() {
-                app.ui.toasts.push(Toast::warning("Automations are not running in this window"));
+                app.ui.toasts.push(Toast::warning(tr!("automation-not-running")));
                 return;
             }
             // Make sure the worker has the latest edits first.
@@ -433,19 +433,28 @@ pub fn reload_scripts(app: &mut SoyuzApp) {
     match &app.automation.loader {
         Some(l) => {
             l.reload();
-            app.ui.toasts.push(Toast::info("Reloading scripts"));
+            app.ui.toasts.push(Toast::info(tr!("automation-reloading")));
         }
         None => {
-            app.ui.toasts.push(Toast::warning("Scripts are not loaded yet"));
+            app.ui.toasts.push(Toast::warning(tr!("automation-not-loaded")));
         }
     }
 }
 
-/// Example scripts offered on the Scripts page: `(file name, title, source)`.
-pub const TEMPLATES: &[(&str, &str, &str)] = &[
-    ("example.rhai", "Example: actions, a column and a previewer", include_str!("templates/example.rhai")),
-    ("tidy-downloads.rhai", "Rule script: sort by extension", include_str!("templates/tidy.rhai")),
+/// Example scripts offered on the Scripts page: `(file name, source)`; titles from
+/// [`template_title`].
+pub const TEMPLATES: &[(&str, &str)] = &[
+    ("example.rhai", include_str!("templates/example.rhai")),
+    ("tidy-downloads.rhai", include_str!("templates/tidy.rhai")),
 ];
+
+/// Button title of a template in [`TEMPLATES`].
+pub fn template_title(file: &str) -> &'static str {
+    match file {
+        "example.rhai" => tr!("automation-template-example"),
+        _ => tr!("automation-template-tidy"),
+    }
+}
 
 fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
     let dir = soyuz_script::scripts_dir();
@@ -453,7 +462,7 @@ fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
     let postman = app.services.mailbox.postman();
     let tx = app.automation.action_tx.clone();
     let wake = app.automation.wake.clone();
-    let file = template.and_then(|t| TEMPLATES.iter().find(|(f, ..)| *f == t)).map(|(f, _, src)| (*f, *src));
+    let file = template.and_then(|t| TEMPLATES.iter().find(|(f, _)| *f == t)).map(|(f, src)| (*f, *src));
     let target = dir.clone();
     // Create the folder (and the template file) off the UI thread, then show it.
     let spawned = std::thread::Builder::new().name("soyuz-scripts-folder".into()).spawn(move || {
@@ -480,7 +489,7 @@ fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
             }
             Err(e) => {
                 postman.send(crate::services::mailbox::UiMsg::Notice(
-                    Toast::error("Couldn't create the scripts folder").body(e),
+                    Toast::error(tr!("automation-folder-failed")).body(e),
                 ));
             }
         }
@@ -510,7 +519,7 @@ fn pump_rules(app: &mut SoyuzApp, ctx: &egui::Context) {
             Ok(l) => st.lock = Some(l),
             Err(e) => {
                 log::info!("automations: another Soyuz window runs the rules ({e})");
-                st.rules_note = Some("Another Soyuz window runs the rules.".into());
+                st.rules_note = Some(tr!("automation-another-window").into());
             }
         }
     }
@@ -613,7 +622,7 @@ fn pump_cli(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             Err(e) => {
                 st.cli_failed = true;
-                st.cli_status = Some(Err(format!("not available: {e} (another Soyuz window may serve it)")));
+                st.cli_status = Some(Err(tr!("automation-cli-unavailable", error = e.to_string())));
             }
         }
     }
@@ -665,7 +674,8 @@ fn open_path(app: &mut SoyuzApp, path: PathBuf) {
             postman.send(crate::services::mailbox::UiMsg::OpenDir(path));
         } else if let Err(e) = soyuz_fs::launch::open_default(&path) {
             postman.send(crate::services::mailbox::UiMsg::Notice(
-                Toast::error(format!("Couldn't open {}", soyuz_core::entry::display_name(&path))).body(e.to_string()),
+                Toast::error(tr!("automation-open-failed", name = soyuz_core::entry::display_name(&path)))
+                    .body(e.to_string()),
             ));
         }
     });
@@ -673,20 +683,23 @@ fn open_path(app: &mut SoyuzApp, path: PathBuf) {
 
 fn default_label(kind: &JobKind) -> String {
     let (items, dest) = items_of(kind);
-    let what = match items.as_slice() {
-        [one] => format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(one)),
-        many => format!("{} items", many.len()),
+    let count = items.len();
+    let name = match items.as_slice() {
+        [one] => soyuz_core::entry::display_name(one).to_string(),
+        _ => String::new(),
     };
     match (kind, dest) {
         (JobKind::Copy { .. }, Some(d)) => {
-            format!("Copy {what} to \u{201c}{}\u{201d}", soyuz_core::entry::display_name(&d))
+            tr!("automation-cli-copy", count = count, name = name, dest = soyuz_core::entry::display_name(&d))
         }
         (JobKind::Move { .. }, Some(d)) => {
-            format!("Move {what} to \u{201c}{}\u{201d}", soyuz_core::entry::display_name(&d))
+            tr!("automation-cli-move", count = count, name = name, dest = soyuz_core::entry::display_name(&d))
         }
-        (JobKind::Delete { mode: soyuz_jobs::DeleteMode::Trash, .. }, _) => format!("Move {what} to trash"),
-        (JobKind::Delete { .. }, _) => format!("Delete {what}"),
-        _ => what,
+        (JobKind::Delete { mode: soyuz_jobs::DeleteMode::Trash, .. }, _) => {
+            tr!("automation-cli-trash", count = count, name = name)
+        }
+        (JobKind::Delete { .. }, _) => tr!("automation-cli-delete", count = count, name = name),
+        _ => tr!("automation-cli-items", count = count, name = name),
     }
 }
 
@@ -696,7 +709,7 @@ mod tests {
 
     #[test]
     fn templates_load_and_run() {
-        let srcs: Vec<(&str, &str)> = TEMPLATES.iter().map(|(f, _, s)| (*f, *s)).collect();
+        let srcs: Vec<(&str, &str)> = TEMPLATES.to_vec();
         let set = ScriptSet::from_sources(&srcs, soyuz_script::Limits::default());
         for s in &set.scripts {
             assert!(s.is_ok(), "{}: {:?}", s.file, s.error);

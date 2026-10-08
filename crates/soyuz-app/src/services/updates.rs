@@ -139,7 +139,7 @@ impl std::fmt::Display for Version {
 pub fn parse_repo(s: &str) -> Result<(String, String), String> {
     let s = s.trim();
     if s.is_empty() {
-        return Err("no repository configured".into());
+        return Err(tr!("services-update-no-repo").into());
     }
     let rest = s
         .strip_prefix("https://")
@@ -148,11 +148,11 @@ pub fn parse_repo(s: &str) -> Result<(String, String), String> {
         .unwrap_or(s);
     let rest = rest.strip_prefix("github.com/").unwrap_or(rest);
     if rest.contains("://") || rest.starts_with("api.github.com") {
-        return Err("only github.com repositories are supported".into());
+        return Err(tr!("services-update-github-only").into());
     }
     let mut parts = rest.trim_end_matches('/').split('/');
     let (Some(owner), Some(name)) = (parts.next(), parts.next()) else {
-        return Err("expected owner/name".into());
+        return Err(tr!("services-update-expected-owner-name").into());
     };
     let name = name.strip_suffix(".git").unwrap_or(name);
     // Extra path segments (`/releases`, `/tree/main`) are tolerated.
@@ -164,7 +164,7 @@ pub fn parse_repo(s: &str) -> Result<(String, String), String> {
     let owner_ok =
         !owner.is_empty() && owner.len() <= 39 && owner.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-');
     if !owner_ok || !ok(name) || name.starts_with('.') {
-        return Err(format!("“{s}” is not a GitHub owner/name"));
+        return Err(tr!("services-update-bad-repo", repo = s));
     }
     Ok((owner.to_string(), name.to_string()))
 }
@@ -267,22 +267,23 @@ fn convert(r: RawRelease) -> Option<Release> {
 /// Parse `/releases/latest` (one object) or `/releases` (an array; the newest non-draft
 /// release that `prereleases` allows wins).
 pub fn parse_releases(json: &str, prereleases: bool) -> Result<Release, String> {
-    let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("unexpected reply: {e}"))?;
+    let v: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| tr!("services-update-unexpected-reply", error = e.to_string()))?;
     let raws: Vec<RawRelease> = if v.is_array() {
-        serde_json::from_value(v).map_err(|e| format!("unexpected reply: {e}"))?
+        serde_json::from_value(v).map_err(|e| tr!("services-update-unexpected-reply", error = e.to_string()))?
     } else {
         if let Some(msg) = v.get("message").and_then(|m| m.as_str())
             && v.get("tag_name").is_none()
         {
-            return Err(format!("GitHub: {msg}"));
+            return Err(tr!("services-update-github-message", message = msg));
         }
-        vec![serde_json::from_value(v).map_err(|e| format!("unexpected reply: {e}"))?]
+        vec![serde_json::from_value(v).map_err(|e| tr!("services-update-unexpected-reply", error = e.to_string()))?]
     };
     raws.into_iter()
         .filter_map(convert)
         .filter(|r| prereleases || !(r.prerelease || r.version.is_prerelease()))
         .max_by(|a, b| a.version.cmp(&b.version))
-        .ok_or_else(|| "the repository has no published releases".into())
+        .ok_or_else(|| tr!("services-update-no-releases").into())
 }
 
 /// Whether `latest` is newer than the running version.
@@ -477,7 +478,7 @@ fn client() -> Result<reqwest::Client, String> {
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(60 * 30))
         .build()
-        .map_err(|e| format!("cannot build HTTP client: {e}"))
+        .map_err(|e| tr!("services-update-no-client", error = e.to_string()))
 }
 
 async fn get_text(client: &reqwest::Client, url: &str, limit: usize) -> Result<String, String> {
@@ -487,25 +488,25 @@ async fn get_text(client: &reqwest::Client, url: &str, limit: usize) -> Result<S
         .header("X-GitHub-Api-Version", "2022-11-28")
         .send()
         .await
-        .map_err(|e| format!("network error: {e}"))?;
+        .map_err(|e| tr!("services-update-network", error = e.to_string()))?;
     let status = resp.status();
     let mut buf = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("network error: {e}"))? {
+    while let Some(chunk) = resp.chunk().await.map_err(|e| tr!("services-update-network", error = e.to_string()))? {
         buf.extend_from_slice(&chunk);
         if buf.len() > limit {
-            return Err("reply too large".into());
+            return Err(tr!("services-update-reply-too-large").into());
         }
     }
     let text = String::from_utf8_lossy(&buf).into_owned();
     if status.as_u16() == 404 {
-        return Err("no releases found (check the repository name)".into());
+        return Err(tr!("services-update-not-found").into());
     }
     if !status.is_success() {
         let msg = serde_json::from_str::<serde_json::Value>(&text)
             .ok()
             .and_then(|v| v.get("message").and_then(|m| m.as_str()).map(str::to_string))
             .unwrap_or_default();
-        return Err(format!("GitHub replied {status} {msg}").trim().to_string());
+        return Err(tr!("services-update-http-status", status = status.to_string(), message = msg).trim().to_string());
     }
     Ok(text)
 }
@@ -539,7 +540,7 @@ pub fn check(repo: String, prereleases: bool, ctx: egui::Context) {
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) {
     if let Err(e) = std::thread::Builder::new().name(name.into()).spawn(f) {
         log::error!("cannot spawn {name}: {e}");
-        STATE.lock().phase = Phase::Failed(format!("cannot start: {e}"));
+        STATE.lock().phase = Phase::Failed(tr!("services-update-cannot-start", error = e.to_string()));
     }
 }
 
@@ -549,7 +550,7 @@ pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
         return;
     }
     let Some(asset) = asset_for_this_copy(&release).cloned() else {
-        set(Phase::Failed("this release has no download for this platform".into()), &ctx);
+        set(Phase::Failed(tr!("services-update-no-asset").into()), &ctx);
         return;
     };
     let cancel = Arc::new(AtomicBool::new(false));
@@ -574,9 +575,7 @@ pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
                 };
                 if let Signature::Invalid(hr) = signature {
                     let _ = std::fs::remove_file(&path);
-                    Phase::Failed(format!(
-                        "the installer's signature is invalid (0x{hr:08X}); the download was deleted"
-                    ))
+                    Phase::Failed(tr!("services-update-bad-signature", code = format!("0x{hr:08X}")))
                 } else {
                     let detached_sig = signature_asset(&release, &asset.name).is_some();
                     Phase::Downloaded { release, path, sha256, signature, detached_sig }
@@ -609,24 +608,28 @@ async fn download_verified(
         }
     }
     if expected.is_empty() {
-        return Err("the release publishes no SHA-256 checksum for this file, so it cannot be verified".into());
+        return Err(tr!("services-update-no-checksum").into());
     }
     if expected.windows(2).any(|w| w[0].1 != w[1].1) {
-        return Err("the release's checksums disagree with each other; not downloading".into());
+        return Err(tr!("services-update-checksums-disagree").into());
     }
     let want = expected[0].1.clone();
 
-    let name = safe_file_name(&asset.name).ok_or("bad asset name")?;
-    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let name = safe_file_name(&asset.name).ok_or(tr!("services-update-bad-asset-name"))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| tr!("services-update-cannot-create", path = dir.display().to_string(), error = e.to_string()))?;
     let part = dir.join(format!("{name}.part"));
-    let mut file = std::fs::File::create(&part).map_err(|e| format!("cannot write {}: {e}", part.display()))?;
-    let mut resp = client.get(&asset.url).send().await.map_err(|e| format!("network error: {e}"))?;
+    let mut file = std::fs::File::create(&part).map_err(|e| {
+        tr!("services-update-cannot-write-file", path = part.display().to_string(), error = e.to_string())
+    })?;
+    let mut resp =
+        client.get(&asset.url).send().await.map_err(|e| tr!("services-update-network", error = e.to_string()))?;
     let cleanup = |e: String| {
         let _ = std::fs::remove_file(&part);
         e
     };
     if !resp.status().is_success() {
-        return Err(cleanup(format!("download failed: {}", resp.status())));
+        return Err(cleanup(tr!("services-update-download-failed", status = resp.status().to_string())));
     }
     let total = resp.content_length().unwrap_or(asset.size);
     let mut hasher = Sha256::new();
@@ -635,25 +638,25 @@ async fn download_verified(
     loop {
         if cancel.load(AtomicOrdering::SeqCst) {
             drop(file);
-            return Err(cleanup("download cancelled".into()));
+            return Err(cleanup(tr!("services-update-cancelled").into()));
         }
         let chunk = match resp.chunk().await {
             Ok(Some(c)) => c,
             Ok(None) => break,
             Err(e) => {
                 drop(file);
-                return Err(cleanup(format!("network error: {e}")));
+                return Err(cleanup(tr!("services-update-network", error = e.to_string())));
             }
         };
         got += chunk.len() as u64;
         if got > MAX_ASSET {
             drop(file);
-            return Err(cleanup("download is unexpectedly large".into()));
+            return Err(cleanup(tr!("services-update-too-large").into()));
         }
         hasher.update(&chunk);
         if let Err(e) = file.write_all(&chunk) {
             drop(file);
-            return Err(cleanup(format!("cannot write the download: {e}")));
+            return Err(cleanup(tr!("services-update-cannot-write", error = e.to_string())));
         }
         if last_report.elapsed() > Duration::from_millis(100) {
             last_report = std::time::Instant::now();
@@ -666,19 +669,16 @@ async fn download_verified(
     }
     if let Err(e) = file.sync_all() {
         drop(file);
-        return Err(cleanup(format!("cannot write the download: {e}")));
+        return Err(cleanup(tr!("services-update-cannot-write", error = e.to_string())));
     }
     drop(file);
     let have = hex(&hasher.finalize());
     if have != want {
-        return Err(cleanup(format!(
-            "checksum mismatch (expected {}…, got {}…); the download was deleted",
-            &want[..12],
-            &have[..12]
-        )));
+        return Err(cleanup(tr!("services-update-checksum-mismatch", expected = &want[..12], got = &have[..12])));
     }
     let target = unique_path(dir, &name);
-    std::fs::rename(&part, &target).map_err(|e| cleanup(format!("cannot rename the download: {e}")))?;
+    std::fs::rename(&part, &target)
+        .map_err(|e| cleanup(tr!("services-update-cannot-rename", error = e.to_string())))?;
     Ok((target, have))
 }
 
@@ -784,8 +784,8 @@ pub fn pump(app: &mut crate::app::SoyuzApp, ctx: &egui::Context) {
     };
     if let Some(v) = notice {
         app.ui.toasts.push(
-            crate::ui::toasts::Toast::info(format!("Soyuz {v} is available"))
-                .body("Open Settings → About & updates to read the release notes and download it."),
+            crate::ui::toasts::Toast::info(tr!("services-update-available", version = v.to_string()))
+                .body(tr!("services-update-available-body")),
         );
     }
 }

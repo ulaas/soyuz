@@ -38,25 +38,38 @@ impl Mode {
     /// Chip label shown in the input.
     pub fn label(self) -> &'static str {
         match self {
-            Mode::Commands => "Commands",
-            Mode::Folders => "Go to folder",
-            Mode::Path => "Path",
-            Mode::Bookmarks => "Bookmarks",
-            Mode::Search => "Search",
-            Mode::Shell => "Shell",
-            Mode::Tabs => "Tabs",
+            Mode::Commands => tr!("actions-mode-commands"),
+            Mode::Folders => tr!("actions-mode-folders"),
+            Mode::Path => tr!("actions-mode-path"),
+            Mode::Bookmarks => tr!("actions-mode-bookmarks"),
+            Mode::Search => tr!("actions-mode-search"),
+            Mode::Shell => tr!("actions-mode-shell"),
+            Mode::Tabs => tr!("actions-mode-tabs"),
+        }
+    }
+
+    /// Lowercase name in the footer legend (prefixed modes).
+    pub fn legend(self) -> &'static str {
+        match self {
+            Mode::Commands => tr!("actions-mode-commands"),
+            Mode::Folders => tr!("actions-mode-folders"),
+            Mode::Path => tr!("actions-legend-path"),
+            Mode::Bookmarks => tr!("actions-legend-bookmarks"),
+            Mode::Search => tr!("actions-legend-search"),
+            Mode::Shell => tr!("actions-legend-shell"),
+            Mode::Tabs => tr!("actions-legend-tabs"),
         }
     }
 
     pub fn placeholder(self) -> &'static str {
         match self {
-            Mode::Commands => "Type a command, or : path  @ bookmark  / search  > shell  # tab",
-            Mode::Folders => "Jump to a recent folder or bookmark…",
-            Mode::Path => "Type a path — Tab completes folders",
-            Mode::Bookmarks => "Bookmarks, favorites and recent folders",
-            Mode::Search => "Search this folder and its subfolders",
-            Mode::Shell => "Run a shell command in this folder",
-            Mode::Tabs => "Switch to an open tab",
+            Mode::Commands => tr!("actions-placeholder-commands"),
+            Mode::Folders => tr!("actions-placeholder-folders"),
+            Mode::Path => tr!("actions-placeholder-path"),
+            Mode::Bookmarks => tr!("actions-placeholder-bookmarks"),
+            Mode::Search => tr!("actions-placeholder-search"),
+            Mode::Shell => tr!("actions-placeholder-shell"),
+            Mode::Tabs => tr!("actions-placeholder-tabs"),
         }
     }
 

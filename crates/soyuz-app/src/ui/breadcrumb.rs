@@ -18,7 +18,7 @@ use crate::state::pane::PaneId;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{HIDDEN_CONTROLS_TIP, menu_item, paint_hidden_badge, spinner, trunc_galley};
+use crate::ui::widgets::{hidden_controls_tip, menu_item, paint_hidden_badge, spinner, trunc_galley};
 
 pub struct OmnibarCtx<'a> {
     pub pane: PaneId,
@@ -59,7 +59,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let editing = c.address.editing;
     let field = rect;
     let bg = ui.interact(field, Id::new("soyuz.omnibar.bg"), Sense::click());
-    crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::Navigation, "Address");
+    crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::Navigation, tr!("app-crumb-address"));
     let hover = bg.hovered() && !editing;
     ui.painter().rect_filled(field, CornerRadius::same(radius::CARD), p.bg_surface1);
     let stroke = if editing {
@@ -141,7 +141,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
                 // Overflow dropdown with the collapsed ancestors.
                 let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(28.0, h));
                 let resp = ui.interact(r, Id::new("soyuz.crumb.more"), Sense::click());
-                crate::ui::a11y::button(&resp, "Hidden parent folders");
+                crate::ui::a11y::button(&resp, tr!("app-crumb-hidden-parents"));
                 if resp.hovered() {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 }
@@ -183,7 +183,11 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         let resp = ui.interact(r, Id::new(("soyuz.crumb", i)), Sense::click());
         crate::ui::a11y::button(
             &resp,
-            &if last { format!("{} (edit path)", list[i].label) } else { format!("Go to {}", list[i].label) },
+            &if last {
+                tr!("app-crumb-edit-path", name = &list[i].label)
+            } else {
+                tr!("app-crumb-go-to", name = &list[i].label)
+            },
         );
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
@@ -203,7 +207,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         ui.painter().galley(pos2(tx, cy - g.size().y / 2.0), g, color);
         let resp = if hidden {
             paint_hidden_badge(ui.painter(), &p, pos2(tx + gw, cy), &list[i].label);
-            resp.on_hover_text(HIDDEN_CONTROLS_TIP)
+            resp.on_hover_text(hidden_controls_tip())
         } else {
             resp
         };
@@ -230,7 +234,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     // Refresh button at the right end.
     let rr = Rect::from_center_size(pos2(field.right() - 18.0, cy), vec2(26.0, 26.0));
     let rresp = ui.interact(rr, Id::new("soyuz.omnibar.refresh"), Sense::click());
-    crate::ui::a11y::button(&rresp, "Refresh");
+    crate::ui::a11y::button(&rresp, tr!("app-crumb-refresh"));
     if rresp.hovered() {
         ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), p.bg_surface2);
     }
@@ -241,7 +245,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         icons::font(14.0),
         if rresp.hovered() { p.text_primary } else { p.text_tertiary },
     );
-    if rresp.on_hover_text("Refresh (F5)").clicked() {
+    if rresp.on_hover_text(tr!("app-crumb-refresh-tip")).clicked() {
         c.cmds.push(Cmd::PaneAction(c.pane, soyuz_core::config::Action::Refresh));
     }
     if bg.clicked() {
@@ -275,7 +279,7 @@ fn sep(
     };
     let id = Id::new(("soyuz.crumb.sep", &dir));
     let resp = ui.interact(r, id, Sense::click());
-    crate::ui::a11y::button(&resp, "Subfolders");
+    crate::ui::a11y::button(&resp, tr!("app-crumb-subfolders"));
     let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&resp));
     if resp.hovered() || open {
         ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
@@ -299,7 +303,7 @@ fn sep(
                     ui.painter().text(
                         r.center(),
                         Align2::CENTER_CENTER,
-                        "Can't read this folder",
+                        tr!("app-crumb-cant-read"),
                         FontId::proportional(12.0),
                         p.text_tertiary,
                     );
@@ -310,7 +314,7 @@ fn sep(
             Some(entries) => {
                 let dirs: Vec<_> = entries.iter().filter(|e| e.is_dir_like() && !e.is_hidden()).collect();
                 if dirs.is_empty() {
-                    menu_item(ui, Some(ph::FOLDER_DASHED), "No folders", None, false);
+                    menu_item(ui, Some(ph::FOLDER_DASHED), tr!("app-crumb-no-folders"), None, false);
                 }
                 egui::ScrollArea::vertical().max_height(380.0).show(ui, |ui| {
                     for e in dirs {

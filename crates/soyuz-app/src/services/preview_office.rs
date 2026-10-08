@@ -116,7 +116,7 @@ pub struct Container<R: Read + Seek> {
 
 impl<R: Read + Seek> Container<R> {
     pub fn new(r: R, cap: u64) -> Result<Self, String> {
-        let zip = zip::ZipArchive::new(r).map_err(|e| format!("Not a valid document container ({e})"))?;
+        let zip = zip::ZipArchive::new(r).map_err(|e| tr!("services-office-bad-container", error = e.to_string()))?;
         Ok(Container { zip, cap })
     }
 
@@ -216,9 +216,9 @@ fn docx<R: Read + Seek>(c: &mut Container<R>) -> Result<DocModel, String> {
             }
         }
     }
-    let xml = c.text("word/document.xml").ok_or("This document has no readable body (word/document.xml)")?;
+    let xml = c.text("word/document.xml").ok_or_else(|| tr!("services-office-no-body", part = "word/document.xml"))?;
     let ev = preview_xml::events(&xml, MAX_EVENTS);
-    let mut doc = DocModel { format: "Word document", ..Default::default() };
+    let mut doc = DocModel { format: tr!("services-office-word"), ..Default::default() };
     let mut para: Option<Para> = None;
     let (mut bold, mut italic, mut in_rpr, mut in_ppr, mut in_text) = (false, false, false, false, false);
     for e in &ev {
@@ -358,10 +358,10 @@ fn odt<R: Read + Seek>(c: &mut Container<R>) -> Result<DocModel, String> {
     if let Some(xml) = c.text("styles.xml") {
         odf_styles(&preview_xml::events(&xml, 400_000), &mut map, &mut heads);
     }
-    let xml = c.text("content.xml").ok_or("This document has no readable body (content.xml)")?;
+    let xml = c.text("content.xml").ok_or_else(|| tr!("services-office-no-body", part = "content.xml"))?;
     let ev = preview_xml::events(&xml, MAX_EVENTS);
     odf_styles(&ev, &mut map, &mut heads);
-    let mut doc = DocModel { format: "OpenDocument text", ..Default::default() };
+    let mut doc = DocModel { format: tr!("services-office-odt"), ..Default::default() };
     let mut para: Option<Para> = None;
     let mut list_depth = 0usize;
     // Span style stack: (bold, italic) of each open span.
@@ -485,13 +485,13 @@ pub fn resolve(base: &str, target: &str) -> String {
 }
 
 fn xlsx<R: Read + Seek>(c: &mut Container<R>, max_rows: usize) -> Result<SheetModel, String> {
-    let mut m = SheetModel { format: "Excel workbook", ..Default::default() };
+    let mut m = SheetModel { format: tr!("services-office-excel"), ..Default::default() };
     let wb_rels = rels(c, "xl/_rels/workbook.xml.rels", "xl");
     let mut first_target = None;
     if let Some(xml) = c.text("xl/workbook.xml") {
         for e in preview_xml::events(&xml, 100_000) {
             if e.is_start("sheet") {
-                m.sheets.push(e.attr("name").unwrap_or("Sheet").to_string());
+                m.sheets.push(e.attr("name").unwrap_or(tr!("services-office-sheet")).to_string());
                 if first_target.is_none() {
                     first_target = e.attr("id").and_then(|id| wb_rels.get(id)).cloned();
                 }
@@ -529,7 +529,7 @@ fn xlsx<R: Read + Seek>(c: &mut Container<R>, max_rows: usize) -> Result<SheetMo
             }
         }
     }
-    let xml = c.text(&target).ok_or("The first sheet can't be read")?;
+    let xml = c.text(&target).ok_or(tr!("services-office-first-sheet"))?;
     let ev = preview_xml::events(&xml, MAX_EVENTS);
     let mut row: Option<Vec<String>> = None;
     let mut cell: Option<(usize, String, String)> = None; // (col, type, value)
@@ -579,7 +579,10 @@ fn xlsx<R: Read + Seek>(c: &mut Container<R>, max_rows: usize) -> Result<SheetMo
                             "s" => {
                                 v.trim().parse::<usize>().ok().and_then(|i| shared.get(i)).cloned().unwrap_or_default()
                             }
-                            "b" => if v.trim() == "1" { "TRUE" } else { "FALSE" }.to_string(),
+                            "b" => {
+                                if v.trim() == "1" { tr!("services-office-true") } else { tr!("services-office-false") }
+                                    .to_string()
+                            }
                             "e" => v,
                             _ => tidy_number(&v),
                         };
@@ -641,9 +644,9 @@ fn finish_sheet(m: &mut SheetModel) {
 }
 
 fn ods<R: Read + Seek>(c: &mut Container<R>, max_rows: usize) -> Result<SheetModel, String> {
-    let xml = c.text("content.xml").ok_or("This spreadsheet has no readable body (content.xml)")?;
+    let xml = c.text("content.xml").ok_or_else(|| tr!("services-office-no-body-sheet", part = "content.xml"))?;
     let ev = preview_xml::events(&xml, MAX_EVENTS);
-    let mut m = SheetModel { format: "OpenDocument spreadsheet", ..Default::default() };
+    let mut m = SheetModel { format: tr!("services-office-ods"), ..Default::default() };
     let mut table_depth = 0usize;
     let mut first_done = false;
     let mut row: Option<(Vec<String>, usize)> = None; // (cells, repeat)
@@ -653,7 +656,7 @@ fn ods<R: Read + Seek>(c: &mut Container<R>, max_rows: usize) -> Result<SheetMod
         match e {
             X::Start { name, empty, .. } => match name.as_str() {
                 "table" if !empty => {
-                    m.sheets.push(e.attr("name").unwrap_or("Sheet").to_string());
+                    m.sheets.push(e.attr("name").unwrap_or(tr!("services-office-sheet")).to_string());
                     table_depth += 1;
                 }
                 "table-row" if table_depth == 1 && !first_done => {
@@ -765,7 +768,7 @@ fn natural_slide_no(path: &str) -> u32 {
 }
 
 fn pptx<R: Read + Seek>(c: &mut Container<R>) -> Result<SlidesModel, String> {
-    let mut m = SlidesModel { format: "PowerPoint presentation", ..Default::default() };
+    let mut m = SlidesModel { format: tr!("services-office-pptx"), ..Default::default() };
     let pres_rels = rels(c, "ppt/_rels/presentation.xml.rels", "ppt");
     let mut order: Vec<String> = Vec::new();
     if let Some(xml) = c.text("ppt/presentation.xml") {
@@ -837,9 +840,9 @@ fn pptx_slide(ev: &[X]) -> Slide {
 }
 
 fn odp<R: Read + Seek>(c: &mut Container<R>) -> Result<SlidesModel, String> {
-    let xml = c.text("content.xml").ok_or("This presentation has no readable body (content.xml)")?;
+    let xml = c.text("content.xml").ok_or_else(|| tr!("services-office-no-body-slides", part = "content.xml"))?;
     let ev = preview_xml::events(&xml, MAX_EVENTS);
-    let mut m = SlidesModel { format: "OpenDocument presentation", ..Default::default() };
+    let mut m = SlidesModel { format: tr!("services-office-odp"), ..Default::default() };
     let mut slide: Option<Slide> = None;
     let mut frame_title = false;
     let mut in_notes = false;

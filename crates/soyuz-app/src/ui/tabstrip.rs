@@ -137,7 +137,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     // Background: double-click empty space → new tab.
     if !in_titlebar {
         let bg = ui.interact(full, Id::new("soyuz.tabstrip.bg"), Sense::click());
-        crate::ui::a11y::container(&ctx, bg.id, egui::accesskit::Role::TabList, "Tabs");
+        crate::ui::a11y::container(&ctx, bg.id, egui::accesskit::Role::TabList, tr!("app-tabs-list"));
         if bg.double_clicked() {
             app.cmds.push(Cmd::Action(Action::NewTab));
         }
@@ -261,7 +261,11 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                 Stroke::new(2.0, color.gamma_multiply(0.9)),
             );
         }
-        let title = if group.name.is_empty() { "Tab group".to_string() } else { format!("Tab group {}", group.name) };
+        let title = if group.name.is_empty() {
+            tr!("app-tabs-group").to_string()
+        } else {
+            tr!("app-tabs-group-named", name = &group.name)
+        };
         crate::ui::a11y::button(&resp, &title);
         if drag.is_some() && pointer.is_some_and(|pp| r.expand(4.0).contains(pp)) {
             hovered_chip = Some((g, r));
@@ -276,9 +280,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             group_rename(ui, app, g, r);
         } else {
             let resp = resp.on_hover_text(if group.collapsed {
-                "Expand group"
+                tr!("app-tabs-expand-group")
             } else {
-                "Collapse group (right-click for more)"
+                tr!("app-tabs-collapse-group")
             });
             if resp.double_clicked() {
                 app.cmds.push(Cmd::Workspace(WsCmd::StartRenameGroup(g)));
@@ -324,7 +328,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         if show_close && n > 1 && !ghosted {
             let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 20.0));
             let cresp = ui.interact(cr, Id::new(("soyuz.tab.close", tab_id.0)), Sense::click());
-            crate::ui::a11y::button(&cresp, &format!("Close tab {title}"));
+            crate::ui::a11y::button(&cresp, &tr!("app-tabs-close-named", title = &title));
             if cresp.hovered() {
                 painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
             }
@@ -391,7 +395,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let plus_x = (last_right.max(chip_right) + 4.0).min(full.right() - plus_w);
     let pr = Rect::from_min_size(pos2(plus_x, full.top() + 2.0), vec2(28.0, 28.0));
     let presp = ui.interact(pr, Id::new("soyuz.tab.new"), Sense::click());
-    crate::ui::a11y::button(&presp, "New tab");
+    crate::ui::a11y::button(&presp, tr!("app-tabs-new"));
     if presp.hovered() {
         ui.painter().rect_filled(pr, CornerRadius::same(radius::ROW), p.bg_surface2);
     }
@@ -403,8 +407,8 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         if presp.hovered() { p.text_primary } else { p.text_secondary },
     );
     let tip = match chord_label(&app.keymap, &Action::NewTab) {
-        Some(k) => format!("New tab ({k})"),
-        None => "New tab".into(),
+        Some(k) => tr!("app-tabs-new-tip", key = k),
+        None => tr!("app-tabs-new").into(),
     };
     if presp.on_hover_text(tip).clicked() {
         app.cmds.push(Cmd::Action(Action::NewTab));
@@ -527,9 +531,9 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
     let g = trunc_galley(&painter, &title, FontId::proportional(12.5), p.text_primary, r.width() - 44.0);
     painter.galley(pos2(r.left() + 32.0, r.center().y - g.size().y / 2.0), g, p.text_primary);
     let hint = match target {
-        Some(DropTarget::TearOff { .. }) => "Release to open in a new window",
-        Some(DropTarget::Window { .. }) => "Release to move to that window",
-        Some(DropTarget::Nothing) | None => "A window keeps at least one tab",
+        Some(DropTarget::TearOff { .. }) => tr!("app-tabs-drop-new-window"),
+        Some(DropTarget::Window { .. }) => tr!("app-tabs-drop-other-window"),
+        Some(DropTarget::Nothing) | None => tr!("app-tabs-drop-keep-one"),
         Some(DropTarget::Reorder) => "",
     };
     if !hint.is_empty() {
@@ -582,7 +586,7 @@ fn group_rename(ui: &mut Ui, app: &mut SoyuzApp, g: GroupId, r: Rect) {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
     let resp = child.add(
         egui::TextEdit::singleline(text)
-            .hint_text("Group name")
+            .hint_text(tr!("app-tabs-group-name"))
             .desired_width(r.width())
             .margin(Margin::symmetric(6, 2))
             .font(FontId::proportional(11.5)),
@@ -625,29 +629,32 @@ pub fn slot_lefts(order: &[usize], widths: &[f32], start: f32) -> Vec<f32> {
 fn tab_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, km: &soyuz_core::config::Keymap, i: usize, pinned: bool, n: usize) {
     ui.set_width(230.0);
     let sc = |a: &Action| chord_label(km, a);
-    if menu_item(ui, Some(ph::PLUS), "New tab", sc(&Action::NewTab).as_deref(), true).clicked() {
+    if menu_item(ui, Some(ph::PLUS), tr!("app-tabs-new"), sc(&Action::NewTab).as_deref(), true).clicked() {
         cmds.push(Cmd::NewTabAfter(i));
         ui.close();
     }
-    if menu_item(ui, Some(ph::COPY_SIMPLE), "Duplicate tab", sc(&Action::DuplicateTab).as_deref(), true).clicked() {
+    if menu_item(ui, Some(ph::COPY_SIMPLE), tr!("app-tabs-duplicate"), sc(&Action::DuplicateTab).as_deref(), true)
+        .clicked()
+    {
         cmds.push(Cmd::DuplicateTab(i));
         ui.close();
     }
-    let (pin_icon, pin_label) = if pinned { (ph::PUSH_PIN_SLASH, "Unpin tab") } else { (ph::PUSH_PIN, "Pin tab") };
+    let (pin_icon, pin_label) =
+        if pinned { (ph::PUSH_PIN_SLASH, tr!("app-tabs-unpin")) } else { (ph::PUSH_PIN, tr!("app-tabs-pin")) };
     if menu_item(ui, Some(pin_icon), pin_label, sc(&Action::PinTab).as_deref(), true).clicked() {
         cmds.push(Cmd::PinTab(i, !pinned));
         ui.close();
     }
     menu_separator(ui);
-    if menu_item(ui, Some(ph::X), "Close tab", sc(&Action::CloseTab).as_deref(), n > 1).clicked() {
+    if menu_item(ui, Some(ph::X), tr!("app-tabs-close"), sc(&Action::CloseTab).as_deref(), n > 1).clicked() {
         cmds.push(Cmd::CloseTab(i));
         ui.close();
     }
-    if menu_item(ui, Some(ph::X_CIRCLE), "Close other tabs", None, n > 1).clicked() {
+    if menu_item(ui, Some(ph::X_CIRCLE), tr!("app-tabs-close-others"), None, n > 1).clicked() {
         cmds.push(Cmd::CloseOtherTabs(i));
         ui.close();
     }
-    if menu_item(ui, Some(ph::ARROW_LINE_RIGHT), "Close tabs to the right", None, i + 1 < n).clicked() {
+    if menu_item(ui, Some(ph::ARROW_LINE_RIGHT), tr!("app-tabs-close-right"), None, i + 1 < n).clicked() {
         cmds.push(Cmd::CloseTabsToRight(i));
         ui.close();
     }
@@ -655,7 +662,7 @@ fn tab_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, km: &soyuz_core::config::Keymap, i
     if menu_item(
         ui,
         Some(ph::ARROW_COUNTER_CLOCKWISE),
-        "Reopen closed tab",
+        tr!("app-tabs-reopen-closed"),
         sc(&Action::ReopenClosedTab).as_deref(),
         true,
     )

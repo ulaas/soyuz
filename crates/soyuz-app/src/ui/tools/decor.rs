@@ -21,6 +21,20 @@ pub fn git_color(code: GitCode, p: &Palette) -> Color32 {
     }
 }
 
+/// Display name of a git status (GitStatus column, tooltips).
+pub fn git_label(code: GitCode) -> &'static str {
+    match code {
+        GitCode::Ignored => tr!("tools-git-ignored"),
+        GitCode::Untracked => tr!("tools-git-untracked"),
+        GitCode::TypeChange => tr!("tools-git-type-changed"),
+        GitCode::Renamed => tr!("tools-git-renamed"),
+        GitCode::Added => tr!("tools-git-added"),
+        GitCode::Deleted => tr!("tools-git-deleted"),
+        GitCode::Modified => tr!("tools-git-modified"),
+        GitCode::Conflicted => tr!("tools-git-conflict"),
+    }
+}
+
 fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
     let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
     Color32::from_rgba_premultiplied(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()), l(a.a(), b.a()))
@@ -112,7 +126,11 @@ pub fn paint_cell(
                     crate::ui::views::flow::semibold(12.0),
                     color,
                 );
-                let label = if staged { format!("{} (staged)", code.label()) } else { code.label().to_string() };
+                let label = if staged {
+                    tr!("tools-git-staged", status = git_label(code))
+                } else {
+                    git_label(code).to_string()
+                };
                 let g = trunc_galley(painter, &label, FontId::proportional(12.0), color, w - 34.0);
                 painter.galley(pos2(x0 + 26.0, cy - g.size().y / 2.0), g, color);
             }
@@ -128,9 +146,9 @@ pub fn paint_cell(
                     x += DOT_STEP + 2.0;
                 }
                 let label = if n == 1 {
-                    tags::TAG_NAMES[tags::mask_tags(mask).next().unwrap_or(0) as usize].to_string()
+                    super::tags_ui::tag_name(tags::mask_tags(mask).next().unwrap_or(0)).to_string()
                 } else {
-                    format!("{n} tags")
+                    tr!("tools-tags-count", count = n)
                 };
                 let color = p.text_secondary.gamma_multiply(alpha);
                 let g = trunc_galley(painter, &label, FontId::proportional(12.0), color, x0 + w - x - 8.0);
@@ -146,11 +164,11 @@ pub fn paint_cell(
 pub fn cell_text(col: Column, e: &EntryInfo) -> Option<String> {
     match col {
         Column::GitStatus => {
-            Some(git::status_of(&e.path, e.is_dir_like()).map(|c| c.label().to_string()).unwrap_or_default())
+            Some(git::status_of(&e.path, e.is_dir_like()).map(|c| git_label(c).to_string()).unwrap_or_default())
         }
-        Column::Tags => Some(
-            tags::mask_tags(tags::tags_of(&e.path)).map(|t| tags::TAG_NAMES[t as usize]).collect::<Vec<_>>().join(", "),
-        ),
+        Column::Tags => {
+            Some(tags::mask_tags(tags::tags_of(&e.path)).map(super::tags_ui::tag_name).collect::<Vec<_>>().join(", "))
+        }
         _ => None,
     }
 }

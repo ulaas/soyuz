@@ -38,10 +38,10 @@ impl TouchKind {
 
     pub fn label(self) -> &'static str {
         match self {
-            TouchKind::Reading => "The assistant looked at this",
-            TouchKind::Planned => "In a plan waiting for your approval",
-            TouchKind::Changing => "Being changed by an assistant job",
-            TouchKind::Done => "Changed by the assistant",
+            TouchKind::Reading => tr!("ai-touch-reading"),
+            TouchKind::Planned => tr!("ai-touch-planned"),
+            TouchKind::Changing => tr!("ai-touch-changing"),
+            TouchKind::Done => tr!("ai-touch-done"),
         }
     }
 }

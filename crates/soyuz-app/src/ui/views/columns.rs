@@ -81,7 +81,7 @@ pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
 
 /// Header label: script columns are named by their provider (F6).
 pub fn header_label(col: Column) -> String {
-    crate::automation::scripts::column_label(col).unwrap_or_else(|| col.label().to_string())
+    crate::automation::scripts::column_label(col).unwrap_or_else(|| crate::i18n::labels::column(col).to_string())
 }
 
 /// `RHSA…` attribute letters.

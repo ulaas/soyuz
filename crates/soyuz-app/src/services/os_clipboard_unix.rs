@@ -133,7 +133,7 @@ pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String>
         run("xclip", &["-selection", "clipboard", "-t", "x-special/gnome-copied-files", "-i"], Some(body.as_bytes()))
             .is_some()
     };
-    if ok { Ok(()) } else { Err("neither wl-copy nor xclip is available".into()) }
+    if ok { Ok(()) } else { Err(tr!("services-clipboard-no-tool").into()) }
 }
 
 /// Files on the clipboard, after pending background writes have landed.
@@ -182,7 +182,7 @@ fn applescript_string(s: &str) -> String {
 
 #[cfg(target_os = "macos")]
 pub(super) fn set_files(_mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
-    let [one] = paths else { return Err("only a single file can be put on the macOS clipboard".into()) };
+    let [one] = paths else { return Err(tr!("services-clipboard-mac-single").into()) };
     let script = format!("set the clipboard to (POSIX file {})", applescript_string(&one.to_string_lossy()));
     run("osascript", &["-e", &script], None).map(|_| ()).ok_or_else(|| "osascript failed".into())
 }

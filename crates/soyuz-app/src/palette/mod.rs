@@ -119,7 +119,8 @@ pub struct PaletteState {
     cursor_to_end: bool,
     scroll_to_selected: bool,
     results: Vec<Item>,
-    results_key: Option<(String, Mode, u64)>,
+    /// Input, base mode, source version and `i18n::generation()` of the cached results.
+    results_key: Option<(String, Mode, u64, u64)>,
     /// Bumped whenever sources change (forces a rebuild).
     version: u64,
     pub memory: Memory,
@@ -268,14 +269,18 @@ fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
             .find(|c| &c.name == name)
             .map(|c| {
                 let line = format!("{} {}", c.command, crate::commands::join_args(&c.args));
-                if c.terminal { format!("Terminal · {}", line.trim()) } else { line.trim().to_string() }
+                if c.terminal {
+                    tr!("actions-palette-terminal-detail", command = line.trim())
+                } else {
+                    line.trim().to_string()
+                }
             })
             .unwrap_or(e.description),
         Action::RunScript(id) => crate::automation::menu::palette_detail(id).unwrap_or(e.description),
         _ => e.description,
     };
     it.chord = chord_for(app, a);
-    it.tag = Some(e.category.label().to_string());
+    it.tag = Some(crate::i18n::labels::action_category(e.category).to_string());
     it.tint = match e.category {
         soyuz_core::config::ActionCategory::FileOps => Tint::Info,
         soyuz_core::config::ActionCategory::View => Tint::Success,
@@ -293,14 +298,14 @@ pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
     let mut out = Vec::new();
     if q.trim().is_empty() {
         for a in recent.iter().filter(|a| actions.contains(a)).take(6) {
-            let mut it = action_item(app, a, "Recent");
-            it.tag = Some("recent".into());
+            let mut it = action_item(app, a, tr!("actions-section-recent"));
+            it.tag = Some(tr!("actions-tag-recent").into());
             out.push(it);
         }
         let mut rest: Vec<Item> = actions
             .iter()
             .filter(|a| !recent.iter().take(6).any(|r| r == *a))
-            .map(|a| action_item(app, a, "All commands"))
+            .map(|a| action_item(app, a, tr!("actions-section-all-commands")))
             .collect();
         rest.sort_by(|a, b| {
             let ca = match &a.exec {
@@ -311,7 +316,7 @@ pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
                 Exec::Action(x) => x.category(),
                 _ => soyuz_core::config::ActionCategory::Tools,
             };
-            ca.cmp(&cb).then_with(|| a.title.cmp(&b.title))
+            ca.cmp(&cb).then_with(|| soyuz_core::natural_cmp(&a.title, &b.title, true))
         });
         out.extend(rest);
         return out;
@@ -328,11 +333,11 @@ pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
         .collect();
     for m in score_actions(&entries, &recent, q) {
         let a = &entries[m.index].0;
-        let mut it = action_item(app, a, "Commands");
+        let mut it = action_item(app, a, tr!("actions-section-commands"));
         it.score = m.score;
         it.hl = m.hl;
         if m.recent {
-            it.tag = Some("recent".into());
+            it.tag = Some(tr!("actions-tag-recent").into());
         }
         out.push(it);
     }
@@ -348,19 +353,28 @@ pub struct Ranked {
     pub recent: bool,
 }
 
-/// Pure command ranking: title matches count double, keywords / description / category
+/// Pure command ranking: title matches count double (the translated or the English
+/// title, so English muscle memory keeps working), keywords / category / config name
 /// match too; recently used commands get a boost that fades with their position.
 pub fn score_actions(entries: &[(Action, catalog::Entry)], recent: &[Action], q: &str) -> Vec<Ranked> {
     let mut f = Fuzzy::new(q);
     let mut out = Vec::new();
     for (index, (a, e)) in entries.iter().enumerate() {
         let title = f.indices(&e.title);
-        let extra =
-            f.score(&format!("{} {} {} {}", e.title, e.keywords, e.category.label(), a.name().replace('_', " ")));
-        let (score, hl) = match (title, extra) {
-            (Some((s, hl)), _) => (s as i64 * 2, hl),
-            (None, Some(s)) => (s as i64, Vec::new()),
-            (None, None) => continue,
+        let title_en = if e.title_en == e.title { None } else { f.score(&e.title_en) };
+        let extra = f.score(&format!(
+            "{} {} {} {} {}",
+            e.title,
+            e.keywords,
+            crate::i18n::labels::action_category(e.category),
+            e.category.label(),
+            a.name().replace('_', " ")
+        ));
+        let (score, hl) = match (title, title_en, extra) {
+            (Some((s, hl)), _, _) => (s as i64 * 2, hl),
+            (None, Some(s), _) => (s as i64 * 2, Vec::new()),
+            (None, None, Some(s)) => (s as i64, Vec::new()),
+            (None, None, None) => continue,
         };
         let boost = recent.iter().position(|r| r == a).map_or(0, |i| (12 - i.min(11) as i64) * 6);
         out.push(Ranked { index, score: score + boost, hl, recent: boost > 0 });
@@ -377,7 +391,8 @@ pub fn score_actions(entries: &[(Action, catalog::Entry)], recent: &[Action], q:
     out
 }
 
-/// Bookmarks, favorites and frecency folders, deduplicated.
+/// Bookmarks, favorites and frecency folders, deduplicated. The kind (`"Bookmark"`,
+/// `"Favorite"`, `"Recent"`, `"Here"`) is an identifier, not shown as is.
 fn folder_sources(app: &SoyuzApp) -> Vec<(PathBuf, String, &'static str, f64)> {
     let now = now_secs();
     let mut v: Vec<(PathBuf, String, &'static str, f64)> = Vec::new();
@@ -433,9 +448,9 @@ pub fn rank_folders(app: &SoyuzApp, q: &str, bookmarks_first: bool) -> Vec<Item>
             (None, None) => continue,
         };
         let section = match (q.trim().is_empty(), kind) {
-            (false, _) => "Folders",
-            (true, "Recent") => "Recent & frequent",
-            (true, _) => "Bookmarks & favorites",
+            (false, _) => tr!("actions-section-folders"),
+            (true, "Recent") => tr!("actions-section-recent-frequent"),
+            (true, _) => tr!("actions-section-bookmarks-favorites"),
         };
         let glyph = match kind {
             "Bookmark" => ph::BOOKMARK_SIMPLE,
@@ -445,11 +460,19 @@ pub fn rank_folders(app: &SoyuzApp, q: &str, bookmarks_first: bool) -> Vec<Item>
         let mut it = Item::new(Exec::Go(Location::Dir(path.clone())), label, glyph, section);
         it.detail = path_text;
         it.tint = if matches!(kind, "Recent" | "Here") { Tint::Folder } else { Tint::Warning };
-        it.tag = Some(if current.as_deref().is_some_and(|c| same_path(c, &shown)) {
-            "current".into()
-        } else {
-            kind.to_lowercase()
-        });
+        it.tag = Some(
+            if current.as_deref().is_some_and(|c| same_path(c, &shown)) {
+                tr!("actions-tag-current")
+            } else {
+                match kind {
+                    "Bookmark" => tr!("actions-tag-bookmark"),
+                    "Favorite" => tr!("actions-tag-favorite"),
+                    "Recent" => tr!("actions-tag-recent"),
+                    _ => tr!("actions-tag-here"),
+                }
+            }
+            .into(),
+        );
         it.hl = hl;
         let kind_rank = if bookmarks_first && kind != "Recent" { 10_000 } else { 0 };
         it.score = score + (fr.max(0.0).ln_1p() * 40.0) as i64 + kind_rank;
@@ -457,9 +480,10 @@ pub fn rank_folders(app: &SoyuzApp, q: &str, bookmarks_first: bool) -> Vec<Item>
     }
     if q.trim().is_empty() {
         // Sections: recent first (Ctrl+P), bookmarks first (`@`).
+        let recent = tr!("actions-section-recent-frequent");
         out.sort_by(|a, b| {
-            let ra = (a.section == "Recent & frequent") != bookmarks_first;
-            let rb = (b.section == "Recent & frequent") != bookmarks_first;
+            let ra = (a.section == recent) != bookmarks_first;
+            let rb = (b.section == recent) != bookmarks_first;
             rb.cmp(&ra).then_with(|| b.score.cmp(&a.score))
         });
     } else {
@@ -511,9 +535,13 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
     if !q.trim().is_empty()
         && let Some(loc) = Location::parse(&full)
     {
-        let mut it =
-            Item::new(Exec::Go(loc.clone()), format!("Go to {}", loc.display()), ph::ARROW_SQUARE_RIGHT, "Path");
-        it.detail = "Enter to open · Ctrl+Enter opens in a new tab".into();
+        let mut it = Item::new(
+            Exec::Go(loc.clone()),
+            tr!("actions-palette-go-to", path = loc.display()),
+            ph::ARROW_SQUARE_RIGHT,
+            tr!("actions-section-path"),
+        );
+        it.detail = tr!("actions-palette-go-hint").into();
         it.score = i64::MAX;
         out.push(it);
     }
@@ -535,7 +563,7 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
                 Exec::Complete { text, go: Some(Location::Dir(target.clone())) },
                 e.name.clone(),
                 crate::ui::sidebar::favorite_glyph(&target),
-                "Folders",
+                tr!("actions-section-folders"),
             );
             it.detail = shown;
             it.tint = Tint::Folder;
@@ -554,13 +582,14 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
                 let go = std::mem::take(&mut out);
                 out = comps;
                 out.extend(go.into_iter().map(|mut g| {
-                    g.section = "Path";
+                    g.section = tr!("actions-section-path");
                     g
                 }));
             }
         }
     } else if loading {
-        let mut it = Item::new(Exec::Nothing, "Listing folder…", ph::HOURGLASS, "Folders");
+        let mut it =
+            Item::new(Exec::Nothing, tr!("actions-palette-listing"), ph::HOURGLASS, tr!("actions-section-folders"));
         it.detail = soyuz_fs::strip_verbatim(&dir).to_string_lossy().into_owned();
         it.tint = Tint::Neutral;
         out.push(it);
@@ -575,27 +604,28 @@ fn rank_search(app: &SoyuzApp, q: &str) -> Vec<Item> {
         .location
         .as_fs_path()
         .map(|p| soyuz_fs::strip_verbatim(p).to_string_lossy().into_owned())
-        .unwrap_or_else(|| "this folder".into());
+        .unwrap_or_else(|| tr!("actions-palette-this-folder").into());
+    let section = tr!("actions-section-search");
     if q.trim().is_empty() {
-        let mut it = Item::new(Exec::Nothing, "Type what to search for", ph::MAGNIFYING_GLASS, "Search");
-        it.detail = format!("Names in {dir} and below · globs like *.rs work");
+        let mut it = Item::new(Exec::Nothing, tr!("actions-palette-search-empty"), ph::MAGNIFYING_GLASS, section);
+        it.detail = tr!("actions-palette-search-empty-detail", dir = &dir);
         it.tint = Tint::Neutral;
         return vec![it];
     }
     let mut a = Item::new(
         Exec::Search { text: q.to_string(), content: false },
-        format!("Search names for “{q}”"),
+        tr!("actions-palette-search-names", query = q),
         ph::MAGNIFYING_GLASS,
-        "Search",
+        section,
     );
-    a.detail = format!("in {dir} and subfolders");
+    a.detail = tr!("actions-palette-in-subfolders", dir = &dir);
     let mut b = Item::new(
         Exec::Search { text: q.to_string(), content: true },
-        format!("Search file contents for “{q}”"),
+        tr!("actions-palette-search-contents", query = q),
         ph::FILE_SEARCH,
-        "Search",
+        section,
     );
-    b.detail = format!("in {dir} and subfolders");
+    b.detail = tr!("actions-palette-in-subfolders", dir = &dir);
     b.tint = Tint::Info;
     vec![a, b]
 }
@@ -610,8 +640,13 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
         .unwrap_or_else(|| soyuz_fs::home().to_string_lossy().into_owned());
     let mut out = Vec::new();
     if !q.trim().is_empty() {
-        let mut it = Item::new(Exec::Shell(q.to_string()), format!("Run  {q}"), ph::TERMINAL, "Shell");
-        it.detail = format!("in {dir} · output in the terminal panel");
+        let mut it = Item::new(
+            Exec::Shell(q.to_string()),
+            tr!("actions-palette-run", command = q),
+            ph::TERMINAL,
+            tr!("actions-section-shell"),
+        );
+        it.detail = tr!("actions-palette-run-detail", dir = &dir);
         it.tint = Tint::Success;
         out.push(it);
     }
@@ -625,19 +660,20 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
             Exec::Complete { text: format!(">{line}"), go: None },
             line.clone(),
             ph::CLOCK_COUNTER_CLOCKWISE,
-            "Recent commands",
+            tr!("actions-section-recent-commands"),
         );
-        it.detail = "Tab to edit · Enter to run".into();
+        it.detail = tr!("actions-palette-shell-recent-hint").into();
         it.tint = Tint::Neutral;
         it.hl = hl;
         it.score = s as i64;
         it.exec = Exec::Shell(line.clone());
-        it.tag = Some("recent".into());
+        it.tag = Some(tr!("actions-tag-recent").into());
         out.push(it);
     }
     if out.is_empty() {
-        let mut it = Item::new(Exec::Nothing, "Type a command to run", ph::TERMINAL, "Shell");
-        it.detail = format!("in {dir}");
+        let mut it =
+            Item::new(Exec::Nothing, tr!("actions-palette-shell-empty"), ph::TERMINAL, tr!("actions-section-shell"));
+        it.detail = tr!("actions-palette-in-dir", dir = &dir);
         it.tint = Tint::Neutral;
         out.push(it);
     }
@@ -657,13 +693,18 @@ fn rank_tabs(app: &SoyuzApp, q: &str) -> Vec<Item> {
             (None, Some(s)) => (s as i64, Vec::new()),
             _ => continue,
         };
-        let mut it = Item::new(Exec::Tab(i), label, if t.pinned { ph::PUSH_PIN } else { ph::BROWSERS }, "Tabs");
+        let mut it = Item::new(
+            Exec::Tab(i),
+            label,
+            if t.pinned { ph::PUSH_PIN } else { ph::BROWSERS },
+            tr!("actions-section-tabs"),
+        );
         it.detail = detail;
         it.hl = hl;
         it.score = score;
         it.tint = Tint::Folder;
         if i == app.ws.active {
-            it.tag = Some("current".into());
+            it.tag = Some(tr!("actions-tag-current").into());
         }
         if i < 8 {
             it.chord = chord_for(app, &Action::SelectTab(i as u8 + 1));
@@ -822,7 +863,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     }
 
     // (Re)build results when the query or sources changed; paths rebuild while listing.
-    let key = (app.palette.input.clone(), app.palette.base, app.palette.version);
+    let key = (app.palette.input.clone(), app.palette.base, app.palette.version, crate::i18n::generation());
     let mode = app.palette.mode();
     if app.palette.results_key.as_ref() != Some(&key) || mode == Mode::Path {
         let changed = app.palette.results_key.as_ref().map(|k| &k.0) != Some(&key.0);
@@ -862,7 +903,12 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         .show(ctx, |ui| {
             ui.set_width(width);
             ui.set_opacity(ease);
-            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Command palette");
+            crate::ui::a11y::container(
+                ui.ctx(),
+                ui.unique_id(),
+                egui::accesskit::Role::Dialog,
+                tr!("action-command-palette"),
+            );
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             input_row(ui, app, &p, width);
             divider(ui, &p);
@@ -1050,7 +1096,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
         painter.text(
             rect.center() + vec2(0.0, 16.0),
             Align2::CENTER_CENTER,
-            "No matches",
+            tr!("actions-palette-no-matches"),
             FontId::proportional(13.0),
             p.text_secondary,
         );
@@ -1092,7 +1138,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                     ui.painter().text(
                         pos2(r.left() + 20.0, r.bottom() - 7.0),
                         Align2::LEFT_BOTTOM,
-                        it.section.to_uppercase(),
+                        upper(it.section),
                         FontId::proportional(10.5),
                         p.text_tertiary,
                     );
@@ -1183,16 +1229,16 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
         ui.painter().galley(pos2(*x, cy - g.size().y / 2.0), g.clone(), p.text_tertiary);
         *x += g.size().x + 12.0;
     };
-    hint(&mut x, "↑↓", "move");
-    hint(&mut x, "Enter", "run");
+    hint(&mut x, "↑↓", tr!("actions-palette-hint-move"));
+    hint(&mut x, "Enter", tr!("actions-palette-hint-run"));
     if matches!(app.palette.mode(), Mode::Path | Mode::Shell | Mode::Folders | Mode::Bookmarks) {
-        hint(&mut x, "Tab", "complete");
+        hint(&mut x, "Tab", tr!("actions-palette-hint-complete"));
     }
     // Prefix legend (clickable), right-aligned.
     let mut rx = rect.right() - 12.0;
     for m in Mode::PREFIXED.iter().rev() {
         let c = m.prefix().unwrap_or(' ');
-        let label = format!("{c} {}", m.label().to_lowercase());
+        let label = format!("{c} {}", m.legend());
         let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.0), p.text_secondary);
         let r = Rect::from_min_size(pos2(rx - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
         if r.left() < x {
@@ -1217,6 +1263,21 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
             *clicked = Some((Exec::Prefix(c), Modifiers::NONE));
         }
         rx = r.left() - 5.0;
+    }
+}
+
+/// Uppercase section header text; Turkish maps i → İ and ı → I.
+fn upper(s: &str) -> String {
+    if crate::i18n::current() == soyuz_core::Locale::TrTr {
+        s.chars()
+            .flat_map(|c| match c {
+                'i' => vec!['İ'],
+                'ı' => vec!['I'],
+                c => c.to_uppercase().collect(),
+            })
+            .collect()
+    } else {
+        s.to_uppercase()
     }
 }
 

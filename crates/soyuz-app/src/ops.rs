@@ -132,7 +132,7 @@ pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
     let loc = match crate::services::remote::normalize(loc) {
         Ok(l) => l,
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Can't open this address").body(e));
+            app.ui.toasts.push(Toast::error(tr!("ops-bad-address")).body(e));
             return;
         }
     };
@@ -270,12 +270,12 @@ pub fn launch(app: &mut SoyuzApp, path: &Path) {
         }
         if let Err(e) = soyuz_fs::launch::open_default(&path) {
             postman.send(UiMsg::Notice(
-                Toast::error(format!("Couldn't open {}", soyuz_core::entry::display_name(&path))).body(e.to_string()),
+                Toast::error(tr!("ops-open-failed", name = soyuz_core::entry::display_name(&path))).body(e.to_string()),
             ));
         }
     });
     if let Err(e) = spawned {
-        app.ui.toasts.push(Toast::error("Couldn't start the launcher").body(e.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("ops-launcher-failed")).body(e.to_string()));
     }
 }
 
@@ -290,7 +290,7 @@ fn spawn_launch(app: &mut SoyuzApp, title: String, f: impl FnOnce() -> Result<()
         }
     });
     if let Err(e) = spawned {
-        app.ui.toasts.push(Toast::error("Couldn't start the launcher").body(e.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("ops-launcher-failed")).body(e.to_string()));
     }
 }
 
@@ -565,8 +565,8 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
             let current = app.ws.find_pane(pane).filter(|p| p.generation == generation).map(|p| p.location.clone());
             if let Some(lost) = current {
                 app.ui.toasts.push(
-                    Toast::warning("Folder no longer exists")
-                        .body(format!("{} was removed or unmounted.", crate::state::crumbs::location_title(&lost))),
+                    Toast::warning(tr!("ops-folder-gone"))
+                        .body(tr!("ops-folder-gone-body", name = crate::state::crumbs::location_title(&lost))),
                 );
                 navigate(app, pane, location, NavOpts::default());
             }
@@ -629,10 +629,7 @@ pub fn refresh(app: &mut SoyuzApp) {
 }
 
 fn coming_soon(app: &mut SoyuzApp, action: &Action) {
-    app.ui.toasts.push(
-        Toast::info(format!("{} is coming soon", action.title()))
-            .body("File operations arrive with the jobs engine integration."),
-    );
+    app.ui.toasts.push(Toast::info(tr!("ops-coming-soon", action = action.title())).body(tr!("ops-coming-soon-body")));
 }
 
 pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
@@ -649,7 +646,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::OpenInNewTab { location, activate } => open_in_new_tab(app, location, activate),
         Cmd::OpenInOtherPane(loc) => open_in_other_pane(app, loc),
         Cmd::OpenWith { path, app: info } => {
-            let title = format!("Couldn't open with {}", info.name);
+            let title = tr!("ops-open-with-failed", app = &info.name);
             spawn_launch(app, title, move || soyuz_fs::launch::open_with(&path, &info).map_err(|e| e.to_string()));
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
@@ -658,9 +655,9 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             let n = t.lines().count();
             ctx.copy_text(t);
             app.ui.toasts.push(Toast::success(if n > 1 {
-                format!("Copied {n} paths")
+                tr!("ops-copied-paths", count = n)
             } else {
-                "Copied to clipboard".into()
+                tr!("ops-copied-to-clipboard").into()
             }));
         }
         Cmd::Toast(t) => {
@@ -677,13 +674,13 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::ComingSoon(a) => coming_soon(app, &a),
         Cmd::FileOp(c) => fileops::apply(app, c, ctx),
         Cmd::RevealInSystem(p) => {
-            spawn_launch(app, "Couldn't reveal in the system file manager".into(), move || {
+            spawn_launch(app, tr!("ops-reveal-failed").into(), move || {
                 soyuz_fs::launch::reveal_in_system(&p).map_err(|e| e.to_string())
             });
         }
         Cmd::TerminalAt(dir) => {
             let preferred = (!app.config.terminal.shell.is_empty()).then(|| app.config.terminal.shell.clone());
-            spawn_launch(app, "Couldn't open a terminal".into(), move || {
+            spawn_launch(app, tr!("ops-terminal-failed").into(), move || {
                 soyuz_fs::launch::open_terminal_at(&dir, preferred.as_deref()).map_err(|e| e.to_string())
             });
         }
@@ -693,7 +690,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
                 let name = soyuz_core::entry::display_name(&path);
                 s.favorites.push(FavoriteEntry { name: name.clone(), path });
                 s.favorites_customized = true;
-                app.ui.toasts.push(Toast::success(format!("Added “{name}” to Favorites")));
+                app.ui.toasts.push(Toast::success(tr!("ops-favorite-added", name = &name)));
             }
         }
         Cmd::RemoveFavorite(path) => {
@@ -750,7 +747,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             if let Some(p) = app.ws.find_pane(id) {
                 let view = p.view.clone();
                 app.views.apply_to_all(&view);
-                app.ui.toasts.push(Toast::success("View applied to all folders"));
+                app.ui.toasts.push(Toast::success(tr!("ops-view-applied")));
             }
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),

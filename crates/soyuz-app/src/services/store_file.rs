@@ -127,10 +127,7 @@ fn copy_new(from: &Path, to: &Path) -> std::io::Result<()> {
 
 fn write_now(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if is_blocked(path) {
-        return Err(format!(
-            "{} could not be read at startup; not overwriting it (fix or delete it and restart)",
-            path.display()
-        ));
+        return Err(tr!("services-store-blocked", path = path.display().to_string()));
     }
     if let Some(dir) = path.parent() {
         let _ = soyuz_fs::create_dir_all(dir);

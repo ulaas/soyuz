@@ -24,33 +24,36 @@ pub struct DeleteConfirmDialog {
     title: String,
 }
 
-fn count(n: usize) -> String {
-    if n == 1 { "1 item".into() } else { format!("{} items", crate::ui::statusbar::group_thousands(n)) }
-}
-
 impl DeleteConfirmDialog {
     pub fn new(paths: Vec<PathBuf>, mode: DeleteMode) -> Self {
-        let what = match paths.as_slice() {
+        let title = match paths.as_slice() {
             [one] => {
-                format!("\u{201c}{}\u{201d}", crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(one)))
+                let name = crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(one));
+                match mode {
+                    DeleteMode::Trash => tr!("dialogs-delete-trash-one", name = name),
+                    DeleteMode::Permanent => tr!("dialogs-delete-permanent-one", name = name),
+                    DeleteMode::Wipe { .. } => tr!("dialogs-delete-wipe-one", name = name),
+                }
             }
-            many => count(many.len()),
-        };
-        let title = match mode {
-            DeleteMode::Trash => format!("Move {what} to the trash?"),
-            DeleteMode::Permanent => format!("Delete {what} permanently?"),
-            DeleteMode::Wipe { .. } => format!("Securely wipe {what}?"),
+            many => {
+                let count = many.len();
+                match mode {
+                    DeleteMode::Trash => tr!("dialogs-delete-trash-many", count = count),
+                    DeleteMode::Permanent => tr!("dialogs-delete-permanent-many", count = count),
+                    DeleteMode::Wipe { .. } => tr!("dialogs-delete-wipe-many", count = count),
+                }
+            }
         };
         DeleteConfirmDialog { kind: ConfirmKind::Delete { paths, mode }, title }
     }
 
     pub fn purge(items: Vec<TrashItem>) -> Self {
-        let title = format!("Delete {} permanently?", count(items.len()));
+        let title = tr!("dialogs-delete-permanent-many", count = items.len());
         DeleteConfirmDialog { kind: ConfirmKind::Purge(items), title }
     }
 
     pub fn empty_trash(n: usize) -> Self {
-        DeleteConfirmDialog { kind: ConfirmKind::EmptyTrash(n), title: "Empty the trash?".into() }
+        DeleteConfirmDialog { kind: ConfirmKind::EmptyTrash(n), title: tr!("dialogs-delete-empty-title").into() }
     }
 
     fn names(&self) -> Vec<String> {
@@ -65,6 +68,10 @@ impl DeleteConfirmDialog {
 impl Dialog for DeleteConfirmDialog {
     fn title(&self) -> &str {
         &self.title
+    }
+
+    fn alert(&self) -> bool {
+        true
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -82,23 +89,17 @@ impl Dialog for DeleteConfirmDialog {
         let p = palette(ui.ctx());
         let (msg, confirm, danger) = match &self.kind {
             ConfirmKind::Delete { mode: DeleteMode::Trash, .. } => {
-                ("You can restore items from the trash later.".to_string(), "Move to trash", false)
+                (tr!("dialogs-delete-trash-body").to_string(), tr!("dialogs-delete-trash-confirm"), false)
             }
             ConfirmKind::Delete { mode: DeleteMode::Permanent, .. } => {
-                ("Permanently deleted items can't be restored.".to_string(), "Delete", true)
+                (tr!("dialogs-delete-permanent-body").to_string(), tr!("common-delete"), true)
             }
-            ConfirmKind::Delete { mode: DeleteMode::Wipe { .. }, .. } => (
-                "The data is overwritten before deletion. On SSDs and copy-on-write filesystems this cannot guarantee \
-                 the old blocks are gone."
-                    .to_string(),
-                "Wipe",
-                true,
-            ),
-            ConfirmKind::Purge(_) => {
-                ("These items will be removed from the trash for good.".to_string(), "Delete", true)
+            ConfirmKind::Delete { mode: DeleteMode::Wipe { .. }, .. } => {
+                (tr!("dialogs-delete-wipe-body").to_string(), tr!("dialogs-delete-wipe-confirm"), true)
             }
+            ConfirmKind::Purge(_) => (tr!("dialogs-delete-purge-body").to_string(), tr!("common-delete"), true),
             ConfirmKind::EmptyTrash(n) => {
-                (format!("All {} in the trash will be deleted permanently.", count(*n)), "Empty trash", true)
+                (tr!("dialogs-delete-empty-body", count = *n), tr!("dialogs-delete-empty-confirm"), true)
             }
         };
         ui.label(RichText::new(msg).color(p.text_secondary));
@@ -124,7 +125,7 @@ impl Dialog for DeleteConfirmDialog {
                     }
                     if names.len() > 5 {
                         ui.label(
-                            RichText::new(format!("and {} more", names.len() - 5))
+                            RichText::new(tr!("dialogs-delete-and-more", count = names.len() - 5))
                                 .font(FontId::proportional(12.0))
                                 .color(p.text_tertiary),
                         );
@@ -137,7 +138,7 @@ impl Dialog for DeleteConfirmDialog {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             ok = button(ui, confirm, if danger { Btn::Danger } else { Btn::Primary }).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             ok = true;

@@ -83,7 +83,7 @@ fn aux_column(
             ui.painter().text(
                 rect.center(),
                 Align2::CENTER_CENTER,
-                "Can't read this folder",
+                tr!("views-miller-unreadable"),
                 FontId::proportional(12.0),
                 p.text_tertiary,
             );
@@ -97,7 +97,7 @@ fn aux_column(
         ui.painter().text(
             pos2(rect.center().x, rect.top() + 40.0),
             Align2::CENTER_CENTER,
-            "Empty folder",
+            tr!("views-miller-empty"),
             FontId::proportional(12.0),
             p.text_tertiary,
         );
@@ -157,7 +157,7 @@ fn aux_column(
                     &e.name,
                 );
             }
-            let resp = if hidden { resp.on_hover_text(crate::ui::widgets::HIDDEN_CONTROLS_TIP) } else { resp };
+            let resp = if hidden { resp.on_hover_text(crate::ui::widgets::hidden_controls_tip()) } else { resp };
             if e.is_dir_like() {
                 ui.painter().text(
                     pos2(r.right() - 10.0, r.center().y),

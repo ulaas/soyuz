@@ -77,6 +77,11 @@ reqwest.workspace = true
 rustls.workspace = true
 tokio.workspace = true
 sha2.workspace = true
+# Localization (F10).
+fluent-bundle.workspace = true
+fluent-langneg.workspace = true
+intl-memoizer.workspace = true
+unic-langid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # HWND of the eframe window for the DWM / Snap Layouts integration (`ui::native_chrome`).

@@ -190,10 +190,6 @@ fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
     })
 }
 
-fn plural(n: usize, one: &str) -> String {
-    if n == 1 { format!("1 {one}") } else { format!("{} {one}s", crate::ui::statusbar::group_thousands(n)) }
-}
-
 pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
     use Action as A;
     let (pane_id, dir, sel) = focused(app);
@@ -212,8 +208,9 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             }
             let n = sel.len();
             app.fileops.clipboard.set(mode, sel);
-            let verb = if mode == ClipMode::Cut { "Cut" } else { "Copied" };
-            let mut t = Toast::info(format!("{verb} {}", plural(n, "item"))).body("Paste with Ctrl+V.");
+            let title =
+                if mode == ClipMode::Cut { tr!("ops-clip-cut", count = n) } else { tr!("ops-clip-copied", count = n) };
+            let mut t = Toast::info(title).body(tr!("ops-clip-paste-hint"));
             t.duration = Some(2.0);
             app.ui.toasts.push(t);
         }
@@ -230,7 +227,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::PasteAsLink | A::PasteShortcut => {
             let Some(d) = dir else { return };
             let Some((_, paths)) = app.fileops.clipboard.for_paste() else {
-                app.ui.toasts.push(Toast::info("Nothing to paste"));
+                app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-paste")));
                 return;
             };
             transfer(app, paths, d, DropEffect::Link);
@@ -243,9 +240,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             Some(_) => {}
             None if action == A::CopyToOtherPane && !app.ws.tab().dual => crate::ops::refresh(app),
             None => {
-                app.ui.toasts.push(
-                    Toast::info("No other pane").body("Open the dual pane view (F9) to copy or move between folders."),
-                );
+                app.ui.toasts.push(Toast::info(tr!("ops-no-other-pane")).body(tr!("ops-no-other-pane-body")));
             }
         },
         A::CopyTo | A::MoveTo => {
@@ -273,7 +268,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             let folder = action == A::NewFolder;
             let pane = app.ws.pane();
             let names: Vec<&str> = pane.entries.iter().map(|e| e.name.as_str()).collect();
-            let base = if folder { "New folder" } else { "New file.txt" };
+            let base = if folder { tr!("ops-default-folder-name") } else { tr!("ops-default-file-name") };
             let name = names::unique_in(&names, base, names::case_insensitive_fs());
             let path = d.join(&name);
             let kind = if folder { CreateKind::Dir } else { CreateKind::File { template: None } };
@@ -370,7 +365,7 @@ pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
 /// `jobs.verify_after_copy` says.
 pub fn paste_into_with(app: &mut SoyuzApp, dest: PathBuf, verify: bool) {
     let Some((mode, paths)) = Clipboard::os_paths_hook().or_else(|| app.fileops.clipboard.for_paste()) else {
-        app.ui.toasts.push(Toast::info("Nothing to paste").body("Copy or cut files first (Ctrl+C / Ctrl+X)."));
+        app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-paste")).body(tr!("ops-nothing-to-paste-body")));
         return;
     };
     let effect = if mode == ClipMode::Cut { DropEffect::Move } else { DropEffect::Copy };
@@ -404,7 +399,7 @@ pub fn transfer_with(
     }
     if paths.is_empty() || !dnd::valid_target(&paths, &dest) {
         if !paths.is_empty() {
-            app.ui.toasts.push(Toast::warning("Can't drop a folder into itself"));
+            app.ui.toasts.push(Toast::warning(tr!("ops-drop-into-itself")));
         }
         return None;
     }
@@ -495,7 +490,7 @@ fn undo(app: &mut SoyuzApp) {
     let entry =
         app.fileops.jobs.history().iter().rev().find(|h| h.this_session && !h.undone && h.undoable).map(|h| h.id);
     let Some(h) = entry else {
-        app.ui.toasts.push(Toast::info("Nothing to undo in this session"));
+        app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-undo")));
         return;
     };
     match app.fileops.jobs.engine().undo(h) {
@@ -504,7 +499,7 @@ fn undo(app: &mut SoyuzApp) {
             app.fileops.jobs.track(id, JobMeta::new(OpKind::Undo, &[], None));
         }
         None => {
-            app.ui.toasts.push(Toast::info("That operation is still being undone"));
+            app.ui.toasts.push(Toast::info(tr!("ops-still-undoing")));
         }
     }
 }
@@ -515,7 +510,7 @@ fn redo(app: &mut SoyuzApp) {
     let from_stack = app.fileops.undo_stack.iter().rev().copied().find(|id| undone(*id));
     let h = from_stack.or_else(|| hist.iter().rev().find(|h| h.undone && h.this_session).map(|h| h.id));
     let Some(h) = h else {
-        app.ui.toasts.push(Toast::info("Nothing to redo"));
+        app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-redo")));
         return;
     };
     app.fileops.undo_stack.retain(|x| *x != h);
@@ -539,7 +534,7 @@ pub fn history_action(app: &mut SoyuzApp, h: HistoryId, what: HistoryAction) {
             app.fileops.jobs.track(id, JobMeta::new(op, &[], None));
         }
         None => {
-            app.ui.toasts.push(Toast::info("Not available right now"));
+            app.ui.toasts.push(Toast::info(tr!("ops-not-available")));
         }
     }
 }
@@ -648,20 +643,20 @@ pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
             ctx,
             |ui| {
                 egui::Frame::menu(ui.style()).show(ui, |ui| {
-                    ui.set_width(200.0);
+                    ui.set_min_width(200.0);
                     use crate::theme::icons::ph;
                     use crate::ui::widgets::{menu_item, menu_separator};
-                    if menu_item(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), "Move here", None, true).clicked() {
+                    if menu_item(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("ops-dnd-move-here"), None, true).clicked() {
                         chosen = Some(DropEffect::Move);
                     }
-                    if menu_item(ui, Some(ph::COPY), "Copy here", None, true).clicked() {
+                    if menu_item(ui, Some(ph::COPY), tr!("ops-dnd-copy-here"), None, true).clicked() {
                         chosen = Some(DropEffect::Copy);
                     }
-                    if menu_item(ui, Some(ph::LINK), "Create link here", None, true).clicked() {
+                    if menu_item(ui, Some(ph::LINK), tr!("ops-dnd-link-here"), None, true).clicked() {
                         chosen = Some(DropEffect::Link);
                     }
                     menu_separator(ui);
-                    if menu_item(ui, Some(ph::X), "Cancel", None, true).clicked() {
+                    if menu_item(ui, Some(ph::X), tr!("common-cancel"), None, true).clicked() {
                         close = true;
                     }
                 });
@@ -796,7 +791,7 @@ fn on_finished(app: &mut SoyuzApp, id: JobId, summary: &JobSummary) {
             } else {
                 let mut t = Toast::success(title).body(names::summary_line(summary));
                 if meta.op.undoable() {
-                    t = t.action("Undo", Action::Undo);
+                    t = t.action(tr!("common-undo"), Action::Undo);
                     t.duration = Some(7.0);
                 }
                 app.ui.toasts.push(t);
@@ -805,14 +800,14 @@ fn on_finished(app: &mut SoyuzApp, id: JobId, summary: &JobSummary) {
         JobState::Failed(e) => {
             let what = names::job_title(&meta, true, total, &snap.label);
             app.ui.toasts.push(
-                Toast::error(format!("Failed: {}", lower_first(&what)))
+                Toast::error(tr!("ops-job-failed", what = lower_first(&what)))
                     .body(e.to_string())
-                    .action("Details", Action::JobsShowHistory),
+                    .action(tr!("ops-details"), Action::JobsShowHistory),
             );
         }
         JobState::Cancelled if meta.toast => {
             let what = names::job_title(&meta, true, total, &snap.label);
-            let mut t = Toast::info("Cancelled").body(what);
+            let mut t = Toast::info(tr!("ops-outcome-cancelled")).body(what);
             t.duration = Some(3.0);
             app.ui.toasts.push(t);
         }
@@ -833,7 +828,7 @@ fn failure_toast(title: &str, s: &JobSummary) -> Toast {
     if let Some((p, e)) = s.errors.first() {
         body.push_str(&format!("\n{}: {e}", soyuz_core::entry::display_name(p)));
     }
-    Toast::warning(title).body(body).action("Details", Action::JobsShowHistory)
+    Toast::warning(title).body(body).action(tr!("ops-details"), Action::JobsShowHistory)
 }
 
 fn auto_open_activity(app: &mut SoyuzApp) {
@@ -882,7 +877,7 @@ fn external_drops(app: &mut SoyuzApp, ctx: &egui::Context) {
             transfer(app, dropped, dest, DropEffect::Copy);
         }
         None => {
-            app.ui.toasts.push(Toast::info("Drop files onto a folder view to copy them there"));
+            app.ui.toasts.push(Toast::info(tr!("ops-drop-onto-folder")));
         }
     }
 }

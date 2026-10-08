@@ -22,9 +22,9 @@ pub struct OpenWithDialog {
 
 impl OpenWithDialog {
     pub fn new(path: PathBuf) -> Self {
-        let title = format!(
-            "Open \u{201c}{}\u{201d} with",
-            crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&path))
+        let title = tr!(
+            "dialogs-openwith-title",
+            name = crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&path))
         );
         OpenWithDialog { path, title, selected: None, custom: String::new(), error: None }
     }
@@ -76,18 +76,18 @@ impl Dialog for OpenWithDialog {
                     None => {
                         ui.horizontal(|ui| {
                             ui.add(egui::Spinner::new().size(14.0));
-                            ui.label(RichText::new("Looking up applications…").color(p.text_secondary));
+                            ui.label(RichText::new(tr!("dialogs-openwith-looking")).color(p.text_secondary));
                         });
                     }
                     Some(list) if list.is_empty() => {
-                        ui.label(RichText::new("No registered applications for this file type").color(p.text_tertiary));
+                        ui.label(RichText::new(tr!("dialogs-openwith-none")).color(p.text_tertiary));
                     }
                     Some(list) => {
                         for (i, app) in list.iter().enumerate() {
                             let label = if app.launchable {
                                 app.name.clone()
                             } else {
-                                format!("{} (opens with the default handler)", app.name)
+                                tr!("dialogs-openwith-default-handler", app = &app.name)
                             };
                             let r = ui.add_sized(
                                 [ui.available_width(), 26.0],
@@ -106,7 +106,7 @@ impl Dialog for OpenWithDialog {
                 });
             });
         ui.add_space(12.0);
-        ui.label(RichText::new("Or another program (full path):").color(p.text_secondary));
+        ui.label(RichText::new(tr!("dialogs-openwith-other")).color(p.text_secondary));
         ui.add_space(4.0);
         let hint = if cfg!(windows) { r"C:\Program Files\App\app.exe" } else { "/usr/bin/app" };
         let r = ui.add(
@@ -124,7 +124,7 @@ impl Dialog for OpenWithDialog {
             ui.add_space(6.0);
             ui.label(RichText::new(e).color(p.danger));
         }
-        let (ok, cancel) = footer(ui, "Open", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("dialogs-openwith-open"), tr!("common-cancel"));
         if cancel {
             return false;
         }
@@ -133,7 +133,7 @@ impl Dialog for OpenWithDialog {
         }
         let chosen = if let Some(exe) = parse_program(&self.custom) {
             if !exe.is_absolute() || !exe.is_file() {
-                self.error = Some(format!("{} is not a program file", exe.display()));
+                self.error = Some(tr!("dialogs-openwith-not-program", path = exe.display().to_string()));
                 return true;
             }
             Some(custom_app(&exe))
@@ -146,7 +146,7 @@ impl Dialog for OpenWithDialog {
                 false
             }
             None => {
-                self.error = Some("Choose an application or type a program path".into());
+                self.error = Some(tr!("dialogs-openwith-choose").into());
                 true
             }
         }

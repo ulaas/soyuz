@@ -2,6 +2,7 @@
 //! a live preview card, and per-token color overrides (`[theme.colors]`).
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
+use soyuz_core::SizeStyle;
 use soyuz_core::config::{Backdrop, FallbackFonts, IconStyle};
 
 use super::widgets::{color_swatch, group, number, segmented, small_button, switch, to_hex};
@@ -11,43 +12,43 @@ use crate::theme::tokens::parse_hex;
 use crate::theme::{Palette, icons, palette};
 
 /// Token name → getter (same names as `[theme.colors]` / PLAN §1.2).
-/// `(token name, label, getter)`.
+/// `(token name, label message key, getter)`.
 pub type Token = (&'static str, &'static str, fn(&Palette) -> Color32);
 
 pub const TOKENS: [Token; 33] = [
-    ("bg.window", "Window background", |p| p.bg_window),
-    ("bg.surface1", "Sidebar, toolbars", |p| p.bg_surface1),
-    ("bg.surface2", "Hover rows, inputs, cards", |p| p.bg_surface2),
-    ("bg.surface3", "Popups, menus, dialogs", |p| p.bg_surface3),
-    ("bg.sunken", "Terminal, hex view", |p| p.bg_sunken),
-    ("border.subtle", "Separators", |p| p.border_subtle),
-    ("border.strong", "Focused controls", |p| p.border_strong),
-    ("text.primary", "Primary text", |p| p.text_primary),
-    ("text.secondary", "Secondary text", |p| p.text_secondary),
-    ("text.tertiary", "Hints, placeholders", |p| p.text_tertiary),
-    ("accent", "Accent", |p| p.accent),
-    ("accent.hover", "Accent (hover)", |p| p.accent_hover),
-    ("accent.subtle", "Selection fill", |p| p.accent_subtle),
-    ("success", "Success", |p| p.success),
-    ("warning", "Warning", |p| p.warning),
-    ("danger", "Danger", |p| p.danger),
-    ("info", "Info", |p| p.info),
-    ("glyph.folder", "Folder icons", |p| p.glyph_folder),
-    ("glyph.image", "Image icons", |p| p.glyph_image),
-    ("glyph.video", "Video icons", |p| p.glyph_video),
-    ("glyph.audio", "Audio icons", |p| p.glyph_audio),
-    ("glyph.archive", "Archive icons", |p| p.glyph_archive),
-    ("glyph.code", "Code icons", |p| p.glyph_code),
-    ("glyph.doc", "Document icons", |p| p.glyph_doc),
-    ("glyph.exe", "Program icons", |p| p.glyph_exe),
-    ("tag.red", "Tag red", |p| p.tags[0]),
-    ("tag.orange", "Tag orange", |p| p.tags[1]),
-    ("tag.yellow", "Tag yellow", |p| p.tags[2]),
-    ("tag.green", "Tag green", |p| p.tags[3]),
-    ("tag.cyan", "Tag cyan", |p| p.tags[4]),
-    ("tag.blue", "Tag blue", |p| p.tags[5]),
-    ("tag.purple", "Tag purple", |p| p.tags[6]),
-    ("tag.gray", "Tag gray", |p| p.tags[7]),
+    ("bg.window", "settings-token-bg-window", |p| p.bg_window),
+    ("bg.surface1", "settings-token-bg-surface1", |p| p.bg_surface1),
+    ("bg.surface2", "settings-token-bg-surface2", |p| p.bg_surface2),
+    ("bg.surface3", "settings-token-bg-surface3", |p| p.bg_surface3),
+    ("bg.sunken", "settings-token-bg-sunken", |p| p.bg_sunken),
+    ("border.subtle", "settings-token-border-subtle", |p| p.border_subtle),
+    ("border.strong", "settings-token-border-strong", |p| p.border_strong),
+    ("text.primary", "settings-token-text-primary", |p| p.text_primary),
+    ("text.secondary", "settings-token-text-secondary", |p| p.text_secondary),
+    ("text.tertiary", "settings-token-text-tertiary", |p| p.text_tertiary),
+    ("accent", "settings-token-accent", |p| p.accent),
+    ("accent.hover", "settings-token-accent-hover", |p| p.accent_hover),
+    ("accent.subtle", "settings-token-accent-subtle", |p| p.accent_subtle),
+    ("success", "settings-token-success", |p| p.success),
+    ("warning", "settings-token-warning", |p| p.warning),
+    ("danger", "settings-token-danger", |p| p.danger),
+    ("info", "settings-token-info", |p| p.info),
+    ("glyph.folder", "settings-token-glyph-folder", |p| p.glyph_folder),
+    ("glyph.image", "settings-token-glyph-image", |p| p.glyph_image),
+    ("glyph.video", "settings-token-glyph-video", |p| p.glyph_video),
+    ("glyph.audio", "settings-token-glyph-audio", |p| p.glyph_audio),
+    ("glyph.archive", "settings-token-glyph-archive", |p| p.glyph_archive),
+    ("glyph.code", "settings-token-glyph-code", |p| p.glyph_code),
+    ("glyph.doc", "settings-token-glyph-doc", |p| p.glyph_doc),
+    ("glyph.exe", "settings-token-glyph-exe", |p| p.glyph_exe),
+    ("tag.red", "settings-token-tag-red", |p| p.tags[0]),
+    ("tag.orange", "settings-token-tag-orange", |p| p.tags[1]),
+    ("tag.yellow", "settings-token-tag-yellow", |p| p.tags[2]),
+    ("tag.green", "settings-token-tag-green", |p| p.tags[3]),
+    ("tag.cyan", "settings-token-tag-cyan", |p| p.tags[4]),
+    ("tag.blue", "settings-token-tag-blue", |p| p.tags[5]),
+    ("tag.purple", "settings-token-tag-purple", |p| p.tags[6]),
+    ("tag.gray", "settings-token-tag-gray", |p| p.tags[7]),
 ];
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
@@ -62,19 +63,15 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         preview_card(ui, &p, d.appearance.density.row_height(), d.appearance.icon_style == IconStyle::Colored);
         any = true;
     }
-    any |= group(ui, q, ctx, "Theme", |r| {
-        r.block(
-            "Color theme",
-            "Each theme has a dark and a light variant. Theme files live in the themes folder; edits apply live.",
-            |ui| {
-                if let Some(a) = super::themes_ui::gallery(ui, d, &p) {
-                    theme_action = Some(a);
-                }
-            },
-        );
+    any |= group(ui, q, ctx, tr!("settings-appearance-theme"), |r| {
+        r.block(tr!("settings-appearance-color-theme"), tr!("settings-appearance-color-theme-desc"), |ui| {
+            if let Some(a) = super::themes_ui::gallery(ui, d, &p) {
+                theme_action = Some(a);
+            }
+        });
         r.row_kw(
-            "Mode",
-            "Follow the system dark / light switch live, or force dark or light.",
+            tr!("settings-appearance-mode"),
+            tr!("settings-appearance-mode-desc"),
             "dark light mode theme",
             |ui| {
                 let mut v = match d.appearance.theme.to_ascii_lowercase().as_str() {
@@ -82,99 +79,105 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     "light" => 2,
                     _ => 0,
                 };
-                if segmented(ui, &mut v, &[(0, "System"), (1, "Dark"), (2, "Light")]) {
+                if segmented(
+                    ui,
+                    &mut v,
+                    &[
+                        (0, tr!("settings-appearance-mode-system")),
+                        (1, tr!("settings-dark")),
+                        (2, tr!("settings-light")),
+                    ],
+                ) {
                     d.appearance.theme = ["system", "dark", "light"][v].to_string();
                 }
             },
         );
-        r.block(
-            "Accent color",
-            "Selection, focus rings, primary buttons and links. System follows the Windows accent color live.",
-            |ui| {
-                ui.horizontal(|ui| super::themes_ui::accent_row(ui, d, &p));
-            },
-        );
-        r.row_kw("Reduce motion", "Turn off animations (panels, dialogs, toasts).", "animation accessibility", |ui| {
-            switch(ui, &mut d.appearance.reduced_motion);
+        r.block(tr!("settings-appearance-accent"), tr!("settings-appearance-accent-desc"), |ui| {
+            ui.horizontal(|ui| super::themes_ui::accent_row(ui, d, &p));
         });
         r.row_kw(
-            "High contrast",
-            "Black / white surfaces, stronger text, borders and focus rings.",
+            tr!("settings-appearance-reduce-motion"),
+            tr!("settings-appearance-reduce-motion-desc"),
+            "animation accessibility",
+            |ui| {
+                switch(ui, &mut d.appearance.reduced_motion);
+            },
+        );
+        r.row_kw(
+            tr!("settings-appearance-high-contrast"),
+            tr!("settings-appearance-high-contrast-desc"),
             "accessibility a11y contrast vision",
             |ui| {
                 switch(ui, &mut d.appearance.high_contrast);
             },
         );
     });
-    any |= group(ui, q, ctx, "Density & text", |r| {
-        r.block(
-            "Density",
-            "Compact, cozy, comfortable or touch: list rows of 24, 28, 32 or 40 px; touch also enlarges buttons and menus for fingers. Click a preview.",
-            |ui| {
-                super::density_gallery::gallery(ui, &mut d.appearance.density);
-            },
-        );
-        r.row_kw("Font size", "Base size of all UI text.", "text scale", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-appearance-density-text"), |r| {
+        r.block(tr!("settings-appearance-density"), tr!("settings-appearance-density-desc"), |ui| {
+            super::density_gallery::gallery(ui, &mut d.appearance.density);
+        });
+        r.row_kw(tr!("settings-terminal-font-size"), tr!("settings-appearance-font-size-desc"), "text scale", |ui| {
             number(ui, &mut d.appearance.font_size, 11.0..=17.0, " pt");
         });
-        r.row_kw(
-            "Interface scale",
-            "Zoom the whole window (Ctrl+= / Ctrl+- / Ctrl+0; applies when you release the slider).",
-            "ui scale zoom dpi",
-            |ui| {
-                let mut v = s.scale_temp.unwrap_or(d.appearance.ui_scale);
-                let resp = number(ui, &mut v, 0.5..=3.0, "×");
-                if resp.dragged() {
-                    s.scale_temp = Some(v);
-                } else {
-                    if resp.changed() || s.scale_temp.is_some() {
-                        d.appearance.ui_scale = (v * 20.0).round() / 20.0;
-                    }
-                    s.scale_temp = None;
+        r.row_kw(tr!("settings-appearance-scale"), tr!("settings-appearance-scale-desc"), "ui scale zoom dpi", |ui| {
+            let mut v = s.scale_temp.unwrap_or(d.appearance.ui_scale);
+            let resp = number(ui, &mut v, 0.5..=3.0, "×");
+            if resp.dragged() {
+                s.scale_temp = Some(v);
+            } else {
+                if resp.changed() || s.scale_temp.is_some() {
+                    d.appearance.ui_scale = (v * 20.0).round() / 20.0;
                 }
-            },
-        );
+                s.scale_temp = None;
+            }
+        });
         r.row_kw(
-            "Fonts",
-            "Interface, headings, terminal, code, hex and number fonts, with size offsets and previews.",
+            tr!("settings-preview-fonts"),
+            tr!("settings-appearance-fonts-desc"),
             "typeface family segoe consolas monospace",
             |ui| {
-                if small_button(ui, Some(ph::TEXT_AA), "Fonts…", false).clicked() {
+                if small_button(ui, Some(ph::TEXT_AA), tr!("settings-appearance-fonts-button"), false).clicked() {
                     go_fonts = true;
                 }
             },
         );
         r.row_kw(
-            "Fallback fonts",
-            "System fonts for Chinese, Japanese, Korean and emoji names, loaded in the background. Automatic: when a name needs them; at startup: also covers terminal output.",
+            tr!("settings-appearance-fallback"),
+            tr!("settings-appearance-fallback-desc"),
             "cjk chinese japanese korean emoji tofu glyph unicode font fallback",
             |ui| {
                 segmented(
                     ui,
                     &mut d.appearance.fallback_fonts,
-                    &[(FallbackFonts::Auto, "Automatic"), (FallbackFonts::Startup, "At startup"), (FallbackFonts::Off, "Off")],
+                    &[
+                        (FallbackFonts::Auto, tr!("settings-automatic")),
+                        (FallbackFonts::Startup, tr!("settings-appearance-fallback-startup")),
+                        (FallbackFonts::Off, tr!("settings-off")),
+                    ],
                 );
             },
         );
     });
-    any |= group(ui, q, ctx, "Icons & thumbnails", |r| {
-        r.row("File icons", "Colored by type, or monochrome.", |ui| {
-            segmented(ui, &mut d.appearance.icon_style, &[(IconStyle::Colored, "Colored"), (IconStyle::Mono, "Mono")]);
+    any |= group(ui, q, ctx, tr!("settings-appearance-icons"), |r| {
+        r.row(tr!("settings-appearance-file-icons"), tr!("settings-appearance-file-icons-desc"), |ui| {
+            segmented(
+                ui,
+                &mut d.appearance.icon_style,
+                &[
+                    (IconStyle::Colored, tr!("settings-appearance-colored")),
+                    (IconStyle::Mono, tr!("settings-appearance-mono")),
+                ],
+            );
         });
-        r.row_kw(
-            "Extension badges",
-            "A small colored label with the file extension on icons in the grid and gallery views.",
-            "icon label type",
-            |ui| {
-                switch(ui, &mut d.appearance.extension_badges);
-            },
-        );
-        r.row_kw("Thumbnails", "Show image and video thumbnails instead of icons.", "preview pictures", |ui| {
+        r.row_kw(tr!("settings-appearance-badges"), tr!("settings-appearance-badges-desc"), "icon label type", |ui| {
+            switch(ui, &mut d.appearance.extension_badges);
+        });
+        r.row_kw(tr!("settings-appearance-thumbs"), tr!("settings-appearance-thumbs-desc"), "preview pictures", |ui| {
             switch(ui, &mut d.appearance.show_thumbnails);
         });
         r.row_kw(
-            "Folder thumbnails",
-            "Grid views show a 2×2 mosaic of the first pictures inside each folder.",
+            tr!("settings-appearance-folder-thumbs"),
+            tr!("settings-appearance-folder-thumbs-desc"),
             "mosaic folder preview",
             |ui| {
                 switch(ui, &mut d.appearance.folder_thumbnails);
@@ -182,115 +185,120 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
         let ff = crate::services::thumb_video::ffmpeg_path();
         let video_desc = match &ff {
-            Some(p) => format!("First frame of videos through ffmpeg ({}).", p.display()),
-            None => "First frame of videos through ffmpeg — not found on PATH, so videos show their length instead."
-                .to_string(),
+            Some(p) => tr!("settings-appearance-video-thumbs-desc", path = p.display().to_string()),
+            None => tr!("settings-appearance-video-thumbs-missing").to_string(),
         };
-        r.row_kw("Video thumbnails", &video_desc, "ffmpeg movie mp4 frame", |ui| {
+        r.row_kw(tr!("settings-appearance-video-thumbs"), &video_desc, "ffmpeg movie mp4 frame", |ui| {
             switch(ui, &mut d.appearance.video_thumbnails);
         });
         r.row_kw(
-            "Thumbnail disk cache",
-            "Keeps thumbnails in the thumbs folder so they survive restarts (0 = off). Oldest are removed first.",
+            tr!("settings-appearance-thumb-cache"),
+            tr!("settings-appearance-thumb-cache-desc"),
             "cache thumbs disk storage",
             |ui| {
-                if small_button(ui, Some(ph::TRASH), "Clear", false).clicked() {
+                if small_button(ui, Some(ph::TRASH), tr!("settings-clear"), false).clicked() {
                     crate::services::thumb_disk::clear();
                 }
                 number(ui, &mut d.appearance.thumb_disk_cache_mib, 0..=4096, " MiB");
             },
         );
-        r.row_kw("Default thumbnail size", "Starting zoom of grid views.", "icon size zoom", |ui| {
-            number(ui, &mut d.appearance.thumbnail_size, 32..=256, " px");
-        });
-        r.row("Sidebar width", "", |ui| {
+        r.row_kw(
+            tr!("settings-appearance-thumb-size"),
+            tr!("settings-appearance-thumb-size-desc"),
+            "icon size zoom",
+            |ui| {
+                number(ui, &mut d.appearance.thumbnail_size, 32..=256, " px");
+            },
+        );
+        r.row(tr!("settings-appearance-sidebar-width"), "", |ui| {
             number(ui, &mut d.appearance.sidebar_width, 160.0..=420.0, " px");
         });
     });
-    any |= group(ui, q, ctx, "Window", |r| {
+    any |= group(ui, q, ctx, tr!("settings-views-new-window-window"), |r| {
         let desc = if crate::ui::titlebar::Chrome::live_switch() {
-            "Soyuz's own title bar with the logo, the tabs and themed window controls. Off: the system title bar."
+            tr!("settings-appearance-titlebar-desc")
         } else {
-            "Soyuz's title bar with the tabs under the window buttons. Off: the system title bar. Takes effect after a restart."
+            tr!("settings-appearance-titlebar-desc-restart")
         };
-        r.row_kw("Custom title bar", desc, "titlebar window frame decorations chrome caption", |ui| {
+        r.row_kw(tr!("settings-appearance-titlebar"), desc, "titlebar window frame decorations chrome caption", |ui| {
             switch(ui, &mut d.appearance.custom_titlebar);
         });
         r.row_kw(
-            "Backdrop",
-            "Windows 11: show the system Mica or Acrylic material behind the window. Takes effect after a restart.",
+            tr!("settings-appearance-backdrop"),
+            tr!("settings-appearance-backdrop-desc"),
             "mica acrylic translucent transparent blur material",
             |ui| {
                 segmented(
                     ui,
                     &mut d.appearance.backdrop,
-                    &[(Backdrop::None, "None"), (Backdrop::Mica, "Mica"), (Backdrop::Acrylic, "Acrylic")],
+                    &[(Backdrop::None, tr!("settings-none")), (Backdrop::Mica, "Mica"), (Backdrop::Acrylic, "Acrylic")],
                 );
             },
         );
         r.row_kw(
-            "Snap layouts",
-            "Windows 11: hovering the maximize button opens the Snap Layouts flyout. Takes effect after a restart.",
+            tr!("settings-appearance-snap"),
+            tr!("settings-appearance-snap-desc"),
             "snap maximize layouts flyout",
             |ui| {
                 switch(ui, &mut d.appearance.snap_layouts);
             },
         );
     });
-    any |= group(ui, q, ctx, "Theme colors", |r| {
-        r.block(
-            "",
-            "Override any design token. Overrides apply to both dark and light themes; a dot marks overridden tokens.",
-            |ui| {
-                let mut reset_all = false;
-                ui.horizontal(|ui| {
-                    let n = d.theme.colors.len();
-                    ui.label(
-                        RichText::new(format!("{n} override{}", if n == 1 { "" } else { "s" }))
-                            .size(11.5)
-                            .color(p.text_tertiary),
-                    );
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if n > 0 && small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Reset colors", true).clicked()
-                        {
-                            reset_all = true;
-                        }
-                    });
-                });
-                ui.add_space(6.0);
-                let cols = ((ui.available_width() / 250.0).floor() as usize).max(1);
-                egui::Grid::new("soyuz.settings.tokens").num_columns(cols).spacing(vec2(18.0, 6.0)).show(ui, |ui| {
-                    for (i, (name, label, get)) in TOKENS.iter().enumerate() {
-                        let overridden = d.theme.colors.contains_key(*name);
-                        let mut c = d.theme.colors.get(*name).and_then(|h| parse_hex(h)).unwrap_or_else(|| get(&p));
-                        ui.horizontal(|ui| {
-                            ui.set_min_width(230.0);
-                            if color_swatch(ui, &mut c, overridden) {
-                                d.theme.colors.insert(name.to_string(), to_hex(c));
-                            }
-                            ui.add_space(4.0);
-                            ui.vertical(|ui| {
-                                ui.label(RichText::new(*label).size(12.0).color(p.text_primary));
-                                ui.label(RichText::new(*name).size(10.5).monospace().color(p.text_tertiary));
-                            });
-                            if overridden
-                                && small_button(ui, Some(ph::X), "", false)
-                                    .on_hover_text("Use the theme's color")
-                                    .clicked()
-                            {
-                                d.theme.colors.remove(*name);
-                            }
-                        });
-                        if (i + 1) % cols == 0 {
-                            ui.end_row();
-                        }
+    any |= group(ui, q, ctx, tr!("settings-appearance-theme-colors"), |r| {
+        r.block("", tr!("settings-appearance-theme-colors-desc"), |ui| {
+            let mut reset_all = false;
+            ui.horizontal(|ui| {
+                let n = d.theme.colors.len();
+                ui.label(
+                    RichText::new(tr!("settings-appearance-overrides", count = n)).size(11.5).color(p.text_tertiary),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if n > 0
+                        && small_button(
+                            ui,
+                            Some(ph::ARROW_COUNTER_CLOCKWISE),
+                            tr!("settings-appearance-reset-colors"),
+                            true,
+                        )
+                        .clicked()
+                    {
+                        reset_all = true;
                     }
                 });
-                if reset_all {
-                    d.theme.colors.clear();
+            });
+            ui.add_space(6.0);
+            let cols = ((ui.available_width() / 250.0).floor() as usize).max(1);
+            egui::Grid::new("soyuz.settings.tokens").num_columns(cols).spacing(vec2(18.0, 6.0)).show(ui, |ui| {
+                for (i, (name, label, get)) in TOKENS.iter().enumerate() {
+                    let overridden = d.theme.colors.contains_key(*name);
+                    let mut c = d.theme.colors.get(*name).and_then(|h| parse_hex(h)).unwrap_or_else(|| get(&p));
+                    ui.horizontal(|ui| {
+                        ui.set_min_width(230.0);
+                        if color_swatch(ui, &mut c, overridden) {
+                            d.theme.colors.insert(name.to_string(), to_hex(c));
+                        }
+                        ui.add_space(4.0);
+                        ui.vertical(|ui| {
+                            ui.label(RichText::new(crate::i18n::t_dyn(label)).size(12.0).color(p.text_primary));
+                            ui.label(RichText::new(*name).size(10.5).monospace().color(p.text_tertiary));
+                        });
+                        if overridden
+                            && small_button(ui, Some(ph::X), "", false)
+                                .on_hover_text(tr!("settings-appearance-token-reset"))
+                                .clicked()
+                        {
+                            d.theme.colors.remove(*name);
+                        }
+                    });
+                    if (i + 1) % cols == 0 {
+                        ui.end_row();
+                    }
                 }
-            },
-        );
+            });
+            if reset_all {
+                d.theme.colors.clear();
+            }
+        });
     });
     match theme_action {
         Some(super::themes_ui::ThemeAction::Import) => super::start_theme_import(app),
@@ -322,10 +330,13 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
     // Sidebar.
     let side = Rect::from_min_size(rect.min, vec2(150.0, h));
     painter.rect_filled(side, CornerRadius { nw: 10, sw: 10, ne: 0, se: 0 }, p.bg_surface1);
-    for (i, (g, label, active)) in
-        [(ph::HOUSE, "Home", false), (ph::FOLDER_SIMPLE, "Projects", true), (ph::DOWNLOAD_SIMPLE, "Downloads", false)]
-            .iter()
-            .enumerate()
+    for (i, (g, label, active)) in [
+        (ph::HOUSE, tr!("settings-appearance-preview-home"), false),
+        (ph::FOLDER_SIMPLE, tr!("settings-appearance-preview-projects"), true),
+        (ph::DOWNLOAD_SIMPLE, tr!("settings-appearance-preview-downloads"), false),
+    ]
+    .iter()
+    .enumerate()
     {
         let rr = Rect::from_min_size(pos2(side.left() + 8.0, side.top() + 14.0 + i as f32 * 30.0), vec2(134.0, 26.0));
         if *active {
@@ -355,16 +366,16 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
     painter.text(
         pos2(crumb.left() + 10.0, crumb.center().y),
         Align2::LEFT_CENTER,
-        "Home  ›  Projects",
+        tr!("settings-appearance-preview-crumb"),
         FontId::proportional(12.0),
         p.text_secondary,
     );
     // Rows.
     let rows = [
-        (ph::FOLDER_SIMPLE, "src", p.glyph_folder, "—", true),
-        (ph::IMAGE, "screenshot.png", p.glyph_image, "1.4 MiB", false),
-        (ph::FILE_CODE, "main.rs", p.glyph_code, "12 KiB", false),
-        (ph::FILE_TEXT, "README.md", p.glyph_doc, "3 KiB", false),
+        (ph::FOLDER_SIMPLE, "src", p.glyph_folder, "—".to_string(), true),
+        (ph::IMAGE, "screenshot.png", p.glyph_image, soyuz_core::format_size(1_468_006, SizeStyle::Binary), false),
+        (ph::FILE_CODE, "main.rs", p.glyph_code, soyuz_core::format_size(12 * 1024, SizeStyle::Binary), false),
+        (ph::FILE_TEXT, "README.md", p.glyph_doc, soyuz_core::format_size(3 * 1024, SizeStyle::Binary), false),
     ];
     for (i, (g, name, color, size, selected)) in rows.iter().enumerate() {
         let rr = Rect::from_min_size(
@@ -392,7 +403,7 @@ fn preview_card(ui: &mut Ui, p: &Palette, row_h: f32, colored: bool) {
         painter.text(
             pos2(rr.right() - 12.0, rr.center().y),
             Align2::RIGHT_CENTER,
-            *size,
+            size.as_str(),
             FontId::proportional(12.0),
             p.text_secondary,
         );
@@ -409,6 +420,11 @@ mod tests {
         let mut pal = crate::theme::ORBIT_DARK.clone();
         let map = TOKENS.iter().map(|(n, _, _)| (n.to_string(), "#123456".to_string())).collect();
         assert!(pal.apply_overrides(&map).is_empty());
+        for (_, key, _) in TOKENS {
+            for l in [soyuz_core::Locale::EnUs, soyuz_core::Locale::TrTr] {
+                assert!(crate::i18n::has_in(key, l), "{key}");
+            }
+        }
         for (_, _, get) in TOKENS {
             assert_eq!(get(&pal), Color32::from_rgb(0x12, 0x34, 0x56));
         }

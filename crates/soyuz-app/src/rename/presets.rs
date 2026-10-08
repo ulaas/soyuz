@@ -45,19 +45,19 @@ pub fn builtin() -> Vec<Preset> {
     };
     vec![
         p(
-            "Photos by capture date",
+            tr!("dialogs-rename-preset-photos"),
             Target::Stem,
             Counter { start: 1, step: 1, pad: 3, per_folder: false },
             vec![Rule::Template { pattern: "{exif:%Y-%m-%d} {n}".into() }],
         ),
         p(
-            "Folder name + number",
+            tr!("dialogs-rename-preset-folder-number"),
             Target::Stem,
             Counter::default(),
             vec![Rule::Template { pattern: "{parent} {n}".into() }],
         ),
         p(
-            "Spaces to underscores",
+            tr!("dialogs-rename-preset-underscores"),
             Target::Stem,
             Counter::default(),
             vec![
@@ -71,9 +71,14 @@ pub fn builtin() -> Vec<Preset> {
                 },
             ],
         ),
-        p("Lower-case extensions", Target::Extension, Counter::default(), vec![Rule::Case { mode: CaseMode::Lower }]),
         p(
-            "Prefix with modified date",
+            tr!("dialogs-rename-preset-lower-ext"),
+            Target::Extension,
+            Counter::default(),
+            vec![Rule::Case { mode: CaseMode::Lower }],
+        ),
+        p(
+            tr!("dialogs-rename-preset-date-prefix"),
             Target::Stem,
             Counter::default(),
             vec![Rule::Insert { text: "{date:%Y%m%d}_".into(), at: Position::Start }],

@@ -21,7 +21,11 @@ pub fn palette_actions() -> Vec<Action> {
 pub fn palette_detail(id: &str) -> Option<String> {
     let set = super::scripts::current()?;
     let (sc, a) = set.action(id)?;
-    let desc = if a.description.trim().is_empty() { "Script action".to_string() } else { a.description.clone() };
+    let desc = if a.description.trim().is_empty() {
+        tr!("automation-script-action").to_string()
+    } else {
+        a.description.clone()
+    };
     Some(format!("{desc} · {}", sc.file))
 }
 

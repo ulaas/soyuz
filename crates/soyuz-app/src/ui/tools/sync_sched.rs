@@ -52,15 +52,14 @@ pub enum Schedule {
 impl Schedule {
     pub fn label(&self) -> String {
         match self {
-            Schedule::Manual => "Manual".into(),
+            Schedule::Manual => tr!("tools-sched-manual").into(),
             Schedule::Interval { minutes } if *minutes % 60 == 0 && *minutes >= 60 => {
-                let h = minutes / 60;
-                if h == 1 { "Every hour".into() } else { format!("Every {h} hours") }
+                tr!("tools-sched-every-hours", count = minutes / 60)
             }
-            Schedule::Interval { minutes } => format!("Every {minutes} min"),
-            Schedule::Daily { hour, minute } => format!("Daily at {hour:02}:{minute:02}"),
-            Schedule::OnChange => "When files change".into(),
-            Schedule::OnStart => "When Soyuz starts".into(),
+            Schedule::Interval { minutes } => tr!("tools-sched-every-minutes", count = *minutes),
+            Schedule::Daily { hour, minute } => tr!("tools-sched-daily", time = format!("{hour:02}:{minute:02}")),
+            Schedule::OnChange => tr!("tools-sched-on-change").into(),
+            Schedule::OnStart => tr!("tools-sched-on-start").into(),
         }
     }
 }
@@ -132,10 +131,10 @@ pub enum Trigger {
 impl Trigger {
     pub fn label(self) -> &'static str {
         match self {
-            Trigger::Manual => "manual",
-            Trigger::Schedule => "scheduled",
-            Trigger::Change => "on change",
-            Trigger::Start => "at start",
+            Trigger::Manual => tr!("tools-trigger-manual"),
+            Trigger::Schedule => tr!("tools-trigger-schedule"),
+            Trigger::Change => tr!("tools-trigger-change"),
+            Trigger::Start => tr!("tools-trigger-start"),
         }
     }
 }
@@ -157,12 +156,12 @@ pub enum RunStatus {
 impl RunStatus {
     pub fn label(self) -> &'static str {
         match self {
-            RunStatus::InSync => "In sync",
-            RunStatus::DryRun => "Dry run",
-            RunStatus::Applied => "Synced",
-            RunStatus::Partial => "Partly synced",
-            RunStatus::Failed => "Failed",
-            RunStatus::Cancelled => "Cancelled",
+            RunStatus::InSync => tr!("tools-status-in-sync"),
+            RunStatus::DryRun => tr!("tools-status-dry-run"),
+            RunStatus::Applied => tr!("tools-status-applied"),
+            RunStatus::Partial => tr!("tools-status-partial"),
+            RunStatus::Failed => tr!("tools-status-failed"),
+            RunStatus::Cancelled => tr!("tools-cancelled"),
         }
     }
 }
@@ -181,11 +180,11 @@ pub enum ReportOp {
 impl ReportOp {
     pub fn label(self) -> &'static str {
         match self {
-            ReportOp::CopyToRight => "Copy to right",
-            ReportOp::CopyToLeft => "Copy to left",
-            ReportOp::DeleteLeft => "Delete on left",
-            ReportOp::DeleteRight => "Delete on right",
-            ReportOp::KeepCopy => "Keep a copy",
+            ReportOp::CopyToRight => tr!("tools-compare-copy-right"),
+            ReportOp::CopyToLeft => tr!("tools-compare-copy-left"),
+            ReportOp::DeleteLeft => tr!("tools-compare-delete-left"),
+            ReportOp::DeleteRight => tr!("tools-compare-delete-right"),
+            ReportOp::KeepCopy => tr!("tools-report-keep-copy"),
         }
     }
 }
@@ -241,27 +240,33 @@ impl RunReport {
         let deletes = n(ReportOp::DeleteLeft) + n(ReportOp::DeleteRight);
         let mut parts = Vec::new();
         match self.status {
-            RunStatus::InSync => parts.push("nothing to change".to_string()),
+            RunStatus::InSync => parts.push(tr!("tools-report-nothing").to_string()),
             RunStatus::Failed | RunStatus::Cancelled if !self.message.is_empty() => parts.push(self.message.clone()),
             _ => {
-                let verb = if self.dry_run { "would " } else { "" };
                 if copies > 0 {
-                    parts.push(format!("{verb}copy {copies}"));
+                    parts.push(if self.dry_run {
+                        tr!("tools-report-would-copy", count = copies)
+                    } else {
+                        tr!("tools-report-copy", count = copies)
+                    });
                 }
                 if deletes > 0 {
-                    parts.push(format!("{verb}delete {deletes}"));
+                    parts.push(if self.dry_run {
+                        tr!("tools-report-would-delete", count = deletes)
+                    } else {
+                        tr!("tools-report-delete", count = deletes)
+                    });
                 }
                 if self.total_actions > self.actions.len() {
-                    parts.push(format!("{} actions in all", self.total_actions));
+                    parts.push(tr!("tools-report-actions-total", count = self.total_actions));
                 }
             }
         }
         if self.failed > 0 {
-            parts.push(format!("{} failed", self.failed));
+            parts.push(tr!("tools-report-failed", count = self.failed));
         }
         if !self.conflicts.is_empty() {
-            let c = self.conflicts.len();
-            parts.push(format!("{c} conflict{} skipped", if c == 1 { "" } else { "s" }));
+            parts.push(tr!("tools-report-conflicts", count = self.conflicts.len()));
         }
         parts.join(" · ")
     }
@@ -448,9 +453,9 @@ pub fn cancel(app: &SoyuzApp, name: &str) {
 pub fn activity(name: &str) -> Option<&'static str> {
     with(|s| {
         s.runs.get(name).map(|r| match r.phase {
-            Phase::Planning(..) => "Planning…",
-            Phase::Syncing { .. } => "Syncing…",
-            Phase::Recording(..) => "Recording state…",
+            Phase::Planning(..) => tr!("tools-activity-planning"),
+            Phase::Syncing { .. } => tr!("tools-activity-syncing"),
+            Phase::Recording(..) => tr!("tools-activity-recording"),
         })
     })
 }
@@ -667,7 +672,7 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
                     Ok(res) => {
                         let mut report = *report;
                         if let Err(e) = res {
-                            report.message = format!("synced, but the sync state could not be saved: {e}");
+                            report.message = tr!("tools-report-state-not-saved", error = e);
                             report.status = RunStatus::Partial;
                         }
                         finish(s, report, cfg.reports_kept, &mut toasts);
@@ -690,7 +695,7 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
     });
     // Submit jobs (needs the app; outside the scheduler borrow).
     for (name, trigger, planned) in submit {
-        let label = format!("Sync profile \u{201c}{name}\u{201d}");
+        let label = tr!("tools-sched-job-label", name = &name);
         let mut spec = app.fileops.jobs.spec(JobKind::Sync { plan: planned.plan.clone() });
         spec.options.label = Some(label);
         let job = crate::ui::archive::submit_job(app, spec);
@@ -735,20 +740,17 @@ fn finish(s: &mut Scheduler, mut rep: RunReport, keep: u32, toasts: &mut Vec<Toa
     let conflicts = rep.conflicts.len();
     let toast = match rep.status {
         RunStatus::Failed => {
-            Some(Toast::error(format!("Sync \u{201c}{name}\u{201d} failed")).body(rep.message.clone()))
+            Some(Toast::error(tr!("tools-sched-toast-failed", name = &name)).body(rep.message.clone()))
         }
         _ if conflicts > 0 => Some(
-            Toast::warning(format!(
-                "\u{201c}{name}\u{201d}: {conflicts} conflict{} to resolve",
-                if conflicts == 1 { "" } else { "s" }
-            ))
-            .body("Changed on both sides, so they were skipped. Open the profile to choose.")
-            .action("Open sync profiles", soyuz_core::config::Action::SyncProfiles),
+            Toast::warning(tr!("tools-sched-toast-conflicts", name = &name, count = conflicts))
+                .body(tr!("tools-sched-toast-conflicts-body"))
+                .action(tr!("tools-sched-open-profiles"), soyuz_core::config::Action::SyncProfiles),
         ),
         RunStatus::DryRun if !unattended => {
-            Some(Toast::info(format!("Dry run of \u{201c}{name}\u{201d}")).body(rep.summary()))
+            Some(Toast::info(tr!("tools-sched-toast-dry-run", name = &name)).body(rep.summary()))
         }
-        RunStatus::InSync if !unattended => Some(Toast::success(format!("\u{201c}{name}\u{201d} is in sync"))),
+        RunStatus::InSync if !unattended => Some(Toast::success(tr!("tools-sched-toast-in-sync", name = &name))),
         _ => None,
     };
     if let Some(t) = toast {
@@ -769,7 +771,7 @@ fn plan_profile(p: &SyncProfile, trigger: Trigger, dry: bool, ctl: &OpControl) -
     let mut report = blank_report(&p.name, Some(p), trigger, dry);
     for (side, dir) in [("left", &p.left), ("right", &p.right)] {
         if !soyuz_fs::exists_nofollow(dir) {
-            return Err(format!("the {side} folder {} is not available", dir.display()));
+            return Err(tr!("tools-sched-err-unavailable", side = side, path = dir.display().to_string()));
         }
     }
     let computed = compare::compute(&p.left, &p.right, p.method, p.preset, ctl)?;
@@ -814,7 +816,7 @@ fn sync_watchers(s: &mut Scheduler, profiles: &[SyncProfile], enabled: bool, toa
         Ok(w) => w,
         Err(e) => {
             if !s.watch_failed {
-                toasts.push(Toast::warning("Can't watch sync folders").body(e.to_string()));
+                toasts.push(Toast::warning(tr!("tools-sched-watch-failed")).body(e.to_string()));
                 s.watch_failed = true;
             }
             return;
@@ -837,26 +839,29 @@ fn sync_watchers(s: &mut Scheduler, profiles: &[SyncProfile], enabled: bool, toa
 /// Relative "next run" text for the list.
 pub fn next_label(p: &SyncProfile, enabled: bool) -> String {
     if !enabled && p.schedule != Schedule::Manual {
-        return "Scheduler off (Settings › Jobs)".into();
+        return tr!("tools-next-scheduler-off").into();
     }
     match p.schedule {
-        Schedule::Manual => "Runs when you start it".into(),
-        Schedule::OnChange => "Next: when a file changes".into(),
+        Schedule::Manual => tr!("tools-next-manual").into(),
+        Schedule::OnChange => tr!("tools-next-on-change").into(),
         _ => match next_of(p) {
-            None => "Ran this session".into(),
+            None => tr!("tools-next-ran").into(),
             Some(t) => match t.duration_since(SystemTime::now()) {
-                Err(_) => "Next: now".into(),
-                Ok(d) if d.as_secs() < 90 => "Next: in a minute".into(),
-                Ok(d) if d.as_secs() < 3600 => format!("Next: in {} min", d.as_secs().div_ceil(60)),
+                Err(_) => tr!("tools-next-now").into(),
+                Ok(d) if d.as_secs() < 90 => tr!("tools-next-minute").into(),
+                Ok(d) if d.as_secs() < 3600 => tr!("tools-next-in-minutes", count = d.as_secs().div_ceil(60)),
                 Ok(_) => {
                     let lt = DateTime::<Local>::from(t);
                     let today = Local::now().date_naive();
+                    let time = lt.format("%H:%M").to_string();
                     if lt.date_naive() == today {
-                        format!("Next: today {}", lt.format("%H:%M"))
+                        tr!("tools-next-today", time = time)
                     } else if Some(lt.date_naive()) == today.succ_opt() {
-                        format!("Next: tomorrow {}", lt.format("%H:%M"))
+                        tr!("tools-next-tomorrow", time = time)
                     } else {
-                        format!("Next: {} {}", lt.format("%b"), lt.day())
+                        let months = soyuz_core::locale::month_abbr(soyuz_core::locale::current());
+                        let month = months[lt.month0() as usize % 12];
+                        tr!("tools-next-date", month = month, day = lt.day().to_string())
                     }
                 }
             },

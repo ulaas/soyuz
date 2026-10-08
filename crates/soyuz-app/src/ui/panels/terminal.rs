@@ -47,7 +47,7 @@ impl Session {
         if let Some(c) = &self.custom {
             return c.clone();
         }
-        title_label(&self.title).unwrap_or_else(|| format!("Terminal {}", self.id))
+        title_label(&self.title).unwrap_or_else(|| tr!("panels-terminal-default-name", number = self.id.to_string()))
     }
 
     pub fn is_alive(&self) -> bool {
@@ -253,8 +253,7 @@ pub fn run_command(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf, line: 
     // file name would run extra commands no matter how it is quoted (REVIEW-2 #3).
     if soyuz_term::has_control_chars(line) || soyuz_term::has_control_chars(&dir.to_string_lossy()) {
         app.ui.toasts.push(
-            Toast::error("Command not run")
-                .body("The command line or folder contains control characters (e.g. a newline) and cannot be typed into a shell safely."),
+            Toast::error(tr!("panels-terminal-command-not-run")).body(tr!("panels-terminal-command-not-run-body")),
         );
         return;
     }
@@ -516,7 +515,7 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                     ui.horizontal(|ui| {
                         ui.label(icons::icon(ph::CLIPBOARD_TEXT, 16.0).color(p.warning));
                         ui.label(
-                            egui::RichText::new("The terminal wants to set your clipboard:")
+                            egui::RichText::new(tr!("panels-terminal-clip-title"))
                                 .font(FontId::proportional(13.0))
                                 .color(p.text_primary),
                         );
@@ -529,7 +528,11 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                         .show(ui, |ui| {
                             ui.set_width(ui.available_width());
                             let preview = clipboard_preview(&text);
-                            let shown = if preview.is_empty() { "(empty)".to_string() } else { preview };
+                            let shown = if preview.is_empty() {
+                                tr!("panels-terminal-clip-empty").to_string()
+                            } else {
+                                preview
+                            };
                             ui.add(
                                 egui::Label::new(
                                     egui::RichText::new(shown).font(FontId::monospace(11.5)).color(p.text_secondary),
@@ -539,24 +542,22 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                         });
                     ui.add_space(4.0);
                     ui.label(
-                        egui::RichText::new(
-                            "Programs can plant commands for you to paste. Allow only if you expect it.",
-                        )
-                        .font(FontId::proportional(11.0))
-                        .color(p.text_tertiary),
+                        egui::RichText::new(tr!("panels-terminal-clip-warning"))
+                            .font(FontId::proportional(11.0))
+                            .color(p.text_tertiary),
                     );
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        if button(ui, "Deny", Btn::Ghost).clicked() {
+                        if button(ui, tr!("panels-terminal-clip-deny"), Btn::Ghost).clicked() {
                             answer = Some(ClipDecision::Drop);
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
-                            if button(ui, "Allow once", Btn::Primary).clicked() {
+                            if button(ui, tr!("panels-terminal-clip-allow-once"), Btn::Primary).clicked() {
                                 answer = Some(ClipDecision::Copy);
                             }
-                            if button(ui, "Always for this session", Btn::Secondary)
-                                .on_hover_text("Allow clipboard writes from the terminal until Soyuz restarts")
+                            if button(ui, tr!("panels-terminal-clip-always"), Btn::Secondary)
+                                .on_hover_text(tr!("panels-terminal-clip-always-tip"))
                                 .clicked()
                             {
                                 answer = Some(ClipDecision::Copy);
@@ -676,21 +677,21 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
         let mut rename = false;
         resp.context_menu(|ui| {
-            ui.set_width(200.0);
-            if menu_item(ui, Some(ph::PENCIL_SIMPLE), "Rename", None, true).clicked() {
+            ui.set_min_width(200.0);
+            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("common-rename"), None, true).clicked() {
                 rename = true;
                 ui.close();
             }
-            if menu_item(ui, Some(ph::PLUS), "New terminal", None, true).clicked() {
+            if menu_item(ui, Some(ph::PLUS), tr!("panels-terminal-new"), None, true).clicked() {
                 new_session = true;
                 ui.close();
             }
-            if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+            if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("panels-terminal-open-external"), None, true).clicked() {
                 external = true;
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::X), "Close", None, true).clicked() {
+            if menu_item(ui, Some(ph::X), tr!("common-close"), None, true).clicked() {
                 to_close = Some(*id);
                 ui.close();
             }
@@ -700,7 +701,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
     }
     let plus = Rect::from_min_size(pos2(x + 2.0, strip.top() + 4.0), vec2(22.0, 22.0));
-    let presp = ui.interact(plus, Id::new("soyuz.term.new"), Sense::click()).on_hover_text("New terminal");
+    let presp = ui.interact(plus, Id::new("soyuz.term.new"), Sense::click()).on_hover_text(tr!("panels-terminal-new"));
     if presp.hovered() {
         ui.painter().rect_filled(plus, CornerRadius::same(5), p.bg_surface2);
     }
@@ -708,8 +709,9 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     new_session |= presp.clicked();
     // Right side: busy hint + external terminal button.
     let ext = Rect::from_min_size(pos2(strip.right() - 26.0, strip.top() + 4.0), vec2(22.0, 22.0));
-    let eresp =
-        ui.interact(ext, Id::new("soyuz.term.external"), Sense::click()).on_hover_text("Open external terminal here");
+    let eresp = ui
+        .interact(ext, Id::new("soyuz.term.external"), Sense::click())
+        .on_hover_text(tr!("panels-terminal-open-external"));
     if eresp.hovered() {
         ui.painter().rect_filled(ext, CornerRadius::same(5), p.bg_surface2);
     }
@@ -721,7 +723,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         ui.painter().text(
             pos2(ext.left() - 10.0, strip.center().y),
             Align2::RIGHT_CENTER,
-            "Terminal busy — didn't change folder",
+            tr!("panels-terminal-busy"),
             FontId::proportional(11.0),
             p.warning,
         );
@@ -754,6 +756,18 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     if let Some(s) = app.ui.terminal.sessions.iter().find(|s| s.id == active) {
         match &s.term {
             Some(term) => {
+                if crate::ui::a11y::active(ui.ctx()) {
+                    // Screen readers: a terminal node named after the session, its visible
+                    // text as the value. Added before the view so it never covers it.
+                    let node = ui.interact(inner, Id::new(("soyuz.term.a11y", s.id)), Sense::hover());
+                    let name = tr!("panels-terminal-a11y", name = s.label());
+                    let text = term.screen_text();
+                    crate::ui::a11y::with(ui.ctx(), node.id, |n| {
+                        n.set_role(egui::accesskit::Role::Terminal);
+                        n.set_label(name);
+                        n.set_value(text.trim_end());
+                    });
+                }
                 let mut child = ui.new_child(UiBuilder::new().max_rect(inner).id_salt(("soyuz.term", s.id)));
                 child.set_clip_rect(inner);
                 let r = TerminalView::new(term)
@@ -779,7 +793,10 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 ui.painter().text(
                     inner.center() + vec2(0.0, 18.0),
                     Align2::CENTER_CENTER,
-                    format!("Couldn't start the shell: {}", s.error.as_deref().unwrap_or("unknown error")),
+                    tr!(
+                        "panels-terminal-shell-failed",
+                        error = s.error.clone().unwrap_or_else(|| tr!("panels-terminal-unknown-error").to_string())
+                    ),
                     FontId::proportional(12.0),
                     p.text_secondary,
                 );
@@ -841,7 +858,7 @@ fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&P
         return;
     }
     let Some(path) = resolve_link(url, base) else {
-        app.ui.toasts.push(Toast::info("Link target not found").body(url.to_string()));
+        app.ui.toasts.push(Toast::info(tr!("panels-terminal-link-not-found")).body(url.to_string()));
         return;
     };
     // Classify the target on a worker thread (no disk access on the UI thread).
@@ -853,21 +870,21 @@ fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&P
             postman.send(UiMsg::OpenDir(path));
         } else if path.exists() {
             if looks_executable(&path) {
-                postman.send(UiMsg::Notice(Toast::info("Executable revealed, not run").body(
-                    "Links in terminal output never start programs. Open it from the file list if you trust it.",
-                )));
+                postman.send(UiMsg::Notice(
+                    Toast::info(tr!("panels-terminal-exe-revealed")).body(tr!("panels-terminal-exe-revealed-body")),
+                ));
                 if let Err(e) = soyuz_fs::launch::reveal_in_system(&path) {
-                    postman.send(UiMsg::Notice(Toast::error("Couldn't reveal the file").body(e.to_string())));
+                    postman.send(UiMsg::Notice(Toast::error(tr!("panels-terminal-reveal-failed")).body(e.to_string())));
                 }
             } else {
                 postman.send(UiMsg::Launch(path));
             }
         } else {
-            postman.send(UiMsg::Notice(Toast::info("Link target not found").body(url)));
+            postman.send(UiMsg::Notice(Toast::info(tr!("panels-terminal-link-not-found")).body(url)));
         }
     });
     if let Err(e) = spawned {
-        app.ui.toasts.push(Toast::error("Couldn't open the link").body(e.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("panels-terminal-link-failed")).body(e.to_string()));
     }
 }
 
@@ -946,11 +963,11 @@ fn looks_executable(path: &Path) -> bool {
 
 /// Context-menu rows: integrated + external terminal at `dir`.
 pub fn menu_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, dir: &Path) {
-    if menu_item(ui, Some(ph::TERMINAL_WINDOW), "Open terminal here", Some("Ctrl+`"), true).clicked() {
+    if menu_item(ui, Some(ph::TERMINAL_WINDOW), tr!("panels-terminal-open-here"), Some("Ctrl+`"), true).clicked() {
         cmds.push(Cmd::OpenTerminalPanel(dir.to_path_buf()));
         ui.close();
     }
-    if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+    if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("panels-terminal-open-external"), None, true).clicked() {
         cmds.push(Cmd::TerminalAt(dir.to_path_buf()));
         ui.close();
     }

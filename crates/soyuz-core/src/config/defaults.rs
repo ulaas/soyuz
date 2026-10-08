@@ -64,7 +64,7 @@ impl Default for General {
             date_format: DateFormat::default(),
             default_view: ViewMode::Details,
             double_click_speed_ms: 400,
-            language: "en".into(),
+            language: "auto".into(),
             strict_windows_names: false,
         }
     }

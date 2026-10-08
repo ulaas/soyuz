@@ -56,8 +56,8 @@ impl Sequencer {
     /// "g …" / "m …" while waiting.
     pub fn pending_label(&self) -> Option<String> {
         match self.mark {
-            Some(MarkOp::Set) => Some("m … set mark".into()),
-            Some(MarkOp::Jump) => Some("' … jump to mark".into()),
+            Some(MarkOp::Set) => Some(tr!("actions-keyseq-set-mark").into()),
+            Some(MarkOp::Jump) => Some(tr!("actions-keyseq-jump-mark").into()),
             None if !self.pending.is_empty() => {
                 Some(format!("{} …", self.pending.iter().map(|c| short_chord(*c)).collect::<Vec<_>>().join(" ")))
             }
@@ -248,12 +248,14 @@ fn mark(app: &mut SoyuzApp, op: MarkOp, c: char) {
     match op {
         MarkOp::Set => {
             let Some(dir) = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim) else {
-                app.ui.toasts.push(Toast::warning("Marks need a real folder"));
+                app.ui.toasts.push(Toast::warning(tr!("actions-mark-needs-folder")));
                 return;
             };
             app.palette.memory.marks.insert(key, dir.clone());
             app.palette.dirty = true;
-            app.ui.toasts.push(Toast::success(format!("Mark '{c}' set")).body(dir.display().to_string()));
+            app.ui
+                .toasts
+                .push(Toast::success(tr!("actions-mark-set", mark = c.to_string())).body(dir.display().to_string()));
         }
         MarkOp::Jump => match app.palette.memory.marks.get(&key).cloned() {
             Some(dir) => {
@@ -261,7 +263,7 @@ fn mark(app: &mut SoyuzApp, op: MarkOp, c: char) {
                 ops::navigate(app, id, Location::Dir(dir), NavOpts::user());
             }
             None => {
-                app.ui.toasts.push(Toast::info(format!("No mark '{c}'")));
+                app.ui.toasts.push(Toast::info(tr!("actions-mark-missing", mark = c.to_string())));
             }
         },
     }

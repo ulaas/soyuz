@@ -169,7 +169,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             match target {
                 Some(t) => queue(ToolCmd::Treemap(t)),
                 None => {
-                    app.ui.toasts.push(Toast::info("Open a folder to analyze its disk usage"));
+                    app.ui.toasts.push(Toast::info(tr!("tools-toast-open-folder-treemap")));
                 }
             }
         }
@@ -184,20 +184,20 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             match l {
                 Some(l) => queue(ToolCmd::Compare(l, r)),
                 None => {
-                    app.ui.toasts.push(Toast::info("Open a folder to compare it"));
+                    app.ui.toasts.push(Toast::info(tr!("tools-toast-open-folder-compare")));
                 }
             }
         }
         A::SplitFile => match sel.as_slice() {
             [(p, false)] => queue(ToolCmd::Split(p.clone())),
             _ => {
-                app.ui.toasts.push(Toast::info("Select one file to split"));
+                app.ui.toasts.push(Toast::info(tr!("tools-toast-select-file-split")));
             }
         },
         A::JoinFiles => match sel.iter().find(|(p, d)| !d && split::is_part(p)) {
             Some((p, _)) => queue(ToolCmd::Join(p.clone())),
             None => {
-                app.ui.toasts.push(Toast::info("Select the first part of a split file (.001)"));
+                app.ui.toasts.push(Toast::info(tr!("tools-toast-select-first-part")));
             }
         },
         A::AddTag(n) => {
@@ -223,7 +223,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 _ => match &pane.location {
                     Location::Dir(d) => queue(ToolCmd::Versions(d.clone(), true, None)),
                     _ => {
-                        app.ui.toasts.push(Toast::info("Select one file or folder to see its previous versions"));
+                        app.ui.toasts.push(Toast::info(tr!("tools-toast-select-versions")));
                     }
                 },
             }
@@ -330,7 +330,7 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             match profiles.iter().find(|p| p.name == name).cloned() {
                 Some(pr) => t.compare = Some(compare::CompareWindow::with_profile(&pr, profiles)),
                 None => {
-                    app.ui.toasts.push(Toast::info(format!("No sync profile named \u{201c}{name}\u{201d}")));
+                    app.ui.toasts.push(Toast::info(tr!("tools-toast-no-profile", name = name)));
                 }
             }
         }
@@ -340,10 +340,9 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
         },
         ToolCmd::Versions(path, is_dir, current) => {
             if !app.config.sync.previous_versions {
-                app.ui.toasts.push(
-                    Toast::info("Previous versions are turned off")
-                        .body("Turn them on in Settings › Jobs › Sync & versions."),
-                );
+                app.ui
+                    .toasts
+                    .push(Toast::info(tr!("tools-toast-versions-off")).body(tr!("tools-toast-versions-off-body")));
             } else {
                 t.versions = Some(versions::VersionsWindow::new(path, is_dir, current));
             }
@@ -354,13 +353,12 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
         ToolCmd::Join(p) => t.split = Some(split::SplitWindow::join(p)),
         ToolCmd::ToggleTag { paths, tag } => {
             let added = crate::services::tags::toggle_many(&paths, tag);
-            let name = crate::services::tags::TAG_NAMES[tag as usize];
+            let name = tags_ui::tag_name(tag);
             let n = paths.len();
-            let what = if n == 1 { "1 item".to_string() } else { format!("{n} items") };
             app.ui.toasts.push(Toast::info(if added {
-                format!("Tagged {what} {name}")
+                tr!("tools-toast-tagged", count = n, tag = name)
             } else {
-                format!("Removed {name} from {what}")
+                tr!("tools-toast-untagged", count = n, tag = name)
             }));
             refresh_tag_panes(app);
         }
@@ -530,7 +528,7 @@ pub fn tool_window(
             }
             let close = Rect::from_center_size(pos2(hr.right() - 22.0, hr.center().y), vec2(30.0, 30.0));
             let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(close));
-            if icon_button(&mut cu, ph::X, "Close", true).clicked() {
+            if icon_button(&mut cu, ph::X, tr!("common-close"), true).clicked() {
                 keep = false;
             }
             ui.painter().line_segment(
@@ -686,7 +684,7 @@ pub fn git_chip(ui: &mut Ui, dir: Option<&std::path::Path>, pane: crate::state::
     let Some(dir) = dir else { return };
     let Some(s) = crate::services::git::summary_for(dir) else { return };
     let p = palette(ui.ctx());
-    let branch = s.branch.clone().unwrap_or_else(|| "detached".into());
+    let branch = s.branch.clone().unwrap_or_else(|| tr!("tools-git-detached").into());
     let mut text = branch.clone();
     if s.ahead > 0 {
         text.push_str(&format!("  ↑{}", s.ahead));
@@ -726,20 +724,27 @@ pub fn git_chip(ui: &mut Ui, dir: Option<&std::path::Path>, pane: crate::state::
     if s.busy {
         crate::ui::widgets::spinner(ui, pos2(r.right() + 8.0, r.center().y), 4.0, p.text_tertiary);
     }
-    let mut tip = format!("Git repository: {}\nBranch: {branch}", soyuz_fs::strip_verbatim(&s.root).display());
+    let mut tip =
+        tr!("tools-git-tip-repo", root = soyuz_fs::strip_verbatim(&s.root).display().to_string(), branch = &branch);
     if s.loaded {
-        tip.push_str(&format!(
-            "\n{} changed · {} staged · {} untracked{}",
-            s.changed,
-            s.staged,
-            s.untracked,
-            if s.conflicts > 0 { format!(" · {} conflicts", s.conflicts) } else { String::new() }
-        ));
+        tip.push('\n');
+        tip.push_str(&if s.conflicts > 0 {
+            tr!(
+                "tools-git-tip-counts-conflicts",
+                changed = s.changed,
+                staged = s.staged,
+                untracked = s.untracked,
+                conflicts = s.conflicts
+            )
+        } else {
+            tr!("tools-git-tip-counts", changed = s.changed, staged = s.staged, untracked = s.untracked)
+        });
     }
     if let Some(e) = &s.error {
         tip.push_str(&format!("\n{e}"));
     }
-    tip.push_str("\nClick to open the repository root");
+    tip.push('\n');
+    tip.push_str(tr!("tools-git-tip-click"));
     if resp.on_hover_text(tip).clicked() {
         cmds.push(Cmd::Navigate { pane, location: Location::Dir(s.root.clone()), select: None });
     }
@@ -765,13 +770,8 @@ pub fn shelf_toggle(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
             color,
         );
     }
-    let tip = if n > 0 { format!("Shelf · {n} items") } else { "Shelf (drop files here to collect them)".into() };
+    let tip = if n > 0 { tr!("tools-shelf-tip-count", count = n) } else { tr!("tools-shelf-tip-empty").into() };
     if resp.on_hover_text(tip).clicked() {
         cmds.push(Cmd::Action(Action::ToggleShelf));
     }
-}
-
-/// Human file count.
-pub fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{} {}", crate::ui::statusbar::group_thousands(n), if n == 1 { one } else { many })
 }

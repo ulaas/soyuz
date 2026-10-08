@@ -16,7 +16,7 @@ use soyuz_core::{EntryInfo, OpControl, SizeStyle, format_size, format_time};
 use soyuz_jobs::{DeleteMode, JobId, JobKind};
 use soyuz_search::DupeEvent;
 
-use super::{button, plural, progress_bar, text_field, tool_window};
+use super::{button, progress_bar, text_field, tool_window};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::services::jobs::{JobMeta, OpKind};
@@ -36,9 +36,18 @@ pub enum Keep {
 impl Keep {
     pub fn label(self) -> &'static str {
         match self {
-            Keep::Newest => "Keep newest",
-            Keep::Oldest => "Keep oldest",
-            Keep::ShortestPath => "Keep shortest path",
+            Keep::Newest => tr!("tools-dupes-keep-newest"),
+            Keep::Oldest => tr!("tools-dupes-keep-oldest"),
+            Keep::ShortestPath => tr!("tools-dupes-keep-shortest"),
+        }
+    }
+
+    /// Short chip text in a group header.
+    fn short_label(self) -> &'static str {
+        match self {
+            Keep::Newest => tr!("tools-dupes-newest"),
+            Keep::Oldest => tr!("tools-dupes-oldest"),
+            Keep::ShortestPath => tr!("tools-dupes-shortest"),
         }
     }
 }
@@ -89,8 +98,9 @@ impl Group {
     }
 }
 
+/// Minimum sizes; an empty label is "Any" (translated at draw time).
 const SIZES: [(&str, u64); 5] =
-    [("Any", 1), ("≥ 100 KB", 100_000), ("≥ 1 MB", 1_000_000), ("≥ 10 MB", 10_000_000), ("≥ 100 MB", 100_000_000)];
+    [("", 1), ("≥ 100 KB", 100_000), ("≥ 1 MB", 1_000_000), ("≥ 10 MB", 10_000_000), ("≥ 100 MB", 100_000_000)];
 
 struct Running {
     rx: Receiver<DupeEvent>,
@@ -256,10 +266,11 @@ impl DupesWindow {
         let sub = match self.roots.as_slice() {
             [] => String::new(),
             [one] => super::tags_ui::show_path(one),
-            many => format!("{} folders", many.len()),
+            many => tr!("tools-dupes-folders", count = many.len()),
         };
-        let keep =
-            tool_window(ctx, "dupes", "Duplicate finder", &sub, ph::FILES, vec2(900.0, 640.0), |ui| self.body(ui, app));
+        let keep = tool_window(ctx, "dupes", tr!("tools-dupes-title"), &sub, ph::FILES, vec2(900.0, 640.0), |ui| {
+            self.body(ui, app)
+        });
         if !keep {
             self.stop();
             self.open = false;
@@ -270,12 +281,14 @@ impl DupesWindow {
         let p = palette(ui.ctx());
         // Roots.
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Search in").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("tools-dupes-search-in")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+            );
             let mut remove = None;
             for (i, r) in self.roots.iter().enumerate() {
                 let label = format!("{}  ×", soyuz_core::entry::display_name(r));
                 if super::chip(ui, &label, p.accent)
-                    .on_hover_text(format!("{}\nClick to remove", r.display()))
+                    .on_hover_text(tr!("tools-dupes-root-tip", path = r.display().to_string()))
                     .clicked()
                 {
                     remove = Some(i);
@@ -284,9 +297,9 @@ impl DupesWindow {
             if let Some(i) = remove {
                 self.roots.remove(i);
             }
-            let r = text_field(ui, &mut self.new_root, "Add a folder path…", 220.0);
+            let r = text_field(ui, &mut self.new_root, tr!("tools-dupes-add-path-hint"), 220.0);
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if (enter || button(ui, Some(ph::PLUS), "Add", 0, !self.new_root.trim().is_empty()).clicked())
+            if (enter || button(ui, Some(ph::PLUS), tr!("tools-add"), 0, !self.new_root.trim().is_empty()).clicked())
                 && !self.new_root.trim().is_empty()
             {
                 let pb = PathBuf::from(self.new_root.trim());
@@ -297,28 +310,38 @@ impl DupesWindow {
             }
             if let Some(other) = other_pane_dir(app)
                 && !self.roots.contains(&other)
-                && button(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), "Add other pane", 0, true).clicked()
+                && button(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("tools-dupes-add-other-pane"), 0, true).clicked()
             {
                 self.roots.push(other);
             }
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Minimum size").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("tools-dupes-min-size")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+            );
             for (i, (label, _)) in SIZES.iter().enumerate() {
                 let mut on = self.min_idx == i;
+                let label = if label.is_empty() { tr!("tools-dupes-size-any") } else { label };
                 if super::toggle_chip(ui, label, &mut on, p.accent).clicked() {
                     self.min_idx = i;
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.running.is_some() {
-                    if button(ui, Some(ph::STOP), "Stop", 0, true).clicked() {
+                    if button(ui, Some(ph::STOP), tr!("tools-stop"), 0, true).clicked() {
                         self.stop();
                         self.done = Some((self.groups.len() as u64, 0, 0.0));
                         self.groups.sort_by_key(|g| std::cmp::Reverse(g.wasted()));
                     }
-                } else if button(ui, Some(ph::MAGNIFYING_GLASS), "Find duplicates", 1, !self.roots.is_empty()).clicked()
+                } else if button(
+                    ui,
+                    Some(ph::MAGNIFYING_GLASS),
+                    tr!("tools-menu-find-duplicates"),
+                    1,
+                    !self.roots.is_empty(),
+                )
+                .clicked()
                 {
                     self.start();
                 }
@@ -331,13 +354,13 @@ impl DupesWindow {
             let frac = (r.total > 0).then(|| r.hashed as f32 / r.total as f32);
             progress_bar(ui, ui.available_width(), frac);
             ui.label(
-                RichText::new(format!(
-                    "Hashing {} of {} candidates · {} read · {} groups so far · {:.0} s",
-                    r.hashed,
-                    r.total,
-                    format_size(r.bytes, SizeStyle::Binary),
-                    self.groups.len(),
-                    r.started.elapsed().as_secs_f32()
+                RichText::new(tr!(
+                    "tools-dupes-hashing",
+                    done = r.hashed,
+                    total = r.total,
+                    size = format_size(r.bytes, SizeStyle::Binary),
+                    groups = self.groups.len(),
+                    secs = r.started.elapsed().as_secs()
                 ))
                 .font(FontId::proportional(12.0))
                 .color(p.text_secondary),
@@ -345,35 +368,32 @@ impl DupesWindow {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
         } else if let Some((_, _, secs)) = self.done {
             ui.label(
-                RichText::new(format!(
-                    "{} · {} reclaimable{}",
-                    plural(self.groups.len(), "group of duplicates", "groups of duplicates"),
-                    format_size(wasted, SizeStyle::Binary),
+                RichText::new({
+                    let groups = self.groups.len();
+                    let size = format_size(wasted, SizeStyle::Binary);
                     if secs >= 1.0 {
-                        format!(" · {secs:.1} s")
+                        let secs = soyuz_core::locale::format_decimal(f64::from(secs), 1);
+                        tr!("tools-dupes-summary-secs", groups = groups, size = size, secs = secs)
                     } else if secs > 0.0 {
-                        format!(" · {} ms", (secs * 1000.0).round())
+                        let ms = (secs * 1000.0).round() as u64;
+                        tr!("tools-dupes-summary-ms", groups = groups, size = size, ms = ms)
                     } else {
-                        String::new()
+                        tr!("tools-dupes-summary", groups = groups, size = size)
                     }
-                ))
+                })
                 .font(FontId::proportional(12.5))
                 .color(p.text_primary),
             );
         }
         if self.groups.is_empty() {
             let (g, t, s) = if self.running.is_some() {
-                (ph::SPINNER, "Looking for duplicates…", "Groups appear here as soon as they are confirmed.")
+                (ph::SPINNER, tr!("tools-dupes-empty-running"), tr!("tools-dupes-empty-running-body"))
             } else if self.done.is_some() && self.removed > 0 {
-                (
-                    ph::SPARKLE,
-                    "All duplicates handled",
-                    "The marked copies were moved to the trash (Undo is in the toast).",
-                )
+                (ph::SPARKLE, tr!("tools-dupes-empty-handled"), tr!("tools-dupes-empty-handled-body"))
             } else if self.done.is_some() {
-                (ph::CHECK_CIRCLE, "No duplicates found", "Every file under these folders is unique.")
+                (ph::CHECK_CIRCLE, tr!("tools-dupes-empty-none"), tr!("tools-dupes-empty-none-body"))
             } else {
-                (ph::FILES, "Find identical files", "Choose folders and a minimum size, then start.")
+                (ph::FILES, tr!("tools-dupes-empty-start"), tr!("tools-dupes-empty-start-body"))
             };
             super::compare::empty_note(ui, g, t, s);
             return;
@@ -381,7 +401,11 @@ impl DupesWindow {
         // Bulk helpers.
         ui.add_space(2.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Select in every group:").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("tools-dupes-select-every-group"))
+                    .font(FontId::proportional(12.0))
+                    .color(p.text_tertiary),
+            );
             for k in [Keep::Newest, Keep::Oldest, Keep::ShortestPath] {
                 if button(ui, None, k.label(), 0, true).clicked() {
                     for g in &mut self.groups {
@@ -390,7 +414,7 @@ impl DupesWindow {
                     self.confirm = false;
                 }
             }
-            if button(ui, None, "Clear", 0, true).clicked() {
+            if button(ui, None, tr!("tools-clear"), 0, true).clicked() {
                 for g in &mut self.groups {
                     g.marked.iter_mut().for_each(|m| *m = false);
                 }
@@ -406,9 +430,9 @@ impl DupesWindow {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             let text = if n == 0 {
-                "Mark the copies you want to remove".to_string()
+                tr!("tools-dupes-mark-hint").to_string()
             } else {
-                format!("{} marked · {}", plural(n, "file", "files"), format_size(bytes, SizeStyle::Binary))
+                tr!("tools-dupes-marked", count = n, size = format_size(bytes, SizeStyle::Binary))
             };
             ui.label(RichText::new(text).font(FontId::proportional(12.5)).color(if n > 0 {
                 p.text_primary
@@ -418,20 +442,20 @@ impl DupesWindow {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.confirm {
                     let busy = !self.trashing.is_empty() || !self.gone_rx.is_empty();
-                    if button(ui, Some(ph::TRASH), &format!("Move {n} to trash"), 2, n > 0 && !busy).clicked() {
+                    if button(ui, Some(ph::TRASH), &tr!("tools-dupes-move-n-to-trash", count = n), 2, n > 0 && !busy)
+                        .clicked()
+                    {
                         let spec =
                             app.fileops.jobs.spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
                         let id = app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Trash, &paths, None));
                         self.trashing.push((id, paths));
                         self.confirm = false;
-                        app.ui
-                            .toasts
-                            .push(Toast::info(format!("Moving {} to the trash", plural(n, "duplicate", "duplicates"))));
+                        app.ui.toasts.push(Toast::info(tr!("tools-dupes-toast-moving", count = n)));
                     }
-                    if button(ui, None, "Cancel", 0, true).clicked() {
+                    if button(ui, None, tr!("common-cancel"), 0, true).clicked() {
                         self.confirm = false;
                     }
-                } else if button(ui, Some(ph::TRASH), "Delete marked…", 2, n > 0).clicked() {
+                } else if button(ui, Some(ph::TRASH), tr!("tools-dupes-delete-marked"), 2, n > 0).clicked() {
                     self.confirm = true;
                 }
             });
@@ -496,8 +520,12 @@ impl DupesWindow {
                         icons::font(15.0),
                         file_icons::color(e0, &p),
                     );
-                    let title = format!("{} copies · {} each", g.files.len(), format_size(g.size(), cfg.size_style));
-                    painter.text(
+                    let title = tr!(
+                        "tools-dupes-group-title",
+                        count = g.files.len(),
+                        size = format_size(g.size(), cfg.size_style)
+                    );
+                    let title_r = painter.text(
                         pos2(hr.left() + 46.0, hr.center().y),
                         Align2::LEFT_CENTER,
                         title,
@@ -505,20 +533,16 @@ impl DupesWindow {
                         p.text_primary,
                     );
                     painter.text(
-                        pos2(hr.left() + 230.0, hr.center().y),
+                        pos2((hr.left() + 230.0).max(title_r.right() + 16.0), hr.center().y),
                         Align2::LEFT_CENTER,
-                        format!("{} reclaimable", format_size(g.wasted(), cfg.size_style)),
+                        tr!("tools-dupes-reclaimable", size = format_size(g.wasted(), cfg.size_style)),
                         FontId::proportional(12.0),
                         p.success,
                     );
                     // Keep helpers (right side of the header).
                     let mut x = hr.right() - 8.0;
                     for k in [Keep::ShortestPath, Keep::Oldest, Keep::Newest] {
-                        let label = match k {
-                            Keep::Newest => "Newest",
-                            Keep::Oldest => "Oldest",
-                            Keep::ShortestPath => "Shortest path",
-                        };
+                        let label = k.short_label();
                         let gal = ui.painter().layout_no_wrap(
                             label.to_string(),
                             FontId::proportional(11.5),
@@ -527,7 +551,7 @@ impl DupesWindow {
                         let w = gal.size().x + 16.0;
                         let r = Rect::from_min_size(pos2(x - w, hr.center().y - 11.0), vec2(w, 22.0));
                         x -= w + 4.0;
-                        let resp = ui.interact(r, ui.id().with(("dupes.k", gi, label)), Sense::click());
+                        let resp = ui.interact(r, ui.id().with(("dupes.k", gi, k as u8)), Sense::click());
                         ui.painter().rect_filled(
                             r,
                             CornerRadius::same(11),
@@ -545,7 +569,7 @@ impl DupesWindow {
                     ui.painter().text(
                         pos2(x - 4.0, hr.center().y),
                         Align2::RIGHT_CENTER,
-                        "Keep",
+                        tr!("tools-dupes-keep"),
                         FontId::proportional(11.0),
                         p.text_tertiary,
                     );
@@ -620,7 +644,7 @@ impl DupesWindow {
                             ui.painter().text(
                                 pos2(rr.left() + 40.0 + nw + 8.0, rr.top() - 2.0),
                                 Align2::LEFT_BOTTOM,
-                                "Keep at least one copy",
+                                tr!("tools-dupes-keep-one"),
                                 FontId::proportional(11.0),
                                 p.warning,
                             );
@@ -632,12 +656,12 @@ impl DupesWindow {
                             reveal = Some(e.path.clone());
                         }
                         let path = e.path.clone();
-                        resp.on_hover_text(format!("{}\nClick to mark · double-click to reveal", path.display()))
-                            .context_menu(|ui| {
+                        resp.on_hover_text(tr!("tools-dupes-row-tip", path = path.display().to_string())).context_menu(
+                            |ui| {
                                 if crate::ui::widgets::menu_item(
                                     ui,
                                     Some(ph::FOLDER_OPEN),
-                                    "Reveal in pane",
+                                    tr!("tools-shelf-reveal"),
                                     None,
                                     true,
                                 )
@@ -646,13 +670,20 @@ impl DupesWindow {
                                     reveal = Some(path.clone());
                                     ui.close();
                                 }
-                                if crate::ui::widgets::menu_item(ui, Some(ph::CLIPBOARD_TEXT), "Copy path", None, true)
-                                    .clicked()
+                                if crate::ui::widgets::menu_item(
+                                    ui,
+                                    Some(ph::CLIPBOARD_TEXT),
+                                    tr!("tools-copy-path"),
+                                    None,
+                                    true,
+                                )
+                                .clicked()
                                 {
                                     ui.ctx().copy_text(super::tags_ui::show_path(&path));
                                     ui.close();
                                 }
-                            });
+                            },
+                        );
                     }
                     y += gh;
                 }

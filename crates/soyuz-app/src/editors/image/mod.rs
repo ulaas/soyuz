@@ -46,7 +46,12 @@ pub fn load(path: &std::path::Path, max_mp: u32) -> Result<Loaded, String> {
     let format = reader.format();
     let (w, h) = reader.into_dimensions().map_err(|e| e.to_string())?;
     if u64::from(w) * u64::from(h) > u64::from(max_mp.max(1)) * 1_000_000 {
-        return Err(format!("{w} × {h} is larger than the {max_mp} MP limit ([editor] max_image_mp)"));
+        return Err(tr!(
+            "editors-image-too-large",
+            width = w.to_string(),
+            height = h.to_string(),
+            limit = max_mp.to_string()
+        ));
     }
     let reader =
         image::ImageReader::open(path).map_err(|e| e.to_string())?.with_guessed_format().map_err(|e| e.to_string())?;
@@ -91,7 +96,7 @@ pub fn encode(img: &DynamicImage, mode: SaveMode, jpeg_quality: u8) -> Result<Ve
             let enc = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, jpeg_quality.clamp(1, 100));
             rgb.write_with_encoder(enc).map_err(|e| e.to_string())?;
         }
-        SaveMode::Unsupported => return Err("Soyuz can't write this image format".into()),
+        SaveMode::Unsupported => return Err(tr!("editors-image-cant-write").into()),
     }
     Ok(out.into_inner())
 }
@@ -267,12 +272,8 @@ impl ImageDoc {
         if self.is_dirty() && matches!(self.save_mode(), SaveMode::Lossy(_) | SaveMode::Unsupported) {
             let r = Rect::from_min_size(pos2(rect.left() + 8.0, top + 2.0), vec2(rect.width() - 16.0, 30.0));
             let text = match self.save_mode() {
-                SaveMode::Lossy(_) => {
-                    format!(
-                        "JPEG can't be rotated or cropped losslessly here: saving re-encodes it at quality {jpeg_quality} and drops metadata."
-                    )
-                }
-                _ => "This format can't be written: edits can't be saved.".to_string(),
+                SaveMode::Lossy(_) => tr!("editors-image-lossy-warning", quality = jpeg_quality.to_string()),
+                _ => tr!("editors-image-unsupported-warning").to_string(),
             };
             widgets::banner(ui, r, p, ph::WARNING, p.warning, &text, &[]);
             top += 36.0;
@@ -291,18 +292,18 @@ impl ImageDoc {
         let fit = self.zoom.is_none();
         let mut clicked: Vec<&'static str> = Vec::new();
         let items: [(&'static str, &'static str, &'static str, bool, bool); 12] = [
-            ("save", ph::FLOPPY_DISK, "Save (Ctrl+S)", can_save, false),
-            ("undo", ph::ARROW_COUNTER_CLOCKWISE, "Undo (Ctrl+Z)", can_undo, false),
-            ("redo", ph::ARROW_CLOCKWISE, "Redo (Ctrl+Y)", can_redo, false),
-            ("fit", ph::ARROWS_IN, "Fit to view (0)", true, fit),
-            ("100", ph::MAGNIFYING_GLASS, "Actual size (1)", true, false),
-            ("out", ph::MAGNIFYING_GLASS_MINUS, "Zoom out (-)", true, false),
-            ("in", ph::MAGNIFYING_GLASS_PLUS, "Zoom in (+)", true, false),
-            ("rl", ph::ARROW_COUNTER_CLOCKWISE, "Rotate left (Shift+R)", true, false),
-            ("rr", ph::ARROW_CLOCKWISE, "Rotate right (R)", true, false),
-            ("fh", ph::FLIP_HORIZONTAL, "Flip horizontally (H)", true, false),
-            ("fv", ph::FLIP_VERTICAL, "Flip vertically (V)", true, false),
-            ("crop", ph::CROP, "Crop: drag a rectangle, Enter applies (C)", true, crop_mode),
+            ("save", ph::FLOPPY_DISK, tr!("editors-tb-save"), can_save, false),
+            ("undo", ph::ARROW_COUNTER_CLOCKWISE, tr!("editors-tb-undo"), can_undo, false),
+            ("redo", ph::ARROW_CLOCKWISE, tr!("editors-tb-redo"), can_redo, false),
+            ("fit", ph::ARROWS_IN, tr!("editors-image-fit"), true, fit),
+            ("100", ph::MAGNIFYING_GLASS, tr!("editors-image-actual-size"), true, false),
+            ("out", ph::MAGNIFYING_GLASS_MINUS, tr!("editors-image-zoom-out"), true, false),
+            ("in", ph::MAGNIFYING_GLASS_PLUS, tr!("editors-image-zoom-in"), true, false),
+            ("rl", ph::ARROW_COUNTER_CLOCKWISE, tr!("editors-image-rotate-left"), true, false),
+            ("rr", ph::ARROW_CLOCKWISE, tr!("editors-image-rotate-right"), true, false),
+            ("fh", ph::FLIP_HORIZONTAL, tr!("editors-image-flip-h"), true, false),
+            ("fv", ph::FLIP_VERTICAL, tr!("editors-image-flip-v"), true, false),
+            ("crop", ph::CROP, tr!("editors-image-crop"), true, crop_mode),
         ];
         for (i, (key, glyph, tip, enabled, on)) in items.into_iter().enumerate() {
             if matches!(i, 3 | 7 | 11) {
@@ -318,7 +319,7 @@ impl ImageDoc {
             }
         }
         if self.crop.is_some() {
-            for (label, key) in [("Apply crop", "apply"), ("Cancel", "cancel")] {
+            for (label, key) in [(tr!("editors-image-apply-crop"), "apply"), (tr!("common-cancel"), "cancel")] {
                 let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), p.text_primary);
                 let b = Rect::from_min_size(pos2(x + 4.0, r.top() + 5.0), vec2(g.size().x + 18.0, 24.0));
                 x = b.right() + 2.0;
@@ -383,14 +384,23 @@ impl ImageDoc {
     fn status(&self, ui: &mut Ui, r: Rect, p: &Palette) {
         ui.painter().hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.border_subtle));
         let (w, h) = self.size();
-        let fmt = self.format.map(|f| format!("{f:?}").to_uppercase()).unwrap_or_else(|| "Image".into());
-        let mut s = format!("{w} × {h} px  ·  {fmt}  ·  {:.0} %", self.last_scale * 100.0);
+        let fmt =
+            self.format.map(|f| format!("{f:?}").to_uppercase()).unwrap_or_else(|| tr!("editors-image-kind").into());
+        let mut s = tr!(
+            "editors-image-status",
+            width = w.to_string(),
+            height = h.to_string(),
+            format = fmt,
+            zoom = format!("{:.0}", self.last_scale * 100.0)
+        );
         if let Some(c) = self.crop {
             let (_, _, cw, ch) = c.to_pixels(w, h);
-            s.push_str(&format!("  ·  crop {cw} × {ch}"));
+            s.push_str("  ·  ");
+            s.push_str(&tr!("editors-image-status-crop", width = cw.to_string(), height = ch.to_string()));
         }
         if !self.ops.is_empty() {
-            s.push_str(&format!("  ·  {} edit{}", self.ops.len(), if self.ops.len() == 1 { "" } else { "s" }));
+            s.push_str("  ·  ");
+            s.push_str(&tr!("editors-image-status-edits", count = self.ops.len()));
         }
         ui.painter().text(
             pos2(r.left() + 10.0, r.center().y),
@@ -400,9 +410,9 @@ impl ImageDoc {
             p.text_secondary,
         );
         let mode = match self.save_mode() {
-            SaveMode::Lossless(_) => "Saves losslessly",
-            SaveMode::Lossy(_) => "Saves re-encoded (lossy)",
-            SaveMode::Unsupported => "Read-only format",
+            SaveMode::Lossless(_) => tr!("editors-image-mode-lossless"),
+            SaveMode::Lossy(_) => tr!("editors-image-mode-lossy"),
+            SaveMode::Unsupported => tr!("editors-image-mode-readonly"),
         };
         ui.painter().text(
             pos2(r.right() - 10.0, r.center().y),
@@ -584,7 +594,7 @@ impl ImageDoc {
             painter.text(
                 pos2(area.center().x, area.top() + 16.0),
                 Align2::CENTER_CENTER,
-                "Drag to select the area to keep",
+                tr!("editors-image-crop-hint"),
                 FontId::proportional(12.0),
                 p.text_secondary,
             );

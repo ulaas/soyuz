@@ -86,3 +86,22 @@ fn tilde_expansion() {
     assert_eq!(PathBuf::from(expand_tilde("~/x")), home.join("x"));
     assert_eq!(expand_tilde("/abs"), "/abs");
 }
+
+/// Turkish UI: Turkish titles rank, English titles and keywords still find commands.
+#[test]
+fn ranks_in_turkish_and_keeps_english_muscle_memory() {
+    let e: Vec<(Action, catalog::Entry)> =
+        Action::all().into_iter().map(|a| (a.clone(), catalog::entry_in(&a, soyuz_core::Locale::TrTr))).collect();
+    let top = |q: &str| -> Vec<Action> {
+        score_actions(&e, &[], q).into_iter().take(5).map(|r| e[r.index].0.clone()).collect()
+    };
+    assert_eq!(top("yeni klasör")[0], Action::NewFolder);
+    assert_eq!(top("ayarlar")[0], Action::Settings);
+    assert_eq!(top("new folder")[0], Action::NewFolder);
+    assert_eq!(top("copy path")[0], Action::CopyPath);
+    assert_eq!(top("settings")[0], Action::Settings);
+    assert!(top("recycle").contains(&Action::Delete));
+    // Dotless / dotted i: "işler" and "isler" both find the jobs commands.
+    assert!(top("isleri duraklat").contains(&Action::JobsPauseAll));
+    assert!(top("İŞLERİ DURAKLAT").contains(&Action::JobsPauseAll));
+}

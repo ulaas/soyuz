@@ -22,7 +22,7 @@ use crate::theme::fonts::SEMIBOLD;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
-use crate::ui::widgets::{HIDDEN_CONTROLS_TIP, paint_hidden_badge, trunc_galley, wrapped_galley};
+use crate::ui::widgets::{hidden_controls_tip, paint_hidden_badge, trunc_galley, wrapped_galley};
 
 /// Width reserved for the hidden-characters badge after a name.
 fn badge_w(name: &str) -> f32 {
@@ -171,7 +171,7 @@ fn body(
     if let Some(i) = hovered
         && pane.entry_at(i).is_some_and(|e| soyuz_core::naming::has_hidden_controls(&e.name))
     {
-        bg.clone().on_hover_text(HIDDEN_CONTROLS_TIP);
+        bg.clone().on_hover_text(hidden_controls_tip());
     }
 
     // ---- paint ----
@@ -186,7 +186,12 @@ fn body(
     let a11y_on = crate::ui::a11y::active(ui.ctx());
     if a11y_on {
         let title = crate::state::crumbs::location_title(&pane.location);
-        crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::ListBox, &format!("Files in {title}"));
+        crate::ui::a11y::container(
+            ui.ctx(),
+            bg.id,
+            egui::accesskit::Role::ListBox,
+            &tr!("views-a11y-files-in", title = title),
+        );
         let total = pane.visible.len();
         let cursor_id = cursor_pos.map(|c| Id::new(("soyuz.flow.row", pane.id.0, c)));
         crate::ui::a11y::with(ui.ctx(), bg.id, |n| {
@@ -226,12 +231,15 @@ fn body(
                         cut: v.fileops.clipboard.is_cut(&e.path),
                     };
                     if a11y_on {
-                        let kind = if e.is_dir_like() { "folder" } else { "file" };
                         crate::ui::a11y::list_item(
                             ui,
                             Id::new(("soyuz.flow.row", pane.id.0, i)),
                             r.intersect(list_area),
-                            &format!("{}, {kind}", soyuz_core::naming::reveal_controls(&e.name)),
+                            &tr!(
+                                "views-a11y-row",
+                                name = soyuz_core::naming::reveal_controls(&e.name),
+                                kind = if e.is_dir_like() { "folder" } else { "file" }
+                            ),
                             st.selected,
                             i,
                             pane.visible.len(),
@@ -799,7 +807,11 @@ fn paint_group_header(painter: &Painter, p: &Palette, r: Rect, label: &str, coun
     let lx = r.left() + 22.0;
     let lw = lg.size().x;
     painter.galley(pos2(lx, cy - lg.size().y / 2.0), lg, c);
-    let cg = painter.layout_no_wrap(count.to_string(), FontId::proportional(11.5), p.text_tertiary);
+    let cg = painter.layout_no_wrap(
+        soyuz_core::locale::group_int(count as u64),
+        FontId::proportional(11.5),
+        p.text_tertiary,
+    );
     let cx = lx + lw + 8.0;
     let cw = cg.size().x;
     painter.galley(pos2(cx, cy - cg.size().y / 2.0), cg, p.text_tertiary);

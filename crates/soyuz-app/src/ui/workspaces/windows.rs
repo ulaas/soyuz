@@ -134,7 +134,7 @@ pub fn window_list(app: &SoyuzApp) -> Vec<(WindowId, String)> {
     let title = |ws: &Workspace| {
         let n = ws.tabs.len();
         let t = crate::state::crumbs::location_title(&ws.pane().location);
-        if n > 1 { format!("{t} (+{} tabs)", n - 1) } else { t }
+        if n > 1 { tr!("workspaces-window-more-tabs", title = t, count = n - 1) } else { t }
     };
     // `app.ws` is the current window; the main workspace sits in the current window's
     // slot while a secondary window is swapped in.
@@ -148,7 +148,7 @@ pub fn window_list(app: &SoyuzApp) -> Vec<(WindowId, String)> {
             None => &app.ws,
         }
     };
-    out.push((WindowId::MAIN, format!("Main window — {}", title(main_ws))));
+    out.push((WindowId::MAIN, tr!("workspaces-main-window", title = title(main_ws))));
     for w in &app.workspaces.windows {
         let ws = if w.id == cur { &app.ws } else { &w.ws };
         out.push((w.id, title(ws)));
@@ -341,7 +341,7 @@ fn focus(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
 
 fn merge_into(app: &mut SoyuzApp, ctx: &egui::Context, into: WindowId) {
     if app.workspaces.windows.is_empty() {
-        app.ui.toasts.push(Toast::info("There are no other windows"));
+        app.ui.toasts.push(Toast::info(tr!("workspaces-no-other-windows")));
         return;
     }
     if let Some(k) = index(app, into) {
@@ -357,11 +357,7 @@ fn merge_into(app: &mut SoyuzApp, ctx: &egui::Context, into: WindowId) {
     }
     app.workspaces.owner = WindowId::MAIN;
     app.workspaces.geoms.retain(|g| g.id.is_main());
-    app.ui.toasts.push(Toast::success(if n == 1 {
-        "Merged 1 window".to_string()
-    } else {
-        format!("Merged {n} windows")
-    }));
+    app.ui.toasts.push(Toast::success(tr!("workspaces-merged", count = n)));
 }
 
 /// A tab dragged out of the strip of the current window was released (or moved by a
@@ -378,7 +374,7 @@ pub fn drop_tab(app: &mut SoyuzApp, ctx: &egui::Context, tab: TabId, target: Dro
                 app.workspaces.ops.push(WinOp::OpenTabs { tabs: vec![t], group, pos, size });
             }
             None => {
-                app.ui.toasts.push(Toast::info("A window keeps at least one tab"));
+                app.ui.toasts.push(Toast::info(tr!("workspaces-keep-one-tab")));
             }
         },
         DropTarget::Window { id, index } => {
@@ -392,7 +388,7 @@ pub fn drop_tab(app: &mut SoyuzApp, ctx: &egui::Context, tab: TabId, target: Dro
             } else if !cur.is_main() {
                 app.workspaces.ops.push(WinOp::MoveLastTab { from: cur, to: id, index });
             } else {
-                app.ui.toasts.push(Toast::info("The main window keeps at least one tab"));
+                app.ui.toasts.push(Toast::info(tr!("workspaces-main-keeps-tab")));
             }
         }
     }

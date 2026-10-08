@@ -13,16 +13,30 @@ use super::{ToolCmd, queue};
 use crate::cmd::Cmd;
 use crate::keys::chord_label;
 use crate::ops::fileops::dnd::{self, DragPayload};
-use crate::services::tags::{self, TAG_COUNT, TAG_NAMES};
+use crate::services::tags::{self, TAG_COUNT};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, submenu, trunc_galley};
 
+/// Display name of a tag color (the English `TAG_NAMES` stay the slugs / config values).
+pub fn tag_name(tag: u8) -> &'static str {
+    match tag {
+        0 => tr!("tools-tag-red"),
+        1 => tr!("tools-tag-orange"),
+        2 => tr!("tools-tag-yellow"),
+        3 => tr!("tools-tag-green"),
+        4 => tr!("tools-tag-cyan"),
+        5 => tr!("tools-tag-blue"),
+        6 => tr!("tools-tag-purple"),
+        _ => tr!("tools-tag-gray"),
+    }
+}
+
 /// A menu row with a colored dot instead of an icon; `checked` draws a check mark.
 fn tag_row(ui: &mut Ui, tag: u8, checked: bool, shortcut: Option<&str>) -> egui::Response {
     let p = palette(ui.ctx());
-    let resp = menu_item(ui, None, TAG_NAMES[tag as usize], shortcut, true);
+    let resp = menu_item(ui, None, tag_name(tag), shortcut, true);
     let c = pos2(resp.rect.left() + 17.0, resp.rect.center().y);
     ui.painter().circle_filled(c, 5.5, p.tags[tag as usize]);
     if checked {
@@ -49,7 +63,7 @@ pub fn items_menu(
         recent_items_menu(ui, &paths);
     }
     let masks: Vec<u8> = paths.iter().map(|p| tags::tags_of(p)).collect();
-    submenu(ui, Some(ph::TAG), "Tags", |ui| {
+    submenu(ui, Some(ph::TAG), tr!("tools-tags-menu"), |ui| {
         ui.set_width(200.0);
         for t in 0..TAG_COUNT as u8 {
             let all = masks.iter().all(|m| m & (1 << t) != 0);
@@ -61,12 +75,12 @@ pub fn items_menu(
         }
         menu_separator(ui);
         let any = masks.iter().any(|m| *m != 0);
-        if menu_item(ui, Some(ph::X_CIRCLE), "Clear tags", None, any).clicked() {
+        if menu_item(ui, Some(ph::X_CIRCLE), tr!("tools-tags-clear"), None, any).clicked() {
             queue(ToolCmd::ClearTags(paths.clone()));
             ui.close();
         }
     });
-    if menu_item(ui, Some(ph::TRAY_ARROW_DOWN), "Add to shelf", None, true).clicked() {
+    if menu_item(ui, Some(ph::TRAY_ARROW_DOWN), tr!("tools-menu-add-to-shelf"), None, true).clicked() {
         queue(ToolCmd::ShelfAdd(paths.clone()));
         ui.close();
     }
@@ -79,19 +93,19 @@ pub fn items_menu(
         }
     };
     if dirs.len() == 1 && sel.len() == 1 {
-        act(ui, cmds, ph::CHART_PIE_SLICE, "Analyze disk usage", Action::DiskUsageTreemap);
+        act(ui, cmds, ph::CHART_PIE_SLICE, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
     }
     if !dirs.is_empty() && dirs.len() == sel.len() {
-        act(ui, cmds, ph::FILES, "Find duplicates", Action::FindDuplicates);
+        act(ui, cmds, ph::FILES, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
     }
     if dirs.len() == 2 && sel.len() == 2 {
-        act(ui, cmds, ph::GIT_DIFF, "Compare folders", Action::CompareFolders);
+        act(ui, cmds, ph::GIT_DIFF, tr!("tools-menu-compare-folders"), Action::CompareFolders);
     }
     if let [(p, false)] = sel {
         if crate::ui::tools::split::is_part(p) {
-            act(ui, cmds, ph::ARROWS_MERGE, "Join parts…", Action::JoinFiles);
+            act(ui, cmds, ph::ARROWS_MERGE, tr!("tools-menu-join-parts"), Action::JoinFiles);
         } else {
-            act(ui, cmds, ph::ARROWS_SPLIT, "Split file…", Action::SplitFile);
+            act(ui, cmds, ph::ARROWS_SPLIT, tr!("tools-menu-split-file"), Action::SplitFile);
         }
     }
 }
@@ -107,19 +121,19 @@ pub fn background_menu(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: Pane
     };
     match location {
         Location::Dir(_) => {
-            act(ui, cmds, ph::CHART_PIE_SLICE, "Analyze disk usage", Action::DiskUsageTreemap);
-            act(ui, cmds, ph::FILES, "Find duplicates", Action::FindDuplicates);
+            act(ui, cmds, ph::CHART_PIE_SLICE, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
+            act(ui, cmds, ph::FILES, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
             act(
                 ui,
                 cmds,
                 ph::GIT_DIFF,
-                if dual { "Compare with other pane" } else { "Compare folders…" },
+                if dual { tr!("tools-menu-compare-other-pane") } else { tr!("tools-menu-compare-folders-dialog") },
                 Action::CompareFolders,
             );
             menu_separator(ui);
         }
         Location::Recent => {
-            if menu_item(ui, Some(ph::BROOM), "Clear recent items", None, true).clicked() {
+            if menu_item(ui, Some(ph::BROOM), tr!("tools-menu-clear-recent"), None, true).clicked() {
                 crate::services::recent::clear();
                 cmds.push(Cmd::PaneAction(pane, Action::Refresh));
                 ui.close();
@@ -132,7 +146,7 @@ pub fn background_menu(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: Pane
 
 /// Rows for items shown in the Recent location.
 pub fn recent_items_menu(ui: &mut Ui, paths: &[PathBuf]) {
-    if menu_item(ui, Some(ph::CLOCK_COUNTER_CLOCKWISE), "Remove from Recent", None, true).clicked() {
+    if menu_item(ui, Some(ph::CLOCK_COUNTER_CLOCKWISE), tr!("tools-menu-remove-from-recent"), None, true).clicked() {
         queue(ToolCmd::ForgetRecent(paths.to_vec()));
         ui.close();
     }
@@ -147,9 +161,10 @@ pub fn sidebar_section(
     pane: PaneId,
     cmds: &mut Vec<Cmd>,
 ) {
+    // The collapsed-state key stays English (persisted in the session).
     let name = "Tags";
     let mut open = !collapsed.contains(name);
-    collapsible_header(ui, name, &mut open);
+    collapsible_header(ui, tr!("tools-tags-section"), &mut open);
     if open {
         collapsed.remove(name);
     } else {
@@ -181,13 +196,7 @@ pub fn sidebar_section(
                 painter.circle_stroke(c, 7.5, Stroke::new(1.0, p.tags[t as usize].gamma_multiply(0.6)));
             }
             let label_color = if active { p.text_primary } else { p.text_primary.gamma_multiply(0.9) };
-            let g = trunc_galley(
-                &painter,
-                TAG_NAMES[t as usize],
-                FontId::proportional(13.0),
-                label_color,
-                rect.width() - 70.0,
-            );
+            let g = trunc_galley(&painter, tag_name(t), FontId::proportional(13.0), label_color, rect.width() - 70.0);
             painter.galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, label_color);
             let n = counts[t as usize];
             if n > 0 {
@@ -243,7 +252,8 @@ fn tag_drop_target(ui: &Ui, resp: &egui::Response, tag: u8) {
 pub fn recent_row(ui: &mut Ui, current: &Location, pane: PaneId, cmds: &mut Vec<Cmd>) {
     let active = matches!(current, Location::Recent);
     let r =
-        NavRow { icon: ph::CLOCK_COUNTER_CLOCKWISE, label: "Recent", active, icon_color: None, usage: None }.show(ui);
+        NavRow { icon: ph::CLOCK_COUNTER_CLOCKWISE, label: tr!("tools-recent"), active, icon_color: None, usage: None }
+            .show(ui);
     if r.clicked() {
         cmds.push(Cmd::FocusPane(pane));
         cmds.push(Cmd::Navigate { pane, location: Location::Recent, select: None });

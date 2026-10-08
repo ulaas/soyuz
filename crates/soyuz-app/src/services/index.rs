@@ -307,14 +307,14 @@ fn pill_terms(form: &SearchForm) -> Result<Vec<Expr>, String> {
     let size = |s: &str| -> Result<Option<u64>, String> {
         match s.trim() {
             "" => Ok(None),
-            t => soyuz_index::query::parse_size(t).map(Some).ok_or_else(|| format!("Can't read the size “{t}”")),
+            t => soyuz_index::query::parse_size(t).map(Some).ok_or_else(|| tr!("services-index-bad-size", size = t)),
         }
     };
     let (min, max) = (size(&form.min_size)?, size(&form.max_size)?);
     if let (Some(a), Some(b)) = (min, max)
         && a > b
     {
-        return Err("The minimum size is larger than the maximum".into());
+        return Err(tr!("services-index-size-range").into());
     }
     if min.is_some() || max.is_some() {
         out.push(Expr::Term(Term::Size(Range { lo: min, hi: max.map(|m| m.saturating_add(1)) })));
@@ -371,11 +371,11 @@ pub fn plan_from_form(form: &SearchForm) -> Result<IndexPlan, String> {
         expr = expr.and(t);
     }
     if expr.is_empty() {
-        return Err("Type something to search for".into());
+        return Err(tr!("services-index-empty-query").into());
     }
     let scope = if form.everywhere { Vec::new() } else { vec![soyuz_fs::strip_verbatim(&form.root)] };
     if scope.iter().any(|s| s.as_os_str().is_empty()) {
-        return Err("Choose a folder to search in".into());
+        return Err(tr!("services-index-no-folder").into());
     }
     Ok(IndexPlan {
         expr,
@@ -394,7 +394,7 @@ pub fn live_query(plan: &IndexPlan, respect_gitignore: bool, content_max: u64) -
         roots = self::roots();
     }
     if roots.is_empty() {
-        return Err("No folders are indexed; add one in Settings → Preview & search".into());
+        return Err(tr!("services-index-no-roots").into());
     }
     let base = SearchQuery {
         roots,

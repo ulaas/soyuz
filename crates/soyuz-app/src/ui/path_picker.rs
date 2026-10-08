@@ -60,10 +60,18 @@ pub struct PathPicker {
 
 impl PathPicker {
     pub fn new(title: &str, mode: PickMode, dir: PathBuf, name: &str, exts: &[&str]) -> Self {
+        // Home (always first) plus Desktop / Documents / Downloads (matched on the
+        // folder name: labels are translated).
         let places = crate::ui::sidebar::standard_places()
             .into_iter()
-            .filter(|p| matches!(p.label.as_str(), "Home" | "Desktop" | "Documents" | "Downloads"))
-            .map(|p| (p.label, p.icon, p.path))
+            .enumerate()
+            .filter(|(i, p)| {
+                *i == 0
+                    || p.path.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
+                        ["Desktop", "Documents", "Downloads"].iter().any(|s| s.eq_ignore_ascii_case(n))
+                    })
+            })
+            .map(|(_, p)| (p.label, p.icon, p.path))
             .collect();
         let mut picker = PathPicker {
             id: Id::new(("soyuz.picker", title.to_string())),
@@ -183,14 +191,14 @@ impl PathPicker {
             // Location row: up + editable path.
             ui.horizontal(|ui| {
                 let parent = self.dir.parent().map(Path::to_path_buf);
-                if icon_button(ui, ph::ARROW_UP, "Parent folder", parent.is_some()).clicked() {
+                if icon_button(ui, ph::ARROW_UP, tr!("app-picker-parent"), parent.is_some()).clicked() {
                     go = parent;
                 }
                 let r = ui.add(
                     TextEdit::singleline(&mut self.path_text)
                         .desired_width(f32::INFINITY)
                         .margin(Margin::symmetric(8, 6))
-                        .hint_text("Folder path"),
+                        .hint_text(tr!("app-picker-folder-path")),
                 );
                 if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
                     let typed = PathBuf::from(self.path_text.trim().trim_matches('"'));
@@ -217,7 +225,7 @@ impl PathPicker {
             ui.add_space(10.0);
             if self.mode == PickMode::Save {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("File name").color(p.text_secondary));
+                    ui.label(RichText::new(tr!("app-picker-file-name")).color(p.text_secondary));
                     let r = ui.add(
                         TextEdit::singleline(&mut self.name)
                             .desired_width(f32::INFINITY)
@@ -238,23 +246,20 @@ impl PathPicker {
             if let Some(path) = &self.confirm_replace {
                 ui.add_space(6.0);
                 ui.label(
-                    RichText::new(format!(
-                        "{} already exists. Press Save again to replace it.",
-                        soyuz_core::entry::display_name(path)
-                    ))
-                    .color(p.warning),
+                    RichText::new(tr!("app-picker-replace", name = soyuz_core::entry::display_name(path)))
+                        .color(p.warning),
                 );
             }
             ui.add_space(12.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let label = if self.mode == PickMode::Save { "Save" } else { "Open" };
+                let label = if self.mode == PickMode::Save { tr!("common-save") } else { tr!("app-picker-open") };
                 let ok = self.target().is_some();
                 let resp = ui.add_enabled_ui(ok, |ui| pill_button(ui, None, label, true)).inner;
                 if resp.clicked() && ok {
                     result = self.confirm();
                 }
                 ui.add_space(6.0);
-                if pill_button(ui, None, "Cancel", false).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
                     result = PickResult::Cancelled;
                 }
             });
@@ -293,7 +298,7 @@ impl PathPicker {
                 ui.set_width(ui.available_width());
                 if self.loading {
                     ui.add_space(12.0);
-                    ui.vertical_centered(|ui| ui.label(RichText::new("Loading…").color(p.text_tertiary)));
+                    ui.vertical_centered(|ui| ui.label(RichText::new(tr!("common-loading")).color(p.text_tertiary)));
                     return;
                 }
                 if let Some(e) = &self.error {
@@ -303,7 +308,9 @@ impl PathPicker {
                 }
                 if self.entries.is_empty() {
                     ui.add_space(12.0);
-                    ui.vertical_centered(|ui| ui.label(RichText::new("No matching items").color(p.text_tertiary)));
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new(tr!("app-picker-no-items")).color(p.text_tertiary))
+                    });
                     return;
                 }
                 ScrollArea::vertical().max_height(280.0).auto_shrink([false, false]).show_rows(
@@ -316,7 +323,11 @@ impl PathPicker {
                             let (rect, resp) =
                                 ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
                             let kind = if e.is_dir_like() { "folder" } else { "file" };
-                            crate::ui::a11y::toggle(&resp, &format!("{}, {kind}", e.name), self.selected == Some(i));
+                            crate::ui::a11y::toggle(
+                                &resp,
+                                &tr!("app-picker-row", name = &e.name, kind = kind),
+                                self.selected == Some(i),
+                            );
                             let sel = self.selected == Some(i);
                             if sel {
                                 ui.painter().rect_filled(rect, CornerRadius::same(radius::ROW), p.accent_subtle);

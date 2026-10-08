@@ -117,6 +117,12 @@ getrandom = "0.3.4"
 # --- index (F5): SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "functions", "cache"] }
 
+# --- localization (F10): Project Fluent, pure Rust ---
+fluent-bundle = "0.16.0"
+fluent-langneg = "0.13.1"
+intl-memoizer = "0.5.3"
+unic-langid = "0.9.6"
+
 # --- misc ---
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 humansize = "2.1.3"

@@ -35,7 +35,7 @@ pub fn kind_for_ext(ext: &str) -> Option<&'static str> {
         "stl" => "STL",
         "obj" => "Wavefront OBJ",
         "gltf" => "glTF",
-        "glb" => "glTF binary",
+        "glb" => tr!("services-model-gltf-binary"),
         _ => return None,
     })
 }
@@ -46,10 +46,10 @@ pub fn parse(data: &[u8], ext: &str, dir: Option<&Path>, cap: u64) -> Result<Mod
         "stl" => stl(data)?,
         "obj" => obj(&String::from_utf8_lossy(data))?,
         "gltf" | "glb" => gltf_model(data, dir, cap)?,
-        _ => return Err("Unknown model format".into()),
+        _ => return Err(tr!("services-model-unknown").into()),
     };
     if m.tris.is_empty() {
-        return Err("The model has no triangles".into());
+        return Err(tr!("services-model-no-triangles").into());
     }
     if m.colors.is_empty() {
         m.colors.push([0.78, 0.80, 0.84]);
@@ -80,7 +80,7 @@ pub fn stl(data: &[u8]) -> Result<Model, String> {
             if tok == "vertex" {
                 let mut v = [0f32; 3];
                 for c in &mut v {
-                    *c = it.next().and_then(|t| t.parse().ok()).ok_or("Damaged ASCII STL")?;
+                    *c = it.next().and_then(|t| t.parse().ok()).ok_or(tr!("services-model-bad-ascii-stl"))?;
                 }
                 verts.push(v);
                 if verts.len() / 3 >= MAX_TRIS {
@@ -94,7 +94,7 @@ pub fn stl(data: &[u8]) -> Result<Model, String> {
             m.tris.push([base, base + 1, base + 2]);
         }
     } else {
-        let n = n.ok_or("Damaged STL file")?;
+        let n = n.ok_or(tr!("services-model-bad-stl"))?;
         let n = n.min((data.len().saturating_sub(84)) / 50).min(MAX_TRIS);
         m.positions.reserve(n * 3);
         m.tris.reserve(n);
@@ -171,7 +171,7 @@ fn transform(m: &[[f32; 4]; 4], p: [f32; 3]) -> [f32; 3] {
 }
 
 fn gltf_model(data: &[u8], dir: Option<&Path>, cap: u64) -> Result<Model, String> {
-    let g = gltf::Gltf::from_slice(data).map_err(|e| format!("Not a readable glTF file ({e})"))?;
+    let g = gltf::Gltf::from_slice(data).map_err(|e| tr!("services-model-bad-gltf", error = e.to_string()))?;
     let mut buffers: Vec<Vec<u8>> = Vec::new();
     for b in g.buffers() {
         let bytes = match b.source() {
@@ -196,7 +196,10 @@ fn gltf_model(data: &[u8], dir: Option<&Path>, cap: u64) -> Result<Model, String
         };
         buffers.push(bytes);
     }
-    let mut m = Model { format: if data.starts_with(b"glTF") { "glTF binary" } else { "glTF" }, ..Default::default() };
+    let mut m = Model {
+        format: if data.starts_with(b"glTF") { tr!("services-model-gltf-binary") } else { "glTF" },
+        ..Default::default()
+    };
     let mut mat_index: std::collections::HashMap<Option<usize>, u16> = std::collections::HashMap::new();
     let ident = [[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 1.0, 0.0], [0.0, 0.0, 0.0, 1.0]];
     let mut stack: Vec<(gltf::Node<'_>, [[f32; 4]; 4], usize)> = Vec::new();

@@ -535,8 +535,9 @@ pub fn fetch(e: &EntryInfo, then: FetchThen, postman: Postman) {
                 }
             }
             Err(err) => {
-                postman
-                    .send(UiMsg::Notice(Toast::error(format!("Couldn't download {}", e.name)).body(err.to_string())));
+                postman.send(UiMsg::Notice(
+                    Toast::error(tr!("remote-download-failed", name = &e.name)).body(err.to_string()),
+                ));
             }
         }
     });

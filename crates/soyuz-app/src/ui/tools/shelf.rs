@@ -202,7 +202,7 @@ impl Shelf {
         ui.painter().text(
             pos2(hr.left() + 34.0, hr.center().y),
             Align2::LEFT_CENTER,
-            "Shelf",
+            tr!("tools-shelf-title"),
             crate::ui::views::flow::semibold(13.5),
             p.text_primary,
         );
@@ -217,12 +217,12 @@ impl Shelf {
         }
         let close = Rect::from_center_size(pos2(hr.right() - 20.0, hr.center().y), vec2(30.0, 30.0));
         let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(close));
-        if icon_button(&mut cu, ph::X, "Hide shelf", true).clicked() {
+        if icon_button(&mut cu, ph::X, tr!("tools-shelf-hide"), true).clicked() {
             self.open = false;
         }
         let clear = Rect::from_center_size(pos2(hr.right() - 50.0, hr.center().y), vec2(30.0, 30.0));
         let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(clear));
-        if icon_button(&mut cu, ph::BROOM, "Clear shelf", !self.items.is_empty()).clicked() {
+        if icon_button(&mut cu, ph::BROOM, tr!("tools-shelf-clear"), !self.items.is_empty()).clicked() {
             self.items.clear();
             self.selected.clear();
         }
@@ -271,12 +271,12 @@ impl Shelf {
             ui.painter().text(
                 c + vec2(0.0, 4.0),
                 Align2::CENTER_CENTER,
-                "Drop files here",
+                tr!("tools-shelf-empty-title"),
                 crate::ui::views::flow::semibold(13.0),
                 p.text_primary,
             );
             let g = ui.painter().layout(
-                "Collect items from different folders, then drag them out or copy them all at once.".into(),
+                tr!("tools-shelf-empty-body").into(),
                 FontId::proportional(11.5),
                 p.text_secondary,
                 list.width() - 40.0,
@@ -327,12 +327,16 @@ impl Shelf {
                     );
                     painter.galley(pos2(r.left() + 32.0, r.top() + 4.0), g, p.text_primary);
                     let sub = if item.missing {
-                        "Missing".to_string()
+                        tr!("tools-shelf-missing").to_string()
                     } else {
                         let folder = item.path.parent().map(soyuz_core::entry::display_name).unwrap_or_default();
                         match &item.entry {
                             Some(e) if !e.is_dir_like() => {
-                                format!("{} · {folder}", format_size(e.size, SizeStyle::Binary))
+                                tr!(
+                                    "tools-shelf-item-sub",
+                                    size = format_size(e.size, SizeStyle::Binary),
+                                    folder = &folder
+                                )
                             }
                             _ => folder,
                         }
@@ -370,23 +374,21 @@ impl Shelf {
                         );
                     }
                     let path = item.path.clone();
-                    resp.on_hover_text(format!(
-                        "{}\nDrag out to copy or move · double-click to reveal",
-                        path.display()
-                    ))
-                    .context_menu(|ui| {
-                        ui.set_width(200.0);
-                        if menu_item(ui, Some(ph::FOLDER_OPEN), "Reveal in pane", None, true).clicked() {
-                            reveal = Some(path.clone());
-                            ui.close();
-                        }
-                        if menu_item(ui, Some(ph::X), "Remove from shelf", None, true).clicked() {
-                            let mut s = BTreeSet::new();
-                            s.insert(i);
-                            remove = Some(s);
-                            ui.close();
-                        }
-                    });
+                    resp.on_hover_text(tr!("tools-shelf-item-tip", path = path.display().to_string())).context_menu(
+                        |ui| {
+                            ui.set_width(200.0);
+                            if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("tools-shelf-reveal"), None, true).clicked() {
+                                reveal = Some(path.clone());
+                                ui.close();
+                            }
+                            if menu_item(ui, Some(ph::X), tr!("tools-shelf-remove"), None, true).clicked() {
+                                let mut s = BTreeSet::new();
+                                s.insert(i);
+                                remove = Some(s);
+                                ui.close();
+                            }
+                        },
+                    );
                 }
             },
         );
@@ -411,19 +413,24 @@ impl Shelf {
         let n = if self.selected.is_empty() { self.items.len() } else { self.selected.len() };
         let to = dest.as_deref().map(soyuz_core::entry::display_name).unwrap_or_else(|| "—".into());
         fu.label(
-            egui::RichText::new(format!("{} {} → {to}", if self.selected.is_empty() { "All" } else { "Selected" }, n))
-                .font(FontId::proportional(11.5))
-                .color(p.text_tertiary),
+            egui::RichText::new(tr!(
+                "tools-shelf-footer",
+                which = if self.selected.is_empty() { "all" } else { "selected" },
+                count = n,
+                dest = to
+            ))
+            .font(FontId::proportional(11.5))
+            .color(p.text_tertiary),
         );
         fu.horizontal(|ui| {
             let ok = dest.is_some();
-            if button(ui, Some(ph::COPY), "Copy here", 1, ok).clicked()
+            if button(ui, Some(ph::COPY), tr!("tools-shelf-copy-here"), 1, ok).clicked()
                 && let Some(d) = &dest
             {
                 let paths = self.targets();
                 app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer { paths, dest: d.clone(), effect: DropEffect::Copy }));
             }
-            if button(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), "Move here", 0, ok).clicked()
+            if button(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("tools-shelf-move-here"), 0, ok).clicked()
                 && let Some(d) = &dest
             {
                 let paths = self.targets();
@@ -481,7 +488,7 @@ impl Shelf {
                 painter.text(
                     strip.center() + vec2(0.0, 10.0),
                     Align2::CENTER_CENTER,
-                    "Shelf",
+                    tr!("tools-shelf-title"),
                     FontId::proportional(10.5),
                     p.text_secondary,
                 );

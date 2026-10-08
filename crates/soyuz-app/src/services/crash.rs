@@ -335,12 +335,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             p.shown = true;
             if safe_mode() {
                 app.ui.toasts.push(
-                    Toast::warning("Safe mode")
-                        .body(
-                            "Default settings, no session restore, no folder watching, thumbnails or git status. \
-                             Restart Soyuz normally to leave safe mode.",
-                        )
-                        .sticky(),
+                    Toast::warning(tr!("services-crash-safe-mode")).body(tr!("services-crash-safe-mode-body")).sticky(),
                 );
             }
             if !p.crashes.is_empty() {
@@ -395,9 +390,9 @@ fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
             }
             journal::dismiss(&dismiss);
             let msg = if started == 0 {
-                "Nothing was left to resume".to_string()
+                tr!("services-crash-nothing-to-resume").to_string()
             } else {
-                format!("Resuming {started} operation{}", if started == 1 { "" } else { "s" })
+                tr!("services-crash-resuming", count = started)
             };
             app.ui.toasts.push(Toast::info(msg));
         }
@@ -412,9 +407,9 @@ fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
             }
             journal::dismiss(&dismiss);
             let msg = if started == 0 {
-                "Nothing had been completed, so there is nothing to roll back".to_string()
+                tr!("services-crash-nothing-to-roll-back").to_string()
             } else {
-                format!("Rolling back {started} operation{}", if started == 1 { "" } else { "s" })
+                tr!("services-crash-rolling-back", count = started)
             };
             app.ui.toasts.push(Toast::info(msg));
         }
@@ -426,7 +421,7 @@ fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
         RecoveryAction::DeleteReports(r) => {
             let n = delete_reports(&r);
             mark_seen(&crashes_dir(), &[]);
-            app.ui.toasts.push(Toast::success(format!("Deleted {n} crash report{}", if n == 1 { "" } else { "s" })));
+            app.ui.toasts.push(Toast::success(tr!("services-crash-deleted", count = n)));
         }
         RecoveryAction::OpenCrashFolder => {
             let dir = crashes_dir();
@@ -439,7 +434,7 @@ fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
             Err(e) => {
-                app.ui.toasts.push(Toast::error("Couldn't restart in safe mode").body(e.to_string()));
+                app.ui.toasts.push(Toast::error(tr!("services-crash-restart-failed")).body(e.to_string()));
             }
         },
     }

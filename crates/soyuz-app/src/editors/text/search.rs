@@ -43,7 +43,7 @@ pub fn compile(q: &Query) -> Result<Option<Regex>, String> {
     let body = if q.regex { q.text.clone() } else { regex::escape(&q.text) };
     let pat = if q.whole_word { format!(r"\b(?:{body})\b") } else { body };
     RegexBuilder::new(&pat).case_insensitive(!q.case).size_limit(1 << 23).build().map(Some).map_err(|e| match e {
-        regex::Error::Syntax(s) => s.lines().last().unwrap_or("invalid pattern").trim().to_string(),
+        regex::Error::Syntax(s) => s.lines().last().unwrap_or(tr!("editors-find-invalid-pattern")).trim().to_string(),
         other => other.to_string(),
     })
 }

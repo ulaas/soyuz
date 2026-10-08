@@ -144,13 +144,12 @@ pub fn build(ai: &Ai, route: Route, vars: &HashMap<String, String>) -> Result<Ar
         return super::fake::FakeModel::from_file(&path, vars).map(|m| Arc::new(m) as Arc<dyn ChatModel>);
     }
     if !ai.enabled {
-        return Err("AI features are turned off (Settings → AI).".into());
+        return Err(tr!("ai-error-disabled").into());
     }
-    let (mut profile, model) =
-        resolve(ai, route).ok_or_else(|| "No AI provider is configured yet. Add one in Settings → AI.".to_string())?;
+    let (mut profile, model) = resolve(ai, route).ok_or_else(|| tr!("ai-error-no-provider").to_string())?;
     profile.model = model;
     if profile.model.trim().is_empty() {
-        return Err(format!("Profile “{}” has no model id.", profile.name));
+        return Err(tr!("ai-error-no-model-id", name = &profile.name));
     }
     let provider = Provider::from_profile(&profile, NetSettings::from_config(ai)).map_err(|e| e.to_string())?;
     Ok(Arc::new(ProviderModel::new(provider, &profile)))

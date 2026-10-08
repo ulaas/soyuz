@@ -25,11 +25,11 @@ use crate::ui::toasts::Toast;
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
     let pane = app.ws.pane();
     let Some(dir) = pane.location.as_fs_path().map(Path::to_path_buf) else {
-        app.ui.toasts.push(Toast::info("Links can only be created in a folder on disk"));
+        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     };
     if !matches!(pane.location, soyuz_core::Location::Dir(_)) {
-        app.ui.toasts.push(Toast::info("Links can only be created in a folder on disk"));
+        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     }
     let target = if pane.selection.is_empty() { None } else { pane.selected_entries().first().map(|e| e.path.clone()) };
@@ -218,16 +218,26 @@ impl LinkDialog {
                 let mut nav: Option<PathBuf> = None;
                 let mut pick: Option<PathBuf> = None;
                 ui.horizontal(|ui| {
-                    if small_icon_button(ui, ph::ARROW_UP, "Parent folder").clicked()
+                    if small_icon_button(ui, ph::ARROW_UP, tr!("dialogs-link-parent")).clicked()
                         && let Some(parent) = dir.parent()
                     {
                         nav = Some(parent.to_path_buf());
                     }
-                    if small_icon_button(ui, ph::HOUSE, "Home").clicked() {
+                    if small_icon_button(ui, ph::HOUSE, tr!("dialogs-link-home")).clicked() {
                         nav = Some(soyuz_fs::home());
                     }
                     let shown = soyuz_fs::strip_verbatim(&dir).display().to_string();
-                    let w = (ui.available_width() - 112.0).max(40.0);
+                    let use_label = tr!("dialogs-link-use-folder");
+                    let use_w = ui
+                        .painter()
+                        .layout_no_wrap(
+                            use_label.to_string(),
+                            egui::TextStyle::Small.resolve(ui.style()),
+                            p.text_primary,
+                        )
+                        .size()
+                        .x;
+                    let w = (ui.available_width() - use_w - 24.0).max(40.0);
                     ui.allocate_ui(vec2(w, 20.0), |ui| {
                         ui.add(
                             egui::Label::new(
@@ -238,7 +248,7 @@ impl LinkDialog {
                         .on_hover_text(&shown);
                     });
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if ui.small_button("Use this folder").clicked() {
+                        if ui.small_button(use_label).clicked() {
                             pick = Some(dir.clone());
                         }
                     });
@@ -249,7 +259,7 @@ impl LinkDialog {
                         None => {
                             ui.horizontal(|ui| {
                                 ui.spinner();
-                                ui.label(RichText::new("Loading\u{2026}").color(p.text_tertiary));
+                                ui.label(RichText::new(tr!("common-loading")).color(p.text_tertiary));
                             });
                         }
                         Some(Err(e)) => {
@@ -302,7 +312,7 @@ impl LinkDialog {
                                     }
                                 });
                             if entries.is_empty() {
-                                ui.label(RichText::new("Empty folder").color(p.text_tertiary));
+                                ui.label(RichText::new(tr!("dialogs-link-empty-folder")).color(p.text_tertiary));
                             }
                         }
                     });
@@ -315,16 +325,14 @@ impl LinkDialog {
                 }
             });
         ui.label(
-            RichText::new("Click to choose, double-click a folder to open it.")
-                .font(FontId::proportional(10.5))
-                .color(p.text_tertiary),
+            RichText::new(tr!("dialogs-link-picker-hint")).font(FontId::proportional(10.5)).color(p.text_tertiary),
         );
     }
 }
 
 impl Dialog for LinkDialog {
     fn title(&self) -> &str {
-        "Create link"
+        tr!("dialogs-link-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -339,9 +347,9 @@ impl Dialog for LinkDialog {
         let p = palette(ui.ctx());
         ui.horizontal(|ui| {
             for (k, label, glyph) in [
-                (LinkChoice::Symlink, "Symbolic link", ph::LINK),
-                (LinkChoice::Hardlink, "Hard link", ph::LINK_SIMPLE),
-                (LinkChoice::Junction, "Junction", ph::TREE_STRUCTURE),
+                (LinkChoice::Symlink, tr!("dialogs-link-symlink"), ph::LINK),
+                (LinkChoice::Hardlink, tr!("dialogs-link-hardlink"), ph::LINK_SIMPLE),
+                (LinkChoice::Junction, tr!("dialogs-link-junction"), ph::TREE_STRUCTURE),
             ] {
                 if k == LinkChoice::Junction && !cfg!(windows) {
                     continue;
@@ -353,18 +361,16 @@ impl Dialog for LinkDialog {
             }
         });
         let hint = match self.kind {
-            LinkChoice::Symlink => {
-                "Points to a file or folder by path and may cross volumes. On Windows this needs Developer Mode or elevation."
-            }
-            LinkChoice::Hardlink => "A second name for the same file data. Files only, on the same volume.",
-            LinkChoice::Junction => "A Windows folder link that needs no special rights. Folders only, local volumes.",
+            LinkChoice::Symlink => tr!("dialogs-link-symlink-hint"),
+            LinkChoice::Hardlink => tr!("dialogs-link-hardlink-hint"),
+            LinkChoice::Junction => tr!("dialogs-link-junction-hint"),
         };
         ui.label(RichText::new(hint).font(FontId::proportional(11.5)).color(p.text_tertiary));
-        caption(ui, "Target");
+        caption(ui, tr!("dialogs-link-target"));
         ui.horizontal(|ui| {
             let r = ui.add(
                 TextEdit::singleline(&mut self.target)
-                    .hint_text("Path of the file or folder to link to")
+                    .hint_text(tr!("dialogs-link-target-hint"))
                     .desired_width(ui.available_width() - 30.0)
                     .margin(Margin::symmetric(10, 6)),
             );
@@ -382,7 +388,7 @@ impl Dialog for LinkDialog {
                 self.follow_browse = true;
             }
             let glyph = if self.picker_open { ph::CARET_UP } else { ph::FOLDER_OPEN };
-            if small_icon_button(ui, glyph, "Browse").clicked() {
+            if small_icon_button(ui, glyph, tr!("dialogs-link-browse")).clicked() {
                 self.picker_open = !self.picker_open;
             }
         });
@@ -407,27 +413,27 @@ impl Dialog for LinkDialog {
             TargetState::Checking => {
                 ui.spinner();
                 ui.label(
-                    RichText::new("Checking target\u{2026}").font(FontId::proportional(11.5)).color(p.text_tertiary),
+                    RichText::new(tr!("dialogs-link-checking")).font(FontId::proportional(11.5)).color(p.text_tertiary),
                 );
             }
             TargetState::Missing => {
-                badge(ui, Some(ph::WARNING), "Target does not exist", p.warning);
+                badge(ui, Some(ph::WARNING), tr!("dialogs-link-missing"), p.warning);
             }
             TargetState::File => {
-                badge(ui, Some(ph::FILE), "File", p.success);
+                badge(ui, Some(ph::FILE), tr!("dialogs-link-file"), p.success);
             }
             TargetState::Dir => {
-                badge(ui, Some(ph::FOLDER), "Folder", p.success);
+                badge(ui, Some(ph::FOLDER), tr!("dialogs-conflict-folder"), p.success);
             }
         });
         // Always laid out (disabled for other kinds) so the dialog doesn't jump.
         ui.add_enabled_ui(self.kind == LinkChoice::Symlink, |ui| {
-            check(ui, &mut self.relative, "Store a relative path (the link keeps working when both move together)");
+            check(ui, &mut self.relative, tr!("dialogs-link-relative"));
         });
-        caption(ui, "Link name");
+        caption(ui, tr!("dialogs-link-name"));
         let n = ui.add(
             TextEdit::singleline(&mut self.name)
-                .hint_text("Name of the new link")
+                .hint_text(tr!("dialogs-link-name-hint"))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 6)),
         );
@@ -435,29 +441,30 @@ impl Dialog for LinkDialog {
             self.name_touched = true;
         }
         ui.label(
-            RichText::new(format!("Created in {}", soyuz_fs::strip_verbatim(&self.dir).display()))
-                .font(FontId::proportional(11.0))
-                .color(p.text_tertiary),
+            RichText::new(tr!(
+                "dialogs-link-created-in",
+                dir = soyuz_fs::strip_verbatim(&self.dir).display().to_string()
+            ))
+            .font(FontId::proportional(11.0))
+            .color(p.text_tertiary),
         );
 
         let name = self.name.trim().to_string();
         let target = self.target_path();
         let err: Option<String> = if self.target.trim().is_empty() {
-            Some("Choose a target.".into())
+            Some(tr!("dialogs-link-choose-target").into())
         } else if let Err(e) = soyuz_core::validate_name(&name) {
-            Some(format!("Invalid name: {e}"))
+            Some(tr!("dialogs-props-invalid-name", error = e.to_string()))
         } else if self.existing.iter().any(|e| e.eq_ignore_ascii_case(&name)) {
-            Some(format!("\u{201c}{name}\u{201d} already exists here."))
+            Some(tr!("dialogs-link-exists", name = &name))
         } else {
             match (self.kind, &state) {
-                (_, TargetState::Checking) => Some("Checking the target\u{2026}".into()),
-                (LinkChoice::Hardlink, TargetState::Dir) => Some("Hard links can only point to files.".into()),
-                (LinkChoice::Hardlink, TargetState::Missing) => Some("A hard link needs an existing file.".into()),
-                (LinkChoice::Hardlink, _) if !same_volume => {
-                    Some("Hard links must be on the same volume as the target.".into())
-                }
-                (LinkChoice::Junction, TargetState::File) => Some("Junctions can only point to folders.".into()),
-                (LinkChoice::Junction, TargetState::Missing) => Some("A junction needs an existing folder.".into()),
+                (_, TargetState::Checking) => Some(tr!("dialogs-link-checking").into()),
+                (LinkChoice::Hardlink, TargetState::Dir) => Some(tr!("dialogs-link-hard-files-only").into()),
+                (LinkChoice::Hardlink, TargetState::Missing) => Some(tr!("dialogs-link-hard-needs-file").into()),
+                (LinkChoice::Hardlink, _) if !same_volume => Some(tr!("dialogs-link-hard-same-volume").into()),
+                (LinkChoice::Junction, TargetState::File) => Some(tr!("dialogs-link-junction-folders-only").into()),
+                (LinkChoice::Junction, TargetState::Missing) => Some(tr!("dialogs-link-junction-needs-folder").into()),
                 _ => None,
             }
         };
@@ -474,8 +481,8 @@ impl Dialog for LinkDialog {
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             let enabled = err.is_none();
-            ok = ui.add_enabled_ui(enabled, |ui| button(ui, "Create", Btn::Primary)).inner.clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = ui.add_enabled_ui(enabled, |ui| button(ui, tr!("dialogs-link-create"), Btn::Primary)).inner.clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         let text_focus = n.has_focus();
         if text_focus && ui.input(|i| i.key_pressed(Key::Enter)) {

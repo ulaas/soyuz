@@ -146,7 +146,7 @@ impl TreeState {
 
 /// Roots: Home first, then every volume.
 fn roots(volumes: &[VolumeInfo]) -> Vec<Root> {
-    let mut v = vec![Root { path: soyuz_fs::home(), label: "Home".into(), kind: RootKind::Home }];
+    let mut v = vec![Root { path: soyuz_fs::home(), label: tr!("views-tree-home").into(), kind: RootKind::Home }];
     for (i, vol) in volumes.iter().enumerate() {
         v.push(Root {
             path: vol.mount.clone(),
@@ -310,16 +310,16 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
     let edit = TextEdit::singleline(&mut s.filter)
         .id(id)
         .frame(egui::Frame::NONE)
-        .hint_text(egui::RichText::new("Filter folders").color(p.text_tertiary))
+        .hint_text(egui::RichText::new(tr!("views-tree-filter")).color(p.text_tertiary))
         .font(FontId::proportional(12.5))
         .desired_width(text_rect.width())
         .margin(egui::Margin::ZERO);
     let resp = child.add(edit);
-    crate::ui::a11y::with(ui.ctx(), resp.id, |n| n.set_label("Filter folders"));
+    crate::ui::a11y::with(ui.ctx(), resp.id, |n| n.set_label(tr!("views-tree-filter")));
     if !s.filter.is_empty() {
         let cr = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(18.0, 18.0));
         let c = ui.interact(cr, id.with("clear"), Sense::click());
-        crate::ui::a11y::button(&c, "Clear filter");
+        crate::ui::a11y::button(&c, tr!("views-tree-clear-filter"));
         if c.hovered() {
             ui.painter().rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
         }
@@ -345,10 +345,10 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
     let width = ui.available_width();
     let (all, _) = ui.allocate_exact_size(vec2(width, (n as f32 * h).max(h)), Sense::hover());
     let container = Id::new("soyuz.tree");
-    crate::ui::a11y::container(&ctx, container, Role::Tree, "Folder tree");
+    crate::ui::a11y::container(&ctx, container, Role::Tree, tr!("views-tree-a11y"));
     if n == 0 {
         let p = palette(&ctx);
-        let msg = if s.filter.trim().is_empty() { "Loading…" } else { "No matching folders" };
+        let msg = if s.filter.trim().is_empty() { tr!("common-loading") } else { tr!("views-tree-no-matches") };
         ui.painter().text(
             pos2(all.left() + 12.0, all.center().y),
             Align2::LEFT_CENTER,
@@ -434,40 +434,47 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         let mut toggle = false;
         resp.context_menu(|ui| {
             ui.set_width(230.0);
-            if menu_item(ui, Some(ph::FOLDER_OPEN), "Open", None, true).clicked() {
+            if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-tree-open"), None, true).clicked() {
                 io_navigate(io.pane, path.clone(), cmds);
                 ui.close();
             }
-            if menu_item(ui, Some(ph::BROWSERS), "Open in new tab", None, true).clicked() {
+            if menu_item(ui, Some(ph::BROWSERS), tr!("views-tree-open-new-tab"), None, true).clicked() {
                 cmds.push(Cmd::OpenInNewTab { location: Location::Dir(path.clone()), activate: true });
                 ui.close();
             }
-            if menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), "Open in other pane", None, true).clicked() {
+            if menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("views-tree-open-other-pane"), None, true).clicked()
+            {
                 cmds.push(Cmd::OpenInOtherPane(Location::Dir(path.clone())));
                 ui.close();
             }
             if row.expandable
-                && menu_item(ui, Some(ph::CARET_DOWN), if expanded { "Collapse" } else { "Expand" }, None, true)
-                    .clicked()
+                && menu_item(
+                    ui,
+                    Some(ph::CARET_DOWN),
+                    if expanded { tr!("views-tree-collapse") } else { tr!("views-tree-expand") },
+                    None,
+                    true,
+                )
+                .clicked()
             {
                 toggle = true;
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::FOLDER_PLUS), "New folder", None, true).clicked() {
+            if menu_item(ui, Some(ph::FOLDER_PLUS), tr!("views-tree-new-folder"), None, true).clicked() {
                 cmds.push(Cmd::Tree(TreeCmd::NewFolder(path.clone())));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), "Copy path", None, true).clicked() {
+            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("views-tree-copy-path"), None, true).clicked() {
                 cmds.push(Cmd::CopyText(soyuz_fs::strip_verbatim(&path).to_string_lossy().into_owned()));
                 ui.close();
             }
-            if !is_root && menu_item(ui, Some(ph::STAR), "Add to favorites", None, true).clicked() {
+            if !is_root && menu_item(ui, Some(ph::STAR), tr!("views-tree-add-favorite"), None, true).clicked() {
                 cmds.push(Cmd::AddFavorite(path.clone()));
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::INFO), "Properties", None, true).clicked() {
+            if menu_item(ui, Some(ph::INFO), tr!("views-tree-properties"), None, true).clicked() {
                 cmds.push(Cmd::Tree(TreeCmd::Properties(path.clone())));
                 ui.close();
             }
@@ -734,7 +741,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
                 app.ui.dialogs.push(d);
             }
             Err(e) => {
-                app.ui.toasts.push(Toast::error("Couldn't read the folder").body(e.to_string()));
+                app.ui.toasts.push(Toast::error(tr!("views-tree-read-failed")).body(e.to_string()));
             }
         },
     }
@@ -754,7 +761,7 @@ fn new_folder(app: &mut SoyuzApp, dir: PathBuf) {
         .map(|n| n.children.iter().map(|c| soyuz_core::entry::display_name(c)).collect())
         .unwrap_or_default();
     let refs: Vec<&str> = existing.iter().map(String::as_str).collect();
-    let name = names::unique_in(&refs, "New folder", names::case_insensitive_fs());
+    let name = names::unique_in(&refs, tr!("views-tree-new-folder-name"), names::case_insensitive_fs());
     let path = dir.join(&name);
     crate::ops::navigate(app, pane, Location::Dir(dir.clone()), crate::ops::NavOpts::user());
     let spec =
@@ -783,7 +790,7 @@ pub fn toggle(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     crate::ui::settings::update_config(app, ctx, |c| c.sidebar.mode = next);
-    let msg = if next == SidebarMode::Places { "Folder tree hidden" } else { "Folder tree shown" };
+    let msg = if next == SidebarMode::Places { tr!("views-tree-hidden") } else { tr!("views-tree-shown") };
     app.ui.toasts.push(Toast::info(msg));
 }
 

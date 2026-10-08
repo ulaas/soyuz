@@ -253,11 +253,11 @@ pub fn info_rows(
         if let Some((bytes, files, dirs, done)) = folder_size {
             let v = format!("{}{}", format_size(bytes, style), if done { "" } else { "…" });
             rows.push(("Size".into(), v));
-            rows.push(("Contains".into(), format!("{files} files, {dirs} folders")));
+            rows.push(("Contains".into(), tr!("views-info-contains", files = files, dirs = dirs)));
         }
     } else {
         let size = if entry.size == 0 { meta.map_or(0, |m| m.size) } else { entry.size };
-        rows.push(("Size".into(), format!("{} ({} bytes)", format_size(size, style), group_digits(size))));
+        rows.push(("Size".into(), tr!("views-info-size-bytes", size = format_size(size, style), bytes = size)));
         if let Some(a) = entry.alloc_size.filter(|&a| a != entry.size && Source::from_path(&entry.path).is_entry()) {
             rows.push(("Compressed".into(), format_size(a, style)));
         }
@@ -300,27 +300,106 @@ pub fn info_rows(
     rows
 }
 
-/// `1234567` → `1,234,567`.
+/// `1234567` → `1,234,567` (`1.234.567` in Turkish).
 pub fn group_digits(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
+    soyuz_core::locale::group_int(n)
+}
+
+/// Translated label of an info row key. [`info_rows`] and the preview loaders key rows
+/// by their English name (rows are deduplicated and looked up by it); unknown keys are
+/// shown as they are.
+pub fn info_label(key: &str) -> &str {
+    match key {
+        "Type" => tr!("views-info-type"),
+        "Size" => tr!("views-info-size"),
+        "Contains" => tr!("views-info-contains-label"),
+        "Compressed" => tr!("views-info-compressed"),
+        "Where" => tr!("views-info-where"),
+        "Modified" => tr!("views-info-modified"),
+        "Created" => tr!("views-info-created"),
+        "Accessed" => tr!("views-info-accessed"),
+        "Attributes" => tr!("views-info-attributes"),
+        "Mode" => tr!("views-info-mode"),
+        "Owner" => tr!("views-info-owner"),
+        "Title" => tr!("views-info-title"),
+        "Artist" => tr!("views-info-artist"),
+        "Album" => tr!("views-info-album"),
+        "Album artist" => tr!("views-info-album-artist"),
+        "Year" => tr!("views-info-year"),
+        "Genre" => tr!("views-info-genre"),
+        "Track" => tr!("views-info-track"),
+        "Composer" => tr!("views-info-composer"),
+        "Container" => tr!("views-info-container"),
+        "Format" => tr!("views-info-format"),
+        "Sample rate" => tr!("views-info-sample-rate"),
+        "Channels" => tr!("views-info-channels"),
+        "Bit depth" => tr!("views-info-bit-depth"),
+        "Duration" => tr!("views-info-duration"),
+        "Dimensions" => tr!("views-info-dimensions"),
+        "Frame rate" => tr!("views-info-frame-rate"),
+        "Bitrate" => tr!("views-info-bitrate"),
+        "Tracks" => tr!("views-info-tracks"),
+        "Color" => tr!("views-info-color"),
+        "Compression" => tr!("views-info-compression"),
+        "Encoding" => tr!("views-info-encoding"),
+        "Encrypted" => tr!("views-info-encrypted"),
+        "Entries" => tr!("views-info-entries"),
+        "Language" => tr!("views-info-language"),
+        "Lines" => tr!("views-info-lines"),
+        "Note" => tr!("views-info-note"),
+        "PDF version" => tr!("views-info-pdf-version"),
+        "Previewer" => tr!("views-info-previewer"),
+        "Pages" => tr!("views-info-pages"),
+        "Author" => tr!("views-info-author"),
+        "Producer" => tr!("views-info-producer"),
+        "Publisher" => tr!("views-info-publisher"),
+        "Published" => tr!("views-info-published"),
+        "Version" => tr!("views-info-version"),
+        "EPUB version" => tr!("views-info-epub-version"),
+        "Page size" => tr!("views-info-page-size"),
+        "Paragraphs" => tr!("views-info-paragraphs"),
+        "Codec" => tr!("views-info-codec"),
+        "Copyright" => tr!("views-info-copyright"),
+        "Designer" => tr!("views-info-designer"),
+        "Weight" => tr!("views-info-weight"),
+        "Spacing" => tr!("views-info-spacing"),
+        "Variable axes" => tr!("views-info-variable-axes"),
+        "Bounds" => tr!("views-info-bounds"),
+        "Faces" => tr!("views-info-faces"),
+        "Meshes" => tr!("views-info-meshes"),
+        "Drawn" => tr!("views-info-drawn"),
+        "Shown" => tr!("views-info-shown"),
+        "Renderer" => tr!("views-info-renderer"),
+        "Waveform" => tr!("views-info-waveform"),
+        "Words" => tr!("views-info-words"),
+        "Sheets" => tr!("views-info-sheets"),
+        "Slides" => tr!("views-info-slides"),
+        "Chapters" => tr!("views-info-chapters"),
+        "Family" => tr!("views-info-family"),
+        "Style" => tr!("views-info-style"),
+        "Glyphs" => tr!("views-info-glyphs"),
+        "Triangles" => tr!("views-info-triangles"),
+        "Vertices" => tr!("views-info-vertices"),
+        other => other,
     }
-    out
 }
 
 /// Two-column info grid.
 pub fn info_grid(ui: &mut Ui, rows: &[(String, String)], label_w: f32) {
     let p = palette(ui.ctx());
+    let font = FontId::proportional(11.5);
+    // Translated labels can be longer: widen the label column up to a limit.
+    let widest = rows
+        .iter()
+        .map(|(k, _)| ui.painter().layout_no_wrap(info_label(k).to_string(), font.clone(), p.text_tertiary).size().x)
+        .fold(0.0_f32, f32::max);
+    let label_w = label_w.max(widest + 4.0).min(label_w * 1.6);
     for (k, v) in rows {
         ui.horizontal_top(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             let (r, _) = ui.allocate_exact_size(vec2(label_w, 18.0), Sense::hover());
-            ui.painter().text(r.left_center(), Align2::LEFT_CENTER, k, FontId::proportional(11.5), p.text_tertiary);
+            let label = info_label(k);
+            ui.painter().text(r.left_center(), Align2::LEFT_CENTER, label, font.clone(), p.text_tertiary);
             ui.add(egui::Label::new(egui::RichText::new(v).size(12.0).color(p.text_primary)).wrap());
         });
     }
@@ -378,7 +457,14 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
     let p = palette(ui.ctx());
     let mut action = None;
     let Some(entry) = st.entry.clone() else {
-        centered_message(ui, rect, ph::EYE, p.text_tertiary, "Nothing selected", "Select a file to preview it.");
+        centered_message(
+            ui,
+            rect,
+            ph::EYE,
+            p.text_tertiary,
+            tr!("views-preview-nothing-selected"),
+            tr!("views-preview-nothing-selected-sub"),
+        );
         return None;
     };
     let Some(loaded) = st.loaded.clone() else {
@@ -463,7 +549,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     markdown::show(ui, blocks, &p);
                     if *truncated {
                         ui.add_space(8.0);
-                        ui.label(egui::RichText::new("Preview truncated").size(11.0).color(p.text_tertiary));
+                        ui.label(egui::RichText::new(tr!("views-preview-truncated")).size(11.0).color(p.text_tertiary));
                     }
                 },
             );
@@ -478,20 +564,24 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             ui.painter().text(
                 header.left_center() + vec2(14.0, -7.0),
                 Align2::LEFT_CENTER,
-                format!("{} entries", group_digits(l.total_entries as u64)),
+                tr!("views-preview-archive-entries", count = l.total_entries),
                 semibold(12.5),
                 p.text_primary,
             );
             ui.painter().text(
                 header.left_center() + vec2(14.0, 9.0),
                 Align2::LEFT_CENTER,
-                format!("{} · {} unpacked", l.format, format_size(l.total_size, soyuz_core::SizeStyle::Binary)),
+                tr!(
+                    "views-preview-archive-unpacked",
+                    format = &l.format,
+                    size = format_size(l.total_size, soyuz_core::SizeStyle::Binary)
+                ),
                 FontId::proportional(11.0),
                 p.text_tertiary,
             );
             let br = Rect::from_min_size(pos2(header.right() - 84.0, header.top() + 8.0), vec2(74.0, 24.0));
             let mut bchild = ui.new_child(UiBuilder::new().max_rect(br));
-            if pill_button(&mut bchild, Some(ph::FOLDER_OPEN), "Browse", false).clicked() {
+            if pill_button(&mut bchild, Some(ph::FOLDER_OPEN), tr!("views-preview-browse"), false).clicked() {
                 action = Some(PreviewAction::Open(entry.path.clone()));
             }
             let list = Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max);
@@ -545,24 +635,24 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                 *y += 20.0;
             };
             if let Some(err) = &s.error {
-                line(ui, &mut y, "Can't list this folder".into(), semibold(13.0), p.text_primary);
+                line(ui, &mut y, tr!("views-preview-folder-unreadable").into(), semibold(13.0), p.text_primary);
                 line(ui, &mut y, err.clone(), FontId::proportional(11.5), p.danger);
             } else {
                 line(
                     ui,
                     &mut y,
-                    format!("{} folders · {} files", group_digits(s.dirs), group_digits(s.files)),
+                    tr!("views-preview-folder-counts", dirs = s.dirs, files = s.files),
                     semibold(13.5),
                     p.text_primary,
                 );
                 match st.folder_size() {
                     Some((bytes, files, _, done)) => {
-                        let text = format!(
-                            "{} in {} files{}",
-                            format_size(bytes, soyuz_core::SizeStyle::Binary),
-                            group_digits(files),
-                            if done { "" } else { " …" }
-                        );
+                        let size = format_size(bytes, soyuz_core::SizeStyle::Binary);
+                        let text = if done {
+                            tr!("views-preview-folder-size", size = size, files = files)
+                        } else {
+                            tr!("views-preview-folder-size-running", size = size, files = files)
+                        };
                         line(
                             ui,
                             &mut y,
@@ -577,13 +667,22 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     None => line(
                         ui,
                         &mut y,
-                        format!("{} in direct files", format_size(s.direct_bytes, soyuz_core::SizeStyle::Binary)),
+                        tr!(
+                            "views-preview-folder-direct",
+                            size = format_size(s.direct_bytes, soyuz_core::SizeStyle::Binary)
+                        ),
                         FontId::proportional(12.0),
                         p.text_secondary,
                     ),
                 }
                 if s.hidden > 0 {
-                    line(ui, &mut y, format!("{} hidden", s.hidden), FontId::proportional(11.5), p.text_tertiary);
+                    line(
+                        ui,
+                        &mut y,
+                        tr!("views-preview-folder-hidden", count = s.hidden),
+                        FontId::proportional(11.5),
+                        p.text_tertiary,
+                    );
                 }
                 if !s.top_ext.is_empty() {
                     y += 6.0;
@@ -608,7 +707,13 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                 }
                 if let Some((name, t)) = &s.newest {
                     let rel = format_time(*t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Relative));
-                    line(ui, &mut y, format!("Newest: {name} · {rel}"), FontId::proportional(11.0), p.text_tertiary);
+                    line(
+                        ui,
+                        &mut y,
+                        tr!("views-preview-folder-newest", name = name, when = rel),
+                        FontId::proportional(11.0),
+                        p.text_tertiary,
+                    );
                 }
             }
             let _ = y;
@@ -660,7 +765,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             if loaded.kind == Kind::Pdf || loaded.kind == Kind::Image {
                 let br = Rect::from_center_size(rect.center() + vec2(0.0, 74.0), vec2(120.0, 26.0));
                 let mut child = ui.new_child(UiBuilder::new().max_rect(br));
-                if pill_button(&mut child, Some(ph::BINARY), "Show bytes", false).clicked() {
+                if pill_button(&mut child, Some(ph::BINARY), tr!("views-preview-show-bytes"), false).clicked() {
                     action = Some(PreviewAction::ToggleHex);
                 }
             }
@@ -694,7 +799,7 @@ fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<egui::text::LayoutJob>>, w
                     ui.painter().text(
                         pos2(r.left() + gutter + 12.0, r.center().y),
                         Align2::LEFT_CENTER,
-                        "… preview truncated ([preview] max_text_kib)",
+                        tr!("views-preview-text-truncated"),
                         FontId::proportional(11.0),
                         p.text_tertiary,
                     );
@@ -737,6 +842,22 @@ mod tests {
     }
 
     #[test]
+    fn multi_plural_messages_format_on_one_line() {
+        use crate::i18n::{FluentArgs, t_args_in};
+        use soyuz_core::Locale;
+        let mut a = FluentArgs::new();
+        a.set("dirs", 2);
+        a.set("files", 1);
+        assert_eq!(t_args_in("views-preview-folder-counts", &a, Locale::EnUs), "2 folders · 1 file");
+        assert_eq!(t_args_in("views-preview-folder-counts", &a, Locale::TrTr), "2 klasör · 1 dosya");
+        let mut a = FluentArgs::new();
+        a.set("files", 1234);
+        a.set("folders", 1);
+        assert_eq!(t_args_in("views-index-idle", &a, Locale::EnUs), "Indexed · 1,234 files, 1 folder");
+        assert_eq!(t_args_in("views-index-idle", &a, Locale::TrTr), "Dizine eklendi · 1.234 dosya, 1 klasör");
+    }
+
+    #[test]
     fn info_rows_for_file_and_folder() {
         let cfg = Config::default();
         let mut e = EntryInfo::minimal(PathBuf::from("/data/report.pdf"), EntryKind::File);
@@ -756,7 +877,7 @@ mod tests {
         let rows = info_rows(&d, None, Some((4096, 3, 1, false)), &cfg);
         let size = rows.iter().find(|(a, _)| a == "Size").unwrap();
         assert!(size.1.ends_with('…'), "still computing");
-        assert!(rows.iter().any(|(a, v)| a == "Contains" && v == "3 files, 1 folders"));
+        assert!(rows.iter().any(|(a, v)| a == "Contains" && v == "3 files, 1 folder"));
 
         let a = EntryInfo::minimal(PathBuf::from("/x/a.zip!/dir/f.txt"), EntryKind::File);
         let rows = info_rows(&a, None, None, &cfg);

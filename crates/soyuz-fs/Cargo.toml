@@ -48,6 +48,8 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Environment",
     "Win32_System_LibraryLoader",
     "Win32_Graphics_Dwm",
+    # GetUserDefaultUILanguage + LCIDToLocaleName (UI language for `general.language = "auto"`).
+    "Win32_Globalization",
     "Win32_NetworkManagement_NetManagement",
     "Win32_Graphics_Gdi",
     "Win32_UI_Controls",

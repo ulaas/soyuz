@@ -30,21 +30,23 @@ impl HistoryDialog {
 
 /// `14:05` today, `Mon 14:05` this week, else `12 Oct`.
 pub fn when_label(ts: u64, now: u64) -> String {
-    use chrono::TimeZone;
+    use chrono::{Datelike, TimeZone};
     let Some(t) = chrono::Local.timestamp_opt(ts as i64, 0).single() else { return String::new() };
     let age = now.saturating_sub(ts);
+    let l = soyuz_core::locale::current();
     if age < 20 * 3600 {
         t.format("%H:%M").to_string()
     } else if age < 6 * 86_400 {
-        t.format("%a %H:%M").to_string()
+        let day = soyuz_core::locale::weekday_abbr(l)[t.weekday().num_days_from_monday() as usize];
+        format!("{day} {}", t.format("%H:%M"))
     } else {
-        t.format("%d %b").to_string()
+        format!("{:02} {}", t.day(), soyuz_core::locale::month_abbr(l)[t.month0() as usize])
     }
 }
 
 impl Dialog for HistoryDialog {
     fn title(&self) -> &str {
-        "Where was I?"
+        tr!("workspaces-history-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -68,13 +70,10 @@ impl Dialog for HistoryDialog {
             }
         }
         let rows = tab.visits.rows(Some(self.pane));
-        ui.label(
-            RichText::new("Every folder this tab visited. Branches keep the places back / forward would forget.")
-                .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("workspaces-history-intro")).color(p.text_secondary));
         ui.add_space(10.0);
         if rows.is_empty() {
-            ui.label(RichText::new("Nothing yet — browse a little first.").color(p.text_tertiary));
+            ui.label(RichText::new(tr!("workspaces-history-empty")).color(p.text_tertiary));
         }
         let mut go = None;
         ScrollArea::vertical().max_height(420.0).auto_shrink([false, true]).show(ui, |ui| {
@@ -158,7 +157,7 @@ impl Dialog for HistoryDialog {
             ctx.cmds.push(Cmd::Workspace(WsCmd::Visit { pane: self.pane, location }));
             return false;
         }
-        !crate::ui::dialogs::close_footer(ui, "Close")
+        !crate::ui::dialogs::close_footer(ui, tr!("common-close"))
     }
 }
 

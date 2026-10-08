@@ -44,11 +44,11 @@ impl Category {
 
     pub fn label(self) -> &'static str {
         match self {
-            Category::OnlyLeft => "Only left",
-            Category::NewerLeft => "Newer left",
-            Category::Differ => "Different",
-            Category::NewerRight => "Newer right",
-            Category::OnlyRight => "Only right",
+            Category::OnlyLeft => tr!("tools-compare-only-left"),
+            Category::NewerLeft => tr!("tools-compare-newer-left"),
+            Category::Differ => tr!("tools-compare-different"),
+            Category::NewerRight => tr!("tools-compare-newer-right"),
+            Category::OnlyRight => tr!("tools-compare-only-right"),
         }
     }
 
@@ -133,11 +133,11 @@ impl Preset {
 
     pub fn label(self) -> &'static str {
         match self {
-            Preset::Update => "Two-way update",
-            Preset::MirrorRight => "Mirror left → right",
-            Preset::MirrorLeft => "Mirror right → left",
-            Preset::TwoWay => "Two-way sync",
-            Preset::Custom => "Custom",
+            Preset::Update => tr!("tools-preset-update"),
+            Preset::MirrorRight => tr!("tools-preset-mirror-right"),
+            Preset::MirrorLeft => tr!("tools-preset-mirror-left"),
+            Preset::TwoWay => tr!("tools-preset-two-way"),
+            Preset::Custom => tr!("tools-split-custom"),
         }
     }
 
@@ -180,9 +180,9 @@ pub enum Method {
 impl Method {
     pub fn label(self) -> &'static str {
         match self {
-            Method::DateSize => "Date & size",
-            Method::Size => "Size",
-            Method::Content => "Content",
+            Method::DateSize => tr!("tools-method-date-size"),
+            Method::Size => tr!("tools-method-size"),
+            Method::Content => tr!("tools-method-content"),
         }
     }
 }
@@ -361,12 +361,12 @@ pub fn rows_from_two_way(plan: &sync_state::TwoWayPlan) -> Vec<Row> {
 /// Why a two-way row has its action (the table's tag).
 pub fn two_way_reason(row: &Row) -> &'static str {
     match (row.left.is_some(), row.right.is_some(), row.action) {
-        (true, false, RowAction::Delete) => "Deleted right",
-        (false, true, RowAction::Delete) => "Deleted left",
-        (true, false, _) => "New left",
-        (false, true, _) => "New right",
-        (_, _, RowAction::CopyRight) => "Changed left",
-        (_, _, RowAction::CopyLeft) => "Changed right",
+        (true, false, RowAction::Delete) => tr!("tools-reason-deleted-right"),
+        (false, true, RowAction::Delete) => tr!("tools-reason-deleted-left"),
+        (true, false, _) => tr!("tools-reason-new-left"),
+        (false, true, _) => tr!("tools-reason-new-right"),
+        (_, _, RowAction::CopyRight) => tr!("tools-reason-changed-left"),
+        (_, _, RowAction::CopyLeft) => tr!("tools-reason-changed-right"),
         _ => row.cat.label(),
     }
 }
@@ -593,11 +593,11 @@ impl CompareWindow {
         }
         let (l, r) = (PathBuf::from(self.left.trim()), PathBuf::from(self.right.trim()));
         if l.as_os_str().is_empty() || r.as_os_str().is_empty() {
-            self.state = State::Failed("Choose two folders to compare.".into());
+            self.state = State::Failed(tr!("tools-compare-err-choose").into());
             return;
         }
         if l == r {
-            self.state = State::Failed("Both sides are the same folder.".into());
+            self.state = State::Failed(tr!("tools-compare-err-same").into());
             return;
         }
         let ctl = OpControl::new();
@@ -673,7 +673,9 @@ impl CompareWindow {
             match rx.try_recv() {
                 Ok(res) => {
                     if let Err(e) = res {
-                        app.ui.toasts.push(crate::ui::toasts::Toast::warning("Couldn't save the sync state").body(e));
+                        app.ui
+                            .toasts
+                            .push(crate::ui::toasts::Toast::warning(tr!("tools-compare-state-save-failed")).body(e));
                     }
                     self.start();
                 }
@@ -688,9 +690,10 @@ impl CompareWindow {
             None => String::new(),
         };
         let mut submit = None;
-        let keep = tool_window(ctx, "compare", "Compare & sync", &sub, ph::GIT_DIFF, vec2(1040.0, 660.0), |ui| {
-            submit = self.body(ui, app);
-        });
+        let keep =
+            tool_window(ctx, "compare", tr!("tools-compare-title"), &sub, ph::GIT_DIFF, vec2(1040.0, 660.0), |ui| {
+                submit = self.body(ui, app);
+            });
         if let Some(plan) = submit {
             self.run(app, plan);
         }
@@ -715,10 +718,10 @@ impl CompareWindow {
     }
 
     fn run(&mut self, app: &mut SoyuzApp, plan: SyncPlan) {
-        let label = format!(
-            "Sync {} ↔ {}",
-            soyuz_core::entry::display_name(&plan.left),
-            soyuz_core::entry::display_name(&plan.right)
+        let label = tr!(
+            "tools-compare-job-label",
+            left = soyuz_core::entry::display_name(&plan.left),
+            right = soyuz_core::entry::display_name(&plan.right)
         );
         self.pending_record = self.two_way.clone().map(|ctx| PendingRecord {
             left: plan.left.clone(),
@@ -741,20 +744,20 @@ impl CompareWindow {
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 44.0) / 2.0;
             ui.label(icons::icon(ph::FOLDER_SIMPLE, 14.0).color(Category::OnlyLeft.color(&p)));
-            text_field(ui, &mut self.left, "Left folder", w - 22.0);
-            if crate::ui::widgets::icon_button(ui, ph::ARROWS_LEFT_RIGHT, "Swap sides", true).clicked() {
+            text_field(ui, &mut self.left, tr!("tools-compare-left-hint"), w - 22.0);
+            if crate::ui::widgets::icon_button(ui, ph::ARROWS_LEFT_RIGHT, tr!("tools-compare-swap"), true).clicked() {
                 std::mem::swap(&mut self.left, &mut self.right);
                 if matches!(self.state, State::Ready) {
                     self.start();
                 }
             }
-            text_field(ui, &mut self.right, "Right folder", w - 22.0);
+            text_field(ui, &mut self.right, tr!("tools-compare-right-hint"), w - 22.0);
             ui.label(icons::icon(ph::FOLDER_SIMPLE, 14.0).color(Category::OnlyRight.color(&p)));
         });
         ui.add_space(4.0);
         // Method, preset, compare, profiles.
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Compare by").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("tools-compare-by")).font(FontId::proportional(12.0)).color(p.text_tertiary));
             for m in [Method::DateSize, Method::Size, Method::Content] {
                 let mut on = self.method == m;
                 if super::toggle_chip(ui, m.label(), &mut on, p.accent).clicked() && self.method != m {
@@ -765,15 +768,14 @@ impl CompareWindow {
                 }
             }
             ui.add_space(10.0);
-            ui.label(RichText::new("Sync mode").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("tools-compare-sync-mode")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+            );
             for pr in Preset::ALL {
                 let mut on = self.preset == pr;
                 let mut chip = super::toggle_chip(ui, pr.label(), &mut on, p.accent);
                 if pr == Preset::TwoWay {
-                    chip = chip.on_hover_text(
-                        "Remembers the last sync, so deletions and edits on both sides are told apart. \
-                         Changes on both sides are asked as conflicts.",
-                    );
+                    chip = chip.on_hover_text(tr!("tools-preset-two-way-tip"));
                 }
                 if chip.clicked() && self.preset != pr {
                     // Two-way plans differently: compare again when switching in or out.
@@ -791,13 +793,13 @@ impl CompareWindow {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let running = matches!(self.state, State::Running { .. });
                 if running {
-                    if button(ui, Some(ph::STOP), "Cancel", 0, true).clicked()
+                    if button(ui, Some(ph::STOP), tr!("common-cancel"), 0, true).clicked()
                         && let State::Running { ctl, .. } = &self.state
                     {
                         ctl.cancel();
                         self.state = State::Idle;
                     }
-                } else if button(ui, Some(ph::ARROW_CLOCKWISE), "Compare", 1, true).clicked() {
+                } else if button(ui, Some(ph::ARROW_CLOCKWISE), tr!("tools-compare-start"), 1, true).clicked() {
                     self.start();
                 }
                 self.profiles_menu(ui);
@@ -806,20 +808,18 @@ impl CompareWindow {
         ui.add_space(6.0);
         match &self.state {
             State::Idle if self.rows.is_empty() => {
-                empty_note(
-                    ui,
-                    ph::GIT_DIFF,
-                    "Pick two folders and press Compare",
-                    "Differences show up here, ready to sync.",
-                );
+                empty_note(ui, ph::GIT_DIFF, tr!("tools-compare-empty"), tr!("tools-compare-empty-body"));
                 return None;
             }
             State::Running { started, .. } => {
                 progress_bar(ui, ui.available_width(), None);
                 ui.label(
-                    RichText::new(format!("Comparing… {:.1} s", started.elapsed().as_secs_f32()))
-                        .font(FontId::proportional(12.0))
-                        .color(p.text_secondary),
+                    RichText::new(tr!(
+                        "tools-compare-running",
+                        secs = soyuz_core::locale::format_decimal(started.elapsed().as_secs_f64(), 1)
+                    ))
+                    .font(FontId::proportional(12.0))
+                    .color(p.text_secondary),
                 );
                 return None;
             }
@@ -830,7 +830,7 @@ impl CompareWindow {
                 });
                 progress_bar(ui, ui.available_width(), frac);
                 ui.label(
-                    RichText::new("Syncing… the folders are compared again when the job finishes.")
+                    RichText::new(tr!("tools-compare-syncing"))
                         .font(FontId::proportional(12.0))
                         .color(p.text_secondary),
                 );
@@ -840,13 +840,15 @@ impl CompareWindow {
             State::Recording(_) => {
                 progress_bar(ui, ui.available_width(), None);
                 ui.label(
-                    RichText::new("Recording the sync state…").font(FontId::proportional(12.0)).color(p.text_secondary),
+                    RichText::new(tr!("tools-compare-recording"))
+                        .font(FontId::proportional(12.0))
+                        .color(p.text_secondary),
                 );
                 return None;
             }
             State::Failed(e) => {
                 let e = e.clone();
-                empty_note(ui, ph::WARNING_CIRCLE, "Can't compare these folders", &e);
+                empty_note(ui, ph::WARNING_CIRCLE, tr!("tools-compare-failed"), &e);
                 return None;
             }
             _ => {}
@@ -868,27 +870,22 @@ impl CompareWindow {
                 filter_chip(ui, c.label(), counts[i], c.color(&p), &mut self.show[i]);
             }
             ui.label(
-                RichText::new(format!("· {} identical", crate::ui::statusbar::group_thousands(self.same as usize)))
+                RichText::new(tr!("tools-compare-identical", count = self.same))
                     .font(FontId::proportional(12.0))
                     .color(p.text_tertiary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                text_field(ui, &mut self.search, "Filter names", 180.0);
+                text_field(ui, &mut self.search, tr!("tools-compare-filter-hint"), 180.0);
             });
         });
         ui.add_space(4.0);
         if self.two_way.as_ref().is_some_and(|t| t.first_run) && !self.rows.is_empty() {
             ui.label(
-                RichText::new(
-                    "First two-way sync of these folders: newer files win, unclear ones are conflicts. \
-                     From now on deletions and edits on both sides are tracked.",
-                )
-                .font(FontId::proportional(11.5))
-                .color(p.text_tertiary),
+                RichText::new(tr!("tools-compare-first-run")).font(FontId::proportional(11.5)).color(p.text_tertiary),
             );
         }
         if self.rows.is_empty() {
-            empty_note(ui, ph::CHECK_CIRCLE, "The folders are in sync", "No differences were found.");
+            empty_note(ui, ph::CHECK_CIRCLE, tr!("tools-compare-in-sync"), tr!("tools-compare-in-sync-body"));
             return None;
         }
         let vis: Vec<usize> = (0..self.rows.len()).filter(|&i| self.visible(&self.rows[i])).collect();
@@ -907,12 +904,12 @@ impl CompareWindow {
         ui.horizontal(|ui| {
             plan_line(ui, &p, &stats);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                go = button(ui, Some(ph::ARROW_RIGHT), "Review sync…", 1, total > 0).clicked();
+                go = button(ui, Some(ph::ARROW_RIGHT), tr!("tools-compare-review"), 1, total > 0).clicked();
                 if conflicts > 0 {
                     let label = if open > 0 {
-                        format!("Resolve {open} conflict{}…", if open == 1 { "" } else { "s" })
+                        tr!("tools-compare-resolve-n", count = open)
                     } else {
-                        "Conflicts…".to_string()
+                        tr!("tools-compare-conflicts-button").to_string()
                     };
                     let kind = if open > 0 { 2 } else { 0 };
                     resolve = button(ui, Some(ph::GIT_MERGE), &label, kind, true).clicked();
@@ -929,22 +926,22 @@ impl CompareWindow {
     }
 
     fn profiles_menu(&mut self, ui: &mut Ui) {
-        let resp = button(ui, Some(ph::FLOPPY_DISK), "Profiles", 0, true);
+        let resp = button(ui, Some(ph::FLOPPY_DISK), tr!("tools-profiles"), 0, true);
         egui::Popup::menu(&resp).width(260.0).show(|ui| {
             ui.set_width(260.0);
             if self.profiles.is_empty() {
-                menu_item(ui, Some(ph::INFO), "No saved profiles", None, false);
+                menu_item(ui, Some(ph::INFO), tr!("tools-profiles-none"), None, false);
             }
             let mut load = None;
             let mut delete = None;
             for (i, pr) in self.profiles.iter().enumerate() {
                 ui.horizontal(|ui| {
-                    let r = menu_item(ui, Some(ph::FOLDER_SIMPLE_STAR), &pr.name, None, true).on_hover_text(format!(
-                        "{}\n↔ {}\n{} · {}",
-                        pr.left.display(),
-                        pr.right.display(),
-                        pr.method.label(),
-                        pr.preset.label()
+                    let r = menu_item(ui, Some(ph::FOLDER_SIMPLE_STAR), &pr.name, None, true).on_hover_text(tr!(
+                        "tools-profile-tip",
+                        left = pr.left.display().to_string(),
+                        right = pr.right.display().to_string(),
+                        method = pr.method.label(),
+                        mode = pr.preset.label()
                     ));
                     if r.clicked() {
                         load = Some(i);
@@ -965,16 +962,16 @@ impl CompareWindow {
             }
             menu_separator(ui);
             ui.label(
-                RichText::new("Save current as")
+                RichText::new(tr!("tools-profiles-save-as"))
                     .font(FontId::proportional(11.0))
                     .color(palette(ui.ctx()).text_tertiary),
             );
             ui.horizontal(|ui| {
-                text_field(ui, &mut self.profile_name, "Profile name", 170.0);
+                text_field(ui, &mut self.profile_name, tr!("tools-profiles-name-hint"), 170.0);
                 let ok = !self.profile_name.trim().is_empty()
                     && !self.left.trim().is_empty()
                     && !self.right.trim().is_empty();
-                if button(ui, None, "Save", 1, ok).clicked() {
+                if button(ui, None, tr!("common-save"), 1, ok).clicked() {
                     let name = self.profile_name.trim().to_string();
                     let schedule = self.profiles.iter().find(|p| p.name == name).map(|p| p.schedule.clone());
                     // A hand-edited table saves as its base mode.
@@ -999,12 +996,12 @@ impl CompareWindow {
                 }
             });
             ui.label(
-                RichText::new("Right-click a profile to delete it")
+                RichText::new(tr!("tools-profiles-delete-hint"))
                     .font(FontId::proportional(10.5))
                     .color(palette(ui.ctx()).text_tertiary),
             );
             menu_separator(ui);
-            if menu_item(ui, Some(ph::CALENDAR_CHECK), "Schedules & reports…", None, true).clicked() {
+            if menu_item(ui, Some(ph::CALENDAR_CHECK), tr!("tools-profiles-schedules"), None, true).clicked() {
                 super::queue(super::ToolCmd::SyncProfiles);
                 ui.close();
             }
@@ -1024,20 +1021,26 @@ impl CompareWindow {
         painter.text(
             pos2(hr.left() + 10.0, hr.center().y),
             Align2::LEFT_CENTER,
-            "LEFT",
+            tr!("tools-compare-col-left"),
             hfont.clone(),
             p.text_tertiary,
         );
         painter.text(
             pos2(hr.left() + meta_w + 10.0, hr.center().y),
             Align2::LEFT_CENTER,
-            "NAME",
+            tr!("tools-compare-col-name"),
             hfont.clone(),
             p.text_tertiary,
         );
-        painter.text(pos2(hr.right() - 10.0, hr.center().y), Align2::RIGHT_CENTER, "RIGHT", hfont, p.text_tertiary);
+        painter.text(
+            pos2(hr.right() - 10.0, hr.center().y),
+            Align2::RIGHT_CENTER,
+            tr!("tools-compare-col-right"),
+            hfont,
+            p.text_tertiary,
+        );
         let ar = Rect::from_min_size(pos2(hr.left() + meta_w + name_w, hr.top() + 1.0), vec2(act_w, 24.0));
-        if let Some(a) = action_buttons(ui, ar, None, None, "all visible rows") {
+        if let Some(a) = action_buttons(ui, ar, None, None, tr!("tools-compare-all-visible")) {
             for &i in vis {
                 let r = &mut self.rows[i];
                 if allowed(r.cat, a) {
@@ -1075,9 +1078,9 @@ impl CompareWindow {
                     let meta = |s: &Option<Side>| -> String {
                         match s {
                             Some(m) if m.dir => {
-                                format!(
-                                    "Folder  ·  {}",
-                                    m.modified.map(|t| format_time(t, &cfg.date_format)).unwrap_or_default()
+                                tr!(
+                                    "tools-compare-meta-folder",
+                                    modified = m.modified.map(|t| format_time(t, &cfg.date_format)).unwrap_or_default()
                                 )
                             }
                             Some(m) => format!(
@@ -1125,12 +1128,12 @@ impl CompareWindow {
                     let gw = g.size().x;
                     painter.galley(pos2(nx + 30.0, r.center().y - g.size().y / 2.0), g, ncolor);
                     let (tag_text, tag_color) = match row.conflict {
-                        Some(_) if row.action == RowAction::Skip => ("Conflict", p.danger),
-                        Some(_) => ("Resolved", p.success),
+                        Some(_) if row.action == RowAction::Skip => (tr!("tools-git-conflict"), p.danger),
+                        Some(_) => (tr!("tools-compare-resolved"), p.success),
                         None if two_way => (two_way_reason(row), color),
                         None => (row.cat.label(), color),
                     };
-                    let tag = trunc_galley(painter, tag_text, FontId::proportional(10.5), tag_color, 80.0);
+                    let tag = trunc_galley(painter, tag_text, FontId::proportional(10.5), tag_color, 96.0);
                     let tag_rect =
                         Rect::from_min_size(pos2(nx + 36.0 + gw, r.center().y - tag.size().y / 2.0), tag.size());
                     painter.galley(tag_rect.min, tag, tag_color);
@@ -1163,25 +1166,22 @@ impl CompareWindow {
         let plan = build_plan(&l, &r, &self.rows, &tag);
         let open = self.rows.iter().filter(|r| r.conflict.is_some() && r.action == RowAction::Skip).count();
         ui.label(
-            RichText::new("Review the sync plan").font(crate::ui::views::flow::semibold(14.0)).color(p.text_primary),
+            RichText::new(tr!("tools-compare-plan-title"))
+                .font(crate::ui::views::flow::semibold(14.0))
+                .color(p.text_primary),
         );
         ui.add_space(4.0);
         ui.horizontal(|ui| plan_line(ui, &p, &stats));
         if stats.delete_left + stats.delete_right > 0 {
             ui.label(
-                RichText::new("Deleted items go to the trash when the volume supports it.")
-                    .font(FontId::proportional(12.0))
-                    .color(p.warning),
+                RichText::new(tr!("tools-compare-plan-trash-note")).font(FontId::proportional(12.0)).color(p.warning),
             );
         }
         if open > 0 {
             ui.label(
-                RichText::new(format!(
-                    "{open} unresolved conflict{} will be skipped and asked again next time.",
-                    if open == 1 { "" } else { "s" }
-                ))
-                .font(FontId::proportional(12.0))
-                .color(p.warning),
+                RichText::new(tr!("tools-compare-plan-open-conflicts", count = open))
+                    .font(FontId::proportional(12.0))
+                    .color(p.warning),
             );
         }
         ui.add_space(6.0);
@@ -1193,12 +1193,16 @@ impl CompareWindow {
             |ui, range| {
                 for a in &plan.actions[range] {
                     let (glyph, verb, rel, color) = match a {
-                        SyncAction::CopyLR(x) => (ph::ARROW_RIGHT, "Copy to right", x, p.accent),
-                        SyncAction::CopyRL(x) => (ph::ARROW_LEFT, "Copy to left", x, p.accent),
-                        SyncAction::DeleteL(x) => (ph::TRASH, "Delete on left", x, p.danger),
-                        SyncAction::DeleteR(x) => (ph::TRASH, "Delete on right", x, p.danger),
+                        SyncAction::CopyLR(x) => (ph::ARROW_RIGHT, tr!("tools-compare-copy-right"), x, p.accent),
+                        SyncAction::CopyRL(x) => (ph::ARROW_LEFT, tr!("tools-compare-copy-left"), x, p.accent),
+                        SyncAction::DeleteL(x) => (ph::TRASH, tr!("tools-compare-delete-left"), x, p.danger),
+                        SyncAction::DeleteR(x) => (ph::TRASH, tr!("tools-compare-delete-right"), x, p.danger),
                         SyncAction::CopyAs { dst_left, to, .. } => {
-                            let verb = if *dst_left { "Conflict copy ←" } else { "Conflict copy →" };
+                            let verb = if *dst_left {
+                                tr!("tools-compare-conflict-copy-left")
+                            } else {
+                                tr!("tools-compare-conflict-copy-right")
+                            };
                             (ph::COPY, verb, to, p.warning)
                         }
                     };
@@ -1211,33 +1215,35 @@ impl CompareWindow {
                         icons::font(13.0),
                         color,
                     );
-                    painter.text(
+                    let verb_r = painter.text(
                         pos2(row.left() + 28.0, row.center().y),
                         Align2::LEFT_CENTER,
                         verb,
                         FontId::proportional(12.0),
                         p.text_secondary,
                     );
+                    // Paths line up at 140 px unless a (translated) verb is wider.
+                    let rel_x = (row.left() + 140.0).max(verb_r.right() + 12.0);
                     let g = trunc_galley(
                         painter,
                         &rel.to_string_lossy(),
                         FontId::proportional(12.5),
                         p.text_primary,
-                        row.width() - 160.0,
+                        row.right() - rel_x - 20.0,
                     );
-                    painter.galley(pos2(row.left() + 140.0, row.center().y - g.size().y / 2.0), g, p.text_primary);
+                    painter.galley(pos2(rel_x, row.center().y - g.size().y / 2.0), g, p.text_primary);
                 }
             },
         );
         let mut out = None;
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if button(ui, Some(ph::ARROW_LEFT), "Back", 0, true).clicked() {
+            if button(ui, Some(ph::ARROW_LEFT), tr!("tools-back"), 0, true).clicked() {
                 self.stage = Stage::Table;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let danger = stats.delete_left + stats.delete_right > 0;
-                let label = format!("Start sync ({})", plan.actions.len());
+                let label = tr!("tools-compare-start-sync", count = plan.actions.len());
                 if button(ui, Some(ph::PLAY), &label, if danger { 2 } else { 1 }, !plan.actions.is_empty()).clicked() {
                     out = Some(plan.clone());
                 }
@@ -1254,38 +1260,39 @@ impl CompareWindow {
         let cfg = &app.config.general;
         let idx: Vec<usize> = (0..self.rows.len()).filter(|&i| self.rows[i].conflict.is_some()).collect();
         let open = idx.iter().filter(|&&i| self.rows[i].action == RowAction::Skip).count();
-        ui.label(RichText::new("Resolve conflicts").font(crate::ui::views::flow::semibold(14.0)).color(p.text_primary));
         ui.label(
-            RichText::new(format!(
-                "{} item{} changed on both sides since the last sync. Choose which version wins; \
-                 skipped items are asked again next time.",
-                idx.len(),
-                if idx.len() == 1 { "" } else { "s" }
-            ))
-            .font(FontId::proportional(12.0))
-            .color(p.text_secondary),
+            RichText::new(tr!("tools-compare-conflicts-title"))
+                .font(crate::ui::views::flow::semibold(14.0))
+                .color(p.text_primary),
+        );
+        ui.label(
+            RichText::new(tr!("tools-compare-conflicts-body", count = idx.len()))
+                .font(FontId::proportional(12.0))
+                .color(p.text_secondary),
         );
         ui.add_space(4.0);
         // Apply to all.
         let mut all: Option<Option<Resolution>> = None;
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Apply to all").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(
+                RichText::new(tr!("tools-compare-apply-all")).font(FontId::proportional(12.0)).color(p.text_tertiary),
+            );
             for r in [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip] {
                 if button(ui, None, r.label(), 0, true).clicked() {
                     all = Some(Some(r));
                 }
             }
-            if button(ui, Some(ph::CLOCK), "Keep newer", 0, true)
-                .on_hover_text("For each item, the side modified last wins")
+            if button(ui, Some(ph::CLOCK), tr!("tools-compare-keep-newer"), 0, true)
+                .on_hover_text(tr!("tools-compare-keep-newer-tip"))
                 .clicked()
             {
                 all = Some(None);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let (t, c) = if open == 0 {
-                    ("All decided".to_string(), p.success)
+                    (tr!("tools-compare-all-decided").to_string(), p.success)
                 } else {
-                    (format!("{open} open"), p.warning)
+                    (tr!("tools-compare-n-open", count = open), p.warning)
                 };
                 ui.label(RichText::new(t).font(FontId::proportional(12.0)).color(c));
             });
@@ -1308,8 +1315,8 @@ impl CompareWindow {
         let h = (ui.available_height() - 44.0).max(80.0);
         let meta = |s: &Option<Side>| -> String {
             match s {
-                None => "Deleted".into(),
-                Some(m) if m.dir => "Folder".into(),
+                None => tr!("tools-compare-meta-deleted").into(),
+                Some(m) if m.dir => tr!("tools-compare-meta-folder-only").into(),
                 Some(m) => format!(
                     "{}  ·  {}",
                     format_size(m.size, cfg.size_style),
@@ -1338,7 +1345,18 @@ impl CompareWindow {
                         CornerRadius::same(1),
                         if decided { p.success } else { p.danger },
                     );
-                    let choices_w = 330.0;
+                    // Choice buttons: at least 78 px, wider for longer (translated) labels.
+                    let choice_w = |res: Resolution| {
+                        let g = painter.layout_no_wrap(
+                            res.label().to_string(),
+                            FontId::proportional(11.5),
+                            p.text_secondary,
+                        );
+                        (g.size().x + 16.0).max(78.0)
+                    };
+                    let choices = [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip];
+                    let widths = choices.map(choice_w);
+                    let choices_w = widths.iter().sum::<f32>() + 4.0 * (choices.len() as f32 - 1.0) + 6.0;
                     let text_w = (r.width() - choices_w - 24.0).max(120.0);
                     let name = row.rel.to_string_lossy();
                     let g =
@@ -1349,8 +1367,8 @@ impl CompareWindow {
                         let t = trunc_galley(painter, kind.label(), FontId::proportional(10.5), p.danger, 200.0);
                         painter.galley(pos2(r.left() + 22.0 + gw, r.top() + 9.0), t, p.danger);
                     }
-                    let lm = format!("Left: {}", meta(&row.left));
-                    let rm = format!("Right: {}", meta(&row.right));
+                    let lm = tr!("tools-compare-meta-left", meta = meta(&row.left));
+                    let rm = tr!("tools-compare-meta-right", meta = meta(&row.right));
                     let half = (text_w / 2.0 - 6.0).max(60.0);
                     let lg = trunc_galley(painter, &lm, FontId::proportional(11.5), p.text_secondary, half);
                     painter.galley(pos2(r.left() + 14.0, r.top() + 28.0), lg, p.text_secondary);
@@ -1359,8 +1377,7 @@ impl CompareWindow {
                     // Choices.
                     let mut x = r.right() - choices_w;
                     let both = row.left.is_some() && row.right.is_some();
-                    for res in [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip] {
-                        let w = 78.0;
+                    for (res, w) in choices.into_iter().zip(widths) {
                         let cr = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
                         x += w + 4.0;
                         let ok = res != Resolution::KeepBoth || both;
@@ -1395,14 +1412,12 @@ impl CompareWindow {
                             fg,
                         );
                         let tip = match res {
-                            Resolution::Left if row.left.is_none() => "Delete it on the right too",
-                            Resolution::Right if row.right.is_none() => "Delete it on the left too",
-                            Resolution::Left => "Copy the left version over the right one",
-                            Resolution::Right => "Copy the right version over the left one",
-                            Resolution::KeepBoth => {
-                                "Left keeps the name; the right version is kept as a conflict copy on both sides"
-                            }
-                            Resolution::Skip => "Decide later",
+                            Resolution::Left if row.left.is_none() => tr!("tools-compare-res-delete-right"),
+                            Resolution::Right if row.right.is_none() => tr!("tools-compare-res-delete-left"),
+                            Resolution::Left => tr!("tools-compare-res-left"),
+                            Resolution::Right => tr!("tools-compare-res-right"),
+                            Resolution::KeepBoth => tr!("tools-compare-res-both"),
+                            Resolution::Skip => tr!("tools-compare-res-skip"),
                         };
                         if ok && resp.on_hover_text(tip).clicked() {
                             set = Some((i, res));
@@ -1416,11 +1431,11 @@ impl CompareWindow {
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
-            if button(ui, Some(ph::ARROW_LEFT), "Back", 0, true).clicked() {
+            if button(ui, Some(ph::ARROW_LEFT), tr!("tools-back"), 0, true).clicked() {
                 self.stage = Stage::Table;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if button(ui, Some(ph::ARROW_RIGHT), "Review sync…", 1, true).clicked() {
+                if button(ui, Some(ph::ARROW_RIGHT), tr!("tools-compare-review"), 1, true).clicked() {
                     self.stage = Stage::Preview;
                 }
             });
@@ -1438,10 +1453,10 @@ fn action_buttons(
 ) -> Option<RowAction> {
     let p = palette(ui.ctx());
     let items = [
-        (RowAction::CopyLeft, ph::ARROW_LEFT, "Copy to left"),
-        (RowAction::Skip, ph::MINUS, "Skip"),
-        (RowAction::CopyRight, ph::ARROW_RIGHT, "Copy to right"),
-        (RowAction::Delete, ph::TRASH, "Delete"),
+        (RowAction::CopyLeft, ph::ARROW_LEFT, tr!("tools-compare-copy-left")),
+        (RowAction::Skip, ph::MINUS, tr!("common-skip")),
+        (RowAction::CopyRight, ph::ARROW_RIGHT, tr!("tools-compare-copy-right")),
+        (RowAction::Delete, ph::TRASH, tr!("common-delete")),
     ];
     let w = rect.width() / items.len() as f32;
     let mut out = None;
@@ -1482,15 +1497,21 @@ fn action_buttons(
 
 fn plan_line(ui: &mut Ui, p: &Palette, s: &PlanStats) {
     let small = |t: String, c: Color32| RichText::new(t).font(FontId::proportional(12.0)).color(c);
-    ui.label(small(format!("{} → right", s.to_right), if s.to_right > 0 { p.accent } else { p.text_tertiary }));
+    ui.label(small(
+        tr!("tools-plan-to-right", count = s.to_right),
+        if s.to_right > 0 { p.accent } else { p.text_tertiary },
+    ));
     ui.label(small("·".into(), p.text_tertiary));
-    ui.label(small(format!("{} ← left", s.to_left), if s.to_left > 0 { p.accent } else { p.text_tertiary }));
+    ui.label(small(
+        tr!("tools-plan-to-left", count = s.to_left),
+        if s.to_left > 0 { p.accent } else { p.text_tertiary },
+    ));
     ui.label(small("·".into(), p.text_tertiary));
     let del = s.delete_left + s.delete_right;
-    ui.label(small(format!("{del} to delete"), if del > 0 { p.danger } else { p.text_tertiary }));
+    ui.label(small(tr!("tools-plan-to-delete", count = del), if del > 0 { p.danger } else { p.text_tertiary }));
     if s.bytes > 0 {
         ui.label(small("·".into(), p.text_tertiary));
-        ui.label(small(format!("{} to copy", format_size(s.bytes, SizeStyle::Binary)), p.text_secondary));
+        ui.label(small(tr!("tools-plan-to-copy", size = format_size(s.bytes, SizeStyle::Binary)), p.text_secondary));
     }
 }
 

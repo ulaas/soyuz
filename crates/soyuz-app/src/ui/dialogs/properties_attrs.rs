@@ -18,32 +18,32 @@ use crate::theme::palette;
 pub fn editable_attrs() -> Vec<(Attributes, &'static str, &'static str)> {
     if cfg!(windows) {
         vec![
-            (Attributes::READONLY, "Read-only", "Programs can read but not change the file"),
-            (Attributes::HIDDEN, "Hidden", "Not shown unless hidden files are visible"),
-            (Attributes::SYSTEM, "System", "Used by the operating system"),
-            (Attributes::ARCHIVE, "Archive", "Changed since the last backup"),
-            (Attributes::NOT_CONTENT_INDEXED, "Not content indexed", "Excluded from the search index"),
-            (Attributes::TEMPORARY, "Temporary", "Kept in memory when possible"),
-            (Attributes::OFFLINE, "Offline", "Data is not immediately available"),
-            (Attributes::COMPRESSED, "Compressed (NTFS)", "Stored compressed by the file system"),
+            (Attributes::READONLY, tr!("dialogs-attr-readonly"), tr!("dialogs-attr-readonly-hint")),
+            (Attributes::HIDDEN, tr!("dialogs-attr-hidden"), tr!("dialogs-attr-hidden-hint")),
+            (Attributes::SYSTEM, tr!("dialogs-attr-system"), tr!("dialogs-attr-system-hint")),
+            (Attributes::ARCHIVE, tr!("dialogs-attr-archive"), tr!("dialogs-attr-archive-hint")),
+            (Attributes::NOT_CONTENT_INDEXED, tr!("dialogs-attr-not-indexed"), tr!("dialogs-attr-not-indexed-hint")),
+            (Attributes::TEMPORARY, tr!("dialogs-attr-temporary"), tr!("dialogs-attr-temporary-hint")),
+            (Attributes::OFFLINE, tr!("dialogs-attr-offline"), tr!("dialogs-attr-offline-hint")),
+            (Attributes::COMPRESSED, tr!("dialogs-attr-compressed"), tr!("dialogs-attr-compressed-hint")),
         ]
     } else if cfg!(target_os = "macos") {
         vec![
-            (Attributes::IMMUTABLE, "Locked (immutable)", "Cannot be changed, renamed or deleted"),
-            (Attributes::HIDDEN, "Hidden", "Hidden in Finder"),
+            (Attributes::IMMUTABLE, tr!("dialogs-attr-locked"), tr!("dialogs-attr-locked-hint")),
+            (Attributes::HIDDEN, tr!("dialogs-attr-hidden"), tr!("dialogs-attr-hidden-finder-hint")),
         ]
     } else {
-        vec![(Attributes::IMMUTABLE, "Immutable", "Cannot be changed, renamed or deleted (needs root)")]
+        vec![(Attributes::IMMUTABLE, tr!("dialogs-attr-immutable"), tr!("dialogs-attr-immutable-hint"))]
     }
 }
 
 /// Read-only flags shown for information.
 pub fn info_attrs() -> Vec<(Attributes, &'static str)> {
     vec![
-        (Attributes::ENCRYPTED, "Encrypted"),
-        (Attributes::SPARSE, "Sparse"),
-        (Attributes::REPARSE, "Reparse point"),
-        (Attributes::CLOUD_PLACEHOLDER, "Cloud placeholder"),
+        (Attributes::ENCRYPTED, tr!("dialogs-attr-encrypted")),
+        (Attributes::SPARSE, tr!("dialogs-attr-sparse")),
+        (Attributes::REPARSE, tr!("dialogs-attr-reparse")),
+        (Attributes::CLOUD_PLACEHOLDER, tr!("dialogs-attr-cloud")),
     ]
 }
 
@@ -100,7 +100,9 @@ impl AttrEdit {
                     row.1 = t;
                 }
                 if row.1 != row.2 {
-                    ui.label(RichText::new("changed").font(FontId::proportional(10.5)).color(p.accent));
+                    ui.label(
+                        RichText::new(tr!("dialogs-props-changed")).font(FontId::proportional(10.5)).color(p.accent),
+                    );
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(RichText::new(*hint).font(FontId::proportional(11.0)).color(p.text_tertiary));
@@ -218,11 +220,12 @@ impl ModeEdit {
 
     pub fn show(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
-        caption(ui, "Permissions");
+        caption(ui, tr!("dialogs-mode-permissions"));
         let col_w = 64.0;
         let label_w = 70.0;
         let (head, _) = ui.allocate_exact_size(vec2(label_w + col_w * 3.0, 18.0), Sense::hover());
-        for (i, h) in ["Read", "Write", "Execute"].iter().enumerate() {
+        let heads = [tr!("dialogs-mode-read"), tr!("dialogs-mode-write"), tr!("dialogs-mode-execute")];
+        for (i, h) in heads.iter().enumerate() {
             ui.painter().text(
                 pos2(head.left() + label_w + col_w * i as f32 + 8.0, head.center().y),
                 Align2::LEFT_CENTER,
@@ -232,7 +235,8 @@ impl ModeEdit {
             );
         }
         let mut changed = false;
-        for (row, who) in ["Owner", "Group", "Others"].iter().enumerate() {
+        let whos = [tr!("dialogs-mode-owner"), tr!("dialogs-mode-group"), tr!("dialogs-mode-others")];
+        for (row, who) in whos.iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 let (r, _) = ui.allocate_exact_size(vec2(label_w, 22.0), Sense::hover());
@@ -257,7 +261,9 @@ impl ModeEdit {
         }
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            for (i, label) in [(0, "Set user ID"), (1, "Set group ID"), (2, "Sticky")] {
+            let specials =
+                [(0, tr!("dialogs-mode-setuid")), (1, tr!("dialogs-mode-setgid")), (2, tr!("dialogs-mode-sticky"))];
+            for (i, label) in specials {
                 let mut t = self.bits[i];
                 if tri_check(ui, &mut t, label, true).clicked() {
                     self.bits[i] = t;
@@ -268,12 +274,12 @@ impl ModeEdit {
         });
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Octal").color(p.text_tertiary));
+            ui.label(RichText::new(tr!("dialogs-mode-octal")).color(p.text_tertiary));
             let r = ui.add(
                 TextEdit::singleline(&mut self.octal)
                     .desired_width(64.0)
                     .font(FontId::monospace(12.5))
-                    .hint_text("mixed")
+                    .hint_text(tr!("dialogs-mode-mixed"))
                     .margin(Margin::symmetric(8, 4)),
             );
             self.octal_focus = r.has_focus();
@@ -288,7 +294,7 @@ impl ModeEdit {
                 ui.label(RichText::new(mode_string(m)).font(FontId::monospace(12.5)).color(p.text_secondary));
             }
             if self.changed() {
-                ui.label(RichText::new("changed").font(FontId::proportional(10.5)).color(p.accent));
+                ui.label(RichText::new(tr!("dialogs-props-changed")).font(FontId::proportional(10.5)).color(p.accent));
             }
         });
         if changed && !self.octal_focus {

@@ -57,30 +57,30 @@ fn is_rename(tool: &str) -> bool {
 }
 
 fn totals(plan: &Plan) -> String {
-    let mut s = format!("{} item{}", plan.items.len(), if plan.items.len() == 1 { "" } else { "s" });
+    let mut parts = vec![tr!("ai-card-items", count = plan.items.len())];
     if plan.total_bytes > 0 {
-        s.push_str(&format!(" \u{00b7} {}", soyuz_core::format_size(plan.total_bytes, soyuz_core::SizeStyle::Binary)));
+        parts.push(soyuz_core::format_size(plan.total_bytes, soyuz_core::SizeStyle::Binary));
     }
     if plan.total_entries > plan.items.len() as u64 {
-        s.push_str(&format!(" \u{00b7} {} entries", plan.total_entries));
+        parts.push(tr!("ai-card-entries", count = plan.total_entries));
     }
     if plan.conflicts > 0 {
-        s.push_str(&format!(" \u{00b7} {} conflict{}", plan.conflicts, if plan.conflicts == 1 { "" } else { "s" }));
+        parts.push(tr!("ai-card-conflicts", count = plan.conflicts));
     }
-    s
+    parts.join(" \u{00b7} ")
 }
 
 fn state_badge(ui: &mut Ui, p: &Palette, state: &CardState, rect: egui::Rect) {
     let (icon, label, color) = match state {
-        CardState::Pending => (ph::HOURGLASS, "Waiting for you".to_string(), p.warning),
-        CardState::Approved { auto: true } => (ph::CHECKS, "Auto-approved".into(), p.accent),
-        CardState::Approved { auto: false } => (ph::CHECK, "Approved".into(), p.accent),
-        CardState::Running(_) => (ph::ARROWS_CLOCKWISE, "Running".into(), p.accent),
-        CardState::Done { ok: true, .. } => (ph::CHECK_CIRCLE, "Done".into(), p.success),
-        CardState::Done { ok: false, .. } => (ph::WARNING, "Failed".into(), p.danger),
-        CardState::Rejected => (ph::PROHIBIT, "Rejected".into(), p.text_tertiary),
-        CardState::Edited => (ph::PENCIL_SIMPLE, "Replaced by your edit".into(), p.text_tertiary),
-        CardState::Preview => (ph::EYE, "Preview only".into(), p.text_tertiary),
+        CardState::Pending => (ph::HOURGLASS, tr!("ai-card-state-pending").to_string(), p.warning),
+        CardState::Approved { auto: true } => (ph::CHECKS, tr!("ai-card-state-auto").into(), p.accent),
+        CardState::Approved { auto: false } => (ph::CHECK, tr!("ai-card-state-approved").into(), p.accent),
+        CardState::Running(_) => (ph::ARROWS_CLOCKWISE, tr!("ai-card-state-running").into(), p.accent),
+        CardState::Done { ok: true, .. } => (ph::CHECK_CIRCLE, tr!("ai-card-state-done").into(), p.success),
+        CardState::Done { ok: false, .. } => (ph::WARNING, tr!("ai-card-state-failed").into(), p.danger),
+        CardState::Rejected => (ph::PROHIBIT, tr!("ai-card-state-rejected").into(), p.text_tertiary),
+        CardState::Edited => (ph::PENCIL_SIMPLE, tr!("ai-card-state-edited").into(), p.text_tertiary),
+        CardState::Preview => (ph::EYE, tr!("ai-card-state-preview").into(), p.text_tertiary),
         CardState::Withdrawn(why) => (ph::CLOCK_COUNTDOWN, why.clone(), p.text_tertiary),
     };
     let g = ui.painter().layout_no_wrap(label, FontId::proportional(10.5), color);
@@ -124,11 +124,11 @@ fn edited_args(card: &PlanCard, e: &PlanEdit) -> Result<Value, String> {
             .filter_map(|(i, n)| i.src.as_ref().map(|s| json!({"path": s, "new_name": n.trim()})))
             .collect();
         if pairs.iter().any(|p| p["new_name"].as_str().is_some_and(str::is_empty)) {
-            return Err("names cannot be empty".into());
+            return Err(tr!("ai-card-names-empty").into());
         }
         return Ok(if card.tool == "rename" && pairs.len() == 1 { pairs[0].clone() } else { json!({"pairs": pairs}) });
     }
-    serde_json::from_str::<Value>(&e.json).map_err(|err| format!("not valid JSON: {err}"))
+    serde_json::from_str::<Value>(&e.json).map_err(|err| tr!("ai-card-invalid-json", error = err.to_string()))
 }
 
 /// The "External client" strip of MCP cards: badge, client, transport and countdown.
@@ -137,7 +137,7 @@ fn origin_strip(ui: &mut Ui, p: &Palette, card: &PlanCard) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
         let font = FontId::proportional(10.5);
-        let g = ui.painter().layout_no_wrap("External client".into(), semibold(10.5), p.warning);
+        let g = ui.painter().layout_no_wrap(tr!("ai-card-external").into(), semibold(10.5), p.warning);
         let (r, _) = ui.allocate_exact_size(vec2(g.size().x + 26.0, 18.0), Sense::hover());
         ui.painter().rect_filled(r, CornerRadius::same(9), p.warning.gamma_multiply(0.14));
         ui.painter().text(
@@ -149,21 +149,19 @@ fn origin_strip(ui: &mut Ui, p: &Palette, card: &PlanCard) {
         );
         ui.painter().galley(pos2(r.left() + 19.0, r.center().y - g.size().y / 2.0), g, p.warning);
         ui.label(RichText::new(client).font(semibold(12.0)).color(p.text_primary))
-            .on_hover_text("The MCP client that asked for this change. Its request is untrusted data.");
-        ui.label(RichText::new(format!("via {via}")).font(font.clone()).color(p.text_tertiary));
+            .on_hover_text(tr!("ai-card-client-tip"));
+        ui.label(RichText::new(tr!("ai-card-via", transport = via)).font(font.clone()).color(p.text_tertiary));
         if card.state == CardState::Pending
             && let Some(exp) = card.expires
         {
             let left = exp.saturating_duration_since(std::time::Instant::now()).as_secs();
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    RichText::new(format!("{}:{:02} left", left / 60, left % 60)).font(font).color(if left < 30 {
-                        p.danger
-                    } else {
-                        p.text_tertiary
-                    }),
+                    RichText::new(tr!("ai-card-left", time = format!("{}:{:02}", left / 60, left % 60)))
+                        .font(font)
+                        .color(if left < 30 { p.danger } else { p.text_tertiary }),
                 )
-                .on_hover_text("The request is refused when nobody answers in time (Settings → AI → Connections).");
+                .on_hover_text(tr!("ai-card-timeout-tip"));
             });
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(500));
         }
@@ -194,48 +192,57 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
             let w = ui.available_width();
             let (hr, hresp) = ui.allocate_exact_size(vec2(w, 40.0), Sense::click());
             ui.painter().circle_filled(pos2(hr.left() + 17.0, hr.center().y), 17.0, color.gamma_multiply(0.13));
-            ui.painter().text(pos2(hr.left() + 17.0, hr.center().y), Align2::CENTER_CENTER, icon, icons::font(16.0), color);
+            ui.painter().text(
+                pos2(hr.left() + 17.0, hr.center().y),
+                Align2::CENTER_CENTER,
+                icon,
+                icons::font(16.0),
+                color,
+            );
             let tx = hr.left() + 44.0;
             let tw = (hr.right() - tx - 120.0).max(60.0);
             let summary = card.plan.summary.trim_start_matches("AI: ").to_string();
             let g = crate::ui::widgets::trunc_galley(ui.painter(), &summary, semibold(13.0), p.text_primary, tw);
             ui.painter().galley(pos2(tx, hr.top() + 2.0), g, p.text_primary);
             let sub = format!("{} \u{00b7} {}", card.tool, totals(&card.plan));
-            let sg = crate::ui::widgets::trunc_galley(ui.painter(), &sub, FontId::proportional(11.0), p.text_tertiary, tw);
+            let sg =
+                crate::ui::widgets::trunc_galley(ui.painter(), &sub, FontId::proportional(11.0), p.text_tertiary, tw);
             ui.painter().galley(pos2(tx, hr.top() + 22.0), sg, p.text_tertiary);
             state_badge(ui, p, &card.state, hr);
             let caret = if card.expanded { ph::CARET_UP } else { ph::CARET_DOWN };
-            ui.painter().text(pos2(hr.right() - 8.0, hr.bottom() - 6.0), Align2::RIGHT_BOTTOM, caret, icons::font(12.0), p.text_tertiary);
+            ui.painter().text(
+                pos2(hr.right() - 8.0, hr.bottom() - 6.0),
+                Align2::RIGHT_BOTTOM,
+                caret,
+                icons::font(12.0),
+                p.text_tertiary,
+            );
+            // Screen readers: the card is a named group; its header toggles the details.
+            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Group, &summary);
+            crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
+                n.set_role(egui::accesskit::Role::Button);
+                n.set_label(summary.as_str());
+                n.set_description(sub.as_str());
+                n.set_expanded(card.expanded);
+            });
             if hresp.on_hover_text(&summary).clicked() {
                 card.expanded = !card.expanded;
             }
             // Risk, taint and warnings.
             if destructive && card.state != CardState::Preview {
-                banner(ui, p, ph::SHIELD_WARNING, p.danger, "Destructive: items leave this folder (trash is restorable; permanent delete is not).");
+                banner(ui, p, ph::SHIELD_WARNING, p.danger, tr!("ai-card-destructive"));
             }
             if card.origin != CardOrigin::Assistant && card.state == CardState::Pending {
-                banner(
-                    ui,
-                    p,
-                    ph::SHIELD_WARNING,
-                    p.warning,
-                    "Requested by an AI client outside Soyuz. Check the items: neither the request nor file names can approve anything by themselves.",
-                );
+                banner(ui, p, ph::SHIELD_WARNING, p.warning, tr!("ai-card-external-warning"));
             }
             if card.tainted && card.state != CardState::Preview {
-                banner(
-                    ui,
-                    p,
-                    ph::SHIELD_WARNING,
-                    p.warning,
-                    "Proposed right after the assistant read file contents. Text inside files can try to steer it — check this plan before approving.",
-                );
+                banner(ui, p, ph::SHIELD_WARNING, p.warning, tr!("ai-card-tainted"));
             }
             for wmsg in &card.plan.warnings {
                 banner(ui, p, ph::WARNING, p.warning, wmsg);
             }
             if !card.plan.executable && card.state == CardState::Pending {
-                banner(ui, p, ph::PROHIBIT, p.danger, "Blocked by conflicts (see the items marked below). Edit or reject it.");
+                banner(ui, p, ph::PROHIBIT, p.danger, tr!("ai-card-blocked"));
             }
             // Details.
             if card.expanded {
@@ -259,12 +266,12 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                     ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
                     if let Some(edit) = card.edit.clone() {
                         let res = edited_args(card, &edit);
-                        if button(ui, Some(ph::CHECK), "Use these changes", Tone::Primary, res.is_ok()).clicked()
+                        if button(ui, Some(ph::CHECK), tr!("ai-card-use-edit"), Tone::Primary, res.is_ok()).clicked()
                             && let Ok(args) = res
                         {
                             action = Some(CardAction::Decide(Decision::Edit(args)));
                         }
-                        if button(ui, None, "Cancel edit", Tone::Quiet, true).clicked() {
+                        if button(ui, None, tr!("ai-card-cancel-edit"), Tone::Quiet, true).clicked() {
                             card.edit = None;
                         }
                         if let Err(e) = edited_args(card, &edit) {
@@ -273,25 +280,25 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                         return;
                     }
                     let can = card.plan.executable;
-                    let ok = button(ui, Some(ph::CHECK), "Approve", Tone::Primary, can);
-                    let ok = if can { ok } else { ok.on_hover_text("This plan has blocking conflicts") };
+                    let ok = button(ui, Some(ph::CHECK), tr!("ai-card-approve"), Tone::Primary, can);
+                    let ok = if can { ok } else { ok.on_hover_text(tr!("ai-card-blocked-tip")) };
                     if ok.clicked() {
                         action = Some(CardAction::Decide(Decision::Approve));
                     }
-                    if button(ui, Some(ph::PENCIL_SIMPLE), "Edit", Tone::Normal, true).clicked() {
+                    if button(ui, Some(ph::PENCIL_SIMPLE), tr!("ai-card-edit"), Tone::Normal, true).clicked() {
                         begin_edit(card);
                     }
-                    if button(ui, Some(ph::X), "Reject", Tone::Danger, true).clicked() {
+                    if button(ui, Some(ph::X), tr!("ai-card-reject"), Tone::Danger, true).clicked() {
                         action = Some(CardAction::Decide(Decision::Reject(String::new())));
                     }
                     let (label, tip) = match &card.origin {
                         CardOrigin::Assistant => (
-                            format!("Approve all \u{201c}{}\u{201d}", card.tool),
-                            "Approve this plan and every later plan of the same kind in this chat (never for plans proposed right after reading file contents).".to_string(),
+                            tr!("ai-card-approve-kind", tool = &card.tool),
+                            tr!("ai-card-approve-kind-tip").to_string(),
                         ),
                         CardOrigin::Mcp { client, .. } => (
-                            format!("Approve all \u{201c}{}\u{201d} from {client}", card.tool),
-                            format!("Approve this plan and every later \u{201c}{}\u{201d} request from {client} until Soyuz restarts. Each still runs as an undoable job you can see here.", card.tool),
+                            tr!("ai-card-approve-kind-client", tool = &card.tool, client = client),
+                            tr!("ai-card-approve-kind-client-tip", tool = &card.tool, client = client),
                         ),
                     };
                     let bulk_ok = card.origin == CardOrigin::Assistant || !irreversible(&card.tool);
@@ -324,9 +331,7 @@ fn banner(ui: &mut Ui, p: &Palette, icon: &str, color: egui::Color32, text: &str
 
 fn editor(ui: &mut Ui, p: &Palette, tool: &str, plan: &Plan, edit: &mut PlanEdit) {
     if is_rename(tool) && !edit.names.is_empty() {
-        ui.label(
-            RichText::new("Edit the new names, then use them to rebuild the plan.").size(11.0).color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("ai-card-edit-names-hint")).size(11.0).color(p.text_tertiary));
         for (i, item) in plan.items.iter().enumerate() {
             let Some(name) = edit.names.get_mut(i) else { break };
             ui.horizontal(|ui| {
@@ -346,11 +351,7 @@ fn editor(ui: &mut Ui, p: &Palette, tool: &str, plan: &Plan, edit: &mut PlanEdit
             });
         }
     } else {
-        ui.label(
-            RichText::new("Edit the tool arguments (JSON). The plan is rebuilt with a fresh dry run.")
-                .size(11.0)
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("ai-card-edit-json-hint")).size(11.0).color(p.text_tertiary));
         ui.add(
             TextEdit::multiline(&mut edit.json)
                 .code_editor()

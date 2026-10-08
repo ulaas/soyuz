@@ -35,7 +35,7 @@ pub fn spawn_window(app: &mut SoyuzApp, loc: &Location) -> bool {
     let exe = match std::env::current_exe() {
         Ok(e) => e,
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Couldn't open a new window").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("ops-new-window-failed")).body(e.to_string()));
             return false;
         }
     };
@@ -50,7 +50,7 @@ pub fn spawn_window(app: &mut SoyuzApp, loc: &Location) -> bool {
             true
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Couldn't open a new window").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("ops-new-window-failed")).body(e.to_string()));
             false
         }
     }
@@ -64,7 +64,7 @@ pub fn tab_to_new_window(app: &mut SoyuzApp) {
             let i = app.ws.active;
             app.cmds.push(crate::cmd::Cmd::Workspace(crate::ui::workspaces::WsCmd::TabToNewWindow(i)));
         } else {
-            app.ui.toasts.push(Toast::info("A window keeps at least one tab"));
+            app.ui.toasts.push(Toast::info(tr!("ops-window-keeps-tab")));
         }
         return;
     }
@@ -95,16 +95,16 @@ pub fn is_elevatable(path: &Path, mode: Option<u32>) -> bool {
 pub fn run_elevated(app: &mut SoyuzApp) {
     let pane = app.ws.pane();
     let Some(e) = pane.selected_entries().first().map(|e| (*e).clone()) else {
-        app.ui.toasts.push(Toast::info("Select a program to run as administrator"));
+        app.ui.toasts.push(Toast::info(tr!("ops-elevate-select")));
         return;
     };
     if e.is_dir_like() || !is_elevatable(&e.path, e.mode) {
-        let what = if cfg!(windows) { "an .exe, .msi, .bat or .cmd file" } else { "an executable file" };
-        app.ui.toasts.push(Toast::info(format!("Run as administrator needs {what}")));
+        let platform = if cfg!(windows) { "windows" } else { "other" };
+        app.ui.toasts.push(Toast::info(tr!("ops-elevate-needs", platform = platform)));
         return;
     }
     if let Err(err) = soyuz_fs::launch::run_elevated(&e.path, &[]) {
-        app.ui.toasts.push(Toast::error(format!("Couldn't run {} as administrator", e.name)).body(err.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("ops-elevate-failed", name = &e.name)).body(err.to_string()));
     }
 }
 

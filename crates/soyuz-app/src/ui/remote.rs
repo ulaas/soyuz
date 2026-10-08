@@ -78,7 +78,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         app.ui.dialogs.push(HostKeyDialog { prompt, tx: Some(tx) });
     }
     if let Some(uri) = svc::take_sign_in_request() {
-        let note = Some("Sign-in failed. Check the user name and password.".to_string());
+        let note = Some(tr!("remote-sign-in-failed").to_string());
         app.ui.dialogs.push(ConnectDialog::for_uri(&uri, note));
     }
     let mut refresh: Vec<RemoteUri> = Vec::new();
@@ -158,7 +158,7 @@ pub fn apply(app: &mut SoyuzApp, c: RemoteCmd) {
         RemoteCmd::Disconnect(uri) => {
             if let Ok(u) = RemoteUri::parse(&uri) {
                 svc::disconnect(&u);
-                app.ui.toasts.push(Toast::info(format!("Disconnected from {}", u.server_label())));
+                app.ui.toasts.push(Toast::info(tr!("remote-disconnected", server = u.server_label())));
             }
         }
         RemoteCmd::Remove(id) => svc::remove_connection(&id),
@@ -218,7 +218,7 @@ pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -
     let entry = app.ws.find_pane(pane).and_then(|p| p.entries.iter().find(|e| e.path == path).cloned());
     let Some(e) = entry else { return true };
     if !svc::is_fetching(&e) && svc::cached_copy(&e).is_none() {
-        let mut t = Toast::info(format!("Downloading {}…", e.name)).body("It opens when the download finishes.");
+        let mut t = Toast::info(tr!("remote-downloading", name = &e.name)).body(tr!("remote-downloading-body"));
         t.duration = Some(2.5);
         app.ui.toasts.push(t);
     }
@@ -306,16 +306,18 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
             ctx.copy_text(sel.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n"));
             let n = sel.len();
             app.fileops.clipboard.set(mode, sel);
-            let verb = if mode == ClipMode::Cut { "Cut" } else { "Copied" };
-            let mut t = Toast::info(format!("{verb} {n} remote item{}", if n == 1 { "" } else { "s" }))
-                .body("Paste into any folder or server with Ctrl+V.");
+            let title =
+                if mode == ClipMode::Cut { tr!("remote-cut", count = n) } else { tr!("remote-copied", count = n) };
+            let mut t = Toast::info(title).body(tr!("remote-clipboard-body"));
             t.duration = Some(2.0);
             app.ui.toasts.push(t);
         }
         A::Paste | A::PasteAndVerify => {
             let Some(dest) = here_path else { return };
             let Some((mode, paths)) = clipboard_paths(app) else {
-                app.ui.toasts.push(Toast::info("Nothing to paste").body("Copy or cut files first (Ctrl+C / Ctrl+X)."));
+                app.ui
+                    .toasts
+                    .push(Toast::info(tr!("remote-nothing-to-paste")).body(tr!("remote-nothing-to-paste-body")));
                 return;
             };
             let mv = mode == ClipMode::Cut;
@@ -326,7 +328,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
                 Some(Location::Remote(u)) => PathBuf::from(u),
                 Some(Location::Dir(d)) => d,
                 _ => {
-                    app.ui.toasts.push(Toast::info("No folder in the other pane"));
+                    app.ui.toasts.push(Toast::info(tr!("remote-no-other-folder")));
                     return;
                 }
             };
@@ -338,15 +340,10 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
             if sel.is_empty() {
                 return;
             }
-            let what = if sel.len() == 1 {
-                format!("“{}”", soyuz_core::entry::display_name(&sel[0]))
-            } else {
-                format!("{} items", sel.len())
-            };
+            let name =
+                if sel.len() == 1 { soyuz_core::entry::display_name(&sel[0]).to_string() } else { String::new() };
             let server = here.as_ref().map(RemoteUri::server_label).unwrap_or_default();
-            let msg = format!(
-                "{what} will be deleted from {server} permanently. Servers have no trash, so this can't be undone."
-            );
+            let msg = tr!("remote-delete-message", count = sel.len(), name = name, server = server);
             let cmd = Cmd::Remote(RemoteCmd::Submit {
                 kind: JobKind::Remote(RemoteOp::Delete { paths: sel.clone() }),
                 op: OpKind::Delete,
@@ -354,7 +351,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
                 dest: None,
                 clear_clipboard: false,
             });
-            app.ui.dialogs.push(ConfirmDialog::new("Delete from server?", &msg, "Delete", cmd));
+            app.ui.dialogs.push(ConfirmDialog::new(tr!("remote-delete-title"), &msg, tr!("common-delete"), cmd));
         }
         A::Rename => {
             let pane = app.ws.pane();
@@ -372,7 +369,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
         A::NewFolder => {
             if let Some(u) = here {
                 let names: Vec<&str> = app.ws.pane().entries.iter().map(|e| e.name.as_str()).collect();
-                let name = crate::ops::fileops::names::unique_in(&names, "New folder", false);
+                let name = crate::ops::fileops::names::unique_in(&names, tr!("remote-new-folder-name"), false);
                 app.ui.dialogs.push(NameDialog::new_folder(u, name));
             }
         }
@@ -383,25 +380,26 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
                 let when = e
                     .modified
                     .map(|m| chrono::DateTime::<chrono::Local>::from(m).format("%Y-%m-%d %H:%M").to_string())
-                    .unwrap_or_else(|| "unknown".into());
-                let body = if e.is_dir_like() {
-                    format!("Folder · modified {when}\n{}", e.path.display())
+                    .unwrap_or_else(|| tr!("remote-unknown-time").into());
+                let line = if e.is_dir_like() {
+                    tr!("remote-props-folder", when = &when)
                 } else {
-                    format!("{size} · modified {when}\n{}", e.path.display())
+                    tr!("remote-props-file", size = size, when = &when)
                 };
+                let body = format!("{line}\n{}", e.path.display());
                 app.ui.toasts.push(Toast::info(e.name.clone()).body(body));
             }
         }
         other => {
             let what = match other {
-                A::NewFile => "New files",
-                A::Duplicate => "Duplicate",
-                A::PasteAsLink | A::PasteShortcut => "Links",
-                A::OpenTerminalHere | A::OpenInTerminal => "Terminals",
-                A::RevealInSystem => "The system file manager",
-                _ => "This command",
+                A::NewFile => "new-file",
+                A::Duplicate => "duplicate",
+                A::PasteAsLink | A::PasteShortcut => "links",
+                A::OpenTerminalHere | A::OpenInTerminal => "terminal",
+                A::RevealInSystem => "reveal",
+                _ => "other",
             };
-            app.ui.toasts.push(Toast::info(format!("{what} isn't available on remote locations")));
+            app.ui.toasts.push(Toast::info(tr!("remote-unavailable", what = what)));
         }
     }
 }
@@ -441,9 +439,10 @@ pub fn sidebar_section(
     pane: PaneId,
     cmds: &mut Vec<Cmd>,
 ) {
+    // `name` keys the collapsed state (settings); the header shows the translation.
     let name = "Network";
     let mut open = !collapsed.contains(name);
-    collapsible_header(ui, name, &mut open);
+    collapsible_header(ui, tr!("remote-network"), &mut open);
     if open {
         collapsed.remove(name);
     } else {
@@ -459,10 +458,10 @@ pub fn sidebar_section(
         let Some(uri) = c.parsed() else { continue };
         let state = svc::conn_state(&uri);
         let (color, state_text) = match &state {
-            ConnState::Connected => (Some(p.success), "Connected".to_string()),
-            ConnState::Connecting => (Some(p.warning), "Connecting…".to_string()),
-            ConnState::Failed(m) => (Some(p.danger), format!("Failed: {m}")),
-            ConnState::Idle => (None, "Not connected".to_string()),
+            ConnState::Connected => (Some(p.success), tr!("remote-state-connected").to_string()),
+            ConnState::Connecting => (Some(p.warning), tr!("remote-state-connecting").to_string()),
+            ConnState::Failed(m) => (Some(p.danger), tr!("remote-state-failed", error = m)),
+            ConnState::Idle => (None, tr!("remote-state-idle").to_string()),
         };
         let icon = match uri.scheme {
             Scheme::S3 => ph::CLOUD,
@@ -483,26 +482,26 @@ pub fn sidebar_section(
         let saved = svc::is_saved(&c.id);
         r.context_menu(|ui| {
             ui.set_width(220.0);
-            if menu_item(ui, Some(ph::BROWSERS), "Open in new tab", None, true).clicked() {
+            if menu_item(ui, Some(ph::BROWSERS), tr!("remote-open-new-tab"), None, true).clicked() {
                 cmds.push(Cmd::Remote(RemoteCmd::Open { uri: uri.display(), new_tab: true }));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::PENCIL_SIMPLE), "Edit connection…", None, saved).clicked() {
+            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("remote-edit-connection"), None, saved).clicked() {
                 cmds.push(Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: Some(c.id.clone()), note: None }));
                 ui.close();
             }
             let connected = matches!(state, ConnState::Connected | ConnState::Failed(_));
-            if menu_item(ui, Some(ph::PLUGS), "Disconnect", None, connected).clicked() {
+            if menu_item(ui, Some(ph::PLUGS), tr!("remote-disconnect"), None, connected).clicked() {
                 cmds.push(Cmd::Remote(RemoteCmd::Disconnect(uri.display())));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), "Copy address", None, true).clicked() {
+            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("remote-copy-address"), None, true).clicked() {
                 cmds.push(Cmd::CopyText(uri.display()));
                 ui.close();
             }
             if saved {
                 menu_separator(ui);
-                if menu_item(ui, Some(ph::TRASH), "Remove from sidebar", None, true).clicked() {
+                if menu_item(ui, Some(ph::TRASH), tr!("remote-remove"), None, true).clicked() {
                     cmds.push(Cmd::Remote(RemoteCmd::Remove(c.id.clone())));
                     ui.close();
                 }
@@ -510,11 +509,9 @@ pub fn sidebar_section(
         });
     }
     let r =
-        NavRow {
-            icon: ph::PLUS, label: "Connect to server…", active: false, icon_color: Some(p.accent), usage: None
-        }
-        .show(ui)
-        .on_hover_text("SFTP, WebDAV, FTP / FTPS or S3-compatible storage");
+        NavRow { icon: ph::PLUS, label: tr!("remote-connect"), active: false, icon_color: Some(p.accent), usage: None }
+            .show(ui)
+            .on_hover_text(tr!("remote-connect-tip"));
     if r.clicked() {
         cmds.push(Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: None, note: None }));
     }
@@ -646,16 +643,16 @@ impl ConnectDialog {
         let host = self.host.trim();
         if host.is_empty() {
             return Err(
-                if self.proto == Scheme::S3 { "Enter the bucket name." } else { "Enter the server name." }.into()
+                if self.proto == Scheme::S3 { tr!("remote-error-bucket") } else { tr!("remote-error-server") }.into()
             );
         }
         let port = match self.port.trim() {
             "" => None,
-            p => Some(p.parse::<u16>().map_err(|_| format!("“{p}” is not a valid port."))?),
+            p => Some(p.parse::<u16>().map_err(|_| tr!("remote-error-port", port = p))?),
         };
         let user = Some(self.user.trim().to_string()).filter(|u| !u.is_empty());
         if self.proto == Scheme::Sftp && user.is_none() {
-            return Err("SFTP needs a user name.".into());
+            return Err(tr!("remote-error-sftp-user").into());
         }
         let mut query = Vec::new();
         if self.proto == Scheme::S3 {
@@ -683,10 +680,20 @@ impl ConnectDialog {
     fn auth_options(&self) -> Vec<(AuthKind, &'static str)> {
         match self.proto {
             Scheme::Sftp => {
-                vec![(AuthKind::Password, "Password"), (AuthKind::KeyFile, "Key file"), (AuthKind::Agent, "SSH agent")]
+                vec![
+                    (AuthKind::Password, tr!("remote-auth-password")),
+                    (AuthKind::KeyFile, tr!("remote-auth-key-file")),
+                    (AuthKind::Agent, tr!("remote-auth-agent")),
+                ]
             }
-            Scheme::S3 => vec![(AuthKind::Password, "Access keys"), (AuthKind::Anonymous, "Public")],
-            _ => vec![(AuthKind::Password, "Password"), (AuthKind::Anonymous, "Anonymous")],
+            Scheme::S3 => vec![
+                (AuthKind::Password, tr!("remote-auth-access-keys")),
+                (AuthKind::Anonymous, tr!("remote-auth-public")),
+            ],
+            _ => vec![
+                (AuthKind::Password, tr!("remote-auth-password")),
+                (AuthKind::Anonymous, tr!("remote-auth-anonymous")),
+            ],
         }
     }
 }
@@ -699,7 +706,7 @@ impl Default for ConnectDialog {
 
 impl Dialog for ConnectDialog {
     fn title(&self) -> &str {
-        if self.edit.is_some() { "Edit connection" } else { "Connect to server" }
+        if self.edit.is_some() { tr!("remote-dialog-edit-title") } else { tr!("remote-dialog-connect-title") }
     }
     fn icon(&self) -> Option<&'static str> {
         Some(ph::GLOBE)
@@ -715,7 +722,7 @@ impl Dialog for ConnectDialog {
             ui.add_space(4.0);
         }
         // Protocol.
-        field_label(ui, "Protocol");
+        field_label(ui, tr!("remote-protocol"));
         ui.horizontal(|ui| {
             let mut proto = self.proto;
             crate::ui::settings::widgets::segmented(ui, &mut proto, &PROTOCOLS);
@@ -735,7 +742,7 @@ impl Dialog for ConnectDialog {
         ui.columns(2, |cols| {
             let (a, b) = cols.split_at_mut(1);
             let ui = &mut a[0];
-            field_label(ui, if s3 { "Bucket" } else { "Server" });
+            field_label(ui, if s3 { tr!("remote-bucket") } else { tr!("remote-server") });
             let r = text_field(ui, &mut self.host, if s3 { "my-bucket" } else { "example.com" }, false);
             if self.focus {
                 r.request_focus();
@@ -743,20 +750,20 @@ impl Dialog for ConnectDialog {
             }
             let ui = &mut b[0];
             if s3 {
-                field_label(ui, "Region");
+                field_label(ui, tr!("remote-region"));
                 text_field(ui, &mut self.region, "us-east-1", false);
             } else {
-                field_label(ui, "Port");
+                field_label(ui, tr!("remote-port"));
                 let def = self.scheme().default_port().to_string();
                 text_field(ui, &mut self.port, &def, false);
             }
         });
         if s3 {
-            field_label(ui, "Endpoint");
+            field_label(ui, tr!("remote-endpoint"));
             text_field(ui, &mut self.endpoint, "https://s3.amazonaws.com, http://127.0.0.1:9000 …", false);
         }
         // Sign-in.
-        field_label(ui, "Sign in with");
+        field_label(ui, tr!("remote-sign-in-with"));
         let mut auth = self.auth;
         crate::ui::settings::widgets::segmented(ui, &mut auth, &self.auth_options());
         self.auth = auth;
@@ -764,46 +771,42 @@ impl Dialog for ConnectDialog {
             ui.columns(2, |cols| {
                 let (a, b) = cols.split_at_mut(1);
                 let ui = &mut a[0];
-                field_label(ui, if s3 { "Access key" } else { "User" });
-                text_field(ui, &mut self.user, if s3 { "AKIA…" } else { "user name" }, false);
+                field_label(ui, if s3 { tr!("remote-access-key") } else { tr!("remote-user") });
+                text_field(ui, &mut self.user, if s3 { "AKIA…" } else { tr!("remote-user-hint") }, false);
                 let ui = &mut b[0];
                 let (label, hint) = match (self.auth, s3) {
-                    (_, true) => ("Secret key", ""),
-                    (AuthKind::KeyFile, _) => ("Key passphrase", "if the key has one"),
+                    (_, true) => (tr!("remote-secret-key"), ""),
+                    (AuthKind::KeyFile, _) => (tr!("remote-key-passphrase"), tr!("remote-key-passphrase-hint")),
                     (AuthKind::Agent, _) => ("", ""),
-                    _ => ("Password", ""),
+                    _ => (tr!("remote-password"), ""),
                 };
                 if !label.is_empty() {
                     field_label(ui, label);
                     let keep = self.edit.as_ref().is_some_and(|c| c.has_secret);
-                    let hint = if keep && self.secret.is_empty() { "unchanged" } else { hint };
+                    let hint = if keep && self.secret.is_empty() { tr!("remote-secret-unchanged") } else { hint };
                     text_field(ui, &mut self.secret, hint, true);
                 }
             });
             if self.auth == AuthKind::KeyFile {
-                field_label(ui, "Private key file");
+                field_label(ui, tr!("remote-key-file-label"));
                 text_field(ui, &mut self.key_file, r"C:\Users\me\.ssh\id_ed25519", false);
             }
             if self.auth == AuthKind::Agent {
                 ui.add_space(4.0);
-                ui.label(
-                    RichText::new("Uses the Windows OpenSSH agent (or Pageant). Add keys with ssh-add.")
-                        .size(11.5)
-                        .color(p.text_tertiary),
-                );
+                ui.label(RichText::new(tr!("remote-agent-note")).size(11.5).color(p.text_tertiary));
             }
         }
-        field_label(ui, if s3 { "Prefix (optional)" } else { "Folder (optional)" });
+        field_label(ui, if s3 { tr!("remote-prefix") } else { tr!("remote-folder") });
         text_field(ui, &mut self.path, "/", false);
         // Save.
         ui.add_space(10.0);
-        ui.checkbox(&mut self.save, "Save in the sidebar (Network)");
+        ui.checkbox(&mut self.save, tr!("remote-save"));
         if self.save {
             ui.horizontal(|ui| {
                 ui.add_space(24.0);
                 ui.add(
                     TextEdit::singleline(&mut self.name)
-                        .hint_text("Name (optional)")
+                        .hint_text(tr!("remote-name-hint"))
                         .desired_width(220.0)
                         .margin(Margin::symmetric(8, 5)),
                 );
@@ -811,7 +814,7 @@ impl Dialog for ConnectDialog {
             if self.auth != AuthKind::Anonymous && self.auth != AuthKind::Agent {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
-                    ui.checkbox(&mut self.remember, "Remember the secret (Windows Credential Manager)");
+                    ui.checkbox(&mut self.remember, tr!("remote-remember"));
                 });
             }
         }
@@ -820,7 +823,7 @@ impl Dialog for ConnectDialog {
             ui.label(RichText::new(e).color(p.danger));
         }
         let enter = ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Connect", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("remote-connect-button"), tr!("common-cancel"));
         if ok || enter {
             match self.build() {
                 Ok(uri) => {
@@ -892,8 +895,8 @@ impl Drop for HostKeyDialog {
 impl Dialog for HostKeyDialog {
     fn title(&self) -> &str {
         match self.prompt.status {
-            HostKeyStatus::Changed { .. } => "Server key changed!",
-            _ => "Trust this server?",
+            HostKeyStatus::Changed { .. } => tr!("remote-hostkey-changed-title"),
+            _ => tr!("remote-hostkey-trust-title"),
         }
     }
     fn icon(&self) -> Option<&'static str> {
@@ -915,21 +918,9 @@ impl Dialog for HostKeyDialog {
         };
         let changed = matches!(self.prompt.status, HostKeyStatus::Changed { .. });
         if changed {
-            ui.label(
-                RichText::new(format!(
-                    "{host} presented a different key than the one you trusted before. This can mean the server was \
-                     reinstalled, or that someone is intercepting the connection."
-                ))
-                .color(p.danger),
-            );
+            ui.label(RichText::new(tr!("remote-hostkey-changed-body", host = &host)).color(p.danger));
         } else {
-            ui.label(
-                RichText::new(format!(
-                    "This is the first connection to {host}. Check that the fingerprint matches the server's before \
-                     trusting it."
-                ))
-                .color(p.text_secondary),
-            );
+            ui.label(RichText::new(tr!("remote-hostkey-first-body", host = &host)).color(p.text_secondary));
         }
         ui.add_space(10.0);
         let card = egui::Frame::new()
@@ -943,11 +934,15 @@ impl Dialog for HostKeyDialog {
             ui.label(RichText::new(&self.prompt.fingerprint).font(egui::FontId::monospace(12.5)).color(p.text_primary));
             if let HostKeyStatus::Changed { previous } = &self.prompt.status {
                 ui.add_space(8.0);
-                ui.label(RichText::new("Previously trusted").size(11.5).color(p.text_tertiary));
+                ui.label(RichText::new(tr!("remote-hostkey-previous")).size(11.5).color(p.text_tertiary));
                 ui.label(RichText::new(previous).font(egui::FontId::monospace(12.0)).color(p.text_secondary));
             }
         });
-        let (ok, cancel) = footer(ui, if changed { "Trust the new key" } else { "Trust and connect" }, "Cancel");
+        let (ok, cancel) = footer(
+            ui,
+            if changed { tr!("remote-hostkey-trust-new") } else { tr!("remote-hostkey-trust") },
+            tr!("common-cancel"),
+        );
         if ok {
             self.answer(true);
             return false;
@@ -982,7 +977,7 @@ impl NameDialog {
 
 impl Dialog for NameDialog {
     fn title(&self) -> &str {
-        if self.dir.is_some() { "New folder" } else { "Rename" }
+        if self.dir.is_some() { tr!("remote-new-folder-title") } else { tr!("common-rename") }
     }
     fn icon(&self) -> Option<&'static str> {
         Some(if self.dir.is_some() { ph::FOLDER_PLUS } else { ph::PENCIL_SIMPLE })
@@ -990,7 +985,7 @@ impl Dialog for NameDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        let r = text_field(ui, &mut self.name, "Name", false);
+        let r = text_field(ui, &mut self.name, tr!("remote-name"), false);
         if self.focus {
             r.request_focus();
             self.focus = false;
@@ -1000,11 +995,15 @@ impl Dialog for NameDialog {
             ui.label(RichText::new(e).color(p.danger));
         }
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, if self.dir.is_some() { "Create" } else { "Rename" }, "Cancel");
+        let (ok, cancel) = footer(
+            ui,
+            if self.dir.is_some() { tr!("remote-create") } else { tr!("common-rename") },
+            tr!("common-cancel"),
+        );
         if ok || enter {
             let name = self.name.trim().to_string();
             if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
-                self.error = Some("Enter a name without slashes.".into());
+                self.error = Some(tr!("remote-error-name").into());
                 return true;
             }
             match (&self.dir, &self.from) {

@@ -55,7 +55,7 @@ pub fn is_part(path: &Path) -> bool {
 
 /// All consecutive parts starting at `.001` for the part `any`. Blocking (stats).
 pub fn find_parts(any: &Path) -> Result<(PathBuf, Vec<PathBuf>), String> {
-    let (base, _) = split_part(any).ok_or("Not a split part (expected name.001)")?;
+    let (base, _) = split_part(any).ok_or_else(|| tr!("tools-split-err-not-part").to_string())?;
     let mut parts = Vec::new();
     for n in 1.. {
         let p = part_path(&base, n);
@@ -65,7 +65,7 @@ pub fn find_parts(any: &Path) -> Result<(PathBuf, Vec<PathBuf>), String> {
         parts.push(p);
     }
     if parts.is_empty() {
-        return Err(format!("{} not found", part_path(&base, 1).display()));
+        return Err(tr!("tools-split-err-not-found", path = part_path(&base, 1).display().to_string()));
     }
     Ok((base, parts))
 }
@@ -85,8 +85,28 @@ pub struct JoinOutcome {
     pub verified: Option<bool>,
 }
 
-fn io_err(what: &str, p: &Path, e: std::io::Error) -> String {
-    format!("{what} {}: {e}", soyuz_fs::strip_verbatim(p).display())
+/// File operation named in an error message.
+#[derive(Clone, Copy)]
+enum IoOp {
+    Open,
+    Create,
+    Read,
+    Write,
+}
+
+fn io_err(op: IoOp, p: &Path, e: std::io::Error) -> String {
+    let path = soyuz_fs::strip_verbatim(p).display().to_string();
+    let error = e.to_string();
+    match op {
+        IoOp::Open => tr!("tools-split-err-open", path = path, error = error),
+        IoOp::Create => tr!("tools-split-err-create", path = path, error = error),
+        IoOp::Read => tr!("tools-split-err-read", path = path, error = error),
+        IoOp::Write => tr!("tools-split-err-write", path = path, error = error),
+    }
+}
+
+fn exists_err(p: &Path) -> String {
+    tr!("tools-split-err-exists", path = soyuz_fs::strip_verbatim(p).display().to_string())
 }
 
 /// Split `src` into parts of `part_size` bytes in `out_dir`. Blocking.
@@ -98,17 +118,17 @@ pub fn split_file(
     progress: &AtomicU64,
 ) -> Result<SplitOutcome, String> {
     if part_size == 0 {
-        return Err("Part size must be greater than zero".into());
+        return Err(tr!("tools-split-err-zero-size").into());
     }
-    let name = src.file_name().ok_or("No file name")?;
+    let name = src.file_name().ok_or_else(|| tr!("tools-split-err-no-name").to_string())?;
     let base = out_dir.join(name);
-    let mut input = File::open(src).map_err(|e| io_err("Cannot open", src, e))?;
+    let mut input = File::open(src).map_err(|e| io_err(IoOp::Open, src, e))?;
     let total = input.metadata().map(|m| m.len()).unwrap_or(0);
     let n_parts = total.div_ceil(part_size).max(1) as usize;
     let ck = checksum_path(&base);
     for p in (1..=n_parts).map(|n| part_path(&base, n)).chain(std::iter::once(ck.clone())) {
         if soyuz_fs::exists_nofollow(&p) {
-            return Err(format!("{} already exists", soyuz_fs::strip_verbatim(&p).display()));
+            return Err(exists_err(&p));
         }
     }
     let mut written: Vec<PathBuf> = Vec::new();
@@ -117,25 +137,25 @@ pub fn split_file(
         let mut buf = vec![0u8; BUF];
         for n in 1..=n_parts {
             let p = part_path(&base, n);
-            let f = File::create_new(&p).map_err(|e| io_err("Cannot create", &p, e))?;
+            let f = File::create_new(&p).map_err(|e| io_err(IoOp::Create, &p, e))?;
             written.push(p.clone());
             let mut w = BufWriter::with_capacity(BUF, f);
             let mut left = part_size;
             while left > 0 {
                 if ctl.is_cancelled() {
-                    return Err("Cancelled".into());
+                    return Err(tr!("tools-cancelled").into());
                 }
                 let want = left.min(BUF as u64) as usize;
-                let got = input.read(&mut buf[..want]).map_err(|e| io_err("Cannot read", src, e))?;
+                let got = input.read(&mut buf[..want]).map_err(|e| io_err(IoOp::Read, src, e))?;
                 if got == 0 {
                     break;
                 }
-                w.write_all(&buf[..got]).map_err(|e| io_err("Cannot write", &p, e))?;
+                w.write_all(&buf[..got]).map_err(|e| io_err(IoOp::Write, &p, e))?;
                 hasher.update(&buf[..got]);
                 left -= got as u64;
                 progress.fetch_add(got as u64, Ordering::Relaxed);
             }
-            w.flush().map_err(|e| io_err("Cannot write", &p, e))?;
+            w.flush().map_err(|e| io_err(IoOp::Write, &p, e))?;
         }
         Ok(hasher.finalize().to_hex().to_string())
     })();
@@ -145,7 +165,7 @@ pub fn split_file(
             let line = format!("{hash}  {}\n", name.to_string_lossy());
             File::create_new(&ck)
                 .and_then(|mut f| f.write_all(line.as_bytes()).and_then(|_| f.sync_all()))
-                .map_err(|e| io_err("Cannot create", &ck, e))?;
+                .map_err(|e| io_err(IoOp::Create, &ck, e))?;
             Ok(SplitOutcome { parts: written, checksum: ck, hash })
         }
         Err(e) => {
@@ -173,35 +193,35 @@ pub fn join_parts(
     progress: &AtomicU64,
 ) -> Result<JoinOutcome, String> {
     if output.exists() {
-        return Err(format!("{} already exists", soyuz_fs::strip_verbatim(output).display()));
+        return Err(exists_err(output));
     }
     let expected = checksum.and_then(|c| std::fs::read_to_string(c).ok()).and_then(|t| parse_checksum(&t));
     let mut tmp = output.as_os_str().to_os_string();
     tmp.push(".soyuz-join.part");
     let tmp = PathBuf::from(tmp);
     let result = (|| -> Result<(u64, String), String> {
-        let f = File::create_new(&tmp).map_err(|e| io_err("Cannot create", &tmp, e))?;
+        let f = File::create_new(&tmp).map_err(|e| io_err(IoOp::Create, &tmp, e))?;
         let mut w = BufWriter::with_capacity(BUF, f);
         let mut hasher = blake3::Hasher::new();
         let mut buf = vec![0u8; BUF];
         let mut bytes = 0u64;
         for p in parts {
-            let mut input = File::open(p).map_err(|e| io_err("Cannot open", p, e))?;
+            let mut input = File::open(p).map_err(|e| io_err(IoOp::Open, p, e))?;
             loop {
                 if ctl.is_cancelled() {
-                    return Err("Cancelled".into());
+                    return Err(tr!("tools-cancelled").into());
                 }
-                let got = input.read(&mut buf).map_err(|e| io_err("Cannot read", p, e))?;
+                let got = input.read(&mut buf).map_err(|e| io_err(IoOp::Read, p, e))?;
                 if got == 0 {
                     break;
                 }
-                w.write_all(&buf[..got]).map_err(|e| io_err("Cannot write", &tmp, e))?;
+                w.write_all(&buf[..got]).map_err(|e| io_err(IoOp::Write, &tmp, e))?;
                 hasher.update(&buf[..got]);
                 bytes += got as u64;
                 progress.fetch_add(got as u64, Ordering::Relaxed);
             }
         }
-        w.flush().map_err(|e| io_err("Cannot write", &tmp, e))?;
+        w.flush().map_err(|e| io_err(IoOp::Write, &tmp, e))?;
         Ok((bytes, hasher.finalize().to_hex().to_string()))
     })();
     match result {
@@ -217,7 +237,11 @@ pub fn join_parts(
             // No-replace: something that appeared at the target meanwhile is never overwritten.
             if let Err(e) = soyuz_fs::rename(&tmp, &target, soyuz_fs::RenameMode::NoReplace) {
                 let _ = std::fs::remove_file(&tmp);
-                return Err(format!("Cannot create {}: {e}", soyuz_fs::strip_verbatim(&target).display()));
+                return Err(tr!(
+                    "tools-split-err-create",
+                    path = soyuz_fs::strip_verbatim(&target).display().to_string(),
+                    error = e.to_string()
+                ));
             }
             Ok(JoinOutcome { output: target, bytes, verified })
         }
@@ -253,14 +277,14 @@ struct Task {
     started: Instant,
 }
 
-/// Part size presets (label, bytes).
+/// Part size presets (label, bytes); 0 bytes is "Custom" (translated at draw time).
 const PRESETS: [(&str, u64); 6] = [
     ("10 MB", 10_000_000),
     ("100 MB", 100_000_000),
     ("700 MB (CD)", 700 * 1024 * 1024),
     ("1 GB", 1_000_000_000),
     ("4 GB − 1 (FAT32)", 4 * 1024 * 1024 * 1024 - 1),
-    ("Custom", 0),
+    ("", 0),
 ];
 
 pub struct SplitWindow {
@@ -325,7 +349,7 @@ impl SplitWindow {
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
         self.poll(app);
-        let title = if self.mode == Mode::Split { "Split file" } else { "Join files" };
+        let title = if self.mode == Mode::Split { tr!("tools-split-title") } else { tr!("tools-join-title") };
         let icon = if self.mode == Mode::Split { ph::ARROWS_SPLIT } else { ph::ARROWS_MERGE };
         let name = soyuz_core::entry::display_name(&self.path);
         let keep = tool_window(ctx, "split", title, &name, icon, vec2(520.0, 330.0), |ui| self.body(ui));
@@ -343,20 +367,22 @@ impl SplitWindow {
         self.task = None;
         self.result = Some(match res {
             Ok(Outcome::Split(o)) => {
-                let msg =
-                    format!("Created {} parts and {}", o.parts.len(), soyuz_core::entry::display_name(&o.checksum));
-                app.ui.toasts.push(Toast::success("File split").body(msg.clone()));
+                let msg = tr!(
+                    "tools-split-done-body",
+                    count = o.parts.len(),
+                    checksum = soyuz_core::entry::display_name(&o.checksum)
+                );
+                app.ui.toasts.push(Toast::success(tr!("tools-split-done")).body(msg.clone()));
                 Ok(msg)
             }
             Ok(Outcome::Join(o)) => {
                 let name = soyuz_core::entry::display_name(&o.output);
                 let (toast, msg) = match o.verified {
-                    Some(true) => (Toast::success("Files joined"), format!("{name} · checksum verified")),
-                    Some(false) => (
-                        Toast::error("Checksum mismatch"),
-                        format!("The joined file does not match its checksum; kept as {name}"),
-                    ),
-                    None => (Toast::success("Files joined"), format!("{name} · no checksum file to verify")),
+                    Some(true) => (Toast::success(tr!("tools-join-done")), tr!("tools-join-verified", name = &name)),
+                    Some(false) => {
+                        (Toast::error(tr!("tools-join-mismatch")), tr!("tools-join-mismatch-body", name = &name))
+                    }
+                    None => (Toast::success(tr!("tools-join-done")), tr!("tools-join-unverified", name = &name)),
                 };
                 app.ui.toasts.push(toast.body(msg.clone()));
                 if o.verified == Some(false) { Err(msg) } else { Ok(msg) }
@@ -374,7 +400,7 @@ impl SplitWindow {
         let (total, job): (u64, Work) = match self.mode {
             Mode::Split => {
                 let Some(size) = self.part_size() else {
-                    self.result = Some(Err("Enter a valid part size (e.g. 250 MB)".into()));
+                    self.result = Some(Err(tr!("tools-split-err-invalid-size").into()));
                     return;
                 };
                 let src = self.path.clone();
@@ -417,54 +443,57 @@ impl SplitWindow {
         };
         match self.mode {
             Mode::Split => {
-                label(ui, "FILE");
-                let size =
-                    self.size.map(|s| format_size(s, SizeStyle::Binary)).unwrap_or_else(|| "unknown size".into());
+                label(ui, tr!("tools-split-label-file"));
+                let size = self
+                    .size
+                    .map(|s| format_size(s, SizeStyle::Binary))
+                    .unwrap_or_else(|| tr!("tools-split-unknown-size").into());
                 ui.label(
                     RichText::new(format!("{}  ·  {size}", super::tags_ui::show_path(&self.path)))
                         .color(p.text_primary),
                 );
                 ui.add_space(8.0);
-                label(ui, "PART SIZE");
+                label(ui, tr!("tools-split-label-part-size"));
                 ui.horizontal_wrapped(|ui| {
                     for (i, (name, _)) in PRESETS.iter().enumerate() {
                         let mut on = self.preset == i;
+                        let name = if name.is_empty() { tr!("tools-split-custom") } else { name };
                         if super::toggle_chip(ui, name, &mut on, p.accent).clicked() {
                             self.preset = i;
                         }
                     }
                 });
                 if PRESETS[self.preset].1 == 0 {
-                    super::text_field(ui, &mut self.custom, "e.g. 250 MB", 160.0);
+                    super::text_field(ui, &mut self.custom, tr!("tools-split-custom-hint"), 160.0);
                 }
                 if let (Some(total), Some(ps)) = (self.size, self.part_size()) {
                     let n = total.div_ceil(ps).max(1);
                     ui.label(
-                        RichText::new(format!(
-                            "{} of {} (+ a .blake3 checksum file)",
-                            super::plural(n as usize, "part", "parts"),
-                            format_size(ps, SizeStyle::Binary)
-                        ))
-                        .font(FontId::proportional(12.0))
-                        .color(p.text_secondary),
+                        RichText::new(tr!("tools-split-plan", count = n, size = format_size(ps, SizeStyle::Binary)))
+                            .font(FontId::proportional(12.0))
+                            .color(p.text_secondary),
                     );
                 }
             }
             Mode::Join => {
-                label(ui, "PARTS");
+                label(ui, tr!("tools-split-label-parts"));
                 match &self.parts {
                     Some(Ok((base, parts))) => {
                         let has_ck = self.has_checksum;
 
                         ui.label(
-                            RichText::new(format!("{} parts → {}", parts.len(), soyuz_core::entry::display_name(base)))
-                                .color(p.text_primary),
+                            RichText::new(tr!(
+                                "tools-join-plan",
+                                count = parts.len(),
+                                name = soyuz_core::entry::display_name(base)
+                            ))
+                            .color(p.text_primary),
                         );
                         ui.label(
                             RichText::new(if has_ck {
-                                "A checksum file was found; the result will be verified."
+                                tr!("tools-join-has-checksum")
                             } else {
-                                "No checksum file; the result will not be verified."
+                                tr!("tools-join-no-checksum")
                             })
                             .font(FontId::proportional(12.0))
                             .color(if has_ck { p.success } else { p.text_tertiary }),
@@ -478,8 +507,8 @@ impl SplitWindow {
             }
         }
         ui.add_space(8.0);
-        label(ui, "OUTPUT FOLDER");
-        super::text_field(ui, &mut self.out_dir, "Folder", ui.available_width());
+        label(ui, tr!("tools-split-label-output"));
+        super::text_field(ui, &mut self.out_dir, tr!("tools-split-folder-hint"), ui.available_width());
         ui.add_space(10.0);
         if let Some(t) = &self.task {
             let done = t.progress.load(Ordering::Relaxed);
@@ -487,11 +516,11 @@ impl SplitWindow {
             progress_bar(ui, ui.available_width(), frac);
             let secs = t.started.elapsed().as_secs_f64().max(0.001);
             ui.label(
-                RichText::new(format!(
-                    "{} of {}  ·  {}/s",
-                    format_size(done, SizeStyle::Binary),
-                    format_size(t.total, SizeStyle::Binary),
-                    format_size((done as f64 / secs) as u64, SizeStyle::Binary)
+                RichText::new(tr!(
+                    "tools-split-progress",
+                    done = format_size(done, SizeStyle::Binary),
+                    total = format_size(t.total, SizeStyle::Binary),
+                    speed = format_size((done as f64 / secs) as u64, SizeStyle::Binary)
                 ))
                 .font(FontId::proportional(12.0))
                 .color(p.text_secondary),
@@ -509,13 +538,13 @@ impl SplitWindow {
             ui.horizontal(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if self.task.is_some() {
-                        if button(ui, Some(ph::STOP), "Cancel", 0, true).clicked()
+                        if button(ui, Some(ph::STOP), tr!("common-cancel"), 0, true).clicked()
                             && let Some(t) = &self.task
                         {
                             t.ctl.cancel();
                         }
                     } else if matches!(self.result, Some(Ok(_))) {
-                        if button(ui, Some(ph::CHECK), "Done", 1, true).clicked() {
+                        if button(ui, Some(ph::CHECK), tr!("tools-done"), 1, true).clicked() {
                             self.open = false;
                         }
                     } else {
@@ -523,7 +552,8 @@ impl SplitWindow {
                             Mode::Split => self.size.is_some(),
                             Mode::Join => matches!(self.parts, Some(Ok(_))),
                         };
-                        let label = if self.mode == Mode::Split { "Split" } else { "Join" };
+                        let label =
+                            if self.mode == Mode::Split { tr!("tools-split-start") } else { tr!("tools-join-start") };
                         if button(ui, Some(ph::PLAY), label, 1, ok && !self.out_dir.trim().is_empty()).clicked() {
                             self.start();
                         }

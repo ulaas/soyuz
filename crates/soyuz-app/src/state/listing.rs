@@ -121,15 +121,15 @@ pub fn group_key(e: &EntryInfo, group: GroupBy, now: SystemTime) -> (u32, String
         GroupBy::None => (0, String::new()),
         GroupBy::Kind => {
             if e.is_dir_like() {
-                (0, "Folders".into())
+                (0, tr!("views-group-folders").into())
             } else {
                 (1, kind_label(e))
             }
         }
         GroupBy::Extension => match e.extension() {
-            _ if e.is_dir_like() => (0, "Folders".into()),
+            _ if e.is_dir_like() => (0, tr!("views-group-folders").into()),
             Some(x) => (1, format!(".{}", x.to_lowercase())),
-            None => (2, "No extension".into()),
+            None => (2, tr!("views-group-no-extension").into()),
         },
         GroupBy::FirstLetter => {
             let c = e.name.chars().next().map(|c| c.to_uppercase().next().unwrap_or(c)).unwrap_or('#');
@@ -137,24 +137,24 @@ pub fn group_key(e: &EntryInfo, group: GroupBy, now: SystemTime) -> (u32, String
         }
         GroupBy::Size => {
             if e.is_dir_like() {
-                return (0, "Folders".into());
+                return (0, tr!("views-group-folders").into());
             }
             const MIB: u64 = 1024 * 1024;
             let s = e.size;
             match s {
-                0 => (1, "Empty".into()),
-                1..16_384 => (2, "Tiny (< 16 KiB)".into()),
-                16_384..1_048_576 => (3, "Small (< 1 MiB)".into()),
-                1_048_576..134_217_728 => (4, "Medium (< 128 MiB)".into()),
-                _ if s < 1024 * MIB => (5, "Large (< 1 GiB)".into()),
-                _ => (6, "Huge (≥ 1 GiB)".into()),
+                0 => (1, tr!("views-group-size-empty").into()),
+                1..16_384 => (2, tr!("views-group-size-tiny").into()),
+                16_384..1_048_576 => (3, tr!("views-group-size-small").into()),
+                1_048_576..134_217_728 => (4, tr!("views-group-size-medium").into()),
+                _ if s < 1024 * MIB => (5, tr!("views-group-size-large").into()),
+                _ => (6, tr!("views-group-size-huge").into()),
             }
         }
         GroupBy::Date => match e.modified {
-            None => (9, "Unknown date".into()),
+            None => (9, tr!("views-group-date-unknown").into()),
             Some(t) => date_bucket(t, now),
         },
-        GroupBy::Tag => (0, "No tags".into()),
+        GroupBy::Tag => (0, tr!("views-group-no-tags").into()),
     }
 }
 
@@ -163,19 +163,19 @@ fn date_bucket(t: SystemTime, now: SystemTime) -> (u32, String) {
     let day = 86_400;
     let secs = age.as_secs();
     if t > now {
-        (0, "In the future".into())
+        (0, tr!("views-group-date-future").into())
     } else if secs < day {
-        (1, "Today".into())
+        (1, tr!("views-group-date-today").into())
     } else if secs < 2 * day {
-        (2, "Yesterday".into())
+        (2, tr!("views-group-date-yesterday").into())
     } else if secs < 7 * day {
-        (3, "Earlier this week".into())
+        (3, tr!("views-group-date-week").into())
     } else if secs < 31 * day {
-        (4, "Earlier this month".into())
+        (4, tr!("views-group-date-month").into())
     } else if secs < 365 * day {
-        (5, "Earlier this year".into())
+        (5, tr!("views-group-date-year").into())
     } else {
-        (6, "A long time ago".into())
+        (6, tr!("views-group-date-older").into())
     }
 }
 
@@ -183,84 +183,84 @@ fn date_bucket(t: SystemTime, now: SystemTime) -> (u32, String) {
 pub fn kind_label(e: &EntryInfo) -> String {
     use soyuz_core::EntryKind;
     match e.kind {
-        EntryKind::Dir => return "Folder".into(),
-        EntryKind::Junction => return "Junction".into(),
-        EntryKind::Symlink { target: soyuz_core::LinkTarget::Dir } => return "Folder link".into(),
-        EntryKind::Symlink { target: soyuz_core::LinkTarget::Missing } => return "Broken link".into(),
-        EntryKind::Device => return "Device".into(),
-        EntryKind::Fifo => return "Pipe".into(),
-        EntryKind::Socket => return "Socket".into(),
+        EntryKind::Dir => return tr!("views-kind-folder").into(),
+        EntryKind::Junction => return tr!("views-kind-junction").into(),
+        EntryKind::Symlink { target: soyuz_core::LinkTarget::Dir } => return tr!("views-kind-folder-link").into(),
+        EntryKind::Symlink { target: soyuz_core::LinkTarget::Missing } => return tr!("views-kind-broken-link").into(),
+        EntryKind::Device => return tr!("views-kind-device").into(),
+        EntryKind::Fifo => return tr!("views-kind-pipe").into(),
+        EntryKind::Socket => return tr!("views-kind-socket").into(),
         _ => {}
     }
-    let Some(ext) = e.extension() else { return "File".into() };
+    let Some(ext) = e.extension() else { return tr!("views-kind-file").into() };
     let lower = ext.to_ascii_lowercase();
     let known = match lower.as_str() {
-        "png" => "PNG image",
-        "jpg" | "jpeg" => "JPEG image",
-        "gif" => "GIF image",
-        "webp" => "WebP image",
-        "bmp" => "Bitmap image",
-        "svg" => "SVG image",
-        "ico" => "Icon",
-        "tif" | "tiff" => "TIFF image",
-        "heic" | "heif" => "HEIC image",
-        "mp4" | "m4v" => "MP4 video",
-        "mkv" => "Matroska video",
-        "mov" => "QuickTime video",
-        "avi" => "AVI video",
-        "webm" => "WebM video",
-        "mp3" => "MP3 audio",
-        "flac" => "FLAC audio",
-        "wav" => "WAV audio",
-        "ogg" | "opus" => "Ogg audio",
-        "m4a" | "aac" => "AAC audio",
-        "zip" => "ZIP archive",
-        "7z" => "7-Zip archive",
-        "rar" => "RAR archive",
-        "tar" => "Tar archive",
-        "gz" | "tgz" => "Gzip archive",
-        "xz" | "bz2" | "zst" => "Compressed file",
-        "iso" => "Disc image",
-        "pdf" => "PDF document",
-        "doc" | "docx" => "Word document",
-        "xls" | "xlsx" => "Excel workbook",
-        "ppt" | "pptx" => "PowerPoint deck",
-        "odt" => "Text document",
-        "txt" => "Text file",
+        "png" => tr!("views-kind-png-image"),
+        "jpg" | "jpeg" => tr!("views-kind-jpeg-image"),
+        "gif" => tr!("views-kind-gif-image"),
+        "webp" => tr!("views-kind-webp-image"),
+        "bmp" => tr!("views-kind-bitmap-image"),
+        "svg" => tr!("views-kind-svg-image"),
+        "ico" => tr!("views-kind-icon"),
+        "tif" | "tiff" => tr!("views-kind-tiff-image"),
+        "heic" | "heif" => tr!("views-kind-heic-image"),
+        "mp4" | "m4v" => tr!("views-kind-mp4-video"),
+        "mkv" => tr!("views-kind-matroska-video"),
+        "mov" => tr!("views-kind-quicktime-video"),
+        "avi" => tr!("views-kind-avi-video"),
+        "webm" => tr!("views-kind-webm-video"),
+        "mp3" => tr!("views-kind-mp3-audio"),
+        "flac" => tr!("views-kind-flac-audio"),
+        "wav" => tr!("views-kind-wav-audio"),
+        "ogg" | "opus" => tr!("views-kind-ogg-audio"),
+        "m4a" | "aac" => tr!("views-kind-aac-audio"),
+        "zip" => tr!("views-kind-zip-archive"),
+        "7z" => tr!("views-kind-7-zip-archive"),
+        "rar" => tr!("views-kind-rar-archive"),
+        "tar" => tr!("views-kind-tar-archive"),
+        "gz" | "tgz" => tr!("views-kind-gzip-archive"),
+        "xz" | "bz2" | "zst" => tr!("views-kind-compressed-file"),
+        "iso" => tr!("views-kind-disc-image"),
+        "pdf" => tr!("views-kind-pdf-document"),
+        "doc" | "docx" => tr!("views-kind-word-document"),
+        "xls" | "xlsx" => tr!("views-kind-excel-workbook"),
+        "ppt" | "pptx" => tr!("views-kind-powerpoint-deck"),
+        "odt" => tr!("views-kind-text-document"),
+        "txt" => tr!("views-kind-text-file"),
         "md" => "Markdown",
-        "rtf" => "Rich text",
-        "csv" => "CSV table",
+        "rtf" => tr!("views-kind-rich-text"),
+        "csv" => tr!("views-kind-csv-table"),
         "json" => "JSON",
         "toml" => "TOML",
         "yaml" | "yml" => "YAML",
         "xml" => "XML",
-        "html" | "htm" => "HTML page",
-        "css" => "Stylesheet",
-        "rs" => "Rust source",
-        "py" => "Python script",
+        "html" | "htm" => tr!("views-kind-html-page"),
+        "css" => tr!("views-kind-stylesheet"),
+        "rs" => tr!("views-kind-rust-source"),
+        "py" => tr!("views-kind-python-script"),
         "js" | "mjs" | "cjs" => "JavaScript",
         "ts" | "tsx" => "TypeScript",
-        "c" | "h" => "C source",
-        "cpp" | "cc" | "hpp" | "cxx" => "C++ source",
-        "cs" => "C# source",
-        "go" => "Go source",
-        "java" => "Java source",
-        "kt" => "Kotlin source",
-        "swift" => "Swift source",
-        "sh" | "bash" | "zsh" => "Shell script",
-        "ps1" => "PowerShell script",
-        "bat" | "cmd" => "Batch file",
-        "exe" => "Application",
-        "msi" => "Installer",
-        "dll" | "so" | "dylib" => "Library",
-        "lnk" => "Shortcut",
-        "ttf" | "otf" | "woff" | "woff2" => "Font",
-        "log" => "Log file",
-        "ini" | "cfg" | "conf" => "Settings",
-        "lock" => "Lock file",
+        "c" | "h" => tr!("views-kind-c-source"),
+        "cpp" | "cc" | "hpp" | "cxx" => tr!("views-kind-cpp-source"),
+        "cs" => tr!("views-kind-csharp-source"),
+        "go" => tr!("views-kind-go-source"),
+        "java" => tr!("views-kind-java-source"),
+        "kt" => tr!("views-kind-kotlin-source"),
+        "swift" => tr!("views-kind-swift-source"),
+        "sh" | "bash" | "zsh" => tr!("views-kind-shell-script"),
+        "ps1" => tr!("views-kind-powershell-script"),
+        "bat" | "cmd" => tr!("views-kind-batch-file"),
+        "exe" => tr!("views-kind-application"),
+        "msi" => tr!("views-kind-installer"),
+        "dll" | "so" | "dylib" => tr!("views-kind-library"),
+        "lnk" => tr!("views-kind-shortcut"),
+        "ttf" | "otf" | "woff" | "woff2" => tr!("views-kind-font"),
+        "log" => tr!("views-kind-log-file"),
+        "ini" | "cfg" | "conf" => tr!("views-kind-settings"),
+        "lock" => tr!("views-kind-lock-file"),
         _ => "",
     };
-    if known.is_empty() { format!("{} file", ext.to_uppercase()) } else { known.into() }
+    if known.is_empty() { tr!("views-kind-ext-file", ext = ext.to_uppercase()) } else { known.into() }
 }
 
 #[cfg(test)]

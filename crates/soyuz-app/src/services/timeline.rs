@@ -217,7 +217,7 @@ pub fn summary(entries: &[EntryInfo]) -> String {
     let items: Vec<(PathBuf, i64)> = entries.iter().filter_map(|e| Some((e.path.clone(), mtime(e)?))).collect();
     let c = tl::counts(&items, now, local_offset());
     let week = c[0].1 + c[1].1 + c[2].1;
-    format!("{} today · {} this week · {} in total", c[0].1, week, entries.len())
+    tr!("services-timeline-summary", today = c[0].1, week = week, total = entries.len())
 }
 
 #[cfg(test)]

@@ -21,10 +21,10 @@ pub enum Bucket {
 impl Bucket {
     pub fn label(self) -> &'static str {
         match self {
-            Bucket::Today => "Today",
-            Bucket::Yesterday => "Yesterday",
-            Bucket::ThisWeek => "This week",
-            Bucket::Earlier => "Earlier",
+            Bucket::Today => tr!("ops-bucket-today"),
+            Bucket::Yesterday => tr!("ops-bucket-yesterday"),
+            Bucket::ThisWeek => tr!("ops-bucket-this-week"),
+            Bucket::Earlier => tr!("ops-bucket-earlier"),
         }
     }
 }

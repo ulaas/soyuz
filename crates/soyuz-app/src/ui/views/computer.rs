@@ -35,7 +35,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let p = palette(ui.ctx());
     let mut child = ui.new_child(UiBuilder::new().max_rect(rect.shrink2(vec2(20.0, 16.0))));
     ScrollArea::vertical().id_salt(("soyuz.computer", pane.id.0)).auto_shrink([false, false]).show(&mut child, |ui| {
-        ui.label(egui::RichText::new("Devices and drives").font(semibold(15.0)).color(p.text_primary));
+        ui.label(egui::RichText::new(tr!("views-computer-title")).font(semibold(15.0)).color(p.text_primary));
         ui.add_space(12.0);
         let card = vec2(280.0, 78.0);
         let cols = ((ui.available_width() + 12.0) / (card.x + 12.0)).floor().max(1.0) as usize;
@@ -75,10 +75,10 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         let used = 1.0 - vol.free as f32 / vol.total as f32;
                         let bar = Rect::from_min_size(pos2(tx, r.top() + 38.0), vec2(r.right() - tx - 14.0, 5.0));
                         usage_bar(ui, &p, bar, used);
-                        let text = format!(
-                            "{} free of {}",
-                            format_size(vol.free, SizeStyle::Decimal),
-                            format_size(vol.total, SizeStyle::Decimal)
+                        let text = tr!(
+                            "views-computer-free-of",
+                            free = format_size(vol.free, SizeStyle::Decimal),
+                            total = format_size(vol.total, SizeStyle::Decimal)
                         );
                         ui.painter().text(
                             pos2(tx, r.top() + 56.0),
@@ -88,7 +88,8 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                             p.text_secondary,
                         );
                     } else {
-                        let kind = if vol.fs.is_empty() { "Drive".to_string() } else { vol.fs.clone() };
+                        let kind =
+                            if vol.fs.is_empty() { tr!("views-computer-drive").to_string() } else { vol.fs.clone() };
                         ui.painter().text(
                             pos2(tx, r.top() + 46.0),
                             Align2::LEFT_CENTER,
@@ -110,7 +111,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             ui.add_space(12.0);
         }
         if v.volumes.is_empty() {
-            ui.label(egui::RichText::new("Looking for drives…").color(p.text_tertiary));
+            ui.label(egui::RichText::new(tr!("views-computer-looking")).color(p.text_tertiary));
         }
     });
 }

@@ -41,14 +41,6 @@ pub enum DropEffect {
 }
 
 impl DropEffect {
-    pub fn verb(self) -> &'static str {
-        match self {
-            DropEffect::Copy => "Copy",
-            DropEffect::Move => "Move",
-            DropEffect::Link => "Link",
-        }
-    }
-
     fn glyph(self) -> &'static str {
         match self {
             DropEffect::Copy => ph::COPY,
@@ -295,7 +287,7 @@ pub fn trash_target(ui: &Ui, resp: &Response, cmds: &mut Vec<Cmd>) -> bool {
         return false;
     }
     highlight(ui, resp.rect, radius::ROW);
-    set_hover(ctx, "Trash".into(), None);
+    set_hover(ctx, tr!("ops-dnd-trash").into(), None);
     ctx.data_mut(|d| d.insert_temp(Id::new("soyuz.dnd.trash"), true));
     if ctx.input(|i| i.pointer.any_released())
         && let Some(p) = DragAndDrop::take_payload::<DragPayload>(ctx)
@@ -386,16 +378,19 @@ pub fn paint_badge(ctx: &egui::Context) {
     }
     let p = palette(ctx);
     let n = payload.paths.len();
-    let what = if n == 1 {
-        soyuz_core::entry::display_name(&payload.paths[0])
-    } else {
-        format!("{} items", crate::ui::statusbar::group_thousands(n))
-    };
+    let what = if n == 1 { soyuz_core::entry::display_name(&payload.paths[0]) } else { tr!("common-items", count = n) };
     let (glyph, line2, accent) = match &hover {
-        Some(h) if to_trash => (ph::TRASH, format!("Move to {}", h.label), p.danger),
+        Some(h) if to_trash => (ph::TRASH, tr!("ops-dnd-badge-trash", target = &h.label), p.danger),
         Some(h) => match h.effect {
-            Some(e) => (e.glyph(), format!("{} to {}", e.verb(), h.label), p.accent),
-            None => (ph::QUESTION, format!("Drop into {}", h.label), p.accent),
+            Some(e) => {
+                let line = match e {
+                    DropEffect::Copy => tr!("ops-dnd-badge-copy", target = &h.label),
+                    DropEffect::Move => tr!("ops-dnd-badge-move", target = &h.label),
+                    DropEffect::Link => tr!("ops-dnd-badge-link", target = &h.label),
+                };
+                (e.glyph(), line, p.accent)
+            }
+            None => (ph::QUESTION, tr!("ops-dnd-badge-drop", target = &h.label), p.accent),
         },
         None => (ph::FILES, String::new(), p.text_tertiary),
     };

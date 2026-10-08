@@ -223,6 +223,7 @@ impl Toasts {
                 // Close button.
                 let cr = Rect::from_center_size(pos2(r.right() - 20.0, r.top() + 23.0), vec2(22.0, 22.0));
                 let cresp = ui.interact(cr, id.with("x"), Sense::click());
+                crate::ui::a11y::button(&cresp, tr!("app-toast-dismiss"));
                 if cresp.hovered() {
                     painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface2);
                 }
@@ -241,6 +242,7 @@ impl Toasts {
                     let g = ui.painter().layout_no_wrap(label.clone(), FontId::proportional(12.5), p.accent);
                     let ar = Rect::from_min_size(ar.min, vec2(g.size().x + 20.0, 24.0));
                     let aresp = ui.interact(ar, id.with("a"), Sense::click());
+                    crate::ui::a11y::button(&aresp, label);
                     let fill =
                         if aresp.hovered() { p.accent.gamma_multiply(0.22) } else { p.accent.gamma_multiply(0.12) };
                     painter.rect_filled(ar, CornerRadius::same(radius::ROW), fill.gamma_multiply(a));

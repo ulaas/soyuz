@@ -13,13 +13,28 @@ use super::card;
 use crate::app::SoyuzApp;
 use crate::automation::AutoCmd;
 use crate::cmd::Cmd;
+use crate::i18n::labels::{rule_action, rule_conflict, rule_kind};
 use crate::theme::icons::ph;
 use crate::theme::{Palette, icons, palette};
 use crate::ui::settings::widgets::{code, dropdown, group, matches, number, segmented, small_button, switch, text};
 
-const CTX: &str = "Automations rules watch folder";
+const CTX: &str = "Automations rules watch folder otomasyonlar kurallar izle klasör";
 
 const TAGS: [&str; 8] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "gray"];
+
+/// Display name of a tag color in [`TAGS`].
+fn tag_name(tag: &str) -> &'static str {
+    match tag {
+        "red" => tr!("automation-tag-red"),
+        "orange" => tr!("automation-tag-orange"),
+        "yellow" => tr!("automation-tag-yellow"),
+        "green" => tr!("automation-tag-green"),
+        "cyan" => tr!("automation-tag-cyan"),
+        "blue" => tr!("automation-tag-blue"),
+        "purple" => tr!("automation-tag-purple"),
+        _ => tr!("automation-tag-gray"),
+    }
+}
 
 fn label(ui: &mut Ui, p: &Palette, s: &str) {
     ui.label(RichText::new(s).size(12.0).color(p.text_secondary));
@@ -30,34 +45,29 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let cli_status = app.automation.cli_status.clone();
     let note = app.automation.rules_note.clone();
     let d = &mut app.settings.draft;
-    any |= group(ui, q, CTX, "Automations", |r| {
-        r.row("Run rules", "Act on new items in watched folders while Soyuz is open.", |ui| {
+    any |= group(ui, q, CTX, tr!("automation-rules-group"), |r| {
+        r.row(tr!("automation-rules-run"), tr!("automation-rules-run-desc"), |ui| {
             switch(ui, &mut d.automation.enabled);
         });
-        r.row_kw("Dry run", "Every rule only writes what it would do to its run log.", "test simulate", |ui| {
+        r.row_kw(tr!("automation-rules-dry-run"), tr!("automation-rules-dry-run-desc"), "test simulate", |ui| {
             switch(ui, &mut d.automation.dry_run);
         });
-        r.row_kw("Run log size", "Entries kept per rule.", "history", |ui| {
+        r.row_kw(tr!("automation-rules-log-size"), tr!("automation-rules-log-size-desc"), "history", |ui| {
             number(ui, &mut d.automation.log_entries, 10..=5_000, "");
         });
-        r.row_kw(
-            "Accept commands from the terminal",
-            "soyuz cp | mv | rm | trash | open | reveal | jobs send their jobs to this window (current user only).",
-            "cli command line pipe",
-            |ui| {
-                switch(ui, &mut d.cli.server_enabled);
-                let p = palette(ui.ctx());
-                match &cli_status {
-                    Some(Ok(name)) => {
-                        ui.label(RichText::new(name).monospace().size(10.5).color(p.text_tertiary));
-                    }
-                    Some(Err(e)) => {
-                        ui.label(RichText::new(e).size(11.0).color(p.warning));
-                    }
-                    None => {}
+        r.row_kw(tr!("automation-rules-cli"), tr!("automation-rules-cli-desc"), "cli command line pipe", |ui| {
+            switch(ui, &mut d.cli.server_enabled);
+            let p = palette(ui.ctx());
+            match &cli_status {
+                Some(Ok(name)) => {
+                    ui.label(RichText::new(name).monospace().size(10.5).color(p.text_tertiary));
                 }
-            },
-        );
+                Some(Err(e)) => {
+                    ui.label(RichText::new(e).size(11.0).color(p.warning));
+                }
+                None => {}
+            }
+        });
     });
     let searching = !q.trim().is_empty();
     let p = palette(ui.ctx());
@@ -74,20 +84,22 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         any = true;
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
-            if small_button(ui, Some(ph::PLUS), "New rule", false).clicked() {
+            if small_button(ui, Some(ph::PLUS), tr!("automation-rules-new"), false).clicked() {
                 let watch = app.ws.pane().location.as_fs_path().map(|p| p.to_path_buf()).unwrap_or_default();
                 app.settings.draft.automation.rules.push(AutomationRule {
-                    name: format!("Rule {}", app.settings.draft.automation.rules.len() + 1),
+                    name: tr!(
+                        "automation-rules-default-name",
+                        n = (app.settings.draft.automation.rules.len() + 1).to_string()
+                    ),
                     watch,
                     ..Default::default()
                 });
             }
-            ui.label(RichText::new("or start from").size(11.5).color(p.text_tertiary));
-            if small_button(ui, Some(ph::FILE_PDF), "PDFs from Downloads → Documents/PDF + blue tag", false).clicked()
-            {
+            ui.label(RichText::new(tr!("automation-rules-start-from")).size(11.5).color(p.text_tertiary));
+            if small_button(ui, Some(ph::FILE_PDF), tr!("automation-rules-preset-pdf"), false).clicked() {
                 let home = soyuz_fs::home();
                 app.settings.draft.automation.rules.push(AutomationRule {
-                    name: "File PDFs".into(),
+                    name: tr!("automation-rules-preset-pdf-name").into(),
                     watch: home.join("Downloads"),
                     glob: "*.pdf".into(),
                     actions: vec![
@@ -97,9 +109,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     ..Default::default()
                 });
             }
-            if small_button(ui, Some(ph::BROOM), "Trash old installers", false).clicked() {
+            if small_button(ui, Some(ph::BROOM), tr!("automation-rules-preset-installers"), false).clicked() {
                 app.settings.draft.automation.rules.push(AutomationRule {
-                    name: "Old installers".into(),
+                    name: tr!("automation-rules-preset-installers-name").into(),
                     watch: soyuz_fs::home().join("Downloads"),
                     glob: "*.msi;*.exe".into(),
                     min_age_minutes: 30 * 24 * 60,
@@ -110,14 +122,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 });
             }
         });
-        ui.label(
-            RichText::new(
-                "Each step runs as a job (activity panel, undo). Rules wait until an item stops changing, and never act on \
-                 partial downloads.",
-            )
-            .size(11.5)
-            .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("automation-rules-intro")).size(11.5).color(p.text_tertiary));
     }
     let n = app.settings.draft.automation.rules.len();
     let mut remove = None;
@@ -145,17 +150,17 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.label(icons::icon(ph::ROBOT, 16.0).color(p.accent));
                 ui.add(
                     egui::TextEdit::singleline(&mut r.name)
-                        .hint_text("Rule name")
+                        .hint_text(tr!("automation-rules-name-hint"))
                         .font(egui::FontId::proportional(14.0))
                         .desired_width(220.0)
                         .margin(egui::Margin::symmetric(8, 4)),
                 );
                 switch(ui, &mut r.enabled);
                 let (dot, tip) = match (&status, r.enabled) {
-                    (_, false) => (p.text_tertiary, "Off".to_string()),
-                    (Some(Ok(())), _) => (p.success, "Watching".to_string()),
+                    (_, false) => (p.text_tertiary, tr!("automation-rules-status-off").to_string()),
+                    (Some(Ok(())), _) => (p.success, tr!("automation-rules-status-watching").to_string()),
                     (Some(Err(e)), _) => (p.danger, e.clone()),
-                    (None, _) => (p.text_tertiary, "Not running yet".to_string()),
+                    (None, _) => (p.text_tertiary, tr!("automation-rules-status-not-running").to_string()),
                 };
                 let (rect, resp) = ui.allocate_exact_size(vec2(12.0, 12.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.5, dot);
@@ -164,17 +169,28 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     ui.label(RichText::new(e).size(11.0).color(p.danger));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if small_button(ui, Some(ph::TRASH), "", true).on_hover_text("Delete rule").clicked() {
+                    if small_button(ui, Some(ph::TRASH), "", true)
+                        .on_hover_text(tr!("automation-rules-delete"))
+                        .clicked()
+                    {
                         remove = Some(i);
                     }
-                    if i + 1 < n && small_button(ui, Some(ph::ARROW_DOWN), "", false).clicked() {
+                    if i + 1 < n
+                        && small_button(ui, Some(ph::ARROW_DOWN), "", false)
+                            .on_hover_text(tr!("automation-rules-move-down"))
+                            .clicked()
+                    {
                         moves = Some((i, i + 1));
                     }
-                    if i > 0 && small_button(ui, Some(ph::ARROW_UP), "", false).clicked() {
+                    if i > 0
+                        && small_button(ui, Some(ph::ARROW_UP), "", false)
+                            .on_hover_text(tr!("automation-rules-move-up"))
+                            .clicked()
+                    {
                         moves = Some((i - 1, i));
                     }
-                    if small_button(ui, Some(ph::PLAY), "Run now", false)
-                        .on_hover_text("Act on everything that matches right now")
+                    if small_button(ui, Some(ph::PLAY), tr!("automation-rules-run-now"), false)
+                        .on_hover_text(tr!("automation-rules-run-now-tip"))
                         .clicked()
                     {
                         cmds.push(Cmd::Automation(AutoCmd::RunRule(r.name.clone())));
@@ -183,62 +199,62 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
             ui.add_space(8.0);
             Grid::new(("soyuz.rule", i)).num_columns(2).spacing(vec2(12.0, 8.0)).show(ui, |ui| {
-                label(ui, &p, "Watch");
+                label(ui, &p, tr!("automation-rules-watch"));
                 ui.horizontal(|ui| {
                     let mut s = r.watch.to_string_lossy().into_owned();
                     if code(ui, &mut s, "C:\\Users\\me\\Downloads", 300.0).changed() {
                         r.watch = PathBuf::from(s.trim());
                     }
-                    ui.checkbox(&mut r.recursive, "Subfolders");
+                    ui.checkbox(&mut r.recursive, tr!("automation-rules-subfolders"));
                 });
                 ui.end_row();
-                label(ui, &p, "Names");
+                label(ui, &p, tr!("automation-rules-names"));
                 ui.horizontal(|ui| {
-                    code(ui, &mut r.glob, "*.pdf;*.epub  (empty = any)", 180.0);
-                    code(ui, &mut r.regex, "regex (optional)", 140.0);
+                    code(ui, &mut r.glob, tr!("automation-rules-glob-hint"), 180.0);
+                    code(ui, &mut r.regex, tr!("automation-rules-regex-hint"), 140.0);
                 });
                 ui.end_row();
-                label(ui, &p, "Items");
+                label(ui, &p, tr!("automation-rules-items"));
                 segmented(
                     ui,
                     &mut r.kind,
-                    &[(RuleKind::Files, "Files"), (RuleKind::Folders, "Folders"), (RuleKind::Any, "Both")],
+                    &[RuleKind::Files, RuleKind::Folders, RuleKind::Any].map(|k| (k, rule_kind(k))),
                 );
                 ui.end_row();
-                label(ui, &p, "Size (KiB)");
+                label(ui, &p, tr!("automation-rules-size"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut r.min_size_kib).prefix("≥ ").speed(16));
                     ui.add(egui::DragValue::new(&mut r.max_size_kib).prefix("≤ ").speed(16));
-                    ui.label(RichText::new("0 = no limit").size(11.0).color(p.text_tertiary));
+                    ui.label(RichText::new(tr!("automation-rules-no-limit")).size(11.0).color(p.text_tertiary));
                 });
                 ui.end_row();
-                label(ui, &p, "Age (minutes)");
+                label(ui, &p, tr!("automation-rules-age"));
                 ui.horizontal(|ui| {
                     ui.add(egui::DragValue::new(&mut r.min_age_minutes).prefix("≥ ").speed(1));
                     ui.add(egui::DragValue::new(&mut r.max_age_minutes).prefix("≤ ").speed(1));
-                    ui.label(RichText::new("by modification time").size(11.0).color(p.text_tertiary));
+                    ui.label(RichText::new(tr!("automation-rules-by-mtime")).size(11.0).color(p.text_tertiary));
                 });
                 ui.end_row();
-                label(ui, &p, "Wait");
+                label(ui, &p, tr!("automation-rules-wait"));
                 ui.horizontal(|ui| {
-                    ui.add(egui::DragValue::new(&mut r.delay_secs).range(0..=3600).suffix(" s"));
-                    ui.label(RichText::new("after the last change").size(11.0).color(p.text_tertiary));
-                    ui.checkbox(&mut r.apply_to_existing, "Also existing items");
+                    ui.add(
+                        egui::DragValue::new(&mut r.delay_secs)
+                            .range(0..=3600)
+                            .suffix(tr!("automation-rules-seconds-suffix")),
+                    );
+                    ui.label(RichText::new(tr!("automation-rules-after-change")).size(11.0).color(p.text_tertiary));
+                    ui.checkbox(&mut r.apply_to_existing, tr!("automation-rules-existing"));
                 });
                 ui.end_row();
-                label(ui, &p, "Conflicts");
+                label(ui, &p, tr!("automation-rules-conflicts"));
                 ui.horizontal(|ui| {
-                    let opts = [
-                        (RuleConflict::KeepBoth, RuleConflict::KeepBoth.label()),
-                        (RuleConflict::Skip, RuleConflict::Skip.label()),
-                        (RuleConflict::Overwrite, RuleConflict::Overwrite.label()),
-                        (RuleConflict::Ask, RuleConflict::Ask.label()),
-                    ];
+                    let opts = [RuleConflict::KeepBoth, RuleConflict::Skip, RuleConflict::Overwrite, RuleConflict::Ask]
+                        .map(|c| (c, rule_conflict(c)));
                     dropdown(ui, &format!("rule_conflict_{i}"), &mut r.conflict, &opts, 110.0);
-                    ui.checkbox(&mut r.dry_run, "Dry run");
+                    ui.checkbox(&mut r.dry_run, tr!("automation-rules-dry-run"));
                 });
                 ui.end_row();
-                label(ui, &p, "Then");
+                label(ui, &p, tr!("automation-rules-then"));
                 ui.vertical(|ui| steps(ui, &p, i, &mut r.actions));
                 ui.end_row();
             });
@@ -247,8 +263,8 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             if !log.is_empty() {
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("RUN LOG").size(10.5).color(p.text_tertiary));
-                    if small_button(ui, None, "Clear", false).clicked() {
+                    ui.label(RichText::new(tr!("automation-rules-run-log")).size(10.5).color(p.text_tertiary));
+                    if small_button(ui, None, tr!("automation-rules-clear"), false).clicked() {
                         cmds.push(Cmd::Automation(AutoCmd::ClearLog(r.name.clone())));
                     }
                 });
@@ -279,11 +295,11 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
     for (k, a) in actions.iter_mut().enumerate() {
         ui.horizontal(|ui| {
             ui.label(RichText::new(format!("{}.", k + 1)).size(12.0).color(p.text_tertiary));
-            ui.label(RichText::new(a.label()).size(12.5).color(p.text_primary));
+            ui.label(RichText::new(rule_action(a)).size(12.5).color(p.text_primary));
             match a {
                 RuleAction::Move { to } | RuleAction::Copy { to } => {
                     let mut s = to.to_string_lossy().into_owned();
-                    if code(ui, &mut s, "destination folder", 260.0).changed() {
+                    if code(ui, &mut s, tr!("automation-rules-dest-hint"), 260.0).changed() {
                         *to = PathBuf::from(s.trim());
                     }
                 }
@@ -292,13 +308,13 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
                         .on_hover_text("{name} {stem} {ext} {date} {time} {mdate} {parent}");
                 }
                 RuleAction::Tag { tag } => {
-                    let opts: Vec<(String, &str)> = TAGS.iter().map(|t| (t.to_string(), *t)).collect();
+                    let opts: Vec<(String, &str)> = TAGS.iter().map(|t| (t.to_string(), tag_name(t))).collect();
                     dropdown(ui, &format!("rule_tag_{i}_{k}"), tag, &opts, 100.0);
                 }
                 RuleAction::Script { script } => {
                     if scripts.is_empty() {
-                        text(ui, script, "script name", 160.0)
-                            .on_hover_text("A script in the scripts folder that defines fn rule(path, ctx)");
+                        text(ui, script, tr!("automation-rules-script-hint"), 160.0)
+                            .on_hover_text(tr!("automation-rules-script-tip"));
                     } else {
                         let opts: Vec<(String, &str)> = scripts.iter().map(|s| (s.clone(), s.as_str())).collect();
                         dropdown(ui, &format!("rule_script_{i}_{k}"), script, &opts, 160.0);
@@ -306,7 +322,7 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
                 }
                 RuleAction::Trash => {}
             }
-            if small_button(ui, Some(ph::X), "", true).on_hover_text("Remove step").clicked() {
+            if small_button(ui, Some(ph::X), "", true).on_hover_text(tr!("automation-rules-remove-step")).clicked() {
                 remove = Some(k);
             }
         });
@@ -317,14 +333,18 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
     ui.horizontal_wrapped(|ui| {
         let home = soyuz_fs::home();
         for (glyph, name, make) in [
-            (ph::ARROW_SQUARE_RIGHT, "Move", RuleAction::Move { to: home.join("Documents") }),
-            (ph::COPY, "Copy", RuleAction::Copy { to: home.join("Documents") }),
-            (ph::TEXT_T, "Rename", RuleAction::Rename { pattern: "{mdate}-{name}".into() }),
-            (ph::TAG, "Tag", RuleAction::Tag { tag: "blue".into() }),
-            (ph::TRASH, "Trash", RuleAction::Trash),
-            (ph::CODE, "Script", RuleAction::Script { script: scripts.first().cloned().unwrap_or_default() }),
+            (ph::ARROW_SQUARE_RIGHT, tr!("automation-step-move"), RuleAction::Move { to: home.join("Documents") }),
+            (ph::COPY, tr!("automation-step-copy"), RuleAction::Copy { to: home.join("Documents") }),
+            (ph::TEXT_T, tr!("automation-step-rename"), RuleAction::Rename { pattern: "{mdate}-{name}".into() }),
+            (ph::TAG, tr!("automation-step-tag"), RuleAction::Tag { tag: "blue".into() }),
+            (ph::TRASH, tr!("automation-step-trash"), RuleAction::Trash),
+            (
+                ph::CODE,
+                tr!("automation-step-script"),
+                RuleAction::Script { script: scripts.first().cloned().unwrap_or_default() },
+            ),
         ] {
-            if small_button(ui, Some(glyph), name, false).on_hover_text("Add a step").clicked() {
+            if small_button(ui, Some(glyph), name, false).on_hover_text(tr!("automation-rules-add-step")).clicked() {
                 actions.push(make);
             }
         }
@@ -334,7 +354,7 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
 fn preview_block(ui: &mut Ui, p: &Palette, preview: Option<&crate::automation::RulePreview>) {
     let Some(pv) = preview else { return };
     ui.horizontal(|ui| {
-        ui.label(RichText::new("MATCHES NOW").size(10.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("automation-rules-matches-now")).size(10.5).color(p.text_tertiary));
         if pv.loading {
             ui.add(egui::Spinner::new().size(10.0));
         }
@@ -346,7 +366,7 @@ fn preview_block(ui: &mut Ui, p: &Palette, preview: Option<&crate::automation::R
         }
         Some(Ok((items, total))) => {
             if *total == 0 {
-                ui.label(RichText::new("Nothing in the folder matches right now.").size(12.0).color(p.text_tertiary));
+                ui.label(RichText::new(tr!("automation-rules-no-matches")).size(12.0).color(p.text_tertiary));
             }
             for it in items.iter().take(6) {
                 ui.horizontal(|ui| {
@@ -365,7 +385,9 @@ fn preview_block(ui: &mut Ui, p: &Palette, preview: Option<&crate::automation::R
                 });
             }
             if *total > 6 {
-                ui.label(RichText::new(format!("…and {} more", total - 6)).size(11.5).color(p.text_tertiary));
+                ui.label(
+                    RichText::new(tr!("automation-and-more", count = total - 6)).size(11.5).color(p.text_tertiary),
+                );
             }
         }
     }

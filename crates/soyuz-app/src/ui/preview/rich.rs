@@ -122,13 +122,13 @@ fn doc(ui: &mut Ui, rect: Rect, d: &DocModel, id: Id, p: &Palette, big: bool) {
         if d.paras.len() > DOC_PARAS || d.truncated {
             ui.add_space(6.0);
             ui.label(
-                egui::RichText::new(format!("… preview shows the first {} paragraphs", d.paras.len().min(DOC_PARAS)))
+                egui::RichText::new(tr!("views-rich-first-paragraphs", count = d.paras.len().min(DOC_PARAS)))
                     .size(11.0)
                     .color(p.text_tertiary),
             );
         }
         if d.paras.is_empty() {
-            ui.label(egui::RichText::new("This document has no text.").color(p.text_tertiary));
+            ui.label(egui::RichText::new(tr!("views-rich-doc-no-text")).color(p.text_tertiary));
         }
     });
 }
@@ -165,7 +165,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
         ui.painter().galley(pos2(r.left() + 9.0, r.center().y - g.size().y / 2.0), g, fg);
         let resp = ui.interact(r, id.with(("tab", i)), Sense::hover());
         if i > 0 {
-            resp.on_hover_text("Only the first sheet is previewed");
+            resp.on_hover_text(tr!("views-rich-first-sheet-only"));
         }
         x = r.right() + 4.0;
     }
@@ -174,7 +174,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
         ui.painter().text(
             body.center(),
             Align2::CENTER_CENTER,
-            "This sheet is empty",
+            tr!("views-rich-sheet-empty"),
             FontId::proportional(12.0),
             p.text_tertiary,
         );
@@ -231,7 +231,7 @@ fn sheet(ui: &mut Ui, rect: Rect, s: &SheetModel, id: Id, p: &Palette) {
                     painter.text(
                         pos2(r.left() + gutter + 8.0, r.center().y),
                         Align2::LEFT_CENTER,
-                        "… more rows ([preview] sheet_rows)",
+                        tr!("views-rich-more-rows"),
                         FontId::proportional(11.0),
                         p.text_tertiary,
                     );
@@ -275,7 +275,7 @@ fn slides(ui: &mut Ui, rect: Rect, s: &SlidesModel, id: Id, p: &Palette, big: bo
     let mut c = child(ui, rect.shrink2(vec2(if big { 40.0 } else { 12.0 }, 10.0)));
     ScrollArea::vertical().id_salt(id.with("slides")).auto_shrink([false, false]).show(&mut c, |ui| {
         if s.slides.is_empty() {
-            ui.label(egui::RichText::new("No slides found.").color(p.text_tertiary));
+            ui.label(egui::RichText::new(tr!("views-rich-no-slides")).color(p.text_tertiary));
         }
         let w = ui.available_width().min(if big { 900.0 } else { f32::INFINITY });
         for (i, slide) in s.slides.iter().enumerate() {
@@ -297,7 +297,11 @@ fn slides(ui: &mut Ui, rect: Rect, s: &SlidesModel, id: Id, p: &Palette, big: bo
                             p.accent,
                         );
                         ui.vertical(|ui| {
-                            let title = if slide.title.is_empty() { "Untitled slide" } else { slide.title.as_str() };
+                            let title = if slide.title.is_empty() {
+                                tr!("views-rich-untitled-slide")
+                            } else {
+                                slide.title.as_str()
+                            };
                             ui.add(
                                 egui::Label::new(egui::RichText::new(title).font(semibold(13.5)).color(p.text_primary))
                                     .wrap(),
@@ -337,7 +341,7 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
         let wide = ui.available_width() > 560.0;
         let head = |ui: &mut Ui| {
             ui.vertical(|ui| {
-                let title = m.title.as_deref().unwrap_or("Untitled");
+                let title = m.title.as_deref().unwrap_or(tr!("views-rich-untitled"));
                 ui.add(egui::Label::new(egui::RichText::new(title).font(semibold(19.0)).color(p.text_primary)).wrap());
                 if !m.authors.is_empty() {
                     ui.label(egui::RichText::new(m.authors.join(", ")).size(13.0).color(p.text_secondary));
@@ -378,7 +382,7 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
         }
         ui.add_space(14.0);
         if !m.toc.is_empty() {
-            caption(ui, "CONTENTS", p);
+            caption(ui, tr!("views-rich-contents"), p);
             ui.add_space(4.0);
             for e in m.toc.iter().take(600) {
                 ui.horizontal(|ui| {
@@ -488,7 +492,7 @@ fn model_view(
     let tint = [0.75 + 0.25 * tint[0], 0.75 + 0.25 * tint[1], 0.75 + 0.25 * tint[2]];
     let mesh = preview_model::project(m, st.view, center, radius, tint);
     ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).add(Shape::mesh(mesh));
-    let hint = if interactive { "Drag to rotate · scroll to zoom · double-click resets" } else { "Drag to rotate" };
+    let hint = if interactive { tr!("views-rich-model-hint-full") } else { tr!("views-rich-model-hint") };
     ui.painter().text(
         rect.left_bottom() + vec2(12.0, -12.0),
         Align2::LEFT_BOTTOM,
@@ -631,7 +635,7 @@ fn audio(
         ui.painter().circle_filled(btn.center(), 18.0, fill);
         let glyph = if playing { ph::PAUSE } else { ph::PLAY };
         ui.painter().text(btn.center(), Align2::CENTER_CENTER, glyph, icons::font_fill(16.0), Color32::WHITE);
-        crate::ui::a11y::button(&bresp, if playing { "Pause" } else { "Play" });
+        crate::ui::a11y::button(&bresp, if playing { tr!("views-rich-pause") } else { tr!("views-rich-play") });
         if bresp.clicked() {
             if playing {
                 preview_audio::pause();
@@ -679,7 +683,7 @@ fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note:
             ui.painter().text(
                 pos2(rect.center().x, rect.bottom() - 14.0),
                 Align2::CENTER_CENTER,
-                "Poster frame (ffmpeg) · playback opens in your player (Enter)",
+                tr!("views-rich-poster-note"),
                 FontId::proportional(11.0),
                 Color32::from_gray(170),
             );
@@ -748,19 +752,31 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     if can_render {
-        if crate::ui::widgets::icon_toggle(&mut bc, ph::CARET_LEFT, "Previous page  (PgUp)", nav.page > 0, false)
+        if crate::ui::widgets::icon_toggle(&mut bc, ph::CARET_LEFT, tr!("views-rich-prev-page"), nav.page > 0, false)
             .clicked()
         {
             nav.page = nav.page.saturating_sub(1);
         }
-        bc.label(egui::RichText::new(format!("Page {} of {}", nav.page + 1, pages)).size(12.0).color(p.text_secondary));
-        if crate::ui::widgets::icon_toggle(&mut bc, ph::CARET_RIGHT, "Next page  (PgDn)", nav.page + 1 < pages, false)
-            .clicked()
+        bc.label(
+            egui::RichText::new(tr!("views-rich-page-of", page = nav.page + 1, pages = pages))
+                .size(12.0)
+                .color(p.text_secondary),
+        );
+        if crate::ui::widgets::icon_toggle(
+            &mut bc,
+            ph::CARET_RIGHT,
+            tr!("views-rich-next-page"),
+            nav.page + 1 < pages,
+            false,
+        )
+        .clicked()
         {
             nav.page = (nav.page + 1).min(pages - 1);
         }
     } else {
-        bc.label(egui::RichText::new(format!("{pages} pages · text only")).size(12.0).color(p.text_secondary));
+        bc.label(
+            egui::RichText::new(tr!("views-rich-pages-text-only", pages = pages)).size(12.0).color(p.text_secondary),
+        );
     }
     let mut toggle_r = bar;
     toggle_r.min.x = bar.right() - 120.0;
@@ -772,7 +788,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
         );
         if crate::ui::widgets::segmented(
             &mut tc,
-            &[(ph::FILE, "Page"), (ph::TEXT_ALIGN_LEFT, "Text")],
+            &[(ph::FILE, tr!("views-rich-page")), (ph::TEXT_ALIGN_LEFT, tr!("views-rich-text"))],
             usize::from(nav.text),
             vec2(30.0, 24.0),
         )
@@ -808,9 +824,9 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
                 ui.add_space(10.0);
             }
             if v.info.text.is_empty() {
-                ui.label(egui::RichText::new("No extractable text on the first pages.").color(p.text_tertiary));
+                ui.label(egui::RichText::new(tr!("views-rich-pdf-no-text")).color(p.text_tertiary));
             } else {
-                caption(ui, "TEXT (FIRST PAGES)", p);
+                caption(ui, tr!("views-rich-pdf-text-caption"), p);
                 ui.add_space(4.0);
                 ui.add(
                     egui::Label::new(egui::RichText::new(&v.info.text).size(12.0).color(p.text_primary))
@@ -856,7 +872,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
             ui.painter().text(body.center(), Align2::CENTER_CENTER, e, FontId::proportional(12.0), p.danger);
             let br = Rect::from_center_size(body.center() + vec2(0.0, 30.0), vec2(120.0, 26.0));
             let mut c = ui.new_child(UiBuilder::new().max_rect(br));
-            if pill_button(&mut c, Some(ph::BINARY), "Show bytes", false).clicked() {
+            if pill_button(&mut c, Some(ph::BINARY), tr!("views-preview-show-bytes"), false).clicked() {
                 action = Some(PreviewAction::ToggleHex);
             }
         }
@@ -876,7 +892,7 @@ fn pdfium_card(ui: &mut Ui, why: &str, dirs: &[std::path::PathBuf], p: &Palette)
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(ph::FILE_PDF).font(icons::font_fill(16.0)).color(p.accent));
                 ui.label(
-                    egui::RichText::new("PDF page preview needs pdfium").font(semibold(13.0)).color(p.text_primary),
+                    egui::RichText::new(tr!("views-rich-pdfium-needed")).font(semibold(13.0)).color(p.text_primary),
                 );
             });
             ui.add_space(4.0);

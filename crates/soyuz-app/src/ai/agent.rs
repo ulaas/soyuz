@@ -182,6 +182,7 @@ pub enum Finish {
 }
 
 impl Finish {
+    /// One line for the audit log and the eval reports (English).
     pub fn describe(&self) -> String {
         match self {
             Finish::Done => "Done".into(),
@@ -191,6 +192,19 @@ impl Finish {
             Finish::TimeLimit => "Stopped: time limit reached".into(),
             Finish::MonthlyCap => "Stopped: monthly budget cap reached".into(),
             Finish::Error(e) => format!("Error: {e}"),
+        }
+    }
+
+    /// [`Finish::describe`] for the chat, in the UI language.
+    pub fn label(&self) -> String {
+        match self {
+            Finish::Done => tr!("ai-finish-done").into(),
+            Finish::Cancelled => tr!("ai-finish-cancelled").into(),
+            Finish::StepLimit => tr!("ai-finish-step-limit").into(),
+            Finish::TokenBudget => tr!("ai-finish-token-budget").into(),
+            Finish::TimeLimit => tr!("ai-finish-time-limit").into(),
+            Finish::MonthlyCap => tr!("ai-finish-monthly-cap").into(),
+            Finish::Error(e) => tr!("ai-finish-error", error = e),
         }
     }
 }
@@ -592,13 +606,13 @@ impl Run {
             self.emit(AgentEvent::ToolStarted {
                 call_id: "attachments".into(),
                 tool: "read_text".into(),
-                detail: format!("{texts} text excerpt(s), {pics} picture(s)"),
+                detail: tr!("ai-tool-attach-detail", texts = texts, pics = pics),
                 paths: read_paths,
             });
             self.emit(AgentEvent::ToolFinished {
                 call_id: "attachments".into(),
                 ok: true,
-                brief: format!("{} file(s) looked at", texts + pics),
+                brief: tr!("ai-tool-attach-brief", count = texts + pics),
             });
         }
         self.audit(
@@ -650,11 +664,11 @@ impl Run {
             soyuz_ai::BudgetStatus::Warn { fraction } if !self.warned_budget => {
                 self.warned_budget = true;
                 self.emit(AgentEvent::Notice {
-                    text: format!(
-                        "“{}” has used {:.0} % of its monthly budget (${:.2}).",
-                        model.profile(),
-                        fraction * 100.0,
-                        b.cap_usd
+                    text: tr!(
+                        "ai-notice-budget",
+                        profile = model.profile(),
+                        percent = soyuz_core::locale::format_decimal(fraction * 100.0, 0),
+                        cap = soyuz_core::locale::format_decimal(b.cap_usd, 2)
                     ),
                     warn: true,
                 });
@@ -750,7 +764,7 @@ impl Run {
                             self.emit(AgentEvent::ToolFinished {
                                 call_id: call_id.clone(),
                                 ok: false,
-                                brief: "read-tool limit reached".into(),
+                                brief: tr!("ai-tool-read-limit").into(),
                             });
                             results[i] = Some(frame_untrusted(
                                 name,
@@ -935,7 +949,7 @@ impl Run {
                             }
                             Err(e) => {
                                 self.emit(AgentEvent::Notice {
-                                    text: format!("The edited plan is invalid: {e}"),
+                                    text: tr!("ai-notice-edit-invalid", error = e.to_string()),
                                     warn: true,
                                 });
                                 out[idx] =
@@ -966,11 +980,7 @@ impl Run {
                 return;
             }
             if d == Decision::ApproveKind && tainted.get(&id).copied().unwrap_or(true) {
-                run.emit(AgentEvent::Notice {
-                    text: "This plan came right after the assistant read file contents, so it needs your explicit approval."
-                        .into(),
-                    warn: true,
-                });
+                run.emit(AgentEvent::Notice { text: tr!("ai-notice-needs-approval").into(), warn: true });
                 return;
             }
             got.insert(id, d);
@@ -1001,7 +1011,7 @@ impl Run {
                 &pp.tool,
                 &json!({"status": "not_executable", "reason": "blocking conflicts", "changed": false}),
             );
-            self.emit(AgentEvent::Executed { plan: pp.id, ok: false, message: "Blocked by conflicts".into() });
+            self.emit(AgentEvent::Executed { plan: pp.id, ok: false, message: tr!("ai-exec-blocked").into() });
             return Ok(PlanResult { ok: false, rejected: false, text });
         }
         if let PlanAction::App { op, .. } = &pp.plan.action
@@ -1021,26 +1031,28 @@ impl Run {
             }
             Ok(sub) => {
                 self.emit(AgentEvent::Executing { plan: pp.id, job: sub.job });
-                let (ok, message, job) = match sub.job {
+                // `message` goes to the model (English), `shown` to the chat.
+                let (ok, message, shown, job) = match sub.job {
                     Some(job) => {
                         self.audit("job", Some(&pp.tool), &pp.plan.summary, Some(job.0));
                         let o = self.exec.wait(job, &self.cancel, self.deadline);
                         self.audit("job_result", Some(&pp.tool), &o.describe(), Some(job.0));
                         if o == Outcome::Cancelled && self.cancel.is_cancelled() {
-                            self.emit(AgentEvent::Executed { plan: pp.id, ok: false, message: o.describe() });
+                            self.emit(AgentEvent::Executed { plan: pp.id, ok: false, message: o.label() });
                             return Err(Finish::Cancelled);
                         }
-                        (o.ok(), o.describe(), Some(job.0))
+                        (o.ok(), o.describe(), o.label(), Some(job.0))
                     }
                     None => {
                         self.audit("job", Some(&pp.tool), &format!("{}: {}", pp.plan.summary, sub.note), None);
-                        (true, sub.note.clone(), None)
+                        let shown = if sub.shown.is_empty() { sub.note.clone() } else { sub.shown.clone() };
+                        (true, sub.note.clone(), shown, None)
                     }
                 };
                 if ok {
                     self.executed.push((pp.tool.clone(), pp.args.clone()));
                 }
-                self.emit(AgentEvent::Executed { plan: pp.id, ok, message: message.clone() });
+                self.emit(AgentEvent::Executed { plan: pp.id, ok, message: shown });
                 let v = json!({
                     "status": if ok { "done" } else { "failed" },
                     "plan": pp.plan.summary,
@@ -1064,7 +1076,7 @@ impl Run {
                     self.executed.push((pp.tool.clone(), pp.args.clone()));
                 }
                 self.tainted = true;
-                let message = if failed { "The server reported an error".to_string() } else { "Done".to_string() };
+                let message = if failed { tr!("ai-exec-server-error") } else { tr!("ai-exec-done") }.to_string();
                 self.emit(AgentEvent::Executed { plan: pp.id, ok: !failed, message });
                 let mut text =
                     frame_untrusted(&pp.tool, &json!({"status": if failed { "failed" } else { "done" }, "result": v}));
@@ -1093,7 +1105,7 @@ impl Run {
                 return f;
             }
             self.emit(AgentEvent::Notice {
-                text: format!("Step {}/{n}: {tool} {}", i + 1, brief_args(&args)),
+                text: tr!("ai-recipe-step", step = i + 1, total = n, tool = &tool, args = brief_args(&args)),
                 warn: false,
             });
             let input = ToolInput::parse(&tool, args.clone()).ok();
@@ -1117,9 +1129,9 @@ impl Run {
                             let rejected = r.first().is_some_and(|r| r.rejected);
                             self.emit(AgentEvent::Notice {
                                 text: if rejected {
-                                    format!("Step {} was rejected; the recipe stopped.", i + 1)
+                                    tr!("ai-recipe-step-rejected", step = i + 1)
                                 } else {
-                                    format!("Step {} did not complete; the recipe stopped.", i + 1)
+                                    tr!("ai-recipe-step-failed", step = i + 1)
                                 },
                                 warn: !rejected,
                             });
@@ -1129,7 +1141,14 @@ impl Run {
                     }
                 }
                 Ok(ToolResponse::Data(_)) => {}
-                Err(e) => return Finish::Error(format!("step {} ({tool}): {e}", i + 1)),
+                Err(e) => {
+                    return Finish::Error(tr!(
+                        "ai-recipe-step-error",
+                        step = i + 1,
+                        tool = &tool,
+                        error = e.to_string()
+                    ));
+                }
             }
         }
         Finish::Done
@@ -1173,7 +1192,7 @@ pub fn brief_args(args: &Value) -> String {
         let s = match v {
             Value::String(s) => short_path(s),
             Value::Array(a) if a.len() == 1 => a[0].as_str().map(short_path).unwrap_or_else(|| a[0].to_string()),
-            Value::Array(a) => format!("{} items", a.len()),
+            Value::Array(a) => tr!("ai-brief-args-items", count = a.len()),
             Value::Null => continue,
             other => other.to_string(),
         };
@@ -1201,27 +1220,27 @@ fn short_path(s: &str) -> String {
 /// One line describing a read tool's result for the chat.
 fn summarize_data(v: &Value, hidden: usize) -> String {
     let mut s = Vec::new();
-    for (key, label) in [
-        ("entries", "entries"),
-        ("hits", "matches"),
-        ("groups", "duplicate groups"),
-        ("items", "items"),
-        ("sizes", "folders"),
-        ("tabs", "tabs"),
-    ] {
+    for key in ["entries", "hits", "groups", "items", "sizes", "tabs"] {
         if let Some(a) = v.get(key).and_then(Value::as_array) {
             let total = v.get("total").and_then(Value::as_u64).unwrap_or(a.len() as u64);
-            s.push(format!("{total} {label}"));
+            s.push(match key {
+                "entries" => tr!("ai-brief-entries", count = total),
+                "hits" => tr!("ai-brief-matches", count = total),
+                "groups" => tr!("ai-brief-groups", count = total),
+                "items" => tr!("ai-brief-items", count = total),
+                "sizes" => tr!("ai-brief-folders", count = total),
+                _ => tr!("ai-brief-tabs", count = total),
+            });
         }
     }
     if let Some(t) = v.get("text").and_then(Value::as_str) {
-        s.push(format!("{} lines read", t.lines().count()));
+        s.push(tr!("ai-brief-lines", count = t.lines().count()));
     }
     if v.get("digest").is_some() {
-        s.push("checksum computed".into());
+        s.push(tr!("ai-brief-checksum").into());
     }
     if hidden > 0 {
-        s.push(format!("{hidden} hidden by folder permissions"));
+        s.push(tr!("ai-brief-hidden", count = hidden));
     }
-    if s.is_empty() { "ok".into() } else { s.join(", ") }
+    if s.is_empty() { tr!("ai-brief-ok").into() } else { s.join(", ") }
 }

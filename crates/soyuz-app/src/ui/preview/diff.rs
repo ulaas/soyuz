@@ -105,14 +105,19 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
     }
     let swap_r = Rect::from_min_size(pos2(bar.right() - toggle_w - 8.0, bar.top() + 5.0), vec2(30.0, 30.0));
     let mut sc = ui.new_child(UiBuilder::new().max_rect(swap_r));
-    if crate::ui::widgets::icon_toggle(&mut sc, ph::ARROWS_LEFT_RIGHT, "Swap sides", true, view.swapped).clicked() {
+    if crate::ui::widgets::icon_toggle(&mut sc, ph::ARROWS_LEFT_RIGHT, tr!("views-diff-swap"), true, view.swapped)
+        .clicked()
+    {
         view.swapped = !view.swapped;
     }
     let tr = Rect::from_min_size(pos2(bar.right() - 72.0 - 8.0, bar.top() + 7.0), vec2(72.0, 26.0));
     let mut tc = ui.new_child(UiBuilder::new().max_rect(tr));
-    if let Some(i) =
-        segmented(&mut tc, &[(ph::ROWS, "Unified"), (ph::COLUMNS, "Side by side")], usize::from(side), vec2(32.0, 22.0))
-    {
+    if let Some(i) = segmented(
+        &mut tc,
+        &[(ph::ROWS, tr!("views-diff-unified")), (ph::COLUMNS, tr!("views-diff-side-by-side"))],
+        usize::from(side),
+        vec2(32.0, 22.0),
+    ) {
         view.side = Some(i == 1);
     }
     let body = Rect::from_min_max(pos2(rect.left(), bar.bottom()), rect.max);
@@ -122,18 +127,18 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
             return;
         }
         Some(Err(e)) => {
-            message(ui, body, "Can't compare these files", e, &p);
+            message(ui, body, tr!("views-diff-failed"), e, &p);
             return;
         }
         Some(Ok(m)) => m.clone(),
     };
     if m.binary {
-        let t = if m.identical { "The files are identical" } else { "Binary files differ" };
-        message(ui, body, t, "At least one side isn't text, so there is no line diff.", &p);
+        let t = if m.identical { tr!("views-diff-identical") } else { tr!("views-diff-binary-differ") };
+        message(ui, body, t, tr!("views-diff-binary-sub"), &p);
         return;
     }
     if m.identical {
-        message(ui, body, "No differences", "Both files have the same content.", &p);
+        message(ui, body, tr!("views-diff-none"), tr!("views-diff-none-sub"), &p);
         return;
     }
     let row_h = 18.0;
@@ -171,7 +176,7 @@ pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &Ent
                     ui.painter().text(
                         pos2(r.left() + 12.0, r.center().y),
                         Align2::LEFT_CENTER,
-                        "… diff truncated ([preview] max_diff_kib)",
+                        tr!("views-diff-truncated"),
                         FontId::proportional(11.0),
                         p.text_tertiary,
                     );

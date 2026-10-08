@@ -74,18 +74,18 @@ pub fn validate<'a>(
 ) -> Result<(), String> {
     use soyuz_core::NameError as E;
     soyuz_core::validate_name_with(new, windows_rules).map_err(|e| match e {
-        E::Empty => "A name is required.".to_string(),
-        E::Reserved(n) => format!("\u{201c}{n}\u{201d} is a reserved name."),
-        E::InvalidChar(c) => format!("Names can't contain \u{201c}{c}\u{201d}."),
-        E::TrailingDotOrSpace => "Names can't end with a dot or a space.".to_string(),
-        E::TooLong(n) => format!("The name is too long ({n} characters)."),
+        E::Empty => tr!("ops-rename-required").to_string(),
+        E::Reserved(n) => tr!("ops-rename-reserved", name = n),
+        E::InvalidChar(c) => tr!("ops-rename-invalid-char", char = c.to_string()),
+        E::TrailingDotOrSpace => tr!("ops-rename-trailing-dot").to_string(),
+        E::TooLong(n) => tr!("ops-rename-too-long", count = n),
     })?;
     let same = |a: &str, b: &str| if case_insensitive { a.to_lowercase() == b.to_lowercase() } else { a == b };
     if same(new, original) {
         return Ok(()); // unchanged or a case-only change of the item itself
     }
     if siblings.into_iter().any(|s| s != original && same(s, new)) {
-        return Err(format!("An item named \u{201c}{new}\u{201d} already exists here."));
+        return Err(tr!("ops-rename-exists", name = new));
     }
     Ok(())
 }

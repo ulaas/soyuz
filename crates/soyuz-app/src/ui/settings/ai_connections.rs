@@ -86,7 +86,11 @@ fn risk_picker(ui: &mut Ui, r: &mut AiRisk) {
     segmented(
         ui,
         r,
-        &[(AiRisk::Read, "Read only"), (AiRisk::Write, "Read + write"), (AiRisk::Destructive, "Incl. delete")],
+        &[
+            (AiRisk::Read, tr!("settings-ai-read-only")),
+            (AiRisk::Write, tr!("settings-mcp-risk-write")),
+            (AiRisk::Destructive, tr!("settings-mcp-risk-delete")),
+        ],
     );
 }
 
@@ -107,7 +111,7 @@ impl ConnectionsState {
                 false
             }
             Ok(Err(e)) => {
-                self.notice = Some((format!("{what} failed: {e}"), true));
+                self.notice = Some((tr!("settings-ai-op-failed", what = what, error = e), true));
                 false
             }
             Err(crossbeam_channel::TryRecvError::Empty) => true,
@@ -121,10 +125,7 @@ impl ConnectionsState {
                 Err(_) => {}
             },
             Some(Install::Writing(t, rx)) => match rx.try_recv() {
-                Ok(Ok(())) => {
-                    self.notice =
-                        Some((format!("Added Soyuz to {}. Restart {} to pick it up.", t.label(), t.label()), false))
-                }
+                Ok(Ok(())) => self.notice = Some((tr!("settings-mcp-installed", app = t.label()), false)),
                 Ok(Err(e)) => self.notice = Some((format!("{}: {e}", t.label()), true)),
                 Err(crossbeam_channel::TryRecvError::Empty) => self.install = Some(Install::Writing(t, rx)),
                 Err(_) => {}
@@ -153,21 +154,12 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
     let p = palette(ui.ctx());
 
-    if !searching || matches(q, &["connections mcp", CTX]) {
+    if !searching || matches(q, &["connections mcp", CTX, tr!("settings-mcp-connections")]) {
         ui.add_space(18.0);
-        ui.label(RichText::new("CONNECTIONS (MCP)").size(10.5).color(p.text_tertiary));
-        ui.add(
-            egui::Label::new(
-                RichText::new(
-                    "Let AI apps such as Claude Desktop, Claude Code or VS Code use Soyuz through the Model Context \
-                     Protocol. They work only inside the folders you allow; changes show up here as a plan you approve, \
-                     then run as undoable jobs. Every call is written to ai-audit.jsonl.",
-                )
-                .size(11.5)
-                .color(p.text_tertiary),
-            )
-            .wrap(),
+        ui.label(
+            RichText::new(super::widgets::upper(tr!("settings-mcp-connections"))).size(10.5).color(p.text_tertiary),
         );
+        ui.add(egui::Label::new(RichText::new(tr!("settings-mcp-intro")).size(11.5).color(p.text_tertiary)).wrap());
         if let Some((msg, err)) = &app.settings.connections.notice {
             ui.add_space(4.0);
             ui.label(RichText::new(msg).size(11.5).color(if *err { p.danger } else { p.success }));
@@ -178,21 +170,16 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     {
         let s = &mut app.settings;
         let (d, st) = (&mut s.draft.ai, &mut s.connections);
-        any |= group(ui, q, CTX, "Soyuz MCP server", |r| {
-            r.row_kw(
-                "Let `soyuz --mcp` attach to this window",
-                "Tool calls then show in this window and write tools get an approval card. Off = `soyuz --mcp` runs headless.",
-                "pipe stdio attach",
-                |ui| {
-                    switch(ui, &mut d.mcp.server_enabled);
-                },
-            );
-            r.row_kw("Status", "", "pipe http running", |ui| {
+        any |= group(ui, q, CTX, tr!("settings-mcp-server"), |r| {
+            r.row_kw(tr!("settings-mcp-attach"), tr!("settings-mcp-attach-desc"), "pipe stdio attach", |ui| {
+                switch(ui, &mut d.mcp.server_enabled);
+            });
+            r.row_kw(tr!("settings-index-status"), "", "pipe http running", |ui| {
                 let mut parts = Vec::new();
                 match &status.pipe {
-                    Some(Ok(n)) => parts.push((format!("pipe {n}"), false)),
-                    Some(Err(e)) => parts.push((format!("pipe {e}"), true)),
-                    None => parts.push(("pipe off".into(), false)),
+                    Some(Ok(n)) => parts.push((tr!("settings-mcp-pipe", name = n.to_string()), false)),
+                    Some(Err(e)) => parts.push((tr!("settings-mcp-pipe", name = e.to_string()), true)),
+                    None => parts.push((tr!("settings-mcp-pipe-off").into(), false)),
                 }
                 match &status.http {
                     Some(Ok(a)) => parts.push((a.clone(), false)),
@@ -200,57 +187,52 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     None => {}
                 }
                 if status.waiting > 0 {
-                    parts.push((format!("{} waiting for approval", status.waiting), false));
+                    parts.push((tr!("settings-mcp-waiting", count = status.waiting), false));
                 }
                 for (t, err) in parts.into_iter().rev() {
                     ui.label(RichText::new(t).size(11.5).color(if err { p.warning } else { p.text_secondary }));
                 }
             });
-            r.row_kw(
-                "HTTP transport",
-                "Streamable HTTP on 127.0.0.1 for clients that cannot start programs. Each client needs a token.",
-                "http port network token",
-                |ui| {
-                    switch(ui, &mut d.mcp.http_enabled);
-                },
-            );
+            r.row_kw(tr!("settings-mcp-http"), tr!("settings-mcp-http-desc"), "http port network token", |ui| {
+                switch(ui, &mut d.mcp.http_enabled);
+            });
             if d.mcp.http_enabled {
-                r.row("HTTP port", "Endpoint: http://127.0.0.1:<port>/mcp", |ui| {
+                r.row(tr!("settings-mcp-port"), tr!("settings-mcp-port-desc"), |ui| {
                     number(ui, &mut d.mcp.http_port, 1024..=65535, "");
                 });
-                r.block(
-                    "Allowed browser origins",
-                    "One per line. Loopback origins are always allowed; anything else is refused (DNS-rebinding defence).",
-                    |ui| {
-                        let t = st.origins_text.get_or_insert_with(|| d.mcp.allowed_origins.join("\n"));
-                        if ui.add(TextEdit::multiline(t).desired_rows(1).desired_width(f32::INFINITY).font(egui::TextStyle::Monospace)).changed() {
-                            d.mcp.allowed_origins = t.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
-                        }
-                    },
-                );
+                r.block(tr!("settings-mcp-origins"), tr!("settings-mcp-origins-desc"), |ui| {
+                    let t = st.origins_text.get_or_insert_with(|| d.mcp.allowed_origins.join("\n"));
+                    if ui
+                        .add(
+                            TextEdit::multiline(t)
+                                .desired_rows(1)
+                                .desired_width(f32::INFINITY)
+                                .font(egui::TextStyle::Monospace),
+                        )
+                        .changed()
+                    {
+                        d.mcp.allowed_origins =
+                            t.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+                    }
+                });
             }
-            r.row_kw(
-                "Register unknown clients",
-                "A new client is added as “pending” and can only read until you approve it below. Off = refuse it.",
-                "pending approve new",
-                |ui| {
-                    switch(ui, &mut d.mcp.register_unknown);
-                },
-            );
-            r.row("Approval timeout", "Refuse a change when nobody answers its approval card.", |ui| {
+            r.row_kw(tr!("settings-mcp-register"), tr!("settings-mcp-register-desc"), "pending approve new", |ui| {
+                switch(ui, &mut d.mcp.register_unknown);
+            });
+            r.row(tr!("settings-mcp-approval-timeout"), tr!("settings-mcp-approval-timeout-desc"), |ui| {
                 number(ui, &mut d.mcp.approval_timeout_secs, 10..=3600, " s");
             });
             r.row_kw(
-                "Approval cards",
-                "Where a client's plan card appears: in the assistant panel (it opens when a request arrives) or as a modal card over the window.",
+                tr!("settings-mcp-approval-ui"),
+                tr!("settings-mcp-approval-ui-desc"),
                 "approval panel dialog modal plan card",
                 |ui| {
                     segmented(
                         ui,
                         &mut d.mcp.approval_ui,
                         &[
-                            (soyuz_core::config::AiMcpApprovalUi::Panel, "Assistant panel"),
-                            (soyuz_core::config::AiMcpApprovalUi::Dialog, "Modal card"),
+                            (soyuz_core::config::AiMcpApprovalUi::Panel, tr!("settings-mcp-approval-panel")),
+                            (soyuz_core::config::AiMcpApprovalUi::Dialog, tr!("settings-mcp-approval-modal")),
                         ],
                     );
                 },
@@ -265,7 +247,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 }
 
 fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    if !q.trim().is_empty() && !matches(q, &["mcp clients approve pending token scope risk folders", CTX]) {
+    if !q.trim().is_empty()
+        && !matches(q, &["mcp clients approve pending token scope risk folders", CTX, tr!("settings-mcp-clients")])
+    {
         return false;
     }
     let p = palette(ui.ctx());
@@ -274,7 +258,7 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let s = &mut app.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new("MCP CLIENTS").size(10.5).color(p.text_tertiary));
+    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-clients"))).size(10.5).color(p.text_tertiary));
     ui.add_space(6.0);
     let mut remove = None;
     for (i, c) in d.mcp_clients.iter_mut().enumerate() {
@@ -286,15 +270,18 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
                 ui.label(RichText::new(&c.name).strong().color(p.text_primary));
                 if c.pending {
-                    ui.label(RichText::new("pending · read-only").size(11.5).color(p.warning));
-                    if small_button(ui, Some(ph::CHECK), "Approve", false).clicked() {
+                    ui.label(RichText::new(tr!("settings-mcp-pending")).size(11.5).color(p.warning));
+                    if small_button(ui, Some(ph::CHECK), tr!("settings-mcp-approve"), false).clicked() {
                         c.pending = false;
                     }
                 } else {
-                    ui.label(RichText::new("approved").size(11.5).color(p.success));
+                    ui.label(RichText::new(tr!("settings-mcp-approved")).size(11.5).color(p.success));
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if small_button(ui, Some(ph::TRASH), "", true).on_hover_text("Remove client").clicked() {
+                    if small_button(ui, Some(ph::TRASH), "", true)
+                        .on_hover_text(tr!("settings-mcp-remove-client"))
+                        .clicked()
+                    {
                         remove = Some(i);
                     }
                 });
@@ -304,18 +291,18 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 let lbl = |ui: &mut Ui, t: &str| {
                     ui.label(RichText::new(t).size(12.0).color(p.text_secondary));
                 };
-                lbl(ui, "May");
+                lbl(ui, tr!("settings-mcp-may"));
                 ui.horizontal(|ui| risk_picker(ui, &mut c.max_risk));
                 ui.end_row();
-                lbl(ui, "Ask before changes");
+                lbl(ui, tr!("settings-mcp-ask"));
                 ui.horizontal(|ui| {
                     switch(ui, &mut c.require_approval);
                     if !c.require_approval {
-                        ui.label(RichText::new("changes run without asking").size(11.0).color(p.warning));
+                        ui.label(RichText::new(tr!("settings-mcp-no-ask")).size(11.0).color(p.warning));
                     }
                 });
                 ui.end_row();
-                lbl(ui, "Folders");
+                lbl(ui, tr!("settings-views-folders"));
                 let t = st.roots_text.entry(c.name.clone()).or_insert_with(|| {
                     c.allowed_roots.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n")
                 });
@@ -324,7 +311,7 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         TextEdit::multiline(t)
                             .desired_rows(1)
                             .desired_width(360.0)
-                            .hint_text("empty = the assistant's allowed folders")
+                            .hint_text(tr!("settings-mcp-folders-hint"))
                             .font(egui::TextStyle::Monospace),
                     )
                     .changed()
@@ -333,28 +320,31 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
                 ui.end_row();
                 if http {
-                    lbl(ui, "HTTP token");
+                    lbl(ui, tr!("settings-mcp-token"));
                     ui.horizontal(|ui| {
                         let has = !c.token.is_empty();
                         if has {
                             ui.label(icons::icon(ph::LOCK_KEY, 13.0).color(p.success));
                         }
-                        let label = if has { "Rotate token" } else { "Generate token" };
+                        let label = if has { tr!("settings-mcp-rotate") } else { tr!("settings-mcp-generate") };
                         if small_button(ui, Some(ph::KEY), label, false).clicked() {
                             let token = trust::generate_token();
                             let cred = trust::token_credential(&c.name);
                             c.token = format!("credential:{cred}");
                             st.shown_token = Some((c.name.clone(), token.clone()));
                             st.ops.push((
-                                "Token stored in the credential store".into(),
+                                tr!("settings-mcp-token-stored").into(),
                                 ai_service::store_secret(cred, Secret::new(token), wake_of(ui)),
                             ));
                         }
-                        if has && small_button(ui, Some(ph::X), "Revoke", true).clicked() {
+                        if has && small_button(ui, Some(ph::X), tr!("settings-mcp-revoke"), true).clicked() {
                             if let Ok(soyuz_ai::credentials::KeyRef::Credential(n)) =
                                 soyuz_ai::credentials::parse_ref(&c.token)
                             {
-                                st.ops.push(("Token revoked".into(), ai_service::delete_secret(n, wake_of(ui))));
+                                st.ops.push((
+                                    tr!("settings-mcp-token-revoked").into(),
+                                    ai_service::delete_secret(n, wake_of(ui)),
+                                ));
                             }
                             c.token.clear();
                         }
@@ -366,9 +356,7 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 && *name == c.name
             {
                 ui.add_space(6.0);
-                ui.label(
-                    RichText::new("Copy this token now; Soyuz will not show it again.").size(11.5).color(p.warning),
-                );
+                ui.label(RichText::new(tr!("settings-mcp-token-once")).size(11.5).color(p.warning));
                 let snippet = format!(
                     "{{\n  \"type\": \"http\",\n  \"url\": \"http://127.0.0.1:{port}/mcp\",\n  \"headers\": {{ \"Authorization\": \"Bearer {token}\" }}\n}}"
                 );
@@ -380,10 +368,10 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         .desired_rows(5),
                 );
                 ui.horizontal(|ui| {
-                    if small_button(ui, Some(ph::COPY), "Copy token", false).clicked() {
+                    if small_button(ui, Some(ph::COPY), tr!("settings-mcp-copy-token"), false).clicked() {
                         ui.ctx().copy_text(token.clone());
                     }
-                    if small_button(ui, Some(ph::COPY), "Copy config", false).clicked() {
+                    if small_button(ui, Some(ph::COPY), tr!("settings-mcp-copy-config"), false).clicked() {
                         ui.ctx().copy_text(snippet.clone());
                     }
                 });
@@ -393,21 +381,25 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     if let Some(i) = remove {
         let c = d.mcp_clients.remove(i);
         if let Ok(soyuz_ai::credentials::KeyRef::Credential(n)) = soyuz_ai::credentials::parse_ref(&c.token) {
-            st.ops.push((format!("Removed “{}” and its token", c.name), ai_service::delete_secret(n, wake_of(ui))));
+            st.ops
+                .push((tr!("settings-mcp-client-removed", name = &c.name), ai_service::delete_secret(n, wake_of(ui))));
         }
     }
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        code(ui, &mut st.new_client, "client name, e.g. my-agent", 220.0);
+        code(ui, &mut st.new_client, tr!("settings-mcp-client-hint"), 220.0);
         let name = trust::sanitize_name(&st.new_client);
         let taken = d.mcp_clients.iter().any(|c| trust::sanitize_name(&c.name) == name);
-        if small_button(ui, Some(ph::PLUS), "Add client", false).clicked() && !name.is_empty() && !taken {
+        if small_button(ui, Some(ph::PLUS), tr!("settings-mcp-add-client"), false).clicked()
+            && !name.is_empty()
+            && !taken
+        {
             d.mcp_clients.push(AiMcpClient { name: name.clone(), ..Default::default() });
             st.new_client.clear();
         }
         if !name.is_empty() {
             ui.label(
-                RichText::new(format!("starts with: soyuz --mcp --mcp-client {name}"))
+                RichText::new(tr!("settings-mcp-starts-with", command = format!("soyuz --mcp --mcp-client {name}")))
                     .monospace()
                     .size(11.0)
                     .color(p.text_tertiary),
@@ -415,24 +407,22 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         }
     });
     if d.mcp_clients.is_empty() {
-        ui.label(
-            RichText::new("No clients yet. Use “Add Soyuz to …” below, or connect one: it appears here as pending.")
-                .size(11.5)
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("settings-mcp-no-clients")).size(11.5).color(p.text_tertiary));
     }
     true
 }
 
 fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    if !q.trim().is_empty() && !matches(q, &["add to claude desktop code vs code config snippet install", CTX]) {
+    if !q.trim().is_empty()
+        && !matches(q, &["add to claude desktop code vs code config snippet install", CTX, tr!("settings-mcp-add-to")])
+    {
         return false;
     }
     let p = palette(ui.ctx());
     let s = &mut app.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new("ADD SOYUZ TO …").size(10.5).color(p.text_tertiary));
+    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-add-to"))).size(10.5).color(p.text_tertiary));
     ui.add_space(6.0);
     let busy = matches!(st.install, Some(Install::Loading(..) | Install::Writing(..)));
     ui.horizontal_wrapped(|ui| {
@@ -453,7 +443,7 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         card(ui, |ui| {
             subheading(ui, &format!("{} — {}", pv.target.label(), pv.path.display()));
             ui.add_space(4.0);
-            ui.label(RichText::new("Snippet").size(11.5).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("settings-mcp-snippet")).size(11.5).color(p.text_tertiary));
             let mut snippet = pv.target.snippet(&exe());
             ui.add(
                 TextEdit::multiline(&mut snippet)
@@ -463,32 +453,35 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             );
             ui.add_space(4.0);
             if !pv.changed() {
-                ui.label(RichText::new("Already set up: the file contains this entry.").size(11.5).color(p.success));
+                ui.label(RichText::new(tr!("settings-mcp-already")).size(11.5).color(p.success));
             } else {
                 ui.label(
-                    RichText::new(if pv.old_text.is_some() { "Changes to the file" } else { "New file" })
-                        .size(11.5)
-                        .color(p.text_tertiary),
+                    RichText::new(if pv.old_text.is_some() {
+                        tr!("settings-mcp-file-changes")
+                    } else {
+                        tr!("settings-mcp-new-file")
+                    })
+                    .size(11.5)
+                    .color(p.text_tertiary),
                 );
                 diff_view(ui, &pv.diff);
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 if pv.changed()
-                    && small_button(ui, Some(ph::CHECK), &format!("Write to {}", pv.target.label()), false).clicked()
+                    && small_button(ui, Some(ph::CHECK), &tr!("settings-mcp-write-to", app = pv.target.label()), false)
+                        .clicked()
                 {
                     write = Some(pv.clone());
                 }
-                if small_button(ui, Some(ph::COPY), "Copy snippet", false).clicked() {
+                if small_button(ui, Some(ph::COPY), tr!("settings-mcp-copy-snippet"), false).clicked() {
                     ui.ctx().copy_text(snippet.clone());
                 }
-                if small_button(ui, Some(ph::X), "Close", false).clicked() {
+                if small_button(ui, Some(ph::X), tr!("settings-close-button"), false).clicked() {
                     cancel = true;
                 }
             });
-            ui.label(
-                RichText::new("The old file is kept as .soyuz-backup next to it.").size(11.0).color(p.text_tertiary),
-            );
+            ui.label(RichText::new(tr!("settings-mcp-backup")).size(11.0).color(p.text_tertiary));
         });
     }
     if cancel {
@@ -536,25 +529,16 @@ fn diff_view(ui: &mut Ui, diff: &[DiffLine]) {
 }
 
 fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    if !q.trim().is_empty() && !matches(q, &["external mcp servers tools mount git", CTX]) {
+    if !q.trim().is_empty() && !matches(q, &["external mcp servers tools mount git", CTX, tr!("settings-mcp-servers")])
+    {
         return false;
     }
     let p = palette(ui.ctx());
     let s = &mut app.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
-    ui.label(RichText::new("EXTERNAL MCP SERVERS").size(10.5).color(p.text_tertiary));
-    ui.add(
-        egui::Label::new(
-            RichText::new(
-                "Tools from other MCP servers the in-app assistant may use. Their descriptions and results are treated \
-                 as untrusted; tools above “read” ask for approval first.",
-            )
-            .size(11.5)
-            .color(p.text_tertiary),
-        )
-        .wrap(),
-    );
+    ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-servers"))).size(10.5).color(p.text_tertiary));
+    ui.add(egui::Label::new(RichText::new(tr!("settings-mcp-servers-intro")).size(11.5).color(p.text_tertiary)).wrap());
     let mut remove = None;
     for (i, sv) in d.mcp_servers.iter_mut().enumerate() {
         ui.add_space(6.0);
@@ -564,7 +548,10 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.label(RichText::new(&sv.name).strong().color(p.text_primary));
                 switch(ui, &mut sv.enabled);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if small_button(ui, Some(ph::TRASH), "", true).on_hover_text("Remove server").clicked() {
+                    if small_button(ui, Some(ph::TRASH), "", true)
+                        .on_hover_text(tr!("settings-mcp-remove-server"))
+                        .clicked()
+                    {
                         remove = Some(i);
                     }
                 });
@@ -574,17 +561,17 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 let lbl = |ui: &mut Ui, t: &str| {
                     ui.label(RichText::new(t).size(12.0).color(p.text_secondary));
                 };
-                lbl(ui, "Command");
-                code(ui, &mut sv.command, "program (stdio), e.g. uvx", 320.0);
+                lbl(ui, tr!("settings-commands-command"));
+                code(ui, &mut sv.command, tr!("settings-mcp-command-hint"), 320.0);
                 ui.end_row();
-                lbl(ui, "Arguments");
+                lbl(ui, tr!("settings-terminal-args"));
                 let t = st.args_text.entry(sv.name.clone()).or_insert_with(|| sv.args.join("\n"));
                 if ui
                     .add(
                         TextEdit::multiline(t)
                             .desired_rows(1)
                             .desired_width(320.0)
-                            .hint_text("one per line")
+                            .hint_text(tr!("settings-mcp-args-hint"))
                             .font(egui::TextStyle::Monospace),
                     )
                     .changed()
@@ -592,29 +579,29 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     sv.args = t.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
                 }
                 ui.end_row();
-                lbl(ui, "or URL");
+                lbl(ui, tr!("settings-mcp-url"));
                 code(ui, &mut sv.url, "https://…/mcp (Streamable HTTP)", 320.0);
                 ui.end_row();
                 if !sv.url.trim().is_empty() {
-                    lbl(ui, "Token");
-                    code(ui, &mut sv.token, "credential:<name> or env:<VAR>", 320.0);
+                    lbl(ui, tr!("settings-mcp-server-token"));
+                    code(ui, &mut sv.token, tr!("settings-ai-key-ref-hint"), 320.0);
                     ui.end_row();
                 }
-                lbl(ui, "Its tools may");
+                lbl(ui, tr!("settings-mcp-tools-may"));
                 ui.horizontal(|ui| risk_picker(ui, &mut sv.risk));
                 ui.end_row();
-                lbl(ui, "Ask before running");
+                lbl(ui, tr!("settings-mcp-ask-run"));
                 ui.horizontal(|ui| {
                     switch(ui, &mut sv.require_approval);
                 });
                 ui.end_row();
-                lbl(ui, "Trust read-only hints");
+                lbl(ui, tr!("settings-mcp-trust-hints"));
                 ui.horizontal(|ui| {
                     switch(ui, &mut sv.trust_annotations);
-                    ui.label(RichText::new("only for servers you trust").size(11.0).color(p.text_tertiary));
+                    ui.label(RichText::new(tr!("settings-mcp-trust-hints-desc")).size(11.0).color(p.text_tertiary));
                 });
                 ui.end_row();
-                lbl(ui, "Timeout");
+                lbl(ui, tr!("settings-mcp-timeout"));
                 ui.add(egui::DragValue::new(&mut sv.timeout_secs).range(5..=600).suffix(" s"));
                 ui.end_row();
             });
@@ -623,7 +610,7 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 let running = matches!(st.probes.get(&sv.name), Some(Probe::Running(_)));
                 if running {
                     ui.add(egui::Spinner::new().size(14.0));
-                } else if small_button(ui, Some(ph::PLUGS_CONNECTED), "Test", false).clicked() {
+                } else if small_button(ui, Some(ph::PLUGS_CONNECTED), tr!("settings-mcp-test"), false).clicked() {
                     let cfg = sv.clone();
                     let rx = spawn(ui, move || soyuz_mcp::client::probe_summary(&cfg));
                     st.probes.insert(sv.name.clone(), Probe::Running(rx));
@@ -644,10 +631,13 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        code(ui, &mut st.new_server, "server name", 180.0);
+        code(ui, &mut st.new_server, tr!("settings-mcp-server-hint"), 180.0);
         let name = st.new_server.trim().to_string();
         let taken = d.mcp_servers.iter().any(|s| s.name == name);
-        if small_button(ui, Some(ph::PLUS), "Add server", false).clicked() && !name.is_empty() && !taken {
+        if small_button(ui, Some(ph::PLUS), tr!("settings-mcp-add-server"), false).clicked()
+            && !name.is_empty()
+            && !taken
+        {
             d.mcp_servers.push(AiMcpServer { name, ..Default::default() });
             st.new_server.clear();
         }

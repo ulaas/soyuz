@@ -24,7 +24,7 @@ pub struct ScriptApprovalDialog {
 impl ScriptApprovalDialog {
     pub fn new(action: String, jobs: Vec<PlannedJob>) -> Self {
         let destructive = jobs.iter().any(|j| matches!(j.kind.brief(), JobKindBrief::Trash | JobKindBrief::Delete));
-        let title = format!("“{action}” wants to make {} change{}", jobs.len(), if jobs.len() == 1 { "" } else { "s" });
+        let title = tr!("automation-approval-title", action = &action, count = jobs.len());
         ScriptApprovalDialog { action, jobs, title, destructive }
     }
 }
@@ -55,11 +55,7 @@ impl Dialog for ScriptApprovalDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(
-            RichText::new("A script asked for these changes. Nothing has happened yet.")
-                .size(12.5)
-                .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("automation-approval-intro")).size(12.5).color(p.text_secondary));
         ui.add_space(10.0);
         Frame::new()
             .fill(p.bg_surface2)
@@ -82,7 +78,7 @@ impl Dialog for ScriptApprovalDialog {
                     }
                     if self.jobs.len() > SHOWN {
                         ui.label(
-                            RichText::new(format!("…and {} more", self.jobs.len() - SHOWN))
+                            RichText::new(tr!("automation-and-more", count = self.jobs.len() - SHOWN))
                                 .size(11.5)
                                 .color(p.text_tertiary),
                         );
@@ -90,17 +86,11 @@ impl Dialog for ScriptApprovalDialog {
                 });
             });
         ui.add_space(8.0);
-        ui.label(
-            RichText::new(
-                "Each change runs as a background job you can pause, cancel and undo. Turn this card off in Settings → Scripts.",
-            )
-            .size(11.5)
-            .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("automation-approval-note")).size(11.5).color(p.text_tertiary));
         ui.add_space(14.0);
         let mut keep = true;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if pill_button(ui, Some(ph::PLAY), "Run", true).clicked() {
+            if pill_button(ui, Some(ph::PLAY), tr!("automation-approval-run"), true).clicked() {
                 ctx.cmds.push(Cmd::Automation(AutoCmd::SubmitPlanned {
                     title: self.action.clone(),
                     jobs: std::mem::take(&mut self.jobs),
@@ -108,7 +98,7 @@ impl Dialog for ScriptApprovalDialog {
                 keep = false;
             }
             ui.add_space(6.0);
-            if pill_button(ui, None, "Cancel", false).clicked() {
+            if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
                 keep = false;
             }
         });

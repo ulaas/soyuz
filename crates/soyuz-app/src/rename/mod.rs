@@ -37,9 +37,9 @@ impl Target {
 
     pub fn label(self) -> &'static str {
         match self {
-            Target::Stem => "Name only",
-            Target::Extension => "Extension only",
-            Target::Whole => "Name + extension",
+            Target::Stem => tr!("dialogs-rename-target-stem"),
+            Target::Extension => tr!("dialogs-rename-target-ext"),
+            Target::Whole => tr!("dialogs-rename-target-whole"),
         }
     }
 }
@@ -64,11 +64,11 @@ impl CaseMode {
 
     pub fn label(self) -> &'static str {
         match self {
-            CaseMode::Lower => "lowercase",
-            CaseMode::Upper => "UPPERCASE",
-            CaseMode::Title => "Title Case",
-            CaseMode::Sentence => "Sentence case",
-            CaseMode::Invert => "iNVERT cASE",
+            CaseMode::Lower => tr!("dialogs-rename-case-lower"),
+            CaseMode::Upper => tr!("dialogs-rename-case-upper"),
+            CaseMode::Title => tr!("dialogs-rename-case-title"),
+            CaseMode::Sentence => tr!("dialogs-rename-case-sentence"),
+            CaseMode::Invert => tr!("dialogs-rename-case-invert"),
         }
     }
 }
@@ -133,14 +133,14 @@ pub enum Rule {
 impl Rule {
     pub fn title(&self) -> &'static str {
         match self {
-            Rule::Replace { regex: true, .. } => "Replace (regex)",
-            Rule::Replace { .. } => "Replace",
-            Rule::Case { .. } => "Change case",
-            Rule::Insert { .. } => "Insert text",
-            Rule::Remove { .. } => "Remove characters",
-            Rule::Number { .. } => "Numbering",
-            Rule::Template { .. } => "Template",
-            Rule::Trim { .. } => "Trim spaces",
+            Rule::Replace { regex: true, .. } => tr!("dialogs-rename-rule-regex"),
+            Rule::Replace { .. } => tr!("dialogs-rename-rule-replace"),
+            Rule::Case { .. } => tr!("dialogs-rename-rule-case"),
+            Rule::Insert { .. } => tr!("dialogs-rename-rule-insert"),
+            Rule::Remove { .. } => tr!("dialogs-rename-rule-remove"),
+            Rule::Number { .. } => tr!("dialogs-rename-rule-number"),
+            Rule::Template { .. } => tr!("dialogs-rename-rule-template"),
+            Rule::Trim { .. } => tr!("dialogs-rename-rule-trim"),
         }
     }
 
@@ -280,7 +280,7 @@ fn format_counter(n: i64, pad: usize) -> String {
 /// Validate a strftime pattern (chrono panics on `to_string` of a bad one).
 pub fn check_date_format(fmt: &str) -> Result<(), String> {
     if StrftimeItems::new(fmt).any(|i| matches!(i, FmtItem::Error)) {
-        Err(format!("invalid date format \u{201c}{fmt}\u{201d}"))
+        Err(tr!("dialogs-rename-err-date-format", format = fmt))
     } else {
         Ok(())
     }
@@ -289,7 +289,7 @@ pub fn check_date_format(fmt: &str) -> Result<(), String> {
 fn format_naive(dt: &NaiveDateTime, fmt: &str) -> Result<String, String> {
     check_date_format(fmt)?;
     let mut s = String::new();
-    write!(s, "{}", dt.format(fmt)).map_err(|_| format!("invalid date format \u{201c}{fmt}\u{201d}"))?;
+    write!(s, "{}", dt.format(fmt)).map_err(|_| tr!("dialogs-rename-err-date-format", format = fmt))?;
     Ok(s)
 }
 
@@ -319,14 +319,14 @@ pub fn expand_tokens(text: &str, t: &TokenCtx<'_>) -> Result<String, String> {
                 rest = a;
                 continue;
             }
-            return Err("unmatched \u{201c}}\u{201d}".into());
+            return Err(tr!("dialogs-rename-err-unmatched").into());
         }
         if let Some(a) = after.strip_prefix('{') {
             out.push('{');
             rest = a;
             continue;
         }
-        let Some(end) = after.find('}') else { return Err("unclosed \u{201c}{\u{201d}".into()) };
+        let Some(end) = after.find('}') else { return Err(tr!("dialogs-rename-err-unclosed").into()) };
         let token = &after[..end];
         rest = &after[end + 1..];
         let (key, arg) = match token.split_once(':') {
@@ -336,7 +336,9 @@ pub fn expand_tokens(text: &str, t: &TokenCtx<'_>) -> Result<String, String> {
         match key {
             "n" => {
                 let pad = match arg {
-                    Some(a) => a.trim().parse::<usize>().map_err(|_| format!("bad padding in {{{token}}}"))?.min(32),
+                    Some(a) => {
+                        a.trim().parse::<usize>().map_err(|_| tr!("dialogs-rename-err-padding", token = token))?.min(32)
+                    }
                     None => t.pad,
                 };
                 out.push_str(&format_counter(t.counter, pad));
@@ -356,7 +358,7 @@ pub fn expand_tokens(text: &str, t: &TokenCtx<'_>) -> Result<String, String> {
                     None => check_date_format(fmt)?,
                 }
             }
-            _ => return Err(format!("unknown token {{{token}}}")),
+            _ => return Err(tr!("dialogs-rename-err-token", token = token)),
         }
     }
     out.push_str(rest);
@@ -380,7 +382,7 @@ pub fn compile(spec: &Spec) -> Result<Compiled<'_>, String> {
                 let re = RegexBuilder::new(&pat)
                     .case_insensitive(!case_sensitive)
                     .build()
-                    .map_err(|e| format!("rule {}: {}", i + 1, first_line(&e.to_string())))?;
+                    .map_err(|e| tr!("dialogs-rename-err-rule", rule = i + 1, error = first_line(&e.to_string())))?;
                 Some(re)
             }
             _ => None,
@@ -500,7 +502,7 @@ impl Compiled<'_> {
             if !entry.enabled {
                 continue;
             }
-            let num = |e: String| format!("rule {}: {e}", i + 1);
+            let num = |e: String| tr!("dialogs-rename-err-rule", rule = i + 1, error = e);
             part = match &entry.rule {
                 Rule::Replace { regex, first_only, with, .. } => match &self.regexes[i] {
                     None => part,
@@ -676,7 +678,7 @@ pub fn validate(
                         Status::Ok
                     }
                 }
-                (Ok(_), None) => Status::Error("no target".into()),
+                (Ok(_), None) => Status::Error(tr!("dialogs-rename-err-no-target").into()),
             };
             Row { new_name, status }
         })
@@ -735,7 +737,7 @@ pub fn parse_editor(text: &str, n: usize) -> Result<Vec<String>, String> {
         lines.pop();
     }
     if lines.len() != n {
-        return Err(format!("{} lines for {n} items: keep exactly one name per line", lines.len()));
+        return Err(tr!("dialogs-rename-err-lines", lines = lines.len(), count = n));
     }
     Ok(lines)
 }

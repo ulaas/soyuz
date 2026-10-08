@@ -156,9 +156,9 @@ impl Recipe {
     pub fn parse(text: &str) -> Result<Recipe, String> {
         let r: Recipe = toml::from_str(text).map_err(|e| e.to_string())?;
         for s in &r.steps {
-            let d = soyuz_ai::tools::def(&s.tool).ok_or_else(|| format!("unknown tool “{}”", s.tool))?;
+            let d = soyuz_ai::tools::def(&s.tool).ok_or_else(|| tr!("ai-recipe-unknown-tool", tool = &s.tool))?;
             if d.risk == soyuz_ai::tools::Risk::Read && d.category != soyuz_ai::tools::Category::Ui {
-                return Err(format!("“{}” is a read tool; recipes only hold changes", s.tool));
+                return Err(tr!("ai-recipe-read-tool", tool = &s.tool));
             }
         }
         Ok(r)

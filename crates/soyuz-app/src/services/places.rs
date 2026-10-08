@@ -69,9 +69,11 @@ pub fn detect_cloud(home: &Path) -> Vec<(String, PathBuf)> {
             out.push((name, p));
         }
     };
-    for (var, name) in
-        [("OneDriveCommercial", "OneDrive (work)"), ("OneDriveConsumer", "OneDrive"), ("OneDrive", "OneDrive")]
-    {
+    for (var, name) in [
+        ("OneDriveCommercial", tr!("services-places-onedrive-work")),
+        ("OneDriveConsumer", "OneDrive"),
+        ("OneDrive", "OneDrive"),
+    ] {
         if let Some(v) = std::env::var_os(var)
             && !v.is_empty()
         {

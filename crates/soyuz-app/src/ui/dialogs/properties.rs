@@ -109,10 +109,10 @@ pub fn apply(app: &mut SoyuzApp, cmd: MetaCmd, _ctx: &egui::Context) {
             }
             match failed.first() {
                 None => {
-                    app.ui.toasts.push(Toast::success("Ownership changed"));
+                    app.ui.toasts.push(Toast::success(tr!("dialogs-props-owner-changed")));
                 }
                 Some(e) => {
-                    app.ui.toasts.push(Toast::error("Couldn't change ownership").body(e.clone()));
+                    app.ui.toasts.push(Toast::error(tr!("dialogs-props-owner-failed")).body(e.clone()));
                 }
             }
             refresh_panes(app);
@@ -166,16 +166,16 @@ pub fn context_items(
         }
     };
     if multi {
-        item(ui, cmds, ph::TEXTBOX, "Batch rename\u{2026}", Action::BatchRename);
+        item(ui, cmds, ph::TEXTBOX, tr!("dialogs-menu-batch-rename"), Action::BatchRename);
     }
-    item(ui, cmds, ph::SLIDERS_HORIZONTAL, "Attributes & timestamps\u{2026}", Action::SetAttributes);
+    item(ui, cmds, ph::SLIDERS_HORIZONTAL, tr!("dialogs-menu-attributes"), Action::SetAttributes);
     if single_file {
-        submenu(ui, Some(ph::FINGERPRINT), "Checksum", |ui| {
-            ui.set_width(200.0);
+        submenu(ui, Some(ph::FINGERPRINT), tr!("dialogs-menu-checksum"), |ui| {
+            ui.set_min_width(200.0);
             for a in super::properties_checksum::ALGOS {
                 item(ui, cmds, ph::HASH, a.label(), Action::Checksum(a));
             }
-            item(ui, cmds, ph::CHECK_CIRCLE, "Compare with\u{2026}", Action::CompareChecksum);
+            item(ui, cmds, ph::CHECK_CIRCLE, tr!("dialogs-menu-compare"), Action::CompareChecksum);
         });
     }
 }
@@ -186,7 +186,7 @@ pub fn targets(app: &SoyuzApp) -> Result<(PaneId, Vec<EntryInfo>), String> {
     let pane = app.ws.pane();
     match &pane.location {
         Location::Dir(_) | Location::Search(_) | Location::Recent | Location::Tags(_) => {}
-        _ => return Err("Properties are available for files and folders on disk".into()),
+        _ => return Err(tr!("dialogs-props-unavailable").into()),
     }
     let mut sel: Vec<EntryInfo> = pane.selected_entries().into_iter().cloned().collect();
     if sel.is_empty()
@@ -195,7 +195,7 @@ pub fn targets(app: &SoyuzApp) -> Result<(PaneId, Vec<EntryInfo>), String> {
         sel.push(soyuz_fs::stat(d, false).map_err(|e| e.to_string())?);
     }
     if sel.is_empty() {
-        return Err("Select one or more items first".into());
+        return Err(tr!("dialogs-props-select-first").into());
     }
     Ok((pane.id, sel))
 }
@@ -229,12 +229,12 @@ pub enum Tab {
 impl Tab {
     fn label(self) -> (&'static str, &'static str) {
         match self {
-            Tab::General => (ph::INFO, "General"),
-            Tab::Attributes => (ph::SLIDERS_HORIZONTAL, "Attributes"),
-            Tab::Security => (ph::SHIELD_CHECK, "Security"),
-            Tab::Checksums => (ph::FINGERPRINT, "Checksums"),
-            Tab::Details => (ph::LIST_BULLETS, "Details"),
-            Tab::Versions => (ph::CLOCK_COUNTER_CLOCKWISE, "Previous versions"),
+            Tab::General => (ph::INFO, tr!("dialogs-props-tab-general")),
+            Tab::Attributes => (ph::SLIDERS_HORIZONTAL, tr!("dialogs-props-tab-attributes")),
+            Tab::Security => (ph::SHIELD_CHECK, tr!("dialogs-props-tab-security")),
+            Tab::Checksums => (ph::FINGERPRINT, tr!("dialogs-props-tab-checksums")),
+            Tab::Details => (ph::LIST_BULLETS, tr!("dialogs-props-tab-details")),
+            Tab::Versions => (ph::CLOCK_COUNTER_CLOCKWISE, tr!("dialogs-props-tab-versions")),
         }
     }
 }
@@ -426,14 +426,14 @@ impl PropertiesDialog {
         }
         let tab = tabs.iter().position(|t| *t == tab).unwrap_or(0);
         let title = if single {
-            format!("{} properties", crate::ui::widgets::shown_name(&first.name))
+            tr!("dialogs-props-title-one", name = crate::ui::widgets::shown_name(&first.name))
         } else {
-            format!("{} items", entries.len())
+            tr!("common-items", count = entries.len())
         };
         let times = [
-            TimeEdit::new("Created", entries.iter().map(|e| e.created).collect()),
-            TimeEdit::new("Modified", entries.iter().map(|e| e.modified).collect()),
-            TimeEdit::new("Accessed", entries.iter().map(|e| e.accessed).collect()),
+            TimeEdit::new(tr!("dialogs-props-created"), entries.iter().map(|e| e.created).collect()),
+            TimeEdit::new(tr!("dialogs-props-modified"), entries.iter().map(|e| e.modified).collect()),
+            TimeEdit::new(tr!("dialogs-props-accessed"), entries.iter().map(|e| e.accessed).collect()),
         ];
         let owner = (!cfg!(windows)).then(|| {
             let same = |f: fn(&EntryInfo) -> Option<&str>| {
@@ -481,7 +481,7 @@ impl PropertiesDialog {
 
     fn exact(&self, b: u64) -> String {
         let s = self.size(b);
-        if b < 1024 { s } else { format!("{s} ({} bytes)", crate::ui::statusbar::group_thousands(b as usize)) }
+        if b < 1024 { s } else { tr!("dialogs-props-exact-size", size = s, bytes = b) }
     }
 
     /// Start / merge the background re-stat of a single item.
@@ -554,36 +554,35 @@ impl PropertiesDialog {
                     }
                     // The edit field holds the real name; spell out hidden characters.
                     crate::ui::widgets::hidden_note(ui, &e.name);
-                    let kind = crate::state::listing::kind_label(&e);
-                    let mut line = kind;
+                    let mut line = crate::state::listing::kind_label(&e);
                     if e.kind == EntryKind::File {
-                        line.push_str(&format!(" \u{00b7} {}", self.size(e.size)));
+                        line = tr!("dialogs-props-kind-size", kind = line, size = self.size(e.size));
                     }
                     ui.label(RichText::new(line).font(FontId::proportional(11.5)).color(p.text_tertiary));
                 } else {
                     let files = self.entries.iter().filter(|e| !e.is_dir_like()).count();
                     let dirs = self.entries.len() - files;
                     ui.label(
-                        RichText::new(format!("{} items selected", self.entries.len()))
+                        RichText::new(tr!("dialogs-props-selected", count = self.entries.len()))
                             .font(semibold(15.0))
                             .color(p.text_primary),
                     );
                     let mut parts = Vec::new();
                     if files > 0 {
-                        parts.push(format!("{files} file{}", if files == 1 { "" } else { "s" }));
+                        parts.push(tr!("common-files", count = files));
                     }
                     if dirs > 0 {
-                        parts.push(format!("{dirs} folder{}", if dirs == 1 { "" } else { "s" }));
+                        parts.push(tr!("common-folders", count = dirs));
                     }
                     let kinds: std::collections::BTreeSet<String> =
                         self.entries.iter().map(crate::state::listing::kind_label).collect();
                     let kinds = if kinds.len() == 1 {
-                        format!("All {}", kinds.into_iter().next().unwrap_or_default())
+                        tr!("dialogs-props-all-kind", kind = kinds.into_iter().next().unwrap_or_default())
                     } else {
-                        "Mixed types".into()
+                        tr!("dialogs-props-mixed-types").into()
                     };
                     ui.label(
-                        RichText::new(format!("{} \u{00b7} {kinds}", parts.join(", ")))
+                        RichText::new(tr!("dialogs-props-summary", counts = parts.join(", "), kinds = kinds))
                             .font(FontId::proportional(11.5))
                             .color(p.text_tertiary),
                     );
@@ -598,13 +597,13 @@ impl PropertiesDialog {
         if needs_walk && self.stats.is_none() {
             self.stats = Some(spawn_stats(ui.ctx(), &self.entries, self.ctl.clone()));
         }
-        caption(ui, "General");
+        caption(ui, tr!("dialogs-props-tab-general"));
         if let Some(e) = self.single().cloned() {
-            kv_row(ui, "Type", &crate::state::listing::kind_label(&e));
+            kv_row(ui, tr!("dialogs-props-type"), &crate::state::listing::kind_label(&e));
         }
         let parent = common_parent(&self.entries);
         if let Some(parent) = &parent {
-            kv_row_with(ui, "Location", |ui| {
+            kv_row_with(ui, tr!("dialogs-props-location"), |ui| {
                 let s = soyuz_fs::strip_verbatim(parent).display().to_string();
                 ui.horizontal(|ui| {
                     let w = ui.available_width() - 30.0;
@@ -618,18 +617,20 @@ impl PropertiesDialog {
         }
         match (&self.stats, self.single()) {
             (None, Some(e)) => {
-                kv_row(ui, "Size", &self.exact(e.size));
+                kv_row(ui, tr!("dialogs-props-size"), &self.exact(e.size));
                 match e.alloc_size {
-                    Some(a) => kv_row(ui, "Size on disk", &self.exact(a)),
-                    None => {
-                        kv_row(ui, "Size on disk", &format!("\u{2248} {}", self.size(e.size.div_ceil(4096) * 4096)))
-                    }
+                    Some(a) => kv_row(ui, tr!("dialogs-props-size-on-disk"), &self.exact(a)),
+                    None => kv_row(
+                        ui,
+                        tr!("dialogs-props-size-on-disk"),
+                        &format!("\u{2248} {}", self.size(e.size.div_ceil(4096) * 4096)),
+                    ),
                 };
             }
             (Some(stats), _) => {
                 let s = stats.lock().clone();
                 let busy = !s.done;
-                kv_row_with(ui, "Size", |ui| {
+                kv_row_with(ui, tr!("dialogs-props-size"), |ui| {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(self.exact(s.bytes)).color(p.text_primary));
                         if busy {
@@ -638,18 +639,18 @@ impl PropertiesDialog {
                     });
                 });
                 let approx = if s.alloc_known { "" } else { "\u{2248} " };
-                kv_row(ui, "Size on disk", &format!("{approx}{}", self.exact(s.alloc)));
-                let mut contains = format!(
-                    "{} file{}, {} folder{}",
-                    crate::ui::statusbar::group_thousands(s.files as usize),
-                    if s.files == 1 { "" } else { "s" },
-                    crate::ui::statusbar::group_thousands(s.dirs as usize),
-                    if s.dirs == 1 { "" } else { "s" },
-                );
-                if s.errors > 0 {
-                    contains.push_str(&format!(" \u{00b7} {} unreadable", s.errors));
-                }
-                kv_row(ui, if self.entries.len() == 1 { "Contains" } else { "Total" }, &contains);
+                kv_row(ui, tr!("dialogs-props-size-on-disk"), &format!("{approx}{}", self.exact(s.alloc)));
+                let contains = if s.errors > 0 {
+                    tr!("dialogs-props-contains-errors", files = s.files, dirs = s.dirs, errors = s.errors)
+                } else {
+                    tr!("dialogs-props-contains", files = s.files, dirs = s.dirs)
+                };
+                let label = if self.entries.len() == 1 {
+                    tr!("dialogs-props-contains-label")
+                } else {
+                    tr!("dialogs-props-total")
+                };
+                kv_row(ui, label, &contains);
             }
             (None, None) => {}
         }
@@ -663,7 +664,7 @@ impl PropertiesDialog {
                 })
             });
             if let Some(t) = bg.with(|t| t.cloned().flatten()) {
-                kv_row(ui, "Link target", &t);
+                kv_row(ui, tr!("dialogs-props-link-target"), &t);
             }
         }
         if let Some(e) = self.single().filter(|e| e.kind == EntryKind::Dir) {
@@ -672,9 +673,9 @@ impl PropertiesDialog {
 
         rule(ui);
         ui.horizontal(|ui| {
-            caption(ui, "Dates");
+            caption(ui, tr!("dialogs-props-dates"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if small_icon_button(ui, ph::CLOCK_COUNTER_CLOCKWISE, "Set modified and accessed to now").clicked() {
+                if small_icon_button(ui, ph::CLOCK_COUNTER_CLOCKWISE, tr!("dialogs-props-touch-tip")).clicked() {
                     let now = SystemTime::now();
                     self.times[1].value = Some(now);
                     self.times[2].value = Some(now);
@@ -685,11 +686,11 @@ impl PropertiesDialog {
         for (i, t) in self.times.iter_mut().enumerate() {
             kv_row_with(ui, t.label, |ui| {
                 ui.horizontal(|ui| {
-                    let ph_text = if t.mixed { "Multiple values" } else { "Unknown" };
+                    let ph_text = if t.mixed { tr!("dialogs-props-multiple") } else { tr!("dialogs-props-unknown") };
                     datetime_field(ui, id.with(i), &mut t.value, ph_text, true);
                     if t.changed() {
-                        badge(ui, None, "changed", p.accent);
-                        if small_icon_button(ui, ph::ARROW_COUNTER_CLOCKWISE, "Revert").clicked() {
+                        badge(ui, None, tr!("dialogs-props-changed"), p.accent);
+                        if small_icon_button(ui, ph::ARROW_COUNTER_CLOCKWISE, tr!("dialogs-props-revert")).clicked() {
                             t.value = t.orig;
                         }
                     }
@@ -698,7 +699,7 @@ impl PropertiesDialog {
         }
         if cfg!(not(any(windows, target_os = "macos"))) {
             ui.label(
-                RichText::new("Linux file systems don't allow changing the creation time.")
+                RichText::new(tr!("dialogs-props-no-created-linux"))
                     .font(FontId::proportional(11.0))
                     .color(p.text_tertiary),
             );
@@ -707,7 +708,7 @@ impl PropertiesDialog {
 
     fn attributes(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
-        caption(ui, "Attributes");
+        caption(ui, tr!("dialogs-props-attributes"));
         self.attrs.show(ui);
         let info: Vec<&str> = info_attrs()
             .into_iter()
@@ -754,7 +755,7 @@ impl PropertiesDialog {
             None => {
                 ui.horizontal(|ui| {
                     ui.spinner();
-                    ui.label(RichText::new("Reading metadata\u{2026}").color(p.text_tertiary));
+                    ui.label(RichText::new(tr!("dialogs-props-reading")).color(p.text_tertiary));
                 });
             }
             Some(sections) => {
@@ -776,7 +777,8 @@ impl PropertiesDialog {
                     if let Some(e) = self.entries.first() {
                         ui.add_space(6.0);
                         let s = soyuz_fs::strip_verbatim(&e.path).display().to_string();
-                        if ui.add(egui::Button::new(RichText::new("Copy full path").size(12.0))).clicked() {
+                        if ui.add(egui::Button::new(RichText::new(tr!("dialogs-props-copy-path")).size(12.0))).clicked()
+                        {
                             cmds.push(Cmd::CopyText(s));
                         }
                     }
@@ -801,7 +803,7 @@ impl PropertiesDialog {
             Some(e) if self.name.trim() != e.name => {
                 let n = self.name.trim().to_string();
                 if let Err(err) = soyuz_core::validate_name(&n) {
-                    self.error = Some(format!("Invalid name: {err}"));
+                    self.error = Some(tr!("dialogs-props-invalid-name", error = err.to_string()));
                     return false;
                 }
                 Some((e.path.clone(), n))
@@ -840,7 +842,7 @@ impl PropertiesDialog {
             let new_path = from.with_file_name(&to);
             self.entries[0].path = new_path.clone();
             self.entries[0].name = to.clone();
-            self.title = format!("{to} properties");
+            self.title = tr!("dialogs-props-title-one", name = &to);
             if let Some(c) = &mut self.checksums {
                 c.cancel_all();
                 *c = Checksums::new(new_path);
@@ -947,14 +949,14 @@ impl Dialog for PropertiesDialog {
         let mut apply = false;
         ui.horizontal(|ui| {
             if dirty {
-                badge(ui, Some(ph::PENCIL_SIMPLE), "Unsaved changes", p.accent);
+                badge(ui, Some(ph::PENCIL_SIMPLE), tr!("dialogs-props-unsaved"), p.accent);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                ok = button(ui, "OK", Btn::Primary).clicked();
-                cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+                ok = button(ui, tr!("common-ok"), Btn::Primary).clicked();
+                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
                 ui.add_enabled_ui(dirty, |ui| {
-                    apply = button(ui, "Apply", Btn::Ghost).clicked() && dirty;
+                    apply = button(ui, tr!("common-apply"), Btn::Ghost).clicked() && dirty;
                 });
             });
         });

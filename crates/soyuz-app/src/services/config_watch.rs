@@ -135,25 +135,27 @@ pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context, result: Result<Loaded, Co
             if !loaded.warnings.is_empty() {
                 app.ui
                     .toasts
-                    .push(Toast::warning("Configuration reloaded with warnings").body(loaded.warnings.join("\n")));
+                    .push(Toast::warning(tr!("services-config-reloaded-warnings")).body(loaded.warnings.join("\n")));
             } else if changed || explicit {
-                app.ui.toasts.push(Toast::success("Configuration reloaded"));
+                app.ui.toasts.push(Toast::success(tr!("services-config-reloaded")));
             }
         }
         Err(e) => {
             let title = match &e {
                 ConfigError::Parse { line, col, .. } if *line > 0 => {
-                    format!("config.toml: error at line {line}, column {col}")
+                    tr!("services-config-error-at", line = line.to_string(), col = col.to_string())
                 }
-                _ => "config.toml could not be loaded".to_string(),
+                _ => tr!("services-config-load-failed").to_string(),
             };
             let body = match &e {
-                ConfigError::Parse { msg, .. } => format!("{msg}\nThe previous settings stay active."),
-                other => format!("{other}\nThe previous settings stay active."),
+                ConfigError::Parse { msg, .. } => tr!("services-config-error-body", error = msg),
+                other => tr!("services-config-error-body", error = other.to_string()),
             };
-            app.ui
-                .toasts
-                .push(Toast::error(title).body(body).action("Edit config", soyuz_core::config::Action::EditConfigFile));
+            app.ui.toasts.push(
+                Toast::error(title)
+                    .body(body)
+                    .action(tr!("services-config-edit"), soyuz_core::config::Action::EditConfigFile),
+            );
         }
     }
 }
@@ -195,7 +197,7 @@ pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
             (j.max_parallel, j.per_device_serial, j.reset_apply_all_between_jobs, j.history_limit)
         };
         if engine(&old.jobs) != engine(&c.jobs) && !app.settings.is_open() {
-            app.ui.toasts.push(Toast::info("Queue settings apply after restart"));
+            app.ui.toasts.push(Toast::info(tr!("services-config-queue-restart")));
         }
     }
     let (km, warnings) = config::keymap(c);

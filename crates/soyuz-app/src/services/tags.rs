@@ -21,7 +21,8 @@ use crate::state::pane::{ListingStatus, Pane};
 
 /// Number of tag colors (`tag.red` … `tag.gray`).
 pub const TAG_COUNT: usize = 8;
-/// Display names, index-aligned with `Palette::tags`.
+/// English names (slugs, parsing), index-aligned with `Palette::tags`; see
+/// [`display_name`] for the translated label.
 pub const TAG_NAMES: [&str; TAG_COUNT] = ["Red", "Orange", "Yellow", "Green", "Cyan", "Blue", "Purple", "Gray"];
 
 /// `"red"` for tag 0, used in `Location::Tags` and `tags.toml`.
@@ -402,9 +403,20 @@ pub fn flush() {
     });
 }
 
-/// Display name of a tag slug (`red` → `Red`).
+/// Display name of a tag slug (`red` → `Red`, "Kırmızı" in Turkish).
 pub fn display_name(slug: &str) -> String {
-    from_name(slug).map(|t| TAG_NAMES[t as usize].to_string()).unwrap_or_else(|| slug.to_string())
+    let Some(t) = from_name(slug) else { return slug.to_string() };
+    match t {
+        0 => tr!("services-tag-red"),
+        1 => tr!("services-tag-orange"),
+        2 => tr!("services-tag-yellow"),
+        3 => tr!("services-tag-green"),
+        4 => tr!("services-tag-cyan"),
+        5 => tr!("services-tag-blue"),
+        6 => tr!("services-tag-purple"),
+        _ => tr!("services-tag-gray"),
+    }
+    .to_string()
 }
 
 /// Whether there are unsaved changes (the UI keeps repainting until they are written).
@@ -527,7 +539,7 @@ pub fn attach(pane: &mut Pane, tag_slug: &str, postman: Postman) {
             soyuz_core::FsErrorKind::NotFound,
             "tag",
             None,
-            format!("Unknown tag “{tag_slug}”."),
+            tr!("services-tag-unknown", name = tag_slug),
         ));
         return;
     };

@@ -26,17 +26,24 @@ pub struct Conflict {
 impl Conflict {
     pub fn message(&self) -> String {
         let names: Vec<String> = self.actions.iter().map(crate::palette::catalog::title).collect();
+        let context = crate::i18n::labels::key_context(self.context);
         match self.kind {
             ConflictKind::Duplicate => {
-                format!("{} is bound to {} in {}", self.keys, names.join(" and "), self.context.label())
+                let actions = names
+                    .into_iter()
+                    .reduce(|first, second| tr!("actions-conflict-and", first = first, second = second))
+                    .unwrap_or_default();
+                tr!("actions-conflict-duplicate", keys = &self.keys, actions = actions, context = context)
             }
-            ConflictKind::Prefix => format!("{} waits for more keys, delaying {}", self.keys, names.join(" / ")),
-            ConflictKind::Shadowed => format!(
-                "{} runs {} in the {} instead of {}",
-                self.keys,
-                names.get(1).cloned().unwrap_or_default(),
-                self.context.label().to_lowercase(),
-                names.first().cloned().unwrap_or_default()
+            ConflictKind::Prefix => {
+                tr!("actions-conflict-prefix", keys = &self.keys, actions = names.join(" / "))
+            }
+            ConflictKind::Shadowed => tr!(
+                "actions-conflict-shadowed",
+                keys = &self.keys,
+                other = names.get(1).cloned().unwrap_or_default(),
+                context = soyuz_core::locale::to_lower_in(context, crate::i18n::current()),
+                action = names.first().cloned().unwrap_or_default()
             ),
         }
     }

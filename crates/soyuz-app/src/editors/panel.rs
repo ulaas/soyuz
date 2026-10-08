@@ -138,7 +138,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, fg);
         let xr = Rect::from_center_size(pos2(r.right() - 13.0, r.center().y), vec2(18.0, 18.0));
         let xresp = ui.interact(xr, ui.id().with(("editor.tab.x", d.id)), Sense::click());
-        crate::ui::a11y::button(&xresp, "Close");
+        crate::ui::a11y::button(&xresp, tr!("common-close"));
         let dirty = d.is_dirty();
         if xresp.hovered() || (resp.hovered() && !dirty) || (active && !dirty) {
             if xresp.hovered() {
@@ -152,7 +152,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             crate::ui::widgets::spinner(ui, xr.center(), 5.0, p.accent);
         }
         let full = d.path.display().to_string();
-        let resp = resp.on_hover_text(if dirty { format!("{full}\nUnsaved changes") } else { full });
+        let resp = resp.on_hover_text(if dirty { tr!("editors-tab-unsaved-tip", path = full) } else { full });
         if xresp.clicked() || resp.middle_clicked() {
             cmds.push(TabCmd::Close(i));
         } else if resp.clicked() {
@@ -163,29 +163,29 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         resp.context_menu(|ui| {
             ui.set_width(220.0);
             use crate::ui::widgets::{menu_item, menu_separator};
-            if menu_item(ui, Some(ph::FLOPPY_DISK), "Save", Some("Ctrl+S"), dirty).clicked() {
+            if menu_item(ui, Some(ph::FLOPPY_DISK), tr!("common-save"), Some("Ctrl+S"), dirty).clicked() {
                 cmds.push(TabCmd::Save(i));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::ARROWS_CLOCKWISE), "Reload from disk", None, true).clicked() {
+            if menu_item(ui, Some(ph::ARROWS_CLOCKWISE), tr!("editors-tab-reload"), None, true).clicked() {
                 cmds.push(TabCmd::Reload(i));
                 ui.close();
             }
             menu_separator(ui);
-            if !is_hex && menu_item(ui, Some(ph::BINARY), "Reopen in hex editor", None, true).clicked() {
+            if !is_hex && menu_item(ui, Some(ph::BINARY), tr!("editors-tab-reopen-hex"), None, true).clicked() {
                 cmds.push(TabCmd::Reopen(i, Want::Hex));
                 ui.close();
             }
-            if !is_text && menu_item(ui, Some(ph::FILE_TEXT), "Reopen as text", None, true).clicked() {
+            if !is_text && menu_item(ui, Some(ph::FILE_TEXT), tr!("editors-tab-reopen-text"), None, true).clicked() {
                 cmds.push(TabCmd::Reopen(i, Want::Text));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Show in file list", None, true).clicked() {
+            if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("editors-tab-reveal"), None, true).clicked() {
                 cmds.push(TabCmd::Reveal(i));
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::X), "Close", Some("Ctrl+W"), true).clicked() {
+            if menu_item(ui, Some(ph::X), tr!("common-close"), Some("Ctrl+W"), true).clicked() {
                 cmds.push(TabCmd::Close(i));
                 ui.close();
             }
@@ -198,20 +198,22 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let br =
         |i: f32| Rect::from_center_size(pos2(header.right() - 20.0 - i * 28.0, header.top() + 19.0), vec2(24.0, 24.0));
     let id = ui.id().with("editor.panel");
-    if super::widgets::icon_at(ui, br(0.0), id.with("close"), ph::X, "Hide the editor (documents stay open)", true, &p)
-    {
+    if super::widgets::icon_at(ui, br(0.0), id.with("close"), ph::X, tr!("editors-panel-hide"), true, &p) {
         app.editors.open = false;
         app.editors.maximized = false;
         app.ui.focus = crate::app::Focus::List;
     }
-    let (mg, mt) =
-        if maximized { (ph::CORNERS_IN, "Restore") } else { (ph::CORNERS_OUT, "Maximize over the file panes") };
+    let (mg, mt) = if maximized {
+        (ph::CORNERS_IN, tr!("editors-panel-restore"))
+    } else {
+        (ph::CORNERS_OUT, tr!("editors-panel-maximize"))
+    };
     if super::widgets::icon_at(ui, br(1.0), id.with("max"), mg, mt, true, &p) {
         app.editors.maximized = !maximized;
     }
     let (dg, dt) = match dock {
-        EditorDock::Right => (ph::SQUARE_HALF_BOTTOM, "Dock at the bottom"),
-        EditorDock::Bottom => (ph::SQUARE_HALF, "Dock on the right"),
+        EditorDock::Right => (ph::SQUARE_HALF_BOTTOM, tr!("editors-panel-dock-bottom")),
+        EditorDock::Bottom => (ph::SQUARE_HALF, tr!("editors-panel-dock-right")),
     };
     if super::widgets::icon_at(ui, br(2.0), id.with("dock"), dg, dt, !maximized, &p) {
         let next = if dock == EditorDock::Right { EditorDock::Bottom } else { EditorDock::Right };
@@ -233,11 +235,14 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     if let Some(d) = app.editors.docs.get_mut(idx) {
         if let Some(ext) = d.external {
             let r = Rect::from_min_size(pos2(body.left() + 8.0, body.top() + 6.0), vec2(body.width() - 16.0, 30.0));
-            let (text, buttons): (&str, &[&str]) = match ext {
-                External::Changed => ("This file changed on disk.", &["Reload", "Keep my version"]),
-                External::Deleted => ("This file was deleted or renamed on disk. Saving writes it again.", &["OK"]),
+            let (text, buttons): (&str, Vec<&str>) = match ext {
+                External::Changed => (
+                    tr!("editors-external-changed"),
+                    vec![tr!("editors-external-reload"), tr!("editors-external-keep")],
+                ),
+                External::Deleted => (tr!("editors-external-deleted"), vec![tr!("common-ok")]),
             };
-            external_answer = super::widgets::banner(ui, r, &p, ph::WARNING, p.warning, text, buttons);
+            external_answer = super::widgets::banner(ui, r, &p, ph::WARNING, p.warning, text, &buttons);
             if ext == External::Deleted && external_answer.is_some() {
                 d.external = None;
                 external_answer = None;
@@ -250,7 +255,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 crate::ui::widgets::spinner(ui, body.center(), 12.0, p.accent);
             }
             DocKind::Failed(e) => {
-                let msg = format!("Couldn't open {}\n{e}", d.name);
+                let msg = tr!("editors-open-failed", name = &d.name, error = &*e);
                 ui.painter().text(
                     body.center(),
                     Align2::CENTER_CENTER,
@@ -285,7 +290,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         ui.painter().text(
             c + vec2(0.0, 6.0),
             Align2::CENTER_CENTER,
-            "No files open",
+            tr!("editors-empty"),
             FontId::proportional(14.0),
             p.text_secondary,
         );
@@ -294,7 +299,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         ui.painter().text(
             c + vec2(0.0, 28.0),
             Align2::CENTER_CENTER,
-            format!("Select a file and press {key} (or right-click → Edit in Soyuz)"),
+            tr!("editors-empty-hint", key = key),
             FontId::proportional(12.0),
             p.text_tertiary,
         );
@@ -330,7 +335,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             TabCmd::Close(i) => super::close(app, i, false),
             TabCmd::Reopen(i, want) => {
                 if app.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
-                    app.ui.toasts.push(crate::ui::toasts::Toast::info("Save or discard the changes first"));
+                    app.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("editors-reopen-dirty")));
                 } else {
                     super::reopen_as(app, &ctx, i, want);
                 }
@@ -357,8 +362,8 @@ pub struct UnsavedDialog {
 impl UnsavedDialog {
     pub fn close(name: &str, doc: u64, tx: crossbeam_channel::Sender<Msg>) -> Self {
         UnsavedDialog {
-            title: format!("Save changes to {name}?"),
-            body: "Your changes are lost if you don't save them.".into(),
+            title: tr!("editors-unsaved-title", name = name),
+            body: tr!("editors-unsaved-body").into(),
             target: Some(doc),
             tx,
             answered: false,
@@ -367,19 +372,19 @@ impl UnsavedDialog {
 
     pub fn quit(names: &[String], tx: crossbeam_channel::Sender<Msg>) -> Self {
         let title = if names.len() == 1 {
-            format!("Save changes to {}?", names[0])
+            tr!("editors-unsaved-title", name = &names[0])
         } else {
-            format!("{} files have unsaved changes", names.len())
+            tr!("editors-unsaved-quit-title", count = names.len())
         };
-        let mut body = String::from("Soyuz is closing. ");
-        if names.len() > 1 {
-            body.push_str(&names.iter().take(6).cloned().collect::<Vec<_>>().join(", "));
+        let body = if names.len() > 1 {
+            let mut list = names.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
             if names.len() > 6 {
-                body.push_str(", …");
+                list.push_str(", …");
             }
-            body.push_str(". ");
-        }
-        body.push_str("Your changes are lost if you don't save them.");
+            tr!("editors-unsaved-quit-body-list", names = list)
+        } else {
+            tr!("editors-unsaved-quit-body").to_string()
+        };
         UnsavedDialog { title, body, target: None, tx, answered: false }
     }
 
@@ -420,9 +425,14 @@ impl Dialog for UnsavedDialog {
         let (mut save, mut discard, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            save = button(ui, if self.target.is_some() { "Save" } else { "Save all" }, Btn::Primary).clicked();
-            discard = button(ui, "Don't save", Btn::Danger).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            save = button(
+                ui,
+                if self.target.is_some() { tr!("common-save") } else { tr!("editors-unsaved-save-all") },
+                Btn::Primary,
+            )
+            .clicked();
+            discard = button(ui, tr!("editors-unsaved-dont-save"), Btn::Danger).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             save = true;

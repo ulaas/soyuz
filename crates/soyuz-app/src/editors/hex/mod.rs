@@ -39,6 +39,8 @@ struct FindBar {
     text: String,
     hex: bool,
     status: Option<String>,
+    /// The last search found a match (the status is shown in green).
+    found: bool,
     focus: bool,
 }
 
@@ -135,7 +137,7 @@ impl HexDoc {
     pub fn open_find(&mut self) {
         let hex = self.find.as_ref().is_none_or(|f| f.hex);
         let text = self.find.take().map(|f| f.text).unwrap_or_default();
-        self.find = Some(FindBar { text, hex, status: None, focus: true });
+        self.find = Some(FindBar { text, hex, status: None, found: false, focus: true });
         self.goto = None;
     }
 
@@ -173,10 +175,14 @@ impl HexDoc {
                     cancel.clone(),
                     self.wake.clone(),
                 );
-                f.status = Some("Searching…".into());
+                f.status = Some(tr!("editors-hex-searching").into());
+                f.found = false;
                 self.search = Some((rx, cancel, forward));
             }
-            Err(e) => f.status = Some(e),
+            Err(e) => {
+                f.status = Some(e);
+                f.found = false;
+            }
         }
     }
 
@@ -222,17 +228,19 @@ impl HexDoc {
             && let Ok(res) = rx.try_recv()
         {
             self.search = None;
+            let found = matches!(res, Ok(Some(_)));
             let status = match res {
                 Ok(Some(off)) => {
                     self.go_to(off);
                     self.text_col = self.find.as_ref().is_some_and(|f| !f.hex);
-                    format!("Found at 0x{off:X}")
+                    tr!("editors-hex-found", offset = format!("{off:X}"))
                 }
-                Ok(None) => "Not found".into(),
+                Ok(None) => tr!("editors-hex-not-found").into(),
                 Err(e) => e,
             };
             if let Some(f) = self.find.as_mut() {
                 f.status = Some(status);
+                f.found = found;
             }
         }
     }
@@ -372,8 +380,8 @@ impl HexDoc {
                 p,
                 ph::INFO,
                 p.info,
-                "Too large for the text editor: opened read-only in hex.",
-                &["Allow editing"],
+                tr!("editors-hex-too-large"),
+                &[tr!("editors-hex-allow-editing")],
             )
             .is_some()
             {
@@ -383,7 +391,7 @@ impl HexDoc {
         }
         if let Some(e) = &self.error {
             let r = Rect::from_min_size(pos2(rect.left() + 8.0, top + 2.0), vec2(rect.width() - 16.0, 30.0));
-            widgets::banner(ui, r, p, ph::WARNING, p.danger, &format!("Couldn't read the file: {e}"), &[]);
+            widgets::banner(ui, r, p, ph::WARNING, p.danger, &tr!("editors-hex-read-failed", error = e), &[]);
             top += 36.0;
         }
         let status = Rect::from_min_max(pos2(rect.left(), rect.bottom() - STATUS_H), rect.max);
@@ -403,12 +411,12 @@ impl HexDoc {
             }
             widgets::icon_at(ui, b, id.with(("hx", tip)), glyph, tip, enabled, p)
         };
-        out.save |= btn(ui, ph::FLOPPY_DISK, "Save (Ctrl+S)", self.is_dirty(), false);
+        out.save |= btn(ui, ph::FLOPPY_DISK, tr!("editors-tb-save"), self.is_dirty(), false);
         let (can_undo, can_redo) = (self.patches.can_undo(), self.patches.can_redo());
-        if btn(ui, ph::ARROW_COUNTER_CLOCKWISE, "Undo (Ctrl+Z)", can_undo, false) {
+        if btn(ui, ph::ARROW_COUNTER_CLOCKWISE, tr!("editors-tb-undo"), can_undo, false) {
             self.undo();
         }
-        if btn(ui, ph::ARROW_CLOCKWISE, "Redo (Ctrl+Y)", can_redo, false) {
+        if btn(ui, ph::ARROW_CLOCKWISE, tr!("editors-tb-redo"), can_redo, false) {
             self.redo();
         }
         x.set(x.get() + 8.0);
@@ -422,14 +430,14 @@ impl HexDoc {
             }
             widgets::icon_at(ui, b, id.with(("hx2", tip)), glyph, tip, true, p)
         };
-        if b(ui, ph::MAGNIFYING_GLASS, "Find bytes or text (Ctrl+F)", find_on) {
+        if b(ui, ph::MAGNIFYING_GLASS, tr!("editors-hex-tb-find"), find_on) {
             if find_on {
                 self.find = None;
             } else {
                 self.open_find();
             }
         }
-        if b(ui, ph::ARROW_LINE_DOWN, "Go to offset (Ctrl+G)", goto_on) {
+        if b(ui, ph::ARROW_LINE_DOWN, tr!("editors-hex-tb-goto"), goto_on) {
             if goto_on {
                 self.goto = None;
             } else {
@@ -438,17 +446,20 @@ impl HexDoc {
         }
         x.set(x.get() + 8.0);
         let lock = self.read_only;
-        if b(ui, if lock { ph::LOCK_SIMPLE } else { ph::LOCK_SIMPLE_OPEN }, "Read-only (no editing)", lock) {
+        if b(ui, if lock { ph::LOCK_SIMPLE } else { ph::LOCK_SIMPLE_OPEN }, tr!("editors-hex-tb-read-only"), lock) {
             self.read_only = !self.read_only;
         }
         // Byte order for the inspector.
-        let label = if self.big_endian { "Big endian" } else { "Little endian" };
-        let br = Rect::from_min_size(pos2(r.right() - 100.0, r.top() + 6.0), vec2(92.0, 22.0));
+        let label = if self.big_endian { tr!("editors-hex-big-endian") } else { tr!("editors-hex-little-endian") };
+        let label_w =
+            ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(11.5), p.text_secondary).size().x;
+        let bw = (label_w + 16.0).max(92.0);
+        let br = Rect::from_min_size(pos2(r.right() - 8.0 - bw, r.top() + 6.0), vec2(bw, 22.0));
         let resp = ui.interact(br, id.with("endian"), Sense::click());
         crate::ui::a11y::button(&resp, label);
         ui.painter().rect_filled(br, CornerRadius::same(4), if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 });
         ui.painter().text(br.center(), Align2::CENTER_CENTER, label, FontId::proportional(11.5), p.text_secondary);
-        if resp.on_hover_text("Byte order used by the data inspector").clicked() {
+        if resp.on_hover_text(tr!("editors-hex-endian-tip")).clicked() {
             self.big_endian = !self.big_endian;
         }
         ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, p.border_subtle));
@@ -462,7 +473,7 @@ impl HexDoc {
         );
         if let Some(text) = self.goto.as_mut() {
             let fid = id.with("hex.goto");
-            let resp = widgets::field(ui, fr, fid, text, "Offset: 0x1F, 1Fh or 31, +16", true);
+            let resp = widgets::field(ui, fr, fid, text, tr!("editors-hex-goto-hint"), true);
             focus.push(fid);
             if std::mem::take(&mut self.goto_focus) {
                 resp.request_focus();
@@ -487,7 +498,7 @@ impl HexDoc {
             }
         } else if let Some(f) = self.find.as_mut() {
             let fid = id.with("hex.find");
-            let hint = if f.hex { "Hex bytes, e.g. DE AD BE EF" } else { "Text (UTF-8)" };
+            let hint = if f.hex { tr!("editors-hex-find-hint-hex") } else { tr!("editors-hex-find-hint-text") };
             let resp = widgets::field(ui, fr, fid, &mut f.text, hint, true);
             focus.push(fid);
             if std::mem::take(&mut f.focus) {
@@ -499,15 +510,16 @@ impl HexDoc {
                 cr,
                 id.with("hex.mode"),
                 if f.hex { "HEX" } else { "TXT" },
-                "Search hex bytes or text",
+                tr!("editors-hex-mode-tip"),
                 true,
                 p,
             ) {
                 f.hex = !f.hex;
                 f.status = None;
+                f.found = false;
             }
             let status = f.status.clone().unwrap_or_default();
-            let color = if status.starts_with("Found") { p.success } else { p.text_secondary };
+            let color = if f.found { p.success } else { p.text_secondary };
             ui.painter().text(
                 pos2(cr.right() + 10.0, r.center().y),
                 Align2::LEFT_CENTER,
@@ -519,10 +531,11 @@ impl HexDoc {
             let back = ui.input(|i| i.modifiers.shift);
             let right = r.right() - 8.0;
             let ir = |i: f32| Rect::from_min_size(pos2(right - 26.0 * (i + 1.0), r.top() + 5.0), vec2(24.0, 24.0));
-            let close = widgets::icon_at(ui, ir(0.0), id.with("hf.close"), ph::X, "Close (Esc)", true, p);
-            let next = widgets::icon_at(ui, ir(1.0), id.with("hf.next"), ph::ARROW_DOWN, "Next (Enter / F3)", true, p);
+            let close = widgets::icon_at(ui, ir(0.0), id.with("hf.close"), ph::X, tr!("editors-find-close"), true, p);
+            let next =
+                widgets::icon_at(ui, ir(1.0), id.with("hf.next"), ph::ARROW_DOWN, tr!("editors-find-next"), true, p);
             let prev =
-                widgets::icon_at(ui, ir(2.0), id.with("hf.prev"), ph::ARROW_UP, "Previous (Shift+Enter)", true, p);
+                widgets::icon_at(ui, ir(2.0), id.with("hf.prev"), ph::ARROW_UP, tr!("editors-find-prev"), true, p);
             if close {
                 self.close_bars();
             } else if enter || next || prev {
@@ -537,9 +550,11 @@ impl HexDoc {
 
     fn status(&self, ui: &mut Ui, r: Rect, p: &Palette) {
         ui.painter().hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.border_subtle));
-        let mut s = format!("Offset 0x{:X} ({})  ·  {} bytes", self.cursor, self.cursor, self.len);
+        let mut s =
+            tr!("editors-hex-status", hex = format!("{:X}", self.cursor), offset = self.cursor, count = self.len);
         if !self.patches.is_empty() {
-            s.push_str(&format!("  ·  {} changed", self.patches.len()));
+            s.push_str("  ·  ");
+            s.push_str(&tr!("editors-hex-status-changed", count = self.patches.len()));
         }
         ui.painter().text(
             pos2(r.left() + 10.0, r.center().y),
@@ -548,8 +563,8 @@ impl HexDoc {
             FontId::proportional(11.5),
             p.text_secondary,
         );
-        let mode = if self.read_only { "Read-only" } else { "Overwrite" };
-        let col = if self.text_col { "Text column" } else { "Hex column" };
+        let mode = if self.read_only { tr!("editors-read-only") } else { tr!("editors-hex-overwrite") };
+        let col = if self.text_col { tr!("editors-hex-text-column") } else { tr!("editors-hex-hex-column") };
         ui.painter().text(
             pos2(r.right() - 10.0, r.center().y),
             Align2::RIGHT_CENTER,
@@ -759,7 +774,7 @@ impl HexDoc {
             painter.text(
                 area.center(),
                 Align2::CENTER_CENTER,
-                "Empty file",
+                tr!("editors-text-empty"),
                 FontId::proportional(12.0),
                 p.text_tertiary,
             );
@@ -780,11 +795,11 @@ impl HexDoc {
         painter.text(
             pos2(r.left() + 14.0, r.top() + 16.0),
             Align2::LEFT_CENTER,
-            "Data inspector",
+            tr!("editors-hex-inspector"),
             FontId::new(12.5, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into())),
             p.text_primary,
         );
-        let order = if self.big_endian { "big endian" } else { "little endian" };
+        let order = if self.big_endian { tr!("editors-hex-order-big") } else { tr!("editors-hex-order-little") };
         painter.text(
             pos2(r.left() + 14.0, r.top() + 34.0),
             Align2::LEFT_CENTER,
@@ -793,7 +808,10 @@ impl HexDoc {
             p.text_tertiary,
         );
         let bytes: Vec<u8> = (self.cursor..(self.cursor + 8).min(self.len)).map_while(|o| self.byte(o)).collect();
-        let rows = model::inspect(&bytes, self.big_endian);
+        let rows: Vec<(&str, String)> = model::inspect(&bytes, self.big_endian)
+            .into_iter()
+            .map(|(label, v)| (if label == "binary" { tr!("editors-hex-binary") } else { label }, v))
+            .collect();
         if side {
             let mut y = r.top() + 56.0;
             for (label, value) in rows {

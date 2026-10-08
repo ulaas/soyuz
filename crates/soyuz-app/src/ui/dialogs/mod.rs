@@ -50,6 +50,10 @@ pub trait Dialog {
     fn width(&self) -> f32 {
         420.0
     }
+    /// Confirmations of destructive or blocking choices are exposed as alert dialogs.
+    fn alert(&self) -> bool {
+        false
+    }
     /// Draw the body. Return `false` to close.
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool;
 }
@@ -100,8 +104,7 @@ impl Dialogs {
             .show(ctx, |ui| {
                 ui.set_width(width);
                 ui.set_opacity(t);
-                crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, top.title());
-                crate::ui::a11y::with(ui.ctx(), ui.unique_id(), |n| n.set_modal());
+                crate::ui::a11y::dialog(ui.ctx(), ui.unique_id(), top.title(), top.alert(), true);
                 ui.horizontal(|ui| {
                     if let Some(g) = top.icon() {
                         ui.label(icons::icon(g, 18.0).color(p.accent));
@@ -160,6 +163,10 @@ impl Dialog for ConfirmDialog {
         &self.title
     }
 
+    fn alert(&self) -> bool {
+        true
+    }
+
     fn icon(&self) -> Option<&'static str> {
         Some(ph::QUESTION)
     }
@@ -168,7 +175,7 @@ impl Dialog for ConfirmDialog {
         let p = palette(ui.ctx());
         ui.label(RichText::new(&self.message).color(p.text_secondary));
         let enter = ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, &self.confirm, "Cancel");
+        let (ok, cancel) = footer(ui, &self.confirm, tr!("common-cancel"));
         if ok || enter {
             if let Some(c) = self.on_confirm.take() {
                 ctx.cmds.push(c);
@@ -195,7 +202,7 @@ impl PatternDialog {
 
 impl Dialog for PatternDialog {
     fn title(&self) -> &str {
-        "Select by pattern"
+        tr!("dialogs-pattern-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -204,7 +211,7 @@ impl Dialog for PatternDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(RichText::new("Glob (*.rs, IMG_??.jpg) or plain text").color(p.text_secondary));
+        ui.label(RichText::new(tr!("dialogs-pattern-hint")).color(p.text_secondary));
         ui.add_space(8.0);
         let r =
             ui.add(TextEdit::singleline(&mut self.text).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)));
@@ -213,9 +220,9 @@ impl Dialog for PatternDialog {
             self.focus = false;
         }
         ui.add_space(8.0);
-        ui.checkbox(&mut self.add, "Add to the current selection");
+        ui.checkbox(&mut self.add, tr!("dialogs-pattern-add"));
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Select", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("dialogs-pattern-select"), tr!("common-cancel"));
         if ok || enter {
             let kind = if self.text.contains(['*', '?']) { PatternKind::Glob } else { PatternKind::Substring };
             if let Ok(pat) = NamePatternSpec::new(kind, self.text.trim()).compile()
@@ -234,10 +241,7 @@ impl Dialog for PatternDialog {
                 for k in keys {
                     pane.selection.insert(k);
                 }
-                ctx.cmds.push(Cmd::Toast(crate::ui::toasts::Toast::info(format!(
-                    "Selected {n} item{}",
-                    if n == 1 { "" } else { "s" }
-                ))));
+                ctx.cmds.push(Cmd::Toast(crate::ui::toasts::Toast::info(tr!("dialogs-pattern-selected", count = n))));
             }
             return false;
         }
@@ -258,7 +262,7 @@ impl ColumnsDialog {
 
 impl Dialog for ColumnsDialog {
     fn title(&self) -> &str {
-        "Columns"
+        tr!("dialogs-columns-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -295,7 +299,7 @@ impl Dialog for ColumnsDialog {
         if changed {
             ctx.cmds.push(Cmd::ViewChanged(self.pane));
         }
-        !close_footer(ui, "Done") && !ui.input(|i| i.key_pressed(Key::Enter))
+        !close_footer(ui, tr!("dialogs-done")) && !ui.input(|i| i.key_pressed(Key::Enter))
     }
 }
 
@@ -311,7 +315,7 @@ impl AboutDialog {
         AboutDialog { renderer, icon: None }
     }
 
-    /// `(label, value)` facts shown in the dialog and copied by "Copy info".
+    /// `(label, value)` facts copied by "Copy info" (English, for bug reports).
     pub fn facts(&self) -> Vec<(&'static str, String)> {
         vec![
             ("Version", env!("CARGO_PKG_VERSION").to_string()),
@@ -322,19 +326,41 @@ impl AboutDialog {
             ("Memory", memory_line()),
         ]
     }
+
+    /// Translated label of a [`facts`](Self::facts) entry.
+    fn fact_label(key: &str) -> &'static str {
+        match key {
+            "Build" => tr!("dialogs-about-build"),
+            "Platform" => tr!("dialogs-about-platform"),
+            "Renderer" => tr!("dialogs-about-renderer"),
+            "Config" => tr!("dialogs-about-config"),
+            "Memory" => tr!("dialogs-about-memory"),
+            _ => tr!("dialogs-about-version"),
+        }
+    }
 }
 
 /// Cache memory for the About dialog: thumbnails and previews (decoded bytes).
 fn memory_line() -> String {
-    let mib = |b: u64| format!("{:.1} MiB", b as f64 / (1024.0 * 1024.0));
+    let mib = |b: u64| format!("{} MiB", soyuz_core::locale::format_decimal(b as f64 / (1024.0 * 1024.0), 1));
     let (tb, tn) = crate::services::thumbs::memory();
     let (pb, pn) = crate::services::preview_cache::memory();
-    format!("thumbnails {} ({tn}) \u{00b7} previews {} ({pn})", mib(tb), mib(pb))
+    tr!("dialogs-about-memory-line", thumbs = mib(tb), thumb_count = tn, previews = mib(pb), preview_count = pn)
+}
+
+/// Upper-case for small captions, with the Turkish dotted/dotless i rules
+/// (`str::to_uppercase` maps `i` to `I`).
+pub(crate) fn caption_upper(s: &str) -> String {
+    if soyuz_core::locale::current() == soyuz_core::Locale::TrTr {
+        s.chars().map(|c| if c == 'i' { "\u{130}".to_string() } else { c.to_uppercase().collect() }).collect()
+    } else {
+        s.to_uppercase()
+    }
 }
 
 impl Dialog for AboutDialog {
     fn title(&self) -> &str {
-        "About Soyuz"
+        tr!("dialogs-about-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -363,10 +389,11 @@ impl Dialog for AboutDialog {
             ui.vertical(|ui| {
                 ui.add_space(6.0);
                 ui.label(RichText::new("Soyuz").font(semibold(22.0)).color(p.text_primary));
-                ui.label(RichText::new(format!("Version {}", env!("CARGO_PKG_VERSION"))).color(p.text_secondary));
                 ui.label(
-                    RichText::new("A keyboard-first, non-blocking file explorer.").color(p.text_tertiary).size(12.0),
+                    RichText::new(tr!("dialogs-about-version-line", version = env!("CARGO_PKG_VERSION")))
+                        .color(p.text_secondary),
                 );
+                ui.label(RichText::new(tr!("dialogs-about-tagline")).color(p.text_tertiary).size(12.0));
             });
         });
         ui.add_space(12.0);
@@ -374,20 +401,14 @@ impl Dialog for AboutDialog {
         egui::Grid::new("soyuz.about.facts").num_columns(2).striped(false).spacing([16.0, 6.0]).show(ui, |ui| {
             // The version is already in the header.
             for (k, v) in facts.iter().skip(1) {
-                ui.label(RichText::new(*k).color(p.text_tertiary));
+                ui.label(RichText::new(Self::fact_label(k)).color(p.text_tertiary));
                 ui.add(egui::Label::new(RichText::new(v).color(p.text_primary)).truncate());
                 ui.end_row();
             }
         });
         ui.add_space(10.0);
-        ui.label(
-            RichText::new(
-                "Licensed under MIT OR Apache-2.0. Fonts: Inter, JetBrains Mono (OFL). Icons: Phosphor (MIT).",
-            )
-            .color(p.text_tertiary)
-            .size(11.5),
-        );
-        let (close, copy) = footer(ui, "Close", "Copy info");
+        ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(11.5));
+        let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
             let text = facts.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n");
             ctx.cmds.push(Cmd::CopyText(format!("Soyuz\n{text}")));
@@ -420,7 +441,7 @@ impl KeybindingsDialog {
 
 impl Dialog for KeybindingsDialog {
     fn title(&self) -> &str {
-        "Keyboard shortcuts"
+        tr!("dialogs-keys-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -435,7 +456,7 @@ impl Dialog for KeybindingsDialog {
         let p = palette(ui.ctx());
         ui.add(
             TextEdit::singleline(&mut self.filter)
-                .hint_text("Filter shortcuts")
+                .hint_text(tr!("dialogs-keys-filter"))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 6)),
         );
@@ -450,7 +471,7 @@ impl Dialog for KeybindingsDialog {
                 if last != Some(*cat) {
                     ui.add_space(6.0);
                     ui.label(
-                        RichText::new(cat.label().to_uppercase())
+                        RichText::new(caption_upper(crate::i18n::labels::action_category(*cat)))
                             .font(FontId::proportional(10.5))
                             .color(p.text_tertiary),
                     );
@@ -464,6 +485,32 @@ impl Dialog for KeybindingsDialog {
                 });
             }
         });
-        !close_footer(ui, "Close")
+        !close_footer(ui, tr!("common-close"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::i18n::{FluentArgs, t_args_in};
+    use soyuz_core::Locale;
+
+    fn render(key: &str, args: &[(&str, i64)], l: Locale) -> String {
+        let mut a = FluentArgs::new();
+        for (k, v) in args {
+            a.set(*k, *v);
+        }
+        t_args_in(key, &a, l)
+    }
+
+    #[test]
+    fn plural_messages_render() {
+        assert_eq!(render("dialogs-props-contains", &[("files", 1), ("dirs", 2)], Locale::EnUs), "1 file, 2 folders");
+        assert_eq!(render("dialogs-props-contains", &[("files", 1), ("dirs", 2)], Locale::TrTr), "1 dosya, 2 klasör");
+        assert_eq!(render("dialogs-delete-trash-many", &[("count", 3)], Locale::EnUs), "Move 3 items to the trash?");
+        assert_eq!(
+            render("dialogs-delete-trash-many", &[("count", 3)], Locale::TrTr),
+            "3 öğe Çöp Kutusu'na taşınsın mı?"
+        );
+        assert_eq!(render("dialogs-quit-title", &[("count", 1)], Locale::EnUs), "A file operation is still running");
     }
 }

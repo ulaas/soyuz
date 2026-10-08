@@ -38,11 +38,7 @@ impl RecoveryDialog {
     pub fn new(ctx: &egui::Context, recovered: Vec<Recovered>) -> Self {
         let jobs: Vec<JournalJob> = recovered.iter().flat_map(|r| r.jobs.iter().cloned()).collect();
         let n = jobs.len();
-        let title = if n == 1 {
-            "Soyuz closed during an operation".to_string()
-        } else {
-            format!("Soyuz closed during {n} operations")
-        };
+        let title = tr!("dialogs-recovery-title", count = n);
         let leftovers = Arc::new(Mutex::new(None));
         let scan_ctl = OpControl::new();
         let (out, ctl, scan_jobs, c) = (leftovers.clone(), scan_ctl.clone(), jobs.clone(), ctx.clone());
@@ -84,8 +80,7 @@ fn kind_icon(b: JobKindBrief) -> &'static str {
 }
 
 fn started(job: &JournalJob) -> String {
-    let t: chrono::DateTime<chrono::Local> = job.started.into();
-    t.format("%b %-d, %H:%M").to_string()
+    soyuz_core::format_time(job.started, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Short))
 }
 
 /// One interrupted operation as a card with a progress bar.
@@ -103,19 +98,20 @@ fn job_card(ui: &mut Ui, job: &JournalJob, p: &Palette) {
                 ui.vertical(|ui| {
                     ui.label(RichText::new(&job.label).color(p.text_primary).font(FontId::proportional(13.0)));
                     let done = match job.fraction() {
-                        Some(f) => format!("{:.0}% done", f * 100.0),
-                        None => "progress unknown".into(),
+                        Some(f) => tr!("dialogs-recovery-done", percent = format!("{:.0}", f * 100.0)),
+                        None => tr!("dialogs-recovery-progress-unknown").to_string(),
                     };
-                    let undo = if job.can_roll_back() {
-                        format!(" · {} completed part(s) can be rolled back", job.records.len())
+                    let line = if job.can_roll_back() {
+                        tr!(
+                            "dialogs-recovery-job-line-undo",
+                            started = started(job),
+                            done = done,
+                            count = job.records.len()
+                        )
                     } else {
-                        String::new()
+                        tr!("dialogs-recovery-job-line", started = started(job), done = done)
                     };
-                    ui.label(
-                        RichText::new(format!("Started {} · {done}{undo}", started(job)))
-                            .font(FontId::proportional(11.5))
-                            .color(p.text_tertiary),
-                    );
+                    ui.label(RichText::new(line).font(FontId::proportional(11.5)).color(p.text_tertiary));
                 });
             });
             if let Some(f) = job.fraction() {
@@ -144,13 +140,7 @@ impl Dialog for RecoveryDialog {
 
     fn show(&mut self, ui: &mut Ui, _ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(
-            RichText::new(
-                "These operations were still running when Soyuz stopped. Resume them, roll back what they \
-                 already did (moved to the trash where possible), or leave things as they are.",
-            )
-            .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("dialogs-recovery-body")).color(p.text_secondary));
         ui.add_space(10.0);
         ScrollArea::vertical().max_height(260.0).auto_shrink([false, true]).show(ui, |ui| {
             for job in &self.jobs {
@@ -165,7 +155,7 @@ impl Dialog for RecoveryDialog {
                 ui.horizontal(|ui| {
                     ui.add(egui::Spinner::new().size(12.0).color(p.text_tertiary));
                     ui.label(
-                        RichText::new("Looking for leftover temporary files…")
+                        RichText::new(tr!("dialogs-recovery-scanning"))
                             .font(FontId::proportional(12.0))
                             .color(p.text_tertiary),
                     );
@@ -173,22 +163,15 @@ impl Dialog for RecoveryDialog {
             }
             Some(v) if v.is_empty() => {
                 ui.label(
-                    RichText::new(format!("{}  No leftover temporary files found.", ph::CHECK_CIRCLE))
+                    RichText::new(format!("{}  {}", ph::CHECK_CIRCLE, tr!("dialogs-recovery-no-leftovers")))
                         .font(FontId::proportional(12.0))
                         .color(p.success),
                 );
             }
             Some(v) => {
                 ui.horizontal(|ui| {
-                    ui.checkbox(
-                        &mut self.clean,
-                        format!(
-                            "Move {} leftover temporary file{} to the trash",
-                            v.len(),
-                            if v.len() == 1 { "" } else { "s" }
-                        ),
-                    );
-                    let t = if self.show_leftovers { "Hide" } else { "Show" };
+                    ui.checkbox(&mut self.clean, tr!("dialogs-recovery-clean", count = v.len()));
+                    let t = if self.show_leftovers { tr!("dialogs-hide") } else { tr!("dialogs-show") };
                     if ui.link(RichText::new(t).font(FontId::proportional(12.0)).color(p.accent)).clicked() {
                         self.show_leftovers = !self.show_leftovers;
                     }
@@ -217,17 +200,23 @@ impl Dialog for RecoveryDialog {
         let can_roll_back = self.jobs.iter().any(JournalJob::can_roll_back);
         let (mut resume, mut rollback, mut discard, mut later) = (false, false, false, false);
         ui.horizontal(|ui| {
-            later = button(ui, "Decide later", Btn::Ghost).on_hover_text("Ask again next time Soyuz starts").clicked();
+            later = button(ui, tr!("dialogs-recovery-later"), Btn::Ghost)
+                .on_hover_text(tr!("dialogs-recovery-later-tip"))
+                .clicked();
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                resume = button(ui, "Resume", Btn::Primary).on_hover_text("Finish what is left").clicked();
+                resume = button(ui, tr!("dialogs-recovery-resume"), Btn::Primary)
+                    .on_hover_text(tr!("dialogs-recovery-resume-tip"))
+                    .clicked();
                 ui.add_enabled_ui(can_roll_back, |ui| {
-                    rollback = button(ui, "Roll back", Btn::Secondary)
-                        .on_hover_text("Undo the parts that were completed")
-                        .on_disabled_hover_text("Nothing was completed yet")
+                    rollback = button(ui, tr!("dialogs-recovery-rollback"), Btn::Secondary)
+                        .on_hover_text(tr!("dialogs-recovery-rollback-tip"))
+                        .on_disabled_hover_text(tr!("dialogs-recovery-rollback-none"))
                         .clicked();
                 });
-                discard = button(ui, "Discard", Btn::Secondary).on_hover_text("Leave everything as it is").clicked();
+                discard = button(ui, tr!("dialogs-recovery-discard"), Btn::Secondary)
+                    .on_hover_text(tr!("dialogs-recovery-discard-tip"))
+                    .clicked();
             });
         });
         let dismiss = || self.recovered.clone();

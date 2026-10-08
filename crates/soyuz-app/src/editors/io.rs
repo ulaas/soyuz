@@ -98,7 +98,7 @@ fn load(path: &Path, want: Want, limits: &Limits) -> LoadResult {
         Err(e) => return LoadResult::Error(e.to_string()),
     };
     if meta.is_dir() {
-        return LoadResult::Error("This is a folder".into());
+        return LoadResult::Error(tr!("editors-error-is-folder").into());
     }
     let len = meta.len();
     if want == Want::Hex {
@@ -175,9 +175,9 @@ fn save(path: &Path, job: SaveJob, backup: bool) -> (Result<(), String>, Option<
 pub fn backup_to_trash(path: &Path) -> Result<(), String> {
     let Ok(meta) = std::fs::metadata(path) else { return Ok(()) };
     if meta.len() > MAX_BACKUP {
-        return Err("too large for a backup copy".into());
+        return Err(tr!("editors-backup-too-large").into());
     }
-    let dir = path.parent().ok_or("no parent folder")?;
+    let dir = path.parent().ok_or(tr!("editors-backup-no-parent"))?;
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "file".into());
     let bak = soyuz_core::unique_name(dir, &format!("{name}.bak"), "", &|p| p.exists());
     std::fs::copy(path, &bak).map_err(|e| e.to_string())?;

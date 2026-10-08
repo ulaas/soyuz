@@ -58,6 +58,8 @@ pub struct SearchUi {
     saving: Option<String>,
     error: Option<String>,
     path: PathBuf,
+    /// Searches that are flat views (so the toggle can leave them again).
+    flat: BTreeSet<SearchId>,
 }
 
 impl SearchUi {
@@ -74,7 +76,17 @@ impl SearchUi {
             })
             .collect();
         let form = SearchForm { respect_gitignore: config.search.respect_gitignore, ..Default::default() };
-        SearchUi { open: false, form, focus: false, config_saved, saved, saving: None, error: None, path }
+        SearchUi {
+            open: false,
+            form,
+            focus: false,
+            config_saved,
+            saved,
+            saving: None,
+            error: None,
+            path,
+            flat: BTreeSet::new(),
+        }
     }
 
     /// Sidebar names: config searches first, then the user's.
@@ -181,15 +193,13 @@ fn register_and_show(app: &mut SoyuzApp, spec: SearchSpec) {
 }
 
 /// Show the results of `query` in the focused pane (also used by smart search).
-pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) {
+pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) -> SearchId {
     let id = svc::register(SearchSpec::new(query, title));
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
     app.ui.focus = Focus::List;
+    id
 }
-
-/// Title prefix marking a flat-view listing (so the toggle can leave it again).
-const FLAT_PREFIX: &str = "All files in ";
 
 /// `ToggleFlatView`: list every file below the current folder in one flat, sortable
 /// listing (a recursive soyuz-search walk without a name filter, streamed like search
@@ -197,14 +207,14 @@ const FLAT_PREFIX: &str = "All files in ";
 pub fn toggle_flat_view(app: &mut SoyuzApp) {
     let pane = app.ws.pane();
     if let Location::Search(id) = &pane.location {
-        if svc::spec(*id).is_some_and(|s| s.title.starts_with(FLAT_PREFIX)) {
+        if app.ui.search.flat.contains(id) {
             let id = pane.id;
             ops::history_jump(app, id, true, 1);
         }
         return;
     }
     let Some(root) = current_dir(app) else {
-        app.ui.toasts.push(Toast::info("Flat view works in folders"));
+        app.ui.toasts.push(Toast::info(tr!("views-search-flat-needs-folder")));
         return;
     };
     let query = soyuz_search::SearchQuery {
@@ -214,8 +224,9 @@ pub fn toggle_flat_view(app: &mut SoyuzApp) {
         kinds: Some(soyuz_core::EntryKindSet::FILE | soyuz_core::EntryKindSet::SYMLINK),
         ..Default::default()
     };
-    let title = format!("{FLAT_PREFIX}{}", soyuz_core::entry::display_name(&root));
-    run_query(app, query, title);
+    let title = tr!("views-search-flat-title", folder = soyuz_core::entry::display_name(&root));
+    let id = run_query(app, query, title);
+    app.ui.search.flat.insert(id);
 }
 
 /// Run sidebar entry `i` (config searches first, then user ones).
@@ -240,9 +251,9 @@ pub fn remove_saved(app: &mut SoyuzApp, i: usize) {
     if i >= n_cfg && i - n_cfg < app.ui.search.saved.len() {
         let removed = app.ui.search.saved.remove(i - n_cfg);
         if let Err(e) = app.ui.search.persist() {
-            app.ui.toasts.push(Toast::error("Couldn't save searches").body(e));
+            app.ui.toasts.push(Toast::error(tr!("views-search-save-failed")).body(e));
         } else {
-            app.ui.toasts.push(Toast::info(format!("Removed saved search “{}”", removed.name)));
+            app.ui.toasts.push(Toast::info(tr!("views-search-removed", name = &removed.name)));
         }
     }
 }
@@ -263,7 +274,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     svc::init(ctx, app.config.search.threads);
     crate::ui::smart::pump(app, ctx);
     for n in svc::pump(&mut app.ws) {
-        app.ui.toasts.push(Toast::error("Search failed").body(n));
+        app.ui.toasts.push(Toast::error(tr!("views-search-failed")).body(n));
     }
     crate::ui::archive::pump(app, ctx);
     if svc::sizing() {
@@ -292,7 +303,7 @@ pub fn folder_sizes(app: &mut SoyuzApp) {
     }
     let n = svc::start_folder_sizes(id, dirs);
     if n == 0 {
-        app.ui.toasts.push(Toast::info("No folders to measure"));
+        app.ui.toasts.push(Toast::info(tr!("views-search-no-folders-to-measure")));
     }
 }
 
@@ -381,7 +392,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let close_r = Rect::from_center_size(pos2(rx - 13.0, cy), vec2(24.0, 24.0));
     rx = close_r.left() - 4.0;
     let cresp =
-        ui.interact(close_r, Id::new("soyuz.search.close"), Sense::click()).on_hover_text("Close search  (Esc)");
+        ui.interact(close_r, Id::new("soyuz.search.close"), Sense::click()).on_hover_text(tr!("views-search-close"));
     if cresp.hovered() {
         ui.painter().rect_filled(close_r, CornerRadius::same(5), p.bg_surface2);
     }
@@ -392,7 +403,8 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     }
     let star_r = Rect::from_center_size(pos2(rx - 13.0, cy), vec2(24.0, 24.0));
     rx = star_r.left() - 6.0;
-    let sresp = ui.interact(star_r, Id::new("soyuz.search.save"), Sense::click()).on_hover_text("Save this search");
+    let sresp =
+        ui.interact(star_r, Id::new("soyuz.search.save"), Sense::click()).on_hover_text(tr!("views-search-save-tip"));
     if sresp.hovered() {
         ui.painter().rect_filled(star_r, CornerRadius::same(5), p.bg_surface2);
     }
@@ -401,7 +413,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         app.ui.search.saving = Some(app.ui.search.form.title());
     }
     save_popup(ui, &sresp, app);
-    let label = if running { "Stop" } else { "Search" };
+    let label = if running { tr!("views-search-stop") } else { tr!("views-search-run") };
     let bw = pill_width(ui, true, label) + 6.0;
     let br = Rect::from_center_size(pos2(rx - bw / 2.0, cy), vec2(bw, 26.0));
     rx = br.left() - 10.0;
@@ -415,11 +427,18 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let everywhere = app.ui.search.form.everywhere;
     let scope_name =
         if scope.as_os_str().is_empty() { "…".to_string() } else { soyuz_core::entry::display_name(&scope) };
-    let scope_label = if everywhere { "Everywhere".to_string() } else { format!("in {scope_name}") };
+    let scope_label = if everywhere {
+        tr!("views-search-everywhere").to_string()
+    } else {
+        tr!("views-search-in", folder = scope_name)
+    };
     let sw = pill_width(ui, true, &scope_label).min(180.0);
     let scope_r = Rect::from_min_size(pos2(card.left() + 6.0, cy - 13.0), vec2(sw, 26.0));
-    let tip =
-        if everywhere { "Search every indexed folder".to_string() } else { format!("Search in {}", scope.display()) };
+    let tip = if everywhere {
+        tr!("views-search-everywhere-tip").to_string()
+    } else {
+        tr!("views-search-in-tip", path = scope.display().to_string())
+    };
     let scope_icon = if everywhere { ph::DATABASE } else { ph::FOLDER_SIMPLE };
     let sresp =
         pill(ui, scope_r, Id::new("soyuz.search.scope"), Some(scope_icon), &trunc(&scope_label, 22), everywhere, &tip);
@@ -430,8 +449,8 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         ui.set_width(250.0);
         let form = &mut app.ui.search.form;
         let label = match &here {
-            Some(d) => format!("This folder ({})", soyuz_core::entry::display_name(d)),
-            None => "This folder".to_string(),
+            Some(d) => tr!("views-search-this-folder-named", folder = soyuz_core::entry::display_name(d)),
+            None => tr!("views-search-this-folder").to_string(),
         };
         if menu_check(ui, !form.everywhere, &label, None).clicked() {
             form.everywhere = false;
@@ -441,10 +460,10 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             rerun = true;
             ui.close();
         }
-        let r = menu_check(ui, form.everywhere, "All indexed folders", None).on_hover_text(if index_on {
-            "Instant results from the background index"
+        let r = menu_check(ui, form.everywhere, tr!("views-search-all-indexed"), None).on_hover_text(if index_on {
+            tr!("views-search-all-indexed-tip")
         } else {
-            "Turn on the background index in Settings → Preview & search for instant results"
+            tr!("views-search-all-indexed-off-tip")
         });
         if r.clicked() {
             form.everywhere = true;
@@ -456,36 +475,48 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     // Pills from the right edge leftwards.
     let f = app.ui.search.form.clone();
     let mut pills: Vec<(&'static str, Option<&'static str>, String, bool, &'static str)> = vec![
-        ("gitignore", None, ".gitignore".into(), f.respect_gitignore, "Respect .gitignore files"),
-        ("hidden", Some(ph::EYE), "Hidden".into(), f.include_hidden, "Include hidden files"),
+        ("gitignore", None, ".gitignore".into(), f.respect_gitignore, tr!("views-search-gitignore-tip")),
+        ("hidden", Some(ph::EYE), tr!("views-search-hidden").into(), f.include_hidden, tr!("views-search-hidden-tip")),
         (
             "kind",
             None,
-            if f.kind == KindFilter::Any { "Kind".into() } else { f.kind.label().into() },
+            if f.kind == KindFilter::Any { tr!("views-search-kind").into() } else { kind_label(f.kind).into() },
             f.kind != KindFilter::Any,
-            "Filter by kind",
+            tr!("views-search-kind-tip"),
         ),
         (
             "date",
             Some(ph::CALENDAR),
-            if f.date == DateRange::Any { "Date".into() } else { f.date.label().into() },
+            if f.date == DateRange::Any { tr!("views-search-date").into() } else { date_label(f.date).into() },
             f.date != DateRange::Any,
-            "Modified date",
+            tr!("views-search-date-tip"),
         ),
         (
             "size",
             Some(ph::RULER),
             size_label(&f),
             !f.min_size.trim().is_empty() || !f.max_size.trim().is_empty(),
-            "File size",
+            tr!("views-search-size-tip"),
         ),
-        ("content", Some(ph::FILE_TEXT), "Contents".into(), f.content, "Search inside files"),
-        ("case", None, "Aa".into(), f.case_sensitive, "Match case"),
+        (
+            "content",
+            Some(ph::FILE_TEXT),
+            tr!("views-search-contents").into(),
+            f.content,
+            tr!("views-search-contents-tip"),
+        ),
+        ("case", None, "Aa".into(), f.case_sensitive, tr!("views-search-case-tip")),
     ];
     if !f.content {
-        pills.push(("mode", None, f.mode.label().into(), f.mode != NameMode::Substring, "How the name is matched"));
+        pills.push((
+            "mode",
+            None,
+            mode_label(f.mode).into(),
+            f.mode != NameMode::Substring,
+            tr!("views-search-mode-tip"),
+        ));
     } else {
-        pills.push(("regex", None, ".*".into(), f.content_regex, "Regular expression"));
+        pills.push(("regex", None, ".*".into(), f.content_regex, tr!("views-search-regex-tip")));
     }
     let mut x = rx;
     let min_text = 180.0;
@@ -530,12 +561,12 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                     ui.set_width(200.0);
                     for m in NameMode::ALL {
                         let hint = match m {
-                            NameMode::Substring => "Name contains the text",
+                            NameMode::Substring => tr!("views-search-mode-contains-tip"),
                             NameMode::Glob => "*.rs, IMG_????.jpg",
                             NameMode::Regex => "^report-\\d+\\.pdf$",
-                            NameMode::Fuzzy => "Loose match, ranked by relevance",
+                            NameMode::Fuzzy => tr!("views-search-mode-fuzzy-tip"),
                         };
-                        if menu_check(ui, form.mode == m, m.label(), None).on_hover_text(hint).clicked() {
+                        if menu_check(ui, form.mode == m, mode_label(m), None).on_hover_text(hint).clicked() {
                             form.mode = m;
                             changed = true;
                             ui.close();
@@ -547,7 +578,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 Popup::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
                     ui.set_width(180.0);
                     for k in KindFilter::ALL {
-                        if menu_check(ui, form.kind == k, k.label(), None).clicked() {
+                        if menu_check(ui, form.kind == k, kind_label(k), None).clicked() {
                             form.kind = k;
                             changed = true;
                             ui.close();
@@ -559,7 +590,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 Popup::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
                     ui.set_width(190.0);
                     for d in DateRange::ALL {
-                        if menu_check(ui, form.date == d, d.label(), None).clicked() {
+                        if menu_check(ui, form.date == d, date_label(d), None).clicked() {
                             form.date = d;
                             changed = true;
                             ui.close();
@@ -573,23 +604,31 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
                         ui.set_width(230.0);
-                        ui.label(egui::RichText::new("FILE SIZE").size(10.5).color(p.text_tertiary));
+                        ui.label(
+                            egui::RichText::new(tr!("views-search-size-caption")).size(10.5).color(p.text_tertiary),
+                        );
                         ui.add_space(4.0);
                         ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new("Min").color(p.text_secondary));
+                            ui.label(egui::RichText::new(tr!("views-search-size-min")).color(p.text_secondary));
                             ui.add(
-                                TextEdit::singleline(&mut form.min_size).hint_text("e.g. 10 MB").desired_width(70.0),
+                                TextEdit::singleline(&mut form.min_size)
+                                    .hint_text(tr!("views-search-size-min-hint"))
+                                    .desired_width(70.0),
                             );
-                            ui.label(egui::RichText::new("Max").color(p.text_secondary));
-                            ui.add(TextEdit::singleline(&mut form.max_size).hint_text("any").desired_width(70.0));
+                            ui.label(egui::RichText::new(tr!("views-search-size-max")).color(p.text_secondary));
+                            ui.add(
+                                TextEdit::singleline(&mut form.max_size)
+                                    .hint_text(tr!("views-search-size-max-hint"))
+                                    .desired_width(70.0),
+                            );
                         });
                         ui.add_space(4.0);
                         menu_separator(ui);
                         for (label, min, max) in [
-                            ("Tiny (< 16 KB)", "", "16k"),
-                            ("Large (> 100 MB)", "100M", ""),
-                            ("Huge (> 1 GB)", "1G", ""),
-                            ("Any size", "", ""),
+                            (tr!("views-search-size-tiny"), "", "16k"),
+                            (tr!("views-search-size-large"), "100M", ""),
+                            (tr!("views-search-size-huge"), "1G", ""),
+                            (tr!("views-search-size-any"), "", ""),
                         ] {
                             if menu_item(ui, None, label, None, true).clicked() {
                                 form.min_size = min.into();
@@ -634,11 +673,11 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let indexed = crate::services::index::uses_query_language(&app.ui.search.form)
         && (app.ui.search.form.everywhere || crate::services::index::covers(&app.ui.search.form.root));
     let hint = if content {
-        "Search file contents…"
+        tr!("views-search-hint-content")
     } else if indexed {
-        "Search the index…  kind:image  size:>5MB  modified:<7d  tag:red  -draft"
+        tr!("views-search-hint-index")
     } else {
-        "Search names in this folder and below…  (kind:image size:>5MB …)"
+        tr!("views-search-hint-names")
     };
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let resp = child.add(
@@ -664,7 +703,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         let mut gchild = ui.new_child(UiBuilder::new().max_rect(gr.shrink2(vec2(4.0, 0.0))));
         let g = gchild.add(
             TextEdit::singleline(&mut app.ui.search.form.name_glob)
-                .hint_text("in files: *.rs")
+                .hint_text(tr!("views-search-hint-glob"))
                 .frame(Frame::NONE)
                 .font(FontId::proportional(12.0))
                 .vertical_align(egui::Align::Center)
@@ -697,7 +736,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
 
 fn size_label(f: &SearchForm) -> String {
     match (f.min_size.trim(), f.max_size.trim()) {
-        ("", "") => "Size".into(),
+        ("", "") => tr!("views-search-size").into(),
         (a, "") => format!("> {a}"),
         ("", b) => format!("< {b}"),
         (a, b) => format!("{a} – {b}"),
@@ -723,7 +762,7 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             ui.set_width(260.0);
-            ui.label(egui::RichText::new("SAVE SEARCH").size(10.5).color(p.text_tertiary));
+            ui.label(egui::RichText::new(tr!("views-search-save-caption")).size(10.5).color(p.text_tertiary));
             ui.add_space(4.0);
             if let Some(name) = app.ui.search.saving.as_mut() {
                 let r = ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).margin(Margin::symmetric(8, 5)));
@@ -737,10 +776,10 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if pill_button(ui, None, "Save", true).clicked() {
+                if pill_button(ui, None, tr!("common-save"), true).clicked() {
                     done = Some(true);
                 }
-                if pill_button(ui, None, "Cancel", false).clicked() {
+                if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
                     done = Some(false);
                 }
             });
@@ -757,8 +796,8 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
             s.saved.retain(|e| e.name != name.trim());
             s.saved.push(SavedEntry { name: name.trim().to_string(), form });
             match s.persist() {
-                Ok(()) => app.ui.toasts.push(Toast::success(format!("Saved “{}”", name.trim()))),
-                Err(e) => app.ui.toasts.push(Toast::error("Couldn't save the search").body(e)),
+                Ok(()) => app.ui.toasts.push(Toast::success(tr!("views-search-saved", name = name.trim()))),
+                Err(e) => app.ui.toasts.push(Toast::error(tr!("views-search-save-one-failed")).body(e)),
             };
         }
     }
@@ -777,45 +816,55 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         spinner(ui, pos2(x, cy), 6.0, p.accent);
     }
     x += 14.0;
-    let count = crate::ui::preview::render::group_digits(prog.hits);
-    let head = format!("{title} — {count} result{}", if prog.hits == 1 { "" } else { "s" });
+    let head = tr!("views-search-head", title = title, count = prog.hits);
     let hg =
         trunc_galley(ui.painter(), &head, crate::ui::views::flow::semibold(12.0), p.text_primary, row.width() * 0.45);
     let hw = hg.size().x;
     ui.painter().galley(pos2(x, cy - hg.size().y / 2.0), hg, p.text_primary);
     x += hw + 12.0;
     let secs = prog.elapsed.as_secs_f32();
-    let mut detail = if prog.indexed {
-        format!("from the index in {} ms", prog.elapsed.as_millis().max(1))
+    let mut parts = vec![if prog.indexed {
+        tr!("views-search-from-index", ms = prog.elapsed.as_millis().max(1) as u64)
     } else {
-        format!("scanned {} in {:.1} s", crate::ui::preview::render::group_digits(prog.scanned), secs)
-    };
+        tr!("views-search-scanned", count = prog.scanned, secs = soyuz_core::locale::format_decimal(f64::from(secs), 1))
+    }];
     if prog.truncated && !prog.cancelled {
-        detail.push_str(" · result limit reached");
+        parts.push(tr!("views-search-limit-reached").to_string());
     }
     if prog.cancelled {
-        detail.push_str(" · cancelled");
+        parts.push(tr!("views-search-cancelled").to_string());
     }
     if prog.errors > 0 {
-        detail.push_str(&format!(" · {} unreadable", prog.errors));
+        parts.push(tr!("views-search-unreadable", count = prog.errors));
     }
     if !prog.done && !prog.current.as_os_str().is_empty() {
-        detail.push_str(&format!(" · {}", soyuz_fs::strip_verbatim(&prog.current).display()));
+        parts.push(soyuz_fs::strip_verbatim(&prog.current).display().to_string());
     }
+    let detail = parts.join(" · ");
     // Right side controls.
     let mut rx = row.right() - 8.0;
     if !prog.done {
-        let w = pill_width(ui, true, "Cancel");
+        let w = pill_width(ui, true, tr!("common-cancel"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
-        if pill(ui, r, Id::new("soyuz.search.cancel"), Some(ph::X), "Cancel", false, "Stop searching").clicked() {
+        if pill(
+            ui,
+            r,
+            Id::new("soyuz.search.cancel"),
+            Some(ph::X),
+            tr!("common-cancel"),
+            false,
+            tr!("views-search-cancel-tip"),
+        )
+        .clicked()
+        {
             svc::cancel(id);
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
     let fuzzy = svc::spec(id).and_then(|s| s.query.name).is_some_and(|n| n.kind == soyuz_core::PatternKind::Fuzzy);
     if fuzzy {
-        let w = pill_width(ui, true, "Relevance");
+        let w = pill_width(ui, true, tr!("views-search-relevance"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
         if pill(
@@ -823,9 +872,9 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             r,
             Id::new("soyuz.search.rank"),
             Some(ph::SPARKLE),
-            "Relevance",
+            tr!("views-search-relevance"),
             prog.ranked,
-            "Order by match quality",
+            tr!("views-search-relevance-tip"),
         )
         .clicked()
         {
@@ -835,7 +884,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
     let spec = svc::spec(id);
     let smart = spec.as_ref().and_then(|s| s.smart.clone());
     if let Some(name) = &smart {
-        let w = pill_width(ui, true, "Edit");
+        let w = pill_width(ui, true, tr!("views-search-edit"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
         if pill(
@@ -843,9 +892,9 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             r,
             Id::new("soyuz.search.smart.edit"),
             Some(ph::PENCIL_SIMPLE),
-            "Edit",
+            tr!("views-search-edit"),
             false,
-            "Edit this smart folder",
+            tr!("views-search-edit-smart-tip"),
         )
         .clicked()
             && let Some(i) = crate::ui::smart::folders().iter().position(|f| &f.name == name)
@@ -853,7 +902,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(Some(i))));
         }
     } else if spec.as_ref().is_some_and(|s| s.plan.is_some()) {
-        let w = pill_width(ui, true, "Smart folder");
+        let w = pill_width(ui, true, tr!("views-search-smart-folder"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
         if pill(
@@ -861,9 +910,9 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             r,
             Id::new("soyuz.search.smart.new"),
             Some(ph::FOLDER_SIMPLE_DOTTED),
-            "Smart folder",
+            tr!("views-search-smart-folder"),
             false,
-            "Save as a smart folder in the sidebar (stays up to date)",
+            tr!("views-search-smart-folder-tip"),
         )
         .clicked()
         {
@@ -871,7 +920,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         }
     }
     if !app.ui.search.open && smart.is_none() {
-        let w = pill_width(ui, true, "Refine");
+        let w = pill_width(ui, true, tr!("views-search-refine"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
         if pill(
@@ -879,9 +928,9 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             r,
             Id::new("soyuz.search.refine"),
             Some(ph::SLIDERS_HORIZONTAL),
-            "Refine",
+            tr!("views-search-refine"),
             false,
-            "Edit this search",
+            tr!("views-search-refine-tip"),
         )
         .clicked()
         {
@@ -905,7 +954,8 @@ pub fn sidebar_section(
         return;
     }
     let mut open = !collapsed.contains("Searches");
-    collapsible_header(ui, "Searches", &mut open);
+    // The collapsed-set key stays "Searches" (persisted); the header is translated.
+    collapsible_header(ui, tr!("views-search-sidebar"), &mut open);
     if open {
         collapsed.remove("Searches");
     } else {
@@ -920,12 +970,12 @@ pub fn sidebar_section(
         }
         r.context_menu(|ui| {
             ui.set_width(200.0);
-            if menu_item(ui, Some(ph::MAGNIFYING_GLASS), "Run search", None, true).clicked() {
+            if menu_item(ui, Some(ph::MAGNIFYING_GLASS), tr!("views-search-run-saved"), None, true).clicked() {
                 cmds.push(Cmd::RunSavedSearch(i));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::X), "Remove", None, i >= n_config)
-                .on_hover_text(if i < n_config { "Defined in config.toml" } else { "" })
+            if menu_item(ui, Some(ph::X), tr!("views-search-remove"), None, i >= n_config)
+                .on_hover_text(if i < n_config { tr!("views-search-defined-in-config") } else { "" })
                 .clicked()
             {
                 cmds.push(Cmd::RemoveSavedSearch(i));
@@ -938,5 +988,42 @@ pub fn sidebar_section(
 impl SearchUi {
     pub fn config_count(&self) -> usize {
         self.config_saved.len()
+    }
+}
+
+/// Translated name-mode label (`NameMode::label` stays English).
+pub fn mode_label(m: NameMode) -> &'static str {
+    match m {
+        NameMode::Substring => tr!("views-search-mode-contains"),
+        NameMode::Glob => tr!("views-search-mode-glob"),
+        NameMode::Regex => tr!("views-search-mode-regex"),
+        NameMode::Fuzzy => tr!("views-search-mode-fuzzy"),
+    }
+}
+
+/// Translated kind-filter label.
+pub fn kind_label(k: KindFilter) -> &'static str {
+    match k {
+        KindFilter::Any => tr!("views-search-kind-any"),
+        KindFilter::Files => tr!("views-search-kind-files"),
+        KindFilter::Folders => tr!("views-search-kind-folders"),
+        KindFilter::Images => tr!("views-search-kind-images"),
+        KindFilter::Videos => tr!("views-search-kind-videos"),
+        KindFilter::Audio => tr!("views-search-kind-audio"),
+        KindFilter::Documents => tr!("views-search-kind-documents"),
+        KindFilter::Archives => tr!("views-search-kind-archives"),
+        KindFilter::Code => tr!("views-search-kind-code"),
+    }
+}
+
+/// Translated date-range label.
+pub fn date_label(d: DateRange) -> &'static str {
+    match d {
+        DateRange::Any => tr!("views-search-date-any"),
+        DateRange::Today => tr!("views-search-date-today"),
+        DateRange::Week => tr!("views-search-date-week"),
+        DateRange::Month => tr!("views-search-date-month"),
+        DateRange::Year => tr!("views-search-date-year"),
+        DateRange::OlderThanYear => tr!("views-search-date-older"),
     }
 }

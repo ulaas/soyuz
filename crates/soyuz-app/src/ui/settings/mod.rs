@@ -43,7 +43,7 @@ enum PickPurpose {
 
 /// Delay between the last edit and writing `config.toml`.
 const SAVE_DELAY: Duration = Duration::from_millis(700);
-const NAV_W: f32 = 216.0;
+const NAV_W: f32 = 236.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Section {
@@ -87,26 +87,38 @@ impl Section {
         Section::About,
     ];
 
-    pub fn title(self) -> &'static str {
+    /// Stable, untranslated id (`general`, `appearance`, …): dev scripts and the Fluent
+    /// keys `settings-section-<id>` / `…-desc` use it.
+    pub fn id(self) -> &'static str {
         match self {
-            Section::General => "General",
-            Section::Appearance => "Appearance",
-            Section::Fonts => "Fonts",
-            Section::Views => "Views & layout",
-            Section::Behaviour => "Behaviour",
-            Section::Jobs => "File operations",
-            Section::Terminal => "Terminal",
-            Section::Preview => "Preview & search",
-            Section::Editor => "Editor",
-            Section::Keyboard => "Keyboard",
-            Section::Commands => "Custom commands",
-            Section::Bookmarks => "Bookmarks",
-            Section::Scripts => "Scripts",
-            Section::Automations => "Automations",
-            Section::Ai => "AI assistant",
-            Section::Advanced => "Advanced",
-            Section::About => "About & updates",
+            Section::General => "general",
+            Section::Appearance => "appearance",
+            Section::Fonts => "fonts",
+            Section::Views => "views",
+            Section::Behaviour => "behaviour",
+            Section::Jobs => "jobs",
+            Section::Terminal => "terminal",
+            Section::Preview => "preview",
+            Section::Editor => "editor",
+            Section::Keyboard => "keyboard",
+            Section::Commands => "commands",
+            Section::Bookmarks => "bookmarks",
+            Section::Scripts => "scripts",
+            Section::Automations => "automations",
+            Section::Ai => "ai",
+            Section::Advanced => "advanced",
+            Section::About => "about",
         }
+    }
+
+    pub fn title(self) -> &'static str {
+        // i18n-dynamic: settings-section-
+        crate::i18n::t_dyn(&format!("settings-section-{}", self.id()))
+    }
+
+    /// English title (dev scripts select sections by it whatever the UI language).
+    pub fn english_title(self) -> &'static str {
+        crate::i18n::t_in(&format!("settings-section-{}", self.id()), soyuz_core::Locale::EnUs)
     }
 
     pub fn icon(self) -> &'static str {
@@ -132,25 +144,8 @@ impl Section {
     }
 
     pub fn description(self) -> &'static str {
-        match self {
-            Section::General => "Startup, hidden files, sizes and dates.",
-            Section::Appearance => "Theme, accent color, density and fonts. Changes preview live.",
-            Section::Fonts => "Fonts for the interface, headings, terminal, code, hex view and numbers.",
-            Section::Views => "Default view, columns, sorting and window layout.",
-            Section::Behaviour => "Clicking, confirmations, drag and drop and typing.",
-            Section::Jobs => "Copy / move engine, verification, sync schedules and previous versions.",
-            Section::Terminal => "The integrated terminal panel.",
-            Section::Preview => "Preview limits, search defaults and git integration.",
-            Section::Editor => "The built-in text, hex and image editors (Edit in Soyuz, F4).",
-            Section::Keyboard => "Presets and every shortcut. Click a shortcut to change it.",
-            Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
-            Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
-            Section::Scripts => "Rhai scripts: actions, context-menu entries, columns and previewers.",
-            Section::Automations => "Rules that file new items in watched folders, and the soyuz command line.",
-            Section::Ai => "Model providers, API keys, privacy, scope, budgets and MCP connections.",
-            Section::Advanced => "Edit, export or import config.toml, and make Soyuz your default file manager.",
-            Section::About => "Version, and checking GitHub Releases for a newer Soyuz (only when you ask).",
-        }
+        // i18n-dynamic: settings-section-
+        crate::i18n::t_dyn(&format!("settings-section-{}-desc", self.id()))
     }
 
     /// Reset this section of `c` to defaults.
@@ -335,12 +330,12 @@ fn flush_save(app: &mut SoyuzApp) {
                     app.settings.saved_flash = Some(Instant::now());
                 }
                 Err(e) => {
-                    app.ui.toasts.push(Toast::error("Couldn't save config.toml").body(e.to_string()));
+                    app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
                 }
             }
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Couldn't save config.toml").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
         }
     }
 }
@@ -450,7 +445,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         .backdrop_color(Color32::from_black_alpha(((if p.dark { 130.0 } else { 80.0 }) * ease) as u8))
         .show(ctx, |ui| {
             ui.set_opacity(ease);
-            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Settings");
+            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, tr!("settings-title"));
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let nav = Rect::from_min_size(rect.min, vec2(NAV_W, rect.height()));
             let content = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
@@ -471,8 +466,8 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             content_area(&mut c_ui, app, &p);
             // Close button.
             let cr = Rect::from_center_size(pos2(rect.right() - 22.0, rect.top() + 22.0), vec2(26.0, 26.0));
-            let cresp = ui.interact(cr, id.with("close"), Sense::click()).on_hover_text("Close (Esc)");
-            crate::ui::a11y::button(&cresp, "Close settings");
+            let cresp = ui.interact(cr, id.with("close"), Sense::click()).on_hover_text(tr!("settings-close-tooltip"));
+            crate::ui::a11y::button(&cresp, tr!("settings-close"));
             if cresp.has_focus() {
                 crate::ui::widgets::focus_ring(ui, cr);
             }
@@ -563,7 +558,9 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         ui.add_space(6.0);
         ui.label(icons::icon(ph::GEAR_SIX, 18.0).color(p.accent));
         ui.label(
-            RichText::new("Settings").font(FontId::new(17.0, FontFamily::Name(SEMIBOLD.into()))).color(p.text_primary),
+            RichText::new(tr!("settings-title"))
+                .font(FontId::new(17.0, FontFamily::Name(SEMIBOLD.into())))
+                .color(p.text_primary),
         );
     });
     ui.add_space(12.0);
@@ -579,81 +576,96 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     ui.add(
         TextEdit::singleline(&mut s.query)
             .id(search_id)
-            .hint_text(RichText::new(format!("{}  Search settings", ph::MAGNIFYING_GLASS)).color(p.text_tertiary))
+            .hint_text(
+                RichText::new(format!("{}  {}", ph::MAGNIFYING_GLASS, tr!("settings-search-hint")))
+                    .color(p.text_tertiary),
+            )
             .desired_width(f32::INFINITY)
             .margin(Margin::symmetric(10, 7)),
     );
     ui.add_space(10.0);
     let searching = !s.query.trim().is_empty();
-    for sec in Section::ALL {
-        let active = !searching && s.section == sec;
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
-        crate::ui::a11y::tab(&resp, sec.title(), active);
-        if resp.has_focus() {
-            crate::ui::widgets::focus_ring(ui, r);
-        }
-        let hover =
-            ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(ui.ctx(), 0.1));
-        if active {
-            ui.painter().rect_filled(r, CornerRadius::same(7), p.accent_subtle);
-            ui.painter().rect_filled(
-                Rect::from_min_size(pos2(r.left(), r.center().y - 8.0), vec2(3.0, 16.0)),
-                CornerRadius::same(2),
-                p.accent,
-            );
-        } else if hover > 0.0 {
-            ui.painter().rect_filled(r, CornerRadius::same(7), p.bg_surface3.gamma_multiply(hover));
-        }
-        let fg = if active { p.text_primary } else { p.text_secondary };
-        let glyph_font = if active { icons::font_fill(15.0) } else { icons::font(15.0) };
-        ui.painter().text(
-            pos2(r.left() + 14.0, r.center().y),
-            Align2::LEFT_CENTER,
-            sec.icon(),
-            glyph_font,
-            if active { p.accent } else { p.text_tertiary },
-        );
-        ui.painter().text(
-            pos2(r.left() + 38.0, r.center().y),
-            Align2::LEFT_CENTER,
-            sec.title(),
-            FontId::proportional(13.0),
-            fg,
-        );
-        if sec == Section::Keyboard {
-            let n = key_cache(s)
-                .conflicts
-                .iter()
-                .filter(|c| c.kind != crate::keys::conflicts::ConflictKind::Shadowed)
-                .count();
-            if n > 0 {
-                let badge = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 16.0));
-                ui.painter().rect_filled(badge, CornerRadius::same(8), p.danger.gamma_multiply(0.85));
-                ui.painter().text(
-                    badge.center(),
-                    Align2::CENTER_CENTER,
-                    n.to_string(),
-                    FontId::proportional(10.0),
-                    Color32::WHITE,
+    // The section list scrolls when the window is too short for it, so it never runs
+    // under the footer (status + "Edit config.toml").
+    let footer_h = 64.0;
+    egui::ScrollArea::vertical()
+        .id_salt("soyuz.settings.nav")
+        .max_height((ui.available_height() - footer_h).max(64.0))
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            for sec in Section::ALL {
+                let active = !searching && s.section == sec;
+                let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
+                crate::ui::a11y::tab(&resp, sec.title(), active);
+                if resp.has_focus() {
+                    crate::ui::widgets::focus_ring(ui, r);
+                }
+                let hover = ui.ctx().animate_bool_with_time(
+                    resp.id.with("h"),
+                    resp.hovered(),
+                    crate::theme::anim(ui.ctx(), 0.1),
                 );
+                if active {
+                    ui.painter().rect_filled(r, CornerRadius::same(7), p.accent_subtle);
+                    ui.painter().rect_filled(
+                        Rect::from_min_size(pos2(r.left(), r.center().y - 8.0), vec2(3.0, 16.0)),
+                        CornerRadius::same(2),
+                        p.accent,
+                    );
+                } else if hover > 0.0 {
+                    ui.painter().rect_filled(r, CornerRadius::same(7), p.bg_surface3.gamma_multiply(hover));
+                }
+                let fg = if active { p.text_primary } else { p.text_secondary };
+                let glyph_font = if active { icons::font_fill(15.0) } else { icons::font(15.0) };
+                ui.painter().text(
+                    pos2(r.left() + 14.0, r.center().y),
+                    Align2::LEFT_CENTER,
+                    sec.icon(),
+                    glyph_font,
+                    if active { p.accent } else { p.text_tertiary },
+                );
+                ui.painter().text(
+                    pos2(r.left() + 38.0, r.center().y),
+                    Align2::LEFT_CENTER,
+                    sec.title(),
+                    FontId::proportional(13.0),
+                    fg,
+                );
+                if sec == Section::Keyboard {
+                    let n = key_cache(s)
+                        .conflicts
+                        .iter()
+                        .filter(|c| c.kind != crate::keys::conflicts::ConflictKind::Shadowed)
+                        .count();
+                    if n > 0 {
+                        let badge = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 16.0));
+                        ui.painter().rect_filled(badge, CornerRadius::same(8), p.danger.gamma_multiply(0.85));
+                        ui.painter().text(
+                            badge.center(),
+                            Align2::CENTER_CENTER,
+                            n.to_string(),
+                            FontId::proportional(10.0),
+                            Color32::WHITE,
+                        );
+                    }
+                }
+                if resp.clicked() {
+                    s.section = sec;
+                    s.query.clear();
+                    s.scroll_top = true;
+                }
             }
-        }
-        if resp.clicked() {
-            s.section = sec;
-            s.query.clear();
-            s.scroll_top = true;
-        }
-    }
+        });
     // Bottom: save status + config file shortcuts.
     let mut close = false;
     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
         let status = if s.save_due.is_some() {
-            (ph::CIRCLE_NOTCH, "Saving…", p.text_tertiary)
+            (ph::CIRCLE_NOTCH, tr!("settings-status-saving"), p.text_tertiary)
         } else if s.saved_flash.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
-            (ph::CHECK_CIRCLE, "Saved to config.toml", p.success)
+            (ph::CHECK_CIRCLE, tr!("settings-status-saved"), p.success)
         } else {
-            (ph::CHECK, "Changes apply instantly", p.text_tertiary)
+            (ph::CHECK, tr!("settings-status-live"), p.text_tertiary)
         };
         ui.horizontal(|ui| {
             ui.add_space(6.0);
@@ -661,7 +673,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
             ui.label(RichText::new(status.1).size(11.0).color(status.2));
         });
         ui.add_space(6.0);
-        if nav_link(ui, p, ph::FILE_CODE, "Edit config.toml") {
+        if nav_link(ui, p, ph::FILE_CODE, tr!("settings-edit-config")) {
             app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
             close = true;
         }
@@ -691,7 +703,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
     ui.horizontal(|ui| {
         if searching {
             ui.label(
-                RichText::new(format!("Results for “{}”", app.settings.query.trim()))
+                RichText::new(tr!("settings-search-results", query = app.settings.query.trim()))
                     .font(FontId::new(19.0, FontFamily::Name(SEMIBOLD.into())))
                     .color(p.text_primary),
             );
@@ -705,12 +717,12 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(30.0);
                 if sec != Section::Advanced
-                    && widgets::small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Reset section", true)
-                        .on_hover_text("Restore the defaults of this section")
+                    && widgets::small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("settings-reset-section"), true)
+                        .on_hover_text(tr!("settings-reset-section-tooltip"))
                         .clicked()
                 {
                     sec.reset(&mut app.settings.draft);
-                    app.ui.toasts.push(Toast::info(format!("{} reset to defaults", sec.title())));
+                    app.ui.toasts.push(Toast::info(tr!("settings-reset-section-done", section = sec.title())));
                 }
             });
         }
@@ -738,7 +750,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
                     ui.label(icons::icon(ph::MAGNIFYING_GLASS, 28.0).color(p.text_tertiary));
-                    ui.label(RichText::new("No settings match").color(p.text_secondary));
+                    ui.label(RichText::new(tr!("settings-search-empty")).color(p.text_secondary));
                 });
             }
         } else {
@@ -796,21 +808,21 @@ pub fn start_export(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
     let dir = transfer_dir();
     let name = export_path(&dir).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let picker = PathPicker::new("Export settings", PickMode::Save, dir, &name, &["toml"]);
+    let picker = PathPicker::new(tr!("settings-export-title"), PickMode::Save, dir, &name, &["toml"]);
     app.settings.picker = Some((PickPurpose::Export, picker));
 }
 
 /// Open the in-app picker for importing a configuration file.
 fn start_import(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
-    let picker = PathPicker::new("Import settings", PickMode::Open, transfer_dir(), "", &["toml"]);
+    let picker = PathPicker::new(tr!("settings-import-title"), PickMode::Open, transfer_dir(), "", &["toml"]);
     app.settings.picker = Some((PickPurpose::Import, picker));
 }
 
 /// Open the picker for importing a theme file (copied into the themes folder).
 fn start_theme_import(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
-    let picker = PathPicker::new("Import theme", PickMode::Open, transfer_dir(), "", &["toml"]);
+    let picker = PathPicker::new(tr!("settings-theme-import-title"), PickMode::Open, transfer_dir(), "", &["toml"]);
     app.settings.picker = Some((PickPurpose::ThemeImport, picker));
 }
 
@@ -821,7 +833,7 @@ fn start_theme_export(app: &mut SoyuzApp) {
     let _ = std::fs::create_dir_all(&dir);
     let base = crate::theme::themes::slug(&app.settings.draft.appearance.color_theme);
     let name = format!("{base}-custom.toml");
-    let picker = PathPicker::new("Export theme", PickMode::Save, dir, &name, &["toml"]);
+    let picker = PathPicker::new(tr!("settings-theme-export-title"), PickMode::Save, dir, &name, &["toml"]);
     app.settings.picker = Some((PickPurpose::ThemeExport, picker));
 }
 
@@ -835,10 +847,10 @@ fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let def = crate::theme::themes::ThemeDef::from_palettes(&stem, &stem, &dark, &light);
     match soyuz_fs::write_atomic(path, def.to_toml().as_bytes()) {
         Ok(()) => {
-            app.ui.toasts.push(Toast::success("Theme exported").body(path.display().to_string()));
+            app.ui.toasts.push(Toast::success(tr!("settings-theme-exported")).body(path.display().to_string()));
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Theme export failed").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-theme-export-failed")).body(e.to_string()));
         }
     }
 }
@@ -849,7 +861,7 @@ fn import_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Theme import failed").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-theme-import-failed")).body(e.to_string()));
             return;
         }
     };
@@ -858,15 +870,14 @@ fn import_theme(app: &mut SoyuzApp, path: &std::path::Path) {
             app.settings.draft.appearance.color_theme = t.id.clone();
             app.settings.draft.appearance.high_contrast = false;
             let toast = if warnings.is_empty() {
-                Toast::success(format!("Theme \u{201c}{}\u{201d} imported", t.name))
+                Toast::success(tr!("settings-theme-imported", name = &t.name))
             } else {
-                Toast::warning(format!("Theme \u{201c}{}\u{201d} imported with warnings", t.name))
-                    .body(warnings.join("\n"))
+                Toast::warning(tr!("settings-theme-imported-warnings", name = &t.name)).body(warnings.join("\n"))
             };
             app.ui.toasts.push(toast);
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Not a valid theme file").body(e));
+            app.ui.toasts.push(Toast::error(tr!("settings-theme-invalid")).body(e));
         }
     }
 }
@@ -902,17 +913,17 @@ fn export(app: &mut SoyuzApp, path: PathBuf) -> Option<PathBuf> {
     let text = match config::to_string_preserving(&existing, &app.config) {
         Ok(t) => t,
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Export failed").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
             return None;
         }
     };
     match soyuz_fs::write_atomic(&path, text.as_bytes()) {
         Ok(()) => {
-            app.ui.toasts.push(Toast::success("Settings exported").body(path.display().to_string()));
+            app.ui.toasts.push(Toast::success(tr!("settings-exported")).body(path.display().to_string()));
             Some(path)
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Export failed").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
             None
         }
     }
@@ -923,14 +934,14 @@ fn import(app: &mut SoyuzApp, path: &std::path::Path) {
     match config::load(path) {
         Ok(loaded) => {
             app.settings.draft = loaded.config;
-            let mut t = Toast::success("Settings imported");
+            let mut t = Toast::success(tr!("settings-imported"));
             if !loaded.warnings.is_empty() {
-                t = Toast::warning("Settings imported with warnings").body(loaded.warnings.join("\n"));
+                t = Toast::warning(tr!("settings-imported-warnings")).body(loaded.warnings.join("\n"));
             }
             app.ui.toasts.push(t);
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error("Import failed").body(e.to_string()));
+            app.ui.toasts.push(Toast::error(tr!("settings-import-failed")).body(e.to_string()));
         }
     }
 }
@@ -984,5 +995,17 @@ mod export_tests {
         assert_eq!(first, dir.path().join("soyuz-config.toml"));
         std::fs::write(&first, b"x").unwrap();
         assert_eq!(super::export_path(dir.path()), dir.path().join("soyuz-config (2).toml"));
+    }
+
+    #[test]
+    fn every_section_is_translated() {
+        for s in super::Section::ALL {
+            for l in [soyuz_core::Locale::EnUs, soyuz_core::Locale::TrTr] {
+                let k = format!("settings-section-{}", s.id());
+                assert!(crate::i18n::has_in(&k, l), "{k}");
+                assert!(crate::i18n::has_in(&format!("{k}-desc"), l), "{k}-desc");
+            }
+        }
+        assert_eq!(super::Section::Views.english_title(), "Views & layout");
     }
 }

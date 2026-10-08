@@ -46,11 +46,35 @@ fn candidate_places() -> Vec<Place> {
     out
 }
 
+/// Translated label of a standard place (`label` is the English folder name, which is
+/// also what the probe stores).
+fn place_label(label: &str) -> String {
+    match label {
+        "Home" => tr!("app-place-home"),
+        "Desktop" => tr!("app-place-desktop"),
+        "Documents" => tr!("app-place-documents"),
+        "Downloads" => tr!("app-place-downloads"),
+        "Pictures" => tr!("app-place-pictures"),
+        "Music" => tr!("app-place-music"),
+        "Videos" => tr!("app-place-videos"),
+        other => other,
+    }
+    .to_string()
+}
+
+fn localized(mut places: Vec<Place>) -> Vec<Place> {
+    for p in &mut places {
+        p.label = place_label(&p.label);
+    }
+    places
+}
+
 /// Home plus the standard user folders that exist. The existence checks run once on a
 /// worker thread (never on the UI thread); until they finish every candidate is listed.
+/// Labels are in the current UI language.
 pub fn standard_places() -> Vec<Place> {
     if let Some(p) = PROBED.get() {
-        return p.clone();
+        return localized(p.clone());
     }
     PROBE_STARTED.call_once(|| {
         let _ = std::thread::Builder::new().name("soyuz-places".into()).spawn(|| {
@@ -63,7 +87,7 @@ pub fn standard_places() -> Vec<Place> {
             let _ = PROBED.set(places);
         });
     });
-    candidate_places()
+    localized(candidate_places())
 }
 
 /// The standard places probe has finished.
@@ -113,6 +137,8 @@ pub struct SidebarState {
     drag: Option<usize>,
     /// Default favorites were refreshed from the background places probe.
     places_applied: bool,
+    /// `i18n::generation()` the default favorites were labelled in.
+    lang_gen: u64,
 }
 
 impl Default for SidebarState {
@@ -129,6 +155,7 @@ impl SidebarState {
             collapsed: BTreeSet::new(),
             drag: None,
             places_applied: places_probed(),
+            lang_gen: crate::i18n::generation(),
         }
     }
 }
@@ -156,7 +183,22 @@ pub struct SidebarCtx<'a> {
     pub tree: crate::ui::tree::TreeArgs<'a>,
 }
 
+/// Section heading shown to the user.
 fn section_name(s: SidebarSection) -> &'static str {
+    match s {
+        SidebarSection::Favorites => tr!("app-sidebar-favorites"),
+        SidebarSection::Devices => tr!("app-sidebar-devices"),
+        SidebarSection::Cloud => tr!("app-sidebar-cloud"),
+        SidebarSection::Tags => tr!("app-sidebar-tags"),
+        SidebarSection::Network => tr!("app-sidebar-network"),
+        SidebarSection::Trash => tr!("app-sidebar-other"),
+        SidebarSection::Tree => tr!("app-sidebar-folders"),
+        SidebarSection::Smart => tr!("app-sidebar-smart"),
+    }
+}
+
+/// Stable section key (stored in the session's collapsed set; never translated).
+fn section_key(s: SidebarSection) -> &'static str {
     match s {
         SidebarSection::Favorites => "Favorites",
         SidebarSection::Devices => "Devices",
@@ -179,6 +221,14 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             }
         } else {
             root.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+        }
+    }
+    // Language switched: relabel the default favorites (customized ones keep their names).
+    let gen_now = crate::i18n::generation();
+    if s.lang_gen != gen_now {
+        s.lang_gen = gen_now;
+        if !s.favorites_customized {
+            s.favorites = crate::app::default_favorites();
         }
     }
     Panel::left("soyuz.sidebar")
@@ -277,8 +327,14 @@ fn footer(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
     let top = ui.max_rect().top() - 3.0;
     let x = ui.max_rect().x_range();
     ui.painter().hline(x.min + 4.0..=x.max - 4.0, top, Stroke::new(1.0, p.border_subtle));
-    let resp = NavRow { icon: ph::GEAR_SIX, label: "Settings", active: c.settings_open, icon_color: None, usage: None }
-        .show(ui);
+    let resp = NavRow {
+        icon: ph::GEAR_SIX,
+        label: tr!("app-sidebar-settings"),
+        active: c.settings_open,
+        icon_color: None,
+        usage: None,
+    }
+    .show(ui);
     if let Some(k) = &c.settings_key
         && ui.is_rect_visible(resp.rect)
     {
@@ -291,8 +347,8 @@ fn footer(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
         );
     }
     let tip = match &c.settings_key {
-        Some(k) => format!("Settings  ({k})"),
-        None => "Settings".to_string(),
+        Some(k) => tr!("app-sidebar-settings-tip", key = k),
+        None => tr!("app-sidebar-settings").to_string(),
     };
     if resp.on_hover_text(tip).clicked() {
         c.cmds.push(Cmd::Action(soyuz_core::config::Action::Settings));
@@ -301,13 +357,13 @@ fn footer(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
 
 /// Section header; returns whether the section is open.
 fn header(ui: &mut Ui, s: &mut SidebarState, sec: SidebarSection) -> bool {
-    let name = section_name(sec);
-    let mut open = !s.collapsed.contains(name);
-    collapsible_header(ui, name, &mut open);
+    let key = section_key(sec);
+    let mut open = !s.collapsed.contains(key);
+    collapsible_header(ui, section_name(sec), &mut open);
     if open {
-        s.collapsed.remove(name);
+        s.collapsed.remove(key);
     } else {
-        s.collapsed.insert(name.to_string());
+        s.collapsed.insert(key.to_string());
     }
     open
 }
@@ -318,31 +374,31 @@ fn is_current(c: &SidebarCtx<'_>, path: &Path) -> bool {
 
 fn place_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, path: &Path, removable: bool) {
     ui.set_width(220.0);
-    if menu_item(ui, Some(ph::BROWSERS), "Open in new tab", None, true).clicked() {
+    if menu_item(ui, Some(ph::BROWSERS), tr!("app-ctx-open-in-new-tab"), None, true).clicked() {
         cmds.push(Cmd::OpenInNewTab { location: Location::Dir(path.to_path_buf()), activate: true });
         ui.close();
     }
-    if menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), "Open in other pane", None, true).clicked() {
+    if menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("app-ctx-open-in-other-pane"), None, true).clicked() {
         cmds.push(Cmd::OpenInOtherPane(Location::Dir(path.to_path_buf())));
         ui.close();
     }
-    if menu_item(ui, Some(ph::ARROW_SQUARE_UP_RIGHT), "Reveal in system file manager", None, true).clicked() {
+    if menu_item(ui, Some(ph::ARROW_SQUARE_UP_RIGHT), tr!("app-ctx-reveal-in-system"), None, true).clicked() {
         cmds.push(Cmd::RevealInSystem(path.to_path_buf()));
         ui.close();
     }
-    if menu_item(ui, Some(ph::CLIPBOARD_TEXT), "Copy path", None, true).clicked() {
+    if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("app-ctx-copy-path"), None, true).clicked() {
         cmds.push(Cmd::CopyText(soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned()));
         ui.close();
     }
     if removable {
         menu_separator(ui);
-        if menu_item(ui, Some(ph::STAR), "Remove from favorites", None, true).clicked() {
+        if menu_item(ui, Some(ph::STAR), tr!("app-sidebar-remove-favorite"), None, true).clicked() {
             cmds.push(Cmd::RemoveFavorite(path.to_path_buf()));
             ui.close();
         }
     } else {
         menu_separator(ui);
-        if menu_item(ui, Some(ph::STAR), "Add to favorites", None, true).clicked() {
+        if menu_item(ui, Some(ph::STAR), tr!("app-ctx-add-to-favorites"), None, true).clicked() {
             cmds.push(Cmd::AddFavorite(path.to_path_buf()));
             ui.close();
         }
@@ -437,7 +493,9 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         return;
     }
     let active = matches!(c.current, Location::Computer);
-    let r = NavRow { icon: ph::DESKTOP_TOWER, label: "This PC", active, icon_color: None, usage: None }.show(ui);
+    let r =
+        NavRow { icon: ph::DESKTOP_TOWER, label: tr!("app-sidebar-this-pc"), active, icon_color: None, usage: None }
+            .show(ui);
     if r.clicked() {
         c.cmds.push(Cmd::FocusPane(c.pane));
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Computer, select: None });
@@ -449,11 +507,11 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         let active = matches!(c.current, Location::Dir(p) if p == &v.mount);
         let r = NavRow { icon: volume_glyph(v), label: &label, active, icon_color: None, usage }.show(ui);
         let tip = if v.total > 0 {
-            format!(
-                "{}\n{} free of {}",
-                v.mount.display(),
-                format_size(v.free, SizeStyle::Decimal),
-                format_size(v.total, SizeStyle::Decimal)
+            tr!(
+                "app-sidebar-volume-tip",
+                path = v.mount.display().to_string(),
+                free = format_size(v.free, SizeStyle::Decimal),
+                total = format_size(v.total, SizeStyle::Decimal)
             )
         } else {
             v.mount.display().to_string()
@@ -470,7 +528,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         ui.painter().text(
             pos2(rect.left() + 34.0, rect.center().y),
             Align2::LEFT_CENTER,
-            "Scanning…",
+            tr!("app-sidebar-scanning"),
             FontId::proportional(12.0),
             p.text_tertiary,
         );
@@ -502,7 +560,7 @@ fn other(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     crate::ui::tools::tags_ui::recent_row(ui, c.current, c.pane, c.cmds);
     crate::ui::workspaces::timeline_row(ui, c.current, c.pane, c.cmds);
     let active = matches!(c.current, Location::Trash);
-    let r = NavRow { icon: ph::TRASH, label: "Trash", active, icon_color: None, usage: None }.show(ui);
+    let r = NavRow { icon: ph::TRASH, label: tr!("app-sidebar-trash"), active, icon_color: None, usage: None }.show(ui);
     crate::ops::fileops::dnd::trash_target(ui, &r, c.cmds);
     if r.clicked() {
         c.cmds.push(Cmd::FocusPane(c.pane));

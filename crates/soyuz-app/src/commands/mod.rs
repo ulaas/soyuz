@@ -272,7 +272,7 @@ pub fn join_args(args: &[String]) -> String {
 /// Run the custom command called `name` against the focused pane.
 pub fn run_named(app: &mut SoyuzApp, name: &str, ctx: &egui::Context) {
     let Some(cmd) = app.config.custom_commands.iter().find(|c| c.name == name).cloned() else {
-        app.ui.toasts.push(Toast::warning(format!("No custom command named “{name}”")));
+        app.ui.toasts.push(Toast::warning(tr!("actions-command-not-found", name = name)));
         return;
     };
     run(app, &cmd, ctx);
@@ -281,7 +281,7 @@ pub fn run_named(app: &mut SoyuzApp, name: &str, ctx: &egui::Context) {
 /// Run `cmd` (detached, or typed into the terminal panel).
 pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, ctx: &egui::Context) {
     if cmd.command.trim().is_empty() {
-        app.ui.toasts.push(Toast::warning(format!("“{}” has no command", cmd.name)));
+        app.ui.toasts.push(Toast::warning(tr!("actions-command-empty", name = &cmd.name)));
         return;
     }
     let pctx = PlaceholderCtx::from_app(app);
@@ -301,14 +301,14 @@ pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, ctx: &egui::Context) {
         let result = if shell_line { spawn_shell(&line, &dir) } else { spawn_direct(&program, &args, &dir) };
         if let Err(e) = result {
             postman.send(crate::services::mailbox::UiMsg::Notice(
-                Toast::error(format!("Couldn't run “{name}”")).body(e.to_string()),
+                Toast::error(tr!("actions-command-run-failed", name = &name)).body(e.to_string()),
             ));
         }
     });
     if let Err(e) = spawned {
-        app.ui.toasts.push(Toast::error("Couldn't start the command").body(e.to_string()));
+        app.ui.toasts.push(Toast::error(tr!("actions-command-start-failed")).body(e.to_string()));
     } else {
-        app.ui.toasts.push(Toast::info(format!("Running “{}”", cmd.name)));
+        app.ui.toasts.push(Toast::info(tr!("actions-command-running", name = &cmd.name)));
     }
 }
 

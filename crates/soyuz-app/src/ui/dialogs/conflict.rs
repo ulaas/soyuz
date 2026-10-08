@@ -96,7 +96,7 @@ fn count_badge(ui: &Ui, total: usize) {
         return;
     }
     let p = palette(ui.ctx());
-    let text = format!("1 of {total} waiting");
+    let text = tr!("dialogs-prompt-waiting", total = total);
     let g = ui.painter().layout_no_wrap(text, FontId::proportional(11.0), p.warning);
     let top_right = ui.max_rect().right_top();
     let r =
@@ -122,21 +122,21 @@ impl PromptDialog {
     pub fn new(job: JobId, prompt: JobPrompt, job_title: String, shared: Rc<RefCell<PromptShared>>) -> Self {
         let title = match &prompt {
             JobPrompt::Conflict(c) => match c.kind {
-                ConflictKind::FileExists => "Replace or skip?",
-                ConflictKind::DirExists => "Merge folders?",
-                ConflictKind::FileVsDir => "That name is taken",
-                ConflictKind::SameFile => "Source and destination are the same",
-                ConflictKind::MoveIntoSelf => "Can't move a folder into itself",
-                ConflictKind::CaseOnly => "Name differs only in case",
+                ConflictKind::FileExists => tr!("dialogs-conflict-title-file"),
+                ConflictKind::DirExists => tr!("dialogs-conflict-title-dir"),
+                ConflictKind::FileVsDir => tr!("dialogs-conflict-title-kind"),
+                ConflictKind::SameFile => tr!("dialogs-conflict-title-same"),
+                ConflictKind::MoveIntoSelf => tr!("dialogs-conflict-title-into-self"),
+                ConflictKind::CaseOnly => tr!("dialogs-conflict-title-case"),
             },
             JobPrompt::Error { error, .. } if error.op == soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP => {
-                "Archive expands beyond safety limit"
+                tr!("dialogs-prompt-title-archive-limit")
             }
-            JobPrompt::Error { .. } => "Something went wrong",
-            JobPrompt::NotEnoughSpace { .. } => "Not enough space",
-            JobPrompt::TrashUnsupported { .. } => "Can't move to the trash",
-            JobPrompt::ReadOnlyItem { .. } => "Read-only item",
-            JobPrompt::Password { .. } => "Password required",
+            JobPrompt::Error { .. } => tr!("dialogs-prompt-title-error"),
+            JobPrompt::NotEnoughSpace { .. } => tr!("dialogs-prompt-title-space"),
+            JobPrompt::TrashUnsupported { .. } => tr!("dialogs-prompt-title-trash"),
+            JobPrompt::ReadOnlyItem { .. } => tr!("dialogs-prompt-title-read-only"),
+            JobPrompt::Password { .. } => tr!("dialogs-prompt-title-password"),
         }
         .to_string();
         PromptDialog {
@@ -163,6 +163,10 @@ impl Drop for PromptDialog {
 impl Dialog for PromptDialog {
     fn title(&self) -> &str {
         &self.title
+    }
+
+    fn alert(&self) -> bool {
+        true
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -220,14 +224,14 @@ impl PromptDialog {
     fn conflict(&mut self, ui: &mut Ui, c: &ConflictInfo, p: &Palette) -> Option<Answer> {
         let name = crate::ui::widgets::shown_name(&c.dst.name);
         let msg = match c.kind {
-            ConflictKind::FileExists => format!("The destination already has a file named \u{201c}{name}\u{201d}."),
-            ConflictKind::DirExists => format!("The destination already has a folder named \u{201c}{name}\u{201d}."),
-            ConflictKind::FileVsDir => format!("\u{201c}{name}\u{201d} exists as a different kind of item."),
-            ConflictKind::SameFile => "The source and the destination are the same item.".to_string(),
+            ConflictKind::FileExists => tr!("dialogs-conflict-file-exists", name = &name),
+            ConflictKind::DirExists => tr!("dialogs-conflict-dir-exists", name = &name),
+            ConflictKind::FileVsDir => tr!("dialogs-conflict-kind-differs", name = &name),
+            ConflictKind::SameFile => tr!("dialogs-conflict-same").to_string(),
             ConflictKind::MoveIntoSelf => {
-                format!("\u{201c}{}\u{201d} can't go inside itself.", crate::ui::widgets::shown_name(&c.src.name))
+                tr!("dialogs-conflict-into-self", name = crate::ui::widgets::shown_name(&c.src.name))
             }
-            ConflictKind::CaseOnly => format!("\u{201c}{name}\u{201d} differs only by upper/lower case."),
+            ConflictKind::CaseOnly => tr!("dialogs-conflict-case", name = &name),
         };
         ui.label(RichText::new(msg).color(p.text_secondary));
         crate::ui::widgets::hidden_note(ui, &c.dst.name);
@@ -247,7 +251,7 @@ impl PromptDialog {
         entry_card(
             ui,
             left,
-            "Source",
+            tr!("dialogs-conflict-source"),
             &c.src,
             newer == Some(std::cmp::Ordering::Greater),
             larger == Some(std::cmp::Ordering::Greater),
@@ -256,7 +260,7 @@ impl PromptDialog {
         entry_card(
             ui,
             right,
-            "Destination",
+            tr!("dialogs-conflict-destination"),
             &c.dst,
             newer == Some(std::cmp::Ordering::Less),
             larger == Some(std::cmp::Ordering::Less),
@@ -266,7 +270,11 @@ impl PromptDialog {
 
         let blocked = matches!(c.kind, ConflictKind::MoveIntoSelf);
         if let Some(text) = self.rename.as_mut() {
-            ui.label(RichText::new("New name").font(FontId::proportional(11.5)).color(p.text_secondary));
+            ui.label(
+                RichText::new(tr!("dialogs-conflict-new-name"))
+                    .font(FontId::proportional(11.5))
+                    .color(p.text_secondary),
+            );
             let r = ui.add(TextEdit::singleline(text).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 6)));
             if self.focus_rename {
                 r.request_focus();
@@ -279,13 +287,13 @@ impl PromptDialog {
             ui.add_space(6.0);
         }
         if !blocked {
-            ui.checkbox(&mut self.apply_all, "Do this for all remaining conflicts in this operation");
+            ui.checkbox(&mut self.apply_all, tr!("dialogs-conflict-apply-all"));
         }
         ui.add_space(14.0);
 
         let mut out = None;
         ui.horizontal(|ui| {
-            if button(ui, "Cancel operation", Btn::Ghost).clicked() {
+            if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
                 out = Some(Answer::CancelJob);
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -293,64 +301,92 @@ impl PromptDialog {
                 let all = self.apply_all;
                 if let Some(text) = self.rename.clone() {
                     let valid = soyuz_core::validate_name(text.trim()).is_ok();
-                    if button(ui, "Rename", Btn::Primary).clicked() && valid {
+                    if button(ui, tr!("common-rename"), Btn::Primary).clicked() && valid {
                         out = Some(resolve(ConflictResolution::Rename(text.trim().to_string()), false));
                     }
-                    if button(ui, "Back", Btn::Secondary).clicked() {
+                    if button(ui, tr!("dialogs-conflict-back"), Btn::Secondary).clicked() {
                         self.rename = None;
                     }
                     return;
                 }
                 match c.kind {
                     ConflictKind::MoveIntoSelf => {
-                        if button(ui, "Skip", Btn::Primary).clicked() {
+                        if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
                             out = Some(resolve(ConflictResolution::Skip, false));
                         }
                     }
                     ConflictKind::SameFile => {
-                        if button(ui, "Keep both", Btn::Primary).clicked() {
+                        if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Primary).clicked() {
                             out = Some(resolve(ConflictResolution::KeepBoth, all));
                         }
-                        if button(ui, "Skip", Btn::Secondary).clicked() {
+                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
                             out = Some(resolve(ConflictResolution::Skip, all));
                         }
                     }
                     _ => {
                         let dir = c.kind == ConflictKind::DirExists;
                         let (primary, res) = if dir {
-                            ("Merge", ConflictResolution::MergeDir)
+                            (tr!("dialogs-conflict-merge"), ConflictResolution::MergeDir)
                         } else {
-                            ("Replace", ConflictResolution::Overwrite)
+                            (tr!("dialogs-conflict-replace"), ConflictResolution::Overwrite)
                         };
                         if button(ui, primary, Btn::Primary).clicked() {
                             out = Some(resolve(res, all));
                         }
-                        if button(ui, "Keep both", Btn::Secondary).clicked() {
+                        if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Secondary).clicked() {
                             out = Some(resolve(ConflictResolution::KeepBoth, all));
                         }
-                        if button(ui, "Skip", Btn::Secondary).clicked() {
+                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
                             out = Some(resolve(ConflictResolution::Skip, all));
                         }
-                        let more = button(ui, "More\u{2026}", Btn::Ghost);
+                        let more = button(ui, tr!("dialogs-conflict-more"), Btn::Ghost);
                         egui::Popup::menu(&more).show(|ui| {
-                            ui.set_width(220.0);
+                            ui.set_min_width(220.0);
                             use crate::ui::widgets::menu_item;
-                            if dir && menu_item(ui, Some(ph::SWAP), "Replace folder", None, true).clicked() {
+                            if dir
+                                && menu_item(ui, Some(ph::SWAP), tr!("dialogs-conflict-replace-folder"), None, true)
+                                    .clicked()
+                            {
                                 out = Some(resolve(ConflictResolution::Overwrite, all));
                             }
                             if !dir {
-                                if menu_item(ui, Some(ph::CLOCK_CLOCKWISE), "Replace if newer", None, true).clicked() {
+                                if menu_item(
+                                    ui,
+                                    Some(ph::CLOCK_CLOCKWISE),
+                                    tr!("dialogs-conflict-replace-newer"),
+                                    None,
+                                    true,
+                                )
+                                .clicked()
+                                {
                                     out = Some(resolve(ConflictResolution::OverwriteIfNewer, all));
                                 }
-                                if menu_item(ui, Some(ph::ARROWS_OUT_SIMPLE), "Replace if larger", None, true).clicked()
+                                if menu_item(
+                                    ui,
+                                    Some(ph::ARROWS_OUT_SIMPLE),
+                                    tr!("dialogs-conflict-replace-larger"),
+                                    None,
+                                    true,
+                                )
+                                .clicked()
                                 {
                                     out = Some(resolve(ConflictResolution::OverwriteIfLarger, all));
                                 }
-                                if menu_item(ui, Some(ph::SCALES), "Replace if size differs", None, true).clicked() {
+                                if menu_item(
+                                    ui,
+                                    Some(ph::SCALES),
+                                    tr!("dialogs-conflict-replace-different"),
+                                    None,
+                                    true,
+                                )
+                                .clicked()
+                                {
                                     out = Some(resolve(ConflictResolution::OverwriteIfDifferent, all));
                                 }
                             }
-                            if menu_item(ui, Some(ph::PENCIL_SIMPLE), "Rename\u{2026}", None, true).clicked() {
+                            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("dialogs-conflict-rename"), None, true)
+                                .clicked()
+                            {
                                 self.rename = Some(c.suggested_name.clone());
                                 self.focus_rename = true;
                             }
@@ -419,7 +455,7 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     ui.painter().text(
         pos2(r.left() + 12.0, r.top() + 14.0),
         Align2::LEFT_CENTER,
-        caption.to_uppercase(),
+        super::caption_upper(caption),
         FontId::proportional(10.0),
         p.text_tertiary,
     );
@@ -435,13 +471,17 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     let dir = e.path.parent().map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned()).unwrap_or_default();
     let g = trunc_galley(ui.painter(), &dir, FontId::proportional(11.0), p.text_tertiary, tw);
     ui.painter().galley(pos2(x, thumb.top() + 20.0), g, p.text_tertiary);
-    let size = if e.is_dir_like() { "Folder".to_string() } else { format_size(e.size, SizeStyle::Binary) };
+    let size = if e.is_dir_like() {
+        tr!("dialogs-conflict-folder").to_string()
+    } else {
+        format_size(e.size, SizeStyle::Binary)
+    };
     let sy = thumb.top() + 46.0;
     let sg = ui.painter().layout_no_wrap(size, FontId::proportional(12.0), p.text_secondary);
     let sw = sg.size().x;
     ui.painter().galley(pos2(x, sy - sg.size().y / 2.0), sg, p.text_secondary);
     if larger {
-        tag(ui, pos2(x + sw + 8.0, sy), "Larger", p.accent);
+        tag(ui, pos2(x + sw + 8.0, sy), tr!("dialogs-conflict-larger"), p.accent);
     }
     let date = e
         .modified
@@ -452,6 +492,6 @@ fn entry_card(ui: &mut Ui, r: Rect, caption: &str, e: &EntryInfo, newer: bool, l
     let dw = dg.size().x;
     ui.painter().galley(pos2(x, dy - dg.size().y / 2.0), dg, p.text_secondary);
     if newer {
-        tag(ui, pos2(x + dw + 8.0, dy), "Newer", p.success);
+        tag(ui, pos2(x + dw + 8.0, dy), tr!("dialogs-conflict-newer"), p.success);
     }
 }

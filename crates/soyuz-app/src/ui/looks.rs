@@ -44,6 +44,38 @@ pub fn begin_frame(ctx: &egui::Context) {
     folder_colors::pump(ctx);
 }
 
+/// Translated name of tag color `i` (`TAG_NAMES` order).
+fn color_name(i: usize) -> &'static str {
+    match i {
+        0 => tr!("app-color-red"),
+        1 => tr!("app-color-orange"),
+        2 => tr!("app-color-yellow"),
+        3 => tr!("app-color-green"),
+        4 => tr!("app-color-cyan"),
+        5 => tr!("app-color-blue"),
+        6 => tr!("app-color-purple"),
+        _ => tr!("app-color-gray"),
+    }
+}
+
+/// Translated label of an emblem id (`EMBLEMS`).
+fn emblem_label(id: &str) -> &'static str {
+    match id {
+        "star" => tr!("app-emblem-star"),
+        "heart" => tr!("app-emblem-heart"),
+        "code" => tr!("app-emblem-code"),
+        "image" => tr!("app-emblem-image"),
+        "music" => tr!("app-emblem-music"),
+        "film" => tr!("app-emblem-film"),
+        "briefcase" => tr!("app-emblem-briefcase"),
+        "book" => tr!("app-emblem-book"),
+        "cloud" => tr!("app-emblem-cloud"),
+        "lock" => tr!("app-emblem-lock"),
+        "game" => tr!("app-emblem-game"),
+        _ => tr!("app-emblem-archive"),
+    }
+}
+
 /// Right-click → "Folder color" for the selected folders.
 pub fn folder_color_menu(ui: &mut Ui, dirs: &[PathBuf]) {
     if dirs.is_empty() {
@@ -51,13 +83,14 @@ pub fn folder_color_menu(ui: &mut Ui, dirs: &[PathBuf]) {
     }
     let p = palette(ui.ctx());
     let current = folder_colors::style_of(&dirs[0]).unwrap_or_default();
-    submenu(ui, Some(ph::PALETTE), "Folder color", |ui| {
+    submenu(ui, Some(ph::PALETTE), tr!("app-looks-folder-color"), |ui| {
         ui.set_width(210.0);
         // A row of color dots.
         ui.horizontal(|ui| {
             ui.add_space(6.0);
             ui.spacing_mut().item_spacing.x = 2.0;
-            for (i, name) in TAG_NAMES.iter().enumerate() {
+            for i in 0..TAG_NAMES.len() {
+                let name = color_name(i);
                 let c = p.tags[i];
                 let (r, resp) = ui.allocate_exact_size(vec2(22.0, 26.0), egui::Sense::click());
                 let selected = current.color == Some(FolderColor::Tag(i as u8));
@@ -67,30 +100,30 @@ pub fn folder_color_menu(ui: &mut Ui, dirs: &[PathBuf]) {
                 } else if resp.hovered() {
                     ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(1.0, p.border_strong));
                 }
-                crate::ui::a11y::button(&resp, &format!("{name} folder"));
-                if resp.on_hover_text(*name).clicked() {
+                crate::ui::a11y::button(&resp, &tr!("app-looks-color-folder", color = name));
+                if resp.on_hover_text(name).clicked() {
                     folder_colors::set_color(dirs, Some(FolderColor::Tag(i as u8)));
                     ui.close();
                 }
             }
         });
-        if menu_item(ui, Some(ph::PROHIBIT), "No color", None, current.color.is_some()).clicked() {
+        if menu_item(ui, Some(ph::PROHIBIT), tr!("app-looks-no-color"), None, current.color.is_some()).clicked() {
             folder_colors::set_color(dirs, None);
             ui.close();
         }
         menu_separator(ui);
-        submenu(ui, Some(ph::SPARKLE), "Emblem", |ui| {
+        submenu(ui, Some(ph::SPARKLE), tr!("app-looks-emblem"), |ui| {
             ui.set_width(180.0);
-            for (id, label, glyph) in EMBLEMS {
+            for (id, _, glyph) in EMBLEMS {
                 let on = current.emblem.as_deref() == Some(id);
-                let resp = menu_item(ui, Some(glyph), label, if on { Some("✓") } else { None }, true);
+                let resp = menu_item(ui, Some(glyph), emblem_label(id), if on { Some("✓") } else { None }, true);
                 if resp.clicked() {
                     folder_colors::set_emblem(dirs, if on { None } else { Some(id) });
                     ui.close();
                 }
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::PROHIBIT), "No emblem", None, current.emblem.is_some()).clicked() {
+            if menu_item(ui, Some(ph::PROHIBIT), tr!("app-looks-no-emblem"), None, current.emblem.is_some()).clicked() {
                 folder_colors::set_emblem(dirs, None);
                 ui.close();
             }

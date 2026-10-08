@@ -239,9 +239,9 @@ impl Terminal {
         self.backend.shared.idle_for()
     }
 
-    /// Visible screen text, rows joined with `\n` (trailing blanks trimmed).
-    #[cfg(test)]
-    pub(crate) fn screen_text(&self) -> String {
+    /// Visible screen text, rows joined with `\n` (trailing blanks trimmed). Also the
+    /// value of the terminal's accessibility node.
+    pub fn screen_text(&self) -> String {
         use alacritty_terminal::grid::Dimensions;
         use alacritty_terminal::index::{Column, Line};
         let t = self.backend.term.lock();

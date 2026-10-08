@@ -160,13 +160,13 @@ pub fn name_cmp(a: &str, b: &str) -> Ordering {
     soyuz_core::naming::natural_cmp(a, b, true)
 }
 
-/// Does `name` contain `needle` (already lowercase)? Returns the byte range.
+/// Does `name` contain `needle` (already folded with `fold_for_match`)? Returns the byte range.
 pub fn find_match(name: &str, needle_lower: &str) -> Option<(usize, usize)> {
     if needle_lower.is_empty() {
         return None;
     }
-    let lower = name.to_lowercase();
-    // Lowercasing can change byte lengths (rare); only trust ranges when it did not.
+    let lower = soyuz_core::fold_for_match(name);
+    // Folding can change byte lengths (rare); only trust ranges when it did not.
     let at = lower.find(needle_lower)?;
     if lower.len() == name.len() { Some((at, at + needle_lower.len())) } else { Some((0, 0)) }
 }
@@ -355,7 +355,7 @@ impl TreeModel {
     /// ancestors) are shown, searched through every loaded folder; otherwise the
     /// expanded folders are walked.
     pub fn flatten(&self, vis: Visibility, filter: &str) -> Flat {
-        let needle = filter.trim().to_lowercase();
+        let needle = soyuz_core::fold_for_match(filter.trim());
         let mut flat = Flat::default();
         for (ri, r) in self.roots.iter().enumerate() {
             if needle.is_empty() {
@@ -553,14 +553,14 @@ pub fn parent_row(rows: &[Row], i: usize) -> Option<usize> {
 /// Type-ahead: the next row (after `cur`, wrapping) whose name starts with `prefix`.
 /// Typing one letter repeatedly cycles through the rows starting with it.
 pub fn type_ahead(rows: &[Row], cur: Option<usize>, prefix: &str) -> Option<usize> {
-    let p = prefix.to_lowercase();
+    let p = soyuz_core::fold_for_match(prefix);
     if p.is_empty() || rows.is_empty() {
         return None;
     }
     let mut chars = p.chars();
     let first = chars.next()?;
     let repeated = chars.all(|c| c == first);
-    let starts = |j: usize, s: &str| rows[j].name.to_lowercase().starts_with(s);
+    let starts = |j: usize, s: &str| soyuz_core::fold_for_match(&rows[j].name).starts_with(s);
     let n = rows.len();
     let start = cur.unwrap_or(n - 1);
     if p.chars().count() > 1 && !repeated {

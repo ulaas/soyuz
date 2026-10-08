@@ -41,11 +41,11 @@ impl Change {
 
     pub fn label(self) -> &'static str {
         match self {
-            Change::Added => "added",
-            Change::Moved => "moved",
-            Change::Renamed => "renamed",
-            Change::Deleted => "deleted",
-            Change::Changed => "changed",
+            Change::Added => tr!("ai-diff-added"),
+            Change::Moved => tr!("ai-diff-moved"),
+            Change::Renamed => tr!("ai-diff-renamed"),
+            Change::Deleted => tr!("ai-diff-deleted"),
+            Change::Changed => tr!("ai-diff-changed"),
             Change::Context => "",
         }
     }
@@ -205,7 +205,7 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
                 color,
             );
         }
-        let resp = resp.on_hover_text(format!("{}\nClick to show it in the pane", child.path.display()));
+        let resp = resp.on_hover_text(tr!("ai-diff-reveal-tip", path = child.path.display().to_string()));
         if resp.clicked() {
             acts.push(PanelAct::Reveal(child.path.clone()));
         }
@@ -226,7 +226,7 @@ fn column(ui: &mut Ui, p: &Palette, title: &str, node: &Node, acts: &mut Vec<Pan
         let total = node.count();
         if total > MAX_ROWS {
             ui.label(
-                egui::RichText::new(format!("\u{2026} {} more", total - MAX_ROWS)).size(11.0).color(p.text_tertiary),
+                egui::RichText::new(tr!("ai-diff-more", count = total - MAX_ROWS)).size(11.0).color(p.text_tertiary),
             );
         }
     });
@@ -257,20 +257,21 @@ pub fn tree_diff(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelAct>
     let only_after = before.children.is_empty();
     let only_before = after.children.is_empty();
     if only_after || only_before {
-        column(ui, p, if only_after { "After" } else { "Before" }, if only_after { &after } else { &before }, acts, w);
+        let title = if only_after { tr!("ai-diff-after") } else { tr!("ai-diff-before") };
+        column(ui, p, title, if only_after { &after } else { &before }, acts, w);
     } else if w >= 420.0 {
         ui.horizontal_top(|ui| {
             let cw = (w - 12.0) / 2.0;
-            column(ui, p, "Before", &before, acts, cw);
+            column(ui, p, tr!("ai-diff-before"), &before, acts, cw);
             let (r, _) = ui.allocate_exact_size(vec2(1.0, 10.0), Sense::hover());
             ui.painter()
                 .line_segment([r.center_top(), pos2(r.center().x, r.top() + 400.0)], Stroke::new(1.0, p.border_subtle));
-            column(ui, p, "After", &after, acts, cw);
+            column(ui, p, tr!("ai-diff-after"), &after, acts, cw);
         });
     } else {
-        column(ui, p, "Before", &before, acts, w);
+        column(ui, p, tr!("ai-diff-before"), &before, acts, w);
         ui.add_space(4.0);
-        column(ui, p, "After", &after, acts, w);
+        column(ui, p, tr!("ai-diff-after"), &after, acts, w);
     }
     legend(ui, p, plan);
 }
@@ -349,14 +350,14 @@ pub fn rename_table(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelA
     ui.painter().text(
         pos2(h.left() + 24.0, h.center().y),
         Align2::LEFT_CENTER,
-        "Current name",
+        tr!("ai-diff-current-name"),
         FontId::proportional(10.5),
         p.text_tertiary,
     );
     ui.painter().text(
         pos2(h.left() + 30.0 + col, h.center().y),
         Align2::LEFT_CENTER,
-        "New name",
+        tr!("ai-diff-new-name"),
         FontId::proportional(10.5),
         p.text_tertiary,
     );
@@ -408,7 +409,7 @@ pub fn rename_table(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelA
     }
     if plan.items.len() > MAX_ROWS {
         ui.label(
-            egui::RichText::new(format!("\u{2026} {} more", plan.items.len() - MAX_ROWS))
+            egui::RichText::new(tr!("ai-diff-more", count = plan.items.len() - MAX_ROWS))
                 .size(11.0)
                 .color(p.text_tertiary),
         );

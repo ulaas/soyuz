@@ -51,7 +51,8 @@ pub fn convert(n: TreeNode) -> SubTree {
     let is_dir = !other
         && (has_children || n.files != 1 || std::fs::symlink_metadata(&n.path).map(|m| m.is_dir()).unwrap_or(false));
     let complete = !(is_dir && !has_children && n.files > 0);
-    let name = if other { "Smaller items".to_string() } else { soyuz_core::entry::display_name(&n.path) };
+    let name =
+        if other { tr!("tools-treemap-smaller-items").to_string() } else { soyuz_core::entry::display_name(&n.path) };
     SubTree {
         name,
         path: n.path,
@@ -78,6 +79,13 @@ pub struct Node {
     pub parent: Option<usize>,
     /// Sorted by bytes, descending.
     pub children: Vec<usize>,
+}
+
+impl Node {
+    /// Display name (the folded node follows the current UI language).
+    pub fn label(&self) -> &str {
+        if self.other { tr!("tools-treemap-smaller-items") } else { &self.name }
+    }
 }
 
 /// Node arena; index 0 is the root.

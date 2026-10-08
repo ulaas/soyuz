@@ -17,8 +17,10 @@ use super::{CancelFlag, TaskId, job_label, label_task};
 pub struct Submitted {
     /// The job, for plans that run one.
     pub job: Option<JobId>,
-    /// What happened for app actions (tags, custom commands, undo).
+    /// What happened for app actions (tags, custom commands, undo), for the model.
     pub note: String,
+    /// The same for the chat, in the UI language (empty: show `note`).
+    pub shown: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -35,7 +37,7 @@ impl Outcome {
         matches!(self, Outcome::Done(s) if s.items_failed == 0)
     }
 
-    /// One line for the chat and the model.
+    /// One line for the model and the audit log (English).
     pub fn describe(&self) -> String {
         match self {
             Outcome::Done(s) if s.items_failed == 0 => {
@@ -50,6 +52,28 @@ impl Outcome {
             Outcome::Failed(e) => format!("failed: {e}"),
             Outcome::Cancelled => "cancelled".into(),
             Outcome::TimedOut => "still running (time limit reached)".into(),
+        }
+    }
+
+    /// [`Outcome::describe`] for the chat, in the UI language.
+    pub fn label(&self) -> String {
+        match self {
+            Outcome::Done(s) if s.items_failed == 0 => {
+                tr!("ai-outcome-done", ok = s.items_ok, skipped = s.items_skipped)
+            }
+            Outcome::Done(s) => match s.errors.first() {
+                Some((p, e)) => tr!(
+                    "ai-outcome-errors-first",
+                    ok = s.items_ok,
+                    failed = s.items_failed,
+                    path = p.display().to_string(),
+                    error = e.to_string()
+                ),
+                None => tr!("ai-outcome-errors", ok = s.items_ok, failed = s.items_failed),
+            },
+            Outcome::Failed(e) => tr!("ai-outcome-failed", error = e),
+            Outcome::Cancelled => tr!("ai-outcome-cancelled").into(),
+            Outcome::TimedOut => tr!("ai-outcome-timed-out").into(),
         }
     }
 }
@@ -115,13 +139,13 @@ impl Executor for EngineExecutor {
         match &plan.action {
             PlanAction::Job(_) => {
                 let spec = task_spec(task, plan).ok_or("no job")?;
-                Ok(Submitted { job: Some(self.engine.submit(spec)), note: String::new() })
+                Ok(Submitted { job: Some(self.engine.submit(spec)), note: String::new(), shown: String::new() })
             }
             PlanAction::App { op, args } => {
                 self.app_actions.lock().push((op.clone(), args.clone()));
-                Ok(Submitted { job: None, note: format!("{op} done") })
+                Ok(Submitted { job: None, note: format!("{op} done"), shown: String::new() })
             }
-            PlanAction::None => Ok(Submitted { job: None, note: "nothing to do".into() }),
+            PlanAction::None => Ok(Submitted { job: None, note: "nothing to do".into(), shown: String::new() }),
         }
     }
 
@@ -173,13 +197,13 @@ pub fn undo_entries(
             break;
         }
         let Some(job) = engine.undo(h) else {
-            failed.push(format!("history entry {} cannot be undone now", h.0));
+            failed.push(tr!("ai-undo-entry-unavailable", id = h.0.to_string()));
             continue;
         };
         on_job(job);
         match wait_engine(engine, job, cancel, Instant::now() + Duration::from_secs(600)) {
             Outcome::Done(s) if s.items_failed == 0 => undone += 1,
-            o => failed.push(format!("history entry {}: {}", h.0, o.describe())),
+            o => failed.push(tr!("ai-undo-entry-failed", id = h.0.to_string(), outcome = o.label())),
         }
     }
     (undone, failed)

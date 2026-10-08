@@ -79,7 +79,7 @@ fn read_at<R: Read + Seek + ?Sized>(r: &mut R, pos: u64, buf: &mut [u8]) -> std:
 // ---- WAV ----------------------------------------------------------------------------
 
 fn wav(b: &[u8], out: &mut Vec<Field>) {
-    push(out, "Format", "WAVE audio");
+    push(out, "Format", tr!("services-media-wave"));
     let mut at = 12;
     let mut byte_rate = 0u32;
     while at + 8 <= b.len() {
@@ -98,7 +98,7 @@ fn wav(b: &[u8], out: &mut Vec<Field>) {
                 if fmt == 1 {
                     "PCM".to_string()
                 } else if fmt == 3 {
-                    "IEEE float".into()
+                    tr!("services-media-ieee-float").into()
                 } else {
                     format!("0x{fmt:04X}")
                 },
@@ -106,7 +106,7 @@ fn wav(b: &[u8], out: &mut Vec<Field>) {
             push(out, "Sample rate", format!("{rate} Hz"));
             push(out, "Channels", channel_label(channels as u32));
             if bits > 0 {
-                push(out, "Bit depth", format!("{bits}-bit"));
+                push(out, "Bit depth", tr!("services-media-bits", bits = bits.to_string()));
             }
         } else if id == b"data" && byte_rate > 0 {
             push(out, "Duration", format_duration(size as f64 / byte_rate as f64));
@@ -122,8 +122,8 @@ fn wav(b: &[u8], out: &mut Vec<Field>) {
 
 fn channel_label(n: u32) -> String {
     match n {
-        1 => "Mono".into(),
-        2 => "Stereo".into(),
+        1 => tr!("services-media-mono").into(),
+        2 => tr!("services-media-stereo").into(),
         6 => "5.1".into(),
         8 => "7.1".into(),
         n => n.to_string(),
@@ -151,7 +151,7 @@ fn avi(b: &[u8], out: &mut Vec<Field>) {
 // ---- FLAC ---------------------------------------------------------------------------
 
 fn flac(b: &[u8], out: &mut Vec<Field>) {
-    push(out, "Format", "FLAC audio");
+    push(out, "Format", tr!("services-media-flac"));
     // First metadata block must be STREAMINFO (type 0), 34 bytes, right after "fLaC".
     if b.get(4).map(|t| t & 0x7F) != Some(0) || b.len() < 8 + 18 {
         return;
@@ -163,7 +163,7 @@ fn flac(b: &[u8], out: &mut Vec<Field>) {
     let samples = (u64::from(s[13] & 0x0F) << 32) | u64::from(u32::from_be_bytes([s[14], s[15], s[16], s[17]]));
     push(out, "Sample rate", format!("{rate} Hz"));
     push(out, "Channels", channel_label(channels));
-    push(out, "Bit depth", format!("{bits}-bit"));
+    push(out, "Bit depth", tr!("services-media-bits", bits = bits.to_string()));
     if rate > 0 && samples > 0 {
         push(out, "Duration", format_duration(samples as f64 / rate as f64));
     }
@@ -256,7 +256,7 @@ fn mp3(b: &[u8], len: u64, out: &mut Vec<Field>) {
     }
     // First frame after the tag (search a little in case of padding / junk).
     let frame = (audio_start..b.len().saturating_sub(4)).take(16 * 1024).find_map(|i| mpeg_frame(b, i));
-    push(out, "Format", frame.map_or("MP3 audio", |f| f.3));
+    push(out, "Format", frame.map_or(tr!("services-media-mp3"), |f| f.3));
     if let Some((br, sr, ch, _)) = frame {
         push(out, "Bitrate", format!("{br} kbps"));
         push(out, "Sample rate", format!("{sr} Hz"));
@@ -335,8 +335,8 @@ fn mp4<R: Read + Seek + ?Sized>(r: &mut R, len: u64, out: &mut Vec<Field>) {
         }
     }
     let container = match brand.as_str() {
-        "qt" => "QuickTime movie".to_string(),
-        "M4A" | "M4B" => "MPEG-4 audio".into(),
+        "qt" => tr!("services-media-quicktime").to_string(),
+        "M4A" | "M4B" => tr!("services-media-mpeg4-audio").into(),
         "" => "MPEG-4".into(),
         b => format!("MPEG-4 ({b})"),
     };
@@ -415,9 +415,9 @@ fn moov_fields(moov: &[u8], out: &mut Vec<Field>) {
         push(out, "Dimensions", format!("{w} × {h}"));
     }
     let tracks = match (video, audio) {
-        (true, true) => "Video + audio",
-        (true, false) => "Video",
-        (false, true) => "Audio",
+        (true, true) => tr!("services-media-tracks-av"),
+        (true, false) => tr!("services-media-tracks-video"),
+        (false, true) => tr!("services-media-tracks-audio"),
         _ => "",
     };
     push(out, "Tracks", tracks);

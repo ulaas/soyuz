@@ -76,22 +76,18 @@ fn empty(ui: &mut Ui, app: &SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     ui.vertical_centered(|ui| {
         ui.label(icons::icon_fill(ph::SPARKLE, 30.0).color(p.accent));
         ui.add_space(4.0);
-        ui.label(RichText::new("Ask about this folder").font(semibold(15.0)).color(p.text_primary));
-        ui.label(
-            RichText::new("The assistant looks around with read tools and proposes every change as a plan you approve. Approved plans run as normal, undoable jobs.")
-                .size(11.5)
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("ai-empty-title")).font(semibold(15.0)).color(p.text_primary));
+        ui.label(RichText::new(tr!("ai-empty-body")).size(11.5).color(p.text_tertiary));
     });
     ui.add_space(14.0);
     let has_sel = !app.ws.pane().selection.is_empty();
     let mut ideas: Vec<(&str, &str, String)> = vec![
-        (ph::MAGIC_WAND, "Organize this folder", "/organize".into()),
-        (ph::QUESTION, "What is in here?", "/explain".into()),
-        (ph::COPY, "Find duplicates", "/dedupe".into()),
+        (ph::MAGIC_WAND, tr!("ai-idea-organize"), "/organize".into()),
+        (ph::QUESTION, tr!("ai-idea-explain"), "/explain".into()),
+        (ph::COPY, tr!("ai-idea-dedupe"), "/dedupe".into()),
     ];
     if has_sel {
-        ideas.insert(0, (ph::TEXT_T, "Suggest better names for the selection", "/rename".into()));
+        ideas.insert(0, (ph::TEXT_T, tr!("ai-idea-rename"), "/rename".into()));
     }
     for (icon, label, prompt) in ideas {
         let w = ui.available_width();
@@ -166,7 +162,7 @@ fn assistant(ui: &mut Ui, p: &Palette, text: &str, reasoning: &str, streaming: b
         ui.vertical(|ui| {
             ui.set_width(ui.available_width());
             if !reasoning.trim().is_empty() {
-                egui::CollapsingHeader::new(RichText::new("Thinking").size(11.0).color(p.text_tertiary))
+                egui::CollapsingHeader::new(RichText::new(tr!("ai-thinking")).size(11.0).color(p.text_tertiary))
                     .id_salt(ui.next_auto_id())
                     .default_open(false)
                     .show(ui, |ui| {
@@ -273,22 +269,18 @@ fn confirm(ui: &mut Ui, p: &Palette, estimate: f64, model: &str, acts: &mut Vec<
             ui.horizontal(|ui| {
                 ui.label(icons::icon(ph::COINS, 16.0).color(p.warning));
                 ui.label(
-                    RichText::new(format!("This task may cost about ${estimate:.2}"))
+                    RichText::new(tr!("ai-confirm-cost", cost = soyuz_core::locale::format_decimal(estimate, 2)))
                         .font(semibold(13.0))
                         .color(p.text_primary),
                 );
             });
-            ui.label(
-                RichText::new(format!("Estimated for {model} over a full run. You can stop it at any time with Esc."))
-                    .size(11.5)
-                    .color(p.text_secondary),
-            );
+            ui.label(RichText::new(tr!("ai-confirm-body", model = model)).size(11.5).color(p.text_secondary));
             ui.add_space(6.0);
             ui.horizontal(|ui| {
-                if button(ui, Some(ph::PLAY), "Start", Tone::Primary, true).clicked() {
+                if button(ui, Some(ph::PLAY), tr!("ai-start"), Tone::Primary, true).clicked() {
                     acts.push(PanelAct::Confirm(true));
                 }
-                if button(ui, None, "Cancel", Tone::Normal, true).clicked() {
+                if button(ui, None, tr!("common-cancel"), Tone::Normal, true).clicked() {
                     acts.push(PanelAct::Confirm(false));
                 }
             });
@@ -309,16 +301,17 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
     ui.painter()
         .line_segment([pos2(r.left(), r.center().y), pos2(r.right(), r.center().y)], Stroke::new(1.0, p.border_subtle));
     let changes = t.executed.len();
-    let mut label = t.reason.describe();
+    let mut parts = vec![t.reason.label()];
     if changes > 0 {
-        label.push_str(&format!(" \u{00b7} {changes} change{}", if changes == 1 { "" } else { "s" }));
+        parts.push(tr!("ai-end-changes", count = changes));
     }
     if t.usage.total() > 0 {
-        label.push_str(&format!(" \u{00b7} {} tokens", tokens(t.usage.total())));
+        parts.push(tr!("ai-end-tokens", tokens = tokens(t.usage.total())));
     }
     if let Some(c) = t.cost {
-        label.push_str(&format!(" \u{00b7} ${c:.3}"));
+        parts.push(tr!("ai-end-cost", cost = soyuz_core::locale::format_decimal(c, 3)));
     }
+    let label = parts.join(" \u{00b7} ");
     let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.0), color);
     let gw = g.size().x + 26.0;
     let pill = egui::Rect::from_center_size(r.center(), vec2(gw.min(w), 18.0));
@@ -326,10 +319,10 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
     ui.painter().text(pos2(pill.left() + 9.0, pill.center().y), Align2::CENTER_CENTER, icon, icons::font(11.0), color);
     ui.painter().galley(pos2(pill.left() + 19.0, pill.center().y - g.size().y / 2.0), g, color);
     if let Finish::Error(e) = &t.reason
-        && e.contains("Settings")
+        && (e.contains("Settings") || e.contains(tr!("ai-settings-word")))
     {
         ui.horizontal(|ui| {
-            if button(ui, Some(ph::GEAR_SIX), "Open AI settings", Tone::Normal, true).clicked() {
+            if button(ui, Some(ph::GEAR_SIX), tr!("ai-open-settings"), Tone::Normal, true).clicked() {
                 acts.push(PanelAct::OpenSettings);
             }
         });
@@ -340,15 +333,15 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
     ui.horizontal_wrapped(|ui| {
         match &t.undo {
             UndoState::None => {
-                if button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Undo everything the assistant did", Tone::Normal, true)
-                    .on_hover_text("Undo every job of this task, newest first (history undo).")
+                if button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("ai-undo-all"), Tone::Normal, true)
+                    .on_hover_text(tr!("ai-undo-all-tip"))
                     .clicked()
                 {
                     acts.push(PanelAct::Undo(t.task));
                 }
             }
             UndoState::Running => {
-                button(ui, Some(ph::HOURGLASS), "Undoing\u{2026}", Tone::Normal, false);
+                button(ui, Some(ph::HOURGLASS), tr!("ai-undoing"), Tone::Normal, false);
             }
             UndoState::Done(msg) => {
                 ui.label(RichText::new(msg).size(11.5).color(p.text_secondary));
@@ -358,8 +351,8 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
             match &mut t.recipe_name {
                 None => {
                     if t.saved.is_none()
-                        && button(ui, Some(ph::FLOPPY_DISK), "Save as recipe", Tone::Quiet, true)
-                            .on_hover_text("Save these steps as a TOML recipe you can re-run later without a model (same preview and approval).")
+                        && button(ui, Some(ph::FLOPPY_DISK), tr!("ai-save-recipe"), Tone::Quiet, true)
+                            .on_hover_text(tr!("ai-save-recipe-tip"))
                             .clicked()
                     {
                         t.recipe_name = Some(String::new());
@@ -367,16 +360,21 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
                 }
                 Some(name) => {
                     let resp = ui.add(
-                        TextEdit::singleline(name).hint_text("Recipe name").desired_width(150.0).font(FontId::proportional(12.0)),
+                        TextEdit::singleline(name)
+                            .hint_text(tr!("ai-recipe-name-hint"))
+                            .desired_width(150.0)
+                            .font(FontId::proportional(12.0)),
                     );
                     resp.request_focus();
                     let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                    if (button(ui, Some(ph::CHECK), "Save", Tone::Primary, !name.trim().is_empty()).clicked() || enter)
+                    if (button(ui, Some(ph::CHECK), tr!("common-save"), Tone::Primary, !name.trim().is_empty())
+                        .clicked()
+                        || enter)
                         && !name.trim().is_empty()
                     {
                         acts.push(PanelAct::SaveRecipe(t.task, name.trim().to_string()));
                         t.recipe_name = None;
-                        t.saved = Some("Saving\u{2026}".into());
+                        t.saved = Some(tr!("ai-saving").into());
                     }
                     if ui.input(|i| i.key_pressed(Key::Escape)) {
                         t.recipe_name = None;
@@ -419,13 +417,19 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
                     ui.horizontal(|ui| {
                         ui.label(icons::icon(ph::HOURGLASS, 13.0).color(p.warning));
                         ui.label(
-                            RichText::new(format!("{} plans wait for your approval", pending.len()))
+                            RichText::new(tr!("ai-pending-plans", count = pending.len()))
                                 .size(12.0)
                                 .color(p.text_primary),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if button(ui, Some(ph::CHECKS), "Approve all", Tone::Primary, pending.iter().any(|e| *e))
-                                .clicked()
+                            if button(
+                                ui,
+                                Some(ph::CHECKS),
+                                tr!("ai-approve-all"),
+                                Tone::Primary,
+                                pending.iter().any(|e| *e),
+                            )
+                            .clicked()
                             {
                                 acts.push(PanelAct::ApproveAllPending(task));
                             }
@@ -445,14 +449,14 @@ fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathB
     let mut out: Vec<(String, String, Vec<PathBuf>)> = Vec::new();
     let sel: Vec<PathBuf> = pane.selected_entries().iter().map(|e| e.path.clone()).collect();
     if !sel.is_empty() && "selection".contains(&q) {
-        out.push((ph::SELECTION_ALL.into(), format!("selection ({} items)", sel.len()), sel));
+        out.push((ph::SELECTION_ALL.into(), tr!("ai-mention-selection", count = sel.len()), sel));
     }
     if let Location::Dir(d) = &pane.location
         && ("folder".contains(&q) || "here".contains(&q))
     {
         out.push((
             ph::FOLDER_OPEN.into(),
-            format!("this folder: {}", soyuz_core::entry::display_name(d)),
+            tr!("ai-mention-folder", name = soyuz_core::entry::display_name(d)),
             vec![d.clone()],
         ));
     }
@@ -462,7 +466,7 @@ fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathB
             if (q.is_empty() || name.to_lowercase().contains(&q) || "tab".contains(&q))
                 && !out.iter().any(|(_, _, v)| v.len() == 1 && &v[0] == d)
             {
-                out.push((ph::BROWSERS.into(), format!("tab: {name}"), vec![d.clone()]));
+                out.push((ph::BROWSERS.into(), tr!("ai-mention-tab", name = &name), vec![d.clone()]));
             }
         }
     }
@@ -513,8 +517,8 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         let matches: Vec<_> = state::SLASH.iter().filter(|(c, _, _)| c.starts_with(&text.to_lowercase())).collect();
         if !matches.is_empty() {
             popup_frame(ui, p, |ui| {
-                for (c, d, _) in &matches {
-                    if pick_row(ui, p, ph::LIGHTNING, c, d) {
+                for (c, _, _) in &matches {
+                    if pick_row(ui, p, ph::LIGHTNING, c, state::slash_description(c)) {
                         app.ai.panel.composer = format!("{c} ");
                         app.ai.panel.focus_composer = true;
                     }
@@ -569,11 +573,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         .inner_margin(Margin { left: 10, right: 6, top: 8, bottom: 6 })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            let hint = if running {
-                "The assistant is working\u{2026}  (Esc stops it)"
-            } else {
-                "Ask or give a task\u{2026}   / commands \u{00b7} @ mention"
-            };
+            let hint = if running { tr!("ai-composer-busy") } else { tr!("ai-composer-hint") };
             let resp = ui.add(
                 TextEdit::multiline(&mut app.ai.panel.composer)
                     .id(id)
@@ -588,19 +588,17 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
             }
             ui.horizontal(|ui| {
                 if ui.available_width() > 420.0 {
-                    ui.label(
-                        RichText::new("Enter to send \u{00b7} Shift+Enter new line").size(10.5).color(p.text_tertiary),
-                    );
+                    ui.label(RichText::new(tr!("ai-composer-keys")).size(10.5).color(p.text_tertiary));
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if running {
-                        if button(ui, Some(ph::STOP), "Stop", Tone::Danger, true).clicked() {
+                        if button(ui, Some(ph::STOP), tr!("ai-stop"), Tone::Danger, true).clicked() {
                             acts.push(PanelAct::Stop);
                         }
                     } else if button(
                         ui,
                         Some(ph::PAPER_PLANE_RIGHT),
-                        "Send",
+                        tr!("ai-send"),
                         Tone::Primary,
                         !app.ai.panel.composer.trim().is_empty(),
                     )
@@ -608,7 +606,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                     {
                         acts.push(PanelAct::Send);
                     }
-                    if chip(ui, Some(ph::MAGNIFYING_GLASS), "Smart search", app.ai.smart.open).clicked() {
+                    if chip(ui, Some(ph::MAGNIFYING_GLASS), tr!("ai-smart-chip"), app.ai.smart.open).clicked() {
                         app.ai.smart.open = !app.ai.smart.open;
                         app.ai.smart.focus = app.ai.smart.open;
                     }
@@ -633,7 +631,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
             ui.painter().text(
                 frame_rect.center(),
                 Align2::CENTER_CENTER,
-                format!("Mention {n} item{}", if n == 1 { "" } else { "s" }),
+                tr!("ai-drop-mention", count = n),
                 semibold(12.5),
                 p.accent,
             );
@@ -656,9 +654,8 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
 fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     let ext = app.ai.external.tools();
     let status = app.ai.external.status();
-    let label = if ext.is_empty() { "Tools".to_string() } else { format!("Tools \u{00b7} {} connected", ext.len()) };
-    let r = super::chip_menu(ui, Some(ph::PLUGS), &label, !ext.is_empty())
-        .on_hover_text("Tools the assistant can use: Soyuz's own and those of connected MCP servers");
+    let label = if ext.is_empty() { tr!("ai-tools").to_string() } else { tr!("ai-tools-connected", count = ext.len()) };
+    let r = super::chip_menu(ui, Some(ph::PLUGS), &label, !ext.is_empty()).on_hover_text(tr!("ai-tools-tip"));
     let max_risk = crate::ai::agent::Limits::from_config(&app.config.ai.agent).max_risk;
     let connecting = app.ai.external_connecting();
     let mut insert: Option<String> = None;
@@ -666,33 +663,32 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
         ui.set_width(330.0);
         let builtin = soyuz_ai::tools::catalog().iter().filter(|d| d.risk <= max_risk).count();
         crate::ui::widgets::menu_caption(ui, "Soyuz");
+        let ceiling = match max_risk {
+            soyuz_ai::tools::Risk::Read => "read",
+            soyuz_ai::tools::Risk::Write => "write",
+            soyuz_ai::tools::Risk::Destructive => "destructive",
+        };
         ui.label(
-            RichText::new(format!(
-                "{builtin} built-in tools (files, search, jobs, UI) \u{00b7} up to {max_risk:?} risk"
-            ))
-            .size(11.0)
-            .color(p.text_tertiary),
+            RichText::new(tr!("ai-tools-builtin", count = builtin, risk = ceiling)).size(11.0).color(p.text_tertiary),
         );
         crate::ui::widgets::menu_separator(ui);
-        crate::ui::widgets::menu_caption(ui, "Connected tools (MCP servers)");
+        crate::ui::widgets::menu_caption(ui, tr!("ai-tools-caption-connected"));
         if status.is_empty() {
-            ui.label(
-                RichText::new("No external MCP servers. Add one in Settings \u{2192} AI \u{2192} Connections.")
-                    .size(11.0)
-                    .color(p.text_tertiary),
-            );
+            ui.label(RichText::new(tr!("ai-tools-none")).size(11.0).color(p.text_tertiary));
         }
         for (name, st) in &status {
             let (icon, color, text) = match st {
                 soyuz_mcp::client::ServerStatus::Connected { tools, .. } => {
-                    (ph::PLUGS_CONNECTED, p.success, format!("{tools} tools"))
+                    (ph::PLUGS_CONNECTED, p.success, tr!("ai-tools-count", count = *tools))
                 }
                 soyuz_mcp::client::ServerStatus::Failed(e) => (ph::WARNING, p.danger, e.clone()),
-                soyuz_mcp::client::ServerStatus::Disabled => (ph::PROHIBIT, p.text_tertiary, "disabled".into()),
+                soyuz_mcp::client::ServerStatus::Disabled => {
+                    (ph::PROHIBIT, p.text_tertiary, tr!("ai-tools-disabled").into())
+                }
                 soyuz_mcp::client::ServerStatus::NotConnected => (
                     ph::HOURGLASS,
                     p.text_tertiary,
-                    if connecting { "connecting\u{2026}".into() } else { "not connected".into() },
+                    if connecting { tr!("ai-tools-connecting").into() } else { tr!("ai-tools-not-connected").into() },
                 ),
             };
             ui.horizontal(|ui| {
@@ -703,19 +699,19 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
             for t in ext.iter().filter(|t| &t.server == name) {
                 let allowed = t.risk <= max_risk;
                 let risk = match t.risk {
-                    soyuz_ai::tools::Risk::Read => "read",
-                    soyuz_ai::tools::Risk::Write => "write",
-                    soyuz_ai::tools::Risk::Destructive => "destructive",
+                    soyuz_ai::tools::Risk::Read => tr!("ai-risk-read"),
+                    soyuz_ai::tools::Risk::Write => tr!("ai-risk-write"),
+                    soyuz_ai::tools::Risk::Destructive => tr!("ai-risk-destructive"),
                 };
                 let gate = if !allowed {
-                    "above the assistant's risk ceiling"
+                    tr!("ai-tools-gate-ceiling")
                 } else if t.risk == soyuz_ai::tools::Risk::Read || !t.require_approval {
-                    "runs without asking"
+                    tr!("ai-tools-gate-free")
                 } else {
-                    "asks for approval"
+                    tr!("ai-tools-gate-ask")
                 };
                 let icon = if t.risk == soyuz_ai::tools::Risk::Read { ph::EYE } else { ph::LIGHTNING };
-                let tip = format!("{}\n\nRisk: {risk} \u{00b7} {gate}", t.spec.description);
+                let tip = format!("{}\n\n{}", t.spec.description, tr!("ai-tools-risk-line", risk = risk, gate = gate));
                 let resp = crate::ui::widgets::menu_item(
                     ui,
                     Some(icon),
@@ -731,7 +727,7 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
             }
         }
         crate::ui::widgets::menu_separator(ui);
-        if crate::ui::widgets::menu_item(ui, Some(ph::GEAR_SIX), "Manage connections\u{2026}", None, true).clicked() {
+        if crate::ui::widgets::menu_item(ui, Some(ph::GEAR_SIX), tr!("ai-manage-connections"), None, true).clicked() {
             acts.push(PanelAct::OpenSettings);
             ui.close();
         }
@@ -741,7 +737,8 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
         if !c.is_empty() && !c.ends_with(char::is_whitespace) {
             c.push(' ');
         }
-        c.push_str(&format!("Use the `{name}` tool to "));
+        c.push_str(&tr!("ai-use-tool", name = &name));
+        c.push(' ');
         app.ai.panel.focus_composer = true;
     }
 }

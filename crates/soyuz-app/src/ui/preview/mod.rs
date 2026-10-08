@@ -152,14 +152,16 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let header = Rect::from_min_size(card.min, vec2(card.width(), 48.0));
             let (glyph, color, name, sub) = match &st.entry {
                 Some(e) => {
-                    let kind = st.loaded.as_ref().map(|l| l.kind.label().to_string()).unwrap_or_default();
+                    let kind = st.loaded.as_ref().map(|l| kind_label(l.kind).to_string()).unwrap_or_default();
                     (file_icons::glyph(e), file_icons::color(e, &p), e.name.clone(), kind)
                 }
-                None => (ph::EYE, p.text_tertiary, "Preview".to_string(), String::new()),
+                None => (ph::EYE, p.text_tertiary, tr!("views-preview-title").to_string(), String::new()),
             };
-            let name = if name.is_empty() { "Preview".into() } else { name };
+            let name = if name.is_empty() { tr!("views-preview-title").into() } else { name };
             let (glyph, color, name, sub) = match &pair {
-                Some((a, b)) => (ph::GIT_DIFF, p.accent, format!("{} ↔ {}", a.name, b.name), "Diff".to_string()),
+                Some((a, b)) => {
+                    (ph::GIT_DIFF, p.accent, format!("{} ↔ {}", a.name, b.name), tr!("views-preview-diff").to_string())
+                }
                 None => (glyph, color, name, sub),
             };
             ui.painter().text(
@@ -184,7 +186,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let hex_on = st.force_hex;
             let hresp = ui
                 .scope_builder(UiBuilder::new().max_rect(hex_r), |ui| {
-                    icon_toggle(ui, ph::BINARY, "Show as hex", can_hex, hex_on)
+                    icon_toggle(ui, ph::BINARY, tr!("views-preview-show-hex"), can_hex, hex_on)
                 })
                 .inner;
             if hresp.clicked() {
@@ -193,7 +195,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let close_r = Rect::from_min_size(pos2(header.right() - 34.0, header.center().y - 14.0), vec2(28.0, 28.0));
             let cresp = ui
                 .scope_builder(UiBuilder::new().max_rect(close_r), |ui| {
-                    icon_toggle(ui, ph::X, "Close preview  (Alt+P)", true, false)
+                    icon_toggle(ui, ph::X, tr!("views-preview-close"), true, false)
                 })
                 .inner;
             close = cresp.clicked();
@@ -242,7 +244,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 );
                 let mut ichild = ui.new_child(UiBuilder::new().max_rect(ir.shrink2(vec2(14.0, 10.0))));
                 ScrollArea::vertical().id_salt("preview.info").auto_shrink([false, false]).show(&mut ichild, |ui| {
-                    ui.label(egui::RichText::new("INFO").size(10.5).color(p.text_tertiary).strong());
+                    ui.label(egui::RichText::new(tr!("views-preview-info")).size(10.5).color(p.text_tertiary).strong());
                     ui.add_space(4.0);
                     info_grid(ui, &rows, 78.0);
                 });
@@ -262,5 +264,28 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             });
         }
         None => {}
+    }
+}
+
+/// Translated label of a preview category (`Kind::label` stays English for logs).
+pub fn kind_label(k: crate::services::preview::Kind) -> &'static str {
+    use crate::services::preview::Kind;
+    match k {
+        Kind::Folder => tr!("views-preview-kind-folder"),
+        Kind::Image => tr!("views-preview-kind-image"),
+        Kind::Svg => tr!("views-preview-kind-svg"),
+        Kind::Text => tr!("views-preview-kind-text"),
+        Kind::Markdown => "Markdown",
+        Kind::Archive => tr!("views-preview-kind-archive"),
+        Kind::Audio => tr!("views-preview-kind-audio"),
+        Kind::Video => tr!("views-preview-kind-video"),
+        Kind::Pdf => tr!("views-preview-kind-pdf"),
+        Kind::Binary => tr!("views-preview-kind-binary"),
+        Kind::Document => tr!("views-preview-kind-document"),
+        Kind::Spreadsheet => tr!("views-preview-kind-spreadsheet"),
+        Kind::Presentation => tr!("views-preview-kind-presentation"),
+        Kind::Ebook => tr!("views-preview-kind-ebook"),
+        Kind::Font => tr!("views-preview-kind-font"),
+        Kind::Model => tr!("views-preview-kind-model"),
     }
 }

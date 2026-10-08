@@ -20,10 +20,10 @@ const CTX_GENERAL: &str = "General";
 pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let mut any = false;
-    any |= group(ui, q, CTX_GENERAL, "Startup", |r| {
+    any |= group(ui, q, CTX_GENERAL, tr!("settings-general-startup"), |r| {
         r.row_kw(
-            "Start in",
-            "Folder shown when Soyuz starts without a saved session.",
+            tr!("settings-general-start-in"),
+            tr!("settings-general-start-in-desc"),
             "start location home last",
             |ui| {
                 let mut mode = match d.general.start_location.trim().to_ascii_lowercase().as_str() {
@@ -35,7 +35,15 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 if mode == 2 {
                     text(ui, &mut d.general.start_location, "C:\\Users\\me\\Projects", 200.0);
                 }
-                segmented(ui, &mut mode, &[(0, "Home"), (1, "Last folder"), (2, "Folder")]);
+                segmented(
+                    ui,
+                    &mut mode,
+                    &[
+                        (0, tr!("settings-general-start-home")),
+                        (1, tr!("settings-general-start-last")),
+                        (2, tr!("settings-general-start-folder")),
+                    ],
+                );
                 if mode != before {
                     d.general.start_location = match mode {
                         0 => "home".into(),
@@ -45,275 +53,311 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             },
         );
-        r.row("Restore tabs on startup", "Reopen the tabs, panes and folders of the last session.", |ui| {
+        r.row(tr!("settings-general-restore-tabs"), tr!("settings-general-restore-tabs-desc"), |ui| {
             switch(ui, &mut d.behaviour.restore_session);
         });
-        r.row_kw("Language", "Only English is available for now.", "locale translation", |ui| {
-            ui.add_enabled_ui(false, |ui| text(ui, &mut d.general.language, "en", 80.0));
-        });
-    });
-    any |= group(ui, q, CTX_GENERAL, "Files", |r| {
         r.row_kw(
-            "Show hidden files",
-            "Dotfiles and items with the hidden attribute (Ctrl+H toggles).",
-            "dotfiles",
+            tr!("settings-general-language"),
+            tr!("settings-general-language-desc"),
+            "language locale translation dil türkçe english",
             |ui| {
-                switch(ui, &mut d.general.show_hidden);
+                let choices = crate::i18n::language_choices();
+                // "en" / "tr" (older configs) select their full tag.
+                let mut sel = match crate::i18n::negotiate(&d.general.language) {
+                    _ if d.general.language.trim().eq_ignore_ascii_case("auto") => "auto",
+                    Some(l) => l.tag(),
+                    None => "auto",
+                };
+                let opts: Vec<(&'static str, &str)> = choices.iter().map(|(v, l)| (*v, l.as_str())).collect();
+                if dropdown(ui, "language", &mut sel, &opts, 160.0) {
+                    d.general.language = sel.to_string();
+                }
             },
         );
-        r.row("Show system files", "Windows protected operating-system files.", |ui| {
+    });
+    any |= group(ui, q, CTX_GENERAL, tr!("settings-general-files"), |r| {
+        r.row_kw(tr!("settings-general-show-hidden"), tr!("settings-general-show-hidden-desc"), "dotfiles", |ui| {
+            switch(ui, &mut d.general.show_hidden);
+        });
+        r.row(tr!("settings-general-show-system"), tr!("settings-general-show-system-desc"), |ui| {
             switch(ui, &mut d.general.show_system);
         });
-        r.row("Show file extensions", "Display “.txt”, “.rs” … after names.", |ui| {
+        r.row(tr!("settings-general-show-ext"), tr!("settings-general-show-ext-desc"), |ui| {
             switch(ui, &mut d.general.show_extensions);
         });
         r.row_kw(
-            "Strict Windows names",
-            "Apply Windows file-name rules (no <>:\"|?*, reserved names) on every OS.",
+            tr!("settings-general-strict-names"),
+            tr!("settings-general-strict-names-desc"),
             "validate portable",
             |ui| {
                 switch(ui, &mut d.general.strict_windows_names);
             },
         );
     });
-    any |= group(ui, q, CTX_GENERAL, "Formats", |r| {
+    any |= group(ui, q, CTX_GENERAL, tr!("settings-general-formats"), |r| {
         let sample = 1_288_490_189u64;
         r.row_kw(
-            "File sizes",
-            &format!("1.2 GB file shows as {}", format_size(sample, d.general.size_style)),
+            tr!("settings-general-sizes"),
+            &tr!("settings-general-sizes-desc", sample = format_size(sample, d.general.size_style)),
             "units kib mb",
             |ui| {
                 segmented(
                     ui,
                     &mut d.general.size_style,
-                    &[(SizeStyle::Binary, "KiB, MiB"), (SizeStyle::Decimal, "kB, MB"), (SizeStyle::Bytes, "Bytes")],
+                    &[
+                        (SizeStyle::Binary, "KiB, MiB"),
+                        (SizeStyle::Decimal, "kB, MB"),
+                        (SizeStyle::Bytes, tr!("settings-general-sizes-bytes")),
+                    ],
                 );
             },
         );
         let preview =
             format_time(SystemTime::now() - std::time::Duration::from_secs(3600 * 26), &d.general.date_format);
-        r.row_kw("Dates", &format!("Yesterday's file shows as “{preview}”"), "time format strftime", |ui| {
-            let mut custom = match &d.general.date_format {
-                DateFormat::Custom(s) => Some(s.clone()),
-                _ => None,
-            };
-            if let Some(s) = custom.as_mut()
-                && code(ui, s, "%Y-%m-%d %H:%M", 140.0).changed()
-            {
-                d.general.date_format = DateFormat::Custom(s.clone());
-            }
-            let mut sel = match &d.general.date_format {
-                DateFormat::Named(n) => Some(*n),
-                DateFormat::Custom(_) => None,
-            };
-            let opts = [
-                (Some(DateFormatName::Relative), "Relative"),
-                (Some(DateFormatName::Short), "Short"),
-                (Some(DateFormatName::Long), "Long"),
-                (Some(DateFormatName::Iso), "ISO 8601"),
-                (None, "Custom…"),
-            ];
-            if dropdown(ui, "date_format", &mut sel, &opts, 120.0) {
-                d.general.date_format = match sel {
-                    Some(n) => DateFormat::Named(n),
-                    None => DateFormat::Custom("%Y-%m-%d %H:%M".into()),
+        r.row_kw(
+            tr!("settings-general-dates"),
+            &tr!("settings-general-dates-desc", preview = preview),
+            "time format strftime",
+            |ui| {
+                let mut custom = match &d.general.date_format {
+                    DateFormat::Custom(s) => Some(s.clone()),
+                    _ => None,
                 };
-            }
-        });
+                if let Some(s) = custom.as_mut()
+                    && code(ui, s, "%Y-%m-%d %H:%M", 140.0).changed()
+                {
+                    d.general.date_format = DateFormat::Custom(s.clone());
+                }
+                let mut sel = match &d.general.date_format {
+                    DateFormat::Named(n) => Some(*n),
+                    DateFormat::Custom(_) => None,
+                };
+                let opts = [
+                    (Some(DateFormatName::Relative), tr!("settings-general-date-relative")),
+                    (Some(DateFormatName::Short), tr!("settings-general-date-short")),
+                    (Some(DateFormatName::Long), tr!("settings-general-date-long")),
+                    (Some(DateFormatName::Iso), "ISO 8601"),
+                    (None, tr!("settings-general-date-custom")),
+                ];
+                if dropdown(ui, "date_format", &mut sel, &opts, 120.0) {
+                    d.general.date_format = match sel {
+                        Some(n) => DateFormat::Named(n),
+                        None => DateFormat::Custom("%Y-%m-%d %H:%M".into()),
+                    };
+                }
+            },
+        );
     });
     any
 }
 
-const MODES: [(ViewMode, &str); 5] = [
-    (ViewMode::Details, "Details"),
-    (ViewMode::Grid, "Grid"),
-    (ViewMode::List, "List"),
-    (ViewMode::Miller, "Columns"),
-    (ViewMode::Gallery, "Gallery"),
-];
+fn modes() -> [(ViewMode, &'static str); 5] {
+    [
+        (ViewMode::Details, tr!("settings-view-details")),
+        (ViewMode::Grid, tr!("settings-view-grid")),
+        (ViewMode::List, tr!("settings-view-list")),
+        (ViewMode::Miller, tr!("settings-view-columns")),
+        (ViewMode::Gallery, tr!("settings-view-gallery")),
+    ]
+}
 
 pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Views layout";
     let mut any = false;
-    any |= group(ui, q, ctx, "Folders", |r| {
-        r.row("Default view", "Used for folders you haven't customized.", |ui| {
-            segmented(ui, &mut d.general.default_view, &MODES);
+    any |= group(ui, q, ctx, tr!("settings-views-folders"), |r| {
+        r.row(tr!("settings-views-default-view"), tr!("settings-views-default-view-desc"), |ui| {
+            segmented(ui, &mut d.general.default_view, &modes());
         });
-        r.row("Folders first", "Keep folders above files when sorting.", |ui| {
+        r.row(tr!("settings-views-folders-first"), tr!("settings-views-folders-first-desc"), |ui| {
             switch(ui, &mut d.general.folders_first);
         });
-        r.row_kw("Natural sorting", "file2 comes before file10.", "numeric", |ui| {
+        r.row_kw(tr!("settings-views-natural-sort"), tr!("settings-views-natural-sort-desc"), "numeric", |ui| {
             switch(ui, &mut d.general.natural_sort);
         });
-        r.row("Case-insensitive sorting", "“apple” and “Apple” sort together.", |ui| {
+        r.row(tr!("settings-views-case-sort"), tr!("settings-views-case-sort-desc"), |ui| {
             switch(ui, &mut d.general.case_insensitive_sort);
         });
-        r.row_kw("Remember view per folder", "Each folder keeps its own view, sort and grouping.", "memory", |ui| {
+        r.row_kw(tr!("settings-views-remember"), tr!("settings-views-remember-desc"), "memory", |ui| {
             switch(ui, &mut d.behaviour.remember_folder_views);
         });
     });
-    any |= group(ui, q, ctx, "Details columns", |r| {
-        r.block(
-            "",
-            "Columns of the details view for folders without their own layout. Drag widths in the view itself.",
-            |ui| {
-                columns_editor(ui, &mut d.columns.details, &mut d.columns.widths);
-            },
-        );
+    any |= group(ui, q, ctx, tr!("settings-views-details-columns"), |r| {
+        r.block("", tr!("settings-views-details-columns-desc"), |ui| {
+            columns_editor(ui, &mut d.columns.details, &mut d.columns.widths);
+        });
     });
-    any |= group(ui, q, ctx, "Window layout", |r| {
-        r.row("Sidebar", "Favorites, devices and the folder tree.", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-views-window-layout"), |r| {
+        r.row(tr!("settings-views-sidebar"), tr!("settings-views-sidebar-desc"), |ui| {
             switch(ui, &mut d.layout.sidebar);
         });
         r.row_kw(
-            "Sidebar content",
-            "Places sections, the folder tree of your drives and home folder, or both (Ctrl+Shift+E toggles the tree).",
+            tr!("settings-views-sidebar-content"),
+            tr!("settings-views-sidebar-content-desc"),
             "folder tree places navigation pane",
             |ui| {
                 segmented(
                     ui,
                     &mut d.sidebar.mode,
-                    &[(SidebarMode::Places, "Places"), (SidebarMode::Tree, "Folder tree"), (SidebarMode::Both, "Both")],
+                    &[
+                        (SidebarMode::Places, tr!("settings-views-sidebar-places")),
+                        (SidebarMode::Tree, tr!("settings-views-folder-tree")),
+                        (SidebarMode::Both, tr!("settings-views-sidebar-both")),
+                    ],
                 );
             },
         );
+        r.row_kw(tr!("settings-views-tree-follow"), tr!("settings-views-tree-follow-desc"), "sync reveal tree", |ui| {
+            switch(ui, &mut d.sidebar.tree_follow);
+        });
         r.row_kw(
-            "Tree follows the current folder",
-            "Expand the folder tree to the active pane's folder and highlight it.",
-            "sync reveal tree",
-            |ui| {
-                switch(ui, &mut d.sidebar.tree_follow);
-            },
-        );
-        r.row_kw(
-            "Expand tree on drag hover",
-            "Hold a drag over a collapsed folder to open it. 0 turns this off.",
+            tr!("settings-views-tree-drag"),
+            tr!("settings-views-tree-drag-desc"),
             "drag drop spring loaded tree",
             |ui| {
                 number(ui, &mut d.sidebar.tree_drag_expand_ms, 0..=3000, " ms");
             },
         );
-        r.row("Status bar", "Item counts, selection size and free space.", |ui| {
+        r.row(tr!("settings-views-status-bar"), tr!("settings-views-status-bar-desc"), |ui| {
             switch(ui, &mut d.layout.status_bar);
         });
-        r.row("Preview pane", "Show the preview pane at startup.", |ui| {
+        r.row(tr!("settings-views-preview-pane"), tr!("settings-views-preview-pane-desc"), |ui| {
             switch(ui, &mut d.layout.preview_pane);
         });
-        r.row_kw("Dual pane at startup", "Open new windows with two panes.", "split commander", |ui| {
+        r.row_kw(tr!("settings-views-dual-pane"), tr!("settings-views-dual-pane-desc"), "split commander", |ui| {
             switch(ui, &mut d.layout.dual_pane);
         });
-        r.row("Dual pane orientation", "", |ui| {
+        r.row(tr!("settings-views-dual-orientation"), "", |ui| {
             segmented(
                 ui,
                 &mut d.layout.dual_pane_orientation,
-                &[(Orientation::Vertical, "Side by side"), (Orientation::Horizontal, "Stacked")],
+                &[
+                    (Orientation::Vertical, tr!("settings-views-side-by-side")),
+                    (Orientation::Horizontal, tr!("settings-views-stacked")),
+                ],
             );
         });
-        r.row("Tab strip", "", |ui| {
+        r.row(tr!("settings-views-tab-strip"), "", |ui| {
             segmented(
                 ui,
                 &mut d.layout.tab_strip,
-                &[(TabStripMode::Always, "Always"), (TabStripMode::Multiple, "With 2+ tabs")],
+                &[
+                    (TabStripMode::Always, tr!("settings-always")),
+                    (TabStripMode::Multiple, tr!("settings-views-tab-strip-multiple")),
+                ],
             );
         });
-        r.row("Activity panel", "Where running file operations are shown.", |ui| {
+        r.row(tr!("settings-views-activity-panel"), tr!("settings-views-activity-panel-desc"), |ui| {
             segmented(
                 ui,
                 &mut d.layout.activity_panel,
                 &[
-                    (ActivityPlacement::Right, "Right"),
-                    (ActivityPlacement::Bottom, "Bottom"),
-                    (ActivityPlacement::Floating, "Floating"),
+                    (ActivityPlacement::Right, tr!("settings-views-activity-right")),
+                    (ActivityPlacement::Bottom, tr!("settings-views-activity-bottom")),
+                    (ActivityPlacement::Floating, tr!("settings-views-activity-floating")),
                 ],
             );
         });
-        r.row("Terminal height", "Default height of the bottom panel.", |ui| {
+        r.row(tr!("settings-views-terminal-height"), tr!("settings-views-terminal-height-desc"), |ui| {
             number(ui, &mut d.layout.terminal_height, 120.0..=800.0, " px");
         });
     });
-    any |= group(ui, q, ctx, "Windows & workspaces", |r| {
+    any |= group(ui, q, ctx, tr!("settings-views-windows"), |r| {
         use soyuz_core::config::{CloseWindowTabs, NewWindowMode};
         r.row_kw(
-            "New window opens",
-            "Ctrl+N: another window of this Soyuz (shares jobs and settings), or a separate process.",
+            tr!("settings-views-new-window"),
+            tr!("settings-views-new-window-desc"),
             "multi window process",
             |ui| {
                 segmented(
                     ui,
                     &mut d.workspace.new_window,
-                    &[(NewWindowMode::InProcess, "Window"), (NewWindowMode::Process, "Process")],
+                    &[
+                        (NewWindowMode::InProcess, tr!("settings-views-new-window-window")),
+                        (NewWindowMode::Process, tr!("settings-views-new-window-process")),
+                    ],
                 );
             },
         );
-        r.row_kw("Tear tabs off", "Drag a tab out of the strip to open it in its own window.", "detach drag", |ui| {
+        r.row_kw(tr!("settings-views-tear-off"), tr!("settings-views-tear-off-desc"), "detach drag", |ui| {
             switch(ui, &mut d.workspace.tear_off);
         });
-        r.row_kw("Tear-off distance", "How far a tab has to leave the strip first.", "drag", |ui| {
+        r.row_kw(tr!("settings-views-tear-off-distance"), tr!("settings-views-tear-off-distance-desc"), "drag", |ui| {
             number(ui, &mut d.workspace.tear_off_distance, 16.0..=200.0, " px");
         });
         r.row_kw(
-            "Closing a window with tabs",
-            "Move its tabs to another window, close them, or ask each time.",
+            tr!("settings-views-close-window"),
+            tr!("settings-views-close-window-desc"),
             "merge close window",
             |ui| {
                 segmented(
                     ui,
                     &mut d.workspace.close_window_tabs,
                     &[
-                        (CloseWindowTabs::Ask, "Ask"),
-                        (CloseWindowTabs::Merge, "Move tabs"),
-                        (CloseWindowTabs::Close, "Close tabs"),
+                        (CloseWindowTabs::Ask, tr!("settings-ask")),
+                        (CloseWindowTabs::Merge, tr!("settings-views-move-tabs")),
+                        (CloseWindowTabs::Close, tr!("settings-views-close-tabs")),
                     ],
                 );
             },
         );
-        r.row_kw("Restore windows", "Reopen the other windows, where they were, with the session.", "session", |ui| {
+        r.row_kw(tr!("settings-views-restore-windows"), tr!("settings-views-restore-windows-desc"), "session", |ui| {
             switch(ui, &mut d.workspace.restore_windows);
         });
         r.row_kw(
-            "Relative synchronized browsing",
-            "Synced panes follow sibling and multi-level moves, not only into a child folder or up.",
+            tr!("settings-views-sync-relative"),
+            tr!("settings-views-sync-relative-desc"),
             "sync navigation follow",
             |ui| {
                 switch(ui, &mut d.workspace.sync_relative);
             },
         );
-        r.row_kw("History graph size", "Places remembered per tab for “Where was I?”.", "history graph", |ui| {
-            number(ui, &mut d.workspace.history_graph_limit, 20..=2000, "");
-        });
-        r.row_kw("Timeline range", "Days of changes the Timeline shows (at least this week).", "timeline", |ui| {
-            number(ui, &mut d.workspace.timeline_days, 1..=60, " days");
-        });
-        r.row_kw("Timeline folders", "Recently visited folders scanned for changed files.", "timeline scan", |ui| {
-            number(ui, &mut d.workspace.timeline_scan_folders, 0..=300, "");
-        });
-        r.row_kw("Timeline items", "The most files the Timeline lists.", "timeline limit", |ui| {
-            number(ui, &mut d.workspace.timeline_max_items, 50..=10_000, "");
+        r.row_kw(
+            tr!("settings-views-history-graph"),
+            tr!("settings-views-history-graph-desc"),
+            "history graph",
+            |ui| {
+                number(ui, &mut d.workspace.history_graph_limit, 20..=2000, "");
+            },
+        );
+        r.row_kw(tr!("settings-views-timeline-range"), tr!("settings-views-timeline-range-desc"), "timeline", |ui| {
+            number(ui, &mut d.workspace.timeline_days, 1..=60, &format!(" {}", tr!("settings-unit-days")));
         });
         r.row_kw(
-            "Timeline uses the search index",
-            "Also ask the search index, when one is available, for changed files.",
+            tr!("settings-views-timeline-folders"),
+            tr!("settings-views-timeline-folders-desc"),
+            "timeline scan",
+            |ui| {
+                number(ui, &mut d.workspace.timeline_scan_folders, 0..=300, "");
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-timeline-items"),
+            tr!("settings-views-timeline-items-desc"),
+            "timeline limit",
+            |ui| {
+                number(ui, &mut d.workspace.timeline_max_items, 50..=10_000, "");
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-timeline-index"),
+            tr!("settings-views-timeline-index-desc"),
             "timeline index",
             |ui| {
                 switch(ui, &mut d.workspace.timeline_use_index);
             },
         );
     });
-    any |= group(ui, q, ctx, "Sidebar sections", |r| {
-        r.block("", "Choose and order the sections of the sidebar.", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-views-sidebar-sections"), |r| {
+        r.block("", tr!("settings-views-sidebar-sections-desc"), |ui| {
             sidebar_sections(ui, &mut d.sidebar.sections);
         });
     });
-    any |= group(ui, q, ctx, "Toolbar & context menu", |r| {
-        r.block(
-            "Toolbar items",
-            "Action names (e.g. back, up, new_tab), plus | separator, spacer, breadcrumb, filter, view_menu, sort_menu, activity. One per line.",
-            |ui| {
-                lines_editor(ui, "toolbar", &mut d.toolbar.items, 5);
-            },
-        );
-        r.block("Hidden context-menu entries", "Action names to hide from right-click menus. One per line.", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-views-toolbar"), |r| {
+        r.block(tr!("settings-views-toolbar-items"), tr!("settings-views-toolbar-items-desc"), |ui| {
+            lines_editor(ui, "toolbar", &mut d.toolbar.items, 5);
+        });
+        r.block(tr!("settings-views-ctx-hide"), tr!("settings-views-ctx-hide-desc"), |ui| {
             lines_editor(ui, "ctx_hide", &mut d.context_menu.hide, 3);
         });
         // `[context_menu] order` is not offered: the menus have a fixed, grouped layout
@@ -328,15 +372,12 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
     // Shown columns, in order.
     for (i, col) in details.clone().iter().enumerate() {
         ui.horizontal(|ui| {
-            ui.label(
-                RichText::new(
-                    crate::palette::catalog::title(&soyuz_core::config::Action::SortBy(*col)).replace("Sort by: ", ""),
-                )
-                .color(p.text_primary),
-            );
+            ui.label(RichText::new(crate::ui::views::columns::header_label(*col)).color(p.text_primary));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if *col != Column::Name
-                    && small_button(ui, Some(ph::X), "", true).on_hover_text("Hide column").clicked()
+                    && small_button(ui, Some(ph::X), "", true)
+                        .on_hover_text(tr!("settings-views-hide-column"))
+                        .clicked()
                 {
                     action = Some((i, 0));
                 }
@@ -371,7 +412,7 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
     if !hidden.is_empty() {
         ui.add_space(6.0);
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("Add:").size(11.5).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("settings-views-add-column")).size(11.5).color(p.text_tertiary));
             for c in hidden {
                 if small_button(ui, Some(ph::PLUS), &crate::ui::views::columns::header_label(c), false).clicked() {
                     details.push(c);
@@ -384,14 +425,14 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
 fn sidebar_sections(ui: &mut Ui, sections: &mut Vec<SidebarSection>) {
     let p = palette(ui.ctx());
     let all = [
-        (SidebarSection::Favorites, "Favorites"),
-        (SidebarSection::Devices, "Devices"),
-        (SidebarSection::Cloud, "Cloud folders"),
-        (SidebarSection::Tags, "Tags"),
-        (SidebarSection::Network, "Network"),
-        (SidebarSection::Trash, "Trash"),
-        (SidebarSection::Tree, "Folder tree"),
-        (SidebarSection::Smart, "Smart folders"),
+        (SidebarSection::Favorites, tr!("settings-views-section-favorites")),
+        (SidebarSection::Devices, tr!("settings-views-section-devices")),
+        (SidebarSection::Cloud, tr!("settings-views-section-cloud")),
+        (SidebarSection::Tags, tr!("settings-views-section-tags")),
+        (SidebarSection::Network, tr!("settings-views-section-network")),
+        (SidebarSection::Trash, tr!("settings-views-section-trash")),
+        (SidebarSection::Tree, tr!("settings-views-folder-tree")),
+        (SidebarSection::Smart, tr!("settings-views-section-smart")),
     ];
     let mut action: Option<(usize, bool)> = None;
     for (i, s) in sections.clone().iter().enumerate() {
@@ -452,106 +493,134 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Behaviour";
     let mut any = false;
-    any |= group(ui, q, ctx, "Opening", |r| {
-        r.row_kw("Open items with a single click", "Otherwise a double click opens.", "click", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-behaviour-opening"), |r| {
+        r.row_kw(tr!("settings-behaviour-single-click"), tr!("settings-behaviour-single-click-desc"), "click", |ui| {
             switch(ui, &mut d.general.single_click_open);
         });
-        r.row("Double-click speed", "Maximum time between the two clicks.", |ui| {
+        r.row(tr!("settings-behaviour-double-click"), tr!("settings-behaviour-double-click-desc"), |ui| {
             number(ui, &mut d.general.double_click_speed_ms, 150..=900, " ms");
         });
-        r.row("Open folders in", "", |ui| {
+        r.row(tr!("settings-behaviour-open-folders-in"), "", |ui| {
             segmented(
                 ui,
                 &mut d.general.open_folders_in,
-                &[(OpenFoldersIn::SameTab, "Same tab"), (OpenFoldersIn::NewTab, "New tab")],
+                &[
+                    (OpenFoldersIn::SameTab, tr!("settings-behaviour-same-tab")),
+                    (OpenFoldersIn::NewTab, tr!("settings-behaviour-new-tab")),
+                ],
             );
         });
-        r.row("Middle click on a folder", "", |ui| {
+        r.row(tr!("settings-behaviour-middle-click"), "", |ui| {
             segmented(
                 ui,
                 &mut d.behaviour.middle_click,
                 &[
-                    (MiddleClick::NewTab, "New tab"),
-                    (MiddleClick::OtherPane, "Other pane"),
-                    (MiddleClick::Nothing, "Nothing"),
+                    (MiddleClick::NewTab, tr!("settings-behaviour-new-tab")),
+                    (MiddleClick::OtherPane, tr!("settings-behaviour-other-pane")),
+                    (MiddleClick::Nothing, tr!("settings-behaviour-nothing")),
                 ],
             );
         });
     });
-    any |= group(ui, q, ctx, "Confirmations", |r| {
-        r.row_kw("Confirm moving to trash", "Ask before Delete sends items to the trash.", "delete recycle", |ui| {
-            switch(ui, &mut d.general.confirm_delete);
-        });
-        r.row_kw("Confirm permanent delete", "Ask before Shift+Delete removes items for good.", "delete", |ui| {
-            switch(ui, &mut d.general.confirm_permanent_delete);
-        });
-        r.row("When pasted items already exist", "", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-behaviour-confirmations"), |r| {
+        r.row_kw(
+            tr!("settings-behaviour-confirm-trash"),
+            tr!("settings-behaviour-confirm-trash-desc"),
+            "delete recycle",
+            |ui| {
+                switch(ui, &mut d.general.confirm_delete);
+            },
+        );
+        r.row_kw(
+            tr!("settings-behaviour-confirm-permanent"),
+            tr!("settings-behaviour-confirm-permanent-desc"),
+            "delete",
+            |ui| {
+                switch(ui, &mut d.general.confirm_permanent_delete);
+            },
+        );
+        r.row(tr!("settings-behaviour-paste-conflict"), "", |ui| {
             dropdown(
                 ui,
                 "paste_conflict",
                 &mut d.behaviour.paste_conflict,
                 &[
-                    (PasteConflict::Ask, "Ask"),
-                    (PasteConflict::Overwrite, "Overwrite"),
-                    (PasteConflict::Skip, "Skip"),
-                    (PasteConflict::KeepBoth, "Keep both"),
+                    (PasteConflict::Ask, tr!("settings-ask")),
+                    (PasteConflict::Overwrite, tr!("settings-behaviour-overwrite")),
+                    (PasteConflict::Skip, tr!("settings-skip")),
+                    (PasteConflict::KeepBoth, tr!("settings-behaviour-keep-both")),
                 ],
                 130.0,
             );
         });
     });
-    any |= group(ui, q, ctx, "Drag and drop", |r| {
+    any |= group(ui, q, ctx, tr!("settings-behaviour-drag-drop"), |r| {
         r.row_kw(
-            "Default drop action",
-            "Ctrl copies, Shift moves, Alt links regardless of this.",
+            tr!("settings-behaviour-drop-action"),
+            tr!("settings-behaviour-drop-action-desc"),
             "drag drop move copy",
             |ui| {
                 segmented(
                     ui,
                     &mut d.behaviour.drag_default,
                     &[
-                        (DragDefault::Auto, "Auto"),
-                        (DragDefault::Copy, "Copy"),
-                        (DragDefault::Move, "Move"),
-                        (DragDefault::Ask, "Ask"),
+                        (DragDefault::Auto, tr!("settings-auto")),
+                        (DragDefault::Copy, tr!("settings-behaviour-drop-copy")),
+                        (DragDefault::Move, tr!("settings-behaviour-drop-move")),
+                        (DragDefault::Ask, tr!("settings-ask")),
                     ],
                 );
             },
         );
         r.row_kw(
-            "Spring-loaded folders",
-            "While dragging, hovering a folder, breadcrumb or tab opens it so you can drop deeper.",
+            tr!("settings-behaviour-spring"),
+            tr!("settings-behaviour-spring-desc"),
             "drag hover open spring",
             |ui| {
                 switch(ui, &mut d.behaviour.spring_loaded_folders);
             },
         );
-        r.row_kw("Spring-load delay", "How long to hover before the folder opens.", "drag hover delay", |ui| {
-            number(ui, &mut d.behaviour.spring_load_delay_ms, 200..=3000, " ms");
-        });
+        r.row_kw(
+            tr!("settings-behaviour-spring-delay"),
+            tr!("settings-behaviour-spring-delay-desc"),
+            "drag hover delay",
+            |ui| {
+                number(ui, &mut d.behaviour.spring_load_delay_ms, 200..=3000, " ms");
+            },
+        );
     });
-    any |= group(ui, q, ctx, "Typing & renaming", |r| {
-        r.row_kw("Typing in the list", "Jump to the first match, or filter the list.", "type ahead", |ui| {
-            segmented(ui, &mut d.behaviour.type_ahead, &[(TypeAhead::Jump, "Jump"), (TypeAhead::Filter, "Filter")]);
+    any |= group(ui, q, ctx, tr!("settings-behaviour-typing"), |r| {
+        r.row_kw(tr!("settings-behaviour-type-ahead"), tr!("settings-behaviour-type-ahead-desc"), "type ahead", |ui| {
+            segmented(
+                ui,
+                &mut d.behaviour.type_ahead,
+                &[
+                    (TypeAhead::Jump, tr!("settings-behaviour-jump")),
+                    (TypeAhead::Filter, tr!("settings-behaviour-filter")),
+                ],
+            );
         });
-        r.row("Rename selects", "What is selected when renaming starts (F2 cycles).", |ui| {
+        r.row(tr!("settings-behaviour-rename-selects"), tr!("settings-behaviour-rename-selects-desc"), |ui| {
             segmented(
                 ui,
                 &mut d.behaviour.rename_selects,
-                &[(RenameSelects::Stem, "Name only"), (RenameSelects::All, "Everything")],
+                &[
+                    (RenameSelects::Stem, tr!("settings-behaviour-name-only")),
+                    (RenameSelects::All, tr!("settings-behaviour-everything")),
+                ],
             );
         });
     });
-    any |= group(ui, q, ctx, "Refreshing", |r| {
+    any |= group(ui, q, ctx, tr!("settings-behaviour-refreshing"), |r| {
         r.row_kw(
-            "Refresh automatically",
-            "Watch open folders for changes made by other programs.",
+            tr!("settings-behaviour-auto-refresh"),
+            tr!("settings-behaviour-auto-refresh-desc"),
             "watch auto refresh",
             |ui| {
                 switch(ui, &mut d.behaviour.auto_refresh);
             },
         );
-        r.row("Change debounce", "How long to wait for a burst of changes to settle.", |ui| {
+        r.row(tr!("settings-behaviour-debounce"), tr!("settings-behaviour-debounce-desc"), |ui| {
             number(ui, &mut d.behaviour.watch_debounce_ms, 50..=2000, " ms");
         });
     });
@@ -562,74 +631,57 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Jobs file operations copy move archive extract";
     let mut any = false;
-    any |= group(ui, q, ctx, "Queue", |r| {
-        r.row_kw(
-            "Parallel jobs",
-            "How many copy / move / delete jobs run at once. Applies after restart.",
-            "parallelism threads",
-            |ui| {
-                number(ui, &mut d.jobs.max_parallel, 1..=16, "");
-            },
-        );
-        r.row_kw(
-            "Queue mode",
-            "Per device runs one job per disk pair at a time, which is fastest on HDDs. Applies after restart.",
-            "serial",
-            |ui| {
-                segmented(ui, &mut d.jobs.per_device_serial, &[(true, "Per device"), (false, "Parallel")]);
-            },
-        );
-        r.row("Open the activity panel automatically", "When a job runs longer than a second.", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-jobs-queue"), |r| {
+        r.row_kw(tr!("settings-jobs-parallel"), tr!("settings-jobs-parallel-desc"), "parallelism threads", |ui| {
+            number(ui, &mut d.jobs.max_parallel, 1..=16, "");
+        });
+        r.row_kw(tr!("settings-jobs-queue-mode"), tr!("settings-jobs-queue-mode-desc"), "serial", |ui| {
+            segmented(
+                ui,
+                &mut d.jobs.per_device_serial,
+                &[(true, tr!("settings-jobs-per-device")), (false, tr!("settings-jobs-parallel-mode"))],
+            );
+        });
+        r.row(tr!("settings-jobs-auto-activity"), tr!("settings-jobs-auto-activity-desc"), |ui| {
             switch(ui, &mut d.jobs.auto_open_activity);
         });
-        r.row_kw(
-            "Reset “apply to all” between jobs",
-            "Conflict answers don't carry over to the next job. Applies after restart.",
-            "conflict",
-            |ui| {
-                switch(ui, &mut d.jobs.reset_apply_all_between_jobs);
-            },
-        );
-        r.row("History size", "Completed operations kept for undo. Applies after restart.", |ui| {
+        r.row_kw(tr!("settings-jobs-reset-apply-all"), tr!("settings-jobs-reset-apply-all-desc"), "conflict", |ui| {
+            switch(ui, &mut d.jobs.reset_apply_all_between_jobs);
+        });
+        r.row(tr!("settings-jobs-history"), tr!("settings-jobs-history-desc"), |ui| {
             number(ui, &mut d.jobs.history_limit, 10..=5000, "");
         });
     });
-    any |= group(ui, q, ctx, "Copying", |r| {
-        r.row_kw(
-            "Verify after copy",
-            "Hash source and destination (BLAKE3) and compare.",
-            "checksum integrity",
-            |ui| {
-                switch(ui, &mut d.jobs.verify_after_copy);
-            },
-        );
-        r.row_kw(
-            "Copy-on-write clones",
-            "Instant copies on ReFS / Btrfs / APFS when possible.",
-            "reflink block clone",
-            |ui| {
-                segmented(
-                    ui,
-                    &mut d.jobs.reflink,
-                    &[(ReflinkPref::Auto, "Auto"), (ReflinkPref::Never, "Never"), (ReflinkPref::Always, "Always")],
-                );
-            },
-        );
-        r.row("Copy buffer", "", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-jobs-copying"), |r| {
+        r.row_kw(tr!("settings-jobs-verify"), tr!("settings-jobs-verify-desc"), "checksum integrity", |ui| {
+            switch(ui, &mut d.jobs.verify_after_copy);
+        });
+        r.row_kw(tr!("settings-jobs-reflink"), tr!("settings-jobs-reflink-desc"), "reflink block clone", |ui| {
+            segmented(
+                ui,
+                &mut d.jobs.reflink,
+                &[
+                    (ReflinkPref::Auto, tr!("settings-auto")),
+                    (ReflinkPref::Never, tr!("settings-never")),
+                    (ReflinkPref::Always, tr!("settings-always")),
+                ],
+            );
+        });
+        r.row(tr!("settings-jobs-buffer"), "", |ui| {
             number(ui, &mut d.jobs.copy_buffer_mib, 1..=128, " MiB");
         });
-        r.row_kw("Unbuffered I/O above", "Large files bypass the OS cache.", "direct", |ui| {
+        r.row_kw(tr!("settings-jobs-unbuffered"), tr!("settings-jobs-unbuffered-desc"), "direct", |ui| {
             number(ui, &mut d.jobs.unbuffered_threshold_mib, 16..=4096, " MiB");
         });
-        r.block("Preserve", "Metadata carried over to copies.", |ui| {
+        r.block(tr!("settings-jobs-preserve"), tr!("settings-jobs-preserve-desc"), |ui| {
             ui.horizontal_wrapped(|ui| {
                 for (item, label) in [
-                    (PreserveItem::Times, "Timestamps"),
-                    (PreserveItem::Attrs, "Attributes"),
-                    (PreserveItem::Xattr, "Extended attributes"),
-                    (PreserveItem::Acl, "ACLs"),
-                    (PreserveItem::Owner, "Owner"),
-                    (PreserveItem::Sparse, "Sparse files"),
+                    (PreserveItem::Times, tr!("settings-jobs-preserve-times")),
+                    (PreserveItem::Attrs, tr!("settings-jobs-preserve-attrs")),
+                    (PreserveItem::Xattr, tr!("settings-jobs-preserve-xattr")),
+                    (PreserveItem::Acl, tr!("settings-jobs-preserve-acl")),
+                    (PreserveItem::Owner, tr!("settings-jobs-preserve-owner")),
+                    (PreserveItem::Sparse, tr!("settings-jobs-preserve-sparse")),
                 ] {
                     let mut on = d.jobs.preserve.contains(&item);
                     if ui.checkbox(&mut on, label).changed() {
@@ -644,149 +696,141 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
         });
     });
-    any |= group(ui, q, ctx, "Archive safety", |r| {
+    any |= group(ui, q, ctx, tr!("settings-jobs-archive"), |r| {
         r.row_kw(
-            "Expansion limit",
-            "Pause extraction when the output grows past this multiple of the archive's size (0 = off).",
+            tr!("settings-jobs-bomb-ratio"),
+            tr!("settings-jobs-bomb-ratio-desc"),
             "decompression bomb zip ratio extract",
             |ui| {
                 number(ui, &mut d.archive.bomb_ratio, 0..=1000, "×");
             },
         );
-        r.row_kw("…but not below", "The expansion limit never pauses before this much output.", "bomb floor", |ui| {
+        r.row_kw(tr!("settings-jobs-bomb-floor"), tr!("settings-jobs-bomb-floor-desc"), "bomb floor", |ui| {
             number(ui, &mut d.archive.bomb_floor_mib, 16..=65_536, " MiB");
         });
-        r.row_kw("Most entries", "Pause extraction past this many entries (0 = no limit).", "bomb files count", |ui| {
+        r.row_kw(tr!("settings-jobs-max-entries"), tr!("settings-jobs-max-entries-desc"), "bomb files count", |ui| {
             number(ui, &mut d.archive.max_entries, 0..=10_000_000, "");
         });
-        r.row_kw("Largest entry", "Pause on a single entry larger than this (0 = no limit).", "bomb size", |ui| {
+        r.row_kw(tr!("settings-jobs-max-entry"), tr!("settings-jobs-max-entry-desc"), "bomb size", |ui| {
             number(ui, &mut d.archive.max_entry_mib, 0..=1_048_576, " MiB");
         });
         r.row_kw(
-            "Compression when adding to a zip",
-            "Deflate level for files pasted into a zip you are browsing (0 = store, 9 = smallest).",
+            tr!("settings-jobs-zip-level"),
+            tr!("settings-jobs-zip-level-desc"),
             "edit zip add level compress",
             |ui| {
                 number(ui, &mut d.archive.edit_level, 0..=9, "");
             },
         );
         r.row_kw(
-            "Keep setuid / setgid / sticky bits",
-            "Off strips these special permission bits from extracted files (Linux / macOS).",
+            tr!("settings-jobs-special-bits"),
+            tr!("settings-jobs-special-bits-desc"),
             "permissions mode suid",
             |ui| {
                 switch(ui, &mut d.archive.preserve_special_bits);
             },
         );
     });
-    any |= group(ui, q, ctx, "Trash", |r| {
-        r.row_kw("When the trash isn't available", "e.g. network drives and FAT volumes.", "recycle", |ui| {
-            segmented(
-                ui,
-                &mut d.jobs.trash_unsupported,
-                &[
-                    (TrashUnsupportedPolicy::Ask, "Ask"),
-                    (TrashUnsupportedPolicy::Permanent, "Delete"),
-                    (TrashUnsupportedPolicy::Skip, "Skip"),
-                ],
+    any |= group(ui, q, ctx, tr!("settings-views-section-trash"), |r| {
+        r.row_kw(
+            tr!("settings-jobs-trash-unsupported"),
+            tr!("settings-jobs-trash-unsupported-desc"),
+            "recycle",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.jobs.trash_unsupported,
+                    &[
+                        (TrashUnsupportedPolicy::Ask, tr!("settings-ask")),
+                        (TrashUnsupportedPolicy::Permanent, tr!("settings-jobs-trash-delete")),
+                        (TrashUnsupportedPolicy::Skip, tr!("settings-skip")),
+                    ],
+                );
+            },
+        );
+    });
+    any |= group(
+        ui,
+        q,
+        "Jobs sync schedule backup snapshot shadow copy previous versions",
+        tr!("settings-jobs-sync"),
+        |r| {
+            r.row_kw(
+                tr!("settings-jobs-scheduler"),
+                tr!("settings-jobs-scheduler-desc"),
+                "scheduler automatic",
+                |ui| {
+                    switch(ui, &mut d.sync.scheduler);
+                },
             );
-        });
-    });
-    any |= group(ui, q, "Jobs sync schedule backup snapshot shadow copy previous versions", "Sync & versions", |r| {
-        r.row_kw(
-            "Run scheduled sync profiles",
-            "Profiles with a schedule run while Soyuz is open (no background service).",
-            "scheduler automatic",
-            |ui| {
-                switch(ui, &mut d.sync.scheduler);
-            },
-        );
-        r.row_kw(
-            "Scheduled runs are dry runs",
-            "Only write a report of what would change; apply it yourself from Sync profiles.",
-            "preview report",
-            |ui| {
+            r.row_kw(tr!("settings-jobs-dry-run"), tr!("settings-jobs-dry-run-desc"), "preview report", |ui| {
                 switch(ui, &mut d.sync.scheduled_dry_run);
-            },
-        );
-        r.row_kw(
-            "“On change” delay",
-            "Wait this long after the last change before syncing.",
-            "debounce watch",
-            |ui| {
-                number(ui, &mut d.sync.change_debounce_secs, 1..=600, " s");
-            },
-        );
-        r.row_kw("Reports kept per profile", "Run and dry-run reports.", "history log", |ui| {
-            number(ui, &mut d.sync.reports_kept, 1..=200, "");
+            });
+            r.row_kw(
+                tr!("settings-jobs-change-delay"),
+                tr!("settings-jobs-change-delay-desc"),
+                "debounce watch",
+                |ui| {
+                    number(ui, &mut d.sync.change_debounce_secs, 1..=600, " s");
+                },
+            );
+            r.row_kw(tr!("settings-jobs-reports"), tr!("settings-jobs-reports-desc"), "history log", |ui| {
+                number(ui, &mut d.sync.reports_kept, 1..=200, "");
+            });
+            r.row_kw(
+                tr!("settings-jobs-previous-versions"),
+                tr!("settings-jobs-previous-versions-desc"),
+                "vss snapshot restore",
+                |ui| {
+                    switch(ui, &mut d.sync.previous_versions);
+                },
+            );
+            r.row_kw(
+                tr!("settings-jobs-shadow-probe"),
+                tr!("settings-jobs-shadow-probe-desc"),
+                "vss globalroot",
+                |ui| {
+                    number(ui, &mut d.sync.shadow_probe_max, 1..=512, "");
+                },
+            );
+        },
+    );
+    any |= group(ui, q, "Remote network sftp ssh webdav ftp s3 server cloud", tr!("settings-remote"), |r| {
+        r.row_kw(tr!("settings-remote-cache"), tr!("settings-remote-cache-desc"), "cache ttl", |ui| {
+            number(ui, &mut d.remote.cache_ttl_secs, 0..=3600, " s");
         });
-        r.row_kw(
-            "Previous versions",
-            "List earlier copies of files from Windows shadow copies (Properties, context menu).",
-            "vss snapshot restore",
-            |ui| {
-                switch(ui, &mut d.sync.previous_versions);
-            },
-        );
-        r.row_kw(
-            "Shadow copies to probe",
-            "Fallback when the kernel device list can't be read.",
-            "vss globalroot",
-            |ui| {
-                number(ui, &mut d.sync.shadow_probe_max, 1..=512, "");
-            },
-        );
-    });
-    any |= group(ui, q, "Remote network sftp ssh webdav ftp s3 server cloud", "Remote locations", |r| {
-        r.row_kw(
-            "Reuse folder listings for",
-            "Remote folders are listed again after this long (Refresh always re-lists).",
-            "cache ttl",
-            |ui| {
-                number(ui, &mut d.remote.cache_ttl_secs, 0..=3600, " s");
-            },
-        );
-        r.row_kw("Check open remote folders every", "0 = only on Refresh.", "poll watch", |ui| {
+        r.row_kw(tr!("settings-remote-poll"), tr!("settings-remote-poll-desc"), "poll watch", |ui| {
             number(ui, &mut d.remote.poll_secs, 0..=3600, " s");
         });
-        r.row_kw("Connection timeout", "Give up connecting after this long.", "connect", |ui| {
-            number(ui, &mut d.remote.connect_timeout_secs, 1..=300, " s");
-        });
-        r.row_kw("Server timeout", "Give up when a server stops answering mid-operation.", "io stall", |ui| {
+        r.row_kw(
+            tr!("settings-remote-connect-timeout"),
+            tr!("settings-remote-connect-timeout-desc"),
+            "connect",
+            |ui| {
+                number(ui, &mut d.remote.connect_timeout_secs, 1..=300, " s");
+            },
+        );
+        r.row_kw(tr!("settings-remote-io-timeout"), tr!("settings-remote-io-timeout-desc"), "io stall", |ui| {
             number(ui, &mut d.remote.io_timeout_secs, 5..=3600, " s");
         });
         r.row_kw(
-            "Download cache",
-            "Remote files opened or previewed are kept in a temp folder up to this size.",
+            tr!("settings-remote-download-cache"),
+            tr!("settings-remote-download-cache-desc"),
             "preview temp",
             |ui| {
                 number(ui, &mut d.remote.preview_cache_mb, 16..=65_536, " MB");
             },
         );
-        r.row_kw(
-            "Preview files up to",
-            "Larger remote files are not downloaded just to preview them.",
-            "preview",
-            |ui| {
-                number(ui, &mut d.remote.preview_max_mb, 1..=4096, " MB");
-            },
-        );
-        r.row_kw(
-            r"List shares for \\server",
-            "Typing a bare server name lists its shared folders (Windows).",
-            "smb unc netshareenum",
-            |ui| {
-                switch(ui, &mut d.remote.share_enumeration);
-            },
-        );
+        r.row_kw(tr!("settings-remote-preview-max"), tr!("settings-remote-preview-max-desc"), "preview", |ui| {
+            number(ui, &mut d.remote.preview_max_mb, 1..=4096, " MB");
+        });
+        r.row_kw(tr!("settings-remote-shares"), tr!("settings-remote-shares-desc"), "smb unc netshareenum", |ui| {
+            switch(ui, &mut d.remote.share_enumeration);
+        });
         let hosts = soyuz_vfs::registry::known_hosts().entries();
         r.row_kw(
-            "Trusted SSH servers",
-            &format!(
-                "{} host key{} trusted. Forget one to be asked again.",
-                hosts.len(),
-                if hosts.len() == 1 { "" } else { "s" }
-            ),
+            tr!("settings-remote-trusted"),
+            &tr!("settings-remote-hosts-desc", count = hosts.len()),
             "known_hosts fingerprint host key",
             |ui| {
                 ui.vertical(|ui| {
@@ -796,7 +840,7 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                                 "{algo}
 {fp}"
                             ));
-                            if small_button(ui, None, "Forget", true).clicked() {
+                            if small_button(ui, None, tr!("settings-remote-forget"), true).clicked() {
                                 let (h, port) = match host.rsplit_once(':') {
                                     Some((h, p)) => (h.to_string(), p.parse().unwrap_or(22)),
                                     None => (host.clone(), 22),
@@ -816,8 +860,8 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Terminal shell";
     let mut any = false;
-    any |= group(ui, q, ctx, "Shell", |r| {
-        r.row_kw("Shell", "Leave empty to detect automatically. Applies to new sessions.", "pwsh bash zsh cmd", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-terminal-shell"), |r| {
+        r.row_kw(tr!("settings-terminal-shell"), tr!("settings-terminal-shell-desc"), "pwsh bash zsh cmd", |ui| {
             code(ui, &mut d.terminal.shell, "auto", 160.0);
             let picks: &[&str] = if cfg!(windows) { &["pwsh", "powershell", "cmd"] } else { &["bash", "zsh", "fish"] };
             for pick in picks.iter().rev() {
@@ -826,64 +870,72 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             }
         });
-        r.row("Arguments", "Extra arguments for the shell.", |ui| {
+        r.row(tr!("settings-terminal-args"), tr!("settings-terminal-args-desc"), |ui| {
             let mut s = crate::commands::join_args(&d.terminal.args);
             if code(ui, &mut s, "-NoLogo", 220.0).changed() {
                 d.terminal.args = crate::commands::split_args(&s);
             }
         });
-        r.row_kw("Shell integration", "Inject a prompt hook so the terminal reports its folder.", "cwd prompt", |ui| {
+        r.row_kw(tr!("settings-terminal-integration"), tr!("settings-terminal-integration-desc"), "cwd prompt", |ui| {
             switch(ui, &mut d.terminal.shell_integration);
         });
-        r.row("Scrollback", "Lines kept per session.", |ui| {
-            number(ui, &mut d.terminal.scrollback, 1000..=100_000, " lines");
+        r.row(tr!("settings-terminal-scrollback"), tr!("settings-terminal-scrollback-desc"), |ui| {
+            number(ui, &mut d.terminal.scrollback, 1000..=100_000, &format!(" {}", tr!("settings-unit-lines")));
         });
     });
-    any |= group(ui, q, ctx, "Look", |r| {
-        r.row_kw("Font size", "", "terminal text", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-terminal-look"), |r| {
+        r.row_kw(tr!("settings-terminal-font-size"), "", "terminal text", |ui| {
             number(ui, &mut d.terminal.font_size, 8.0..=24.0, " pt");
         });
-        r.row_kw("Colors", "Auto derives the palette from the app theme.", "theme", |ui| {
+        r.row_kw(tr!("settings-terminal-colors"), tr!("settings-terminal-colors-desc"), "theme", |ui| {
             let mut v = match d.terminal.theme.as_str() {
                 "dark" => 1,
                 "light" => 2,
                 _ => 0,
             };
-            if segmented(ui, &mut v, &[(0, "Auto"), (1, "Dark"), (2, "Light")]) {
+            if segmented(
+                ui,
+                &mut v,
+                &[(0, tr!("settings-auto")), (1, tr!("settings-dark")), (2, tr!("settings-light"))],
+            ) {
                 d.terminal.theme = ["auto", "dark", "light"][v].to_string();
             }
         });
     });
-    any |= group(ui, q, ctx, "Following", |r| {
-        r.row_kw("Follow navigation", "cd the terminal when the focused pane changes folder.", "sync", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-terminal-following"), |r| {
+        r.row_kw(tr!("settings-terminal-follow-nav"), tr!("settings-terminal-follow-nav-desc"), "sync", |ui| {
             switch(ui, &mut d.terminal.follow_navigation);
         });
-        r.row_kw("Follow the shell", "Navigate the pane when you cd in the shell.", "reverse sync", |ui| {
-            switch(ui, &mut d.terminal.follow_shell);
-        });
-        r.row("cd on tab switch", "", |ui| {
+        r.row_kw(
+            tr!("settings-terminal-follow-shell"),
+            tr!("settings-terminal-follow-shell-desc"),
+            "reverse sync",
+            |ui| {
+                switch(ui, &mut d.terminal.follow_shell);
+            },
+        );
+        r.row(tr!("settings-terminal-cd-tab"), "", |ui| {
             switch(ui, &mut d.terminal.cd_on_tab_switch);
         });
-        r.row("One terminal per tab", "Otherwise all tabs share the same sessions.", |ui| {
+        r.row(tr!("settings-terminal-per-tab"), tr!("settings-terminal-per-tab-desc"), |ui| {
             switch(ui, &mut d.terminal.per_tab);
         });
-        r.row_kw("Esc returns focus", "Esc on an empty prompt goes back to the file list.", "escape", |ui| {
+        r.row_kw(tr!("settings-terminal-esc"), tr!("settings-terminal-esc-desc"), "escape", |ui| {
             switch(ui, &mut d.terminal.escape_returns_focus);
         });
     });
-    any |= group(ui, q, ctx, "Security", |r| {
-        r.row_kw(
-            "Programs setting the clipboard",
-            "OSC 52 lets terminal output replace your clipboard, e.g. with a command for you to paste.              Reading the clipboard is always blocked.",
-            "osc52 clipboard paste",
-            |ui| {
-                segmented(
-                    ui,
-                    &mut d.terminal.osc52,
-                    &[(Osc52Policy::Ask, "Ask"), (Osc52Policy::Allow, "Allow"), (Osc52Policy::Deny, "Deny")],
-                );
-            },
-        );
+    any |= group(ui, q, ctx, tr!("settings-terminal-security"), |r| {
+        r.row_kw(tr!("settings-terminal-osc52"), tr!("settings-terminal-osc52-desc"), "osc52 clipboard paste", |ui| {
+            segmented(
+                ui,
+                &mut d.terminal.osc52,
+                &[
+                    (Osc52Policy::Ask, tr!("settings-ask")),
+                    (Osc52Policy::Allow, tr!("settings-allow")),
+                    (Osc52Policy::Deny, tr!("settings-deny")),
+                ],
+            );
+        });
     });
     any
 }
@@ -892,131 +944,91 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Preview search git";
     let mut any = false;
-    any |= group(ui, q, ctx, "Preview", |r| {
-        r.row_kw("Text preview limit", "Larger files show the first part only.", "max size", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-preview"), |r| {
+        r.row_kw(tr!("settings-preview-text-limit"), tr!("settings-preview-text-limit-desc"), "max size", |ui| {
             number(ui, &mut d.preview.max_text_kib, 16..=16_384, " KiB");
         });
-        r.row_kw("Image size limit", "Larger images aren't decoded for previews.", "megapixels", |ui| {
+        r.row_kw(tr!("settings-preview-image-limit"), tr!("settings-preview-image-limit-desc"), "megapixels", |ui| {
             number(ui, &mut d.preview.max_image_mp, 4..=400, " MP");
         });
-        r.row_kw("Syntax theme", "auto follows the app theme, or a syntect theme name.", "highlight code", |ui| {
+        r.row_kw(tr!("settings-preview-syntax"), tr!("settings-preview-syntax-desc"), "highlight code", |ui| {
             text(ui, &mut d.preview.syntax_theme, "auto", 160.0);
         });
-        r.row_kw(
-            "PDF preview",
-            "Pages render with pdfium.dll (not bundled; put it next to soyuz.exe or in the config folder).              Without it, PDFs show their text.",
-            "pdfium document",
-            |ui| {
-                switch(ui, &mut d.preview.pdf);
-            },
-        );
-        r.row_kw(
-            "pdfium folder",
-            "Where pdfium.dll lives. Empty: next to soyuz.exe, then the config folder.",
-            "pdf dll",
-            |ui| {
-                text(ui, &mut d.preview.pdfium_dir, "next to soyuz.exe", 220.0);
-            },
-        );
-        r.row_kw(
-            "Office documents",
-            "Word, Excel, PowerPoint and OpenDocument structure and text.",
-            "docx xlsx pptx odt ods",
-            |ui| {
-                switch(ui, &mut d.preview.office);
-            },
-        );
-        r.row_kw("Spreadsheet rows", "Rows read from the first sheet.", "xlsx ods table", |ui| {
-            number(ui, &mut d.preview.sheet_rows, 10..=100_000, " rows");
+        r.row_kw(tr!("settings-preview-pdf"), tr!("settings-preview-pdf-desc"), "pdfium document", |ui| {
+            switch(ui, &mut d.preview.pdf);
         });
-        r.row_kw("E-books", "EPUB title, author, cover and contents.", "epub book", |ui| {
+        r.row_kw(tr!("settings-preview-pdfium"), tr!("settings-preview-pdfium-desc"), "pdf dll", |ui| {
+            text(ui, &mut d.preview.pdfium_dir, tr!("settings-preview-pdfium-hint"), 220.0);
+        });
+        r.row_kw(tr!("settings-preview-office"), tr!("settings-preview-office-desc"), "docx xlsx pptx odt ods", |ui| {
+            switch(ui, &mut d.preview.office);
+        });
+        r.row_kw(tr!("settings-preview-sheet-rows"), tr!("settings-preview-sheet-rows-desc"), "xlsx ods table", |ui| {
+            number(ui, &mut d.preview.sheet_rows, 10..=100_000, &format!(" {}", tr!("settings-unit-rows")));
+        });
+        r.row_kw(tr!("settings-preview-epub"), tr!("settings-preview-epub-desc"), "epub book", |ui| {
             switch(ui, &mut d.preview.epub);
         });
-        r.row_kw(
-            "Document size limit",
-            "Office, EPUB and PDF files (and the parts inside them) above this aren't parsed.",
-            "max size",
-            |ui| {
-                number(ui, &mut d.preview.max_document_mib, 1..=4096, " MiB");
-            },
-        );
-        r.row_kw("Fonts", "A specimen and glyph grid for TTF, OTF, TTC and WOFF.", "typeface specimen", |ui| {
+        r.row_kw(tr!("settings-preview-doc-limit"), tr!("settings-preview-doc-limit-desc"), "max size", |ui| {
+            number(ui, &mut d.preview.max_document_mib, 1..=4096, " MiB");
+        });
+        r.row_kw(tr!("settings-preview-fonts"), tr!("settings-preview-fonts-desc"), "typeface specimen", |ui| {
             switch(ui, &mut d.preview.fonts);
         });
-        r.row_kw("3D models", "Quick render of glTF, GLB, STL and OBJ; drag to rotate.", "stl gltf obj 3d", |ui| {
+        r.row_kw(tr!("settings-preview-models"), tr!("settings-preview-models-desc"), "stl gltf obj 3d", |ui| {
             switch(ui, &mut d.preview.models);
         });
-        r.row_kw(
-            "Spin models",
-            "Turn models slowly until you drag them (off with reduced motion).",
-            "turntable rotate",
-            |ui| {
-                switch(ui, &mut d.preview.model_turntable);
-            },
-        );
-        r.row_kw("Model size limit", "Larger model files aren't loaded.", "max size", |ui| {
+        r.row_kw(tr!("settings-preview-spin"), tr!("settings-preview-spin-desc"), "turntable rotate", |ui| {
+            switch(ui, &mut d.preview.model_turntable);
+        });
+        r.row_kw(tr!("settings-preview-model-limit"), tr!("settings-preview-model-limit-desc"), "max size", |ui| {
             number(ui, &mut d.preview.max_model_mib, 1..=4096, " MiB");
         });
-        r.row_kw("Audio waveform", "Decode audio files to draw their waveform.", "wave sound music", |ui| {
+        r.row_kw(tr!("settings-preview-waveform"), tr!("settings-preview-waveform-desc"), "wave sound music", |ui| {
             switch(ui, &mut d.preview.audio_waveform);
         });
-        r.row_kw("Audio size limit", "Larger audio files get no waveform.", "max size", |ui| {
+        r.row_kw(tr!("settings-preview-audio-limit"), tr!("settings-preview-audio-limit-desc"), "max size", |ui| {
             number(ui, &mut d.preview.max_audio_mib, 1..=16_384, " MiB");
         });
-        r.row_kw("Audio playback", "Play, pause and seek inside the preview.", "play music sound", |ui| {
+        r.row_kw(tr!("settings-preview-playback"), tr!("settings-preview-playback-desc"), "play music sound", |ui| {
             switch(ui, &mut d.preview.audio_playback);
         });
-        r.row_kw(
-            "Video poster frames",
-            "Uses ffmpeg when it is installed. Nothing is downloaded.",
-            "ffmpeg thumbnail",
-            |ui| {
-                switch(ui, &mut d.preview.video_ffmpeg);
-            },
-        );
-        r.row_kw("ffmpeg program", "A name looked up on PATH, or a full path.", "ffmpeg path", |ui| {
+        r.row_kw(tr!("settings-preview-video"), tr!("settings-preview-video-desc"), "ffmpeg thumbnail", |ui| {
+            switch(ui, &mut d.preview.video_ffmpeg);
+        });
+        r.row_kw(tr!("settings-preview-ffmpeg"), tr!("settings-preview-ffmpeg-desc"), "ffmpeg path", |ui| {
             text(ui, &mut d.preview.ffmpeg_path, "ffmpeg", 220.0);
         });
-        r.row_kw(
-            "Compare two files",
-            "With exactly two text files selected, the preview shows their diff.",
-            "diff compare",
-            |ui| {
-                switch(ui, &mut d.preview.diff);
-            },
-        );
-        r.row_kw("Diff size limit", "Each file is compared up to this size.", "max size", |ui| {
+        r.row_kw(tr!("settings-preview-diff"), tr!("settings-preview-diff-desc"), "diff compare", |ui| {
+            switch(ui, &mut d.preview.diff);
+        });
+        r.row_kw(tr!("settings-preview-diff-limit"), tr!("settings-preview-diff-limit-desc"), "max size", |ui| {
             number(ui, &mut d.preview.max_diff_kib, 16..=65_536, " KiB");
         });
+        r.row_kw(tr!("settings-preview-thumb-mem"), tr!("settings-preview-thumb-mem-desc"), "cache ram budget", |ui| {
+            number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
+        });
         r.row_kw(
-            "Thumbnail memory",
-            "Decoded thumbnails kept in memory; the least recently shown go first. Current use is in About.",
-            "cache ram budget",
-            |ui| {
-                number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
-            },
-        );
-        r.row_kw(
-            "Preview memory",
-            "Finished previews kept so going back to a file is instant. Current use is in About.",
+            tr!("settings-preview-preview-mem"),
+            tr!("settings-preview-preview-mem-desc"),
             "cache ram budget",
             |ui| {
                 number(ui, &mut d.preview.preview_cache_mib, 0..=4096, " MiB");
             },
         );
     });
-    any |= group(ui, q, ctx, "Search", |r| {
-        r.row_kw("Search threads", "0 uses every core.", "parallel", |ui| {
+    any |= group(ui, q, ctx, tr!("settings-search"), |r| {
+        r.row_kw(tr!("settings-search-threads"), tr!("settings-search-threads-desc"), "parallel", |ui| {
             number(ui, &mut d.search.threads, 0..=64, "");
         });
-        r.row_kw("Respect .gitignore", "Skip ignored files by default.", "ignore", |ui| {
+        r.row_kw(tr!("settings-search-gitignore"), tr!("settings-search-gitignore-desc"), "ignore", |ui| {
             switch(ui, &mut d.search.respect_gitignore);
         });
-        r.row_kw("Content search limit", "Files larger than this are skipped when searching contents.", "grep", |ui| {
+        r.row_kw(tr!("settings-search-content-limit"), tr!("settings-search-content-limit-desc"), "grep", |ui| {
             number(ui, &mut d.search.content_max_mib, 1..=1024, " MiB");
         });
         if !d.search.saved.is_empty() {
-            r.block("Saved searches from config.toml", "", |ui| {
+            r.block(tr!("settings-search-saved"), "", |ui| {
                 let mut remove = None;
                 for (i, s) in d.search.saved.iter().enumerate() {
                     ui.horizontal(|ui| {
@@ -1037,10 +1049,10 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     });
     any |= crate::ui::smart_settings::index_group(ui, q, d);
     any |= group(ui, q, ctx, "Git", |r| {
-        r.row_kw("Git status column", "Show modified / untracked markers in repositories.", "vcs", |ui| {
+        r.row_kw(tr!("settings-git-status-column"), tr!("settings-git-status-column-desc"), "vcs", |ui| {
             switch(ui, &mut d.git.status_column);
         });
-        r.row("Refresh interval", "", |ui| {
+        r.row(tr!("settings-git-refresh"), "", |ui| {
             number(ui, &mut d.git.refresh_secs, 1..=120, " s");
         });
     });
@@ -1058,31 +1070,40 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut copy = false;
     let mut any = false;
     any |= group(ui, q, "Config file advanced", "config.toml", |r| {
-        r.block("", "Every setting lives in one TOML file. Edits made in an editor apply within a second; parse errors show where they are and keep the previous settings.", |ui| {
+        r.block("", tr!("settings-advanced-config-desc"), |ui| {
             ui.horizontal(|ui| {
                 ui.label(crate::theme::icons::icon(ph::FILE_CODE, 14.0).color(p.accent));
-                ui.add(egui::Label::new(RichText::new(path.display().to_string()).monospace().color(p.text_secondary)).truncate());
+                ui.add(
+                    egui::Label::new(RichText::new(path.display().to_string()).monospace().color(p.text_secondary))
+                        .truncate(),
+                );
             });
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                edit = small_button(ui, Some(ph::PENCIL_SIMPLE), "Edit config file", false).clicked();
-                reload = small_button(ui, Some(ph::ARROW_CLOCKWISE), "Reload from disk", false).clicked();
-                copy = small_button(ui, Some(ph::CLIPBOARD_TEXT), "Copy as TOML", false).clicked();
+                edit = small_button(ui, Some(ph::PENCIL_SIMPLE), tr!("settings-advanced-edit"), false).clicked();
+                reload = small_button(ui, Some(ph::ARROW_CLOCKWISE), tr!("settings-advanced-reload"), false).clicked();
+                copy = small_button(ui, Some(ph::CLIPBOARD_TEXT), tr!("settings-advanced-copy"), false).clicked();
             });
         });
     });
-    any |= group(ui, q, "Config file advanced", "Export & import", |r| {
-        r.row_kw("Export settings", "Save a copy of config.toml anywhere you like.", "backup save", |ui| {
-            export = small_button(ui, Some(ph::EXPORT), "Export…", false).clicked();
+    any |= group(ui, q, "Config file advanced", tr!("settings-advanced-transfer"), |r| {
+        r.row_kw(tr!("settings-export-title"), tr!("settings-advanced-export-desc"), "backup save", |ui| {
+            export = small_button(ui, Some(ph::EXPORT), tr!("settings-advanced-export"), false).clicked();
         });
-        r.row_kw("Import settings", "Load a config file (replaces the current settings).", "restore load", |ui| {
-            import = small_button(ui, Some(ph::DOWNLOAD_SIMPLE), "Import…", false).clicked();
+        r.row_kw(tr!("settings-import-title"), tr!("settings-advanced-import-desc"), "restore load", |ui| {
+            import = small_button(ui, Some(ph::DOWNLOAD_SIMPLE), tr!("settings-advanced-import"), false).clicked();
         });
     });
-    any |= group(ui, q, "Config file advanced", "Danger zone", |r| {
-        r.row_kw("Reset everything", "Restore every setting to its default.", "defaults factory", |ui| {
-            reset_all = small_button(ui, Some(ph::WARNING), "Reset all settings", true).clicked();
-        });
+    any |= group(ui, q, "Config file advanced", tr!("settings-advanced-danger"), |r| {
+        r.row_kw(
+            tr!("settings-advanced-reset-all"),
+            tr!("settings-advanced-reset-all-desc"),
+            "defaults factory",
+            |ui| {
+                reset_all =
+                    small_button(ui, Some(ph::WARNING), tr!("settings-advanced-reset-all-button"), true).clicked();
+            },
+        );
     });
     if edit {
         app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
@@ -1102,7 +1123,7 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     if reset_all {
         app.settings.draft = soyuz_core::config::Config::default();
-        app.ui.toasts.push(crate::ui::toasts::Toast::info("All settings reset to defaults"));
+        app.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("settings-advanced-reset-all-done")));
     }
     any
 }

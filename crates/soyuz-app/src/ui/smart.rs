@@ -59,14 +59,14 @@ impl SmartStore {
         f.name = f.name.trim().to_string();
         f.query = f.query.trim().to_string();
         if f.name.is_empty() {
-            return Err("Give the smart folder a name".into());
+            return Err(tr!("views-smart-need-name").into());
         }
         if f.query.is_empty() {
-            return Err("The query is empty".into());
+            return Err(tr!("views-smart-query-empty").into());
         }
         soyuz_index::parse(&f.query).map_err(|e| e.msg)?;
         if self.folders.iter().enumerate().any(|(i, o)| Some(i) != index && o.name.eq_ignore_ascii_case(&f.name)) {
-            return Err(format!("There already is a smart folder called “{}”", f.name));
+            return Err(tr!("views-smart-name-exists", name = &f.name));
         }
         match index {
             Some(i) if i < self.folders.len() => {
@@ -185,11 +185,11 @@ pub fn apply(app: &mut SoyuzApp, cmd: SmartCmd) {
             });
             match res {
                 Ok(i) => {
-                    app.ui.toasts.push(Toast::success(format!("Smart folder “{}” saved", folder.name.trim())));
+                    app.ui.toasts.push(Toast::success(tr!("views-smart-saved", name = folder.name.trim())));
                     open(app, i, false);
                 }
                 Err(e) => {
-                    app.ui.toasts.push(Toast::error("Couldn't save the smart folder").body(e));
+                    app.ui.toasts.push(Toast::error(tr!("views-smart-save-failed")).body(e));
                 }
             }
         }
@@ -208,8 +208,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: SmartCmd) {
             });
             if let Some(f) = removed {
                 app.ui.toasts.push(
-                    Toast::info(format!("Deleted smart folder “{}”", f.name))
-                        .body("Only the saved query was removed; no files were touched."),
+                    Toast::info(tr!("views-smart-deleted", name = &f.name)).body(tr!("views-smart-deleted-body")),
                 );
             }
         }
@@ -218,9 +217,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: SmartCmd) {
         }
         SmartCmd::RebuildIndex => {
             if ix::rebuild() {
-                app.ui
-                    .toasts
-                    .push(Toast::info("Rebuilding the index").body("Searches walk the disk until it is done."));
+                app.ui.toasts.push(Toast::info(tr!("views-smart-rebuilding")).body(tr!("views-smart-rebuilding-body")));
             }
         }
     }
@@ -232,7 +229,7 @@ fn open(app: &mut SoyuzApp, i: usize, new_tab: bool) {
     let plan = match ix::plan_from_query(&f.query, f.include_hidden) {
         Ok(p) => p,
         Err(e) => {
-            app.ui.toasts.push(Toast::error(format!("Smart folder “{}”", f.name)).body(e));
+            app.ui.toasts.push(Toast::error(tr!("views-smart-error-title", name = &f.name)).body(e));
             return;
         }
     };
@@ -241,7 +238,7 @@ fn open(app: &mut SoyuzApp, i: usize, new_tab: bool) {
         Ok(q) => q,
         Err(_) if ix::can_serve(&plan) => soyuz_search::SearchQuery::default(),
         Err(e) => {
-            app.ui.toasts.push(Toast::error(format!("Smart folder “{}”", f.name)).body(e));
+            app.ui.toasts.push(Toast::error(tr!("views-smart-error-title", name = &f.name)).body(e));
             return;
         }
     };
@@ -266,6 +263,7 @@ fn shown_name(loc: &Location) -> Option<String> {
     }
 }
 
+/// Collapsed-set key of the sidebar section (persisted; the header is translated).
 const SECTION: &str = "Smart folders";
 
 /// Sidebar section (drawn when there are smart folders or indexing is on).
@@ -275,7 +273,7 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
         return;
     }
     let mut open = !collapsed.contains(SECTION);
-    collapsible_header(ui, SECTION, &mut open);
+    collapsible_header(ui, tr!("views-smart-section"), &mut open);
     if open {
         collapsed.remove(SECTION);
     } else {
@@ -296,20 +294,20 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
         }
         r.context_menu(|ui| {
             ui.set_width(210.0);
-            if menu_item(ui, Some(ph::FOLDER_OPEN), "Open", None, true).clicked() {
+            if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-smart-open"), None, true).clicked() {
                 cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: false }));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::PLUS), "Open in new tab", None, true).clicked() {
+            if menu_item(ui, Some(ph::PLUS), tr!("views-smart-open-new-tab"), None, true).clicked() {
                 cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: true }));
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::PENCIL_SIMPLE), "Edit or rename…", None, true).clicked() {
+            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("views-smart-edit"), None, true).clicked() {
                 cmds.push(Cmd::Smart(SmartCmd::Edit(Some(i))));
                 ui.close();
             }
-            if menu_item(ui, Some(ph::TRASH), "Delete…", None, true).clicked() {
+            if menu_item(ui, Some(ph::TRASH), tr!("views-smart-delete"), None, true).clicked() {
                 cmds.push(Cmd::Smart(SmartCmd::Delete(i)));
                 ui.close();
             }
@@ -317,13 +315,13 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
     }
     let r = NavRow {
         icon: ph::PLUS,
-        label: "New smart folder…",
+        label: tr!("views-smart-new"),
         active: false,
         icon_color: Some(palette(ui.ctx()).text_tertiary),
         usage: None,
     }
     .show(ui)
-    .on_hover_text("A saved query that stays up to date, e.g. kind:image modified:<7d");
+    .on_hover_text(tr!("views-smart-new-tip"));
     if r.clicked() {
         cmds.push(Cmd::Smart(SmartCmd::Edit(None)));
     }
@@ -332,18 +330,17 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
 /// Short status text for the index (status bar chip and settings).
 pub fn status_line(st: &soyuz_index::IndexStatus) -> String {
     use soyuz_index::Phase;
-    let n = |v: u64| crate::ui::statusbar::group_thousands(v as usize);
     match &st.phase {
-        Phase::Starting => "Starting the index…".into(),
+        Phase::Starting => tr!("views-index-starting").into(),
         Phase::Crawling => match st.progress() {
-            Some(p) => format!("Indexing {:.0}% · {} items", p * 100.0, n(st.scanned)),
-            None => format!("Indexing · {} items", n(st.scanned)),
+            Some(p) => tr!("views-index-crawling-pct", pct = (p * 100.0).round() as u64, count = st.scanned),
+            None => tr!("views-index-crawling", count = st.scanned),
         },
-        Phase::Verifying => format!("Checking for changes · {} items", n(st.scanned)),
-        Phase::CatchingUp => "Applying changes from the NTFS journal…".into(),
-        Phase::Contents => format!("Reading file contents · {}", n(st.content_files)),
-        Phase::Idle => format!("Indexed · {} files, {} folders", n(st.files), n(st.folders)),
-        Phase::Failed(e) => format!("Index off: {e}"),
+        Phase::Verifying => tr!("views-index-verifying", count = st.scanned),
+        Phase::CatchingUp => tr!("views-index-catching-up").into(),
+        Phase::Contents => tr!("views-index-contents", count = st.content_files),
+        Phase::Idle => tr!("views-index-idle", files = st.files, folders = st.folders),
+        Phase::Failed(e) => tr!("views-index-failed", error = e.to_string()),
     }
 }
 
@@ -357,14 +354,14 @@ pub fn status_chip(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     let failed = matches!(st.phase, Phase::Failed(_));
     let label = match &st.phase {
         Phase::Crawling => match st.progress() {
-            Some(pr) => format!("Indexing {:.0}%", pr * 100.0),
-            None => "Indexing".to_string(),
+            Some(pr) => tr!("views-index-chip-pct", pct = (pr * 100.0).round() as u64),
+            None => tr!("views-index-chip-indexing").to_string(),
         },
-        Phase::Verifying | Phase::CatchingUp => "Updating index".into(),
-        Phase::Contents => "Indexing contents".into(),
-        Phase::Starting => "Index".into(),
-        Phase::Idle => "Indexed".into(),
-        Phase::Failed(_) => "Index off".into(),
+        Phase::Verifying | Phase::CatchingUp => tr!("views-index-chip-updating").into(),
+        Phase::Contents => tr!("views-index-chip-contents").into(),
+        Phase::Starting => tr!("views-index-chip-starting").into(),
+        Phase::Idle => tr!("views-index-chip-idle").into(),
+        Phase::Failed(_) => tr!("views-index-chip-off").into(),
     };
     let font = FontId::proportional(11.5);
     let tw = ui.painter().layout_no_wrap(label.clone(), font.clone(), p.text_secondary).size().x;
@@ -388,22 +385,23 @@ pub fn status_chip(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
             st.ready_roots.iter().map(|r| r.display().to_string()).collect::<Vec<_>>().join("\n")
         ));
     }
-    tip.push_str("\nClick for index settings; right-click for more");
+    tip.push('\n');
+    tip.push_str(tr!("views-index-chip-tip"));
     let resp = resp.on_hover_text(tip);
     if resp.clicked() {
         cmds.push(Cmd::Smart(SmartCmd::OpenSettings));
     }
     resp.context_menu(|ui| {
         ui.set_width(200.0);
-        if menu_item(ui, Some(ph::GEAR_SIX), "Index settings…", None, true).clicked() {
+        if menu_item(ui, Some(ph::GEAR_SIX), tr!("views-index-settings"), None, true).clicked() {
             cmds.push(Cmd::Smart(SmartCmd::OpenSettings));
             ui.close();
         }
-        if menu_item(ui, Some(ph::ARROWS_CLOCKWISE), "Rebuild index", None, !failed).clicked() {
+        if menu_item(ui, Some(ph::ARROWS_CLOCKWISE), tr!("views-index-rebuild"), None, !failed).clicked() {
             cmds.push(Cmd::Smart(SmartCmd::RebuildIndex));
             ui.close();
         }
-        if menu_item(ui, Some(ph::FOLDER_SIMPLE_DOTTED), "New smart folder…", None, true).clicked() {
+        if menu_item(ui, Some(ph::FOLDER_SIMPLE_DOTTED), tr!("views-smart-new"), None, true).clicked() {
             cmds.push(Cmd::Smart(SmartCmd::Edit(None)));
             ui.close();
         }
@@ -425,20 +423,23 @@ impl SmartDialog {
     }
 }
 
-const HELP: &[(&str, &str)] = &[
-    ("report \"exact phrase\"", "name contains the words / the phrase"),
-    ("*.pdf  ext:pdf,docx", "name pattern, extensions"),
-    ("kind:image  kind:folder", "image video audio document archive code file folder"),
-    ("size:>5MB  size:1k..2M", "file size"),
-    ("modified:<7d  created:2026-01", "age (h d w mo y) or date"),
-    ("tag:red  path:docs  in:\"~/Projects\"", "color tag, path text, folder"),
-    ("content:todo", "words inside text files (needs content indexing)"),
-    ("-draft  a OR b  (a b)", "exclude, either, group"),
-];
+/// Query cheat sheet: `(example, what it does)`; the examples are query syntax.
+fn help() -> [(&'static str, &'static str); 8] {
+    [
+        ("report \"exact phrase\"", tr!("views-smart-help-words")),
+        ("*.pdf  ext:pdf,docx", tr!("views-smart-help-pattern")),
+        ("kind:image  kind:folder", tr!("views-smart-help-kind")),
+        ("size:>5MB  size:1k..2M", tr!("views-smart-help-size")),
+        ("modified:<7d  created:2026-01", tr!("views-smart-help-age")),
+        ("tag:red  path:docs  in:\"~/Projects\"", tr!("views-smart-help-tag")),
+        ("content:todo", tr!("views-smart-help-content")),
+        ("-draft  a OR b  (a b)", tr!("views-smart-help-logic")),
+    ]
+}
 
 impl Dialog for SmartDialog {
     fn title(&self) -> &str {
-        if self.index.is_some() { "Edit smart folder" } else { "New smart folder" }
+        if self.index.is_some() { tr!("views-smart-dialog-edit") } else { tr!("views-smart-dialog-new") }
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -454,10 +455,10 @@ impl Dialog for SmartDialog {
         let label = |ui: &mut Ui, s: &str| {
             ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.text_secondary));
         };
-        label(ui, "Name");
+        label(ui, tr!("views-smart-name"));
         let n = ui.add(
             TextEdit::singleline(&mut self.folder.name)
-                .hint_text("Recent photos")
+                .hint_text(tr!("views-smart-name-hint"))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 7)),
         );
@@ -466,7 +467,7 @@ impl Dialog for SmartDialog {
             self.focus = false;
         }
         ui.add_space(8.0);
-        label(ui, "Query");
+        label(ui, tr!("views-smart-query"));
         ui.add(
             TextEdit::singleline(&mut self.folder.query)
                 .hint_text("kind:image modified:<30d -screenshot")
@@ -485,17 +486,17 @@ impl Dialog for SmartDialog {
                 let plan = ix::plan_from_query(&self.folder.query, self.folder.include_hidden).ok();
                 let live = plan.as_ref().is_some_and(ix::can_serve);
                 let text = if live {
-                    "Answered by the index; refreshes by itself as files change."
+                    tr!("views-smart-live")
                 } else if ix::is_enabled() {
-                    "The index doesn't cover this yet; the folder searches the disk until it does."
+                    tr!("views-smart-not-covered")
                 } else {
-                    "Indexing is off, so the folder searches the disk when opened (Settings → Preview & search)."
+                    tr!("views-smart-index-off")
                 };
                 ui.label(RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
             }
         }
         ui.add_space(6.0);
-        ui.checkbox(&mut self.folder.include_hidden, "Include hidden files");
+        ui.checkbox(&mut self.folder.include_hidden, tr!("views-smart-include-hidden"));
         ui.add_space(8.0);
         egui::Frame::new()
             .fill(p.bg_surface2)
@@ -504,24 +505,24 @@ impl Dialog for SmartDialog {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 3.0;
-                for (example, what) in HELP {
+                for (example, what) in help() {
                     ui.horizontal(|ui| {
                         ui.allocate_ui_with_layout(vec2(250.0, 16.0), Layout::left_to_right(Align::Center), |ui| {
                             ui.set_min_width(250.0);
                             ui.add(
                                 egui::Label::new(
-                                    RichText::new(*example).font(FontId::monospace(11.0)).color(p.text_primary),
+                                    RichText::new(example).font(FontId::monospace(11.0)).color(p.text_primary),
                                 )
                                 .truncate(),
                             );
                         });
-                        ui.label(RichText::new(*what).font(FontId::proportional(11.0)).color(p.text_tertiary));
+                        ui.label(RichText::new(what).font(FontId::proportional(11.0)).color(p.text_tertiary));
                     });
                 }
             });
         let err = match &parsed {
-            _ if self.folder.name.trim().is_empty() => Some("Give the smart folder a name".to_string()),
-            _ if self.folder.query.trim().is_empty() => Some("Type a query".to_string()),
+            _ if self.folder.name.trim().is_empty() => Some(tr!("views-smart-need-name").to_string()),
+            _ if self.folder.query.trim().is_empty() => Some(tr!("views-smart-type-query").to_string()),
             Err(e) => Some(e.msg.clone()),
             Ok(_) => None,
         };
@@ -529,14 +530,14 @@ impl Dialog for SmartDialog {
             .iter()
             .enumerate()
             .any(|(i, f)| Some(i) != self.index && f.name.eq_ignore_ascii_case(self.folder.name.trim()));
-        let err = err.or_else(|| taken.then(|| "That name is taken".to_string()));
+        let err = err.or_else(|| taken.then(|| tr!("views-smart-name-taken").to_string()));
         ui.add_space(14.0);
         let mut ok = false;
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, "Save", Btn::Primary).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = button(ui, tr!("common-save"), Btn::Primary).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
             if let Some(e) = &err
                 && !self.folder.name.is_empty()
             {
@@ -561,7 +562,7 @@ struct ConfirmDelete {
 
 impl Dialog for ConfirmDelete {
     fn title(&self) -> &str {
-        "Delete smart folder"
+        tr!("views-smart-delete-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -570,19 +571,15 @@ impl Dialog for ConfirmDelete {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(RichText::new(format!("Delete the smart folder “{}”?", self.name)).color(p.text_primary));
-        ui.label(
-            RichText::new("Only the saved query goes away; the files it shows are not touched.")
-                .font(FontId::proportional(11.5))
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("views-smart-delete-confirm", name = &self.name)).color(p.text_primary));
+        ui.label(RichText::new(tr!("views-smart-delete-body")).font(FontId::proportional(11.5)).color(p.text_tertiary));
         ui.add_space(14.0);
         let mut ok = false;
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, "Delete", Btn::Danger).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = button(ui, tr!("common-delete"), Btn::Danger).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ok {
             ctx.cmds.push(Cmd::Smart(SmartCmd::ConfirmDelete(self.index)));

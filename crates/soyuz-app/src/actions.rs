@@ -150,11 +150,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             let tab = app.ws.tab_mut();
             tab.sync_nav = !tab.sync_nav;
             let on = tab.sync_nav;
-            app.ui.toasts.push(Toast::info(if on {
-                "Synchronized navigation on"
-            } else {
-                "Synchronized navigation off"
-            }));
+            app.ui.toasts.push(Toast::info(if on { tr!("actions-sync-nav-on") } else { tr!("actions-sync-nav-off") }));
         }
 
         // ---- view ----
@@ -187,7 +183,11 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 }
             }
             let on = app.ui.show_hidden;
-            app.ui.toasts.push(Toast::info(if on { "Showing hidden files" } else { "Hiding hidden files" }));
+            app.ui.toasts.push(Toast::info(if on {
+                tr!("actions-showing-hidden")
+            } else {
+                tr!("actions-hiding-hidden")
+            }));
         }
         A::SortBy(col) => sort_by(app, col),
         A::ToggleSortDir => {
@@ -214,13 +214,13 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             let pane = app.ws.pane_mut();
             pane.view = view;
             pane.resort();
-            app.ui.toasts.push(Toast::info("Folder view reset"));
+            app.ui.toasts.push(Toast::info(tr!("actions-folder-view-reset")));
         }
         A::ApplyViewToAll => {
             app.ui.dialogs.push(ConfirmDialog::new(
-                "Apply this view to all folders?",
-                "Every folder will use the current layout, sorting and grouping. Folders you customized are reset.",
-                "Apply to all",
+                tr!("actions-apply-view-title"),
+                tr!("actions-apply-view-message"),
+                tr!("actions-apply-view-confirm"),
                 Cmd::ApplyViewToAll(pane_id),
             ));
         }
@@ -300,7 +300,11 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::TypeAheadToggle => {
             let b = &mut app.config.behaviour;
             b.type_ahead = if b.type_ahead == TypeAhead::Jump { TypeAhead::Filter } else { TypeAhead::Jump };
-            let msg = if b.type_ahead == TypeAhead::Jump { "Typing jumps to names" } else { "Typing filters the list" };
+            let msg = if b.type_ahead == TypeAhead::Jump {
+                tr!("actions-type-ahead-jump")
+            } else {
+                tr!("actions-type-ahead-filter")
+            };
             app.ui.toasts.push(Toast::info(msg));
         }
 
@@ -311,7 +315,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             match file {
                 Some(path) => app.cmds.push(Cmd::ChooseOpenWith(path)),
                 None => {
-                    app.ui.toasts.push(Toast::info("Select a file to open with another application"));
+                    app.ui.toasts.push(Toast::info(tr!("actions-open-with-needs-file")));
                 }
             }
         }
@@ -394,14 +398,19 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 _ => 1.0,
             };
             crate::ui::settings::update_config(app, ctx, |c| c.appearance.ui_scale = next);
-            let mut t = Toast::info("Interface zoom").body(format!("{:.0} %  ·  Ctrl+0 resets", next * 100.0));
+            let percent = format!("{:.0}", next * 100.0);
+            let mut t = Toast::info(tr!("actions-ui-zoom")).body(tr!("actions-ui-zoom-body", percent = percent));
             t.duration = Some(1.5);
             app.ui.toasts.push_replacing(t);
         }
         A::ToggleHighContrast => {
             let on = !app.config.appearance.high_contrast;
             crate::ui::settings::update_config(app, ctx, |c| c.appearance.high_contrast = on);
-            app.ui.toasts.push(Toast::info(if on { "High contrast on" } else { "High contrast off" }));
+            app.ui.toasts.push(Toast::info(if on {
+                tr!("actions-high-contrast-on")
+            } else {
+                tr!("actions-high-contrast-off")
+            }));
         }
         A::ShowKeybindings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Keyboard)),
         A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
@@ -417,7 +426,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             if !path.exists()
                 && let Err(e) = soyuz_core::config::save_pretty(&path, &app.config)
             {
-                app.ui.toasts.push(Toast::error("Couldn't create the config file").body(e.to_string()));
+                app.ui.toasts.push(Toast::error(tr!("actions-config-create-failed")).body(e.to_string()));
                 return;
             }
             ops::launch(app, &path);
@@ -443,7 +452,9 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));
             } else {
-                app.ui.toasts.push(Toast::info(format!("{} is coming soon", other.title())));
+                app.ui
+                    .toasts
+                    .push(Toast::info(tr!("actions-coming-soon", action = crate::palette::catalog::title(&other))));
             }
         }
     }
@@ -530,7 +541,8 @@ pub fn cursor(app: &mut SoyuzApp, dir: NavDir, extend: bool, keep: bool) {
     app.ui.focus = Focus::List;
 }
 
-/// Group-by choices shown in menus.
+/// Group-by choices shown in menus (English names; the UI shows
+/// [`crate::palette::catalog::group_label`]).
 pub const GROUPS: [(GroupBy, &str); 6] = [
     (GroupBy::None, "None"),
     (GroupBy::Kind, "Type"),

@@ -27,7 +27,7 @@ impl SaveWorkspaceDialog {
 
 impl Dialog for SaveWorkspaceDialog {
     fn title(&self) -> &str {
-        "Save workspace"
+        tr!("workspaces-save-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -36,14 +36,11 @@ impl Dialog for SaveWorkspaceDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(
-            RichText::new("Saves this window's tabs, groups, pane layout and each pane's view under a name.")
-                .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("workspaces-save-intro")).color(p.text_secondary));
         ui.add_space(10.0);
         let r = ui.add(
             TextEdit::singleline(&mut self.name)
-                .hint_text("Workspace name")
+                .hint_text(tr!("workspaces-save-name-hint"))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 7)),
         );
@@ -55,20 +52,16 @@ impl Dialog for SaveWorkspaceDialog {
         let groups = ctx.ws.groups.len();
         ui.add_space(6.0);
         ui.label(
-            RichText::new(format!(
-                "{tabs} tab{}{}",
-                if tabs == 1 { "" } else { "s" },
-                match groups {
-                    0 => String::new(),
-                    1 => " · 1 group".into(),
-                    n => format!(" · {n} groups"),
-                }
-            ))
+            RichText::new(if groups == 0 {
+                tr!("workspaces-tabs", count = tabs)
+            } else {
+                tr!("workspaces-tabs-and-groups", tabs = tabs, groups = groups)
+            })
             .font(FontId::proportional(11.5))
             .color(p.text_tertiary),
         );
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Save", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("common-save"), tr!("common-cancel"));
         if (ok || enter) && !self.name.trim().is_empty() {
             ctx.cmds.push(Cmd::Workspace(WsCmd::Save(self.name.trim().to_string())));
             return false;
@@ -86,7 +79,7 @@ pub struct ManageWorkspacesDialog {
 
 impl Dialog for ManageWorkspacesDialog {
     fn title(&self) -> &str {
-        "Workspaces"
+        tr!("workspaces-manage-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -101,10 +94,7 @@ impl Dialog for ManageWorkspacesDialog {
         let p = palette(ui.ctx());
         let list = crate::ui::workspaces::store_snapshot();
         if list.is_empty() {
-            ui.label(
-                RichText::new("No saved workspaces yet. Use “Save workspace as…” to keep this window's layout.")
-                    .color(p.text_secondary),
-            );
+            ui.label(RichText::new(tr!("workspaces-manage-empty")).color(p.text_secondary));
         }
         egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
             for (i, (name, hotkey, tabs)) in list.iter().enumerate() {
@@ -116,14 +106,14 @@ impl Dialog for ManageWorkspacesDialog {
                         ui.add(TextEdit::singleline(n).desired_width(200.0).margin(Margin::symmetric(8, 5)));
                         ui.add(
                             TextEdit::singleline(h)
-                                .hint_text("Hotkey, e.g. Ctrl+Alt+1")
+                                .hint_text(tr!("workspaces-manage-hotkey-hint"))
                                 .desired_width(150.0)
                                 .margin(Margin::symmetric(8, 5)),
                         );
                     } else {
                         ui.label(RichText::new(name).color(p.text_primary).font(FontId::proportional(13.0)));
                         ui.label(
-                            RichText::new(format!("{tabs} tab{}", if *tabs == 1 { "" } else { "s" }))
+                            RichText::new(tr!("workspaces-tabs", count = *tabs))
                                 .font(FontId::proportional(11.5))
                                 .color(p.text_tertiary),
                         );
@@ -134,7 +124,7 @@ impl Dialog for ManageWorkspacesDialog {
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         if editing {
-                            if button(ui, "Done", Btn::Primary).clicked()
+                            if button(ui, tr!("workspaces-manage-done"), Btn::Primary).clicked()
                                 && let Some((k, n, h)) = self.editing.take()
                             {
                                 ctx.cmds.push(Cmd::Workspace(WsCmd::Rename(k, n)));
@@ -142,19 +132,23 @@ impl Dialog for ManageWorkspacesDialog {
                             }
                             return;
                         }
-                        if button(ui, "Delete", Btn::Ghost).clicked() {
+                        if button(ui, tr!("common-delete"), Btn::Ghost).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::Delete(i)));
                         }
-                        if button(ui, "Edit", Btn::Ghost).clicked() {
+                        if button(ui, tr!("workspaces-manage-edit"), Btn::Ghost).clicked() {
                             self.editing = Some((i, name.clone(), hotkey.clone()));
                         }
-                        if i > 0 && button(ui, "Up", Btn::Ghost).on_hover_text("Move up (slot order)").clicked() {
+                        if i > 0
+                            && button(ui, tr!("workspaces-manage-up"), Btn::Ghost)
+                                .on_hover_text(tr!("workspaces-manage-up-tip"))
+                                .clicked()
+                        {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::MoveUp(i)));
                         }
-                        if button(ui, "New window", Btn::Secondary).clicked() {
+                        if button(ui, tr!("workspaces-manage-new-window"), Btn::Secondary).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::OpenInNewWindow(i)));
                         }
-                        if button(ui, "Open", Btn::Primary).clicked() {
+                        if button(ui, tr!("workspaces-manage-open"), Btn::Primary).clicked() {
                             ctx.cmds.push(Cmd::Workspace(WsCmd::Open(i)));
                         }
                     });
@@ -163,11 +157,9 @@ impl Dialog for ManageWorkspacesDialog {
         });
         ui.add_space(6.0);
         ui.label(
-            RichText::new("The first nine are also “open_workspace:1” … “:9” for key bindings.")
-                .font(FontId::proportional(11.5))
-                .color(p.text_tertiary),
+            RichText::new(tr!("workspaces-manage-slots-note")).font(FontId::proportional(11.5)).color(p.text_tertiary),
         );
-        !crate::ui::dialogs::close_footer(ui, "Close")
+        !crate::ui::dialogs::close_footer(ui, tr!("common-close"))
     }
 }
 
@@ -180,7 +172,7 @@ pub struct CloseWindowDialog {
 
 impl CloseWindowDialog {
     pub fn new(id: WindowId, tabs: usize, open: Arc<AtomicBool>) -> Self {
-        CloseWindowDialog { id, title: format!("Close a window with {tabs} tabs?"), open }
+        CloseWindowDialog { id, title: tr!("workspaces-close-title", count = tabs), open }
     }
 }
 
@@ -205,21 +197,16 @@ impl Dialog for CloseWindowDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        let other = if self.id.is_main() { "the next window" } else { "the main window" };
-        ui.label(
-            RichText::new(format!(
-                "Move its tabs to {other}, or close them (Ctrl+Shift+T reopens closed tabs). \
-                 Settings → Views → Windows & workspaces can remember the answer."
-            ))
-            .color(p.text_secondary),
-        );
+        let body =
+            if self.id.is_main() { tr!("workspaces-close-body-next") } else { tr!("workspaces-close-body-main") };
+        ui.label(RichText::new(body).color(p.text_secondary));
         ui.add_space(18.0);
         let (mut merge, mut close, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            merge = button(ui, "Move tabs", Btn::Primary).clicked();
-            close = button(ui, "Close tabs", Btn::Danger).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            merge = button(ui, tr!("workspaces-close-move"), Btn::Primary).clicked();
+            close = button(ui, tr!("workspaces-close-close"), Btn::Danger).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             merge = true;

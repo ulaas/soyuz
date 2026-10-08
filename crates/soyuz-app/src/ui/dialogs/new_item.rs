@@ -22,20 +22,17 @@ pub enum LinkChoice {
 impl LinkChoice {
     fn label(self) -> &'static str {
         match self {
-            LinkChoice::Symlink => "Symbolic link",
-            LinkChoice::Hardlink => "Hard link",
-            LinkChoice::Junction => "Junction",
+            LinkChoice::Symlink => tr!("dialogs-link-symlink"),
+            LinkChoice::Hardlink => tr!("dialogs-link-hardlink"),
+            LinkChoice::Junction => tr!("dialogs-link-junction"),
         }
     }
 
     fn hint(self) -> &'static str {
         match self {
-            LinkChoice::Symlink => {
-                "Points to a file or folder by path; may cross volumes. On Windows this needs \
-                                    Developer Mode or elevation."
-            }
-            LinkChoice::Hardlink => "Another name for the same file data; files only, same volume.",
-            LinkChoice::Junction => "A Windows folder link (no special rights needed); folders only.",
+            LinkChoice::Symlink => tr!("dialogs-link-symlink-hint"),
+            LinkChoice::Hardlink => tr!("dialogs-link-hardlink-hint"),
+            LinkChoice::Junction => tr!("dialogs-link-junction-hint"),
         }
     }
 }
@@ -74,7 +71,7 @@ impl LinkDialog {
 
 impl Dialog for LinkDialog {
     fn title(&self) -> &str {
-        "Create link"
+        tr!("dialogs-link-title")
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -98,23 +95,24 @@ impl Dialog for LinkDialog {
         ui.label(RichText::new(self.kind.hint()).font(FontId::proportional(11.5)).color(p.text_tertiary));
         ui.add_space(10.0);
         let mut no_focus = false;
-        let t = field(ui, "Target", &mut self.target, "Path of the file or folder to link to", &mut self.focus);
+        let t =
+            field(ui, tr!("dialogs-link-target"), &mut self.target, tr!("dialogs-link-target-hint"), &mut self.focus);
         if t.changed() && !self.name_touched {
             let refs: Vec<&str> = self.existing.iter().map(String::as_str).collect();
             self.name = crate::ops::fileops::names::link_name(std::path::Path::new(self.target.trim()), &refs);
         }
-        let n = field(ui, "Link name", &mut self.name, "Name of the new link", &mut no_focus);
+        let n = field(ui, tr!("dialogs-link-name"), &mut self.name, tr!("dialogs-link-name-hint"), &mut no_focus);
         if n.changed() {
             self.name_touched = true;
         }
         let name = self.name.trim().to_string();
         let target = self.target.trim().to_string();
         let err = if target.is_empty() {
-            Some("Enter a target path.".to_string())
+            Some(tr!("dialogs-link-need-target").to_string())
         } else if let Err(e) = soyuz_core::validate_name(&name) {
-            Some(format!("Invalid name: {e}"))
+            Some(tr!("dialogs-props-invalid-name", error = e.to_string()))
         } else if self.existing.iter().any(|e| e.eq_ignore_ascii_case(&name)) {
-            Some(format!("\u{201c}{name}\u{201d} already exists here."))
+            Some(tr!("dialogs-link-exists", name = &name))
         } else {
             None
         };
@@ -124,7 +122,7 @@ impl Dialog for LinkDialog {
             ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
         }
         ui.label(
-            RichText::new(format!("In {}", soyuz_fs::strip_verbatim(&self.dir).display()))
+            RichText::new(tr!("dialogs-link-in", dir = soyuz_fs::strip_verbatim(&self.dir).display().to_string()))
                 .font(FontId::proportional(11.5))
                 .color(p.text_tertiary),
         );
@@ -133,8 +131,8 @@ impl Dialog for LinkDialog {
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, "Create", Btn::Primary).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = button(ui, tr!("dialogs-link-create"), Btn::Primary).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             ok = true;
@@ -168,7 +166,7 @@ impl TransferDialog {
 
 impl Dialog for TransferDialog {
     fn title(&self) -> &str {
-        if self.mv { "Move to folder" } else { "Copy to folder" }
+        if self.mv { tr!("dialogs-transfer-move-title") } else { tr!("dialogs-transfer-copy-title") }
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -182,20 +180,22 @@ impl Dialog for TransferDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         let n = self.paths.len();
-        let what = if n == 1 {
-            format!(
-                "\u{201c}{}\u{201d}",
-                crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&self.paths[0]))
-            )
+        let text = if n == 1 {
+            let name = crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(&self.paths[0]));
+            if self.mv {
+                tr!("dialogs-transfer-move-one", name = name)
+            } else {
+                tr!("dialogs-transfer-copy-one", name = name)
+            }
+        } else if self.mv {
+            tr!("dialogs-transfer-move-many", count = n)
         } else {
-            format!("{n} items")
+            tr!("dialogs-transfer-copy-many", count = n)
         };
-        ui.label(
-            RichText::new(format!("{} {what} to:", if self.mv { "Move" } else { "Copy" })).color(p.text_secondary),
-        );
+        ui.label(RichText::new(text).color(p.text_secondary));
         ui.add_space(6.0);
         let mut f = self.focus;
-        field(ui, "Destination folder", &mut self.dest, "Folder path", &mut f);
+        field(ui, tr!("dialogs-transfer-dest"), &mut self.dest, tr!("dialogs-transfer-dest-hint"), &mut f);
         self.focus = f;
         let dest = PathBuf::from(soyuz_fs::expand_env(self.dest.trim()));
         let mut ok = false;
@@ -203,8 +203,8 @@ impl Dialog for TransferDialog {
         ui.add_space(8.0);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = button(ui, if self.mv { "Move" } else { "Copy" }, Btn::Primary).clicked();
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = button(ui, if self.mv { tr!("common-move") } else { tr!("common-copy") }, Btn::Primary).clicked();
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ui.input(|i| i.key_pressed(Key::Enter)) {
             ok = true;

@@ -33,18 +33,14 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
     if !app.ai.recipes.loaded {
         app.ai.load_recipes();
     }
-    ui.label(
-        RichText::new("Recipes replay saved steps in the current folder with fresh plans — no model, same approvals.")
-            .size(11.5)
-            .color(p.text_tertiary),
-    );
+    ui.label(RichText::new(tr!("ai-recipes-intro")).size(11.5).color(p.text_tertiary));
     ui.add_space(6.0);
     ScrollArea::vertical().id_salt("soyuz.ai.recipes").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
         if app.ai.recipes.loading.is_some() && app.ai.recipes.list.is_empty() {
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Loading\u{2026}").color(p.text_tertiary));
+                ui.label(RichText::new(tr!("common-loading")).color(p.text_tertiary));
             });
             return;
         }
@@ -52,8 +48,8 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
             crate::ui::tools::compare::empty_note(
                 ui,
                 ph::BOOK_OPEN,
-                "No recipes yet",
-                "After the assistant finished a task, choose “Save as recipe” to keep its steps.",
+                tr!("ai-recipes-empty-title"),
+                tr!("ai-recipes-empty-body"),
             );
             return;
         }
@@ -66,15 +62,13 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
                         ui.label(RichText::new(&rec.name).font(semibold(13.0)).color(p.text_primary));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if button(ui, Some(ph::TRASH), "", Tone::Quiet, true)
-                                .on_hover_text("Delete this recipe")
+                                .on_hover_text(tr!("ai-recipe-delete-tip"))
                                 .clicked()
                             {
                                 acts.push(PanelAct::DeleteRecipe(path.clone()));
                             }
-                            if button(ui, Some(ph::PLAY), "Run here", Tone::Primary, app.ai.running.is_none())
-                                .on_hover_text(
-                                    "Plan every step again in the current folder; each plan waits for your approval.",
-                                )
+                            if button(ui, Some(ph::PLAY), tr!("ai-recipe-run"), Tone::Primary, app.ai.running.is_none())
+                                .on_hover_text(tr!("ai-recipe-run-tip"))
                                 .clicked()
                             {
                                 acts.push(PanelAct::RunRecipe(Box::new(rec.clone())));
@@ -134,17 +128,21 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
     let models = uniq(&|e| if e.source == audit::SOURCE_MCP { String::new() } else { e.via.clone() });
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        ui.add(TextEdit::singleline(&mut a.filter).hint_text("Filter text").desired_width(140.0));
+        ui.add(TextEdit::singleline(&mut a.filter).hint_text(tr!("ai-audit-filter-hint")).desired_width(140.0));
         for (id, label, value, opts) in [
-            ("ai.audit.source", "Source", &mut a.source, &sources),
-            ("ai.audit.session", "Session", &mut a.session, &sessions),
-            ("ai.audit.model", "Model", &mut a.model, &models),
+            ("ai.audit.source", tr!("ai-audit-source"), &mut a.source, &sources),
+            ("ai.audit.session", tr!("ai-audit-session"), &mut a.session, &sessions),
+            ("ai.audit.model", tr!("ai-audit-model"), &mut a.model, &models),
         ] {
-            let shown = if value.is_empty() { format!("{label}: all") } else { format!("{label}: {value}") };
+            let shown = if value.is_empty() {
+                tr!("ai-audit-chip-all", label = label)
+            } else {
+                tr!("ai-audit-chip", label = label, value = &*value)
+            };
             let r = super::chip_menu(ui, None, &shown, !value.is_empty());
             egui::Popup::menu(&r).id(egui::Id::new(id)).show(|ui| {
                 ui.set_width(240.0);
-                if crate::ui::widgets::menu_item(ui, None, "All", None, true).clicked() {
+                if crate::ui::widgets::menu_item(ui, None, tr!("ai-audit-all"), None, true).clicked() {
                     value.clear();
                     ui.close();
                 }
@@ -156,7 +154,8 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 }
             });
         }
-        if button(ui, Some(ph::ARROWS_CLOCKWISE), "", Tone::Quiet, true).on_hover_text("Reload").clicked() {
+        if button(ui, Some(ph::ARROWS_CLOCKWISE), "", Tone::Quiet, true).on_hover_text(tr!("ai-audit-reload")).clicked()
+        {
             acts.push(PanelAct::ReloadAudit);
         }
     });
@@ -183,11 +182,11 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
         })
         .collect();
     ui.label(
-        RichText::new(format!(
-            "{} of {} events \u{00b7} {}",
-            rows.len(),
-            a.events.len(),
-            audit::default_path().display()
+        RichText::new(tr!(
+            "ai-audit-count",
+            shown = rows.len(),
+            total = a.events.len(),
+            path = audit::default_path().display().to_string()
         ))
         .size(10.5)
         .color(p.text_tertiary),
@@ -234,13 +233,23 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                     "{}  {}{tool}{outcome}{}",
                     local_time(&e.ts),
                     e.event,
-                    e.job_id.map(|j| format!(" \u{00b7} job {j}")).unwrap_or_default()
+                    e.job_id
+                        .map(|j| format!(" \u{00b7} {}", tr!("ai-audit-job", id = j.to_string())))
+                        .unwrap_or_default()
                 );
                 // Source badge: who did it (the assistant or an external MCP client).
                 let (badge, badge_color) = if mcp {
                     (format!("MCP \u{00b7} {}", if e.client.is_empty() { "?" } else { &e.client }), p.warning)
                 } else {
-                    (if e.client == "recipe" { "Recipe".to_string() } else { "Assistant".to_string() }, p.accent)
+                    (
+                        if e.client == "recipe" {
+                            tr!("ai-audit-badge-recipe")
+                        } else {
+                            tr!("ai-audit-badge-assistant")
+                        }
+                        .to_string(),
+                        p.accent,
+                    )
                 };
                 let bg = crate::ui::widgets::trunc_galley(
                     ui.painter(),
@@ -323,7 +332,7 @@ fn pill_ui(ui: &mut Ui, p: &Palette, pill: &Pill) -> bool {
         icons::font(10.0),
         p.text_tertiary,
     );
-    resp.on_hover_text("Remove this filter").clicked()
+    resp.on_hover_text(tr!("ai-smart-remove-tip")).clicked()
 }
 
 /// Natural language → pills → structured query (editable before it runs).
@@ -338,18 +347,15 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.label(icons::icon(ph::MAGNIFYING_GLASS, 14.0).color(p.accent));
-                ui.label(RichText::new("Smart search").font(semibold(12.5)).color(p.text_primary));
+                ui.label(RichText::new(tr!("ai-smart-title")).font(semibold(12.5)).color(p.text_primary));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if button(ui, Some(ph::X), "", Tone::Quiet, true).clicked() {
                         s.open = false;
                     }
                 });
             });
-            let resp = ui.add(
-                TextEdit::singleline(&mut s.input)
-                    .hint_text("e.g. photos from last summer larger than 5 MB")
-                    .desired_width(f32::INFINITY),
-            );
+            let resp =
+                ui.add(TextEdit::singleline(&mut s.input).hint_text(tr!("ai-smart-hint")).desired_width(f32::INFINITY));
             if std::mem::take(&mut s.focus) {
                 resp.request_focus();
             }
@@ -369,7 +375,7 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                     }
                 }
                 if s.pills.is_empty() {
-                    ui.label(RichText::new("Filters appear here as you type.").size(11.0).color(p.text_tertiary));
+                    ui.label(RichText::new(tr!("ai-smart-empty")).size(11.0).color(p.text_tertiary));
                 }
             });
             if let Some(i) = remove {
@@ -377,7 +383,7 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                 s.query_text = smart_search::to_text(&s.pills);
             }
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Query").size(10.5).color(p.text_tertiary));
+                ui.label(RichText::new(tr!("ai-smart-query")).size(10.5).color(p.text_tertiary));
                 let r = ui.add(
                     TextEdit::singleline(&mut s.query_text)
                         .font(FontId::monospace(11.5))
@@ -395,13 +401,19 @@ pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<P
                 ui.label(RichText::new(e).size(11.0).color(p.danger));
             }
             ui.horizontal(|ui| {
-                if button(ui, Some(ph::MAGNIFYING_GLASS), "Search", Tone::Primary, !s.query_text.trim().is_empty())
-                    .clicked()
+                if button(
+                    ui,
+                    Some(ph::MAGNIFYING_GLASS),
+                    tr!("ai-smart-search"),
+                    Tone::Primary,
+                    !s.query_text.trim().is_empty(),
+                )
+                .clicked()
                 {
                     acts.push(PanelAct::SmartRun);
                 }
-                if button(ui, Some(ph::SPARKLE), "Ask the assistant", Tone::Quiet, !s.input.trim().is_empty())
-                    .on_hover_text("Let the model build the query and pick the best matches")
+                if button(ui, Some(ph::SPARKLE), tr!("ai-smart-ask"), Tone::Quiet, !s.input.trim().is_empty())
+                    .on_hover_text(tr!("ai-smart-ask-tip"))
                     .clicked()
                 {
                     acts.push(PanelAct::SmartAskModel);

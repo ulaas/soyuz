@@ -53,7 +53,7 @@ pub fn format_of(data: &[u8]) -> Option<&'static str> {
     match data.get(..4)? {
         b"wOFF" => Some("WOFF"),
         b"wOF2" => Some("WOFF 2"),
-        b"ttcf" => Some("TrueType collection"),
+        b"ttcf" => Some(tr!("services-font-collection")),
         b"OTTO" => Some("OpenType (CFF)"),
         [0, 1, 0, 0] | b"true" => Some("TrueType"),
         _ => None,
@@ -64,7 +64,7 @@ pub fn format_of(data: &[u8]) -> Option<&'static str> {
 pub fn woff_to_sfnt(data: &[u8], cap: usize) -> Result<Vec<u8>, String> {
     let u16be = |at: usize| data.get(at..at + 2).map(|b| u16::from_be_bytes([b[0], b[1]]));
     let u32be = |at: usize| data.get(at..at + 4).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]));
-    let bad = || "Damaged WOFF file".to_string();
+    let bad = || tr!("services-font-bad-woff").to_string();
     let flavor = u32be(4).ok_or_else(bad)?;
     let num = u16be(12).ok_or_else(bad)? as usize;
     if num == 0 || num > 512 {
@@ -79,7 +79,7 @@ pub fn woff_to_sfnt(data: &[u8], cap: usize) -> Result<Vec<u8>, String> {
         let orig = u32be(at + 12).ok_or_else(bad)? as usize;
         let csum = u32be(at + 16).ok_or_else(bad)?;
         if orig > cap {
-            return Err("WOFF table too large".into());
+            return Err(tr!("services-font-woff-table").into());
         }
         let raw = data.get(off..off.checked_add(comp).ok_or_else(bad)?).ok_or_else(bad)?;
         let body = if comp < orig {
@@ -123,23 +123,28 @@ pub fn meta(data: &[u8]) -> Result<FontMeta, String> {
     use skrifa::MetadataProvider;
     use skrifa::raw::FileRef;
     use skrifa::string::StringId as N;
-    let file = FileRef::new(data).map_err(|e| format!("Not a readable font ({e})"))?;
+    let file = FileRef::new(data).map_err(|e| tr!("services-font-unreadable", error = e.to_string()))?;
     let faces = match &file {
         FileRef::Collection(c) => c.len(),
         FileRef::Font(_) => 1,
     };
-    let face =
-        file.fonts().next().ok_or("The font collection is empty")?.map_err(|e| format!("Not a readable font ({e})"))?;
+    let face = file
+        .fonts()
+        .next()
+        .ok_or(tr!("services-font-empty-collection"))?
+        .map_err(|e| tr!("services-font-unreadable", error = e.to_string()))?;
     let name = |id: N| -> Option<String> {
         face.localized_strings(id)
             .english_or_first()
             .map(|s| s.to_string().trim().to_string())
             .filter(|s| !s.is_empty())
     };
-    let family =
-        name(N::TYPOGRAPHIC_FAMILY_NAME).or_else(|| name(N::FAMILY_NAME)).unwrap_or_else(|| "Unnamed font".into());
-    let subfamily =
-        name(N::TYPOGRAPHIC_SUBFAMILY_NAME).or_else(|| name(N::SUBFAMILY_NAME)).unwrap_or_else(|| "Regular".into());
+    let family = name(N::TYPOGRAPHIC_FAMILY_NAME)
+        .or_else(|| name(N::FAMILY_NAME))
+        .unwrap_or_else(|| tr!("services-font-unnamed").into());
+    let subfamily = name(N::TYPOGRAPHIC_SUBFAMILY_NAME)
+        .or_else(|| name(N::SUBFAMILY_NAME))
+        .unwrap_or_else(|| tr!("services-font-regular").into());
     let axes =
         face.axes().iter().map(|a| (a.tag().to_string(), a.min_value(), a.default_value(), a.max_value())).collect();
     let attrs = face.attributes();
@@ -160,7 +165,7 @@ pub fn meta(data: &[u8]) -> Result<FontMeta, String> {
         monospaced: metrics.is_monospace,
         axes,
         faces,
-        format: format_of(data).unwrap_or("Font"),
+        format: format_of(data).unwrap_or(tr!("services-kind-font")),
     })
 }
 
@@ -271,7 +276,7 @@ fn grid_strip<F: Font>(font: &F, chars: &[char], width: usize, cell: usize) -> S
         let baseline = r as f32 * cell as f32 + cell as f32 / 2.0 + (sf.ascent() + sf.descent()) / 2.0;
         blit(font, id.with_scale_and_position(PxScale::from(px), point(x, baseline)), &mut rgba, width, height);
     }
-    Strip { caption: format!("Glyphs ({} shown)", chars.len()), width, height, rgba }
+    Strip { caption: tr!("services-font-glyphs-caption", count = chars.len()), width, height, rgba }
 }
 
 const PANGRAM: &str = "The quick brown fox jumps over the lazy dog.";
@@ -279,7 +284,7 @@ const PANGRAM: &str = "The quick brown fox jumps over the lazy dog.";
 /// Render the specimen strips at `width` pixels; `scale` is pixels per point, so the
 /// captioned sizes are true point sizes on screen.
 pub fn specimen(data: &[u8], family: &str, width: usize, scale: f32) -> Result<Vec<Strip>, String> {
-    let font = FontRef::try_from_slice_and_index(data, 0).map_err(|_| "This font can't be rendered".to_string())?;
+    let font = FontRef::try_from_slice_and_index(data, 0).map_err(|_| tr!("services-font-cant-render").to_string())?;
     let width = width.clamp(160, 4096);
     let covered: Vec<char> = {
         let mut v: Vec<char> = font.codepoint_ids().filter(|(id, _)| id.0 != 0).map(|(_, c)| c).collect();
@@ -289,7 +294,11 @@ pub fn specimen(data: &[u8], family: &str, width: usize, scale: f32) -> Result<V
         v
     };
     let latin = ['a', 'e', 'o', 'T', 'q'].iter().all(|c| covered.binary_search(c).is_ok());
-    let sample: String = if latin { PANGRAM.into() } else { covered.iter().take(40).collect() };
+    // The pangram of the UI language when the font covers it, else the English one.
+    let local = tr!("services-font-pangram");
+    let pangram =
+        if local.chars().all(|c| !c.is_alphabetic() || covered.binary_search(&c).is_ok()) { local } else { PANGRAM };
+    let sample: String = if latin { pangram.into() } else { covered.iter().take(40).collect() };
     let s = scale.clamp(0.5, 4.0);
     let mut out = Vec::new();
     let title = if latin || family.chars().all(|c| covered.binary_search(&c).is_ok() || c == ' ') {
@@ -307,7 +316,7 @@ pub fn specimen(data: &[u8], family: &str, width: usize, scale: f32) -> Result<V
             18.0 * s,
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 .,;:!?&@#%()[]{}",
             width,
-            "Characters".into(),
+            tr!("services-font-characters").into(),
         ));
     }
     let grid: Vec<char> = covered.iter().copied().take(GRID_GLYPHS).collect();

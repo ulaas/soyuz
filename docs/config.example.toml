@@ -22,7 +22,7 @@ size_style = "binary"            # binary | decimal | bytes
 date_format = "relative"         # relative | short | long | iso | "%Y-%m-%d %H:%M"
 default_view = "details"         # details | grid | list | miller | gallery
 double_click_speed_ms = 400
-language = "en"
+language = "auto"                # auto (OS display language) | en-US | tr-TR — switches live
 strict_windows_names = false     # apply Windows file-name rules on every OS
 
 [appearance]

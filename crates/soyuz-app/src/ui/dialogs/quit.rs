@@ -19,11 +19,7 @@ pub struct QuitDialog {
 
 impl QuitDialog {
     pub fn new(pending: usize, open: Arc<AtomicBool>) -> Self {
-        let title = if pending == 1 {
-            "A file operation is still running".to_string()
-        } else {
-            format!("{pending} file operations are still running")
-        };
+        let title = tr!("dialogs-quit-title", count = pending);
         QuitDialog { title, open }
     }
 }
@@ -39,6 +35,10 @@ impl Dialog for QuitDialog {
         &self.title
     }
 
+    fn alert(&self) -> bool {
+        true
+    }
+
     fn icon(&self) -> Option<&'static str> {
         Some(ph::WARNING)
     }
@@ -49,20 +49,14 @@ impl Dialog for QuitDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(
-            RichText::new(
-                "Quitting now cancels them and may leave partially copied files behind. You can keep Soyuz open, \
-                 or let it close by itself once they finish.",
-            )
-            .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("dialogs-quit-body")).color(p.text_secondary));
         ui.add_space(18.0);
         let (mut quit, mut wait, mut keep) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            quit = button(ui, "Cancel jobs and quit", Btn::Danger).clicked();
-            wait = button(ui, "Quit when finished", Btn::Primary).clicked();
-            keep = button(ui, "Keep open", Btn::Secondary).clicked();
+            quit = button(ui, tr!("dialogs-quit-cancel-jobs"), Btn::Danger).clicked();
+            wait = button(ui, tr!("dialogs-quit-when-finished"), Btn::Primary).clicked();
+            keep = button(ui, tr!("dialogs-quit-keep-open"), Btn::Secondary).clicked();
         });
         // Enter picks the safe default.
         if ui.input(|i| i.key_pressed(Key::Enter)) {

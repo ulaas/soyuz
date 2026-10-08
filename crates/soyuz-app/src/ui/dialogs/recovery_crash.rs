@@ -20,11 +20,7 @@ pub struct CrashDialog {
 
 impl CrashDialog {
     pub fn new(reports: Vec<CrashReport>) -> Self {
-        let title = if reports.len() == 1 {
-            "Soyuz closed unexpectedly".to_string()
-        } else {
-            format!("Soyuz recorded {} crash reports", reports.len())
-        };
+        let title = tr!("dialogs-crash-title", count = reports.len());
         CrashDialog { title, reports, viewing: None }
     }
 
@@ -40,7 +36,8 @@ impl CrashDialog {
                 cut -= 1;
             }
             text.truncate(cut);
-            text.push_str("\n… (open the file to see the rest)");
+            text.push('\n');
+            text.push_str(tr!("dialogs-crash-truncated"));
         }
         self.viewing = Some((i, text));
     }
@@ -61,27 +58,29 @@ impl Dialog for CrashDialog {
 
     fn show(&mut self, ui: &mut Ui, _ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(
-            RichText::new(
-                "A crash report was saved on this computer. It contains the version, the operating system, \
-                 where the problem happened and the last log lines. It is never sent anywhere.",
-            )
-            .color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("dialogs-crash-body")).color(p.text_secondary));
         ui.add_space(10.0);
         let mut view = None;
         for (i, r) in self.reports.iter().enumerate().take(8) {
             ui.horizontal(|ui| {
                 let when = r
                     .when
-                    .map(|t| chrono::DateTime::<chrono::Local>::from(t).format("%b %-d, %H:%M").to_string())
+                    .map(|t| {
+                        soyuz_core::format_time(t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Short))
+                    })
                     .unwrap_or_default();
                 ui.label(RichText::new(when).font(FontId::proportional(12.0)).color(p.text_tertiary));
                 let summary = if r.summary.is_empty() { r.name.clone() } else { r.summary.clone() };
                 ui.label(RichText::new(summary).font(FontId::proportional(12.5)).color(p.text_primary));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let open = self.viewing.as_ref().is_some_and(|(v, _)| *v == i);
-                    if ui.link(RichText::new(if open { "Hide" } else { "View" }).color(p.accent)).clicked() {
+                    if ui
+                        .link(
+                            RichText::new(if open { tr!("dialogs-hide") } else { tr!("dialogs-crash-view") })
+                                .color(p.accent),
+                        )
+                        .clicked()
+                    {
                         view = Some(i);
                     }
                 });
@@ -105,15 +104,16 @@ impl Dialog for CrashDialog {
         ui.add_space(16.0);
         let (mut close, mut delete, mut folder, mut safe) = (false, false, false, false);
         ui.horizontal(|ui| {
-            delete = button(ui, "Delete reports", Btn::Ghost).clicked();
-            folder =
-                button(ui, "Open folder", Btn::Ghost).on_hover_text("Show the crashes folder in a new tab").clicked();
+            delete = button(ui, tr!("dialogs-crash-delete"), Btn::Ghost).clicked();
+            folder = button(ui, tr!("dialogs-crash-open-folder"), Btn::Ghost)
+                .on_hover_text(tr!("dialogs-crash-open-folder-tip"))
+                .clicked();
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                close = button(ui, "Close", Btn::Primary).clicked();
+                close = button(ui, tr!("common-close"), Btn::Primary).clicked();
                 if !safe_mode() {
-                    safe = button(ui, "Restart in safe mode", Btn::Secondary)
-                        .on_hover_text("Default settings; no session restore, watchers, thumbnails or git")
+                    safe = button(ui, tr!("dialogs-crash-safe-mode"), Btn::Secondary)
+                        .on_hover_text(tr!("dialogs-crash-safe-mode-tip"))
                         .clicked();
                 }
             });

@@ -67,12 +67,20 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let dual = v.dual;
     let cmds = &mut *v.cmds;
 
-    action_item(ui, km, cmds, id, if all_dirs { ph::FOLDER_OPEN } else { ph::ARROW_SQUARE_OUT }, "Open", Action::Open);
+    action_item(
+        ui,
+        km,
+        cmds,
+        id,
+        if all_dirs { ph::FOLDER_OPEN } else { ph::ARROW_SQUARE_OUT },
+        tr!("app-ctx-open"),
+        Action::Open,
+    );
     if all_dirs {
-        action_item(ui, km, cmds, id, ph::BROWSERS, "Open in new tab", Action::OpenInNewTab);
+        action_item(ui, km, cmds, id, ph::BROWSERS, tr!("app-ctx-open-in-new-tab"), Action::OpenInNewTab);
         if single
             && let Some((path, _)) = &first
-            && menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), "Open in other pane", None, true).clicked()
+            && menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("app-ctx-open-in-other-pane"), None, true).clicked()
         {
             cmds.push(Cmd::OpenInOtherPane(Location::Dir(path.clone())));
             ui.close();
@@ -86,14 +94,14 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         // Warm the per-extension cache as soon as the menu opens, so the submenu is
         // usually filled by the time the pointer reaches it.
         let _ = apps_for_cached(ui.ctx(), &path);
-        submenu(ui, Some(ph::APP_WINDOW), "Open with", |ui| {
+        submenu(ui, Some(ph::APP_WINDOW), tr!("app-ctx-open-with"), |ui| {
             ui.set_width(220.0);
             let Some(apps) = apps_for_cached(ui.ctx(), &path) else {
-                menu_item(ui, Some(ph::HOURGLASS), "Looking for apps\u{2026}", None, false);
+                menu_item(ui, Some(ph::HOURGLASS), tr!("app-ctx-open-with-looking"), None, false);
                 return;
             };
             if apps.is_empty() {
-                menu_item(ui, Some(ph::INFO), "No registered apps found", None, false);
+                menu_item(ui, Some(ph::INFO), tr!("app-ctx-open-with-none"), None, false);
             }
             for app in apps {
                 if menu_item(ui, Some(ph::APP_WINDOW), &app.name, None, app.launchable).clicked() {
@@ -102,22 +110,22 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
                 }
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::DOTS_THREE), "Choose another app…", None, true).clicked() {
+            if menu_item(ui, Some(ph::DOTS_THREE), tr!("app-ctx-open-with-choose"), None, true).clicked() {
                 cmds.push(Cmd::ChooseOpenWith(path.clone()));
                 ui.close();
             }
         });
     }
     if single && let Some((_, false)) = &first {
-        action_item(ui, km, cmds, id, ph::NOTE_PENCIL, "Edit in Soyuz", Action::OpenInEditor);
+        action_item(ui, km, cmds, id, ph::NOTE_PENCIL, tr!("app-ctx-edit-in-soyuz"), Action::OpenInEditor);
     }
     menu_separator(ui);
-    action_item(ui, km, cmds, id, ph::SCISSORS, "Cut", Action::Cut);
-    action_item(ui, km, cmds, id, ph::COPY, "Copy", Action::Copy);
+    action_item(ui, km, cmds, id, ph::SCISSORS, tr!("app-ctx-cut"), Action::Cut);
+    action_item(ui, km, cmds, id, ph::COPY, tr!("app-ctx-copy"), Action::Copy);
     if single
         && has_clip
         && let Some((path, true)) = &first
-        && menu_item(ui, Some(ph::CLIPBOARD), "Paste into folder", None, true).clicked()
+        && menu_item(ui, Some(ph::CLIPBOARD), tr!("app-ctx-paste-into-folder"), None, true).clicked()
     {
         cmds.push(Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone())));
         ui.close();
@@ -129,19 +137,27 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             cmds,
             id,
             ph::CLOCK_COUNTER_CLOCKWISE,
-            "Restore previous version…",
+            tr!("app-ctx-previous-versions"),
             Action::PreviousVersions,
         );
     }
     if dual {
-        action_item(ui, km, cmds, id, ph::COPY_SIMPLE, "Copy to other pane", Action::CopyToOtherPane);
-        action_item(ui, km, cmds, id, ph::ARROW_BEND_DOWN_RIGHT, "Move to other pane", Action::MoveToOtherPane);
+        action_item(ui, km, cmds, id, ph::COPY_SIMPLE, tr!("app-ctx-copy-to-other-pane"), Action::CopyToOtherPane);
+        action_item(
+            ui,
+            km,
+            cmds,
+            id,
+            ph::ARROW_BEND_DOWN_RIGHT,
+            tr!("app-ctx-move-to-other-pane"),
+            Action::MoveToOtherPane,
+        );
     }
-    action_item(ui, km, cmds, id, ph::PENCIL_SIMPLE, "Rename", Action::Rename);
-    action_item(ui, km, cmds, id, ph::COPY_SIMPLE, "Duplicate", Action::Duplicate);
-    action_item(ui, km, cmds, id, ph::LINK, "Create link…", Action::NewSymlink);
-    action_item(ui, km, cmds, id, ph::TRASH, "Move to trash", Action::Delete);
-    action_item(ui, km, cmds, id, ph::X_CIRCLE, "Delete permanently", Action::DeletePermanent);
+    action_item(ui, km, cmds, id, ph::PENCIL_SIMPLE, tr!("app-ctx-rename"), Action::Rename);
+    action_item(ui, km, cmds, id, ph::COPY_SIMPLE, tr!("app-ctx-duplicate"), Action::Duplicate);
+    action_item(ui, km, cmds, id, ph::LINK, tr!("app-ctx-create-link"), Action::NewSymlink);
+    action_item(ui, km, cmds, id, ph::TRASH, tr!("app-ctx-move-to-trash"), Action::Delete);
+    action_item(ui, km, cmds, id, ph::X_CIRCLE, tr!("app-ctx-delete-permanently"), Action::DeletePermanent);
     menu_separator(ui);
     action_item(
         ui,
@@ -149,10 +165,18 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         cmds,
         id,
         ph::CLIPBOARD_TEXT,
-        if single { "Copy path" } else { "Copy paths" },
+        if single { tr!("app-ctx-copy-path") } else { tr!("app-ctx-copy-paths") },
         Action::CopyPath,
     );
-    action_item(ui, km, cmds, id, ph::TEXT_AA, if single { "Copy name" } else { "Copy names" }, Action::CopyName);
+    action_item(
+        ui,
+        km,
+        cmds,
+        id,
+        ph::TEXT_AA,
+        if single { tr!("app-ctx-copy-name") } else { tr!("app-ctx-copy-names") },
+        Action::CopyName,
+    );
     if single {
         action_item(
             ui,
@@ -160,17 +184,17 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             cmds,
             id,
             ph::ARROW_SQUARE_UP_RIGHT,
-            "Reveal in system file manager",
+            tr!("app-ctx-reveal-in-system"),
             Action::RevealInSystem,
         );
     }
     if single && let Some((path, true)) = &first {
-        action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, "Open terminal here", Action::OpenInTerminal);
-        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+        action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, tr!("app-ctx-open-terminal-here"), Action::OpenInTerminal);
+        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("app-ctx-open-external-terminal"), None, true).clicked() {
             cmds.push(Cmd::TerminalAt(path.clone()));
             ui.close();
         }
-        if menu_item(ui, Some(ph::STAR), "Add to favorites", None, true).clicked() {
+        if menu_item(ui, Some(ph::STAR), tr!("app-ctx-add-to-favorites"), None, true).clicked() {
             cmds.push(Cmd::AddFavorite(path.clone()));
             ui.close();
         }
@@ -185,7 +209,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         crate::ui::looks::folder_color_menu(ui, &dirs);
     }
     if all_dirs {
-        action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
+        action_item(ui, km, cmds, id, ph::CHART_PIE, tr!("app-ctx-folder-sizes"), Action::FolderSize);
     }
     let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
     crate::commands::context_items(ui, v.config, cmds, id, &kinds);
@@ -201,7 +225,7 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     menu_separator(ui);
     let single_file = single && first.as_ref().is_some_and(|(_, dir)| !dir);
     crate::ui::dialogs::properties::context_items(ui, km, cmds, id, sel.len() > 1, single_file);
-    action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
+    action_item(ui, km, cmds, id, ph::INFO, tr!("app-ctx-properties"), Action::Properties);
 }
 
 fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
@@ -209,34 +233,34 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     let id = pane.id;
     let has_clip = !v.fileops.clipboard.is_empty() || crate::services::os_clipboard::has_files();
     let cmds = &mut *v.cmds;
-    submenu(ui, Some(ph::SQUARES_FOUR), "View", |ui| {
+    submenu(ui, Some(ph::SQUARES_FOUR), tr!("app-ctx-view"), |ui| {
         ui.set_width(220.0);
         view_mode_items(ui, km, cmds, pane);
     });
-    submenu(ui, Some(ph::SORT_ASCENDING), "Sort by", |ui| {
+    submenu(ui, Some(ph::SORT_ASCENDING), tr!("app-ctx-sort-by"), |ui| {
         ui.set_width(220.0);
         sort_items(ui, cmds, pane);
     });
-    submenu(ui, Some(ph::ROWS), "Group by", |ui| {
+    submenu(ui, Some(ph::ROWS), tr!("app-ctx-group-by"), |ui| {
         ui.set_width(200.0);
         group_items(ui, cmds, pane);
     });
     menu_separator(ui);
-    action_item(ui, km, cmds, id, ph::ARROW_CLOCKWISE, "Refresh", Action::Refresh);
+    action_item(ui, km, cmds, id, ph::ARROW_CLOCKWISE, tr!("app-ctx-refresh"), Action::Refresh);
     if has_clip {
-        action_item(ui, km, cmds, id, ph::CLIPBOARD, "Paste", Action::Paste);
-        action_item(ui, km, cmds, id, ph::LINK, "Paste as link", Action::PasteAsLink);
-        action_item(ui, km, cmds, id, ph::SEAL_CHECK, "Paste and verify", Action::PasteAndVerify);
+        action_item(ui, km, cmds, id, ph::CLIPBOARD, tr!("app-ctx-paste"), Action::Paste);
+        action_item(ui, km, cmds, id, ph::LINK, tr!("app-ctx-paste-as-link"), Action::PasteAsLink);
+        action_item(ui, km, cmds, id, ph::SEAL_CHECK, tr!("app-ctx-paste-and-verify"), Action::PasteAndVerify);
     } else {
-        menu_item(ui, Some(ph::CLIPBOARD), "Paste", chord_label(km, &Action::Paste).as_deref(), false);
+        menu_item(ui, Some(ph::CLIPBOARD), tr!("app-ctx-paste"), chord_label(km, &Action::Paste).as_deref(), false);
     }
-    action_item(ui, km, cmds, id, ph::FOLDER_PLUS, "New folder", Action::NewFolder);
-    action_item(ui, km, cmds, id, ph::FILE_PLUS, "New file", Action::NewFile);
-    action_item(ui, km, cmds, id, ph::LINK, "New link…", Action::NewSymlink);
+    action_item(ui, km, cmds, id, ph::FOLDER_PLUS, tr!("app-ctx-new-folder"), Action::NewFolder);
+    action_item(ui, km, cmds, id, ph::FILE_PLUS, tr!("app-ctx-new-file"), Action::NewFile);
+    action_item(ui, km, cmds, id, ph::LINK, tr!("app-ctx-new-link"), Action::NewSymlink);
     menu_separator(ui);
     if let Location::Dir(dir) = &pane.location {
-        action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, "Open terminal here", Action::OpenTerminalHere);
-        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), "Open external terminal here", None, true).clicked() {
+        action_item(ui, km, cmds, id, ph::TERMINAL_WINDOW, tr!("app-ctx-open-terminal-here"), Action::OpenTerminalHere);
+        if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("app-ctx-open-external-terminal"), None, true).clicked() {
             cmds.push(Cmd::TerminalAt(dir.clone()));
             ui.close();
         }
@@ -246,11 +270,11 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             cmds,
             id,
             ph::ARROW_SQUARE_UP_RIGHT,
-            "Reveal in system file manager",
+            tr!("app-ctx-reveal-in-system"),
             Action::RevealInSystem,
         );
-        action_item(ui, km, cmds, id, ph::CLIPBOARD_TEXT, "Copy folder path", Action::CopyPath);
-        if menu_item(ui, Some(ph::STAR), "Add to favorites", None, true).clicked() {
+        action_item(ui, km, cmds, id, ph::CLIPBOARD_TEXT, tr!("app-ctx-copy-folder-path"), Action::CopyPath);
+        if menu_item(ui, Some(ph::STAR), tr!("app-ctx-add-to-favorites"), None, true).clicked() {
             cmds.push(Cmd::AddFavorite(dir.clone()));
             ui.close();
         }
@@ -262,16 +286,18 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         menu_separator(ui);
     }
     crate::ui::tools::tags_ui::background_menu(ui, km, cmds, id, &pane.location, v.dual);
-    if menu_check(ui, v.show_hidden, "Show hidden files", chord_label(km, &Action::ToggleHidden).as_deref()).clicked() {
+    if menu_check(ui, v.show_hidden, tr!("app-ctx-show-hidden"), chord_label(km, &Action::ToggleHidden).as_deref())
+        .clicked()
+    {
         cmds.push(Cmd::PaneAction(id, Action::ToggleHidden));
         ui.close();
     }
-    if menu_check(ui, v.checkbox_mode, "Item checkboxes", None).clicked() {
+    if menu_check(ui, v.checkbox_mode, tr!("app-ctx-item-checkboxes"), None).clicked() {
         cmds.push(Cmd::PaneAction(id, Action::ToggleCheckboxes));
         ui.close();
     }
-    action_item(ui, km, cmds, id, ph::SELECTION_ALL, "Select all", Action::SelectAll);
-    action_item(ui, km, cmds, id, ph::CHART_PIE, "Calculate folder sizes", Action::FolderSize);
+    action_item(ui, km, cmds, id, ph::SELECTION_ALL, tr!("app-ctx-select-all"), Action::SelectAll);
+    action_item(ui, km, cmds, id, ph::CHART_PIE, tr!("app-ctx-folder-sizes"), Action::FolderSize);
     crate::commands::context_items(ui, v.config, cmds, id, &[soyuz_core::config::CommandContext::Background]);
     crate::automation::menu::context_items(
         ui,
@@ -282,22 +308,33 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         &[],
     );
     menu_separator(ui);
-    action_item(ui, km, cmds, id, ph::INFO, "Properties", Action::Properties);
+    action_item(ui, km, cmds, id, ph::INFO, tr!("app-ctx-properties"), Action::Properties);
 }
 
-pub const MODES: [(ViewMode, &str, &str, Action); 5] = [
-    (ViewMode::Details, ph::LIST, "Details", Action::ViewDetails),
-    (ViewMode::List, ph::LIST_DASHES, "List", Action::ViewList),
-    (ViewMode::Grid, ph::SQUARES_FOUR, "Icons", Action::ViewGrid),
-    (ViewMode::Gallery, ph::IMAGES, "Gallery", Action::ViewGallery),
-    (ViewMode::Miller, ph::COLUMNS, "Columns", Action::ViewMiller),
+pub const MODES: [(ViewMode, &str, Action); 5] = [
+    (ViewMode::Details, ph::LIST, Action::ViewDetails),
+    (ViewMode::List, ph::LIST_DASHES, Action::ViewList),
+    (ViewMode::Grid, ph::SQUARES_FOUR, Action::ViewGrid),
+    (ViewMode::Gallery, ph::IMAGES, Action::ViewGallery),
+    (ViewMode::Miller, ph::COLUMNS, Action::ViewMiller),
 ];
 
+/// Translated name of a view mode (menus, status bar switcher).
+pub fn mode_label(mode: ViewMode) -> &'static str {
+    match mode {
+        ViewMode::Details => tr!("app-view-details"),
+        ViewMode::List => tr!("app-view-list"),
+        ViewMode::Grid => tr!("app-view-icons"),
+        ViewMode::Gallery => tr!("app-view-gallery"),
+        ViewMode::Miller => tr!("app-view-columns"),
+    }
+}
+
 pub fn view_mode_items(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: &Pane) {
-    for (mode, icon, label, action) in MODES {
+    for (mode, icon, action) in MODES {
         let checked = pane.view.mode == mode;
         let sc = chord_label(km, &action);
-        let r = menu_item(ui, Some(if checked { ph::CHECK } else { icon }), label, sc.as_deref(), true);
+        let r = menu_item(ui, Some(if checked { ph::CHECK } else { icon }), mode_label(mode), sc.as_deref(), true);
         if r.clicked() {
             cmds.push(Cmd::PaneAction(pane.id, action));
             ui.close();
@@ -310,7 +347,7 @@ const SORT_COLUMNS: [Column; 7] =
 
 pub fn sort_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
     for col in SORT_COLUMNS {
-        if menu_check(ui, pane.view.sort.column == col, col.label(), None).clicked() {
+        if menu_check(ui, pane.view.sort.column == col, crate::i18n::labels::column(col), None).clicked() {
             if pane.view.sort.column != col {
                 cmds.push(Cmd::PaneAction(pane.id, Action::SortBy(col)));
             }
@@ -318,7 +355,7 @@ pub fn sort_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
         }
     }
     menu_separator(ui);
-    for (dir, label) in [(SortDir::Asc, "Ascending"), (SortDir::Desc, "Descending")] {
+    for (dir, label) in [(SortDir::Asc, tr!("app-sort-ascending")), (SortDir::Desc, tr!("app-sort-descending"))] {
         if menu_check(ui, pane.view.sort.dir == dir, label, None).clicked() {
             if pane.view.sort.dir != dir {
                 cmds.push(Cmd::PaneAction(pane.id, Action::ToggleSortDir));
@@ -329,8 +366,8 @@ pub fn sort_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
 }
 
 pub fn group_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
-    for (g, label) in GROUPS {
-        if menu_check(ui, pane.view.group == g, label, None).clicked() {
+    for (g, _) in GROUPS {
+        if menu_check(ui, pane.view.group == g, crate::palette::catalog::group_label(g), None).clicked() {
             cmds.push(Cmd::PaneAction(pane.id, Action::SetGroupBy(g)));
             ui.close();
         }
@@ -340,7 +377,7 @@ pub fn group_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
 /// Column chooser (details header right-click).
 pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     ui.set_width(220.0);
-    menu_caption(ui, "Columns");
+    menu_caption(ui, tr!("app-ctx-columns"));
     let visible: Vec<Column> = pane.view.visible_columns().iter().map(|c| c.column).collect();
     for col in Column::ALL {
         if matches!(
@@ -363,7 +400,7 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         }
     }
     menu_separator(ui);
-    if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Reset columns", None, true).clicked() {
+    if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("app-ctx-reset-columns"), None, true).clicked() {
         pane.view.columns = crate::state::view_memory::ViewState::from_config(v.config).columns;
         pane.layout_sig = None;
         v.cmds.push(Cmd::ViewChanged(pane.id));

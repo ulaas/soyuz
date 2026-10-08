@@ -167,7 +167,7 @@ pub fn attach(pane: &mut Pane, id: SearchId) {
             soyuz_core::FsErrorKind::NotFound,
             "search",
             None,
-            "This search is no longer available. Run it again from the search bar.",
+            tr!("services-search-gone"),
         ));
         return;
     };
@@ -234,15 +234,16 @@ fn start_handle(
             return Ok((h, plan.name_root(), None, true));
         }
         let filter = soyuz_index::Matcher::new(&plan.expr, SystemTime::now())?;
-        let handle =
-            soyuz_search::start(spec.query.clone(), threads, wake).map_err(|e| format!("Invalid pattern: {e}"))?;
+        let handle = soyuz_search::start(spec.query.clone(), threads, wake)
+            .map_err(|e| tr!("services-search-invalid-pattern", error = e.to_string()))?;
         let root = match spec.query.roots.as_slice() {
             [one] => one.clone(),
             _ => plan.name_root(),
         };
         return Ok((handle, root, Some(filter), false));
     }
-    let handle = soyuz_search::start(spec.query.clone(), threads, wake).map_err(|e| format!("Invalid pattern: {e}"))?;
+    let handle = soyuz_search::start(spec.query.clone(), threads, wake)
+        .map_err(|e| tr!("services-search-invalid-pattern", error = e.to_string()))?;
     Ok((handle, spec.query.roots.first().cloned().unwrap_or_default(), None, false))
 }
 
@@ -562,10 +563,10 @@ impl NameMode {
     pub const ALL: [NameMode; 4] = [NameMode::Substring, NameMode::Glob, NameMode::Regex, NameMode::Fuzzy];
     pub fn label(self) -> &'static str {
         match self {
-            NameMode::Substring => "Contains",
-            NameMode::Glob => "Glob",
-            NameMode::Regex => "Regex",
-            NameMode::Fuzzy => "Fuzzy",
+            NameMode::Substring => tr!("services-search-mode-contains"),
+            NameMode::Glob => tr!("services-search-mode-glob"),
+            NameMode::Regex => tr!("services-search-mode-regex"),
+            NameMode::Fuzzy => tr!("services-search-mode-fuzzy"),
         }
     }
     fn kind(self) -> PatternKind {
@@ -600,12 +601,12 @@ impl DateRange {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            DateRange::Any => "Any time",
-            DateRange::Today => "Last 24 hours",
-            DateRange::Week => "Last 7 days",
-            DateRange::Month => "Last 30 days",
-            DateRange::Year => "Last 12 months",
-            DateRange::OlderThanYear => "Older than a year",
+            DateRange::Any => tr!("services-search-date-any"),
+            DateRange::Today => tr!("services-search-date-day"),
+            DateRange::Week => tr!("services-search-date-week"),
+            DateRange::Month => tr!("services-search-date-month"),
+            DateRange::Year => tr!("services-search-date-year"),
+            DateRange::OlderThanYear => tr!("services-search-date-older"),
         }
     }
     /// `(after, before)` bounds relative to `now`.
@@ -651,15 +652,15 @@ impl KindFilter {
     ];
     pub fn label(self) -> &'static str {
         match self {
-            KindFilter::Any => "Any kind",
-            KindFilter::Files => "Files",
-            KindFilter::Folders => "Folders",
-            KindFilter::Images => "Images",
-            KindFilter::Videos => "Videos",
-            KindFilter::Audio => "Audio",
-            KindFilter::Documents => "Documents",
-            KindFilter::Archives => "Archives",
-            KindFilter::Code => "Code",
+            KindFilter::Any => tr!("services-search-kind-any"),
+            KindFilter::Files => tr!("services-search-kind-files"),
+            KindFilter::Folders => tr!("services-search-kind-folders"),
+            KindFilter::Images => tr!("services-search-kind-images"),
+            KindFilter::Videos => tr!("services-search-kind-videos"),
+            KindFilter::Audio => tr!("services-search-kind-audio"),
+            KindFilter::Documents => tr!("services-search-kind-documents"),
+            KindFilter::Archives => tr!("services-search-kind-archives"),
+            KindFilter::Code => tr!("services-search-kind-code"),
         }
     }
     fn extensions(self) -> &'static [&'static str] {
@@ -737,7 +738,7 @@ impl SearchForm {
 
     pub fn build(&self, now: SystemTime, content_max: u64) -> Result<SearchQuery, String> {
         if self.root.as_os_str().is_empty() {
-            return Err("Choose a folder to search in".into());
+            return Err(tr!("services-index-no-folder").into());
         }
         let mut q = SearchQuery { roots: vec![self.root.clone()], ..SearchQuery::default() };
         let text = self.text.trim();
@@ -766,16 +767,16 @@ impl SearchForm {
         }
         let min = match self.min_size.trim() {
             "" => None,
-            s => Some(parse_size(s).ok_or_else(|| format!("Can't read the size “{s}”"))?),
+            s => Some(parse_size(s).ok_or_else(|| tr!("services-index-bad-size", size = s))?),
         };
         let max = match self.max_size.trim() {
             "" => None,
-            s => Some(parse_size(s).ok_or_else(|| format!("Can't read the size “{s}”"))?),
+            s => Some(parse_size(s).ok_or_else(|| tr!("services-index-bad-size", size = s))?),
         };
         if let (Some(a), Some(b)) = (min, max)
             && a > b
         {
-            return Err("The minimum size is larger than the maximum".into());
+            return Err(tr!("services-index-size-range").into());
         }
         if min.is_some() || max.is_some() {
             q.size = Some((min, max));
@@ -798,21 +799,28 @@ impl SearchForm {
         q.respect_gitignore = self.respect_gitignore;
         q.content_max_size = content_max;
         if q.name.is_none() && q.content.is_none() && q.size.is_none() && q.modified.is_none() && q.kinds.is_none() {
-            return Err("Type something to search for".into());
+            return Err(tr!("services-index-empty-query").into());
         }
         Ok(q)
     }
 
     /// Header title: `“text” in folder`.
     pub fn title(&self) -> String {
-        let what =
-            if self.text.trim().is_empty() { "Everything".to_string() } else { format!("“{}”", self.text.trim()) };
+        let text = self.text.trim();
         if self.everywhere {
-            return format!("{what} in indexed folders");
+            return if text.is_empty() {
+                tr!("services-search-title-all-indexed").to_string()
+            } else {
+                tr!("services-search-title-indexed", text = text)
+            };
         }
         let r = soyuz_fs::strip_verbatim(&self.root);
         let folder = soyuz_core::entry::display_name(&r);
-        format!("{what} in {folder}")
+        if text.is_empty() {
+            tr!("services-search-title-all", folder = folder)
+        } else {
+            tr!("services-search-title", text = text, folder = folder)
+        }
     }
 }
 

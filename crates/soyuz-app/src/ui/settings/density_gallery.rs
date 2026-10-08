@@ -9,12 +9,14 @@ use crate::theme::icons::ph;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, palette};
 
-const OPTIONS: [(Density, &str); 4] = [
-    (Density::Compact, "Compact"),
-    (Density::Cozy, "Cozy"),
-    (Density::Comfortable, "Comfortable"),
-    (Density::Touch, "Touch"),
-];
+fn options() -> [(Density, &'static str); 4] {
+    [
+        (Density::Compact, tr!("settings-density-compact")),
+        (Density::Cozy, tr!("settings-density-cozy")),
+        (Density::Comfortable, tr!("settings-density-comfortable")),
+        (Density::Touch, tr!("settings-density-touch")),
+    ]
+}
 
 /// Scale of the mini previews (row heights keep their real ratios).
 const SCALE: f32 = 0.62;
@@ -35,7 +37,7 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
     let preview_h = Density::Touch.row_height() * SCALE * rows_shown as f32 + 12.0;
     let card_h = preview_h + 34.0;
     let mut changed = false;
-    for chunk in OPTIONS.chunks(cols) {
+    for chunk in options().chunks(cols) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = GAP;
             for &(d, label) in chunk {
@@ -43,7 +45,7 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                 let selected = *density == d;
                 crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
                     n.set_role(Role::RadioButton);
-                    n.set_label(format!("{label} density"));
+                    n.set_label(tr!("settings-density-a11y", name = label));
                     n.set_selected(selected);
                 });
                 if resp.clicked() && !selected {

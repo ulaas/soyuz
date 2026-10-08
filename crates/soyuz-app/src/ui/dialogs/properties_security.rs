@@ -20,21 +20,21 @@ pub fn load(path: &std::path::Path) -> Loaded {
 
 pub fn rights_labels(r: AccessRights) -> Vec<&'static str> {
     if r.contains(AccessRights::FULL) {
-        return vec!["Full control"];
+        return vec![tr!("dialogs-sec-full-control")];
     }
     let mut v = Vec::new();
     for (bit, l) in [
-        (AccessRights::READ, "Read"),
-        (AccessRights::WRITE, "Write"),
-        (AccessRights::EXECUTE, "Execute"),
-        (AccessRights::DELETE, "Delete"),
+        (AccessRights::READ, tr!("dialogs-mode-read")),
+        (AccessRights::WRITE, tr!("dialogs-mode-write")),
+        (AccessRights::EXECUTE, tr!("dialogs-mode-execute")),
+        (AccessRights::DELETE, tr!("common-delete")),
     ] {
         if r.contains(bit) {
             v.push(l);
         }
     }
     if v.is_empty() {
-        v.push("Special");
+        v.push(tr!("dialogs-sec-special"));
     }
     v
 }
@@ -63,12 +63,12 @@ impl OwnerEdit {
         let o = self.owner.trim();
         let g = self.group.trim();
         let uid = if o != self.orig_owner && !o.is_empty() {
-            Some(resolve_id(o, "/etc/passwd").ok_or_else(|| format!("unknown user \u{201c}{o}\u{201d}"))?)
+            Some(resolve_id(o, "/etc/passwd").ok_or_else(|| tr!("dialogs-sec-unknown-user", name = o))?)
         } else {
             None
         };
         let gid = if g != self.orig_group && !g.is_empty() {
-            Some(resolve_id(g, "/etc/group").ok_or_else(|| format!("unknown group \u{201c}{g}\u{201d}"))?)
+            Some(resolve_id(g, "/etc/group").ok_or_else(|| tr!("dialogs-sec-unknown-group", name = g))?)
         } else {
             None
         };
@@ -103,8 +103,10 @@ pub fn lookup_id(db: &str, name: &str) -> Option<u32> {
 pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>) {
     let p = palette(ui.ctx());
     if let Some(edit) = owner {
-        caption(ui, "Ownership");
-        for (label, text) in [("Owner", &mut edit.owner), ("Group", &mut edit.group)] {
+        caption(ui, tr!("dialogs-sec-ownership"));
+        for (label, text) in
+            [(tr!("dialogs-mode-owner"), &mut edit.owner), (tr!("dialogs-mode-group"), &mut edit.group)]
+        {
             kv_row_with(ui, label, |ui| {
                 ui.add(TextEdit::singleline(text).desired_width(200.0).margin(Margin::symmetric(8, 4)));
             });
@@ -115,7 +117,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             }
             Ok(Some(_)) => {
                 ui.label(
-                    RichText::new("Changing ownership usually requires administrator rights.")
+                    RichText::new(tr!("dialogs-sec-owner-admin"))
                         .font(FontId::proportional(11.5))
                         .color(p.text_tertiary),
                 );
@@ -126,23 +128,23 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
     let Some(loaded) = loaded else {
         ui.horizontal(|ui| {
             ui.spinner();
-            ui.label(RichText::new("Reading permissions\u{2026}").color(p.text_tertiary));
+            ui.label(RichText::new(tr!("dialogs-sec-reading")).color(p.text_tertiary));
         });
         return;
     };
     match loaded {
         Err(e) => {
-            badge(ui, Some(ph::WARNING), "Permissions unavailable", p.warning);
+            badge(ui, Some(ph::WARNING), tr!("dialogs-sec-unavailable"), p.warning);
             ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.text_tertiary));
         }
         Ok((info, eff)) => {
-            caption(ui, "Owner");
-            kv_row(ui, "Owner", &info.owner);
+            caption(ui, tr!("dialogs-mode-owner"));
+            kv_row(ui, tr!("dialogs-mode-owner"), &info.owner);
             if let Some(g) = &info.group {
-                kv_row(ui, "Group", g);
+                kv_row(ui, tr!("dialogs-mode-group"), g);
             }
             if let Some(eff) = eff {
-                kv_row_with(ui, "Your access", |ui| {
+                kv_row_with(ui, tr!("dialogs-sec-your-access"), |ui| {
                     ui.horizontal_wrapped(|ui| {
                         for l in rights_labels(*eff) {
                             badge(ui, None, l, p.accent);
@@ -150,7 +152,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                     });
                 });
             }
-            caption(ui, "Access entries");
+            caption(ui, tr!("dialogs-sec-entries"));
             egui::Frame::new()
                 .fill(p.bg_surface2)
                 .corner_radius(CornerRadius::same(crate::theme::tokens::radius::CARD))
@@ -158,7 +160,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     if info.entries.is_empty() {
-                        ui.label(RichText::new("No entries (everyone has full access)").color(p.text_tertiary));
+                        ui.label(RichText::new(tr!("dialogs-sec-no-entries")).color(p.text_tertiary));
                     }
                     egui::ScrollArea::vertical().max_height(190.0).show(ui, |ui| {
                         for ace in &info.entries {
@@ -178,7 +180,19 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                                             + 22.0
                                     })
                                     .sum::<f32>()
-                                    + if ace.inherited { 60.0 } else { 0.0 };
+                                    + if ace.inherited {
+                                        ui.painter()
+                                            .layout_no_wrap(
+                                                tr!("dialogs-sec-inherited").to_string(),
+                                                FontId::proportional(10.5),
+                                                p.text_tertiary,
+                                            )
+                                            .size()
+                                            .x
+                                            + 12.0
+                                    } else {
+                                        0.0
+                                    };
                                 let name_w = (ui.available_width() - badges_w - 8.0).max(60.0);
                                 ui.allocate_ui(egui::vec2(name_w, 20.0), |ui| {
                                     ui.add(
@@ -190,7 +204,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     if ace.inherited {
                                         ui.label(
-                                            RichText::new("inherited")
+                                            RichText::new(tr!("dialogs-sec-inherited"))
                                                 .font(FontId::proportional(10.5))
                                                 .color(p.text_tertiary),
                                         );
@@ -206,7 +220,7 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             if cfg!(windows) {
                 ui.add_space(4.0);
                 ui.label(
-                    RichText::new("Read-only view. Advanced permission editing is not available.")
+                    RichText::new(tr!("dialogs-sec-read-only-view"))
                         .font(FontId::proportional(11.0))
                         .color(p.text_tertiary),
                 );

@@ -250,8 +250,13 @@ fn too_large(kind: Kind, icon: &'static str, len: u64, cap: u64, key: &str) -> L
     card(
         kind,
         icon,
-        "Too large to preview",
-        format!("{} MiB exceeds the {} MiB limit ([preview] {key}).", len >> 20, cap >> 20),
+        tr!("services-preview-too-large"),
+        tr!(
+            "services-preview-too-large-body",
+            size = (len >> 20).to_string(),
+            limit = (cap >> 20).to_string(),
+            key = key
+        ),
     )
 }
 
@@ -284,7 +289,15 @@ fn office(k: OfficeKind, reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits) 
                 Office::Sheet(s) => {
                     fact(&mut facts, "Format", s.format);
                     fact(&mut facts, "Sheets", s.sheets.len().to_string());
-                    fact(&mut facts, "Shown", format!("{} rows × {} columns", s.rows.len(), s.ncols));
+                    fact(
+                        &mut facts,
+                        "Shown",
+                        tr!(
+                            "services-preview-sheet-shown",
+                            rows = s.rows.len().to_string(),
+                            cols = s.ncols.to_string()
+                        ),
+                    );
                 }
                 Office::Slides(s) => {
                     fact(&mut facts, "Format", s.format);
@@ -296,7 +309,7 @@ fn office(k: OfficeKind, reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits) 
             }
             loaded(kind, Rich::Office(Arc::new(o)), facts)
         }
-        Err(e) => card(kind, ph::WARNING_CIRCLE, "Can't read this document", e),
+        Err(e) => card(kind, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-document"), e),
     }
 }
 
@@ -327,7 +340,7 @@ fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
             }
             loaded(Kind::Ebook, Rich::Epub { model: Arc::new(m), cover }, facts)
         }
-        Err(e) => card(Kind::Ebook, ph::WARNING_CIRCLE, "Can't read this e-book", e),
+        Err(e) => card(Kind::Ebook, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-ebook"), e),
     }
 }
 
@@ -337,31 +350,26 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
     }
     let data = match read_all(reader, lim.max_document) {
         Ok(d) => d,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, "Can't read this font", e),
+        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
     };
     let data = match preview_font::format_of(&data) {
         Some("WOFF") => match preview_font::woff_to_sfnt(&data, lim.max_document as usize) {
             Ok(d) => d,
-            Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, "Can't read this font", e),
+            Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
         },
         Some("WOFF 2") => {
-            return card(
-                Kind::Font,
-                ph::TEXT_AA,
-                "WOFF 2 font",
-                "WOFF 2 needs a Brotli and glyph-transform decoder that isn't built in. TTF, OTF, TTC and WOFF preview.",
-            );
+            return card(Kind::Font, ph::TEXT_AA, tr!("services-preview-woff2"), tr!("services-preview-woff2-body"));
         }
         _ => data,
     };
     let meta = match preview_font::meta(&data) {
         Ok(m) => m,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, "Can't read this font", e),
+        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
     };
     let width = (lim.width_pt() * ppp) as usize;
     let strips = match preview_font::specimen(&data, &meta.family, width, ppp) {
         Ok(s) => s,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, "Can't render this font", e),
+        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-render-font"), e),
     };
     let strips: Vec<(String, Tex)> = strips
         .into_iter()
@@ -381,14 +389,14 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
     fact(&mut facts, "Glyphs", meta.glyphs.to_string());
     fact(&mut facts, "Weight", meta.weight.to_string());
     if meta.monospaced {
-        fact(&mut facts, "Spacing", "Monospaced");
+        fact(&mut facts, "Spacing", tr!("services-preview-monospaced"));
     }
     if !meta.axes.is_empty() {
         let axes: Vec<String> = meta.axes.iter().map(|(t, lo, _, hi)| format!("{t} {lo:.0}–{hi:.0}")).collect();
         fact(&mut facts, "Variable axes", axes.join(", "));
     }
     if meta.faces > 1 {
-        fact(&mut facts, "Faces", format!("{} (first shown)", meta.faces));
+        fact(&mut facts, "Faces", tr!("services-preview-faces", count = meta.faces));
     }
     if let Some(d) = meta.designer.as_ref().or(meta.manufacturer.as_ref()) {
         fact(&mut facts, "Designer", d.clone());
@@ -405,7 +413,7 @@ fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, li
     }
     let data = match read_all(reader, lim.max_model) {
         Ok(d) => d,
-        Err(e) => return card(Kind::Model, ph::WARNING_CIRCLE, "Can't read this model", e),
+        Err(e) => return card(Kind::Model, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-model"), e),
     };
     let dir = path.and_then(Path::parent);
     match preview_model::parse(&data, ext, dir, lim.max_model) {
@@ -414,7 +422,7 @@ fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, li
             fact(&mut facts, "Format", m.format);
             fact(&mut facts, "Triangles", group(m.total_tris as u64));
             if m.tris.len() < m.total_tris {
-                fact(&mut facts, "Drawn", format!("{} (decimated)", m.tris.len()));
+                fact(&mut facts, "Drawn", tr!("services-preview-decimated", count = m.tris.len()));
             }
             fact(&mut facts, "Vertices", group(m.positions.len() as u64));
             if m.meshes > 1 {
@@ -424,21 +432,13 @@ fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, li
             fact(&mut facts, "Bounds", format!("{} × {} × {}", fmt_len(x), fmt_len(y), fmt_len(z)));
             loaded(Kind::Model, Rich::Model { model: Arc::new(m), turntable: lim.turntable }, facts)
         }
-        Err(e) => card(Kind::Model, ph::WARNING_CIRCLE, "Can't read this model", e),
+        Err(e) => card(Kind::Model, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-model"), e),
     }
 }
 
-/// `1234567` → `1,234,567`.
+/// `1234567` → `1,234,567` (`1.234.567` in Turkish).
 fn group(n: u64) -> String {
-    let s = n.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
+    soyuz_core::locale::group_int(n)
 }
 
 fn fmt_len(v: f32) -> String {
@@ -468,7 +468,7 @@ fn audio(
         Some(p) => AudioSrc::File(p.to_path_buf()),
         None => match read_all(reader, len) {
             Ok(b) => AudioSrc::Mem(b.into()),
-            Err(e) => return card(Kind::Audio, ph::WARNING_CIRCLE, "Can't read this file", e),
+            Err(e) => return card(Kind::Audio, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
         },
     };
     let waveform = lim.waveform && len <= lim.max_audio;
@@ -497,7 +497,11 @@ fn audio(
         fact(&mut facts, "Sample rate", format!("{sr} Hz"));
     }
     if lim.waveform && len > lim.max_audio {
-        fact(&mut facts, "Waveform", format!("Skipped above {} MiB ([preview] max_audio_mib)", lim.max_audio >> 20));
+        fact(
+            &mut facts,
+            "Waveform",
+            tr!("services-preview-waveform-skipped", size = (lim.max_audio >> 20).to_string()),
+        );
     }
     let cover = info.cover.take().and_then(|b| decode_image(ctx, format!("preview:audio-cover:{id}"), &b, 512));
     let rich = Rich::Audio { info: Arc::new(info), src, ext: ext.to_string(), playback: lim.playback, cover };
@@ -519,14 +523,8 @@ fn video(
     let _ = reader.seek(SeekFrom::Start(0));
     let facts = preview_media::probe(&mut *reader, len, ext);
     let (poster, note) = match (path, preview_video::find_ffmpeg(&lim.ffmpeg_path)) {
-        (None, _) => (None, Some("Poster frames are only made for files on disk.".to_string())),
-        (Some(_), None) => (
-            None,
-            Some(format!(
-                "Install ffmpeg (or set [preview] ffmpeg_path) for a poster frame; \"{}\" wasn't found.",
-                lim.ffmpeg_path
-            )),
-        ),
+        (None, _) => (None, Some(tr!("services-preview-poster-disk-only").to_string())),
+        (Some(_), None) => (None, Some(tr!("services-preview-no-ffmpeg", path = &lim.ffmpeg_path))),
         (Some(p), Some(ff)) => {
             let dur = facts.iter().find(|(k, _)| k == "Duration").and_then(|(_, v)| preview_video::parse_duration(v));
             let w = ((if lim.big { 1280.0 } else { 640.0 }) * ppp).min(1920.0) as u32;
@@ -555,7 +553,7 @@ fn pdf(
         Some(p) => PdfSrc::File(p.to_path_buf()),
         None => match read_all(reader, len) {
             Ok(b) => PdfSrc::Mem(b.into()),
-            Err(e) => return card(Kind::Pdf, ph::WARNING_CIRCLE, "Can't read this file", e),
+            Err(e) => return card(Kind::Pdf, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
         },
     };
     let dirs = preview_pdf::pdfium_dirs(&lim.pdfium_dir);
@@ -587,7 +585,7 @@ fn pdf(
     #[cfg(not(feature = "pdf"))]
     {
         let _ = (ctx, id, stale, width_px);
-        no_render = Some("This build has no PDF renderer (cargo feature `pdf`).".into());
+        no_render = Some(tr!("services-preview-no-pdf-renderer").into());
     }
     if info.is_none() {
         if len > lim.max_document {
@@ -608,7 +606,7 @@ fn pdf(
                     body.push_str("\n\n");
                     body.push_str(why);
                 }
-                return card(Kind::Pdf, ph::FILE_PDF, "Can't read this PDF", body);
+                return card(Kind::Pdf, ph::FILE_PDF, tr!("services-preview-cant-read-pdf"), body);
             }
         }
     }
@@ -629,9 +627,9 @@ fn pdf(
         fact(&mut facts, "Page size", format!("{:.0} × {:.0} mm", w / 72.0 * 25.4, h / 72.0 * 25.4));
     }
     if info.encrypted {
-        fact(&mut facts, "Encrypted", "Yes");
+        fact(&mut facts, "Encrypted", tr!("common-yes"));
     }
-    fact(&mut facts, "Renderer", if no_render.is_none() { "pdfium" } else { "text only" });
+    fact(&mut facts, "Renderer", if no_render.is_none() { "pdfium" } else { tr!("services-preview-text-only") });
     if let Some(why) = &mut no_render {
         *why = why.trim_start_matches("pdfium: ").to_string();
     }
@@ -669,7 +667,7 @@ pub fn pdf_page_async(
     #[cfg(not(feature = "pdf"))]
     {
         let _ = (view, page, ctx);
-        let _ = tx.send(Err("No PDF renderer in this build".into()));
+        let _ = tx.send(Err(tr!("services-preview-no-pdf-renderer-short").into()));
     }
     rx
 }

@@ -263,7 +263,7 @@ impl McpApprovals {
                     None => {
                         touch::unmark(&c.card.paths());
                         touch::mark_mcp(&changed_paths(&c.card.plan), TouchKind::Done);
-                        c.card.state = CardState::Done { ok: true, message: "Done".into() };
+                        c.card.state = CardState::Done { ok: true, message: tr!("ai-exec-done").into() };
                         c.resolved = Some(Instant::now());
                         c.card.expanded = false;
                     }
@@ -306,22 +306,23 @@ impl McpApprovals {
                 let timed_out = c.pending.as_ref().is_some_and(|p| now + Duration::from_millis(500) >= p.deadline);
                 c.pending = None;
                 touch::unmark(&c.card.paths());
-                c.card.state =
-                    CardState::Withdrawn(if timed_out { "Timed out" } else { "Cancelled by the client" }.to_string());
+                c.card.state = CardState::Withdrawn(
+                    if timed_out { tr!("ai-mcp-timed-out") } else { tr!("ai-mcp-cancelled-by-client") }.to_string(),
+                );
                 c.resolved = Some(now);
                 c.card.expanded = false;
             }
             if let (CardState::Running(_), Some(job)) = (&c.card.state, c.job) {
                 let finished = match job_state(job) {
-                    None => Some((false, "The job is gone from the activity list".to_string())),
+                    None => Some((false, tr!("ai-mcp-job-gone").to_string())),
                     Some(JobState::Done(s)) if s.items_failed == 0 => {
-                        Some((true, format!("Done: {} item(s), {} skipped", s.items_ok, s.items_skipped)))
+                        Some((true, tr!("ai-mcp-job-done", ok = s.items_ok, skipped = s.items_skipped)))
                     }
                     Some(JobState::Done(s)) => {
-                        Some((false, format!("Finished with errors: {} ok, {} failed", s.items_ok, s.items_failed)))
+                        Some((false, tr!("ai-mcp-job-errors", ok = s.items_ok, failed = s.items_failed)))
                     }
-                    Some(JobState::Failed(e)) => Some((false, format!("Failed: {e}"))),
-                    Some(JobState::Cancelled) => Some((false, "Cancelled".to_string())),
+                    Some(JobState::Failed(e)) => Some((false, tr!("ai-mcp-job-failed", error = e.to_string()))),
+                    Some(JobState::Cancelled) => Some((false, tr!("ai-mcp-job-cancelled").to_string())),
                     Some(_) => None,
                 };
                 if let Some((ok, message)) = finished {

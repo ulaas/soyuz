@@ -332,7 +332,7 @@ impl McpBridge {
                 }
                 Err(e) => {
                     log::warn!("MCP: cannot serve {name}: {e} (another Soyuz window may serve it)");
-                    self.status.pipe = Some(Err(format!("not available: {e}")));
+                    self.status.pipe = Some(Err(tr!("ai-mcp-pipe-unavailable", error = e.to_string())));
                 }
             }
         }
@@ -350,7 +350,10 @@ impl McpBridge {
                     self.status.http = Some(Ok(format!("http://{}/mcp", h.addr())));
                     self.http = Some((port, h));
                 }
-                Err(e) => self.status.http = Some(Err(format!("cannot listen on 127.0.0.1:{port}: {e}"))),
+                Err(e) => {
+                    self.status.http =
+                        Some(Err(tr!("ai-mcp-http-failed", port = port.to_string(), error = e.to_string())))
+                }
             }
         }
         // Tokens come from the credential store: resolve them off the UI thread.
@@ -460,10 +463,10 @@ fn register(app: &mut SoyuzApp, ctx: &egui::Context, name: String, transport: Tr
         crate::ui::settings::update_config(app, ctx, |c| {
             c.ai.mcp_clients.push(AiMcpClient { name: name.clone(), pending: true, ..Default::default() })
         });
-        app.ui.toasts.push(Toast::info(format!("New MCP client “{name}”")).body(format!(
-            "Connected over {}; it is read-only until you approve it in Settings → AI assistant → Connections.",
-            transport.label()
-        )));
+        app.ui.toasts.push(
+            Toast::info(tr!("ai-mcp-new-client", name = &name))
+                .body(tr!("ai-mcp-new-client-body", transport = transport.label())),
+        );
     }
 }
 

@@ -96,6 +96,8 @@ pub struct Pane {
     pub refreshing: bool,
     /// Visible order must be recomputed before the next draw.
     pub dirty: bool,
+    /// UI language generation the group labels were built with.
+    pub i18n_gen: u64,
     /// Scroll the cursor into view on the next draw.
     pub scroll_to_cursor: bool,
     /// Apply this scroll offset on the next draw (history / session restore).
@@ -165,6 +167,7 @@ impl Pane {
             status: ListingStatus::Loading { since: Instant::now() },
             refreshing: false,
             dirty: true,
+            i18n_gen: crate::i18n::generation(),
             scroll_to_cursor: false,
             restore_scroll: None,
             scroll_y: 0.0,
@@ -320,6 +323,13 @@ impl Pane {
 
     pub fn refresh_visible(&mut self, show_hidden: bool, show_system: bool) {
         self.flush_incoming();
+        // Group labels are translated: rebuild them after a language switch.
+        let i18n_gen = crate::i18n::generation();
+        if self.i18n_gen != i18n_gen {
+            self.i18n_gen = i18n_gen;
+            self.collapsed_groups.clear();
+            self.dirty = true;
+        }
         if !self.dirty {
             return;
         }
@@ -441,7 +451,7 @@ impl Pane {
         if prefix.is_empty() || self.visible.is_empty() {
             return None;
         }
-        let lp = prefix.to_lowercase();
+        let lp = soyuz_core::fold_for_match(prefix);
         let cycling = lp.chars().count() > 1 && lp.chars().all(|c| lp.starts_with(c));
         let needle: String = if cycling { lp.chars().take(1).collect() } else { lp };
         let start =
@@ -449,7 +459,7 @@ impl Pane {
         let n = self.visible.len();
         (0..n)
             .map(|k| (start + k) % n)
-            .find(|&p| self.entry_at(p).is_some_and(|e| e.name.to_lowercase().starts_with(&needle)))
+            .find(|&p| self.entry_at(p).is_some_and(|e| soyuz_core::fold_for_match(&e.name).starts_with(&needle)))
     }
 }
 

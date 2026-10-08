@@ -68,10 +68,10 @@ pub fn poster(ffmpeg: &Path, video: &Path, at: f64, max_w: u32, stale: &dyn Fn()
         // CREATE_NO_WINDOW: no console flashes up for the child.
         cmd.creation_flags(0x0800_0000);
     }
-    let mut child = cmd.spawn().map_err(|e| format!("Can't start ffmpeg ({e})"))?;
+    let mut child = cmd.spawn().map_err(|e| tr!("services-video-cant-start", error = e.to_string()))?;
     let Some(mut out) = child.stdout.take() else {
         let _ = child.kill();
-        return Err("ffmpeg gave no output".into());
+        return Err(tr!("services-video-no-output").into());
     };
     let reader = std::thread::spawn(move || {
         let mut buf = Vec::new();
@@ -88,12 +88,12 @@ pub fn poster(ffmpeg: &Path, video: &Path, at: f64, max_w: u32, stale: &dyn Fn()
         if stale() || start.elapsed() > TIMEOUT {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(if stale() { "stale".into() } else { "ffmpeg took too long".into() });
+            return Err(if stale() { "stale".into() } else { tr!("services-video-timeout").into() });
         }
         std::thread::sleep(Duration::from_millis(25));
     }
     let bytes = reader.join().unwrap_or_default();
-    if bytes.starts_with(b"\x89PNG") { Ok(bytes) } else { Err("ffmpeg produced no frame".into()) }
+    if bytes.starts_with(b"\x89PNG") { Ok(bytes) } else { Err(tr!("services-video-no-frame").into()) }
 }
 
 /// Parse a "1:02:03" / "4:05" / "12.5 s" duration fact back into seconds.

@@ -130,7 +130,7 @@ pub fn analyze(src: &AudioSrc, ext: &str, waveform: bool, stale: &dyn Fn() -> bo
     }
     let mut probed = symphonia::default::get_probe()
         .format(&hint, mss, &FormatOptions { enable_gapless: true, ..Default::default() }, &MetadataOptions::default())
-        .map_err(|e| format!("Unsupported audio ({e})"))?;
+        .map_err(|e| tr!("services-audio-unsupported", error = e.to_string()))?;
     let mut info = AudioInfo::default();
     if let Some(m) = probed.metadata.get()
         && let Some(rev) = m.current()
@@ -145,7 +145,7 @@ pub fn analyze(src: &AudioSrc, ext: &str, waveform: bool, stale: &dyn Fn() -> bo
         .default_track()
         .filter(|t| t.codec_params.codec != CODEC_TYPE_NULL)
         .or_else(|| format.tracks().iter().find(|t| t.codec_params.codec != CODEC_TYPE_NULL))
-        .ok_or("No audio track")?
+        .ok_or(tr!("services-audio-no-track"))?
         .clone();
     let cp = &track.codec_params;
     info.sample_rate = cp.sample_rate;
@@ -165,7 +165,7 @@ pub fn analyze(src: &AudioSrc, ext: &str, waveform: bool, stale: &dyn Fn() -> bo
     }
     let mut decoder = symphonia::default::get_codecs()
         .make(cp, &DecoderOptions::default())
-        .map_err(|e| format!("Unsupported codec ({e})"))?;
+        .map_err(|e| tr!("services-audio-unsupported-codec", error = e.to_string()))?;
     let started = Instant::now();
     let mut raw: Vec<(f32, f32)> = Vec::new();
     let mut cur = (f32::MAX, f32::MIN);
@@ -365,7 +365,7 @@ fn audio_thread(rx: Receiver<Cmd>, state: Arc<Mutex<PlayerState>>, seen: Arc<Mut
             track = None;
             let mut s = state.lock();
             s.playing = false;
-            s.error = Some("The audio player failed on this file".into());
+            s.error = Some(tr!("services-audio-player-failed").into());
         }
     }
 }
@@ -390,7 +390,7 @@ fn handle(
                         d.log_on_drop(false);
                         *device = Some(d);
                     }
-                    Err(e) => return fail(format!("No audio output device ({e})")),
+                    Err(e) => return fail(tr!("services-audio-no-device", error = e.to_string())),
                 }
             }
             let Some(dev) = device.as_ref() else { return };
@@ -420,7 +420,7 @@ fn handle(
                     .map_err(|e| e.to_string()),
             };
             if let Err(e) = built {
-                return fail(format!("Can't play this file ({e})"));
+                return fail(tr!("services-audio-cant-play", error = e.to_string()));
             }
             if at > 0.0 {
                 let _ = p.try_seek(Duration::from_secs_f64(at));

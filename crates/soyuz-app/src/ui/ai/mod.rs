@@ -155,12 +155,13 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, tone: Tone, enabled:
     resp
 }
 
-/// `12.4k` style token counts.
+/// `12.4k` style token counts (locale decimal separator).
 pub fn tokens(n: u64) -> String {
+    use soyuz_core::locale::format_decimal;
     match n {
         0..=999 => n.to_string(),
-        1000..=999_999 => format!("{:.1}k", n as f64 / 1000.0),
-        _ => format!("{:.2}M", n as f64 / 1_000_000.0),
+        1000..=999_999 => format!("{}k", format_decimal(n as f64 / 1000.0, 1)),
+        _ => format!("{}M", format_decimal(n as f64 / 1_000_000.0, 2)),
     }
 }
 
@@ -174,21 +175,21 @@ fn access_icon(a: AiAccess) -> &'static str {
 
 pub fn access_short(a: AiAccess) -> &'static str {
     match a {
-        AiAccess::None => "No access",
-        AiAccess::Metadata => "Metadata",
-        AiAccess::Contents => "Contents",
+        AiAccess::None => tr!("ai-access-short-none"),
+        AiAccess::Metadata => tr!("ai-access-short-metadata"),
+        AiAccess::Contents => tr!("ai-access-short-contents"),
     }
 }
 
 /// Menu with the three access levels plus "inherit" for `path`.
 pub fn access_menu(ui: &mut Ui, path: &std::path::Path, current: AiAccess, explicit: bool, acts: &mut Vec<PanelAct>) {
     ui.set_width(250.0);
-    crate::ui::widgets::menu_caption(ui, "Assistant access for this folder");
+    crate::ui::widgets::menu_caption(ui, tr!("ai-access-menu-caption"));
     for a in AiAccess::ALL {
         let label = match a {
-            AiAccess::None => "No access (hidden from the assistant)",
-            AiAccess::Metadata => "Metadata only (names, sizes, dates)",
-            AiAccess::Contents => "Contents allowed (may be sent to the model)",
+            AiAccess::None => tr!("ai-access-menu-none"),
+            AiAccess::Metadata => tr!("ai-access-menu-metadata"),
+            AiAccess::Contents => tr!("ai-access-menu-contents"),
         };
         let on = explicit && a == current;
         if menu_item(ui, Some(if on { ph::CHECK } else { access_icon(a) }), label, None, true).clicked() {
@@ -197,14 +198,8 @@ pub fn access_menu(ui: &mut Ui, path: &std::path::Path, current: AiAccess, expli
         }
     }
     menu_separator(ui);
-    if menu_item(
-        ui,
-        Some(if explicit { ph::ARROW_U_UP_LEFT } else { ph::CHECK }),
-        "Inherit from parent folders",
-        None,
-        true,
-    )
-    .clicked()
+    if menu_item(ui, Some(if explicit { ph::ARROW_U_UP_LEFT } else { ph::CHECK }), tr!("ai-access-inherit"), None, true)
+        .clicked()
     {
         acts.push(PanelAct::FolderAccess(path.to_path_buf(), None));
         ui.close();
@@ -214,7 +209,7 @@ pub fn access_menu(ui: &mut Ui, path: &std::path::Path, current: AiAccess, expli
 /// Inline AI entries for the item / background context menus.
 pub fn context_items(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId, items: bool, single_dir: bool) {
     use crate::keys::chord_label;
-    crate::ui::widgets::submenu(ui, Some(ph::SPARKLE), "Assistant", |ui| {
+    crate::ui::widgets::submenu(ui, Some(ph::SPARKLE), tr!("ai-menu-assistant"), |ui| {
         ui.set_width(230.0);
         let mut item = |ui: &mut Ui, icon: &str, label: &str, a: Action| {
             let sc = chord_label(km, &a);
@@ -224,16 +219,16 @@ pub fn context_items(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId
             }
         };
         if items {
-            item(ui, ph::TEXT_T, "Suggest names", Action::AiSuggestNames);
-            item(ui, ph::NOTEPAD, "Summarize", Action::AiSummarize);
-            item(ui, ph::FLOW_ARROW, "Find related files", Action::AiFindRelated);
+            item(ui, ph::TEXT_T, tr!("ai-menu-suggest-names"), Action::AiSuggestNames);
+            item(ui, ph::NOTEPAD, tr!("ai-menu-summarize"), Action::AiSummarize);
+            item(ui, ph::FLOW_ARROW, tr!("ai-menu-find-related"), Action::AiFindRelated);
         }
         if !items || single_dir {
-            item(ui, ph::QUESTION, "Explain this folder", Action::AiExplainFolder);
+            item(ui, ph::QUESTION, tr!("ai-menu-explain-folder"), Action::AiExplainFolder);
         }
-        item(ui, ph::MAGIC_WAND, "Organize\u{2026}", Action::AiOrganize);
+        item(ui, ph::MAGIC_WAND, tr!("ai-menu-organize"), Action::AiOrganize);
         menu_separator(ui);
-        item(ui, ph::MAGNIFYING_GLASS, "Smart search\u{2026}", Action::AiSmartSearch);
+        item(ui, ph::MAGNIFYING_GLASS, tr!("ai-menu-smart-search"), Action::AiSmartSearch);
     });
 }
 
@@ -244,9 +239,13 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
     ui.horizontal(|ui| {
         ui.add_sized(
             vec2(110.0, 20.0),
-            egui::Label::new(egui::RichText::new("AI access").color(p.text_tertiary).size(12.0)),
+            egui::Label::new(egui::RichText::new(tr!("ai-properties-access")).color(p.text_tertiary).size(12.0)),
         );
-        let label = format!("{}{}", access_short(access), if explicit { "" } else { " (inherited)" });
+        let label = if explicit {
+            access_short(access).to_string()
+        } else {
+            tr!("ai-access-inherited", access = access_short(access))
+        };
         let r = chip_menu(ui, Some(access_icon(access)), &label, explicit);
         let mut acts = Vec::new();
         egui::Popup::menu(&r).show(|ui| access_menu(ui, path, access, explicit, &mut acts));
@@ -315,26 +314,25 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
     ui.painter().text(
         pos2(r.left() + 34.0, r.center().y - 7.0),
         Align2::LEFT_CENTER,
-        "Assistant",
+        tr!("ai-panel-title"),
         semibold(14.0),
         p.text_primary,
     );
     let sub = match running {
-        Some(r) if r.recipe => "Running a recipe\u{2026}".to_string(),
+        Some(r) if r.recipe => tr!("ai-status-recipe").to_string(),
         Some(r) => {
             let waiting = app.ai.chat.iter().any(
                 |c| matches!(c, state::ChatItem::Plan(x) if x.task == r.task && x.state == state::CardState::Pending),
             );
             if waiting {
-                "Waiting for your approval".into()
+                tr!("ai-status-waiting").into()
             } else {
-                format!("Working \u{00b7} {}s", r.started.elapsed().as_secs())
+                tr!("ai-status-working", secs = r.started.elapsed().as_secs())
             }
         }
         None => match app.services.mcp.approvals.lock().pending() {
-            0 => "Plans every change; nothing happens without you".into(),
-            1 => "1 external request waits for you".into(),
-            n => format!("{n} external requests wait for you"),
+            0 => tr!("ai-status-idle").into(),
+            n => tr!("ai-status-external", count = n),
         },
     };
     let sub_w = (r.width() - 34.0 - 100.0).max(40.0);
@@ -349,15 +347,17 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
         let br = Rect::from_min_size(pos2(*x, r.center().y - 15.0), vec2(30.0, 30.0));
         ui.scope_builder(UiBuilder::new().max_rect(br), |ui| icon_toggle(ui, glyph, tip, true, on)).inner.clicked()
     };
-    let key =
-        crate::keys::chord_label(&app.keymap, &Action::ToggleAiPanel).map(|k| format!("  ({k})")).unwrap_or_default();
-    if btn(ui, &mut x, ph::X, &format!("Close the assistant{key}"), false) {
+    let close = match crate::keys::chord_label(&app.keymap, &Action::ToggleAiPanel) {
+        Some(k) => tr!("ai-close-key", key = k),
+        None => tr!("ai-close").to_string(),
+    };
+    if btn(ui, &mut x, ph::X, &close, false) {
         acts.push(PanelAct::Close);
     }
-    if btn(ui, &mut x, ph::GEAR_SIX, "AI settings", false) {
+    if btn(ui, &mut x, ph::GEAR_SIX, tr!("ai-settings"), false) {
         acts.push(PanelAct::OpenSettings);
     }
-    if app.ai.running.is_none() && btn(ui, &mut x, ph::NOTE_PENCIL, "New chat", false) {
+    if app.ai.running.is_none() && btn(ui, &mut x, ph::NOTE_PENCIL, tr!("ai-new-chat"), false) {
         acts.push(PanelAct::NewChat);
     }
 }
@@ -374,14 +374,14 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
         let text = match &label {
             Some((prof, m)) if m.is_empty() => prof.clone(),
             Some((prof, m)) => format!("{prof} \u{00b7} {m}"),
-            None => "No model configured".into(),
+            None => tr!("ai-no-model").into(),
         };
         let r = chip_menu(ui, Some(ph::CPU), &text, false);
         egui::Popup::menu(&r).show(|ui| {
             ui.set_width(240.0);
-            crate::ui::widgets::menu_caption(ui, "Model for the next message");
+            crate::ui::widgets::menu_caption(ui, tr!("ai-model-caption"));
             let none = app.ai.panel.profile_override.is_none();
-            if menu_item(ui, Some(if none { ph::CHECK } else { ph::FLOW_ARROW }), "Automatic (fast / strong routing)", None, true)
+            if menu_item(ui, Some(if none { ph::CHECK } else { ph::FLOW_ARROW }), tr!("ai-model-auto"), None, true)
                 .clicked()
             {
                 acts.push(PanelAct::SetProfile(None));
@@ -389,24 +389,30 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             }
             for prof in &app.config.ai.profiles {
                 let on = app.ai.panel.profile_override.as_deref() == Some(prof.name.as_str());
-                let icon = if on { ph::CHECK } else if prof.kind.is_local() { ph::DESKTOP_TOWER } else { ph::CLOUD };
+                let icon = if on {
+                    ph::CHECK
+                } else if prof.kind.is_local() {
+                    ph::DESKTOP_TOWER
+                } else {
+                    ph::CLOUD
+                };
                 if menu_item(ui, Some(icon), &format!("{} \u{00b7} {}", prof.name, prof.model), None, true).clicked() {
                     acts.push(PanelAct::SetProfile(Some(prof.name.clone())));
                     ui.close();
                 }
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::GEAR_SIX), "Manage providers\u{2026}", None, true).clicked() {
+            if menu_item(ui, Some(ph::GEAR_SIX), tr!("ai-manage-providers"), None, true).clicked() {
                 acts.push(PanelAct::OpenSettings);
                 ui.close();
             }
         });
         if app.ai.panel.profile_override.is_none() {
             let (icon, l) = match route {
-                Route::Fast => (ph::LIGHTNING, "Fast"),
-                Route::Strong => (ph::BRAIN, "Strong"),
+                Route::Fast => (ph::LIGHTNING, tr!("ai-route-fast")),
+                Route::Strong => (ph::BRAIN, tr!("ai-route-strong")),
             };
-            if chip(ui, Some(icon), l, false).on_hover_text("Model routing for typed messages: fast (naming, classifying) or strong (planning). Slash commands pick their own.").clicked() {
+            if chip(ui, Some(icon), l, false).on_hover_text(tr!("ai-route-tip")).clicked() {
                 acts.push(PanelAct::SetRoute(if route == Route::Fast { Route::Strong } else { Route::Fast }));
             }
         }
@@ -414,11 +420,11 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
         if let Location::Dir(dir) = &app.ws.pane().location {
             let (access, explicit) = state::access_for(app, dir);
             let r = chip_menu(ui, Some(access_icon(access)), access_short(access), access == AiAccess::Contents)
-            .on_hover_text(format!(
-                "What the assistant may see in {}{}",
-                soyuz_core::entry::display_name(dir),
-                if explicit { "" } else { " (inherited)" }
-            ));
+                .on_hover_text(if explicit {
+                    tr!("ai-access-tip", name = soyuz_core::entry::display_name(dir))
+                } else {
+                    tr!("ai-access-tip-inherited", name = soyuz_core::entry::display_name(dir))
+                });
             let dir = dir.clone();
             egui::Popup::menu(&r).show(|ui| access_menu(ui, &dir, access, explicit, acts));
         }
@@ -433,20 +439,27 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             let cap = app.config.ai.profile(prof).map_or(0.0, |p| p.monthly_budget_usd);
             Some((s.cost_usd, cap))
         });
-        let mut meter = format!("{} tok", tokens(usage.total()));
-        if let Some(c) = cost {
-            meter.push_str(&format!(" \u{00b7} ${c:.3}"));
-        }
-        let warn = month.is_some_and(|(spent, cap)| cap > 0.0 && spent / cap * 100.0 >= f64::from(app.config.ai.budget_warn_percent));
+        let meter = match cost {
+            Some(c) => tr!(
+                "ai-meter-tokens-cost",
+                tokens = tokens(usage.total()),
+                cost = soyuz_core::locale::format_decimal(c, 3)
+            ),
+            None => tr!("ai-meter-tokens", tokens = tokens(usage.total())),
+        };
+        let warn = month.is_some_and(|(spent, cap)| {
+            cap > 0.0 && spent / cap * 100.0 >= f64::from(app.config.ai.budget_warn_percent)
+        });
         let r = chip(ui, Some(ph::COINS), &meter, false);
         let tip = match month {
-            Some((spent, cap)) if cap > 0.0 => format!(
-                "{} this task / session\nThis month: ${spent:.2} of ${cap:.2} ({:.0} %)",
-                if app.ai.running.is_some() { "Tokens and cost of" } else { "Tokens and cost of this" },
-                spent / cap * 100.0
+            Some((spent, cap)) if cap > 0.0 => tr!(
+                "ai-meter-tip-capped",
+                spent = soyuz_core::locale::format_decimal(spent, 2),
+                cap = soyuz_core::locale::format_decimal(cap, 2),
+                percent = soyuz_core::locale::format_decimal(spent / cap * 100.0, 0)
             ),
-            Some((spent, _)) => format!("This month: ${spent:.2} (no cap)"),
-            None => "Tokens and cost (unpriced models show tokens only)".into(),
+            Some((spent, _)) => tr!("ai-meter-tip-month", spent = soyuz_core::locale::format_decimal(spent, 2)),
+            None => tr!("ai-meter-tip").into(),
         };
         let r = r.on_hover_text(tip);
         if warn {
@@ -459,9 +472,9 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 2.0;
         for (tab, icon, label) in [
-            (PanelTab::Chat, ph::CHAT_CIRCLE_DOTS, "Chat"),
-            (PanelTab::Recipes, ph::BOOK_OPEN, "Recipes"),
-            (PanelTab::Audit, ph::SCROLL, "Audit log"),
+            (PanelTab::Chat, ph::CHAT_CIRCLE_DOTS, tr!("ai-tab-chat")),
+            (PanelTab::Recipes, ph::BOOK_OPEN, tr!("ai-tab-recipes")),
+            (PanelTab::Audit, ph::SCROLL, tr!("ai-tab-audit")),
         ] {
             let on = app.ai.panel.tab == tab;
             let g = ui.painter().layout_no_wrap(label.into(), semibold(12.0), Color32::PLACEHOLDER);
@@ -482,7 +495,7 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
         if let Some(r) = &app.ai.running {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let _ = r;
-                if button(ui, Some(ph::STOP_CIRCLE), "Stop  Esc", Tone::Danger, true).clicked() {
+                if button(ui, Some(ph::STOP_CIRCLE), tr!("ai-stop-esc"), Tone::Danger, true).clicked() {
                     acts.push(PanelAct::Stop);
                 }
             });
@@ -576,7 +589,8 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
                     "Turn this into one `search` tool call for the current folder and run it, then select the best matches: {}",
                     app.ai.smart.input
                 );
-                state::start_chat(app, ctx, text, Route::Fast, Vec::new());
+                let shown = tr!("ai-smart-ask-shown", text = app.ai.smart.input.trim());
+                state::start_chat_shown(app, ctx, shown, text, Route::Fast, Vec::new());
             }
             PanelAct::SmartRun => state::run_smart_search(app),
             PanelAct::ReloadAudit => app.ai.audit.loaded = false,
@@ -586,5 +600,37 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
             PanelAct::McpUndoClient(client) => state::undo_mcp_client(app, client),
             PanelAct::McpClear => app.services.mcp.approvals.lock().clear_resolved(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use soyuz_core::Locale;
+
+    use crate::i18n::{FluentArgs, t_args_in, t_in};
+
+    #[test]
+    fn panel_messages_render_in_both_languages() {
+        let mut a = FluentArgs::new();
+        a.set("count", 12);
+        a.set("risk", "read");
+        assert_eq!(
+            t_args_in("ai-tools-builtin", &a, Locale::EnUs),
+            "12 built-in tools (files, search, jobs, UI) \u{00b7} up to Read risk"
+        );
+        assert!(t_args_in("ai-tools-builtin", &a, Locale::TrTr).ends_with("risk sınırı: okuma"));
+        let mut a = FluentArgs::new();
+        a.set("spent", "1.50");
+        a.set("cap", "10.00");
+        a.set("percent", "15");
+        assert_eq!(
+            t_args_in("ai-meter-tip-capped", &a, Locale::EnUs),
+            "Tokens and cost of this task / session\nThis month: $1.50 of $10.00 (15 %)"
+        );
+        let mut a = FluentArgs::new();
+        a.set("count", 1);
+        assert_eq!(t_args_in("ai-status-external", &a, Locale::EnUs), "1 external request waits for you");
+        assert_eq!(t_args_in("ai-status-external", &a, Locale::TrTr), "1 dış istek onayınızı bekliyor");
+        assert_eq!(t_in("ai-tab-audit", Locale::TrTr), "Denetim günlüğü");
     }
 }

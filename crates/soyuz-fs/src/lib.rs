@@ -36,6 +36,7 @@ pub mod list;
 pub mod meta;
 pub mod mv;
 pub mod os_fonts;
+pub mod os_locale;
 pub mod os_theme;
 pub mod path;
 pub mod perms;

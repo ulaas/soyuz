@@ -11,6 +11,10 @@
 //! * `scroll:<px>` — scroll the focused pane to an offset;
 //! * `size:<w>x<h>` — resize the window; `welcome:on|off`; `appearance` (Settings →
 //!   Appearance); `quit`;
+//! * `expect:<check>` — log `SOYUZ_SCRIPT: expect ok <check>` or `expect FAILED <check>
+//!   (actual …)`; checks: `cwd=<folder name>`, `cursor=<name>`, `settings=open|closed`,
+//!   `palette=open|closed`, `dialog=open|closed`, `exists=<path>`, `missing=<path>`,
+//!   `lang=<tag>` (used by the keyboard-only test, `tests/keyboard_only.rs`);
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`);
@@ -222,6 +226,10 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "welcome" => app.ui.welcome = arg.trim() != "off",
             "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
+            "expect" => match expect(app, arg.trim()) {
+                Ok(()) => log::info!("SOYUZ_SCRIPT: expect ok {}", arg.trim()),
+                Err(actual) => log::warn!("SOYUZ_SCRIPT: expect FAILED {} (actual {actual})", arg.trim()),
+            },
             "scroll" => {
                 // Absolute scroll offset of the focused pane (perf probes).
                 let y = arg.trim().parse::<f32>().unwrap_or(0.0);
@@ -236,7 +244,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 let want = arg.trim().to_ascii_lowercase();
                 let sec = crate::ui::settings::Section::ALL
                     .into_iter()
-                    .find(|s| s.title().to_ascii_lowercase().starts_with(&want));
+                    .find(|s| s.english_title().to_ascii_lowercase().starts_with(&want));
                 crate::ui::settings::open(app, sec);
             }
             "appearance" => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Appearance)),
@@ -267,6 +275,44 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
         ctx.request_repaint();
     }
+}
+
+/// One `expect:` check; `Err(actual value)` when it does not hold.
+fn expect(app: &SoyuzApp, check: &str) -> Result<(), String> {
+    let (what, want) = check.split_once('=').unwrap_or((check, ""));
+    let open = |b: bool| if b { "open" } else { "closed" }.to_string();
+    let actual = match what.trim() {
+        "cwd" => {
+            let loc = app.ws.pane().location.display();
+            let name = std::path::Path::new(&loc).file_name().map(|n| n.to_string_lossy().into_owned());
+            name.unwrap_or(loc)
+        }
+        "cursor" => {
+            let pane = app.ws.pane();
+            pane.cursor_pos().and_then(|p| pane.entry_at(p)).map(|e| e.name.clone()).unwrap_or_default()
+        }
+        "settings" => open(app.settings.is_open()),
+        "palette" => open(app.palette.open),
+        "dialog" => open(app.ui.dialogs.is_open()),
+        // Debug hook only: a one-off metadata probe on the UI thread is fine here.
+        "exists" => {
+            if std::path::Path::new(want).exists() {
+                want.to_string()
+            } else {
+                "absent".into()
+            }
+        }
+        "missing" => {
+            if std::path::Path::new(want).exists() {
+                "present".into()
+            } else {
+                want.to_string()
+            }
+        }
+        "lang" => crate::i18n::current().tag().to_string(),
+        other => return Err(format!("unknown check {other}")),
+    };
+    if actual == want { Ok(()) } else { Err(actual) }
 }
 
 /// `config` with one dotted key set to a TOML value.

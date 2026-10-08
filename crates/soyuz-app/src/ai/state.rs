@@ -496,7 +496,8 @@ pub fn handles(a: &Action) -> bool {
     )
 }
 
-/// Slash commands: `(command, description, route)`.
+/// Slash commands: `(command, description, route)`. The composer popup shows the
+/// translated [`slash_description`].
 pub const SLASH: &[(&str, &str, Route)] = &[
     ("/organize", "Plan a tidy folder structure and move files into it", Route::Strong),
     ("/dedupe", "Find duplicates and propose trashing the extra copies", Route::Strong),
@@ -504,6 +505,18 @@ pub const SLASH: &[(&str, &str, Route)] = &[
     ("/explain", "Explain what this folder contains", Route::Fast),
     ("/find", "Find files matching a description", Route::Fast),
 ];
+
+/// What the composer popup shows for a slash command.
+pub fn slash_description(cmd: &str) -> &'static str {
+    match cmd {
+        "/organize" => tr!("ai-slash-organize"),
+        "/dedupe" => tr!("ai-slash-dedupe"),
+        "/rename" => tr!("ai-slash-rename"),
+        "/explain" => tr!("ai-slash-explain"),
+        "/find" => tr!("ai-slash-find"),
+        _ => "",
+    }
+}
 
 /// Expand a slash command into a prompt and route (`None` = plain message).
 pub fn expand_slash(text: &str, has_selection: bool) -> Option<(String, Route)> {
@@ -569,9 +582,9 @@ pub fn undo_mcp_client(app: &mut SoyuzApp, client: String) {
             link.send(UiRequest::TrackMcp { job, client: who.clone() })
         });
         let msg = if failed.is_empty() {
-            format!("Undid {n} operation(s) of {who}.")
+            tr!("ai-undo-client-done", count = n, client = &who)
         } else {
-            format!("Undid {n} operation(s) of {who}; {} could not be undone: {}", failed.len(), failed.join("; "))
+            tr!("ai-undo-client-partial", count = n, client = &who, failed = failed.len(), errors = failed.join("; "))
         };
         let _ = tx.send(msg);
         wake();
@@ -609,9 +622,11 @@ pub fn execute_action(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         Action::AiSummarize => {
             open_panel(app);
-            start_chat(
+            let shown = if has_sel { tr!("ai-user-summarize-selection") } else { tr!("ai-user-summarize-folder") };
+            start_chat_shown(
                 app,
                 ctx,
+                shown.to_string(),
                 prompt(if has_sel {
                     "Summarize the selected files in a few bullet points each. Read their text where you are allowed to; otherwise summarise from names, sizes and dates."
                 } else {
@@ -628,9 +643,10 @@ pub fn execute_action(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         Action::AiFindRelated => {
             open_panel(app);
-            start_chat(
+            start_chat_shown(
                 app,
                 ctx,
+                tr!("ai-user-find-related").to_string(),
                 prompt(
                     "Find files related to the selected items (similar names, same project, same dates, same type) in this folder and nearby folders. List the best matches and select them in the pane.",
                 ),
@@ -757,7 +773,7 @@ pub fn suggest_names(app: &mut SoyuzApp, ctx: &egui::Context) {
         selected.iter().filter(|e| !e.is_dir_like()).take(max).map(|e| e.path.clone()).collect()
     };
     if files.is_empty() {
-        app.ai.chat.push(ChatItem::Notice { text: "Select some files to suggest names for.".into(), warn: true });
+        app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-select-files").into(), warn: true });
         return;
     }
     let perms = Permissions::from_config(&app.config.ai);
@@ -779,7 +795,7 @@ pub fn suggest_names(app: &mut SoyuzApp, ctx: &egui::Context) {
         files.len(),
         list.join("\n")
     );
-    let short = format!("Suggest names for {} file(s)", files.len());
+    let short = tr!("ai-user-suggest-names", count = files.len());
     app.ai.chat.push(ChatItem::User { text: short, mentions: Vec::new() });
     app.ai.panel.scroll_to_bottom = true;
     start_chat_inner(app, ctx, prompt, Route::Fast, Vec::new(), attachments, false);
@@ -787,14 +803,25 @@ pub fn suggest_names(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 /// Start a chat task (also from inline actions).
 pub fn start_chat(app: &mut SoyuzApp, ctx: &egui::Context, prompt: String, route: Route, mentions: Vec<PathBuf>) {
+    let short: String = prompt.chars().take(140).collect();
+    let shown = if prompt.chars().count() > 140 { format!("{short}\u{2026}") } else { short };
+    start_chat_shown(app, ctx, shown, prompt, route, mentions);
+}
+
+/// [`start_chat`] with its own chat bubble text (`shown`, in the UI language) for a
+/// prompt written for the model.
+pub fn start_chat_shown(
+    app: &mut SoyuzApp,
+    ctx: &egui::Context,
+    shown: String,
+    prompt: String,
+    route: Route,
+    mentions: Vec<PathBuf>,
+) {
     if prompt.trim().is_empty() {
         return;
     }
-    let short: String = prompt.chars().take(140).collect();
-    app.ai.chat.push(ChatItem::User {
-        text: if prompt.chars().count() > 140 { format!("{short}\u{2026}") } else { short },
-        mentions: mentions.clone(),
-    });
+    app.ai.chat.push(ChatItem::User { text: shown, mentions: mentions.clone() });
     app.ai.panel.scroll_to_bottom = true;
     start_chat_inner(app, ctx, prompt, route, mentions, Default::default(), false);
 }
@@ -820,17 +847,12 @@ pub fn start_chat_inner(
     confirmed: bool,
 ) {
     if app.ai.running.is_some() {
-        app.ai.chat.push(ChatItem::Notice {
-            text: "The assistant is still working on the previous task. Stop it first (Esc).".into(),
-            warn: true,
-        });
+        app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-busy-previous").into(), warn: true });
         return;
     }
     let cfg = app.config.ai.clone();
     if !cfg.enabled && model::fake_transcript().is_none() {
-        app.ai
-            .chat
-            .push(ChatItem::Notice { text: "AI features are turned off in Settings → AI.".into(), warn: true });
+        app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-disabled").into(), warn: true });
         return;
     }
     let input = gather_context(app);
@@ -937,7 +959,7 @@ fn launch(
 /// Start a recipe in the current folder (same preview / approval, no model).
 pub fn run_recipe(app: &mut SoyuzApp, r: &Recipe) {
     if app.ai.running.is_some() {
-        app.ai.chat.push(ChatItem::Notice { text: "The assistant is busy; stop it first.".into(), warn: true });
+        app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-busy").into(), warn: true });
         return;
     }
     let folder = match &app.ws.pane().location {
@@ -945,14 +967,14 @@ pub fn run_recipe(app: &mut SoyuzApp, r: &Recipe) {
         _ => match &r.base {
             Some(b) => b.clone(),
             None => {
-                app.ui.toasts.push(Toast::warning("Open a folder to run the recipe in"));
+                app.ui.toasts.push(Toast::warning(tr!("ai-toast-open-folder")));
                 return;
             }
         },
     };
     app.ai.panel.tab = PanelTab::Chat;
     app.ai.chat.push(ChatItem::User {
-        text: format!("Run recipe “{}” in {}", r.name, folder.display()),
+        text: tr!("ai-user-run-recipe", name = &r.name, folder = folder.display().to_string()),
         mentions: Vec::new(),
     });
     let cfg = app.config.ai.clone();
@@ -974,7 +996,7 @@ pub fn confirm_pending(app: &mut SoyuzApp, ctx: &egui::Context, go: bool) {
         if go {
             start_chat_inner(app, ctx, p.prompt, p.route, p.mentions, p.attachments, true);
         } else {
-            app.ai.chat.push(ChatItem::Notice { text: "Cancelled before starting.".into(), warn: false });
+            app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-cancelled").into(), warn: false });
         }
     }
 }
@@ -1081,8 +1103,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 && t.task == task
             {
                 t.saved = Some(match &r {
-                    Ok(p) => format!("Saved as {p}"),
-                    Err(e) => format!("Could not save: {e}"),
+                    Ok(p) => tr!("ai-saved-as", file = p),
+                    Err(e) => tr!("ai-save-failed", error = e),
                 });
             }
         }
@@ -1223,7 +1245,7 @@ fn ui_tool(app: &mut SoyuzApp, input: ToolInput) -> Result<Value, ToolError> {
         }
         ToolInput::ShowToast(a) => {
             let msg: String = a.message.chars().take(200).collect();
-            app.ui.toasts.push(Toast::info("Assistant").body(msg));
+            app.ui.toasts.push(Toast::info(tr!("ai-panel-title")).body(msg));
             ok()
         }
         ToolInput::OpenTerminalAt(a) => {
@@ -1295,14 +1317,19 @@ fn submit(app: &mut SoyuzApp, ctx: &egui::Context, task: TaskId, plan: &Plan) ->
             // The chat reports the result; no completion toast on top of the panel.
             let meta = JobMeta::new(op, &items, dest).ai(task.0).quiet();
             let job = app.fileops.jobs.submit(spec, meta);
-            Ok(Submitted { job: Some(job), note: String::new() })
+            Ok(Submitted { job: Some(job), note: String::new(), shown: String::new() })
         }
-        PlanAction::App { op, args } => app_action(app, ctx, op, args).map(|note| Submitted { job: None, note }),
-        PlanAction::None => Ok(Submitted { job: None, note: "nothing to do".into() }),
+        PlanAction::App { op, args } => {
+            app_action(app, ctx, op, args).map(|(note, shown)| Submitted { job: None, note, shown })
+        }
+        PlanAction::None => {
+            Ok(Submitted { job: None, note: "nothing to do".into(), shown: tr!("ai-note-nothing").into() })
+        }
     }
 }
 
-fn app_action(app: &mut SoyuzApp, ctx: &egui::Context, op: &str, args: &Value) -> Result<String, String> {
+/// `(note for the model, note for the chat)`.
+fn app_action(app: &mut SoyuzApp, ctx: &egui::Context, op: &str, args: &Value) -> Result<(String, String), String> {
     match op {
         "tag" => {
             let a: soyuz_ai::tools::TagArgs = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
@@ -1320,17 +1347,19 @@ fn app_action(app: &mut SoyuzApp, ctx: &egui::Context, op: &str, args: &Value) -
                     n += todo.len();
                 }
             }
-            Ok(format!("{} tags on {n} item(s)", if a.remove { "removed" } else { "added" }))
+            let shown =
+                if a.remove { tr!("ai-note-tags-removed", count = n) } else { tr!("ai-note-tags-added", count = n) };
+            Ok((format!("{} tags on {n} item(s)", if a.remove { "removed" } else { "added" }), shown))
         }
         "undo" => {
             let id = args.get("history_id").and_then(Value::as_u64).ok_or("missing history_id")?;
             crate::ops::fileops::history_action(app, HistoryId(id), crate::ops::fileops::HistoryAction::Undo);
-            Ok(format!("undo of history entry {id} started"))
+            Ok((format!("undo of history entry {id} started"), tr!("ai-note-undo-started", id = id.to_string())))
         }
         "run_custom_command" => {
             let name = args.get("name").and_then(Value::as_str).ok_or("missing name")?.to_string();
             crate::commands::run_named(app, &name, ctx);
-            Ok(format!("custom command “{name}” started"))
+            Ok((format!("custom command “{name}” started"), tr!("ai-note-command-started", name = &name)))
         }
         other => Err(format!("unsupported app action “{other}”")),
     }
@@ -1479,10 +1508,9 @@ fn on_event(app: &mut SoyuzApp, ev: AgentEvent) {
             }
         }
         AgentEvent::Notice { text, warn } => ai.chat.push(ChatItem::Notice { text, warn }),
-        AgentEvent::Compacted(n) => ai.chat.push(ChatItem::Notice {
-            text: format!("Summarised {n} older tool result(s) to keep the conversation small."),
-            warn: false,
-        }),
+        AgentEvent::Compacted(n) => {
+            ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-compacted", count = n), warn: false })
+        }
         AgentEvent::Finished { reason, messages, executed } => {
             if let Some((_, _, s)) = last_assistant(&mut ai.chat, task) {
                 *s = false;
@@ -1531,9 +1559,9 @@ pub fn undo_task(app: &mut SoyuzApp, task: TaskId) {
         let (n, failed) =
             exec::undo_task(&engine, task, &CancelFlag::new(), |job| link.send(UiRequest::Track { job, task }));
         let msg = if failed.is_empty() {
-            format!("Undid {n} operation(s).")
+            tr!("ai-undo-done", count = n)
         } else {
-            format!("Undid {n} operation(s); {} could not be undone: {}", failed.len(), failed.join("; "))
+            tr!("ai-undo-partial", count = n, failed = failed.len(), errors = failed.join("; "))
         };
         let _ = tx.send(msg);
         wake();

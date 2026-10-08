@@ -220,7 +220,7 @@ impl DiffClient {
                 return;
             }
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| diff_files(&a, &b, cap)))
-                .unwrap_or_else(|_| Err("The diff failed on these files".into()))
+                .unwrap_or_else(|_| Err(tr!("services-diff-failed").into()))
                 .map(Arc::new);
             if latest.load(Ordering::SeqCst) == id {
                 let _ = tx.send(DiffResult { id, pair: (a, b), result });

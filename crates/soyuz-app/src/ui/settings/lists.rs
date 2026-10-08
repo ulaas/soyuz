@@ -10,26 +10,36 @@ use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
 use crate::ui::dialogs::keybind_record::RecordTarget;
 
-const TEMPLATES: [(&str, &str, &str, bool); 4] = [
-    ("Open in VS Code", "code", "%s", false),
-    ("Git status here", "git status", "", true),
-    (
-        "Copy names to clipboard",
-        if cfg!(windows) { "cmd /C echo %n | clip" } else { "sh -c \"echo %n | xclip -sel c\"" },
-        "",
-        false,
-    ),
-    ("List folder in terminal", if cfg!(windows) { "Get-ChildItem %d" } else { "ls -la %d" }, "", true),
-];
+/// Starter commands: (name, command, arguments, run in terminal).
+fn templates() -> [(&'static str, &'static str, &'static str, bool); 4] {
+    [
+        (tr!("settings-commands-template-vscode"), "code", "%s", false),
+        (tr!("settings-commands-template-git"), "git status", "", true),
+        (
+            tr!("settings-commands-template-copy-names"),
+            if cfg!(windows) { "cmd /C echo %n | clip" } else { "sh -c \"echo %n | xclip -sel c\"" },
+            "",
+            false,
+        ),
+        (
+            tr!("settings-commands-template-list"),
+            if cfg!(windows) { "Get-ChildItem %d" } else { "ls -la %d" },
+            "",
+            true,
+        ),
+    ]
+}
 
-const PLACEHOLDERS: [(&str, &str); 6] = [
-    ("%p", "focused item (or the folder)"),
-    ("%s", "selected paths"),
-    ("%n", "selected names"),
-    ("%d", "current folder"),
-    ("%o", "other pane's folder"),
-    ("%%", "a literal %"),
-];
+fn placeholders() -> [(&'static str, &'static str); 6] {
+    [
+        ("%p", tr!("settings-commands-ph-focused")),
+        ("%s", tr!("settings-commands-ph-selected")),
+        ("%n", tr!("settings-commands-ph-names")),
+        ("%d", tr!("settings-commands-ph-dir")),
+        ("%o", tr!("settings-commands-ph-other")),
+        ("%%", tr!("settings-commands-ph-percent")),
+    ]
+}
 
 fn card(ui: &mut Ui, body: impl FnOnce(&mut Ui)) {
     let p = palette(ui.ctx());
@@ -53,32 +63,28 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         any = true;
         ui.add_space(14.0);
         card(ui, |ui| {
-            subheading(ui, "Placeholders");
+            subheading(ui, tr!("settings-commands-placeholders"));
             ui.add_space(4.0);
             ui.horizontal_wrapped(|ui| {
-                for (k, v) in PLACEHOLDERS {
+                for (k, v) in placeholders() {
                     ui.label(RichText::new(k).monospace().color(p.accent));
                     ui.label(RichText::new(v).size(11.5).color(p.text_secondary));
                     ui.add_space(10.0);
                 }
             });
             ui.add_space(4.0);
-            ui.label(
-                RichText::new("An argument that is exactly %s or %n expands to one argument per item. Commands appear in the palette (Ctrl+Shift+P), in the right-click menu and can have a hotkey.")
-                    .size(11.5)
-                    .color(p.text_tertiary),
-            );
+            ui.label(RichText::new(tr!("settings-commands-help")).size(11.5).color(p.text_tertiary));
         });
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
-            if small_button(ui, Some(ph::PLUS), "New command", false).clicked() {
+            if small_button(ui, Some(ph::PLUS), tr!("settings-commands-new"), false).clicked() {
                 app.settings
                     .draft
                     .custom_commands
-                    .push(CustomCommand { name: "New command".into(), ..Default::default() });
+                    .push(CustomCommand { name: tr!("settings-commands-new").into(), ..Default::default() });
             }
-            ui.label(RichText::new("or start from").size(11.5).color(p.text_tertiary));
-            for (name, cmd, args, term) in TEMPLATES {
+            ui.label(RichText::new(tr!("settings-commands-or-template")).size(11.5).color(p.text_tertiary));
+            for (name, cmd, args, term) in templates() {
                 if small_button(ui, Some(if term { ph::TERMINAL } else { ph::LIGHTNING }), name, false).clicked() {
                     app.settings.draft.custom_commands.push(CustomCommand {
                         name: name.into(),
@@ -102,7 +108,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut moves = None;
     for i in 0..n {
         let c = &app.settings.draft.custom_commands[i];
-        if searching && !matches(q, &[&c.name, &c.command, "custom command"]) {
+        if searching && !matches(q, &[&c.name, &c.command, "custom command", tr!("settings-section-commands")]) {
             continue;
         }
         any = true;
@@ -114,13 +120,16 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.label(icons::icon(if c.terminal { ph::TERMINAL } else { ph::LIGHTNING }, 16.0).color(p.accent));
                 ui.add(
                     egui::TextEdit::singleline(&mut c.name)
-                        .hint_text("Name")
+                        .hint_text(tr!("settings-name"))
                         .font(egui::FontId::proportional(14.0))
                         .desired_width(220.0)
                         .margin(Margin::symmetric(8, 4)),
                 );
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if small_button(ui, Some(ph::TRASH), "", true).on_hover_text("Delete command").clicked() {
+                    if small_button(ui, Some(ph::TRASH), "", true)
+                        .on_hover_text(tr!("settings-commands-delete"))
+                        .clicked()
+                    {
                         remove = Some(i);
                     }
                     if i + 1 < n && small_button(ui, Some(ph::ARROW_DOWN), "", false).clicked() {
@@ -129,28 +138,30 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     if i > 0 && small_button(ui, Some(ph::ARROW_UP), "", false).clicked() {
                         moves = Some((i - 1, i));
                     }
-                    if !c.command.trim().is_empty() && small_button(ui, Some(ph::PLAY), "Run", false).clicked() {
+                    if !c.command.trim().is_empty()
+                        && small_button(ui, Some(ph::PLAY), tr!("settings-commands-run"), false).clicked()
+                    {
                         run = Some(c.clone());
                     }
                 });
             });
             ui.add_space(8.0);
             egui::Grid::new(("soyuz.cc", i)).num_columns(2).spacing(egui::vec2(12.0, 8.0)).show(ui, |ui| {
-                ui.label(RichText::new("Command").size(12.0).color(p.text_secondary));
-                code(ui, &mut c.command, "program or command line", ui.available_width().min(460.0));
+                ui.label(RichText::new(tr!("settings-commands-command")).size(12.0).color(p.text_secondary));
+                code(ui, &mut c.command, tr!("settings-commands-command-hint"), ui.available_width().min(460.0));
                 ui.end_row();
-                ui.label(RichText::new("Arguments").size(12.0).color(p.text_secondary));
+                ui.label(RichText::new(tr!("settings-terminal-args")).size(12.0).color(p.text_secondary));
                 let buf = &mut s.args_text[i];
-                if code(ui, buf, "%s   (quotes group words)", ui.available_width().min(460.0)).changed() {
+                if code(ui, buf, tr!("settings-commands-args-hint"), ui.available_width().min(460.0)).changed() {
                     c.args = crate::commands::split_args(buf);
                 }
                 ui.end_row();
-                ui.label(RichText::new("Show for").size(12.0).color(p.text_secondary));
+                ui.label(RichText::new(tr!("settings-commands-show-for")).size(12.0).color(p.text_secondary));
                 ui.horizontal(|ui| {
                     for (k, label) in [
-                        (CommandContext::File, "Files"),
-                        (CommandContext::Dir, "Folders"),
-                        (CommandContext::Background, "Folder background"),
+                        (CommandContext::File, tr!("settings-general-files")),
+                        (CommandContext::Dir, tr!("settings-views-folders")),
+                        (CommandContext::Background, tr!("settings-commands-background-ctx")),
                     ] {
                         let mut on = c.context.is_empty() || c.context.contains(&k);
                         if ui.checkbox(&mut on, label).changed() {
@@ -172,13 +183,17 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     }
                 });
                 ui.end_row();
-                ui.label(RichText::new("Run in").size(12.0).color(p.text_secondary));
-                super::widgets::segmented(ui, &mut c.terminal, &[(false, "Background"), (true, "Terminal panel")]);
+                ui.label(RichText::new(tr!("settings-commands-run-in")).size(12.0).color(p.text_secondary));
+                super::widgets::segmented(
+                    ui,
+                    &mut c.terminal,
+                    &[(false, tr!("settings-commands-run-background")), (true, tr!("settings-commands-run-terminal"))],
+                );
                 ui.end_row();
-                ui.label(RichText::new("Hotkey").size(12.0).color(p.text_secondary));
+                ui.label(RichText::new(tr!("settings-commands-hotkey")).size(12.0).color(p.text_secondary));
                 ui.horizontal(|ui| {
                     if c.hotkey.trim().is_empty() {
-                        if small_button(ui, Some(ph::KEYBOARD), "Record…", false).clicked() {
+                        if small_button(ui, Some(ph::KEYBOARD), tr!("settings-commands-record"), false).clicked() {
                             rec = Some(i);
                         }
                     } else {
@@ -221,7 +236,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     if let Some(i) = rec {
         let name = app.settings.draft.custom_commands[i].name.clone();
-        record(app, RecordTarget::Command(i), format!("Hotkey for “{name}”"));
+        record(app, RecordTarget::Command(i), tr!("settings-commands-record-title", name = name));
     }
     if let Some(c) = run {
         let ctx = ui.ctx().clone();
@@ -231,7 +246,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(20.0);
         ui.vertical_centered(|ui| {
             ui.label(icons::icon(ph::LIGHTNING, 28.0).color(p.text_tertiary));
-            ui.label(RichText::new("No custom commands yet").color(p.text_secondary));
+            ui.label(RichText::new(tr!("settings-commands-empty")).color(p.text_secondary));
         });
     }
     any
@@ -262,7 +277,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             if let Some(cur) = &current
-                && small_button(ui, Some(ph::PLUS), "Bookmark current folder", false).clicked()
+                && small_button(ui, Some(ph::PLUS), tr!("settings-bookmarks-add-current"), false).clicked()
             {
                 let name = cur
                     .file_name()
@@ -275,14 +290,13 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     icon: String::new(),
                 });
             }
-            if small_button(ui, Some(ph::PLUS), "Empty bookmark", false).clicked() {
-                app.settings.draft.bookmarks.push(Bookmark { name: "Bookmark".into(), ..Default::default() });
+            if small_button(ui, Some(ph::PLUS), tr!("settings-bookmarks-add-empty"), false).clicked() {
+                app.settings
+                    .draft
+                    .bookmarks
+                    .push(Bookmark { name: tr!("settings-bookmarks-default-name").into(), ..Default::default() });
             }
-            ui.label(
-                RichText::new("Bookmarks 1–9 also open with Alt+1…9 and with their own hotkey.")
-                    .size(11.5)
-                    .color(p.text_tertiary),
-            );
+            ui.label(RichText::new(tr!("settings-bookmarks-help")).size(11.5).color(p.text_tertiary));
         });
     }
     let n = app.settings.draft.bookmarks.len();
@@ -294,7 +308,8 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         let list: Vec<usize> = (0..n)
             .filter(|i| {
                 let b = &app.settings.draft.bookmarks[*i];
-                !searching || matches(q, &[&b.name, &b.path.to_string_lossy(), "bookmark"])
+                !searching
+                    || matches(q, &[&b.name, &b.path.to_string_lossy(), "bookmark", tr!("settings-section-bookmarks")])
             })
             .collect();
         if !list.is_empty() {
@@ -314,7 +329,8 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                                 .width(44.0)
                                 .show_ui(ui, |ui| {
                                     for (k, g) in BOOKMARK_ICONS {
-                                        let label = if k.is_empty() { "default" } else { k };
+                                        let label =
+                                            if k.is_empty() { tr!("settings-bookmarks-icon-default") } else { k };
                                         if ui.selectable_label(b.icon == k, format!("{g}  {label}")).clicked() {
                                             b.icon = k.to_string();
                                         }
@@ -323,9 +339,16 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                             if i < 9 {
                                 ui.label(RichText::new(format!("{}", i + 1)).monospace().color(p.text_tertiary));
                             }
-                            text(ui, &mut b.name, "Name", 150.0);
+                            text(ui, &mut b.name, tr!("settings-name"), 150.0);
                             let mut path = b.path.to_string_lossy().into_owned();
-                            if code(ui, &mut path, "Folder path", (ui.available_width() - 110.0).max(120.0)).changed() {
+                            if code(
+                                ui,
+                                &mut path,
+                                tr!("settings-bookmarks-path-hint"),
+                                (ui.available_width() - 110.0).max(120.0),
+                            )
+                            .changed()
+                            {
                                 b.path = path.into();
                             }
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -340,7 +363,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                                 }
                                 if b.hotkey.trim().is_empty() {
                                     if small_button(ui, Some(ph::KEYBOARD), "", false)
-                                        .on_hover_text("Record a hotkey")
+                                        .on_hover_text(tr!("settings-bookmarks-record"))
                                         .clicked()
                                     {
                                         rec = Some(i);
@@ -370,13 +393,13 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     if let Some(i) = rec {
         let name = app.settings.draft.bookmarks[i].name.clone();
-        record(app, RecordTarget::Bookmark(i), format!("Hotkey for bookmark “{name}”"));
+        record(app, RecordTarget::Bookmark(i), tr!("settings-bookmarks-record-title", name = name));
     }
     if !searching && n == 0 {
         ui.add_space(20.0);
         ui.vertical_centered(|ui| {
             ui.label(icons::icon(ph::BOOKMARK_SIMPLE, 28.0).color(p.text_tertiary));
-            ui.label(RichText::new("No bookmarks yet").color(p.text_secondary));
+            ui.label(RichText::new(tr!("settings-bookmarks-empty")).color(p.text_secondary));
         });
     }
     any

@@ -735,20 +735,15 @@ impl TextDoc {
             top += BAR_H;
         }
         let notice = if self.lossy && self.read_only {
-            Some((
-                ph::WARNING,
-                p.warning,
-                "Not valid UTF-8: invalid bytes are shown as \u{FFFD}. Saving would write them that way.",
-                &["Edit anyway"][..],
-            ))
+            Some((ph::WARNING, p.warning, tr!("editors-text-lossy"), [tr!("editors-text-edit-anyway")]))
         } else if self.mixed_eol && !self.notice_dismissed {
-            Some((ph::INFO, p.info, "Mixed line endings: saving uses the most common one.", &["OK"][..]))
+            Some((ph::INFO, p.info, tr!("editors-text-mixed-eol"), [tr!("common-ok")]))
         } else {
             None
         };
         if let Some((glyph, color, text, buttons)) = notice {
             let r = Rect::from_min_size(pos2(rect.left() + 8.0, top + 2.0), vec2(rect.width() - 16.0, 30.0));
-            if widgets::banner(ui, r, p, glyph, color, text, buttons).is_some() {
+            if widgets::banner(ui, r, p, glyph, color, text, &buttons).is_some() {
                 if self.lossy && self.read_only {
                     self.read_only = false;
                 } else {
@@ -777,11 +772,11 @@ impl TextDoc {
             widgets::icon_at(ui, b, id.with(("tb", tip)), glyph, tip, enabled, p)
         };
         let dirty = self.is_dirty();
-        out.save |= btn(ui, ph::FLOPPY_DISK, "Save (Ctrl+S)", dirty && !self.read_only, false);
-        if btn(ui, ph::ARROW_COUNTER_CLOCKWISE, "Undo (Ctrl+Z)", self.history.can_undo(), false) {
+        out.save |= btn(ui, ph::FLOPPY_DISK, tr!("editors-tb-save"), dirty && !self.read_only, false);
+        if btn(ui, ph::ARROW_COUNTER_CLOCKWISE, tr!("editors-tb-undo"), self.history.can_undo(), false) {
             self.undo();
         }
-        if btn(ui, ph::ARROW_CLOCKWISE, "Redo (Ctrl+Y)", self.history.can_redo(), false) {
+        if btn(ui, ph::ARROW_CLOCKWISE, tr!("editors-tb-redo"), self.history.can_redo(), false) {
             self.redo();
         }
         x.set(x.get() + 8.0);
@@ -795,7 +790,7 @@ impl TextDoc {
             }
             widgets::icon_at(ui, b, id.with(("tb2", tip)), glyph, tip, true, p)
         };
-        if b(ui, ph::MAGNIFYING_GLASS, "Find (Ctrl+F)", find_open && !replace_open) {
+        if b(ui, ph::MAGNIFYING_GLASS, tr!("editors-tb-find"), find_open && !replace_open) {
             if find_open && !replace_open {
                 self.find.open = false;
             } else {
@@ -804,7 +799,7 @@ impl TextDoc {
                 self.find.replace = false;
             }
         }
-        if b(ui, ph::SWAP, "Replace (Ctrl+H)", replace_open) {
+        if b(ui, ph::SWAP, tr!("editors-tb-replace"), replace_open) {
             if replace_open {
                 self.find.open = false;
             } else {
@@ -812,7 +807,7 @@ impl TextDoc {
                 self.find.replace = true;
             }
         }
-        if b(ui, ph::ARROW_LINE_DOWN, "Go to line (Ctrl+G)", self.goto.is_some()) {
+        if b(ui, ph::ARROW_LINE_DOWN, tr!("editors-tb-goto"), self.goto.is_some()) {
             if self.goto.is_some() {
                 self.goto = None;
             } else {
@@ -820,13 +815,13 @@ impl TextDoc {
             }
         }
         x.set(x.get() + 8.0);
-        out.toggle_wrap |= b(ui, ph::TEXT_ALIGN_LEFT, "Wrap long lines", env.cfg.wrap);
-        out.toggle_whitespace |= b(ui, ph::PARAGRAPH, "Show whitespace", env.cfg.show_whitespace);
+        out.toggle_wrap |= b(ui, ph::TEXT_ALIGN_LEFT, tr!("editors-tb-wrap"), env.cfg.wrap);
+        out.toggle_whitespace |= b(ui, ph::PARAGRAPH, tr!("editors-tb-whitespace"), env.cfg.show_whitespace);
         if self.read_only {
             ui.painter().text(
                 pos2(r.right() - 10.0, r.center().y),
                 Align2::RIGHT_CENTER,
-                "Read-only",
+                tr!("editors-read-only"),
                 FontId::proportional(11.5),
                 p.warning,
             );
@@ -843,7 +838,7 @@ impl TextDoc {
         let fr = Rect::from_min_size(pos2(row1.left() + 8.0, row1.top() + 5.0), vec2(field_w, 24.0));
         let fid = id.with("find.field");
         let before = self.find.query.text.clone();
-        let resp = widgets::field(ui, fr, fid, &mut self.find.query.text, "Find", true);
+        let resp = widgets::field(ui, fr, fid, &mut self.find.query.text, tr!("editors-find-hint"), true);
         env.focus.push(fid);
         if std::mem::take(&mut self.find.focus_find) {
             resp.request_focus();
@@ -866,9 +861,9 @@ impl TextDoc {
                 *v = !*v;
             }
         };
-        chip(ui, "Aa", "Match case", &mut self.find.query.case);
-        chip(ui, "W", "Whole word", &mut self.find.query.whole_word);
-        chip(ui, ".*", "Regular expression", &mut self.find.query.regex);
+        chip(ui, "Aa", tr!("editors-find-match-case"), &mut self.find.query.case);
+        chip(ui, "W", tr!("editors-find-whole-word"), &mut self.find.query.whole_word);
+        chip(ui, ".*", tr!("editors-find-regex"), &mut self.find.query.regex);
         if before != self.find.query.text {
             // Incremental: jump to the first match from the selection start.
             self.refresh_matches();
@@ -881,14 +876,14 @@ impl TextDoc {
         let count = match (&self.find.error, self.find.matches.len()) {
             (Some(e), _) => e.clone(),
             (None, _) if self.find.query.text.is_empty() => String::new(),
-            (None, 0) => "No results".into(),
+            (None, 0) => tr!("editors-find-no-results").into(),
             (None, n) => {
                 let (a, b) = self.sel.range();
                 let cur = self.find.matches.iter().position(|m| m.start_pos() == a && m.end_pos() == b);
                 let more = if n >= search::MAX_MATCHES { "+" } else { "" };
                 match cur {
-                    Some(i) => format!("{} of {n}{more}", i + 1),
-                    None => format!("{n}{more} results"),
+                    Some(i) => tr!("editors-find-position", current = i + 1, total = n, more = more),
+                    None => tr!("editors-find-results", count = n, more = more),
                 }
             }
         };
@@ -902,21 +897,22 @@ impl TextDoc {
         );
         let right = row1.right() - 8.0;
         let ir = |i: f32| Rect::from_min_size(pos2(right - 26.0 * (i + 1.0), row1.top() + 5.0), vec2(24.0, 24.0));
-        if widgets::icon_at(ui, ir(0.0), id.with("find.close"), ph::X, "Close (Esc)", true, p) {
+        if widgets::icon_at(ui, ir(0.0), id.with("find.close"), ph::X, tr!("editors-find-close"), true, p) {
             self.find.open = false;
             self.focus_request = true;
         }
-        if widgets::icon_at(ui, ir(1.0), id.with("find.next"), ph::ARROW_DOWN, "Next (Enter / F3)", true, p) {
+        if widgets::icon_at(ui, ir(1.0), id.with("find.next"), ph::ARROW_DOWN, tr!("editors-find-next"), true, p) {
             self.find_step(true);
         }
-        if widgets::icon_at(ui, ir(2.0), id.with("find.prev"), ph::ARROW_UP, "Previous (Shift+Enter)", true, p) {
+        if widgets::icon_at(ui, ir(2.0), id.with("find.prev"), ph::ARROW_UP, tr!("editors-find-prev"), true, p) {
             self.find_step(false);
         }
         if self.find.replace {
             let row2 = Rect::from_min_size(pos2(r.left(), row1.bottom() - 4.0), vec2(r.width(), BAR_H));
             let rr = Rect::from_min_size(pos2(row2.left() + 8.0, row2.top() + 5.0), vec2(field_w, 24.0));
             let rid = id.with("replace.field");
-            let hint = if self.find.query.regex { "Replace ($1 for groups)" } else { "Replace" };
+            let hint =
+                if self.find.query.regex { tr!("editors-replace-hint-regex") } else { tr!("editors-replace-hint") };
             let resp = widgets::field(ui, rr, rid, &mut self.find.replace_text, hint, true);
             env.focus.push(rid);
             if (resp.has_focus() || resp.lost_focus()) && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -924,10 +920,16 @@ impl TextDoc {
                 resp.request_focus();
             }
             let br = |x: f32, w: f32| Rect::from_min_size(pos2(x, row2.top() + 5.0), vec2(w, 24.0));
-            let b1 = br(rr.right() + 6.0, 70.0);
-            let b2 = br(b1.right() + 6.0, 86.0);
-            for (b, label, all) in [(b1, "Replace", false), (b2, "Replace all", true)] {
-                let resp = ui.interact(b, id.with(("rep", label)), Sense::click());
+            // Buttons fit their (translated) labels.
+            let label_w = |ui: &Ui, s: &str| {
+                let g = ui.painter().layout_no_wrap(s.to_string(), FontId::proportional(12.0), p.text_primary);
+                (g.size().x + 20.0).max(70.0)
+            };
+            let (l1, l2) = (tr!("editors-replace-one"), tr!("editors-replace-all"));
+            let b1 = br(rr.right() + 6.0, label_w(ui, l1));
+            let b2 = br(b1.right() + 6.0, label_w(ui, l2));
+            for (b, label, all) in [(b1, l1, false), (b2, l2, true)] {
+                let resp = ui.interact(b, id.with(("rep", all)), Sense::click());
                 crate::ui::a11y::button(&resp, label);
                 let fill = if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 };
                 ui.painter().rect_filled(b, CornerRadius::same(4), fill);
@@ -957,7 +959,7 @@ impl TextDoc {
         let n = self.buf.line_count();
         let fr = Rect::from_min_size(pos2(r.left() + 8.0, r.top() + 5.0), vec2(180.0, 24.0));
         let Some(text) = self.goto.as_mut() else { return };
-        let resp = widgets::field(ui, fr, id, text, "Line[:column]", true);
+        let resp = widgets::field(ui, fr, id, text, tr!("editors-goto-hint"), true);
         env.focus.push(id);
         if std::mem::take(&mut self.goto_focus) {
             resp.request_focus();
@@ -965,7 +967,7 @@ impl TextDoc {
         ui.painter().text(
             pos2(fr.right() + 10.0, r.center().y),
             Align2::LEFT_CENTER,
-            format!("1 – {n}  ·  Enter to jump"),
+            tr!("editors-goto-range", count = n),
             FontId::proportional(11.5),
             p.text_secondary,
         );
@@ -986,13 +988,15 @@ impl TextDoc {
         ui.painter().hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.border_subtle));
         let head = self.sel.head;
         let col = self.buf.line(head.line)[..head.col.min(self.buf.line(head.line).len())].chars().count() + 1;
-        let mut left = format!("Ln {}, Col {col}", head.line + 1);
+        let mut left = tr!("editors-text-status-pos", line = head.line + 1, col = col);
         if !self.sel.is_empty() {
             let (a, b) = self.sel.range();
             let n = self.buf.text_range(a, b).chars().count();
-            left.push_str(&format!("  ·  {n} selected"));
+            left.push_str("  ·  ");
+            left.push_str(&tr!("editors-text-status-selected", count = n));
         }
-        left.push_str(&format!("  ·  {} lines", self.buf.line_count()));
+        left.push_str("  ·  ");
+        left.push_str(&tr!("editors-text-status-lines", count = self.buf.line_count()));
         ui.painter().text(
             pos2(r.left() + 10.0, r.center().y),
             Align2::LEFT_CENTER,
@@ -1000,8 +1004,12 @@ impl TextDoc {
             FontId::proportional(11.5),
             p.text_secondary,
         );
-        let lang = self.language().unwrap_or("Plain text");
-        let indent = if self.uses_tabs { "Tabs".to_string() } else { format!("Spaces: {tab}") };
+        let lang = self.language().unwrap_or(tr!("editors-text-plain"));
+        let indent = if self.uses_tabs {
+            tr!("editors-text-indent-tabs").to_string()
+        } else {
+            tr!("editors-text-indent-spaces", count = tab)
+        };
         let right = format!("{lang}  ·  {indent}  ·  {}", self.encoding.label());
         let eol_rect =
             Rect::from_min_max(pos2(r.right() - 50.0, r.top() + 2.0), pos2(r.right() - 6.0, r.bottom() - 2.0));
@@ -1023,7 +1031,7 @@ impl TextDoc {
             FontId::proportional(11.5),
             if self.eol != self.saved_eol { p.accent } else { p.text_secondary },
         );
-        if resp.on_hover_text("Line endings used when saving (click to switch)").clicked() && !self.read_only {
+        if resp.on_hover_text(tr!("editors-text-eol-tip")).clicked() && !self.read_only {
             self.eol = if self.eol == Eol::CrLf { Eol::Lf } else { Eol::CrLf };
         }
     }
@@ -1316,7 +1324,7 @@ impl TextDoc {
             clip.text(
                 pos2(text.left(), text.top() + row_h / 2.0),
                 Align2::LEFT_CENTER,
-                "Empty file",
+                tr!("editors-text-empty"),
                 FontId::proportional(12.0),
                 p.text_tertiary,
             );

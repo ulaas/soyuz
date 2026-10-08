@@ -5,55 +5,50 @@ use egui::{Align, Layout, RichText, Ui};
 
 use super::card;
 use crate::app::SoyuzApp;
-use crate::automation::{AutoCmd, TEMPLATES};
+use crate::automation::{AutoCmd, TEMPLATES, template_title};
 use crate::cmd::Cmd;
 use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
 use crate::ui::settings::widgets::{group, matches, number, small_button, switch};
 
-const CTX: &str = "Scripts rhai";
+const CTX: &str = "Scripts rhai betikler";
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
     let d = &mut app.settings.draft.scripting;
-    any |= group(ui, q, CTX, "Scripting", |r| {
-        r.row("Run scripts", "Load scripts/*.rhai: their actions, columns, previewers and rule steps.", |ui| {
+    any |= group(ui, q, CTX, tr!("automation-scripts-group"), |r| {
+        r.row(tr!("automation-scripts-run"), tr!("automation-scripts-run-desc"), |ui| {
             switch(ui, &mut d.enabled);
         });
         r.row_kw(
-            "Approve script changes",
-            "Show what an action wants to change before it runs. Off: changes start right away (still undoable).",
+            tr!("automation-scripts-approve"),
+            tr!("automation-scripts-approve-desc"),
             "confirm preview plan",
             |ui| {
                 switch(ui, &mut d.approve_writes);
             },
         );
-        r.row_kw(
-            "Let scripts read files",
-            "list, stat, search and read_text. Off: scripts only see the paths they are given.",
-            "sandbox privacy",
-            |ui| {
-                switch(ui, &mut d.allow_read);
-            },
-        );
-        r.row_kw("Time limit", "Longest an action or rule script may run.", "timeout sandbox", |ui| {
+        r.row_kw(tr!("automation-scripts-read"), tr!("automation-scripts-read-desc"), "sandbox privacy", |ui| {
+            switch(ui, &mut d.allow_read);
+        });
+        r.row_kw(tr!("automation-scripts-timeout"), tr!("automation-scripts-timeout-desc"), "timeout sandbox", |ui| {
             number(ui, &mut d.timeout_ms, 100..=60_000, " ms");
         });
         r.row_kw(
-            "Column and preview time limit",
-            "Per value of a script column or previewer call.",
+            tr!("automation-scripts-cell-timeout"),
+            tr!("automation-scripts-cell-timeout-desc"),
             "timeout cell",
             |ui| {
                 number(ui, &mut d.cell_timeout_ms, 20..=5_000, " ms");
             },
         );
-        r.row_kw("Operation limit", "Script operations per call before it is stopped.", "sandbox ops", |ui| {
+        r.row_kw(tr!("automation-scripts-ops"), tr!("automation-scripts-ops-desc"), "sandbox ops", |ui| {
             number(ui, &mut d.max_operations, 100_000..=100_000_000, "");
         });
-        r.row_kw("Largest file read", "read_text returns at most this much.", "sandbox kib", |ui| {
+        r.row_kw(tr!("automation-scripts-read-max"), tr!("automation-scripts-read-max-desc"), "sandbox kib", |ui| {
             number(ui, &mut d.max_read_kib, 4..=65_536, " KiB");
         });
-        r.row_kw("Most entries listed", "list() and search() return at most this many.", "sandbox", |ui| {
+        r.row_kw(tr!("automation-scripts-list-max"), tr!("automation-scripts-list-max-desc"), "sandbox", |ui| {
             number(ui, &mut d.max_list_entries, 100..=200_000, "");
         });
     });
@@ -76,43 +71,33 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
-                if small_button(ui, Some(ph::FOLDER_OPEN), "Show scripts folder", false).clicked() {
+                if small_button(ui, Some(ph::FOLDER_OPEN), tr!("automation-scripts-show-folder"), false).clicked() {
                     app.cmds.push(Cmd::Automation(AutoCmd::OpenScriptsFolder));
                 }
-                if small_button(ui, Some(ph::ARROWS_CLOCKWISE), "Reload", false).clicked() {
+                if small_button(ui, Some(ph::ARROWS_CLOCKWISE), tr!("automation-scripts-reload"), false).clicked() {
                     app.cmds.push(Cmd::Automation(AutoCmd::ReloadScripts));
                 }
-                ui.label(RichText::new("New from").size(11.5).color(p.text_tertiary));
-                for (file, title, _) in TEMPLATES {
-                    if small_button(ui, Some(ph::FILE_PLUS), title, false).clicked() {
+                ui.label(RichText::new(tr!("automation-scripts-new-from")).size(11.5).color(p.text_tertiary));
+                for (file, _) in TEMPLATES {
+                    if small_button(ui, Some(ph::FILE_PLUS), template_title(file), false).clicked() {
                         app.cmds.push(Cmd::Automation(AutoCmd::NewScript(file)));
                     }
                 }
             });
             ui.add_space(6.0);
-            ui.label(
-                RichText::new(
-                    "Scripts reload when you save them. They run sandboxed (no processes, network or direct file changes): \
-                     every change they ask for becomes a job you can undo. Bind actions in Keyboard as “run_script:<file>/<id>”.",
-                )
-                .size(11.5)
-                .color(p.text_tertiary),
-            );
+            ui.label(RichText::new(tr!("automation-scripts-folder-note")).size(11.5).color(p.text_tertiary));
         });
     }
     let Some(set) = app.automation.set.clone() else {
         if show_folder {
             ui.add_space(10.0);
-            ui.label(RichText::new("Loading scripts…").color(p.text_tertiary));
+            ui.label(RichText::new(tr!("automation-scripts-loading")).color(p.text_tertiary));
         }
         return any;
     };
     if set.scripts.is_empty() && show_folder {
         ui.add_space(10.0);
-        ui.label(
-            RichText::new("No scripts yet. Start from a template above, or put .rhai files in the scripts folder.")
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("automation-scripts-empty")).color(p.text_tertiary));
         return any;
     }
     let (actions, columns, previewers) = set
@@ -120,15 +105,17 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         .fold((0, 0, 0), |(a, c, pv), s| (a + s.actions.len(), c + s.columns.len(), pv + s.previewers.len()));
     if show_folder {
         ui.add_space(10.0);
-        ui.label(
-            RichText::new(format!(
-                "{} script(s) · {actions} action(s) · {columns} column(s) · {previewers} previewer(s){}",
-                set.scripts.len(),
-                if columns > 4 { " · only the first 4 columns are shown" } else { "" }
-            ))
-            .size(11.5)
-            .color(p.text_tertiary),
+        let summary = tr!(
+            "automation-scripts-summary",
+            scripts = set.scripts.len(),
+            actions = actions,
+            columns = columns,
+            previewers = previewers
         );
+        ui.label(RichText::new(summary).size(11.5).color(p.text_tertiary));
+        if columns > 4 {
+            ui.label(RichText::new(tr!("automation-scripts-columns-capped")).size(11.5).color(p.warning));
+        }
     }
     let mut toggle: Option<(String, bool)> = None;
     for sc in &set.scripts {
@@ -173,8 +160,13 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 sc.actions.iter().filter_map(|a| app.automation.runtime_errors.get(&a.title)).collect();
             for e in rt {
                 ui.add(
-                    egui::Label::new(RichText::new(format!("Last run: {e}")).monospace().size(11.5).color(p.warning))
-                        .wrap(),
+                    egui::Label::new(
+                        RichText::new(tr!("automation-scripts-last-run", error = e))
+                            .monospace()
+                            .size(11.5)
+                            .color(p.warning),
+                    )
+                    .wrap(),
                 );
             }
             if !sc.enabled {
@@ -195,30 +187,40 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         ui.label(RichText::new(&a.hotkey).size(11.0).color(p.text_secondary));
                     }
                     if a.menu {
-                        ui.label(RichText::new("context menu").size(11.0).color(p.text_tertiary));
+                        ui.label(
+                            RichText::new(tr!("automation-scripts-context-menu")).size(11.0).color(p.text_tertiary),
+                        );
                     }
                 });
             }
             for c in &sc.columns {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::COLUMNS, 13.0).color(p.accent));
-                    ui.label(RichText::new(format!("Column “{}”", c.title)).size(12.5).color(p.text_primary));
+                    ui.label(
+                        RichText::new(tr!("automation-scripts-column", title = &c.title))
+                            .size(12.5)
+                            .color(p.text_primary),
+                    );
                 });
             }
             for pv in &sc.previewers {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::EYE, 13.0).color(p.accent));
                     ui.label(
-                        RichText::new(format!("Previewer “{}” for .{}", pv.title, pv.extensions.join(", .")))
-                            .size(12.5)
-                            .color(p.text_primary),
+                        RichText::new(tr!(
+                            "automation-scripts-previewer",
+                            title = &pv.title,
+                            exts = pv.extensions.join(", .")
+                        ))
+                        .size(12.5)
+                        .color(p.text_primary),
                     );
                 });
             }
             if sc.has_rule {
                 ui.horizontal(|ui| {
                     ui.label(icons::icon(ph::ROBOT, 13.0).color(p.accent));
-                    ui.label(RichText::new("Rule step: fn rule(path, ctx)").size(12.5).color(p.text_primary));
+                    ui.label(RichText::new(tr!("automation-scripts-rule-step")).size(12.5).color(p.text_primary));
                 });
             }
         });

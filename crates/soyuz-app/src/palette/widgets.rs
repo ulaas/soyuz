@@ -82,8 +82,17 @@ pub fn paint_chips_scaled(ui: &Ui, p: &Palette, binding: &str, right: f32, cy: f
         }
         if gi > 0 {
             x -= 4.0;
-            painter.text(pos2(x, cy), Align2::RIGHT_CENTER, "then", FontId::proportional(10.0), p.text_tertiary);
-            let w = painter.layout_no_wrap("then".into(), FontId::proportional(10.0), p.text_tertiary).size().x;
+            painter.text(
+                pos2(x, cy),
+                Align2::RIGHT_CENTER,
+                tr!("actions-palette-then"),
+                FontId::proportional(10.0),
+                p.text_tertiary,
+            );
+            let w = painter
+                .layout_no_wrap(tr!("actions-palette-then").into(), FontId::proportional(10.0), p.text_tertiary)
+                .size()
+                .x;
             x -= w + 5.0;
         }
     }
@@ -106,7 +115,10 @@ pub fn chips_width_scaled(ui: &Ui, binding: &str, scale: f32) -> f32 {
         }
         if gi > 0 {
             w += 4.0
-                + ui.painter().layout_no_wrap("then".into(), FontId::proportional(10.0), Color32::WHITE).size().x
+                + ui.painter()
+                    .layout_no_wrap(tr!("actions-palette-then").into(), FontId::proportional(10.0), Color32::WHITE)
+                    .size()
+                    .x
                 + 5.0;
         }
     }

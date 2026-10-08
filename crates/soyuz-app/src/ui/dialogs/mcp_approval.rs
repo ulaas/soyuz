@@ -32,10 +32,10 @@ impl McpApprovalDialog {
     pub fn new(id: u64, approvals: Arc<Mutex<McpApprovals>>, open: Arc<AtomicBool>) -> Self {
         let (title, destructive) = match approvals.lock().card(id) {
             Some(c) if c.card.plan.risk == Risk::Destructive => {
-                (format!("{} wants to delete or overwrite files", c.client()), true)
+                (tr!("dialogs-mcp-title-destructive", client = c.client()), true)
             }
-            Some(c) => (format!("{} wants to change files", c.client()), false),
-            None => ("An AI client wants to change files".to_string(), false),
+            Some(c) => (tr!("dialogs-mcp-title", client = c.client()), false),
+            None => (tr!("dialogs-mcp-title-unknown").to_string(), false),
         };
         McpApprovalDialog { id, approvals, open, title, destructive }
     }
@@ -78,11 +78,7 @@ impl Dialog for McpApprovalDialog {
             .show(ui, |ui| cards::show(ui, &p, &mut c.card, true, &mut acts))
             .inner;
         ui.add_space(6.0);
-        ui.label(
-            RichText::new("Approved plans run as normal background jobs you can pause, cancel and undo.")
-                .size(11.0)
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("dialogs-mcp-note")).size(11.0).color(p.text_tertiary));
         match action {
             Some(CardAction::Decide(d)) => {
                 a.decide(self.id, d);

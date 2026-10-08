@@ -171,7 +171,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
                 .take(MAX_OPEN_AT_ONCE)
                 .collect();
             if files.is_empty() {
-                app.ui.toasts.push(Toast::info("Select a file to edit"));
+                app.ui.toasts.push(Toast::info(tr!("editors-select-file")));
                 return;
             }
             for f in files {
@@ -272,7 +272,7 @@ pub fn save(app: &mut SoyuzApp, ctx: &egui::Context, idx: usize) {
         DocKind::Image(im) => {
             let mode = im.save_mode();
             if mode == image::ops::SaveMode::Unsupported {
-                app.ui.toasts.push(Toast::warning("This image format can't be written"));
+                app.ui.toasts.push(Toast::warning(tr!("editors-image-format-readonly")));
                 return;
             }
             io::SaveJob::Image { full: im.full.clone(), ops: im.ops.clone(), mode, quality }
@@ -376,7 +376,7 @@ fn on_loaded(app: &mut SoyuzApp, ctx: &egui::Context, doc: u64, reload: bool, st
         (LoadResult::Image(l), _) => d.kind = DocKind::Image(Box::new(image::ImageDoc::new(d.path.clone(), l, wake))),
         (LoadResult::Error(e), _) => {
             if reload {
-                app.ui.toasts.push(Toast::error(format!("Couldn't reload {}", d.name)).body(e));
+                app.ui.toasts.push(Toast::error(tr!("editors-reload-failed", name = &d.name)).body(e));
             } else {
                 d.kind = DocKind::Failed(e);
             }
@@ -419,9 +419,10 @@ fn on_saved(
                 let id = d.id;
                 start_load(app, ctx, id, true);
             }
-            let mut t = Toast::success(format!("Saved {name}"));
+            let mut t = Toast::success(tr!("editors-saved", name = &name));
             if let Some(note) = backup {
-                t = Toast::warning(format!("Saved {name}")).body(format!("No backup copy in the trash: {note}"));
+                t = Toast::warning(tr!("editors-saved", name = &name))
+                    .body(tr!("editors-saved-no-backup", note = note));
             }
             t.duration = Some(2.0);
             app.ui.toasts.push_replacing(t);
@@ -434,7 +435,7 @@ fn on_saved(
             d.save_token = None;
             let name = d.name.clone();
             app.editors.quit_after_save = false;
-            app.ui.toasts.push(Toast::error(format!("Couldn't save {name}")).body(e));
+            app.ui.toasts.push(Toast::error(tr!("editors-save-failed", name = name)).body(e));
         }
     }
 }
@@ -451,7 +452,7 @@ fn on_changed(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, stamp: Optio
             let id = d.id;
             let name = d.name.clone();
             start_load(app, ctx, id, true);
-            let mut t = Toast::info(format!("Reloaded {name}")).body("It changed on disk.");
+            let mut t = Toast::info(tr!("editors-reloaded", name = name)).body(tr!("editors-reloaded-body"));
             t.duration = Some(2.5);
             app.ui.toasts.push_replacing(t);
         }

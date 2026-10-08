@@ -88,6 +88,12 @@ fn small_button(ui: &mut Ui, r: Rect, id: Id, label: &str, enabled: bool, p: &Pa
     enabled && resp.clicked()
 }
 
+/// Width of a [`small_button`] for `label`: at least `min`, wider for longer translations.
+fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
+    let w = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::WHITE).size().x;
+    (w + 20.0).max(min)
+}
+
 pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
     let entries: Vec<HistoryEntry> = app.fileops.jobs.history().iter().rev().cloned().collect();
     if entries.is_empty() {
@@ -103,14 +109,14 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         ui.painter().text(
             c + vec2(0.0, 12.0),
             Align2::CENTER_CENTER,
-            "No history yet",
+            tr!("panels-history-empty"),
             semibold(13.0),
             p.text_secondary,
         );
         ui.painter().text(
             c + vec2(0.0, 30.0),
             Align2::CENTER_CENTER,
-            "Finished operations appear here and can be undone.",
+            tr!("panels-history-empty-hint"),
             FontId::proportional(11.5),
             p.text_tertiary,
         );
@@ -139,7 +145,15 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 let tx = row.left() + 46.0;
                 let tw = row.width() - 46.0 - 240.0;
                 let verified = !h.undone && is_verified(h);
-                let tag_w = if verified { 70.0 } else { 0.0 };
+                let tag_w = if verified {
+                    ui.painter()
+                        .layout_no_wrap(tr!("panels-verified").to_string(), FontId::proportional(10.5), p.success)
+                        .size()
+                        .x
+                        + 20.0
+                } else {
+                    0.0
+                };
                 let tg = trunc_galley(
                     ui.painter(),
                     &title,
@@ -153,18 +167,18 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     crate::ui::dialogs::conflict::tag(
                         ui,
                         pos2(tx + tgw + 8.0, row.top() + 16.0),
-                        "Undone",
+                        tr!("panels-history-undone"),
                         p.text_tertiary,
                     );
                 } else if verified {
                     let at = pos2(tx + tgw + 8.0, row.top() + 16.0);
-                    let w = crate::ui::dialogs::conflict::tag(ui, at, "Verified", p.success);
+                    let w = crate::ui::dialogs::conflict::tag(ui, at, tr!("panels-verified"), p.success);
                     ui.interact(
                         Rect::from_min_size(pos2(at.x, at.y - 8.0), vec2(w, 16.0)),
                         Id::new(("soyuz.hist.verified", h.id.0)),
                         Sense::hover(),
                     )
-                    .on_hover_text("Every copied file was hash-compared with its source (BLAKE3)");
+                    .on_hover_text(tr!("panels-history-verified-tip"));
                 }
                 let mut sub = format!(
                     "{} \u{b7} {}",
@@ -172,7 +186,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     names::summary_line(&h.summary)
                 );
                 if !h.undoable && !h.undone {
-                    sub.push_str(" \u{b7} can't be undone");
+                    sub.push_str(" \u{b7} ");
+                    sub.push_str(tr!("panels-history-not-undoable"));
                 }
                 let sc = if h.summary.items_failed > 0 { p.warning } else { p.text_tertiary };
                 let sg = trunc_galley(ui.painter(), &sub, FontId::proportional(11.5), sc, tw);
@@ -186,23 +201,28 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     rr
                 };
                 if h.undone {
-                    if small_button(ui, place(64.0), Id::new(("soyuz.hist.redo", h.id.0)), "Redo", true, p) {
+                    let label = tr!("common-redo");
+                    let rr = place(button_width(ui, label, 64.0));
+                    if small_button(ui, rr, Id::new(("soyuz.hist.redo", h.id.0)), label, true, p) {
                         todo = Some((h.id, HistoryAction::Redo));
                     }
                 } else {
-                    let rr = place(64.0);
-                    if small_button(ui, rr, Id::new(("soyuz.hist.undo", h.id.0)), "Undo", h.undoable, p) {
+                    let label = tr!("common-undo");
+                    let rr = place(button_width(ui, label, 64.0));
+                    if small_button(ui, rr, Id::new(("soyuz.hist.undo", h.id.0)), label, h.undoable, p) {
                         todo = Some((h.id, HistoryAction::Undo));
                     }
                     if !h.undoable {
                         ui.interact(rr, Id::new(("soyuz.hist.undo.tip", h.id.0)), Sense::hover())
-                            .on_hover_text("This operation can't be undone (e.g. a permanent delete).");
+                            .on_hover_text(tr!("panels-history-not-undoable-tip"));
                     }
                 }
-                if h.summary.items_failed > 0
-                    && small_button(ui, place(92.0), Id::new(("soyuz.hist.retry", h.id.0)), "Retry failed", true, p)
-                {
-                    todo = Some((h.id, HistoryAction::Retry));
+                if h.summary.items_failed > 0 {
+                    let label = tr!("panels-retry-failed");
+                    let rr = place(button_width(ui, label, 92.0));
+                    if small_button(ui, rr, Id::new(("soyuz.hist.retry", h.id.0)), label, true, p) {
+                        todo = Some((h.id, HistoryAction::Retry));
+                    }
                 }
             }
         },

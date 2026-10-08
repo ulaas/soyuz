@@ -13,14 +13,25 @@ use crate::theme::palette;
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{icon_button, kbd, pill_button};
 
-const TIPS: &[(Action, &str, &str)] = &[
-    (Action::CommandPalette, ph::COMMAND, "Every command, searchable"),
-    (Action::JumpToFolderDialog, ph::FOLDER_OPEN, "Jump to any folder you visited"),
-    (Action::Search, ph::MAGNIFYING_GLASS, "Search names and contents"),
-    (Action::ToggleDualPane, ph::SQUARE_SPLIT_HORIZONTAL, "Two folders side by side"),
-    (Action::ToggleTerminal, ph::TERMINAL_WINDOW, "A terminal that follows you"),
-    (Action::QuickLook, ph::EYE, "Preview the selected file"),
+const TIPS: &[(Action, &str)] = &[
+    (Action::CommandPalette, ph::COMMAND),
+    (Action::JumpToFolderDialog, ph::FOLDER_OPEN),
+    (Action::Search, ph::MAGNIFYING_GLASS),
+    (Action::ToggleDualPane, ph::SQUARE_SPLIT_HORIZONTAL),
+    (Action::ToggleTerminal, ph::TERMINAL_WINDOW),
+    (Action::QuickLook, ph::EYE),
 ];
+
+fn tip_text(action: &Action) -> &'static str {
+    match action {
+        Action::CommandPalette => tr!("app-welcome-tip-palette"),
+        Action::JumpToFolderDialog => tr!("app-welcome-tip-jump"),
+        Action::Search => tr!("app-welcome-tip-search"),
+        Action::ToggleDualPane => tr!("app-welcome-tip-dual"),
+        Action::ToggleTerminal => tr!("app-welcome-tip-terminal"),
+        _ => tr!("app-welcome-tip-preview"),
+    }
+}
 
 /// Draw the card when it is due. `bottom` is the space taken by the status bar.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
@@ -51,28 +62,26 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                         ui.ctx(),
                         ui.unique_id(),
                         egui::accesskit::Role::Dialog,
-                        "Welcome to Soyuz",
+                        tr!("app-welcome-title"),
                     );
                     ui.horizontal(|ui| {
                         ui.label(icons::icon(ph::ROCKET_LAUNCH, 18.0).color(p.accent));
-                        ui.label(RichText::new("Welcome to Soyuz").font(semibold(15.0)).color(p.text_primary));
+                        ui.label(RichText::new(tr!("app-welcome-title")).font(semibold(15.0)).color(p.text_primary));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if icon_button(ui, ph::X, "Dismiss", true).clicked() {
+                            if icon_button(ui, ph::X, tr!("app-welcome-dismiss"), true).clicked() {
                                 dismiss = true;
                             }
                         });
                     });
-                    ui.label(
-                        RichText::new("Keyboard-first and never blocking. A few shortcuts to start with:")
-                            .color(p.text_secondary),
-                    );
+                    ui.label(RichText::new(tr!("app-welcome-intro")).color(p.text_secondary));
                     ui.add_space(8.0);
-                    for (action, glyph, what) in TIPS {
+                    for (action, glyph) in TIPS {
+                        let what = tip_text(action);
                         let Some(keys) = chord_label(&app.keymap, action) else { continue };
                         ui.horizontal(|ui| {
                             ui.set_min_height(24.0);
                             ui.label(icons::icon(glyph, 15.0).color(p.text_tertiary));
-                            ui.label(RichText::new(*what).color(p.text_primary));
+                            ui.label(RichText::new(what).color(p.text_primary));
                             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                 kbd(ui, &keys);
                             });
@@ -80,11 +89,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                     }
                     ui.add_space(10.0);
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                        if pill_button(ui, None, "Got it", true).clicked() {
+                        if pill_button(ui, None, tr!("app-welcome-got-it"), true).clicked() {
                             dismiss = true;
                         }
                         ui.add_space(6.0);
-                        if pill_button(ui, Some(ph::GEAR_SIX), "Settings", false).clicked() {
+                        if pill_button(ui, Some(ph::GEAR_SIX), tr!("app-welcome-settings"), false).clicked() {
                             settings = true;
                         }
                     });

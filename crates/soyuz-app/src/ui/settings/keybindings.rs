@@ -4,7 +4,7 @@
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::config::{Action, ActionCategory, Config, KeyPreset, Keymap, format_sequence};
 
-use super::widgets::{group, matches, segmented, small_button, switch};
+use super::widgets::{group, matches, segmented, small_button, switch, upper};
 use super::{binding_chip, key_cache, record};
 use crate::app::SoyuzApp;
 use crate::keys::conflicts::{Conflict, ConflictKind, for_action};
@@ -36,51 +36,41 @@ pub fn is_overridden(c: &Config, a: &Action) -> bool {
     c.keys.bindings.keys().any(|k| k.parse::<Action>().ok().as_ref() == Some(a))
 }
 
-const PRESET_HELP: [(KeyPreset, &str); 4] = [
-    (KeyPreset::Explorer, "Windows Explorer conventions: F2 rename, Del, Alt+arrows, Ctrl+1…9 tabs."),
-    (
-        KeyPreset::Commander,
-        "Total Commander style: F3 view, F5 copy, F6 move, F7 folder, F8 delete, Tab switches panes.",
-    ),
-    (KeyPreset::Finder, "macOS Finder: Enter renames, Cmd+Down opens, Cmd+Backspace trashes, Cmd+1…4 views."),
-    (KeyPreset::Vim, "hjkl, gg / G, yy copy, dd cut, pp paste, / filter, marks with m and '."),
-];
+fn preset_help(k: KeyPreset) -> &'static str {
+    match k {
+        KeyPreset::Explorer => tr!("settings-keys-preset-explorer-desc"),
+        KeyPreset::Commander => tr!("settings-keys-preset-commander-desc"),
+        KeyPreset::Finder => tr!("settings-keys-preset-finder-desc"),
+        KeyPreset::Vim => tr!("settings-keys-preset-vim-desc"),
+    }
+}
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     let mut any = false;
     {
         let d = &mut app.settings.draft;
-        any |= group(ui, q, "Keyboard shortcuts keys", "Preset", |r| {
-            let help = PRESET_HELP.iter().find(|(k, _)| *k == d.keys.preset).map(|(_, h)| *h).unwrap_or("");
-            r.row_kw("Key preset", help, "explorer commander finder vim", |ui| {
+        any |= group(ui, q, "Keyboard shortcuts keys", tr!("settings-keys-preset"), |r| {
+            let help = preset_help(d.keys.preset);
+            r.row_kw(tr!("settings-keys-key-preset"), help, "explorer commander finder vim", |ui| {
                 segmented(
                     ui,
                     &mut d.keys.preset,
                     &[
-                        (KeyPreset::Explorer, "Explorer"),
-                        (KeyPreset::Commander, "Commander"),
-                        (KeyPreset::Finder, "Finder"),
-                        (KeyPreset::Vim, "Vim-ish"),
+                        (KeyPreset::Explorer, crate::i18n::labels::key_preset(KeyPreset::Explorer)),
+                        // Short form: the full preset name ("Commander (F-keys)") is too wide here.
+                        (KeyPreset::Commander, tr!("settings-keys-preset-commander")),
+                        (KeyPreset::Finder, crate::i18n::labels::key_preset(KeyPreset::Finder)),
+                        (KeyPreset::Vim, crate::i18n::labels::key_preset(KeyPreset::Vim)),
                     ],
                 );
             });
-            r.row_kw(
-                "Treat Cmd as Ctrl",
-                "Bindings written with Ctrl also answer to Cmd on macOS.",
-                "command meta",
-                |ui| {
-                    switch(ui, &mut d.keys.cmd_is_ctrl);
-                },
-            );
-            r.row_kw(
-                "Marks",
-                "m + key marks the current folder, ' + key jumps back to it (always on in Vim-ish).",
-                "ranger bookmark",
-                |ui| {
-                    switch(ui, &mut d.keys.marks);
-                },
-            );
+            r.row_kw(tr!("settings-keys-cmd-ctrl"), tr!("settings-keys-cmd-ctrl-desc"), "command meta", |ui| {
+                switch(ui, &mut d.keys.cmd_is_ctrl);
+            });
+            r.row_kw(tr!("settings-keys-marks"), tr!("settings-keys-marks-desc"), "ranger bookmark", |ui| {
+                switch(ui, &mut d.keys.marks);
+            });
         });
     }
     let searching_outside = !q.trim().is_empty();
@@ -112,7 +102,17 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             (a, e, b)
         })
         .filter(|(a, e, b)| {
-            let text_ok = matches(&filter, &[&e.title, e.keywords, &a.to_string(), &b.join(" "), e.category.label()]);
+            let text_ok = matches(
+                &filter,
+                &[
+                    &e.title,
+                    &e.title_en,
+                    e.keywords,
+                    &a.to_string(),
+                    &b.join(" "),
+                    crate::i18n::labels::action_category(e.category),
+                ],
+            );
             let conflict_ok = !app.settings.keys_conflicts_only
                 || for_action(&conflicts, a).iter().any(|c| c.kind != ConflictKind::Shadowed);
             let modified_ok = !app.settings.keys_modified_only || is_overridden(&app.settings.draft, a);
@@ -124,30 +124,32 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     any = true;
     ui.add_space(14.0);
-    ui.label(RichText::new("SHORTCUTS").font(FontId::proportional(10.5)).color(p.text_tertiary));
+    ui.label(
+        RichText::new(upper(tr!("settings-keys-shortcuts"))).font(FontId::proportional(10.5)).color(p.text_tertiary),
+    );
     ui.add_space(6.0);
     if !searching_outside {
         ui.horizontal(|ui| {
             ui.add(
                 TextEdit::singleline(&mut app.settings.keys_filter)
                     .hint_text(
-                        RichText::new(format!("{}  Search actions or keys", ph::MAGNIFYING_GLASS))
+                        RichText::new(format!("{}  {}", ph::MAGNIFYING_GLASS, tr!("settings-keys-search-hint")))
                             .color(p.text_tertiary),
                     )
                     .desired_width(260.0)
                     .margin(Margin::symmetric(10, 6)),
             );
             ui.add_space(8.0);
-            ui.checkbox(&mut app.settings.keys_conflicts_only, "Conflicts only");
+            ui.checkbox(&mut app.settings.keys_conflicts_only, tr!("settings-keys-conflicts-only"));
             ui.add_space(4.0);
-            ui.checkbox(&mut app.settings.keys_modified_only, "Changed only");
+            ui.checkbox(&mut app.settings.keys_modified_only, tr!("settings-keys-changed-only"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let n = app.settings.draft.keys.bindings.len();
                 if n > 0
                     && small_button(
                         ui,
                         Some(ph::ARROW_COUNTER_CLOCKWISE),
-                        &format!("Reset {n} change{}", if n == 1 { "" } else { "s" }),
+                        &tr!("settings-keys-reset-changes", count = n),
                         true,
                     )
                     .clicked()
@@ -192,7 +194,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.set_width(ui.available_width());
             if rows.is_empty() {
                 ui.add_space(20.0);
-                ui.vertical_centered(|ui| ui.label(RichText::new("No shortcuts match").color(p.text_tertiary)));
+                ui.vertical_centered(|ui| ui.label(RichText::new(tr!("settings-keys-empty")).color(p.text_tertiary)));
                 ui.add_space(20.0);
                 return;
             }
@@ -201,7 +203,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 if last != Some(e.category) {
                     ui.add_space(if last.is_none() { 4.0 } else { 10.0 });
                     ui.label(
-                        RichText::new(e.category.label().to_uppercase())
+                        RichText::new(upper(crate::i18n::labels::action_category(e.category)))
                             .font(FontId::proportional(10.0))
                             .color(p.text_tertiary),
                     );
@@ -250,13 +252,14 @@ fn action_row(
             ui.spacing_mut().item_spacing.x = 4.0;
             if overridden
                 && small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "", false)
-                    .on_hover_text("Reset to the preset")
+                    .on_hover_text(tr!("settings-keys-reset-one"))
                     .clicked()
             {
                 reset = true;
             }
-            let plus = small_button(ui, Some(ph::PLUS), if bindings.is_empty() { "Add" } else { "" }, false)
-                .on_hover_text("Record a shortcut");
+            let plus =
+                small_button(ui, Some(ph::PLUS), if bindings.is_empty() { tr!("settings-add") } else { "" }, false)
+                    .on_hover_text(tr!("settings-keys-record"));
             if plus.clicked() {
                 add = true;
             }
@@ -290,7 +293,7 @@ fn action_row(
         set_override(&mut app.settings.draft, a, list);
     }
     if add {
-        record(app, RecordTarget::Action(a.clone()), format!("Shortcut for “{}”", e.title));
+        record(app, RecordTarget::Action(a.clone()), tr!("settings-keys-record-title", action = &e.title));
     }
 }
 

@@ -10,16 +10,16 @@ use crate::theme::themes::{self, ThemeDef};
 use crate::theme::tokens::parse_hex;
 use crate::theme::{Palette, icons, library};
 
-/// Accent presets: (name, hex).
+/// Accent presets: (name message key, hex).
 pub const ACCENTS: [(&str, &str); 8] = [
-    ("Orbit blue", "#5B8CFF"),
-    ("Violet", "#8B5CF6"),
-    ("Pink", "#EC4899"),
-    ("Red", "#F2555A"),
-    ("Amber", "#F59E0B"),
-    ("Green", "#22C55E"),
-    ("Teal", "#14B8A6"),
-    ("Sky", "#38BDF8"),
+    ("settings-accent-orbit-blue", "#5B8CFF"),
+    ("settings-accent-violet", "#8B5CF6"),
+    ("settings-accent-pink", "#EC4899"),
+    ("settings-accent-red", "#F2555A"),
+    ("settings-accent-amber", "#F59E0B"),
+    ("settings-accent-green", "#22C55E"),
+    ("settings-accent-teal", "#14B8A6"),
+    ("settings-accent-sky", "#38BDF8"),
 ];
 
 /// Buttons under the gallery.
@@ -53,11 +53,7 @@ pub fn gallery(ui: &mut Ui, d: &mut Config, p: &Palette) -> Option<ThemeAction> 
         ui.add_space(6.0);
     }
     if hc {
-        ui.label(
-            egui::RichText::new("High contrast is on: it replaces the color theme until you turn it off.")
-                .size(11.5)
-                .color(p.warning),
-        );
+        ui.label(egui::RichText::new(tr!("settings-theme-hc-on")).size(11.5).color(p.warning));
     }
     for w in library::warnings_of(&current) {
         ui.label(egui::RichText::new(format!("{current}: {w}")).size(11.5).color(p.warning));
@@ -68,16 +64,16 @@ pub fn gallery(ui: &mut Ui, d: &mut Config, p: &Palette) -> Option<ThemeAction> 
     }
     ui.add_space(2.0);
     ui.horizontal(|ui| {
-        if small_button(ui, Some(ph::DOWNLOAD_SIMPLE), "Import theme…", false).clicked() {
+        if small_button(ui, Some(ph::DOWNLOAD_SIMPLE), tr!("settings-theme-import"), false).clicked() {
             action = Some(ThemeAction::Import);
         }
-        if small_button(ui, Some(ph::EXPORT), "Export current…", false)
-            .on_hover_text("Save the current colors (theme, accent and overrides) as a theme file")
+        if small_button(ui, Some(ph::EXPORT), tr!("settings-theme-export"), false)
+            .on_hover_text(tr!("settings-theme-export-tooltip"))
             .clicked()
         {
             action = Some(ThemeAction::Export);
         }
-        if small_button(ui, Some(ph::FOLDER_OPEN), "Themes folder", false)
+        if small_button(ui, Some(ph::FOLDER_OPEN), tr!("settings-theme-folder"), false)
             .on_hover_text(library::themes_dir().display().to_string())
             .clicked()
         {
@@ -87,9 +83,15 @@ pub fn gallery(ui: &mut Ui, d: &mut Config, p: &Palette) -> Option<ThemeAction> 
     action
 }
 
+/// Shown name of a theme: built-in names that are words are translated, the rest
+/// (proper names, user themes) stay as written in the file.
+fn display_name(t: &ThemeDef) -> &str {
+    if t.builtin && t.id == "high-contrast" { tr!("settings-theme-high-contrast") } else { &t.name }
+}
+
 fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(CARD, Sense::click());
-    crate::ui::a11y::button(&resp, &format!("{} theme", t.name));
+    crate::ui::a11y::button(&resp, &tr!("settings-theme-a11y", name = display_name(t)));
     let (dark, light) = t.palettes();
     let painter = ui.painter_at(rect.expand(3.0));
     let r = CornerRadius::same(8);
@@ -129,7 +131,7 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
     painter.text(
         pos2(label.left() + 10.0, label.center().y),
         Align2::LEFT_CENTER,
-        &t.name,
+        display_name(t),
         FontId::proportional(12.0),
         p.text_primary,
     );
@@ -137,7 +139,7 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
         painter.text(
             pos2(label.right() - 10.0, label.center().y),
             Align2::RIGHT_CENTER,
-            "custom",
+            tr!("settings-theme-custom-tag"),
             FontId::proportional(10.5),
             p.text_tertiary,
         );
@@ -155,7 +157,11 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
         painter.circle_filled(c, 8.0, p.accent);
         painter.text(c, Align2::CENTER_CENTER, ph::CHECK, icons::font(10.0), Color32::WHITE);
     }
-    resp.on_hover_text(if t.author.is_empty() { t.name.clone() } else { format!("{} — {}", t.name, t.author) })
+    resp.on_hover_text(if t.author.is_empty() {
+        display_name(t).to_string()
+    } else {
+        tr!("settings-theme-tooltip", name = display_name(t), author = &t.author)
+    })
 }
 
 /// Accent: the theme's, the OS accent, or a preset / custom color.
@@ -183,7 +189,15 @@ pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
         AccentChoice::Custom(_) => 2,
     };
     let before = mode;
-    segmented(ui, &mut mode, &[(0, "Theme"), (1, "System"), (2, "Custom")]);
+    segmented(
+        ui,
+        &mut mode,
+        &[
+            (0, tr!("settings-appearance-theme")),
+            (1, tr!("settings-appearance-mode-system")),
+            (2, tr!("settings-custom")),
+        ],
+    );
     if mode != before {
         match mode {
             0 => set(d, AccentChoice::Theme),
@@ -203,7 +217,7 @@ pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
         } else if resp.hovered() {
             ui.painter().circle_stroke(rect.center(), 11.0, Stroke::new(1.0, p.border_strong));
         }
-        if resp.on_hover_text(name).clicked() {
+        if resp.on_hover_text(crate::i18n::t_dyn(name)).clicked() {
             set(d, AccentChoice::Custom(c));
         }
     }
@@ -211,5 +225,17 @@ pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
     let mut custom = current;
     if color_swatch(ui, &mut custom, matches!(choice, AccentChoice::Custom(_))) {
         set(d, AccentChoice::Custom(custom));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn accent_names_are_translated() {
+        for (key, _) in super::ACCENTS {
+            for l in [soyuz_core::Locale::EnUs, soyuz_core::Locale::TrTr] {
+                assert!(crate::i18n::has_in(key, l), "{key}");
+            }
+        }
     }
 }

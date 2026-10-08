@@ -101,11 +101,16 @@ impl Recorder {
         let mut clear = false;
         let resp = Modal::new(id).frame(frame).backdrop_color(Color32::from_black_alpha(60)).show(ctx, |ui| {
             ui.set_width(420.0);
-            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, "Record shortcut");
+            crate::ui::a11y::container(
+                ui.ctx(),
+                ui.unique_id(),
+                egui::accesskit::Role::Dialog,
+                tr!("dialogs-record-title"),
+            );
             ui.horizontal(|ui| {
                 ui.label(icons::icon(ph::KEYBOARD, 18.0).color(p.accent));
                 ui.label(
-                    RichText::new("Record shortcut")
+                    RichText::new(tr!("dialogs-record-title"))
                         .font(FontId::new(16.0, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into())))
                         .color(p.text_primary),
                 );
@@ -126,7 +131,7 @@ impl Recorder {
                 painter.text(
                     rect.center(),
                     Align2::CENTER_CENTER,
-                    "Press a key combination…",
+                    tr!("dialogs-record-press"),
                     FontId::proportional(14.0),
                     p.text_tertiary,
                 );
@@ -138,20 +143,26 @@ impl Recorder {
             ui.add_space(10.0);
             if users.is_empty() {
                 let msg = if self.chords.is_empty() {
-                    "Up to three chords make a sequence (e.g. G then G).".to_string()
+                    tr!("dialogs-record-sequence-hint")
                 } else {
-                    "Not used by anything else.".to_string()
+                    tr!("dialogs-record-unused")
                 };
                 ui.label(RichText::new(msg).size(11.5).color(p.text_tertiary));
             } else {
                 let names: Vec<String> = users
                     .iter()
-                    .map(|(c, a)| format!("{} ({})", crate::palette::catalog::title(a), c.label()))
+                    .map(|(c, a)| {
+                        tr!(
+                            "dialogs-record-user",
+                            action = crate::palette::catalog::title(a),
+                            context = crate::i18n::labels::key_context(*c)
+                        )
+                    })
                     .collect();
                 ui.horizontal_wrapped(|ui| {
                     ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
                     ui.label(
-                        RichText::new(format!("Currently bound to {}. Saving moves it here.", names.join(", ")))
+                        RichText::new(tr!("dialogs-record-conflict", users = names.join(", ")))
                             .size(11.5)
                             .color(p.warning),
                     );
@@ -159,17 +170,17 @@ impl Recorder {
             }
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Enter saves · Esc cancels").size(11.0).color(p.text_tertiary));
+                ui.label(RichText::new(tr!("dialogs-record-keys-hint")).size(11.0).color(p.text_tertiary));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if pill_button(ui, Some(ph::CHECK), "Save", true).clicked() && !self.chords.is_empty() {
+                    if pill_button(ui, Some(ph::CHECK), tr!("common-save"), true).clicked() && !self.chords.is_empty() {
                         outcome = RecordOutcome::Save(binding.clone());
                     }
                     ui.add_space(6.0);
-                    if pill_button(ui, None, "Cancel", false).clicked() {
+                    if pill_button(ui, None, tr!("common-cancel"), false).clicked() {
                         outcome = RecordOutcome::Cancel;
                     }
                     ui.add_space(6.0);
-                    if pill_button(ui, Some(ph::BACKSPACE), "Clear", false).clicked() {
+                    if pill_button(ui, Some(ph::BACKSPACE), tr!("dialogs-record-clear"), false).clicked() {
                         clear = true;
                     }
                 });

@@ -42,37 +42,44 @@ impl Exif {
             (Some(m), Some(md)) => Some(format!("{m} {md}")),
             (a, b) => a.clone().or_else(|| b.clone()),
         };
-        push("Camera", camera);
-        push("Lens", self.lens.clone());
-        push("Taken", self.taken.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()));
+        let dec = soyuz_core::locale::format_decimal;
+        push(tr!("dialogs-exif-camera"), camera);
+        push(tr!("dialogs-exif-lens"), self.lens.clone());
+        push(tr!("dialogs-exif-taken"), self.taken.map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string()));
         push(
-            "Exposure",
+            tr!("dialogs-exif-exposure"),
             self.exposure.filter(|e| e.1 != 0).map(|(n, d)| {
                 if n >= d {
-                    format!("{:.1} s", n as f64 / d as f64)
+                    format!("{} s", dec(n as f64 / d as f64, 1))
                 } else {
                     format!("1/{} s", (d as f64 / n.max(1) as f64).round())
                 }
             }),
         );
-        push("Aperture", self.f_number.filter(|f| f.1 != 0).map(|(n, d)| format!("f/{:.1}", n as f64 / d as f64)));
+        push(
+            tr!("dialogs-exif-aperture"),
+            self.f_number.filter(|f| f.1 != 0).map(|(n, d)| format!("f/{}", dec(n as f64 / d as f64, 1))),
+        );
         push("ISO", self.iso.map(|i| i.to_string()));
-        push("Focal length", self.focal_mm.filter(|f| f.1 != 0).map(|(n, d)| format!("{:.0} mm", n as f64 / d as f64)));
-        push("Orientation", self.orientation.filter(|o| *o > 1).map(orientation_label));
-        push("Software", self.software.clone());
+        push(
+            tr!("dialogs-exif-focal"),
+            self.focal_mm.filter(|f| f.1 != 0).map(|(n, d)| format!("{:.0} mm", n as f64 / d as f64)),
+        );
+        push(tr!("dialogs-exif-orientation"), self.orientation.filter(|o| *o > 1).map(orientation_label));
+        push(tr!("dialogs-exif-software"), self.software.clone());
         out
     }
 }
 
 fn orientation_label(o: u16) -> String {
     match o {
-        2 => "Mirrored".into(),
-        3 => "Rotated 180°".into(),
-        4 => "Mirrored vertically".into(),
-        5 => "Mirrored, rotated 90° CCW".into(),
-        6 => "Rotated 90° CW".into(),
-        7 => "Mirrored, rotated 90° CW".into(),
-        8 => "Rotated 90° CCW".into(),
+        2 => tr!("dialogs-exif-orient-2").into(),
+        3 => tr!("dialogs-exif-orient-3").into(),
+        4 => tr!("dialogs-exif-orient-4").into(),
+        5 => tr!("dialogs-exif-orient-5").into(),
+        6 => tr!("dialogs-exif-orient-6").into(),
+        7 => tr!("dialogs-exif-orient-7").into(),
+        8 => tr!("dialogs-exif-orient-8").into(),
         o => format!("{o}"),
     }
 }

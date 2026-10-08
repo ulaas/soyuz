@@ -91,22 +91,22 @@ pub enum Kind {
 impl Kind {
     pub fn label(self) -> &'static str {
         match self {
-            Kind::Folder => "Folder",
-            Kind::Image => "Image",
-            Kind::Svg => "SVG image",
-            Kind::Text => "Text",
-            Kind::Markdown => "Markdown",
-            Kind::Archive => "Archive",
-            Kind::Audio => "Audio",
-            Kind::Video => "Video",
-            Kind::Pdf => "PDF document",
-            Kind::Binary => "Binary",
-            Kind::Document => "Document",
-            Kind::Spreadsheet => "Spreadsheet",
-            Kind::Presentation => "Presentation",
-            Kind::Ebook => "E-book",
-            Kind::Font => "Font",
-            Kind::Model => "3D model",
+            Kind::Folder => tr!("services-kind-folder"),
+            Kind::Image => tr!("services-kind-image"),
+            Kind::Svg => tr!("services-kind-svg"),
+            Kind::Text => tr!("services-kind-text"),
+            Kind::Markdown => tr!("services-kind-markdown"),
+            Kind::Archive => tr!("services-kind-archive"),
+            Kind::Audio => tr!("services-kind-audio"),
+            Kind::Video => tr!("services-kind-video"),
+            Kind::Pdf => tr!("services-kind-pdf"),
+            Kind::Binary => tr!("services-kind-binary"),
+            Kind::Document => tr!("services-kind-document"),
+            Kind::Spreadsheet => tr!("services-kind-spreadsheet"),
+            Kind::Presentation => tr!("services-kind-presentation"),
+            Kind::Ebook => tr!("services-kind-ebook"),
+            Kind::Font => tr!("services-kind-font"),
+            Kind::Model => tr!("services-kind-model"),
         }
     }
 }
@@ -534,12 +534,12 @@ fn run_load(job: LoadJob) {
                 .downcast_ref::<&str>()
                 .map(|s| s.to_string())
                 .or_else(|| e.downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "internal error".into());
+                .unwrap_or_else(|| tr!("services-preview-internal-error").into());
             message(
                 Kind::Binary,
                 crate::theme::icons::ph::WARNING_CIRCLE,
-                "Preview failed",
-                format!("The previewer crashed on this file ({why})."),
+                tr!("services-preview-failed"),
+                tr!("services-preview-crashed", reason = why),
             )
         }
     };
@@ -617,7 +617,8 @@ fn open_source(source: &Source) -> Result<Opened, String> {
 pub fn read_archive_entry(archive: &Path, inner: &str, cap: u64) -> Result<(Vec<u8>, bool), String> {
     let password = super::archive::password_for(archive);
     let mut reader = soyuz_archive::open(archive, password.as_deref()).map_err(|e| e.to_string())?;
-    let idx = soyuz_archive::find_entry(reader.as_mut(), inner).ok_or_else(|| "entry not found".to_string())?;
+    let idx = soyuz_archive::find_entry(reader.as_mut(), inner)
+        .ok_or_else(|| tr!("services-preview-entry-not-found").to_string())?;
     let mut r = reader.open_entry(idx).map_err(|e| e.to_string())?;
     let mut buf = Vec::new();
     r.by_ref().take(cap).read_to_end(&mut buf).map_err(|e| e.to_string())?;
@@ -644,7 +645,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     };
     let mut opened = match open_source(&job.source) {
         Ok(o) => o,
-        Err(e) => return message(Kind::Binary, ph::WARNING_CIRCLE, "Can't read this file", e),
+        Err(e) => return message(Kind::Binary, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
     };
     let head = opened.head(8192);
     let kind = detect(&name, false, &head, job.force_hex);
@@ -664,7 +665,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             stale,
         );
         if let Opened::Mem(_, _, true) = opened {
-            out.facts.push(("Note".into(), "Preview limited to the first 64 MiB".into()));
+            out.facts.push(("Note".into(), tr!("services-preview-limited").into()));
         }
         out.meta = out.meta.or(meta);
         return out;
@@ -689,12 +690,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             Loaded { kind, content: Content::Media { video: kind == Kind::Video }, facts, meta: None }
         }
         Kind::Pdf => {
-            let mut l = message(
-                kind,
-                ph::FILE_PDF,
-                "PDF document",
-                "Page rendering needs the optional `pdf` build feature. Showing the raw bytes is one click away.",
-            );
+            let mut l = message(kind, ph::FILE_PDF, tr!("services-kind-pdf"), tr!("services-preview-pdf-no-feature"));
             let head = String::from_utf8_lossy(&head[..head.len().min(16)]).into_owned();
             if let Some(v) = head.strip_prefix("%PDF-") {
                 l.facts.push(("PDF version".into(), v.chars().take(3).collect()));
@@ -711,7 +707,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
         | Kind::Model => hex(&job.source, &mut opened),
     };
     if let Opened::Mem(_, _, true) = opened {
-        out.facts.push(("Note".into(), "Preview limited to the first 64 MiB".into()));
+        out.facts.push(("Note".into(), tr!("services-preview-limited").into()));
     }
     if out.meta.is_none() {
         out.meta = meta;
@@ -758,13 +754,22 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
                 let _ = c.seek(SeekFrom::Start(0));
                 Box::new(std::io::BufReader::new(c))
             }
-            Err(e) => return message(Kind::Image, ph::WARNING_CIRCLE, "Can't read this image", e.to_string()),
+            Err(e) => {
+                return message(
+                    Kind::Image,
+                    ph::WARNING_CIRCLE,
+                    tr!("services-preview-cant-read-image"),
+                    e.to_string(),
+                );
+            }
         },
         Opened::Mem(c, _, _) => Box::new(Cursor::new(c.get_ref().clone())),
     };
     let reader = match image::ImageReader::new(std::io::BufReader::new(reader)).with_guessed_format() {
         Ok(r) => r,
-        Err(e) => return message(Kind::Image, ph::WARNING_CIRCLE, "Can't read this image", e.to_string()),
+        Err(e) => {
+            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-image"), e.to_string());
+        }
     };
     let format = reader.format().map(|f| format!("{f:?}").to_uppercase());
     let mut reader = reader;
@@ -773,7 +778,9 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     reader.limits(lim);
     let mut decoder = match reader.into_decoder() {
         Ok(d) => d,
-        Err(e) => return message(Kind::Image, ph::WARNING_CIRCLE, "Unsupported image", e.to_string()),
+        Err(e) => {
+            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-unsupported-image"), e.to_string());
+        }
     };
     let (w, h) = image::ImageDecoder::dimensions(&decoder);
     let mut facts = vec![("Dimensions".to_string(), format!("{w} × {h} px"))];
@@ -787,11 +794,11 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
         let mut l = message(
             Kind::Image,
             ph::IMAGE,
-            "Image too large to preview",
-            format!(
-                "{:.0} MP exceeds the {} MP preview limit ([preview] max_image_mp).",
-                mp as f64 / 1e6,
-                limits.max_image_mp
+            tr!("services-preview-image-too-large"),
+            tr!(
+                "services-preview-image-too-large-body",
+                mp = format!("{:.0}", mp as f64 / 1e6),
+                limit = limits.max_image_mp.to_string()
             ),
         );
         l.facts = facts;
@@ -803,7 +810,9 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     let orientation = image::ImageDecoder::orientation(&mut decoder).ok();
     let mut img = match image::DynamicImage::from_decoder(decoder) {
         Ok(i) => i,
-        Err(e) => return message(Kind::Image, ph::WARNING_CIRCLE, "Can't decode this image", e.to_string()),
+        Err(e) => {
+            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-cant-decode-image"), e.to_string());
+        }
     };
     if let Some(o) = orientation {
         img.apply_orientation(o);
@@ -828,7 +837,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
 /// A script previewer's result as preview content.
 fn script_preview(r: Result<soyuz_script::Preview, soyuz_script::ScriptError>) -> Loaded {
     use crate::theme::icons::ph;
-    let facts = vec![("Previewer".to_string(), "Script".to_string())];
+    let facts = vec![("Previewer".to_string(), tr!("services-preview-script").to_string())];
     match r {
         Ok(soyuz_script::Preview::Markdown(md)) => Loaded {
             kind: Kind::Markdown,
@@ -851,7 +860,7 @@ fn script_preview(r: Result<soyuz_script::Preview, soyuz_script::ScriptError>) -
             }
         }
         Err(e) => {
-            let mut l = message(Kind::Text, ph::WARNING_CIRCLE, "The script previewer failed", e.to_string());
+            let mut l = message(Kind::Text, ph::WARNING_CIRCLE, tr!("services-preview-script-failed"), e.to_string());
             l.facts = facts;
             l
         }
@@ -901,7 +910,12 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
     use crate::theme::icons::ph;
     let Source::File(path) = source else {
         let _ = opened;
-        return message(Kind::Archive, ph::FILE_ZIP, "Nested archive", "Open it from its folder to browse it.");
+        return message(
+            Kind::Archive,
+            ph::FILE_ZIP,
+            tr!("services-preview-nested-archive"),
+            tr!("services-preview-nested-archive-body"),
+        );
     };
     let password = super::archive::password_for(path);
     let mut reader = match soyuz_archive::open(path, password.as_deref()) {
@@ -910,11 +924,18 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
             return message(
                 Kind::Archive,
                 ph::LOCK_SIMPLE,
-                "Password protected",
-                "Press Enter to open it and type the password.",
+                tr!("services-preview-password"),
+                tr!("services-preview-password-body"),
             );
         }
-        Err(e) => return message(Kind::Archive, ph::WARNING_CIRCLE, "Can't read this archive", e.to_string()),
+        Err(e) => {
+            return message(
+                Kind::Archive,
+                ph::WARNING_CIRCLE,
+                tr!("services-preview-cant-read-archive"),
+                e.to_string(),
+            );
+        }
     };
     let format = format!("{:?}", reader.format());
     let entries = match reader.entries() {
@@ -923,11 +944,18 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
             return message(
                 Kind::Archive,
                 ph::LOCK_SIMPLE,
-                "Password protected",
-                "Press Enter to open it and type the password.",
+                tr!("services-preview-password"),
+                tr!("services-preview-password-body"),
             );
         }
-        Err(e) => return message(Kind::Archive, ph::WARNING_CIRCLE, "Can't read this archive", e.to_string()),
+        Err(e) => {
+            return message(
+                Kind::Archive,
+                ph::WARNING_CIRCLE,
+                tr!("services-preview-cant-read-archive"),
+                e.to_string(),
+            );
+        }
     };
     let mut l = ArchiveListing { format: format.clone(), total_entries: entries.len(), ..Default::default() };
     for e in entries {
@@ -957,13 +985,14 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
     }
     l.entries.extend(implicit);
     l.entries.sort_by_key(|a| a.0.trim_end_matches('/').to_lowercase());
-    let mut facts = vec![("Format".to_string(), format), ("Entries".into(), l.total_entries.to_string())];
+    let mut facts =
+        vec![("Format".to_string(), format), ("Entries".into(), soyuz_core::locale::group_int(l.total_entries as u64))];
     if l.total_size > 0 && l.compressed > 0 {
         let ratio = 100.0 - (l.compressed as f64 / l.total_size as f64 * 100.0);
-        facts.push(("Compression".into(), format!("{ratio:.0}% saved")));
+        facts.push(("Compression".into(), tr!("services-fact-compression-saved", ratio = format!("{ratio:.0}"))));
     }
     if l.encrypted {
-        facts.push(("Encrypted".into(), "Yes".into()));
+        facts.push(("Encrypted".into(), tr!("common-yes").into()));
     }
     Loaded { kind: Kind::Archive, content: Content::Archive(l), facts, meta: None }
 }

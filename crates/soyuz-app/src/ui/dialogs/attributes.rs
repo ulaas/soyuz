@@ -54,16 +54,16 @@ impl AttributesDialog {
         let now = Some(SystemTime::now());
         AttributesDialog {
             title: if entries.len() == 1 {
-                format!("Attributes of {}", crate::ui::widgets::shown_name(&entries[0].name))
+                tr!("dialogs-attrs-title-one", name = crate::ui::widgets::shown_name(&entries[0].name))
             } else {
-                format!("Attributes of {} items", entries.len())
+                tr!("dialogs-attrs-title-many", count = entries.len())
             },
             attrs: AttrEdit::new(&entries),
             mode: ModeEdit::new(&entries),
             times: [
-                TimeSlot { label: "Created", on: false, value: now },
-                TimeSlot { label: "Modified", on: false, value: now },
-                TimeSlot { label: "Accessed", on: false, value: now },
+                TimeSlot { label: tr!("dialogs-props-created"), on: false, value: now },
+                TimeSlot { label: tr!("dialogs-props-modified"), on: false, value: now },
+                TimeSlot { label: tr!("dialogs-props-accessed"), on: false, value: now },
             ],
             recursive: false,
             collecting: None,
@@ -145,12 +145,12 @@ impl Dialog for AttributesDialog {
             }
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new("Collecting folder contents\u{2026}").color(p.text_secondary));
+                ui.label(RichText::new(tr!("dialogs-attrs-collecting")).color(p.text_secondary));
             });
-            let cancel = super::close_footer(ui, "Cancel");
+            let cancel = super::close_footer(ui, tr!("common-cancel"));
             return !cancel;
         }
-        caption(ui, "Attributes");
+        caption(ui, tr!("dialogs-props-attributes"));
         self.attrs.show(ui);
         if let Some(m) = &mut self.mode {
             rule(ui);
@@ -158,9 +158,9 @@ impl Dialog for AttributesDialog {
         }
         rule(ui);
         ui.horizontal(|ui| {
-            caption(ui, "Timestamps");
+            caption(ui, tr!("dialogs-props-timestamps"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.button("All to now").clicked() {
+                if ui.button(tr!("dialogs-attrs-all-now")).clicked() {
                     let now = Some(SystemTime::now());
                     for t in &mut self.times {
                         t.value = now;
@@ -183,22 +183,19 @@ impl Dialog for AttributesDialog {
         let any_dir = self.entries.iter().any(|e| e.kind == EntryKind::Dir);
         if any_dir {
             rule(ui);
-            check(ui, &mut self.recursive, "Also apply to everything inside the selected folders");
+            check(ui, &mut self.recursive, tr!("dialogs-attrs-recursive"));
         }
         ui.add_space(4.0);
-        ui.label(
-            RichText::new("Changes run as a background job and can be undone (Ctrl+Z).")
-                .font(FontId::proportional(11.0))
-                .color(p.text_tertiary),
-        );
+        ui.label(RichText::new(tr!("dialogs-props-undo-note")).font(FontId::proportional(11.0)).color(p.text_tertiary));
         ui.add_space(14.0);
         let changes = self.has_changes();
         let mut ok = false;
         let mut cancel = false;
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
-            ok = ui.add_enabled_ui(changes, |ui| button(ui, "Apply", Btn::Primary)).inner.clicked() && changes;
-            cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+            ok = ui.add_enabled_ui(changes, |ui| button(ui, tr!("common-apply"), Btn::Primary)).inner.clicked()
+                && changes;
+            cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
         });
         if ok {
             if self.recursive && any_dir {

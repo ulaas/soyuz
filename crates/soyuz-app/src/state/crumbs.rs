@@ -87,7 +87,11 @@ fn path_crumbs(p: &Path, home: Option<&Path>) -> Vec<Crumb> {
         && !h.as_os_str().is_empty()
         && let Ok(rel) = p.strip_prefix(&h)
     {
-        out.push(Crumb { label: "Home".into(), location: Location::Dir(h.clone()), kind: CrumbKind::Home });
+        out.push(Crumb {
+            label: tr!("ops-place-home").into(),
+            location: Location::Dir(h.clone()),
+            kind: CrumbKind::Home,
+        });
         acc = h.clone();
         rest = rel;
         for c in rest.components() {
@@ -151,14 +155,14 @@ pub fn location_title(loc: &Location) -> String {
             Some(last) if !last.is_empty() => last.to_string(),
             _ => soyuz_core::entry::display_name(archive),
         },
-        Location::Trash => "Trash".into(),
-        Location::Computer => "This PC".into(),
-        Location::Recent => "Recent".into(),
-        Location::Timeline => "Timeline".into(),
-        Location::Tags(t) => format!("Tag: {}", crate::services::tags::display_name(t)),
+        Location::Trash => tr!("ops-place-trash").into(),
+        Location::Computer => tr!("ops-place-computer").into(),
+        Location::Recent => tr!("ops-place-recent").into(),
+        Location::Timeline => tr!("ops-place-timeline").into(),
+        Location::Tags(t) => tr!("ops-place-tag", name = crate::services::tags::display_name(t)),
         // Smart folders show their name (F5).
         Location::Search(id) => {
-            crate::services::search::spec(*id).and_then(|s| s.smart).unwrap_or_else(|| "Search".into())
+            crate::services::search::spec(*id).and_then(|s| s.smart).unwrap_or_else(|| tr!("ops-place-search").into())
         }
         Location::Remote(u) => match soyuz_vfs::RemoteUri::parse(u) {
             Ok(uri) => uri.file_name().map(str::to_string).unwrap_or_else(|| uri.server_label()),

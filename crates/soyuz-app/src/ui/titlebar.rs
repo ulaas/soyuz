@@ -297,7 +297,7 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
         return; // no room (tiny window): leave the space to dragging
     }
     let resp = ui.interact(btn, Id::new("soyuz.titlebar.brand"), Sense::click());
-    crate::ui::a11y::button(&resp, "Soyuz menu");
+    crate::ui::a11y::button(&resp, tr!("app-titlebar-menu"));
     let hover = ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(&ctx, 0.10));
     let open = Popup::is_id_open(&ctx, Popup::default_response_id(&resp));
     let painter = ui.painter();
@@ -317,7 +317,7 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
     if resp.has_focus() {
         focus_ring(ui, btn);
     }
-    let resp = resp.on_hover_text("Soyuz menu");
+    let resp = resp.on_hover_text(tr!("app-titlebar-menu"));
     Popup::menu(&resp).align(RectAlign::BOTTOM_START).show(|ui| app_menu(ui, app));
 }
 
@@ -342,35 +342,35 @@ fn app_menu(ui: &mut Ui, app: &mut SoyuzApp) {
             ui.close();
         }
     };
-    item(ui, &mut cmds, ph::APP_WINDOW, "New window", Action::NewWindow);
+    item(ui, &mut cmds, ph::APP_WINDOW, tr!("app-titlebar-new-window"), Action::NewWindow);
     crate::ui::workspaces::workspaces_menu(ui, app, &mut cmds);
     menu_separator(ui);
-    item(ui, &mut cmds, ph::GEAR_SIX, "Settings…", Action::Settings);
-    item(ui, &mut cmds, ph::KEYBOARD, "Keyboard shortcuts", Action::ShowKeybindings);
-    item(ui, &mut cmds, ph::INFO, "About Soyuz", Action::About);
+    item(ui, &mut cmds, ph::GEAR_SIX, tr!("app-titlebar-settings"), Action::Settings);
+    item(ui, &mut cmds, ph::KEYBOARD, tr!("app-titlebar-shortcuts"), Action::ShowKeybindings);
+    item(ui, &mut cmds, ph::INFO, tr!("app-titlebar-about"), Action::About);
     menu_separator(ui);
-    item(ui, &mut cmds, ph::SIGN_OUT, "Quit", Action::Quit);
+    item(ui, &mut cmds, ph::SIGN_OUT, tr!("app-titlebar-quit"), Action::Quit);
     app.cmds.extend(cmds);
 }
 
 fn window_menu(ui: &mut Ui, km: &soyuz_core::config::Keymap, maximized: bool) {
     ui.set_width(200.0);
     let ctx = ui.ctx().clone();
-    if menu_item(ui, Some(ph::ARROWS_IN_SIMPLE), "Restore", None, maximized).clicked() {
+    if menu_item(ui, Some(ph::ARROWS_IN_SIMPLE), tr!("app-titlebar-restore"), None, maximized).clicked() {
         ctx.send_viewport_cmd(ViewportCommand::Maximized(false));
         ui.close();
     }
-    if menu_item(ui, Some(ph::MINUS), "Minimize", None, true).clicked() {
+    if menu_item(ui, Some(ph::MINUS), tr!("app-titlebar-minimize"), None, true).clicked() {
         ctx.send_viewport_cmd(ViewportCommand::Minimized(true));
         ui.close();
     }
-    if menu_item(ui, Some(ph::ARROWS_OUT_SIMPLE), "Maximize", None, !maximized).clicked() {
+    if menu_item(ui, Some(ph::ARROWS_OUT_SIMPLE), tr!("app-titlebar-maximize"), None, !maximized).clicked() {
         ctx.send_viewport_cmd(ViewportCommand::Maximized(true));
         ui.close();
     }
     menu_separator(ui);
     let close_key = chord_label(km, &Action::CloseWindow).or_else(|| cfg!(windows).then(|| "Alt+F4".to_string()));
-    if menu_item(ui, Some(ph::X), "Close", close_key.as_deref(), true).clicked() {
+    if menu_item(ui, Some(ph::X), tr!("app-titlebar-close"), close_key.as_deref(), true).clicked() {
         ctx.send_viewport_cmd(ViewportCommand::Close);
         ui.close();
     }
@@ -409,12 +409,17 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
             let close_radius = close_corner(crate::ui::native_chrome::is_windows_11(), floating);
             let max_glyph = if ws.maximized { Glyph::Restore } else { Glyph::Maximize };
             let buttons = [
-                (rmin, Glyph::Minimize, "Minimize"),
-                (rmax, max_glyph, if ws.maximized { "Restore" } else { "Maximize" }),
-                (rclose, Glyph::Close, "Close"),
+                (rmin, Glyph::Minimize, "min", tr!("app-titlebar-minimize")),
+                (
+                    rmax,
+                    max_glyph,
+                    if ws.maximized { "restore" } else { "max" },
+                    if ws.maximized { tr!("app-titlebar-restore") } else { tr!("app-titlebar-maximize") },
+                ),
+                (rclose, Glyph::Close, "close", tr!("app-titlebar-close")),
             ];
-            for (r, glyph, label) in buttons {
-                let resp = ui.interact(r, Id::new(("soyuz.titlebar.ctl", label)), Sense::click());
+            for (r, glyph, key, label) in buttons {
+                let resp = ui.interact(r, Id::new(("soyuz.titlebar.ctl", key)), Sense::click());
                 crate::ui::a11y::button(&resp, label);
                 let is_max = matches!(glyph, Glyph::Maximize | Glyph::Restore);
                 let hovered = resp.hovered() || (is_max && os_hover);

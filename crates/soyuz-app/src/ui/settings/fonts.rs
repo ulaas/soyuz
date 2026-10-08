@@ -20,50 +20,52 @@ struct RoleInfo {
     sample: &'static str,
 }
 
-const ROLES: [RoleInfo; 6] = [
-    RoleInfo {
-        kind: FontRoleKind::Ui,
-        label: "Interface",
-        desc: "Labels, menus, buttons and file names. Default: Segoe UI (falls back to the embedded Inter).",
-        hint: Fonts::DEFAULT_UI,
-        sample: "The quick brown fox jumps over the lazy dog \u{2014} Documents, Pictures, Ünïcödé",
-    },
-    RoleInfo {
-        kind: FontRoleKind::UiSemibold,
-        label: "Headings",
-        desc: "Titles, dialog headers and section names. Empty: the semibold face of the interface font.",
-        hint: "Semibold of the interface font",
-        sample: "Properties \u{b7} Downloads \u{b7} Settings",
-    },
-    RoleInfo {
-        kind: FontRoleKind::Terminal,
-        label: "Terminal",
-        desc: "The integrated terminal. Default: Consolas, then Cascadia Mono, then the embedded JetBrains Mono.",
-        hint: Fonts::DEFAULT_MONO,
-        sample: "PS C:\\Users\\me> git status  \u{2502} 0O 1lI |{}[]  \u{2713}",
-    },
-    RoleInfo {
-        kind: FontRoleKind::Code,
-        label: "Code editor",
-        desc: "The text editor, code previews and other monospace text. Default: Consolas, then Cascadia Code.",
-        hint: Fonts::DEFAULT_MONO,
-        sample: "fn main() { let x = 0x1F; /* 0O 1lI */ println!(\"{x}\"); }",
-    },
-    RoleInfo {
-        kind: FontRoleKind::Hex,
-        label: "Hex view",
-        desc: "The hex editor and hex preview.",
-        hint: Fonts::DEFAULT_MONO,
-        sample: "00000010  4D 5A 90 00 03 00 00 00  MZ\u{2026}\u{2026}\u{2026}",
-    },
-    RoleInfo {
-        kind: FontRoleKind::Numbers,
-        label: "Numbers",
-        desc: "Sizes, dates and progress figures in the file list and the activity panel. Empty: the interface font (Segoe UI digits are tabular, so columns line up).",
-        hint: "Same as the interface font",
-        sample: "1,234,567  \u{b7}  111.1 MiB  \u{b7}  888.8 KiB  \u{b7}  2026-10-08 14:32  \u{b7}  98 %",
-    },
-];
+fn roles() -> [RoleInfo; 6] {
+    [
+        RoleInfo {
+            kind: FontRoleKind::Ui,
+            label: tr!("settings-fonts-interface"),
+            desc: tr!("settings-fonts-interface-desc"),
+            hint: Fonts::DEFAULT_UI,
+            sample: tr!("settings-fonts-sample-ui"),
+        },
+        RoleInfo {
+            kind: FontRoleKind::UiSemibold,
+            label: tr!("settings-fonts-headings"),
+            desc: tr!("settings-fonts-headings-desc"),
+            hint: tr!("settings-fonts-headings-hint"),
+            sample: tr!("settings-fonts-sample-headings"),
+        },
+        RoleInfo {
+            kind: FontRoleKind::Terminal,
+            label: tr!("settings-section-terminal"),
+            desc: tr!("settings-fonts-terminal-desc"),
+            hint: Fonts::DEFAULT_MONO,
+            sample: "PS C:\\Users\\me> git status  \u{2502} 0O 1lI |{}[]  \u{2713}",
+        },
+        RoleInfo {
+            kind: FontRoleKind::Code,
+            label: tr!("settings-fonts-code"),
+            desc: tr!("settings-fonts-code-desc"),
+            hint: Fonts::DEFAULT_MONO,
+            sample: "fn main() { let x = 0x1F; /* 0O 1lI */ println!(\"{x}\"); }",
+        },
+        RoleInfo {
+            kind: FontRoleKind::Hex,
+            label: tr!("settings-fonts-hex"),
+            desc: tr!("settings-fonts-hex-desc"),
+            hint: Fonts::DEFAULT_MONO,
+            sample: "00000010  4D 5A 90 00 03 00 00 00  MZ\u{2026}\u{2026}\u{2026}",
+        },
+        RoleInfo {
+            kind: FontRoleKind::Numbers,
+            label: tr!("settings-fonts-numbers"),
+            desc: tr!("settings-fonts-numbers-desc"),
+            hint: tr!("settings-fonts-numbers-hint"),
+            sample: "1,234,567  \u{b7}  111.1 MiB  \u{b7}  888.8 KiB  \u{b7}  2026-10-08 14:32  \u{b7}  98 %",
+        },
+    ]
+}
 
 /// Text size the preview of a role uses (the role's base size; offset added later).
 fn base_size(c: &Config, kind: FontRoleKind) -> f32 {
@@ -83,34 +85,39 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Fonts typeface font family size";
     let mut any = false;
-    let base: Vec<f32> = ROLES.iter().map(|r| base_size(d, r.kind)).collect();
-    for (title, range) in [("Interface", 0..2), ("Monospace", 2..5), ("Numbers", 5..6)] {
+    let roles = roles();
+    let base: Vec<f32> = roles.iter().map(|r| base_size(d, r.kind)).collect();
+    for (title, range) in [
+        (tr!("settings-fonts-interface"), 0..2),
+        (tr!("settings-fonts-monospace"), 2..5),
+        (tr!("settings-fonts-numbers"), 5..6),
+    ] {
         any |= group(ui, q, ctx, title, |r| {
-            for (i, info) in ROLES[range.clone()].iter().enumerate() {
+            for (i, info) in roles[range.clone()].iter().enumerate() {
                 let size = base[range.start + i];
                 r.block(info.label, info.desc, |ui| role_editor(ui, &p, &mut d.fonts, info, size, &status));
             }
         });
     }
-    any |= group(ui, q, ctx, "Rendering", |r| {
+    any |= group(ui, q, ctx, tr!("settings-fonts-rendering"), |r| {
         r.row_kw(
-            "Hinting",
-            "Snap letter stems to the pixel grid: crisper text at small sizes (Segoe UI and Consolas are hand-hinted).",
+            tr!("settings-fonts-hinting"),
+            tr!("settings-fonts-hinting-desc"),
             "sharp crisp cleartype grid",
             |ui| {
                 switch(ui, &mut d.fonts.hinting);
             },
         );
         r.row_kw(
-            "Sub-pixel positioning",
-            "Place letters at fractional pixel positions: more even spacing, slightly softer stems.",
+            tr!("settings-fonts-subpixel"),
+            tr!("settings-fonts-subpixel-desc"),
             "subpixel binning blur spacing kerning",
             |ui| {
                 switch(ui, &mut d.fonts.subpixel_positioning);
             },
         );
-        r.row_kw("Reset all fonts", "Back to Segoe UI / Consolas with no size offsets.", "default restore", |ui| {
-            if small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Reset", false).clicked() {
+        r.row_kw(tr!("settings-fonts-reset-all"), tr!("settings-fonts-reset-all-desc"), "default restore", |ui| {
+            if small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("common-reset"), false).clicked() {
                 d.fonts = Fonts::default();
             }
         });
@@ -125,15 +132,15 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         ui.add_enabled_ui(!role.embedded, |ui| family_field(ui, p, &mut role.family, info.hint, kind));
-        ui.label(RichText::new("Embedded").size(12.0).color(p.text_secondary));
+        ui.label(RichText::new(tr!("settings-fonts-embedded")).size(12.0).color(p.text_secondary));
         switch(ui, &mut role.embedded);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let changed = *role != default;
             let reset = ui.add_enabled_ui(changed, |ui| small_button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "", false));
-            if reset.inner.on_hover_text("Reset this font").clicked() {
+            if reset.inner.on_hover_text(tr!("settings-fonts-reset-one")).clicked() {
                 *role = default.clone();
             }
-            number(ui, &mut role.size_offset, -4.0..=8.0, " pt").on_hover_text("Size offset (points)");
+            number(ui, &mut role.size_offset, -4.0..=8.0, " pt").on_hover_text(tr!("settings-fonts-offset"));
         });
     });
     ui.add_space(6.0);
@@ -159,7 +166,11 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
                 }
                 None => {
                     ui.label(crate::theme::icons::icon(ph::CHECK_CIRCLE, 12.0).color(p.text_tertiary));
-                    ui.label(RichText::new(format!("Using {}", r.source.describe())).size(11.5).color(p.text_tertiary));
+                    ui.label(
+                        RichText::new(tr!("settings-fonts-using", font = r.source.describe()))
+                            .size(11.5)
+                            .color(p.text_tertiary),
+                    );
                 }
             }
         });

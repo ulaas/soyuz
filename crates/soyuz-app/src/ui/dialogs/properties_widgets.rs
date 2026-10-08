@@ -11,6 +11,9 @@ use egui::{
     Sense, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
+use soyuz_core::Locale;
+use soyuz_core::locale::{month_names, weekday_abbr};
+
 use crate::cmd::Cmd;
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
@@ -100,7 +103,7 @@ pub fn caption(ui: &mut Ui, text: &str) {
     if vertical {
         ui.add_space(6.0);
     }
-    ui.label(RichText::new(text.to_uppercase()).font(FontId::proportional(10.5)).color(p.text_tertiary));
+    ui.label(RichText::new(super::caption_upper(text)).font(FontId::proportional(10.5)).color(p.text_tertiary));
     if vertical {
         ui.add_space(2.0);
     }
@@ -133,7 +136,7 @@ pub fn badge(ui: &mut Ui, icon: Option<&str>, text: &str, color: Color32) -> Res
 
 /// Small icon button that copies `text` (via `Cmd::CopyText`).
 pub fn copy_button(ui: &mut Ui, text: &str, cmds: &mut Vec<Cmd>) -> Response {
-    let r = small_icon_button(ui, ph::COPY, "Copy");
+    let r = small_icon_button(ui, ph::COPY, tr!("common-copy"));
     if r.clicked() {
         cmds.push(Cmd::CopyText(text.to_string()));
     }
@@ -305,7 +308,8 @@ pub fn datetime_field(ui: &mut Ui, id: Id, value: &mut Option<SystemTime>, place
             *value = Some(v);
             changed = true;
         }
-        let btn = ui.add_enabled_ui(enabled, |ui| small_icon_button(ui, ph::CALENDAR_DOTS, "Pick a date")).inner;
+        let btn =
+            ui.add_enabled_ui(enabled, |ui| small_icon_button(ui, ph::CALENDAR_DOTS, tr!("dialogs-date-pick"))).inner;
         Popup::from_toggle_button_response(&btn)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .width(236.0)
@@ -327,6 +331,7 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
     let now = to_naive(SystemTime::now());
     let cur = value.map(to_naive).unwrap_or(now);
     let month = st.month.unwrap_or_else(|| cur.date().with_day(1).unwrap_or(cur.date()));
+    let locale = soyuz_core::locale::current();
     let mut changed = false;
     let mut set = |n: NaiveDateTime, value: &mut Option<SystemTime>| {
         if let Some(t) = from_naive(n)
@@ -337,22 +342,27 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
         }
     };
     ui.horizontal(|ui| {
-        if small_icon_button(ui, ph::CARET_LEFT, "Previous month").clicked() {
+        if small_icon_button(ui, ph::CARET_LEFT, tr!("dialogs-date-prev-month")).clicked() {
             st.month = Some(add_months(month, -1));
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if small_icon_button(ui, ph::CARET_RIGHT, "Next month").clicked() {
+            if small_icon_button(ui, ph::CARET_RIGHT, tr!("dialogs-date-next-month")).clicked() {
                 st.month = Some(add_months(month, 1));
             }
             ui.with_layout(Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
-                ui.label(RichText::new(month.format("%B %Y").to_string()).font(semibold(13.0)).color(p.text_primary));
+                let title = format!("{} {}", month_names(locale)[month.month0() as usize], month.year());
+                ui.label(RichText::new(title).font(semibold(13.0)).color(p.text_primary));
             });
         });
     });
     ui.add_space(4.0);
     let cell = vec2(32.0, 26.0);
     let (grid, _) = ui.allocate_exact_size(vec2(cell.x * 7.0, cell.y * 7.0), Sense::hover());
-    for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].iter().enumerate() {
+    let days = match locale {
+        Locale::EnUs => ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
+        l => weekday_abbr(l),
+    };
+    for (i, d) in days.iter().enumerate() {
         let c = pos2(grid.left() + cell.x * (i as f32 + 0.5), grid.top() + cell.y * 0.5);
         ui.painter().text(c, Align2::CENTER_CENTER, *d, FontId::proportional(10.5), p.text_tertiary);
     }
@@ -400,7 +410,7 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
             set(cur.date().and_time(t), value);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            if ui.button("Now").clicked() {
+            if ui.button(tr!("dialogs-date-now")).clicked() {
                 st.month = None;
                 set(now, value);
             }

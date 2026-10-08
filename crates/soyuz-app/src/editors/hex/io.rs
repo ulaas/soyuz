@@ -119,7 +119,7 @@ pub fn search(
             let mut s = a;
             while s < b {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err("cancelled".into());
+                    return Err(tr!("editors-hex-cancelled").into());
                 }
                 let take = CHUNK.min(b - s) + n - 1;
                 let mut buf = read_at(&mut f, s, take.min(len - s) as usize).map_err(|e| e.to_string())?;
@@ -136,7 +136,7 @@ pub fn search(
             let mut e = b;
             while e > a {
                 if cancel.load(Ordering::Relaxed) {
-                    return Err("cancelled".into());
+                    return Err(tr!("editors-hex-cancelled").into());
                 }
                 let s = e.saturating_sub(CHUNK).max(a);
                 let take = (e - s + n - 1).min(len - s);

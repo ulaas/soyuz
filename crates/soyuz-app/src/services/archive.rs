@@ -78,10 +78,12 @@ pub fn is_browsable(path: &Path) -> bool {
 pub fn to_fs_error(e: ArchiveError, archive: &Path) -> FsError {
     let (kind, msg) = match e {
         ArchiveError::Io(fe) => return fe,
-        ArchiveError::PasswordRequired => (FsErrorKind::PasswordRequired, "This archive is password protected".into()),
-        ArchiveError::WrongPassword => (FsErrorKind::WrongPassword, "Wrong password".into()),
-        ArchiveError::Corrupt(m) => (FsErrorKind::Corrupt, format!("Corrupt archive: {m}")),
-        ArchiveError::Unsupported(f) => (FsErrorKind::Unsupported, format!("{f:?} archives are not supported")),
+        ArchiveError::PasswordRequired => (FsErrorKind::PasswordRequired, tr!("services-archive-password").into()),
+        ArchiveError::WrongPassword => (FsErrorKind::WrongPassword, tr!("services-archive-wrong-password").into()),
+        ArchiveError::Corrupt(m) => (FsErrorKind::Corrupt, tr!("services-archive-corrupt", error = m)),
+        ArchiveError::Unsupported(f) => {
+            (FsErrorKind::Unsupported, tr!("services-archive-unsupported", format = format!("{f:?}")))
+        }
         other => (FsErrorKind::Io, other.to_string()),
     };
     FsError::with_message(kind, "open_archive", Some(archive), msg)
@@ -127,7 +129,9 @@ fn worker() -> &'static Sender<Req> {
                     Req::Open { archive, inner, limits, postman } => {
                         if let Err(e) = open_entry(&archive, &inner, &limits) {
                             let name = inner.rsplit('/').next().unwrap_or(&inner).to_string();
-                            postman.send(UiMsg::Notice(Toast::error(format!("Couldn't open {name}")).body(e)));
+                            postman.send(UiMsg::Notice(
+                                Toast::error(tr!("services-archive-open-failed", name = name)).body(e),
+                            ));
                         }
                     }
                 }
@@ -228,7 +232,7 @@ pub fn temp_root() -> Result<PathBuf, String> {
                 Err(e) => last = e.to_string(),
             }
         }
-        Err(format!("cannot create a temporary folder: {last}"))
+        Err(tr!("services-archive-temp-failed", error = last))
     })
     .clone()
 }
@@ -239,7 +243,7 @@ pub fn temp_root() -> Result<PathBuf, String> {
 /// control characters, Windows device names (`CON`, `nul.txt`, `COM1`) and names
 /// Windows silently rewrites (trailing dot / space).
 pub fn temp_entry_name(name: &str) -> Result<&str, String> {
-    let bad = || Err(format!("“{name}” is not a safe file name"));
+    let bad = || Err(tr!("services-archive-unsafe-name", name = name));
     if name.is_empty() || name == "." || name == ".." || name.len() > 255 {
         return bad();
     }
@@ -275,7 +279,8 @@ fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<(),
     // `create_new`: never open an existing file or follow a symlink at `dest`.
     let mut file = std::fs::OpenOptions::new().write(true).create_new(true).open(&dest).map_err(|e| e.to_string())?;
     let copied = with_reader(archive, |r| {
-        let idx = soyuz_archive::find_entry(r, inner).ok_or(ArchiveError::Corrupt("entry not found".into()))?;
+        let idx = soyuz_archive::find_entry(r, inner)
+            .ok_or(ArchiveError::Corrupt(tr!("services-preview-entry-not-found").into()))?;
         let archive_size = std::fs::metadata(archive).map_or(0, |m| m.len());
         let mut rd = match limits.read_cap(archive_size) {
             Some(cap) => soyuz_archive::open_entry_capped(r, idx, cap)?,

@@ -25,9 +25,9 @@ pub fn source_label(r: &AuditRecord) -> String {
     if r.source == SOURCE_MCP {
         if r.client.is_empty() { "MCP".into() } else { format!("MCP \u{00b7} {}", r.client) }
     } else if r.client == "recipe" {
-        "Assistant (recipe)".into()
+        tr!("ai-audit-source-recipe").into()
     } else {
-        "Assistant".into()
+        tr!("ai-audit-source-assistant").into()
     }
 }
 

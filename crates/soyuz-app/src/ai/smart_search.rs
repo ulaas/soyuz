@@ -230,10 +230,7 @@ pub fn to_query(pills: &[Pill], default_root: PathBuf) -> Result<SearchQuery, St
                         q.kinds = Some(EntryKindSet::FILE);
                     }
                     None => {
-                        return Err(format!(
-                            "unknown kind “{}” (try image, video, audio, document, archive, code, folder)",
-                            p.value
-                        ));
+                        return Err(tr!("ai-smart-unknown-kind", kind = &p.value));
                     }
                 }
             }
@@ -242,13 +239,10 @@ pub fn to_query(pills: &[Pill], default_root: PathBuf) -> Result<SearchQuery, St
             ),
             PillKey::Name => names.push(p.value.clone()),
             PillKey::Size => {
-                q.size = Some(parse_size(&p.value).ok_or_else(|| format!("bad size “{}” (e.g. >5MB)", p.value))?)
+                q.size = Some(parse_size(&p.value).ok_or_else(|| tr!("ai-smart-bad-size", value = &p.value))?)
             }
             PillKey::Modified => {
-                q.modified = Some(
-                    parse_modified(&p.value)
-                        .ok_or_else(|| format!("bad date “{}” (e.g. 2026-06..2026-08)", p.value))?,
-                )
+                q.modified = Some(parse_modified(&p.value).ok_or_else(|| tr!("ai-smart-bad-date", value = &p.value))?)
             }
             PillKey::Content => {
                 q.content = Some(ContentPatternSpec { regex: false, text: p.value.clone(), case_sensitive: false })

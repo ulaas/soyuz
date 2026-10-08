@@ -129,7 +129,7 @@ impl Checksums {
             ctx.request_repaint();
         });
         if spawn.is_err() {
-            *row.state.lock() = HashState::Failed("cannot start a worker thread".into());
+            *row.state.lock() = HashState::Failed(tr!("dialogs-hash-no-thread").into());
         }
     }
 
@@ -166,11 +166,13 @@ impl Checksums {
         let p = palette(ui.ctx());
         let ctx = ui.ctx().clone();
         ui.horizontal(|ui| {
-            caption(ui, "Checksums");
+            caption(ui, tr!("dialogs-props-tab-checksums"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let any_idle =
                     self.rows.iter().any(|r| matches!(*r.state.lock(), HashState::Idle | HashState::Failed(_)));
-                if any_idle && ui.add(egui::Button::new(RichText::new("Compute all").size(12.0))).clicked() {
+                if any_idle
+                    && ui.add(egui::Button::new(RichText::new(tr!("dialogs-hash-compute-all")).size(12.0))).clicked()
+                {
                     self.start_all(&ctx);
                 }
             });
@@ -202,9 +204,9 @@ impl Checksums {
                         );
                         match &state {
                             HashState::Idle => {
-                                ui.label(RichText::new("Not computed").color(p.text_tertiary));
+                                ui.label(RichText::new(tr!("dialogs-hash-not-computed")).color(p.text_tertiary));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    if small_icon_button(ui, ph::PLAY, "Compute").clicked() {
+                                    if small_icon_button(ui, ph::PLAY, tr!("dialogs-hash-compute")).clicked() {
                                         start = Some(row.algo);
                                     }
                                 });
@@ -212,13 +214,16 @@ impl Checksums {
                             HashState::Running { done, total } => {
                                 let frac = if *total > 0 { *done as f32 / *total as f32 } else { 0.0 };
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    if small_icon_button(ui, ph::X, "Cancel").clicked() {
+                                    if small_icon_button(ui, ph::X, tr!("common-cancel")).clicked() {
                                         cancel = Some(row.algo);
                                     }
                                     ui.label(
-                                        RichText::new(format!("{:.0}%", frac * 100.0))
-                                            .font(FontId::proportional(11.0))
-                                            .color(p.text_tertiary),
+                                        RichText::new(tr!(
+                                            "dialogs-hash-percent",
+                                            percent = format!("{:.0}", frac * 100.0)
+                                        ))
+                                        .font(FontId::proportional(11.0))
+                                        .color(p.text_tertiary),
                                     );
                                     let (r, _) =
                                         ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
@@ -244,7 +249,7 @@ impl Checksums {
                             HashState::Failed(e) => {
                                 ui.label(RichText::new(e).color(p.danger));
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    if small_icon_button(ui, ph::ARROW_CLOCKWISE, "Retry").clicked() {
+                                    if small_icon_button(ui, ph::ARROW_CLOCKWISE, tr!("common-retry")).clicked() {
                                         start = Some(row.algo);
                                     }
                                 });
@@ -264,10 +269,10 @@ impl Checksums {
             c.cancel();
         }
 
-        caption(ui, "Compare");
+        caption(ui, tr!("dialogs-hash-compare"));
         let r = ui.add(
             TextEdit::singleline(&mut self.compare)
-                .hint_text("Paste a checksum to verify (MD5, SHA-1, SHA-256, BLAKE3 or CRC-32)")
+                .hint_text(tr!("dialogs-hash-compare-hint"))
                 .font(FontId::monospace(12.0))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 6)),
@@ -287,19 +292,19 @@ impl Checksums {
         ui.horizontal(|ui| match v {
             Verdict::Empty => {}
             Verdict::NotHex => {
-                badge(ui, Some(ph::WARNING), "Not a hexadecimal checksum", p.warning);
+                badge(ui, Some(ph::WARNING), tr!("dialogs-hash-not-hex"), p.warning);
             }
             Verdict::UnknownLength => {
-                badge(ui, Some(ph::WARNING), "Unrecognized checksum length", p.warning);
+                badge(ui, Some(ph::WARNING), tr!("dialogs-hash-bad-length"), p.warning);
             }
             Verdict::Pending => {
-                badge(ui, Some(ph::HOURGLASS), "Computing\u{2026}", p.info);
+                badge(ui, Some(ph::HOURGLASS), tr!("dialogs-hash-computing"), p.info);
             }
             Verdict::Match(a) => {
-                badge(ui, Some(ph::CHECK_CIRCLE), &format!("Match \u{00b7} {}", a.label()), p.success);
+                badge(ui, Some(ph::CHECK_CIRCLE), &tr!("dialogs-hash-match", algo = a.label()), p.success);
             }
             Verdict::Mismatch => {
-                badge(ui, Some(ph::X_CIRCLE), "Mismatch \u{00b7} the file differs", p.danger);
+                badge(ui, Some(ph::X_CIRCLE), tr!("dialogs-hash-mismatch"), p.danger);
             }
         });
     }

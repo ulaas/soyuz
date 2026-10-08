@@ -46,13 +46,13 @@ fn dir_of(path: &str) -> &str {
 
 pub fn parse<R: Read + Seek>(r: R, cap: u64) -> Result<EpubModel, String> {
     let mut c = Container::new(r, cap)?;
-    let container = c.text("META-INF/container.xml").ok_or("Not an EPUB (META-INF/container.xml is missing)")?;
+    let container = c.text("META-INF/container.xml").ok_or(tr!("services-epub-no-container"))?;
     let opf_path = preview_xml::events(&container, 10_000)
         .iter()
         .find(|e| e.is_start("rootfile"))
         .and_then(|e| e.attr("full-path").map(str::to_string))
-        .ok_or("The EPUB names no package document")?;
-    let opf = c.text(&opf_path).ok_or("The EPUB package document can't be read")?;
+        .ok_or(tr!("services-epub-no-package"))?;
+    let opf = c.text(&opf_path).ok_or(tr!("services-epub-package-unreadable"))?;
     let base = dir_of(&opf_path).to_string();
     let ev = preview_xml::events(&opf, 400_000);
     let mut m = EpubModel::default();

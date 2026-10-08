@@ -536,7 +536,7 @@ impl SoyuzApp {
     pub fn confirm_quit(&mut self, ctx: &egui::Context, when_idle: bool) {
         if when_idle {
             self.quit.when_idle = true;
-            self.ui.toasts.push(crate::ui::toasts::Toast::info("Soyuz will close when the operations finish"));
+            self.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("app-quit-when-finished")));
             ctx.request_repaint();
         } else {
             self.quit.allowed = true;
@@ -588,6 +588,7 @@ pub fn load_config() -> Config {
 
 /// Settings applied to egui itself (startup and every config change).
 pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
+    crate::i18n::apply_setting(&c.general.language);
     let delay = f64::from(c.general.double_click_speed_ms.clamp(100, 2000)) / 1000.0;
     ctx.options_mut(|o| o.input_options.max_double_click_delay = delay);
     crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);

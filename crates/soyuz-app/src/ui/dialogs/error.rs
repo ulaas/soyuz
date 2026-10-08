@@ -10,8 +10,9 @@ use soyuz_jobs::{JobPrompt, PromptResponse};
 use super::conflict::{Answer, Btn, PromptDialog, button};
 use crate::theme::Palette;
 
+/// Display name for the messages (they add the quotes themselves).
 fn name(p: &std::path::Path) -> String {
-    format!("\u{201c}{}\u{201d}", crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(p)))
+    crate::ui::widgets::shown_name(&soyuz_core::entry::display_name(p))
 }
 
 /// Path line in a sunken box.
@@ -35,13 +36,13 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
     match prompt {
         JobPrompt::Error { path, error, .. } if error.op == ARCHIVE_LIMIT_OP => {
             // Decompression-bomb guard: Continue lifts the limit, Abort (default) stops.
-            ui.label(RichText::new(format!("{} expands beyond the safety limit.", name(path))).color(p.text_primary));
+            ui.label(RichText::new(tr!("dialogs-prompt-archive-limit", name = name(path))).color(p.text_primary));
             ui.add_space(4.0);
             if !error.message.is_empty() {
                 ui.label(RichText::new(&error.message).font(FontId::proportional(12.0)).color(p.warning));
             }
             ui.label(
-                RichText::new("Archives built to fill the disk (decompression bombs) look like this. Limits are in Settings › File operations.")
+                RichText::new(tr!("dialogs-prompt-archive-limit-hint"))
                     .font(FontId::proportional(11.5))
                     .color(p.text_tertiary),
             );
@@ -51,11 +52,14 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             let respond = |a| Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if button(ui, "Abort", Btn::Primary).on_hover_text("Stop extracting").clicked() {
+                if button(ui, tr!("dialogs-prompt-abort"), Btn::Primary)
+                    .on_hover_text(tr!("dialogs-prompt-abort-extract-tip"))
+                    .clicked()
+                {
                     out = respond(ErrorAction::Abort);
                 }
-                if button(ui, "Continue", Btn::Secondary)
-                    .on_hover_text("Ignore this limit for this extraction")
+                if button(ui, tr!("dialogs-prompt-continue"), Btn::Secondary)
+                    .on_hover_text(tr!("dialogs-prompt-continue-tip"))
                     .clicked()
                 {
                     out = respond(ErrorAction::Skip);
@@ -66,7 +70,7 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             }
         }
         JobPrompt::Error { path, error, retryable } => {
-            ui.label(RichText::new(format!("Couldn't process {}.", name(path))).color(p.text_primary));
+            ui.label(RichText::new(tr!("dialogs-prompt-error", name = name(path))).color(p.text_primary));
             ui.add_space(4.0);
             ui.label(RichText::new(capitalize(error.kind.describe())).color(p.danger));
             if !error.message.is_empty() && error.message != error.kind.describe() {
@@ -76,7 +80,10 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             path_box(ui, path, p);
             ui.add_space(16.0);
             ui.horizontal(|ui| {
-                if button(ui, "Abort", Btn::Ghost).on_hover_text("Stop the whole operation").clicked() {
+                if button(ui, tr!("dialogs-prompt-abort"), Btn::Ghost)
+                    .on_hover_text(tr!("dialogs-prompt-abort-tip"))
+                    .clicked()
+                {
                     out = Some(Answer::Respond(PromptResponse::Error {
                         action: ErrorAction::Abort,
                         apply_to_all: false,
@@ -86,16 +93,18 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let respond = |a| Some(Answer::Respond(PromptResponse::Error { action: a, apply_to_all: false }));
                     if *retryable {
-                        if button(ui, "Retry", Btn::Primary).clicked() {
+                        if button(ui, tr!("common-retry"), Btn::Primary).clicked() {
                             out = respond(ErrorAction::Retry);
                         }
-                        if button(ui, "Skip", Btn::Secondary).clicked() {
+                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
                             out = respond(ErrorAction::Skip);
                         }
-                    } else if button(ui, "Skip", Btn::Primary).clicked() {
+                    } else if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
                         out = respond(ErrorAction::Skip);
                     }
-                    if button(ui, "Skip all", Btn::Secondary).on_hover_text("Skip this and every later error").clicked()
+                    if button(ui, tr!("dialogs-prompt-skip-all"), Btn::Secondary)
+                        .on_hover_text(tr!("dialogs-prompt-skip-all-tip"))
+                        .clicked()
                     {
                         out = respond(ErrorAction::SkipAll);
                     }
@@ -108,11 +117,11 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
         }
         JobPrompt::NotEnoughSpace { needed, free, dest } => {
             ui.label(
-                RichText::new(format!(
-                    "{} needs {} but only {} is free.",
-                    name(dest),
-                    format_size(*needed, SizeStyle::Binary),
-                    format_size(*free, SizeStyle::Binary)
+                RichText::new(tr!(
+                    "dialogs-prompt-space",
+                    name = name(dest),
+                    needed = format_size(*needed, SizeStyle::Binary),
+                    free = format_size(*free, SizeStyle::Binary)
                 ))
                 .color(p.text_primary),
             );
@@ -126,45 +135,43 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             ui.painter().rect_filled(fr, CornerRadius::same(4), p.warning);
             ui.add_space(6.0);
             ui.label(
-                RichText::new("Some items will fail when the disk fills up.")
-                    .font(FontId::proportional(11.5))
-                    .color(p.text_tertiary),
+                RichText::new(tr!("dialogs-prompt-space-hint")).font(FontId::proportional(11.5)).color(p.text_tertiary),
             );
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if button(ui, "Continue anyway", Btn::Primary).clicked() {
+                if button(ui, tr!("dialogs-prompt-continue-anyway"), Btn::Primary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Space { proceed: true }));
                 }
-                if button(ui, "Cancel operation", Btn::Secondary).clicked() {
+                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Secondary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Space { proceed: false }));
                 }
             });
         }
         JobPrompt::TrashUnsupported { path, reason } => {
-            ui.label(RichText::new(format!("{} can't be moved to the trash.", name(path))).color(p.text_primary));
+            ui.label(RichText::new(tr!("dialogs-prompt-trash", name = name(path))).color(p.text_primary));
             if !reason.is_empty() {
                 ui.label(RichText::new(reason).font(FontId::proportional(12.0)).color(p.text_secondary));
             }
             ui.add_space(6.0);
-            ui.label(RichText::new("Delete it permanently instead? This can't be undone.").color(p.danger));
+            ui.label(RichText::new(tr!("dialogs-prompt-trash-permanent")).color(p.danger));
             ui.add_space(10.0);
-            ui.checkbox(&mut d.apply_all, "Do this for all items in this operation");
+            ui.checkbox(&mut d.apply_all, tr!("dialogs-prompt-apply-all-items"));
             ui.add_space(14.0);
             let all = d.apply_all;
             ui.horizontal(|ui| {
-                if button(ui, "Cancel operation", Btn::Ghost).clicked() {
+                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
                     out = Some(Answer::CancelJob);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if button(ui, "Delete permanently", Btn::Danger).clicked() {
+                    if button(ui, tr!("dialogs-prompt-delete-permanently"), Btn::Danger).clicked() {
                         out = Some(Answer::Respond(PromptResponse::TrashUnsupported {
                             permanent: true,
                             apply_to_all: all,
                         }));
                     }
-                    if button(ui, "Skip", Btn::Secondary).clicked() {
+                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
                         out = Some(Answer::Respond(PromptResponse::TrashUnsupported {
                             permanent: false,
                             apply_to_all: all,
@@ -174,39 +181,39 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             });
         }
         JobPrompt::ReadOnlyItem { path } => {
-            ui.label(RichText::new(format!("{} is read-only.", name(path))).color(p.text_primary));
-            ui.label(RichText::new("Change it anyway?").color(p.text_secondary));
+            ui.label(RichText::new(tr!("dialogs-prompt-read-only", name = name(path))).color(p.text_primary));
+            ui.label(RichText::new(tr!("dialogs-prompt-read-only-ask")).color(p.text_secondary));
             ui.add_space(8.0);
             path_box(ui, path, p);
             ui.add_space(10.0);
-            ui.checkbox(&mut d.apply_all, "Do this for all read-only items in this operation");
+            ui.checkbox(&mut d.apply_all, tr!("dialogs-prompt-apply-all-read-only"));
             ui.add_space(14.0);
             let all = d.apply_all;
             ui.horizontal(|ui| {
-                if button(ui, "Cancel operation", Btn::Ghost).clicked() {
+                if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
                     out = Some(Answer::CancelJob);
                 }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
-                    if button(ui, "Change anyway", Btn::Danger).clicked() {
+                    if button(ui, tr!("dialogs-prompt-change-anyway"), Btn::Danger).clicked() {
                         out = Some(Answer::Respond(PromptResponse::ReadOnly { force: true, apply_to_all: all }));
                     }
-                    if button(ui, "Skip", Btn::Secondary).clicked() {
+                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
                         out = Some(Answer::Respond(PromptResponse::ReadOnly { force: false, apply_to_all: all }));
                     }
                 });
             });
         }
         JobPrompt::Password { archive, wrong } => {
-            ui.label(RichText::new(format!("{} is encrypted.", name(archive))).color(p.text_primary));
+            ui.label(RichText::new(tr!("dialogs-prompt-encrypted", name = name(archive))).color(p.text_primary));
             if *wrong {
-                ui.label(RichText::new("That password didn't work. Try again.").color(p.danger));
+                ui.label(RichText::new(tr!("dialogs-prompt-wrong-password")).color(p.danger));
             }
             ui.add_space(8.0);
             let r = ui.add(
                 TextEdit::singleline(&mut d.password)
                     .password(true)
-                    .hint_text("Password")
+                    .hint_text(tr!("dialogs-prompt-password"))
                     .desired_width(f32::INFINITY)
                     .margin(Margin::symmetric(10, 7)),
             );
@@ -218,10 +225,11 @@ pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Pa
             ui.add_space(16.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                if (button(ui, "Unlock", Btn::Primary).clicked() || enter) && !d.password.is_empty() {
+                if (button(ui, tr!("dialogs-prompt-unlock"), Btn::Primary).clicked() || enter) && !d.password.is_empty()
+                {
                     out = Some(Answer::Respond(PromptResponse::Password(Some(d.password.clone()))));
                 }
-                if button(ui, "Cancel", Btn::Secondary).clicked() {
+                if button(ui, tr!("common-cancel"), Btn::Secondary).clicked() {
                     out = Some(Answer::Respond(PromptResponse::Password(None)));
                 }
             });

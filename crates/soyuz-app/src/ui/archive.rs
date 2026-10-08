@@ -35,7 +35,7 @@ pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -
                 crate::services::jobs::extract_limits(&app.config),
                 app.services.mailbox.postman(),
             );
-            app.ui.toasts.push(Toast::info(format!("Opening {}…", soyuz_core::entry::display_name(path))));
+            app.ui.toasts.push(Toast::info(tr!("views-archive-opening", name = soyuz_core::entry::display_name(path))));
         }
         return true;
     }
@@ -89,7 +89,7 @@ pub fn unique_dir(parent: &Path, base: &str) -> PathBuf {
 }
 
 fn extract_spec(archive: &Path, entries: Option<Vec<usize>>, dest: PathBuf, strip: usize) -> JobSpec {
-    let label = format!("Extract {}", soyuz_core::entry::display_name(archive));
+    let label = tr!("views-archive-job-extract", name = soyuz_core::entry::display_name(archive));
     JobSpec {
         kind: JobKind::Extract {
             archive: archive.to_path_buf(),
@@ -158,7 +158,7 @@ pub fn extract_to_dialog(app: &mut SoyuzApp) {
     }
     let archives = selected_archives(app);
     if archives.is_empty() {
-        app.ui.toasts.push(Toast::info("Select an archive to extract"));
+        app.ui.toasts.push(Toast::info(tr!("views-archive-select-to-extract")));
         return;
     }
     let dest = other.or_else(|| archives[0].parent().map(Path::to_path_buf)).unwrap_or_default();
@@ -209,11 +209,13 @@ fn submit_entries(app: &mut SoyuzApp, archive: PathBuf, items: Vec<(String, bool
                 svc::submit_job_detached(extract_spec(&archive, Some(idx), dest, strip));
             }
             Ok(_) => {
-                postman.send(crate::services::mailbox::UiMsg::Notice(Toast::info("Nothing to extract")));
+                postman.send(crate::services::mailbox::UiMsg::Notice(Toast::info(tr!(
+                    "views-archive-nothing-to-extract"
+                ))));
             }
             Err(e) => {
                 postman.send(crate::services::mailbox::UiMsg::Notice(
-                    Toast::error("Couldn't read the archive").body(e.to_string()),
+                    Toast::error(tr!("views-archive-read-failed")).body(e.to_string()),
                 ));
             }
         }
@@ -237,13 +239,13 @@ pub fn indices_for<'a>(paths: impl Iterator<Item = &'a str>, items: &[(String, b
 pub fn create_dialog(app: &mut SoyuzApp) {
     let pane = app.ws.pane();
     let Location::Dir(dir) = &pane.location else {
-        app.ui.toasts.push(Toast::info("Compress works on files in a folder"));
+        app.ui.toasts.push(Toast::info(tr!("views-archive-compress-needs-folder")));
         return;
     };
     let selected = pane.selected_entries();
     let sources: Vec<PathBuf> = selected.iter().map(|e| e.path.clone()).collect();
     if sources.is_empty() {
-        app.ui.toasts.push(Toast::info("Select files or folders to compress"));
+        app.ui.toasts.push(Toast::info(tr!("views-archive-select-to-compress")));
         return;
     }
     let base = if sources.len() == 1 {
@@ -270,12 +272,11 @@ pub fn test_archive(app: &mut SoyuzApp) {
             let ctl = soyuz_core::OpControl::new();
             let t = soyuz_archive::open(&a, pw.as_deref()).and_then(|mut r| r.test(&ctl, &mut ()));
             let toast = match t {
-                Ok(rep) if rep.bad.is_empty() => {
-                    Toast::success(format!("{name} is OK")).body(format!("{} entries tested", rep.entries))
-                }
-                Ok(rep) => Toast::error(format!("{name} has {} damaged entries", rep.bad.len()))
+                Ok(rep) if rep.bad.is_empty() => Toast::success(tr!("views-archive-test-ok", name = &name))
+                    .body(tr!("views-archive-test-ok-body", count = rep.entries)),
+                Ok(rep) => Toast::error(tr!("views-archive-test-damaged", name = &name, count = rep.bad.len()))
                     .body(rep.bad.iter().take(5).map(|(p, e)| format!("{p}: {e}")).collect::<Vec<_>>().join("\n")),
-                Err(e) => Toast::error(format!("Couldn't test {name}")).body(e.to_string()),
+                Err(e) => Toast::error(tr!("views-archive-test-failed", name = &name)).body(e.to_string()),
             };
             postman.send(crate::services::mailbox::UiMsg::Notice(toast));
         });
@@ -334,26 +335,26 @@ pub fn context_items(
                 ui,
                 cmds,
                 ph::TRAY_ARROW_DOWN,
-                if has_selection { "Extract selected…" } else { "Extract all…" },
+                if has_selection { tr!("views-archive-extract-selected") } else { tr!("views-archive-extract-all") },
                 A::ExtractTo,
             );
-            act(ui, cmds, ph::ARROW_LINE_DOWN, "Extract here", A::ExtractHere);
+            act(ui, cmds, ph::ARROW_LINE_DOWN, tr!("views-archive-extract-here"), A::ExtractHere);
             edit_context_items(ui, cmds, pane, location, has_selection);
         }
         _ => {
             if any_archive {
                 menu_separator(ui);
-                submenu(ui, Some(ph::FILE_ZIP), "Extract", |ui| {
+                submenu(ui, Some(ph::FILE_ZIP), tr!("views-archive-extract"), |ui| {
                     ui.set_width(220.0);
-                    act(ui, cmds, ph::ARROW_LINE_DOWN, "Extract here", A::ExtractHere);
-                    act(ui, cmds, ph::FOLDER_SIMPLE, "Extract to folder", A::ExtractToFolder);
-                    act(ui, cmds, ph::TRAY_ARROW_DOWN, "Extract to…", A::ExtractTo);
+                    act(ui, cmds, ph::ARROW_LINE_DOWN, tr!("views-archive-extract-here"), A::ExtractHere);
+                    act(ui, cmds, ph::FOLDER_SIMPLE, tr!("views-archive-extract-to-folder"), A::ExtractToFolder);
+                    act(ui, cmds, ph::TRAY_ARROW_DOWN, tr!("views-archive-extract-to"), A::ExtractTo);
                     menu_separator(ui);
-                    act(ui, cmds, ph::CHECK_CIRCLE, "Test archive", A::TestArchive);
+                    act(ui, cmds, ph::CHECK_CIRCLE, tr!("views-archive-test"), A::TestArchive);
                 });
             }
             if has_selection && matches!(location, Location::Dir(_)) {
-                act(ui, cmds, ph::PACKAGE, "Compress…", A::CreateArchive);
+                act(ui, cmds, ph::PACKAGE, tr!("views-archive-compress-menu"), A::CreateArchive);
             }
         }
     }
@@ -377,7 +378,7 @@ impl PasswordDialog {
 
 impl Dialog for PasswordDialog {
     fn title(&self) -> &str {
-        "Password required"
+        tr!("views-archive-password-title")
     }
     fn icon(&self) -> Option<&'static str> {
         Some(ph::LOCK_SIMPLE)
@@ -385,12 +386,10 @@ impl Dialog for PasswordDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         let name = soyuz_core::entry::display_name(&self.archive);
-        ui.label(
-            RichText::new(format!("“{name}” is encrypted. Enter its password to browse it.")).color(p.text_secondary),
-        );
+        ui.label(RichText::new(tr!("views-archive-password-body", name = &name)).color(p.text_secondary));
         if self.wrong {
             ui.add_space(4.0);
-            ui.label(RichText::new("That password didn't work.").color(p.danger));
+            ui.label(RichText::new(tr!("views-archive-password-wrong")).color(p.danger));
         }
         ui.add_space(10.0);
         let r = ui.add(
@@ -404,7 +403,7 @@ impl Dialog for PasswordDialog {
             self.focus = false;
         }
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Unlock", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("views-archive-unlock"), tr!("common-cancel"));
         if (ok || enter) && !self.text.is_empty() {
             svc::set_password(&self.archive, std::mem::take(&mut self.text));
             ctx.cmds.push(Cmd::PaneAction(self.pane, soyuz_core::config::Action::Refresh));
@@ -430,7 +429,7 @@ impl ExtractDialog {
 
 impl Dialog for ExtractDialog {
     fn title(&self) -> &str {
-        "Extract"
+        tr!("views-archive-extract")
     }
     fn icon(&self) -> Option<&'static str> {
         Some(ph::TRAY_ARROW_DOWN)
@@ -441,25 +440,24 @@ impl Dialog for ExtractDialog {
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
         let what = match (&self.selection, self.archives.len()) {
-            (Some((items, _)), _) => format!(
-                "{} selected item{} from {}",
-                items.len(),
-                if items.len() == 1 { "" } else { "s" },
-                soyuz_core::entry::display_name(&self.archives[0])
+            (Some((items, _)), _) => tr!(
+                "views-archive-extract-what",
+                count = items.len(),
+                name = soyuz_core::entry::display_name(&self.archives[0])
             ),
             (None, 1) => soyuz_core::entry::display_name(&self.archives[0]),
-            (None, n) => format!("{n} archives"),
+            (None, n) => tr!("views-archive-n-archives", count = n),
         };
         ui.label(RichText::new(what).color(p.text_secondary));
         ui.add_space(10.0);
-        ui.label(RichText::new("Destination folder").size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("views-archive-destination")).size(11.5).color(p.text_tertiary));
         ui.add_space(2.0);
         let r =
             ui.add(TextEdit::singleline(&mut self.dest).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)));
         ui.add_space(6.0);
-        ui.checkbox(&mut self.subfolder, "Create a folder named after the archive");
+        ui.checkbox(&mut self.subfolder, tr!("views-archive-subfolder"));
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Extract", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("views-archive-extract"), tr!("common-cancel"));
         if ok || enter {
             let base = PathBuf::from(self.dest.trim());
             if base.as_os_str().is_empty() {
@@ -549,7 +547,7 @@ impl CreateDialog {
 
 impl Dialog for CreateDialog {
     fn title(&self) -> &str {
-        "Compress"
+        tr!("views-archive-compress")
     }
     fn icon(&self) -> Option<&'static str> {
         Some(ph::PACKAGE)
@@ -564,12 +562,12 @@ impl Dialog for CreateDialog {
             RichText::new(if n == 1 {
                 soyuz_core::entry::display_name(&self.sources[0])
             } else {
-                format!("{n} items")
+                tr!("common-items", count = n)
             })
             .color(p.text_secondary),
         );
         ui.add_space(10.0);
-        ui.label(RichText::new("Archive name").size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("views-archive-name")).size(11.5).color(p.text_tertiary));
         ui.add_space(2.0);
         let r =
             ui.add(TextEdit::singleline(&mut self.name).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 7)));
@@ -585,7 +583,7 @@ impl Dialog for CreateDialog {
             self.focus = false;
         }
         ui.add_space(10.0);
-        ui.label(RichText::new("Format").size(11.5).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("views-archive-format")).size(11.5).color(p.text_tertiary));
         ui.add_space(2.0);
         // Text segmented control.
         let formats = writable_formats();
@@ -619,21 +617,21 @@ impl Dialog for CreateDialog {
         }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Compression").size(11.5).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("views-archive-compression")).size(11.5).color(p.text_tertiary));
             let mut lvl = self.level as f32;
             ui.add(egui::Slider::new(&mut lvl, 0.0..=9.0).step_by(1.0).show_value(false));
             self.level = lvl.round() as u8;
             let label = match self.level {
-                0 => "Store",
-                1..=3 => "Fast",
-                4..=6 => "Normal",
-                _ => "Maximum",
+                0 => tr!("views-archive-level-store"),
+                1..=3 => tr!("views-archive-level-fast"),
+                4..=6 => tr!("views-archive-level-normal"),
+                _ => tr!("views-archive-level-max"),
             };
             ui.label(RichText::new(format!("{label} ({})", self.level)).size(11.5).color(p.text_secondary));
         });
         if self.format.supports_password() {
             ui.add_space(8.0);
-            ui.label(RichText::new("Password (optional)").size(11.5).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("views-archive-password-optional")).size(11.5).color(p.text_tertiary));
             ui.add_space(2.0);
             ui.add(
                 TextEdit::singleline(&mut self.password)
@@ -642,11 +640,11 @@ impl Dialog for CreateDialog {
                     .margin(Margin::symmetric(10, 7)),
             );
             if self.format == ArchiveFormat::SevenZ && !self.password.is_empty() {
-                ui.label(RichText::new("File names are encrypted too.").size(11.0).color(p.text_tertiary));
+                ui.label(RichText::new(tr!("views-archive-names-encrypted")).size(11.0).color(p.text_tertiary));
             }
         }
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Compress", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("views-archive-compress"), tr!("common-cancel"));
         if ok || enter {
             let name = self.name.trim();
             if name.is_empty() {
@@ -654,11 +652,12 @@ impl Dialog for CreateDialog {
             }
             let dest = self.dir.join(name);
             if dest.exists() {
-                ctx.cmds
-                    .push(Cmd::Toast(Toast::warning(format!("“{name}” already exists")).body("Choose another name.")));
+                ctx.cmds.push(Cmd::Toast(
+                    Toast::warning(tr!("views-archive-exists", name = name)).body(tr!("views-archive-exists-body")),
+                ));
                 return true;
             }
-            let label = format!("Compress {}", name);
+            let label = tr!("views-archive-job-compress", name = name);
             let spec = JobSpec {
                 kind: JobKind::Compress {
                     sources: self.sources.clone(),
@@ -780,30 +779,32 @@ pub fn execute_edit(app: &mut SoyuzApp, a: soyuz_core::config::Action) {
     match a {
         A::Delete | A::DeletePermanent => {
             if selected.is_empty() {
-                app.ui.toasts.push(Toast::info("Select entries to delete from the archive"));
+                app.ui.toasts.push(Toast::info(tr!("views-archive-select-to-delete")));
                 return;
             }
             let n = selected.len();
             let edits = selected.into_iter().map(|(path, _)| soyuz_archive::ZipEdit::Delete { path }).collect();
-            let label = format!("Delete {n} item{} from {zip_name}", if n == 1 { "" } else { "s" });
+            let label = tr!("views-archive-job-delete", count = n, archive = &zip_name);
             app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
         }
         A::Rename => match selected.as_slice() {
             [(path, is_dir)] => app.ui.dialogs.push(RenameEntryDialog::new(archive, path.clone(), *is_dir)),
             _ => {
-                app.ui.toasts.push(Toast::info("Select one entry to rename"));
+                app.ui.toasts.push(Toast::info(tr!("views-archive-select-one-to-rename")));
             }
         },
         A::Paste => {
             let clip = crate::ops::fileops::clipboard::Clipboard::os_paths_hook()
                 .or_else(|| app.fileops.clipboard.for_paste());
             let Some((_, sources)) = clip.filter(|(_, p)| !p.is_empty()) else {
-                app.ui.toasts.push(Toast::info("Nothing to add").body("Copy files first (Ctrl+C), then paste here."));
+                app.ui.toasts.push(
+                    Toast::info(tr!("views-archive-nothing-to-add")).body(tr!("views-archive-nothing-to-add-body")),
+                );
                 return;
             };
             let n = sources.len();
             let edits = vec![soyuz_archive::ZipEdit::Add { sources, dest_dir: inner }];
-            let label = format!("Add {n} item{} to {zip_name}", if n == 1 { "" } else { "s" });
+            let label = tr!("views-archive-job-add", count = n, archive = &zip_name);
             app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
         }
         _ => {}
@@ -824,10 +825,10 @@ fn edit_context_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: PaneId, location: 
         }
     };
     menu_separator(ui);
-    act(ui, ph::FILE_PLUS, "Add copied files here", A::Paste);
+    act(ui, ph::FILE_PLUS, tr!("views-archive-add-here"), A::Paste);
     if has_selection {
-        act(ui, ph::PENCIL_SIMPLE, "Rename in archive\u{2026}", A::Rename);
-        act(ui, ph::TRASH, "Delete from archive", A::DeletePermanent);
+        act(ui, ph::PENCIL_SIMPLE, tr!("views-archive-rename-menu"), A::Rename);
+        act(ui, ph::TRASH, tr!("views-archive-delete-menu"), A::DeletePermanent);
     }
 }
 
@@ -892,19 +893,20 @@ fn valid_entry_name(name: &str) -> bool {
 
 impl Dialog for RenameEntryDialog {
     fn title(&self) -> &str {
-        "Rename in archive"
+        tr!("views-archive-rename-title")
     }
     fn icon(&self) -> Option<&'static str> {
         Some(ph::PENCIL_SIMPLE)
     }
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        let what = if self.is_dir { "folder" } else { "file" };
+        let kind = if self.is_dir { "folder" } else { "file" };
         ui.label(
-            RichText::new(format!(
-                "New name for the {what} \u{201c}{}\u{201d} in {}",
-                self.from,
-                soyuz_core::entry::display_name(&self.archive)
+            RichText::new(tr!(
+                "views-archive-rename-body",
+                kind = kind,
+                name = &self.from,
+                archive = soyuz_core::entry::display_name(&self.archive)
             ))
             .color(p.text_secondary),
         );
@@ -919,17 +921,21 @@ impl Dialog for RenameEntryDialog {
         let valid = valid_entry_name(&name);
         if !valid && !name.is_empty() {
             ui.add_space(4.0);
-            ui.label(RichText::new("A name can't contain slashes.").color(p.danger));
+            ui.label(RichText::new(tr!("views-archive-no-slashes")).color(p.danger));
         }
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, "Rename", "Cancel");
+        let (ok, cancel) = footer(ui, tr!("common-rename"), tr!("common-cancel"));
         if (ok || enter) && valid {
             let to = match self.from.rsplit_once('/') {
                 Some((parent, _)) => format!("{parent}/{name}"),
                 None => name,
             };
             if to != self.from {
-                let label = format!("Rename {} in {}", self.from, soyuz_core::entry::display_name(&self.archive));
+                let label = tr!(
+                    "views-archive-job-rename",
+                    name = &self.from,
+                    archive = soyuz_core::entry::display_name(&self.archive)
+                );
                 let edits = vec![soyuz_archive::ZipEdit::Rename { from: self.from.clone(), to }];
                 ctx.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&self.archive, edits, label, 0))));
             }

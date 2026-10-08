@@ -34,7 +34,7 @@ use crate::ui::widgets::menu_item;
 pub fn open(app: &mut SoyuzApp) {
     let pane = app.ws.pane();
     let (soyuz_core::Location::Dir(_) | soyuz_core::Location::Search(_)) = &pane.location else {
-        app.ui.toasts.push(Toast::info("Batch rename works on files and folders on disk"));
+        app.ui.toasts.push(Toast::info(tr!("dialogs-rename-unavailable")));
         return;
     };
     let entries: Vec<&soyuz_core::EntryInfo> = if pane.selection.is_empty() {
@@ -43,7 +43,7 @@ pub fn open(app: &mut SoyuzApp) {
         pane.selected_entries()
     };
     if entries.is_empty() {
-        app.ui.toasts.push(Toast::info("Nothing to rename"));
+        app.ui.toasts.push(Toast::info(tr!("dialogs-rename-nothing")));
         return;
     }
     let items: Vec<Item> = entries.iter().map(|e| Item::new(e.path.clone(), e.is_dir_like(), e.modified)).collect();
@@ -107,7 +107,7 @@ impl BatchRenameDialog {
         };
         let editor = items.iter().map(Item::name).collect::<Vec<_>>().join("\n");
         BatchRenameDialog {
-            title: format!("Rename {} items", items.len()),
+            title: tr!("dialogs-rename-title", count = items.len()),
             pane,
             items,
             known_lower: known.iter().map(|k| k.to_string_lossy().to_lowercase()).collect(),
@@ -209,9 +209,10 @@ impl BatchRenameDialog {
     fn toolbar(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
         ui.horizontal(|ui| {
-            for (m, label, glyph) in
-                [(Mode::Rules, "Rules", ph::LIST_CHECKS), (Mode::Editor, "Text editor", ph::NOTE_PENCIL)]
-            {
+            for (m, label, glyph) in [
+                (Mode::Rules, tr!("dialogs-rename-rules"), ph::LIST_CHECKS),
+                (Mode::Editor, tr!("dialogs-rename-editor"), ph::NOTE_PENCIL),
+            ] {
                 let on = self.mode == m;
                 let r = chip(ui, glyph, label, on, &p);
                 if r.clicked() && !on {
@@ -223,10 +224,10 @@ impl BatchRenameDialog {
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let presets_btn = button(ui, "Presets", Btn::Secondary);
+                let presets_btn = button(ui, tr!("dialogs-rename-presets"), Btn::Secondary);
                 Popup::menu(&presets_btn).show(|ui| {
-                    ui.set_width(260.0);
-                    crate::ui::widgets::menu_caption(ui, "Built-in");
+                    ui.set_min_width(260.0);
+                    crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-builtin"));
                     for pr in self.builtin.clone() {
                         if menu_item(ui, Some(ph::MAGIC_WAND), &pr.name, None, true).clicked() {
                             self.spec = pr.spec.clone();
@@ -235,7 +236,7 @@ impl BatchRenameDialog {
                     }
                     if !self.user.is_empty() {
                         crate::ui::widgets::menu_separator(ui);
-                        crate::ui::widgets::menu_caption(ui, "Saved");
+                        crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-saved"));
                     }
                     let mut delete = None;
                     for pr in self.user.clone() {
@@ -248,12 +249,12 @@ impl BatchRenameDialog {
                     ui.horizontal(|ui| {
                         ui.add(
                             TextEdit::singleline(&mut self.preset_name)
-                                .hint_text("Preset name")
+                                .hint_text(tr!("dialogs-rename-preset-name"))
                                 .desired_width(150.0)
                                 .margin(Margin::symmetric(8, 4)),
                         );
                         let ok = !self.preset_name.trim().is_empty();
-                        if ui.add_enabled(ok, egui::Button::new("Save")).clicked() {
+                        if ui.add_enabled(ok, egui::Button::new(tr!("common-save"))).clicked() {
                             let name = self.preset_name.trim().to_string();
                             self.user.retain(|p| p.name != name);
                             self.user.push(Preset { name, spec: self.spec.clone() });
@@ -264,7 +265,7 @@ impl BatchRenameDialog {
                         }
                     });
                     if !self.user.is_empty() {
-                        crate::ui::widgets::submenu(ui, Some(ph::TRASH), "Delete saved preset", |ui| {
+                        crate::ui::widgets::submenu(ui, Some(ph::TRASH), tr!("dialogs-rename-delete-preset"), |ui| {
                             for (i, pr) in self.user.iter().enumerate() {
                                 if menu_item(ui, Some(ph::X), &pr.name, None, true).clicked() {
                                     delete = Some(i);
@@ -285,13 +286,13 @@ impl BatchRenameDialog {
 
     fn rules_panel(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
-        caption(ui, "Edit");
+        caption(ui, tr!("dialogs-rename-edit"));
         ui.horizontal(|ui| {
             for t in Target::ALL {
                 ui.selectable_value(&mut self.spec.target, t, t.label());
             }
         });
-        caption(ui, "Rules");
+        caption(ui, tr!("dialogs-rename-rules"));
         let mut remove = None;
         let mut swap = None;
         let n = self.spec.rules.len();
@@ -311,13 +312,15 @@ impl BatchRenameDialog {
                                 .color(if entry.enabled { p.text_primary } else { p.text_tertiary }),
                         );
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if small_icon_button(ui, ph::X, "Remove rule").clicked() {
+                            if small_icon_button(ui, ph::X, tr!("dialogs-rename-remove-rule")).clicked() {
                                 remove = Some(i);
                             }
-                            if i + 1 < n && small_icon_button(ui, ph::ARROW_DOWN, "Move down").clicked() {
+                            if i + 1 < n
+                                && small_icon_button(ui, ph::ARROW_DOWN, tr!("dialogs-rename-move-down")).clicked()
+                            {
                                 swap = Some((i, i + 1));
                             }
-                            if i > 0 && small_icon_button(ui, ph::ARROW_UP, "Move up").clicked() {
+                            if i > 0 && small_icon_button(ui, ph::ARROW_UP, tr!("dialogs-rename-move-up")).clicked() {
                                 swap = Some((i - 1, i));
                             }
                         });
@@ -332,13 +335,13 @@ impl BatchRenameDialog {
         if let Some((a, b)) = swap {
             self.spec.rules.swap(a, b);
         }
-        let add = button(ui, "+ Add rule", Btn::Secondary);
+        let add = button(ui, tr!("dialogs-rename-add-rule"), Btn::Secondary);
         Popup::menu(&add).show(|ui| {
-            ui.set_width(220.0);
+            ui.set_min_width(220.0);
             for r in Rule::templates() {
                 let label = match &r {
-                    Rule::Insert { at: Position::Start, .. } => "Insert prefix".to_string(),
-                    Rule::Insert { at: Position::End, .. } => "Insert suffix".to_string(),
+                    Rule::Insert { at: Position::Start, .. } => tr!("dialogs-rename-insert-prefix").to_string(),
+                    Rule::Insert { at: Position::End, .. } => tr!("dialogs-rename-insert-suffix").to_string(),
                     other => other.title().to_string(),
                 };
                 if menu_item(ui, Some(rule_icon(&r)), &label, None, true).clicked() {
@@ -346,14 +349,16 @@ impl BatchRenameDialog {
                 }
             }
         });
-        caption(ui, "Counter  {n}");
+        caption(ui, &tr!("dialogs-rename-counter", token = "{n}"));
         counter_editor(ui, &mut self.spec.counter);
         ui.add_space(6.0);
         ui.label(
-            RichText::new(
-                "Tokens: {n} {n:3} {name} {ext} {parent} {date} {date:%Y-%m-%d} {exif:%Y%m%d}. \
-                 Regex replacements can use $1 or ${name}.",
-            )
+            RichText::new(tr!(
+                "dialogs-rename-tokens-hint",
+                tokens = "{n} {n:3} {name} {ext} {parent} {date} {date:%Y-%m-%d} {exif:%Y%m%d}",
+                group = "$1",
+                named = "${name}"
+            ))
             .font(FontId::proportional(11.0))
             .color(p.text_tertiary),
         );
@@ -361,11 +366,9 @@ impl BatchRenameDialog {
 
     fn editor_panel(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
-        caption(ui, "One name per line");
+        caption(ui, tr!("dialogs-rename-one-per-line"));
         ui.label(
-            RichText::new("Edit freely; line N renames item N. Paste from a spreadsheet works too.")
-                .font(FontId::proportional(11.0))
-                .color(p.text_tertiary),
+            RichText::new(tr!("dialogs-rename-editor-hint")).font(FontId::proportional(11.0)).color(p.text_tertiary),
         );
         ui.add_space(4.0);
         egui::ScrollArea::vertical().id_salt("br_editor").max_height(420.0).show(ui, |ui| {
@@ -377,7 +380,7 @@ impl BatchRenameDialog {
                     .code_editor(),
             );
         });
-        if ui.button("Reset to current names").clicked() {
+        if ui.button(tr!("dialogs-rename-reset-names")).clicked() {
             self.editor = self.items.iter().map(Item::name).collect::<Vec<_>>().join("\n");
         }
     }
@@ -392,14 +395,14 @@ impl BatchRenameDialog {
         ui.painter().text(
             egui::pos2(h.left() + 26.0, h.center().y),
             egui::Align2::LEFT_CENTER,
-            "Current name",
+            tr!("dialogs-rename-current-name"),
             FontId::proportional(11.0),
             p.text_tertiary,
         );
         ui.painter().text(
             egui::pos2(h.left() + 26.0 + col + 4.0, h.center().y),
             egui::Align2::LEFT_CENTER,
-            "New name",
+            tr!("dialogs-conflict-new-name"),
             FontId::proportional(11.0),
             p.text_tertiary,
         );
@@ -486,9 +489,9 @@ fn status_style(s: &Status, p: &Palette) -> (&'static str, egui::Color32, String
     match s {
         Status::Unchanged => (ph::MINUS, p.text_tertiary, String::new()),
         Status::Ok => (ph::ARROW_RIGHT, p.accent, String::new()),
-        Status::Invalid(e) => (ph::WARNING_CIRCLE, p.danger, format!("Invalid name: {e}")),
-        Status::Duplicate => (ph::COPY, p.danger, "Another item gets the same name".into()),
-        Status::Exists => (ph::WARNING, p.warning, "A file with this name already exists".into()),
+        Status::Invalid(e) => (ph::WARNING_CIRCLE, p.danger, tr!("dialogs-props-invalid-name", error = e)),
+        Status::Duplicate => (ph::COPY, p.danger, tr!("dialogs-rename-duplicate").into()),
+        Status::Exists => (ph::WARNING, p.warning, tr!("dialogs-rename-exists").into()),
         Status::Error(e) => (ph::BUG, p.danger, e.clone()),
     }
 }
@@ -537,10 +540,30 @@ fn rule_icon(r: &Rule) -> &'static str {
     }
 }
 
+/// Width of the label column of the rule editors: fits the longest label of the
+/// current language (Turkish labels are longer than the English ones).
+fn label_w(ui: &Ui) -> f32 {
+    let font = FontId::proportional(11.5);
+    let labels = [
+        tr!("dialogs-rename-find"),
+        tr!("dialogs-rename-replace"),
+        tr!("dialogs-rename-text"),
+        tr!("dialogs-rename-separator"),
+        tr!("dialogs-rename-pattern"),
+        tr!("dialogs-rename-position"),
+    ];
+    let widest = labels
+        .iter()
+        .map(|l| ui.painter().layout_no_wrap(l.to_string(), font.clone(), egui::Color32::WHITE).size().x)
+        .fold(0.0, f32::max);
+    (widest + 8.0).max(70.0)
+}
+
 fn field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, mono: bool) {
     let p = palette(ui.ctx());
+    let lw = label_w(ui);
     ui.horizontal(|ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(70.0, 22.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(lw, 22.0), Sense::hover());
         ui.painter().text(
             egui::pos2(r.left(), r.center().y),
             egui::Align2::LEFT_CENTER,
@@ -559,28 +582,28 @@ fn field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, mono: bool) {
 
 fn position_editor(ui: &mut Ui, at: &mut Position) {
     let p = palette(ui.ctx());
+    let lw = label_w(ui);
     ui.horizontal(|ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(70.0, 22.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(lw, 22.0), Sense::hover());
         ui.painter().text(
             egui::pos2(r.left(), r.center().y),
             egui::Align2::LEFT_CENTER,
-            "Position",
+            tr!("dialogs-rename-position"),
             FontId::proportional(11.5),
             p.text_tertiary,
         );
         let is_idx = matches!(at, Position::Index(_));
-        if ui.selectable_label(*at == Position::Start, "Start").clicked() {
+        if ui.selectable_label(*at == Position::Start, tr!("dialogs-rename-pos-start")).clicked() {
             *at = Position::Start;
         }
-        if ui.selectable_label(*at == Position::End, "End").clicked() {
+        if ui.selectable_label(*at == Position::End, tr!("dialogs-rename-pos-end")).clicked() {
             *at = Position::End;
         }
-        if ui.selectable_label(is_idx, "At").clicked() && !is_idx {
+        if ui.selectable_label(is_idx, tr!("dialogs-rename-pos-at")).clicked() && !is_idx {
             *at = Position::Index(1);
         }
         if let Position::Index(i) = at {
-            ui.add(egui::DragValue::new(i).range(-255..=255))
-                .on_hover_text("Character index; negative counts from the end");
+            ui.add(egui::DragValue::new(i).range(-255..=255)).on_hover_text(tr!("dialogs-rename-pos-index-tip"));
         }
     });
 }
@@ -588,13 +611,18 @@ fn position_editor(ui: &mut Ui, at: &mut Position) {
 fn rule_editor(ui: &mut Ui, rule: &mut Rule, idx: usize) {
     ui.push_id(idx, |ui| match rule {
         Rule::Replace { find, with, regex, case_sensitive, first_only } => {
-            field(ui, "Find", find, if *regex { r"e.g. IMG_(\d+)" } else { "text to find" }, *regex);
-            field(ui, "Replace", with, if *regex { "e.g. Photo $1" } else { "replacement (tokens allowed)" }, *regex);
-            ui.horizontal(|ui| {
-                ui.add_space(74.0);
-                check(ui, regex, "Regex");
-                check(ui, case_sensitive, "Match case");
-                check(ui, first_only, "First only");
+            let find_hint =
+                if *regex { tr!("dialogs-rename-find-regex-hint") } else { tr!("dialogs-rename-find-hint") };
+            field(ui, tr!("dialogs-rename-find"), find, find_hint, *regex);
+            let with_hint =
+                if *regex { tr!("dialogs-rename-replace-regex-hint") } else { tr!("dialogs-rename-replace-hint") };
+            field(ui, tr!("dialogs-rename-replace"), with, with_hint, *regex);
+            let indent = label_w(ui) + 4.0;
+            ui.horizontal_wrapped(|ui| {
+                ui.add_space(indent);
+                check(ui, regex, tr!("dialogs-rename-regex"));
+                check(ui, case_sensitive, tr!("dialogs-rename-match-case"));
+                check(ui, first_only, tr!("dialogs-rename-first-only"));
             });
         }
         Rule::Case { mode } => {
@@ -605,40 +633,46 @@ fn rule_editor(ui: &mut Ui, rule: &mut Rule, idx: usize) {
             });
         }
         Rule::Insert { text, at } => {
-            field(ui, "Text", text, "e.g. {date:%Y%m%d}_ or Draft ", true);
+            field(
+                ui,
+                tr!("dialogs-rename-text"),
+                text,
+                &tr!("dialogs-rename-text-hint", token = "{date:%Y%m%d}_"),
+                true,
+            );
             position_editor(ui, at);
         }
         Rule::Remove { start, count, from_end } => {
-            ui.horizontal(|ui| {
-                ui.label("Remove");
+            ui.horizontal_wrapped(|ui| {
+                ui.label(tr!("dialogs-rename-remove-count"));
                 ui.add(egui::DragValue::new(count).range(0..=255));
-                ui.label("chars starting at");
+                ui.label(tr!("dialogs-rename-remove-start"));
                 ui.add(egui::DragValue::new(start).range(0..=255));
-                check(ui, from_end, "from the end");
+                check(ui, from_end, tr!("dialogs-rename-from-end"));
             });
         }
         Rule::Number { at, separator } => {
             position_editor(ui, at);
-            field(ui, "Separator", separator, "e.g. _ or space", false);
+            field(ui, tr!("dialogs-rename-separator"), separator, tr!("dialogs-rename-separator-hint"), false);
         }
         Rule::Template { pattern } => {
-            field(ui, "Pattern", pattern, "{parent} {n}", true);
+            field(ui, tr!("dialogs-rename-pattern"), pattern, "{parent} {n}", true);
         }
         Rule::Trim { collapse } => {
-            check(ui, collapse, "Also collapse repeated spaces");
+            check(ui, collapse, tr!("dialogs-rename-collapse"));
         }
     });
 }
 
 fn counter_editor(ui: &mut Ui, c: &mut Counter) {
-    ui.horizontal(|ui| {
-        ui.label("Start");
+    ui.horizontal_wrapped(|ui| {
+        ui.label(tr!("dialogs-rename-counter-start"));
         ui.add(egui::DragValue::new(&mut c.start).range(-1_000_000..=1_000_000));
-        ui.label("Step");
+        ui.label(tr!("dialogs-rename-counter-step"));
         ui.add(egui::DragValue::new(&mut c.step).range(-1000..=1000));
-        ui.label("Digits");
+        ui.label(tr!("dialogs-rename-counter-digits"));
         ui.add(egui::DragValue::new(&mut c.pad).range(0..=12));
-        check(ui, &mut c.per_folder, "Per folder");
+        check(ui, &mut c.per_folder, tr!("dialogs-rename-per-folder"));
     });
 }
 
@@ -686,35 +720,21 @@ impl Dialog for BatchRenameDialog {
             if let Some(e) = &self.compile_error {
                 badge(ui, Some(ph::WARNING_CIRCLE), e, p.danger);
             } else {
-                badge(ui, Some(ph::ARROW_RIGHT), &format!("{ok} to rename"), p.accent);
+                badge(ui, Some(ph::ARROW_RIGHT), &tr!("dialogs-rename-to-rename", count = ok), p.accent);
                 if bad > 0 {
-                    badge(
-                        ui,
-                        Some(ph::WARNING),
-                        &format!("{bad} problem{}", if bad == 1 { "" } else { "s" }),
-                        p.danger,
-                    );
+                    badge(ui, Some(ph::WARNING), &tr!("dialogs-rename-problems", count = bad), p.danger);
                 }
                 if self.cycles > 0 {
-                    badge(
-                        ui,
-                        Some(ph::ARROWS_CLOCKWISE),
-                        &format!(
-                            "{} swap cycle{} \u{00b7} temporary names used",
-                            self.cycles,
-                            if self.cycles == 1 { "" } else { "s" }
-                        ),
-                        p.info,
-                    );
+                    badge(ui, Some(ph::ARROWS_CLOCKWISE), &tr!("dialogs-rename-cycles", count = self.cycles), p.info);
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let enabled = ok > 0 && bad == 0 && self.compile_error.is_none();
-                let label = format!("Rename {ok} item{}", if ok == 1 { "" } else { "s" });
+                let label = tr!("dialogs-rename-go", count = ok);
                 let r = ui.add_enabled_ui(enabled, |ui| button(ui, &label, Btn::Primary)).inner;
                 go = r.clicked() && enabled;
-                cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+                cancel = button(ui, tr!("common-cancel"), Btn::Secondary).clicked();
             });
         });
         if go {

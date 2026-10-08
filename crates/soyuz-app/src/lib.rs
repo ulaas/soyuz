@@ -9,6 +9,9 @@
 // (`services::os_clipboard::windows`), which opts in locally.
 #![deny(unsafe_code)]
 
+#[macro_use]
+pub mod i18n;
+
 pub mod actions;
 pub mod ai;
 pub mod app;

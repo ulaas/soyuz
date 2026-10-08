@@ -150,10 +150,10 @@ pub enum ConflictKind {
 impl ConflictKind {
     pub fn label(self) -> &'static str {
         match self {
-            ConflictKind::BothChanged => "Changed on both sides",
-            ConflictKind::BothCreated => "Different on both sides",
-            ConflictKind::ChangedLeftDeletedRight => "Changed left · deleted right",
-            ConflictKind::DeletedLeftChangedRight => "Deleted left · changed right",
+            ConflictKind::BothChanged => tr!("tools-conflict-both-changed"),
+            ConflictKind::BothCreated => tr!("tools-conflict-both-created"),
+            ConflictKind::ChangedLeftDeletedRight => tr!("tools-conflict-changed-left-deleted-right"),
+            ConflictKind::DeletedLeftChangedRight => tr!("tools-conflict-deleted-left-changed-right"),
         }
     }
 }
@@ -320,10 +320,10 @@ pub enum Resolution {
 impl Resolution {
     pub fn label(self) -> &'static str {
         match self {
-            Resolution::Left => "Keep left",
-            Resolution::Right => "Keep right",
-            Resolution::KeepBoth => "Keep both",
-            Resolution::Skip => "Skip",
+            Resolution::Left => tr!("tools-resolution-left"),
+            Resolution::Right => tr!("tools-resolution-right"),
+            Resolution::KeepBoth => tr!("tools-resolution-both"),
+            Resolution::Skip => tr!("common-skip"),
         }
     }
 }

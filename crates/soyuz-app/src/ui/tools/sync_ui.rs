@@ -85,7 +85,7 @@ impl SyncProfilesWindow {
         }
         let mut profiles = sync_sched::profiles();
         let n = profiles.len();
-        let sub = if n == 1 { "1 profile".to_string() } else { format!("{n} profiles") };
+        let sub = tr!("tools-profiles-count", count = n);
         let mut changed = false;
         let mut open_compare: Option<SyncProfile> = None;
         let mut cancel: Option<String> = None;
@@ -94,27 +94,27 @@ impl SyncProfilesWindow {
         let keep = tool_window(
             ctx,
             "sync_profiles",
-            "Sync profiles",
+            tr!("tools-profiles-title"),
             &sub,
             ph::CALENDAR_CHECK,
             vec2(880.0, 640.0),
             |ui| {
                 let p = palette(ui.ctx());
                 ui.horizontal(|ui| {
-                let (t, c) = if enabled {
-                    ("Scheduled profiles run while Soyuz is open; each run is a normal job in the activity panel.", p.text_tertiary)
-                } else {
-                    ("The scheduler is off (Settings › Jobs › Sync & versions); profiles only run when you start them.", p.warning)
-                };
-                ui.label(RichText::new(t).font(FontId::proportional(11.5)).color(c));
-            });
+                    let (t, c) = if enabled {
+                        (tr!("tools-profiles-scheduler-on"), p.text_tertiary)
+                    } else {
+                        (tr!("tools-profiles-scheduler-off"), p.warning)
+                    };
+                    ui.label(RichText::new(t).font(FontId::proportional(11.5)).color(c));
+                });
                 ui.add_space(6.0);
                 if profiles.is_empty() {
                     super::compare::empty_note(
                         ui,
                         ph::FOLDER_SIMPLE_STAR,
-                        "No saved sync profiles",
-                        "Open Compare & sync, pick two folders and save them under Profiles. Schedules and reports show up here.",
+                        tr!("tools-profiles-empty"),
+                        tr!("tools-profiles-empty-body"),
                     );
                     return;
                 }
@@ -171,7 +171,7 @@ impl SyncProfilesWindow {
                     );
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         let glyph = if expanded { ph::CARET_UP } else { ph::CARET_DOWN };
-                        if crate::ui::widgets::icon_button(ui, glyph, "Schedule & reports", true).clicked() {
+                        if crate::ui::widgets::icon_button(ui, glyph, tr!("tools-profiles-expand"), true).clicked() {
                             self.expanded = if expanded { None } else { Some(pr.name.clone()) };
                             self.detail = None;
                             if !expanded {
@@ -179,32 +179,32 @@ impl SyncProfilesWindow {
                             }
                         }
                         if running.is_some() {
-                            cancel = button(ui, Some(ph::STOP), "Cancel", 0, true).clicked();
+                            cancel = button(ui, Some(ph::STOP), tr!("common-cancel"), 0, true).clicked();
                         } else {
-                            if button(ui, Some(ph::PLAY), "Run now", 1, true).clicked() {
+                            if button(ui, Some(ph::PLAY), tr!("tools-profiles-run-now"), 1, true).clicked() {
                                 sync_sched::run_now(&pr.name, false);
                             }
-                            if button(ui, Some(ph::LIST_CHECKS), "Dry run", 0, true)
-                                .on_hover_text("Write a report of what would change, without changing anything")
+                            if button(ui, Some(ph::LIST_CHECKS), tr!("tools-status-dry-run"), 0, true)
+                                .on_hover_text(tr!("tools-profiles-dry-run-tip"))
                                 .clicked()
                             {
                                 sync_sched::run_now(&pr.name, true);
                             }
                         }
-                        if button(ui, Some(ph::GIT_DIFF), "Open", 0, true)
-                            .on_hover_text("Compare the folders and choose actions (and resolve conflicts) by hand")
+                        if button(ui, Some(ph::GIT_DIFF), tr!("tools-open"), 0, true)
+                            .on_hover_text(tr!("tools-profiles-open-tip"))
                             .clicked()
                         {
                             open = true;
                         }
                     });
                 });
-                let paths = format!(
-                    "{}  ↔  {}  ·  {} · {}",
-                    short_path(&pr.left),
-                    short_path(&pr.right),
-                    pr.preset.label(),
-                    pr.method.label()
+                let paths = tr!(
+                    "tools-profiles-card-paths",
+                    left = short_path(&pr.left),
+                    right = short_path(&pr.right),
+                    mode = pr.preset.label(),
+                    method = pr.method.label()
                 );
                 let g = trunc_galley(
                     ui.painter(),
@@ -215,10 +215,10 @@ impl SyncProfilesWindow {
                 );
                 let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                 ui.painter().galley(r.min, g, p.text_secondary);
-                ui.interact(r, ui.id().with(("sync.paths", &pr.name)), Sense::hover()).on_hover_text(format!(
-                    "{}\n↔ {}",
-                    pr.left.display(),
-                    pr.right.display()
+                ui.interact(r, ui.id().with(("sync.paths", &pr.name)), Sense::hover()).on_hover_text(tr!(
+                    "tools-profiles-card-paths-tip",
+                    left = pr.left.display().to_string(),
+                    right = pr.right.display().to_string()
                 ));
                 ui.add_space(4.0);
                 // Status line.
@@ -235,7 +235,12 @@ impl SyncProfilesWindow {
                                 &DateFormat::Named(soyuz_core::DateFormatName::Relative),
                                 SystemTime::now(),
                             );
-                            let text = format!("{when} ({}) · {}", r.trigger.label(), r.summary());
+                            let text = tr!(
+                                "tools-profiles-last-run",
+                                when = when,
+                                trigger = r.trigger.label(),
+                                summary = r.summary()
+                            );
                             let g = trunc_galley(
                                 ui.painter(),
                                 &text,
@@ -248,7 +253,9 @@ impl SyncProfilesWindow {
                         }
                         (None, None) => {
                             ui.label(
-                                RichText::new("Never run").font(FontId::proportional(12.0)).color(p.text_tertiary),
+                                RichText::new(tr!("tools-profiles-never-run"))
+                                    .font(FontId::proportional(12.0))
+                                    .color(p.text_tertiary),
                             );
                         }
                     }
@@ -276,9 +283,13 @@ impl SyncProfilesWindow {
 
     fn reports_view(&mut self, ui: &mut Ui, name: &str, date: &DateFormat) {
         let p = palette(ui.ctx());
-        ui.label(RichText::new("Run reports").font(crate::ui::views::flow::semibold(12.5)).color(p.text_primary));
+        ui.label(
+            RichText::new(tr!("tools-profiles-reports"))
+                .font(crate::ui::views::flow::semibold(12.5))
+                .color(p.text_primary),
+        );
         let Some(list) = self.reports.get(name).cloned() else {
-            ui.label(RichText::new("Loading…").font(FontId::proportional(12.0)).color(p.text_tertiary));
+            ui.label(RichText::new(tr!("common-loading")).font(FontId::proportional(12.0)).color(p.text_tertiary));
             return;
         };
         // Refresh when a newer run finished meanwhile.
@@ -290,9 +301,7 @@ impl SyncProfilesWindow {
         }
         if list.is_empty() {
             ui.label(
-                RichText::new("No runs yet. Use Dry run to see what would change.")
-                    .font(FontId::proportional(12.0))
-                    .color(p.text_tertiary),
+                RichText::new(tr!("tools-profiles-no-runs")).font(FontId::proportional(12.0)).color(p.text_tertiary),
             );
             return;
         }
@@ -319,7 +328,8 @@ impl SyncProfilesWindow {
                             FontId::proportional(12.0),
                             p.text_primary,
                         );
-                        let s = format!("{} · {}", r.status.label(), r.trigger.label());
+                        let s =
+                            tr!("tools-profiles-report-row", status = r.status.label(), trigger = r.trigger.label());
                         ui.painter().text(
                             rect.min + vec2(22.0, 19.0),
                             Align2::LEFT_TOP,
@@ -371,17 +381,17 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
     let p = palette(ui.ctx());
     let before = s.clone();
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Schedule").font(FontId::proportional(12.0)).color(p.text_tertiary));
+        ui.label(RichText::new(tr!("tools-sched-label")).font(FontId::proportional(12.0)).color(p.text_tertiary));
         let mut k = kind_of(s);
         if segmented(
             ui,
             &mut k,
             &[
-                (Kind::Manual, "Manual"),
-                (Kind::Interval, "Every…"),
-                (Kind::Daily, "Daily"),
-                (Kind::OnChange, "On change"),
-                (Kind::OnStart, "At start"),
+                (Kind::Manual, tr!("tools-sched-manual")),
+                (Kind::Interval, tr!("tools-sched-kind-interval")),
+                (Kind::Daily, tr!("tools-sched-kind-daily")),
+                (Kind::OnChange, tr!("tools-sched-kind-change")),
+                (Kind::OnStart, tr!("tools-sched-kind-start")),
             ],
         ) {
             *s = match k {
@@ -396,29 +406,25 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
     match s {
         Schedule::Interval { minutes } => {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("Every").font(FontId::proportional(12.0)).color(p.text_secondary));
-                number(ui, minutes, 1..=1440, " min");
+                ui.label(
+                    RichText::new(tr!("tools-sched-every")).font(FontId::proportional(12.0)).color(p.text_secondary),
+                );
+                number(ui, minutes, 1..=1440, &format!(" {}", tr!("tools-unit-min")));
             });
         }
         Schedule::Daily { hour, minute } => {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("At").font(FontId::proportional(12.0)).color(p.text_secondary));
-                number(ui, hour, 0..=23, " h");
-                number(ui, minute, 0..=59, " min");
+                ui.label(RichText::new(tr!("tools-sched-at")).font(FontId::proportional(12.0)).color(p.text_secondary));
+                number(ui, hour, 0..=23, &format!(" {}", tr!("tools-unit-hour")));
+                number(ui, minute, 0..=59, &format!(" {}", tr!("tools-unit-min")));
             });
             ui.label(
-                RichText::new("A run missed while Soyuz was closed is caught up at the next start.")
-                    .font(FontId::proportional(11.0))
-                    .color(p.text_tertiary),
+                RichText::new(tr!("tools-sched-daily-note")).font(FontId::proportional(11.0)).color(p.text_tertiary),
             );
         }
         Schedule::OnChange => {
             ui.label(
-                RichText::new(
-                    "Runs a few seconds after files change in either folder (Settings › Jobs › change delay).",
-                )
-                .font(FontId::proportional(11.0))
-                .color(p.text_tertiary),
+                RichText::new(tr!("tools-sched-change-note")).font(FontId::proportional(11.0)).color(p.text_tertiary),
             );
         }
         _ => {}
@@ -430,10 +436,12 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
     let p = palette(ui.ctx());
     ui.horizontal(|ui| {
         status_pill(ui, r.status, &p);
-        let head = if r.dry_run { "Would change" } else { "Changed" };
-        ui.label(
-            RichText::new(format!("{head}: {}", r.summary())).font(FontId::proportional(12.0)).color(p.text_secondary),
-        );
+        let head = if r.dry_run {
+            tr!("tools-report-would-change", summary = r.summary())
+        } else {
+            tr!("tools-report-changed", summary = r.summary())
+        };
+        ui.label(RichText::new(head).font(FontId::proportional(12.0)).color(p.text_secondary));
     });
     if !r.message.is_empty() {
         ui.label(RichText::new(&r.message).font(FontId::proportional(11.5)).color(p.warning));
@@ -453,7 +461,11 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
         }))
         .collect();
     if rows.is_empty() {
-        ui.label(RichText::new("Nothing to change.").font(FontId::proportional(12.0)).color(p.text_tertiary));
+        ui.label(
+            RichText::new(tr!("tools-report-nothing-to-change"))
+                .font(FontId::proportional(12.0))
+                .color(p.text_tertiary),
+        );
         return;
     }
     ScrollArea::vertical().id_salt(("sync.report", r.started)).max_height(196.0).show_rows(
@@ -470,22 +482,29 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
                     icons::font(12.5),
                     *col,
                 );
-                ui.painter().text(
+                let what_r = ui.painter().text(
                     rect.left_center() + vec2(22.0, 0.0),
                     Align2::LEFT_CENTER,
                     *what,
                     FontId::proportional(11.0),
                     p.text_tertiary,
                 );
-                let gal =
-                    trunc_galley(ui.painter(), path, FontId::proportional(12.0), p.text_primary, rect.width() - 150.0);
-                ui.painter().galley(rect.left_center() + vec2(140.0, -gal.size().y / 2.0), gal, p.text_primary);
+                // Paths line up at 140 px unless a (translated) label is wider.
+                let x = (rect.left() + 140.0).max(what_r.right() + 10.0);
+                let gal = trunc_galley(
+                    ui.painter(),
+                    path,
+                    FontId::proportional(12.0),
+                    p.text_primary,
+                    rect.right() - x - 10.0,
+                );
+                ui.painter().galley(egui::pos2(x, rect.center().y - gal.size().y / 2.0), gal, p.text_primary);
             }
         },
     );
     if r.total_actions > r.actions.len() {
         ui.label(
-            RichText::new(format!("… and {} more", r.total_actions - r.actions.len()))
+            RichText::new(tr!("tools-report-more", count = r.total_actions - r.actions.len()))
                 .font(FontId::proportional(11.0))
                 .color(p.text_tertiary),
         );

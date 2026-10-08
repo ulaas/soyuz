@@ -59,14 +59,14 @@ impl GitCode {
 
     pub fn label(self) -> &'static str {
         match self {
-            GitCode::Ignored => "Ignored",
-            GitCode::Untracked => "Untracked",
-            GitCode::TypeChange => "Type changed",
-            GitCode::Renamed => "Renamed",
-            GitCode::Added => "Added",
-            GitCode::Deleted => "Deleted",
-            GitCode::Modified => "Modified",
-            GitCode::Conflicted => "Conflict",
+            GitCode::Ignored => tr!("services-git-ignored"),
+            GitCode::Untracked => tr!("services-git-untracked"),
+            GitCode::TypeChange => tr!("services-git-type-changed"),
+            GitCode::Renamed => tr!("services-git-renamed"),
+            GitCode::Added => tr!("services-git-added"),
+            GitCode::Deleted => tr!("services-git-deleted"),
+            GitCode::Modified => tr!("services-git-modified"),
+            GitCode::Conflicted => tr!("services-git-conflict"),
         }
     }
 
@@ -331,14 +331,14 @@ fn config_filter_keys(root: &Path, show_scope: bool) -> std::io::Result<std::pro
 
 /// Filter drivers defined in repo-controlled config. Reading config runs no commands.
 fn repo_filter_drivers(root: &Path) -> Result<Vec<String>, String> {
-    let mut out = config_filter_keys(root, true).map_err(|e| format!("git not available: {e}"))?;
+    let mut out = config_filter_keys(root, true).map_err(|e| tr!("services-git-unavailable", error = e.to_string()))?;
     // Exit code 1 = no matching keys; anything else may be a git older than 2.26 that
     // lacks `--show-scope`: retry without it (then every driver is neutralised).
     if !out.status.success() && out.status.code() != Some(1) {
-        out = config_filter_keys(root, false).map_err(|e| format!("git not available: {e}"))?;
+        out = config_filter_keys(root, false).map_err(|e| tr!("services-git-unavailable", error = e.to_string()))?;
     }
     parse_filter_drivers(&String::from_utf8_lossy(&out.stdout))
-        .ok_or_else(|| "refusing to run git status: unusual filter driver name".to_string())
+        .ok_or_else(|| tr!("services-git-unusual-filter").to_string())
 }
 
 /// Build the hardened `git status` command for `root` (see the notes above).
@@ -368,7 +368,7 @@ fn status_command(root: &Path) -> Result<Command, String> {
 /// Run `git status` in `root` with a timeout. Blocking; run off the UI thread.
 pub fn run_status(root: &Path, timeout: Duration) -> Result<Porcelain, String> {
     let mut cmd = status_command(root)?;
-    let mut child = cmd.spawn().map_err(|e| format!("git not available: {e}"))?;
+    let mut child = cmd.spawn().map_err(|e| tr!("services-git-unavailable", error = e.to_string()))?;
     let mut stdout = child.stdout.take().ok_or("no stdout")?;
     let mut stderr = child.stderr.take().ok_or("no stderr")?;
     let reader = std::thread::spawn(move || {
@@ -388,7 +388,7 @@ pub fn run_status(root: &Path, timeout: Duration) -> Result<Porcelain, String> {
             Ok(None) if start.elapsed() > timeout => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err("git status timed out".into());
+                return Err(tr!("services-git-timeout").into());
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(15)),
             Err(e) => return Err(e.to_string()),
@@ -397,7 +397,7 @@ pub fn run_status(root: &Path, timeout: Duration) -> Result<Porcelain, String> {
     let out = reader.join().unwrap_or_default();
     let err = err_reader.join().unwrap_or_default();
     if !status.success() {
-        return Err(err.lines().next().unwrap_or("git status failed").to_string());
+        return Err(err.lines().next().unwrap_or(tr!("services-git-failed")).to_string());
     }
     Ok(parse_porcelain_v2(&out))
 }

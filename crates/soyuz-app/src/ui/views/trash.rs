@@ -96,7 +96,7 @@ impl TrashState {
         });
         if spawned.is_err() {
             self.loading = false;
-            self.error = Some("Couldn't start the trash reader".into());
+            self.error = Some(tr!("views-trash-reader-failed").into());
         }
     }
 
@@ -181,27 +181,23 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     painter.text(
         pos2(icon_r.right() + 12.0, hr.top() + 20.0),
         Align2::LEFT_CENTER,
-        "Trash",
+        tr!("views-trash-title"),
         semibold(15.0),
         p.text_primary,
     );
     let total: u64 = ts.items.iter().map(|i| i.size).sum();
     let sub = if ts.loading && !ts.loaded {
-        "Reading the trash…".to_string()
+        tr!("views-trash-reading").to_string()
     } else if ts.items.is_empty() {
-        "Empty".to_string()
+        tr!("views-trash-empty-short").to_string()
     } else {
         let n = ts.items.len();
-        let mut s = format!(
-            "{} item{} \u{b7} {}",
-            crate::ui::statusbar::group_thousands(n),
-            if n == 1 { "" } else { "s" },
-            format_size(total, v.config.general.size_style)
-        );
-        if !ts.selected.is_empty() {
-            s.push_str(&format!(" \u{b7} {} selected", ts.selected.len()));
+        let size = format_size(total, v.config.general.size_style);
+        if ts.selected.is_empty() {
+            tr!("views-trash-summary", count = n, size = size)
+        } else {
+            tr!("views-trash-summary-selected", count = n, size = size, selected = ts.selected.len())
         }
-        s
     };
     painter.text(
         pos2(icon_r.right() + 12.0, hr.top() + 38.0),
@@ -225,10 +221,10 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let icon = |ui: &mut Ui, g: &str, tip: &str| crate::ui::widgets::icon_button(ui, g, tip, true);
     let empty_clicked = !ts.items.is_empty()
         && if compact {
-            icon(&mut bar, ph::TRASH_SIMPLE, "Empty trash").clicked()
+            icon(&mut bar, ph::TRASH_SIMPLE, tr!("views-trash-empty-trash")).clicked()
         } else {
-            danger_pill(&mut bar, ph::TRASH_SIMPLE, "Empty trash", true)
-                .on_hover_text("Delete everything in the trash permanently")
+            danger_pill(&mut bar, ph::TRASH_SIMPLE, tr!("views-trash-empty-trash"), true)
+                .on_hover_text(tr!("views-trash-empty-trash-tip"))
                 .clicked()
         };
     if empty_clicked {
@@ -237,18 +233,19 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     let ts = &mut v.fileops.trash;
     if has_sel {
         let del = if compact {
-            icon(&mut bar, ph::X_CIRCLE, "Delete permanently").clicked()
+            icon(&mut bar, ph::X_CIRCLE, tr!("views-trash-delete-permanently")).clicked()
         } else {
-            danger_pill(&mut bar, ph::X_CIRCLE, "Delete permanently", false).clicked()
+            danger_pill(&mut bar, ph::X_CIRCLE, tr!("views-trash-delete-permanently"), false).clicked()
         };
         if del {
             v.cmds.push(Cmd::FileOp(FileOpCmd::ConfirmPurge(ts.selected_items())));
         }
         let ts = &mut v.fileops.trash;
         let restore = if compact {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), "Restore", true).clicked()
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), true).clicked()
         } else {
-            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), "Restore selected", true).clicked()
+            pill_button(&mut bar, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore-selected"), true)
+                .clicked()
         };
         if restore {
             v.cmds.push(Cmd::FileOp(FileOpCmd::TrashRestore(ts.selected_items())));
@@ -256,7 +253,8 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         }
     }
     let ts = &mut v.fileops.trash;
-    let refresh = crate::ui::widgets::icon_button(&mut bar, ph::ARROW_CLOCKWISE, "Refresh", !ts.loading);
+    let refresh =
+        crate::ui::widgets::icon_button(&mut bar, ph::ARROW_CLOCKWISE, tr!("views-trash-refresh"), !ts.loading);
     if refresh.clicked() {
         ts.reload();
     }
@@ -275,7 +273,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         EmptyState {
             glyph: ph::WARNING_CIRCLE,
             glyph_color: Some(p.danger),
-            title: "Can't read the trash",
+            title: tr!("views-trash-unreadable"),
             subtitle: &err,
             hints: &[],
         }
@@ -288,8 +286,8 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             EmptyState {
                 glyph: ph::TRASH,
                 glyph_color: Some(p.text_secondary),
-                title: "Trash is empty",
-                subtitle: "Items you delete stay here until you empty the trash.",
+                title: tr!("views-trash-empty-title"),
+                subtitle: tr!("views-trash-empty-subtitle"),
                 hints: &[],
             }
             .show(&mut child);
@@ -302,10 +300,10 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     // ---- column header ----
     let w = body.width();
     let cols = [
-        ("Name", body.left() + 10.0, w * 0.30),
-        ("Original location", body.left() + 10.0 + w * 0.30, w * 0.38),
-        ("Date deleted", body.left() + 10.0 + w * 0.68, w * 0.18),
-        ("Size", body.left() + 10.0 + w * 0.86, w * 0.14 - 20.0),
+        (crate::i18n::labels::column(soyuz_core::Column::Name), body.left() + 10.0, w * 0.30),
+        (tr!("views-trash-col-original"), body.left() + 10.0 + w * 0.30, w * 0.38),
+        (tr!("views-trash-col-deleted"), body.left() + 10.0 + w * 0.68, w * 0.18),
+        (crate::i18n::labels::column(soyuz_core::Column::Size), body.left() + 10.0 + w * 0.86, w * 0.14 - 20.0),
     ];
     let ch = Rect::from_min_size(body.min, vec2(w, COLS_H));
     for (i, (label, x, cw)) in cols.iter().enumerate() {
@@ -375,7 +373,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     &e.name,
                 ) > 0.0
                 {
-                    resp.on_hover_text(crate::ui::widgets::HIDDEN_CONTROLS_TIP)
+                    resp.on_hover_text(crate::ui::widgets::hidden_controls_tip())
                 } else {
                     resp
                 };
@@ -383,7 +381,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     .parent()
                     .map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned())
                     .filter(|s| !s.is_empty() && !it.original.as_os_str().is_empty())
-                    .unwrap_or_else(|| "Unknown".into());
+                    .unwrap_or_else(|| tr!("views-trash-unknown-origin").into());
                 let g =
                     trunc_galley(ui.painter(), &origin, FontId::proportional(12.5), p.text_secondary, cols[1].2 - 18.0);
                 ui.painter().galley(pos2(cols[1].1 + 8.0, cy - g.size().y / 2.0), g, p.text_secondary);
@@ -426,22 +424,22 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         let pane_id = pane.id;
         resp.context_menu(|ui| {
             ui.set_width(230.0);
-            if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Restore", None, true).clicked() {
+            if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), None, true).clicked() {
                 cmds.push(Cmd::FileOp(FileOpCmd::TrashRestore(selected.clone())));
                 ui.close();
             }
             if let Some(dir) = original.parent().filter(|d| !d.as_os_str().is_empty())
-                && menu_item(ui, Some(ph::FOLDER_OPEN), "Open original location", None, true).clicked()
+                && menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-trash-open-original"), None, true).clicked()
             {
                 cmds.push(Cmd::Navigate { pane: pane_id, location: Location::Dir(dir.to_path_buf()), select: None });
                 ui.close();
             }
-            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), "Copy original path", None, true).clicked() {
+            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("views-trash-copy-original"), None, true).clicked() {
                 cmds.push(Cmd::CopyText(soyuz_fs::strip_verbatim(&original).to_string_lossy().into_owned()));
                 ui.close();
             }
             menu_separator(ui);
-            if menu_item(ui, Some(ph::X_CIRCLE), "Delete permanently", None, true).clicked() {
+            if menu_item(ui, Some(ph::X_CIRCLE), tr!("views-trash-delete-permanently"), None, true).clicked() {
                 cmds.push(Cmd::FileOp(FileOpCmd::ConfirmPurge(selected.clone())));
                 ui.close();
             }

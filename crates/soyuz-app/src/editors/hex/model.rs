@@ -149,6 +149,7 @@ pub fn inspect(bytes: &[u8], big_endian: bool) -> Vec<(&'static str, String)> {
     };
     rows.push(("f32", float(4)));
     rows.push(("f64", float(8)));
+    // "binary" is translated where the inspector draws its labels.
     rows.push(("binary", bytes.first().map_or("—".to_string(), |b| format!("{b:08b}"))));
     rows.push(("UTF-8", utf8_char(bytes)));
     rows
@@ -162,12 +163,12 @@ pub fn utf8_char(bytes: &[u8]) -> String {
         0xC2..=0xDF => 2,
         0xE0..=0xEF => 3,
         0xF0..=0xF4 => 4,
-        _ => return "invalid".into(),
+        _ => return tr!("editors-hex-invalid").into(),
     };
     match bytes.get(..len).and_then(|b| std::str::from_utf8(b).ok()).and_then(|s| s.chars().next()) {
         Some(c) if c.is_control() => format!("U+{:04X}", c as u32),
         Some(c) => format!("U+{:04X} '{c}'", c as u32),
-        None => "invalid".into(),
+        None => tr!("editors-hex-invalid").into(),
     }
 }
 
@@ -175,20 +176,20 @@ pub fn utf8_char(bytes: &[u8]) -> String {
 /// otherwise the UTF-8 bytes of the text.
 pub fn parse_needle(input: &str, hex: bool) -> Result<Vec<u8>, String> {
     if !hex {
-        return if input.is_empty() { Err("Type something to find".into()) } else { Ok(input.as_bytes().to_vec()) };
+        return if input.is_empty() { Err(tr!("editors-hex-need-text").into()) } else { Ok(input.as_bytes().to_vec()) };
     }
     let digits: String = input
         .split(|c: char| c.is_whitespace() || c == ',')
         .map(|t| t.trim_start_matches("0x").trim_start_matches("0X"))
         .collect();
     if digits.is_empty() {
-        return Err("Type hex bytes, e.g. DE AD BE EF".into());
+        return Err(tr!("editors-hex-need-bytes").into());
     }
     if let Some(c) = digits.chars().find(|c| !c.is_ascii_hexdigit()) {
-        return Err(format!("'{c}' is not a hex digit"));
+        return Err(tr!("editors-hex-bad-digit", char = c.to_string()));
     }
     if digits.len() % 2 == 1 {
-        return Err("Odd number of hex digits".into());
+        return Err(tr!("editors-hex-odd-digits").into());
     }
     Ok((0..digits.len()).step_by(2).map(|i| u8::from_str_radix(&digits[i..i + 2], 16).unwrap_or(0)).collect())
 }

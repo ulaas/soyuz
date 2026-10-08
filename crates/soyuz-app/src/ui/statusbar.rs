@@ -34,28 +34,16 @@ pub struct StatusInfo {
     pub git_dir: Option<std::path::PathBuf>,
 }
 
-fn plural(n: usize, one: &str, many: &str) -> String {
-    format!("{} {}", group_thousands(n), if n == 1 { one } else { many })
-}
-
-/// `12345` → `12,345`.
+/// `12345` → `12,345` (`12.345` in Turkish: the current locale's digit grouping).
 pub fn group_thousands(n: usize) -> String {
-    let s = n.to_string();
-    let mut out = String::with_capacity(s.len() + s.len() / 3);
-    for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(ch);
-    }
-    out
+    soyuz_core::locale::group_int(n as u64)
 }
 
-const MODES: [(ViewMode, &str, &str, Action); 4] = [
-    (ViewMode::Details, ph::LIST, "Details", Action::ViewDetails),
-    (ViewMode::List, ph::LIST_DASHES, "List", Action::ViewList),
-    (ViewMode::Grid, ph::SQUARES_FOUR, "Icons", Action::ViewGrid),
-    (ViewMode::Miller, ph::COLUMNS, "Columns", Action::ViewMiller),
+const MODES: [(ViewMode, &str, Action); 4] = [
+    (ViewMode::Details, ph::LIST, Action::ViewDetails),
+    (ViewMode::List, ph::LIST_DASHES, Action::ViewList),
+    (ViewMode::Grid, ph::SQUARES_FOUR, Action::ViewGrid),
+    (ViewMode::Miller, ph::COLUMNS, Action::ViewMiller),
 ];
 
 pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mut Option<u16>) {
@@ -73,24 +61,29 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                     spinner(ui, r.center(), 5.0, p.accent);
                 }
                 let items = if info.filtered {
-                    format!("{} of {}", group_thousands(info.visible), plural(info.total, "item", "items"))
+                    tr!("app-status-items-filtered", visible = info.visible, count = info.total)
                 } else {
-                    plural(info.visible, "item", "items")
+                    tr!("app-status-items", count = info.visible)
                 };
                 ui.label(small(&items));
                 if info.hidden > 0 {
                     ui.label(
-                        RichText::new(format!("· {} hidden", group_thousands(info.hidden)))
+                        RichText::new(tr!("app-status-hidden", count = info.hidden))
                             .font(FontId::proportional(11.5))
                             .color(p.text_tertiary),
                     );
                 }
                 if info.selected > 0 {
                     ui.label(RichText::new("·").color(p.text_tertiary));
-                    let mut s = format!("{} selected", group_thousands(info.selected));
-                    if info.selected_bytes > 0 {
-                        s.push_str(&format!("  ({})", format_size(info.selected_bytes, info.size_style)));
-                    }
+                    let s = if info.selected_bytes > 0 {
+                        tr!(
+                            "app-status-selected-size",
+                            count = info.selected,
+                            size = format_size(info.selected_bytes, info.size_style)
+                        )
+                    } else {
+                        tr!("app-status-selected", count = info.selected)
+                    };
                     ui.label(RichText::new(s).font(FontId::proportional(11.5)).color(p.accent));
                 }
                 crate::ui::tools::git_chip(ui, info.git_dir.as_deref(), info.pane, cmds);
@@ -109,14 +102,15 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                         ViewMode::Gallery => 2,
                         _ => 0,
                     });
-                    let items: Vec<(&str, &str)> = MODES.iter().map(|m| (m.1, m.2)).collect();
+                    let items: Vec<(&str, &str)> =
+                        MODES.iter().map(|m| (m.1, crate::ui::context_menu::mode_label(m.0))).collect();
                     if let Some(i) = segmented(ui, &items, current, vec2(26.0, 18.0)) {
-                        cmds.push(Cmd::PaneAction(info.pane, MODES[i].3.clone()));
+                        cmds.push(Cmd::PaneAction(info.pane, MODES[i].2.clone()));
                     }
                     if matches!(info.mode, ViewMode::Grid | ViewMode::Gallery) {
                         let mut z = info.zoom as f32;
                         let r = mini_slider(ui, &mut z, 16.0..=256.0, 96.0)
-                            .on_hover_text(format!("Icon size {}", info.zoom));
+                            .on_hover_text(tr!("app-status-icon-size", size = info.zoom.to_string()));
                         if r.changed() || r.dragged() || r.clicked() {
                             *zoom_out = Some(z.round() as u16);
                         }
@@ -129,13 +123,12 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
                         let (r, _) = ui.allocate_exact_size(vec2(56.0, 14.0), Sense::hover());
                         let bar = Rect::from_center_size(r.center(), vec2(56.0, 4.0));
                         usage_bar(ui, &p, bar, used);
-                        ui.label(small(&format!("{} free", format_size(free, SizeStyle::Decimal)))).on_hover_text(
-                            format!(
-                                "{} free of {}",
-                                format_size(free, SizeStyle::Decimal),
-                                format_size(total, SizeStyle::Decimal)
-                            ),
-                        );
+                        ui.label(small(&tr!("app-status-free", free = format_size(free, SizeStyle::Decimal))))
+                            .on_hover_text(tr!(
+                                "app-status-free-of",
+                                free = format_size(free, SizeStyle::Decimal),
+                                total = format_size(total, SizeStyle::Decimal)
+                            ));
                     }
                 });
             });
@@ -146,9 +139,9 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
 fn theme_switch(ui: &mut Ui, current: ThemePreference, cmds: &mut Vec<Cmd>) {
     let p = palette(ui.ctx());
     let items = [
-        (ThemePreference::System, ph::CIRCLE_HALF, "Follow system theme"),
-        (ThemePreference::Light, ph::SUN, "Light theme"),
-        (ThemePreference::Dark, ph::MOON, "Dark theme"),
+        (ThemePreference::System, ph::CIRCLE_HALF, tr!("app-status-theme-system")),
+        (ThemePreference::Light, ph::SUN, tr!("app-status-theme-light")),
+        (ThemePreference::Dark, ph::MOON, tr!("app-status-theme-dark")),
     ];
     // Right-to-left layout: allocate in reverse so the visual order is system, light, dark.
     for (pref, glyph, tip) in items.iter().rev() {
@@ -178,6 +171,5 @@ mod tests {
         assert_eq!(group_thousands(999), "999");
         assert_eq!(group_thousands(1000), "1,000");
         assert_eq!(group_thousands(1234567), "1,234,567");
-        assert_eq!(plural(1, "item", "items"), "1 item");
     }
 }

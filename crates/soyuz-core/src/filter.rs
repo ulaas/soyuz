@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::entry::{Attributes, EntryInfo, EntryKindSet};
+use crate::locale::{fold_char_for_match, fold_for_match};
 
 /// Which matcher a [`NamePatternSpec`] compiles to.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize, Default)]
@@ -43,7 +44,7 @@ impl NamePatternSpec {
         let ci = !self.case_sensitive;
         Ok(match self.kind {
             PatternKind::Substring => {
-                NamePattern::Substring { needle: if ci { self.text.to_lowercase() } else { self.text.clone() }, ci }
+                NamePattern::Substring { needle: if ci { fold_for_match(&self.text) } else { self.text.clone() }, ci }
             }
             PatternKind::Glob => {
                 let glob = globset::GlobBuilder::new(&self.text)
@@ -60,7 +61,7 @@ impl NamePatternSpec {
                     .build()
                     .map_err(|e| PatternError::Regex(e.to_string()))?,
             ),
-            PatternKind::Fuzzy => NamePattern::Fuzzy { needle: self.text.to_lowercase() },
+            PatternKind::Fuzzy => NamePattern::Fuzzy { needle: fold_for_match(&self.text) },
         })
     }
 }
@@ -86,7 +87,7 @@ impl NamePattern {
         match self {
             NamePattern::Substring { needle, ci } => {
                 if *ci {
-                    name.to_lowercase().contains(needle.as_str())
+                    fold_for_match(name).contains(needle.as_str())
                 } else {
                     name.contains(needle.as_str())
                 }
@@ -94,7 +95,7 @@ impl NamePattern {
             NamePattern::Glob(g) => g.is_match(name),
             NamePattern::Regex(r) => r.is_match(name),
             NamePattern::Fuzzy { needle } => {
-                let mut hay = name.chars().flat_map(char::to_lowercase);
+                let mut hay = name.chars().map(fold_char_for_match);
                 needle.chars().all(|n| hay.any(|h| h == n))
             }
         }
@@ -149,6 +150,19 @@ mod tests {
 
     fn m(kind: PatternKind, text: &str, name: &str) -> bool {
         NamePatternSpec::new(kind, text).compile().unwrap().is_match(name)
+    }
+
+    #[test]
+    fn turkish_i_matching() {
+        use PatternKind::{Fuzzy, Substring};
+        assert!(m(Substring, "istanbul", "İSTANBUL.jpg"));
+        assert!(m(Substring, "İst", "istanbul.jpg"));
+        assert!(m(Substring, "ilik", "ılık su.txt"));
+        assert!(m(Substring, "img", "IMG_0001.JPG"));
+        assert!(m(Substring, "ışık", "IŞIK.png"));
+        assert!(m(Fuzzy, "izm", "İzmir notları.md"));
+        assert!(m(Substring, "çağ", "ÇAĞRI.txt"));
+        assert!(!m(Substring, "cag", "ÇAĞRI.txt"));
     }
 
     #[test]

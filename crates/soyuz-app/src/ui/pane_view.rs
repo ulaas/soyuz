@@ -90,23 +90,25 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 crate::ui::views::trash::show(ui, rect, pane, v);
             } else {
                 let (glyph, title, sub) = match pane.location {
-                    Location::Trash => (ph::TRASH, "Trash", "Browsing the trash arrives with the trash milestone."),
-                    Location::Recent => (ph::CLOCK, "Recent", "Recent items are not tracked yet."),
-                    Location::Search(_) => (ph::MAGNIFYING_GLASS, "Search", "Search results will appear here."),
-                    Location::Archive { .. } => {
-                        (ph::FILE_ZIP, "Archive", "Browsing archives arrives with the archive milestone.")
+                    Location::Trash => (ph::TRASH, tr!("views-trash-title"), tr!("views-pane-trash-pending")),
+                    Location::Recent => (ph::CLOCK, tr!("views-pane-recent"), tr!("views-pane-recent-pending")),
+                    Location::Search(_) => {
+                        (ph::MAGNIFYING_GLASS, tr!("views-pane-search"), tr!("views-pane-search-pending"))
                     }
-                    _ => (ph::TAG, "Tags", "Tags are not available yet."),
+                    Location::Archive { .. } => {
+                        (ph::FILE_ZIP, tr!("views-pane-archive"), tr!("views-pane-archive-pending"))
+                    }
+                    _ => (ph::TAG, tr!("views-pane-tags"), tr!("views-pane-tags-pending")),
                 };
                 empty(ui, rect, pane, v, glyph, Some(p.text_secondary), title, sub, &[]);
             }
         }
         ListingStatus::Failed(e) => {
             let title = match e.kind {
-                soyuz_core::FsErrorKind::PermissionDenied => "Access denied",
-                soyuz_core::FsErrorKind::NotFound => "Folder not found",
-                soyuz_core::FsErrorKind::NotDirectory => "Not a folder",
-                _ => "Can't open this folder",
+                soyuz_core::FsErrorKind::PermissionDenied => tr!("views-pane-access-denied"),
+                soyuz_core::FsErrorKind::NotFound => tr!("views-pane-not-found"),
+                soyuz_core::FsErrorKind::NotDirectory => tr!("views-pane-not-a-folder"),
+                _ => tr!("views-pane-cant-open"),
             };
             let sub = e.to_string();
             empty(
@@ -118,7 +120,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 Some(p.danger),
                 title,
                 &sub,
-                &[("Alt+Up", "Go up"), ("Alt+Left", "Go back")],
+                &[("Alt+Up", tr!("views-pane-hint-go-up")), ("Alt+Left", tr!("views-pane-hint-go-back"))],
             );
         }
         ListingStatus::Loading { since } if pane.entries.is_empty() => {
@@ -132,7 +134,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                     ui.painter().text(
                         pos2(rect.right() - 36.0, rect.bottom() - 20.0),
                         Align2::RIGHT_CENTER,
-                        "Loading…",
+                        tr!("common-loading"),
                         FontId::proportional(12.0),
                         p.text_tertiary,
                     );
@@ -144,7 +146,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         _ => {
             if pane.visible.is_empty() {
                 if pane.filter_active() {
-                    let sub = format!("Nothing here matches “{}”.", pane.filter);
+                    let sub = tr!("views-pane-no-matches-sub", filter = &pane.filter);
                     empty(
                         ui,
                         rect,
@@ -152,9 +154,9 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         v,
                         ph::FUNNEL_X,
                         Some(p.text_secondary),
-                        "No matches",
+                        tr!("views-pane-no-matches"),
                         &sub,
-                        &[("Esc", "Clear filter")],
+                        &[("Esc", tr!("views-pane-hint-clear-filter"))],
                     );
                 } else if !pane.entries.is_empty() {
                     empty(
@@ -164,9 +166,9 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         v,
                         ph::EYE_SLASH,
                         Some(p.text_secondary),
-                        "Only hidden items",
-                        "This folder contains hidden items only.",
-                        &[("Ctrl+H", "Show hidden files")],
+                        tr!("views-pane-only-hidden"),
+                        tr!("views-pane-only-hidden-sub"),
+                        &[("Ctrl+H", tr!("views-pane-hint-show-hidden"))],
                     );
                 } else if matches!(pane.location, Location::Timeline) {
                     empty(
@@ -176,8 +178,8 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         v,
                         ph::CALENDAR_DOTS,
                         Some(p.text_secondary),
-                        "No changes this week",
-                        "Files you change in the folders Soyuz knows about show up here, newest first.",
+                        tr!("views-pane-timeline-empty"),
+                        tr!("views-pane-timeline-empty-sub"),
                         &[],
                     );
                 } else {
@@ -188,8 +190,8 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         v,
                         ph::FOLDER_DASHED,
                         Some(p.glyph_folder),
-                        "This folder is empty",
-                        "Drop files here or create something new.",
+                        tr!("views-pane-empty"),
+                        tr!("views-pane-empty-sub"),
                         &[],
                     );
                 }

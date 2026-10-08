@@ -10,6 +10,15 @@ use egui::{
 use crate::theme::fonts::SEMIBOLD;
 use crate::theme::{icons, palette};
 
+/// Upper-case `s` for the current language (Turkish dotted i: "Biçim" → "BİÇİM").
+pub fn upper(s: &str) -> String {
+    if crate::i18n::current() == soyuz_core::Locale::TrTr {
+        s.chars().map(|c| if c == 'i' { 'İ' } else { c }).collect::<String>().to_uppercase()
+    } else {
+        s.to_uppercase()
+    }
+}
+
 /// Whether `query` (lower-case words) matches any of `texts`.
 pub fn matches(query: &str, texts: &[&str]) -> bool {
     if query.trim().is_empty() {
@@ -44,9 +53,14 @@ impl Rows<'_> {
         let Some(ui) = self.ui.as_deref_mut() else { return };
         separator(ui, &mut self.first);
         let p = palette(ui.ctx());
+        // The label column takes what the control leaves (measured last frame), so long
+        // labels (translations) wrap less next to narrow controls such as switches.
+        let width_id = egui::Id::new(("soyuz.settings.row_ctrl_w", label));
+        let ctrl_w: Option<f32> = ui.ctx().data(|d| d.get_temp(width_id));
         ui.horizontal_top(|ui| {
             let w = ui.available_width();
-            let left_w = (w * 0.5).max(160.0);
+            let lo = (w * 0.35).max(160.0_f32.min(w));
+            let left_w = ctrl_w.map_or((w * 0.5).max(160.0), |c| (w - c - 16.0).clamp(lo, (w * 0.62).max(lo)));
             let left = ui.allocate_ui_with_layout(vec2(left_w, 0.0), Layout::top_down(Align::Min), |ui| {
                 ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add_space(9.0);
@@ -60,10 +74,15 @@ impl Rows<'_> {
             let rem = ui.available_width();
             // Controls in this row use the row label as their accessible name.
             ui.ctx().data_mut(|d| d.insert_temp(row_label_id(), label.to_string()));
-            ui.allocate_ui_with_layout(vec2(rem, h), Layout::right_to_left(Align::Center), |ui| {
+            let ctrl = ui.allocate_ui_with_layout(vec2(rem, h), Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 control(ui)
             });
+            let used = ctrl.response.rect.width();
+            if ctrl_w.is_none_or(|c| (c - used).abs() > 0.5) {
+                ui.ctx().data_mut(|d| d.insert_temp(width_id, used));
+                ui.ctx().request_repaint();
+            }
         });
     }
 
@@ -126,7 +145,7 @@ pub fn group(ui: &mut Ui, query: &str, context: &str, title: &str, mut body: imp
     let p = palette(ui.ctx());
     ui.add_space(14.0);
     if !title.is_empty() {
-        ui.label(RichText::new(title.to_uppercase()).font(FontId::proportional(10.5)).color(p.text_tertiary));
+        ui.label(RichText::new(upper(title)).font(FontId::proportional(10.5)).color(p.text_tertiary));
         ui.add_space(6.0);
     }
     Frame::new()
@@ -224,7 +243,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
 
 /// Themed dropdown over `options`. Returns `true` when changed.
 pub fn dropdown<T: PartialEq + Clone>(ui: &mut Ui, id: &str, value: &mut T, options: &[(T, &str)], width: f32) -> bool {
-    let current = options.iter().find(|(v, _)| v == value).map(|(_, l)| *l).unwrap_or("Custom");
+    let current = options.iter().find(|(v, _)| v == value).map(|(_, l)| *l).unwrap_or(tr!("settings-custom"));
     let mut changed = false;
     egui::ComboBox::from_id_salt(("soyuz.settings.dd", id)).selected_text(current).width(width).show_ui(ui, |ui| {
         for (v, label) in options {

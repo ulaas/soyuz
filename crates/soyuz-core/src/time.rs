@@ -7,6 +7,8 @@ use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Datelike, Local};
 use serde::{Deserialize, Serialize};
 
+use crate::locale::{self, Locale};
+
 /// Named date formats.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -36,49 +38,114 @@ impl Default for DateFormat {
     }
 }
 
-/// Format `t` in local time.
+/// Format `t` in local time, in the current [`locale`](crate::locale).
 pub fn format_time(t: SystemTime, fmt: &DateFormat) -> String {
     format_time_at(t, fmt, SystemTime::now())
 }
 
 /// [`format_time`] with an explicit "now" (for relative formats; testable).
 pub fn format_time_at(t: SystemTime, fmt: &DateFormat, now: SystemTime) -> String {
+    format_time_at_in(t, fmt, now, locale::current())
+}
+
+/// [`format_time_at`] in an explicit locale. Turkish uses `08.10.2026 14:03` for the
+/// short form, Turkish month / weekday names (also inside custom `%B %A %b %a` patterns)
+/// and Turkish relative words ("Az önce", "Bugün 14:03", "Dün 09:12").
+pub fn format_time_at_in(t: SystemTime, fmt: &DateFormat, now: SystemTime, l: Locale) -> String {
     let dt: DateTime<Local> = t.into();
     match fmt {
-        DateFormat::Named(DateFormatName::Short) => dt.format("%Y-%m-%d %H:%M").to_string(),
-        DateFormat::Named(DateFormatName::Long) => dt.format("%A, %-d %B %Y %H:%M:%S").to_string(),
+        DateFormat::Named(DateFormatName::Short) => dt.format(short_pattern(l)).to_string(),
+        DateFormat::Named(DateFormatName::Long) => custom(dt, "%A, %-d %B %Y %H:%M:%S", l),
         DateFormat::Named(DateFormatName::Iso) => dt.format("%Y-%m-%dT%H:%M:%S%:z").to_string(),
-        DateFormat::Named(DateFormatName::Relative) => relative(dt, now.into()),
-        DateFormat::Custom(pattern) => custom(dt, pattern),
+        DateFormat::Named(DateFormatName::Relative) => relative(dt, now.into(), l),
+        DateFormat::Custom(pattern) => custom(dt, pattern, l),
     }
 }
 
-fn relative(dt: DateTime<Local>, now: DateTime<Local>) -> String {
+fn short_pattern(l: Locale) -> &'static str {
+    match l {
+        Locale::EnUs => "%Y-%m-%d %H:%M",
+        Locale::TrTr => "%d.%m.%Y %H:%M",
+    }
+}
+
+fn relative(dt: DateTime<Local>, now: DateTime<Local>, l: Locale) -> String {
+    let w = locale::words(l);
     let secs = (now - dt).num_seconds();
     if (0..60).contains(&secs) {
-        return "Just now".into();
+        return w.just_now.into();
     }
     if (60..3600).contains(&secs) {
-        return format!("{} min ago", secs / 60);
+        return w.min_ago.replace("{}", &(secs / 60).to_string());
     }
     let days = now.date_naive().signed_duration_since(dt.date_naive()).num_days();
     match days {
-        0 => format!("Today {}", dt.format("%H:%M")),
-        1 => format!("Yesterday {}", dt.format("%H:%M")),
-        2..=6 => dt.format("%A %H:%M").to_string(),
-        _ if dt.year() == now.year() && days > 0 => dt.format("%-d %b %H:%M").to_string(),
-        _ => dt.format("%Y-%m-%d").to_string(),
+        0 => format!("{} {}", w.today, dt.format("%H:%M")),
+        1 => format!("{} {}", w.yesterday, dt.format("%H:%M")),
+        2..=6 => custom(dt, "%A %H:%M", l),
+        _ if dt.year() == now.year() && days > 0 => custom(dt, "%-d %b %H:%M", l),
+        _ => match l {
+            Locale::EnUs => dt.format("%Y-%m-%d").to_string(),
+            Locale::TrTr => dt.format("%d.%m.%Y").to_string(),
+        },
     }
 }
 
-fn custom(dt: DateTime<Local>, pattern: &str) -> String {
-    let items: Vec<Item<'_>> = StrftimeItems::new(pattern).collect();
+/// Replace the name specifiers (`%A %a %B %b %h`, with optional flags) of a strftime
+/// pattern by the locale's literal names; chrono itself only knows English.
+fn localize_pattern(dt: &DateTime<Local>, pattern: &str, l: Locale) -> String {
+    if l == Locale::EnUs {
+        return pattern.to_string();
+    }
+    let month = dt.month0() as usize;
+    let wd = dt.weekday().num_days_from_monday() as usize;
+    let mut out = String::with_capacity(pattern.len() + 16);
+    let mut it = pattern.chars().peekable();
+    while let Some(c) = it.next() {
+        if c != '%' {
+            out.push(c);
+            continue;
+        }
+        let mut token = String::from("%");
+        while let Some(&f) = it.peek() {
+            if matches!(f, '-' | '_' | '0' | '^' | '#') {
+                token.push(f);
+                it.next();
+            } else {
+                break;
+            }
+        }
+        let Some(spec) = it.next() else {
+            out.push_str(&token);
+            break;
+        };
+        let name = match spec {
+            'A' => Some(locale::weekday_names(l)[wd]),
+            'a' => Some(locale::weekday_abbr(l)[wd]),
+            'B' => Some(locale::month_names(l)[month]),
+            'b' | 'h' => Some(locale::month_abbr(l)[month]),
+            _ => None,
+        };
+        match name {
+            Some(n) => out.push_str(n),
+            None => {
+                out.push_str(&token);
+                out.push(spec);
+            }
+        }
+    }
+    out
+}
+
+fn custom(dt: DateTime<Local>, pattern: &str, l: Locale) -> String {
+    let pattern = localize_pattern(&dt, pattern, l);
+    let items: Vec<Item<'_>> = StrftimeItems::new(&pattern).collect();
     if items.iter().any(|i| matches!(i, Item::Error)) {
-        return dt.format("%Y-%m-%d %H:%M").to_string();
+        return dt.format(short_pattern(l)).to_string();
     }
     let mut out = String::new();
     if write!(out, "{}", dt.format_with_items(items.into_iter())).is_err() {
-        return dt.format("%Y-%m-%d %H:%M").to_string();
+        return dt.format(short_pattern(l)).to_string();
     }
     out
 }
@@ -143,6 +210,37 @@ mod tests {
         let old = now - Duration::from_secs(400 * 86400);
         let s = format_time_at(old, &f, now);
         assert_eq!(s.len(), 10, "{s}");
+    }
+
+    #[test]
+    fn turkish_dates() {
+        use chrono::TimeZone;
+        let tr = Locale::TrTr;
+        // Thursday 8 October 2026, 14:03:27 local time.
+        let dt = Local.with_ymd_and_hms(2026, 10, 8, 14, 3, 27).unwrap();
+        let t: SystemTime = dt.into();
+        let far = t + Duration::from_secs(400 * 86400);
+        let long = DateFormat::Named(DateFormatName::Long);
+        assert_eq!(format_time_at_in(t, &long, far, tr), "Perşembe, 8 Ekim 2026 14:03:27");
+        assert_eq!(format_time_at_in(t, &long, far, Locale::EnUs), "Thursday, 8 October 2026 14:03:27");
+        let short = DateFormat::Named(DateFormatName::Short);
+        assert_eq!(format_time_at_in(t, &short, far, tr), "08.10.2026 14:03");
+        assert_eq!(format_time_at_in(t, &short, far, Locale::EnUs), "2026-10-08 14:03");
+        let custom = DateFormat::Custom("%-d %b %Y, %a".into());
+        assert_eq!(format_time_at_in(t, &custom, far, tr), "8 Eki 2026, Per");
+        // `%%B` is a literal "%B", not a month name.
+        assert_eq!(format_time_at_in(t, &DateFormat::Custom("%%B".into()), far, tr), "%B");
+        let rel = DateFormat::Named(DateFormatName::Relative);
+        let after = |s: u64| t + Duration::from_secs(s);
+        assert_eq!(format_time_at_in(t, &rel, after(5), tr), "Az önce");
+        assert_eq!(format_time_at_in(t, &rel, after(300), tr), "5 dk önce");
+        assert_eq!(format_time_at_in(t, &rel, after(3 * 3600), tr), "Bugün 14:03");
+        assert_eq!(format_time_at_in(t, &rel, after(86400), tr), "Dün 14:03");
+        assert_eq!(format_time_at_in(t, &rel, after(3 * 86400), tr), "Perşembe 14:03");
+        assert_eq!(format_time_at_in(t, &rel, far, tr), "08.10.2026");
+        let later = Local.with_ymd_and_hms(2026, 12, 20, 10, 0, 0).unwrap();
+        assert_eq!(format_time_at_in(t, &rel, later.into(), tr), "8 Eki 14:03");
+        assert_eq!(format_time_at_in(t, &rel, later.into(), Locale::EnUs), "8 Oct 14:03");
     }
 
     #[test]
