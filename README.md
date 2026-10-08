@@ -244,9 +244,10 @@ when results arrive, so the UI thread only renders — and renders nothing while
 ## License
 
 Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option. Bundled fonts: Inter and JetBrains Mono
-(SIL Open Font License, see `crates/soyuz-app/assets/fonts/`); icons: Phosphor (MIT).
-Segoe UI and Consolas are used from the Windows installation and are not distributed.
+[MIT license](LICENSE-MIT) at your option. Bundled fonts: Inter, IBM Plex Sans / Mono, Noto Sans, Cascadia Mono, JetBrains Mono and
+Source Code Pro (SIL Open Font License, see `crates/soyuz-app/assets/fonts/`); icons:
+Phosphor (MIT). Segoe UI, Consolas and other system fonts can be chosen but are read from
+the Windows installation and never distributed.
 
 Unless you explicitly state otherwise, any contribution intentionally submitted for
 inclusion in Soyuz by you, as defined in the Apache-2.0 license, shall be dual licensed

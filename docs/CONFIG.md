@@ -138,6 +138,9 @@ written as a list of quoted values is an enumeration: use one of them.
 |---|---|---|---|
 | `hinting` | boolean | `true` | TrueType hinting: snap stems to the pixel grid (crisper text at small sizes). |
 | `subpixel_positioning` | boolean | `false` | Sub-pixel glyph positioning: more even letter spacing, slightly softer stems. |
+| `hinting_strength` | `"crisp"` \| `"normal"` \| `"light"` | `"crisp"` | How hard hinting snaps the outlines to the pixel grid (with `hinting = true`). (`crisp`: Snap stems horizontally and vertically: the sharpest text at 100 % scaling; `normal`: egui's default: snap vertically, keep the unhinted letter widths; `light`: Only snap heights (FreeType's "light" mode): truest shapes, softer stems) |
+| `text_gamma_dark` | float | `0.45` | Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower = heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5). |
+| `text_gamma_light` | float | `0.8` | Text weight on light themes (same scale; 1.0 = linear coverage, egui's default). |
 
 ## `[fonts.ui]`
 
@@ -145,8 +148,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Segoe UI"` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `"Inter"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.ui_semibold]`
@@ -155,8 +158,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `""` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.terminal]`
@@ -165,8 +168,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Consolas"` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.code]`
@@ -175,8 +178,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Consolas"` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.hex]`
@@ -185,8 +188,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `"Consolas"` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `"Cascadia Mono"` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[fonts.numbers]`
@@ -195,8 +198,8 @@ One role's font.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `family` | string | `""` | Installed family name or font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
-| `embedded` | boolean | `false` | Always use the embedded font (Inter / JetBrains Mono), ignoring `family`. |
+| `family` | string | `""` | Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles their default. |
+| `embedded` | boolean | `false` | Only embedded fonts: the one `family` names when it is embedded, else the role's embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts. |
 | `size_offset` | float | `0.0` | Points added to the role's text size (−4 … +8). |
 
 ## `[theme]`
@@ -312,7 +315,7 @@ Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`, `"br
 | `shell_integration` | boolean | `true` | Inject prompt hooks so the shell reports its working directory (OSC 7). |
 | `escape_returns_focus` | boolean | `true` | Esc on an empty prompt line returns keyboard focus to the file list. |
 | `scrollback` | integer | `10000` | Lines of scrollback per terminal. |
-| `font_size` | float | `12.5` | Terminal font size in points. |
+| `font_size` | float | `13.0` | Terminal font size in points. |
 | `theme` | string | `"auto"` | `"auto"` (derive from app theme) \| `"<name>"`. |
 | `per_tab` | boolean | `false` | One terminal set per tab (`true`) or one shared by all tabs (`false`). |
 | `follow_shell` | boolean | `false` | Reverse sync: when the shell reports a new cwd, navigate the focused pane there. |

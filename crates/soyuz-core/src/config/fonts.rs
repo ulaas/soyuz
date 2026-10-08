@@ -1,10 +1,11 @@
 //! `[fonts]`: one font per role (interface, headings, terminal, code editor, hex view,
 //! numbers), each with a family, an "embedded font only" switch and a size offset.
 //!
-//! A family is an installed font's name as Windows lists it (`Segoe UI`, `Cascadia Mono`,
-//! `Segoe UI Semibold`), or a `.ttf` / `.otf` / `.ttc` path. The app always appends the
-//! role's embedded font (Inter / Inter SemiBold / JetBrains Mono) after it, so a missing
-//! font falls back gracefully.
+//! A family is one of the fonts embedded in the app (Inter, IBM Plex Sans, Noto Sans,
+//! Cascadia Mono, JetBrains Mono, …; the defaults), an installed font's name as Windows
+//! lists it (`Segoe UI`, `Consolas`, `Segoe UI Semibold`), or a `.ttf` / `.otf` / `.ttc`
+//! path. The app always appends the role's embedded default (Inter / Inter SemiBold /
+//! Cascadia Mono) after it, so a missing font falls back gracefully.
 //!
 //! Compatibility: the older `[appearance] font` / `mono_font` keys are still read. A
 //! non-default value moves into `[fonts] ui` (resp. `terminal`, `code` and `hex`) when
@@ -62,10 +63,12 @@ impl FontRoleKind {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct FontRole {
-    /// Installed family name or font file path. Empty: `ui_semibold` uses the semibold
-    /// face of the `ui` family, `numbers` uses the `ui` font, other roles their default.
+    /// Embedded or installed family name, or a font file path. Empty: `ui_semibold` uses
+    /// the semibold face of the `ui` family, `numbers` uses the `ui` font, other roles
+    /// their default.
     pub family: String,
-    /// Always use the embedded font (Inter / JetBrains Mono), ignoring `family`.
+    /// Only embedded fonts: the one `family` names when it is embedded, else the role's
+    /// embedded default (Inter / Inter SemiBold / Cascadia Mono). Never reads system fonts.
     pub embedded: bool,
     /// Points added to the role's text size (−4 … +8).
     pub size_offset: f32,
@@ -96,6 +99,34 @@ pub struct Fonts {
     pub hinting: bool,
     /// Sub-pixel glyph positioning: more even letter spacing, slightly softer stems.
     pub subpixel_positioning: bool,
+    /// How hard hinting snaps the outlines to the pixel grid (with `hinting = true`).
+    pub hinting_strength: HintingStrength,
+    /// Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower =
+    /// heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5).
+    pub text_gamma_dark: f32,
+    /// Text weight on light themes (same scale; 1.0 = linear coverage, egui's default).
+    pub text_gamma_light: f32,
+}
+
+/// `[fonts] hinting_strength`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HintingStrength {
+    /// Snap stems horizontally and vertically: the sharpest text at 100 % scaling.
+    #[default]
+    Crisp,
+    /// egui's default: snap vertically, keep the unhinted letter widths.
+    Normal,
+    /// Only snap heights (FreeType's "light" mode): truest shapes, softer stems.
+    Light,
+}
+
+impl Fonts {
+    /// `text_gamma_dark` / `text_gamma_light` for a theme, clamped (`None`: egui's curve).
+    pub fn text_gamma(&self, dark: bool) -> Option<f32> {
+        let g = if dark { self.text_gamma_dark } else { self.text_gamma_light };
+        (g.is_finite() && g > 0.0).then(|| g.clamp(0.25, 2.0))
+    }
 }
 
 impl Default for Fonts {
@@ -109,15 +140,18 @@ impl Default for Fonts {
             numbers: FontRole::named(""),
             hinting: true,
             subpixel_positioning: false,
+            hinting_strength: HintingStrength::default(),
+            text_gamma_dark: 0.45,
+            text_gamma_light: 0.8,
         }
     }
 }
 
 impl Fonts {
-    /// Default interface family (a Windows system font; never embedded).
-    pub const DEFAULT_UI: &'static str = "Segoe UI";
-    /// Default monospace family for the terminal, editor and hex view.
-    pub const DEFAULT_MONO: &'static str = "Consolas";
+    /// Default interface family (embedded: drawn well by egui's grayscale renderer).
+    pub const DEFAULT_UI: &'static str = "Inter";
+    /// Default monospace family for the terminal, editor and hex view (embedded).
+    pub const DEFAULT_MONO: &'static str = "Cascadia Mono";
     /// The `[appearance] font` / `mono_font` defaults of schema 1 (they meant "bundled").
     const LEGACY_UI: &'static str = "Inter";
     const LEGACY_MONO: &'static str = "JetBrains Mono";
@@ -212,12 +246,12 @@ mod tests {
     #[test]
     fn explicit_roles_win_over_legacy_keys() {
         let mut f = Fonts::default();
-        f.terminal.family = "Cascadia Mono".into();
+        f.terminal.family = "Consolas".into();
         f.ui.size_offset = 1.0;
         let (mut a, mut b) = ("Fira Sans".to_string(), "Iosevka".to_string());
         f.adopt_legacy(&mut a, &mut b);
-        assert_eq!(f.ui.family, "Segoe UI", "ui was customized: legacy font ignored");
-        assert_eq!(f.terminal.family, "Cascadia Mono");
+        assert_eq!(f.ui.family, Fonts::DEFAULT_UI, "ui was customized: legacy font ignored");
+        assert_eq!(f.terminal.family, "Consolas");
         assert_eq!(f.code.family, "Iosevka");
     }
 

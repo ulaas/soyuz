@@ -363,8 +363,15 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
     let font = view.font.clone().unwrap_or_else(|| egui::TextStyle::Monospace.resolve(ui.style()));
     let ctx = ui.ctx().clone();
     let ppp = ctx.pixels_per_point();
-    let (cell_w, cell_h, atlas_fill) =
-        ctx.fonts_mut(|f| (f.glyph_width(&font, 'M'), f.row_height(&font), f.font_atlas_fill_ratio()));
+    let (cell_w, cell_h, atlas_fill, fonts_identity) = ctx.fonts_mut(|f| {
+        // New font definitions (a `[fonts]` change re-installs them) or new text options
+        // (theme switch, text gamma) make egui rebuild its atlas: cached galleys go stale.
+        let data = f.definitions().font_data.values().next().map_or(0, |d| Arc::as_ptr(d) as *const () as usize);
+        let t = f.options().color_transfer_function;
+        let options = (u64::from(t.to_gamma().to_bits()) << 1)
+            | u64::from(t == egui::epaint::FontColorTransferFunction::default());
+        (f.glyph_width(&font, 'M'), f.row_height(&font), f.font_atlas_fill_ratio(), (data, options))
+    });
     let cell_w = cell_w.max(1.0);
     let cell_h = cell_h.max(1.0);
 
@@ -413,6 +420,8 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
         for b in font.family.to_string().bytes() {
             h.u64(u64::from(b));
         }
+        h.u64(fonts_identity.0 as u64);
+        h.u64(fonts_identity.1);
         h.0
     };
     // A shrinking atlas fill ratio means egui recreated the font atlas: cached galleys are stale.

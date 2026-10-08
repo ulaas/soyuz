@@ -405,7 +405,7 @@ pub mod type_scale {
     pub const BODY: f32 = 13.0;
     pub const BUTTON: f32 = 13.0;
     pub const HEADING: f32 = 18.0;
-    pub const MONOSPACE: f32 = 12.5;
+    pub const MONOSPACE: f32 = 13.0;
     pub const TITLE: f32 = 15.0;
     pub const CAPTION: f32 = 11.5;
     pub const DISPLAY: f32 = 22.0;

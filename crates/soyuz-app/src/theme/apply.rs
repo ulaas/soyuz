@@ -36,6 +36,8 @@ pub struct ThemeOptions {
     pub density: Density,
     /// Thicker strokes for widget outlines and focus.
     pub high_contrast: bool,
+    /// `[fonts] text_gamma_dark` / `text_gamma_light` (`None`: egui's curve for the theme).
+    pub text_gamma: [Option<f32>; 2],
 }
 
 /// Install both palettes as egui styles and select the theme preference.
@@ -44,6 +46,11 @@ pub fn apply(ctx: &Context, opts: &ThemeOptions) {
         let mut s = style(p, opts.font_size, opts.reduced_motion);
         offset_text(&mut s, opts.ui_offset, opts.semibold_offset, opts.code_offset);
         tune(&mut s, opts.density, opts.high_contrast);
+        // Coverage → opacity: a lower gamma draws grayscale-AA text heavier (egui's own
+        // curves: `2c - c²` ≈ 0.5 on dark, linear on light backgrounds).
+        if let Some(g) = opts.text_gamma[usize::from(theme == Theme::Light)] {
+            s.visuals.text_options.color_transfer_function = egui::epaint::FontColorTransferFunction::Gamma(g);
+        }
         ctx.set_style_of(theme, s);
     }
     ctx.set_theme(opts.preference);
