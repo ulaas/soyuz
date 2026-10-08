@@ -36,6 +36,8 @@ pub enum UiMsg {
     Notice(Toast),
     /// A shortcut resolved to a folder: navigate the focused pane there.
     OpenDir(PathBuf),
+    /// A worker found a file to open with its default application.
+    Launch(PathBuf),
 }
 
 /// Cloneable sending half handed to worker threads.

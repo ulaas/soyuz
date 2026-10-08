@@ -370,7 +370,9 @@ pub struct FileIdentity {
 }
 
 /// [`FileIdentity`] of `path` (`follow == false`: of a link itself, not its target).
+#[track_caller]
 pub fn file_identity(path: &Path, follow: bool) -> FsResult<FileIdentity> {
+    let _guard = crate::guard::check("file_identity");
     #[cfg(windows)]
     {
         use crate::sys::windows::fs::file_id;
@@ -388,7 +390,9 @@ pub fn file_identity(path: &Path, follow: bool) -> FsResult<FileIdentity> {
 }
 
 /// dev+inode / FileIdInfo equality (symlinks followed).
+#[track_caller]
 pub fn same_file(a: &Path, b: &Path) -> FsResult<bool> {
+    let _guard = crate::guard::check("same_file");
     let ia = file_identity(a, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
     let ib = file_identity(b, true).map_err(|e| FsError { op: "same_file".into(), ..e })?;
     Ok(ia == ib)
@@ -396,7 +400,9 @@ pub fn same_file(a: &Path, b: &Path) -> FsResult<bool> {
 
 /// Device (volume) of `path`: `st_dev` on unix, the volume serial number on Windows (the
 /// same value [`crate::volumes::volumes`] reports).
+#[track_caller]
 pub fn device_of(path: &Path) -> FsResult<DeviceId> {
+    let _guard = crate::guard::check("device_of");
     #[cfg(windows)]
     {
         use crate::sys::windows::{fs as wfs, volume};

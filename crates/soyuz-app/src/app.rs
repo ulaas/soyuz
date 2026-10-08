@@ -137,6 +137,9 @@ impl SoyuzApp {
     /// Construct from the configuration loaded by [`load_config`] (the window
     /// attributes in `main.rs` are derived from the same config).
     pub fn new(cc: &CreationContext<'_>, config: Config, renderer: &'static str, startup: Startup) -> Self {
+        let transparent = crate::ui::native_chrome::backdrop_active();
+        crate::ui::native_chrome::init(cc, &config, transparent);
+        soyuz_fs::register_ui_thread();
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
 
@@ -176,6 +179,7 @@ impl SoyuzApp {
         let mut sidebar = SidebarState::new();
         if let Some(favs) = session.as_ref().and_then(|s| s.favorites.clone()) {
             sidebar.favorites = favs;
+            sidebar.favorites_customized = true;
         }
         if let Some(s) = &session {
             sidebar.collapsed = s.collapsed_sections.iter().cloned().collect();
@@ -360,20 +364,14 @@ impl SoyuzApp {
         if !self.secondary {
             let text = self.session().to_toml();
             if self.last_session.as_deref() != Some(text.as_str()) {
-                match self.session().save(&self.session_path) {
-                    Ok(()) => self.last_session = Some(text),
-                    Err(e) => log::warn!("cannot save session: {e}"),
-                }
+                // Written by the store worker (in order, atomically; flushed on exit).
+                crate::services::store_file::save_async(self.session_path.clone(), text.clone().into_bytes());
+                self.last_session = Some(text);
             }
         }
         if self.views.dirty && self.config.behaviour.remember_folder_views {
-            if let Some(dir) = self.views_path.parent() {
-                let _ = soyuz_fs::create_dir_all(dir);
-            }
-            match soyuz_fs::write_atomic(&self.views_path, self.views.to_toml().as_bytes()) {
-                Ok(()) => self.views.dirty = false,
-                Err(e) => log::warn!("cannot save view memory: {e}"),
-            }
+            crate::services::store_file::save_async(self.views_path.clone(), self.views.to_toml().into_bytes());
+            self.views.dirty = false;
         }
     }
 
@@ -604,6 +602,8 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     if let Some(w) = crate::services::preview_text::set_syntax_theme(&c.preview.syntax_theme) {
         log::warn!("{w}");
     }
+    crate::services::thumbs::set_budget_bytes(c.preview.thumb_cache_mib.saturating_mul(1024 * 1024));
+    crate::services::preview_cache::set_budget_bytes(c.preview.preview_cache_mib.saturating_mul(1024 * 1024));
 }
 
 /// The location (and entry to put the cursor on) for a command-line path: a folder
@@ -659,6 +659,7 @@ impl eframe::App for SoyuzApp {
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
         crate::ui::titlebar::sync(&ctx, self);
+        crate::ui::native_chrome::sync_theme(&ctx);
         shell::show(ui, self);
         crate::palette::show(&ctx, self);
         crate::ui::settings::show(&ctx, self);
@@ -690,5 +691,13 @@ impl eframe::App for SoyuzApp {
 
     fn auto_save_interval(&self) -> Duration {
         Duration::from_secs(30)
+    }
+
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        if crate::ui::native_chrome::backdrop_active() {
+            [0.0; 4] // the system backdrop shows through
+        } else {
+            visuals.panel_fill.to_normalized_gamma_f32()
+        }
     }
 }

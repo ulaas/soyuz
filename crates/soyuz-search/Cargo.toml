@@ -23,7 +23,12 @@ parking_lot.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+criterion.workspace = true
 walkdir.workspace = true
+
+[[bench]]
+name = "search"
+harness = false
 
 [lints]
 workspace = true

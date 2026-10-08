@@ -23,6 +23,11 @@ log.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 proptest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "sort"
+harness = false
 
 [lints]
 workspace = true

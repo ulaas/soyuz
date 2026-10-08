@@ -133,6 +133,23 @@ pub struct Appearance {
     pub thumbnail_size: u32,
     pub sidebar_width: f32,
     pub custom_titlebar: bool,
+    /// Windows 11 window backdrop behind translucent surfaces (no-op elsewhere; read at start).
+    pub backdrop: Backdrop,
+    /// Windows 11 Snap Layouts flyout when hovering the maximize button (custom title bar).
+    pub snap_layouts: bool,
+}
+
+/// `[appearance] backdrop`: the system material drawn behind the window (Windows 11).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Backdrop {
+    /// Opaque theme colors.
+    #[default]
+    None,
+    /// Mica: the desktop wallpaper, heavily blurred and tinted.
+    Mica,
+    /// Acrylic: a blur of whatever is behind the window.
+    Acrylic,
 }
 
 /// `[theme.colors]`: token name (as in PLAN §1.2, e.g. `"accent"`, `"bg.window"`) → hex.
@@ -411,6 +428,10 @@ pub struct Preview {
     pub syntax_theme: String,
     /// Needs cargo feature `pdf`.
     pub pdf: bool,
+    /// Memory budget of decoded thumbnails (MiB).
+    pub thumb_cache_mib: u64,
+    /// Memory budget of decoded previews (images, text, media) (MiB).
+    pub preview_cache_mib: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

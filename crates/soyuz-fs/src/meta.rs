@@ -16,7 +16,9 @@ pub struct MetaSnapshot {
 }
 
 /// Capture times / attributes / mode of `path` (symlinks not followed).
+#[track_caller]
 pub fn meta_snapshot(path: &Path) -> FsResult<MetaSnapshot> {
+    let _guard = crate::guard::check("meta_snapshot");
     let e = crate::list::stat(path, false).map_err(|e| FsError { op: "meta_snapshot".into(), ..e })?;
     Ok(MetaSnapshot {
         times: TimesSet { modified: e.modified, created: e.created, accessed: e.accessed },

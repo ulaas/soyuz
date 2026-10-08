@@ -92,6 +92,7 @@ fn resolve_renderer(choice: RendererChoice) -> (eframe::Renderer, &'static str) 
 }
 
 fn main() -> ExitCode {
+    soyuz_app::devscript::mark_process_start();
     soyuz_app::services::crash::init_logging();
     soyuz_app::services::crash::install_panic_hook();
 
@@ -119,7 +120,25 @@ fn main() -> ExitCode {
     soyuz_app::services::crash::startup(startup.safe_mode);
     let config =
         if startup.safe_mode { soyuz_app::services::crash::safe_config() } else { soyuz_app::app::load_config() };
+    soyuz_app::devscript::startup_mark("config loaded");
     let chrome = soyuz_app::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar);
+    // Windows 11 system backdrop: a transparent window presented through a
+    // DirectComposition visual (DX12), read once at startup.
+    let backdrop = soyuz_app::ui::native_chrome::startup_backdrop(&config).is_some();
+    soyuz_app::ui::native_chrome::set_backdrop_active(backdrop);
+    let mut wgpu_options = eframe::egui_wgpu::WgpuConfiguration::default();
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup {
+        // Windows: DX12 only unless `WGPU_BACKEND` says otherwise. Initializing the Vulkan
+        // loader (and any overlay layers injected into it) costs ~250 ms of startup.
+        if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
+            setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+        }
+        if backdrop {
+            setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+            setup.instance_descriptor.backend_options.dx12.presentation_system =
+                eframe::wgpu::Dx12SwapchainKind::DxgiFromVisual;
+        }
+    }
 
     let options = eframe::NativeOptions {
         viewport: soyuz_app::ui::titlebar::configure_viewport(
@@ -128,10 +147,12 @@ fn main() -> ExitCode {
                 .with_app_id("soyuz")
                 .with_inner_size([1280.0, 800.0])
                 .with_min_inner_size([720.0, 440.0])
-                .with_icon(soyuz_app::app_icon::icon_data(128)),
+                .with_icon(soyuz_app::app_icon::icon_data(128))
+                .with_transparent(backdrop),
             chrome,
         ),
         renderer,
+        wgpu_options,
         centered: true,
         // eframe's own state (window geometry, egui memory) lives with the rest of the
         // configuration, so portable mode keeps it next to the executable as well.
@@ -141,7 +162,12 @@ fn main() -> ExitCode {
     let result = eframe::run_native(
         "Soyuz",
         options,
-        Box::new(move |cc| Ok(Box::new(soyuz_app::SoyuzApp::new(cc, config, renderer_name, startup)))),
+        Box::new(move |cc| {
+            soyuz_app::devscript::startup_mark("window + renderer ready");
+            let app = soyuz_app::SoyuzApp::new(cc, config, renderer_name, startup);
+            soyuz_app::devscript::startup_mark("app state ready");
+            Ok(Box::new(app))
+        }),
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,

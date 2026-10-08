@@ -388,6 +388,10 @@ pub struct PropertiesDialog {
     /// Link target of a single symlink / junction, read once in the background (it used
     /// to be a `read_link` per frame on the UI thread).
     link_target: Option<Bg<Option<String>>>,
+    /// A fresh `stat` of a single item (listings may omit allocation size / link count /
+    /// file id), taken on a worker thread and merged once when it lands.
+    fresh: Option<Bg<Option<EntryInfo>>>,
+    fresh_merged: bool,
 }
 
 /// Decode a small thumbnail (worker thread).
@@ -398,23 +402,8 @@ fn load_thumb(path: &std::path::Path) -> Option<egui::ColorImage> {
 }
 
 impl PropertiesDialog {
-    pub fn new(
-        pane: PaneId,
-        mut entries: Vec<EntryInfo>,
-        size_style: SizeStyle,
-        tab: Tab,
-        start: Option<Start>,
-    ) -> Self {
+    pub fn new(pane: PaneId, entries: Vec<EntryInfo>, size_style: SizeStyle, tab: Tab, start: Option<Start>) -> Self {
         let single = entries.len() == 1;
-        if single && let Ok(fresh) = soyuz_fs::stat(&entries[0].path, false) {
-            // Listings may omit allocation size / link count / file id; a stat has them.
-            let keep = entries[0].clone();
-            entries[0] = EntryInfo {
-                owner: keep.owner.or(fresh.owner.clone()),
-                group: keep.group.or(fresh.group.clone()),
-                ..fresh
-            };
-        }
         let first = entries[0].clone();
         let file = single && first.kind == EntryKind::File;
         let mut tabs = vec![Tab::General, Tab::Attributes];
@@ -467,6 +456,8 @@ impl PropertiesDialog {
             thumb: None,
             thumb_tex: None,
             link_target: None,
+            fresh: None,
+            fresh_merged: false,
             entries,
         }
     }
@@ -484,7 +475,28 @@ impl PropertiesDialog {
         if b < 1024 { s } else { format!("{s} ({} bytes)", crate::ui::statusbar::group_thousands(b as usize)) }
     }
 
+    /// Start / merge the background re-stat of a single item.
+    fn refresh_single(&mut self, ctx: &egui::Context) {
+        if self.entries.len() != 1 || self.fresh_merged {
+            return;
+        }
+        let path = self.entries[0].path.clone();
+        let bg = self.fresh.get_or_insert_with(|| Bg::spawn(ctx, move || soyuz_fs::stat(&path, false).ok()));
+        let Some(fresh) = bg.with(|v| v.cloned()) else { return };
+        self.fresh_merged = true;
+        if let Some(f) = fresh {
+            let e = &mut self.entries[0];
+            e.alloc_size = f.alloc_size.or(e.alloc_size);
+            e.nlink = f.nlink.or(e.nlink);
+            e.inode = f.inode.or(e.inode);
+            e.dev = f.dev.or(e.dev);
+            e.owner = e.owner.take().or(f.owner);
+            e.group = e.group.take().or(f.group);
+        }
+    }
+
     fn header(&mut self, ui: &mut Ui) {
+        self.refresh_single(ui.ctx());
         let p = palette(ui.ctx());
         ui.horizontal(|ui| {
             let (r, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());

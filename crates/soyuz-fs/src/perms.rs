@@ -49,12 +49,16 @@ pub struct SecurityInfo {
 }
 
 /// Read-only ACL view (owner, group and simplified entries).
+#[track_caller]
 pub fn security_info(path: &Path) -> FsResult<SecurityInfo> {
+    let _guard = crate::guard::check("security_info");
     imp::security_info(path).map_err(|e| FsError { op: "security_info".into(), ..e })
 }
 
 /// Effective rights of the current user on `path`.
+#[track_caller]
 pub fn effective_access(path: &Path) -> FsResult<AccessRights> {
+    let _guard = crate::guard::check("effective_access");
     imp::effective_access(path).map_err(|e| FsError { op: "effective_access".into(), ..e })
 }
 

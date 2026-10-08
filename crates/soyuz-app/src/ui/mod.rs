@@ -8,6 +8,7 @@ pub mod breadcrumb;
 pub mod context_menu;
 pub mod dialogs;
 pub mod empty_state;
+pub mod native_chrome;
 pub mod pane_view;
 pub mod panels;
 pub mod path_picker;

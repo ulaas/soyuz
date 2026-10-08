@@ -42,6 +42,13 @@ windows-sys = { workspace = true, features = [
     "Win32_System_Threading",
     "Win32_System_Registry",
     "Win32_System_Environment",
+    "Win32_System_LibraryLoader",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_Controls",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Wdk_Storage_FileSystem",
 ] }
 
 [target.'cfg(unix)'.dependencies]
@@ -52,6 +59,11 @@ filetime.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "listing"
+harness = false
 
 [lints]
 workspace = true

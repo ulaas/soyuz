@@ -52,6 +52,8 @@ chrono.workspace = true
 blake3.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+# HWND of the eframe window for the DWM / Snap Layouts integration (`ui::native_chrome`).
+raw-window-handle = "0.6.2"
 # Raw clipboard access (CF_HDROP file lists): user32/kernel32 only, no shell APIs.
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
@@ -65,6 +67,11 @@ xattr.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "thumbs"
+harness = false
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz.exe (Windows hosts with rc.exe only; no-op elsewhere).

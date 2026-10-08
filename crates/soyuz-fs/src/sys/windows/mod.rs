@@ -1,9 +1,11 @@
-//! Raw Windows shims over kernel32 / advapi32 (`windows-sys`). No shell or COM APIs.
+//! Raw Windows shims over kernel32 / advapi32 / ntdll (`windows-sys`). No shell or COM APIs.
 //!
 //! Every path handed to the OS goes through [`crate::path::to_wide_long`] (absolute,
 //! `\\?\`-prefixed, NUL-terminated) so long paths and trailing dots/spaces work.
 
+pub(crate) mod chrome;
 pub(crate) mod fs;
+pub(crate) mod ntdir;
 pub(crate) mod registry;
 pub(crate) mod security;
 pub(crate) mod volume;

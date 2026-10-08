@@ -36,17 +36,39 @@ const STANDARD: [(&str, &str); 6] = [
     ("Videos", ph::FILM_STRIP),
 ];
 
-/// Home plus the standard user folders that exist.
-pub fn standard_places() -> Vec<Place> {
+static PROBED: std::sync::OnceLock<Vec<Place>> = std::sync::OnceLock::new();
+static PROBE_STARTED: std::sync::Once = std::sync::Once::new();
+
+fn candidate_places() -> Vec<Place> {
     let home = soyuz_fs::home();
     let mut out = vec![Place { label: "Home".into(), icon: ph::HOUSE, path: home.clone() }];
-    for (name, icon) in STANDARD {
-        let p = home.join(name);
-        if p.is_dir() {
-            out.push(Place { label: name.into(), icon, path: p });
-        }
-    }
+    out.extend(STANDARD.iter().map(|&(name, icon)| Place { label: name.into(), icon, path: home.join(name) }));
     out
+}
+
+/// Home plus the standard user folders that exist. The existence checks run once on a
+/// worker thread (never on the UI thread); until they finish every candidate is listed.
+pub fn standard_places() -> Vec<Place> {
+    if let Some(p) = PROBED.get() {
+        return p.clone();
+    }
+    PROBE_STARTED.call_once(|| {
+        let _ = std::thread::Builder::new().name("soyuz-places".into()).spawn(|| {
+            let places: Vec<Place> = candidate_places()
+                .into_iter()
+                .enumerate()
+                .filter(|(i, p)| *i == 0 || p.path.is_dir())
+                .map(|(_, p)| p)
+                .collect();
+            let _ = PROBED.set(places);
+        });
+    });
+    candidate_places()
+}
+
+/// The standard places probe has finished.
+pub fn places_probed() -> bool {
+    PROBED.get().is_some()
 }
 
 /// Glyph for a favorite path (standard places get their own icons).
@@ -89,6 +111,8 @@ pub struct SidebarState {
     pub collapsed: BTreeSet<String>,
     /// Favorite being dragged (index).
     drag: Option<usize>,
+    /// Default favorites were refreshed from the background places probe.
+    places_applied: bool,
 }
 
 impl Default for SidebarState {
@@ -104,6 +128,7 @@ impl SidebarState {
             favorites_customized: false,
             collapsed: BTreeSet::new(),
             drag: None,
+            places_applied: places_probed(),
         }
     }
 }
@@ -143,6 +168,16 @@ fn section_name(s: SidebarSection) -> &'static str {
 
 pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     let p = palette(root.ctx());
+    if !s.places_applied {
+        if places_probed() {
+            s.places_applied = true;
+            if !s.favorites_customized {
+                s.favorites = crate::app::default_favorites();
+            }
+        } else {
+            root.ctx().request_repaint_after(std::time::Duration::from_millis(50));
+        }
+    }
     Panel::left("soyuz.sidebar")
         .resizable(true)
         .default_size(c.width.clamp(size::SIDEBAR_MIN, size::SIDEBAR_MAX))

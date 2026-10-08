@@ -114,6 +114,13 @@ impl Memory {
         let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
         crate::services::store_file::save_sync(path, text.as_bytes())
     }
+
+    /// Queue the write on the store worker (never blocks the UI thread).
+    pub fn save_async(&self, path: &Path) -> Result<(), String> {
+        let text = toml::to_string_pretty(self).map_err(|e| e.to_string())?;
+        crate::services::store_file::save_async(path.to_path_buf(), text.into_bytes());
+        Ok(())
+    }
 }
 
 fn push_front(v: &mut Vec<String>, item: &str, max: usize) {

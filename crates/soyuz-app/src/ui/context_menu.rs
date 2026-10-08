@@ -83,6 +83,9 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         && let Some((path, false)) = &first
     {
         let path = path.clone();
+        // Warm the per-extension cache as soon as the menu opens, so the submenu is
+        // usually filled by the time the pointer reaches it.
+        let _ = apps_for_cached(ui.ctx(), &path);
         submenu(ui, Some(ph::APP_WINDOW), "Open with", |ui| {
             ui.set_width(220.0);
             let Some(apps) = apps_for_cached(ui.ctx(), &path) else {

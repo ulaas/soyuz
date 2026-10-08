@@ -485,6 +485,7 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
         UiMsg::Notice(t) => {
             app.ui.toasts.push(t);
         }
+        UiMsg::Launch(p) => launch(app, &p),
         UiMsg::OpenDir(p) => {
             let id = app.ws.pane().id;
             navigate(app, id, Location::Dir(p), NavOpts::user());

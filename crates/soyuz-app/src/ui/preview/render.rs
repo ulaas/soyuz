@@ -70,6 +70,8 @@ pub struct PreviewState {
     pub zoom: f32,
     pub pan: Vec2,
     big: bool,
+    /// Cache key of the in-flight request (the result is remembered when it lands).
+    cache_key: Option<crate::services::preview_cache::CacheKey>,
 }
 
 impl PreviewState {
@@ -86,6 +88,7 @@ impl PreviewState {
             zoom: 1.0,
             pan: Vec2::ZERO,
             big,
+            cache_key: None,
         }
     }
 
@@ -123,6 +126,20 @@ impl PreviewState {
         }
         match entry {
             Some(e) => {
+                let ck = (!self.force_hex && !e.is_dir_like()).then(|| crate::services::preview_cache::CacheKey {
+                    path: e.path.clone(),
+                    modified: e.modified,
+                    size: e.size,
+                    variant: (limits.max_image_px, limits.dark, limits.max_text_bytes),
+                });
+                if let Some(hit) = ck.as_ref().and_then(crate::services::preview_cache::get) {
+                    self.client.cancel();
+                    self.cache_key = None;
+                    self.loaded = Some(hit);
+                    self.loading_since = None;
+                    return;
+                }
+                self.cache_key = ck;
                 let source = Source::from_path(&e.path);
                 self.client.request(source, e.is_dir_like(), self.force_hex, limits);
                 self.loading_since = Some(Instant::now());
@@ -182,6 +199,9 @@ impl PreviewState {
                             done: false,
                             changed_at: Instant::now(),
                         });
+                    }
+                    if let Some(k) = self.cache_key.take() {
+                        crate::services::preview_cache::put(k, &loaded);
                     }
                     self.loaded = Some(*loaded);
                 }

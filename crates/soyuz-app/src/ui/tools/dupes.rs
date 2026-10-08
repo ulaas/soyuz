@@ -115,6 +115,8 @@ pub struct DupesWindow {
     removed: usize,
     /// Trash jobs in flight and the paths each was asked to remove.
     trashing: Vec<(JobId, Vec<PathBuf>)>,
+    /// Existence checks of finished trash jobs, running on worker threads.
+    gone_rx: Vec<crossbeam_channel::Receiver<HashSet<PathBuf>>>,
 }
 
 impl DupesWindow {
@@ -131,6 +133,7 @@ impl DupesWindow {
             refused: None,
             removed: 0,
             trashing: Vec::new(),
+            gone_rx: Vec::new(),
         };
         if !w.roots.is_empty() {
             w.start();
@@ -198,7 +201,26 @@ impl DupesWindow {
             .collect();
         for i in finished.into_iter().rev() {
             let (_, paths) = self.trashing.remove(i);
-            let gone: HashSet<PathBuf> = paths.into_iter().filter(|p| !soyuz_fs::exists_nofollow(p)).collect();
+            // One existence check per file, off the UI thread.
+            let (tx, rx) = crossbeam_channel::bounded(1);
+            let wake = super::wake();
+            let _ = std::thread::Builder::new().name("soyuz-dupes-gone".into()).spawn(move || {
+                let gone: HashSet<PathBuf> = paths.into_iter().filter(|p| !soyuz_fs::exists_nofollow(p)).collect();
+                let _ = tx.send(gone);
+                wake();
+            });
+            self.gone_rx.push(rx);
+        }
+        let mut landed = Vec::new();
+        self.gone_rx.retain(|rx| match rx.try_recv() {
+            Ok(g) => {
+                landed.push(g);
+                false
+            }
+            Err(crossbeam_channel::TryRecvError::Empty) => true,
+            Err(crossbeam_channel::TryRecvError::Disconnected) => false,
+        });
+        for gone in landed {
             self.removed += gone.len();
             for g in &mut self.groups {
                 let keep: Vec<(EntryInfo, bool)> =
@@ -395,7 +417,7 @@ impl DupesWindow {
             }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if self.confirm {
-                    let busy = !self.trashing.is_empty();
+                    let busy = !self.trashing.is_empty() || !self.gone_rx.is_empty();
                     if button(ui, Some(ph::TRASH), &format!("Move {n} to trash"), 2, n > 0 && !busy).clicked() {
                         let spec =
                             app.fileops.jobs.spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
