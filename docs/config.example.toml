@@ -128,6 +128,17 @@ max_image_mp = 40
 syntax_theme = "auto"
 pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
 
+[editor]                         # "Edit in Soyuz" (F4): text, hex and image editors
+dock = "right"                   # right | bottom
+font_size = 13.0
+tab_width = 4
+wrap = false                     # soft-wrap long lines
+show_whitespace = false
+max_text_mib = 20                # larger text files open read-only in the hex editor
+backup_to_trash = true           # put the previous version (<name>.bak) in the trash before overwriting
+jpeg_quality = 92                # edited JPEGs are re-encoded (lossy) at this quality
+max_image_mp = 200               # largest image the image editor decodes
+
 [git]
 status_column = true
 refresh_secs = 5

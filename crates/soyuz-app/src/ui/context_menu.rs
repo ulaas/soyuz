@@ -105,6 +105,9 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
             }
         });
     }
+    if single && let Some((_, false)) = &first {
+        action_item(ui, km, cmds, id, ph::NOTE_PENCIL, "Edit in Soyuz", Action::OpenInEditor);
+    }
     menu_separator(ui);
     action_item(ui, km, cmds, id, ph::SCISSORS, "Cut", Action::Cut);
     action_item(ui, km, cmds, id, ph::COPY, "Copy", Action::Copy);

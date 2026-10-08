@@ -28,6 +28,7 @@ impl Default for Config {
             archive: Archive::default(),
             search: Search::default(),
             preview: Preview::default(),
+            editor: Editor::default(),
             git: Git::default(),
             keys: Keys::default(),
             bookmarks: Vec::new(),
@@ -210,6 +211,22 @@ impl Default for Preview {
     }
 }
 
+impl Default for Editor {
+    fn default() -> Self {
+        Editor {
+            dock: EditorDock::Right,
+            font_size: 13.0,
+            tab_width: 4,
+            wrap: false,
+            show_whitespace: false,
+            max_text_mib: 20,
+            backup_to_trash: true,
+            jpeg_quality: 92,
+            max_image_mp: 200,
+        }
+    }
+}
+
 impl Default for Git {
     fn default() -> Self {
         Git { status_column: true, refresh_secs: 5 }
@@ -326,6 +343,8 @@ fn common(km: &mut Keymap) {
     b(L, A::ExtendUp, SHIFT, KeyName::ArrowUp);
     b(L, A::ExtendDown, SHIFT, KeyName::ArrowDown);
     b(L, A::OpenInNewTab, CTRL, KeyName::Enter);
+    // "Edit in Soyuz" (Total Commander's F4 = edit).
+    b(L, A::OpenInEditor, NONE, KeyName::F4);
 }
 
 /// Build the key map for a preset (before `[keys.bindings]` overrides).
@@ -350,7 +369,6 @@ pub fn preset(p: KeyPreset) -> Keymap {
         }
         KeyPreset::Commander => {
             b(L, A::QuickLook, NONE, KeyName::F3);
-            b(L, A::Open, NONE, KeyName::F4);
             b(L, A::CopyToOtherPane, NONE, KeyName::F5);
             b(L, A::MoveToOtherPane, NONE, KeyName::F6);
             b(L, A::NewFolder, NONE, KeyName::F7);
@@ -464,6 +482,8 @@ mod tests {
         assert_eq!(km.lookup(KeyContext::Terminal, ch("Ctrl+Shift+P")), Some(&Action::CommandPalette));
         let cmd = preset(KeyPreset::Commander);
         assert_eq!(cmd.lookup(KeyContext::FileList, ch("F5")), Some(&Action::CopyToOtherPane));
+        assert_eq!(cmd.lookup(KeyContext::FileList, ch("F4")), Some(&Action::OpenInEditor));
+        assert_eq!(km.lookup(KeyContext::FileList, ch("F4")), Some(&Action::OpenInEditor));
         assert_eq!(km.lookup(KeyContext::FileList, ch("Ctrl+K")), Some(&Action::CommandPalette));
         assert_eq!(km.lookup(KeyContext::FileList, ch("Ctrl+P")), Some(&Action::JumpToFolderDialog));
     }

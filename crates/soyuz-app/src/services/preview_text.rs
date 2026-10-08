@@ -189,6 +189,24 @@ pub fn highlight(
     jobs
 }
 
+/// The shared syntax / theme sets (the editor highlights with the same assets).
+pub fn syntax_assets() -> &'static (SyntaxSet, ThemeSet) {
+    syntax()
+}
+
+/// The syntect theme selected by `[preview] syntax_theme` (`auto` follows `dark`).
+pub fn active_theme(dark: bool) -> &'static syntect::highlighting::Theme {
+    let ts = &syntax().1;
+    let configured = SYNTAX_THEME.read().clone();
+    let auto = if dark { "base16-ocean.dark" } else { "InspiredGitHub" };
+    ts.themes.get(configured.trim()).unwrap_or(&ts.themes[auto])
+}
+
+/// The syntax for a file name (`None` = plain text).
+pub fn syntax_for(name: &str) -> Option<&'static syntect::parsing::SyntaxReference> {
+    language_name(name).and_then(|l| syntax().0.find_syntax_by_name(&l))
+}
+
 /// Strip line endings and expand tabs (4 columns).
 pub fn clean_line(s: &str) -> String {
     let s = s.trim_end_matches(['\n', '\r']);

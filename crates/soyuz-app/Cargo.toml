@@ -47,6 +47,7 @@ image.workspace = true
 syntect.workspace = true
 nucleo-matcher.workspace = true
 regex.workspace = true
+memchr.workspace = true
 chrono.workspace = true
 blake3.workspace = true
 

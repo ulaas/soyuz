@@ -4,6 +4,7 @@
 //! reload) refresh the window. Search filters rows across all sections.
 
 mod appearance;
+mod editor;
 mod keybindings;
 mod lists;
 mod pages;
@@ -45,6 +46,7 @@ pub enum Section {
     Jobs,
     Terminal,
     Preview,
+    Editor,
     Keyboard,
     Commands,
     Bookmarks,
@@ -52,7 +54,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 11] = [
+    pub const ALL: [Section; 12] = [
         Section::General,
         Section::Appearance,
         Section::Views,
@@ -60,6 +62,7 @@ impl Section {
         Section::Jobs,
         Section::Terminal,
         Section::Preview,
+        Section::Editor,
         Section::Keyboard,
         Section::Commands,
         Section::Bookmarks,
@@ -75,6 +78,7 @@ impl Section {
             Section::Jobs => "File operations",
             Section::Terminal => "Terminal",
             Section::Preview => "Preview & search",
+            Section::Editor => "Editor",
             Section::Keyboard => "Keyboard",
             Section::Commands => "Custom commands",
             Section::Bookmarks => "Bookmarks",
@@ -91,6 +95,7 @@ impl Section {
             Section::Jobs => ph::COPY,
             Section::Terminal => ph::TERMINAL_WINDOW,
             Section::Preview => ph::EYE,
+            Section::Editor => ph::NOTE_PENCIL,
             Section::Keyboard => ph::KEYBOARD,
             Section::Commands => ph::LIGHTNING,
             Section::Bookmarks => ph::BOOKMARK_SIMPLE,
@@ -107,6 +112,7 @@ impl Section {
             Section::Jobs => "Copy / move engine: parallelism, verification, preservation.",
             Section::Terminal => "The integrated terminal panel.",
             Section::Preview => "Preview limits, search defaults and git integration.",
+            Section::Editor => "The built-in text, hex and image editors (Edit in Soyuz, F4).",
             Section::Keyboard => "Presets and every shortcut. Click a shortcut to change it.",
             Section::Commands => "Your own commands with placeholders, in the palette and context menu.",
             Section::Bookmarks => "Folders you jump to often, with optional hotkeys.",
@@ -151,6 +157,7 @@ impl Section {
                 c.search = d.search;
                 c.search.saved = saved;
             }
+            Section::Editor => c.editor = d.editor,
             Section::Keyboard => c.keys = d.keys,
             Section::Commands => c.custom_commands = d.custom_commands,
             Section::Bookmarks => c.bookmarks = d.bookmarks,
@@ -689,6 +696,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Jobs => pages::jobs(ui, app, q),
         Section::Terminal => pages::terminal(ui, app, q),
         Section::Preview => pages::preview(ui, app, q),
+        Section::Editor => editor::editor(ui, app, q),
         Section::Keyboard => keybindings::page(ui, app, q),
         Section::Commands => lists::commands(ui, app, q),
         Section::Bookmarks => lists::bookmarks(ui, app, q),

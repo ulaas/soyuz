@@ -82,13 +82,18 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     crate::ui::search::bar(ui, app);
     crate::ui::preview::show(ui, app);
     panels::show_activity(ui, app);
+    crate::editors::show(ui, app);
     crate::ui::tools::show_panels(ui, app);
 
     CentralPanel::default()
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
         .show(ui, |ui| {
             let area = ui.available_rect_before_wrap();
-            panes(ui, area, app);
+            if crate::editors::maximized(app) {
+                crate::editors::show_central(ui, area, app);
+            } else {
+                panes(ui, area, app);
+            }
             ui.allocate_rect(area, Sense::hover());
         });
 

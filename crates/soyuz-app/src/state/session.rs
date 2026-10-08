@@ -75,6 +75,8 @@ pub struct Session {
     pub welcome_seen: bool,
     /// Drop shelf contents (kept across restarts).
     pub shelf: Vec<PathBuf>,
+    /// Files open in the built-in editor.
+    pub editors: Vec<PathBuf>,
 }
 
 impl Default for Session {
@@ -91,6 +93,7 @@ impl Default for Session {
             checkbox_mode: false,
             welcome_seen: false,
             shelf: Vec::new(),
+            editors: Vec::new(),
         }
     }
 }
