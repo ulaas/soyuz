@@ -31,6 +31,8 @@ pub enum OpKind {
     NewFolder,
     NewFile,
     Link,
+    /// Attributes / timestamps / permissions (Properties, bulk attributes).
+    SetMeta,
     Restore,
     EmptyTrash,
     Undo,
@@ -51,6 +53,7 @@ impl OpKind {
             JobKindBrief::RestoreTrash => OpKind::Restore,
             JobKindBrief::EmptyTrash => OpKind::EmptyTrash,
             JobKindBrief::Undo => OpKind::Undo,
+            JobKindBrief::SetMeta => OpKind::SetMeta,
             _ => OpKind::Other,
         }
     }
@@ -67,6 +70,7 @@ impl OpKind {
                 | OpKind::NewFolder
                 | OpKind::NewFile
                 | OpKind::Link
+                | OpKind::SetMeta
                 | OpKind::Redo
         )
     }

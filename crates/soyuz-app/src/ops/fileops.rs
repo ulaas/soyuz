@@ -204,9 +204,12 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 return;
             }
             let mode = if action == A::Cut { ClipMode::Cut } else { ClipMode::Copy };
-            // The OS clipboard gets the paths as text: Ctrl+V then reaches the app, and
-            // pasting into an editor yields the paths.
-            ctx.copy_text(Clipboard::os_text(&sel));
+            // The OS clipboard gets the files in the native format (Explorer / Finder /
+            // Nautilus can paste them) plus the paths as text; without a native
+            // mechanism, just the text (Ctrl+V then still reaches the app).
+            if !crate::services::os_clipboard::set_files(mode, &sel) {
+                ctx.copy_text(Clipboard::os_text(&sel));
+            }
             let n = sel.len();
             app.fileops.clipboard.set(mode, sel);
             let verb = if mode == ClipMode::Cut { "Cut" } else { "Copied" };
@@ -730,6 +733,7 @@ fn on_finished(app: &mut SoyuzApp, id: JobId, summary: &JobSummary) {
                 AfterJob::ClearClipboard => {
                     if summary.items_failed == 0 {
                         app.fileops.clipboard.clear();
+                        crate::services::os_clipboard::clear_cut();
                     }
                 }
                 AfterJob::None => {}

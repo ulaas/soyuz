@@ -616,6 +616,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
+        Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, ctx),
         Cmd::SubmitJob(spec) => {
             crate::ui::archive::submit_job(app, *spec);
         }

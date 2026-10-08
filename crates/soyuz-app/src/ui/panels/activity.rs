@@ -51,6 +51,7 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
         OpKind::NewFolder => (ph::FOLDER_PLUS, p.glyph_folder),
         OpKind::NewFile => (ph::FILE_PLUS, p.accent),
         OpKind::Link => (ph::LINK, p.info),
+        OpKind::SetMeta => (ph::SLIDERS_HORIZONTAL, p.accent),
         OpKind::Restore => (ph::ARROW_COUNTER_CLOCKWISE, p.success),
         OpKind::Undo => (ph::ARROW_U_UP_LEFT, p.text_secondary),
         OpKind::Redo => (ph::ARROW_U_UP_RIGHT, p.text_secondary),

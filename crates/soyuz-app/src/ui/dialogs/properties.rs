@@ -1,0 +1,919 @@
+//! Properties dialog (Alt+Enter, PLAN M10) and the dispatcher for the metadata actions
+//! (Properties, checksums, batch rename, bulk attributes / timestamps, touch, links).
+//!
+//! Tabs: **General** (icon or thumbnail, editable name, type, location, size / size on
+//! disk / item counts computed in the background, editable created / modified / accessed
+//! times), **Attributes** (Windows attributes or unix mode bits + octal), **Security**
+//! (owner and a read-only ACL view; unix chown), **Checksums**, **Details** (file id,
+//! links, EXIF / media metadata). Multi-selection shows a summary with tri-state
+//! editing. Changes are applied as `SetMeta` / `Rename` jobs, so they show up in the
+//! activity panel and are undoable.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+
+use egui::{Align, Align2, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use parking_lot::Mutex;
+use soyuz_core::config::Action;
+use soyuz_core::{Control, EntryInfo, EntryKind, HashAlgo, Location, OpControl, SizeStyle, format_size};
+use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
+use soyuz_jobs::JobKind;
+
+use super::conflict::{Btn, button};
+use super::properties_attrs::{AttrEdit, MetaJob, ModeEdit, info_attrs, plan_jobs};
+use super::properties_checksum::Checksums;
+use super::properties_security::OwnerEdit;
+use super::properties_widgets::{
+    badge, caption, datetime_field, kv_row, kv_row_with, rule, small_icon_button, tab_strip,
+};
+use super::{Dialog, DialogCtx};
+use crate::app::SoyuzApp;
+use crate::cmd::Cmd;
+use crate::ops::fileops::FileOpCmd;
+use crate::services::jobs::{JobMeta, OpKind};
+use crate::state::pane::PaneId;
+use crate::theme::{icons, icons::ph, palette};
+use crate::ui::toasts::Toast;
+use crate::ui::views::flow::semibold;
+
+/// Commands produced by the metadata dialogs (applied by [`apply`] with app access).
+#[derive(Clone, Debug)]
+pub enum MetaCmd {
+    /// Submit `SetMeta` jobs (attributes / times / mode).
+    SetMeta(Vec<MetaJob>),
+    /// Change owner / group (unix; not undoable).
+    Chown { paths: Vec<PathBuf>, uid: Option<u32>, gid: Option<u32> },
+    /// Submit a batch rename job.
+    BatchRename { pane: PaneId, pairs: Vec<(PathBuf, PathBuf)> },
+    /// Create a link (`Create` job) at `path` inside `dir`.
+    Create { dir: PathBuf, path: PathBuf, kind: soyuz_jobs::CreateKind },
+}
+
+/// Actions handled here (routed by `actions::execute` before the file-op module).
+pub fn handles(app: &SoyuzApp, a: &Action) -> bool {
+    use Action as A;
+    match a {
+        A::Properties
+        | A::BatchRename
+        | A::SetAttributes
+        | A::TouchTimestamps
+        | A::Checksum(_)
+        | A::CompareChecksum
+        | A::NewSymlink
+        | A::NewHardlink
+        | A::NewJunction => true,
+        // F2 on a multiple selection opens the batch rename dialog.
+        A::Rename => matches!(app.ws.pane().location, Location::Dir(_)) && app.ws.pane().selection.len() > 1,
+        _ => false,
+    }
+}
+
+pub fn execute(app: &mut SoyuzApp, action: Action, _ctx: &egui::Context) {
+    use Action as A;
+    match action {
+        A::Properties => open(app, Tab::General, None),
+        A::Checksum(algo) => open(app, Tab::Checksums, Some(Start::Hash(algo))),
+        A::CompareChecksum => open(app, Tab::Checksums, Some(Start::Compare)),
+        A::BatchRename | A::Rename => super::batch_rename::open(app),
+        A::SetAttributes => super::attributes::open(app),
+        A::TouchTimestamps => touch(app),
+        A::NewSymlink => super::links::open(app, super::new_item::LinkChoice::Symlink),
+        A::NewHardlink => super::links::open(app, super::new_item::LinkChoice::Hardlink),
+        A::NewJunction => super::links::open(app, super::new_item::LinkChoice::Junction),
+        _ => {}
+    }
+}
+
+/// Apply a [`MetaCmd`].
+pub fn apply(app: &mut SoyuzApp, cmd: MetaCmd, _ctx: &egui::Context) {
+    match cmd {
+        MetaCmd::SetMeta(jobs) => {
+            for j in jobs {
+                if j.paths.is_empty() {
+                    continue;
+                }
+                let kind = JobKind::SetMeta { paths: j.paths.clone(), times: j.times, attrs: j.attrs, mode: j.mode };
+                let spec = app.fileops.jobs.spec(kind);
+                let meta = JobMeta::new(OpKind::SetMeta, &j.paths, None);
+                app.fileops.jobs.submit(spec, meta);
+            }
+            refresh_panes(app);
+        }
+        MetaCmd::Chown { paths, uid, gid } => {
+            let mut failed = Vec::new();
+            for p in &paths {
+                if let Err(e) = soyuz_fs::chown(p, uid, gid) {
+                    failed.push(e.to_string());
+                }
+            }
+            match failed.first() {
+                None => {
+                    app.ui.toasts.push(Toast::success("Ownership changed"));
+                }
+                Some(e) => {
+                    app.ui.toasts.push(Toast::error("Couldn't change ownership").body(e.clone()));
+                }
+            }
+            refresh_panes(app);
+        }
+        MetaCmd::BatchRename { pane, pairs } => {
+            if pairs.is_empty() {
+                return;
+            }
+            let from: Vec<PathBuf> = pairs.iter().map(|(a, _)| a.clone()).collect();
+            let first_new = pairs[0].1.file_name().map(|n| n.to_string_lossy().into_owned());
+            let spec = app.fileops.jobs.spec(JobKind::Rename { pairs });
+            let mut meta = JobMeta::new(OpKind::Rename, &from, None);
+            if let Some(name) = first_new {
+                meta = meta.after(crate::services::jobs::AfterJob::Select { pane, name });
+            }
+            app.fileops.jobs.submit(spec, meta);
+        }
+        MetaCmd::Create { dir, path, kind } => {
+            let spec = app.fileops.jobs.spec(JobKind::Create { path: path.clone(), kind });
+            let meta = JobMeta::new(OpKind::Link, std::slice::from_ref(&path), Some(dir));
+            app.fileops.jobs.submit(spec, meta);
+        }
+    }
+}
+
+fn refresh_panes(app: &mut SoyuzApp) {
+    // Watchers report attribute / time changes inconsistently across platforms; mark the
+    // panes dirty so the next frame re-reads them.
+    for t in &mut app.ws.tabs {
+        for p in &mut t.panes {
+            p.dirty = true;
+        }
+    }
+}
+
+/// Extra rows for the items context menu (batch rename, attributes, checksums).
+pub fn context_items(
+    ui: &mut Ui,
+    km: &soyuz_core::config::Keymap,
+    cmds: &mut Vec<Cmd>,
+    pane: PaneId,
+    multi: bool,
+    single_file: bool,
+) {
+    use crate::ui::widgets::{menu_item, submenu};
+    let item = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, a: Action| {
+        let sc = crate::keys::chord_label(km, &a);
+        if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
+            cmds.push(Cmd::PaneAction(pane, a));
+            ui.close();
+        }
+    };
+    if multi {
+        item(ui, cmds, ph::TEXTBOX, "Batch rename\u{2026}", Action::BatchRename);
+    }
+    item(ui, cmds, ph::SLIDERS_HORIZONTAL, "Attributes & timestamps\u{2026}", Action::SetAttributes);
+    if single_file {
+        submenu(ui, Some(ph::FINGERPRINT), "Checksum", |ui| {
+            ui.set_width(200.0);
+            for a in super::properties_checksum::ALGOS {
+                item(ui, cmds, ph::HASH, a.label(), Action::Checksum(a));
+            }
+            item(ui, cmds, ph::CHECK_CIRCLE, "Compare with\u{2026}", Action::CompareChecksum);
+        });
+    }
+}
+
+/// Entries the metadata actions work on: the selection of the focused pane, or the
+/// folder itself when nothing is selected. Archives / trash / computer are refused.
+pub fn targets(app: &SoyuzApp) -> Result<(PaneId, Vec<EntryInfo>), String> {
+    let pane = app.ws.pane();
+    match &pane.location {
+        Location::Dir(_) | Location::Search(_) | Location::Recent | Location::Tags(_) => {}
+        _ => return Err("Properties are available for files and folders on disk".into()),
+    }
+    let mut sel: Vec<EntryInfo> = pane.selected_entries().into_iter().cloned().collect();
+    if sel.is_empty()
+        && let Location::Dir(d) = &pane.location
+    {
+        sel.push(soyuz_fs::stat(d, false).map_err(|e| e.to_string())?);
+    }
+    if sel.is_empty() {
+        return Err("Select one or more items first".into());
+    }
+    Ok((pane.id, sel))
+}
+
+/// "Touch": set modified + accessed to now on the selection (undoable job).
+fn touch(app: &mut SoyuzApp) {
+    match targets(app) {
+        Ok((_, entries)) => {
+            let now = SystemTime::now();
+            let t = TimesSet { modified: Some(now), accessed: Some(now), created: None };
+            let jobs = plan_jobs(&entries, Some(t), None, None);
+            app.cmds.push(Cmd::Meta(MetaCmd::SetMeta(jobs)));
+        }
+        Err(e) => {
+            app.ui.toasts.push(Toast::info(e));
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tab {
+    General,
+    Attributes,
+    Security,
+    Checksums,
+    Details,
+}
+
+impl Tab {
+    fn label(self) -> (&'static str, &'static str) {
+        match self {
+            Tab::General => (ph::INFO, "General"),
+            Tab::Attributes => (ph::SLIDERS_HORIZONTAL, "Attributes"),
+            Tab::Security => (ph::SHIELD_CHECK, "Security"),
+            Tab::Checksums => (ph::FINGERPRINT, "Checksums"),
+            Tab::Details => (ph::LIST_BULLETS, "Details"),
+        }
+    }
+}
+
+/// What to do right after opening.
+#[derive(Clone, Copy, Debug)]
+pub enum Start {
+    Hash(HashAlgo),
+    Compare,
+}
+
+pub fn open(app: &mut SoyuzApp, tab: Tab, start: Option<Start>) {
+    match targets(app) {
+        Ok((pane, entries)) => {
+            let d = PropertiesDialog::new(pane, entries, app.config.general.size_style, tab, start);
+            app.ui.dialogs.push(d);
+        }
+        Err(e) => {
+            app.ui.toasts.push(Toast::info(e));
+        }
+    }
+}
+
+/// A value computed on a worker thread.
+pub struct Bg<T> {
+    slot: Arc<Mutex<Option<T>>>,
+}
+
+impl<T: Send + 'static> Bg<T> {
+    pub fn spawn(ctx: &egui::Context, f: impl FnOnce() -> T + Send + 'static) -> Self {
+        let slot = Arc::new(Mutex::new(None));
+        let s2 = slot.clone();
+        let ctx = ctx.clone();
+        let _ = std::thread::Builder::new().name("soyuz-props".into()).spawn(move || {
+            let v = f();
+            *s2.lock() = Some(v);
+            ctx.request_repaint();
+        });
+        Bg { slot }
+    }
+
+    pub fn with<R>(&self, f: impl FnOnce(Option<&T>) -> R) -> R {
+        f(self.slot.lock().as_ref())
+    }
+}
+
+/// Folder statistics accumulated by the background walk.
+#[derive(Clone, Debug, Default)]
+pub struct Stats {
+    pub files: u64,
+    pub dirs: u64,
+    pub bytes: u64,
+    pub alloc: u64,
+    pub alloc_known: bool,
+    pub errors: u64,
+    pub done: bool,
+}
+
+fn spawn_stats(ctx: &egui::Context, entries: &[EntryInfo], ctl: Arc<OpControl>) -> Arc<Mutex<Stats>> {
+    let stats = Arc::new(Mutex::new(Stats::default()));
+    let s2 = stats.clone();
+    let roots: Vec<(PathBuf, bool)> = entries.iter().map(|e| (e.path.clone(), e.kind == EntryKind::Dir)).collect();
+    let single_dir = roots.len() == 1 && roots[0].1;
+    let ctx = ctx.clone();
+    let _ = std::thread::Builder::new().name("soyuz-props-size".into()).spawn(move || {
+        let mut last = Instant::now();
+        let mut local = Stats::default();
+        for (root, _) in &roots {
+            let r = soyuz_fs::walk(root, &WalkOptions::default(), &ctl, &mut |item| {
+                match item {
+                    WalkItem::Entry { entry, depth } => {
+                        if !(single_dir && depth == 0) {
+                            match entry.kind {
+                                EntryKind::Dir => local.dirs += 1,
+                                _ => {
+                                    local.files += 1;
+                                    local.bytes += entry.size;
+                                    match entry.alloc_size {
+                                        Some(a) => {
+                                            local.alloc += a;
+                                            local.alloc_known = true;
+                                        }
+                                        None => local.alloc += entry.size.div_ceil(4096) * 4096,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    WalkItem::Error { .. } => local.errors += 1,
+                    WalkItem::DirDone { .. } => {}
+                }
+                if last.elapsed() > Duration::from_millis(120) {
+                    last = Instant::now();
+                    *s2.lock() = local.clone();
+                    ctx.request_repaint();
+                }
+                if ctl.is_cancelled() { Control::Stop } else { Control::Continue }
+            });
+            if r.is_err() {
+                local.errors += 1;
+            }
+            if ctl.is_cancelled() {
+                return;
+            }
+        }
+        local.done = true;
+        *s2.lock() = local;
+        ctx.request_repaint();
+    });
+    stats
+}
+
+struct TimeEdit {
+    label: &'static str,
+    orig: Option<SystemTime>,
+    value: Option<SystemTime>,
+    mixed: bool,
+}
+
+impl TimeEdit {
+    fn new(label: &'static str, vals: Vec<Option<SystemTime>>) -> Self {
+        let first = vals.first().copied().flatten();
+        let mixed = vals.iter().any(|v| *v != first);
+        TimeEdit { label, orig: if mixed { None } else { first }, value: if mixed { None } else { first }, mixed }
+    }
+
+    fn changed(&self) -> bool {
+        self.value != self.orig && self.value.is_some()
+    }
+}
+
+pub struct PropertiesDialog {
+    title: String,
+    pane: PaneId,
+    entries: Vec<EntryInfo>,
+    size_style: SizeStyle,
+    tabs: Vec<Tab>,
+    tab: usize,
+    name: String,
+    focus_name: bool,
+    times: [TimeEdit; 3],
+    attrs: AttrEdit,
+    mode: Option<ModeEdit>,
+    owner: Option<OwnerEdit>,
+    ctl: Arc<OpControl>,
+    stats: Option<Arc<Mutex<Stats>>>,
+    security: Option<Bg<super::properties_security::Loaded>>,
+    details: Option<Bg<super::properties_details::Sections>>,
+    checksums: Option<Checksums>,
+    start: Option<Start>,
+    error: Option<String>,
+    thumb: Option<Bg<Option<egui::ColorImage>>>,
+    thumb_tex: Option<egui::TextureHandle>,
+}
+
+/// Decode a small thumbnail (worker thread).
+fn load_thumb(path: &std::path::Path) -> Option<egui::ColorImage> {
+    let img = image::open(path).ok()?.thumbnail(112, 112).to_rgba8();
+    let (w, h) = img.dimensions();
+    Some(egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], img.as_raw()))
+}
+
+impl PropertiesDialog {
+    pub fn new(
+        pane: PaneId,
+        mut entries: Vec<EntryInfo>,
+        size_style: SizeStyle,
+        tab: Tab,
+        start: Option<Start>,
+    ) -> Self {
+        let single = entries.len() == 1;
+        if single && let Ok(fresh) = soyuz_fs::stat(&entries[0].path, false) {
+            // Listings may omit allocation size / link count / file id; a stat has them.
+            let keep = entries[0].clone();
+            entries[0] = EntryInfo {
+                owner: keep.owner.or(fresh.owner.clone()),
+                group: keep.group.or(fresh.group.clone()),
+                ..fresh
+            };
+        }
+        let first = entries[0].clone();
+        let file = single && first.kind == EntryKind::File;
+        let mut tabs = vec![Tab::General, Tab::Attributes];
+        if single {
+            tabs.push(Tab::Security);
+        }
+        if file {
+            tabs.push(Tab::Checksums);
+        }
+        if single {
+            tabs.push(Tab::Details);
+        }
+        let tab = tabs.iter().position(|t| *t == tab).unwrap_or(0);
+        let title = if single { format!("{} properties", first.name) } else { format!("{} items", entries.len()) };
+        let times = [
+            TimeEdit::new("Created", entries.iter().map(|e| e.created).collect()),
+            TimeEdit::new("Modified", entries.iter().map(|e| e.modified).collect()),
+            TimeEdit::new("Accessed", entries.iter().map(|e| e.accessed).collect()),
+        ];
+        let owner = (!cfg!(windows)).then(|| {
+            let same = |f: fn(&EntryInfo) -> Option<&str>| {
+                let v = f(&entries[0]);
+                entries.iter().all(|e| f(e) == v).then_some(v).flatten()
+            };
+            OwnerEdit::new(same(|e| e.owner.as_deref()), same(|e| e.group.as_deref()))
+        });
+        PropertiesDialog {
+            title,
+            pane,
+            size_style,
+            tabs,
+            tab,
+            name: first.name.clone(),
+            focus_name: false,
+            times,
+            attrs: AttrEdit::new(&entries),
+            mode: ModeEdit::new(&entries),
+            owner,
+            ctl: OpControl::new(),
+            stats: None,
+            security: None,
+            details: None,
+            checksums: file.then(|| Checksums::new(first.path.clone())),
+            start,
+            error: None,
+            thumb: None,
+            thumb_tex: None,
+            entries,
+        }
+    }
+
+    fn single(&self) -> Option<&EntryInfo> {
+        (self.entries.len() == 1).then(|| &self.entries[0])
+    }
+
+    fn size(&self, b: u64) -> String {
+        format_size(b, self.size_style)
+    }
+
+    fn exact(&self, b: u64) -> String {
+        let s = self.size(b);
+        if b < 1024 { s } else { format!("{s} ({} bytes)", crate::ui::statusbar::group_thousands(b as usize)) }
+    }
+
+    fn header(&mut self, ui: &mut Ui) {
+        let p = palette(ui.ctx());
+        ui.horizontal(|ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(56.0, 56.0), Sense::hover());
+            ui.painter().rect_filled(r, CornerRadius::same(crate::theme::tokens::radius::CARD), p.bg_surface2);
+            let e = &self.entries[0];
+            let thumb = self.entries.len() == 1
+                && e.kind == EntryKind::File
+                && e.size < 64 * 1024 * 1024
+                && crate::ui::views::icons::classify(e) == crate::ui::views::icons::FileClass::Image;
+            if thumb && self.thumb.is_none() {
+                let path = e.path.clone();
+                self.thumb = Some(Bg::spawn(ui.ctx(), move || load_thumb(&path)));
+            }
+            if self.thumb_tex.is_none()
+                && let Some(img) = self.thumb.as_ref().and_then(|b| b.with(|v| v.cloned().flatten()))
+            {
+                self.thumb_tex = Some(ui.ctx().load_texture("soyuz.props.thumb", img, egui::TextureOptions::LINEAR));
+            }
+            let e = &self.entries[0];
+            if let Some(tex) = &self.thumb_tex {
+                let size = tex.size_vec2();
+                let scale = (52.0 / size.x).min(52.0 / size.y);
+                let rect = egui::Rect::from_center_size(r.center(), size * scale);
+                egui::Image::new(tex).corner_radius(CornerRadius::same(4)).paint_at(ui, rect);
+            } else {
+                let (glyph, color) = if self.entries.len() > 1 {
+                    (ph::STACK, p.accent)
+                } else {
+                    (crate::ui::views::icons::glyph(e), crate::ui::views::icons::color(e, &p))
+                };
+                ui.painter().text(r.center(), Align2::CENTER_CENTER, glyph, icons::font(30.0), color);
+            }
+            ui.add_space(8.0);
+            ui.vertical(|ui| {
+                ui.add_space(4.0);
+                if let Some(e) = self.single().cloned() {
+                    let resp = ui.add(
+                        TextEdit::singleline(&mut self.name)
+                            .font(semibold(15.0))
+                            .desired_width(ui.available_width())
+                            .margin(Margin::symmetric(8, 5)),
+                    );
+                    if self.focus_name {
+                        resp.request_focus();
+                        self.focus_name = false;
+                    }
+                    let kind = crate::state::listing::kind_label(&e);
+                    let mut line = kind;
+                    if e.kind == EntryKind::File {
+                        line.push_str(&format!(" \u{00b7} {}", self.size(e.size)));
+                    }
+                    ui.label(RichText::new(line).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                } else {
+                    let files = self.entries.iter().filter(|e| !e.is_dir_like()).count();
+                    let dirs = self.entries.len() - files;
+                    ui.label(
+                        RichText::new(format!("{} items selected", self.entries.len()))
+                            .font(semibold(15.0))
+                            .color(p.text_primary),
+                    );
+                    let mut parts = Vec::new();
+                    if files > 0 {
+                        parts.push(format!("{files} file{}", if files == 1 { "" } else { "s" }));
+                    }
+                    if dirs > 0 {
+                        parts.push(format!("{dirs} folder{}", if dirs == 1 { "" } else { "s" }));
+                    }
+                    let kinds: std::collections::BTreeSet<String> =
+                        self.entries.iter().map(crate::state::listing::kind_label).collect();
+                    let kinds = if kinds.len() == 1 {
+                        format!("All {}", kinds.into_iter().next().unwrap_or_default())
+                    } else {
+                        "Mixed types".into()
+                    };
+                    ui.label(
+                        RichText::new(format!("{} \u{00b7} {kinds}", parts.join(", ")))
+                            .font(FontId::proportional(11.5))
+                            .color(p.text_tertiary),
+                    );
+                }
+            });
+        });
+    }
+
+    fn general(&mut self, ui: &mut Ui, cmds: &mut Vec<Cmd>) {
+        let p = palette(ui.ctx());
+        let needs_walk = self.entries.iter().any(|e| e.kind == EntryKind::Dir) || self.entries.len() > 1;
+        if needs_walk && self.stats.is_none() {
+            self.stats = Some(spawn_stats(ui.ctx(), &self.entries, self.ctl.clone()));
+        }
+        caption(ui, "General");
+        if let Some(e) = self.single().cloned() {
+            kv_row(ui, "Type", &crate::state::listing::kind_label(&e));
+        }
+        let parent = common_parent(&self.entries);
+        if let Some(parent) = &parent {
+            kv_row_with(ui, "Location", |ui| {
+                let s = soyuz_fs::strip_verbatim(parent).display().to_string();
+                ui.horizontal(|ui| {
+                    let w = ui.available_width() - 30.0;
+                    ui.allocate_ui(vec2(w, 20.0), |ui| {
+                        ui.add(egui::Label::new(RichText::new(&s).color(p.text_primary)).truncate().selectable(true))
+                            .on_hover_text(&s);
+                    });
+                    super::properties_widgets::copy_button(ui, &s, cmds);
+                });
+            });
+        }
+        match (&self.stats, self.single()) {
+            (None, Some(e)) => {
+                kv_row(ui, "Size", &self.exact(e.size));
+                match e.alloc_size {
+                    Some(a) => kv_row(ui, "Size on disk", &self.exact(a)),
+                    None => {
+                        kv_row(ui, "Size on disk", &format!("\u{2248} {}", self.size(e.size.div_ceil(4096) * 4096)))
+                    }
+                };
+            }
+            (Some(stats), _) => {
+                let s = stats.lock().clone();
+                let busy = !s.done;
+                kv_row_with(ui, "Size", |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(self.exact(s.bytes)).color(p.text_primary));
+                        if busy {
+                            ui.spinner();
+                        }
+                    });
+                });
+                let approx = if s.alloc_known { "" } else { "\u{2248} " };
+                kv_row(ui, "Size on disk", &format!("{approx}{}", self.exact(s.alloc)));
+                let mut contains = format!(
+                    "{} file{}, {} folder{}",
+                    crate::ui::statusbar::group_thousands(s.files as usize),
+                    if s.files == 1 { "" } else { "s" },
+                    crate::ui::statusbar::group_thousands(s.dirs as usize),
+                    if s.dirs == 1 { "" } else { "s" },
+                );
+                if s.errors > 0 {
+                    contains.push_str(&format!(" \u{00b7} {} unreadable", s.errors));
+                }
+                kv_row(ui, if self.entries.len() == 1 { "Contains" } else { "Total" }, &contains);
+            }
+            (None, None) => {}
+        }
+        if let Some(e) = self.single()
+            && let EntryKind::Symlink { .. } | EntryKind::Junction = e.kind
+            && let Ok(t) = soyuz_fs::read_link(&e.path)
+        {
+            kv_row(ui, "Link target", &soyuz_fs::strip_verbatim(&t).display().to_string());
+        }
+        rule(ui);
+        ui.horizontal(|ui| {
+            caption(ui, "Dates");
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if small_icon_button(ui, ph::CLOCK_COUNTER_CLOCKWISE, "Set modified and accessed to now").clicked() {
+                    let now = SystemTime::now();
+                    self.times[1].value = Some(now);
+                    self.times[2].value = Some(now);
+                }
+            });
+        });
+        let id = ui.id().with("times");
+        for (i, t) in self.times.iter_mut().enumerate() {
+            kv_row_with(ui, t.label, |ui| {
+                ui.horizontal(|ui| {
+                    let ph_text = if t.mixed { "Multiple values" } else { "Unknown" };
+                    datetime_field(ui, id.with(i), &mut t.value, ph_text, true);
+                    if t.changed() {
+                        badge(ui, None, "changed", p.accent);
+                        if small_icon_button(ui, ph::ARROW_COUNTER_CLOCKWISE, "Revert").clicked() {
+                            t.value = t.orig;
+                        }
+                    }
+                });
+            });
+        }
+        if cfg!(not(any(windows, target_os = "macos"))) {
+            ui.label(
+                RichText::new("Linux file systems don't allow changing the creation time.")
+                    .font(FontId::proportional(11.0))
+                    .color(p.text_tertiary),
+            );
+        }
+    }
+
+    fn attributes(&mut self, ui: &mut Ui) {
+        let p = palette(ui.ctx());
+        caption(ui, "Attributes");
+        self.attrs.show(ui);
+        let info: Vec<&str> = info_attrs()
+            .into_iter()
+            .filter(|(a, _)| self.entries.iter().any(|e| e.attrs.contains(*a)))
+            .map(|(_, l)| l)
+            .collect();
+        if !info.is_empty() {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                for l in info {
+                    badge(ui, Some(ph::INFO), l, p.text_secondary);
+                }
+            });
+        }
+        if let Some(m) = &mut self.mode {
+            rule(ui);
+            m.show(ui);
+        }
+    }
+
+    fn security(&mut self, ui: &mut Ui) {
+        if self.security.is_none()
+            && let Some(e) = self.single()
+        {
+            let path = e.path.clone();
+            self.security = Some(Bg::spawn(ui.ctx(), move || super::properties_security::load(&path)));
+        }
+        let owner = self.owner.as_mut();
+        match &self.security {
+            Some(bg) => bg.with(|l| super::properties_security::show(ui, l, owner)),
+            None => super::properties_security::show(ui, None, owner),
+        }
+    }
+
+    fn details(&mut self, ui: &mut Ui, cmds: &mut Vec<Cmd>) {
+        let p = palette(ui.ctx());
+        if self.details.is_none()
+            && let Some(e) = self.single().cloned()
+        {
+            self.details = Some(Bg::spawn(ui.ctx(), move || super::properties_details::load(&e)));
+        }
+        let Some(bg) = &self.details else { return };
+        bg.with(|d| match d {
+            None => {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(RichText::new("Reading metadata\u{2026}").color(p.text_tertiary));
+                });
+            }
+            Some(sections) => {
+                egui::ScrollArea::vertical().max_height(360.0).auto_shrink([false, true]).show(ui, |ui| {
+                    for (title, rows) in sections {
+                        caption(ui, title);
+                        for (k, v) in rows {
+                            kv_row_with(ui, k, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::Label::new(RichText::new(v).color(p.text_primary))
+                                            .wrap()
+                                            .selectable(true),
+                                    );
+                                });
+                            });
+                        }
+                    }
+                    if let Some(e) = self.entries.first() {
+                        ui.add_space(6.0);
+                        let s = soyuz_fs::strip_verbatim(&e.path).display().to_string();
+                        if ui.add(egui::Button::new(RichText::new("Copy full path").size(12.0))).clicked() {
+                            cmds.push(Cmd::CopyText(s));
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    fn dirty(&self) -> bool {
+        let renamed = self.single().is_some_and(|e| self.name.trim() != e.name);
+        renamed
+            || self.times.iter().any(TimeEdit::changed)
+            || self.attrs.changes().is_some()
+            || self.mode.as_ref().is_some_and(ModeEdit::changed)
+            || self.owner.as_ref().is_some_and(|o| matches!(o.changes(), Ok(Some(_))))
+    }
+
+    /// Validate and queue the changes. Returns `false` when something is invalid.
+    fn commit(&mut self, cmds: &mut Vec<Cmd>) -> bool {
+        self.error = None;
+        let rename = match self.single() {
+            Some(e) if self.name.trim() != e.name => {
+                let n = self.name.trim().to_string();
+                if let Err(err) = soyuz_core::validate_name(&n) {
+                    self.error = Some(format!("Invalid name: {err}"));
+                    return false;
+                }
+                Some((e.path.clone(), n))
+            }
+            _ => None,
+        };
+        let owner = match self.owner.as_ref().map(OwnerEdit::changes) {
+            Some(Err(e)) => {
+                self.error = Some(e);
+                return false;
+            }
+            Some(Ok(c)) => c,
+            None => None,
+        };
+        let times = {
+            let t = TimesSet {
+                created: self.times[0].changed().then_some(self.times[0].value).flatten(),
+                modified: self.times[1].changed().then_some(self.times[1].value).flatten(),
+                accessed: self.times[2].changed().then_some(self.times[2].value).flatten(),
+            };
+            (t != TimesSet::default()).then_some(t)
+        };
+        let jobs = plan_jobs(&self.entries, times, self.attrs.changes(), self.mode.as_ref());
+        if !jobs.is_empty() {
+            cmds.push(Cmd::Meta(MetaCmd::SetMeta(jobs)));
+        }
+        if let Some((uid, gid)) = owner {
+            cmds.push(Cmd::Meta(MetaCmd::Chown {
+                paths: self.entries.iter().map(|e| e.path.clone()).collect(),
+                uid,
+                gid,
+            }));
+        }
+        if let Some((from, to)) = rename {
+            cmds.push(Cmd::FileOp(FileOpCmd::Rename { pane: self.pane, from: from.clone(), to: to.clone() }));
+            let new_path = from.with_file_name(&to);
+            self.entries[0].path = new_path.clone();
+            self.entries[0].name = to.clone();
+            self.title = format!("{to} properties");
+            if let Some(c) = &mut self.checksums {
+                c.cancel_all();
+                *c = Checksums::new(new_path);
+            }
+        }
+        // The edits are now the baseline.
+        for t in &mut self.times {
+            if t.changed() {
+                t.orig = t.value;
+                t.mixed = false;
+            }
+        }
+        self.attrs.commit();
+        if let Some(m) = &mut self.mode {
+            m.commit();
+        }
+        if let Some(o) = &mut self.owner {
+            o.commit();
+        }
+        true
+    }
+}
+
+impl Drop for PropertiesDialog {
+    fn drop(&mut self) {
+        self.ctl.cancel();
+    }
+}
+
+/// The folder all entries live in (`None` when they differ, e.g. search results).
+fn common_parent(entries: &[EntryInfo]) -> Option<PathBuf> {
+    let first = entries.first()?.path.parent()?.to_path_buf();
+    entries.iter().all(|e| e.path.parent() == Some(first.as_path())).then_some(first)
+}
+
+impl Dialog for PropertiesDialog {
+    fn title(&self) -> &str {
+        &self.title
+    }
+
+    fn icon(&self) -> Option<&'static str> {
+        Some(ph::INFO)
+    }
+
+    fn width(&self) -> f32 {
+        560.0
+    }
+
+    fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
+        let p = palette(ui.ctx());
+        if let Some(start) = self.start.take()
+            && let Some(c) = &mut self.checksums
+        {
+            match start {
+                Start::Hash(a) => c.start(a, ui.ctx()),
+                Start::Compare => c.focus_compare = true,
+            }
+        }
+        self.header(ui);
+        ui.add_space(10.0);
+        let labels: Vec<(&str, &str)> = self.tabs.iter().map(|t| t.label()).collect();
+        tab_strip(ui, &labels, &mut self.tab);
+        let tab = self.tabs[self.tab];
+        // Fixed body height so switching tabs doesn't make the modal jump.
+        let body_h = 380.0;
+        let (body, _) = ui.allocate_exact_size(vec2(ui.available_width(), body_h), Sense::hover());
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body).layout(Layout::top_down(Align::Min)));
+        child.set_clip_rect(body.expand(4.0));
+        egui::ScrollArea::vertical().id_salt(("props", tab as u8)).auto_shrink([false, false]).show(&mut child, |ui| {
+            match tab {
+                Tab::General => self.general(ui, ctx.cmds),
+                Tab::Attributes => self.attributes(ui),
+                Tab::Security => self.security(ui),
+                Tab::Checksums => {
+                    if let Some(c) = &mut self.checksums {
+                        c.show(ui, ctx.cmds);
+                    }
+                }
+                Tab::Details => self.details(ui, ctx.cmds),
+            }
+        });
+
+        ui.add_space(12.0);
+        if let Some(e) = &self.error {
+            ui.label(RichText::new(e).font(FontId::proportional(11.5)).color(p.danger));
+            ui.add_space(4.0);
+        }
+        let dirty = self.dirty();
+        let mut ok = false;
+        let mut cancel = false;
+        let mut apply = false;
+        ui.horizontal(|ui| {
+            if dirty {
+                badge(ui, Some(ph::PENCIL_SIMPLE), "Unsaved changes", p.accent);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                ok = button(ui, "OK", Btn::Primary).clicked();
+                cancel = button(ui, "Cancel", Btn::Secondary).clicked();
+                ui.add_enabled_ui(dirty, |ui| {
+                    apply = button(ui, "Apply", Btn::Ghost).clicked() && dirty;
+                });
+            });
+        });
+        let text_focused =
+            ui.ctx().memory(|m| m.focused()).is_some_and(|id| TextEdit::load_state(ui.ctx(), id).is_some());
+        if ui.input(|i| i.key_pressed(Key::Enter)) && (!text_focused || self.single().is_some()) {
+            ok = true;
+        }
+        if apply {
+            self.commit(ctx.cmds);
+        }
+        if ok {
+            return !self.commit(ctx.cmds);
+        }
+        !cancel
+    }
+}

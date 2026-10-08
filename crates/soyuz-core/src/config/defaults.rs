@@ -285,6 +285,7 @@ fn common(km: &mut Keymap) {
     b(L, A::SelectNone, NONE, KeyName::Escape);
     b(L, A::Open, NONE, KeyName::Enter);
     b(L, A::Properties, ALT, KeyName::Enter);
+    b(L, A::BatchRename, CTRL_SHIFT, KeyName::R);
     b(L, A::Delete, NONE, KeyName::Delete);
     b(L, A::DeletePermanent, SHIFT, KeyName::Delete);
     b(L, A::NewFolder, CTRL_SHIFT, KeyName::N);

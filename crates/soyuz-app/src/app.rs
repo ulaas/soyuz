@@ -331,7 +331,11 @@ impl SoyuzApp {
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
-        let dispatched = keys::dispatch(ctx, &self.keymap, kctx, text_focused, self.config.keys.cmd_is_ctrl);
+        let mut dispatched = keys::dispatch(ctx, &self.keymap, kctx, text_focused, self.config.keys.cmd_is_ctrl);
+        if kctx == KeyContext::FileList && !text_focused {
+            // Ctrl+V with only files on the OS clipboard produces no egui event.
+            crate::services::os_clipboard::paste_key_fallback(ctx, &self.keymap, &mut dispatched);
+        }
         for d in dispatched {
             actions::execute(self, d.action, ctx);
         }

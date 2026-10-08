@@ -348,12 +348,6 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 app.cmds.push(Cmd::CopyText(items.join(sep)));
             }
         }
-        A::Properties => {
-            app.ui.toasts.push(
-                Toast::info("Properties are coming soon")
-                    .body("The properties dialog lands with the metadata milestone."),
-            );
-        }
 
         // ---- tools ----
         A::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
@@ -380,6 +374,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
         A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
         A::TestArchive => crate::ui::archive::test_archive(app),
+        a if crate::ui::dialogs::properties::handles(app, &a) => crate::ui::dialogs::properties::execute(app, a, ctx),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, ctx),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {

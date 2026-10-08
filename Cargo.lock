@@ -3982,6 +3982,7 @@ dependencies = [
 name = "soyuz-app"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "crossbeam-channel",
  "eframe",
  "egui",
@@ -3991,6 +3992,7 @@ dependencies = [
  "image",
  "log",
  "parking_lot",
+ "regex",
  "serde",
  "soyuz-archive",
  "soyuz-core",
@@ -4001,6 +4003,7 @@ dependencies = [
  "syntect",
  "tempfile",
  "toml",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

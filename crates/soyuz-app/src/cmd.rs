@@ -93,4 +93,6 @@ pub enum Cmd {
     RemoveSavedSearch(usize),
     /// File operations (clipboard, drag and drop, rename, prompts, trash): `ops::fileops`.
     FileOp(crate::ops::fileops::FileOpCmd),
+    /// Metadata dialogs (properties, attributes, batch rename, links): `ui::dialogs::properties`.
+    Meta(crate::ui::dialogs::properties::MetaCmd),
 }
