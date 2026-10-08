@@ -63,11 +63,8 @@ pub struct SearchUi {
 impl SearchUi {
     pub fn new(config: &Config) -> Self {
         let path = soyuz_core::config::config_dir().join("searches.toml");
-        let saved = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|t| toml::from_str::<SavedFile>(&t).ok())
-            .map(|f| f.saved)
-            .unwrap_or_default();
+        // A broken file is backed up and protected from being overwritten (store_file).
+        let saved = crate::services::store_file::load_toml::<SavedFile>(&path).value().saved;
         let config_saved = config
             .search
             .saved
@@ -87,10 +84,7 @@ impl SearchUi {
 
     fn persist(&self) -> Result<(), String> {
         let text = toml::to_string_pretty(&SavedFile { saved: self.saved.clone() }).map_err(|e| e.to_string())?;
-        if let Some(dir) = self.path.parent() {
-            let _ = soyuz_fs::create_dir_all(dir);
-        }
-        soyuz_fs::write_atomic(&self.path, text.as_bytes()).map_err(|e| e.to_string())
+        crate::services::store_file::save_sync(&self.path, text.as_bytes())
     }
 }
 
@@ -146,6 +140,36 @@ fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
     app.ui.focus = Focus::List;
+}
+
+/// Title prefix marking a flat-view listing (so the toggle can leave it again).
+const FLAT_PREFIX: &str = "All files in ";
+
+/// `ToggleFlatView`: list every file below the current folder in one flat, sortable
+/// listing (a recursive soyuz-search walk without a name filter, streamed like search
+/// results). Toggling again inside the flat listing returns to the folder.
+pub fn toggle_flat_view(app: &mut SoyuzApp) {
+    let pane = app.ws.pane();
+    if let Location::Search(id) = &pane.location {
+        if svc::spec(*id).is_some_and(|s| s.title.starts_with(FLAT_PREFIX)) {
+            let id = pane.id;
+            ops::history_jump(app, id, true, 1);
+        }
+        return;
+    }
+    let Some(root) = current_dir(app) else {
+        app.ui.toasts.push(Toast::info("Flat view works in folders"));
+        return;
+    };
+    let query = soyuz_search::SearchQuery {
+        roots: vec![root.clone()],
+        include_hidden: app.ui.show_hidden,
+        respect_gitignore: false,
+        kinds: Some(soyuz_core::EntryKindSet::FILE | soyuz_core::EntryKindSet::SYMLINK),
+        ..Default::default()
+    };
+    let title = format!("{FLAT_PREFIX}{}", soyuz_core::entry::display_name(&root));
+    run_query(app, query, title);
 }
 
 /// Run sidebar entry `i` (config searches first, then user ones).

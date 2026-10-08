@@ -32,13 +32,14 @@ pub fn install(
     appearance: &Appearance,
     overrides: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
-    fonts::install(ctx);
+    let font_warnings = fonts::install(ctx, &appearance.font, &appearance.mono_font);
     let (mut dark, mut light) = if appearance.high_contrast {
         (ORBIT_HC_DARK.clone(), ORBIT_HC_LIGHT.clone())
     } else {
         (ORBIT_DARK.clone(), ORBIT_LIGHT.clone())
     };
     let mut warnings = dark.apply_overrides(overrides);
+    warnings.extend(font_warnings);
     // The same overrides apply to both palettes; report problems only once.
     let _ = light.apply_overrides(overrides);
     let opts = ThemeOptions {

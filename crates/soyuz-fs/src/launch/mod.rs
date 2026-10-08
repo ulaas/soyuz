@@ -219,22 +219,91 @@ pub fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<()> {
     Err(last_err.unwrap_or_else(|| FsError::unsupported("open_terminal", Some(dir))))
 }
 
+/// Quote `s` as a PowerShell single-quoted string literal. PowerShell treats the
+/// typographic quotes `‘ ’ ‚ ‛` exactly like `'`, so every one of them is doubled too;
+/// nothing else is special inside single quotes (no `$`, backtick or subexpression).
+pub fn powershell_quote(s: &str) -> String {
+    let mut q = String::with_capacity(s.len() + 2);
+    q.push('\'');
+    for c in s.chars() {
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            q.push(c);
+        }
+        q.push(c);
+    }
+    q.push('\'');
+    q
+}
+
+/// Encode a script for `powershell.exe -EncodedCommand` (base64 of UTF-16LE). This keeps
+/// the script away from both the CRT and PowerShell's own command-line parsing.
+pub fn powershell_encoded_command(script: &str) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = (u32::from(chunk[0]) << 16)
+            | (u32::from(*chunk.get(1).unwrap_or(&0)) << 8)
+            | u32::from(*chunk.get(2).unwrap_or(&0));
+        out.push(T[(n >> 18) as usize & 63] as char);
+        out.push(T[(n >> 12) as usize & 63] as char);
+        out.push(if chunk.len() > 1 { T[(n >> 6) as usize & 63] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[n as usize & 63] as char } else { '=' });
+    }
+    out
+}
+
+/// Quote one argument for a Windows command line as the MSVC CRT /
+/// `CommandLineToArgvW` parse it (backslashes before a `"` are doubled).
+pub fn windows_quote_arg(arg: &str) -> String {
+    if !arg.is_empty() && !arg.contains([' ', '\t', '\n', '\u{b}', '"']) {
+        return arg.to_string();
+    }
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let mut backslashes = 0usize;
+    for c in arg.chars() {
+        match c {
+            '\\' => backslashes += 1,
+            '"' => {
+                out.extend(std::iter::repeat_n('\\', backslashes * 2 + 1));
+                out.push('"');
+                backslashes = 0;
+            }
+            _ => {
+                out.extend(std::iter::repeat_n('\\', backslashes));
+                out.push(c);
+                backslashes = 0;
+            }
+        }
+    }
+    out.extend(std::iter::repeat_n('\\', backslashes * 2));
+    out.push('"');
+    out
+}
+
+/// The `Start-Process -Verb RunAs` script for [`run_elevated`]. `-ArgumentList` gets one
+/// pre-quoted command-line string (Start-Process joins list items with bare spaces, which
+/// would split arguments containing spaces).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn elevate_script(exe: &str, args: &[String]) -> String {
+    let mut script = format!("Start-Process -Verb RunAs -FilePath {}", powershell_quote(exe));
+    if !args.is_empty() {
+        let line: Vec<String> = args.iter().map(|a| windows_quote_arg(a)).collect();
+        script.push_str(&format!(" -ArgumentList {}", powershell_quote(&line.join(" "))));
+    }
+    script
+}
+
 /// Run `exe` elevated (UAC prompt via an external `powershell Start-Process -Verb RunAs`
 /// on Windows, `pkexec` on Linux; see PLAN §4). `Unsupported` on macOS.
 pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     #[cfg(windows)]
     {
-        let quote = |s: &str| format!("'{}'", s.replace('\'', "''"));
-        let mut script = format!(
-            "Start-Process -Verb RunAs -FilePath {}",
-            quote(&crate::path::strip_verbatim(exe).to_string_lossy())
-        );
-        if !args.is_empty() {
-            let list: Vec<String> = args.iter().map(|a| quote(a)).collect();
-            script.push_str(&format!(" -ArgumentList {}", list.join(",")));
-        }
+        let script = elevate_script(&crate::path::strip_verbatim(exe).to_string_lossy(), args);
         let mut c = Command::new("powershell.exe");
-        c.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", &script]);
+        c.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"])
+            .arg(powershell_encoded_command(&script));
         spawn_detached(c, "run_elevated", exe)
     }
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -292,6 +361,42 @@ pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn powershell_quoting_covers_typographic_quotes() {
+        assert_eq!(powershell_quote("a b"), "'a b'");
+        assert_eq!(powershell_quote("it's"), "'it''s'");
+        assert_eq!(powershell_quote("it’s"), "'it’’s'");
+        assert_eq!(powershell_quote("‘x‛‚"), "'‘‘x‛‛‚‚'");
+        assert_eq!(powershell_quote("$(calc) `n"), "'$(calc) `n'");
+        assert_eq!(powershell_quote(""), "''");
+    }
+
+    #[test]
+    fn encoded_command_is_utf16le_base64() {
+        assert_eq!(powershell_encoded_command("dir"), "ZABpAHIA");
+        assert_eq!(powershell_encoded_command(""), "");
+        assert_eq!(powershell_encoded_command("a"), "YQA=");
+    }
+
+    #[test]
+    fn windows_arg_quoting() {
+        assert_eq!(windows_quote_arg("plain"), "plain");
+        assert_eq!(windows_quote_arg(""), "\"\"");
+        assert_eq!(windows_quote_arg("a b"), "\"a b\"");
+        assert_eq!(windows_quote_arg(r"C:\a b\"), r#""C:\a b\\""#);
+        assert_eq!(windows_quote_arg(r#"say "hi""#), r#""say \"hi\"""#);
+        assert_eq!(windows_quote_arg(r#"a\"b c"#), r#""a\\\"b c""#);
+    }
+
+    #[test]
+    fn elevate_script_quotes_hostile_names() {
+        let s = elevate_script(r"C:\it’s; calc ‘.exe", &["a b".into(), "x’;calc;’".into()]);
+        assert_eq!(
+            s,
+            "Start-Process -Verb RunAs -FilePath 'C:\\it’’s; calc ‘‘.exe' -ArgumentList '\"a b\" x’’;calc;’’'"
+        );
+    }
 
     #[test]
     fn shortcut_targets() {

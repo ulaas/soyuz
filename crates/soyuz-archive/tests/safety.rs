@@ -104,6 +104,37 @@ fn tar_slip_is_rejected() {
     assert_eq!(std::fs::read(dest.join("good.txt")).unwrap(), b"good");
 }
 
+#[test]
+fn chained_symlinks_cannot_escape() {
+    // `d/l1 -> ..` stays inside on its own; `l2 -> d/l1/..` is lexically `d` but on
+    // disk resolves to the parent of the destination. It must be refused whether it
+    // comes before or after the link it traverses.
+    let d = tempfile::tempdir().unwrap();
+    let archive = d.path().join("chain.tar");
+    write_raw_tar(
+        &archive,
+        &[
+            ("l2", tar::EntryType::Symlink, "d/l1/..", b""),
+            ("d/l1", tar::EntryType::Symlink, "..", b""),
+            ("l3", tar::EntryType::Symlink, "d/l1/../..", b""),
+            ("ok.txt", tar::EntryType::Regular, "", b"ok"),
+        ],
+    );
+    let mut r = open(&archive, None).unwrap();
+    let dest = d.path().join("dest");
+    let mut sink = TestSink::default();
+    r.extract(None, &dest, &ExtractOptions::default(), &OpControl::new(), &mut sink).unwrap();
+    for name in ["l2", "l3"] {
+        assert!(
+            sink.errors.iter().any(|(p, e)| p == name && matches!(e, ArchiveError::ZipSlip(_))),
+            "{name}: {:?}",
+            sink.errors
+        );
+        assert!(std::fs::symlink_metadata(dest.join(name)).is_err(), "{name} must not be created");
+    }
+    assert_eq!(std::fs::read(dest.join("ok.txt")).unwrap(), b"ok");
+}
+
 #[cfg(unix)]
 #[test]
 fn never_writes_through_symlinks() {

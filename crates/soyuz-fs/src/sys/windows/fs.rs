@@ -604,22 +604,42 @@ pub(crate) fn allocated_ranges(f: &File, size: u64) -> io::Result<Vec<(u64, u64)
     const ENTRY: usize = size_of::<FILE_ALLOCATED_RANGE_BUFFER>();
     let mut out = Vec::new();
     let mut start = 0u64;
-    let mut buf = vec![0u8; ENTRY * 512];
+    // Typed (8-byte aligned) buffers: the kernel writes FILE_ALLOCATED_RANGE_BUFFERs.
+    let zero = FILE_ALLOCATED_RANGE_BUFFER { FileOffset: 0, Length: 0 };
+    let mut buf = vec![zero; 512];
     while start < size {
-        let mut input = Vec::with_capacity(ENTRY);
-        input.extend_from_slice(&(start as i64).to_le_bytes());
-        input.extend_from_slice(&((size - start) as i64).to_le_bytes());
-        let (n, more) = match ioctl(raw(f), FSCTL_QUERY_ALLOCATED_RANGES, &input, &mut buf) {
-            Ok(n) => (n as usize, false),
-            Err(e) if e.raw_os_error() == Some(ERROR_MORE_DATA as i32) => (buf.len(), true),
-            Err(e) => return Err(e),
+        let input = FILE_ALLOCATED_RANGE_BUFFER { FileOffset: start as i64, Length: (size - start) as i64 };
+        let mut ret = 0u32;
+        // SAFETY: valid handle; `input` and `buf` are live, correctly typed and sized
+        // for the byte lengths we pass; no overlapped I/O.
+        let ok = unsafe {
+            DeviceIoControl(
+                raw(f),
+                FSCTL_QUERY_ALLOCATED_RANGES,
+                (&input as *const FILE_ALLOCATED_RANGE_BUFFER).cast(),
+                ENTRY as u32,
+                buf.as_mut_ptr().cast(),
+                (buf.len() * ENTRY) as u32,
+                &mut ret,
+                null_mut(),
+            )
+        };
+        let (n, more) = if ok != 0 {
+            (ret as usize / ENTRY, false)
+        } else {
+            let e = last_err();
+            if e.raw_os_error() == Some(ERROR_MORE_DATA as i32) {
+                // `ret` holds the bytes written so far.
+                ((ret as usize / ENTRY).min(buf.len()), true)
+            } else {
+                return Err(e);
+            }
         };
         let mut last_end = start;
-        for chunk in buf[..n - n % ENTRY].as_chunks::<ENTRY>().0 {
-            let off = i64::from_le_bytes(chunk[..8].try_into().expect("8 bytes")) as u64;
-            let len = i64::from_le_bytes(chunk[8..16].try_into().expect("8 bytes")) as u64;
+        for r in &buf[..n.min(buf.len())] {
+            let (off, len) = (r.FileOffset as u64, r.Length as u64);
             out.push((off, len));
-            last_end = off + len;
+            last_end = off.saturating_add(len);
         }
         if !more || last_end <= start {
             break;

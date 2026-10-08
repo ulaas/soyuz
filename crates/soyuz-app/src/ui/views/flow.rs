@@ -589,7 +589,7 @@ fn paint_details_row(
             let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
             let galley = trunc_galley(
                 painter,
-                &e.name,
+                &super::display_name(e),
                 FontId::proportional(13.0),
                 color,
                 x1 - tx - 8.0 - deco.trailing_width(),
@@ -660,7 +660,7 @@ fn paint_grid_cell(
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let font = FontId::proportional(if zoom < 48.0 { 12.0 } else { 12.5 });
     let rows = if gallery { 1 } else { 2 };
-    let galley = wrapped_galley(painter, &e.name, font, color, r.width() - 10.0, rows);
+    let galley = wrapped_galley(painter, &super::display_name(e), font, color, r.width() - 10.0, rows);
     let gy = icon_box.bottom() + 6.0;
     painter.galley(pos2(r.center().x, gy), galley, color);
 }
@@ -693,7 +693,7 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
     let right_pad = if miller && e.is_dir_like() { 24.0 } else { 8.0 };
     let color = deco.name_color(p, p.text_primary).gamma_multiply(a);
     let max_w = r.right() - x - 24.0 - right_pad - deco.trailing_width();
-    let galley = trunc_galley(painter, &e.name, FontId::proportional(13.0), color, max_w);
+    let galley = trunc_galley(painter, &super::display_name(e), FontId::proportional(13.0), color, max_w);
     let gw = galley.size().x;
     painter.galley(pos2(x + 24.0, cy - galley.size().y / 2.0), galley, color);
     deco.paint_tags(painter, p, x + 24.0 + gw, cy, p.bg_surface1);
@@ -745,7 +745,10 @@ fn in_name_extent(
     let Some(e) = pane.entry_at(i) else { return false };
     let Some(r) = layout.item_rect(i) else { return false };
     let x0 = origin_x + name.x + if checkbox { 8.0 + CHECK + 10.0 } else { 10.0 };
-    let w = painter.layout_no_wrap(e.name.clone(), FontId::proportional(13.0), Color32::WHITE).size().x;
+    let w = painter
+        .layout_no_wrap(super::display_name(e).into_owned(), FontId::proportional(13.0), Color32::WHITE)
+        .size()
+        .x;
     let x1 = (x0 + 24.0 + w + 6.0).min(origin_x + name.x + name.w);
     let y = pos.y - list_top;
     pos.x >= x0 && pos.x <= x1 && y >= r.top() && y <= r.bottom()

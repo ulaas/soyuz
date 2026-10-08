@@ -122,6 +122,16 @@ impl TerminalPanel {
     fn session_mut(&mut self, id: u64) -> Option<&mut Session> {
         self.sessions.iter_mut().find(|s| s.id == id)
     }
+
+    /// A tab was closed: drop (and thereby kill) the shells it owned in per-tab mode
+    /// (REVIEW-2 #9). Shared sessions (`tab == None`) are untouched.
+    pub fn drop_tab(&mut self, tab: u64) {
+        self.sessions.retain(|s| s.tab != Some(tab));
+        self.active.retain(|(o, _)| *o != tab);
+        if self.last_pane_dir.as_ref().is_some_and(|(t, _)| *t == tab) {
+            self.last_pane_dir = None;
+        }
+    }
 }
 
 fn settings_for(app: &SoyuzApp, cwd: &Path) -> TermSettings {
@@ -232,6 +242,15 @@ pub fn open_at(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf) {
 /// Run a shell command line in `dir` with its output in the terminal panel: typed into
 /// the active session when it is idle (after a `cd`), otherwise into a new session.
 pub fn run_command(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf, line: &str) {
+    // Typed text goes through the shell's line editor: a newline/escape in a (crafted)
+    // file name would run extra commands no matter how it is quoted (REVIEW-2 #3).
+    if soyuz_term::has_control_chars(line) || soyuz_term::has_control_chars(&dir.to_string_lossy()) {
+        app.ui.toasts.push(
+            Toast::error("Command not run")
+                .body("The command line or folder contains control characters (e.g. a newline) and cannot be typed into a shell safely."),
+        );
+        return;
+    }
     app.ui.bottom.open = true;
     app.ui.bottom.tab = BottomTab::Terminal;
     let owner = TerminalPanel::owner(app.config.terminal.per_tab, app.ws.tab().id.0);
@@ -406,6 +425,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 && let Some(id) = active
                 && let Some(s) = app.ui.terminal.session_mut(id)
                 && !s.last_dir.as_deref().is_some_and(|d| same_dir(d, &dir))
+                // `send_cd` refuses these anyway (REVIEW-2 #3); don't flag the shell busy.
+                && !soyuz_term::has_control_chars(&dir.to_string_lossy())
             {
                 s.pending_cd = Some((dir, Instant::now()));
             }
@@ -598,6 +619,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let focused = app.ui.terminal.focused;
     let font_size = app.config.terminal.font_size.clamp(7.0, 32.0);
     let mut link = None;
+    let mut link_base: Option<PathBuf> = None;
     let mut esc = false;
     let mut wants = false;
     if let Some(s) = app.ui.terminal.sessions.iter().find(|s| s.id == active) {
@@ -612,6 +634,9 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                     .show(&mut child);
                 wants = r.wants_focus;
                 link = r.link_clicked;
+                if link.is_some() {
+                    link_base = term.cwd().or_else(|| s.last_dir.clone());
+                }
                 esc = r.escape_on_empty_line;
             }
             None => {
@@ -647,7 +672,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         unfocus(app, &ctx);
     }
     if let Some(url) = link {
-        open_link(app, &ctx, &url);
+        open_link(app, &ctx, &url, link_base.as_deref());
     }
 
     if let Some(id) = to_activate {
@@ -677,21 +702,109 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
 }
 
 /// Ctrl+click on a link: URLs go to the browser, paths open in the pane / default app.
-fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str) {
+/// Relative paths resolve against the session's working directory (not the app's), and
+/// executables are revealed rather than run: terminal output is untrusted text
+/// (REVIEW-2 #24).
+fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&Path>) {
     let lower = url.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {
         ctx.open_url(egui::OpenUrl::new_tab(url));
         return;
     }
-    let path = PathBuf::from(url.strip_prefix("file://").unwrap_or(url));
+    let Some(path) = resolve_link(url, base) else {
+        app.ui.toasts.push(Toast::info("Link target not found").body(url.to_string()));
+        return;
+    };
     if path.is_dir() {
         let pane = app.ws.pane().id;
         app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
     } else if path.exists() {
-        crate::ops::launch(app, &path);
+        if looks_executable(&path) {
+            app.ui
+                .toasts
+                .push(Toast::info("Executable revealed, not run").body(
+                    "Links in terminal output never start programs. Open it from the file list if you trust it.",
+                ));
+            app.cmds.push(Cmd::RevealPath(path));
+        } else {
+            crate::ops::launch(app, &path);
+        }
     } else {
         app.ui.toasts.push(Toast::info("Link target not found").body(url.to_string()));
     }
+}
+
+/// The filesystem path a terminal link points at. `None` for a relative link when the
+/// session's directory is unknown (never resolve against the app's own cwd).
+fn resolve_link(url: &str, base: Option<&Path>) -> Option<PathBuf> {
+    let raw = url.strip_prefix("file://").unwrap_or(url);
+    let p = PathBuf::from(raw);
+    if p.is_absolute() {
+        return Some(p);
+    }
+    // `C:foo` / `oo` style partial paths are neither absolute nor safely relative.
+    if p.has_root() || matches!(p.components().next(), Some(std::path::Component::Prefix(_))) {
+        return None;
+    }
+    base.filter(|b| b.is_absolute()).map(|b| b.join(p))
+}
+
+/// Files that would *run* something when opened with the default handler.
+fn looks_executable(path: &Path) -> bool {
+    const EXTS: &[&str] = &[
+        "exe",
+        "com",
+        "bat",
+        "cmd",
+        "ps1",
+        "psm1",
+        "msi",
+        "msp",
+        "scr",
+        "pif",
+        "cpl",
+        "vbs",
+        "vbe",
+        "js",
+        "jse",
+        "wsf",
+        "wsh",
+        "hta",
+        "lnk",
+        "url",
+        "jar",
+        "reg",
+        "inf",
+        "appref-ms",
+        "application",
+        "msc",
+        "sh",
+        "bash",
+        "zsh",
+        "fish",
+        "command",
+        "desktop",
+        "appimage",
+        "run",
+        "py",
+        "pyw",
+        "pl",
+        "rb",
+        "app",
+        "pkg",
+        "deb",
+        "rpm",
+    ];
+    let ext_hit =
+        path.extension().and_then(|e| e.to_str()).is_some_and(|e| EXTS.iter().any(|x| x.eq_ignore_ascii_case(e)));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::metadata(path).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0) {
+            return true;
+        }
+    }
+    ext_hit
 }
 
 // ---- CJK / emoji fallback font -------------------------------------------------------
@@ -806,5 +919,21 @@ mod tests {
         #[cfg(windows)]
         assert!(same_dir(Path::new(r"C:\A\b"), Path::new(r"c:\a\B")));
         assert!(!same_dir(Path::new("/a/b"), Path::new("/a/c")));
+    }
+
+    #[test]
+    fn links_resolve_against_session_cwd() {
+        let base = std::env::temp_dir();
+        assert_eq!(resolve_link("src/main.rs", Some(&base)), Some(base.join("src/main.rs")));
+        assert_eq!(resolve_link("src/main.rs", None), None, "never the app's cwd");
+        assert_eq!(resolve_link("rel", Some(Path::new("relative/base"))), None);
+        let abs = base.join("x.txt");
+        assert_eq!(resolve_link(&abs.to_string_lossy(), None), Some(abs.clone()));
+        #[cfg(windows)]
+        assert_eq!(resolve_link("C:evil.exe", Some(&base)), None);
+        assert!(looks_executable(Path::new("setup.EXE")));
+        assert!(looks_executable(Path::new("x.ps1")));
+        assert!(looks_executable(Path::new("run.sh")));
+        assert!(!looks_executable(Path::new("notes.txt")));
     }
 }

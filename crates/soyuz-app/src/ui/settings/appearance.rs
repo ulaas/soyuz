@@ -190,7 +190,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
         r.row_kw(
             "Interface font",
-            "Font family name (bundled: Inter). Takes effect after restart.",
+            "Font family (matched against installed font files) or a .ttf/.otf path. Bundled: Inter.",
             "typeface",
             |ui| {
                 text(ui, &mut d.appearance.font, "Inter", 180.0);
@@ -213,9 +213,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row("Sidebar width", "", |ui| {
             number(ui, &mut d.appearance.sidebar_width, 160.0..=420.0, " px");
         });
-        r.row_kw("Custom title bar", "Draw Soyuz's own window title bar (after restart).", "decorations", |ui| {
-            switch(ui, &mut d.appearance.custom_titlebar);
-        });
+        // `custom_titlebar` is not offered here: Soyuz has no own title bar yet (window
+        // dragging / resizing / snap would all need to be reimplemented); the key stays
+        // accepted in config.toml for forward compatibility.
     });
     any |= group(ui, q, ctx, "Theme colors", |r| {
         r.block(

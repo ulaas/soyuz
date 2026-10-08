@@ -119,7 +119,11 @@ static NAMES: OnceLock<Mutex<HashMap<String, Arc<str>>>> = OnceLock::new();
 
 /// `DOMAIN\name` of a SID (cached by SID string; the SID string when unresolvable).
 pub(crate) fn sid_name(sid: PSID) -> Arc<str> {
-    let key = sid_string(sid).unwrap_or_default();
+    // A failed conversion must not be cached (every unconvertible SID would share the
+    // `""` slot and get the first one's name); resolve it uncached instead.
+    let Ok(key) = sid_string(sid) else {
+        return lookup_sid(sid).unwrap_or_else(|| "(unknown SID)".to_string()).into();
+    };
     let cache = NAMES.get_or_init(Default::default);
     if let Some(n) = cache.lock().get(&key) {
         return n.clone();

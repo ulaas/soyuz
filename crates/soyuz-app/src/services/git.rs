@@ -227,32 +227,147 @@ pub fn read_branch(git_dir: &Path) -> Option<String> {
     std::fs::read_to_string(git_dir.join("HEAD")).ok().and_then(|t| parse_head(&t))
 }
 
-/// Run `git status` in `root` with a timeout. Blocking; run off the UI thread.
-pub fn run_status(root: &Path, timeout: Duration) -> Result<Porcelain, String> {
-    let mut cmd = Command::new("git");
+// Hardening (REVIEW-2 #2). The folder being browsed may be an untrusted repository (a
+// downloaded archive, a USB stick, a network share), and git reads `.git/config` from it.
+// What `git status` can be made to *execute* from repo-controlled config, and how each is
+// neutralised here:
+//
+// * `core.fsmonitor` (a hook command)                → `-c core.fsmonitor=false`.
+// * clean filters (`filter.<drv>.clean` / `.process`), selected by the in-tree
+//   `.gitattributes` and run when a stat-dirty file has to be re-hashed → every driver
+//   defined in repo-controlled config is overridden on the command line with empty
+//   commands and `required=false` (git treats an empty command as "no filter"). Command
+//   line `-c` has the highest precedence. Drivers from the user's own global config
+//   (e.g. git-lfs) are left alone; system config is skipped (`GIT_CONFIG_NOSYSTEM`).
+//   The in-tree `.gitattributes` cannot be disabled, hence overriding the drivers.
+// * `post-index-change` hook (runs when the index is rewritten) → `--no-optional-locks`
+//   / `GIT_OPTIONAL_LOCKS=0`: status never writes the index, so it never fires. No other
+//   hook is run by `status`.
+// * submodules: status recurses by running git *inside each submodule*, whose config we
+//   have not inspected                                 → `--ignore-submodules=all`.
+// * lazy fetch in partial clones (missing blobs fetched via the repo's remote URL, `ext::`
+//   transports, `core.sshCommand`)                     → `GIT_NO_LAZY_FETCH=1`,
+//   `-c protocol.allow=never`.
+// * pager (`pager.status` + `core.pager`)            → `--no-pager`, `GIT_PAGER=cat`
+//   (stdout is a pipe anyway).
+// * `core.untrackedCache` would write into `.git`   → `-c core.untrackedCache=false`.
+//
+// Diff drivers / `textconv`, credential helpers, editors and GPG are not used by `status`.
+// git's own `safe.directory` ownership check stays in force. Residual risk: a future git
+// release adding another config-driven command to `status`; a driver name that cannot be
+// expressed as `-c` makes us refuse to run status at all.
+
+/// Apply the repository-independent hardening flags and environment.
+fn hardened(cmd: &mut Command, root: &Path) {
+    cmd.current_dir(root)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_NO_LAZY_FETCH", "1")
+        .env("GIT_PAGER", "cat")
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_EXTERNAL_DIFF")
+        .stdin(Stdio::null());
     cmd.args([
+        "--no-pager",
+        "--no-optional-locks",
+        "-c",
+        "core.fsmonitor=false",
+        "-c",
+        "core.untrackedCache=false",
+        "-c",
+        "protocol.allow=never",
         "-c",
         "core.quotepath=off",
-        "--no-optional-locks",
-        "status",
-        "--porcelain=v2",
-        "-z",
-        "--branch",
-        "--untracked-files=normal",
-        "--ignored=matching",
-    ])
-    .current_dir(root)
-    .env("GIT_OPTIONAL_LOCKS", "0")
-    .env("GIT_TERMINAL_PROMPT", "0")
-    .stdin(Stdio::null())
-    .stdout(Stdio::piped())
-    .stderr(Stdio::piped());
+    ]);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+}
+
+/// Parse `git config [--show-scope] --name-only --get-regexp ^filter\.` output into the
+/// driver names to neutralise (everything not from the user's global/system config).
+/// `None` when a name cannot be passed back safely via `-c`.
+fn parse_filter_drivers(out: &str) -> Option<Vec<String>> {
+    let mut names: Vec<String> = Vec::new();
+    for line in out.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
+            continue;
+        }
+        // Without `--show-scope` (old git) every driver counts as untrusted.
+        let (scope, key) = line.split_once('\t').unwrap_or(("local", line));
+        if scope == "global" || scope == "system" {
+            continue;
+        }
+        let Some(rest) = key.strip_prefix("filter.") else { continue };
+        let Some((name, _var)) = rest.rsplit_once('.') else { continue };
+        if name.is_empty() || name.contains(['=', '\n', '\r', '\0']) {
+            return None;
+        }
+        if !names.iter().any(|n| n == name) {
+            names.push(name.to_string());
+        }
+    }
+    Some(names)
+}
+
+fn config_filter_keys(root: &Path, show_scope: bool) -> std::io::Result<std::process::Output> {
+    let mut cmd = Command::new("git");
+    hardened(&mut cmd, root);
+    cmd.arg("config");
+    if show_scope {
+        cmd.arg("--show-scope");
+    }
+    cmd.args(["--name-only", "--get-regexp", r"^filter\."]).stdout(Stdio::piped()).stderr(Stdio::null());
+    cmd.output()
+}
+
+/// Filter drivers defined in repo-controlled config. Reading config runs no commands.
+fn repo_filter_drivers(root: &Path) -> Result<Vec<String>, String> {
+    let mut out = config_filter_keys(root, true).map_err(|e| format!("git not available: {e}"))?;
+    // Exit code 1 = no matching keys; anything else may be a git older than 2.26 that
+    // lacks `--show-scope`: retry without it (then every driver is neutralised).
+    if !out.status.success() && out.status.code() != Some(1) {
+        out = config_filter_keys(root, false).map_err(|e| format!("git not available: {e}"))?;
+    }
+    parse_filter_drivers(&String::from_utf8_lossy(&out.stdout))
+        .ok_or_else(|| "refusing to run git status: unusual filter driver name".to_string())
+}
+
+/// Build the hardened `git status` command for `root` (see the notes above).
+fn status_command(root: &Path) -> Result<Command, String> {
+    let drivers = repo_filter_drivers(root)?;
+    let mut cmd = Command::new("git");
+    hardened(&mut cmd, root);
+    for d in &drivers {
+        for (var, val) in [("clean", ""), ("smudge", ""), ("process", ""), ("required", "false")] {
+            cmd.arg("-c").arg(format!("filter.{d}.{var}={val}"));
+        }
+    }
+    cmd.args([
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--branch",
+        "--untracked-files=normal",
+        "--ignored=matching",
+        "--ignore-submodules=all",
+    ])
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
+    Ok(cmd)
+}
+
+/// Run `git status` in `root` with a timeout. Blocking; run off the UI thread.
+pub fn run_status(root: &Path, timeout: Duration) -> Result<Porcelain, String> {
+    let mut cmd = status_command(root)?;
     let mut child = cmd.spawn().map_err(|e| format!("git not available: {e}"))?;
     let mut stdout = child.stdout.take().ok_or("no stdout")?;
     let mut stderr = child.stderr.take().ok_or("no stderr")?;
@@ -727,6 +842,70 @@ mod tests {
         assert_eq!(ix.untracked, 2);
         assert_eq!(ix.changed, 4);
         assert_eq!(ix.staged, 2);
+    }
+
+    #[test]
+    fn filter_driver_parsing() {
+        let out = "local\tfilter.evil.clean\nglobal\tfilter.lfs.process\nworktree\tfilter.a.b.smudge\n\
+                   local\tfilter.evil.required\ncommand\tfilter.x.clean\n";
+        assert_eq!(parse_filter_drivers(out).unwrap(), vec!["evil", "a.b", "x"]);
+        // Old git without --show-scope: everything counts.
+        assert_eq!(parse_filter_drivers("filter.lfs.clean\n").unwrap(), vec!["lfs"]);
+        assert!(parse_filter_drivers("local\tfilter.a=b.clean\n").is_none());
+        assert_eq!(parse_filter_drivers("").unwrap(), Vec::<String>::new());
+    }
+
+    /// End-to-end: a hostile repo config must not get commands executed by our status run.
+    #[test]
+    fn status_does_not_run_repo_filters_or_fsmonitor() {
+        let git = |dir: &Path, args: &[&str]| {
+            Command::new("git")
+                .args(["-c", "user.email=t@t", "-c", "user.name=t", "-c", "core.autocrlf=false"])
+                .args(args)
+                .current_dir(dir)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        let t = tempfile::tempdir().unwrap();
+        let repo = t.path().join("r");
+        std::fs::create_dir_all(&repo).unwrap();
+        if !git(&repo, &["init", "-q"]) {
+            eprintln!("git not available; skipping");
+            return;
+        }
+        std::fs::write(repo.join(".gitattributes"), "*.txt filter=evil\n").unwrap();
+        std::fs::write(repo.join("a.txt"), "hi\n").unwrap();
+        assert!(git(&repo, &["add", "-A"]));
+        assert!(git(&repo, &["commit", "-qm", "x"]));
+        let filter_marker = t.path().join("PWNED_FILTER");
+        let fsm_marker = t.path().join("PWNED_FSMONITOR");
+        let fm = filter_marker.to_string_lossy().replace('\\', "/");
+        let mm = fsm_marker.to_string_lossy().replace('\\', "/");
+        assert!(git(&repo, &["config", "filter.evil.clean", &format!("echo x > '{fm}'; cat")]));
+        assert!(git(&repo, &["config", "filter.evil.required", "true"]));
+        assert!(git(&repo, &["config", "core.fsmonitor", &format!("echo x > '{mm}'; true")]));
+        // Make the file stat-dirty so git must re-hash it through the filter.
+        // Same size, new mtime: only hashing (through the filter) can tell.
+        let f = std::fs::OpenOptions::new().write(true).open(repo.join("a.txt")).unwrap();
+        f.set_modified(std::time::SystemTime::now() + Duration::from_secs(120)).unwrap();
+        drop(f);
+        let st = run_status(&repo, STATUS_TIMEOUT);
+        assert!(st.is_ok(), "hardened status must still work: {:?}", st.err());
+        assert!(!filter_marker.exists(), "repo-configured clean filter was executed by git status");
+        assert!(!fsm_marker.exists(), "repo-configured fsmonitor was executed by git status");
+        // Control: a plain `git status` does run them (proves the setup is meaningful).
+        let _ = git(&repo, &["status", "--porcelain"]);
+        if !filter_marker.exists() || !fsm_marker.exists() {
+            eprintln!(
+                "control: plain git status ran filter={} fsmonitor={}",
+                filter_marker.exists(),
+                fsm_marker.exists()
+            );
+        }
     }
 
     #[test]

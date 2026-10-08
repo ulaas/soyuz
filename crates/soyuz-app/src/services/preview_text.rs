@@ -71,6 +71,21 @@ pub fn decode_text(bytes: &[u8]) -> (String, &'static str) {
     }
 }
 
+/// `[preview] syntax_theme`: a syntect theme name, or `auto` (follow the app theme).
+static SYNTAX_THEME: parking_lot::RwLock<String> = parking_lot::RwLock::new(String::new());
+
+/// Apply `[preview] syntax_theme`; returns a warning for an unknown theme name.
+pub fn set_syntax_theme(name: &str) -> Option<String> {
+    let name = name.trim();
+    let auto = name.is_empty() || name.eq_ignore_ascii_case("auto");
+    *SYNTAX_THEME.write() = if auto { String::new() } else { name.to_string() };
+    if auto || syntax().1.themes.contains_key(name) {
+        return None;
+    }
+    let known: Vec<&str> = syntax().1.themes.keys().map(String::as_str).collect();
+    Some(format!("[preview] syntax_theme = \"{name}\" is unknown (auto, {}); using auto", known.join(", ")))
+}
+
 fn syntax() -> &'static (SyntaxSet, ThemeSet) {
     static S: OnceLock<(SyntaxSet, ThemeSet)> = OnceLock::new();
     S.get_or_init(|| (SyntaxSet::load_defaults_newlines(), ThemeSet::load_defaults()))
@@ -124,7 +139,9 @@ pub fn highlight(
     let (ss, ts) = syntax();
     let lang = language_name(name);
     let syntax = lang.as_deref().and_then(|l| ss.find_syntax_by_name(l));
-    let theme = &ts.themes[if dark { "base16-ocean.dark" } else { "InspiredGitHub" }];
+    let configured = SYNTAX_THEME.read().clone();
+    let auto = if dark { "base16-ocean.dark" } else { "InspiredGitHub" };
+    let theme = ts.themes.get(configured.trim()).unwrap_or(&ts.themes[auto]);
     let mut hl = syntax.map(|s| HighlightLines::new(s, theme));
     let start = Instant::now();
     let mut jobs = Vec::new();

@@ -385,6 +385,9 @@ pub struct PropertiesDialog {
     error: Option<String>,
     thumb: Option<Bg<Option<egui::ColorImage>>>,
     thumb_tex: Option<egui::TextureHandle>,
+    /// Link target of a single symlink / junction, read once in the background (it used
+    /// to be a `read_link` per frame on the UI thread).
+    link_target: Option<Bg<Option<String>>>,
 }
 
 /// Decode a small thumbnail (worker thread).
@@ -459,6 +462,7 @@ impl PropertiesDialog {
             error: None,
             thumb: None,
             thumb_tex: None,
+            link_target: None,
             entries,
         }
     }
@@ -624,10 +628,18 @@ impl PropertiesDialog {
         }
         if let Some(e) = self.single()
             && let EntryKind::Symlink { .. } | EntryKind::Junction = e.kind
-            && let Ok(t) = soyuz_fs::read_link(&e.path)
         {
-            kv_row(ui, "Link target", &soyuz_fs::strip_verbatim(&t).display().to_string());
+            let path = e.path.clone();
+            let bg = self.link_target.get_or_insert_with(|| {
+                Bg::spawn(ui.ctx(), move || {
+                    soyuz_fs::read_link(&path).ok().map(|t| soyuz_fs::strip_verbatim(&t).display().to_string())
+                })
+            });
+            if let Some(t) = bg.with(|t| t.cloned().flatten()) {
+                kv_row(ui, "Link target", &t);
+            }
         }
+
         rule(ui);
         ui.horizontal(|ui| {
             caption(ui, "Dates");

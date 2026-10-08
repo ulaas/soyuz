@@ -235,14 +235,16 @@ pub fn create_dialog(app: &mut SoyuzApp) {
         app.ui.toasts.push(Toast::info("Compress works on files in a folder"));
         return;
     };
-    let sources: Vec<PathBuf> = pane.selected_entries().iter().map(|e| e.path.clone()).collect();
+    let selected = pane.selected_entries();
+    let sources: Vec<PathBuf> = selected.iter().map(|e| e.path.clone()).collect();
     if sources.is_empty() {
         app.ui.toasts.push(Toast::info("Select files or folders to compress"));
         return;
     }
     let base = if sources.len() == 1 {
         let n = soyuz_core::entry::display_name(&sources[0]);
-        if sources[0].is_dir() { n } else { archive_stem(&n) }
+        // The listing knows the kind; no stat on the UI thread.
+        if selected[0].is_dir_like() { n } else { archive_stem(&n) }
     } else {
         soyuz_core::entry::display_name(dir)
     };

@@ -224,6 +224,13 @@ pub(crate) fn which(name: &str) -> Option<String> {
         .map(|p| p.to_string_lossy().into_owned())
 }
 
+/// `true` when `s` contains a C0 control (incl. `\n`, `\r`, ESC), DEL or a C1 control
+/// (U+0080–U+009F, e.g. the 8-bit CSI). Such text must never be typed into a shell:
+/// quoting does not help because the line discipline / line editor acts on them first.
+pub fn has_control_chars(s: &str) -> bool {
+    s.chars().any(|c| (c as u32) < 0x20 || c == '\u{7f}' || ('\u{80}'..='\u{9f}').contains(&c))
+}
+
 /// The text typed by `send_cd` (including the trailing `\r`).
 pub(crate) fn cd_command(kind: ShellKind, dir: &Path) -> String {
     let s = dir.to_string_lossy();
@@ -313,6 +320,16 @@ mod tests {
         let u = Path::new("/home/me/it's $HOME");
         assert_eq!(cd_command(ShellKind::Bash, u), " cd -- '/home/me/it'\\''s $HOME'\r");
         assert_eq!(cd_command(ShellKind::Fish, u), "cd '/home/me/it\\'s $HOME'\r");
+    }
+
+    #[test]
+    fn control_chars_detected() {
+        for bad in ["a\nb", "a\rcalc", "x\x1b[201~", "tab\there", "del\x7f", "c1\u{9b}31m", "nul\0", "\u{85}"] {
+            assert!(has_control_chars(bad), "{bad:?}");
+        }
+        for ok in ["C:\\Users\\me", "/home/it's $HOME", "Ürünler", "a&calc&.txt", "\u{a0}nbsp", "日本"] {
+            assert!(!has_control_chars(ok), "{ok:?}");
+        }
     }
 
     #[test]

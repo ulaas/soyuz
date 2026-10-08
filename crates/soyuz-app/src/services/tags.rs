@@ -175,8 +175,16 @@ impl TagStore {
 // ---------------------------------------------------------------------------------------
 // macOS Finder tags: a minimal binary plist reader for an array of strings.
 
+/// Most Finder tags we read from one file (real files carry a handful).
+const MAX_FINDER_TAGS: usize = 64;
+
 /// Parse a `bplist00` whose top object is an array of strings (Finder's
 /// `_kMDItemUserTags`: `"Red\n6"`, `"Work"`). Returns `(name, finder color)`.
+///
+/// The xattr is attacker-controlled (any downloaded file can carry one), so every count
+/// and offset is bounds-checked with checked arithmetic, object references must be
+/// below the trailer's object count, and the array is capped at [`MAX_FINDER_TAGS`]
+/// before anything is allocated.
 pub fn parse_finder_tags(data: &[u8]) -> Option<Vec<(String, Option<u8>)>> {
     if data.len() < 40 || &data[..8] != b"bplist00" {
         return None;
@@ -185,40 +193,53 @@ pub fn parse_finder_tags(data: &[u8]) -> Option<Vec<(String, Option<u8>)>> {
     let off_size = trailer[6] as usize;
     let ref_size = trailer[7] as usize;
     let be = |b: &[u8]| b.iter().fold(0u64, |a, x| (a << 8) | *x as u64);
-    let num_objects = be(&trailer[8..16]) as usize;
-    let top = be(&trailer[16..24]) as usize;
-    let table = be(&trailer[24..32]) as usize;
+    // Values wider than usize (or than the data) are rejected rather than truncated.
+    let num_objects = usize::try_from(be(&trailer[8..16])).ok()?;
+    let top = usize::try_from(be(&trailer[16..24])).ok()?;
+    let table = usize::try_from(be(&trailer[24..32])).ok()?;
     if off_size == 0 || ref_size == 0 || off_size > 8 || ref_size > 8 || top >= num_objects {
         return None;
     }
+    // The offset table must fit in the data before the trailer.
+    let table_end = num_objects.checked_mul(off_size).and_then(|n| n.checked_add(table))?;
+    if table < 8 || table_end > data.len() - 32 {
+        return None;
+    }
     let offset_of = |i: usize| -> Option<usize> {
+        if i >= num_objects {
+            return None;
+        }
         let s = table.checked_add(i.checked_mul(off_size)?)?;
-        data.get(s..s + off_size).map(|b| be(b) as usize)
+        let o = usize::try_from(be(data.get(s..s.checked_add(off_size)?)?)).ok()?;
+        (o < data.len()).then_some(o)
     };
     // Length that follows a marker: low nibble, or an int object when it is 0xF.
     let length = |pos: usize| -> Option<(usize, usize)> {
         let m = *data.get(pos)?;
         let n = (m & 0x0F) as usize;
         if n != 0x0F {
-            return Some((n, pos + 1));
+            return Some((n, pos.checked_add(1)?));
         }
-        let im = *data.get(pos + 1)?;
-        if im >> 4 != 0x1 {
+        let im = *data.get(pos.checked_add(1)?)?;
+        // Int marker 0x1N with 2^N bytes; we accept up to 8 bytes.
+        if im >> 4 != 0x1 || im & 0x0F > 3 {
             return None;
         }
         let bytes = 1usize << (im & 0x0F);
-        let v = be(data.get(pos + 2..pos + 2 + bytes)?) as usize;
-        Some((v, pos + 2 + bytes))
+        let at = pos.checked_add(2)?;
+        let end = at.checked_add(bytes)?;
+        let v = usize::try_from(be(data.get(at..end)?)).ok()?;
+        Some((v, end))
     };
     let string_at = |obj: usize| -> Option<String> {
         let pos = offset_of(obj)?;
         let m = *data.get(pos)?;
         let (n, start) = length(pos)?;
         match m >> 4 {
-            0x5 => data.get(start..start + n).map(|b| String::from_utf8_lossy(b).into_owned()),
+            0x5 => data.get(start..start.checked_add(n)?).map(|b| String::from_utf8_lossy(b).into_owned()),
             0x6 => {
-                let b = data.get(start..start + n * 2)?;
-                let units: Vec<u16> = b.chunks(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                let b = data.get(start..start.checked_add(n.checked_mul(2)?)?)?;
+                let units: Vec<u16> = b.as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes(*c)).collect();
                 Some(String::from_utf16_lossy(&units))
             }
             _ => None,
@@ -229,10 +250,19 @@ pub fn parse_finder_tags(data: &[u8]) -> Option<Vec<(String, Option<u8>)>> {
         return None;
     }
     let (count, start) = length(pos)?;
+    if count > MAX_FINDER_TAGS || count > num_objects {
+        return None;
+    }
+    // All references must be inside the data before any allocation.
+    let refs_end = count.checked_mul(ref_size).and_then(|n| n.checked_add(start))?;
+    if refs_end > data.len() {
+        return None;
+    }
     let mut out = Vec::with_capacity(count);
     for k in 0..count {
-        let r = data.get(start + k * ref_size..start + (k + 1) * ref_size)?;
-        let s = string_at(be(r) as usize)?;
+        let at = start + k * ref_size;
+        let r = data.get(at..at + ref_size)?;
+        let s = string_at(usize::try_from(be(r)).ok()?)?;
         let (name, color) = match s.split_once('\n') {
             Some((n, c)) => (n.to_string(), c.trim().parse::<u8>().ok()),
             None => (s, None),
@@ -321,15 +351,8 @@ pub fn pump(wake: &std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
             let path = r.path.clone();
             let wake = wake.clone();
             let _ = std::thread::Builder::new().name("soyuz-tags-load".into()).spawn(move || {
-                let store = std::fs::read_to_string(&path)
-                    .ok()
-                    .map(|t| {
-                        TagStore::from_toml(&t).unwrap_or_else(|e| {
-                            log::warn!("{}: {e}", path.display());
-                            TagStore::default()
-                        })
-                    })
-                    .unwrap_or_default();
+                // A broken file is backed up and never overwritten (store_file).
+                let store = super::store_file::load(&path, TagStore::from_toml).value();
                 let _ = tx.send(Reply::Loaded(store));
                 wake();
             });
@@ -357,20 +380,26 @@ pub fn pump(wake: &std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
             }
         }
         if r.dirty && r.loaded && r.last_change.elapsed() > Duration::from_millis(400) {
-            r.dirty = false;
-            let text = r.store.to_toml();
-            let path = r.path.clone();
-            let _ = std::thread::Builder::new().name("soyuz-tags-save".into()).spawn(move || {
-                if let Some(dir) = path.parent() {
-                    let _ = soyuz_fs::create_dir_all(dir);
-                }
-                if let Err(e) = soyuz_fs::write_atomic(&path, text.as_bytes()) {
-                    log::warn!("cannot save tags: {e}");
-                }
-            });
+            queue_save(r);
         }
         arrived
     })
+}
+
+/// Hand the current store to the single ordered save worker.
+fn queue_save(r: &mut Registry) {
+    r.dirty = false;
+    super::store_file::save_async(r.path.clone(), r.store.to_toml().into_bytes());
+}
+
+/// Queue pending changes now, skipping the debounce (`App::save` then calls
+/// `store_file::flush`). Edits made before the file finished loading stay in memory.
+pub fn flush() {
+    REG.with_borrow_mut(|r| {
+        if r.dirty && r.loaded {
+            queue_save(r);
+        }
+    });
 }
 
 /// Display name of a tag slug (`red` → `Red`).
@@ -632,5 +661,48 @@ mod tests {
         let m = finder_mask(&tags);
         assert_eq!(m, (1 << 0) | (1 << 5) | (1 << 3));
         assert!(parse_finder_tags(b"not a plist at all, definitely not one").is_none());
+    }
+
+    /// Patch the 32-byte trailer of a plist built by [`bplist`].
+    fn with_trailer(mut data: Vec<u8>, num_objects: u64, top: u64, table: u64) -> Vec<u8> {
+        let t = data.len() - 32;
+        data[t + 8..t + 16].copy_from_slice(&num_objects.to_be_bytes());
+        data[t + 16..t + 24].copy_from_slice(&top.to_be_bytes());
+        data[t + 24..t + 32].copy_from_slice(&table.to_be_bytes());
+        data
+    }
+
+    #[test]
+    fn hostile_bplists_are_rejected_without_panic() {
+        let good = bplist(&["Red\n6", "Work"]);
+        let table = (good.len() - 32 - 3) as u64;
+        // Offsets / counts near usize::MAX must not overflow or allocate.
+        assert!(parse_finder_tags(&with_trailer(good.clone(), u64::MAX, 0, table)).is_none());
+        assert!(parse_finder_tags(&with_trailer(good.clone(), 3, 0, u64::MAX)).is_none());
+        assert!(parse_finder_tags(&with_trailer(good.clone(), 3, 0, u64::MAX - 1)).is_none());
+        assert!(parse_finder_tags(&with_trailer(good.clone(), 3, 2, 0)).is_none());
+        // Array count announced as 2^62 via an extended int length.
+        let mut huge = b"bplist00".to_vec();
+        huge.extend_from_slice(&[0xAF, 0x13]);
+        huge.extend_from_slice(&(1u64 << 62).to_be_bytes());
+        huge.push(8); // offset table: object 0 at offset 8
+        let table = (huge.len() - 1) as u64;
+        let mut trailer = vec![0u8; 6];
+        trailer.extend_from_slice(&[1, 1]);
+        trailer.extend_from_slice(&1u64.to_be_bytes());
+        trailer.extend_from_slice(&0u64.to_be_bytes());
+        trailer.extend_from_slice(&table.to_be_bytes());
+        huge.extend_from_slice(&trailer);
+        assert!(parse_finder_tags(&huge).is_none());
+        // A string whose length runs past the end.
+        let mut long = bplist(&["Red"]);
+        let s = long.iter().position(|b| *b == 0x53).unwrap();
+        long[s] = 0x5F;
+        let _ = parse_finder_tags(&long);
+        // Every truncation of a valid plist is handled.
+        for n in 0..good.len() {
+            let _ = parse_finder_tags(&good[..n]);
+        }
+        assert_eq!(parse_finder_tags(&good).unwrap().len(), 2);
     }
 }

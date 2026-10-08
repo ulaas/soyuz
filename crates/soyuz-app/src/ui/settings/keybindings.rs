@@ -93,7 +93,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
     let mut actions: Vec<Action> = Action::all();
     let n_bm = app.settings.draft.bookmarks.len();
-    actions.retain(|a| !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm.max(3)));
+    actions.retain(|a| {
+        !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm.max(3)) && !crate::actions::unavailable(a)
+    });
     actions.extend(
         app.settings
             .draft

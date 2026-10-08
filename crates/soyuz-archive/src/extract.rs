@@ -16,7 +16,7 @@ use soyuz_core::{
     ConflictResolution, Control, ErrorAction, FsErrorKind, OpControl, Overwrite, unique_name, validate_name_with,
 };
 
-use crate::util::{CHUNK, EntryExtra, fs_err, fs_kind, path_escapes, read_err, resolve_link_target};
+use crate::util::{CHUNK, EntryExtra, fs_err, fs_kind, path_escapes, read_err, resolve_link_target_via};
 use crate::{ArchiveEntry, ArchiveError, ExtractOptions, ExtractSink, ExtractSummary};
 
 /// Data source for one entry.
@@ -99,6 +99,8 @@ pub(crate) struct Extractor<'a> {
     written: HashMap<String, PathBuf>,
     /// Entry path → index, built on the first hard link.
     by_path: Option<HashMap<&'a str, usize>>,
+    /// Lower-cased destination paths of every symlink entry, built on the first symlink.
+    link_rels: Option<HashSet<String>>,
     buf: Vec<u8>,
     tmp_counter: u64,
 }
@@ -151,6 +153,7 @@ impl<'a> Extractor<'a> {
             dir_meta: Vec::new(),
             written: HashMap::new(),
             by_path: None,
+            link_rels: None,
             buf: vec![0u8; CHUNK],
             tmp_counter: 0,
         })
@@ -543,7 +546,23 @@ impl<'a> Extractor<'a> {
                 String::from_utf8_lossy(&s).into_owned()
             }
         };
-        let Some(resolved) = resolve_link_target(rel, &target) else {
+        // Reject targets that pass through another link: one from this archive (extracted
+        // before or after this one) or one already on disk under the destination.
+        let (entries, plan) = (self.entries, &self.plan);
+        let link_rels = self.link_rels.get_or_insert_with(|| {
+            entries
+                .iter()
+                .zip(plan)
+                .filter(|(x, _)| x.is_symlink)
+                .filter_map(|(_, p)| p.as_ref().map(|p| p.to_lowercase()))
+                .collect()
+        });
+        let dest = &self.dest;
+        let mut is_link = |p: &str| {
+            link_rels.contains(&p.to_lowercase())
+                || fs::symlink_metadata(push_rel(dest.clone(), p)).is_ok_and(|m| m.file_type().is_symlink())
+        };
+        let Some(resolved) = resolve_link_target_via(rel, &target, &mut is_link) else {
             return Err(Fail::Entry(ArchiveError::ZipSlip(format!("{} -> {target}", e.path)), *consumed));
         };
         let (path, replace) = match self.target_for_file(e, dst)? {

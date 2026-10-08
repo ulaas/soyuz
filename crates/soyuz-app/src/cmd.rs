@@ -95,4 +95,12 @@ pub enum Cmd {
     FileOp(crate::ops::fileops::FileOpCmd),
     /// Metadata dialogs (properties, attributes, batch rename, links): `ui::dialogs::properties`.
     Meta(crate::ui::dialogs::properties::MetaCmd),
+    /// Close confirmed while jobs are pending: now, or once they have finished.
+    Quit {
+        when_idle: bool,
+    },
+    /// Open the "Open with" chooser for a file.
+    ChooseOpenWith(PathBuf),
+    /// Open a path in a new Soyuz window (a new process; see `ops::new_window`).
+    NewWindow(Location),
 }

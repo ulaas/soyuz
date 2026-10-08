@@ -14,21 +14,34 @@ enum RendererChoice {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Cli {
-    Run { renderer: RendererChoice },
+    Run { renderer: RendererChoice, startup: soyuz_app::app::Startup },
     Help,
     Version,
 }
 
 const USAGE: &str = "\
-Usage: soyuz [OPTIONS]
+Usage: soyuz [OPTIONS] [PATH]
+
+Arguments:
+  [PATH]                  Folder to open (a file opens its folder with the file selected)
 
 Options:
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
+  --new-window            Secondary window: don't restore or overwrite the saved session
   -h, --help              Print help
   -V, --version           Print version";
 
+fn set_path(startup: &mut soyuz_app::app::Startup, path: String) -> Result<(), String> {
+    if startup.open.is_some() {
+        return Err(format!("unexpected extra path '{path}'"));
+    }
+    startup.open = Some(std::path::PathBuf::from(path));
+    Ok(())
+}
+
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut renderer = RendererChoice::Wgpu;
+    let mut startup = soyuz_app::app::Startup::default();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         let value = if arg == "--renderer" {
@@ -47,10 +60,16 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
         match arg.as_str() {
             "-h" | "--help" => return Ok(Cli::Help),
             "-V" | "--version" => return Ok(Cli::Version),
-            other => return Err(format!("unexpected argument '{other}'")),
+            "--new-window" => startup.secondary = true,
+            "--" => {
+                let path = it.next().ok_or("`--` needs a path after it")?;
+                set_path(&mut startup, path)?;
+            }
+            other if other.starts_with('-') => return Err(format!("unexpected argument '{other}'")),
+            _ => set_path(&mut startup, arg)?,
         }
     }
-    Ok(Cli::Run { renderer })
+    Ok(Cli::Run { renderer, startup })
 }
 
 /// Map the CLI choice onto an eframe renderer; returns the renderer and its display name.
@@ -89,8 +108,9 @@ fn main() -> ExitCode {
             println!("soyuz {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Cli::Run { renderer } => renderer,
+        Cli::Run { renderer, startup } => (renderer, startup),
     };
+    let (renderer, startup) = renderer;
     let (renderer, renderer_name) = resolve_renderer(renderer);
 
     let options = eframe::NativeOptions {
@@ -102,12 +122,15 @@ fn main() -> ExitCode {
             .with_icon(soyuz_app::app_icon::icon_data(128)),
         renderer,
         centered: true,
+        // eframe's own state (window geometry, egui memory) lives with the rest of the
+        // configuration, so portable mode keeps it next to the executable as well.
+        persistence_path: Some(soyuz_core::config::config_dir().join("app.ron")),
         ..Default::default()
     };
     let result = eframe::run_native(
         "Soyuz",
         options,
-        Box::new(move |cc| Ok(Box::new(soyuz_app::SoyuzApp::new(cc, renderer_name)))),
+        Box::new(move |cc| Ok(Box::new(soyuz_app::SoyuzApp::new(cc, renderer_name, startup)))),
     );
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -129,9 +152,16 @@ mod tests {
 
     #[test]
     fn cli_parsing() {
-        assert_eq!(parse(&[]), Ok(Cli::Run { renderer: RendererChoice::Wgpu }));
-        assert_eq!(parse(&["--renderer", "glow"]), Ok(Cli::Run { renderer: RendererChoice::Glow }));
-        assert_eq!(parse(&["--renderer=WGPU"]), Ok(Cli::Run { renderer: RendererChoice::Wgpu }));
+        let run = |renderer| Ok(Cli::Run { renderer, startup: Default::default() });
+        assert_eq!(parse(&[]), run(RendererChoice::Wgpu));
+        assert_eq!(parse(&["--renderer", "glow"]), run(RendererChoice::Glow));
+        assert_eq!(parse(&["--renderer=WGPU"]), run(RendererChoice::Wgpu));
+        let Ok(Cli::Run { startup, .. }) = parse(&["--new-window", "C:\\data"]) else { panic!("parse") };
+        assert!(startup.secondary);
+        assert_eq!(startup.open, Some(std::path::PathBuf::from("C:\\data")));
+        let Ok(Cli::Run { startup, .. }) = parse(&["--", "-dash"]) else { panic!("parse") };
+        assert_eq!(startup.open, Some(std::path::PathBuf::from("-dash")));
+        assert!(parse(&["a", "b"]).is_err());
         assert_eq!(parse(&["--help"]), Ok(Cli::Help));
         assert_eq!(parse(&["-V"]), Ok(Cli::Version));
         assert!(parse(&["--renderer"]).is_err());

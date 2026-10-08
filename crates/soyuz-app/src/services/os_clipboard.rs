@@ -38,12 +38,27 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
         return false;
     }
     let paths: Vec<PathBuf> = paths.iter().map(|p| soyuz_fs::strip_verbatim(p)).collect();
+    #[cfg(windows)]
     match imp::set_files(mode, &paths) {
         Ok(()) => true,
         Err(e) => {
             log::debug!("os clipboard: cannot set files: {e}");
             false
         }
+    }
+    // Elsewhere the write spawns external tools: decide up front whether one exists
+    // (for the caller's text fallback), then write off the UI thread.
+    #[cfg(not(windows))]
+    {
+        if !imp::can_set(paths.len()) {
+            return false;
+        }
+        imp::write_async(move || {
+            if let Err(e) = imp::set_files(mode, &paths) {
+                log::debug!("os clipboard: cannot set files: {e}");
+            }
+        });
+        true
     }
 }
 
@@ -61,9 +76,13 @@ pub fn has_files() -> bool {
 /// After a cut from the system clipboard was pasted (moved), empty the clipboard like
 /// Explorer does, but only if it still holds a cut.
 pub fn clear_cut() {
+    #[cfg(windows)]
     if let Some((ClipMode::Cut, _)) = imp::get_files() {
         imp::clear();
     }
+    // Reading spawns external tools elsewhere: do it off the UI thread.
+    #[cfg(not(windows))]
+    imp::write_async(imp::clear_if_cut);
 }
 
 // ---------------------------------------------------------------------------------------

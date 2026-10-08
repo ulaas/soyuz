@@ -2,9 +2,16 @@
 //! `soyuz_fs::read_dir_streaming` and streams chunks into the mailbox. Every navigation
 //! bumps the pane generation and cancels the previous listing's `OpControl`; stale
 //! generations are dropped on the UI side.
+//!
+//! Two independent, elastic pools: one for pane listings/patches and one for auxiliary
+//! work (dropdowns, completion, "lost folder" resolution, sync-navigation probes). A
+//! read on a dead network drive can block a worker in the kernel for minutes and
+//! cannot be cancelled, so when every worker of a pool is busy a new job spawns an
+//! extra worker (up to a cap) instead of queueing behind the stuck ones.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -22,52 +29,104 @@ enum Job {
     Probe { pane: PaneId, path: PathBuf },
 }
 
-pub struct Lister {
+/// Elastic worker pool: `base` workers up front, grown on demand up to `max` while all
+/// workers are busy (a worker stuck on a dead mount stays "busy").
+struct Pool {
+    name: &'static str,
     tx: Sender<Job>,
+    rx: Receiver<Job>,
+    postman: Postman,
+    /// Workers currently waiting for a job.
+    idle: Arc<AtomicUsize>,
+    spawned: AtomicUsize,
+    max: usize,
+}
+
+impl Pool {
+    fn new(name: &'static str, postman: Postman, base: usize, max: usize) -> Self {
+        let (tx, rx) = unbounded::<Job>();
+        let pool = Pool {
+            name,
+            tx,
+            rx,
+            postman,
+            idle: Arc::new(AtomicUsize::new(0)),
+            spawned: AtomicUsize::new(0),
+            max: max.max(base.max(1)),
+        };
+        for _ in 0..base.max(1) {
+            pool.spawn_worker();
+        }
+        pool
+    }
+
+    fn spawn_worker(&self) {
+        let i = self.spawned.fetch_add(1, Ordering::SeqCst);
+        let rx = self.rx.clone();
+        let postman = self.postman.clone();
+        let idle = self.idle.clone();
+        idle.fetch_add(1, Ordering::SeqCst);
+        let spawned = thread::Builder::new().name(format!("soyuz-{}-{i}", self.name)).spawn(move || {
+            while let Ok(job) = rx.recv() {
+                idle.fetch_sub(1, Ordering::SeqCst);
+                run(job, &postman);
+                idle.fetch_add(1, Ordering::SeqCst);
+            }
+        });
+        if let Err(e) = spawned {
+            self.idle.fetch_sub(1, Ordering::SeqCst);
+            log::error!("cannot spawn {} thread: {e}", self.name);
+        }
+    }
+
+    fn send(&self, job: Job) {
+        // Every worker busy (possibly stuck in the kernel on an unreachable share):
+        // add one rather than letting this job wait behind it.
+        if self.idle.load(Ordering::SeqCst) <= self.rx.len() && self.spawned.load(Ordering::SeqCst) < self.max {
+            self.spawn_worker();
+        }
+        let _ = self.tx.send(job);
+    }
+}
+
+pub struct Lister {
+    main: Pool,
+    aux: Pool,
 }
 
 impl Lister {
     pub fn new(postman: Postman, threads: usize) -> Self {
-        let (tx, rx) = unbounded::<Job>();
-        for i in 0..threads.max(1) {
-            let rx: Receiver<Job> = rx.clone();
-            let postman = postman.clone();
-            let spawned = thread::Builder::new().name(format!("soyuz-lister-{i}")).spawn(move || {
-                while let Ok(job) = rx.recv() {
-                    run(job, &postman);
-                }
-            });
-            if let Err(e) = spawned {
-                log::error!("cannot spawn lister thread: {e}");
-            }
+        let threads = threads.max(1);
+        Lister {
+            main: Pool::new("lister", postman.clone(), threads, threads * 4),
+            aux: Pool::new("lister-aux", postman, 2, 8),
         }
-        Lister { tx }
     }
 
     /// Stream a full listing of `path`. `soft` relists (watcher rescans, refresh) deliver
     /// everything in one message so the pane swaps contents without flicker.
     pub fn list(&self, pane: PaneId, generation: u64, path: &Path, ctl: Arc<OpControl>, soft: bool) {
-        let _ = self.tx.send(Job::List { pane, generation, path: path.to_path_buf(), ctl, soft });
+        self.main.send(Job::List { pane, generation, path: path.to_path_buf(), ctl, soft });
     }
 
     /// Re-stat changed children of `dir` for an in-place patch.
     pub fn stat(&self, pane: PaneId, generation: u64, dir: &Path, paths: Vec<PathBuf>) {
-        let _ = self.tx.send(Job::Stat { pane, generation, dir: dir.to_path_buf(), paths });
+        self.main.send(Job::Stat { pane, generation, dir: dir.to_path_buf(), paths });
     }
 
     /// One-shot listing for dropdowns / completion / Miller columns.
     pub fn aux(&self, path: &Path) {
-        let _ = self.tx.send(Job::Aux { path: path.to_path_buf() });
+        self.aux.send(Job::Aux { path: path.to_path_buf() });
     }
 
     /// Find the nearest existing ancestor of a directory that disappeared.
     pub fn resolve(&self, pane: PaneId, generation: u64, path: &Path) {
-        let _ = self.tx.send(Job::Resolve { pane, generation, path: path.to_path_buf() });
+        self.aux.send(Job::Resolve { pane, generation, path: path.to_path_buf() });
     }
 
     /// Check whether `path` is a directory (synchronized navigation).
     pub fn probe(&self, pane: PaneId, path: &Path) {
-        let _ = self.tx.send(Job::Probe { pane, path: path.to_path_buf() });
+        self.aux.send(Job::Probe { pane, path: path.to_path_buf() });
     }
 }
 

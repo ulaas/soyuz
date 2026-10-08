@@ -130,6 +130,13 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 .unwrap_or_else(|| pane.location.clone());
             ops::open_in_other_pane(app, target);
         }
+        A::NewWindow => {
+            let loc = app.ws.pane().location.clone();
+            app.cmds.push(Cmd::NewWindow(loc));
+        }
+        A::TabToNewWindow => ops::window::tab_to_new_window(app),
+        // Every window is its own process: closing it is quitting (with the job check).
+        A::CloseWindow => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
         A::SyncNavigation => {
             let tab = app.ws.tab_mut();
             tab.sync_nav = !tab.sync_nav;
@@ -213,6 +220,8 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ToggleTerminal => crate::ui::panels::terminal::toggle(app, ctx),
         A::FocusTerminal => crate::ui::panels::terminal::focus(app, ctx),
         A::TogglePreviewPane => app.ui.preview.toggle(),
+        A::ToggleInfoPane => app.ui.preview.toggle_info(),
+        A::ToggleFlatView => crate::ui::search::toggle_flat_view(app),
         A::ToggleHexPreview => app.ui.preview.toggle_hex(),
         A::ToggleActivityPanel => app.ui.bottom.toggle(crate::ui::panels::BottomTab::Activity),
 
@@ -288,6 +297,16 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
 
         // ---- file actions available now ----
         A::Open => ops::open_selection(app),
+        A::OpenWith => {
+            let file = app.ws.pane().selected_entries().first().filter(|e| !e.is_dir_like()).map(|e| e.path.clone());
+            match file {
+                Some(path) => app.cmds.push(Cmd::ChooseOpenWith(path)),
+                None => {
+                    app.ui.toasts.push(Toast::info("Select a file to open with another application"));
+                }
+            }
+        }
+        A::RunElevated => ops::window::run_elevated(app),
         A::OpenInNewTab => {
             let dirs: Vec<Location> = app
                 .ws
@@ -407,6 +426,13 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             }
         }
     }
+}
+
+/// Actions without an implementation yet: hidden from the command palette and the
+/// keyboard settings (a binding in `config.toml` still answers with a "coming soon").
+pub fn unavailable(a: &Action) -> bool {
+    // The "Folders" tree section of the sidebar is not built yet.
+    matches!(a, Action::ToggleTreeSidebar)
 }
 
 fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {

@@ -112,7 +112,11 @@ fn wav(b: &[u8], out: &mut Vec<Field>) {
             push(out, "Duration", format_duration(size as f64 / byte_rate as f64));
             break;
         }
-        at = body + size + (size & 1);
+        // Checked: a hostile size must end the walk, not wrap / panic.
+        match body.checked_add(size).and_then(|n| n.checked_add(size & 1)) {
+            Some(next) if next > at => at = next,
+            _ => break,
+        }
     }
 }
 
@@ -223,7 +227,7 @@ fn mp3(b: &[u8], len: u64, out: &mut Vec<Field>) {
     if b.starts_with(b"ID3") && b.len() >= 10 {
         let major = b[3];
         let size = syncsafe(&b[6..10]);
-        audio_start = 10 + size;
+        audio_start = size.saturating_add(10);
         let end = audio_start.min(b.len());
         let mut at = 10;
         while at + 10 <= end {
@@ -233,7 +237,7 @@ fn mp3(b: &[u8], len: u64, out: &mut Vec<Field>) {
             }
             let fsize = if major >= 4 { syncsafe(&b[at + 4..at + 8]) } else { u32be(b, at + 4).unwrap_or(0) as usize };
             let body = at + 10;
-            if fsize == 0 || body + fsize > end {
+            if fsize == 0 || body.saturating_add(fsize) > end {
                 break;
             }
             let label = match id {
@@ -308,7 +312,7 @@ fn mp4<R: Read + Seek + ?Sized>(r: &mut R, len: u64, out: &mut Vec<Field>) {
             size = u64be(&hdr, 8).unwrap_or(0);
             header = 16;
         } else if size == 0 {
-            size = len - pos;
+            size = len.saturating_sub(pos);
         }
         if size < header {
             break;
@@ -319,12 +323,16 @@ fn mp4<R: Read + Seek + ?Sized>(r: &mut R, len: u64, out: &mut Vec<Field>) {
         if &kind == b"moov" {
             let n = (size - header).min(16 * 1024 * 1024) as usize;
             let mut moov = vec![0u8; n];
-            let got = read_at(r, pos + header, &mut moov).unwrap_or(0);
+            let got = pos.checked_add(header).map_or(0, |at| read_at(r, at, &mut moov).unwrap_or(0));
             moov.truncate(got);
             moov_fields(&moov, out);
             break;
         }
-        pos += size;
+        // Box sizes come from the file: a 64-bit size near u64::MAX must not overflow.
+        match pos.checked_add(size) {
+            Some(next) => pos = next,
+            None => break,
+        }
     }
     let container = match brand.as_str() {
         "qt" => "QuickTime movie".to_string(),
@@ -346,16 +354,17 @@ fn boxes(b: &[u8]) -> impl Iterator<Item = ([u8; 4], &[u8])> {
         let kind: [u8; 4] = b[at + 4..at + 8].try_into().ok()?;
         let mut header = 8;
         if size == 1 {
-            size = u64be(b, at + 8)? as usize;
+            size = usize::try_from(u64be(b, at + 8)?).ok()?;
             header = 16;
         } else if size == 0 {
             size = b.len() - at;
         }
-        if size < header || at + size > b.len() {
+        let end = at.checked_add(size)?;
+        if size < header || end > b.len() {
             return None;
         }
-        let body = &b[at + header..at + size];
-        at += size;
+        let body = &b[at + header..end];
+        at = end;
         Some((kind, body))
     })
 }
@@ -525,6 +534,36 @@ mod tests {
         assert_eq!(get(&f, "Duration"), Some("1:31"));
         assert_eq!(get(&f, "Dimensions"), Some("1920 × 1080"));
         assert_eq!(get(&f, "Tracks"), Some("Video"));
+    }
+
+    #[test]
+    fn mp4_hostile_box_sizes_do_not_panic() {
+        // A 64-bit largesize near u64::MAX used to overflow `pos += size` (debug panic).
+        let ftyp = mp4_box(b"ftyp", b"isom\0\0\0\0isom");
+        let mut huge = 1u32.to_be_bytes().to_vec();
+        huge.extend_from_slice(b"mdat");
+        huge.extend_from_slice(&(u64::MAX - 4).to_be_bytes());
+        huge.extend_from_slice(&[0u8; 32]);
+        let file = [ftyp.clone(), huge].concat();
+        let f = probe(&mut Cursor::new(&file), file.len() as u64, "mp4");
+        assert_eq!(get(&f, "Container"), Some("MPEG-4 (isom)"));
+        // Same inside moov: a child box with an absurd largesize.
+        let mut child = 1u32.to_be_bytes().to_vec();
+        child.extend_from_slice(b"trak");
+        child.extend_from_slice(&u64::MAX.to_be_bytes());
+        let moov = mp4_box(b"moov", &child);
+        let file = [ftyp.clone(), moov].concat();
+        let _ = probe(&mut Cursor::new(&file), file.len() as u64, "mp4");
+        // size == 0 ("to end of file") with a len smaller than pos must not underflow.
+        let mut zero = 0u32.to_be_bytes().to_vec();
+        zero.extend_from_slice(b"mdat");
+        let file = [ftyp, zero].concat();
+        let _ = probe(&mut Cursor::new(&file), 4, "mp4");
+        // Hostile WAV chunk size.
+        let mut wav = b"RIFF\0\0\0\0WAVEdata".to_vec();
+        wav.extend_from_slice(&u32::MAX.to_le_bytes());
+        wav.extend_from_slice(&[0u8; 16]);
+        let _ = probe(&mut Cursor::new(&wav), wav.len() as u64, "wav");
     }
 
     #[test]

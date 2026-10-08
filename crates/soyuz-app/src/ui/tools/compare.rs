@@ -281,25 +281,17 @@ fn profiles_path() -> PathBuf {
 }
 
 /// Load saved profiles (small file; read when the window opens).
+/// A broken file is backed up and protected from being overwritten (`store_file`).
 pub fn load_profiles() -> Vec<SyncProfile> {
-    std::fs::read_to_string(profiles_path())
-        .ok()
-        .and_then(|t| toml::from_str::<ProfileFile>(&t).ok())
-        .map(|f| f.profiles)
-        .unwrap_or_default()
+    crate::services::store_file::load_toml::<ProfileFile>(&profiles_path()).value().profiles
 }
 
+/// Saved in order on the shared store worker (flushed by `App::save`).
 fn save_profiles(profiles: &[SyncProfile]) {
-    let text = toml::to_string_pretty(&ProfileFile { profiles: profiles.to_vec() }).unwrap_or_default();
-    let path = profiles_path();
-    let _ = std::thread::Builder::new().name("soyuz-sync-profiles".into()).spawn(move || {
-        if let Some(d) = path.parent() {
-            let _ = soyuz_fs::create_dir_all(d);
-        }
-        if let Err(e) = soyuz_fs::write_atomic(&path, text.as_bytes()) {
-            log::warn!("cannot save sync profiles: {e}");
-        }
-    });
+    match toml::to_string_pretty(&ProfileFile { profiles: profiles.to_vec() }) {
+        Ok(text) => crate::services::store_file::save_async(profiles_path(), text.into_bytes()),
+        Err(e) => log::warn!("cannot save sync profiles: {e}"),
+    }
 }
 
 // ---------------------------------------------------------------------------------------

@@ -114,8 +114,18 @@ pub fn glyph(e: &EntryInfo) -> &'static str {
     }
 }
 
+/// `[appearance] icon_style = "mono"`: every glyph in the neutral document color.
+static MONO: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn set_mono(on: bool) {
+    MONO.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
 /// Glyph color for an entry.
 pub fn color(e: &EntryInfo, p: &Palette) -> Color32 {
+    if MONO.load(std::sync::atomic::Ordering::Relaxed) {
+        return p.glyph_doc;
+    }
     match classify(e) {
         FileClass::Folder => p.glyph_folder,
         FileClass::Image => p.glyph_image,

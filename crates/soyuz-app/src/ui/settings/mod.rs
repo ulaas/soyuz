@@ -701,6 +701,15 @@ fn record(app: &mut SoyuzApp, target: RecordTarget, title: String) {
     app.settings.recorder = Some(Recorder::new(target, title));
 }
 
+/// First free `soyuz-config.toml`, `soyuz-config (2).toml`, … in `dir` (an export never
+/// overwrites an earlier one).
+fn export_path(dir: &std::path::Path) -> PathBuf {
+    (1..1000)
+        .map(|n| dir.join(if n == 1 { "soyuz-config.toml".to_string() } else { format!("soyuz-config ({n}).toml") }))
+        .find(|p| std::fs::symlink_metadata(p).is_err())
+        .unwrap_or_else(|| dir.join(format!("soyuz-config-{}.toml", chrono::Local::now().format("%Y%m%d-%H%M%S"))))
+}
+
 /// Default folder for export / import: Downloads, else home.
 fn transfer_dir() -> PathBuf {
     let dir = soyuz_fs::home().join("Downloads");
@@ -710,7 +719,9 @@ fn transfer_dir() -> PathBuf {
 /// Open the in-app save picker for exporting the configuration.
 pub fn start_export(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
-    let picker = PathPicker::new("Export settings", PickMode::Save, transfer_dir(), "soyuz-config.toml", &["toml"]);
+    let dir = transfer_dir();
+    let name = export_path(&dir).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let picker = PathPicker::new("Export settings", PickMode::Save, dir, &name, &["toml"]);
     app.settings.picker = Some((PickPurpose::Export, picker));
 }
 
@@ -821,4 +832,16 @@ fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removab
         removed = xresp.clicked();
     }
     (resp.clicked() && !removed, removed)
+}
+
+#[cfg(test)]
+mod export_tests {
+    #[test]
+    fn export_never_overwrites() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = super::export_path(dir.path());
+        assert_eq!(first, dir.path().join("soyuz-config.toml"));
+        std::fs::write(&first, b"x").unwrap();
+        assert_eq!(super::export_path(dir.path()), dir.path().join("soyuz-config (2).toml"));
+    }
 }

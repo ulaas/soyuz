@@ -25,25 +25,16 @@ pub fn default_path() -> PathBuf {
     soyuz_core::config::config_dir().join("rename_presets.toml")
 }
 
-/// Load user presets (a missing or broken file yields none; problems are logged).
+/// Load user presets (a missing file yields none; a broken one is backed up to `.bak`,
+/// logged, and protected from being overwritten this session — see `store_file`).
 pub fn load(path: &Path) -> Vec<Preset> {
-    let Ok(text) = std::fs::read_to_string(path) else { return Vec::new() };
-    match toml::from_str::<File>(&text) {
-        Ok(f) => f.preset,
-        Err(e) => {
-            log::warn!("{}: {e}", path.display());
-            Vec::new()
-        }
-    }
+    crate::services::store_file::load_toml::<File>(path).value().preset
 }
 
-/// Save user presets atomically.
+/// Save user presets atomically (refused when the file was unreadable at load).
 pub fn save(path: &Path, presets: &[Preset]) -> Result<(), String> {
     let text = toml::to_string_pretty(&File { preset: presets.to_vec() }).map_err(|e| e.to_string())?;
-    if let Some(dir) = path.parent() {
-        soyuz_fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    soyuz_fs::write_atomic(path, text.as_bytes()).map_err(|e| e.to_string())
+    crate::services::store_file::save_sync(path, text.as_bytes())
 }
 
 /// Presets that ship with the app.

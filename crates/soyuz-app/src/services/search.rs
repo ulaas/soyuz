@@ -63,6 +63,9 @@ struct Active {
     ranked_sort: Option<soyuz_core::SortSpec>,
     rank_dirty: bool,
     last_rank: Instant,
+    /// Fuzzy score per hit, computed once when the hit arrives, so re-ranking a large
+    /// result set is a plain sort instead of re-scoring every name each time.
+    scores: HashMap<PathBuf, u32>,
 }
 
 struct SizeJob {
@@ -85,7 +88,13 @@ struct Registry {
     size_cache: HashMap<PathBuf, (u64, bool)>,
     /// Errors to surface (bad patterns, …).
     notices: Vec<String>,
+    /// Registration order of `specs`, oldest first (bounded, see [`MAX_SPECS`]).
+    order: std::collections::VecDeque<SearchId>,
 }
+
+/// Registered searches kept for history / refresh; older ones are forgotten (their
+/// panes then show "This search is no longer available").
+const MAX_SPECS: usize = 64;
 
 thread_local! {
     static REG: RefCell<Registry> = RefCell::new(Registry::default());
@@ -107,6 +116,16 @@ pub fn register(spec: SearchSpec) -> SearchId {
     let id = soyuz_search::next_search_id();
     REG.with_borrow_mut(|r| {
         r.specs.insert(id, spec);
+        r.order.push_back(id);
+        // Bound the registry: every search used to leak its spec and final progress.
+        // Running searches are never evicted.
+        while r.order.len() > MAX_SPECS {
+            let Some(pos) = r.order.iter().position(|i| !r.active.contains_key(i)) else { break };
+            if let Some(old) = r.order.remove(pos) {
+                r.specs.remove(&old);
+                r.finished.remove(&old);
+            }
+        }
     });
     id
 }
@@ -165,6 +184,7 @@ pub fn attach(pane: &mut Pane, id: SearchId) {
                         ranked_sort: None,
                         rank_dirty: false,
                         last_rank: Instant::now(),
+                        scores: HashMap::new(),
                     },
                 );
             }
@@ -234,16 +254,27 @@ fn file_name(name: &str) -> &str {
 }
 
 /// Order entries by fuzzy score (best first), ties by shorter then alphabetical name.
-pub fn rank(entries: &mut [EntryInfo], scorer: &mut FuzzyScorer) {
-    let mut scored: Vec<(u32, usize)> =
-        entries.iter().enumerate().map(|(i, e)| (scorer.score(file_name(&e.name)).unwrap_or(0), i)).collect();
-    scored.sort_by(|a, b| {
-        b.0.cmp(&a.0)
-            .then_with(|| entries[a.1].name.len().cmp(&entries[b.1].name.len()))
-            .then_with(|| entries[a.1].name.cmp(&entries[b.1].name))
+pub fn rank(entries: &mut Vec<EntryInfo>, scorer: &mut FuzzyScorer) {
+    rank_with(entries, |e| fuzzy_score(scorer, e));
+}
+
+fn fuzzy_score(scorer: &mut FuzzyScorer, e: &EntryInfo) -> u32 {
+    scorer.score(file_name(&e.name)).unwrap_or(0)
+}
+
+/// [`rank`] with a caller-provided score (e.g. cached); moves entries, no clones.
+fn rank_with(entries: &mut Vec<EntryInfo>, mut score: impl FnMut(&EntryInfo) -> u32) {
+    let mut keyed: Vec<(u32, EntryInfo)> = std::mem::take(entries).into_iter().map(|e| (score(&e), e)).collect();
+    keyed.sort_unstable_by(|a, b| {
+        b.0.cmp(&a.0).then_with(|| a.1.name.len().cmp(&b.1.name.len())).then_with(|| a.1.name.cmp(&b.1.name))
     });
-    let order: Vec<EntryInfo> = scored.iter().map(|&(_, i)| entries[i].clone()).collect();
-    entries.clone_from_slice(&order);
+    *entries = keyed.into_iter().map(|(_, e)| e).collect();
+}
+
+/// Minimum pause between re-rankings while results stream in; grows with the result
+/// count so a 100k-hit search doesn't re-sort on the UI thread several times a second.
+fn rank_interval(n: usize) -> Duration {
+    Duration::from_millis((300 + n as u64 / 50).min(3_000))
 }
 
 /// Drain running searches and folder-size jobs into their panes. Returns notices.
@@ -266,6 +297,9 @@ pub fn pump(ws: &mut Workspace) -> Vec<String> {
                     SearchEvent::Hits(hits) => {
                         for (mut e, _matches) in hits {
                             e.name = relative_name(&a.root, &e.path);
+                            if let Some(scorer) = a.fuzzy.as_mut() {
+                                a.scores.insert(e.path.clone(), fuzzy_score(scorer, &e));
+                            }
                             chunk.push(e);
                         }
                     }
@@ -303,10 +337,12 @@ pub fn pump(ws: &mut Workspace) -> Vec<String> {
             {
                 if a.ranked_sort.as_ref().is_some_and(|s| *s != pane.view.sort) {
                     a.progress.ranked = false; // the user sorted by a column
-                } else if a.rank_dirty && (finished_now || a.last_rank.elapsed() > Duration::from_millis(300)) {
+                } else if a.rank_dirty && (finished_now || a.last_rank.elapsed() > rank_interval(pane.entries.len())) {
                     pane.flush_incoming();
                     let mut entries = std::mem::take(&mut pane.entries);
-                    rank(&mut entries, scorer);
+                    let scores = &a.scores;
+                    rank_with(&mut entries, |e| scores.get(&e.path).copied().unwrap_or_else(|| fuzzy_score(scorer, e)));
+
                     pane.set_entries_ordered(entries);
                     a.ranked_sort = Some(pane.view.sort.clone());
                     a.rank_dirty = false;
@@ -778,6 +814,16 @@ mod tests {
         rank(&mut v, &mut s);
         assert_eq!(v[0].name, "main.rs");
         assert_eq!(v.last().unwrap().name, "z/none.md", "non-matches sink");
+    }
+
+    #[test]
+    fn registered_specs_are_bounded() {
+        let mk = || SearchSpec { query: SearchQuery::default(), title: String::new() };
+        let first = register(mk());
+        let ids: Vec<SearchId> = (0..MAX_SPECS).map(|_| register(mk())).collect();
+        assert!(spec(first).is_none(), "the oldest spec is evicted");
+        assert!(ids.iter().all(|id| spec(*id).is_some()));
+        assert!(REG.with_borrow(|r| r.specs.len() <= MAX_SPECS));
     }
 
     #[test]
