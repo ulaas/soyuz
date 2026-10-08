@@ -1,87 +1,377 @@
-//! Toolbar above the content area: navigation, breadcrumb, filter, view toggles.
-//! M0: visual only (navigation lands in M1).
+//! Toolbar above the panes: back / forward (right-click for history) / up, the
+//! omnibar, the live filter, and the view / sort / dual-pane controls. Acts on the
+//! focused pane.
 
-use std::path::{Component, Path};
+use egui::{
+    Align2, CornerRadius, FontId, Frame, Id, Key, Margin, Panel, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind,
+    TextEdit, Ui, UiBuilder, pos2, vec2,
+};
+use soyuz_core::config::Action;
+use soyuz_core::{Location, ViewMode};
 
-use egui::{Align, Frame, Layout, Margin, Panel, RichText, Stroke, TextEdit, Ui, vec2};
-
+use crate::app::SoyuzApp;
+use crate::cmd::Cmd;
+use crate::keys::chord_label;
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::widgets::{icon_button, vdivider};
+use crate::ui::breadcrumb::{self, OmnibarCtx};
+use crate::ui::context_menu::{group_items, sort_items, view_mode_items};
+use crate::ui::views::computer::volume_label;
+use crate::ui::widgets::{icon_button, icon_toggle, menu_caption, menu_check, menu_item, menu_separator, submenu};
 
-pub struct ToolbarState {
-    pub filter: String,
+const FILTER_W: f32 = 210.0;
+
+fn tip(app: &SoyuzApp, label: &str, action: &Action) -> String {
+    match chord_label(&app.keymap, action) {
+        Some(k) => format!("{label}  ({k})"),
+        None => label.to_string(),
+    }
 }
 
-pub fn show(root: &mut Ui, state: &mut ToolbarState, title: &str, path: Option<&Path>) {
+pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(root.ctx());
     Panel::top("soyuz.toolbar")
         .exact_size(size::TOOLBAR)
-        .frame(Frame::new().fill(p.bg_surface1).inner_margin(Margin::symmetric(10, 0)))
+        .show_separator_line(false)
+        .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 6, right: 8, top: 4, bottom: 4 }))
         .show(root, |ui| {
-            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
-                icon_button(ui, ph::ARROW_LEFT, "Back (Alt+Left)", false);
-                icon_button(ui, ph::ARROW_RIGHT, "Forward (Alt+Right)", false);
-                icon_button(ui, ph::ARROW_UP, "Up (Alt+Up)", false);
-                vdivider(ui, 20.0);
-                breadcrumb(ui, title, path);
+            let full = ui.available_rect_before_wrap();
+            let pane_id = app.ws.pane().id;
+            let (can_back, can_fwd, can_up) = {
+                let pane = app.ws.pane();
+                (pane.history.can_back(), pane.history.can_forward(), pane.location.parent().is_some())
+            };
+            // Navigation buttons.
+            let mut x = full.left();
+            let nav = |ui: &mut Ui, x: &mut f32, glyph: &str, tip: String, enabled: bool| {
+                let r = Rect::from_min_size(pos2(*x, full.center().y - 15.0), vec2(30.0, 30.0));
+                *x += 32.0;
+                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_button(ui, glyph, &tip, enabled)).inner
+            };
+            let back = nav(ui, &mut x, ph::ARROW_LEFT, tip(app, "Back", &Action::Back), can_back);
+            let fwd = nav(ui, &mut x, ph::ARROW_RIGHT, tip(app, "Forward", &Action::Forward), can_fwd);
+            let up = nav(ui, &mut x, ph::ARROW_UP, tip(app, "Up", &Action::Up), can_up);
+            if back.clicked() {
+                app.cmds.push(Cmd::PaneAction(pane_id, Action::Back));
+            }
+            if fwd.clicked() {
+                app.cmds.push(Cmd::PaneAction(pane_id, Action::Forward));
+            }
+            if up.clicked() {
+                app.cmds.push(Cmd::PaneAction(pane_id, Action::Up));
+            }
+            history_menu(ui, &back, app, true);
+            history_menu(ui, &fwd, app, false);
+            x += 6.0;
 
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    icon_button(ui, ph::BELL, "Activity", true);
-                    icon_button(ui, ph::SQUARE_SPLIT_HORIZONTAL, "Dual pane (F9)", true);
-                    icon_button(ui, ph::SORT_ASCENDING, "Sort", true);
-                    icon_button(ui, ph::SQUARES_FOUR, "Grid view (Ctrl+Shift+2)", true);
-                    icon_button(ui, ph::LIST, "Details view (Ctrl+Shift+1)", true);
-                    ui.add_space(6.0);
-                    Frame::new()
-                        .fill(p.bg_surface2)
-                        .stroke(Stroke::new(1.0, p.border_subtle))
-                        .corner_radius(radius::ROW)
-                        .inner_margin(Margin::symmetric(8, 3))
-                        .show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(icons::icon(ph::MAGNIFYING_GLASS, 14.0).color(p.text_tertiary));
-                                ui.add(
-                                    TextEdit::singleline(&mut state.filter)
-                                        .hint_text("Filter")
-                                        .frame(Frame::NONE)
-                                        .desired_width(180.0),
-                                );
-                            });
-                        });
-                });
-            });
+            // Right side controls (laid out right to left).
+            let mut rx = full.right();
+            let mut right_btn = |ui: &mut Ui, glyph: &str, tip: &str, on: bool| {
+                let r = Rect::from_min_size(pos2(rx - 30.0, full.center().y - 15.0), vec2(30.0, 30.0));
+                rx -= 32.0;
+                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_toggle(ui, glyph, tip, true, on)).inner
+            };
+            let dual_on = app.ws.tab().dual;
+            let dual =
+                right_btn(ui, ph::SQUARE_SPLIT_HORIZONTAL, &tip(app, "Dual pane", &Action::ToggleDualPane), dual_on);
+            if dual.clicked() {
+                app.cmds.push(Cmd::Action(Action::ToggleDualPane));
+            }
+            dual_menu(ui, &dual, app);
+            let sort = right_btn(ui, ph::SORT_ASCENDING, "Sort", false);
+            let mode = app.ws.pane().view.mode;
+            let mode_glyph = match mode {
+                ViewMode::Details => ph::LIST,
+                ViewMode::List => ph::LIST_DASHES,
+                ViewMode::Grid => ph::SQUARES_FOUR,
+                ViewMode::Gallery => ph::IMAGES,
+                ViewMode::Miller => ph::COLUMNS,
+            };
+            let view = right_btn(ui, mode_glyph, "View", false);
+            view_menu(ui, &view, app);
+            sort_menu(ui, &sort, app);
+            rx -= 6.0;
+
+            // Filter field.
+            let fr = Rect::from_min_size(pos2(rx - FILTER_W, full.center().y - 16.0), vec2(FILTER_W, 32.0));
+            filter(ui, fr, app);
+            rx = fr.left() - 8.0;
+
+            // Omnibar fills the middle.
+            let omni =
+                Rect::from_min_max(pos2(x, full.center().y - 16.0), pos2(rx.max(x + 120.0), full.center().y + 16.0));
+            let root_label = {
+                let pane = app.ws.pane();
+                match &pane.location {
+                    Location::Dir(path) => app
+                        .ui
+                        .volumes
+                        .iter()
+                        .filter(|v| path.starts_with(&v.mount))
+                        .max_by_key(|v| v.mount.as_os_str().len())
+                        .filter(|v| !v.label.is_empty())
+                        .map(volume_label),
+                    _ => None,
+                }
+            };
+            let (location, loading) = {
+                let pane = app.ws.pane();
+                (pane.location.clone(), pane.is_loading() || pane.refreshing)
+            };
+            let mut ctx = OmnibarCtx {
+                pane: pane_id,
+                location: &location,
+                services: &mut app.services,
+                cmds: &mut app.cmds,
+                address: &mut app.ui.address,
+                root_label,
+                loading,
+            };
+            breadcrumb::show(ui, omni, &mut ctx);
         });
 }
 
-/// Path segments as subtle buttons separated by carets.
-fn breadcrumb(ui: &mut Ui, title: &str, path: Option<&Path>) {
-    let p = palette(ui.ctx());
-    let segments: Vec<String> = match path {
-        Some(path) => path
-            .components()
-            .filter_map(|c| match c {
-                Component::Prefix(pre) => Some(pre.as_os_str().to_string_lossy().into_owned()),
-                Component::RootDir => None,
-                Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
-                _ => None,
-            })
-            .collect(),
-        None => vec![title.to_string()],
+fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: bool) {
+    let id = Id::new(("soyuz.history", back));
+    if button.secondary_clicked() {
+        Popup::open_id(ui.ctx(), id);
+    }
+    let pane = app.ws.pane();
+    let pane_id = pane.id;
+    let entries: Vec<String> = if back {
+        pane.history.back_entries().map(|e| crate::state::crumbs::location_title(&e.location)).collect()
+    } else {
+        pane.history.forward_entries().map(|e| crate::state::crumbs::location_title(&e.location)).collect()
     };
-    let segments = if segments.is_empty() { vec!["/".to_string()] } else { segments };
-    let last = segments.len() - 1;
-    ui.spacing_mut().item_spacing.x = 0.0;
-    for (i, seg) in segments.iter().enumerate() {
-        let is_last = i == last;
-        let color = if is_last { p.text_primary } else { p.text_secondary };
-        let text = RichText::new(seg).color(color);
-        let text = if is_last { text.strong() } else { text };
-        ui.add(egui::Button::new(text).frame_when_inactive(false).min_size(vec2(0.0, 26.0)));
-        if !is_last {
-            ui.label(icons::icon(ph::CARET_RIGHT, 11.0).color(p.text_tertiary));
+    let paths: Vec<String> = if back {
+        pane.history.back_entries().map(|e| e.location.display()).collect()
+    } else {
+        pane.history.forward_entries().map(|e| e.location.display()).collect()
+    };
+    Popup::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
+        .kind(egui::PopupKind::Menu)
+        .open_memory(None)
+        .align(RectAlign::BOTTOM_START)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            ui.set_width(240.0);
+            menu_caption(ui, if back { "Back" } else { "Forward" });
+            if entries.is_empty() {
+                menu_item(ui, None, "No history", None, false);
+            }
+            for (i, (title, path)) in entries.iter().zip(&paths).enumerate().take(20) {
+                let r = menu_item(ui, Some(ph::CLOCK_COUNTER_CLOCKWISE), title, None, true).on_hover_text(path);
+                if r.clicked() {
+                    app.cmds.push(Cmd::HistoryJump { pane: pane_id, back, n: i + 1 });
+                    ui.close();
+                }
+            }
+        });
+}
+
+fn view_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
+    Popup::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
+        ui.set_width(250.0);
+        let km = app.keymap.clone();
+        let pane_id = app.ws.pane().id;
+        menu_caption(ui, "Layout");
+        view_mode_items(ui, &km, &mut app.cmds, app.ws.pane());
+        menu_separator(ui);
+        let pane_ref = app.ws.pane();
+        let cmds = &mut app.cmds;
+        submenu(ui, Some(ph::ROWS), "Group by", |ui| {
+            ui.set_width(200.0);
+            group_items(ui, cmds, pane_ref);
+        });
+        menu_separator(ui);
+        if menu_check(ui, app.ui.show_hidden, "Hidden files", chord_label(&km, &Action::ToggleHidden).as_deref())
+            .clicked()
+        {
+            app.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleHidden));
+            ui.close();
         }
+        if menu_check(ui, app.ui.checkbox_mode, "Item checkboxes", None).clicked() {
+            app.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleCheckboxes));
+            ui.close();
+        }
+        if menu_check(ui, app.ui.sidebar_visible, "Sidebar", chord_label(&km, &Action::ToggleSidebar).as_deref())
+            .clicked()
+        {
+            app.cmds.push(Cmd::Action(Action::ToggleSidebar));
+            ui.close();
+        }
+        menu_separator(ui);
+        if menu_item(ui, Some(ph::COLUMNS_PLUS_RIGHT), "Choose columns…", None, true).clicked() {
+            app.cmds.push(Cmd::PaneAction(pane_id, Action::ChooseColumns));
+            ui.close();
+        }
+        let custom = app.views.has_custom(&app.ws.pane().location);
+        if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), "Reset folder view", None, custom).clicked() {
+            app.cmds.push(Cmd::PaneAction(pane_id, Action::ResetFolderView));
+            ui.close();
+        }
+        if menu_item(ui, Some(ph::STACK), "Apply view to all folders…", None, true).clicked() {
+            app.cmds.push(Cmd::PaneAction(pane_id, Action::ApplyViewToAll));
+            ui.close();
+        }
+    });
+}
+
+fn sort_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
+    Popup::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
+        ui.set_width(220.0);
+        menu_caption(ui, "Sort by");
+        sort_items(ui, &mut app.cmds, app.ws.pane());
+        menu_separator(ui);
+        let id = app.ws.pane().id;
+        let pane = app.ws.pane_mut();
+        if menu_check(ui, pane.view.sort.folders_first, "Folders first", None).clicked() {
+            pane.view.sort.folders_first = !pane.view.sort.folders_first;
+            pane.resort();
+            app.cmds.push(Cmd::ViewChanged(id));
+            ui.close();
+        }
+        if menu_check(ui, pane.view.sort.natural, "Natural order (file2 < file10)", None).clicked() {
+            pane.view.sort.natural = !pane.view.sort.natural;
+            pane.resort();
+            app.cmds.push(Cmd::ViewChanged(id));
+            ui.close();
+        }
+    });
+}
+
+fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
+    let id = Id::new("soyuz.dual.menu");
+    if button.secondary_clicked() {
+        Popup::open_id(ui.ctx(), id);
+    }
+    Popup::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
+        .kind(egui::PopupKind::Menu)
+        .open_memory(None)
+        .align(RectAlign::BOTTOM_END)
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
+        .show(|ui| {
+            ui.set_width(240.0);
+            let km = app.keymap.clone();
+            let tab = app.ws.tab_mut();
+            let dual = tab.dual;
+            if menu_check(ui, dual, "Dual pane", chord_label(&km, &Action::ToggleDualPane).as_deref()).clicked() {
+                app.cmds.push(Cmd::Action(Action::ToggleDualPane));
+            }
+            use soyuz_core::config::Orientation;
+            if menu_check(ui, tab.orientation == Orientation::Vertical, "Side by side", None).clicked() {
+                tab.orientation = Orientation::Vertical;
+            }
+            if menu_check(ui, tab.orientation == Orientation::Horizontal, "Stacked", None).clicked() {
+                tab.orientation = Orientation::Horizontal;
+            }
+            menu_separator(ui);
+            if menu_check(ui, tab.sync_nav, "Synchronized navigation", None).clicked() {
+                app.cmds.push(Cmd::Action(Action::SyncNavigation));
+            }
+            if menu_item(
+                ui,
+                Some(ph::ARROWS_LEFT_RIGHT),
+                "Swap panes",
+                chord_label(&km, &Action::SwapPanes).as_deref(),
+                dual,
+            )
+            .clicked()
+            {
+                app.cmds.push(Cmd::Action(Action::SwapPanes));
+            }
+            if menu_item(ui, Some(ph::COPY_SIMPLE), "Mirror to other pane", None, true).clicked() {
+                app.cmds.push(Cmd::Action(Action::MirrorPaneToOther));
+            }
+            if menu_item(
+                ui,
+                Some(ph::ARROW_SQUARE_RIGHT),
+                "Focus other pane",
+                chord_label(&km, &Action::FocusOtherPane).as_deref(),
+                dual,
+            )
+            .clicked()
+            {
+                app.cmds.push(Cmd::Action(Action::FocusOtherPane));
+            }
+        });
+}
+
+/// Live filter for the focused pane.
+fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
+    let p = palette(ui.ctx());
+    let id = Id::new("soyuz.filter");
+    let focused = ui.memory(|m| m.has_focus(id));
+    let pane = app.ws.pane_mut();
+    let active = pane.filter_active();
+    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
+    let stroke = if focused {
+        Stroke::new(1.5, p.accent)
+    } else if active {
+        Stroke::new(1.0, p.accent.gamma_multiply(0.6))
+    } else {
+        Stroke::new(1.0, p.border_subtle)
+    };
+    ui.painter().rect_stroke(r, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+    ui.painter().text(
+        pos2(r.left() + 16.0, r.center().y),
+        Align2::CENTER_CENTER,
+        ph::FUNNEL_SIMPLE,
+        icons::font(14.0),
+        if active { p.accent } else { p.text_tertiary },
+    );
+    let mut text = pane.filter.clone();
+    let inner =
+        Rect::from_min_max(pos2(r.left() + 30.0, r.center().y - 11.0), pos2(r.right() - 28.0, r.center().y + 11.0));
+    let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
+    let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
+    let resp = child.add(
+        TextEdit::singleline(&mut text)
+            .id(id)
+            .hint_text("Filter")
+            .frame(Frame::NONE)
+            .margin(Margin::symmetric(0, 2))
+            .font(FontId::proportional(13.0))
+            .vertical_align(egui::Align::Center)
+            .desired_width(inner.width()),
+    );
+    if app.ui.filter_focus {
+        resp.request_focus();
+        app.ui.filter_focus = false;
+    }
+    if resp.changed() {
+        pane.set_filter(&text);
+    }
+    if esc {
+        pane.set_filter("");
+        resp.surrender_focus();
+        app.ui.focus = crate::app::Focus::List;
+    }
+    if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        app.ui.focus = crate::app::Focus::List;
+        // Enter in the filter selects the first match.
+        if pane.cursor_pos().is_none() && !pane.visible.is_empty() {
+            pane.move_cursor(0, false, false);
+        }
+    }
+    if active {
+        let cr = Rect::from_center_size(pos2(r.right() - 15.0, r.center().y), vec2(20.0, 20.0));
+        let cresp = ui.interact(cr, id.with("clear"), Sense::click());
+        if cresp.hovered() {
+            ui.painter().rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+        }
+        ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(12.0), p.text_tertiary);
+        if cresp.clicked() {
+            pane.set_filter("");
+        }
+    } else if !focused {
+        let hint = chord_label(&app.keymap, &Action::Search).unwrap_or_default();
+        ui.painter().text(
+            pos2(r.right() - 10.0, r.center().y),
+            Align2::RIGHT_CENTER,
+            hint,
+            FontId::proportional(11.0),
+            p.text_tertiary,
+        );
     }
 }
