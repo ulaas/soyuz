@@ -255,6 +255,8 @@ shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device
 repo = ""                        # GitHub "owner/name" or URL; empty = update check disabled
 weekly_check = false             # also check once a week at startup (notification only)
 include_prereleases = false      # offer release candidates / betas too
+[performance]                    # R5: startup and rendering
+cpu_first_frame = true           # Windows: real UI drawn on the CPU while the GPU starts (next start)
 [remote]                         # F2: SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
 cache_ttl_secs = 30              # reuse a remote folder listing this long (Refresh always re-lists)
 poll_secs = 0                    # re-list visible remote folders this often (0 = never)

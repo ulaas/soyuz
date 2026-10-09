@@ -45,6 +45,8 @@ pub struct Config {
     pub sync: SyncSection,
     /// D1: manual update check against GitHub Releases.
     pub updates: Updates,
+    /// R5: startup and rendering performance.
+    pub performance: Performance,
     /// F2: remote locations (SFTP, WebDAV, FTP/FTPS, S3) and network shares.
     pub remote: RemoteSection,
     pub keys: Keys,
@@ -764,6 +766,24 @@ pub struct Updates {
     pub weekly_check: bool,
     /// Offer pre-releases (release candidates, betas) too.
     pub include_prereleases: bool,
+}
+
+/// `[performance]`: startup and rendering (R5).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Performance {
+    /// Windows: draw the real interface on the CPU into the startup placeholder while the
+    /// GPU renderer starts (about 0.05 s instead of 0.37 s to the first real frame; mouse
+    /// input works, the keyboard from the GPU window on), then switch to the GPU window.
+    /// Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the
+    /// next start.
+    pub cpu_first_frame: bool,
+}
+
+impl Default for Performance {
+    fn default() -> Self {
+        Performance { cpu_first_frame: true }
+    }
 }
 
 /// `[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).

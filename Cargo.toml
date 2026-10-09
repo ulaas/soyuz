@@ -29,6 +29,8 @@ soyuz-vfs = { path = "crates/soyuz-vfs" }
 # --- GUI (pinned exactly, see PLAN §7) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
 egui = "=0.36.2"
+# Blocks on wgpu futures in the startup GPU worker (R5); already used by eframe.
+pollster = "1.0.1"
 egui_extras = { version = "=0.36.2", features = ["image", "svg", "file", "syntect"] }
 # SVG icon-pack pictures (same version egui_extras' `svg` feature uses).
 resvg = { version = "0.45.1", default-features = false }

@@ -54,6 +54,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[git]`](#git)
 - [`[sync]`](#sync)
 - [`[updates]`](#updates)
+- [`[performance]`](#performance)
 - [`[remote]`](#remote)
 - [`[keys]`](#keys)
 - [`[ai]`](#ai)
@@ -444,6 +445,14 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `repo` | string | `""` | GitHub repository to check, `owner/name` or `https://github.com/owner/name`. Empty disables the update check. |
 | `weekly_check` | boolean | `false` | Also check once a week at startup (off by default; only shows a notification). |
 | `include_prereleases` | boolean | `false` | Offer pre-releases (release candidates, betas) too. |
+
+## `[performance]`
+
+`[performance]`: startup and rendering (R5).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `cpu_first_frame` | boolean | `true` | Windows: draw the real interface on the CPU into the startup placeholder while the GPU renderer starts (about 0.05 s instead of 0.37 s to the first real frame; mouse input works, the keyboard from the GPU window on), then switch to the GPU window. Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the next start. |
 
 ## `[remote]`
 

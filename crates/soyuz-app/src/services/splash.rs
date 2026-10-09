@@ -70,23 +70,49 @@ fn is_dark(config: &Config, session: Option<&str>) -> bool {
     }
 }
 
+/// What [`open`] showed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Opened {
+    pub place: Place,
+    /// The theme's window background (RGB).
+    pub bg: [u8; 3],
+}
+
 /// Show the placeholder (no-op when off, for secondary windows and off Windows).
-/// `default_size` is the viewport's default inner size in points.
-pub fn open(config: &Config, secondary: bool, default_size: (f32, f32)) {
+/// `default_size` is the viewport's default inner size in points; `app_ron` eframe's
+/// saved state, `pos` the `SOYUZ_WINDOW_POS` debug position (points). `frames`:
+/// CPU-rendered UI frames will be shown in it (`startup`).
+pub fn open(
+    config: &Config,
+    secondary: bool,
+    default_size: (f32, f32),
+    app_ron: Option<&str>,
+    pos: Option<(f32, f32)>,
+    frames: bool,
+) -> Option<Opened> {
     if !cfg!(windows) || !config.appearance.startup_placeholder || secondary {
-        return;
+        return None;
     }
     let dir = soyuz_core::config::config_dir();
-    let app_ron = std::fs::read_to_string(dir.join("app.ron")).ok();
-    let Some(place) = place_from_app_ron(app_ron.as_deref(), default_size) else { return };
+    let place = match (place_from_app_ron(app_ron, default_size)?, pos) {
+        (Place::Centered { width, height }, Some((x, y))) => Place::At { x, y, width, height },
+        (Place::Maximized, Some((x, y))) => Place::At { x, y, width: default_size.0, height: default_size.1 },
+        (place, _) => place,
+    };
     let session = std::fs::read_to_string(dir.join("session.toml")).ok();
     let (dark, light, _) = crate::theme::resolve(&config.appearance);
     let p = if is_dark(config, session.as_deref()) { dark } else { light };
     let bg = [p.bg_window.r(), p.bg_window.g(), p.bg_window.b()];
     let icon = crate::app_icon::icon_data(96);
     let painted = Box::new(|| crate::devscript::startup_mark("placeholder painted"));
-    let splash = Splash::open(place, bg, Some((icon.rgba, icon.width, icon.height)), painted);
-    *SPLASH.lock() = splash;
+    let splash = Splash::open(place, bg, Some((icon.rgba, icon.width, icon.height)), painted, frames)?;
+    *SPLASH.lock() = Some(splash);
+    Some(Opened { place, bg })
+}
+
+/// Run `f` with the open placeholder (`None` when there is none).
+pub fn with<R>(f: impl FnOnce(&Splash) -> R) -> Option<R> {
+    SPLASH.lock().as_ref().map(f)
 }
 
 /// Close the placeholder (the real window is visible now). Idempotent.

@@ -234,6 +234,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     switch(ui, &mut d.appearance.startup_placeholder);
                 },
             );
+            r.row_kw(
+                tr!("settings-appearance-cpu-first-frame"),
+                tr!("settings-appearance-cpu-first-frame-desc"),
+                "startup launch fast cpu render first frame performance",
+                |ui| {
+                    switch(ui, &mut d.performance.cpu_first_frame);
+                },
+            );
         }
         r.row_kw(
             tr!("settings-appearance-thumb-cache"),

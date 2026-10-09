@@ -359,7 +359,7 @@ mod tests {
         );
         assert_eq!(
             names(suggestions(&installed, "", FontRoleKind::Ui)),
-            ["Inter*", "IBM Plex Sans*", "Noto Sans*", "Segoe UI", "Arial"]
+            ["Inter*", "Inter Variable*", "IBM Plex Sans*", "Noto Sans*", "Segoe UI", "Arial"]
         );
         assert!(names(suggestions(&installed, "", FontRoleKind::UiSemibold)).contains(&"Inter SemiBold*".to_string()));
         assert_eq!(names(suggestions(&installed, "cons", mono)), ["Consolas", "Lucida Console"]);

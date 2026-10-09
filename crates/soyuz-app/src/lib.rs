@@ -26,6 +26,7 @@ pub mod ops;
 pub mod palette;
 pub mod rename;
 pub mod services;
+pub mod startup;
 pub mod state;
 pub mod theme;
 pub mod ui;

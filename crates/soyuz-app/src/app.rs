@@ -153,6 +153,14 @@ impl SoyuzApp {
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
 
+    /// Attach to the native window once eframe has created it, for an app built before
+    /// the window existed (`startup`, CPU-rendered first frames).
+    pub fn attach_window(&mut self, cc: &CreationContext<'_>) {
+        crate::ui::native_chrome::init(cc, &self.config, crate::ui::native_chrome::backdrop_active());
+        // `native_chrome::init` applied the window's dark mode from the context theme;
+        // the title / theme sync below runs again on the first GPU frame.
+    }
+
     /// Construct with an explicit config (also used by tests).
     pub fn with_config(ctx: &egui::Context, config: Config, renderer: &'static str) -> Self {
         Self::with_startup(ctx, config, renderer, Startup::default())
@@ -640,15 +648,16 @@ pub fn default_favorites() -> Vec<FavoriteEntry> {
     crate::ui::sidebar::standard_places().into_iter().map(|p| FavoriteEntry { name: p.label, path: p.path }).collect()
 }
 
-impl eframe::App for SoyuzApp {
-    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.handle_close_request(ctx);
-    }
-
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+impl SoyuzApp {
+    /// One frame of the main window (eframe's `App::ui`; also the CPU-rendered startup
+    /// frames, see `startup`, which skip the script hooks and the extra windows).
+    pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
-        crate::devscript::begin(self);
-        crate::devscript::inject(self, &ctx);
+        let cpu = crate::startup::cpu_phase();
+        if !cpu {
+            crate::devscript::begin(self);
+            crate::devscript::inject(self, &ctx);
+        }
         crate::ui::workspaces::windows::begin_main_frame(self, &ctx);
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
@@ -682,11 +691,16 @@ impl eframe::App for SoyuzApp {
         if overlays {
             ops::fileops::end_frame(self, &ctx);
         }
-        crate::devscript::pump(self, &ctx);
+        if !cpu {
+            crate::devscript::pump(self, &ctx);
+        }
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
-        // The other in-process windows (F7), drawn as immediate viewports.
-        crate::ui::workspaces::windows::show(self, &ctx);
+        // The other in-process windows (F7), drawn as immediate viewports (they need
+        // eframe's viewport renderer, so they open with the GPU window).
+        if !cpu {
+            crate::ui::workspaces::windows::show(self, &ctx);
+        }
 
         // Cheap periodic check: persist when the session text changed (every ~30 s,
         // plus eframe's own `save` on exit).
@@ -694,6 +708,16 @@ impl eframe::App for SoyuzApp {
             self.last_session_check = Instant::now();
             self.save_state();
         }
+    }
+}
+
+impl eframe::App for SoyuzApp {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.handle_close_request(ctx);
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.frame(ui);
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

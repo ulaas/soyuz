@@ -6378,6 +6378,7 @@ dependencies = [
  "nucleo-matcher",
  "parking_lot",
  "pdfium-render",
+ "pollster",
  "quick-xml 0.42.0",
  "raw-window-handle",
  "regex",

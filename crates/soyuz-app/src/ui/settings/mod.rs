@@ -21,13 +21,12 @@ use std::time::{Duration, Instant};
 
 use egui::emath::TSTransform;
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontFamily, FontId, Frame, Id, Key, LayerId, Layout, Margin, Modal,
-    Modifiers, Order, Rect, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
+    Align, Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Layout, Margin, Modal, Modifiers, Order,
+    Rect, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, UiBuilder, pos2, vec2,
 };
 use soyuz_core::config::{self, Config, Keymap};
 
 use crate::app::SoyuzApp;
-use crate::theme::fonts::SEMIBOLD;
 use crate::theme::icons::ph;
 use crate::theme::{Palette, icons, palette};
 use crate::ui::dialogs::keybind_record::{RecordOutcome, RecordTarget, Recorder};
@@ -557,11 +556,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     ui.horizontal(|ui| {
         ui.add_space(6.0);
         crate::ui::widgets::icon_label(ui, icons::icon(ph::GEAR_SIX, 18.0).color(p.accent));
-        ui.label(
-            RichText::new(tr!("settings-title"))
-                .font(FontId::new(17.0, FontFamily::Name(SEMIBOLD.into())))
-                .color(p.text_primary),
-        );
+        ui.label(RichText::new(tr!("settings-title")).font(crate::theme::fonts::heading(17.0)).color(p.text_primary));
     });
     ui.add_space(12.0);
     let s = &mut app.settings;
@@ -705,16 +700,12 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         if searching {
             ui.label(
                 RichText::new(tr!("settings-search-results", query = app.settings.query.trim()))
-                    .font(FontId::new(19.0, FontFamily::Name(SEMIBOLD.into())))
+                    .font(crate::theme::fonts::heading(19.0))
                     .color(p.text_primary),
             );
         } else {
             crate::ui::widgets::icon_label(ui, icons::icon(sec.icon(), 20.0).color(p.accent));
-            ui.label(
-                RichText::new(sec.title())
-                    .font(FontId::new(19.0, FontFamily::Name(SEMIBOLD.into())))
-                    .color(p.text_primary),
-            );
+            ui.label(RichText::new(sec.title()).font(crate::theme::fonts::heading(19.0)).color(p.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(30.0);
                 if sec != Section::Advanced

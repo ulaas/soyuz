@@ -8,7 +8,7 @@ use egui::{
 
 use soyuz_core::config::Density;
 
-use super::fonts::SEMIBOLD;
+use super::fonts::{CAPTION as CAPTION_FAMILY, DISPLAY as DISPLAY_FAMILY, SEMIBOLD};
 use super::tokens::{Palette, motion, radius, type_scale};
 
 /// Named text styles beyond egui's built-ins.
@@ -64,7 +64,8 @@ pub fn offset_text(s: &mut egui::Style, ui: f32, semibold: f32, code: f32) {
     for (ts, f) in s.text_styles.iter_mut() {
         let add = match &f.family {
             FontFamily::Monospace => code,
-            FontFamily::Name(n) if n.as_ref() == SEMIBOLD => semibold,
+            FontFamily::Name(n) if n.as_ref() == SEMIBOLD || n.as_ref() == DISPLAY_FAMILY => semibold,
+            FontFamily::Name(n) if n.as_ref() == CAPTION_FAMILY => ui,
             _ if matches!(ts, TextStyle::Small | TextStyle::Body | TextStyle::Button)
                 || f.family == FontFamily::Proportional =>
             {
@@ -117,15 +118,19 @@ pub fn style(p: &Palette, font_size: f32, reduced_motion: bool) -> egui::Style {
     let k = if font_size > 4.0 { font_size / type_scale::BODY } else { 1.0 };
     let prop = |size: f32| FontId::new(size * k, FontFamily::Proportional);
     let semi = |size: f32| FontId::new(size * k, FontFamily::Name(SEMIBOLD.into()));
+    // Small text and large headings have families of their own so a variable ui font
+    // can draw them at another optical size (`fonts::CAPTION` / `fonts::DISPLAY`).
+    let caption = |size: f32| FontId::new(size * k, FontFamily::Name(CAPTION_FAMILY.into()));
+    let display = |size: f32| FontId::new(size * k, FontFamily::Name(DISPLAY_FAMILY.into()));
     s.text_styles = [
-        (TextStyle::Small, prop(type_scale::SMALL)),
+        (TextStyle::Small, caption(type_scale::SMALL)),
         (TextStyle::Body, prop(type_scale::BODY)),
         (TextStyle::Button, prop(type_scale::BUTTON)),
-        (TextStyle::Heading, semi(type_scale::HEADING)),
+        (TextStyle::Heading, display(type_scale::HEADING)),
         (TextStyle::Monospace, FontId::new(type_scale::MONOSPACE * k, FontFamily::Monospace)),
         (TextStyle::Name(TITLE.into()), semi(type_scale::TITLE)),
-        (TextStyle::Name(CAPTION.into()), prop(type_scale::CAPTION)),
-        (TextStyle::Name(DISPLAY.into()), semi(type_scale::DISPLAY)),
+        (TextStyle::Name(CAPTION.into()), caption(type_scale::CAPTION)),
+        (TextStyle::Name(DISPLAY.into()), display(type_scale::DISPLAY)),
     ]
     .into();
 

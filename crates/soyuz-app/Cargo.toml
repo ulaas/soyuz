@@ -43,6 +43,7 @@ soyuz-mcp.workspace = true
 soyuz-script.workspace = true
 soyuz-vfs.workspace = true
 eframe.workspace = true
+pollster.workspace = true
 ron.workspace = true
 egui.workspace = true
 egui_extras.workspace = true

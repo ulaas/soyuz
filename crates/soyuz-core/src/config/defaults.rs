@@ -34,6 +34,7 @@ impl Default for Config {
             git: Git::default(),
             sync: SyncSection::default(),
             updates: Updates::default(),
+            performance: Performance::default(),
             remote: RemoteSection::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),

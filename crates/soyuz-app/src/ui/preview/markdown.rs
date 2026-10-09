@@ -13,7 +13,9 @@ fn spans_job(spans: &[Span], size: f32, color: Color32, heading: bool, p: &Palet
     for s in spans {
         let family = if s.code {
             FontFamily::Monospace
-        } else if s.bold || heading {
+        } else if heading {
+            crate::theme::fonts::heading(size).family
+        } else if s.bold {
             FontFamily::Name(SEMIBOLD.into())
         } else {
             FontFamily::Proportional

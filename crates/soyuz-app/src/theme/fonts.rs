@@ -44,12 +44,19 @@ pub const NUMBERS: &str = "role-numbers";
 pub const ICONS: &str = "icons";
 /// Phosphor Fill variant, used for the active sidebar item.
 pub const PHOSPHOR_FILL: &str = "phosphor-fill";
+/// Small text (`TextStyle::Small`, captions): the ui font, or its caption optical size.
+pub const CAPTION: &str = "caption";
+/// Large headings (`TextStyle::Heading`, display): the heading font, or its display
+/// optical size.
+pub const DISPLAY: &str = "display";
 
 /// One font compiled into the binary.
 #[derive(Debug)]
 pub struct EmbeddedFont {
     /// Face name a `family` field matches (`IBM Plex Sans SemiBold`).
     pub name: &'static str,
+    /// Name shown in Settings (usually [`Self::name`]).
+    pub label: &'static str,
     /// The family it belongs to (`IBM Plex Sans`).
     pub family: &'static str,
     /// Monospace face.
@@ -57,6 +64,23 @@ pub struct EmbeddedFont {
     /// The face headings use when this face draws the interface (`ui_semibold` empty).
     heading: Option<Embedded>,
     bytes: &'static [u8],
+    /// Fixed variation coordinates (a named instance of a variable font; empty = static).
+    coords: &'static [Coord],
+    /// Extra optical-size instances used for small text and large headings while this
+    /// face draws the interface (see [`CAPTION`] / [`DISPLAY`]).
+    optical: Option<&'static Optical>,
+}
+
+/// One variation coordinate (`opsz`, `wght`, …).
+pub type Coord = (&'static [u8; 4], f32);
+
+/// Optical-size instances of a variable interface font beyond its regular / heading
+/// faces: [`CAPTION`] draws small text (`TextStyle::Small`, captions), [`DISPLAY`] large
+/// headings (`TextStyle::Heading`, display).
+#[derive(Debug)]
+pub struct Optical {
+    pub caption: &'static [Coord],
+    pub display: &'static [Coord],
 }
 
 macro_rules! font {
@@ -72,17 +96,61 @@ const fn face(
     heading: Option<Embedded>,
     bytes: &'static [u8],
 ) -> EmbeddedFont {
-    EmbeddedFont { name, family, mono, heading, bytes }
+    EmbeddedFont { name, label: name, family, mono, heading, bytes, coords: &[], optical: None }
 }
+
+/// A named instance of a variable font.
+const fn instance(
+    name: &'static str,
+    label: &'static str,
+    family: &'static str,
+    heading: Option<Embedded>,
+    bytes: &'static [u8],
+    coords: &'static [Coord],
+    optical: Option<&'static Optical>,
+) -> EmbeddedFont {
+    EmbeddedFont { name, label, family, mono: false, heading, bytes, coords, optical }
+}
+
+/// Inter 4's variable font: `opsz` 14–32 (14 = the static "Inter" text design, 32 =
+/// "Inter Display"), `wght` 100–900.
+static INTER_VARIABLE: &[u8] = font!("inter/InterVariable.ttf");
+/// Body text: the axis minimum (the static Inter Regular design).
+const INTER_VAR_BODY: &[Coord] = &[(b"opsz", 14.0), (b"wght", 400.0)];
+/// Titles, tab labels, dialog headings (13–15 pt).
+const INTER_VAR_SEMIBOLD: &[Coord] = &[(b"opsz", 15.0), (b"wght", 600.0)];
+/// Small text (11–11.5 pt): `opsz` cannot go below 14, so a touch more weight instead.
+const INTER_VAR_CAPTION: &[Coord] = &[(b"opsz", 14.0), (b"wght", 440.0)];
+/// Large headings (18–22 pt): tighter spacing and finer details of the display design.
+const INTER_VAR_DISPLAY: &[Coord] = &[(b"opsz", 20.0), (b"wght", 600.0)];
+static INTER_VAR_OPTICAL: Optical = Optical { caption: INTER_VAR_CAPTION, display: INTER_VAR_DISPLAY };
 
 /// Every embedded font, in Settings order (index = [`Embedded`]). See
 /// `assets/fonts/README.md` for versions, sources and checksums.
-pub static EMBEDDED: [EmbeddedFont; 10] = [
+pub static EMBEDDED: [EmbeddedFont; 12] = [
     face("Inter", "Inter", false, Some(Embedded::INTER_SEMIBOLD), font!("inter/Inter-Regular.ttf")),
     face("Inter SemiBold", "Inter", false, None, font!("inter/Inter-SemiBold.ttf")),
-    face("IBM Plex Sans", "IBM Plex Sans", false, Some(Embedded(3)), font!("ibm-plex-sans/IBMPlexSans-Regular.ttf")),
+    instance(
+        "Inter Variable",
+        "Inter Variable (optical sizes)",
+        "Inter Variable",
+        Some(Embedded(3)),
+        INTER_VARIABLE,
+        INTER_VAR_BODY,
+        Some(&INTER_VAR_OPTICAL),
+    ),
+    instance(
+        "Inter Variable SemiBold",
+        "Inter Variable SemiBold (optical sizes)",
+        "Inter Variable",
+        None,
+        INTER_VARIABLE,
+        INTER_VAR_SEMIBOLD,
+        None,
+    ),
+    face("IBM Plex Sans", "IBM Plex Sans", false, Some(Embedded(5)), font!("ibm-plex-sans/IBMPlexSans-Regular.ttf")),
     face("IBM Plex Sans SemiBold", "IBM Plex Sans", false, None, font!("ibm-plex-sans/IBMPlexSans-SemiBold.ttf")),
-    face("Noto Sans", "Noto Sans", false, Some(Embedded(5)), font!("noto-sans/NotoSans-Regular.ttf")),
+    face("Noto Sans", "Noto Sans", false, Some(Embedded(7)), font!("noto-sans/NotoSans-Regular.ttf")),
     face("Noto Sans SemiBold", "Noto Sans", false, None, font!("noto-sans/NotoSans-SemiBold.ttf")),
     face("Cascadia Mono", "Cascadia Mono", true, None, font!("cascadia-mono/CascadiaMono-Regular.ttf")),
     face("JetBrains Mono", "JetBrains Mono", true, None, font!("jetbrains-mono/JetBrainsMono-Regular.ttf")),
@@ -97,8 +165,10 @@ pub struct Embedded(usize);
 impl Embedded {
     pub const INTER: Embedded = Embedded(0);
     pub const INTER_SEMIBOLD: Embedded = Embedded(1);
-    pub const CASCADIA_MONO: Embedded = Embedded(6);
-    pub const JETBRAINS_MONO: Embedded = Embedded(7);
+    pub const INTER_VARIABLE: Embedded = Embedded(2);
+    pub const INTER_VARIABLE_SEMIBOLD: Embedded = Embedded(3);
+    pub const CASCADIA_MONO: Embedded = Embedded(8);
+    pub const JETBRAINS_MONO: Embedded = Embedded(9);
 
     /// Every embedded font.
     pub fn all() -> impl Iterator<Item = Embedded> {
@@ -122,11 +192,31 @@ impl Embedded {
     }
 
     pub fn label(self) -> &'static str {
-        self.font().name
+        self.font().label
     }
 
     fn bytes(self) -> &'static [u8] {
         self.font().bytes
+    }
+
+    /// Whether egui can use this face: always for static faces; a variable instance
+    /// needs every axis it pins (a damaged or truncated file falls back, see [`build`]).
+    fn usable(self) -> bool {
+        let f = self.font();
+        if f.coords.is_empty() {
+            return true;
+        }
+        let axes = FontData::from_static(f.bytes).variation_axes();
+        f.coords.iter().all(|(tag, _)| axes.iter().any(|a| a.tag.to_be_bytes() == **tag))
+    }
+
+    /// The static face used instead when [`Self::usable`] is false.
+    fn static_fallback(self) -> Embedded {
+        match self {
+            Embedded::INTER_VARIABLE => Embedded::INTER,
+            Embedded::INTER_VARIABLE_SEMIBOLD => Embedded::INTER_SEMIBOLD,
+            e => e,
+        }
     }
 
     /// The face for headings when this one draws the interface.
@@ -364,10 +454,27 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&
     let mut defs = FontDefinitions { font_data: defaults.font_data.clone(), families: Default::default() };
     let tw = tweak(fonts);
     // Only the embedded fonts a role uses (primary or fallback) are handed to egui.
+    let instance = |bytes: &'static [u8], coords: &[Coord]| {
+        let mut t = tw.clone();
+        if !coords.is_empty() {
+            t.coords = VariationCoords::new(coords.iter().copied());
+        }
+        FontData::from_static(bytes).tweak(t)
+    };
+    // A variable instance that cannot be used (damaged file) becomes its static face.
+    let roles: Vec<Resolved> = roles
+        .iter()
+        .map(|r| match r.source {
+            Source::Embedded(e) if !e.usable() => {
+                log::warn!("fonts: {} is not usable, using {}", e.label(), e.static_fallback().label());
+                Resolved { source: Source::Embedded(e.static_fallback()), ..r.clone() }
+            }
+            _ => r.clone(),
+        })
+        .collect();
+    let roles = &roles[..];
     let add_embedded = |defs: &mut FontDefinitions, e: Embedded| {
-        defs.font_data
-            .entry(e.key().into())
-            .or_insert_with(|| FontData::from_static(e.bytes()).tweak(tw.clone()).into());
+        defs.font_data.entry(e.key().into()).or_insert_with(|| instance(e.bytes(), e.font().coords).into());
     };
     for r in roles {
         if let Source::Embedded(e) = r.source {
@@ -408,6 +515,27 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&
         }
         defs.families.insert(family(r.role), list);
     }
+    // Small text and large headings: the ui / heading lists, led by the optical-size
+    // instances when the ui font has them.
+    let optical = roles.iter().find(|r| r.role == FontRoleKind::Ui).and_then(|r| match r.source {
+        Source::Embedded(e) => e.font().optical.map(|o| (e, o)),
+        Source::System { .. } => None,
+    });
+    let derived = |defs: &mut FontDefinitions, name: &str, base: FontFamily, coords: Option<(Embedded, &[Coord])>| {
+        let mut list = defs.families.get(&base).cloned().unwrap_or_default();
+        if let Some((e, coords)) = coords {
+            let key = format!("{} {name}", e.key());
+            defs.font_data.entry(key.clone()).or_insert_with(|| instance(e.bytes(), coords).into());
+            list.insert(0, key);
+        }
+        defs.families.insert(FontFamily::Name(name.into()), list);
+    };
+    derived(&mut defs, CAPTION, FontFamily::Proportional, optical.map(|(e, o)| (e, o.caption)));
+    // The display size only while headings use the same family's heading face.
+    let display = optical.filter(|(e, _)| {
+        roles.iter().any(|r| r.role == FontRoleKind::UiSemibold && r.source == Source::Embedded(e.heading()))
+    });
+    derived(&mut defs, DISPLAY, family(FontRoleKind::UiSemibold), display.map(|(e, o)| (e, o.display)));
     // Icon families: the icon font *first*, with egui's fallbacks after it.
     let with_fallbacks =
         |first: &str| std::iter::once(first.to_string()).chain(prop_defaults.iter().cloned()).collect();
@@ -469,6 +597,12 @@ pub fn offset(ctx: &Context, role: FontRoleKind) -> f32 {
 /// The font of `role` at `size` points plus the role's size offset.
 pub fn role_font(ctx: &Context, role: FontRoleKind, size: f32) -> FontId {
     FontId::new((size + offset(ctx, role)).max(4.0), family(role))
+}
+
+/// A semibold heading at `size` points: large sizes (17 pt and up) use the [`DISPLAY`]
+/// family, so a variable ui font draws them at its display optical size.
+pub fn heading(size: f32) -> FontId {
+    FontId::new(size, FontFamily::Name(if size >= 17.0 { DISPLAY } else { SEMIBOLD }.into()))
 }
 
 /// Terminal grid font.
@@ -642,8 +776,48 @@ mod tests {
         assert_eq!(f.families[&FontFamily::Name(SEMIBOLD.into())][0], "Inter SemiBold");
         assert_eq!(f.families[&FontFamily::Name(ICONS.into())][0], "phosphor");
         assert_eq!(f.families[&FontFamily::Name(PHOSPHOR_FILL.into())][0], PHOSPHOR_FILL);
+        assert_eq!(f.families[&FontFamily::Name(CAPTION.into())][0], "Inter", "static fonts: same as the ui list");
+        assert_eq!(f.families[&FontFamily::Name(DISPLAY.into())][0], "Inter SemiBold");
         // Only the fonts in use are handed to egui.
         assert!(!f.font_data.contains_key("Noto Sans") && !f.font_data.contains_key("JetBrains Mono"));
+        assert!(!f.font_data.contains_key("Inter Variable"));
+    }
+
+    #[test]
+    fn inter_variable_has_optical_size_instances() {
+        use skrifa::MetadataProvider as _;
+        let font = skrifa::FontRef::new(Embedded::INTER_VARIABLE.bytes()).unwrap();
+        let axis = |tag: &[u8; 4]| {
+            font.axes().iter().find(|a| a.tag().to_be_bytes() == *tag).map(|a| (a.min_value(), a.max_value()))
+        };
+        assert_eq!(axis(b"opsz"), Some((14.0, 32.0)), "Inter 4.1: opsz 14 (text) to 32 (display)");
+        assert_eq!(axis(b"wght"), Some((100.0, 900.0)));
+        assert!(Embedded::INTER_VARIABLE.usable() && Embedded::INTER_VARIABLE_SEMIBOLD.usable());
+        assert!(Embedded::INTER.usable(), "static faces need no axes");
+        assert_eq!(Embedded::find("inter variable"), Some(Embedded::INTER_VARIABLE));
+        assert_eq!(Embedded::INTER_VARIABLE.heading(), Embedded::INTER_VARIABLE_SEMIBOLD);
+        assert_eq!(Embedded::INTER_VARIABLE.label(), "Inter Variable (optical sizes)");
+
+        let mut fonts = Fonts::default();
+        fonts.ui.family = "Inter Variable".into();
+        let roles = resolve(&fonts, &|_| None, &|_, _| false);
+        assert_eq!(src(&roles, FontRoleKind::UiSemibold), Source::Embedded(Embedded::INTER_VARIABLE_SEMIBOLD));
+        let defs = build(&fonts, &roles, &|_| None);
+        let fam = |n: &str| defs.families[&FontFamily::Name(n.into())].clone();
+        assert_eq!(defs.families[&FontFamily::Proportional][..2], ["Inter Variable", "Inter"], "static Inter after it");
+        assert_eq!(fam(SEMIBOLD)[0], "Inter Variable SemiBold");
+        assert_eq!(fam(CAPTION)[..2], ["Inter Variable caption", "Inter Variable"]);
+        assert_eq!(fam(DISPLAY)[..2], ["Inter Variable display", "Inter Variable SemiBold"]);
+        let coords = |k: &str| defs.font_data[k].tweak.coords.as_ref().to_vec();
+        let tag = |t: &[u8; 4]| skrifa::raw::types::Tag::new(t);
+        assert_eq!(coords("Inter Variable"), [(tag(b"opsz"), 14.0), (tag(b"wght"), 400.0)]);
+        assert_eq!(coords("Inter Variable display"), [(tag(b"opsz"), 20.0), (tag(b"wght"), 600.0)]);
+        // Headings set to another font: no display instance.
+        fonts.ui_semibold.family = "IBM Plex Sans SemiBold".into();
+        let roles = resolve(&fonts, &|_| None, &|_, _| false);
+        let defs = build(&fonts, &roles, &|_| None);
+        assert_eq!(defs.families[&FontFamily::Name(DISPLAY.into())][0], "IBM Plex Sans SemiBold");
+        assert_eq!(defs.families[&FontFamily::Name(CAPTION.into())][0], "Inter Variable caption");
     }
 
     #[test]
