@@ -659,7 +659,7 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
     let max_risk = crate::ai::agent::Limits::from_config(&app.config.ai.agent).max_risk;
     let connecting = app.ai.external_connecting();
     let mut insert: Option<String> = None;
-    egui::Popup::menu(&r).id(Id::new("soyuz.ai.tools")).show(|ui| {
+    crate::ui::native::popup::Menu::menu(&r).id(Id::new("soyuz.ai.tools")).show(|ui| {
         ui.set_width(330.0);
         let builtin = soyuz_ai::tools::catalog().iter().filter(|d| d.risk <= max_risk).count();
         crate::ui::widgets::menu_caption(ui, "Soyuz");

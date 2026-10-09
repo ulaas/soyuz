@@ -152,7 +152,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
                     icons::font(14.0),
                     p.text_secondary,
                 );
-                Popup::menu(&resp).show(|ui| {
+                crate::ui::native::popup::Menu::menu(&resp).show(|ui| {
                     ui.set_width(220.0);
                     for &j in hidden.iter().rev() {
                         if menu_item(ui, Some(ph::FOLDER), &list[j].label, None, true).clicked() {
@@ -292,7 +292,7 @@ fn sep(
         icons::font(11.0),
         if resp.hovered() { p.text_primary } else { p.text_tertiary },
     );
-    Popup::menu(&resp).align(RectAlign::BOTTOM_START).show(|ui| {
+    crate::ui::native::popup::Menu::menu(&resp).align(RectAlign::BOTTOM_START).show(|ui| {
         ui.set_width(240.0);
         let entries = c.services.aux_entries(&dir);
         match entries {

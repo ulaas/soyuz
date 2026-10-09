@@ -180,6 +180,10 @@ pub struct Appearance {
     pub backdrop: Backdrop,
     /// Windows 11 Snap Layouts flyout when hovering the maximize button (custom title bar).
     pub snap_layouts: bool,
+    /// Dialogs, the settings window and menus that do not fit the window open as their own
+    /// OS windows (movable outside the main window and onto other monitors); off = drawn
+    /// inside the window (menus are then clipped to it).
+    pub native_dialogs: bool,
     /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji, Arabic / Hebrew).
     pub fallback_fonts: FallbackFonts,
     /// Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`,

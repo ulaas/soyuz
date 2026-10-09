@@ -381,6 +381,19 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         ctx.request_repaint();
     }
 
+    if crate::ui::native::active(ctx) {
+        show_native(ctx, app, &p);
+        return;
+    }
+    if window_keys(ctx, app) {
+        return;
+    }
+    in_window(ctx, app, &p, ease);
+}
+
+/// Recorder / window keys (Esc closes, Ctrl+F searches, Ctrl+PgUp/PgDn switch
+/// sections). Returns `true` when the window was closed.
+fn window_keys(ctx: &egui::Context, app: &mut SoyuzApp) -> bool {
     // Recorder on top (owns the keyboard while open).
     if app.settings.recorder.is_some() {
         let cmd_is_ctrl = app.settings.draft.keys.cmd_is_ctrl;
@@ -409,7 +422,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         if esc {
             if app.settings.query.is_empty() {
                 close(app);
-                return;
+                return true;
             }
             app.settings.query.clear();
         }
@@ -423,7 +436,94 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             app.settings.scroll_top = true;
         }
     }
+    false
+}
 
+/// The settings window as its own OS window (`[appearance] native_dialogs`).
+fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
+    let mut w = crate::ui::native::dialog::DialogWindow::new(
+        Id::new("soyuz.settings.native"),
+        Id::new("soyuz.settings"),
+        tr!("settings-title"),
+    );
+    w.icon = Some(ph::GEAR_SIX);
+    w.resizable = Some(vec2(1000.0, 700.0 + crate::ui::native::dialog::TITLE_H));
+    w.margin = 0.0;
+    w.fill = p.bg_surface1;
+    let shown = w.show(ctx, |ui| {
+        let ctx = ui.ctx().clone();
+        if window_keys(&ctx, app) {
+            return true;
+        }
+        let rect = ui.max_rect();
+        let close_now = body(ui, app, p, rect, Id::new("soyuz.settings"), false);
+        show_picker(&ctx, app);
+        close_now
+    });
+    if shown.close || shown.inner == Some(true) {
+        if app.settings.open {
+            close(app);
+        }
+        return;
+    }
+    apply_and_save(ctx, app);
+}
+
+/// Live apply + debounced save.
+fn apply_and_save(ctx: &egui::Context, app: &mut SoyuzApp) {
+    if app.settings.draft != app.settings.applied {
+        let draft = app.settings.draft.clone();
+        crate::services::config_watch::apply_config(app, ctx, draft.clone());
+        app.settings.applied = draft;
+        app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
+    }
+    pump_save(ctx, app);
+}
+
+/// Navigation column, content and (with `own_close`) the close button inside `rect`.
+/// Returns `true` to close.
+fn body(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, rect: Rect, id: Id, own_close: bool) -> bool {
+    let mut close_now = false;
+    let nav = Rect::from_min_size(rect.min, vec2(NAV_W, rect.height()));
+    let content = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
+    let r = if own_close { 14 } else { 0 };
+    ui.painter().rect_filled(
+        nav,
+        CornerRadius { nw: r, sw: if own_close { 14 } else { 8 }, ne: 0, se: 0 },
+        p.bg_window,
+    );
+    ui.painter().line_segment(
+        [pos2(nav.right(), nav.top()), pos2(nav.right(), nav.bottom())],
+        Stroke::new(1.0, p.border_subtle),
+    );
+    let mut nav_ui =
+        ui.new_child(UiBuilder::new().max_rect(nav.shrink2(vec2(12.0, 14.0))).layout(Layout::top_down(Align::Min)));
+    if sidebar(&mut nav_ui, app, p) {
+        close_now = true;
+    }
+    let mut c_ui =
+        ui.new_child(UiBuilder::new().max_rect(content.shrink2(vec2(28.0, 18.0))).layout(Layout::top_down(Align::Min)));
+    content_area(&mut c_ui, app, p);
+    if own_close {
+        let cr = Rect::from_center_size(pos2(rect.right() - 22.0, rect.top() + 22.0), vec2(26.0, 26.0));
+        let cresp = ui.interact(cr, id.with("close"), Sense::click()).on_hover_text(tr!("settings-close-tooltip"));
+        crate::ui::a11y::button(&cresp, tr!("settings-close"));
+        if cresp.has_focus() {
+            crate::ui::widgets::focus_ring(ui, cr);
+        }
+        if cresp.hovered() {
+            ui.painter().rect_filled(cr, CornerRadius::same(6), p.bg_surface3);
+        }
+        ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(14.0), p.text_secondary);
+        if cresp.clicked() {
+            close_now = true;
+        }
+    }
+    close_now
+}
+
+/// The settings window drawn inside the app window (an egui modal).
+fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     let screen = ctx.content_rect();
     let size = vec2((screen.width() - 48.0).clamp(560.0, 1000.0), (screen.height() - 48.0).clamp(400.0, 700.0));
     let id = Id::new("soyuz.settings");
@@ -446,37 +546,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             ui.set_opacity(ease);
             crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, tr!("settings-title"));
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            let nav = Rect::from_min_size(rect.min, vec2(NAV_W, rect.height()));
-            let content = Rect::from_min_max(pos2(nav.right(), rect.top()), rect.max);
-            ui.painter().rect_filled(nav, CornerRadius { nw: 14, sw: 14, ne: 0, se: 0 }, p.bg_window);
-            ui.painter().line_segment(
-                [pos2(nav.right(), nav.top()), pos2(nav.right(), nav.bottom())],
-                Stroke::new(1.0, p.border_subtle),
-            );
-            let mut nav_ui = ui.new_child(
-                UiBuilder::new().max_rect(nav.shrink2(vec2(12.0, 14.0))).layout(Layout::top_down(Align::Min)),
-            );
-            if sidebar(&mut nav_ui, app, &p) {
-                close_now = true;
-            }
-            let mut c_ui = ui.new_child(
-                UiBuilder::new().max_rect(content.shrink2(vec2(28.0, 18.0))).layout(Layout::top_down(Align::Min)),
-            );
-            content_area(&mut c_ui, app, &p);
-            // Close button.
-            let cr = Rect::from_center_size(pos2(rect.right() - 22.0, rect.top() + 22.0), vec2(26.0, 26.0));
-            let cresp = ui.interact(cr, id.with("close"), Sense::click()).on_hover_text(tr!("settings-close-tooltip"));
-            crate::ui::a11y::button(&cresp, tr!("settings-close"));
-            if cresp.has_focus() {
-                crate::ui::widgets::focus_ring(ui, cr);
-            }
-            if cresp.hovered() {
-                ui.painter().rect_filled(cr, CornerRadius::same(6), p.bg_surface3);
-            }
-            ui.painter().text(cr.center(), Align2::CENTER_CENTER, ph::X, icons::font(14.0), p.text_secondary);
-            if cresp.clicked() {
-                close_now = true;
-            }
+            close_now = body(ui, app, p, rect, id, true);
         });
     let s = 0.98 + 0.02 * ease;
     let c = screen.center();
@@ -488,15 +558,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         return;
     }
     show_picker(ctx, app);
-
-    // Live apply + debounced save.
-    if app.settings.draft != app.settings.applied {
-        let draft = app.settings.draft.clone();
-        crate::services::config_watch::apply_config(app, ctx, draft.clone());
-        app.settings.applied = draft;
-        app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
-    }
-    pump_save(ctx, app);
+    apply_and_save(ctx, app);
 }
 
 /// Write `config.toml` once the debounce delay has passed.

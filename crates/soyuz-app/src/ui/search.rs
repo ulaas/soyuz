@@ -445,7 +445,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let here = current_dir(app);
     let index_on = crate::services::index::is_enabled();
     let mut rerun = false;
-    Popup::menu(&sresp).align(RectAlign::BOTTOM_START).show(|ui| {
+    crate::ui::native::popup::Menu::menu(&sresp).align(RectAlign::BOTTOM_START).show(|ui| {
         ui.set_width(250.0);
         let form = &mut app.ui.search.form;
         let label = match &here {
@@ -557,7 +557,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 changed = true;
             }
             "mode" => {
-                Popup::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
+                crate::ui::native::popup::Menu::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
                     ui.set_width(200.0);
                     for m in NameMode::ALL {
                         let hint = match m {
@@ -575,7 +575,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 });
             }
             "kind" => {
-                Popup::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
+                crate::ui::native::popup::Menu::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
                     ui.set_width(180.0);
                     for k in KindFilter::ALL {
                         if menu_check(ui, form.kind == k, kind_label(k), None).clicked() {
@@ -587,7 +587,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 });
             }
             "date" => {
-                Popup::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
+                crate::ui::native::popup::Menu::menu(resp).align(RectAlign::BOTTOM_START).show(|ui| {
                     ui.set_width(190.0);
                     for d in DateRange::ALL {
                         if menu_check(ui, form.date == d, date_label(d), None).clicked() {
@@ -599,7 +599,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 });
             }
             "size" => {
-                Popup::menu(resp)
+                crate::ui::native::popup::Menu::menu(resp)
                     .align(RectAlign::BOTTOM_START)
                     .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
                     .show(|ui| {
@@ -755,7 +755,7 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
     let id = Id::new("soyuz.search.save.popup");
     Popup::open_id(ui.ctx(), id);
     let mut done: Option<bool> = None;
-    Popup::new(id, ui.ctx().clone(), anchor.rect, ui.layer_id())
+    crate::ui::native::popup::Menu::new(id, ui.ctx().clone(), anchor.rect, ui.layer_id())
         .kind(egui::PopupKind::Menu)
         .open_memory(None)
         .align(RectAlign::BOTTOM_END)
@@ -968,7 +968,7 @@ pub fn sidebar_section(
         if r.clicked() {
             cmds.push(Cmd::RunSavedSearch(i));
         }
-        r.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(200.0);
             if menu_item(ui, Some(ph::MAGNIFYING_GLASS), tr!("views-search-run-saved"), None, true).clicked() {
                 cmds.push(Cmd::RunSavedSearch(i));

@@ -546,6 +546,10 @@ impl Dropdown {
             }
             let search_id = id.with("search");
             // Keys (before the search box sees them).
+            // Keys typed into a native popup window arrive here one frame later.
+            if let Some(evs) = ctx.data_mut(|d| d.remove_temp::<Vec<egui::Event>>(id.with("fwd"))) {
+                ctx.input_mut(|i| i.events.extend(evs));
+            }
             let page = ((MAX_POPUP_H - SEARCH_H) / ROW_H) as usize;
             let (nav, enter, esc, tab) = ctx.input_mut(|i| {
                 let mut nav = None;
@@ -830,8 +834,15 @@ fn popup<T: PartialEq>(
     let below = screen.bottom() - button.bottom() - 10.0;
     let above = button.top() - screen.top() - 10.0;
     let place_below = below >= want.min(MAX_POPUP_H) || below >= above;
+    let native = crate::ui::native::active(&ctx)
+        && (crate::ui::native::popup::is_native_open(id.with("native"))
+            || want.min(MAX_POPUP_H) > below.max(above) + 0.5);
     let room = if place_below { below } else { above };
-    let h = want.min(MAX_POPUP_H).min(room).max((ROW_H * 3.0 + search_h + pad * 2.0).min(want));
+    let h = if native {
+        want.min(MAX_POPUP_H)
+    } else {
+        want.min(MAX_POPUP_H).min(room).max((ROW_H * 3.0 + search_h + pad * 2.0).min(want))
+    };
     let w = st.width.max(button.width()).min(screen.width() - 16.0);
     let x = button.left().clamp(screen.left() + 8.0, (screen.right() - 8.0 - w).max(screen.left() + 8.0));
     let y = if place_below { button.bottom() + 4.0 } else { button.top() - 4.0 - h };
@@ -841,222 +852,218 @@ fn popup<T: PartialEq>(
         ctx.request_repaint();
     }
     let mut pick = None;
-    let area = egui::Area::new(id.with("popup"))
-        .order(Order::Foreground)
-        .fixed_pos(pos2(x, y + slide))
-        .constrain(false)
-        .show(&ctx, |ui| {
-            ui.set_opacity(t.max(0.05));
-            let frame = egui::Frame::new()
-                .fill(p.bg_surface1)
-                .stroke(Stroke::new(1.0, p.border_strong))
-                .corner_radius(CornerRadius::same(9))
-                .inner_margin(Margin::same(pad as i8))
-                .shadow(egui::epaint::Shadow {
-                    offset: [0, 8],
-                    blur: 24,
-                    spread: 0,
-                    color: Color32::from_black_alpha((p.shadow_alpha * 255.0).min(255.0) as u8),
-                });
-            frame.show(ui, |ui| {
-                let inner_w = w - pad * 2.0;
-                ui.set_width(inner_w);
-                ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                crate::ui::a11y::container(&ctx, ui.id(), Role::ListBox, &dd.name);
-                if search {
-                    search_box(ui, st, search_id, inner_w);
-                    ui.add_space(4.0);
-                }
-                if no_items {
-                    let (r, _) = ui.allocate_exact_size(vec2(inner_w, ROW_H), Sense::hover());
-                    ui.painter().text(
-                        pos2(r.left() + 12.0, r.center().y),
-                        Align2::LEFT_CENTER,
-                        tr!("dropdown-no-matches"),
-                        FontId::proportional(12.5),
-                        p.text_tertiary,
-                    );
-                }
-                let list_max = h - search_h - pad * 2.0 - empty_h;
-                let pointer_moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-                egui::ScrollArea::vertical()
-                    .id_salt(id.with("scroll"))
-                    .max_height(list_max)
-                    .min_scrolled_height(list_max.min(list_h))
-                    .auto_shrink([false, true])
-                    .show_viewport(ui, |ui, viewport| {
-                        let origin = ui.max_rect().min;
-                        let (_, _) = ui.allocate_exact_size(vec2(inner_w, list_h), Sense::hover());
-                        let n_items = rows.iter().filter(|r| !matches!(r, Row::Header(_))).count();
-                        let mut y = 0.0;
-                        let mut pos_in_set = 0usize;
-                        for (ri, row) in rows.iter().enumerate() {
-                            let rh = if matches!(row, Row::Header(_)) { HEADER_H } else { ROW_H };
-                            let r = Rect::from_min_size(origin + vec2(0.0, y), vec2(inner_w, rh));
-                            let visible = y + rh >= viewport.top() - ROW_H && y <= viewport.bottom() + ROW_H;
-                            let wants_scroll = st.scroll.is_some() && st.cursor == Some(ri);
-                            y += rh;
-                            if !matches!(row, Row::Header(_)) {
-                                pos_in_set += 1;
+    let native_key = id.with("native");
+    let frame = egui::Frame::new()
+        .fill(p.bg_surface1)
+        .stroke(Stroke::new(1.0, p.border_strong))
+        .corner_radius(CornerRadius::same(9))
+        .inner_margin(Margin::same(pad as i8));
+    let shadow = egui::epaint::Shadow {
+        offset: [0, 8],
+        blur: 24,
+        spread: 0,
+        color: Color32::from_black_alpha((p.shadow_alpha * 255.0).min(255.0) as u8),
+    };
+    let mut draw = |ui: &mut Ui| {
+        let inner_w = w - pad * 2.0;
+        ui.set_width(inner_w);
+        ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+        crate::ui::a11y::container(&ctx, ui.id(), Role::ListBox, &dd.name);
+        if search {
+            search_box(ui, st, search_id, inner_w);
+            ui.add_space(4.0);
+        }
+        if no_items {
+            let (r, _) = ui.allocate_exact_size(vec2(inner_w, ROW_H), Sense::hover());
+            ui.painter().text(
+                pos2(r.left() + 12.0, r.center().y),
+                Align2::LEFT_CENTER,
+                tr!("dropdown-no-matches"),
+                FontId::proportional(12.5),
+                p.text_tertiary,
+            );
+        }
+        let list_max = h - search_h - pad * 2.0 - empty_h;
+        let pointer_moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+        egui::ScrollArea::vertical()
+            .id_salt(id.with("scroll"))
+            .max_height(list_max)
+            .min_scrolled_height(list_max.min(list_h))
+            .auto_shrink([false, true])
+            .show_viewport(ui, |ui, viewport| {
+                let origin = ui.max_rect().min;
+                let (_, _) = ui.allocate_exact_size(vec2(inner_w, list_h), Sense::hover());
+                let n_items = rows.iter().filter(|r| !matches!(r, Row::Header(_))).count();
+                let mut y = 0.0;
+                let mut pos_in_set = 0usize;
+                for (ri, row) in rows.iter().enumerate() {
+                    let rh = if matches!(row, Row::Header(_)) { HEADER_H } else { ROW_H };
+                    let r = Rect::from_min_size(origin + vec2(0.0, y), vec2(inner_w, rh));
+                    let visible = y + rh >= viewport.top() - ROW_H && y <= viewport.bottom() + ROW_H;
+                    let wants_scroll = st.scroll.is_some() && st.cursor == Some(ri);
+                    y += rh;
+                    if !matches!(row, Row::Header(_)) {
+                        pos_in_set += 1;
+                    }
+                    if wants_scroll {
+                        let center = st.scroll == Some(true);
+                        ui.scroll_to_rect(r, if center { Some(Align::Center) } else { None });
+                        st.scroll = None;
+                    }
+                    if !visible {
+                        continue;
+                    }
+                    match *row {
+                        Row::Header(i) => {
+                            let text = crate::ui::widgets::caption_upper(&items[i].group);
+                            ui.painter().text(
+                                pos2(r.left() + 10.0, r.bottom() - 6.0),
+                                Align2::LEFT_BOTTOM,
+                                text,
+                                FontId::proportional(10.5),
+                                p.text_tertiary,
+                            );
+                        }
+                        Row::Item(i) => {
+                            let it = &items[i];
+                            let rid = id.with(("row", i));
+                            let enabled = it.disabled.is_none();
+                            let resp = ui.interact(r, rid, if enabled { Sense::click() } else { Sense::hover() });
+                            if resp.hovered() && pointer_moved && enabled {
+                                st.cursor = Some(ri);
                             }
-                            if wants_scroll {
-                                let center = st.scroll == Some(true);
-                                ui.scroll_to_rect(r, if center { Some(Align::Center) } else { None });
-                                st.scroll = None;
+                            let is_cursor = st.cursor == Some(ri);
+                            let is_sel = selected == Some(i);
+                            if is_cursor {
+                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+                            } else if resp.hovered() && enabled {
+                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
                             }
-                            if !visible {
-                                continue;
+                            let painter = ui.painter_at(r);
+                            let cy = r.center().y;
+                            let lx = paint_lead(&painter, it, r.left() + 10.0, cy, enabled, &p);
+                            let right = r.right() - 30.0;
+                            let mut sec_w = 0.0;
+                            if !it.secondary.is_empty() {
+                                let lf = it.font.clone().map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
+                                let label_w = painter.layout_no_wrap(it.label.clone(), lf, p.text_primary).size().x;
+                                let g = crate::ui::widgets::trunc_galley(
+                                    &painter,
+                                    &it.secondary,
+                                    FontId::proportional(11.5),
+                                    p.text_tertiary,
+                                    (right - lx - label_w - 16.0).max((right - lx) * 0.35),
+                                );
+                                sec_w = g.size().x + 12.0;
+                                painter.galley(pos2(right - g.size().x, cy - g.size().y / 2.0), g, p.text_tertiary);
                             }
-                            match *row {
-                                Row::Header(i) => {
-                                    let text = crate::ui::widgets::caption_upper(&items[i].group);
-                                    ui.painter().text(
-                                        pos2(r.left() + 10.0, r.bottom() - 6.0),
-                                        Align2::LEFT_BOTTOM,
-                                        text,
-                                        FontId::proportional(10.5),
-                                        p.text_tertiary,
-                                    );
+                            let color = if enabled { p.text_primary } else { p.text_tertiary.gamma_multiply(0.8) };
+                            let font = it.font.clone().map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
+                            let matched = match_indices(&it.label, &st.query);
+                            let hl = if p.dark { p.accent_hover } else { p.accent };
+                            let job = label_job(&it.label, font, color, hl, &matched, right - lx - sec_w);
+                            let g = painter.layout_job(job);
+                            painter.galley(pos2(lx, cy - g.size().y / 2.0), g, color);
+                            if is_sel {
+                                painter.text(
+                                    pos2(r.right() - 15.0, cy),
+                                    Align2::CENTER_CENTER,
+                                    ph::CHECK,
+                                    icons::font(13.0),
+                                    p.accent,
+                                );
+                            }
+                            let label = if it.secondary.is_empty() {
+                                it.label.clone()
+                            } else {
+                                format!("{}, {}", it.label, it.secondary)
+                            };
+                            crate::ui::a11y::with(&ctx, resp.id, |n| {
+                                n.set_role(Role::ListBoxOption);
+                                n.set_label(label.as_str());
+                                n.set_selected(is_sel);
+                                n.set_position_in_set(pos_in_set);
+                                n.set_size_of_set(n_items);
+                                if !enabled {
+                                    n.set_disabled();
                                 }
-                                Row::Item(i) => {
-                                    let it = &items[i];
-                                    let rid = id.with(("row", i));
-                                    let enabled = it.disabled.is_none();
-                                    let resp =
-                                        ui.interact(r, rid, if enabled { Sense::click() } else { Sense::hover() });
-                                    if resp.hovered() && pointer_moved && enabled {
-                                        st.cursor = Some(ri);
-                                    }
-                                    let is_cursor = st.cursor == Some(ri);
-                                    let is_sel = selected == Some(i);
-                                    if is_cursor {
-                                        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
-                                    } else if resp.hovered() && enabled {
-                                        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
-                                    }
-                                    let painter = ui.painter_at(r);
-                                    let cy = r.center().y;
-                                    let lx = paint_lead(&painter, it, r.left() + 10.0, cy, enabled, &p);
-                                    let right = r.right() - 30.0;
-                                    let mut sec_w = 0.0;
-                                    if !it.secondary.is_empty() {
-                                        let lf = it
-                                            .font
-                                            .clone()
-                                            .map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
-                                        let label_w =
-                                            painter.layout_no_wrap(it.label.clone(), lf, p.text_primary).size().x;
-                                        let g = crate::ui::widgets::trunc_galley(
-                                            &painter,
-                                            &it.secondary,
-                                            FontId::proportional(11.5),
-                                            p.text_tertiary,
-                                            (right - lx - label_w - 16.0).max((right - lx) * 0.35),
-                                        );
-                                        sec_w = g.size().x + 12.0;
-                                        painter.galley(
-                                            pos2(right - g.size().x, cy - g.size().y / 2.0),
-                                            g,
-                                            p.text_tertiary,
-                                        );
-                                    }
-                                    let color =
-                                        if enabled { p.text_primary } else { p.text_tertiary.gamma_multiply(0.8) };
-                                    let font =
-                                        it.font.clone().map_or(FontId::proportional(13.0), |f| FontId::new(13.0, f));
-                                    let matched = match_indices(&it.label, &st.query);
-                                    let hl = if p.dark { p.accent_hover } else { p.accent };
-                                    let job = label_job(&it.label, font, color, hl, &matched, right - lx - sec_w);
-                                    let g = painter.layout_job(job);
-                                    painter.galley(pos2(lx, cy - g.size().y / 2.0), g, color);
-                                    if is_sel {
-                                        painter.text(
-                                            pos2(r.right() - 15.0, cy),
-                                            Align2::CENTER_CENTER,
-                                            ph::CHECK,
-                                            icons::font(13.0),
-                                            p.accent,
-                                        );
-                                    }
-                                    let label = if it.secondary.is_empty() {
-                                        it.label.clone()
-                                    } else {
-                                        format!("{}, {}", it.label, it.secondary)
-                                    };
-                                    crate::ui::a11y::with(&ctx, resp.id, |n| {
-                                        n.set_role(Role::ListBoxOption);
-                                        n.set_label(label.as_str());
-                                        n.set_selected(is_sel);
-                                        n.set_position_in_set(pos_in_set);
-                                        n.set_size_of_set(n_items);
-                                        if !enabled {
-                                            n.set_disabled();
-                                        }
-                                    });
-                                    if let Some(reason) = &it.disabled {
-                                        resp.clone().on_hover_text(reason);
-                                    }
-                                    if resp.clicked() {
-                                        pick = Some(Row::Item(i));
-                                    }
-                                }
-                                Row::Custom => {
-                                    let rid = id.with("custom");
-                                    let resp = ui.interact(r, rid, Sense::click());
-                                    if resp.hovered() && pointer_moved {
-                                        st.cursor = Some(ri);
-                                    }
-                                    if st.cursor == Some(ri) {
-                                        ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
-                                    }
-                                    if ri > 0 {
-                                        ui.painter().hline(
-                                            r.x_range().shrink(6.0),
-                                            r.top(),
-                                            Stroke::new(1.0, p.border_subtle),
-                                        );
-                                    }
-                                    let painter = ui.painter_at(r);
-                                    let cy = r.center().y;
-                                    painter.text(
-                                        pos2(r.left() + 17.0, cy),
-                                        Align2::CENTER_CENTER,
-                                        ph::PENCIL_SIMPLE,
-                                        icons::font(14.0),
-                                        p.text_secondary,
-                                    );
-                                    let base = dd.custom.clone().unwrap_or_default();
-                                    let q = st.query.trim();
-                                    let text = if search && !q.is_empty() {
-                                        tr!("dropdown-use-typed", text = q)
-                                    } else {
-                                        base
-                                    };
-                                    let g = crate::ui::widgets::trunc_galley(
-                                        &painter,
-                                        &text,
-                                        FontId::proportional(13.0),
-                                        p.text_primary,
-                                        r.width() - 44.0,
-                                    );
-                                    painter.galley(pos2(r.left() + 32.0, cy - g.size().y / 2.0), g, p.text_primary);
-                                    crate::ui::a11y::with(&ctx, resp.id, |n| {
-                                        n.set_role(Role::ListBoxOption);
-                                        n.set_label(text.as_str());
-                                        n.set_selected(false);
-                                        n.set_position_in_set(pos_in_set);
-                                        n.set_size_of_set(n_items);
-                                    });
-                                    if resp.clicked() {
-                                        pick = Some(Row::Custom);
-                                    }
-                                }
+                            });
+                            if let Some(reason) = &it.disabled {
+                                resp.clone().on_hover_text(reason);
+                            }
+                            if resp.clicked() {
+                                pick = Some(Row::Item(i));
                             }
                         }
-                    });
+                        Row::Custom => {
+                            let rid = id.with("custom");
+                            let resp = ui.interact(r, rid, Sense::click());
+                            if resp.hovered() && pointer_moved {
+                                st.cursor = Some(ri);
+                            }
+                            if st.cursor == Some(ri) {
+                                ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface3);
+                            }
+                            if ri > 0 {
+                                ui.painter().hline(r.x_range().shrink(6.0), r.top(), Stroke::new(1.0, p.border_subtle));
+                            }
+                            let painter = ui.painter_at(r);
+                            let cy = r.center().y;
+                            painter.text(
+                                pos2(r.left() + 17.0, cy),
+                                Align2::CENTER_CENTER,
+                                ph::PENCIL_SIMPLE,
+                                icons::font(14.0),
+                                p.text_secondary,
+                            );
+                            let base = dd.custom.clone().unwrap_or_default();
+                            let q = st.query.trim();
+                            let text = if search && !q.is_empty() { tr!("dropdown-use-typed", text = q) } else { base };
+                            let g = crate::ui::widgets::trunc_galley(
+                                &painter,
+                                &text,
+                                FontId::proportional(13.0),
+                                p.text_primary,
+                                r.width() - 44.0,
+                            );
+                            painter.galley(pos2(r.left() + 32.0, cy - g.size().y / 2.0), g, p.text_primary);
+                            crate::ui::a11y::with(&ctx, resp.id, |n| {
+                                n.set_role(Role::ListBoxOption);
+                                n.set_label(text.as_str());
+                                n.set_selected(false);
+                                n.set_position_in_set(pos_in_set);
+                                n.set_size_of_set(n_items);
+                            });
+                            if resp.clicked() {
+                                pick = Some(Row::Custom);
+                            }
+                        }
+                    }
+                }
             });
+    };
+    if native {
+        let side = crate::ui::native::geometry::Side::Below;
+        let out = crate::ui::native::popup::native_area(&ctx, native_key, button, side, vec2(w, h), &frame, |ui| {
+            forward_keys(ui, id, search);
+            draw(ui);
         });
-    st.rect = Some(area.response.rect);
+        st.rect = None;
+        if out.lost {
+            st.open = false;
+            st.query.clear();
+        }
+    } else {
+        let area = egui::Area::new(id.with("popup"))
+            .order(Order::Foreground)
+            .fixed_pos(pos2(x, y + slide))
+            .constrain(false)
+            .show(&ctx, |ui| {
+                ui.set_opacity(t.max(0.05));
+                frame.shadow(shadow).show(ui, |ui| draw(ui));
+            });
+        st.rect = Some(area.response.rect);
+    }
     pick
 }
 
@@ -1154,6 +1161,26 @@ pub fn text_choice(
     }
     ui.ctx().data_mut(|d| d.insert_temp(flag, editing));
     *value != before
+}
+
+/// Keys pressed in the dropdown's native popup window go to the owner window's key
+/// handling (next frame), like the in-window popup, which never takes the keyboard.
+fn forward_keys(ui: &Ui, id: Id, search: bool) {
+    let evs: Vec<egui::Event> = ui.input(|i| {
+        i.events
+            .iter()
+            .filter(|e| match e {
+                egui::Event::Key { .. } => true,
+                egui::Event::Text(_) => !search,
+                _ => false,
+            })
+            .cloned()
+            .collect()
+    });
+    if !evs.is_empty() {
+        ui.ctx().data_mut(|d| d.insert_temp(id.with("fwd"), evs));
+        ui.ctx().request_repaint();
+    }
 }
 
 #[cfg(test)]

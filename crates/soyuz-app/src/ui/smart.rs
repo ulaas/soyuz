@@ -292,7 +292,7 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
         if r.middle_clicked() {
             cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: true }));
         }
-        r.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(210.0);
             if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-smart-open"), None, true).clicked() {
                 cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: false }));
@@ -391,7 +391,7 @@ pub fn status_chip(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
     if resp.clicked() {
         cmds.push(Cmd::Smart(SmartCmd::OpenSettings));
     }
-    resp.context_menu(|ui| {
+    crate::ui::native::popup::context_menu(&resp, |ui| {
         ui.set_width(200.0);
         if menu_item(ui, Some(ph::GEAR_SIX), tr!("views-index-settings"), None, true).clicked() {
             cmds.push(Cmd::Smart(SmartCmd::OpenSettings));

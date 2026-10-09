@@ -177,17 +177,18 @@ impl PathPicker {
             });
         let mut result = PickResult::Pending;
         let mut go: Option<PathBuf> = None;
-        // Above the modal that opened it (both are new in the same frame, so pin the order).
-        let area = Modal::default_area(self.id).order(egui::Order::Tooltip);
-        let resp = Modal::new(self.id).area(area).frame(frame).show(ctx, |ui| {
-            ui.set_width(520.0);
-            crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, &self.title);
-            ui.horizontal(|ui| {
-                let glyph = if self.mode == PickMode::Save { ph::FLOPPY_DISK } else { ph::FOLDER_OPEN };
-                ui.label(icons::icon(glyph, 18.0).color(p.accent));
-                ui.label(RichText::new(&self.title).font(semibold(16.0)).color(p.text_primary));
-            });
-            ui.add_space(10.0);
+        let title = self.title.clone();
+        let picker_id = self.id;
+        let glyph = if self.mode == PickMode::Save { ph::FLOPPY_DISK } else { ph::FOLDER_OPEN };
+        let mut body = |ui: &mut Ui, native: bool| {
+            if !native {
+                crate::ui::a11y::container(ui.ctx(), ui.unique_id(), egui::accesskit::Role::Dialog, &self.title);
+                ui.horizontal(|ui| {
+                    ui.label(icons::icon(glyph, 18.0).color(p.accent));
+                    ui.label(RichText::new(&self.title).font(semibold(16.0)).color(p.text_primary));
+                });
+                ui.add_space(10.0);
+            }
             // Location row: up + editable path.
             ui.horizontal(|ui| {
                 let parent = self.dir.parent().map(Path::to_path_buf);
@@ -263,11 +264,33 @@ impl PathPicker {
                     result = PickResult::Cancelled;
                 }
             });
-        });
+        };
+        let close = if crate::ui::native::active(ctx) {
+            let mut w = crate::ui::native::dialog::DialogWindow::new(
+                picker_id.with("native"),
+                Id::new("soyuz.path_picker"),
+                &title,
+            );
+            w.icon = Some(glyph);
+            w.width = 520.0;
+            w.margin = 18.0;
+            w.show(ctx, |ui| body(ui, true)).close
+        } else {
+            // Above the modal that opened it (both are new in the same frame, so pin the order).
+            let area = Modal::default_area(picker_id).order(egui::Order::Tooltip);
+            Modal::new(picker_id)
+                .area(area)
+                .frame(frame)
+                .show(ctx, |ui| {
+                    ui.set_width(520.0);
+                    body(ui, false)
+                })
+                .should_close()
+        };
         if let Some(dir) = go {
             self.navigate(dir);
         }
-        if resp.should_close() && result == PickResult::Pending {
+        if close && result == PickResult::Pending {
             result = PickResult::Cancelled;
         }
         result

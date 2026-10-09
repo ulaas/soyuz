@@ -422,7 +422,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         let cmds = &mut *v.cmds;
         let selected = ts.selected_items();
         let pane_id = pane.id;
-        resp.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(230.0);
             if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), None, true).clicked() {
                 cmds.push(Cmd::FileOp(FileOpCmd::TrashRestore(selected.clone())));

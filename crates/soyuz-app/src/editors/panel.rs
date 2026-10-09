@@ -160,7 +160,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
         let is_text = matches!(d.kind, DocKind::Text(_));
         let is_hex = matches!(d.kind, DocKind::Hex(_));
-        resp.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(220.0);
             use crate::ui::widgets::{menu_item, menu_separator};
             if menu_item(ui, Some(ph::FLOPPY_DISK), tr!("common-save"), Some("Ctrl+S"), dirty).clicked() {

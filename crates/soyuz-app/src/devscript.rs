@@ -36,6 +36,10 @@
 //! * `ws:<verb> [arg]` — workspaces (F7): `group`, `add <tab>`, `collapse`, `color <0-7>`,
 //!   `save <name>`, `open <n>`, `layout single|dual|stacked|quad`, `sync`, `tear <tab>`,
 //!   `move <tab> <window>`, `close <window>`, `merge`, `select <tab>`;
+//! * `click:<x>,<y>[,right]` — synthetic egui click at a point of the main window;
+//! * `native:list` / `native:move <x>,<y>` / `native:moveby <dx>,<dy>` — native dialog / popup
+//!   windows (`ui::native`): log their handles and rects, move the dialog (physical pixels);
+//!   `keys:` goes to the newest native window while one is open;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
 //!
 //! `SOYUZ_WINDOW_POS=x,y` (read in `main.rs`) opens the window at that position without
@@ -86,6 +90,8 @@ pub struct DevScript {
     events: Vec<egui::Event>,
     /// When the current `until:` step started waiting.
     until_since: Option<Instant>,
+    /// Synthetic pointer input, fed before the next frame (`click:`).
+    raw: Vec<egui::Event>,
 }
 
 impl DevScript {
@@ -103,6 +109,12 @@ pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
         let events = std::mem::take(&mut app.devscript.events);
         ctx.input_mut(|i| i.events.extend(events));
     }
+}
+
+/// Before a frame of the main window: queued synthetic pointer input (egui needs it in
+/// the raw input to compute hover and clicks).
+pub fn raw_input(app: &mut SoyuzApp, raw: &mut egui::RawInput) {
+    raw.events.append(&mut app.devscript.raw);
 }
 
 /// `keys:` spec → egui events.
@@ -294,7 +306,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),
             "keys" => {
-                app.devscript.events.extend(key_events(arg));
+                // An open native dialog / popup window has the keyboard.
+                let evs = key_events(arg);
+                if !crate::ui::native::inject(&evs) {
+                    app.devscript.events.extend(evs);
+                }
                 ctx.request_repaint();
                 return;
             }
@@ -304,6 +320,32 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 crate::ui::widgets::dropdown::request_open(ctx, key.trim(), query);
             }
             "ai" => crate::ai::state::script(app, ctx, arg),
+            "native" => crate::ui::native::devscript(ctx, arg),
+            "click" | "press" | "release" => {
+                // `click:<x>,<y>[,right]` — synthetic egui pointer click (points), spread
+                // over three frames (move, press, release) like a real one.
+                let parts: Vec<&str> = arg.split(',').map(str::trim).collect();
+                let x = parts.first().and_then(|v| v.parse::<f32>().ok());
+                let y = parts.get(1).and_then(|v| v.parse::<f32>().ok());
+                if let (Some(x), Some(y)) = (x, y) {
+                    let pos = egui::pos2(x, y);
+                    let right = parts.get(2) == Some(&"right");
+                    let button = if right { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
+                    let ev =
+                        |pressed| egui::Event::PointerButton { pos, button, pressed, modifiers: egui::Modifiers::NONE };
+                    match verb {
+                        "click" => {
+                            app.devscript.raw.push(egui::Event::PointerMoved(pos));
+                            app.devscript.steps.push_front(format!("release:{arg}"));
+                            app.devscript.steps.push_front(format!("press:{arg}"));
+                        }
+                        "press" => app.devscript.raw.push(ev(true)),
+                        _ => app.devscript.raw.push(ev(false)),
+                    }
+                }
+                ctx.request_repaint();
+                return;
+            }
             _ => match step.parse::<Action>() {
                 Ok(a) => app.cmds.push(Cmd::Action(a)),
                 Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),
@@ -372,7 +414,7 @@ fn edited(config: &Config, assignment: &str) -> Result<Config, String> {
         .map_err(|e| e.to_string())
 }
 
-fn save_png(path: &std::path::Path, img: &egui::ColorImage) {
+pub(crate) fn save_png(path: &std::path::Path, img: &egui::ColorImage) {
     let [w, h] = img.size;
     let bytes: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
     match image::save_buffer(path, &bytes, w as u32, h as u32, image::ColorType::Rgba8) {

@@ -477,7 +477,7 @@ fn body(
         header(ui, &p, vis, pane, v, &g.cols, origin.x);
     }
 
-    bg.context_menu(|ui| context_menu::pane_menu(ui, pane, v));
+    crate::ui::native::popup::context_menu(&bg, |ui| context_menu::pane_menu(ui, pane, v));
 }
 
 struct ItemState {
@@ -991,6 +991,6 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         }
     }
     if let Some(resp) = chooser {
-        resp.context_menu(|ui| context_menu::column_menu(ui, pane, v));
+        crate::ui::native::popup::context_menu(&resp, |ui| context_menu::column_menu(ui, pane, v));
     }
 }

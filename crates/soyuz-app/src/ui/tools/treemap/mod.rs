@@ -568,7 +568,7 @@ impl TreemapWindow {
             self.menu_target = self.hover;
         }
         if let Some(target) = self.menu_target {
-            resp.context_menu(|ui| self.menu(ui, app, target));
+            crate::ui::native::popup::context_menu(&resp, |ui| self.menu(ui, app, target));
         }
     }
 
