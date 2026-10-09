@@ -85,9 +85,30 @@ pub struct Toasts {
     next: u64,
 }
 
-const WIDTH: f32 = 340.0;
+/// Every toast has the same footprint: one title line and an optional body line.
+const WIDTH: f32 = 360.0;
+const HEIGHT: f32 = 56.0;
+const GAP: f32 = 8.0;
+const MARGIN: f32 = 12.0;
 const ANIM: f64 = 0.2;
 const MAX_VISIBLE: usize = 5;
+
+/// Fraction of the auto-dismiss timer still left (`None` for sticky toasts).
+fn timer_fraction(remaining: Option<f32>, duration: Option<f32>) -> Option<f32> {
+    match (remaining, duration) {
+        (Some(r), Some(d)) if d > 0.0 => Some((r / d).clamp(0.0, 1.0)),
+        _ => None,
+    }
+}
+
+/// Body text squeezed onto one line (the tooltip shows it as written).
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn semibold(size: f32) -> FontId {
+    FontId::new(size, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into()))
+}
 
 impl Toasts {
     pub fn push(&mut self, toast: Toast) -> u64 {
@@ -117,6 +138,11 @@ impl Toasts {
     }
 
     /// Draw the stack anchored to the bottom-right of `area`. Returns actions clicked.
+    ///
+    /// Every toast has one fixed size: text that does not fit is cut with an ellipsis
+    /// and shown whole in a tooltip. Hovering a toast pauses its timer (the progress line
+    /// at the bottom stops) and reveals the close button. Older toasts glide up when a
+    /// new one arrives and settle when one below them closes (reduced motion: jumps).
     pub fn show(&mut self, ctx: &egui::Context, area: Rect, reduced_motion: bool) -> Vec<Action> {
         let mut clicked = Vec::new();
         if self.live.is_empty() {
@@ -125,9 +151,11 @@ impl Toasts {
         let now = ctx.input(|i| i.time);
         let dt = ctx.input(|i| i.stable_dt).min(0.1);
         let p = palette(ctx);
-        let mut y = area.bottom() - 12.0;
+        let width = WIDTH.min(area.width() - 2.0 * MARGIN).max(220.0);
+        let mut bottom = area.bottom() - MARGIN;
         let start = self.live.len().saturating_sub(MAX_VISIBLE);
         let mut any_animating = false;
+        let ease = |x: f32| 1.0 - (1.0 - x).powi(3);
         for l in self.live[start..].iter_mut().rev() {
             if l.born.is_nan() {
                 l.born = now;
@@ -135,38 +163,31 @@ impl Toasts {
             if l.closing.is_some_and(f64::is_nan) {
                 l.closing = Some(now);
             }
-            let appear = if reduced_motion { 1.0 } else { ((now - l.born) / ANIM).clamp(0.0, 1.0) as f32 };
+            let appear = if reduced_motion { 1.0 } else { ease(((now - l.born) / ANIM).clamp(0.0, 1.0) as f32) };
             let vanish = match l.closing {
-                Some(t) if !reduced_motion => 1.0 - ((now - t) / ANIM).clamp(0.0, 1.0) as f32,
+                Some(t) if !reduced_motion => ease(1.0 - ((now - t) / ANIM).clamp(0.0, 1.0) as f32),
                 Some(_) => 0.0,
                 None => 1.0,
             };
-            let ease = |x: f32| 1.0 - (1.0 - x).powi(3);
-            let a = ease(appear) * ease(vanish);
+            let a = appear * vanish;
             if appear < 1.0 || l.closing.is_some() {
                 any_animating = true;
             }
 
-            let body_galley = l.toast.body.as_ref().map(|b| {
-                let mut job = egui::text::LayoutJob::simple(
-                    b.clone(),
-                    FontId::proportional(12.0),
-                    p.text_secondary,
-                    WIDTH - 64.0,
-                );
-                job.wrap.max_rows = 4;
-                ctx.layer_painter(egui::LayerId::background()).layout_job(job)
-            });
-            let body_h = body_galley.as_ref().map_or(0.0, |g| g.size().y + 4.0);
-            let action_h = if l.toast.action.is_some() { 30.0 } else { 0.0 };
-            let h = 46.0 + body_h + action_h;
-            let slide = (1.0 - a) * 16.0;
-            let rect = Rect::from_min_size(pos2(area.right() - WIDTH - 12.0, y - h + slide), vec2(WIDTH, h));
-            y -= (h + 8.0) * a.max(0.001);
-
             let id = Id::new("soyuz.toast").with(l.id);
+            // Stack slot: a closing toast hands its slot back as it fades.
+            let target_top = bottom - HEIGHT;
+            bottom -= (HEIGHT + GAP) * vanish;
+            let top =
+                if reduced_motion { target_top } else { crate::ui::motion::spring_to(ctx, id.with("y"), target_top) };
+            // Enter: rise and fade in. Exit: drift right and fade out.
+            let dy = (1.0 - appear) * 14.0;
+            let dx = (1.0 - vanish) * 28.0;
+            let rect = Rect::from_min_size(pos2(area.right() - width - MARGIN + dx, top + dy), vec2(width, HEIGHT));
+
             let mut close = false;
             Area::new(id).order(Order::Tooltip).fixed_pos(rect.min).interactable(true).show(ctx, |ui| {
+                ui.multiply_opacity(a);
                 let (r, resp) = ui.allocate_exact_size(rect.size(), Sense::hover());
                 // Screen readers announce toasts as polite live alerts.
                 let spoken = match &l.toast.body {
@@ -178,81 +199,114 @@ impl Toasts {
                     n.set_label(spoken);
                     n.set_live(egui::accesskit::Live::Polite);
                 });
-                let painter = ui.painter();
-                let shadow = egui::epaint::Shadow {
-                    offset: [0, 6],
-                    blur: 24,
-                    spread: 0,
-                    color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * a) as u8),
-                };
-                painter.add(shadow.as_shape(r, CornerRadius::same(radius::MODAL)));
-                painter.rect_filled(r, CornerRadius::same(radius::MODAL), p.bg_surface3.gamma_multiply(a));
-                painter.rect_stroke(
-                    r,
-                    CornerRadius::same(radius::MODAL),
-                    Stroke::new(1.0, p.border_strong.gamma_multiply(a)),
-                    StrokeKind::Inside,
-                );
+                let hovered = ui.rect_contains_pointer(r);
+                let hover_t =
+                    ui.ctx().animate_bool_with_time(id.with("hover"), hovered, if reduced_motion { 0.0 } else { 0.12 });
                 let (glyph, color) = match l.toast.kind {
                     ToastKind::Info => (ph::INFO, p.info),
                     ToastKind::Success => (ph::CHECK_CIRCLE, p.success),
                     ToastKind::Warning => (ph::WARNING, p.warning),
                     ToastKind::Error => (ph::WARNING_CIRCLE, p.danger),
                 };
-                // Accent stripe.
-                let stripe = Rect::from_min_size(r.min + vec2(0.0, 10.0), vec2(3.0, r.height() - 20.0));
-                painter.rect_filled(stripe, CornerRadius::same(2), color.gamma_multiply(a));
-                painter.text(
-                    pos2(r.left() + 22.0, r.top() + 23.0),
-                    Align2::CENTER_CENTER,
-                    glyph,
-                    icons::font_fill(18.0),
-                    color.gamma_multiply(a),
-                );
-                let title = trunc_galley(
-                    painter,
-                    &l.toast.title,
-                    FontId::new(13.0, egui::FontFamily::Name(crate::theme::fonts::SEMIBOLD.into())),
-                    p.text_primary.gamma_multiply(a),
-                    WIDTH - 80.0,
-                );
-                painter.galley(pos2(r.left() + 40.0, r.top() + 23.0 - title.size().y / 2.0), title, p.text_primary);
-                if let Some(g) = body_galley {
-                    painter.galley(pos2(r.left() + 40.0, r.top() + 38.0), g, p.text_secondary.gamma_multiply(a));
-                }
-                // Close button.
-                let cr = Rect::from_center_size(pos2(r.right() - 20.0, r.top() + 23.0), vec2(22.0, 22.0));
-                let cresp = ui.interact(cr, id.with("x"), Sense::click());
-                crate::ui::a11y::button(&cresp, tr!("app-toast-dismiss"));
-                if cresp.hovered() {
-                    painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface2);
-                }
-                painter.text(
-                    cr.center(),
-                    Align2::CENTER_CENTER,
-                    ph::X,
-                    icons::font(13.0),
-                    p.text_tertiary.gamma_multiply(a),
-                );
-                if cresp.clicked() {
-                    close = true;
-                }
+                let card = CornerRadius::same(radius::CARD);
+                let painter = ui.painter().clone();
+                let shadow = egui::epaint::Shadow {
+                    offset: [0, 4],
+                    blur: 18,
+                    spread: 0,
+                    color: Color32::from_black_alpha((p.shadow_alpha * 200.0) as u8),
+                };
+                painter.add(shadow.as_shape(r, card));
+                painter.rect_filled(r, card, p.bg_surface3);
+                // Accent stripe along the leading edge.
+                let stripe =
+                    Rect::from_min_max(pos2(r.left() + 1.0, r.top() + 12.0), pos2(r.left() + 4.0, r.bottom() - 12.0));
+                painter.rect_filled(stripe, CornerRadius::same(2), color);
+                painter.rect_stroke(r, card, Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+
+                // Kind icon in a tinted chip.
+                let cy = r.center().y;
+                let chip = pos2(r.left() + 27.0, cy);
+                painter.circle_filled(chip, 13.0, color.gamma_multiply(if p.dark { 0.20 } else { 0.15 }));
+                painter.text(chip, Align2::CENTER_CENTER, glyph, icons::font_fill(15.0), color);
+
+                // Right side: the close slot is always reserved (nothing shifts on hover),
+                // the action button sits left of it.
+                let close_r = Rect::from_center_size(pos2(r.right() - 20.0, cy), vec2(24.0, 24.0));
+                let mut text_right = close_r.left() - 4.0;
                 if let Some((label, action)) = &l.toast.action {
-                    let ar = Rect::from_min_size(pos2(r.left() + 40.0, r.bottom() - 34.0), vec2(0.0, 24.0));
-                    let g = ui.painter().layout_no_wrap(label.clone(), FontId::proportional(12.5), p.accent);
-                    let ar = Rect::from_min_size(ar.min, vec2(g.size().x + 20.0, 24.0));
+                    let g = painter.layout_no_wrap(label.clone(), semibold(12.5), p.accent);
+                    let w = (g.size().x + 22.0).max(56.0);
+                    let ar = Rect::from_center_size(pos2(close_r.left() - 4.0 - w / 2.0, cy), vec2(w, 26.0));
                     let aresp = ui.interact(ar, id.with("a"), Sense::click());
                     crate::ui::a11y::button(&aresp, label);
-                    let fill =
-                        if aresp.hovered() { p.accent.gamma_multiply(0.22) } else { p.accent.gamma_multiply(0.12) };
-                    painter.rect_filled(ar, CornerRadius::same(radius::ROW), fill.gamma_multiply(a));
-                    painter.galley(pos2(ar.left() + 10.0, ar.center().y - g.size().y / 2.0), g, p.accent);
+                    let fill = p.accent.gamma_multiply(if aresp.hovered() { 0.24 } else { 0.13 });
+                    painter.rect_filled(ar, CornerRadius::same(radius::ROW), fill);
+                    if aresp.has_focus() {
+                        painter.rect_stroke(
+                            ar,
+                            CornerRadius::same(radius::ROW),
+                            Stroke::new(1.0, p.accent),
+                            StrokeKind::Outside,
+                        );
+                    }
+                    painter.galley(ar.center() - g.size() / 2.0, g, p.accent);
                     if aresp.clicked() {
                         clicked.push(action.clone());
                         close = true;
                     }
+                    text_right = ar.left() - 10.0;
                 }
-                let hovered = resp.hovered() || ui.rect_contains_pointer(r);
+                let cresp = ui.interact(close_r, id.with("x"), Sense::click());
+                crate::ui::a11y::button(&cresp, tr!("app-toast-dismiss"));
+                let show_x = if cresp.has_focus() { 1.0 } else { hover_t };
+                if show_x > 0.0 {
+                    if cresp.hovered() {
+                        painter.rect_filled(close_r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+                    }
+                    let c = if cresp.hovered() { p.text_primary } else { p.text_tertiary };
+                    painter.text(
+                        close_r.center(),
+                        Align2::CENTER_CENTER,
+                        ph::X,
+                        icons::font(13.0),
+                        c.gamma_multiply(show_x),
+                    );
+                }
+                if cresp.clicked() {
+                    close = true;
+                }
+
+                // Title and body: one line each, cut with an ellipsis.
+                let text_left = r.left() + 50.0;
+                let max_w = (text_right - text_left).max(24.0);
+                let title = trunc_galley(&painter, &l.toast.title, semibold(13.0), p.text_primary, max_w);
+                let body = l.toast.body.as_deref().map(|b| {
+                    let line = one_line(b);
+                    let reflowed = line != b.trim();
+                    (trunc_galley(&painter, &line, FontId::proportional(12.0), p.text_secondary, max_w), reflowed)
+                });
+                let clipped = title.elided || body.as_ref().is_some_and(|(g, reflowed)| g.elided || *reflowed);
+                let title_y = if body.is_some() { cy - 9.0 } else { cy };
+                painter.galley(pos2(text_left, title_y - title.size().y / 2.0), title, p.text_primary);
+                if let Some((g, _)) = body {
+                    painter.galley(pos2(text_left, cy + 9.0 - g.size().y / 2.0), g, p.text_secondary);
+                }
+                if clipped {
+                    // The whole text on hover (the timer is paused while it is read).
+                    let text_rect = Rect::from_min_max(pos2(r.left() + 12.0, r.top()), pos2(text_right, r.bottom()));
+                    let tresp = ui.interact(text_rect, id.with("t"), Sense::hover());
+                    let (t, b) = (&l.toast.title, &l.toast.body);
+                    tresp.on_hover_ui(|ui| {
+                        ui.set_max_width(420.0);
+                        ui.label(egui::RichText::new(t).font(semibold(13.0)).color(p.text_primary));
+                        if let Some(b) = b {
+                            ui.label(egui::RichText::new(b).size(12.0).color(p.text_secondary));
+                        }
+                    });
+                }
+
+                // Auto-dismiss timer: paused while hovered, drawn as a thin line.
                 if !hovered
                     && l.closing.is_none()
                     && let Some(rem) = l.remaining.as_mut()
@@ -261,6 +315,17 @@ impl Toasts {
                     if *rem <= 0.0 {
                         close = true;
                     }
+                }
+                if let Some(frac) = timer_fraction(l.remaining, l.toast.duration) {
+                    let inset = f32::from(radius::CARD);
+                    let track = Rect::from_min_max(
+                        pos2(r.left() + inset, r.bottom() - 3.0),
+                        pos2(r.right() - inset, r.bottom() - 1.0),
+                    );
+                    let mut bar = track;
+                    bar.set_width(track.width() * frac);
+                    let alpha = if hovered { 0.30 } else { 0.60 };
+                    painter.rect_filled(bar, CornerRadius::same(1), color.gamma_multiply(alpha));
                 }
             });
             if close && l.closing.is_none() {
@@ -273,7 +338,8 @@ impl Toasts {
         if any_animating {
             ctx.request_repaint();
         } else if self.live.iter().any(|l| l.remaining.is_some()) {
-            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+            // The progress line moves: ~30 fps is plenty for a 2 px bar.
+            ctx.request_repaint_after(std::time::Duration::from_millis(33));
         }
         clicked
     }
@@ -294,5 +360,18 @@ mod tests {
         assert!(t.live.last().unwrap().remaining.is_none());
         t.dismiss(id);
         assert!(t.live.last().unwrap().closing.is_some());
+    }
+
+    #[test]
+    fn timer_fraction_tracks_remaining_time() {
+        assert_eq!(timer_fraction(Some(2.0), Some(4.0)), Some(0.5));
+        assert_eq!(timer_fraction(Some(-1.0), Some(4.0)), Some(0.0));
+        assert_eq!(timer_fraction(None, None), None);
+        assert_eq!(timer_fraction(Some(1.0), Some(0.0)), None);
+    }
+
+    #[test]
+    fn bodies_collapse_to_one_line() {
+        assert_eq!(one_line("a\n  b\tc "), "a b c");
     }
 }

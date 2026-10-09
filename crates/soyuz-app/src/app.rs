@@ -723,6 +723,10 @@ impl eframe::App for SoyuzApp {
         self.frame(ui);
     }
 
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::devscript::raw_input_hook(self, raw_input);
+    }
+
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_state();
         crate::ui::settings::save_now(self);

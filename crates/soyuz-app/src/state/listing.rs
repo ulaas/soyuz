@@ -115,6 +115,51 @@ pub fn compute_visible(
     (vis, spans)
 }
 
+/// What a pane shows when nothing is visible.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EmptyKind {
+    /// Something is visible (or there are group headers to draw): show the view.
+    NotEmpty,
+    /// The type-to-filter pattern hides every shown entry.
+    NoMatches,
+    /// Every entry is hidden and "show hidden" (Ctrl+H) would reveal at least one.
+    OnlyHidden,
+    /// Nothing to show: an empty folder, or one holding only protected operating-system
+    /// files (`desktop.ini`, `Thumbs.db`, `$RECYCLE.BIN`… — hidden *and* system, kept
+    /// out of sight by `show_system` like Explorer does) that Ctrl+H cannot reveal.
+    Empty,
+}
+
+/// Hidden + system: a protected operating-system file (only `show_system` shows it).
+fn is_protected(e: &EntryInfo) -> bool {
+    e.attrs.contains(Attributes::HIDDEN) && e.attrs.contains(Attributes::SYSTEM)
+}
+
+/// Classify an empty visible list. `visible`/`groups` are the counts the view would draw.
+pub fn classify_empty(
+    entries: &[EntryInfo],
+    visible: usize,
+    groups: usize,
+    filter_active: bool,
+    show_hidden: bool,
+    show_system: bool,
+) -> EmptyKind {
+    if visible > 0 || groups > 0 {
+        return EmptyKind::NotEmpty;
+    }
+    // Entries the hidden / system rules let through (only the name filter can hide them).
+    let shown = |e: &EntryInfo| (show_hidden || !e.is_hidden()) && (show_system || !is_protected(e));
+    if filter_active && entries.iter().any(shown) {
+        return EmptyKind::NoMatches;
+    }
+    let revealable = |e: &EntryInfo| e.is_hidden() && (show_system || !is_protected(e));
+    if !show_hidden && !entries.is_empty() && entries.iter().all(EntryInfo::is_hidden) && entries.iter().any(revealable)
+    {
+        return EmptyKind::OnlyHidden;
+    }
+    EmptyKind::Empty
+}
+
 /// `(order, label)` of an entry's group.
 pub fn group_key(e: &EntryInfo, group: GroupBy, now: SystemTime) -> (u32, String) {
     match group {
@@ -370,5 +415,49 @@ mod tests {
         assert_eq!(kind_label(&file("x.weird", 1)), "WEIRD file");
         assert_eq!(kind_label(&file("Makefile", 1)), "File");
         assert_eq!(kind_label(&dir("d")), "Folder");
+    }
+
+    fn with_attrs(mut e: EntryInfo, attrs: Attributes) -> EntryInfo {
+        e.attrs = attrs;
+        e
+    }
+
+    #[test]
+    fn empty_state_classifier() {
+        use EmptyKind::*;
+        let plain = file("a.txt", 1);
+        let dot = file(".env", 1);
+        let hidden = with_attrs(file("h.txt", 1), Attributes::HIDDEN);
+        let desktop_ini = with_attrs(file("desktop.ini", 1), Attributes::HIDDEN | Attributes::SYSTEM);
+        let c =
+            |e: &[EntryInfo], vis: usize, filter: bool, sh: bool, ss: bool| classify_empty(e, vis, 0, filter, sh, ss);
+
+        // A truly empty folder is empty, whatever the flags.
+        for (sh, ss) in [(false, false), (true, false), (false, true), (true, true)] {
+            assert_eq!(c(&[], 0, false, sh, ss), Empty);
+            assert_eq!(c(&[], 0, true, sh, ss), Empty);
+        }
+        // Something visible, or group headers to draw (all groups collapsed).
+        assert_eq!(c(std::slice::from_ref(&plain), 1, false, false, false), NotEmpty);
+        assert_eq!(classify_empty(std::slice::from_ref(&plain), 0, 1, false, false, false), NotEmpty);
+        // Hidden files that Ctrl+H would reveal.
+        assert_eq!(c(&[hidden.clone(), dot.clone()], 0, false, false, false), OnlyHidden);
+        assert_eq!(c(&[hidden.clone(), desktop_ini.clone()], 0, false, false, false), OnlyHidden);
+        // Only protected OS files: Ctrl+H cannot show them, so the folder reads as empty
+        // (the reported bug: "Only hidden items" in a folder that looks empty).
+        assert_eq!(c(std::slice::from_ref(&desktop_ini), 0, false, false, false), Empty);
+        assert_eq!(c(std::slice::from_ref(&desktop_ini), 0, false, true, false), Empty);
+        // ...unless system files are shown too.
+        assert_eq!(c(std::slice::from_ref(&desktop_ini), 0, false, false, true), OnlyHidden);
+        // Hidden items are already shown: never "only hidden".
+        assert_eq!(c(std::slice::from_ref(&hidden), 0, false, true, false), Empty);
+        // Entries that are not hidden can never make an "only hidden" state.
+        assert_eq!(c(&[plain.clone(), hidden.clone()], 0, false, false, false), Empty);
+        // The name filter hides shown entries: its own state.
+        assert_eq!(c(std::slice::from_ref(&plain), 0, true, false, false), NoMatches);
+        assert_eq!(c(std::slice::from_ref(&hidden), 0, true, true, false), NoMatches);
+        // ...but a filter over hidden-only entries is still about hidden items.
+        assert_eq!(c(&[hidden], 0, true, false, false), OnlyHidden);
+        assert_eq!(c(&[desktop_ini], 0, true, false, false), Empty);
     }
 }

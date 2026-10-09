@@ -89,6 +89,8 @@ impl ViewState {
     }
 
     pub fn set_column_width(&mut self, column: Column, width: f32) {
+        // The name column fills the free width; its stored width is only the minimum.
+        let width = if column == Column::Name { NAME_MIN_W } else { width };
         if let Some(c) = self.columns.iter_mut().find(|c| c.column == column) {
             c.width = width;
         } else if column == Column::Name {
@@ -97,7 +99,24 @@ impl ViewState {
             self.columns.insert(0, spec);
         }
     }
+
+    /// Repair stored state: a name width saved by older versions (the rendered, filled
+    /// width of a drag) would pin the name column wide; it is reset to the minimum.
+    /// Returns `true` when something changed.
+    pub fn sanitize(&mut self) -> bool {
+        let mut changed = false;
+        for c in self.columns.iter_mut().filter(|c| c.column == Column::Name) {
+            if c.width != NAME_MIN_W {
+                c.width = NAME_MIN_W;
+                changed = true;
+            }
+        }
+        changed
+    }
 }
+
+/// Minimum (and stored) width of the name column; see [`ViewState::sanitize`].
+const NAME_MIN_W: f32 = crate::ui::views::columns::MIN_NAME_W;
 
 fn default_columns(c: &Config) -> Vec<ColumnSpec> {
     let mut cols: Vec<ColumnSpec> = c
@@ -106,7 +125,9 @@ fn default_columns(c: &Config) -> Vec<ColumnSpec> {
         .iter()
         .map(|col| {
             let mut s = ColumnSpec::new(*col);
-            if let Some(w) = c.columns.widths.get(&col.to_string()) {
+            if let Some(w) = c.columns.widths.get(&col.to_string())
+                && *col != Column::Name
+            {
                 s.width = w.clamp(40.0, 2000.0);
             }
             s
@@ -114,6 +135,9 @@ fn default_columns(c: &Config) -> Vec<ColumnSpec> {
         .collect();
     if !cols.iter().any(|s| s.column == Column::Name) {
         cols.insert(0, ColumnSpec::new(Column::Name));
+    }
+    for s in cols.iter_mut().filter(|s| s.column == Column::Name) {
+        s.width = NAME_MIN_W;
     }
     cols
 }
@@ -218,12 +242,26 @@ impl ViewMemory {
 
     pub fn load(path: &Path) -> ViewMemory {
         match std::fs::read_to_string(path) {
-            Ok(text) => toml::from_str(&text).unwrap_or_else(|e| {
-                log::warn!("{}: {e}; starting with empty view memory", path.display());
-                ViewMemory::default()
-            }),
+            Ok(text) => {
+                let mut m: ViewMemory = toml::from_str(&text).unwrap_or_else(|e| {
+                    log::warn!("{}: {e}; starting with empty view memory", path.display());
+                    ViewMemory::default()
+                });
+                m.sanitize();
+                m
+            }
             Err(_) => ViewMemory::default(),
         }
+    }
+
+    /// Migrate stored views (see [`ViewState::sanitize`]); marks the memory dirty so the
+    /// repaired file is written back.
+    pub fn sanitize(&mut self) {
+        let mut changed = self.default.as_mut().is_some_and(ViewState::sanitize);
+        for f in self.folders.values_mut() {
+            changed |= f.view.sanitize();
+        }
+        self.dirty |= changed;
     }
 
     pub fn to_toml(&self) -> String {
@@ -306,5 +344,29 @@ mod tests {
         assert_eq!(v.visible_columns()[1].column, Column::Created);
         v.set_column_width(Column::Size, 133.0);
         assert_eq!(v.columns.iter().find(|c| c.column == Column::Size).unwrap().width, 133.0);
+    }
+
+    #[test]
+    fn stored_name_widths_are_migrated() {
+        let mut v = ViewState::default();
+        v.columns.iter_mut().find(|c| c.column == Column::Name).unwrap().width = 778.0;
+        let mut m = ViewMemory::default();
+        m.remember(&Location::Dir("/src/soyuz".into()), &v);
+        m.default = Some(v.clone());
+        m.dirty = false;
+        let mut back: ViewMemory = toml::from_str(&m.to_toml()).unwrap();
+        back.sanitize();
+        assert!(back.dirty, "repaired file is written back");
+        let name_w = |v: &ViewState| v.columns.iter().find(|c| c.column == Column::Name).unwrap().width;
+        assert_eq!(name_w(back.default.as_ref().unwrap()), NAME_MIN_W);
+        assert!(back.folders.values().all(|f| name_w(&f.view) == NAME_MIN_W));
+        // Nothing to repair: stays clean.
+        back.dirty = false;
+        back.sanitize();
+        assert!(!back.dirty);
+        // A name-edge drag never stores a filled width.
+        let mut v = ViewState::default();
+        v.set_column_width(Column::Name, 900.0);
+        assert_eq!(name_w(&v), NAME_MIN_W);
     }
 }

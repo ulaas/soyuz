@@ -935,6 +935,10 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         if r.right() < hr.left() - 4.0 || r.right() > hr.right() + 4.0 {
             continue;
         }
+        // Name as the last column fills to the edge: nothing to resize there.
+        if c.column == Column::Name && ci + 1 == cols.len() {
+            continue;
+        }
         let handle = Rect::from_center_size(pos2(r.right(), r.center().y), vec2(8.0, HEADER_H));
         let hresp = ui.interact(handle, Id::new(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
         crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
@@ -948,10 +952,10 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
                 Stroke::new(2.0, p.accent),
             );
         }
-        if hresp.dragged() {
-            let dx = hresp.drag_delta().x;
-            let new_w = (c.w + dx).max(if c.column == Column::Name { columns::MIN_NAME_W } else { columns::MIN_COL_W });
-            pane.view.set_column_width(c.column, new_w);
+        if hresp.dragged()
+            && let Some((column, w)) = columns::resize_target(cols, ci, hresp.drag_delta().x)
+        {
+            pane.view.set_column_width(column, w);
             pane.layout_sig = None;
         }
         if hresp.drag_stopped() {

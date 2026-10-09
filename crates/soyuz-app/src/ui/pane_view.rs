@@ -6,6 +6,7 @@ use soyuz_core::{Location, ViewMode};
 
 use crate::cmd::Cmd;
 use crate::state::crumbs::location_title;
+use crate::state::listing::EmptyKind;
 use crate::state::pane::{ContextTarget, ListingStatus, Pane};
 use crate::theme::tokens::radius;
 use crate::theme::{icons::ph, palette};
@@ -144,22 +145,24 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             }
         }
         _ => {
-            if pane.visible.is_empty() {
-                if pane.filter_active() {
-                    let sub = tr!("views-pane-no-matches-sub", filter = &pane.filter);
-                    empty(
-                        ui,
-                        rect,
-                        pane,
-                        v,
-                        ph::FUNNEL_X,
-                        Some(p.text_secondary),
-                        tr!("views-pane-no-matches"),
-                        &sub,
-                        &[("Esc", tr!("views-pane-hint-clear-filter"))],
-                    );
-                } else if !pane.entries.is_empty() {
-                    empty(
+            let kind = pane.empty_kind(v.show_hidden, v.show_system);
+            if kind != EmptyKind::NotEmpty {
+                match kind {
+                    EmptyKind::NoMatches => {
+                        let sub = tr!("views-pane-no-matches-sub", filter = &pane.filter);
+                        empty(
+                            ui,
+                            rect,
+                            pane,
+                            v,
+                            ph::FUNNEL_X,
+                            Some(p.text_secondary),
+                            tr!("views-pane-no-matches"),
+                            &sub,
+                            &[("Esc", tr!("views-pane-hint-clear-filter"))],
+                        );
+                    }
+                    EmptyKind::OnlyHidden => empty(
                         ui,
                         rect,
                         pane,
@@ -169,9 +172,8 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         tr!("views-pane-only-hidden"),
                         tr!("views-pane-only-hidden-sub"),
                         &[("Ctrl+H", tr!("views-pane-hint-show-hidden"))],
-                    );
-                } else if matches!(pane.location, Location::Timeline) {
-                    empty(
+                    ),
+                    _ if matches!(pane.location, Location::Timeline) => empty(
                         ui,
                         rect,
                         pane,
@@ -181,9 +183,8 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         tr!("views-pane-timeline-empty"),
                         tr!("views-pane-timeline-empty-sub"),
                         &[],
-                    );
-                } else {
-                    empty(
+                    ),
+                    _ => empty(
                         ui,
                         rect,
                         pane,
@@ -193,7 +194,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                         tr!("views-pane-empty"),
                         tr!("views-pane-empty-sub"),
                         &[],
-                    );
+                    ),
                 }
                 return;
             }

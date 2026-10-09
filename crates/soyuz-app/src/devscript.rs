@@ -18,6 +18,9 @@
 //! * `until:<path>` — pause the script until `<path>` exists (at most 120 s); external
 //!   drivers such as `scripts/uia-audit.ps1` use it to hold a state while they inspect
 //!   the window;
+//! * `toast:<kind>|<title>[|<body>[|undo]]` — show a toast for 30 s (`info`, `success`,
+//!   `warning`, `error`; `undo` adds an Undo action), for toast screenshots;
+//! * `hover:<x>,<y>` — move egui's pointer to that window position (no OS input);
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`;
@@ -86,6 +89,9 @@ pub struct DevScript {
     events: Vec<egui::Event>,
     /// When the current `until:` step started waiting.
     until_since: Option<Instant>,
+    /// Synthetic pointer position (`hover:`), fed through [`raw_input_hook`].
+    pointer: Option<egui::Pos2>,
+    pointer_sent: Option<egui::Pos2>,
 }
 
 impl DevScript {
@@ -102,6 +108,19 @@ pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
     if !app.devscript.events.is_empty() {
         let events = std::mem::take(&mut app.devscript.events);
         ctx.input_mut(|i| i.events.extend(events));
+    }
+}
+
+/// eframe's raw-input hook: keep the synthetic `hover:` pointer in place (before egui
+/// reads the input, so hover state follows it).
+pub fn raw_input_hook(app: &mut SoyuzApp, raw: &mut egui::RawInput) {
+    if let Some(pos) = app.devscript.pointer {
+        raw.events.retain(|e| !matches!(e, egui::Event::PointerGone | egui::Event::PointerMoved(_)));
+        // Moved once: repeating it every frame would count as movement (no tooltips).
+        if app.devscript.pointer_sent != Some(pos) {
+            raw.events.push(egui::Event::PointerMoved(pos));
+            app.devscript.pointer_sent = Some(pos);
+        }
     }
 }
 
@@ -252,6 +271,17 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "welcome" => app.ui.welcome = arg.trim() != "off",
             "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
+            "hover" => {
+                // `hover:<x>,<y>`: synthetic pointer position (logical points), in-app only.
+                if let Some((x, y)) = arg.split_once(',')
+                    && let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>())
+                {
+                    app.devscript.pointer = Some(egui::pos2(x, y));
+                }
+            }
+            "toast" => {
+                app.ui.toasts.push(script_toast(arg));
+            }
             "expect" => match expect(app, arg.trim()) {
                 Ok(()) => log::info!("SOYUZ_SCRIPT: expect ok {}", arg.trim()),
                 Err(actual) => log::warn!("SOYUZ_SCRIPT: expect FAILED {} (actual {actual})", arg.trim()),
@@ -311,6 +341,27 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
         ctx.request_repaint();
     }
+}
+
+/// `toast:` step → a toast that stays for 30 s.
+fn script_toast(arg: &str) -> crate::ui::toasts::Toast {
+    use crate::ui::toasts::{Toast, ToastKind};
+    let mut parts = arg.split('|');
+    let kind = match parts.next().unwrap_or("").trim() {
+        "success" => ToastKind::Success,
+        "warning" => ToastKind::Warning,
+        "error" => ToastKind::Error,
+        _ => ToastKind::Info,
+    };
+    let mut t = Toast::new(kind, parts.next().unwrap_or("Toast").trim());
+    t.duration = Some(30.0);
+    if let Some(b) = parts.next().map(str::trim).filter(|b| !b.is_empty()) {
+        t = t.body(b.replace("\\n", "\n"));
+    }
+    if parts.next().is_some_and(|a| a.trim() == "undo") {
+        t = t.action(tr!("common-undo"), Action::Undo);
+    }
+    t
 }
 
 /// One `expect:` check; `Err(actual value)` when it does not hold.

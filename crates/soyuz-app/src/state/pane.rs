@@ -369,6 +369,18 @@ impl Pane {
         !self.filter.is_empty()
     }
 
+    /// Which empty state to draw (after [`Pane::refresh_visible`] with the same flags).
+    pub fn empty_kind(&self, show_hidden: bool, show_system: bool) -> listing::EmptyKind {
+        listing::classify_empty(
+            &self.entries,
+            self.visible.len(),
+            self.groups.len(),
+            self.filter_active(),
+            show_hidden,
+            show_system,
+        )
+    }
+
     pub fn entry(&self, key: &str) -> Option<&EntryInfo> {
         self.index.get(key).map(|&i| &self.entries[i])
     }
@@ -588,5 +600,53 @@ mod tests {
         assert_eq!(p.visible.len(), 1);
         assert_eq!(p.groups.len(), 2);
         assert_eq!(p.groups.iter().find(|g| g.label == ".rs").unwrap().len, 0);
+    }
+
+    /// Reported bug: a folder that holds only protected OS files (here `desktop.ini`,
+    /// hidden + system) showed "Only hidden items" and suggested Ctrl+H, which cannot
+    /// reveal them. Replays: browse a full folder, navigate into it, toggle hidden.
+    #[test]
+    fn protected_only_folder_reads_as_empty() {
+        use super::listing::EmptyKind;
+        use soyuz_core::Attributes;
+        let mut p = pane_with(&["a.txt"]);
+        p.refresh_visible(false, false);
+        assert_eq!(p.empty_kind(false, false), EmptyKind::NotEmpty);
+
+        // Navigate into the "empty" folder.
+        p.location = Location::Dir("/d/sub".into());
+        p.generation += 1;
+        p.clear_listing();
+        p.status = ListingStatus::Loading { since: Instant::now() };
+        p.refresh_visible(false, false);
+        let mut ini = file("desktop.ini");
+        ini.attrs = Attributes::HIDDEN | Attributes::SYSTEM;
+        assert!(p.on_listing(vec![ini], true, None));
+        for show_hidden in [false, true] {
+            p.dirty = true;
+            p.refresh_visible(show_hidden, false);
+            assert!(p.visible.is_empty());
+            assert_eq!(p.empty_kind(show_hidden, false), EmptyKind::Empty, "show_hidden={show_hidden}");
+        }
+        // With system files shown, it is visible.
+        p.dirty = true;
+        p.refresh_visible(true, true);
+        assert_eq!(p.empty_kind(true, true), EmptyKind::NotEmpty);
+
+        // A real hidden file next to it: "only hidden" (Ctrl+H reveals it) ...
+        let mut dot = file(".git");
+        dot.attrs = Attributes::HIDDEN;
+        p.on_patch(vec![dot], &[]);
+        p.refresh_visible(false, false);
+        assert_eq!(p.empty_kind(false, false), EmptyKind::OnlyHidden);
+        // ... and deleting it (watcher patch) brings the empty state back.
+        p.on_patch(vec![], &[".git".to_string()]);
+        p.refresh_visible(false, false);
+        assert_eq!(p.empty_kind(false, false), EmptyKind::Empty);
+        // Deleting the last file of a folder: empty, not "only hidden".
+        p.on_patch(vec![], &["desktop.ini".to_string()]);
+        p.refresh_visible(false, false);
+        assert!(p.entries.is_empty());
+        assert_eq!(p.empty_kind(false, false), EmptyKind::Empty);
     }
 }
