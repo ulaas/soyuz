@@ -1,10 +1,12 @@
 //! Directory watching for open panes: one `soyuz_fs::Watcher` (one notify backend) with
 //! a non-recursive watch per pane directory.
 //!
-//! The watcher lives on its own thread: registering a watch can be slow (the notify
-//! debouncer's file-id cache scans the directory, which takes seconds for 100k-entry
-//! folders), so the UI only sends commands. Events are drained by the UI each frame
-//! and mapped back to panes through a shared id map.
+//! The watcher lives on its own thread: registering a watch opens the directory, which
+//! can block on a slow or dead network share, so the UI only sends commands. Events are
+//! drained by the UI each frame and mapped back to panes through a shared id map.
+//! `soyuz_fs::Watcher` re-arms watches that go silent and reports them as `Rescan`; on
+//! top of that, finished jobs and manual refreshes relist panes (`ops::refresh_affected`,
+//! `ops::refresh`), so nothing depends on the watcher alone.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

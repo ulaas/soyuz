@@ -165,18 +165,11 @@ pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     match action {
         AfterDrop::Nothing => {}
         AfterDrop::Resume => egui::DragAndDrop::set_payload(ctx, DragPayload::clone(&payload)),
-        AfterDrop::Refresh => refresh_panes(app),
+        // The target moved the files itself: relist the panes showing the sources.
+        AfterDrop::Refresh => crate::ops::refresh_affected(app, &paths),
         AfterDrop::TrashSources(p) => {
             super::delete(app, p, soyuz_jobs::DeleteMode::Trash);
-            refresh_panes(app);
-        }
-    }
-}
-
-fn refresh_panes(app: &mut SoyuzApp) {
-    for t in &mut app.ws.tabs {
-        for p in &mut t.panes {
-            p.dirty = true;
+            crate::ops::refresh_affected(app, &paths);
         }
     }
 }

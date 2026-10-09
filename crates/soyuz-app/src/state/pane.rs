@@ -96,6 +96,11 @@ pub struct Pane {
     pub refreshing: bool,
     /// Visible order must be recomputed before the next draw.
     pub dirty: bool,
+    /// Changes reported while a listing was running (it may already have enumerated past
+    /// them); re-stat'ed once it completes ([`Pane::take_deferred`]).
+    pub deferred_paths: Vec<std::path::PathBuf>,
+    /// Relist once the running listing completes (a job finished meanwhile).
+    pub relist_pending: bool,
     /// UI language generation the group labels were built with.
     pub i18n_gen: u64,
     /// Scroll the cursor into view on the next draw.
@@ -167,6 +172,8 @@ impl Pane {
             status: ListingStatus::Loading { since: Instant::now() },
             refreshing: false,
             dirty: true,
+            deferred_paths: Vec::new(),
+            relist_pending: false,
             i18n_gen: crate::i18n::generation(),
             scroll_to_cursor: false,
             restore_scroll: None,
@@ -210,11 +217,44 @@ impl Pane {
         self.filter_pattern = None;
         self.type_ahead = TypeAhead::default();
         self.refreshing = false;
+        self.deferred_paths.clear();
+        self.relist_pending = false;
         self.dirty = true;
     }
 
     pub fn is_loading(&self) -> bool {
         matches!(self.status, ListingStatus::Loading { .. })
+    }
+
+    /// A complete listing is shown and no relist is running: in-place patches apply.
+    pub fn accepts_patches(&self) -> bool {
+        matches!(self.status, ListingStatus::Ready) && !self.refreshing
+    }
+
+    /// Remember changed paths that arrived while a listing was running (many → relist).
+    pub fn defer_paths(&mut self, paths: Vec<std::path::PathBuf>) {
+        if self.relist_pending {
+            return;
+        }
+        for p in paths {
+            if !self.deferred_paths.contains(&p) {
+                self.deferred_paths.push(p);
+            }
+        }
+        if self.deferred_paths.len() > soyuz_fs::watch::MAX_CHANGED_PATHS {
+            self.deferred_paths.clear();
+            self.relist_pending = true;
+        }
+    }
+
+    /// Work deferred while listing, once patches apply again: `(relist, paths to re-stat)`.
+    pub fn take_deferred(&mut self) -> (bool, Vec<std::path::PathBuf>) {
+        if !self.accepts_patches() {
+            return (false, Vec::new());
+        }
+        let relist = std::mem::take(&mut self.relist_pending);
+        let paths = std::mem::take(&mut self.deferred_paths);
+        if relist { (true, Vec::new()) } else { (false, paths) }
     }
 
     fn rebuild_index(&mut self) {
@@ -529,6 +569,68 @@ mod tests {
         assert_eq!(p.visible_pos("c"), Some(0));
         p.on_patch(vec![], &["c".to_string()]);
         assert!(!p.selection.contains("c"));
+    }
+
+    fn sized(name: &str, size: u64) -> EntryInfo {
+        let mut e = file(name);
+        e.size = size;
+        e
+    }
+
+    fn shown(p: &Pane) -> Vec<String> {
+        p.visible_keys().iter().map(|k| k.to_string()).collect()
+    }
+
+    /// Watcher patches (create / modify / rename / delete) always reach `visible`.
+    #[test]
+    fn watcher_patch_sequence_updates_visible() {
+        let mut p = pane_with(&["b", "d"]);
+        let v0 = p.vis_version;
+        p.on_patch(vec![file("c")], &[]);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["b", "c", "d"], "create merged in sort order");
+        assert!(p.vis_version > v0, "layout caches are keyed on vis_version");
+        p.on_patch(vec![sized("c", 42)], &[]);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["b", "c", "d"], "modify keeps one entry");
+        assert_eq!(p.entry("c").map(|e| e.size), Some(42));
+        p.on_patch(vec![file("a")], &["c".to_string()]);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["a", "b", "d"], "rename = old removed + new added");
+        p.on_patch(vec![], &["d".to_string()]);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["a", "b"]);
+        // A patch for a file the filter hides keeps it out of `visible` but in `entries`.
+        p.set_filter("a");
+        p.on_patch(vec![file("zz")], &[]);
+        p.refresh_visible(true, true);
+        assert_eq!(shown(&p), ["a"]);
+        assert!(p.entry("zz").is_some());
+    }
+
+    /// Changes reported while a listing runs wait for it; a relist request wins.
+    #[test]
+    fn deferred_work_waits_for_the_listing() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        assert!(!p.on_listing(vec![file("a")], false, None));
+        assert!(!p.accepts_patches());
+        p.defer_paths(vec!["/d/x".into(), "/d/x".into()]);
+        assert_eq!(p.deferred_paths.len(), 1, "deduplicated");
+        assert_eq!(p.take_deferred(), (false, Vec::new()), "nothing while loading");
+        assert!(p.on_listing(vec![], true, None));
+        assert_eq!(p.take_deferred(), (false, vec![std::path::PathBuf::from("/d/x")]));
+        assert_eq!(p.take_deferred(), (false, Vec::new()), "taken once");
+        // Too many changes → one relist instead.
+        p.refreshing = true;
+        p.defer_paths((0..100).map(|i| std::path::PathBuf::from(format!("/d/f{i}"))).collect());
+        assert!(p.relist_pending && p.deferred_paths.is_empty());
+        p.refreshing = false;
+        assert_eq!(p.take_deferred(), (true, Vec::new()));
+        // A new location forgets deferred work.
+        p.defer_paths(vec!["/d/y".into()]);
+        p.relist_pending = true;
+        p.clear_listing();
+        assert!(p.deferred_paths.is_empty() && !p.relist_pending);
     }
 
     #[test]

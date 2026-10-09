@@ -2,6 +2,8 @@
 //! handling, opening entries, tabs/panes management and [`Cmd`] application.
 
 pub mod fileops;
+#[cfg(test)]
+mod refresh_tests;
 pub mod window;
 
 use std::path::Path;
@@ -540,7 +542,7 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
             if let Some(p) = app.ws.find_pane_mut(pane)
                 && p.generation == generation
             {
-                p.on_listing(chunk, done, err);
+                pane_listing(p, &mut app.services, chunk, done, err);
             }
         }
         UiMsg::Patched { pane, generation, updated, removed } => {
@@ -609,23 +611,146 @@ fn on_watch(app: &mut SoyuzApp, id: PaneId, kind: WatchKind) {
     let Some(pane) = app.ws.find_pane_mut(id) else { return };
     let Location::Dir(dir) = pane.location.clone() else { return };
     crate::services::git::invalidate(&dir);
+    watch_pane(pane, &mut app.services, kind);
+}
+
+/// Apply one watcher event to a pane showing a directory.
+pub(crate) fn watch_pane(pane: &mut Pane, services: &mut Services, kind: WatchKind) {
+    let Location::Dir(dir) = pane.location.clone() else { return };
     match kind {
         WatchKind::Changed(paths) => {
-            if matches!(pane.status, ListingStatus::Ready) && !pane.refreshing {
-                app.services.lister.stat(id, pane.generation, &dir, paths);
+            if pane.accepts_patches() {
+                services.lister.stat(pane.id, pane.generation, &dir, paths);
+            } else if pane.is_loading() || pane.refreshing {
+                // The running listing may already have passed these names: re-stat them
+                // once it completes instead of dropping the change.
+                pane.defer_paths(paths);
             }
         }
-        WatchKind::Rescan => start_listing(pane, &mut app.services, true),
-        WatchKind::Lost => app.services.lister.resolve(id, pane.generation, &dir),
+        WatchKind::Rescan => start_listing(pane, services, true),
+        WatchKind::Lost => services.lister.resolve(pane.id, pane.generation, &dir),
     }
 }
 
+/// Apply one listing message (of the pane's current generation).
+pub(crate) fn pane_listing(
+    pane: &mut Pane,
+    services: &mut Services,
+    chunk: Vec<soyuz_core::EntryInfo>,
+    done: bool,
+    err: Option<soyuz_core::FsError>,
+) {
+    if pane.on_listing(chunk, done, err) {
+        run_deferred(pane, services);
+    }
+}
+
+/// After a listing completed: apply the work deferred while it ran (changes reported
+/// meanwhile, or a relist requested by a finished job).
+fn run_deferred(pane: &mut Pane, services: &mut Services) {
+    let (relist, paths) = pane.take_deferred();
+    if relist {
+        start_listing(pane, services, true);
+    } else if !paths.is_empty()
+        && let Location::Dir(dir) = &pane.location
+    {
+        services.lister.stat(pane.id, pane.generation, dir, paths);
+    }
+}
+
+/// Manual refresh (Ctrl+R, F5 without a second pane, the breadcrumb's ↻, the context
+/// menu): a full relist of the focused pane that also re-arms its directory watch (in
+/// case the OS stopped reporting changes for it).
 pub fn refresh(app: &mut SoyuzApp) {
-    let pane = app.ws.pane_mut();
-    start_listing(pane, &mut app.services, true);
+    refresh_pane(app.ws.pane_mut(), &mut app.services);
     app.services.aux.clear();
     app.services.places.refresh();
     crate::services::git::refresh_all();
+}
+
+/// [`refresh`] for one pane: full relist (contents stay visible until it completes) and
+/// a fresh directory watch.
+pub(crate) fn refresh_pane(pane: &mut Pane, services: &mut Services) {
+    pane.deferred_paths.clear();
+    pane.relist_pending = false;
+    start_listing(pane, services, true);
+    if pane.refreshing
+        && let Location::Dir(path) = &pane.location
+    {
+        // A soft relist keeps the watch; a manual refresh registers it again.
+        services.watcher.watch(pane.id, path);
+    }
+}
+
+/// Relist every pane (in every window) that shows one of `dirs` or the parent of one of
+/// `paths`: called when a Soyuz job finishes, so its result shows up even when the
+/// watcher is slow, unavailable or turned off (`auto_refresh = false`).
+pub fn refresh_affected(app: &mut SoyuzApp, paths: &[std::path::PathBuf]) {
+    let dirs = affected_dirs(paths);
+    if dirs.is_empty() {
+        return;
+    }
+    let mut ids = panes_showing(&app.ws, &dirs);
+    for w in &app.workspaces.windows {
+        ids.extend(panes_showing(&w.ws, &dirs));
+    }
+    for id in ids {
+        crate::ui::workspaces::windows::with_pane_window(app, id, move |app| {
+            if let Some(pane) = app.ws.find_pane_mut(id) {
+                relist_for_job(pane, &mut app.services);
+            }
+        });
+    }
+}
+
+/// Started panes of `ws` that show one of `dirs`.
+pub(crate) fn panes_showing(ws: &Workspace, dirs: &[std::path::PathBuf]) -> Vec<PaneId> {
+    ws.tabs
+        .iter()
+        .flat_map(|t| t.panes.iter())
+        .filter(|p| p.generation > 0 && p.location.as_fs_path().is_some_and(|d| dirs.iter().any(|x| same_dir(x, d))))
+        .map(|p| p.id)
+        .collect()
+}
+
+/// Relist a directory pane after a job changed it (right after the running listing, if
+/// any: restarting it would blank what is shown).
+pub(crate) fn relist_for_job(pane: &mut Pane, services: &mut Services) {
+    if !matches!(pane.location, Location::Dir(_)) {
+        return;
+    }
+    if pane.is_loading() || pane.refreshing {
+        pane.relist_pending = true;
+    } else {
+        start_listing(pane, services, true);
+    }
+}
+
+/// Directories whose listing a change to `paths` can affect: each path itself (a
+/// destination folder) and its parent.
+pub fn affected_dirs(paths: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut out: Vec<std::path::PathBuf> = Vec::new();
+    for p in paths {
+        if p.as_os_str().is_empty() || crate::services::remote::is_remote_path(p) {
+            continue;
+        }
+        for d in std::iter::once(p.as_path()).chain(p.parent()) {
+            if !d.as_os_str().is_empty() && !out.iter().any(|x| same_dir(x, d)) {
+                out.push(d.to_path_buf());
+            }
+        }
+    }
+    out
+}
+
+/// Same directory, ignoring a trailing separator (and case on Windows / macOS volumes).
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let norm = |p: &Path| {
+        let s = p.to_string_lossy();
+        let s = s.trim_end_matches(['/', '\\']);
+        if cfg!(any(windows, target_os = "macos")) { s.to_lowercase() } else { s.to_string() }
+    };
+    a == b || norm(a) == norm(b)
 }
 
 fn coming_soon(app: &mut SoyuzApp, action: &Action) {

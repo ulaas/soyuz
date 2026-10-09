@@ -1,15 +1,28 @@
 //! Directory watching: a thin `notify-debouncer-full` wrapper (one notify backend per
 //! [`Watcher`], N watched directories). notify itself uses ReadDirectoryChangesW /
 //! inotify / FSEvents.
+//!
+//! The debouncer runs without a file-id cache ([`NoCache`]). Its default cache
+//! (`FileIdMap`) opens every created file and scans its whole map on every removal, on
+//! notify's single event thread, and walks each watched directory on `watch` (seconds for
+//! big folders). Under a burst of changes that thread fell behind, the kernel's
+//! ReadDirectoryChangesW buffer overflowed and notify (8.x) dropped the overflowed batch
+//! without any rescan signal (or, for `ERROR_NOTIFY_ENUM_DIR`, dropped the watch
+//! entirely): new files silently never showed up. Rename pairs are still matched (the
+//! debouncer pairs a rename-from with the following rename-to).
+//!
+//! A liveness thread also guards against watches that stop reporting for any reason
+//! (see [`spawn_liveness`]): a directory whose modification time changes while its
+//! watch stays silent is re-armed and reported as [`WatchKind::Rescan`].
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant, SystemTime};
 
 use notify::RecursiveMode;
 use notify::event::{EventKind, ModifyKind, RemoveKind};
-use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+use notify_debouncer_full::{DebounceEventResult, Debouncer, NoCache, new_debouncer_opt};
 use parking_lot::Mutex;
 use soyuz_core::{FsError, FsErrorKind, FsResult};
 
@@ -29,7 +42,7 @@ pub struct WatchEvent {
 pub enum WatchKind {
     /// Changed paths (≤ 64), deduplicated, expressed under the watched directory as given.
     Changed(Vec<PathBuf>),
-    /// Too many events or backend overflow: relist.
+    /// Too many events, backend overflow, or a watch that went silent: relist.
     Rescan,
     /// The watched directory was removed / renamed away / unmounted.
     Lost,
@@ -44,9 +57,16 @@ struct Watched {
     recursive: bool,
     /// `Lost` was already reported (by an event or the liveness check).
     lost: bool,
+    /// Raw notifications seen for this watch (any path inside it, or the directory
+    /// itself); the liveness check compares it across directory changes.
+    activity: u64,
 }
 
 impl Watched {
+    fn new(dir: PathBuf, canon: Option<PathBuf>, recursive: bool) -> Self {
+        Watched { dir, canon, recursive, lost: false, activity: 0 }
+    }
+
     /// `p` expressed under `dir` (mapping a canonical prefix back), if it is inside.
     fn local(&self, p: &Path) -> Option<PathBuf> {
         if p.starts_with(&self.dir) {
@@ -64,10 +84,12 @@ impl Watched {
 }
 
 type Registry = Arc<Mutex<HashMap<WatchId, Watched>>>;
+type Backend = Debouncer<notify::RecommendedWatcher, NoCache>;
 
 /// Owns one notify backend; `Send`.
 pub struct Watcher {
-    debouncer: Debouncer<notify::RecommendedWatcher, RecommendedCache>,
+    /// Shared with the liveness thread, which re-arms silent watches.
+    debouncer: Arc<Mutex<Backend>>,
     registry: Registry,
     next_id: u64,
 }
@@ -102,8 +124,16 @@ impl Watcher {
             }
             wake();
         };
-        let debouncer = new_debouncer(debounce, None, handler).map_err(|e| notify_err("watch", None, e))?;
-        spawn_liveness(Arc::downgrade(&registry), liveness_tx, liveness_wake);
+        let debouncer = new_debouncer_opt(debounce, None, handler, NoCache::new(), notify::Config::default())
+            .map_err(|e| notify_err("watch", None, e))?;
+        let debouncer = Arc::new(Mutex::new(debouncer));
+        spawn_liveness(Liveness {
+            reg: Arc::downgrade(&registry),
+            backend: Arc::downgrade(&debouncer),
+            tx: liveness_tx,
+            wake: liveness_wake,
+            grace: stale_grace(debounce),
+        });
         Ok(Watcher { debouncer, registry, next_id: 1 })
     }
 
@@ -117,12 +147,12 @@ impl Watcher {
             ));
         }
         let mode = if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
-        self.debouncer.watch(dir, mode).map_err(|e| notify_err("watch", Some(dir), e))?;
+        self.debouncer.lock().watch(dir, mode).map_err(|e| notify_err("watch", Some(dir), e))?;
         let id = WatchId(self.next_id);
         self.next_id += 1;
         let canon =
             std::fs::canonicalize(dir).ok().map(|c| crate::path::strip_verbatim(&c)).filter(|c| c.as_path() != dir);
-        self.registry.lock().insert(id, Watched { dir: dir.to_path_buf(), canon, recursive, lost: false });
+        self.registry.lock().insert(id, Watched::new(dir.to_path_buf(), canon, recursive));
         Ok(id)
     }
 
@@ -131,82 +161,195 @@ impl Watcher {
         if let Some(w) = removed {
             let still_used = self.registry.lock().values().any(|o| o.dir == w.dir);
             if !still_used {
-                let _ = self.debouncer.unwatch(&w.dir);
+                let _ = self.debouncer.lock().unwatch(&w.dir);
             }
         }
     }
 }
 
-/// Some backends (ReadDirectoryChangesW keeps a removed directory "delete pending" while
-/// its handle is open) never report the removal of the watched directory itself; a light
-/// existence check every second reports `Lost` for them. Exits when the [`Watcher`] drops.
+/// How long a watched directory may show a new modification time without any
+/// notification before its watch counts as silent (debounce plus slack).
+fn stale_grace(debounce: Duration) -> Duration {
+    (debounce * 2 + Duration::from_millis(500)).max(Duration::from_millis(1500))
+}
+
+/// What the liveness thread needs (weak handles: it exits when the [`Watcher`] drops).
+struct Liveness {
+    reg: Weak<Mutex<HashMap<WatchId, Watched>>>,
+    backend: Weak<Mutex<Backend>>,
+    tx: crossbeam_channel::Sender<WatchEvent>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    grace: Duration,
+}
+
+/// Per-watch state of the liveness check.
+#[derive(Debug)]
+struct Health {
+    /// Next check due and the current interval.
+    due: Instant,
+    interval: Duration,
+    /// Directory modification time at the previous check (`None` before the first one or
+    /// when it cannot be read).
+    mtime: Option<SystemTime>,
+    /// [`Watched::activity`] at the previous check.
+    activity: u64,
+    /// The directory changed without notifications: `(activity at that point, detected
+    /// at)`. Resolved by any notification, or a silent watch after the grace period.
+    suspect: Option<(u64, Instant)>,
+}
+
+/// Outcome of one liveness check of a present directory.
+#[derive(Debug, PartialEq, Eq)]
+enum Verdict {
+    Fine,
+    /// The directory changed but its watch stayed silent past the grace period.
+    Silent,
+}
+
+impl Health {
+    fn new(now: Instant, interval: Duration) -> Self {
+        Health { due: now, interval, mtime: None, activity: 0, suspect: None }
+    }
+
+    /// Fold one observation in: the directory's modification time and its watch's
+    /// activity counter.
+    fn observe(&mut self, mtime: Option<SystemTime>, activity: u64, now: Instant, grace: Duration) -> Verdict {
+        let changed = mtime.is_some() && self.mtime.is_some() && mtime != self.mtime;
+        let mut verdict = Verdict::Fine;
+        if let Some((before, since)) = self.suspect {
+            if activity != before {
+                self.suspect = None;
+            } else if now.duration_since(since) >= grace {
+                self.suspect = None;
+                verdict = Verdict::Silent;
+            }
+        }
+        // Notifications since the previous check account for a change seen now; without
+        // any, they may still sit in the debouncer, so only suspect the watch for now.
+        if verdict == Verdict::Fine && changed && activity == self.activity && self.suspect.is_none() {
+            self.suspect = Some((activity, now));
+        }
+        if mtime.is_some() {
+            self.mtime = mtime;
+        }
+        self.activity = activity;
+        verdict
+    }
+}
+
+/// Liveness thread, checking every watched directory about once a second:
+/// * Some backends (ReadDirectoryChangesW keeps a removed directory "delete pending"
+///   while its handle is open) never report the removal of the watched directory itself;
+///   a light existence check reports `Lost` for them.
+/// * A directory whose modification time changed while its watch reported nothing for a
+///   grace period has a silent watch (dropped by the backend after an error, an overflow
+///   that lost the batch, a redirector that stopped notifying): it is re-armed and
+///   reported as `Rescan`, so its owner relists.
 ///
 /// The registry is only snapshotted under its lock; the stats run outside it, so a dead
 /// network share (a stat can block for tens of seconds) never stalls event dispatch or
 /// `watch`/`unwatch` on the UI thread. Network paths and directories whose stat was slow
 /// are checked less often (exponential back-off up to [`LIVENESS_MAX_INTERVAL`]).
-fn spawn_liveness(
-    reg: std::sync::Weak<Mutex<HashMap<WatchId, Watched>>>,
-    tx: crossbeam_channel::Sender<WatchEvent>,
-    wake: Arc<dyn Fn() + Send + Sync>,
-) {
+fn spawn_liveness(l: Liveness) {
     let spawned = std::thread::Builder::new().name("soyuz-watch-alive".into()).spawn(move || {
-        // Per watch: (next check due, current interval).
-        let mut schedule: HashMap<WatchId, (Instant, Duration)> = HashMap::new();
+        let mut health: HashMap<WatchId, Health> = HashMap::new();
         loop {
             std::thread::sleep(LIVENESS_INTERVAL);
-            let snapshot: Vec<(WatchId, PathBuf)> = {
-                let Some(reg) = reg.upgrade() else { return };
+            let snapshot: Vec<(WatchId, PathBuf, bool, u64)> = {
+                let Some(reg) = l.reg.upgrade() else { return };
                 let reg = reg.lock();
-                schedule.retain(|id, _| reg.contains_key(id));
-                reg.iter().filter(|(_, w)| !w.lost).map(|(id, w)| (*id, w.dir.clone())).collect()
+                health.retain(|id, _| reg.contains_key(id));
+                reg.iter()
+                    .filter(|(_, w)| !w.lost)
+                    .map(|(id, w)| (*id, w.dir.clone(), w.recursive, w.activity))
+                    .collect()
             };
             let mut gone = Vec::new();
-            for (id, dir) in snapshot {
+            let mut silent: Vec<(PathBuf, bool)> = Vec::new();
+            for (id, dir, recursive, activity) in snapshot {
                 let now = Instant::now();
-                let (due, interval) = *schedule.entry(id).or_insert_with(|| {
-                    (now, if is_network_path(&dir) { LIVENESS_REMOTE_INTERVAL } else { LIVENESS_INTERVAL })
+                let h = health.entry(id).or_insert_with(|| {
+                    Health::new(now, if is_network_path(&dir) { LIVENESS_REMOTE_INTERVAL } else { LIVENESS_INTERVAL })
                 });
-                if now < due {
+                if now < h.due {
                     continue;
                 }
                 let t = Instant::now();
-                let is_gone = !crate::list::exists_nofollow(&dir);
-                let took = t.elapsed();
-                let next = if took > LIVENESS_SLOW_STAT { (interval * 2).min(LIVENESS_MAX_INTERVAL) } else { interval };
-                schedule.insert(id, (Instant::now() + next, next));
-                if is_gone {
-                    gone.push(id);
+                let probe = probe_dir(&dir);
+                if t.elapsed() > LIVENESS_SLOW_STAT {
+                    h.interval = (h.interval * 2).min(LIVENESS_MAX_INTERVAL);
+                }
+                h.due = Instant::now() + h.interval;
+                match probe {
+                    None => gone.push(id),
+                    Some(mtime) => {
+                        if h.observe(mtime, activity, Instant::now(), l.grace) == Verdict::Silent
+                            && !silent.iter().any(|(d, _)| *d == dir)
+                        {
+                            silent.push((dir, recursive));
+                        }
+                    }
                 }
             }
-            if gone.is_empty() {
+            if gone.is_empty() && silent.is_empty() {
                 continue;
             }
-            let Some(reg) = reg.upgrade() else { return };
-            let mut lost = Vec::new();
-            for id in gone {
-                // Re-check under the lock: the watch may have been removed meanwhile.
-                if let Some(w) = reg.lock().get_mut(&id)
-                    && !w.lost
-                {
-                    w.lost = true;
-                    lost.push(id);
+            // Re-arm silent watches, outside the registry lock (unwatch / watch wait for
+            // notify's thread, whose event callback takes the registry lock).
+            if let Some(backend) = l.backend.upgrade() {
+                for (dir, recursive) in &silent {
+                    log::warn!("watch on {} went silent; re-arming it", dir.display());
+                    let mode = if *recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
+                    let mut b = backend.lock();
+                    let _ = b.unwatch(dir);
+                    if let Err(e) = b.watch(dir, mode) {
+                        log::warn!("cannot re-arm the watch on {}: {e}", dir.display());
+                    }
+                }
+            }
+            let Some(reg) = l.reg.upgrade() else { return };
+            let mut out = Vec::new();
+            {
+                let mut reg = reg.lock();
+                for id in gone {
+                    // Re-check under the lock: the watch may have been removed meanwhile.
+                    if let Some(w) = reg.get_mut(&id)
+                        && !w.lost
+                    {
+                        w.lost = true;
+                        out.push(WatchEvent { id, kind: WatchKind::Lost });
+                    }
+                }
+                for (id, w) in reg.iter() {
+                    if !w.lost && silent.iter().any(|(d, _)| *d == w.dir) {
+                        out.push(WatchEvent { id: *id, kind: WatchKind::Rescan });
+                    }
                 }
             }
             drop(reg);
-            if lost.is_empty() {
+            if out.is_empty() {
                 continue;
             }
-            for id in lost {
-                if tx.send(WatchEvent { id, kind: WatchKind::Lost }).is_err() {
+            for ev in out {
+                if l.tx.send(ev).is_err() {
                     return;
                 }
             }
-            wake();
+            (l.wake)();
         }
     });
     if spawned.is_err() {
         log::warn!("could not start the watcher liveness thread");
+    }
+}
+
+/// `None` when nothing exists at `dir` any more, else its modification time (`None`
+/// inside when it cannot be read, e.g. access denied: then only existence is tracked).
+fn probe_dir(dir: &Path) -> Option<Option<SystemTime>> {
+    match crate::list::stat(dir, false) {
+        Ok(e) => Some(e.modified),
+        Err(_) if crate::list::exists_nofollow(dir) => Some(None),
+        Err(_) => None,
     }
 }
 
@@ -248,6 +391,7 @@ fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
             log::warn!("watcher errors: {errors:?}");
             let mut out = Vec::new();
             for (id, w) in reg.iter_mut() {
+                w.activity += 1;
                 if w.gone() {
                     if !w.lost {
                         w.lost = true;
@@ -265,11 +409,14 @@ fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
     let mut lost: Vec<WatchId> = Vec::new();
     for ev in &events {
         if ev.need_rescan() {
-            rescan.extend(reg.keys().copied());
+            for (id, w) in reg.iter_mut() {
+                w.activity += 1;
+                rescan.push(*id);
+            }
             continue;
         }
         for p in &ev.paths {
-            for (id, w) in reg.iter() {
+            for (id, w) in reg.iter_mut() {
                 let Some(local) = w.local(p) else {
                     // An ancestor of the watched directory was removed or renamed away.
                     if w.dir.starts_with(p) && w.gone() && !lost.contains(id) {
@@ -277,6 +424,7 @@ fn dispatch(reg: &Registry, res: DebounceEventResult) -> Vec<WatchEvent> {
                     }
                     continue;
                 };
+                w.activity += 1;
                 if local == w.dir {
                     let removed = matches!(
                         ev.kind,
@@ -393,16 +541,129 @@ mod tests {
 
     #[test]
     fn canonical_paths_map_back() {
-        let w = Watched {
-            dir: PathBuf::from("/var/x"),
-            canon: Some(PathBuf::from("/private/var/x")),
-            recursive: false,
-            lost: false,
-        };
+        let w = Watched::new(PathBuf::from("/var/x"), Some(PathBuf::from("/private/var/x")), false);
         assert_eq!(w.local(Path::new("/private/var/x/f")), Some(PathBuf::from("/var/x/f")));
         assert_eq!(w.local(Path::new("/private/var/x")), Some(PathBuf::from("/var/x")));
         assert_eq!(w.local(Path::new("/var/x/g")), Some(PathBuf::from("/var/x/g")));
         assert_eq!(w.local(Path::new("/elsewhere")), None);
+    }
+
+    #[test]
+    fn health_flags_a_change_without_notifications_after_the_grace_period() {
+        let grace = Duration::from_millis(1500);
+        let t0 = Instant::now();
+        let m0 = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+        let m1 = m0 + Duration::from_secs(1);
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let mut h = Health::new(t0, LIVENESS_INTERVAL);
+        assert_eq!(h.observe(Some(m0), 0, at(0), grace), Verdict::Fine);
+        // Changed, no notification yet: only suspected (it may still be debounced).
+        assert_eq!(h.observe(Some(m1), 0, at(1000), grace), Verdict::Fine);
+        assert!(h.suspect.is_some());
+        assert_eq!(h.observe(Some(m1), 0, at(2000), grace), Verdict::Fine);
+        // Still silent after the grace period → silent watch, reported once.
+        assert_eq!(h.observe(Some(m1), 0, at(2600), grace), Verdict::Silent);
+        assert_eq!(h.observe(Some(m1), 0, at(3600), grace), Verdict::Fine);
+    }
+
+    #[test]
+    fn health_accepts_changes_that_were_notified() {
+        let grace = Duration::from_millis(1500);
+        let t0 = Instant::now();
+        let at = |ms: u64| t0 + Duration::from_millis(ms);
+        let m = |s: u64| Some(SystemTime::UNIX_EPOCH + Duration::from_secs(s));
+        let mut h = Health::new(t0, LIVENESS_INTERVAL);
+        h.observe(m(1), 0, at(0), grace);
+        // Notifications arrived before this check: fine at once.
+        assert_eq!(h.observe(m(2), 3, at(1000), grace), Verdict::Fine);
+        assert!(h.suspect.is_none());
+        // Notification arrives after the change was seen: suspicion cleared.
+        assert_eq!(h.observe(m(3), 3, at(2000), grace), Verdict::Fine);
+        assert!(h.suspect.is_some());
+        assert_eq!(h.observe(m(3), 4, at(3000), grace), Verdict::Fine);
+        assert!(h.suspect.is_none());
+        assert_eq!(h.observe(m(3), 4, at(9000), grace), Verdict::Fine);
+        // An unreadable modification time never flags anything.
+        assert_eq!(h.observe(None, 4, at(10000), grace), Verdict::Fine);
+        assert_eq!(h.observe(None, 4, at(20000), grace), Verdict::Fine);
+    }
+
+    /// A watch the backend dropped silently (here: removed behind the registry's back,
+    /// like notify does after `ERROR_NOTIFY_ENUM_DIR`) is noticed through the directory's
+    /// modification time, re-armed and reported as `Rescan`; later changes arrive again.
+    #[test]
+    fn silent_watch_is_rearmed_and_rescanned() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("watched");
+        std::fs::create_dir(&dir).unwrap();
+        let (mut w, rx) = watcher();
+        let id = w.watch(&dir, false).unwrap();
+        std::thread::sleep(Duration::from_millis(1200)); // first liveness sample
+        w.debouncer.lock().unwatch(&dir).unwrap();
+        std::fs::write(dir.join("unseen.txt"), b"1").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut rescanned = false;
+        while Instant::now() < deadline && !rescanned {
+            if let Ok(ev) = rx.recv_timeout(Duration::from_millis(100)) {
+                assert_eq!(ev.id, id);
+                rescanned = matches!(ev.kind, WatchKind::Rescan);
+            }
+        }
+        assert!(rescanned, "a silent watch must be reported as Rescan");
+        let f = dir.join("after.txt");
+        std::fs::write(&f, b"2").unwrap();
+        let evs = collect(&rx, |e| mentions(e, &f));
+        assert!(mentions(&evs, &f), "the re-armed watch reports again: {evs:?}");
+        w.unwatch(id);
+    }
+
+    /// Bursts of short-lived files must not lose the files that stay (the debouncer's
+    /// file-id cache made notify's thread fall behind and overflow, dropping batches).
+    #[test]
+    fn bursts_do_not_lose_surviving_files() {
+        let d = tempfile::tempdir().unwrap();
+        let big = d.path().join("big");
+        let busy = d.path().join("busy");
+        std::fs::create_dir(&big).unwrap();
+        std::fs::create_dir(&busy).unwrap();
+        for i in 0..5000 {
+            std::fs::write(big.join(format!("f{i}")), b"").unwrap();
+        }
+        let (mut w, rx) = watcher();
+        let t = Instant::now();
+        w.watch(&big, false).unwrap();
+        assert!(t.elapsed() < Duration::from_millis(500), "watch must not walk the directory: {:?}", t.elapsed());
+        let busy_id = w.watch(&busy, false).unwrap();
+        std::thread::sleep(Duration::from_millis(150));
+        let mut survivors = Vec::new();
+        for round in 0..10 {
+            for i in 0..200 {
+                let p = busy.join(format!("transient_file_with_a_long_name_{round}_{i}.part"));
+                std::fs::write(&p, b"x").unwrap();
+                std::fs::rename(&p, p.with_extension("o")).unwrap();
+                std::fs::remove_file(p.with_extension("o")).unwrap();
+            }
+            let s = busy.join(format!("survivor_{round}.txt"));
+            std::fs::write(&s, b"1").unwrap();
+            survivors.push(s);
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut seen = std::collections::HashSet::new();
+        let mut rescan = false;
+        while Instant::now() < deadline && !rescan && !survivors.iter().all(|s| seen.contains(s)) {
+            if let Ok(ev) = rx.recv_timeout(Duration::from_millis(100)) {
+                if ev.id != busy_id {
+                    continue;
+                }
+                match ev.kind {
+                    WatchKind::Changed(v) => seen.extend(v),
+                    WatchKind::Rescan => rescan = true,
+                    WatchKind::Lost => {}
+                }
+            }
+        }
+        let missing: Vec<_> = survivors.iter().filter(|s| !seen.contains(*s)).collect();
+        assert!(rescan || missing.is_empty(), "lost without a rescan: {missing:?}");
     }
 
     #[test]

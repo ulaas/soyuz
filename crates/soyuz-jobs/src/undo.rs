@@ -75,8 +75,9 @@ pub(crate) fn undo_order(records: &[UndoRecord]) -> Vec<UndoRecord> {
     records.iter().rev().cloned().collect()
 }
 
-/// Paths an undo job touches (for overlap serialization).
-pub(crate) fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
+/// Paths an undo job touches (for overlap serialization; the app relists panes showing
+/// them after the job).
+pub fn touched_roots(records: &[UndoRecord]) -> Vec<PathBuf> {
     let mut out = Vec::new();
     for r in records {
         match r {

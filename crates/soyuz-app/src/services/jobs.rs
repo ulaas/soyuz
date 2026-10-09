@@ -187,6 +187,48 @@ pub struct JobsService {
     seen: Option<HashMap<HistoryId, bool>>,
     /// Renames / moves completed (or undone) since the last [`Self::take_moves`].
     moves: Vec<(PathBuf, PathBuf)>,
+    /// Paths changed by finished jobs, for relisting the panes that show them.
+    affected: AffectedPaths,
+}
+
+/// Collects the paths finished jobs changed: the touched roots of jobs submitted through
+/// the app (sources, destinations) once they finish, and the paths of new / undone /
+/// redone history entries (covers undo, redo and retry jobs the engine creates itself).
+#[derive(Default)]
+pub struct AffectedPaths {
+    /// Touched roots of submitted jobs, until they finish.
+    touched: HashMap<JobId, Vec<PathBuf>>,
+    pending: Vec<PathBuf>,
+}
+
+impl AffectedPaths {
+    pub fn submitted(&mut self, id: JobId, kind: &JobKind) {
+        self.touched.insert(id, kind.touched_roots());
+    }
+
+    pub fn event(&mut self, e: &JobEvent) {
+        match e {
+            JobEvent::Finished(id, _) => {
+                if let Some(t) = self.touched.remove(id) {
+                    self.pending.extend(t);
+                }
+            }
+            JobEvent::Removed(id) => {
+                self.touched.remove(id);
+            }
+            _ => {}
+        }
+    }
+
+    /// A history entry was added, undone or redone.
+    pub fn history(&mut self, h: &HistoryEntry) {
+        self.pending.extend(soyuz_jobs::undo::touched_roots(&h.records));
+        self.pending.extend(h.job.touched_roots());
+    }
+
+    pub fn take(&mut self) -> Vec<PathBuf> {
+        std::mem::take(&mut self.pending)
+    }
 }
 
 impl JobsService {
@@ -212,6 +254,7 @@ impl JobsService {
             throttle_bps,
             seen: None,
             moves: Vec::new(),
+            affected: AffectedPaths::default(),
         };
         s.refresh_history();
         s
@@ -246,7 +289,9 @@ impl JobsService {
             spec.options.extract_limits = self.extract_limits.clone();
             spec.options.preserve_special_bits = self.preserve_special_bits;
         }
+        let kind = spec.kind.clone();
         let id = self.engine.submit(spec);
+        self.affected.submitted(id, &kind);
         self.meta.insert(id, meta);
         self.refresh_snapshots();
         id
@@ -283,6 +328,7 @@ impl JobsService {
                 }
                 _ => {}
             }
+            self.affected.event(e);
         }
         let working = self.snapshots.iter().any(|s| s.state.is_active());
         if !events.is_empty() || working {
@@ -319,6 +365,8 @@ impl JobsService {
                 continue;
             }
             self.moves.extend(path_moves(&h.records, forward));
+            // Undo / redo / retry jobs are created by the engine: their paths come from here.
+            self.affected.history(h);
         }
     }
 
@@ -326,6 +374,12 @@ impl JobsService {
     /// The app re-keys path-based state (tags) with them.
     pub fn take_moves(&mut self) -> Vec<(PathBuf, PathBuf)> {
         std::mem::take(&mut self.moves)
+    }
+
+    /// Paths changed by jobs that finished since the last call (sources, destinations,
+    /// created / copied / trashed paths). The app relists panes showing them.
+    pub fn take_affected(&mut self) -> Vec<PathBuf> {
+        self.affected.take()
     }
 
     /// Oldest first.

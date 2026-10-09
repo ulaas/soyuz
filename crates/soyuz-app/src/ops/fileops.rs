@@ -621,6 +621,11 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     for (from, to) in app.fileops.jobs.take_moves() {
         crate::services::tags::rename(&from, &to);
     }
+    // Show what finished jobs changed without waiting for (or relying on) the watcher.
+    let affected = app.fileops.jobs.take_affected();
+    if !affected.is_empty() {
+        crate::ops::refresh_affected(app, &affected);
+    }
     reconcile_prompts(app);
     auto_open_activity(app);
     external_drops(app, ctx);

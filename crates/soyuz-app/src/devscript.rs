@@ -14,13 +14,15 @@
 //! * `expect:<check>` — log `SOYUZ_SCRIPT: expect ok <check>` or `expect FAILED <check>
 //!   (actual …)`; checks: `cwd=<folder name>`, `cursor=<name>`, `settings=open|closed`,
 //!   `palette=open|closed`, `dialog=open|closed`, `exists=<path>`, `missing=<path>`,
-//!   `lang=<tag>` (used by the keyboard-only test, `tests/keyboard_only.rs`);
+//!   `lang=<tag>`, `has=<name>` (the focused pane shows it) (used by the keyboard-only test, `tests/keyboard_only.rs`);
 //! * `until:<path>` — pause the script until `<path>` exists (at most 120 s); external
 //!   drivers such as `scripts/uia-audit.ps1` use it to hold a state while they inspect
 //!   the window;
 //! * `toast:<kind>|<title>[|<body>[|undo]]` — show a toast for 30 s (`info`, `success`,
 //!   `warning`, `error`; `undo` adds an Undo action), for toast screenshots;
 //! * `hover:<x>,<y>` — move egui's pointer to that window position (no OS input);
+//! * `panes:<label>` — log the panes of the active tab (location, status, entry and
+//!   visible counts, visible names);
 //! * `mark:<label>` — log a marker line (`SOYUZ_SCRIPT: mark <label>`), e.g. where the
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`;
@@ -283,6 +285,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "welcome" => app.ui.welcome = arg.trim() != "off",
             "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
+            "panes" => log_panes(app, arg.trim()),
             "hover" => {
                 // `hover:<x>,<y>`: synthetic pointer position (logical points), in-app only.
                 if let Some((x, y)) = arg.split_once(',')
@@ -385,6 +388,24 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
 }
 
+/// `panes:<label>` step: log every pane of the active tab of each window (location, listing state,
+/// entry / visible counts and the visible names) for scripted refresh checks.
+fn log_panes(app: &SoyuzApp, label: &str) {
+    let secondary = app.workspaces.windows.iter().map(|w| w.ws.tab());
+    for (i, p) in std::iter::once(app.ws.tab()).chain(secondary).flat_map(|t| t.panes.iter()).enumerate() {
+        let names: Vec<&str> = p.visible.iter().filter_map(|&j| p.entries.get(j)).map(|e| e.name.as_str()).collect();
+        log::info!(
+            "SOYUZ_SCRIPT: panes {label} #{i} {} status={:?} refreshing={} entries={} visible={} [{}]",
+            p.location.display(),
+            p.status,
+            p.refreshing,
+            p.entries.len(),
+            p.visible.len(),
+            names.join(", ")
+        );
+    }
+}
+
 /// `toast:` step → a toast that stays for 30 s.
 fn script_toast(arg: &str) -> crate::ui::toasts::Toast {
     use crate::ui::toasts::{Toast, ToastKind};
@@ -439,6 +460,11 @@ fn expect(app: &SoyuzApp, check: &str) -> Result<(), String> {
             }
         }
         "lang" => crate::i18n::current().tag().to_string(),
+        // `has=<name>`: the focused pane shows an entry with that name.
+        "has" => {
+            let pane = app.ws.pane();
+            if pane.visible_pos(want).is_some() { want.to_string() } else { "absent".into() }
+        }
         other => return Err(format!("unknown check {other}")),
     };
     if actual == want { Ok(()) } else { Err(actual) }
