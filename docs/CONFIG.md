@@ -140,7 +140,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `hinting` | boolean | `true` | TrueType hinting: snap stems to the pixel grid (crisper text at small sizes). |
-| `subpixel_positioning` | boolean | `false` | Sub-pixel glyph positioning: more even letter spacing, slightly softer stems. |
+| `subpixel_positioning` | boolean | `true` | Sub-pixel glyph positioning: more even letter spacing, slightly softer stems. |
 | `hinting_strength` | `"crisp"` \| `"normal"` \| `"light"` | `"crisp"` | How hard hinting snaps the outlines to the pixel grid (with `hinting = true`). (`crisp`: Snap stems horizontally and vertically: the sharpest text at 100 % scaling; `normal`: egui's default: snap vertically, keep the unhinted letter widths; `light`: Only snap heights (FreeType's "light" mode): truest shapes, softer stems) |
 | `text_gamma_dark` | float | `0.45` | Text weight on dark themes: the gamma that maps glyph coverage to opacity (lower = heavier, 1.0 = linear; 0 = egui's built-in `2c - c²` curve, close to 0.5). |
 | `text_gamma_light` | float | `0.8` | Text weight on light themes (same scale; 1.0 = linear coverage, egui's default). |

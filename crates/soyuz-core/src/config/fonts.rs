@@ -139,7 +139,7 @@ impl Default for Fonts {
             hex: FontRole::named(Fonts::DEFAULT_MONO),
             numbers: FontRole::named(""),
             hinting: true,
-            subpixel_positioning: false,
+            subpixel_positioning: true,
             hinting_strength: HintingStrength::default(),
             text_gamma_dark: 0.45,
             text_gamma_light: 0.8,

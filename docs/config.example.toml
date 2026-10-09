@@ -60,7 +60,7 @@ thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
 # (The old [appearance] font / mono_font keys are still read and moved here.)
 [fonts]
 hinting = true                   # TrueType hinting: crisper stems at small sizes
-subpixel_positioning = false     # smoother letter spacing, slightly softer text
+subpixel_positioning = true      # smoother letter spacing, slightly softer text
 hinting_strength = "crisp"       # crisp (also fits letter widths) | normal (egui's default) | light
 text_gamma_dark = 0.45           # coverage → opacity on dark themes: lower = heavier (0 = egui's curve)
 text_gamma_light = 0.8           # the same on light themes (1.0 = linear)
