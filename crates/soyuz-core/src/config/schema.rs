@@ -489,6 +489,9 @@ pub struct Behaviour {
     pub spring_loaded_folders: bool,
     /// Hover time before a spring-loaded folder opens (ms).
     pub spring_load_delay_ms: u32,
+    /// Dragging items out of the window hands them to other apps (desktop, Explorer,
+    /// editors) as files (Windows OLE drag and drop).
+    pub drag_out: bool,
 }
 
 /// Mirrors `soyuz_fs::Preserve` bits (core cannot depend on fs).

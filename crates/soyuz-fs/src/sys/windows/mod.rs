@@ -1,10 +1,12 @@
-//! Raw Windows shims over kernel32 / advapi32 / ntdll (`windows-sys`). No shell or COM APIs.
+//! Raw Windows shims over kernel32 / advapi32 / ntdll (`windows-sys`). No shell APIs; the
+//! only COM is the hand-written OLE drag source in `dragdrop.rs` (ole32).
 //!
 //! Every path handed to the OS goes through [`crate::path::to_wide_long`] (absolute,
 //! `\\?\`-prefixed, NUL-terminated) so long paths and trailing dots/spaces work.
 
 pub(crate) mod chrome;
 pub(crate) mod console;
+pub(crate) mod dragdrop;
 pub(crate) mod fs;
 pub(crate) mod locale;
 pub(crate) mod ntdir;

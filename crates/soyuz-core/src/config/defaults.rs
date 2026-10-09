@@ -195,6 +195,7 @@ impl Default for Behaviour {
             middle_click: MiddleClick::NewTab,
             spring_loaded_folders: true,
             spring_load_delay_ms: 700,
+            drag_out: true,
         }
     }
 }

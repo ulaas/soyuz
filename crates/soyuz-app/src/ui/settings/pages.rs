@@ -597,6 +597,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 number(ui, &mut d.behaviour.spring_load_delay_ms, 200..=3000, " ms");
             },
         );
+        r.row_kw(
+            tr!("settings-behaviour-drag-out"),
+            tr!("settings-behaviour-drag-out-desc"),
+            "drag out external desktop explorer other apps",
+            |ui| {
+                switch(ui, &mut d.behaviour.drag_out);
+            },
+        );
     });
     any |= group(ui, q, ctx, tr!("settings-behaviour-typing"), |r| {
         r.row_kw(tr!("settings-behaviour-type-ahead"), tr!("settings-behaviour-type-ahead-desc"), "type ahead", |ui| {

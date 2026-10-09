@@ -291,6 +291,7 @@ Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`, `"br
 | `middle_click` | `"new_tab"` \| `"other_pane"` \| `"nothing"` | `"new_tab"` | Middle-clicking a folder opens it in a `new_tab`, the `other_pane`, or does `nothing`. |
 | `spring_loaded_folders` | boolean | `true` | Hovering a folder during a drag opens it (Explorer / Finder "spring-loaded folders"). |
 | `spring_load_delay_ms` | integer | `700` | Hover time before a spring-loaded folder opens (ms). |
+| `drag_out` | boolean | `true` | Dragging items out of the window hands them to other apps (desktop, Explorer, editors) as files (Windows OLE drag and drop). |
 
 ## `[jobs]`
 

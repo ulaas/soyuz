@@ -23,6 +23,7 @@ pub mod console;
 pub mod copy;
 pub mod create;
 pub mod delete;
+pub mod dragout;
 mod err;
 pub mod fault;
 #[cfg(any(test, feature = "fuzzing"))]

@@ -142,6 +142,7 @@ type_ahead = "jump"              # jump | filter
 middle_click = "new_tab"         # new_tab | other_pane | nothing
 spring_loaded_folders = true     # hovering a folder while dragging opens it
 spring_load_delay_ms = 700
+drag_out = true                  # dragging items out of the window hands them to other apps
 
 [jobs]
 max_parallel = 4

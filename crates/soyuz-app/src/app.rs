@@ -727,7 +727,8 @@ impl eframe::App for SoyuzApp {
         self.frame(ui);
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::ops::fileops::dragout::raw_input(ctx, raw_input);
         crate::devscript::raw_input(self, raw_input);
         crate::devscript::raw_input_hook(self, raw_input);
     }

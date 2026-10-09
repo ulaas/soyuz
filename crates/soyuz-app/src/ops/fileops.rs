@@ -7,6 +7,7 @@
 
 pub mod clipboard;
 pub mod dnd;
+pub mod dragout;
 pub mod names;
 pub mod prompts;
 pub mod rename;
@@ -635,6 +636,7 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 /// End of every frame: drag badge and the "ask" drop menu.
 pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
+    dragout::end_frame(app, ctx);
     dnd::paint_badge(ctx);
     if let Some(menu) = app.fileops.dnd.ask.clone() {
         let mut close = false;
