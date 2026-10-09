@@ -598,7 +598,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         let queued = matches!(s.state, JobState::Queued) || (s.state == JobState::Paused && s.started.is_none());
         let prio = s.priority;
         let mut action: Option<u8> = None;
-        egui::Popup::menu(&more).show(|ui| {
+        crate::ui::native::popup::Menu::menu(&more).show(|ui| {
             ui.set_min_width(200.0);
             submenu(ui, Some(ph::FLAG), tr!("panels-priority"), |ui| {
                 ui.set_min_width(150.0);

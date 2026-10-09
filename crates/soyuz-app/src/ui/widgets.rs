@@ -389,7 +389,7 @@ pub fn submenu<R>(ui: &mut Ui, icon: Option<&str>, label: &str, content: impl Fn
         icons::font(11.0),
         p.text_tertiary,
     );
-    egui::containers::menu::SubMenu::new().show(ui, &resp, content).map(|r| r.inner)
+    crate::ui::native::popup::submenu(ui, &resp, content)
 }
 
 /// Menu row with a check mark (when `checked`) in the icon slot.

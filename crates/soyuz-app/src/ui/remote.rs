@@ -480,7 +480,7 @@ pub fn sidebar_section(
             cmds.push(Cmd::OpenInNewTab { location: Location::Remote(uri.display()), activate: false });
         }
         let saved = svc::is_saved(&c.id);
-        r.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(220.0);
             if menu_item(ui, Some(ph::BROWSERS), tr!("remote-open-new-tab"), None, true).clicked() {
                 cmds.push(Cmd::Remote(RemoteCmd::Open { uri: uri.display(), new_tab: true }));

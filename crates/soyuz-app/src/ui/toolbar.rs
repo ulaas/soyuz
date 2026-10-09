@@ -187,7 +187,7 @@ fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: 
     } else {
         pane.history.forward_entries().map(|e| e.location.display()).collect()
     };
-    Popup::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
+    crate::ui::native::popup::Menu::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
         .kind(egui::PopupKind::Menu)
         .open_memory(None)
         .align(RectAlign::BOTTOM_START)
@@ -209,7 +209,7 @@ fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: 
 }
 
 fn view_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
-    Popup::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
+    crate::ui::native::popup::Menu::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
         ui.set_width(250.0);
         let km = app.keymap.clone();
         let pane_id = app.ws.pane().id;
@@ -269,7 +269,7 @@ fn view_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
 }
 
 fn sort_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
-    Popup::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
+    crate::ui::native::popup::Menu::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
         ui.set_width(220.0);
         menu_caption(ui, tr!("app-ctx-sort-by"));
         sort_items(ui, &mut app.cmds, app.ws.pane());
@@ -296,7 +296,7 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
     if button.secondary_clicked() {
         Popup::open_id(ui.ctx(), id);
     }
-    Popup::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
+    crate::ui::native::popup::Menu::new(id, ui.ctx().clone(), button.rect, ui.layer_id())
         .kind(egui::PopupKind::Menu)
         .open_memory(None)
         .align(RectAlign::BOTTOM_END)

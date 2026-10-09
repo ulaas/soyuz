@@ -8,6 +8,7 @@ pub(crate) mod console;
 pub(crate) mod fs;
 pub(crate) mod locale;
 pub(crate) mod ntdir;
+pub(crate) mod owned;
 pub(crate) mod registry;
 pub(crate) mod security;
 pub(crate) mod shadow;

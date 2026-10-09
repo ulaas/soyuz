@@ -248,7 +248,7 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
         };
         let r = chip_menu(ui, Some(access_icon(access)), &label, explicit);
         let mut acts = Vec::new();
-        egui::Popup::menu(&r).show(|ui| access_menu(ui, path, access, explicit, &mut acts));
+        crate::ui::native::popup::Menu::menu(&r).show(|ui| access_menu(ui, path, access, explicit, &mut acts));
         for a in acts {
             if let PanelAct::FolderAccess(path, access) = a {
                 cmds.push(Cmd::Ai(AiCmd::SetFolderAccess { path, access }));
@@ -377,7 +377,7 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             None => tr!("ai-no-model").into(),
         };
         let r = chip_menu(ui, Some(ph::CPU), &text, false);
-        egui::Popup::menu(&r).show(|ui| {
+        crate::ui::native::popup::Menu::menu(&r).show(|ui| {
             ui.set_width(240.0);
             crate::ui::widgets::menu_caption(ui, tr!("ai-model-caption"));
             let none = app.ai.panel.profile_override.is_none();
@@ -426,7 +426,7 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
                     tr!("ai-access-tip-inherited", name = soyuz_core::entry::display_name(dir))
                 });
             let dir = dir.clone();
-            egui::Popup::menu(&r).show(|ui| access_menu(ui, &dir, access, explicit, acts));
+            crate::ui::native::popup::Menu::menu(&r).show(|ui| access_menu(ui, &dir, access, explicit, acts));
         }
         // Meter.
         let (usage, cost) = match &app.ai.running {

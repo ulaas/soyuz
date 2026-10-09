@@ -340,7 +340,7 @@ impl PromptDialog {
                             out = Some(resolve(ConflictResolution::Skip, all));
                         }
                         let more = button(ui, tr!("dialogs-conflict-more"), Btn::Ghost);
-                        egui::Popup::menu(&more).show(|ui| {
+                        crate::ui::native::popup::Menu::menu(&more).show(|ui| {
                             ui.set_min_width(220.0);
                             use crate::ui::widgets::menu_item;
                             if dir

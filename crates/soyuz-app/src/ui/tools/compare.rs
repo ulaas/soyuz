@@ -927,7 +927,7 @@ impl CompareWindow {
 
     fn profiles_menu(&mut self, ui: &mut Ui) {
         let resp = button(ui, Some(ph::FLOPPY_DISK), tr!("tools-profiles"), 0, true);
-        egui::Popup::menu(&resp).width(260.0).show(|ui| {
+        crate::ui::native::popup::Menu::menu(&resp).width(260.0).show(|ui| {
             ui.set_width(260.0);
             if self.profiles.is_empty() {
                 menu_item(ui, Some(ph::INFO), tr!("tools-profiles-none"), None, false);

@@ -54,6 +54,10 @@ pub trait Dialog {
     fn alert(&self) -> bool {
         false
     }
+    /// Kind of dialog for the remembered native window position (the type name).
+    fn kind_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
     /// Draw the body. Return `false` to close.
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool;
 }
@@ -76,6 +80,23 @@ impl Dialogs {
     pub fn show(&mut self, ctx: &egui::Context, dctx: &mut DialogCtx<'_>) {
         let depth = self.stack.len();
         let Some(top) = self.stack.last_mut() else { return };
+        if crate::ui::native::active(ctx) {
+            let kind = Id::new(top.kind_name());
+            let title = top.title().to_string();
+            let mut w = crate::ui::native::dialog::DialogWindow::new(
+                Id::new("soyuz.dialog.native").with(depth).with(kind),
+                kind,
+                &title,
+            );
+            w.icon = top.icon();
+            w.alert = top.alert();
+            w.width = top.width();
+            let shown = w.show(ctx, |ui| top.show(ui, dctx));
+            if shown.close || shown.inner == Some(false) {
+                self.stack.pop();
+            }
+            return;
+        }
         // Keyed by the dialog's identity too, so a smaller dialog opened after a larger
         // one doesn't inherit the remembered size of the previous modal.
         let id = Id::new("soyuz.dialog").with(depth).with((top.icon(), top.width() as i32));

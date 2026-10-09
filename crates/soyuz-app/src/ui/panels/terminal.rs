@@ -676,7 +676,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             to_activate = Some(*id);
         }
         let mut rename = false;
-        resp.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_min_width(200.0);
             if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("common-rename"), None, true).clicked() {
                 rename = true;

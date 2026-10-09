@@ -199,14 +199,17 @@ struct WindowState {
 }
 
 fn window_state(ctx: &Context) -> WindowState {
-    ctx.input(|i| {
+    let ws = ctx.input(|i| {
         let v = i.viewport();
         WindowState {
             maximized: v.maximized.unwrap_or(false),
             fullscreen: v.fullscreen.unwrap_or(false),
             focused: v.focused.unwrap_or(true),
         }
-    })
+    });
+    // A native popup menu of this window has the keyboard: keep the active look (like
+    // OS menus, which never deactivate their window).
+    WindowState { focused: ws.focused || crate::ui::native::popup_focused_for(ctx, ctx.viewport_id()), ..ws }
 }
 
 /// Width of the sidebar panel last frame (the title bar is laid out before it).
@@ -248,7 +251,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             } else if bg.drag_started_by(PointerButton::Primary) {
                 ctx.send_viewport_cmd(ViewportCommand::StartDrag);
             }
-            bg.context_menu(|ui| window_menu(ui, &app.keymap, ws.maximized));
+            crate::ui::native::popup::context_menu(&bg, |ui| window_menu(ui, &app.keymap, ws.maximized));
 
             brand(ui, lay.brand, leading > 0.0, ws.focused, app);
             if app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1 {
@@ -318,7 +321,7 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
         focus_ring(ui, btn);
     }
     let resp = resp.on_hover_text(tr!("app-titlebar-menu"));
-    Popup::menu(&resp).align(RectAlign::BOTTOM_START).show(|ui| app_menu(ui, app));
+    crate::ui::native::popup::Menu::menu(&resp).align(RectAlign::BOTTOM_START).show(|ui| app_menu(ui, app));
 }
 
 /// The app icon rendered at exactly `px` pixels (crisp at any scale), cached per size.
@@ -459,6 +462,32 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
         });
 }
 
+/// A caption close button (same look as the main window's) at `r`; used by the native
+/// dialog windows. `round_corner`: the window has a rounded top-right DWM corner.
+pub fn caption_close(ui: &mut Ui, r: Rect, id: Id, focused: bool, round_corner: bool) -> egui::Response {
+    let ctx = ui.ctx().clone();
+    let p = palette(&ctx);
+    let resp = ui.interact(r, id, Sense::click());
+    crate::ui::a11y::button(&resp, tr!("app-titlebar-close"));
+    let hover = ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(&ctx, 0.10));
+    let radius = close_corner(crate::ui::native_chrome::is_windows_11(), round_corner);
+    let red = Color32::from_rgb(0xC4, 0x2B, 0x1C);
+    let mut fg = if focused { p.text_primary } else { p.text_tertiary };
+    let painter = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        painter.rect_filled(r, radius, red.gamma_multiply(0.85));
+        fg = Color32::WHITE;
+    } else if hover > 0.0 {
+        painter.rect_filled(r, radius, red.gamma_multiply(hover));
+        fg = lerp_color(fg, Color32::WHITE, hover);
+    }
+    paint_glyph(painter, Glyph::Close, r.center(), fg, ctx.pixels_per_point());
+    if resp.has_focus() {
+        focus_ring(ui, r.shrink(4.0));
+    }
+    resp.on_hover_text(tr!("app-titlebar-close"))
+}
+
 fn lerp_color(a: Color32, b: Color32, t: f32) -> Color32 {
     let t = t.clamp(0.0, 1.0);
     let m = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
@@ -507,6 +536,13 @@ pub fn frame(ctx: &Context, app: &SoyuzApp) {
     if ws.maximized || ws.fullscreen {
         return;
     }
+    border_and_resize(ctx, ws.focused, true);
+}
+
+/// The 1 px window edge and (with `resizable`) the edge resize zones of a borderless
+/// window: the main / F7 windows and the native dialog windows.
+pub fn border_and_resize(ctx: &Context, focused: bool, resizable: bool) {
+    let ws = WindowState { focused, ..Default::default() };
     let p = palette(ctx);
     let screen = ctx.content_rect();
     // A subtle 1 px edge so the borderless window stands out on similar backgrounds
@@ -522,6 +558,9 @@ pub fn frame(ctx: &Context, app: &SoyuzApp) {
         Stroke::new(1.0, if ws.focused { p.border_strong } else { p.border_subtle }),
         StrokeKind::Inside,
     );
+    if !resizable {
+        return;
+    }
     // Thin strips along the very edge only, so scrollbars and splitters stay reachable.
     let e = RESIZE_EDGE;
     let strips = [

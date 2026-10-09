@@ -432,7 +432,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         let expanded = row.expanded;
         let cmds = &mut *io.cmds;
         let mut toggle = false;
-        resp.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(230.0);
             if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-tree-open"), None, true).clicked() {
                 io_navigate(io.pane, path.clone(), cmds);

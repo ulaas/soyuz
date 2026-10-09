@@ -374,7 +374,8 @@ impl Shelf {
                         );
                     }
                     let path = item.path.clone();
-                    resp.on_hover_text(tr!("tools-shelf-item-tip", path = path.display().to_string())).context_menu(
+                    crate::ui::native::popup::context_menu(
+                        &resp.on_hover_text(tr!("tools-shelf-item-tip", path = path.display().to_string())),
                         |ui| {
                             ui.set_width(200.0);
                             if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("tools-shelf-reveal"), None, true).clicked() {

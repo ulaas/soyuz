@@ -140,7 +140,7 @@ pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelA
                 tr!("ai-audit-chip", label = label, value = &*value)
             };
             let r = super::chip_menu(ui, None, &shown, !value.is_empty());
-            egui::Popup::menu(&r).id(egui::Id::new(id)).show(|ui| {
+            crate::ui::native::popup::Menu::menu(&r).id(egui::Id::new(id)).show(|ui| {
                 ui.set_width(240.0);
                 if crate::ui::widgets::menu_item(ui, None, tr!("ai-audit-all"), None, true).clicked() {
                     value.clear();

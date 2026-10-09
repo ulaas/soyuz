@@ -656,7 +656,8 @@ impl DupesWindow {
                             reveal = Some(e.path.clone());
                         }
                         let path = e.path.clone();
-                        resp.on_hover_text(tr!("tools-dupes-row-tip", path = path.display().to_string())).context_menu(
+                        crate::ui::native::popup::context_menu(
+                            &resp.on_hover_text(tr!("tools-dupes-row-tip", path = path.display().to_string())),
                             |ui| {
                                 if crate::ui::widgets::menu_item(
                                     ui,

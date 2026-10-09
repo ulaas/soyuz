@@ -99,6 +99,11 @@ fn win32_hwnd(_cc: &eframe::CreationContext<'_>) -> Option<isize> {
     None
 }
 
+/// The main window (0 before [`init`] or off Windows).
+pub fn main_hwnd() -> isize {
+    HWND.load(Ordering::Relaxed)
+}
+
 /// Per-frame sync: follow the theme for the DWM frame tint.
 pub fn sync_theme(ctx: &Context) {
     let hwnd = HWND.load(Ordering::Relaxed);

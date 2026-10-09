@@ -290,7 +290,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                 app.cmds.push(Cmd::Workspace(WsCmd::ToggleGroup(g)));
             }
             let mut cmds = Vec::new();
-            resp.context_menu(|ui| crate::ui::workspaces::group_menu(ui, app, &mut cmds, g));
+            crate::ui::native::popup::context_menu(&resp, |ui| {
+                crate::ui::workspaces::group_menu(ui, app, &mut cmds, g)
+            });
             app.cmds.extend(cmds);
         }
     }
@@ -367,7 +369,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let km = app.keymap.clone();
         let pinned_now = app.ws.tabs[i].pinned;
         let mut cmds = Vec::new();
-        resp.context_menu(|ui| {
+        crate::ui::native::popup::context_menu(&resp, |ui| {
             tab_menu(ui, &mut cmds, &km, i, pinned_now, n);
             crate::ui::workspaces::tab_menu_extra(ui, app, &mut cmds, i);
         });

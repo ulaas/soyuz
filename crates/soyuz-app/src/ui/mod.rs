@@ -12,6 +12,7 @@ pub mod dialogs;
 pub mod empty_state;
 pub mod looks;
 pub mod motion;
+pub mod native;
 pub mod native_chrome;
 pub mod pane_view;
 pub mod panels;

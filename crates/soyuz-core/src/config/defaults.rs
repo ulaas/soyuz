@@ -89,6 +89,7 @@ impl Default for Appearance {
             custom_titlebar: true,
             backdrop: Backdrop::None,
             snap_layouts: true,
+            native_dialogs: true,
             fallback_fonts: FallbackFonts::Auto,
             color_theme: "orbit".into(),
             accent: "theme".into(),

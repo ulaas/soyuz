@@ -440,7 +440,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             s.drag = Some(i);
         }
         let cmds = &mut *c.cmds;
-        r.context_menu(|ui| place_menu(ui, cmds, &f.path, true));
+        crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &f.path, true));
     }
     // Drag to reorder.
     if let Some(from) = s.drag {
@@ -484,7 +484,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         row_clicks(&r, c, &b.path);
         crate::ops::fileops::dnd::target_open(ui, &r, &b.path, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
-        r.context_menu(|ui| place_menu(ui, cmds, &b.path, false));
+        crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &b.path, false));
     }
 }
 
@@ -520,7 +520,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         row_clicks(&r, c, &v.mount);
         crate::ops::fileops::dnd::target_open(ui, &r, &v.mount, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
-        r.context_menu(|ui| place_menu(ui, cmds, &v.mount, false));
+        crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &v.mount, false));
     }
     if vols.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
@@ -549,7 +549,7 @@ fn cloud(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         row_clicks(&r, c, path);
         crate::ops::fileops::dnd::target_open(ui, &r, path, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
-        r.context_menu(|ui| place_menu(ui, cmds, path, false));
+        crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, path, false));
     }
 }
 

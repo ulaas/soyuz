@@ -323,6 +323,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.appearance.snap_layouts);
             },
         );
+        r.row_kw(
+            tr!("settings-appearance-native-dialogs"),
+            tr!("settings-appearance-native-dialogs-desc"),
+            "native dialogs windows popup menus monitor outside clipped",
+            |ui| {
+                switch(ui, &mut d.appearance.native_dialogs);
+            },
+        );
     });
     any |= group(ui, q, ctx, tr!("settings-appearance-theme-colors"), |r| {
         r.block("", tr!("settings-appearance-theme-colors-desc"), |ui| {

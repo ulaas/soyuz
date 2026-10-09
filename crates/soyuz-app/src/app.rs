@@ -607,6 +607,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
     crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
     crate::ai::state::set_rules(&c.ai);
+    crate::ui::native::set_enabled(c.appearance.native_dialogs);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
         log::warn!("{w}");
     }
@@ -657,6 +658,7 @@ impl SoyuzApp {
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         let cpu = crate::startup::cpu_phase();
+        crate::ui::native::begin_frame();
         if !cpu {
             crate::devscript::begin(self);
             crate::devscript::inject(self, &ctx);
@@ -704,6 +706,8 @@ impl SoyuzApp {
         if !cpu {
             crate::ui::workspaces::windows::show(self, &ctx);
         }
+        crate::ui::native::popup::end_frame();
+        crate::ui::native::end_frame(&ctx);
 
         // Cheap periodic check: persist when the session text changed (every ~30 s,
         // plus eframe's own `save` on exit).
@@ -724,6 +728,7 @@ impl eframe::App for SoyuzApp {
     }
 
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::devscript::raw_input(self, raw_input);
         crate::devscript::raw_input_hook(self, raw_input);
     }
 

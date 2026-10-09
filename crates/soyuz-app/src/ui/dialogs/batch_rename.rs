@@ -12,9 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chrono::NaiveDateTime;
-use egui::{
-    Align, CornerRadius, FontId, Layout, Margin, Popup, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2,
-};
+use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2};
 use parking_lot::Mutex;
 
 use super::conflict::{Btn, button};
@@ -225,7 +223,7 @@ impl BatchRenameDialog {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let presets_btn = button(ui, tr!("dialogs-rename-presets"), Btn::Secondary);
-                Popup::menu(&presets_btn).show(|ui| {
+                crate::ui::native::popup::Menu::menu(&presets_btn).show(|ui| {
                     ui.set_min_width(260.0);
                     crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-builtin"));
                     for pr in self.builtin.clone() {
@@ -333,7 +331,7 @@ impl BatchRenameDialog {
             self.spec.rules.swap(a, b);
         }
         let add = button(ui, tr!("dialogs-rename-add-rule"), Btn::Secondary);
-        Popup::menu(&add).show(|ui| {
+        crate::ui::native::popup::Menu::menu(&add).show(|ui| {
             ui.set_min_width(220.0);
             for r in Rule::templates() {
                 let label = match &r {

@@ -7,8 +7,8 @@ use std::time::SystemTime;
 
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Timelike};
 use egui::{
-    Align, Align2, Color32, CornerRadius, FontId, Id, Layout, Popup, PopupCloseBehavior, Rect, Response, RichText,
-    Sense, Stroke, StrokeKind, Ui, pos2, vec2,
+    Align, Align2, Color32, CornerRadius, FontId, Id, Layout, PopupCloseBehavior, Rect, Response, RichText, Sense,
+    Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
 use soyuz_core::Locale;
@@ -310,7 +310,7 @@ pub fn datetime_field(ui: &mut Ui, id: Id, value: &mut Option<SystemTime>, place
         }
         let btn =
             ui.add_enabled_ui(enabled, |ui| small_icon_button(ui, ph::CALENDAR_DOTS, tr!("dialogs-date-pick"))).inner;
-        Popup::from_toggle_button_response(&btn)
+        crate::ui::native::popup::Menu::from_toggle_button_response(&btn)
             .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
             .width(236.0)
             .show(|ui| {
