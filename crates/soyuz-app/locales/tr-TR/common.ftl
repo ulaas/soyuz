@@ -40,3 +40,9 @@ common-kind = { $kind ->
     [link] Bağlantı
    *[other] Öğe
 }
+
+## Dropdown widget
+dropdown-search = Ara…
+dropdown-no-matches = Eşleşme yok
+dropdown-use-typed = “{ $text }” kullan
+dropdown-custom = Özel…

@@ -1,11 +1,11 @@
-//! Settings → Fonts (`[fonts]`): one card per font role with a family field (suggests
-//! installed fonts), an "embedded font" switch, a size offset, a reset button, a live
+//! Settings → Fonts (`[fonts]`): one card per font role with a family dropdown (embedded
+//! and installed fonts, searchable, "Custom…" for other names / files), an "embedded font" switch, a size offset, a reset button, a live
 //! preview in that role's font and a notice when the font is not installed.
 
-use egui::{Align, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
+use egui::{Align, FontId, Layout, Margin, RichText, Ui};
 use soyuz_core::config::{Config, FontRoleKind, Fonts, HintingStrength};
 
-use super::widgets::{group, number, segmented, small_button, switch};
+use super::widgets::{dd, group, number, segmented, small_button, switch, text_choice};
 use crate::app::SoyuzApp;
 use crate::theme::fonts::{self as tfonts, Embedded, Resolved};
 use crate::theme::icons::ph;
@@ -174,7 +174,7 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
     let role = fonts.role_mut(kind);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.add_enabled_ui(!role.embedded, |ui| family_field(ui, p, &mut role.family, info.hint, kind));
+        family_field(ui, &mut role.family, info.hint, kind, role.embedded);
         ui.label(RichText::new(tr!("settings-fonts-embedded")).size(12.0).color(p.text_secondary));
         switch(ui, &mut role.embedded);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -220,67 +220,54 @@ fn role_editor(ui: &mut Ui, p: &Palette, fonts: &mut Fonts, info: &RoleInfo, bas
     }
 }
 
-/// Family text field with suggestions (embedded fonts first, then installed ones).
-fn family_field(ui: &mut Ui, p: &Palette, family: &mut String, hint: &str, kind: FontRoleKind) {
-    let id = egui::Id::new(("soyuz.settings.font_suggest", kind.key()));
-    let resp = ui.add(
-        TextEdit::singleline(family)
-            .id(id.with("edit"))
-            .hint_text(hint)
-            .desired_width(220.0)
-            .margin(Margin::symmetric(8, 5)),
-    );
-    let list_hot = ui.ctx().data(|d| d.get_temp::<bool>(id).unwrap_or(false));
-    let mut hot = false;
-    if resp.has_focus() || list_hot {
-        let installed = sysfonts::catalog_ready().map(|c| c.names()).unwrap_or_default();
-        let names = suggestions(&installed, family, kind);
-        if !names.is_empty() {
-            let area = egui::Area::new(id.with("popup"))
-                .order(egui::Order::Foreground)
-                .fixed_pos(resp.rect.left_bottom() + vec2(0.0, 2.0))
-                .show(ui.ctx(), |ui| {
-                    egui::Frame::popup(ui.style()).inner_margin(Margin::same(4)).show(ui, |ui| {
-                        ui.set_width(resp.rect.width().max(260.0));
-                        for s in names {
-                            let (r, sresp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-                            if sresp.hovered() {
-                                ui.painter().rect_filled(r, egui::CornerRadius::same(4), p.bg_surface2);
-                            }
-                            ui.painter().text(
-                                r.left_center() + vec2(8.0, 0.0),
-                                egui::Align2::LEFT_CENTER,
-                                &s.name,
-                                FontId::proportional(12.5),
-                                p.text_primary,
-                            );
-                            if s.embedded {
-                                ui.painter().text(
-                                    r.right_center() - vec2(8.0, 0.0),
-                                    egui::Align2::RIGHT_CENTER,
-                                    tr!("settings-fonts-embedded"),
-                                    FontId::proportional(11.0),
-                                    p.text_tertiary,
-                                );
-                            }
-                            if sresp.clicked() {
-                                *family = s.name.clone();
-                            }
-                        }
-                    });
-                });
-            hot = area.response.contains_pointer();
-            if area.response.clicked_elsewhere() && !resp.has_focus() {
-                hot = false;
-            }
-        }
+/// Family dropdown: the role default, the embedded faces (each drawn in its own font),
+/// every installed family (searchable), and "Custom…" for other names or a font file.
+fn family_field(ui: &mut Ui, family: &mut String, hint: &str, kind: FontRoleKind, embedded_only: bool) {
+    tfonts::enable_previews(ui.ctx());
+    let installed = sysfonts::catalog_ready().map(|c| c.names());
+    if installed.is_none() {
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
-    ui.ctx().data_mut(|d| d.insert_temp(id, hot));
+    let choices = font_choices(installed.as_deref().unwrap_or_default(), kind);
+    let (g_embedded, g_system) = (tr!("settings-fonts-embedded"), tr!("settings-fonts-system-group"));
+    let only = tr!("settings-fonts-embedded-only-reason");
+    let mut items: Vec<dd::Item<String>> = vec![
+        dd::Item::new(String::new(), tr!("settings-fonts-default"))
+            .secondary(hint)
+            .font(tfonts::preview_family(ui.ctx(), hint))
+            .icon(ph::ARROW_COUNTER_CLOCKWISE),
+    ];
+    for c in &choices {
+        let item = dd::Item::new(c.name.clone(), c.name.clone()).font(tfonts::preview_family(ui.ctx(), &c.name));
+        items.push(if c.embedded {
+            item.group(g_embedded)
+        } else {
+            item.group(g_system).disabled(embedded_only.then(|| only.to_string()))
+        });
+    }
+    if installed.is_none() {
+        items.push(
+            dd::Item::new("?loading".to_string(), tr!("settings-fonts-loading"))
+                .group(g_system)
+                .disabled(Some(tr!("settings-fonts-loading").to_string())),
+        );
+    }
+    // A name typed in another case / with "Regular" still selects its entry.
+    let mut value = items
+        .iter()
+        .find(|it| !it.value.is_empty() && sysfonts::norm(&it.value) == sysfonts::norm(family))
+        .map_or_else(|| family.clone(), |it| it.value.clone());
+    let key = format!("font.{}", kind.key());
+    if text_choice(ui, &key, &mut value, &items, 230.0, tr!("settings-fonts-custom-hint"))
+        && sysfonts::norm(&value) != sysfonts::norm(family)
+    {
+        *family = value;
+    }
 }
 
-/// One entry of the font suggestion list.
+/// One entry of a font dropdown.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Suggestion {
+pub struct FontChoice {
     pub name: String,
     /// Compiled into Soyuz (always available).
     pub embedded: bool,
@@ -299,34 +286,16 @@ fn embedded_for(kind: FontRoleKind) -> impl Iterator<Item = &'static str> {
         .map(|f| f.name)
 }
 
-/// Suggestions for a family field: the embedded fonts of the role, then up to 8
-/// installed names containing `typed` (case-insensitive; with nothing typed, a few
-/// sensible system picks). Empty when `typed` already names exactly one font.
-pub fn suggestions(installed: &[String], typed: &str, kind: FontRoleKind) -> Vec<Suggestion> {
-    let t = typed.trim().to_lowercase();
-    let mut v: Vec<Suggestion> = embedded_for(kind)
-        .filter(|n| t.is_empty() || n.to_lowercase().contains(&t))
-        .map(|n| Suggestion { name: n.to_string(), embedded: true })
-        .collect();
-    let dup = |v: &[Suggestion], n: &str| v.iter().any(|s| sysfonts::norm(&s.name) == sysfonts::norm(n));
-    let mut system: Vec<String> = if t.is_empty() {
-        let picks: &[&str] = if kind.is_mono() {
-            &["Consolas", "Cascadia Code", "Lucida Console", "Courier New"]
-        } else {
-            &["Segoe UI", "Segoe UI Variable", "Arial", "Calibri", "Tahoma", "Verdana"]
-        };
-        picks.iter().filter(|p| installed.iter().any(|n| n.eq_ignore_ascii_case(p))).map(|p| p.to_string()).collect()
-    } else {
-        let mut s: Vec<String> = installed.iter().filter(|n| n.to_lowercase().contains(&t)).cloned().collect();
-        s.sort_by_key(|n| !n.to_lowercase().starts_with(&t));
-        s
-    };
-    system.retain(|n| !dup(&v, n));
-    system.truncate(8);
-    v.extend(system.into_iter().map(|name| Suggestion { name, embedded: false }));
-    if v.len() == 1 && v[0].name.eq_ignore_ascii_case(typed.trim()) {
-        return Vec::new(); // already complete
-    }
+/// The fonts offered for a role: its embedded faces (in their fixed order), then every
+/// installed family that is not one of them, sorted case-insensitively.
+pub fn font_choices(installed: &[String], kind: FontRoleKind) -> Vec<FontChoice> {
+    let mut v: Vec<FontChoice> =
+        embedded_for(kind).map(|n| FontChoice { name: n.to_string(), embedded: true }).collect();
+    let mut system: Vec<&String> =
+        installed.iter().filter(|n| !v.iter().any(|e| sysfonts::norm(&e.name) == sysfonts::norm(n))).collect();
+    system.sort_by_key(|n| n.to_lowercase());
+    system.dedup_by_key(|n| sysfonts::norm(n));
+    v.extend(system.into_iter().map(|n| FontChoice { name: n.clone(), embedded: false }));
     v
 }
 
@@ -334,42 +303,31 @@ pub fn suggestions(installed: &[String], typed: &str, kind: FontRoleKind) -> Vec
 mod tests {
     use super::*;
 
-    fn names(v: Vec<Suggestion>) -> Vec<String> {
+    fn names(v: Vec<FontChoice>) -> Vec<String> {
         v.into_iter().map(|s| if s.embedded { format!("{}*", s.name) } else { s.name }).collect()
     }
 
     #[test]
-    fn suggestions_filter_and_rank() {
+    fn choices_list_embedded_then_installed() {
         let installed: Vec<String> =
-            ["Arial", "Cascadia Code", "Cascadia Mono", "Consolas", "Segoe UI", "Segoe UI Semibold", "Lucida Console"]
-                .map(String::from)
-                .to_vec();
-        let mono = FontRoleKind::Terminal;
+            ["Segoe UI", "arial", "Cascadia Mono", "Consolas", "Cascadia Code", "consolas"].map(String::from).to_vec();
+        let mono = names(font_choices(&installed, FontRoleKind::Terminal));
         assert_eq!(
-            names(suggestions(&installed, "", mono)),
+            mono,
             [
                 "Cascadia Mono*",
                 "JetBrains Mono*",
                 "IBM Plex Mono*",
                 "Source Code Pro*",
-                "Consolas",
+                "arial",
                 "Cascadia Code",
-                "Lucida Console"
-            ]
+                "Consolas",
+                "Segoe UI"
+            ],
+            "the installed Cascadia Mono is the embedded one; duplicates collapse"
         );
-        assert_eq!(
-            names(suggestions(&installed, "", FontRoleKind::Ui)),
-            ["Inter*", "Inter Variable*", "IBM Plex Sans*", "Noto Sans*", "Segoe UI", "Arial"]
-        );
-        assert!(names(suggestions(&installed, "", FontRoleKind::UiSemibold)).contains(&"Inter SemiBold*".to_string()));
-        assert_eq!(names(suggestions(&installed, "cons", mono)), ["Consolas", "Lucida Console"]);
-        assert_eq!(
-            names(suggestions(&installed, "cascadia", mono)),
-            ["Cascadia Mono*", "Cascadia Code"],
-            "the installed Cascadia Mono is the embedded one"
-        );
-        assert_eq!(names(suggestions(&installed, "segoe", FontRoleKind::Ui)), ["Segoe UI", "Segoe UI Semibold"]);
-        assert!(suggestions(&installed, "Consolas", mono).is_empty(), "complete names hide the list");
-        assert!(suggestions(&installed, "ibm plex mono", mono).is_empty());
+        let ui = names(font_choices(&installed, FontRoleKind::Ui));
+        assert_eq!(&ui[..4], ["Inter*", "Inter Variable*", "IBM Plex Sans*", "Noto Sans*"]);
+        assert!(names(font_choices(&[], FontRoleKind::UiSemibold)).contains(&"Inter SemiBold*".to_string()));
     }
 }

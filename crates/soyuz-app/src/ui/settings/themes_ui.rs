@@ -3,7 +3,7 @@
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::Config;
 
-use super::widgets::{color_swatch, segmented, small_button};
+use super::widgets::{color_swatch, dd, small_button};
 use crate::theme::accent::AccentChoice;
 use crate::theme::icons::ph;
 use crate::theme::themes::{self, ThemeDef};
@@ -164,7 +164,28 @@ fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Respons
     })
 }
 
-/// Accent: the theme's, the OS accent, or a preset / custom color.
+/// Which accent entry the dropdown shows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccentSel {
+    Theme,
+    System,
+    Preset(usize),
+    Custom,
+}
+
+/// The dropdown entry for an accent choice (a custom color equal to a preset selects it).
+pub fn accent_sel(choice: AccentChoice) -> AccentSel {
+    match choice {
+        AccentChoice::Theme => AccentSel::Theme,
+        AccentChoice::System => AccentSel::System,
+        AccentChoice::Custom(c) => {
+            ACCENTS.iter().position(|(_, hex)| parse_hex(hex) == Some(c)).map_or(AccentSel::Custom, AccentSel::Preset)
+        }
+    }
+}
+
+/// Accent: the theme's, the OS accent, a preset, or a custom color (dropdown plus a
+/// color button for the custom one).
 pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
     let (mut choice, _) = AccentChoice::parse(&d.appearance.accent);
     // An accent in `[theme.colors]` (older settings) wins over everything; picking here
@@ -183,48 +204,68 @@ pub fn accent_row(ui: &mut Ui, d: &mut Config, p: &Palette) {
         AccentChoice::Custom(c) => c,
         _ => p.accent,
     };
-    let mut mode = match choice {
-        AccentChoice::Theme => 0,
-        AccentChoice::System => 1,
-        AccentChoice::Custom(_) => 2,
-    };
-    let before = mode;
-    segmented(
-        ui,
-        &mut mode,
-        &[
-            (0, tr!("settings-appearance-theme")),
-            (1, tr!("settings-appearance-mode-system")),
-            (2, tr!("settings-custom")),
-        ],
-    );
-    if mode != before {
-        match mode {
-            0 => set(d, AccentChoice::Theme),
-            1 => set(d, AccentChoice::System),
-            _ => set(d, AccentChoice::Custom(current)),
-        }
-    }
-    ui.add_space(10.0);
-    for (name, hex) in ACCENTS {
+    let os = library::os_accent().unwrap_or(p.accent);
+    let mut items = vec![
+        dd::Item::new(AccentSel::Theme, tr!("settings-appearance-theme")).icon(ph::PALETTE),
+        dd::Item::new(AccentSel::System, tr!("settings-appearance-mode-system")).swatch(os).keywords("windows os"),
+    ];
+    let presets = tr!("settings-accent-presets");
+    for (i, (name, hex)) in ACCENTS.iter().enumerate() {
         let c = parse_hex(hex).unwrap_or(p.accent);
-        let (rect, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
-        let selected = choice == AccentChoice::Custom(c);
-        ui.painter().circle_filled(rect.center(), 9.0, c);
-        if selected {
-            ui.painter().circle_stroke(rect.center(), 11.0, Stroke::new(2.0, c));
-            ui.painter().text(rect.center(), Align2::CENTER_CENTER, ph::CHECK, icons::font(10.0), Color32::WHITE);
-        } else if resp.hovered() {
-            ui.painter().circle_stroke(rect.center(), 11.0, Stroke::new(1.0, p.border_strong));
-        }
-        if resp.on_hover_text(crate::i18n::t_dyn(name)).clicked() {
-            set(d, AccentChoice::Custom(c));
+        items.push(dd::Item::new(AccentSel::Preset(i), crate::i18n::t_dyn(name)).swatch(c).group(presets));
+    }
+    let custom_group = tr!("settings-custom");
+    items.push(
+        dd::Item::new(AccentSel::Custom, tr!("dropdown-custom"))
+            .swatch(current)
+            .secondary(super::widgets::to_hex(current))
+            .group(custom_group),
+    );
+    let mut sel = accent_sel(choice);
+    let name = super::widgets::row_label(ui);
+    if dd::Dropdown::new("settings.accent")
+        .width(200.0)
+        .search(false)
+        .name(name.clone())
+        .show(ui, &mut sel, &items)
+        .changed
+    {
+        match sel {
+            AccentSel::Theme => set(d, AccentChoice::Theme),
+            AccentSel::System => set(d, AccentChoice::System),
+            AccentSel::Preset(i) => set(d, AccentChoice::Custom(parse_hex(ACCENTS[i].1).unwrap_or(current))),
+            AccentSel::Custom => set(d, AccentChoice::Custom(current)),
         }
     }
-    ui.add_space(4.0);
+    ui.add_space(6.0);
     let mut custom = current;
-    if color_swatch(ui, &mut custom, matches!(choice, AccentChoice::Custom(_)), &super::widgets::row_label(ui)) {
+    if color_swatch(ui, &mut custom, sel == AccentSel::Custom, &tr!("settings-accent-custom-a11y", name = &name)) {
         set(d, AccentChoice::Custom(custom));
+    }
+}
+
+/// Color theme dropdown: built-in and user themes, each with its dark / light window
+/// colors and accent as swatches (the gallery below shows them larger).
+pub fn theme_dropdown(ui: &mut Ui, d: &mut Config) {
+    let all = library::all();
+    let (builtin, custom) = (tr!("settings-theme-builtin-group"), tr!("settings-theme-custom-group"));
+    let items: Vec<dd::Item<String>> = all
+        .iter()
+        .map(|t| {
+            let (dark, light) = t.palettes();
+            dd::Item::new(t.id.clone(), display_name(t))
+                .swatch(dark.bg_window)
+                .swatch(light.bg_window)
+                .swatch(dark.accent)
+                .keywords(t.author.clone())
+                .group(if t.builtin { builtin } else { custom })
+        })
+        .collect();
+    let mut current = themes::slug(&d.appearance.color_theme);
+    let name = super::widgets::row_label(ui);
+    if dd::Dropdown::new("settings.color_theme").width(240.0).name(name).show(ui, &mut current, &items).changed {
+        d.appearance.color_theme = current;
+        d.appearance.high_contrast = false;
     }
 }
 

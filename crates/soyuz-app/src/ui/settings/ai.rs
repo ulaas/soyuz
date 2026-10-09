@@ -14,7 +14,9 @@ use soyuz_core::config::{
     AiToolMode, default_prices,
 };
 
-use super::widgets::{code, dropdown, group, matches, number, segmented, small_button, subheading, switch};
+use super::widgets::{
+    code, dd, dropdown, group, matches, number, segmented, small_button, subheading, switch, text_choice,
+};
 use crate::app::SoyuzApp;
 use crate::services::ai_service::{self, KeyStatus, Wake};
 use crate::theme::icons::ph;
@@ -42,6 +44,15 @@ pub struct AiPageState {
     notice: Option<(String, bool)>,
     roots_text: Option<String>,
     blocked_text: Option<String>,
+    /// Models listed by each profile's provider (by profile name), for the model dropdown.
+    models: HashMap<String, Models>,
+}
+
+/// A provider's model list, fetched when a model dropdown opens.
+enum Models {
+    Loading(Receiver<Result<Vec<String>, String>>),
+    Done(Vec<String>),
+    Failed(String),
 }
 
 fn wake_of(ui: &Ui) -> Wake {
@@ -59,6 +70,16 @@ impl AiPageState {
             Err(crossbeam_channel::TryRecvError::Empty) => true,
             Err(_) => false,
         });
+        for m in self.models.values_mut() {
+            if let Models::Loading(rx) = m
+                && let Ok(r) = rx.try_recv()
+            {
+                *m = match r {
+                    Ok(v) => Models::Done(v),
+                    Err(e) => Models::Failed(e),
+                };
+            }
+        }
         for t in self.tests.values_mut() {
             if let Test::Running(rx) = t
                 && let Ok(r) = rx.try_recv()
@@ -132,6 +153,55 @@ fn default_model(kind: AiProviderKind) -> &'static str {
         AiProviderKind::Ollama => "qwen3:8b",
         _ => "",
     }
+}
+
+/// Well-known model ids per provider kind (the default first); the provider's own list
+/// is fetched when the model dropdown opens.
+fn known_models(kind: AiProviderKind) -> &'static [&'static str] {
+    match kind {
+        AiProviderKind::Anthropic => &[
+            "claude-opus-5-5",
+            "claude-fable-5-1",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+            "claude-opus-5",
+            "claude-sonnet-5",
+            "claude-fable-5",
+        ],
+        AiProviderKind::Openai => &["gpt-6-luna"],
+        AiProviderKind::OpenaiResponses => &["gpt-6.1-sol"],
+        AiProviderKind::Gemini => &["gemini-3.8-flash"],
+        AiProviderKind::Ollama => &["qwen3:8b"],
+        _ => &[],
+    }
+}
+
+/// Dropdown items for a model field: `first` (the "use the profile's model" entry of
+/// task routing), the known models, then the provider's listed ones.
+fn model_items(
+    kind: AiProviderKind,
+    listed: &[String],
+    status: Option<&str>,
+    first: Option<&str>,
+) -> Vec<dd::Item<String>> {
+    let mut items = Vec::new();
+    if let Some(f) = first {
+        items.push(dd::Item::new(String::new(), f).icon(ph::ARROW_BEND_UP_LEFT));
+    }
+    let known = known_models(kind);
+    let g_known = tr!("settings-ai-models-known");
+    for (i, m) in known.iter().enumerate() {
+        let item = dd::Item::new(m.to_string(), *m).group(g_known);
+        items.push(if i == 0 { item.secondary(tr!("settings-ai-models-default")) } else { item });
+    }
+    let g_listed = tr!("settings-ai-models-listed");
+    for m in listed.iter().filter(|m| !known.contains(&m.as_str())) {
+        items.push(dd::Item::new(m.clone(), m.clone()).group(g_listed));
+    }
+    if let Some(st) = status {
+        items.push(dd::Item::new("?status".to_string(), st).group(g_listed).disabled(Some(st.to_string())));
+    }
+    items
 }
 
 fn unique_name(ai: &Ai, base: &str) -> String {
@@ -222,6 +292,8 @@ fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let s = &mut app.settings;
     let d = &mut s.draft.ai;
     let names: Vec<(String, String)> = d.profiles.iter().map(|p| (p.name.clone(), p.name.clone())).collect();
+    let kinds: Vec<(String, AiProviderKind)> = d.profiles.iter().map(|p| (p.name.clone(), p.kind)).collect();
+    let default_kind = d.default_profile().map_or(AiProviderKind::Anthropic, |p| p.kind);
     let mut any = false;
     any |= group(ui, q, CTX, tr!("settings-ai-assistant"), |r| {
         r.row(tr!("settings-ai-enabled"), tr!("settings-ai-enabled-desc"), |ui| {
@@ -253,7 +325,7 @@ fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             (tr!("settings-ai-strong-model"), tr!("settings-ai-strong-model-desc"), "strong", &mut d.tasks.strong),
         ] {
             r.row_kw(label, desc, "per task routing", |ui| {
-                task_model(ui, id, task, &names);
+                task_model(ui, id, task, &names, &kinds, default_kind);
             });
         }
     });
@@ -442,11 +514,21 @@ fn agent_settings(ui: &mut Ui, d: &mut Ai, q: &str) -> bool {
     any
 }
 
-fn task_model(ui: &mut Ui, id: &str, task: &mut AiTaskModel, names: &[(String, String)]) {
-    code(ui, &mut task.model, tr!("settings-ai-task-model-hint"), 150.0);
+fn task_model(
+    ui: &mut Ui,
+    id: &str,
+    task: &mut AiTaskModel,
+    names: &[(String, String)],
+    kinds: &[(String, AiProviderKind)],
+    default_kind: AiProviderKind,
+) {
+    // In a right-to-left row the profile picker goes rightmost, the model left of it.
     let mut opts: Vec<(String, &str)> = names.iter().map(|(a, b)| (a.clone(), b.as_str())).collect();
     opts.insert(0, (String::new(), tr!("settings-ai-default-profile")));
     dropdown(ui, &format!("ai_task_{id}"), &mut task.profile, &opts, 150.0);
+    let kind = kinds.iter().find(|(n, _)| *n == task.profile).map_or(default_kind, |(_, k)| *k);
+    let items = model_items(kind, &[], None, Some(tr!("settings-ai-task-model-hint")));
+    text_choice(ui, &format!("ai_task_model_{id}"), &mut task.model, &items, 190.0, tr!("settings-ai-model-hint"));
 }
 
 /// One profile card; returns `true` when the user deleted it.
@@ -525,21 +607,7 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
             ui.end_row();
             lbl(ui, tr!("settings-ai-model"));
             ui.horizontal(|ui| {
-                code(ui, &mut prof.model, tr!("settings-ai-model-hint"), 220.0);
-                if let Some(Test::Done(r)) = st.tests.get(&prof.name)
-                    && !r.models.is_empty()
-                {
-                    egui::ComboBox::from_id_salt(("ai_models", i))
-                        .selected_text(tr!("settings-ai-pick"))
-                        .width(90.0)
-                        .show_ui(ui, |ui| {
-                            for m in r.models.iter().take(200) {
-                                if ui.selectable_label(&prof.model == m, m).clicked() {
-                                    prof.model = m.clone();
-                                }
-                            }
-                        });
-                }
+                model_choice(ui, st, prof, &ai_snapshot, i);
             });
             ui.end_row();
             lbl(ui, tr!("settings-ai-api-key"));
@@ -592,6 +660,64 @@ fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
         d.default_profile = d.profiles[i].name.clone();
     }
     delete
+}
+
+/// The profile's model: known ids, the provider's list (fetched in the background when
+/// the dropdown opens and a key is available or the provider is local), "Custom…".
+fn model_choice(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile, ai: &Ai, i: usize) {
+    let mut listed: Vec<String> = match st.tests.get(&prof.name) {
+        Some(Test::Done(r)) => r.models.clone(),
+        _ => Vec::new(),
+    };
+    let status = match st.models.get(&prof.name) {
+        Some(Models::Done(v)) => {
+            listed.extend(v.iter().cloned());
+            None
+        }
+        Some(Models::Loading(_)) => Some(tr!("settings-ai-models-loading").to_string()),
+        Some(Models::Failed(e)) => Some(tr!("settings-ai-models-failed", error = e.as_str())),
+        None => None,
+    };
+    listed.sort();
+    listed.dedup();
+    let items = model_items(prof.kind, &listed, status.as_deref(), None);
+    let out = dd::Dropdown::new(format!("ai_model_{i}"))
+        .width(240.0)
+        .name(tr!("settings-ai-model"))
+        .custom(tr!("dropdown-custom"))
+        .placeholder(if prof.model.trim().is_empty() { tr!("settings-ai-model-hint") } else { tr!("settings-custom") })
+        .show(ui, &mut prof.model, &items);
+    if out.opened && !matches!(st.models.get(&prof.name), Some(Models::Loading(_) | Models::Done(_))) {
+        let typed = st.key_input.get(&prof.name).map(|s| s.trim()).filter(|s| !s.is_empty()).map(Secret::new);
+        let key_ok = prof.kind.is_local()
+            || typed.is_some()
+            || matches!(st.key_status.get(&prof.key), Some(KeyStatus::Stored | KeyStatus::FromEnv(_)));
+        if key_ok {
+            let rx = ai_service::list_models(prof.clone(), ai, typed, wake_of(ui));
+            st.models.insert(prof.name.clone(), Models::Loading(rx));
+        }
+    }
+    // A custom id: edit it inline.
+    let flag = egui::Id::new(("soyuz.ai.model_custom", i));
+    let mut editing = ui.ctx().data(|d| d.get_temp::<bool>(flag)).unwrap_or(false);
+    if out.changed {
+        editing = false;
+    }
+    let focus = out.custom.is_some();
+    if let Some(t) = out.custom {
+        editing = true;
+        if !t.is_empty() {
+            prof.model = t;
+        }
+    }
+    let known = items.iter().any(|it| it.value == prof.model);
+    if editing || (!known && !prof.model.trim().is_empty()) {
+        let r = code(ui, &mut prof.model, tr!("settings-ai-model-hint"), 200.0);
+        if focus {
+            r.request_focus();
+        }
+    }
+    ui.ctx().data_mut(|d| d.insert_temp(flag, editing));
 }
 
 fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {

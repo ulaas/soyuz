@@ -541,9 +541,61 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&
         |first: &str| std::iter::once(first.to_string()).chain(prop_defaults.iter().cloned()).collect();
     defs.families.insert(FontFamily::Name(ICONS.into()), with_fallbacks("phosphor"));
     defs.families.insert(FontFamily::Name(PHOSPHOR_FILL.into()), with_fallbacks(PHOSPHOR_FILL));
+    // Font pickers (Settings → Fonts) ask for one family per usable embedded face, so
+    // each name is drawn in its own font; only then (startup stays lean).
+    let previews = PREVIEWS_WANTED.load(std::sync::atomic::Ordering::Relaxed);
+    for e in Embedded::all().filter(|e| previews && e.usable()) {
+        add_embedded(&mut defs, e);
+        let mut list = vec![e.key().to_string()];
+        list.extend(if e.font().mono { mono_defaults.iter() } else { prop_defaults.iter() }.cloned());
+        defs.families.insert(preview_family_of(e), list);
+    }
     // System CJK / Hangul / emoji fonts loaded so far (see `font_fallback`).
     super::font_fallback::append(&mut defs);
     defs
+}
+
+fn preview_family_of(e: Embedded) -> FontFamily {
+    FontFamily::Name(format!("preview:{}", e.key()).into())
+}
+
+/// Preview families requested ([`enable_previews`]).
+static PREVIEWS_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The pass in which fonts with the preview families were first handed to egui (they
+/// apply from the next pass on); `u64::MAX` = not yet.
+static PREVIEWS_FROM: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(u64::MAX);
+/// The `[fonts]` section last installed (to re-install with previews).
+static LAST: Mutex<Option<Fonts>> = Mutex::new(None);
+
+/// Add the preview families (one per embedded face) on the next frame, re-installing the
+/// current fonts once. Called by font pickers; a no-op after the first call.
+pub fn enable_previews(ctx: &Context) {
+    if PREVIEWS_WANTED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let last = LAST.lock().clone();
+    if let Some(f) = last {
+        install(ctx, &f);
+        ctx.request_repaint();
+    }
+}
+
+/// A family that draws `name` in its own font when that is cheap: embedded faces (each
+/// has a preview family) and system fonts a role currently uses. `None` otherwise (the
+/// caller draws the name in the interface font).
+pub fn preview_family(ctx: &Context, name: &str) -> Option<FontFamily> {
+    let from = PREVIEWS_FROM.load(std::sync::atomic::Ordering::Relaxed);
+    if from == u64::MAX || ctx.cumulative_pass_nr() <= from {
+        return None;
+    }
+    if let Some(e) = Embedded::find(name).filter(|e| e.usable()) {
+        return Some(preview_family_of(e));
+    }
+    let want = sysfonts::norm(name);
+    STATUS.lock().iter().find_map(|r| match &r.source {
+        Source::System { family: f, weight: None, .. } if sysfonts::norm(f) == want => Some(family(r.role)),
+        _ => None,
+    })
 }
 
 /// Definitions with only the embedded fonts (tests, previews of the embedded look).
@@ -575,6 +627,12 @@ pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
     let roles = resolve(fonts, &sysfonts::locate, &is_variable_file);
     let defs = build(fonts, &roles, &load_static);
     ctx.set_fonts(defs);
+    if PREVIEWS_WANTED.load(std::sync::atomic::Ordering::Relaxed)
+        && PREVIEWS_FROM.load(std::sync::atomic::Ordering::Relaxed) == u64::MAX
+    {
+        PREVIEWS_FROM.store(ctx.cumulative_pass_nr(), std::sync::atomic::Ordering::Relaxed);
+    }
+    *LAST.lock() = Some(fonts.clone());
     let offsets: [f32; 6] = std::array::from_fn(|i| fonts.role(FontRoleKind::ALL[i]).offset());
     ctx.data_mut(|d| d.insert_temp(offsets_id(), offsets));
     log::debug!(

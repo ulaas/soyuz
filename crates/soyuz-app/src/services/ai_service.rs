@@ -52,6 +52,29 @@ pub fn test_profile(profile: AiProfile, ai: &Ai, typed_key: Option<Secret>, wake
     })
 }
 
+/// List a (draft) profile's models from the provider's list endpoint (key resolved like
+/// [`test_profile`]); for the model dropdown.
+pub fn list_models(
+    profile: AiProfile,
+    ai: &Ai,
+    typed_key: Option<Secret>,
+    wake: Wake,
+) -> Receiver<Result<Vec<String>, String>> {
+    let net = NetSettings::from_config(ai);
+    spawn("soyuz-ai-models", wake, move || {
+        let key = match typed_key {
+            Some(k) => Ok(Some(k)),
+            None => credentials::resolve(&profile.key),
+        };
+        let provider = key.and_then(|k| Provider::with_key(&profile, k, net)).map_err(|e| e.to_string())?;
+        let rx = provider.list_models(soyuz_ai::runtime::no_wake());
+        let mut models = rx.recv().map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        models.sort();
+        models.dedup();
+        Ok(models)
+    })
+}
+
 /// Save a secret under `name` in the OS credential store.
 pub fn store_secret(name: String, secret: Secret, wake: Wake) -> Receiver<Result<(), String>> {
     spawn("soyuz-ai-cred", wake, move || credentials::store(&name, &secret).map_err(|e| e.to_string()))

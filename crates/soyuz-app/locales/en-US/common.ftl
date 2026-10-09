@@ -41,3 +41,9 @@ common-kind = { $kind ->
     [link] Link
    *[other] Item
 }
+
+## Dropdown widget
+dropdown-search = Search…
+dropdown-no-matches = No matches
+dropdown-use-typed = Use “{ $text }”
+dropdown-custom = Custom…

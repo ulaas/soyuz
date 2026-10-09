@@ -319,23 +319,26 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     r.block("", "", |ui| {
                         let b = &mut app.settings.draft.bookmarks[i];
                         ui.horizontal(|ui| {
-                            let glyph = BOOKMARK_ICONS
+                            let items: Vec<super::widgets::dd::Item<String>> = BOOKMARK_ICONS
+                                .iter()
+                                .map(|(k, g)| {
+                                    let label = if k.is_empty() { tr!("settings-bookmarks-icon-default") } else { k };
+                                    super::widgets::dd::Item::new(k.to_string(), label).icon(g).icon_color(p.accent)
+                                })
+                                .collect();
+                            // Known icon names match case-insensitively.
+                            let mut icon = BOOKMARK_ICONS
                                 .iter()
                                 .find(|(k, _)| k.eq_ignore_ascii_case(b.icon.trim()))
-                                .map(|(_, g)| *g)
-                                .unwrap_or(ph::FOLDER_SIMPLE_STAR);
-                            egui::ComboBox::from_id_salt(("soyuz.bm.icon", i))
-                                .selected_text(icons::icon(glyph, 15.0).color(p.accent))
-                                .width(44.0)
-                                .show_ui(ui, |ui| {
-                                    for (k, g) in BOOKMARK_ICONS {
-                                        let label =
-                                            if k.is_empty() { tr!("settings-bookmarks-icon-default") } else { k };
-                                        if ui.selectable_label(b.icon == k, format!("{g}  {label}")).clicked() {
-                                            b.icon = k.to_string();
-                                        }
-                                    }
-                                });
+                                .map_or_else(|| b.icon.clone(), |(k, _)| k.to_string());
+                            if super::widgets::dd::Dropdown::new(format!("settings.bookmark_icon.{i}"))
+                                .width(130.0)
+                                .name(tr!("settings-bookmarks-icon"))
+                                .show(ui, &mut icon, &items)
+                                .changed
+                            {
+                                b.icon = icon;
+                            }
                             if i < 9 {
                                 ui.label(RichText::new(format!("{}", i + 1)).monospace().color(p.text_tertiary));
                             }

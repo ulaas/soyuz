@@ -9,6 +9,7 @@ use egui::{
 
 use crate::theme::fonts::SEMIBOLD;
 use crate::theme::{icons, palette};
+pub use crate::ui::widgets::dropdown as dd;
 
 /// Upper-case `s` for the current language (Turkish dotted i: "Biçim" → "BİÇİM").
 pub fn upper(s: &str) -> String {
@@ -243,20 +244,28 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
 
 /// Themed dropdown over `options`. Returns `true` when changed.
 pub fn dropdown<T: PartialEq + Clone>(ui: &mut Ui, id: &str, value: &mut T, options: &[(T, &str)], width: f32) -> bool {
-    let current = options.iter().find(|(v, _)| v == value).map(|(_, l)| *l).unwrap_or(tr!("settings-custom"));
-    let mut changed = false;
+    choice(ui, id, value, &dd::items(options), width)
+}
+
+/// Themed dropdown over rich items (icons, swatches, groups, disabled entries), named
+/// after the settings row. Returns `true` when changed.
+pub fn choice<T: PartialEq + Clone>(ui: &mut Ui, id: &str, value: &mut T, items: &[dd::Item<T>], width: f32) -> bool {
     let name = row_label(ui);
-    let combo =
-        egui::ComboBox::from_id_salt(("soyuz.settings.dd", id)).selected_text(current).width(width).show_ui(ui, |ui| {
-            for (v, label) in options {
-                if ui.selectable_label(v == value, *label).clicked() && v != value {
-                    *value = v.clone();
-                    changed = true;
-                }
-            }
-        });
-    named(&combo.response, &name);
-    changed
+    dd::Dropdown::new(format!("settings.{id}")).width(width).name(name).show(ui, value, items).changed
+}
+
+/// A choice over strings that also accepts a free value ("Custom…" opens an inline
+/// field). Returns `true` when changed.
+pub fn text_choice(
+    ui: &mut Ui,
+    id: &str,
+    value: &mut String,
+    items: &[dd::Item<String>],
+    width: f32,
+    hint: &str,
+) -> bool {
+    let name = row_label(ui);
+    dd::text_choice(ui, &format!("settings.{id}"), &name, value, items, width, tr!("dropdown-custom"), hint)
 }
 
 /// Number with a slider and a value label.

@@ -65,7 +65,13 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         any = true;
     }
     any |= group(ui, q, ctx, tr!("settings-appearance-theme"), |r| {
-        r.block(tr!("settings-appearance-color-theme"), tr!("settings-appearance-color-theme-desc"), |ui| {
+        r.row_kw(
+            tr!("settings-appearance-color-theme"),
+            tr!("settings-appearance-color-theme-desc"),
+            "theme palette nord dracula",
+            |ui| super::themes_ui::theme_dropdown(ui, d),
+        );
+        r.block("", "", |ui| {
             if let Some(a) = super::themes_ui::gallery(ui, d, &p) {
                 theme_action = Some(a);
             }
@@ -93,8 +99,8 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             },
         );
-        r.block(tr!("settings-appearance-accent"), tr!("settings-appearance-accent-desc"), |ui| {
-            ui.horizontal(|ui| super::themes_ui::accent_row(ui, d, &p));
+        r.row_kw(tr!("settings-appearance-accent"), tr!("settings-appearance-accent-desc"), "color colour", |ui| {
+            super::themes_ui::accent_row(ui, d, &p);
         });
         r.row_kw(
             tr!("settings-appearance-reduce-motion"),
@@ -243,6 +249,28 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 },
             );
         }
+        r.row_kw(
+            tr!("settings-appearance-gpu-backend"),
+            tr!("settings-appearance-gpu-backend-desc"),
+            "renderer graphics gpu direct3d dx12 vulkan opengl wgpu driver",
+            |ui| {
+                use soyuz_core::config::GpuBackend;
+                let auto_desc = if cfg!(windows) { "Direct3D 12" } else { "" };
+                let items = [
+                    super::widgets::dd::Item::new(GpuBackend::Auto, tr!("settings-automatic"))
+                        .secondary(auto_desc)
+                        .icon(ph::MAGIC_WAND),
+                    super::widgets::dd::Item::new(GpuBackend::Dx12, "Direct3D 12")
+                        .icon(ph::WINDOWS_LOGO)
+                        .disabled((!cfg!(windows)).then(|| tr!("settings-appearance-gpu-windows-only").to_string())),
+                    super::widgets::dd::Item::new(GpuBackend::Vulkan, "Vulkan").icon(ph::GRAPHICS_CARD),
+                    super::widgets::dd::Item::new(GpuBackend::Gl, "OpenGL")
+                        .secondary(tr!("settings-appearance-gpu-compat"))
+                        .icon(ph::CUBE),
+                ];
+                super::widgets::choice(ui, "gpu_backend", &mut d.performance.gpu_backend, &items, 190.0);
+            },
+        );
         r.row_kw(
             tr!("settings-appearance-thumb-cache"),
             tr!("settings-appearance-thumb-cache-desc"),

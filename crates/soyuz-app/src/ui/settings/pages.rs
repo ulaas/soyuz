@@ -10,7 +10,7 @@ use soyuz_core::config::{
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
-use super::widgets::{code, dropdown, group, number, segmented, small_button, switch, text};
+use super::widgets::{choice, code, dd, dropdown, group, number, segmented, small_button, switch, text, text_choice};
 use crate::app::SoyuzApp;
 use crate::theme::icons::ph;
 use crate::theme::palette;
@@ -132,14 +132,21 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     DateFormat::Named(n) => Some(*n),
                     DateFormat::Custom(_) => None,
                 };
+                // Each entry shows what it looks like.
+                let then = SystemTime::now() - std::time::Duration::from_secs(3600 * 26);
+                let named = |n: DateFormatName, label: &str| {
+                    dd::Item::new(Some(n), label).secondary(format_time(then, &DateFormat::Named(n)))
+                };
                 let opts = [
-                    (Some(DateFormatName::Relative), tr!("settings-general-date-relative")),
-                    (Some(DateFormatName::Short), tr!("settings-general-date-short")),
-                    (Some(DateFormatName::Long), tr!("settings-general-date-long")),
-                    (Some(DateFormatName::Iso), "ISO 8601"),
-                    (None, tr!("settings-general-date-custom")),
+                    named(DateFormatName::Relative, tr!("settings-general-date-relative")),
+                    named(DateFormatName::Short, tr!("settings-general-date-short")),
+                    named(DateFormatName::Long, tr!("settings-general-date-long")),
+                    named(DateFormatName::Iso, "ISO 8601"),
+                    dd::Item::new(None, tr!("settings-general-date-custom"))
+                        .secondary("strftime")
+                        .icon(ph::PENCIL_SIMPLE),
                 ];
-                if dropdown(ui, "date_format", &mut sel, &opts, 120.0) {
+                if choice(ui, "date_format", &mut sel, &opts, 150.0) {
                     d.general.date_format = match sel {
                         Some(n) => DateFormat::Named(n),
                         None => DateFormat::Custom("%Y-%m-%d %H:%M".into()),
@@ -151,13 +158,13 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any
 }
 
-fn modes() -> [(ViewMode, &'static str); 5] {
+fn modes() -> [dd::Item<ViewMode>; 5] {
     [
-        (ViewMode::Details, tr!("settings-view-details")),
-        (ViewMode::Grid, tr!("settings-view-grid")),
-        (ViewMode::List, tr!("settings-view-list")),
-        (ViewMode::Miller, tr!("settings-view-columns")),
-        (ViewMode::Gallery, tr!("settings-view-gallery")),
+        dd::Item::new(ViewMode::Details, tr!("settings-view-details")).icon(ph::ROWS),
+        dd::Item::new(ViewMode::Grid, tr!("settings-view-grid")).icon(ph::SQUARES_FOUR),
+        dd::Item::new(ViewMode::List, tr!("settings-view-list")).icon(ph::LIST),
+        dd::Item::new(ViewMode::Miller, tr!("settings-view-columns")).icon(ph::COLUMNS),
+        dd::Item::new(ViewMode::Gallery, tr!("settings-view-gallery")).icon(ph::IMAGES),
     ]
 }
 
@@ -167,7 +174,7 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-views-folders"), |r| {
         r.row(tr!("settings-views-default-view"), tr!("settings-views-default-view-desc"), |ui| {
-            segmented(ui, &mut d.general.default_view, &modes());
+            choice(ui, "default_view", &mut d.general.default_view, &modes(), 160.0);
         });
         r.row(tr!("settings-views-folders-first"), tr!("settings-views-folders-first-desc"), |ui| {
             switch(ui, &mut d.general.folders_first);
@@ -864,13 +871,7 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-terminal-shell"), |r| {
         r.row_kw(tr!("settings-terminal-shell"), tr!("settings-terminal-shell-desc"), "pwsh bash zsh cmd", |ui| {
-            code(ui, &mut d.terminal.shell, "auto", 160.0);
-            let picks: &[&str] = if cfg!(windows) { &["pwsh", "powershell", "cmd"] } else { &["bash", "zsh", "fish"] };
-            for pick in picks.iter().rev() {
-                if small_button(ui, None, pick, false).clicked() {
-                    d.terminal.shell = pick.to_string();
-                }
-            }
+            shell_choice(ui, &mut d.terminal.shell, &mut d.terminal.args);
         });
         r.row(tr!("settings-terminal-args"), tr!("settings-terminal-args-desc"), |ui| {
             let mut s = crate::commands::join_args(&d.terminal.args);
@@ -942,6 +943,88 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any
 }
 
+/// `[terminal] shell` / `args`: automatic, the detected shells (WSL distributions with
+/// their `-d <name>`), or a custom program.
+fn shell_choice(ui: &mut Ui, shell: &mut String, args: &mut Vec<String>) {
+    use crate::services::shells::{self, ShellKind};
+    let c = ui.ctx().clone();
+    let found = shells::detected(move || c.request_repaint());
+    let list = found.unwrap_or_default();
+    let is_auto = shell.trim().is_empty() || shell.trim().eq_ignore_ascii_case("auto");
+    let current = shells::matching(list, shell, args);
+    // Key: "" = automatic, else the entry's index ("#3"), else the typed program.
+    let key = |i: usize| format!("#{i}");
+    let mut value = if is_auto {
+        String::new()
+    } else {
+        current.and_then(|cur| list.iter().position(|s| s == cur)).map_or_else(|| shell.clone(), key)
+    };
+    let mut items = vec![
+        dd::Item::new(String::new(), tr!("settings-auto"))
+            .secondary(if cfg!(windows) { "pwsh → powershell → cmd" } else { "$SHELL" })
+            .icon(ph::MAGIC_WAND),
+    ];
+    let group = tr!("settings-terminal-detected");
+    for (i, s) in list.iter().enumerate() {
+        let icon = match s.kind {
+            ShellKind::Wsl => ph::LINUX_LOGO,
+            ShellKind::Bash => ph::GIT_BRANCH,
+            ShellKind::Cmd => ph::TERMINAL,
+            _ => ph::TERMINAL_WINDOW,
+        };
+        items.push(dd::Item::new(key(i), s.label.clone()).secondary(s.path.clone()).icon(icon).group(group));
+    }
+    if found.is_none() {
+        items.push(
+            dd::Item::new("?".to_string(), tr!("settings-terminal-detecting"))
+                .group(group)
+                .disabled(Some(tr!("settings-terminal-detecting").to_string())),
+        );
+    }
+    let before = value.clone();
+    if text_choice(ui, "terminal_shell", &mut value, &items, 200.0, r"pwsh, C:\…\shell.exe") || value != before {
+        // Arguments that belonged to the previous entry (WSL "-d …", Git Bash login)
+        // go with it.
+        if current.is_some_and(|c| !c.args.is_empty() && c.args == *args) {
+            args.clear();
+        }
+        if value.is_empty() {
+            *shell = "auto".into();
+        } else if let Some(s) = value.strip_prefix('#').and_then(|n| n.parse::<usize>().ok()).and_then(|i| list.get(i))
+        {
+            shell.clone_from(&s.program);
+            if !s.args.is_empty() {
+                args.clone_from(&s.args);
+            }
+        } else {
+            *shell = value;
+        }
+    }
+}
+
+/// `[preview] syntax_theme`: automatic or one of syntect's themes (with their colors).
+fn syntax_theme_choice(ui: &mut Ui, theme: &mut String) {
+    let c = ui.ctx().clone();
+    let list = crate::services::preview_text::syntax_theme_list(move || c.request_repaint());
+    let mut items = vec![
+        dd::Item::new("auto".to_string(), tr!("settings-auto"))
+            .secondary(tr!("settings-preview-syntax-auto"))
+            .icon(ph::CIRCLE_HALF),
+    ];
+    match &list {
+        Some(l) => {
+            for (name, bg, fg) in l {
+                items.push(dd::Item::new(name.clone(), name.clone()).swatch(*bg).swatch(*fg));
+            }
+        }
+        None => items.push(dd::Item::new(theme.clone(), theme.clone())),
+    }
+    let mut v = if theme.trim().is_empty() { "auto".to_string() } else { theme.clone() };
+    if choice(ui, "syntax_theme", &mut v, &items, 200.0) {
+        *theme = v;
+    }
+}
+
 pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let d = &mut app.settings.draft;
     let ctx = "Preview search git";
@@ -954,7 +1037,7 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             number(ui, &mut d.preview.max_image_mp, 4..=400, " MP");
         });
         r.row_kw(tr!("settings-preview-syntax"), tr!("settings-preview-syntax-desc"), "highlight code", |ui| {
-            text(ui, &mut d.preview.syntax_theme, "auto", 160.0);
+            syntax_theme_choice(ui, &mut d.preview.syntax_theme);
         });
         r.row_kw(tr!("settings-preview-pdf"), tr!("settings-preview-pdf-desc"), "pdfium document", |ui| {
             switch(ui, &mut d.preview.pdf);

@@ -778,12 +778,29 @@ pub struct Performance {
     /// Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the
     /// next start.
     pub cpu_first_frame: bool,
+    /// Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform
+    /// default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11
+    /// backdrop (Direct3D 12 only) take precedence. Applies at the next start.
+    pub gpu_backend: GpuBackend,
 }
 
 impl Default for Performance {
     fn default() -> Self {
-        Performance { cpu_first_frame: true }
+        Performance { cpu_first_frame: true, gpu_backend: GpuBackend::Auto }
     }
+}
+
+/// `[performance] gpu_backend`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GpuBackend {
+    #[default]
+    Auto,
+    /// Direct3D 12 (Windows).
+    Dx12,
+    Vulkan,
+    /// OpenGL / ANGLE through wgpu (compatibility).
+    Gl,
 }
 
 /// `[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).

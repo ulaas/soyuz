@@ -257,6 +257,7 @@ weekly_check = false             # also check once a week at startup (notificati
 include_prereleases = false      # offer release candidates / betas too
 [performance]                    # R5: startup and rendering
 cpu_first_frame = true           # Windows: real UI drawn on the CPU while the GPU starts (next start)
+gpu_backend = "auto"             # auto | dx12 | vulkan | gl (next start; WGPU_BACKEND wins)
 [remote]                         # F2: SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
 cache_ttl_secs = 30              # reuse a remote folder listing this long (Refresh always re-lists)
 poll_secs = 0                    # re-list visible remote folders this often (0 = never)

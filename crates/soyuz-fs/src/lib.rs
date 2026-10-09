@@ -50,6 +50,7 @@ pub mod trash;
 pub mod usn;
 pub mod volumes;
 pub mod watch;
+pub mod wsl;
 pub mod xattr;
 
 #[allow(unsafe_code)]

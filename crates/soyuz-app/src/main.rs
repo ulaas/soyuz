@@ -255,8 +255,16 @@ Run `soyuz <command> --help` for usage."
     if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut wgpu_options.wgpu_setup {
         // Windows: DX12 only unless `WGPU_BACKEND` says otherwise. Initializing the Vulkan
         // loader (and any overlay layers injected into it) costs ~250 ms of startup.
-        if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
-            setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+        // `[performance] gpu_backend` picks another API (next start).
+        if std::env::var_os("WGPU_BACKEND").is_none() {
+            use soyuz_core::config::GpuBackend;
+            match config.performance.gpu_backend {
+                GpuBackend::Auto if cfg!(windows) => setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12,
+                GpuBackend::Auto => {}
+                GpuBackend::Dx12 => setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12,
+                GpuBackend::Vulkan => setup.instance_descriptor.backends = eframe::wgpu::Backends::VULKAN,
+                GpuBackend::Gl => setup.instance_descriptor.backends = eframe::wgpu::Backends::GL,
+            }
         }
         if backdrop {
             setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;

@@ -4,7 +4,7 @@
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::config::{Action, ActionCategory, Config, KeyPreset, Keymap, format_sequence};
 
-use super::widgets::{group, matches, segmented, small_button, switch, upper};
+use super::widgets::{choice, dd, group, matches, small_button, switch, upper};
 use super::{binding_chip, key_cache, record};
 use crate::app::SoyuzApp;
 use crate::keys::conflicts::{Conflict, ConflictKind, for_action};
@@ -53,17 +53,16 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         any |= group(ui, q, "Keyboard shortcuts keys", tr!("settings-keys-preset"), |r| {
             let help = preset_help(d.keys.preset);
             r.row_kw(tr!("settings-keys-key-preset"), help, "explorer commander finder vim", |ui| {
-                segmented(
-                    ui,
-                    &mut d.keys.preset,
-                    &[
-                        (KeyPreset::Explorer, crate::i18n::labels::key_preset(KeyPreset::Explorer)),
-                        // Short form: the full preset name ("Commander (F-keys)") is too wide here.
-                        (KeyPreset::Commander, tr!("settings-keys-preset-commander")),
-                        (KeyPreset::Finder, crate::i18n::labels::key_preset(KeyPreset::Finder)),
-                        (KeyPreset::Vim, crate::i18n::labels::key_preset(KeyPreset::Vim)),
-                    ],
-                );
+                let item = |k: KeyPreset, icon| {
+                    dd::Item::new(k, crate::i18n::labels::key_preset(k)).icon(icon).keywords(preset_help(k))
+                };
+                let items = [
+                    item(KeyPreset::Explorer, ph::WINDOWS_LOGO),
+                    item(KeyPreset::Commander, ph::COLUMNS),
+                    item(KeyPreset::Finder, ph::APPLE_LOGO),
+                    item(KeyPreset::Vim, ph::TERMINAL_WINDOW),
+                ];
+                choice(ui, "key_preset", &mut d.keys.preset, &items, 210.0);
             });
             r.row_kw(tr!("settings-keys-cmd-ctrl"), tr!("settings-keys-cmd-ctrl-desc"), "command meta", |ui| {
                 switch(ui, &mut d.keys.cmd_is_ctrl);

@@ -86,9 +86,46 @@ pub fn set_syntax_theme(name: &str) -> Option<String> {
     Some(format!("[preview] syntax_theme = \"{name}\" is unknown (auto, {}); using auto", known.join(", ")))
 }
 
+/// The syntect themes with their background / foreground colors, for the theme
+/// dropdown. `None` while the assets load (the first call starts loading them on a
+/// background thread, then calls `wake`).
+pub fn syntax_theme_list(wake: impl Fn() + Send + 'static) -> Option<Vec<(String, egui::Color32, egui::Color32)>> {
+    static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if SYNTAX_ASSETS.get().is_none() {
+        if !STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            std::thread::Builder::new()
+                .name("soyuz-syntax".into())
+                .spawn(move || {
+                    syntax();
+                    wake();
+                })
+                .ok()?;
+        }
+        return None;
+    }
+    let c = |c: Option<syntect::highlighting::Color>, d: egui::Color32| {
+        c.map_or(d, |c| egui::Color32::from_rgb(c.r, c.g, c.b))
+    };
+    Some(
+        syntax()
+            .1
+            .themes
+            .iter()
+            .map(|(name, t)| {
+                (
+                    name.clone(),
+                    c(t.settings.background, egui::Color32::BLACK),
+                    c(t.settings.foreground, egui::Color32::WHITE),
+                )
+            })
+            .collect(),
+    )
+}
+
+static SYNTAX_ASSETS: OnceLock<(SyntaxSet, ThemeSet)> = OnceLock::new();
+
 fn syntax() -> &'static (SyntaxSet, ThemeSet) {
-    static S: OnceLock<(SyntaxSet, ThemeSet)> = OnceLock::new();
-    S.get_or_init(|| (SyntaxSet::load_defaults_newlines(), ThemeSet::load_defaults()))
+    SYNTAX_ASSETS.get_or_init(|| (SyntaxSet::load_defaults_newlines(), ThemeSet::load_defaults()))
 }
 
 /// Extension aliases for languages the default syntax set names differently / lacks.

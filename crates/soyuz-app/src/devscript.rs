@@ -22,6 +22,8 @@
 //!   frame-budget test starts counting;
 //! * `settings:<section>` — open the settings window on a section (`settings:appearance`;
 //!   `settings:close` closes it);
+//! * `dropdown:<key>[=query]` — open the dropdown with that key (settings rows use
+//!   `settings.<id>`, e.g. `dropdown:settings.font.ui=segoe`) with `query` in its search;
 //! * `smart:<name>` — open a smart folder (`smart:` alone: the new smart folder dialog);
 //! * `keys:<spec>` — synthetic keyboard input on the next frame: plain text is typed,
 //!   `{Enter}`, `{Ctrl+S}`, `{Shift+F3}`, `{Copy}`, `{Cut}`, `{Paste:text}` are keys;
@@ -295,6 +297,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 app.devscript.events.extend(key_events(arg));
                 ctx.request_repaint();
                 return;
+            }
+            "dropdown" => {
+                // `dropdown:<key>[=query]`: open a dropdown (and type into its search).
+                let (key, query) = arg.split_once('=').unwrap_or((arg, ""));
+                crate::ui::widgets::dropdown::request_open(ctx, key.trim(), query);
             }
             "ai" => crate::ai::state::script(app, ctx, arg),
             _ => match step.parse::<Action>() {

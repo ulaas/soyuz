@@ -287,11 +287,8 @@ impl BatchRenameDialog {
     fn rules_panel(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
         caption(ui, tr!("dialogs-rename-edit"));
-        ui.horizontal(|ui| {
-            for t in Target::ALL {
-                ui.selectable_value(&mut self.spec.target, t, t.label());
-            }
-        });
+        let targets: Vec<(Target, &str)> = Target::ALL.iter().map(|t| (*t, t.label())).collect();
+        crate::ui::settings::widgets::segmented(ui, &mut self.spec.target, &targets);
         caption(ui, tr!("dialogs-rename-rules"));
         let mut remove = None;
         let mut swap = None;
@@ -626,11 +623,12 @@ fn rule_editor(ui: &mut Ui, rule: &mut Rule, idx: usize) {
             });
         }
         Rule::Case { mode } => {
-            ui.horizontal_wrapped(|ui| {
-                for m in CaseMode::ALL {
-                    ui.selectable_value(mode, m, m.label());
-                }
-            });
+            let items: Vec<_> =
+                CaseMode::ALL.iter().map(|m| crate::ui::widgets::dropdown::Item::new(*m, m.label())).collect();
+            crate::ui::widgets::dropdown::Dropdown::new(format!("rename.case.{idx}"))
+                .width(200.0)
+                .name(tr!("dialogs-rename-rule-case"))
+                .show(ui, mode, &items);
         }
         Rule::Insert { text, at } => {
             field(

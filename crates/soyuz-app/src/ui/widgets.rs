@@ -14,6 +14,8 @@ use crate::theme::apply::CAPTION;
 use crate::theme::tokens::{radius, size, space};
 use crate::theme::{Palette, icons, palette};
 
+pub mod dropdown;
+
 /// 2 px accent ring with a 1 px `bg.window` gap, drawn around `rect` (PLAN §1.2).
 pub fn focus_ring(ui: &Ui, rect: Rect) {
     let p = palette(ui.ctx());

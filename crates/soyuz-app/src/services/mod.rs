@@ -32,6 +32,7 @@ pub mod preview_xml;
 pub mod recent;
 pub mod remote;
 pub mod search;
+pub mod shells;
 pub mod splash;
 pub mod store_file;
 pub mod tags;

@@ -396,7 +396,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             Some(RecordOutcome::Cancel) => app.settings.recorder = None,
             _ => {}
         }
-    } else if app.settings.picker.is_none() {
+    } else if app.settings.picker.is_none() && !crate::ui::widgets::dropdown::any_open(ctx) {
         // Window keys: Esc closes, Ctrl+F searches, Ctrl+PgUp/PgDn switch sections.
         let (esc, find, prev, next) = ctx.input_mut(|i| {
             (

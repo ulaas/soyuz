@@ -453,6 +453,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `cpu_first_frame` | boolean | `true` | Windows: draw the real interface on the CPU into the startup placeholder while the GPU renderer starts (about 0.05 s instead of 0.37 s to the first real frame; mouse input works, the keyboard from the GPU window on), then switch to the GPU window. Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the next start. |
+| `gpu_backend` | `"auto"` \| `"dx12"` \| `"vulkan"` \| `"gl"` | `"auto"` | Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11 backdrop (Direct3D 12 only) take precedence. Applies at the next start. (`dx12`: Direct3D 12 (Windows); `gl`: OpenGL / ANGLE through wgpu (compatibility)) |
 
 ## `[remote]`
 
