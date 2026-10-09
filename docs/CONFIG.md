@@ -132,7 +132,6 @@ written as a list of quoted values is an enumeration: use one of them.
 | `video_thumbnails` | boolean | `true` | First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found). |
 | `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
 | `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only) before decoding a file ourselves. |
-| `startup_placeholder` | boolean | `true` | Windows: show a native placeholder window (theme background + logo) right away while the GPU renderer starts, replaced by the real window on its first frame. Applies at the next start. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |
 | `thumb_disk_cache_mib` | integer | `256` | On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts. |
 
@@ -454,7 +453,6 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `cpu_first_frame` | boolean | `true` | Windows: draw the real interface on the CPU into the startup placeholder while the GPU renderer starts (about 0.05 s instead of 0.37 s to the first real frame; mouse input works, the keyboard from the GPU window on), then switch to the GPU window. Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the next start. |
 | `gpu_backend` | `"auto"` \| `"dx12"` \| `"vulkan"` \| `"gl"` | `"auto"` | Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11 backdrop (Direct3D 12 only) take precedence. Applies at the next start. (`dx12`: Direct3D 12 (Windows); `gl`: OpenGL / ANGLE through wgpu (compatibility)) |
 
 ## `[remote]`

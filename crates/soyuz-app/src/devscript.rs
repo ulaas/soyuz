@@ -187,11 +187,7 @@ pub fn begin(app: &mut SoyuzApp) {
     match STARTUP_FRAMES.fetch_add(1, std::sync::atomic::Ordering::Relaxed) {
         0 => startup_mark("first frame (ui start)"),
         // The second `ui()` starts after the first frame was painted and presented.
-        1 => {
-            startup_mark("first frame presented");
-            // The real window is visible now: drop the startup placeholder (R5).
-            crate::services::splash::close();
-        }
+        1 => startup_mark("first frame presented"),
         _ => {}
     }
     if app.devscript.frame_log {

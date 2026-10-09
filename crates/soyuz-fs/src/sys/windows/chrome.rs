@@ -12,19 +12,23 @@ use std::mem::{size_of, transmute, zeroed};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 
-use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows_sys::Win32::Graphics::Dwm::{DwmExtendFrameIntoClientArea, DwmSetWindowAttribute};
 use windows_sys::Win32::Graphics::Gdi::{
-    BLACK_BRUSH, FillRect, GetStockObject, HBRUSH, HDC, InvalidateRect, ScreenToClient,
+    BLACK_BRUSH, FillRect, GetMonitorInfoW, GetStockObject, HBRUSH, HDC, InvalidateRect, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MonitorFromWindow, ScreenToClient,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows_sys::Win32::UI::Controls::MARGINS;
+use windows_sys::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GWL_STYLE, GetClientRect, GetWindowLongPtrW, HTCLIENT, HTMAXBUTTON, STYLESTRUCT, SWP_FRAMECHANGED, SWP_NOACTIVATE,
-    SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, WM_ERASEBKGND, WM_MOUSEMOVE, WM_NCDESTROY,
-    WM_NCHITTEST, WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE,
-    WM_STYLECHANGING, WS_SYSMENU,
+    GWL_STYLE, GetClientRect, GetWindowLongPtrW, GetWindowPlacement, HTCLIENT, HTMAXBUTTON, IsWindowVisible, IsZoomed,
+    SIZE_MAXIMIZED, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, STYLESTRUCT, SW_HIDE, SW_MAXIMIZE, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SendMessageW, SetWindowLongPtrW, SetWindowPlacement,
+    SetWindowPos, ShowWindow, WINDOWPLACEMENT, WM_ERASEBKGND, WM_MOUSEMOVE, WM_NCDESTROY, WM_NCHITTEST,
+    WM_NCLBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_SIZE, WM_STYLECHANGING,
+    WS_MAXIMIZE, WS_SYSMENU,
 };
 
 use super::wide_str;
@@ -100,6 +104,60 @@ pub(crate) fn set_corner_preference(hwnd: isize, round: Option<bool>) -> bool {
         None => DWMWCP_DEFAULT,
     };
     set_attr_i32(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, v)
+}
+
+/// Put a window that has not been shown yet into the maximized state without showing it:
+/// `ShowWindow(SW_MAXIMIZE)` always shows (and activates) a window, so instead the window
+/// gets `WS_MAXIMIZE` and the rectangle Windows gives a maximized window (the monitor's
+/// work area plus the frame overhang), while its restored placement stays as it is. The
+/// next ordinary show opens it maximized, once. A visible window is simply maximized.
+pub(crate) fn maximize_hidden(hwnd: isize) -> bool {
+    if hwnd == 0 {
+        return false;
+    }
+    let h = hwnd as HWND;
+    // SAFETY: plain user32 calls on a window handle owned by this process with live
+    // out-structs; a stale handle only makes them fail.
+    unsafe {
+        if IsWindowVisible(h) != 0 {
+            ShowWindow(h, SW_MAXIMIZE);
+            return IsZoomed(h) != 0;
+        }
+        let mut wp: WINDOWPLACEMENT = zeroed();
+        wp.length = size_of::<WINDOWPLACEMENT>() as u32;
+        let mut mi: MONITORINFO = zeroed();
+        mi.cbSize = size_of::<MONITORINFO>() as u32;
+        if GetWindowPlacement(h, &mut wp) == 0
+            || GetMonitorInfoW(MonitorFromWindow(h, MONITOR_DEFAULTTONEAREST), &mut mi) == 0
+        {
+            return false;
+        }
+        let dpi = GetDpiForWindow(h).max(96);
+        let pad = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+        let fx = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + pad;
+        let fy = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + pad;
+        let style = GetWindowLongPtrW(h, GWL_STYLE);
+        SetWindowLongPtrW(h, GWL_STYLE, style | WS_MAXIMIZE as isize);
+        let (x, y, w, ht) = maximized_rect(mi.rcWork, fx, fy);
+        SetWindowPos(h, std::ptr::null_mut(), x, y, w, ht, SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
+        // Keep the restored rectangle the window had (moving it may have replaced it).
+        wp.showCmd = SW_HIDE as u32;
+        wp.flags = 0;
+        SetWindowPlacement(h, &wp);
+        // Windows sends no `WM_SIZE` when the client size happens to stay the same, and
+        // the window's owner (winit) learns the maximized state from it.
+        let mut rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+        GetClientRect(h, &mut rc);
+        let size = ((rc.bottom - rc.top) as u32 & 0xffff) << 16 | ((rc.right - rc.left) as u32 & 0xffff);
+        SendMessageW(h, WM_SIZE, SIZE_MAXIMIZED as WPARAM, size as LPARAM);
+        IsZoomed(h) != 0
+    }
+}
+
+/// `(x, y, w, h)` of a window maximized on a monitor with work area `work`: the frame
+/// (`fx` / `fy` pixels) hangs over the work area's edges.
+fn maximized_rect(work: RECT, fx: i32, fy: i32) -> (i32, i32, i32, i32) {
+    (work.left - fx, work.top - fy, work.right - work.left + 2 * fx, work.bottom - work.top + 2 * fy)
 }
 
 /// `DWMWA_USE_IMMERSIVE_DARK_MODE` (tints the system backdrop and the frame).
@@ -317,4 +375,18 @@ pub(crate) fn set_max_button_rect(rect: Option<[i32; 4]>) {
 /// `(hovered, pressed, clicked since the last call)` of the OS-level maximize button.
 pub(crate) fn max_button_state() -> (bool, bool, bool) {
     (HOVER.load(Ordering::Relaxed), PRESSED.load(Ordering::Relaxed), CLICKED.swap(false, Ordering::Relaxed))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maximized_rect_overhangs_the_work_area() {
+        let rect = |left, top, right, bottom| RECT { left, top, right, bottom };
+        // 2560 x 1440 monitor, 48 px taskbar at the bottom, 8 px frame overhang.
+        assert_eq!(maximized_rect(rect(0, 0, 2560, 1392), 8, 8), (-8, -8, 2576, 1408));
+        // Second monitor to the right with the taskbar at the top.
+        assert_eq!(maximized_rect(rect(2560, 40, 4480, 1080), 8, 8), (2552, 32, 1936, 1056));
+    }
 }

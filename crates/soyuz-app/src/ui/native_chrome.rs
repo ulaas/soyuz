@@ -21,6 +21,7 @@ pub const DWM_CORNER_RADIUS: u8 = 8;
 static HWND: AtomicIsize = AtomicIsize::new(0);
 static BACKDROP_ACTIVE: AtomicBool = AtomicBool::new(false);
 static SNAP_ACTIVE: AtomicBool = AtomicBool::new(false);
+static RESTORE_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 static WIN11: OnceLock<bool> = OnceLock::new();
 
 /// Windows 11 (rounded window corners, Snap Layouts).
@@ -53,11 +54,22 @@ pub fn set_backdrop_active(on: bool) {
     BACKDROP_ACTIVE.store(on, Ordering::Relaxed);
 }
 
+/// The saved window state is maximized, but the window is created restored: winit shows a
+/// hidden window while maximizing it (with eframe's restore steps three blank flashes and
+/// taskbar buttons before the first frame), so [`init`] maximizes it out of sight instead.
+pub fn set_restore_maximized(on: bool) {
+    RESTORE_MAXIMIZED.store(on, Ordering::Relaxed);
+}
+
 /// Attach to the native window (call from `SoyuzApp::new`). `transparent`: the window
 /// was created for [`startup_backdrop`].
 pub fn init(cc: &eframe::CreationContext<'_>, config: &Config, transparent: bool) {
     let Some(hwnd) = win32_hwnd(cc) else { return };
     HWND.store(hwnd, Ordering::Relaxed);
+    if RESTORE_MAXIMIZED.swap(false, Ordering::Relaxed) {
+        let ok = soyuz_fs::chrome::maximize_hidden(hwnd);
+        log::debug!("restored maximized: {ok}");
+    }
     if is_windows_11() {
         soyuz_fs::chrome::set_corner_preference(hwnd, Some(true));
     }

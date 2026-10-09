@@ -62,7 +62,7 @@ windows-sys = { workspace = true, features = [
     "Win32_NetworkManagement_NetManagement",
     "Win32_Graphics_Gdi",
     "Win32_UI_Controls",
-    # Startup placeholder window: per-thread DPI awareness (user32).
+    # Per-monitor DPI of owned popup windows (user32).
     "Win32_UI_HiDpi",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",

@@ -205,10 +205,6 @@ pub struct Appearance {
     /// Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only)
     /// before decoding a file ourselves.
     pub os_thumbnail_cache: bool,
-    /// Windows: show a native placeholder window (theme background + logo) right away
-    /// while the GPU renderer starts, replaced by the real window on its first frame.
-    /// Applies at the next start.
-    pub startup_placeholder: bool,
     /// File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in
     /// generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`.
     pub icon_pack: String,
@@ -779,12 +775,6 @@ pub struct Updates {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Performance {
-    /// Windows: draw the real interface on the CPU into the startup placeholder while the
-    /// GPU renderer starts (about 0.05 s instead of 0.37 s to the first real frame; mouse
-    /// input works, the keyboard from the GPU window on), then switch to the GPU window.
-    /// Needs `[appearance] startup_placeholder` and the custom title bar. Applies at the
-    /// next start.
-    pub cpu_first_frame: bool,
     /// Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform
     /// default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11
     /// backdrop (Direct3D 12 only) take precedence. Applies at the next start.
@@ -793,7 +783,7 @@ pub struct Performance {
 
 impl Default for Performance {
     fn default() -> Self {
-        Performance { cpu_first_frame: true, gpu_backend: GpuBackend::Auto }
+        Performance { gpu_backend: GpuBackend::Auto }
     }
 }
 

@@ -146,44 +146,6 @@ fn choose_adapter(
     (0..infos.len()).min_by_key(|&i| adapter_rank(infos[i].1, power))
 }
 
-/// Create the wgpu instance, adapter and device on a worker thread (R5 CPU-first
-/// startup), with the same instance options, adapter choice and device descriptor
-/// egui-wgpu would use. The D3D12 driver load (~200 ms) happens here while the main
-/// thread draws the first frames on the CPU.
-fn spawn_gpu(
-    setup: &eframe::egui_wgpu::WgpuSetupCreateNew,
-) -> std::sync::mpsc::Receiver<Result<eframe::egui_wgpu::WgpuSetupExisting, String>> {
-    let d = &setup.instance_descriptor;
-    let desc = eframe::wgpu::InstanceDescriptor {
-        backends: d.backends,
-        flags: d.flags,
-        backend_options: d.backend_options.clone(),
-        memory_budget_thresholds: d.memory_budget_thresholds,
-        display: None,
-    };
-    let power = setup.power_preference;
-    let device_descriptor = setup.device_descriptor.clone();
-    let (tx, rx) = std::sync::mpsc::channel();
-    let spawned = std::thread::Builder::new().name("soyuz-gpu-init".into()).spawn(move || {
-        let backends = desc.backends;
-        let instance = eframe::wgpu::Instance::new(desc);
-        let adapters = pollster::block_on(instance.enumerate_adapters(backends));
-        soyuz_app::devscript::startup_mark("adapters enumerated");
-        // (`device_descriptor` logs "adapter chosen".)
-        let result = pick_adapter(&adapters, None, power).and_then(|adapter| {
-            let (device, queue) =
-                pollster::block_on(adapter.request_device(&device_descriptor(&adapter))).map_err(|e| e.to_string())?;
-            soyuz_app::devscript::startup_mark("GPU device ready");
-            Ok(eframe::egui_wgpu::WgpuSetupExisting { instance, adapter, device, queue })
-        });
-        let _ = tx.send(result);
-    });
-    if let Err(e) = spawned {
-        log::warn!("GPU init thread: {e}");
-    }
-    rx
-}
-
 fn main() -> ExitCode {
     soyuz_app::devscript::mark_process_start();
     soyuz_app::services::crash::init_logging();
@@ -285,36 +247,12 @@ Run `soyuz <command> --help` for usage."
             device_descriptor(adapter)
         });
     }
-    // R5: draw the real UI on the CPU into the placeholder while the GPU starts
-    // (`soyuz_app::startup`). Debug override: `SOYUZ_CPU_FIRST=0|1`.
-    let cpu_first = match std::env::var("SOYUZ_CPU_FIRST").ok().as_deref() {
-        Some("0") => false,
-        Some("1") => true,
-        _ => config.performance.cpu_first_frame,
-    } && cfg!(windows)
-        && renderer == eframe::Renderer::Wgpu
-        && chrome == soyuz_app::ui::titlebar::Chrome::Custom
-        && !startup.secondary;
-    let gpu = match &wgpu_options.wgpu_setup {
-        eframe::egui_wgpu::WgpuSetup::CreateNew(setup) if cpu_first => Some(spawn_gpu(setup)),
-        _ => None,
-    };
     // Debug hook (screenshot sessions): `SOYUZ_WINDOW_POS=x,y` opens the window at that
     // spot without activating it, e.g. off-screen so scripted captures do not flash.
     let dev_pos = std::env::var("SOYUZ_WINDOW_POS").ok().and_then(|s| {
         let (x, y) = s.split_once(',')?;
         Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
     });
-    let app_ron = std::fs::read_to_string(soyuz_core::config::config_dir().join("app.ron")).ok();
-    // Windows: a native placeholder window right away while the GPU renderer starts (R5).
-    let opened = soyuz_app::services::splash::open(
-        &config,
-        startup.secondary,
-        (1280.0, 800.0),
-        app_ron.as_deref(),
-        dev_pos.map(|p| (p.x, p.y)),
-        gpu.is_some(),
-    );
 
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("Soyuz")
@@ -334,75 +272,29 @@ Run `soyuz <command> --help` for usage."
         // eframe's own state (window geometry, egui memory) lives with the rest of the
         // configuration, so portable mode keeps it next to the executable as well.
         persistence_path: Some(soyuz_core::config::config_dir().join("app.ron")),
+        // Windows: a window saved maximized is created restored and maximized while still
+        // hidden (`native_chrome::set_restore_maximized`), so startup shows one window
+        // once instead of winit's show / hide flashes.
+        window_builder: Some(Box::new(move |builder| {
+            if cfg!(windows) && builder.maximized == Some(true) {
+                soyuz_app::ui::native_chrome::set_restore_maximized(dev_pos.is_none());
+                builder.with_maximized(false)
+            } else {
+                builder
+            }
+        })),
         ..Default::default()
     };
-    let mut options = options;
-    let result = match (gpu, opened) {
-        (Some(gpu), Some(opened)) => {
-            let ctx = soyuz_app::startup::context(app_ron.as_deref());
-            soyuz_fs::register_ui_thread();
-            let app = soyuz_app::SoyuzApp::with_startup(&ctx, config, renderer_name, startup);
+    let result = eframe::run_native(
+        "Soyuz",
+        options,
+        Box::new(move |cc| {
+            soyuz_app::devscript::startup_mark("window + renderer ready");
+            let app = soyuz_app::SoyuzApp::new(cc, config, renderer_name, startup);
             soyuz_app::devscript::startup_mark("app state ready");
-            let clear = if backdrop {
-                egui::Color32::from_rgb(opened.bg[0], opened.bg[1], opened.bg[2])
-            } else {
-                ctx.global_style().visuals.panel_fill
-            };
-            let ready = std::cell::RefCell::new(None);
-            let gpu_ready = |wait: std::time::Duration| {
-                if ready.borrow().is_none() {
-                    match gpu.recv_timeout(wait) {
-                        Ok(r) => *ready.borrow_mut() = Some(r),
-                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => return false,
-                        Err(_) => *ready.borrow_mut() = Some(Err("GPU init thread ended".into())),
-                    }
-                }
-                true
-            };
-            let prebuilt = soyuz_app::services::splash::with(|splash| {
-                soyuz_app::startup::run(
-                    ctx.clone(),
-                    app,
-                    soyuz_app::startup::Phase {
-                        surface: splash,
-                        maximized: opened.place == soyuz_fs::splash::Place::Maximized,
-                        clear,
-                        gpu_ready: &gpu_ready,
-                        max: std::time::Duration::from_secs(10),
-                    },
-                )
-            });
-            match ready.into_inner() {
-                Some(Ok(existing)) => {
-                    options.wgpu_options.wgpu_setup = eframe::egui_wgpu::WgpuSetup::Existing(existing);
-                }
-                Some(Err(e)) => log::warn!("GPU init on the worker failed ({e}); eframe retries"),
-                None => log::warn!("GPU init still running after the CPU phase; eframe creates its own"),
-            }
-            match prebuilt {
-                Some(prebuilt) => eframe::run_native_ext(
-                    "Soyuz",
-                    options,
-                    Some(ctx),
-                    Box::new(move |cc| {
-                        soyuz_app::devscript::startup_mark("window + renderer ready");
-                        Ok(Box::new(prebuilt.handover(cc)))
-                    }),
-                ),
-                None => Err(eframe::Error::AppCreation("startup placeholder closed early".into())),
-            }
-        }
-        _ => eframe::run_native(
-            "Soyuz",
-            options,
-            Box::new(move |cc| {
-                soyuz_app::devscript::startup_mark("window + renderer ready");
-                let app = soyuz_app::SoyuzApp::new(cc, config, renderer_name, startup);
-                soyuz_app::devscript::startup_mark("app state ready");
-                Ok(Box::new(app))
-            }),
-        ),
-    };
+            Ok(Box::new(app))
+        }),
+    );
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {

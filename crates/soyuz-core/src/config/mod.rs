@@ -76,12 +76,20 @@ pub fn load_or_default(path: &Path) -> Result<Loaded, ConfigError> {
     }
 }
 
+/// Keys of removed settings: still accepted in old config files, without a warning.
+/// (`startup_placeholder` / `cpu_first_frame`: the startup placeholder window and the
+/// CPU-drawn first frames, removed 2026-10-09.)
+pub const REMOVED_KEYS: &[&str] = &["appearance.startup_placeholder", "performance.cpu_first_frame"];
+
 /// Parse config text (see [`load`]).
 pub fn parse_str(text: &str) -> Result<Loaded, ConfigError> {
     let mut warnings = Vec::new();
     let de = toml::Deserializer::parse(text).map_err(|e| parse_error(text, &e))?;
     let mut config: Config = serde_ignored::deserialize(de, |path| {
-        warnings.push(format!("unknown config key: {path}"));
+        let path = path.to_string();
+        if !REMOVED_KEYS.contains(&path.as_str()) {
+            warnings.push(format!("unknown config key: {path}"));
+        }
     })
     .map_err(|e| parse_error(text, &e))?;
     let a = &mut config.appearance;
@@ -255,6 +263,14 @@ mod tests {
         let l = parse_str("bogus = 1\n[general]\nshow_hiddn = true\n[nope]\nx = 2\n").unwrap();
         assert_eq!(l.warnings.len(), 3, "{:?}", l.warnings);
         assert!(l.warnings.iter().any(|w| w.contains("general.show_hiddn")), "{:?}", l.warnings);
+    }
+
+    #[test]
+    fn removed_keys_are_ignored_silently() {
+        let text = "[appearance]\nstartup_placeholder = true\n[performance]\ncpu_first_frame = false\n";
+        let l = parse_str(text).unwrap();
+        assert!(l.warnings.is_empty(), "{:?}", l.warnings);
+        assert_eq!(l.config, Config::default());
     }
 
     #[test]

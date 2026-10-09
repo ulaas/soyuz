@@ -38,10 +38,10 @@ pub fn set_enabled(on: bool) {
     ENABLED.store(on, Ordering::Relaxed);
 }
 
-/// Native windows are used this frame: the setting is on, we are on Windows, the GPU
-/// window is up (not the CPU-drawn startup frames) and the backend has real viewports.
+/// Native windows are used this frame: the setting is on, we are on Windows and the
+/// backend has real viewports.
 pub fn active(ctx: &Context) -> bool {
-    cfg!(windows) && ENABLED.load(Ordering::Relaxed) && !crate::startup::cpu_phase() && !ctx.embed_viewports()
+    cfg!(windows) && ENABLED.load(Ordering::Relaxed) && !ctx.embed_viewports()
 }
 
 /// Scripted / off-screen sessions (`SOYUZ_WINDOW_POS`) never activate windows, so they

@@ -30,6 +30,20 @@ pub fn is_windows_11() -> bool {
     os_build() >= 22000
 }
 
+/// Maximize a window that has not been shown yet without it appearing (Windows; see
+/// `sys::windows::chrome::maximize_hidden`). Returns whether it is maximized now.
+pub fn maximize_hidden(hwnd: isize) -> bool {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::chrome::maximize_hidden(hwnd)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = hwnd;
+        false
+    }
+}
+
 /// Corner preference: `Some(true)` round, `Some(false)` square, `None` system default.
 pub fn set_corner_preference(hwnd: isize, round: Option<bool>) -> bool {
     #[cfg(windows)]

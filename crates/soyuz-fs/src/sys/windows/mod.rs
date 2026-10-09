@@ -15,7 +15,6 @@ pub(crate) mod registry;
 pub(crate) mod security;
 pub(crate) mod shadow;
 pub(crate) mod shares;
-pub(crate) mod splash;
 pub(crate) mod thumbcache;
 pub(crate) mod usn;
 pub(crate) mod volume;
