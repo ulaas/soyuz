@@ -1,4 +1,4 @@
-//! Disk usage analyzer (PLAN M12): a squarified treemap of a folder with cushion-shaded,
+//! Disk usage analyzer: a squarified treemap of a folder with cushion-shaded,
 //! kind-colored tiles, nested folder frames, hover tooltips (path, size, share of the
 //! parent), click to drill in, a breadcrumb to go back up, a side list of the largest
 //! items, and a context menu (open, reveal, move to trash via the jobs engine). The scan

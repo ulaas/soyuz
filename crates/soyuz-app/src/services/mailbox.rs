@@ -1,4 +1,4 @@
-//! The single mailbox app-owned background services report into (PLAN §3). Producers
+//! The single mailbox app-owned background services report into. Producers
 //! send a [`UiMsg`] and wake the UI; `SoyuzApp::ui` drains it at frame start.
 
 use std::path::PathBuf;

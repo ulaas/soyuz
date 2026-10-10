@@ -29,7 +29,7 @@ them so it gets a role, a name and its state.
 | Treemap tiles | ListItem | file / folder name | size as description |
 | Settings controls | the matching egui role (CheckBox for switches, ComboBox, Slider, TextInput) | row label | value |
 
-All names are translated (Fluent, see `docs/INTEGRATION_NOTES.md` → F10). They follow the UI
+All names are translated (Fluent). They follow the UI
 language, so a Turkish UI speaks Turkish names.
 
 ## Keyboard-only operation
@@ -117,7 +117,7 @@ FastPass) that no focusable element is unnamed.
 
 ### Orca (Linux) and VoiceOver (macOS) — deferred
 
-Linux and macOS are out of scope until the owner lifts the platform deferral (see the project notes).
+Linux and macOS are out of scope for now: only Windows is tested.
 When they come back, repeat the NVDA list with Orca (AT-SPI through `accesskit_unix`) and
 VoiceOver (`accesskit_macos`, VO+arrow navigation).
 
@@ -128,7 +128,7 @@ VoiceOver (`accesskit_macos`, VO+arrow navigation).
   (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader
   receives (names, roles, states) in six states, but not how NVDA / Narrator announce it or
   whether navigation feels right; it does not replace this run.
-- Right-to-left layout is deferred (owner decision 2026-10-09); Arabic / Hebrew names render
+- Right-to-left layout is not supported yet; Arabic / Hebrew names render
   with a system fallback font but are laid out in logical order.
 - egui exposes text runs, not a rich document model. The text editor reads line by line,
   without paragraph or heading semantics.

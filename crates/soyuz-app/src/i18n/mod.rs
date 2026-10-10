@@ -1,4 +1,4 @@
-//! Localization (roadmap F10): Project Fluent bundles for every UI string.
+//! Localization: Project Fluent bundles for every UI string.
 //!
 //! * Translations live in `crates/soyuz-app/locales/<lang>/<area>.ftl` and are embedded
 //!   at compile time (`include_str!`, see [`FILES`]). en-US is the source language and

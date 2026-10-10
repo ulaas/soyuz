@@ -210,7 +210,7 @@ jobs:
   # Criterion benchmarks in quick mode: listing 100k entries, natural sort 1M,
   # thumbnail decode + downscale, search throughput. Windows only for now. On pull requests
   # the base branch is benchmarked first and changes over 15% are reported as warnings
-  # (shared runners are too noisy for a hard gate; see docs/INTEGRATION_NOTES.md).
+  # (shared runners are too noisy for a hard gate).
   bench:
     name: Benchmarks (quick, windows)
     needs: no-shell32

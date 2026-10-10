@@ -6,8 +6,8 @@ use soyuz_core::config::AiPrivacy;
 
 const SNAPSHOT: &str = "tests/snapshots/catalog.json";
 
-/// Every tool named in ROADMAP A2.
-const ROADMAP: &[&str] = &[
+/// Every tool the catalog must expose.
+const EXPECTED: &[&str] = &[
     "list_dir",
     "stat",
     "search",
@@ -52,13 +52,13 @@ const ROADMAP: &[&str] = &[
 ];
 
 #[test]
-fn catalog_covers_the_roadmap() {
+fn catalog_covers_every_expected_tool() {
     let cat = catalog();
     let names: Vec<&str> = cat.iter().map(|d| d.name).collect();
-    for n in ROADMAP {
+    for n in EXPECTED {
         assert!(names.contains(n), "missing tool {n}");
     }
-    assert_eq!(names.len(), ROADMAP.len(), "unexpected extra tools: {names:?}");
+    assert_eq!(names.len(), EXPECTED.len(), "unexpected extra tools: {names:?}");
     for d in &cat {
         assert_eq!(d.schema["type"], "object", "{} schema must be an object", d.name);
         assert_eq!(d.schema["additionalProperties"], false, "{} must reject unknown fields", d.name);

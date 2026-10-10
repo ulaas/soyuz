@@ -1,4 +1,4 @@
-//! External MCP clients inside the assistant's UI model (roadmap A3 + A6, unified):
+//! External MCP clients inside the assistant's UI model (unified):
 //!
 //! * [`PendingMcpApproval`] — a write / destructive call of an MCP client waiting for the
 //!   user (created by the bridge's `Backend::request_approval` on a server thread).

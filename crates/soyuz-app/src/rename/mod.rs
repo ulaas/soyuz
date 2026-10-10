@@ -1,4 +1,4 @@
-//! Batch rename engine (PLAN M10): a stack of rules applied to every selected name, a
+//! Batch rename engine: a stack of rules applied to every selected name, a
 //! token language for inserted text (`{n}`, `{name}`, `{ext}`, `{parent}`,
 //! `{date:%Y-%m-%d}`, `{exif:…}`), validation of the result (invalid names, duplicate
 //! targets, collisions with files outside the batch) and a cycle analysis of the final

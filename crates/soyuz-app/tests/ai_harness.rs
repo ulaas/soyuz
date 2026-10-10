@@ -1,4 +1,4 @@
-//! Deterministic harness tests (roadmap A8): a scripted fake provider replays tool-call
+//! Deterministic harness tests: a scripted fake provider replays tool-call
 //! transcripts against a real jobs engine in a temp folder. Covers approval gating,
 //! rejection, edits, budget / step / time limits, cancel, undo-all, auto-approval policy,
 //! the prompt-injection rule, folder permissions, redaction and recipe replay.

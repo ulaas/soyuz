@@ -1,4 +1,4 @@
-//! Folder compare + sync (PLAN M12). `soyuz_search::compare_dirs` runs on a worker; the
+//! Folder compare + sync. `soyuz_search::compare_dirs` runs on a worker; the
 //! result becomes a table of rows (only-left, only-right, newer-left, newer-right,
 //! differ) with a per-row action (copy →, copy ←, delete, skip). Presets fill the
 //! actions (two-way update, mirror left → right, mirror right → left); the plan is
@@ -6,7 +6,7 @@
 //! method, preset, schedule) are saved in `sync_profiles.toml` next to the config and
 //! owned by the scheduler (`sync_sched`).
 //!
-//! F8: the "Two-way sync" mode plans with the three-way state of `sync_state` instead of
+//! The "Two-way sync" mode plans with the three-way state of `sync_state` instead of
 //! a plain compare, so deletions and edits on both sides are told apart; conflicts get
 //! their own stage (keep left / keep right / keep both / skip, apply to all), and after
 //! the job the new state is recorded.
@@ -121,7 +121,7 @@ pub enum Preset {
     MirrorRight,
     /// Make the left side identical to the right.
     MirrorLeft,
-    /// F8: three-way sync against the state of the last sync (deletions propagate,
+    /// Three-way sync against the state of the last sync (deletions propagate,
     /// conflicts are asked).
     TwoWay,
     /// Leave actions as set by hand.
@@ -461,7 +461,7 @@ pub struct SyncProfile {
     pub method: Method,
     #[serde(default)]
     pub preset: Preset,
-    /// F8: when the scheduler runs this profile on its own.
+    /// When the scheduler runs this profile on its own.
     #[serde(default)]
     pub schedule: super::sync_sched::Schedule,
 }

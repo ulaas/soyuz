@@ -1,4 +1,4 @@
-//! "Apply to all" memory for prompts (PLAN §2.4).
+//! "Apply to all" memory for prompts.
 //!
 //! Each job has a *preset* built from its [`JobOptions`](crate::JobOptions) (pre-answered
 //! conflict resolution / error action / `CopyOptions::overwrite`) and a *memory* of the

@@ -1,4 +1,4 @@
-//! The [`Action`] enum: every palette command / bindable operation (PLAN §2.10).
+//! The [`Action`] enum: every palette command / bindable operation.
 //!
 //! String form (used as `[keys.bindings]` keys and in `[toolbar]`): `snake_case`
 //! variant name, payload after `:` — `"copy"`, `"sort_by:name"`, `"open_bookmark:1"`,
@@ -56,7 +56,7 @@ macro_rules! define_actions {
             AddTag(u8),
             Checksum(HashAlgo),
             CustomCommand(String),
-            /// A script action (`scripts/<file>.rhai`, id `file/action`; F6).
+            /// A script action (`scripts/<file>.rhai`, id `file/action`).
             RunScript(String),
         }
 

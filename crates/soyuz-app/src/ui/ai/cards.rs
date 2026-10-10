@@ -1,4 +1,4 @@
-//! Plan cards (roadmap A6): one card per proposed operation with an icon, the summary
+//! Plan cards: one card per proposed operation with an icon, the summary
 //! ("Move 214 files into 9 folders"), totals, conflicts and warnings, expandable details
 //! (tree diff or rename table) and Approve / Edit / Reject / "Approve all of this kind".
 //!

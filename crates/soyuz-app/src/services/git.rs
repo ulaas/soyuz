@@ -1,4 +1,4 @@
-//! Git integration (PLAN M12): repository detection, branch and per-file status for the
+//! Git integration: repository detection, branch and per-file status for the
 //! views (GitStatus column, colored names, badges) and the status-bar branch chip.
 //!
 //! * **Detection** walks up from a folder looking for `.git` (a directory, or a file with
@@ -227,7 +227,7 @@ pub fn read_branch(git_dir: &Path) -> Option<String> {
     std::fs::read_to_string(git_dir.join("HEAD")).ok().and_then(|t| parse_head(&t))
 }
 
-// Hardening (REVIEW-2 #2). The folder being browsed may be an untrusted repository (a
+// Hardening. The folder being browsed may be an untrusted repository (a
 // downloaded archive, a USB stick, a network share), and git reads `.git/config` from it.
 // What `git status` can be made to *execute* from repo-controlled config, and how each is
 // neutralised here:

@@ -76,8 +76,8 @@ $version = (Select-String -Path (Join-Path $repo 'Cargo.toml') -Pattern '^versio
 
 $sb = [System.Text.StringBuilder]::new()
 [void]$sb.AppendLine('# Changelog').AppendLine()
-[void]$sb.AppendLine('All notable changes to Soyuz. Grouped by roadmap phase (see docs/ROADMAP.md): M = the')
-[void]$sb.AppendLine('original milestones (docs/PLAN.md), R = rigidity, B = looks, F = features, A = AI,')
+[void]$sb.AppendLine('All notable changes to Soyuz. Grouped by the commit prefix: M = the')
+[void]$sb.AppendLine('original milestones, R = rigidity, B = looks, F = features, A = AI,')
 [void]$sb.AppendLine('D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`')
 [void]$sb.AppendLine('with `cliff.toml`); commit hashes refer to the main branch.').AppendLine()
 

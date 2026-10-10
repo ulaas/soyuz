@@ -1,4 +1,4 @@
-//! Recursive search and folder sizes for the app (PLAN M6).
+//! Recursive search and folder sizes for the app.
 //!
 //! * Searches are registered under a `SearchId` that becomes the pane's
 //!   `Location::Search(id)`; `ops::start_listing` calls [`attach`], which (re)starts the
@@ -34,7 +34,7 @@ pub struct SearchSpec {
     pub query: SearchQuery,
     /// Short title for headers ("“*.rs” in src").
     pub title: String,
-    /// Query-language search (F5): answered by the index when it covers the scope, else
+    /// Query-language search: answered by the index when it covers the scope, else
     /// `query` is walked and every hit is checked against `plan.expr`.
     pub plan: Option<crate::services::index::IndexPlan>,
     /// Shown as this smart folder (refreshes live as the index changes).
@@ -61,7 +61,7 @@ pub struct Progress {
     pub cancelled: bool,
     /// Fuzzy results are currently ordered by relevance.
     pub ranked: bool,
-    /// Answered by the background index (F5).
+    /// Answered by the background index.
     pub indexed: bool,
 }
 
@@ -701,7 +701,7 @@ pub struct SearchForm {
     pub include_hidden: bool,
     pub respect_gitignore: bool,
     pub root: PathBuf,
-    /// Search every indexed folder instead of `root` (F5).
+    /// Search every indexed folder instead of `root`.
     pub everywhere: bool,
 }
 

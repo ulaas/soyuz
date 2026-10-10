@@ -514,7 +514,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             icon: favorite_glyph(&f.path),
             label: &f.name,
             active: is_current(c, &f.path),
-            // A folder color (B2) tints the favorite's icon.
+            // A folder color tints the favorite's icon.
             icon_color: crate::services::folder_colors::color_of(&f.path, &p),
             usage: None,
         }

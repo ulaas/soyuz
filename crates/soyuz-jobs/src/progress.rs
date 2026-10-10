@@ -40,6 +40,6 @@ pub struct JobSnapshot {
     pub pending_prompt: Option<JobPrompt>,
     pub warnings: u32,
     pub log_len: usize,
-    /// F8: copies of this job are verified by hashing (`JobOptions::copy.verify`).
+    /// Copies of this job are verified by hashing (`JobOptions::copy.verify`).
     pub verify: Option<soyuz_core::HashAlgo>,
 }

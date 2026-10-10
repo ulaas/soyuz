@@ -3,7 +3,7 @@
 //! All filesystem work goes through kernel32/ntdll/advapi32 on Windows and
 //! rustix/libc on unix — never through a shell or COM shell API (CI enforces this).
 //!
-//! Per-OS implementations (PLAN §4):
+//! Per-OS implementations:
 //! * listing: `FindFirstFileExW(FIND_FIRST_EX_LARGE_FETCH)` / `getdents` + `statx` /
 //!   `readdir` + `fstatat`;
 //! * copy: block clone / `CopyFileExW` (progress callback, pause & cancel inside it) /

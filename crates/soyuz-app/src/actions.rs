@@ -1,5 +1,5 @@
 //! `execute(app, Action)`: the single dispatcher used by key bindings, menus, toolbar
-//! buttons and toasts (PLAN §2.8). Actions that belong to later milestones show a
+//! buttons and toasts. Actions that are not implemented yet show a
 //! "coming soon" toast so every binding gives feedback.
 
 use soyuz_core::config::{Action, ActionCategory, TypeAhead};
@@ -19,7 +19,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         crate::ai::execute_action(app, action, ctx);
         return;
     }
-    // Tab groups, workspaces, quad layout, windows, history graph, timeline (F7).
+    // Tab groups, workspaces, quad layout, windows, history graph, timeline.
     if crate::ui::workspaces::action(app, &action, ctx) {
         return;
     }
@@ -463,7 +463,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
 /// Actions without an implementation yet: hidden from the command palette and the
 /// keyboard settings (a binding in `config.toml` still answers with a "coming soon").
 pub fn unavailable(_a: &Action) -> bool {
-    // Every action is implemented (the folder tree landed with F1).
+    // Every action is implemented (including the folder tree).
     false
 }
 

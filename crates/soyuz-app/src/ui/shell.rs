@@ -1,7 +1,7 @@
 //! Root layout: custom title bar (logo + tabs + window controls, when enabled) →
 //! status bar → bottom panel → sidebar → tab strip (native title bar only) → toolbar →
 //! pane cards (single, dual with a draggable splitter, or a 2×2 quad grid), then dialogs
-//! and toasts on top. Secondary in-process windows (F7) draw the same shell without the
+//! and toasts on top. Secondary in-process windows draw the same shell without the
 //! main-only panels (terminal / activity, assistant, preview, editors, tool panels); the
 //! overlays go to the focused window.
 

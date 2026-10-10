@@ -1,4 +1,4 @@
-//! Batch rename dialog (F2 on a multiple selection, Ctrl+Shift+R; PLAN M10).
+//! Batch rename dialog (F2 on a multiple selection, Ctrl+Shift+R).
 //!
 //! Left: the rule stack (find/replace literal or regex, case, insert, remove, numbering,
 //! template, trim) with the numbering counter, the "edit the part" target (name /

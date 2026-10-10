@@ -1,4 +1,4 @@
-//! MCP server inside the running window (roadmap A3).
+//! MCP server inside the running window.
 //!
 //! * Serves the local named pipe that `soyuz --mcp` attaches to, and — when enabled —
 //!   Streamable HTTP on 127.0.0.1 ([`soyuz_mcp`] does the protocol work on its own

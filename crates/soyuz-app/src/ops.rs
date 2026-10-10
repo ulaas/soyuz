@@ -67,7 +67,7 @@ pub fn start_listing(pane: &mut Pane, services: &mut Services, soft: bool) {
             services.lister.list(pane.id, pane.generation, &path, ctl, soft);
         }
         Location::Remote(uri) => {
-            // F2: listed on the lister pool through `services::remote` (cached; a soft
+            // Listed on the lister pool through `services::remote` (cached; a soft
             // relist = Refresh bypasses the cache). No watcher: `[remote] poll_secs`.
             let ctl = OpControl::new();
             pane.ctl = Some(ctl.clone());

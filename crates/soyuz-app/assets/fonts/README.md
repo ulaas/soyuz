@@ -34,7 +34,7 @@ The Phosphor icon fonts come from the `egui-phosphor` crate (MIT).
 
 ## Why these, and what was left out
 
-The comparison sheets in `docs/font-comparison/` (made with `scripts/font-comparison.ps1`)
+The comparison sheets made with `scripts/font-comparison.ps1`
 show every candidate in the real app at 13 and 14 px. In short:
 
 - **Inter** has the most even spacing and the crispest stems with `hinting_strength = "crisp"`;
@@ -43,7 +43,7 @@ show every candidate in the real app at 13 and 14 px. In short:
   JetBrains Mono), a compact line height like Consolas, unbroken box drawing and strokes
   heavy enough for grayscale anti-aliasing.
 - **Source Sans 3** was dropped: with hinting on, egui's hinter draws the capital `İ` without
-  its dot (`docs/font-comparison/rejected-source-sans-3*.png`), which breaks Turkish text.
+  its dot (`rejected-source-sans-3*.png`), which breaks Turkish text.
 - **Inter Medium / IBM Plex Sans Medium** were dropped: SemiBold headings separate better
   from the regular text at small sizes (`rejected-inter-medium.png`).
 - **Noto Sans** spaces letters unevenly with crisp hinting (`rendering-noto.png`); it looks
@@ -70,7 +70,7 @@ and captions cannot get a smaller optical size; captions get a little more weigh
 The static Inter stays in every family as the fallback, and a variable instance whose axes
 cannot be read falls back to the static face.
 
-**Not the default.** `docs/font-comparison/inter-variable.png`
+**Not the default.** The sheet `inter-variable.png`
 (`scripts/font-inter-variable.ps1`) compares both in the real app at 100 %. The static TTFs
 carry TrueType hinting; the variable font has none, so egui's autohinter fits it: with the
 default crisp hinting the body text gets uneven letter gaps ("Variabl e") and lighter stems,

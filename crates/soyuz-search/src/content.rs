@@ -1,4 +1,4 @@
-//! Content matching (regex / literal, binary detection, size cap) (M6).
+//! Content matching (regex / literal, binary detection, size cap).
 //!
 //! Files are read whole (they are capped by `SearchQuery::content_max_size`, 8 MiB by
 //! default) into a per-thread buffer. A NUL byte in the first 8 KiB marks a file as

@@ -1,5 +1,5 @@
 //! 7z reader (sevenz-rust2). Solid blocks are decoded front to back: reading one entry
-//! decodes the preceding entries of its block (documented cost, PLAN §9.6).
+//! decodes the preceding entries of its block (documented cost).
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};

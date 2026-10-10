@@ -1,10 +1,10 @@
 //! Browser-style tab strip: pinned tabs (icon only) first, active tab as a raised pill,
 //! close on hover, middle-click close, drag to reorder, double-click empty space or `+`
 //! for a new tab, right-click for tab actions. While a tab is dragged the others make
-//! room live, each sliding on a spring (B4); hovering a tab during a file drag selects
+//! room live, each sliding on a spring; hovering a tab during a file drag selects
 //! it (spring-loading).
 //!
-//! Tab groups (F7): a colored chip opens each group (click: collapse / expand, double
+//! Tab groups: a colored chip opens each group (click: collapse / expand, double
 //! click: rename, right click: group menu) and the group's tabs carry its color. Drop a
 //! tab between two tabs of a group (or on its chip) to add it. Drag a tab away from the
 //! strip to tear it off into a new window, or onto another window to move it there.

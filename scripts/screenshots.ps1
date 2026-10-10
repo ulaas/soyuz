@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Regenerates the screenshot gallery in docs/screenshots/ from the release build.
+  Regenerates the screenshots in site/assets/shots/ from the release build.
 
 .DESCRIPTION
   1. Builds `soyuz` in release mode (skip with -SkipBuild).
@@ -11,7 +11,7 @@
      (tabs, favorites pointing into the demo tree) and a SOYUZ_SCRIPT that navigates,
      switches views / panels / themes / language and saves window screenshots with `shot:`.
      The app captures its own window; no mouse or keyboard input is sent to the desktop.
-  4. Downscales every PNG to at most -Width pixels and writes it to docs/screenshots/.
+  4. Downscales every PNG to at most -Width pixels and writes it to site/assets/shots/.
   5. Removes the portable marker, portable-data/, the raw captures and the demo tree.
 
 .PARAMETER Width
@@ -41,7 +41,7 @@ Add-Type -AssemblyName System.Drawing
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'target\release\soyuz.exe' }
 if (-not $Demo) { $Demo = Join-Path ((Split-Path -Qualifier $repo) + '\') 'SoyuzDemo' }
-if (-not $OutDir) { $OutDir = Join-Path $repo 'docs\screenshots' }
+if (-not $OutDir) { $OutDir = Join-Path $repo 'site\assets\shots' }
 
 if (-not $SkipBuild) {
     Push-Location $repo
@@ -218,7 +218,7 @@ try {
         SOYUZ_OPEN_TOOL = "compare=$(D 'Documents\Reports')|$(D 'Archive\Reports')"
     }
 
-    # ---- Downscale into docs/screenshots (replacing the previous gallery).
+    # ---- Downscale into the output folder (replacing the previous screenshots).
     if ((Get-ChildItem -LiteralPath $raw -Filter *.png).Count -gt 0 -and $Only.Count -eq 0) {
         Get-ChildItem -LiteralPath $OutDir -Filter *.png | Remove-Item -Force
     }
@@ -243,7 +243,7 @@ try {
             Write-Host ("   {0,-28} {1,5}x{2,-5} {3,7:N0} KB" -f $_.Name, $w, $h, ($len / 1KB))
         } finally { $src.Dispose() }
     }
-    Write-Host ("Gallery: {0} files, {1:N1} MB in {2}" -f (Get-ChildItem -LiteralPath $OutDir -Filter *.png).Count, ($total / 1MB), $OutDir)
+    Write-Host ("Screenshots: {0} files, {1:N1} MB in {2}" -f (Get-ChildItem -LiteralPath $OutDir -Filter *.png).Count, ($total / 1MB), $OutDir)
 }
 finally {
     Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue

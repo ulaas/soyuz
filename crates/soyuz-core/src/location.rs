@@ -30,9 +30,9 @@ pub enum Location {
     Computer,
     Recent,
     Tags(String),
-    /// Files changed today / this week across the folders Soyuz knows about (F7).
+    /// Files changed today / this week across the folders Soyuz knows about.
     Timeline,
-    /// F2: a folder on a remote server, as a normalized URI string
+    /// A folder on a remote server, as a normalized URI string
     /// (`sftp://user@host:port/path`, `webdav(s)://`, `ftp(s)://`, `s3://bucket/…`;
     /// parsed and normalized by `soyuz-vfs`).
     Remote(String),

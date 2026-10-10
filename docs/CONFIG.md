@@ -209,11 +209,11 @@ One role's font.
 
 ## `[theme]`
 
-`[theme.colors]`: token name (as in PLAN §1.2, e.g. `"accent"`, `"bg.window"`) → hex.
+`[theme.colors]`: design token name (e.g. `"accent"`, `"bg.window"`) → hex.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `colors` | table: name → string | `{}` | optional overrides, hex strings, same token names as PLAN §1.2 |
+| `colors` | table: name → string | `{}` | optional overrides, hex strings, same names as the design tokens |
 
 ## `[layout]`
 
@@ -230,7 +230,7 @@ One role's font.
 
 ## `[workspace]`
 
-`[workspace]`: windows, tab groups, saved workspaces, synchronized browsing, the per-tab history graph and the timeline (roadmap F7).
+`[workspace]`: windows, tab groups, saved workspaces, synchronized browsing, the per-tab history graph and the timeline.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -248,7 +248,7 @@ One role's font.
 
 ## `[toolbar]`
 
-Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`, `"breadcrumb"`, `"view_menu"`, `"sort_menu"`, `"activity"`.
+Editable toolbar: action names plus `"|"` (separator), `"spacer"`, `"breadcrumb"`, `"view_menu"`, `"sort_menu"`, `"activity"`.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -447,7 +447,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[sync]`
 
-`[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).
+`[sync]`: scheduled sync profiles, two-way sync state and previous versions.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -460,7 +460,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[updates]`
 
-`[updates]`: user-initiated update check against GitHub Releases (roadmap D1). Nothing is ever downloaded or installed without a click; there is no telemetry. Defaults: no repo (check disabled), no weekly check, stable releases only.
+`[updates]`: user-initiated update check against GitHub Releases. Nothing is ever downloaded or installed without a click; there is no telemetry. Defaults: no repo (check disabled), no weekly check, stable releases only.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -470,7 +470,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[performance]`
 
-`[performance]`: startup and rendering (R5).
+`[performance]`: startup and rendering.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -478,7 +478,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[remote]`
 
-`[remote]`: remote locations (F2). Saved connections live in `remote_connections.json` next to the config; passwords in the OS credential store.
+`[remote]`: remote locations. Saved connections live in `remote_connections.json` next to the config; passwords in the OS credential store.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -501,7 +501,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[ai]`
 
-AI providers (roadmap Phase A); keys live in the OS credential store
+AI providers; keys live in the OS credential store
 
 | Key | Type | Default | Description |
 |---|---|---|---|

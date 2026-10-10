@@ -1,4 +1,4 @@
-//! Settings → AI assistant → Connections (roadmap A3 + A4):
+//! Settings → AI assistant → Connections:
 //! * the Soyuz MCP server (pipe attach for `soyuz --mcp`, optional HTTP on 127.0.0.1),
 //! * MCP clients: approve pending ones, folders, risk ceiling, approval, HTTP tokens,
 //! * "Add Soyuz to Claude Desktop / Claude Code / VS Code" with a diff preview,

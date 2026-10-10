@@ -1,4 +1,4 @@
-//! OS integration for installers and updates (roadmap D1):
+//! OS integration for installers and updates:
 //!
 //! * the opt-in "default file manager" registration: per-user `HKCU\Software\Classes`
 //!   verbs for `Directory` and `Drive`, written with advapi32 only (no shell API), with an

@@ -1,4 +1,4 @@
-//! Saved workspaces (F7): named window layouts — tabs, groups, panes, splits and each
+//! Saved workspaces: named window layouts — tabs, groups, panes, splits and each
 //! pane's view — kept in `workspaces.toml` next to the config. A workspace can have an
 //! optional hotkey (`open_workspace:<n>` for the first nine).
 

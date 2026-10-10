@@ -61,7 +61,7 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
 }
 
 /// Overall fraction done, `None` while unknown.
-/// F8: badge for jobs whose copies are hash-verified (copy / move / sync): "Verifying"
+/// Badge for jobs whose copies are hash-verified (copy / move / sync): "Verifying"
 /// while running, "Verified" when done without failures.
 pub fn verify_badge(kind: soyuz_jobs::JobKindBrief, verify: bool, state: &JobState) -> Option<&'static str> {
     use soyuz_jobs::JobKindBrief as K;
@@ -415,7 +415,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.circle_filled(b, 7.0, p.warning);
         painter.text(b, Align2::CENTER_CENTER, ph::PLUGS_CONNECTED, ticons::font(8.5), Color32::WHITE);
     } else if let Some(origin) = meta.origin {
-        // Started by an automation rule, a script or the CLI (F6).
+        // Started by an automation rule, a script or the CLI.
         let glyph = crate::automation::origin_glyph(origin);
         let b = pos2(ic.x + 14.0, ic.y + 14.0);
         painter.circle_filled(b, 8.5, p.bg_window);
@@ -460,7 +460,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let lgw = lg.size().x;
     painter.galley(pos2(tx, card.top() + 31.0), lg, line_color);
     if let Some(b) = badge {
-        // F8: verified copies.
+        // Verified copies.
         let c = if matches!(s.state, JobState::Done(_)) { p.success } else { p.accent };
         let at = pos2(tx + lgw + 8.0, card.top() + 39.0);
         let w = crate::ui::dialogs::conflict::tag(ui, at, b, c);

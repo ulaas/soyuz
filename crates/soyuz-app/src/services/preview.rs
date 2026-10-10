@@ -1,4 +1,4 @@
-//! Off-thread preview loading for the preview pane and Quick Look (PLAN M9, §3).
+//! Off-thread preview loading for the preview pane and Quick Look.
 //!
 //! A small process-wide worker pool (two loader threads + one hex-page thread) serves
 //! [`PreviewClient`]s. Each client owns a result channel and a "latest request" counter:
@@ -79,7 +79,7 @@ pub enum Kind {
     Video,
     Pdf,
     Binary,
-    // Rich previews (roadmap F3, `preview_rich`).
+    // Rich previews (`preview_rich`).
     Document,
     Spreadsheet,
     Presentation,
@@ -633,7 +633,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     if job.is_dir {
         return folder(&job.source);
     }
-    // Script previewers (F6) take precedence for their file types.
+    // Script previewers take precedence for their file types.
     if let Source::File(p) = &job.source
         && let Some(r) = crate::automation::scripts::preview(p)
     {

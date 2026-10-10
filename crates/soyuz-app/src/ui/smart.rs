@@ -1,4 +1,4 @@
-//! Smart folders (roadmap F5): saved query-language searches shown as live virtual
+//! Smart folders: saved query-language searches shown as live virtual
 //! folders in the sidebar. Opening one shows its results as `Location::Search` (sortable
 //! and actionable like any folder); while the background index can answer the query the
 //! results refresh by themselves as the index changes (`services::index::pump`).

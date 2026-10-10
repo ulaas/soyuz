@@ -1,5 +1,5 @@
 //! `soyuz-search`: streaming file search, folder sizes, duplicate finder and folder
-//! compare (PLAN §2.6).
+//! compare.
 //!
 //! Entry points: [`start`] (streaming search), [`folder_sizes`] / [`size_tree`],
 //! [`find_duplicates`] and [`compare_dirs`]. Fuzzy hits are streamed unsorted; rank them

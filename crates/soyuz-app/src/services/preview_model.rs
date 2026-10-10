@@ -1,4 +1,4 @@
-//! 3D model previews (roadmap F3): STL (binary / ASCII), Wavefront OBJ and glTF 2.0
+//! 3D model previews: STL (binary / ASCII), Wavefront OBJ and glTF 2.0
 //! (`.gltf` with embedded or side-car buffers, `.glb`) are flattened into one triangle
 //! soup, centred and scaled to the unit sphere, and decimated to a display budget. The
 //! UI draws it as a flat-shaded `egui::Mesh` (painter's algorithm, two-sided lighting):

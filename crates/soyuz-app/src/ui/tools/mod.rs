@@ -1,4 +1,4 @@
-//! Power tools (PLAN M12): disk usage treemap, folder compare + sync, duplicate finder,
+//! Power tools: disk usage treemap, folder compare + sync, duplicate finder,
 //! file split / join, the drop shelf, tags UI and git decorations.
 //!
 //! Tools are non-modal windows drawn over the panes (the user can keep browsing while a
@@ -63,13 +63,13 @@ pub enum ToolCmd {
         name: String,
     },
     ForgetRecent(Vec<PathBuf>),
-    /// F8: the sync profiles window (schedules, reports).
+    /// The sync profiles window (schedules, reports).
     SyncProfiles,
-    /// F8: open Compare & sync with a saved profile.
+    /// Open Compare & sync with a saved profile.
     CompareProfile(String),
-    /// F8: "Restore previous version…" for a path (is_dir, current size / modified).
+    /// "Restore previous version…" for a path (is_dir, current size / modified).
     Versions(PathBuf, bool, Option<(u64, Option<std::time::SystemTime>)>),
-    /// F8: a previous-versions action from a panel without app access (Properties tab).
+    /// A previous-versions action from a panel without app access (Properties tab).
     VersionAction(versions::VersionCmd),
 }
 

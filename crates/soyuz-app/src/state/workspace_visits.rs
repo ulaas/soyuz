@@ -1,4 +1,4 @@
-//! "Where was I": a per-tab graph of visited places (F7). Back/forward history is a
+//! "Where was I": a per-tab graph of visited places. Back/forward history is a
 //! line that forgets the forward branch on every new navigation; the graph keeps it.
 //! Each node is a place reached from its parent; navigating somewhere new after going
 //! back starts a sibling branch. Every pane of the tab has its own cursor in the graph.

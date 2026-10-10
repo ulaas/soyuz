@@ -1,4 +1,4 @@
-//! "Sync profiles" window (ROADMAP F8): every saved profile with its schedule, last run
+//! "Sync profiles" window: every saved profile with its schedule, last run
 //! (status, summary, when) and next run; Run now / Dry run / Open in Compare & sync;
 //! a schedule editor and the saved run reports (what changed or would change, conflicts).
 

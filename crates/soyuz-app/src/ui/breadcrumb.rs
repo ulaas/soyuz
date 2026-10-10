@@ -106,7 +106,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let right = field.right() - 34.0;
     let avail = right - left;
     let font = FontId::proportional(13.0);
-    // Folder colors (B2) show as a dot before the crumb's name.
+    // Folder colors show as a dot before the crumb's name.
     let dots: Vec<Option<Color32>> = list
         .iter()
         .map(|cr| match &cr.location {

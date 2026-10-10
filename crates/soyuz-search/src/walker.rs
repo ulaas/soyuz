@@ -1,4 +1,4 @@
-//! Parallel walker over `ignore::WalkBuilder::build_parallel` + `soyuz_fs::stat` (M6).
+//! Parallel walker over `ignore::WalkBuilder::build_parallel` + `soyuz_fs::stat`.
 //!
 //! Layout of a running search: N `ignore` worker threads match entries and push hits
 //! into an internal bounded channel; one coordinator thread batches them into

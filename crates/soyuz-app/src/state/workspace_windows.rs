@@ -1,4 +1,4 @@
-//! In-process windows (F7), pure parts: window identities and where a dragged tab lands
+//! In-process windows, pure parts: window identities and where a dragged tab lands
 //! when it is released — reordered in its own strip, moved into another window's strip
 //! (or anywhere over another window), or torn off into a new window.
 

@@ -1,4 +1,4 @@
-//! Appearance → color theme gallery, accent picker and theme import / export (B2).
+//! Appearance → color theme gallery, accent picker and theme import / export.
 
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::config::Config;

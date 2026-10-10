@@ -1,7 +1,7 @@
 //! Widgets shared by the Properties, attributes, batch rename and link dialogs: an
 //! underlined tab strip, key/value rows, tri-state checkboxes, small badges, a copy
 //! button and a date-time picker (calendar popup + time fields). All follow the design
-//! tokens (PLAN §1.2).
+//! tokens.
 
 use std::time::SystemTime;
 

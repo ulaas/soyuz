@@ -152,7 +152,7 @@ fn main() -> ExitCode {
     soyuz_app::services::crash::install_panic_hook();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
-    // `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`: the CLI companion (F6); no GUI.
+    // `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`: the CLI companion; no GUI.
     let cwd = std::env::current_dir().unwrap_or_default();
     match soyuz_script::cli::parse(&args, &cwd) {
         Ok(Some(cmd)) => {
@@ -234,7 +234,7 @@ Run `soyuz <command> --help` for usage."
                 eframe::wgpu::Dx12SwapchainKind::DxgiFromVisual;
         }
         // Pick from the adapters egui-wgpu already enumerated instead of letting
-        // `request_adapter` enumerate them all again (R5), honouring `WGPU_ADAPTER_NAME`
+        // `request_adapter` enumerate them all again, honouring `WGPU_ADAPTER_NAME`
         // (CI forces the WARP software adapter with it) and `WGPU_POWER_PREF`.
         let power = setup.power_preference;
         setup.native_adapter_selector = Some(std::sync::Arc::new(move |adapters, surface| {

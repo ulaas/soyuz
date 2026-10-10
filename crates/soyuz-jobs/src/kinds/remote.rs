@@ -1,4 +1,4 @@
-//! F2: jobs that involve remote locations (`soyuz-vfs` providers): streaming copies and
+//! Jobs that involve remote locations (`soyuz-vfs` providers): streaming copies and
 //! moves between any two locations (local↔remote, remote↔remote) with conflicts,
 //! progress, pause / cancel and resume of partial files (every retry of a failed file
 //! continues where it stopped when both ends support it), plus remote delete, new

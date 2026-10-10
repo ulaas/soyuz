@@ -1,4 +1,4 @@
-//! Plan previews (roadmap A6): a before / after tree diff (added, moved, renamed and
+//! Plan previews: a before / after tree diff (added, moved, renamed and
 //! deleted nodes colour-coded like the folder-compare tool; click a row to reveal and
 //! preview it) and the rename diff table with the changed characters highlighted.
 

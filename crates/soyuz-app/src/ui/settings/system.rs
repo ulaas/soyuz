@@ -1,4 +1,4 @@
-//! Settings pages for OS integration (roadmap D1): "About & updates" (manual update check
+//! Settings pages for OS integration: "About & updates" (manual update check
 //! against GitHub Releases) and the "Default file manager" opt-in at the top of the General page.
 //! Registry and network work runs on worker threads; the UI only reads snapshots.
 

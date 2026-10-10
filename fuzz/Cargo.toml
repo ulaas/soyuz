@@ -1,4 +1,4 @@
-# cargo-fuzz targets for every parser that reads untrusted data (ROADMAP R2).
+# cargo-fuzz targets for every parser that reads untrusted data.
 #
 # A separate workspace (excluded from the main one). Running needs nightly + cargo-fuzz:
 #   cargo install cargo-fuzz

@@ -1,4 +1,4 @@
-//! Job thread ↔ UI prompt protocol (PLAN §2.4).
+//! Job thread ↔ UI prompt protocol.
 
 use std::path::PathBuf;
 
@@ -22,7 +22,7 @@ pub struct ConflictInfo {
     pub suggested_name: String,
 }
 
-/// Kept unboxed (frozen API, PLAN §2.4); prompts are rare and short-lived.
+/// Kept unboxed (frozen API); prompts are rare and short-lived.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum JobPrompt {

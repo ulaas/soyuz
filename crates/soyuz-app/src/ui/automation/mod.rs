@@ -1,4 +1,4 @@
-//! UI of scripts and automations (roadmap F6): the approval card for a script's planned
+//! UI of scripts and automations: the approval card for a script's planned
 //! changes, and the Scripts / Automations settings pages.
 
 pub mod approval;

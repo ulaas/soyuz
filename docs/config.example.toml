@@ -85,7 +85,7 @@ family = "Cascadia Mono"
 [fonts.numbers]                  # sizes, dates, counters, progress figures
 family = ""                      # "" = the ui font ("IBM Plex Sans" / "Noto Sans" have tabular digits)
 
-[theme.colors]                   # optional overrides, hex strings, same token names as PLAN §1.2
+[theme.colors]                   # optional overrides, hex strings, same names as the design tokens
 # accent = "#5B8CFF"
 # "bg.window" = "#0F1115"
 
@@ -112,7 +112,7 @@ timeline_scan_folders = 40       # recently visited folders scanned (one level) 
 timeline_max_items = 1000
 timeline_use_index = true        # also ask the search index, when one is available
 
-[toolbar]                        # action names (PLAN §2.10), "|" = separator, "spacer" = flex space
+[toolbar]                        # action names, "|" = separator, "spacer" = flex space
 items = ["back", "forward", "up", "|", "breadcrumb", "spacer", "filter", "view_menu", "sort_menu", "toggle_dual_pane", "activity"]
 
 [context_menu]
@@ -274,7 +274,7 @@ preview_cache_mb = 512           # temp cache for remote files opened / previewe
 preview_max_mb = 64              # larger remote files are not downloaded just for a preview
 share_enumeration = true         # typing \\server lists its shares (Windows NetShareEnum)
 
-[ai]                             # AI providers (roadmap Phase A); keys live in the OS credential store
+[ai]                             # AI providers; keys live in the OS credential store
 enabled = true
 default_profile = "claude"       # used when a task names no profile (empty = first profile)
 privacy = "metadata_only"        # none | metadata_only | contents (file contents never leave the machine by default)

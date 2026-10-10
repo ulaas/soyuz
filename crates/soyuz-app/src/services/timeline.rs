@@ -1,4 +1,4 @@
-//! The `Timeline` location (F7): files changed today / this week across the folders
+//! The `Timeline` location: files changed today / this week across the folders
 //! Soyuz knows about. Candidates come from pluggable [`TimelineSource`]s:
 //! * the change journal — file changes reported by the folder watcher while Soyuz runs;
 //! * the recent store — opened files, plus a one-level scan of recently visited folders

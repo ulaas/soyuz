@@ -1,4 +1,4 @@
-//! In-process windows (F7). Every extra window is an egui *immediate* viewport drawn
+//! In-process windows. Every extra window is an egui *immediate* viewport drawn
 //! right after the main window's frame. It owns a [`Workspace`] (tabs, groups) plus a
 //! little per-window UI state; for its frame that workspace is swapped into `app.ws`, so
 //! the whole shell (tab strip, toolbar, sidebar, panes, dialogs) runs unchanged. Jobs,

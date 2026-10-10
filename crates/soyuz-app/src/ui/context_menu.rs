@@ -384,7 +384,7 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             col,
             Column::Dimensions | Column::Duration | Column::Checksum | Column::ItemCount | Column::LinkTarget
         ) {
-            continue; // data sources arrive in later milestones
+            continue; // no data source yet
         }
         if col.script_slot().is_some() && crate::automation::scripts::column_label(col).is_none() {
             continue; // no script provides this column

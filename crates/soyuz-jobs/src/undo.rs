@@ -1,6 +1,6 @@
 //! Undo journal records and the undo executor.
 //!
-//! Undo semantics (PLAN §2.4): `Copied`/`Extracted` delete the copies (to the trash when
+//! Undo semantics: `Copied`/`Extracted` delete the copies (to the trash when
 //! supported, else permanently); `Created` likewise, but a non-empty folder is only ever
 //! trashed, never deleted permanently; `Trashed` restores; `Moved`/`Renamed` reverse
 //! (batched through the cycle-aware rename scheduler, cross-device moves fall back to
@@ -8,7 +8,7 @@
 //! moves the new file to the trash and restores the backup from the trash;
 //! `Irreversible` makes the entry not undoable (the engine refuses to undo it).
 //!
-//! Safety (review 1): a path is only removed when its identity still matches the
+//! Safety: a path is only removed when its identity still matches the
 //! [`UndoStamp`] taken when the job finished (same object; same size and modification time
 //! for files), otherwise the record fails with "changed since". A permanent delete (no
 //! trash on that volume) of anything but an empty folder / empty file asks first through
@@ -49,13 +49,13 @@ pub enum UndoRecord {
         before: MetaSnapshot,
     },
     Irreversible(PathBuf),
-    /// `path` was rewritten in place (F9 archive editing); `backup` is the original, in
+    /// `path` was rewritten in place (archive editing); `backup` is the original, in
     /// the trash.
     Replaced {
         path: PathBuf,
         backup: TrashItem,
     },
-    /// F2: a file or folder created on a remote server (URI). Undo deletes it (remote
+    /// A file or folder created on a remote server (URI). Undo deletes it (remote
     /// servers have no trash): a file only while its size is unchanged, a non-empty
     /// folder only after asking.
     RemoteCreated {
@@ -63,7 +63,7 @@ pub enum UndoRecord {
         is_dir: bool,
         size: u64,
     },
-    /// F2: a rename / same-server move on a remote server; undo renames back.
+    /// A rename / same-server move on a remote server; undo renames back.
     RemoteRenamed {
         from: PathBuf,
         to: PathBuf,

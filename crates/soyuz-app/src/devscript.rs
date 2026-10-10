@@ -38,7 +38,7 @@
 //!   pending plan, `ai:!smart <text>` opens smart search with `text`, `ai:!save <name>`
 //!   saves the last task as a recipe, `ai:!tab chat|recipes|audit` switches the panel page,
 //!   `ai:!mcp-approve` approves every pending MCP request card;
-//! * `ws:<verb> [arg]` — workspaces (F7): `group`, `add <tab>`, `collapse`, `color <0-7>`,
+//! * `ws:<verb> [arg]` — workspaces: `group`, `add <tab>`, `collapse`, `color <0-7>`,
 //!   `save <name>`, `open <n>`, `layout single|dual|stacked|quad`, `sync`, `tear <tab>`,
 //!   `move <tab> <window>`, `close <window>`, `merge`, `select <tab>`;
 //! * `click:<x>,<y>[,right]` — synthetic egui click at a point of the main window;
@@ -68,7 +68,7 @@ use crate::cmd::Cmd;
 static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static STARTUP_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
-/// Remember when `main` started (startup-time measurement, R5).
+/// Remember when `main` started (startup-time measurement).
 pub fn mark_process_start() {
     let _ = PROCESS_START.set(Instant::now());
 }
@@ -328,7 +328,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "ws" => crate::ui::workspaces::devscript(app, ctx, arg),
             "smart" => {
-                // `smart:<name>` opens a smart folder (F5); `smart:` opens the "new" dialog.
+                // `smart:<name>` opens a smart folder; `smart:` opens the "new" dialog.
                 if arg.trim().is_empty() {
                     app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(None)));
                 } else if let Some(index) = crate::ui::smart::folders().iter().position(|f| f.name == arg.trim()) {

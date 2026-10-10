@@ -1,4 +1,4 @@
-//! Generated reference docs stay in sync with the code (roadmap D2).
+//! Generated reference docs stay in sync with the code.
 //!
 //! `docs/KEYBOARD.md` + `docs/keyboard.html` come from soyuz-core's default key maps and
 //! the English palette strings; `docs/CONFIG.md` from the config schema, its doc comments,

@@ -1,4 +1,4 @@
-//! Background directory listing (PLAN §3): a small worker pool runs
+//! Background directory listing: a small worker pool runs
 //! `soyuz_fs::read_dir_streaming` and streams chunks into the mailbox. Every navigation
 //! bumps the pane generation and cancels the previous listing's `OpControl`; stale
 //! generations are dropped on the UI side.
@@ -158,7 +158,7 @@ fn run(job: Job, postman: &Postman) {
             if ctl.is_cancelled() {
                 return;
             }
-            // Remote folders and `\server` share lists (F2): one blocking call.
+            // Remote folders and `\server` share lists: one blocking call.
             if let Some(r) = super::remote::list_blocking(&path, soft) {
                 if ctl.is_cancelled() {
                     return;

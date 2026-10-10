@@ -1,4 +1,4 @@
-//! The assistant's side of the shared audit log (roadmap A7): a session-bound writer of
+//! The assistant's side of the shared audit log: a session-bound writer of
 //! [`soyuz_ai::audit::AuditRecord`]s into the same `ai-audit.jsonl` the MCP server writes
 //! (one file, one line format, appended under a file lock). Every prompt, tool call,
 //! plan, approval / rejection and resulting job id of a task is recorded with

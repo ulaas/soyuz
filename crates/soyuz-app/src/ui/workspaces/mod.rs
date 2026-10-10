@@ -1,4 +1,4 @@
-//! Workspace power-ups (roadmap F7): tab groups, saved workspaces, layouts (single /
+//! Workspace power-ups: tab groups, saved workspaces, layouts (single /
 //! dual / quad) with synchronized browsing, in-process windows, the per-tab history graph
 //! and the timeline.
 //!

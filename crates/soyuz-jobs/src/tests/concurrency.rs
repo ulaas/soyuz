@@ -1,4 +1,4 @@
-//! Pause/resume/cancel latency, prompt starvation, root overlap, shutdown (PLAN §6).
+//! Pause/resume/cancel latency, prompt starvation, root overlap, shutdown.
 
 use std::time::{Duration, Instant};
 

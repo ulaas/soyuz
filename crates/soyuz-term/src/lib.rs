@@ -1,5 +1,5 @@
 //! `soyuz-term`: embedded terminal (alacritty_terminal backend + egui widget).
-//! No soyuz-* dependency, so it builds and tests in isolation (PLAN §2.7).
+//! No soyuz-* dependency, so it builds and tests in isolation.
 //!
 //! Usage:
 //! ```no_run
@@ -153,7 +153,7 @@ impl Terminal {
         self.backend.resize(cols, rows, cell_w, cell_h);
     }
 
-    /// Types `cd "<dir>"` when the shell is idle at a prompt (PLAN §2.7 rule); `false`
+    /// Types `cd "<dir>"` when the shell is idle at a prompt; `false`
     /// when refused. Paths containing control characters are always refused: typed into a
     /// shell, a newline or escape sequence in a (crafted) folder name would run commands.
     pub fn send_cd(&self, dir: &Path) -> bool {

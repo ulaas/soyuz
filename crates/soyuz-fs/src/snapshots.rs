@@ -1,4 +1,4 @@
-//! Snapshots and previous versions of files (ROADMAP F8).
+//! Snapshots and previous versions of files.
 //!
 //! A [`SnapshotProvider`] lists read-only point-in-time copies of a volume and maps a live
 //! path into one of them. [`previous_versions`] asks every provider for the volume of a
@@ -11,7 +11,7 @@
 //!   through `\\?\GLOBALROOT\Device\…\` and matched to its volume by serial number.
 //!   Opening the devices needs administrator rights on a default installation; the
 //!   report then says how many copies exist but could not be read ([`VersionsReport::denied`]).
-//! * btrfs / ZFS snapshots and macOS Time Machine are deferred (owner decision: Windows
+//! * btrfs / ZFS snapshots and macOS Time Machine are deferred (Windows
 //!   first). They plug in as further providers: btrfs `.snapshots/*/` subvolumes, ZFS
 //!   `<mount>/.zfs/snapshot/*/`, Time Machine `/Volumes/<backup>/Backups.backupdb/…`.
 //!

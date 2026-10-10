@@ -1,4 +1,4 @@
-//! "Suggest names" inputs (roadmap A6 / A7): which files may show their contents to the
+//! "Suggest names" inputs: which files may show their contents to the
 //! model, and downscaled pictures for vision models.
 //!
 //! The model never reads the disk: the harness reads a size-capped text excerpt through

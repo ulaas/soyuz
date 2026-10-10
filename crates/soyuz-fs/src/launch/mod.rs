@@ -296,7 +296,7 @@ fn elevate_script(exe: &str, args: &[String]) -> String {
 }
 
 /// Run `exe` elevated (UAC prompt via an external `powershell Start-Process -Verb RunAs`
-/// on Windows, `pkexec` on Linux; see PLAN §4). `Unsupported` on macOS.
+/// on Windows, `pkexec` on Linux). `Unsupported` on macOS.
 pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     #[cfg(windows)]
     {

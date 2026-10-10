@@ -1,4 +1,4 @@
-//! `[ai.agent]` and `[[ai.folders]]` (roadmap A5 / A7): limits and approval policy of the
+//! `[ai.agent]` and `[[ai.folders]]`: limits and approval policy of the
 //! in-app agent harness, redaction, and per-folder AI permissions inherited down the tree.
 
 use std::path::{Path, PathBuf};
@@ -31,7 +31,7 @@ pub enum AiRiskCeiling {
     Destructive,
 }
 
-/// Per-folder AI access (A7), inherited by everything below the folder.
+/// Per-folder AI access, inherited by everything below the folder.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize, Default, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum AiAccess {

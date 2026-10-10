@@ -1,4 +1,4 @@
-//! The drop shelf (PLAN §8 #16): a collapsible right-side panel that collects files from
+//! The drop shelf: a collapsible right-side panel that collects files from
 //! any folder. Drag items onto it (or use "Add to shelf"), keep browsing, then drag them
 //! out onto a folder / tab / sidebar row, or copy / move everything into the focused
 //! pane's folder. The shelf only holds references and persists across navigation.

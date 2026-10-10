@@ -1,4 +1,4 @@
-//! The `Recent` location (PLAN M12): recently visited folders and opened files, kept in
+//! The `Recent` location: recently visited folders and opened files, kept in
 //! `recent.toml` next to the config (portable-aware). Navigation and launches record
 //! items ([`visit_folder`], [`opened_file`]); `Location::Recent` lists them, newest first,
 //! through the normal listing path ([`attach`]). The "Accessed" column shows when Soyuz

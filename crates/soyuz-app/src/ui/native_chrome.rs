@@ -1,4 +1,4 @@
-//! Native window integration for the custom title bar (roadmap B1), Windows 11 only:
+//! Native window integration for the custom title bar, Windows 11 only:
 //!
 //! * rounded DWM corners, with the close button's top-right corner rounded to match;
 //! * `[appearance] backdrop = none | mica | acrylic`: a system backdrop behind translucent

@@ -1,4 +1,4 @@
-//! `soyuz-script`: automation for Soyuz (roadmap F6).
+//! `soyuz-script`: automation for Soyuz.
 //!
 //! * **Scripting** ([`ScriptSet`]): sandboxed [Rhai](https://rhai.rs) scripts in
 //!   `scripts/*.rhai` that register custom actions (palette, context menu, key

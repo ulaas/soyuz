@@ -1,4 +1,4 @@
-//! [`ExternalTools`]: external MCP servers' tools as extra assistant tools (A4), with the
+//! [`ExternalTools`]: external MCP servers' tools as extra assistant tools, with the
 //! same scope / approval semantics as Soyuz's own catalog.
 
 use std::sync::Arc;
@@ -17,7 +17,7 @@ use crate::trust::risk_of;
 /// Longest tool result text passed on to the model.
 pub const MAX_RESULT_CHARS: usize = 100_000;
 
-/// The assistant-side view of extra tools. Implemented by [`McpRegistry`]; the A5
+/// The assistant-side view of extra tools. Implemented by [`McpRegistry`]; the in-app
 /// harness merges [`specs`](Self::specs) with the Soyuz catalog and routes calls whose
 /// name it [`owns`](Self::owns) here.
 pub trait ExternalTools: Send + Sync {

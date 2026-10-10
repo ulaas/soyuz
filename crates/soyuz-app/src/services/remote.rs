@@ -1,4 +1,4 @@
-//! Remote locations (roadmap F2) on the app side: saved connections (sidebar "Network"),
+//! Remote locations on the app side: saved connections (sidebar "Network"),
 //! credentials (OS credential store + per-session secrets), the `soyuz-vfs` hooks
 //! (credentials, host-key confirmation through a UI prompt queue), cached remote
 //! listings for panes / dropdowns, `\\server` share enumeration, and a size-capped temp

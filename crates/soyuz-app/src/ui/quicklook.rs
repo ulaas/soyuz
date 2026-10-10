@@ -1,4 +1,4 @@
-//! Quick Look (PLAN M9): Space opens a large centered overlay previewing the cursor
+//! Quick Look: Space opens a large centered overlay previewing the cursor
 //! item with the same renderers as the preview pane. Arrow keys move through the list
 //! (the overlay follows), Esc / Space close, images zoom with the wheel / pinch and pan
 //! by dragging (double-click toggles fit ↔ 100%).
@@ -23,7 +23,7 @@ use crate::ui::widgets::{icon_toggle, kbd, trunc_galley};
 pub struct QuickLook {
     pub open: bool,
     state: Option<PreviewState>,
-    /// Two-file diff (roadmap F3) when exactly two text files are selected.
+    /// Two-file diff when exactly two text files are selected.
     diff: crate::ui::preview::diff::DiffView,
 }
 

@@ -136,13 +136,13 @@ views-trash-copy-original = Özgün yolu kopyala
 
 ## Bölme içeriği durumları (ui/pane_view.rs)
 
-views-pane-trash-pending = Çöp Kutusu'na göz atma, Çöp Kutusu aşamasıyla gelecek.
+views-pane-trash-pending = Çöp Kutusu'na burada henüz göz atılamıyor.
 views-pane-recent = Son kullanılanlar
 views-pane-recent-pending = Son kullanılan öğeler henüz izlenmiyor.
 views-pane-search = Arama
 views-pane-search-pending = Arama sonuçları burada görünecek.
 views-pane-archive = Arşiv
-views-pane-archive-pending = Arşivlere göz atma, arşiv aşamasıyla gelecek.
+views-pane-archive-pending = Arşivlere burada henüz göz atılamıyor.
 views-pane-tags = Etiketler
 views-pane-tags-pending = Etiketler henüz kullanılamıyor.
 views-pane-access-denied = Erişim engellendi

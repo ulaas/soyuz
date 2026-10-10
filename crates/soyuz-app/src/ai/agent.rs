@@ -1,4 +1,4 @@
-//! The agent loop (roadmap A5) on a worker thread. One [`spawn`] = one task:
+//! The agent loop on a worker thread. One [`spawn`] = one task:
 //!
 //! 1. the task context (built on the UI thread from in-memory state) goes in front of
 //!    the user's message;
@@ -14,7 +14,7 @@
 //! 5. approved plans are submitted one by one through the [`Executor`] (AI-tagged jobs),
 //!    awaited, and the job results go back to the model; repeat.
 //!
-//! External MCP servers (A4, [`Deps::external`]) add their tools to the catalog within
+//! External MCP servers ([`Deps::external`]) add their tools to the catalog within
 //! the risk ceiling; their results are untrusted (they taint the task like file
 //! contents) and calls above read risk become approval cards like Soyuz's own plans,
 //! executed on this thread after approval.
@@ -137,7 +137,7 @@ pub struct Deps {
     pub perms: Arc<Permissions>,
     pub audit: Option<Audit>,
     pub wake: Wake,
-    /// Tools of external MCP servers (A4), if any are configured.
+    /// Tools of external MCP servers, if any are configured.
     pub external: Option<Arc<dyn ExternalTools>>,
 }
 

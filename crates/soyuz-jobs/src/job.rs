@@ -56,7 +56,7 @@ pub enum SyncAction {
     CopyRL(PathBuf),
     DeleteL(PathBuf),
     DeleteR(PathBuf),
-    /// F8: copy `rel` from one side to `to` on a side (possibly the same one); used by the
+    /// Copy `rel` from one side to `to` on a side (possibly the same one); used by the
     /// two-way sync's "keep both" conflict choice (the losing version is kept under a
     /// conflict name). Executed with the copies, before deletions.
     CopyAs {
@@ -82,7 +82,7 @@ impl SyncPlan {
     }
 }
 
-/// M12; produced by `soyuz_search::compare_dirs` + the app's sync dialog.
+/// A folder sync plan, produced by `soyuz_search::compare_dirs` + the app's sync dialog.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SyncPlan {
     pub left: PathBuf,
@@ -90,7 +90,7 @@ pub struct SyncPlan {
     pub actions: Vec<SyncAction>,
 }
 
-/// F2: operations where at least one side is a remote location. Paths are remote URIs
+/// Operations where at least one side is a remote location. Paths are remote URIs
 /// (`sftp://…`, see `soyuz_vfs::RemoteUri`) or native paths, stored in `PathBuf`s.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -188,11 +188,11 @@ pub enum JobKind {
     PurgeTrash {
         items: Vec<TrashItem>,
     },
-    /// M12.
+    /// Folder sync: apply a precomputed plan.
     Sync {
         plan: SyncPlan,
     },
-    /// F9: add / delete / rename entries inside a zip. The archive is rewritten into a
+    /// Add / delete / rename entries inside a zip. The archive is rewritten into a
     /// sibling temp file (unchanged entries copied raw) and swapped in; the original goes
     /// to the trash as the undo backup.
     EditArchive {
@@ -202,7 +202,7 @@ pub enum JobKind {
         #[serde(default)]
         level: Option<u8>,
     },
-    /// F2: remote locations (`soyuz-vfs` providers).
+    /// Remote locations (`soyuz-vfs` providers).
     Remote(RemoteOp),
 }
 

@@ -1,4 +1,4 @@
-//! Crash safety (ROADMAP R3): an in-memory ring-buffer logger, a panic hook that writes
+//! Crash safety: an in-memory ring-buffer logger, a panic hook that writes
 //! crash reports to `<config>/crashes/`, the jobs crash-journal slot, the startup recovery
 //! offer (interrupted operations, unseen crash reports) and `--safe-mode`.
 //!
@@ -250,7 +250,7 @@ pub fn safe_config() -> Config {
     c.git.status_column = false;
     c.layout.preview_pane = false;
     c.appearance.custom_titlebar = false;
-    // No user code or background automation in safe mode (F6).
+    // No user code or background automation in safe mode.
     c.scripting.enabled = false;
     c.automation.enabled = false;
     c

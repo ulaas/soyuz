@@ -1,4 +1,4 @@
-//! Settings → AI (roadmap A1): provider profiles (add from templates, edit, delete, make
+//! Settings → AI: provider profiles (add from templates, edit, delete, make
 //! default), API keys that go straight to the OS credential store, live tr!("settings-ai-test")
 //! with a tool-calling probe, per-task models, privacy, scope, network limits, monthly
 //! budgets with this month's spend, and the price table.

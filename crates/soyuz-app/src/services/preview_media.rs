@@ -1,4 +1,4 @@
-//! Cheap audio / video metadata for the preview pane (PLAN M9: "audio/video metadata
+//! Cheap audio / video metadata for the preview pane ("audio/video metadata
 //! only"). Hand-rolled header parsers for the common containers — WAV, FLAC, MP3
 //! (ID3v2 + first MPEG frame), Ogg Vorbis/Opus, MP4/MOV/M4A (moov/mvhd/tkhd) and AVI —
 //! that read at most a few boxes, never the media data itself. Everything is pure and

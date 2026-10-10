@@ -1,4 +1,4 @@
-//! Crash reports offered on the next start (ROADMAP R3): view the report, open the folder,
+//! Crash reports offered on the next start: view the report, open the folder,
 //! delete the reports or restart in safe mode. Reports never leave the computer.
 
 use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Ui};

@@ -125,7 +125,7 @@ fn body(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
             );
         }
         ListingStatus::Loading { since } if pane.entries.is_empty() => {
-            // Avoid a flash for fast listings: skeleton rows after a short delay (B4).
+            // Avoid a flash for fast listings: skeleton rows after a short delay.
             if since.elapsed().as_secs_f32() > 0.12 {
                 let grid = matches!(pane.view.mode, ViewMode::Grid | ViewMode::Gallery);
                 crate::ui::looks::paint_skeleton(ui, rect, grid, v.config.appearance.density.row_height());

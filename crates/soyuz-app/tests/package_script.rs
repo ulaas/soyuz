@@ -1,4 +1,4 @@
-//! `scripts/package.ps1 -DryRun` (roadmap D1): the packaging plan names the right files and
+//! `scripts/package.ps1 -DryRun`: the packaging plan names the right files and
 //! writes nothing. Skipped when PowerShell 7 (`pwsh`) is not installed.
 
 use std::path::PathBuf;

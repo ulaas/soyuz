@@ -2,7 +2,7 @@
 //! (favorites order, hidden-files toggle, theme, collapsed sidebar sections). Saved
 //! periodically and on exit; restored at startup when `[behaviour] restore_session`.
 //! Tab groups, quad layouts and the other in-process windows (with their positions) are
-//! part of it too (F7); a saved workspace (`workspaces.toml`) is one [`WindowSession`].
+//! part of it too; a saved workspace (`workspaces.toml`) is one [`WindowSession`].
 
 use std::path::{Path, PathBuf};
 

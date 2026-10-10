@@ -1,4 +1,4 @@
-//! Office document previews (roadmap F3): structure and text out of the zip + XML
+//! Office document previews: structure and text out of the zip + XML
 //! containers of OOXML (docx / xlsx / pptx) and ODF (odt / ods / odp). Nothing is
 //! rendered faithfully; the goal is a fast, readable outline: headings, bold / italic
 //! runs and lists for text documents, the first sheet as a table for spreadsheets, and

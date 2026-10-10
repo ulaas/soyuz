@@ -1,4 +1,4 @@
-//! On-disk thumbnail cache (roadmap B3): decoded thumbnails are written as small PNGs to
+//! On-disk thumbnail cache: decoded thumbnails are written as small PNGs to
 //! `<config dir>/thumbs/<hash>.png`, keyed by kind + path + size + mtime + pixel bucket,
 //! so they survive restarts and a changed file never shows a stale picture. The folder
 //! is kept under `[appearance] thumb_disk_cache_mib`: a hit refreshes the file's mtime and
@@ -7,8 +7,7 @@
 //! Windows' own `thumbcache_*.db` is deliberately not read: its entries are keyed by a
 //! 64-bit cache id that Explorer derives (through `IThumbnailCache`) from the volume,
 //! the file id and the last-write time with an undocumented hash; without the shell (or
-//! Windows Search's `Windows.edb`) there is no way to map a path to its entry. See
-//! `docs/INTEGRATION_NOTES.md` (B3).
+//! Windows Search's `Windows.edb`) there is no way to map a path to its entry.
 //!
 //! Every function here does file I/O and must only run on worker threads.
 

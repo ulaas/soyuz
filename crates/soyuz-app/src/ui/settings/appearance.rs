@@ -11,7 +11,7 @@ use crate::theme::icons::ph;
 use crate::theme::tokens::parse_hex;
 use crate::theme::{Palette, icons, palette};
 
-/// Token name → getter (same names as `[theme.colors]` / PLAN §1.2).
+/// Token name → getter (same names as `[theme.colors]`).
 /// `(token name, label message key, getter)`.
 pub type Token = (&'static str, &'static str, fn(&Palette) -> Color32);
 

@@ -1,6 +1,6 @@
 //! Text-side preview helpers: text/binary sniffing and decoding, syntect highlighting
 //! into egui `LayoutJob`s (run on the preview workers), and a small Markdown block
-//! parser whose output the preview pane renders "nicely but plainly" (PLAN M9).
+//! parser whose output the preview pane renders "nicely but plainly".
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};

@@ -1,4 +1,4 @@
-//! The AI side panel (roadmap A6; right dock, Ctrl+I): header with profile / model and
+//! The AI side panel (right dock, Ctrl+I): header with profile / model and
 //! folder-access chips, a live token and cost meter and a stop button; tabs for the chat,
 //! recipes and the audit log. Chat items, plan cards and diffs live in the submodules.
 //! Widgets never mutate app state while drawing: they push [`PanelAct`]s that [`apply`]

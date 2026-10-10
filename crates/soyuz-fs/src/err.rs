@@ -1,4 +1,4 @@
-//! Raw OS error → [`FsError`] mapping with actionable messages (PLAN §4 "Permission errors").
+//! Raw OS error → [`FsError`] mapping with actionable messages.
 
 use std::io;
 use std::path::Path;

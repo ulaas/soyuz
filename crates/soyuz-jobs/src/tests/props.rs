@@ -1,4 +1,4 @@
-//! Property tests (ROADMAP R2) on real temp directories: the batch-rename planner (random
+//! Property tests on real temp directories: the batch-rename planner (random
 //! chains, cycles, collisions with untouched files and injected failures), undo replay of
 //! renames, and sync-plan application against an in-memory model.
 

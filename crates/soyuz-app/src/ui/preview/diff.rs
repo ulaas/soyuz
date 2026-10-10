@@ -1,4 +1,4 @@
-//! Two-file diff view (roadmap F3): shown by the preview pane and Quick Look when exactly
+//! Two-file diff view: shown by the preview pane and Quick Look when exactly
 //! two text files are selected (`[preview] diff`). Unified or side-by-side, virtualized
 //! rows, changed words emphasized. The diff itself runs on a worker
 //! ([`crate::services::preview_diff`]).

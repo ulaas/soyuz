@@ -1,4 +1,4 @@
-//! File split / join (PLAN M12). Splitting writes `name.ext.001`, `.002`, … plus a
+//! File split / join. Splitting writes `name.ext.001`, `.002`, … plus a
 //! b3sum-compatible checksum file `name.ext.blake3` (`<hash>  name.ext`); joining finds
 //! the consecutive parts, concatenates them into a temporary file, verifies against the
 //! checksum file when present and renames the result into place. Both run on a worker

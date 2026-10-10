@@ -1,4 +1,4 @@
-//! Property tests (ROADMAP R2): natural sort is a total order, name validation rules.
+//! Property tests: natural sort is a total order, name validation rules.
 
 use std::cmp::Ordering;
 

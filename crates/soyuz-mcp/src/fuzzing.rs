@@ -1,10 +1,10 @@
-//! Entry points for the `fuzz/` targets (cargo feature `fuzzing`, roadmap A8): untrusted
+//! Entry points for the `fuzz/` targets (cargo feature `fuzzing`): untrusted
 //! JSON-RPC / MCP input in both directions. Each function must never panic for any input.
 //!
 //! * [`server_messages`]: newline-delimited JSON-RPC from an MCP client, routed through the
 //!   real [`Server`] (era negotiation, trust model, tool dispatch, prompts, resources) with
 //!   a backend that never touches the disk, never approves and never writes an audit log.
-//! * [`client_responses`]: responses from an external MCP server, fed to the A4
+//! * [`client_responses`]: responses from an external MCP server, fed to the
 //!   [`McpClient`] (version probe, legacy handshake, `tools/list` pagination, `tools/call`
 //!   content decoding).
 //! * [`strings`]: the small string parsers (`file://` URIs, RFC 2047-style header values,

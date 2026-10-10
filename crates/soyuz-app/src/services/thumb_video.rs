@@ -1,4 +1,4 @@
-//! Video thumbnails (roadmap B3): the first frame through an `ffmpeg` binary found on
+//! Video thumbnails: the first frame through an `ffmpeg` binary found on
 //! `PATH` (spawned off-thread with a timeout, no console window), and the duration from
 //! our own container parser (`preview_media`) for the placeholder when ffmpeg is
 //! missing or fails.

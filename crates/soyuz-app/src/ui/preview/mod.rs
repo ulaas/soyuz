@@ -1,4 +1,4 @@
-//! Right-side preview pane (PLAN M9, Alt+P): previews the focused pane's cursor item
+//! Right-side preview pane (Alt+P): previews the focused pane's cursor item
 //! (or the current folder when nothing is selected) with the shared renderers in
 //! [`render`], plus an info section. Everything loads off the UI thread; changing the
 //! selection makes in-flight requests stale.
@@ -32,7 +32,7 @@ pub struct PreviewPane {
     /// Info pane mode (`ToggleInfoPane`): only the metadata section, no content viewer.
     pub info_only: bool,
     state: Option<PreviewState>,
-    /// Two-file diff (roadmap F3) when exactly two text files are selected.
+    /// Two-file diff when exactly two text files are selected.
     diff: diff::DiffView,
 }
 
@@ -90,7 +90,7 @@ impl PreviewPane {
 pub fn target_entry(app: &SoyuzApp) -> Option<EntryInfo> {
     let pane = app.ws.pane();
     if matches!(pane.location, Location::Remote(_)) {
-        // Remote files preview from a downloaded copy (F2); folders show nothing.
+        // Remote files preview from a downloaded copy; folders show nothing.
         let e =
             pane.cursor.as_deref().and_then(|c| pane.entry(c)).or_else(|| pane.selected_entries().first().copied())?;
         return crate::ui::remote::preview_target(app, e);

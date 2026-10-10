@@ -117,14 +117,14 @@ pub trait ArchiveReader: Send {
         sink: &mut dyn ExtractSink,
     ) -> Result<ExtractSummary, ArchiveError>;
     fn test(&mut self, ctl: &OpControl, sink: &mut dyn ProgressSink) -> Result<TestReport, ArchiveError>;
-    /// Cached directory index (additive, see PLAN §10). The built-in readers build it on
+    /// Cached directory index (additive). The built-in readers build it on
     /// first use; the default returns `None` and [`list_dir`] falls back to a full scan.
     fn dir_index(&mut self) -> Result<Option<&DirIndex>, ArchiveError> {
         Ok(None)
     }
 }
 
-/// Zip compression method for [`create_with`] (additive, see PLAN §10). `level == 0`
+/// Zip compression method for [`create_with`] (additive). `level == 0`
 /// always stores.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

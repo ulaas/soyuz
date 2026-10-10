@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-/// Portable error classification (raw OS codes are mapped onto these, see PLAN §4).
+/// Portable error classification (raw OS codes are mapped onto these).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FsErrorKind {

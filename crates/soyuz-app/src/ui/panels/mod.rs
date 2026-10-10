@@ -1,5 +1,5 @@
-//! Bottom panel host — the extension point for the integrated terminal (M8) and the
-//! activity / jobs panel (M2). The host owns visibility, the active tab and the
+//! Bottom panel host — the extension point for the integrated terminal and the
+//! activity / jobs panel. The host owns visibility, the active tab and the
 //! resizable height; integrations replace the placeholder bodies in [`show`] with their
 //! own widgets (e.g. `soyuz_term::TerminalView`, the job cards).
 

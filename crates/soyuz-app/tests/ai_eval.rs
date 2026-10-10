@@ -1,4 +1,4 @@
-//! Task eval suite (roadmap A8): fixture folders with expected end states, run through the
+//! Task eval suite: fixture folders with expected end states, run through the
 //! real harness (plans approved automatically by a scripted user, jobs on a real engine
 //! in a temp folder). Reports success, model turns, tokens and cost per task.
 //!

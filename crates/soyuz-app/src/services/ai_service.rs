@@ -1,4 +1,4 @@
-//! Background work for the AI settings page (roadmap A1): connection tests, credential
+//! Background work for the AI settings page: connection tests, credential
 //! store reads / writes and the monthly usage ledger. Everything runs on worker threads;
 //! results come back over channels and wake the UI.
 

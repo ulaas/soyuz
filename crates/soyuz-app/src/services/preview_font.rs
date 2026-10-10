@@ -1,4 +1,4 @@
-//! Font previews (roadmap F3): metadata from the `name` / `OS/2` tables (`skrifa`)
+//! Font previews: metadata from the `name` / `OS/2` tables (`skrifa`)
 //! and a rendered specimen (`ab_glyph` rasterizer): the family name, a pangram at a few
 //! sizes, the alphabet and a glyph grid. Specimens are rendered as white coverage masks
 //! so the UI can tint them with the theme's text colour.

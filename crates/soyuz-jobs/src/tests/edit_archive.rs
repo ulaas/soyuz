@@ -1,4 +1,4 @@
-//! F9: `JobKind::EditArchive` (zip rewrite + replace, trash backup, undo).
+//! `JobKind::EditArchive` (zip rewrite + replace, trash backup, undo).
 
 use std::io::Read;
 

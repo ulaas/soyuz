@@ -1,4 +1,4 @@
-//! Timeline (F7): files changed today / this week. Pure parts — calendar buckets in
+//! Timeline: files changed today / this week. Pure parts — calendar buckets in
 //! local time and merging candidates from several sources (watcher journal, recent
 //! store, folder scans, the search index when one is present).
 

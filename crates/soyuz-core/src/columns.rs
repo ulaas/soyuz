@@ -27,7 +27,7 @@ pub enum Column {
     LinkTarget,
     Checksum,
     ItemCount,
-    /// Values computed by script column providers (F6), in provider order.
+    /// Values computed by script column providers, in provider order.
     Script1,
     Script2,
     Script3,

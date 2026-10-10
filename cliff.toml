@@ -2,15 +2,15 @@
 #   git cliff -o CHANGELOG.md
 # Without git-cliff installed, `scripts/changelog.ps1` produces the same grouping.
 #
-# Soyuz commits are not Conventional Commits: they start with a roadmap id
+# Soyuz commits are not Conventional Commits: they start with an area id
 # (`M7:`, `F2:`, `R4/R5/B1:`, `A5-A8:`) or a type (`fix:`, `fix(app):`, `docs:`, `security:`).
 
 [changelog]
 header = """
 # Changelog
 
-All notable changes to Soyuz. Grouped by roadmap phase (see docs/ROADMAP.md): M = the
-original milestones (docs/PLAN.md), R = rigidity, B = looks, F = features, A = AI,
+All notable changes to Soyuz. Grouped by the commit prefix: M = the
+original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution.\n
 """
 body = """

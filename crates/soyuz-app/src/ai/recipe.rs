@@ -1,4 +1,4 @@
-//! Recipes (roadmap A5 "determinism"): the write steps of a finished task saved as a
+//! Recipes (for determinism): the write steps of a finished task saved as a
 //! TOML job graph you can edit and re-run later without a model. Re-running plans every
 //! step again (fresh dry run against the current disk) and shows the same plan cards and
 //! approvals; nothing runs unasked.

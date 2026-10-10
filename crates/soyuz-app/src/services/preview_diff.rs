@@ -1,4 +1,4 @@
-//! Two-file text diff for the preview (roadmap F3): when exactly two text files are
+//! Two-file text diff for the preview: when exactly two text files are
 //! selected, the preview shows their differences (unified or side by side) with the
 //! changed words emphasized. Built on `similar` (Patience diff, time-boxed) and computed
 //! on a worker thread; each side is read up to `[preview] max_diff_kib`.

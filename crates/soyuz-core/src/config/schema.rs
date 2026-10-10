@@ -1,4 +1,4 @@
-//! The `config.toml` schema (PLAN §2.9). Every section is `#[serde(default)]`, so any
+//! The `config.toml` schema. Every section is `#[serde(default)]`, so any
 //! subset of keys is a valid file. Defaults live in `defaults.rs`.
 
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ pub struct Config {
     pub fonts: super::fonts::Fonts,
     pub theme: ThemeSection,
     pub layout: Layout,
-    /// Windows, tab groups, saved workspaces, sync browsing, history graph, timeline (F7).
+    /// Windows, tab groups, saved workspaces, sync browsing, history graph, timeline.
     pub workspace: WorkspaceConfig,
     pub toolbar: Toolbar,
     pub context_menu: ContextMenu,
@@ -43,23 +43,23 @@ pub struct Config {
     pub preview: Preview,
     pub editor: Editor,
     pub git: Git,
-    /// F8: scheduled sync profiles, two-way sync and previous versions.
+    /// Scheduled sync profiles, two-way sync and previous versions.
     pub sync: SyncSection,
-    /// D1: manual update check against GitHub Releases.
+    /// Manual update check against GitHub Releases.
     pub updates: Updates,
-    /// R5: startup and rendering performance.
+    /// Startup and rendering performance.
     pub performance: Performance,
-    /// F2: remote locations (SFTP, WebDAV, FTP/FTPS, S3) and network shares.
+    /// Remote locations (SFTP, WebDAV, FTP/FTPS, S3) and network shares.
     pub remote: RemoteSection,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
     pub custom_commands: Vec<CustomCommand>,
-    /// F6: Rhai scripts (`scripts/*.rhai`).
+    /// Rhai scripts (`scripts/*.rhai`).
     pub scripting: super::automation::Scripting,
-    /// F6: rule-based automations.
+    /// Rule-based automations.
     pub automation: super::automation::Automation,
-    /// F6: the `soyuz cp|mv|rm|…` companion.
+    /// The `soyuz cp|mv|rm|…` companion.
     pub cli: super::automation::Cli,
 }
 
@@ -120,7 +120,7 @@ pub enum Density {
 }
 
 impl Density {
-    /// List row height in points (PLAN §1.2).
+    /// List row height in points.
     pub fn row_height(self) -> f32 {
         match self {
             Density::Compact => 24.0,
@@ -240,7 +240,7 @@ pub enum FallbackFonts {
     Off,
 }
 
-/// `[theme.colors]`: token name (as in PLAN §1.2, e.g. `"accent"`, `"bg.window"`) → hex.
+/// `[theme.colors]`: design token name (e.g. `"accent"`, `"bg.window"`) → hex.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ThemeSection {
@@ -318,7 +318,7 @@ pub enum CloseWindowTabs {
 }
 
 /// `[workspace]`: windows, tab groups, saved workspaces, synchronized browsing, the
-/// per-tab history graph and the timeline (roadmap F7).
+/// per-tab history graph and the timeline.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceConfig {
@@ -347,7 +347,7 @@ pub struct WorkspaceConfig {
     pub timeline_use_index: bool,
 }
 
-/// Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`,
+/// Editable toolbar: action names plus `"|"` (separator), `"spacer"`,
 /// `"breadcrumb"`, `"view_menu"`, `"sort_menu"`, `"activity"`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -380,7 +380,7 @@ pub enum SidebarSection {
     Trash,
     /// The disk tree as a section (only drawn in `mode = "both"`).
     Tree,
-    /// Smart folders (saved live searches, F5). Shown last when not listed.
+    /// Smart folders (saved live searches). Shown last when not listed.
     Smart,
 }
 
@@ -651,7 +651,7 @@ pub struct Search {
     pub content_max_mib: u64,
     /// Saved searches.
     pub saved: Vec<SavedSearchEntry>,
-    /// Background index (F5): `[search.index]`.
+    /// Background index: `[search.index]`.
     pub index: SearchIndex,
 }
 
@@ -776,7 +776,7 @@ pub struct Git {
     pub refresh_secs: u64,
 }
 
-/// `[updates]`: user-initiated update check against GitHub Releases (roadmap D1). Nothing
+/// `[updates]`: user-initiated update check against GitHub Releases. Nothing
 /// is ever downloaded or installed without a click; there is no telemetry. Defaults: no
 /// repo (check disabled), no weekly check, stable releases only.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -819,7 +819,7 @@ pub fn clean_tag_name(s: &str) -> String {
     s.trim().chars().take(TAG_NAME_MAX_CHARS).collect::<String>().trim_end().to_string()
 }
 
-/// `[performance]`: startup and rendering (R5).
+/// `[performance]`: startup and rendering.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Performance {
@@ -848,7 +848,7 @@ pub enum GpuBackend {
     Gl,
 }
 
-/// `[sync]`: scheduled sync profiles, two-way sync state and previous versions (F8).
+/// `[sync]`: scheduled sync profiles, two-way sync state and previous versions.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SyncSection {
@@ -867,7 +867,7 @@ pub struct SyncSection {
     pub shadow_probe_max: u32,
 }
 
-/// `[remote]`: remote locations (F2). Saved connections live in
+/// `[remote]`: remote locations. Saved connections live in
 /// `remote_connections.json` next to the config; passwords in the OS credential store.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]

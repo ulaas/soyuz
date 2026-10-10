@@ -1,4 +1,4 @@
-//! `soyuz-vfs`: remote and cloud locations (roadmap F2).
+//! `soyuz-vfs`: remote and cloud locations.
 //!
 //! * [`provider::Provider`]: the backend trait (list, stat, streaming read / write,
 //!   mkdir, rename, delete, set_times, capabilities). Implementations: SFTP

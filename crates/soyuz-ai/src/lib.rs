@@ -1,4 +1,4 @@
-//! `soyuz-ai`: the AI layer of Soyuz (roadmap Phase A1 + A2).
+//! `soyuz-ai`: the AI layer of Soyuz.
 //!
 //! * [`provider`] — streaming chat with tool calling over Anthropic, OpenAI (Chat
 //!   Completions and Responses), OpenAI-compatible local servers (Ollama, LM Studio,
@@ -7,8 +7,8 @@
 //! * [`audit`] — the append-only `ai-audit.jsonl` log shared by the MCP server and the harness.
 //! * [`credentials`] — API keys in the OS credential store (config holds references only).
 //! * [`pricing`] — price table, usage ledger and monthly budget caps.
-//! * [`tools`] — the typed tool catalog shared by the MCP server (A3) and the in-app
-//!   harness (A5): JSON Schemas, risk classes, scopes, dry-run plans and the
+//! * [`tools`] — the typed tool catalog shared by the MCP server and the in-app
+//!   harness: JSON Schemas, risk classes, scopes, dry-run plans and the
 //!   [`tools::ToolHost`] trait.
 //!
 //! The app is not async: requests run on a private tokio runtime and stream [`Event`]s

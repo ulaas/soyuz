@@ -1,4 +1,4 @@
-//! Keyboard-only path (roadmap F10): drives the real binary with synthetic key events
+//! Keyboard-only path: drives the real binary with synthetic key events
 //! only (`SOYUZ_SCRIPT` `keys:` steps; no pointer input at all) through open, copy
 //! (duplicate), rename, permanent delete, settings and the command palette, in English
 //! and in Turkish, and checks the results on disk and through `expect:` steps.

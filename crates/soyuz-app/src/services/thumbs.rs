@@ -1,4 +1,4 @@
-//! Thumbnail pipeline (PLAN §3): worker threads decode + downscale images and upload the
+//! Thumbnail pipeline: worker threads decode + downscale images and upload the
 //! texture themselves (`egui::Context` is `Send + Sync`), so the UI thread only looks
 //! textures up. Requests are served newest-first and dropped once their rows have been
 //! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps the

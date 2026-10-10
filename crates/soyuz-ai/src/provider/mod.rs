@@ -1,4 +1,4 @@
-//! Provider layer (roadmap A1): one [`Provider`] per configured profile, backed by a
+//! Provider layer: one [`Provider`] per configured profile, backed by a
 //! wire-format [`Backend`] (Anthropic Messages, OpenAI Chat Completions, OpenAI Responses,
 //! Gemini). The generic part here does HTTP, retries (429 / overloaded / 5xx with
 //! `retry-after`), timeouts, cancellation and SSE decoding; backends only encode requests

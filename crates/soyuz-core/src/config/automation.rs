@@ -1,4 +1,4 @@
-//! Scripting, rule-based automations and the CLI companion (roadmap F6):
+//! Scripting, rule-based automations and the CLI companion:
 //!
 //! * `[scripting]` — Rhai scripts in `scripts/*.rhai` next to the config (custom actions,
 //!   column providers, previewers, context-menu entries): sandbox limits and approval.

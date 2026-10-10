@@ -1,4 +1,4 @@
-//! Glue for the B2/B3/B4 "looks" features that several views share: live settings,
+//! Glue for the "looks" features (folder colors, themes, icons, motion) that several views share: live settings,
 //! the per-frame pump, the "Folder color" menu and small painters (extension badges,
 //! folder emblems, color dots, skeleton rows).
 
@@ -255,7 +255,7 @@ struct Enter {
 /// Seconds of the folder-enter slide / fade.
 const ENTER_SECS: f64 = 0.2;
 
-/// Folder-enter transition (B4): `(x offset, opacity)` for the pane's content. Entering
+/// Folder-enter transition: `(x offset, opacity)` for the pane's content. Entering
 /// a subfolder slides in from the right, going up from the left, other jumps only fade.
 pub fn enter_transition(ctx: &egui::Context, pane: u64, location: &soyuz_core::Location) -> (f32, f32) {
     let id = egui::Id::new(("soyuz.looks.enter", pane));

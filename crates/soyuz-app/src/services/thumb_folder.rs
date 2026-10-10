@@ -1,4 +1,4 @@
-//! Folder thumbnails (roadmap B3): a 2×2 mosaic of the first pictures inside a folder.
+//! Folder thumbnails: a 2×2 mosaic of the first pictures inside a folder.
 //! Runs on the thumbnail workers; only the first [`SCAN_LIMIT`] directory entries are
 //! looked at so huge folders stay cheap.
 

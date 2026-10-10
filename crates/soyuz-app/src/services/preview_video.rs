@@ -1,4 +1,4 @@
-//! Video poster frames (roadmap F3) through an optional `ffmpeg` executable. Soyuz never
+//! Video poster frames through an optional `ffmpeg` executable. Soyuz never
 //! bundles or downloads ffmpeg: when `[preview] video_ffmpeg` is on and the program is
 //! found (a full path in `ffmpeg_path`, or the name looked up on `PATH`), one frame is
 //! decoded to PNG on stdout. The process runs with no console window, is killed when the

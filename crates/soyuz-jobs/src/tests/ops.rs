@@ -394,7 +394,7 @@ fn clear_finished_and_remove() {
 }
 
 #[test]
-#[ignore = "needs the soyuz-archive implementation (M7); bodies are todo!/Unsupported in this worktree"]
+#[ignore = "needs the soyuz-archive implementation; bodies are todo!/Unsupported without it"]
 fn compress_then_extract_round_trip() {
     let h = H::new();
     write(&h.p("in/a.txt"), b"hello");
@@ -429,7 +429,7 @@ fn extract_unsupported_archive_fails_cleanly() {
         password: None,
         strip_components: 0,
     });
-    // M0 archive stub → Unsupported; a real implementation → Corrupt. Either way: Failed, no panic.
+    // Archive stub → Unsupported; a real implementation → Corrupt. Either way: Failed, no panic.
     assert!(matches!(h.done(id), JobState::Failed(_)));
 }
 

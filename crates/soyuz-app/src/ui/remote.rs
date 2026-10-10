@@ -1,4 +1,4 @@
-//! Remote locations in the UI (roadmap F2): the "Connect to server…" dialog, the
+//! Remote locations in the UI: the "Connect to server…" dialog, the
 //! sidebar's Network section (saved connections with their connection state), the
 //! "trust this host key?" prompt, sign-in retry, and file operations in remote panes
 //! (copy / cut / paste across providers, delete, rename, new folder, F5 / F6) submitted

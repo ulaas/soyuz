@@ -1,4 +1,4 @@
-//! Search bar (PLAN M6, app side): Ctrl+Shift+F / F3 opens a bar under the toolbar with
+//! Search bar (app side): Ctrl+Shift+F / F3 opens a bar under the toolbar with
 //! the query field and option pills (name mode, case, contents, size, date, kind,
 //! hidden, .gitignore). Results stream into the focused pane as `Location::Search`
 //! (sortable, actionable, Path column), with a status strip showing progress, the result
@@ -165,7 +165,7 @@ pub fn run(app: &mut SoyuzApp) {
     }
 }
 
-/// Query-language search (F5): the index answers it when it covers the scope, else the
+/// Query-language search: the index answers it when it covers the scope, else the
 /// disk walk does (narrowed, every hit checked against the whole query).
 fn run_indexed(app: &mut SoyuzApp, form: &SearchForm, content_max: u64) {
     let ix = crate::services::index::plan_from_form(form).and_then(|plan| {

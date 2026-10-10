@@ -1,4 +1,4 @@
-//! Volume Shadow Copy discovery (F8 "Previous versions") without VSS COM or the shell.
+//! Volume Shadow Copy discovery ("Previous versions") without VSS COM or the shell.
 //!
 //! * Listing: the kernel object directory `\Device` is enumerated with
 //!   `NtOpenDirectoryObject` + `NtQueryDirectoryObject` (ntdll); shadow copies appear there

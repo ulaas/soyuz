@@ -1,4 +1,4 @@
-//! Safety layer of the harness (roadmap A7): per-folder permissions inherited down the
+//! Safety layer of the harness: per-folder permissions inherited down the
 //! tree, redaction of secrets in data sent to cloud models, and prompt-injection
 //! heuristics. The path scope and sensitive-path blocking live in `soyuz_ai::tools::Scope`.
 

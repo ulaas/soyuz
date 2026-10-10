@@ -1,5 +1,5 @@
 //! Read-only access to Explorer's thumbnail cache (`%LOCALAPPDATA%\Microsoft\Windows\
-//! Explorer\thumbcache_<size>.db`, roadmap B3), as a fast thumbnail source that needs no
+//! Explorer\thumbcache_<size>.db`), as a fast thumbnail source that needs no
 //! shell API (`IThumbnailCache` is never used).
 //!
 //! **Cache key.** Every entry is keyed by the 64-bit `System.ThumbnailCacheId`. Explorer
@@ -13,8 +13,7 @@
 //! the UTC last-write time as `(fat_date << 16) | fat_time` (u32 LE) and, when nonzero,
 //! the low 32 bits of (that DOS time converted back to a FILETIME − the original) (u32
 //! LE). Verified on Windows 11 build 26300 against `System.ThumbnailCacheId` and
-//! the entries in `thumbcache_*.db` for files on two NTFS volumes (see
-//! `docs/INTEGRATION_NOTES.md`).
+//! the entries in `thumbcache_*.db` for files on two NTFS volumes.
 //!
 //! **File format** (libyal "Windows Explorer Thumbnail Cache database format", format
 //! versions 30–32 = Windows 8 / 8.1 / 10–11): a 24-byte header (`CMMM`, version, cache

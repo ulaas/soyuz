@@ -304,7 +304,7 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
         .show(|ui| {
             ui.set_width(250.0);
             let km = app.keymap.clone();
-            // Single / dual (side by side, stacked) / quad layouts (F7).
+            // Single / dual (side by side, stacked) / quad layouts.
             let mut layout_cmds = Vec::new();
             crate::ui::workspaces::layout_menu(ui, app, &mut layout_cmds);
             app.cmds.extend(layout_cmds);

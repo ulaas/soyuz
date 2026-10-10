@@ -1,4 +1,4 @@
-# Scripted fake-provider transcript for the docs screenshots (SOYUZ_AI_FAKE, roadmap A8).
+# Scripted fake-provider transcript for the docs screenshots (SOYUZ_AI_FAKE).
 # Used by scripts/screenshots.ps1 on the demo tree from scripts/demo-fixture.ps1.
 delay_ms = 15
 model = "demo-transcript"

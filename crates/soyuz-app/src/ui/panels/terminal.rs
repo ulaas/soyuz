@@ -1,4 +1,4 @@
-//! Integrated terminal (PLAN M8, app side): lives in the bottom panel's Terminal tab,
+//! Integrated terminal (app side): lives in the bottom panel's Terminal tab,
 //! spawned lazily on first open (Ctrl+`). Several sessions per panel with mini-tabs
 //! (new / close / rename, title from the shell); sessions are shared by all tabs or kept
 //! per tab (`[terminal] per_tab`). The active session follows the focused pane's folder
@@ -128,8 +128,8 @@ impl TerminalPanel {
         self.sessions.iter_mut().find(|s| s.id == id)
     }
 
-    /// A tab was closed: drop (and thereby kill) the shells it owned in per-tab mode
-    /// (REVIEW-2 #9). Shared sessions (`tab == None`) are untouched.
+    /// A tab was closed: drop (and thereby kill) the shells it owned in per-tab mode.
+    /// Shared sessions (`tab == None`) are untouched.
     pub fn drop_tab(&mut self, tab: u64) {
         self.sessions.retain(|s| s.tab != Some(tab));
         self.active.retain(|(o, _)| *o != tab);
@@ -250,7 +250,7 @@ pub fn open_at(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf) {
 /// the active session when it is idle (after a `cd`), otherwise into a new session.
 pub fn run_command(app: &mut SoyuzApp, ctx: &egui::Context, dir: PathBuf, line: &str) {
     // Typed text goes through the shell's line editor: a newline/escape in a (crafted)
-    // file name would run extra commands no matter how it is quoted (REVIEW-2 #3).
+    // file name would run extra commands no matter how it is quoted.
     if soyuz_term::has_control_chars(line) || soyuz_term::has_control_chars(&dir.to_string_lossy()) {
         app.ui.toasts.push(
             Toast::error(tr!("panels-terminal-command-not-run")).body(tr!("panels-terminal-command-not-run-body")),
@@ -427,7 +427,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 && let Some(id) = active
                 && let Some(s) = app.ui.terminal.session_mut(id)
                 && !s.last_dir.as_deref().is_some_and(|d| same_dir(d, &dir))
-                // `send_cd` refuses these anyway (REVIEW-2 #3); don't flag the shell busy.
+                // `send_cd` refuses these anyway; don't flag the shell busy.
                 && !soyuz_term::has_control_chars(&dir.to_string_lossy())
             {
                 s.pending_cd = Some((dir, Instant::now()));
@@ -849,8 +849,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
 
 /// Ctrl+click on a link: URLs go to the browser, paths open in the pane / default app.
 /// Relative paths resolve against the session's working directory (not the app's), and
-/// executables are revealed rather than run: terminal output is untrusted text
-/// (REVIEW-2 #24).
+/// executables are revealed rather than run: terminal output is untrusted text.
 fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&Path>) {
     let lower = url.to_ascii_lowercase();
     if lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:") {

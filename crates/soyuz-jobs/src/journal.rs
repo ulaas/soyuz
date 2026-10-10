@@ -1,4 +1,4 @@
-//! Crash journal for in-flight jobs (`jobs.journal`, ROADMAP R3).
+//! Crash journal for in-flight jobs (`jobs.journal`).
 //!
 //! While a mutating job runs, the engine keeps a small JSON journal next to the history:
 //! the job's kind and options, its label, progress and the undo records it has produced so

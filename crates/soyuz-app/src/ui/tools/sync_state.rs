@@ -1,4 +1,4 @@
-//! Two-way sync with real conflict handling (ROADMAP F8).
+//! Two-way sync with real conflict handling.
 //!
 //! A plain compare can't tell "deleted on the left" from "new on the right", or "edited
 //! on both sides" from "edited on one". So a two-way profile remembers what both trees

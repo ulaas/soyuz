@@ -300,7 +300,7 @@ pub struct AiState {
     undo_rx: Vec<(TaskId, Receiver<String>)>,
     /// "Undo everything this MCP client did" runs: `(client, result)`.
     mcp_undo_rx: Vec<(String, Receiver<String>)>,
-    /// External MCP servers whose tools the assistant may use (A4).
+    /// External MCP servers whose tools the assistant may use.
     pub external: Arc<soyuz_mcp::client::McpRegistry>,
     /// `[[ai.mcp_servers]]` last given to [`Self::external`].
     external_applied: Option<Vec<soyuz_core::config::AiMcpServer>>,
@@ -1045,7 +1045,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     for ev in events {
         on_event(app, ev);
     }
-    // External MCP servers (A4): (re)configure, connect in the background.
+    // External MCP servers: (re)configure, connect in the background.
     if let Some(rx) = &app.ai.external_connecting
         && rx.try_recv().is_ok()
     {
