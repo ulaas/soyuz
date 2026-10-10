@@ -299,7 +299,7 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
   signature or be unsigned (a broken signature deletes the download). Nothing runs until you
   click **Run installer…** and confirm. *Check once a week* (off by default) only shows a
   notification.
-- **Default file manager** — Settings → *Advanced* → **Make Soyuz the default** opens folders
+- **Default file manager** — Settings → *General* (top) → **Make Soyuz the default** opens folders
   and drives from other apps, the desktop and Win+R in Soyuz. Soyuz writes an "Open in Soyuz"
   verb for `Directory` and `Drive` under `HKEY_CURRENT_USER\Software\Classes` (your account
   only) and remembers what was there before under `HKEY_CURRENT_USER\Software\Soyuz`.

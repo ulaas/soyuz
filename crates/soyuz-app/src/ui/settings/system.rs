@@ -1,5 +1,5 @@
 //! Settings pages for OS integration (roadmap D1): "About & updates" (manual update check
-//! against GitHub Releases) and the tr!("settings-fm") opt-in on the Advanced page.
+//! against GitHub Releases) and the "Default file manager" opt-in at the top of the General page.
 //! Registry and network work runs on worker threads; the UI only reads snapshots.
 
 use std::path::PathBuf;
@@ -18,7 +18,7 @@ use crate::theme::palette;
 use crate::ui::toasts::Toast;
 
 const CTX_ABOUT: &str = "About updates version";
-const CTX_FM: &str = "Advanced default file manager explorer folders integration";
+const CTX_FM: &str = "General default file manager explorer folders drives integration os desktop";
 
 fn mib(b: u64) -> String {
     format!("{} MiB", soyuz_core::locale::format_decimal(b as f64 / (1024.0 * 1024.0), 1))
@@ -328,7 +328,7 @@ fn exe_path() -> Option<PathBuf> {
     std::env::current_exe().ok()
 }
 
-/// Settings → Advanced → tr!("settings-fm").
+/// Settings → General → "Default file manager" (first group on the page).
 pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     let (status, busy, outcome) = {

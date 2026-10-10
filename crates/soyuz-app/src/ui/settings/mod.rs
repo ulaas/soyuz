@@ -817,7 +817,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
 /// Draw one section's groups (filtered by `q`); returns whether anything was drawn.
 fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
     match sec {
-        Section::General => pages::general(ui, app, q),
+        Section::General => system::file_manager(ui, app, q) | pages::general(ui, app, q),
         Section::Appearance => appearance::page(ui, app, q),
         Section::Fonts => fonts::page(ui, app, q),
         Section::Views => pages::views(ui, app, q),
@@ -832,7 +832,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
         Section::Scripts => crate::ui::automation::scripts_page::page(ui, app, q),
         Section::Automations => crate::ui::automation::rules_page::page(ui, app, q),
         Section::Ai => ai::page(ui, app, q),
-        Section::Advanced => pages::advanced(ui, app, q) | system::file_manager(ui, app, q),
+        Section::Advanced => pages::advanced(ui, app, q),
         Section::About => system::about(ui, app, q),
     }
 }
