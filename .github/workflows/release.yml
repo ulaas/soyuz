@@ -9,7 +9,8 @@
 # Windows artifacts: soyuz-<v>-windows-x64.zip, ...-portable.zip, ...-windows-x64.msi (WiX v5),
 # one .sha256 per file and SHA256SUMS-windows.txt (what the in-app update check verifies).
 # Without the Windows secrets the Windows artifacts are published unsigned, with a warning. The
-# macOS job runs only when all macOS secrets are present.
+# signed macOS job runs only when all macOS secrets are present (otherwise an unsigned
+# arm64 tarball is built); Linux gets an x64 tarball.
 name: Release
 
 on:
@@ -118,6 +119,55 @@ jobs:
             dist/*.msi
             dist/*.sha256
             dist/SHA256SUMS-windows.txt
+          if-no-files-found: error
+
+  # Linux x64 tarball (unsigned, untested: Linux verification is deferred, the project notes).
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux system libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libfontconfig1-dev
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soyuz-linux-x64
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/SHA256SUMS-linux.txt
+          if-no-files-found: error
+
+  # Without Apple credentials: a plain, unsigned macOS arm64 tarball (Gatekeeper asks the
+  # user to confirm on first launch). Replaced by the signed universal job below once the
+  # secrets exist.
+  macos-unsigned:
+    name: macOS arm64 (UNSIGNED)
+    needs: signing-config
+    if: needs.signing-config.outputs.macos != 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/package.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soyuz-macos-arm64-unsigned
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+            dist/SHA256SUMS-macos.txt
           if-no-files-found: error
 
   macos:

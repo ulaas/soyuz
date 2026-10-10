@@ -4,7 +4,8 @@
 
 .DESCRIPTION
     Runs `cargo build --release -p soyuz-app`, then creates
-    dist/soyuz-<version>-<os>-<arch>.zip containing the executable, README, both licenses,
+    dist/soyuz-<version>-<os>-<arch>.zip (Windows) or .tar.gz (Linux / macOS, keeps the
+    executable bit) containing the executable, README, both licenses,
     the example config and the user guide. Pass -Portable to include an empty `portable`
     marker so the unzipped folder keeps its settings next to the exe (portable-data/).
 
@@ -49,7 +50,8 @@ try {
     $bin = Join-Path "target/release" $exe
     $suffix = if ($Portable) { "-portable" } else { "" }
     $name = "soyuz-$version-$os-$arch$suffix"
-    $zip = Join-Path $OutDir "$name.zip"
+    $ext = if ($isWin) { "zip" } else { "tar.gz" }
+    $zip = Join-Path $OutDir "$name.$ext"
     $sums = Join-Path $OutDir "SHA256SUMS-$os.txt"
 
     # What goes into the zip: (source, path inside the zip).
@@ -99,7 +101,13 @@ try {
     if ($Portable) { New-Item -ItemType File -Force (Join-Path $stage "portable") | Out-Null }
 
     if (Test-Path $zip) { Remove-Item -Force $zip }
-    Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
+    if ($isWin) {
+        Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
+    } else {
+        & chmod +x (Join-Path $stage $exe)
+        & tar -czf $zip -C $OutDir $name
+        if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
+    }
     Remove-Item -Recurse -Force $stage
     $artifacts = @($zip)
 

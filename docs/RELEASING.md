@@ -91,3 +91,17 @@ The whole path was exercised locally with a throwaway self-signed certificate. T
    - A search of all CurrentUser and LocalMachine stores found **0** remaining copies of the
      thumbprint.
    - The PFX and the signed test files were deleted.
+
+## Binaries per OS
+
+- **Every push to `main`** (and manual runs of *CI*): the `package` job builds
+  `soyuz-<v>-windows-x64.zip`, `soyuz-<v>-linux-x64.tar.gz` and
+  `soyuz-<v>-macos-arm64.tar.gz` (plus `.sha256` files) with `scripts/package.ps1`; download
+  them from the run's *Artifacts*.
+- **Tags `v*`** (*Release*): Windows zip / portable zip / MSI (Authenticode-signed when the
+  secrets exist), a Linux x64 tarball, and either the signed + notarized macOS universal
+  app (Apple secrets) or an unsigned macOS arm64 tarball.
+- Linux and macOS binaries are built and clippy-clean but **untested** (platform scope in
+  the project notes); their test runs in CI are reported as warnings, not failures. Linux runners
+  need `libasound2-dev` (audio preview via rodio / cpal / ALSA) besides the X11 / Wayland /
+  GL / fontconfig dev packages.
