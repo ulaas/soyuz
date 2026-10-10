@@ -39,6 +39,12 @@ egui_kittest = { version = "=0.36.2", features = ["snapshot", "wgpu"] }
 windows-sys = "0.61.2"
 rustix = { version = "1.1.5", features = ["fs", "process"] }
 libc = "0.2.190"
+# Linux desktop integration (all already in the lockfile via eframe/accesskit/winit).
+zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
+x11rb = "0.13.2"
+wayland-client = "0.31.15"
+wayland-backend = { version = "0.3.17", features = ["client_system"] }
+wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 xattr = "1.6.1"
 filetime = "0.2.29"
 
