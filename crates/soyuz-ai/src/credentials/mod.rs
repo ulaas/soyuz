@@ -1,18 +1,22 @@
 //! API keys in the OS credential store. `config.toml` only holds references:
 //!
 //! * `credential:<name>` — the OS store entry `soyuz:ai:<name>` (Windows Credential
-//!   Manager via advapi32 `CredWriteW` / `CredReadW` / `CredDeleteW`). The environment
-//!   variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
+//!   Manager via advapi32 `CredWriteW` / `CredReadW` / `CredDeleteW`; on Linux the
+//!   freedesktop Secret Service over D-Bus, item `Soyuz: <name>` with the attributes
+//!   `service = soyuz`, `account = <name>`). The environment variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
 //!   it, for CI and headless use.
 //! * `env:<VAR>` — read the environment variable `VAR`.
 //! * empty — no key.
 //!
-//! Linux (Secret Service) and macOS (Keychain) backends are not implemented yet: on those
-//! systems the store reports `Unsupported` and only the environment works.
+//! The macOS (Keychain) backend is not implemented yet: there the store reports
+//! `Unsupported` and only the environment works.
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
 mod windows;
+
+#[cfg(target_os = "linux")]
+mod linux;
 
 use crate::error::{AiError, AiResult};
 
@@ -118,9 +122,18 @@ pub fn target(name: &str) -> String {
     format!("{TARGET_PREFIX}{name}")
 }
 
-/// Is an OS credential store available on this system?
+/// Is an OS credential store available on this system? On Linux this probes the session
+/// bus for a Secret Service once per process (bounded by a few seconds; call it off the UI
+/// thread the first time).
 pub fn store_available() -> bool {
-    cfg!(windows)
+    #[cfg(target_os = "linux")]
+    {
+        linux::available()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        cfg!(windows)
+    }
 }
 
 /// Save (create or replace) a secret.
@@ -148,9 +161,12 @@ fn check_name(name: &str) -> AiResult<()> {
 #[cfg(windows)]
 use windows as imp;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+use linux as imp;
+
+#[cfg(not(any(windows, target_os = "linux")))]
 mod imp {
-    //! Placeholder until the Secret Service (Linux) / Keychain (macOS) backends land.
+    //! Placeholder until the Keychain (macOS) backend lands.
     use crate::error::{AiError, AiResult};
 
     fn unsupported() -> AiError {

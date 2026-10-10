@@ -1,17 +1,17 @@
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use std::sync::Arc;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use std::time::Duration;
 
 use soyuz_jobs::JobKind;
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use soyuz_jobs::{EngineConfig, JobEngine, JobId, JobSpec};
 
 use super::client::{run_with, spec_for};
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use super::proto::{self, Host};
 use super::*;
 
@@ -95,7 +95,7 @@ fn job_specs() {
     assert_eq!(e.0, exit::NOT_FOUND, "missing destination folder");
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 fn engine() -> Arc<JobEngine> {
     JobEngine::new(EngineConfig::default(), Arc::new(soyuz_fs::RealProbe), Arc::new(|| {}))
 }
@@ -137,13 +137,13 @@ fn headless_copy_and_json() {
 }
 
 /// A stand-in for the window: submits straight to an engine, records open requests.
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 struct TestHost {
     engine: Arc<JobEngine>,
     opened: parking_lot::Mutex<Vec<(PathBuf, bool)>>,
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 impl Host for TestHost {
     fn engine(&self) -> Arc<JobEngine> {
         self.engine.clone()
@@ -160,10 +160,16 @@ impl Host for TestHost {
     }
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 #[test]
 fn pipe_round_trip() {
+    #[cfg(windows)]
     let name = format!(r"\\.\pipe\soyuz-cli-test-{}-{}", std::process::id(), line!());
+    // A temp directory instead of the user's runtime dir (`serve` creates `s/` as 0700).
+    #[cfg(unix)]
+    let sock_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    let name = sock_dir.path().join("s/soyuz-cli-test.sock").to_string_lossy().into_owned();
     let host = Arc::new(TestHost { engine: engine(), opened: Default::default() });
     let h = host.clone();
     let _server = soyuz_mcp::pipe::PipeServer::serve(&name, move |s| proto::serve_connection(h.as_ref(), s)).unwrap();

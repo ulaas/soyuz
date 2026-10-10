@@ -1,9 +1,9 @@
 //! Streamable HTTP (token / Host / Origin / header validation, legacy sessions, the
-//! HTTP client) and the named-pipe attach round trip (Windows).
+//! HTTP client) and the local pipe attach round trip (Windows named pipe / unix socket).
 
 mod common;
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 use std::io::{BufRead, BufReader};
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
@@ -223,12 +223,18 @@ fn external_tools_registry_over_http() {
     drop(http);
 }
 
-#[cfg(windows)]
+#[cfg(any(windows, unix))]
 #[test]
 fn named_pipe_attach_round_trip() {
     let fx = Fixture::new();
     let (server, _) = fx.headless(fx.ai());
+    #[cfg(windows)]
     let name = format!(r"\\.\pipe\soyuz-mcp-test-{}-{}", std::process::id(), chrono::Utc::now().timestamp_micros());
+    // A temp directory instead of the user's runtime dir (`serve` creates `s/` as 0700).
+    #[cfg(unix)]
+    let sock_dir = tempfile::tempdir().unwrap();
+    #[cfg(unix)]
+    let name = sock_dir.path().join("s/soyuz-mcp-test.sock").to_string_lossy().into_owned();
     let pipe = soyuz_mcp::pipe::PipeServer::start(&name, server).unwrap();
     // A second server on the same name is refused (first-instance flag).
     let (server2, _) = fx.headless(fx.ai());
@@ -266,4 +272,28 @@ fn named_pipe_attach_round_trip() {
     drop(in_w);
     relay.join().unwrap().unwrap();
     drop(pipe);
+    // Dropping the server frees the name at once (the automation lock relies on this).
+    #[cfg(unix)]
+    {
+        assert!(!std::path::Path::new(&name).exists(), "the socket file is removed");
+        assert!(soyuz_mcp::pipe::connect(&name).unwrap().is_none());
+        let (server3, _) = fx.headless(fx.ai());
+        drop(soyuz_mcp::pipe::PipeServer::start(&name, server3).unwrap());
+    }
+}
+
+/// The automation lock: a second `serve` of a live name fails, and the default names are
+/// per-user sockets in a private directory.
+#[cfg(unix)]
+#[test]
+fn unix_socket_names_and_single_server() {
+    let name = soyuz_mcp::pipe::user_pipe_name("soyuz-cli");
+    assert!(name.ends_with("/soyuz/soyuz-cli.sock") || name.contains("/soyuz-"), "{name}");
+    let d = tempfile::tempdir().unwrap();
+    let name = d.path().join("s/lock.sock").to_string_lossy().into_owned();
+    let first = soyuz_mcp::pipe::PipeServer::serve(&name, |_| {}).unwrap();
+    let second = soyuz_mcp::pipe::PipeServer::serve(&name, |_| {});
+    assert_eq!(second.err().map(|e| e.kind()), Some(std::io::ErrorKind::AddrInUse));
+    drop(first);
+    let _again = soyuz_mcp::pipe::PipeServer::serve(&name, |_| {}).unwrap();
 }

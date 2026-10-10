@@ -140,6 +140,13 @@ impl StdioTransport {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
+        // Own process group: a Ctrl+C in the terminal that started Soyuz must not reach the
+        // server, and dropping the transport can stop the server's own children too.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         let mut child = cmd.spawn().map_err(|e| ClientError::Transport(format!("cannot start “{command}”: {e}")))?;
         let stdin = child.stdin.take().ok_or_else(|| ClientError::Transport("no stdin".into()))?;
         let stdout = child.stdout.take().ok_or_else(|| ClientError::Transport("no stdout".into()))?;
@@ -173,11 +180,59 @@ impl Drop for StdioTransport {
         let deadline = Instant::now() + Duration::from_millis(500);
         while Instant::now() < deadline {
             if matches!(child.try_wait(), Ok(Some(_))) {
+                kill_group(&child);
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
+        kill_group(&child);
         let _ = child.kill();
         let _ = child.wait();
+    }
+}
+
+/// Kill whatever is left of the server's process group (`npx` / `uvx` launchers leave the
+/// real server as a grandchild). The group id is the child's pid (`process_group(0)`); the
+/// kernel does not reuse a pid while a group of that id has members.
+#[cfg(unix)]
+fn kill_group(child: &Child) {
+    let pid = rustix::process::Pid::from_child(child);
+    let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
+}
+
+#[cfg(not(unix))]
+fn kill_group(_child: &Child) {}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    /// Dropping the transport stops the server's whole process group, grandchildren included.
+    #[test]
+    fn drop_kills_the_process_group() {
+        let d = tempfile::tempdir().unwrap();
+        let pidfile = d.path().join("pid");
+        let script = format!("sleep 30 & echo $! > '{}'; wait", pidfile.display());
+        let t = StdioTransport::spawn("/bin/sh", &["-c".into(), script], &Default::default(), "test").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let pid = loop {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
+                break p;
+            }
+            assert!(Instant::now() < deadline, "the script did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+        assert!(proc_dir.exists());
+        drop(t);
+        // The orphaned grandchild is reaped by init / the subreaper shortly after the kill.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let gone = || {
+            std::fs::read_to_string(proc_dir.join("stat")).map_or(true, |s| s.contains(") Z ") || !s.contains("sleep"))
+        };
+        while !gone() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(gone(), "the grandchild survived the drop");
     }
 }
