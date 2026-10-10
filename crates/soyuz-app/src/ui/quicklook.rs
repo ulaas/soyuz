@@ -153,8 +153,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let mut action = None;
     egui::Area::new(Id::new("soyuz.quicklook")).order(Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
         ui.set_opacity(t);
-        // Full-screen catcher: clicking outside the card closes.
-        let bg = ui.interact(screen, Id::new("soyuz.ql.bg"), Sense::click());
+        // Full-screen catcher: clicking outside the card closes. Allocated (not just
+        // interacted) so the overlay layer covers the whole window and the panes beneath get
+        // no clicks, hover or wheel; the modal layer also keeps keyboard focus off them.
+        let bg = ui.allocate_rect(screen, Sense::click());
+        ui.ctx().memory_mut(|m| m.set_modal_layer(ui.layer_id()));
         if bg.clicked() && !bg.interact_pointer_pos().is_some_and(|ptr| card.contains(ptr)) {
             close = true;
         }

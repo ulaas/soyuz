@@ -27,7 +27,10 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use egui::{Align2, Color32, CornerRadius, FontId, Frame, Id, Margin, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
+use egui::{
+    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Margin, Modifiers, Order, Rect, Sense, Stroke, Ui,
+    Vec2, pos2, vec2,
+};
 use soyuz_core::Location;
 use soyuz_core::config::Action;
 
@@ -395,8 +398,52 @@ pub fn show_panels(ui: &mut Ui, app: &mut SoyuzApp) {
     TOOLS.with_borrow_mut(|slot| restore(slot, t));
 }
 
+/// Whether any tool window is open. They are modal: the panes underneath get no pointer
+/// input (see [`backdrop`]) and the keymap does not run while one is open.
+pub fn any_window_open() -> bool {
+    TOOLS.with_borrow(|t| {
+        t.treemap.is_some()
+            || t.compare.is_some()
+            || t.dupes.is_some()
+            || t.split.is_some()
+            || t.sync_profiles.is_some()
+            || t.versions.is_some()
+    })
+}
+
+fn window_layer(id: &str) -> LayerId {
+    LayerId::new(Order::Middle, Id::new(("soyuz.tool", id)))
+}
+
+const WINDOW_IDS: [&str; 6] = ["treemap", "compare", "dupes", "split", "sync_profiles", "versions"];
+
+/// A dimmed, full-screen layer right under the tool windows: it takes every click, hover
+/// and wheel event aimed at the panes, so they stay untouched while a tool is open.
+fn backdrop(ctx: &egui::Context) {
+    let p = palette(ctx);
+    let screen = ctx.content_rect();
+    let layer = egui::Area::new(Id::new("soyuz.tools.backdrop"))
+        .order(Order::Middle)
+        .fixed_pos(screen.min)
+        .show(ctx, |ui| {
+            ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(if p.dark { 110 } else { 60 }));
+            ui.allocate_rect(screen, Sense::click_and_drag());
+        })
+        .response
+        .layer_id;
+    // A click on the backdrop raises it over the windows: put them back on top.
+    if ctx.memory(|m| m.areas().top_layer_id(Order::Middle)) == Some(layer) {
+        for id in WINDOW_IDS {
+            ctx.move_to_top(window_layer(id));
+        }
+    }
+}
+
 /// Tool windows (over the panes, under toasts).
 pub fn show_windows(ctx: &egui::Context, app: &mut SoyuzApp) {
+    if any_window_open() {
+        backdrop(ctx);
+    }
     let mut t = TOOLS.with_borrow_mut(std::mem::take);
     if let Some(w) = &mut t.treemap {
         w.show(ctx, app);
@@ -491,6 +538,18 @@ pub fn tool_window(
             color: Color32::from_black_alpha((p.shadow_alpha * 255.0) as u8),
         });
     let mut keep = true;
+    // Esc closes the frontmost tool window (a focused text field or an open popup takes
+    // Esc first).
+    let frontmost = ctx.memory(|m| m.areas().top_layer_id(Order::Middle)) == Some(window_layer(id));
+    let text_focused = ctx.memory(|m| m.focused()).is_some_and(|f| egui::TextEdit::load_state(ctx, f).is_some());
+    if frontmost
+        && !text_focused
+        && !ctx.any_popup_open()
+        && !crate::ui::widgets::dropdown::any_open(ctx)
+        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+    {
+        keep = false;
+    }
     egui::Window::new(title)
         .id(Id::new(("soyuz.tool", id)))
         .title_bar(false)
