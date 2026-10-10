@@ -32,6 +32,8 @@ pub struct Config {
     pub toolbar: Toolbar,
     pub context_menu: ContextMenu,
     pub sidebar: Sidebar,
+    /// Custom display names of the eight color tags.
+    pub tags: TagsSection,
     pub columns: Columns,
     pub behaviour: Behaviour,
     pub jobs: Jobs,
@@ -769,6 +771,34 @@ pub struct Updates {
     pub weekly_check: bool,
     /// Offer pre-releases (release candidates, betas) too.
     pub include_prereleases: bool,
+}
+
+/// Longest custom tag name, in characters (longer names are cut).
+pub const TAG_NAME_MAX_CHARS: usize = 40;
+
+/// `[tags]`: display names of the eight color tags. Membership is stored by color, so
+/// renaming a tag never touches the tagged items.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TagsSection {
+    /// Custom names in color order (red, orange, yellow, green, cyan, blue, purple, gray).
+    /// An empty entry (or a missing one) shows the translated color name; names are
+    /// trimmed and cut at 40 characters.
+    pub names: Vec<String>,
+}
+
+impl TagsSection {
+    /// The cleaned custom name of tag `i` (0-based), `None` when it uses the default.
+    pub fn custom_name(&self, i: usize) -> Option<String> {
+        self.names.get(i).map(|s| clean_tag_name(s)).filter(|s| !s.is_empty())
+    }
+}
+
+/// A tag name as shown and stored: control characters become spaces, surrounding
+/// whitespace is trimmed and the result is cut at [`TAG_NAME_MAX_CHARS`] characters.
+pub fn clean_tag_name(s: &str) -> String {
+    let s: String = s.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    s.trim().chars().take(TAG_NAME_MAX_CHARS).collect::<String>().trim_end().to_string()
 }
 
 /// `[performance]`: startup and rendering (R5).

@@ -161,6 +161,7 @@ impl Section {
                 c.columns = d.columns;
                 c.layout = d.layout;
                 c.sidebar = d.sidebar;
+                c.tags = d.tags;
                 c.toolbar = d.toolbar;
                 c.context_menu = d.context_menu;
                 c.general.default_view = d.general.default_view;

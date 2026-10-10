@@ -399,4 +399,74 @@ font_size = 14.0
     fn default_path_is_toml() {
         assert!(default_path().ends_with("config.toml"));
     }
+
+    #[test]
+    fn tag_names_back_compat_and_round_trip() {
+        // A config written before `[tags]` existed: every tag keeps its color name.
+        let old = parse_str(
+            "[general]
+show_hidden = true
+",
+        )
+        .unwrap()
+        .config;
+        assert_eq!(old.tags, TagsSection::default());
+        assert!((0..8).all(|i| old.tags.custom_name(i).is_none()));
+        // Fewer entries than tags: the rest are defaults.
+        let short = parse_str(
+            "[tags]
+names = [\"Work\", \"\"]
+",
+        )
+        .unwrap();
+        assert!(short.warnings.is_empty(), "{:?}", short.warnings);
+        assert_eq!(short.config.tags.custom_name(0).as_deref(), Some("Work"));
+        assert_eq!(short.config.tags.custom_name(1), None);
+        assert_eq!(short.config.tags.custom_name(7), None);
+        // Round trip through both writers.
+        let mut c = Config::default();
+        c.tags.names[2] = "Urgent".into();
+        let text = to_pretty_string(&c).unwrap();
+        assert_eq!(parse_str(&text).unwrap().config.tags, c.tags);
+        let merged = to_string_preserving(
+            "[general]
+show_hidden = true # mine
+",
+            &c,
+        )
+        .unwrap();
+        assert!(merged.contains("# mine") && merged.contains("Urgent"), "{merged}");
+        assert_eq!(parse_str(&merged).unwrap().config.tags, c.tags);
+        // Defaults are not written into a user file.
+        let untouched = to_string_preserving(
+            "[general]
+show_hidden = true
+",
+            &old,
+        )
+        .unwrap();
+        assert!(!untouched.contains("[tags]"), "{untouched}");
+    }
+
+    #[test]
+    fn tag_name_cleaning() {
+        assert_eq!(clean_tag_name("  Work  "), "Work");
+        assert_eq!(clean_tag_name("   "), "");
+        assert_eq!(
+            clean_tag_name(
+                "a
+b	c"
+            ),
+            "a b c"
+        );
+        let long = "x".repeat(100);
+        assert_eq!(clean_tag_name(&long).chars().count(), TAG_NAME_MAX_CHARS);
+        // Cut at characters, not bytes; no trailing space after the cut.
+        let turkish = "ğ".repeat(39) + " çok uzun";
+        let cut = clean_tag_name(&turkish);
+        assert_eq!(cut, "ğ".repeat(39));
+        let t = TagsSection { names: vec!["  ".into(), " Home ".into()] };
+        assert_eq!(t.custom_name(0), None);
+        assert_eq!(t.custom_name(1).as_deref(), Some("Home"));
+    }
 }

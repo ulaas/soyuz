@@ -133,17 +133,6 @@ automation-step-tag = Tag
 automation-step-trash = Trash
 automation-step-script = Script
 
-## Tag colors (rule steps)
-
-automation-tag-red = Red
-automation-tag-orange = Orange
-automation-tag-yellow = Yellow
-automation-tag-green = Green
-automation-tag-cyan = Cyan
-automation-tag-blue = Blue
-automation-tag-purple = Purple
-automation-tag-gray = Gray
-
 ## Settings → Scripts
 
 automation-scripts-group = Scripting

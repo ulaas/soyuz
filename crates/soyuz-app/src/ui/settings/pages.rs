@@ -360,6 +360,10 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             sidebar_sections(ui, &mut d.sidebar.sections);
         });
     });
+    any |= group(ui, q, ctx, tr!("settings-views-tag-names"), |r| {
+        r.block("", tr!("settings-views-tag-names-desc"), |_| {});
+        tag_name_rows(r, &mut d.tags.names);
+    });
     any |= group(ui, q, ctx, tr!("settings-views-toolbar"), |r| {
         r.block(tr!("settings-views-toolbar-items"), tr!("settings-views-toolbar-items-desc"), |ui| {
             lines_editor(ui, "toolbar", &mut d.toolbar.items, 5);
@@ -371,6 +375,27 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         // and don't read it yet (the key stays accepted in config.toml).
     });
     any
+}
+
+/// `[tags] names`: one row per color (dot + name field, the color name as placeholder).
+fn tag_name_rows(r: &mut super::widgets::Rows<'_>, names: &mut Vec<String>) {
+    use crate::services::tags::{TAG_COUNT, default_name};
+    for t in 0..TAG_COUNT {
+        let color_name = default_name(t as u8);
+        r.row_kw(color_name, "", "tag tags label rename name etiket", |ui| {
+            let mut s = names.get(t).cloned().unwrap_or_default();
+            let resp = text(ui, &mut s, color_name, 200.0);
+            if resp.changed() {
+                let s: String = s.chars().take(soyuz_core::config::TAG_NAME_MAX_CHARS).collect();
+                if names.len() <= t {
+                    names.resize(TAG_COUNT, String::new());
+                }
+                names[t] = s;
+            }
+            let (dot, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+            ui.painter().circle_filled(dot.center(), 5.5, palette(ui.ctx()).tags[t]);
+        });
+    }
 }
 
 fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::collections::BTreeMap<String, f32>) {

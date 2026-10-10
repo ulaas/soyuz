@@ -23,6 +23,7 @@ impl Default for Config {
             toolbar: Toolbar::default(),
             context_menu: ContextMenu::default(),
             sidebar: Sidebar::default(),
+            tags: TagsSection::default(),
             columns: Columns::default(),
             behaviour: Behaviour::default(),
             jobs: Jobs::default(),
@@ -44,6 +45,12 @@ impl Default for Config {
             automation: Default::default(),
             cli: Default::default(),
         }
+    }
+}
+
+impl Default for TagsSection {
+    fn default() -> Self {
+        TagsSection { names: vec![String::new(); 8] }
     }
 }
 

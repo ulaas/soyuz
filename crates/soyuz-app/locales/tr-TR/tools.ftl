@@ -16,18 +16,13 @@ tools-toast-untagged = { $count } öğeden “{ $tag }” etiketi kaldırıldı
 
 ## Etiketler
 
-tools-tag-red = Kırmızı
-tools-tag-orange = Turuncu
-tools-tag-yellow = Sarı
-tools-tag-green = Yeşil
-tools-tag-cyan = Camgöbeği
-tools-tag-blue = Mavi
-tools-tag-purple = Mor
-tools-tag-gray = Gri
 tools-tags-menu = Etiketler
 tools-tags-section = Etiketler
 tools-tags-clear = Etiketleri temizle
 tools-tags-count = { $count } etiket
+tools-tags-rename = Etiketi yeniden adlandır…
+tools-tags-reset-name = Adı sıfırla
+tools-tags-color-tip = { $color } etiket
 tools-recent = Son kullanılanlar
 
 ## Bağlam menüsü satırları

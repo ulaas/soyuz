@@ -66,7 +66,7 @@ pub fn title_in(a: &Action, l: Locale) -> String {
         A::SelectTab(9) => t_in("action-select-tab-last", l).to_string(),
         A::SelectTab(n) => with_arg("action-select-tab", "n", n.to_string(), l),
         A::OpenWorkspace(n) => with_arg("action-open-workspace", "n", n.to_string(), l),
-        A::AddTag(n) => with_arg("action-add-tag", "tag", tag_name_in(*n, l).to_string(), l),
+        A::AddTag(n) => with_arg("action-add-tag", "tag", tag_name_in(*n, l), l),
         A::SetGroupBy(g) => with_arg("action-set-group-by", "group", group_label_in(*g, l).to_string(), l),
         A::SortBy(c) => with_arg("action-sort-by", "column", column_label_in(*c, l).to_string(), l),
         A::Checksum(h) => with_arg("action-checksum", "algo", h.label().to_string(), l),
@@ -89,12 +89,17 @@ fn column_label_in(c: Column, l: Locale) -> &'static str {
     if l == Locale::EnUs { c.label() } else { crate::i18n::labels::column(c) }
 }
 
-/// Name of color tag `n` (1-based) in the current language.
-pub fn tag_name(n: u8) -> &'static str {
+/// Name of color tag `n` (1-based) in the current language (or the user's name for it).
+pub fn tag_name(n: u8) -> String {
     tag_name_in(n, crate::i18n::current())
 }
 
-pub fn tag_name_in(n: u8, l: Locale) -> &'static str {
+/// The user's name for color tag `n` (1-based) from `[tags] names`, else its color
+/// name in `l`.
+pub fn tag_name_in(n: u8, l: Locale) -> String {
+    if let Some(custom) = n.checked_sub(1).and_then(crate::services::tags::custom_name) {
+        return custom;
+    }
     let key = match n {
         1 => "actions-tag-red",
         2 => "actions-tag-orange",
@@ -106,7 +111,7 @@ pub fn tag_name_in(n: u8, l: Locale) -> &'static str {
         8 => "actions-tag-gray",
         _ => "actions-tag-other",
     };
-    t_in(key, l)
+    t_in(key, l).to_string()
 }
 
 /// Group-by choice in the current language.

@@ -22,18 +22,9 @@ const CTX: &str = "Automations rules watch folder otomasyonlar kurallar izle kla
 
 const TAGS: [&str; 8] = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "gray"];
 
-/// Display name of a tag color in [`TAGS`].
-fn tag_name(tag: &str) -> &'static str {
-    match tag {
-        "red" => tr!("automation-tag-red"),
-        "orange" => tr!("automation-tag-orange"),
-        "yellow" => tr!("automation-tag-yellow"),
-        "green" => tr!("automation-tag-green"),
-        "cyan" => tr!("automation-tag-cyan"),
-        "blue" => tr!("automation-tag-blue"),
-        "purple" => tr!("automation-tag-purple"),
-        _ => tr!("automation-tag-gray"),
-    }
+/// Display name of a tag color in [`TAGS`] (the user's name for it, if renamed).
+fn tag_name(tag: &str) -> String {
+    crate::services::tags::display_name(tag)
 }
 
 fn label(ui: &mut Ui, p: &Palette, s: &str) {
@@ -308,7 +299,9 @@ fn steps(ui: &mut Ui, p: &Palette, i: usize, actions: &mut Vec<RuleAction>) {
                         .on_hover_text("{name} {stem} {ext} {date} {time} {mdate} {parent}");
                 }
                 RuleAction::Tag { tag } => {
-                    let opts: Vec<(String, &str)> = TAGS.iter().map(|t| (t.to_string(), tag_name(t))).collect();
+                    let names: Vec<String> = TAGS.iter().map(|t| tag_name(t)).collect();
+                    let opts: Vec<(String, &str)> =
+                        TAGS.iter().zip(&names).map(|(t, n)| (t.to_string(), n.as_str())).collect();
                     dropdown(ui, &format!("rule_tag_{i}_{k}"), tag, &opts, 100.0);
                 }
                 RuleAction::Script { script } => {
