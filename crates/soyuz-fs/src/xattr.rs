@@ -60,6 +60,45 @@ fn skip_name(name: &std::ffi::OsStr) -> bool {
     n.starts_with("trusted.") || n == "security.selinux" || n.starts_with("system.nfs4")
 }
 
+/// Linux POSIX ACLs live in these two extended attributes.
+#[cfg(target_os = "linux")]
+pub(crate) const ACL_ACCESS: &str = "system.posix_acl_access";
+#[cfg(target_os = "linux")]
+pub(crate) const ACL_DEFAULT: &str = "system.posix_acl_default";
+
+/// Copy only the POSIX ACL (`system.posix_acl_access`) of an open file (`Preserve::ACL`
+/// without `Preserve::XATTR`).
+#[cfg(target_os = "linux")]
+pub(crate) fn copy_acl_fd(src: &std::fs::File, dst: &std::fs::File) -> std::io::Result<()> {
+    use xattr::FileExt;
+    match src.get_xattr(ACL_ACCESS) {
+        Ok(Some(v)) => dst.set_xattr(ACL_ACCESS, &v).or_else(|e| if ignorable(&e) { Ok(()) } else { Err(e) }),
+        Ok(None) => Ok(()),
+        Err(e) if ignorable(&e) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+/// Copy the access and default POSIX ACLs of a directory (follows symlinks).
+#[cfg(target_os = "linux")]
+pub(crate) fn copy_acl_path(src: &Path, dst: &Path) -> std::io::Result<()> {
+    for name in [ACL_ACCESS, ACL_DEFAULT] {
+        match xattr::get(src, name) {
+            Ok(Some(v)) => {
+                if let Err(e) = xattr::set(dst, name, &v)
+                    && !ignorable(&e)
+                {
+                    return Err(e);
+                }
+            }
+            Ok(None) => {}
+            Err(e) if ignorable(&e) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 #[cfg(unix)]
 fn ignorable(e: &std::io::Error) -> bool {
     matches!(e.raw_os_error(), Some(c) if c == libc::ENOTSUP || c == libc::EOPNOTSUPP || c == libc::EPERM || c == libc::EACCES)

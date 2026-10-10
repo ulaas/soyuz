@@ -112,15 +112,32 @@ impl UsnVolume {
     }
 }
 
-/// Give the calling thread the lowest CPU priority (Windows; no-op elsewhere). I/O
-/// priority is left alone: background mode starves a crawl behind any other disk
-/// activity. Returns whether it took effect.
+/// Give the calling thread the lowest priority. Returns whether it took effect.
+///
+/// * Windows: lowest CPU priority. I/O priority is left alone there: background mode
+///   starves a crawl behind any other disk activity.
+/// * Linux: nice 19 for this thread only (`setpriority(PRIO_PROCESS, gettid())` is per
+///   thread) plus the idle I/O class (`ioprio_set(IOPRIO_CLASS_IDLE)`), which yields to all
+///   other disk I/O under BFQ (the usual desktop scheduler).
 pub fn low_priority_thread() -> bool {
     #[cfg(windows)]
     {
         crate::sys::windows::usn::lowest_priority()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let tid = crate::sys::linux::gettid();
+        let cpu = rustix::process::setpriority_process(rustix::process::Pid::from_raw(tid), 19);
+        if let Err(e) = &cpu {
+            log::debug!("setpriority(19) failed: {e}");
+        }
+        let io = crate::sys::linux::ioprio_idle(tid);
+        if let Err(e) = &io {
+            log::debug!("ioprio_set(idle) failed: {e}");
+        }
+        cpu.is_ok() && io.is_ok()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         false
     }
@@ -150,5 +167,23 @@ mod tests {
             )),
         }
         std::thread::spawn(low_priority_thread).join().unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn low_priority_lowers_only_this_thread() {
+        let main_nice = rustix::process::getpriority_process(None).unwrap();
+        let (ok, nice, class) = std::thread::spawn(|| {
+            let ok = low_priority_thread();
+            let tid = crate::sys::linux::gettid();
+            let nice = rustix::process::getpriority_process(rustix::process::Pid::from_raw(tid)).unwrap();
+            (ok, nice, crate::sys::linux::ioprio_class(tid).unwrap())
+        })
+        .join()
+        .unwrap();
+        assert!(ok);
+        assert_eq!(nice, 19);
+        assert_eq!(class, 3, "IOPRIO_CLASS_IDLE");
+        assert_eq!(rustix::process::getpriority_process(None).unwrap(), main_nice, "other threads untouched");
     }
 }

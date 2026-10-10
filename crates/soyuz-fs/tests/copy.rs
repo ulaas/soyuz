@@ -388,3 +388,47 @@ fn xattrs_are_copied_when_supported() {
     copy_file(&src, &dst, &CopyOptions::default(), &OpControl::new(), &mut ()).unwrap();
     assert_eq!(::xattr::get(&dst, "user.soyuz").unwrap().as_deref(), Some(&b"value"[..]));
 }
+
+/// Unix names are bytes: the staged temp name is built from the raw name (non-UTF-8 names
+/// survive) and its length is counted in bytes against NAME_MAX (255).
+#[cfg(unix)]
+#[test]
+fn unix_names_are_bytes() {
+    use std::os::unix::ffi::{OsStrExt, OsStringExt};
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("src");
+    write(&src, b"payload");
+    let raw = std::ffi::OsString::from_vec(b"caf\xe9-\xff.bin".to_vec());
+    let dst = d.path().join(&raw);
+    copy_file(&src, &dst, &CopyOptions::default(), &OpControl::new(), &mut ()).unwrap();
+    assert_eq!(fs::read(&dst).unwrap(), b"payload");
+    let names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert!(names.iter().any(|n| n.as_bytes() == raw.as_bytes()), "{names:?}");
+    assert_eq!(names.len(), 2, "no temp left behind: {names:?}");
+    // 120 two-byte characters = 240 bytes: fits NAME_MAX, but a temp sibling would not.
+    let long: String = "é".repeat(120);
+    let dst = d.path().join(&long);
+    copy_file(&src, &dst, &CopyOptions::default(), &OpControl::new(), &mut ()).unwrap();
+    assert_eq!(fs::read(&dst).unwrap(), b"payload");
+}
+
+/// Linux inode flags travel with `Preserve::ATTRS` (when the filesystem has them).
+#[cfg(target_os = "linux")]
+#[test]
+fn inode_flags_are_preserved() {
+    use soyuz_fs::attrs::{InodeFlags, inode_flags, set_inode_flags};
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("src");
+    write(&src, b"flags");
+    if let Err(e) = set_inode_flags(&src, InodeFlags::NODUMP | InodeFlags::NOATIME, InodeFlags::empty()) {
+        eprintln!("no inode flags on the temp filesystem: {e}");
+        return;
+    }
+    let dst = d.path().join("dst");
+    copy_file(&src, &dst, &CopyOptions::default(), &OpControl::new(), &mut ()).unwrap();
+    assert!(inode_flags(&dst).unwrap().contains(InodeFlags::NODUMP | InodeFlags::NOATIME));
+    let plain = d.path().join("plain");
+    let o = CopyOptions { preserve: Preserve::TIMES, ..CopyOptions::default() };
+    copy_file(&src, &plain, &o, &OpControl::new(), &mut ()).unwrap();
+    assert!(!inode_flags(&plain).unwrap().intersects(InodeFlags::NODUMP | InodeFlags::NOATIME));
+}

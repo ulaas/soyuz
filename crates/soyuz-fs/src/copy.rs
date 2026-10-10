@@ -5,7 +5,10 @@
 //!   (blocks inside the callback) and cancel (`PROGRESS_CANCEL`); sparse files take a manual
 //!   range copy so holes survive.
 //! * Linux: `FICLONE` (btrfs/xfs reflink) → `copy_file_range` in `chunk`-sized steps →
-//!   `read`/`write`; sparse files copy only `SEEK_DATA` extents.
+//!   `read`/`write`; sparse files copy only `SEEK_DATA` extents. `Preserve::ATTRS` carries
+//!   the inode flags (no-CoW / compression before the data, no-dump / no-atime after it,
+//!   append-only / immutable last, once the copy has its final name); `Preserve::ACL`
+//!   carries the `system.posix_acl_*` xattrs even without `Preserve::XATTR`.
 //! * macOS: `fclonefileat` (APFS clone) → chunked `read`/`write` + `fcopyfile` for ACLs.
 //!
 //! Existing destinations are never truncated in place: the copy goes to a hidden sibling
@@ -196,6 +199,7 @@ pub fn copy_file(
             crate::mv::rename(&target, dst, crate::mv::RenameMode::NoReplace)
                 .map_err(|e| FsError { op: "copy".into(), ..e })?;
         }
+        imp::finish_final(src, dst, opts);
         Ok(method)
     })();
     match result {
@@ -214,16 +218,37 @@ pub fn copy_file(
 /// Marker inside the names of the copy engine's temp files (`.<name>.soyuz-part-<pid>-<n>`).
 pub const PART_MARKER: &str = ".soyuz-part-";
 
-/// The temp sibling name of `dst` stays within the usual 255-character name limit.
+/// Longest temp suffix: `.` + marker + pid (10 digits) + `-` + sequence (20 digits).
+const TEMP_EXTRA: usize = 1 + PART_MARKER.len() + 10 + 1 + 20;
+
+/// The temp sibling name of `dst` stays within the file-name limit: 255 UTF-16 units
+/// (counted as characters) on Windows, `NAME_MAX` = 255 bytes on unix.
 fn temp_fits(dst: &Path) -> bool {
-    dst.file_name().is_some_and(|n| n.to_string_lossy().chars().count() + 40 <= 255)
+    dst.file_name().is_some_and(|n| name_len(n) + TEMP_EXTRA <= 255)
 }
 
+#[cfg(unix)]
+fn name_len(n: &std::ffi::OsStr) -> usize {
+    use std::os::unix::ffi::OsStrExt;
+    n.as_bytes().len()
+}
+
+#[cfg(not(unix))]
+fn name_len(n: &std::ffi::OsStr) -> usize {
+    n.to_string_lossy().chars().count()
+}
+
+/// `.<name>.soyuz-part-<pid>-<n>` next to `dst`, built from the raw name (never lossy, so
+/// non-UTF-8 unix names keep their bytes).
 fn temp_sibling(dst: &Path) -> PathBuf {
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let name = dst.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
-    dst.with_file_name(format!(".{name}{PART_MARKER}{}-{seq}", std::process::id()))
+    let mut name = std::ffi::OsString::from(".");
+    if let Some(n) = dst.file_name() {
+        name.push(n);
+    }
+    name.push(format!("{PART_MARKER}{}-{seq}", std::process::id()));
+    dst.with_file_name(name)
 }
 
 /// Atomically move the finished temp copy over `dst`.
@@ -665,6 +690,8 @@ mod imp {
         Ok(true)
     }
 
+    pub(super) fn finish_final(_src: &Path, _dst: &Path, _opts: &CopyOptions) {}
+
     pub(super) fn dir_metadata(src: &Path, dst: &Path, s: &EntryInfo, preserve: Preserve) -> FsResult<()> {
         if preserve.contains(Preserve::XATTR) {
             let _ = crate::xattr::copy_streams(src, dst);
@@ -751,8 +778,19 @@ mod imp {
 
         let mut output = create_dst(target, st.mode)?;
         let mut input = input;
+        // Inode flags that only work on an empty file (no-CoW, compression) go first.
+        #[cfg(target_os = "linux")]
+        let src_flags = if opts.preserve.contains(Preserve::ATTRS) && st.mode & 0o170000 == 0o100000 {
+            rustix::fs::ioctl_getflags(&input).unwrap_or(rustix::fs::IFlags::empty())
+        } else {
+            rustix::fs::IFlags::empty()
+        };
+        #[cfg(target_os = "linux")]
+        set_flags_best_effort(&output, src_flags & EARLY_FLAGS, target);
         let method = copy_bytes(&mut input, &mut output, &st, opts, ctl, sink, (src, target))?;
         apply_fd_metadata(&input, &output, &st, opts, target)?;
+        #[cfg(target_os = "linux")]
+        set_flags_best_effort(&output, src_flags & MIDDLE_FLAGS, target);
         if opts.fsync {
             output.sync_data().map_err(err::map("copy", target))?;
         }
@@ -784,6 +822,7 @@ mod imp {
 
         #[cfg(target_os = "linux")]
         if opts.reflink != Reflink::Never {
+            crate::fault::hit(crate::fault::FaultOp::Write, paths.1).map_err(err::map("copy", paths.1))?;
             match rustix::fs::ioctl_ficlone(&*output, &*input) {
                 Ok(()) => {
                     sink.on_progress(ByteProgress { done: size, total: size, delta: size });
@@ -827,6 +866,7 @@ mod imp {
             let mut first = true;
             loop {
                 ctl.checkpoint()?;
+                crate::fault::hit(crate::fault::FaultOp::Write, paths.1).map_err(err::map("copy", paths.1))?;
                 match copy_file_range(&*input, None, &*output, None, chunk) {
                     Ok(0) => break,
                     Ok(n) => {
@@ -858,6 +898,53 @@ mod imp {
         }
     }
 
+    /// Flags applied to the empty destination before any data (`FS_NOCOW_FL` only works on
+    /// empty files; compression only affects data written afterwards).
+    #[cfg(target_os = "linux")]
+    const EARLY_FLAGS: rustix::fs::IFlags = rustix::fs::IFlags::NOCOW.union(rustix::fs::IFlags::COMPRESSED);
+    /// Flags applied after the data and metadata were written.
+    #[cfg(target_os = "linux")]
+    const MIDDLE_FLAGS: rustix::fs::IFlags = rustix::fs::IFlags::NODUMP.union(rustix::fs::IFlags::NOATIME);
+    /// Flags applied last, after the copy got its final name (an immutable or append-only
+    /// file can no longer be renamed, have its times set, ...). They need
+    /// CAP_LINUX_IMMUTABLE, so without it they are dropped (like `cp -a`).
+    #[cfg(target_os = "linux")]
+    const LATE_FLAGS: rustix::fs::IFlags = rustix::fs::IFlags::APPEND.union(rustix::fs::IFlags::IMMUTABLE);
+
+    /// OR `flags` into the inode flags of `fd`; failures (filesystem without the flag,
+    /// missing privilege) are logged, never fatal.
+    #[cfg(target_os = "linux")]
+    fn set_flags_best_effort(fd: impl rustix::fd::AsFd, flags: rustix::fs::IFlags, target: &Path) {
+        if flags.is_empty() {
+            return;
+        }
+        let res = rustix::fs::ioctl_getflags(&fd)
+            .and_then(|cur| if cur.contains(flags) { Ok(()) } else { rustix::fs::ioctl_setflags(&fd, cur | flags) });
+        if let Err(e) = res {
+            log::debug!("inode flags {flags:?} not carried over to {}: {e}", target.display());
+        }
+    }
+
+    /// Final step under `Preserve::ATTRS`: the append-only / immutable flags of `src` onto
+    /// the finished copy `dst` (already under its final name).
+    pub(super) fn finish_final(src: &Path, dst: &Path, opts: &CopyOptions) {
+        #[cfg(target_os = "linux")]
+        if opts.preserve.contains(Preserve::ATTRS) {
+            let Ok(input) = open_src(src, opts.follow_symlinks) else { return };
+            let Ok(flags) = rustix::fs::ioctl_getflags(&input) else { return };
+            if flags.intersects(LATE_FLAGS) {
+                let Ok(out) =
+                    rustix::fs::openat(CWD, dst, OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::CLOEXEC, Mode::empty())
+                else {
+                    return;
+                };
+                set_flags_best_effort(&out, flags & LATE_FLAGS, dst);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        let _ = (src, dst, opts);
+    }
+
     fn finish_progress(done: u64, size: u64, sink: &mut dyn ProgressSink) {
         if done == 0 && size == 0 {
             sink.on_progress(ByteProgress { done: 0, total: 0, delta: 0 });
@@ -882,6 +969,14 @@ mod imp {
             && let Err(e) = crate::xattr::copy_fd(input, output)
         {
             log::debug!("extended attributes of {} not copied: {e}", target.display());
+        }
+        // POSIX ACLs are xattrs on Linux: carried by XATTR already, else on their own.
+        #[cfg(target_os = "linux")]
+        if opts.preserve.contains(Preserve::ACL)
+            && !opts.preserve.contains(Preserve::XATTR)
+            && let Err(e) = crate::xattr::copy_acl_fd(input, output)
+        {
+            log::debug!("ACL of {} not copied: {e}", target.display());
         }
         #[cfg(target_os = "macos")]
         {
@@ -915,6 +1010,10 @@ mod imp {
         }
         if preserve.contains(Preserve::XATTR) {
             let _ = crate::xattr::copy_path(src, dst);
+        }
+        #[cfg(target_os = "linux")]
+        if preserve.contains(Preserve::ACL) && !preserve.contains(Preserve::XATTR) {
+            let _ = crate::xattr::copy_acl_path(src, dst);
         }
         if preserve.contains(Preserve::OWNER)
             && let Ok(st) = us::ustat_at(CWD, src.as_os_str(), true)
@@ -957,6 +1056,8 @@ mod imp {
     pub(super) fn dir_metadata(_src: &Path, _dst: &Path, _s: &EntryInfo, _p: Preserve) -> FsResult<()> {
         Ok(())
     }
+
+    pub(super) fn finish_final(_src: &Path, _dst: &Path, _opts: &CopyOptions) {}
 }
 
 #[cfg(all(test, windows))]

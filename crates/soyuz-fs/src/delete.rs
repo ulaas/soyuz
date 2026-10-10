@@ -303,6 +303,7 @@ mod imp {
 
     pub(super) fn delete_file(path: &Path, o: &DeleteOptions) -> FsResult<()> {
         let mode = lstat_mode(path, "delete")?;
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete", path))?;
         if mode & S_IFMT == S_IFDIR {
             return Err(FsError::new(FsErrorKind::IsDirectory, "delete", Some(path)));
         }
@@ -316,6 +317,7 @@ mod imp {
     }
 
     pub(super) fn remove_dir(path: &Path, _clear_readonly: bool) -> FsResult<()> {
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete", path))?;
         rustix::fs::unlinkat(CWD, path, AtFlags::REMOVEDIR).map_err(|e| err::io("delete", path, e.into()))
     }
 
@@ -324,6 +326,7 @@ mod imp {
         if mode & S_IFMT != S_IFLNK {
             return Err(super::not_a_link(path));
         }
+        crate::fault::hit(crate::fault::FaultOp::Delete, path).map_err(err::map("delete_link", path))?;
         rustix::fs::unlinkat(CWD, path, AtFlags::empty()).map_err(|e| err::io("delete_link", path, e.into()))
     }
 
@@ -392,14 +395,17 @@ mod imp {
                         }
                     }
                     let done = stack.pop().expect("non-empty stack");
-                    let res = match (&done.name, stack.last()) {
-                        (Some(name), Some(parent)) => match parent.dir.fd() {
-                            Ok(pfd) => rustix::fs::unlinkat(pfd, name.as_os_str(), AtFlags::REMOVEDIR),
-                            Err(e) => Err(e),
-                        },
-                        _ => rustix::fs::unlinkat(CWD, &done.path, AtFlags::REMOVEDIR),
-                    }
-                    .map_err(|e| err::io("delete", &done.path, e.into()));
+                    let res = match crate::fault::hit(crate::fault::FaultOp::Delete, &done.path) {
+                        Err(e) => Err(err::io("delete", &done.path, e)),
+                        Ok(()) => match (&done.name, stack.last()) {
+                            (Some(name), Some(parent)) => match parent.dir.fd() {
+                                Ok(pfd) => rustix::fs::unlinkat(pfd, name.as_os_str(), AtFlags::REMOVEDIR),
+                                Err(e) => Err(e),
+                            },
+                            _ => rustix::fs::unlinkat(CWD, &done.path, AtFlags::REMOVEDIR),
+                        }
+                        .map_err(|e| err::io("delete", &done.path, e.into())),
+                    };
                     report!(&done.path, res, stats.dirs);
                 }
                 Some(Ok(ent)) => {
@@ -430,11 +436,16 @@ mod imp {
                             Err(e) => report!(&path, Err(err::io("delete", &path, e.into())), stats.dirs),
                         },
                         kind => {
-                            let mut res = rustix::fs::unlinkat(fd, name.as_os_str(), AtFlags::empty());
-                            if res == Err(Errno::PERM) && o.clear_readonly && try_clear_immutable(&path) {
-                                res = rustix::fs::unlinkat(fd, name.as_os_str(), AtFlags::empty());
-                            }
-                            let res = res.map_err(|e| err::io("delete", &path, e.into()));
+                            let res = match crate::fault::hit(crate::fault::FaultOp::Delete, &path) {
+                                Err(e) => Err(err::io("delete", &path, e)),
+                                Ok(()) => {
+                                    let mut res = rustix::fs::unlinkat(fd, name.as_os_str(), AtFlags::empty());
+                                    if res == Err(Errno::PERM) && o.clear_readonly && try_clear_immutable(&path) {
+                                        res = rustix::fs::unlinkat(fd, name.as_os_str(), AtFlags::empty());
+                                    }
+                                    res.map_err(|e| err::io("delete", &path, e.into()))
+                                }
+                            };
                             if kind == S_IFLNK {
                                 report!(&path, res, stats.links);
                             } else {

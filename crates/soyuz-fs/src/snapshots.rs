@@ -11,9 +11,15 @@
 //!   through `\\?\GLOBALROOT\Device\…\` and matched to its volume by serial number.
 //!   Opening the devices needs administrator rights on a default installation; the
 //!   report then says how many copies exist but could not be read ([`VersionsReport::denied`]).
-//! * btrfs / ZFS snapshots and macOS Time Machine are deferred (Windows
-//!   first). They plug in as further providers: btrfs `.snapshots/*/` subvolumes, ZFS
-//!   `<mount>/.zfs/snapshot/*/`, Time Machine `/Volumes/<backup>/Backups.backupdb/…`.
+//! * Linux — snapper ([`SnapperProvider`]: `<mount>/.snapshots/<n>/snapshot`, the time from
+//!   `<n>/info.xml`), ZFS ([`ZfsProvider`]: `<mount>/.zfs/snapshot/<name>`) and Timeshift
+//!   ([`TimeshiftProvider`]: `timeshift/snapshots/<date>/localhost` in rsync mode,
+//!   `timeshift-btrfs/snapshots/<date>/@` and `@home` in btrfs mode, on any mounted block
+//!   device). Unmounted btrfs read-only subvolumes outside these layouts are not found.
+//!   Linux snapshot paths map byte-exact ([`map_under`]); the `.snapshots` folder of a
+//!   snapper config is usually root-only, which is reported as [`VersionsReport::denied`].
+//! * macOS Time Machine is deferred; it would plug in as a further provider
+//!   (`/Volumes/<backup>/Backups.backupdb/…`).
 //!
 //! The mapping / filtering / de-duplication logic is pure and unit-tested with fake device
 //! lists.
@@ -157,6 +163,52 @@ pub fn map_into(path: &Path, volume_root: &Path, snap_root: &Path) -> Option<Pat
     Some(PathBuf::from(root + rest))
 }
 
+/// Map `path` on the live mount `volume_root` into the snapshot rooted at `snap_root`, by
+/// path components (unix: case-sensitive and byte-exact). `None` when `path` is not under
+/// `volume_root`.
+pub fn map_under(path: &Path, volume_root: &Path, snap_root: &Path) -> Option<PathBuf> {
+    let rest = path.strip_prefix(volume_root).ok()?;
+    Some(if rest.as_os_str().is_empty() { snap_root.to_path_buf() } else { snap_root.join(rest) })
+}
+
+/// `<date>2024-03-05 14:07:09</date>` (UTC) of a snapper `info.xml`.
+pub fn snapper_date(info_xml: &str) -> Option<SystemTime> {
+    let start = info_xml.find("<date>")? + "<date>".len();
+    let end = start + info_xml[start..].find("</date>")?;
+    let t = chrono::NaiveDateTime::parse_from_str(info_xml[start..end].trim(), "%Y-%m-%d %H:%M:%S").ok()?;
+    Some(SystemTime::from(t.and_utc()))
+}
+
+/// Timeshift snapshot folder name `2024-03-05_14-07-09` (local time).
+pub fn timeshift_date(name: &str) -> Option<SystemTime> {
+    use chrono::TimeZone;
+    let t = chrono::NaiveDateTime::parse_from_str(name, "%Y-%m-%d_%H-%M-%S").ok()?;
+    chrono::Local.from_local_datetime(&t).earliest().map(SystemTime::from)
+}
+
+/// Creation time encoded in common ZFS snapshot names (zfs-auto-snapshot
+/// `…-2024-03-05-1407`, sanoid `autosnap_2024-03-05_14:07:09_…`, `…_2024-03-05_14-07-09`,
+/// plain `2024-03-05`); UTC is assumed.
+pub fn zfs_name_date(name: &str) -> Option<SystemTime> {
+    let b = name.as_bytes();
+    for i in 0..b.len().saturating_sub(9) {
+        let Some(date) = name.get(i..i + 10) else { continue };
+        let Ok(d) = chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d") else { continue };
+        let rest = name.get(i + 10..).unwrap_or("");
+        let rest = rest.strip_prefix(['-', '_', 'T']).unwrap_or("");
+        let digits: String = rest.chars().filter(|c| c.is_ascii_digit()).take(6).collect();
+        let (h, m, sec) = match digits.len() {
+            n if n >= 6 => (&digits[0..2], &digits[2..4], &digits[4..6]),
+            n if n >= 4 => (&digits[0..2], &digits[2..4], "00"),
+            _ => ("00", "00", "00"),
+        };
+        let t =
+            d.and_hms_opt(h.parse().ok()?, m.parse().ok()?, sec.parse().ok()?).or_else(|| d.and_hms_opt(0, 0, 0))?;
+        return Some(SystemTime::from(t.and_utc()));
+    }
+    None
+}
+
 /// Snapshots of the volume with `serial` among probed shadow devices, plus the number of
 /// devices that could not be opened. A creation time equal to the live volume's own
 /// creation time (`live_created`) is not a snapshot time and is dropped.
@@ -256,9 +308,193 @@ impl SnapshotProvider for VssProvider {
     }
 }
 
+/// Read the entries of a snapshot directory: `Ok(None)` when it does not exist,
+/// `Err(())` when it exists but may not be read (root-only `.snapshots`).
+fn list_dir(dir: &Path) -> Result<Option<Vec<std::fs::DirEntry>>, ()> {
+    match std::fs::read_dir(dir) {
+        Ok(rd) => Ok(Some(rd.flatten().collect())),
+        // Only when the folder is known to exist: a lookup below an unreadable mount
+        // (a 0700 EFI partition) is not a snapshot store.
+        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied && crate::list::exists_nofollow(dir) => Err(()),
+        Err(_) => Ok(None),
+    }
+}
+
+/// snapper: `<volume>/.snapshots/<n>/snapshot`, created at `<n>/info.xml`'s `<date>`.
+pub struct SnapperProvider;
+
+impl SnapshotProvider for SnapperProvider {
+    fn name(&self) -> &'static str {
+        "Snapper"
+    }
+
+    fn snapshots(&self, volume_root: &Path) -> FsResult<SnapshotScan> {
+        let mut scan = SnapshotScan::default();
+        let base = volume_root.join(".snapshots");
+        let entries = match list_dir(&base) {
+            Ok(Some(e)) => e,
+            Ok(None) => return Ok(scan),
+            Err(()) => {
+                scan.denied = 1;
+                return Ok(scan);
+            }
+        };
+        for e in entries {
+            let name = e.file_name().to_string_lossy().into_owned();
+            let Ok(seq) = name.parse::<u32>() else { continue };
+            let root = e.path().join("snapshot");
+            if seq == 0 || !crate::list::exists_nofollow(&root) {
+                continue;
+            }
+            let created = std::fs::read_to_string(e.path().join("info.xml")).ok().and_then(|x| snapper_date(&x));
+            scan.snapshots.push(Snapshot {
+                provider: "Snapper",
+                id: name,
+                root,
+                volume: volume_root.to_path_buf(),
+                created,
+                seq,
+            });
+        }
+        sort_newest_first(&mut scan.snapshots);
+        Ok(scan)
+    }
+
+    fn map(&self, snap: &Snapshot, path: &Path) -> Option<PathBuf> {
+        map_under(path, &snap.volume, &snap.root)
+    }
+}
+
+/// ZFS: `<dataset mount>/.zfs/snapshot/<name>` (the `.zfs` folder is reachable even when
+/// hidden).
+pub struct ZfsProvider;
+
+impl SnapshotProvider for ZfsProvider {
+    fn name(&self) -> &'static str {
+        "ZFS snapshot"
+    }
+
+    fn snapshots(&self, volume_root: &Path) -> FsResult<SnapshotScan> {
+        let mut scan = SnapshotScan::default();
+        let entries = match list_dir(&volume_root.join(".zfs").join("snapshot")) {
+            Ok(Some(e)) => e,
+            Ok(None) => return Ok(scan),
+            Err(()) => {
+                scan.denied = 1;
+                return Ok(scan);
+            }
+        };
+        let mut names: Vec<(String, PathBuf)> =
+            entries.into_iter().map(|e| (e.file_name().to_string_lossy().into_owned(), e.path())).collect();
+        names.sort();
+        for (i, (name, root)) in names.into_iter().enumerate() {
+            let created = zfs_name_date(&name);
+            scan.snapshots.push(Snapshot {
+                provider: "ZFS snapshot",
+                id: name,
+                root,
+                volume: volume_root.to_path_buf(),
+                created,
+                seq: u32::try_from(i).unwrap_or(u32::MAX),
+            });
+        }
+        sort_newest_first(&mut scan.snapshots);
+        Ok(scan)
+    }
+
+    fn map(&self, snap: &Snapshot, path: &Path) -> Option<PathBuf> {
+        map_under(path, &snap.volume, &snap.root)
+    }
+}
+
+/// Timeshift snapshots on any mounted block device: rsync mode
+/// (`<mount>/timeshift/snapshots/<date>/localhost` = `/`) and btrfs mode
+/// (`<mount>/timeshift-btrfs/snapshots/<date>/@` = `/`, `@home` = `/home`; visible when the
+/// top-level subvolume is mounted).
+pub struct TimeshiftProvider {
+    /// Mount points to look in (block-device mounts of the mount table).
+    pub mounts: Vec<PathBuf>,
+}
+
+impl TimeshiftProvider {
+    /// Snapshots below the given mount points (pure filesystem walk; testable with fake
+    /// layouts).
+    pub fn scan(mounts: &[PathBuf]) -> SnapshotScan {
+        let mut scan = SnapshotScan::default();
+        let mut seq = 0u32;
+        for m in mounts {
+            for (base, subs) in [
+                (m.join("timeshift").join("snapshots"), &[("localhost", "/")][..]),
+                (m.join("timeshift-btrfs").join("snapshots"), &[("@", "/"), ("@home", "/home")][..]),
+            ] {
+                let entries = match list_dir(&base) {
+                    Ok(Some(e)) => e,
+                    Ok(None) => continue,
+                    Err(()) => {
+                        scan.denied += 1;
+                        continue;
+                    }
+                };
+                for e in entries {
+                    let name = e.file_name().to_string_lossy().into_owned();
+                    let Some(created) = timeshift_date(&name) else { continue };
+                    for (sub, live) in subs {
+                        let root = e.path().join(sub);
+                        if !crate::list::exists_nofollow(&root) {
+                            continue;
+                        }
+                        seq += 1;
+                        scan.snapshots.push(Snapshot {
+                            provider: "Timeshift",
+                            id: format!("{name}/{sub}"),
+                            root,
+                            volume: PathBuf::from(live),
+                            created: Some(created),
+                            seq,
+                        });
+                    }
+                }
+            }
+        }
+        sort_newest_first(&mut scan.snapshots);
+        scan
+    }
+}
+
+impl SnapshotProvider for TimeshiftProvider {
+    fn name(&self) -> &'static str {
+        "Timeshift"
+    }
+
+    fn snapshots(&self, _volume_root: &Path) -> FsResult<SnapshotScan> {
+        Ok(Self::scan(&self.mounts))
+    }
+
+    fn map(&self, snap: &Snapshot, path: &Path) -> Option<PathBuf> {
+        map_under(path, &snap.volume, &snap.root)
+    }
+}
+
 /// Providers for this platform.
 pub fn providers(opts: &VersionOptions) -> Vec<Box<dyn SnapshotProvider>> {
-    if cfg!(windows) { vec![Box::new(VssProvider { probe_max: opts.probe_max.max(1) })] } else { Vec::new() }
+    #[cfg(windows)]
+    {
+        vec![Box::new(VssProvider { probe_max: opts.probe_max.max(1) })]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = opts;
+        vec![
+            Box::new(SnapperProvider),
+            Box::new(ZfsProvider),
+            Box::new(TimeshiftProvider { mounts: crate::volumes::block_device_mounts() }),
+        ]
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        let _ = opts;
+        Vec::new()
+    }
 }
 
 /// Earlier versions of `path` in every snapshot of its volume. Blocking (opens every
@@ -269,9 +505,7 @@ pub fn previous_versions(path: &Path, opts: &VersionOptions) -> FsResult<Version
     let provs = providers(opts);
     if provs.is_empty() {
         return Ok(VersionsReport {
-            unsupported: Some(
-                "Snapshot browsing (btrfs, ZFS, Time Machine) isn't available on this platform yet.".into(),
-            ),
+            unsupported: Some("Snapshot browsing (Time Machine) isn't available on this platform yet.".into()),
             ..VersionsReport::default()
         });
     }
@@ -313,10 +547,24 @@ pub fn previous_versions(path: &Path, opts: &VersionOptions) -> FsResult<Version
     Ok(report)
 }
 
-/// Is `path` inside a snapshot (read-only)?
+/// Is `path` inside a snapshot (read-only)? Shadow copies everywhere; snapper, ZFS and
+/// Timeshift layouts on unix.
 pub fn is_snapshot_path(path: &Path) -> bool {
     let s = path.to_string_lossy();
-    s.len() > GLOBALROOT.len() && s[..GLOBALROOT.len()].eq_ignore_ascii_case(GLOBALROOT) && s.contains(SHADOW_PREFIX)
+    if s.len() > GLOBALROOT.len() && s[..GLOBALROOT.len()].eq_ignore_ascii_case(GLOBALROOT) && s.contains(SHADOW_PREFIX)
+    {
+        return true;
+    }
+    if cfg!(windows) {
+        return false;
+    }
+    let parts: Vec<std::borrow::Cow<'_, str>> = path.components().map(|c| c.as_os_str().to_string_lossy()).collect();
+    parts.windows(3).any(|w| {
+        (w[0] == ".snapshots" && w[1].parse::<u32>().is_ok() && w[2] == "snapshot")
+            || ((w[0] == "timeshift" || w[0] == "timeshift-btrfs")
+                && w[1] == "snapshots"
+                && timeshift_date(&w[2]).is_some())
+    }) || parts.windows(2).any(|w| w[0] == ".zfs" && w[1] == "snapshot")
 }
 
 #[cfg(test)]
@@ -431,6 +679,95 @@ mod tests {
     }
 
     #[test]
+    fn unix_mapping_dates_and_markers() {
+        assert_eq!(
+            map_under(Path::new("/home/u/a.txt"), Path::new("/home"), Path::new("/home/.snapshots/7/snapshot")),
+            Some(PathBuf::from("/home/.snapshots/7/snapshot/u/a.txt"))
+        );
+        assert_eq!(map_under(Path::new("/homework/x"), Path::new("/home"), Path::new("/s")), None);
+        assert_eq!(map_under(Path::new("/home"), Path::new("/home"), Path::new("/s")), Some(PathBuf::from("/s")));
+        let xml =
+            "<?xml version=\"1.0\"?>\n<snapshot>\n  <num>42</num>\n  <date>2024-03-05 14:07:09</date>\n</snapshot>\n";
+        assert_eq!(snapper_date(xml), Some(t(1_709_647_629)));
+        assert_eq!(snapper_date("<snapshot/>"), None);
+        assert!(timeshift_date("2024-03-05_14-07-09").is_some());
+        assert!(timeshift_date("latest").is_none());
+        assert_eq!(zfs_name_date("zfs-auto-snap_hourly-2024-03-05-1407"), Some(t(1_709_647_620)));
+        assert_eq!(zfs_name_date("autosnap_2024-03-05_14:07:09_daily"), Some(t(1_709_647_629)));
+        assert_eq!(zfs_name_date("backup-2024-03-05"), Some(t(1_709_596_800)));
+        assert_eq!(zfs_name_date("manual"), None);
+        if !cfg!(windows) {
+            assert!(is_snapshot_path(Path::new("/home/.snapshots/12/snapshot/u/a.txt")));
+            assert!(is_snapshot_path(Path::new("/tank/data/.zfs/snapshot/daily/x")));
+            assert!(is_snapshot_path(Path::new("/mnt/b/timeshift/snapshots/2024-03-05_14-07-09/localhost/etc")));
+            assert!(!is_snapshot_path(Path::new("/home/u/.snapshots/notes.txt")));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapper_zfs_and_timeshift_fake_layouts() {
+        let d = tempfile::tempdir().unwrap();
+        let vol = d.path().join("vol");
+        let live = vol.join("docs").join("a.txt");
+        std::fs::create_dir_all(live.parent().unwrap()).unwrap();
+        std::fs::write(&live, b"current").unwrap();
+        // snapper: 1 (old content), 2 (same as current), 0 and junk are ignored.
+        for (n, date, content) in [(1, "2024-01-01 10:00:00", "old"), (2, "2024-02-01 10:00:00", "current")] {
+            let s = vol.join(".snapshots").join(n.to_string());
+            std::fs::create_dir_all(s.join("snapshot").join("docs")).unwrap();
+            std::fs::write(s.join("info.xml"), format!("<snapshot><date>{date}</date></snapshot>")).unwrap();
+            std::fs::write(s.join("snapshot").join("docs").join("a.txt"), content).unwrap();
+        }
+        std::fs::create_dir_all(vol.join(".snapshots").join("0").join("snapshot")).unwrap();
+        std::fs::create_dir_all(vol.join(".snapshots").join("junk")).unwrap();
+        let scan = SnapperProvider.snapshots(&vol).unwrap();
+        let ids: Vec<&str> = scan.snapshots.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["2", "1"]);
+        let mapped = SnapperProvider.map(&scan.snapshots[1], &live).unwrap();
+        assert_eq!(std::fs::read(&mapped).unwrap(), b"old");
+
+        // ZFS.
+        let z = vol.join(".zfs").join("snapshot").join("zfs-auto-snap_daily-2024-03-01-0000");
+        std::fs::create_dir_all(z.join("docs")).unwrap();
+        std::fs::write(z.join("docs").join("a.txt"), b"zfs").unwrap();
+        let scan = ZfsProvider.snapshots(&vol).unwrap();
+        assert_eq!(scan.snapshots.len(), 1);
+        assert!(scan.snapshots[0].created.is_some());
+        assert_eq!(std::fs::read(ZfsProvider.map(&scan.snapshots[0], &live).unwrap()).unwrap(), b"zfs");
+
+        // Timeshift (rsync and btrfs layouts) on another "mount".
+        let backup = d.path().join("backup");
+        let rs = backup.join("timeshift").join("snapshots").join("2024-03-05_14-07-09").join("localhost");
+        std::fs::create_dir_all(&rs).unwrap();
+        let bt = backup.join("timeshift-btrfs").join("snapshots").join("2024-03-06_08-00-00");
+        std::fs::create_dir_all(bt.join("@")).unwrap();
+        std::fs::create_dir_all(bt.join("@home")).unwrap();
+        std::fs::create_dir_all(backup.join("timeshift").join("snapshots").join("not-a-date")).unwrap();
+        let scan = TimeshiftProvider::scan(std::slice::from_ref(&backup));
+        let ids: Vec<&str> = scan.snapshots.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids.len(), 3, "{ids:?}");
+        assert!(ids[0].starts_with("2024-03-06_08-00-00/"), "newest first: {ids:?}");
+        let home = scan.snapshots.iter().find(|s| s.id.ends_with("@home")).unwrap();
+        assert_eq!(home.volume, PathBuf::from("/home"));
+        let p = TimeshiftProvider { mounts: vec![] }.map(home, Path::new("/home/u/x")).unwrap();
+        assert_eq!(p, bt.join("@home").join("u").join("x"));
+
+        // The full pipeline over the snapper + ZFS providers: distinct versions only.
+        let mut found = Vec::new();
+        for prov in [&SnapperProvider as &dyn SnapshotProvider, &ZfsProvider] {
+            for snap in prov.snapshots(&vol).unwrap().snapshots {
+                let m = prov.map(&snap, &live).unwrap();
+                let e = crate::list::stat(&m, false).unwrap();
+                found.push(PathVersion { snapshot: snap, path: m, size: e.size, modified: e.modified, is_dir: false });
+            }
+        }
+        assert_eq!(found.len(), 3);
+        let cur = crate::list::stat(&live, false).map(|e| (e.size, e.modified)).ok();
+        assert!(!distinct_versions(cur, found).is_empty());
+    }
+
+    #[test]
     fn previous_versions_of_a_temp_file_reports_cleanly() {
         let dir = tempfile::tempdir().unwrap();
         let f = dir.path().join("a.txt");
@@ -438,7 +775,7 @@ mod tests {
         // No elevation / no shadow copies on CI: must not fail, just report nothing (or
         // the copies that exist when elevated).
         let r = previous_versions(&f, &VersionOptions { probe_max: 2 });
-        if cfg!(windows) {
+        if cfg!(any(windows, target_os = "linux")) {
             let r = r.expect("report");
             assert!(r.unsupported.is_none());
             assert!(r.versions.iter().all(|v| v.path.to_string_lossy().ends_with("a.txt")));

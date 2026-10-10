@@ -4,7 +4,16 @@
 //!   `GetDiskFreeSpaceExW`, plus mounted folders from `FindFirstVolumeW` /
 //!   `GetVolumePathNamesForVolumeNameW`.
 //! * Linux: `/proc/self/mountinfo` (pseudo filesystems filtered) + `statvfs`, labels from
-//!   `/dev/disk/by-label`.
+//!   `/dev/disk/by-label`, removable media from sysfs (`/sys/class/block/<dev>`:
+//!   `removable`, or a USB ancestor), GNOME gvfs mounts (`/run/user/$UID/gvfs/*`) as
+//!   network volumes. One device shows up once: btrfs subvolumes and bind mounts of the
+//!   same filesystem (same `major:minor`) collapse into the mount of the whole filesystem
+//!   (mountinfo root `/`) or else the shortest mount path (`/` rather than `/home` for the
+//!   usual Fedora / openSUSE btrfs layout; a separate `/home` partition is its own
+//!   device and stays listed). tmpfs is listed (as `Ram`) only where users put files:
+//!   `/tmp`, `/var/tmp` and the usual user mount places; `/run`, `/dev/shm` and friends
+//!   stay hidden. [`volume_root`] is the longest mountinfo mount point containing the
+//!   path (so a btrfs subvolume mount such as `/home` is its own root).
 //! * macOS: `getfsstat(MNT_NOWAIT)`.
 //!
 //! Per-volume queries run on short-lived threads with a deadline so a dead network share
@@ -180,6 +189,9 @@ impl FsProbe for RealProbe {
 pub(crate) struct MountInfo {
     pub major: u32,
     pub minor: u32,
+    /// Directory of the filesystem mounted here (`/` for a whole filesystem; the subvolume
+    /// or source directory for btrfs subvolumes and bind mounts).
+    pub root: String,
     pub mount: PathBuf,
     pub options: String,
     pub fstype: String,
@@ -189,6 +201,11 @@ pub(crate) struct MountInfo {
 /// `\040` style octal escapes used by the kernel for spaces, tabs, newlines, backslashes.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn unescape_octal(s: &str) -> String {
+    String::from_utf8_lossy(&unescape_octal_bytes(s)).into_owned()
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn unescape_octal_bytes(s: &str) -> Vec<u8> {
     let b = s.as_bytes();
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
@@ -202,7 +219,21 @@ pub(crate) fn unescape_octal(s: &str) -> String {
             i += 1;
         }
     }
-    String::from_utf8_lossy(&out).into_owned()
+    out
+}
+
+/// A mount path from mountinfo, byte-exact (non-UTF-8 mount points stay intact on unix).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn path_unescaped(s: &str) -> PathBuf {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        PathBuf::from(std::ffi::OsString::from_vec(unescape_octal_bytes(s)))
+    }
+    #[cfg(not(unix))]
+    {
+        PathBuf::from(unescape_octal(s))
+    }
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -219,7 +250,8 @@ pub(crate) fn parse_mountinfo(text: &str) -> Vec<MountInfo> {
         out.push(MountInfo {
             major,
             minor,
-            mount: PathBuf::from(unescape_octal(fields[4])),
+            root: unescape_octal(fields[3]),
+            mount: path_unescaped(fields[4]),
             options: fields[5].to_string(),
             fstype: fields[sep + 1].to_string(),
             source: unescape_octal(fields[sep + 2]),
@@ -260,7 +292,6 @@ pub(crate) fn is_pseudo_mount(m: &MountInfo) -> bool {
         "fuse.snapfuse",
         "nfsd",
         "overlay",
-        "tmpfs",
         "zram",
     ];
     let mount = m.mount.to_string_lossy();
@@ -269,6 +300,12 @@ pub(crate) fn is_pseudo_mount(m: &MountInfo) -> bool {
     }
     if PSEUDO.contains(&m.fstype.as_str()) {
         return true;
+    }
+    if m.fstype == "tmpfs" || m.fstype == "ramfs" {
+        // RAM filesystems only where users keep files.
+        let user_place = ["/tmp", "/var/tmp"].contains(&mount.as_ref())
+            || ["/mnt/", "/media/", "/run/media/", "/home/"].iter().any(|p| mount.starts_with(p));
+        return !user_place;
     }
     ["/proc", "/sys", "/dev", "/run", "/snap", "/var/lib/docker", "/var/snap", "/boot/efi"]
         .iter()
@@ -285,11 +322,105 @@ pub(crate) fn kind_for(fstype: &str, source: &str, mount: &Path) -> VolumeKind {
         "iso9660" | "udf" => VolumeKind::Optical,
         "tmpfs" | "ramfs" => VolumeKind::Ram,
         _ if source.starts_with("//") => VolumeKind::Network,
-        _ if m.starts_with("/media/") || m.starts_with("/run/media/") || m.starts_with("/mnt/") => {
-            VolumeKind::Removable
-        }
+        // udisks mounts hot-plugged media here; /mnt is for static mounts (sysfs decides).
+        _ if m.starts_with("/media/") || m.starts_with("/run/media/") => VolumeKind::Removable,
         _ => VolumeKind::Fixed,
     }
+}
+
+/// The mount containing `path` (absolute, symlinks resolved): longest mount point that is a
+/// path prefix; among stacked mounts on one point the last (topmost) one wins.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn mount_for<'a>(path: &Path, mounts: &'a [MountInfo]) -> Option<&'a MountInfo> {
+    let mut best: Option<&MountInfo> = None;
+    for m in mounts {
+        if path.starts_with(&m.mount) && best.is_none_or(|b| m.mount.as_os_str().len() >= b.mount.as_os_str().len()) {
+            best = Some(m);
+        }
+    }
+    best
+}
+
+/// One entry per filesystem: mounts sharing `major:minor` (btrfs subvolumes, bind mounts)
+/// collapse into the mount of the filesystem root (`root == "/"`), else the one with the
+/// shortest mount path. Order is kept.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn dedupe_mounts(mounts: Vec<MountInfo>) -> Vec<MountInfo> {
+    let rank = |m: &MountInfo| (m.root != "/", m.mount.components().count(), m.mount.as_os_str().len());
+    let mut keep: Vec<MountInfo> = Vec::with_capacity(mounts.len());
+    for m in mounts {
+        // Network filesystems share anonymous device numbers per superblock: each export /
+        // share stays separate when the sources differ.
+        match keep.iter_mut().find(|k| k.major == m.major && k.minor == m.minor && k.fstype == m.fstype) {
+            Some(k) if rank(&m) < rank(k) => *k = m,
+            Some(_) => {}
+            None => keep.push(m),
+        }
+    }
+    keep
+}
+
+/// Label and kind of a gvfs FUSE mount directory name (`smb-share:server=nas,share=media`,
+/// `sftp:host=example.org,user=me`, `mtp:host=Phone_1234`, ...).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn gvfs_label(name: &str) -> (String, VolumeKind) {
+    let (scheme, rest) = name.split_once(':').unwrap_or((name, ""));
+    let mut kv = std::collections::HashMap::new();
+    for part in rest.split(',') {
+        if let Some((k, v)) = part.split_once('=') {
+            kv.insert(k, percent_decode_lossy(v));
+        }
+    }
+    let host = kv.get("host").or_else(|| kv.get("server")).cloned().unwrap_or_default();
+    let kind = match scheme {
+        "mtp" | "gphoto2" | "afc" => VolumeKind::Removable,
+        _ => VolumeKind::Network,
+    };
+    let label = match scheme {
+        "smb-share" => match kv.get("share") {
+            Some(share) => format!("{share} on {host}"),
+            None => host.clone(),
+        },
+        "afp-volume" => match kv.get("volume") {
+            Some(v) => format!("{v} on {host}"),
+            None => host.clone(),
+        },
+        "mtp" | "gphoto2" | "afc" => host.replace('_', " "),
+        "sftp" | "ftp" | "ftps" | "dav" | "davs" | "google-drive" | "onedrive" | "nfs" => {
+            let user = kv.get("user").map(|u| format!("{u}@")).unwrap_or_default();
+            let what = match scheme {
+                "sftp" => "SFTP",
+                "ftp" | "ftps" => "FTP",
+                "dav" | "davs" => "WebDAV",
+                "google-drive" => "Google Drive",
+                "onedrive" => "OneDrive",
+                _ => "NFS",
+            };
+            format!("{user}{host} ({what})")
+        }
+        _ if !host.is_empty() => host.clone(),
+        _ => name.to_string(),
+    };
+    (label, kind)
+}
+
+/// `%20`-style escapes used in gvfs mount names.
+fn percent_decode_lossy(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%'
+            && let Some(v) = s.get(i + 1..i + 3).and_then(|h| u8::from_str_radix(h, 16).ok())
+        {
+            out.push(v);
+            i += 3;
+            continue;
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -465,12 +596,12 @@ mod imp {
     use soyuz_core::{DeviceId, FsResult};
 
     use super::{
-        FsCaps, MountInfo, QUERY_DEADLINE, VolumeInfo, caps_for, is_pseudo_mount, kind_for, parallel_with_deadline,
-        parse_mountinfo,
+        FsCaps, MountInfo, QUERY_DEADLINE, VolumeInfo, VolumeKind, caps_for, dedupe_mounts, gvfs_label,
+        is_pseudo_mount, kind_for, mount_for, parallel_with_deadline, parse_mountinfo,
     };
     use crate::err;
 
-    fn mounts() -> Vec<MountInfo> {
+    pub(crate) fn mounts() -> Vec<MountInfo> {
         std::fs::read_to_string("/proc/self/mountinfo").map(|t| parse_mountinfo(&t)).unwrap_or_default()
     }
 
@@ -508,21 +639,86 @@ mod imp {
         String::from_utf8_lossy(&out).into_owned()
     }
 
-    fn removable(major: u32, minor: u32) -> bool {
-        let base = format!("/sys/dev/block/{major}:{minor}");
-        ["removable", "../removable"]
-            .iter()
-            .any(|f| std::fs::read_to_string(format!("{base}/{f}")).is_ok_and(|s| s.trim() == "1"))
+    /// Is the block device `dev` (`/dev/sdb1`, `/dev/mapper/luks-…`) removable media? Its
+    /// sysfs node (`/sys/class/block/<name>`, the whole disk for a partition) says
+    /// `removable = 1` (card readers, optical drives, most sticks), or it hangs off a USB
+    /// bus (USB disks report `removable = 0`). Device-mapper / md devices are judged by
+    /// the devices under them (`slaves/`).
+    pub(super) fn block_removable(dev: &Path) -> bool {
+        let Some(name) = std::fs::canonicalize(dev).ok().and_then(|d| d.file_name().map(|n| n.to_owned())) else {
+            return false;
+        };
+        sysfs_removable(&Path::new("/sys/class/block").join(name), 0)
+    }
+
+    fn sysfs_removable(node: &Path, depth: u32) -> bool {
+        let Ok(real) = std::fs::canonicalize(node) else { return false };
+        if real.components().any(|c| c.as_os_str().to_string_lossy().starts_with("usb")) {
+            return true;
+        }
+        let disk =
+            if real.join("partition").exists() { real.parent().map(Path::to_path_buf) } else { Some(real.clone()) };
+        if disk.is_some_and(|d| std::fs::read_to_string(d.join("removable")).is_ok_and(|s| s.trim() == "1")) {
+            return true;
+        }
+        if depth < 4
+            && let Ok(rd) = std::fs::read_dir(real.join("slaves"))
+        {
+            return rd.flatten().any(|e| sysfs_removable(&e.path(), depth + 1));
+        }
+        false
+    }
+
+    /// One volume to query: the mount table entry plus label / kind overrides.
+    struct Cand {
+        m: MountInfo,
+        label: Option<String>,
+        kind: Option<VolumeKind>,
+    }
+
+    /// gvfs FUSE mounts (`/run/user/$UID/gvfs/<mount>`), listed under a deadline (the
+    /// gvfs daemon answers the directory listing; a hung backend must not stall us).
+    fn gvfs_mounts(all: &[MountInfo]) -> Vec<Cand> {
+        let Some(root) = all.iter().find(|m| m.fstype == "fuse.gvfsd-fuse").cloned() else { return Vec::new() };
+        let dir = root.mount.clone();
+        let job: Box<dyn FnOnce() -> Vec<std::ffi::OsString> + Send> = Box::new(move || {
+            std::fs::read_dir(&dir).map(|rd| rd.flatten().map(|e| e.file_name()).collect()).unwrap_or_default()
+        });
+        let names = parallel_with_deadline(vec![job], std::time::Duration::from_millis(800))
+            .pop()
+            .flatten()
+            .unwrap_or_default();
+        names
+            .into_iter()
+            .map(|n| {
+                let (label, kind) = gvfs_label(&n.to_string_lossy());
+                Cand {
+                    m: MountInfo {
+                        mount: root.mount.join(&n),
+                        root: "/".into(),
+                        fstype: "fuse.gvfsd-fuse".into(),
+                        source: n.to_string_lossy().into_owned(),
+                        ..root.clone()
+                    },
+                    label: Some(label),
+                    kind: Some(kind),
+                }
+            })
+            .collect()
     }
 
     pub(super) fn volumes() -> Vec<VolumeInfo> {
-        let all: Vec<MountInfo> = mounts().into_iter().filter(|m| !is_pseudo_mount(m)).collect();
+        let table = mounts();
+        let gvfs = gvfs_mounts(&table);
+        let all: Vec<MountInfo> = dedupe_mounts(table.into_iter().filter(|m| !is_pseudo_mount(m)).collect());
+        let mut cands: Vec<Cand> = all.into_iter().map(|m| Cand { m, label: None, kind: None }).collect();
+        cands.extend(gvfs);
         let labels = labels();
         type Job = Box<dyn FnOnce() -> Option<(u64, u64, u64)> + Send>;
-        let jobs: Vec<Job> = all
+        let jobs: Vec<Job> = cands
             .iter()
-            .map(|m| {
-                let mount = m.mount.clone();
+            .map(|c| {
+                let mount = c.m.mount.clone();
                 Box::new(move || {
                     let s = rustix::fs::statvfs(&mount).ok()?;
                     let dev = crate::sys::unix::ustat_at(rustix::fs::CWD, mount.as_os_str(), true).ok()?.dev;
@@ -533,14 +729,15 @@ mod imp {
             .collect();
         let results = parallel_with_deadline(jobs, QUERY_DEADLINE);
         let mut out = Vec::new();
-        for (m, res) in all.into_iter().zip(results) {
+        for (c, res) in cands.into_iter().zip(results) {
+            let m = c.m;
             let (total, free, dev) = res.flatten().unwrap_or((0, 0, rustix::fs::makedev(m.major, m.minor)));
-            let mut kind = kind_for(&m.fstype, &m.source, &m.mount);
-            if kind == super::VolumeKind::Fixed && m.source.starts_with("/dev/") && removable(m.major, m.minor) {
-                kind = super::VolumeKind::Removable;
+            let mut kind = c.kind.unwrap_or_else(|| kind_for(&m.fstype, &m.source, &m.mount));
+            if kind == VolumeKind::Fixed && m.source.starts_with("/dev/") && block_removable(Path::new(&m.source)) {
+                kind = VolumeKind::Removable;
             }
             let src = std::fs::canonicalize(&m.source).unwrap_or_else(|_| PathBuf::from(&m.source));
-            let label = labels.get(&src).cloned().unwrap_or_else(|| {
+            let label = c.label.or_else(|| labels.get(&src).cloned()).unwrap_or_else(|| {
                 if m.mount == Path::new("/") {
                     "File System".to_string()
                 } else {
@@ -548,14 +745,16 @@ mod imp {
                 }
             });
             let mut supports = caps_for(&m.fstype);
-            if crate::trash::trash_support(&m.mount) == crate::trash::TrashSupport::Native {
+            if kind != VolumeKind::Network
+                && crate::trash::trash_support(&m.mount) == crate::trash::TrashSupport::Native
+            {
                 supports |= FsCaps::TRASH;
             }
             out.push(VolumeInfo {
                 read_only: m.options.split(',').any(|o| o == "ro"),
                 mount: m.mount,
                 label,
-                fs: m.fstype,
+                fs: if m.fstype == "fuse.gvfsd-fuse" { "gvfs".into() } else { m.fstype },
                 kind,
                 total,
                 free,
@@ -572,12 +771,57 @@ mod imp {
         Ok((s.f_blocks.saturating_mul(frsize), s.f_bavail.saturating_mul(frsize)))
     }
 
+    /// Absolute path with symlinks resolved, except a final symlink component (a link
+    /// lives on the filesystem of its parent directory).
+    fn resolved(path: &Path) -> Option<PathBuf> {
+        let link = crate::sys::unix::ustat_at(rustix::fs::CWD, path.as_os_str(), false)
+            .is_ok_and(|st| st.mode & 0o170000 == 0o120000);
+        match (link, path.parent(), path.file_name()) {
+            (true, Some(parent), Some(name)) => {
+                let parent = if parent.as_os_str().is_empty() { Path::new(".") } else { parent };
+                std::fs::canonicalize(parent).ok().map(|p| p.join(name))
+            }
+            _ => std::fs::canonicalize(path).ok(),
+        }
+    }
+
     pub(super) fn volume_root(path: &Path) -> FsResult<PathBuf> {
+        let table = mounts();
+        if let Some(p) = resolved(path)
+            && let Some(m) = mount_for(&p, &table)
+        {
+            return Ok(m.mount.clone());
+        }
         super::unix_volume_root(path)
+    }
+
+    /// Mount points of every user-visible filesystem, before de-duplication (per-mount
+    /// trash directories can live on any of them).
+    pub(crate) fn user_mounts() -> Vec<PathBuf> {
+        mounts().into_iter().filter(|m| !is_pseudo_mount(m)).map(|m| m.mount).collect()
     }
 }
 
-/// Walk up from `path` while the device id stays the same.
+/// Mount points of every user-visible filesystem (btrfs subvolume and bind mounts included).
+#[cfg(target_os = "linux")]
+pub(crate) fn user_mounts() -> Vec<PathBuf> {
+    imp::user_mounts()
+}
+
+/// Mount points of every filesystem backed by a block device (`/dev/…` source), hidden
+/// ones included (e.g. Timeshift's `/run/timeshift/…/backup`). Never a network mount, so
+/// looking inside them cannot hang.
+#[cfg(target_os = "linux")]
+pub(crate) fn block_device_mounts() -> Vec<PathBuf> {
+    let mut v: Vec<PathBuf> =
+        imp::mounts().into_iter().filter(|m| m.source.starts_with("/dev/")).map(|m| m.mount).collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// Walk up from `path` while the device id stays the same (fallback when the mount table
+/// cannot be read).
 #[cfg(unix)]
 fn unix_volume_root(path: &Path) -> FsResult<PathBuf> {
     let dev_of = |p: &Path| crate::list::stat(p, true).ok().and_then(|e| e.dev);
@@ -751,9 +995,74 @@ mod tests {
         assert_eq!(kind_for("cifs", "//server/share", Path::new("/mnt/share")), VolumeKind::Network);
         assert_eq!(kind_for("vfat", "/dev/sdb1", Path::new("/media/user/My Disk")), VolumeKind::Removable);
         assert_eq!(kind_for("ext4", "/dev/sda2", Path::new("/")), VolumeKind::Fixed);
+        assert_eq!(
+            kind_for("ext4", "/dev/sdc1", Path::new("/mnt/backup")),
+            VolumeKind::Fixed,
+            "sysfs decides for /mnt"
+        );
         assert!(caps_for("btrfs").contains(FsCaps::REFLINK));
         assert!(!caps_for("vfat").contains(FsCaps::HARDLINK));
         assert_eq!(unescape_octal(r"a\040b\134c"), "a b\\c");
+    }
+
+    /// Fedora's btrfs layout: `/` and `/home` are subvolumes of one filesystem.
+    const BTRFS: &str = "\
+43 1 0:35 /root / rw,relatime shared:1 - btrfs /dev/sdd3 rw,subvolid=259,subvol=/root
+61 43 0:54 / /tmp rw,nosuid,nodev shared:123 - tmpfs tmpfs rw,inode64
+60 43 0:35 /home /home rw,relatime shared:169 - btrfs /dev/sdd3 rw,subvolid=257,subvol=/home
+70 43 8:50 / /boot rw,relatime shared:174 - ext4 /dev/sdd2 rw
+42 40 0:27 / /dev/shm rw,nosuid,nodev shared:3 - tmpfs tmpfs rw
+53 43 0:29 / /run rw,nosuid,nodev shared:14 - tmpfs tmpfs rw,mode=755
+242 53 0:83 / /run/user/1000 rw,nosuid,nodev,relatime shared:902 - tmpfs tmpfs rw,mode=700
+808 242 0:84 / /run/user/1000/gvfs rw,nosuid,nodev,relatime shared:978 - fuse.gvfsd-fuse gvfsd-fuse rw
+90 43 8:33 / /srv/data rw,relatime shared:300 - ext4 /dev/sdc1 rw
+91 43 8:33 /exports /mnt/exports rw,relatime shared:300 - ext4 /dev/sdc1 rw
+92 43 0:35 /root/var/lib/x /var/lib/x rw - btrfs /dev/sdd3 rw
+";
+
+    #[test]
+    fn subvolumes_and_bind_mounts_collapse() {
+        let all = parse_mountinfo(BTRFS);
+        assert_eq!(all[2].root, "/home");
+        let visible: Vec<_> = all.into_iter().filter(|m| !is_pseudo_mount(m)).collect();
+        let mounts: Vec<PathBuf> = dedupe_mounts(visible).into_iter().map(|m| m.mount).collect();
+        assert_eq!(
+            mounts,
+            ["/", "/tmp", "/boot", "/srv/data"].map(PathBuf::from),
+            "btrfs subvolumes and the bind mount fold into one entry; /tmp tmpfs is listed, /run and /dev/shm not"
+        );
+        let tmp = parse_mountinfo(BTRFS).into_iter().find(|m| m.mount == Path::new("/tmp")).unwrap();
+        assert_eq!(kind_for(&tmp.fstype, &tmp.source, &tmp.mount), VolumeKind::Ram);
+    }
+
+    #[test]
+    fn volume_root_is_the_longest_mount_prefix() {
+        let all = parse_mountinfo(BTRFS);
+        let root = |p: &str| mount_for(Path::new(p), &all).map(|m| m.mount.clone());
+        assert_eq!(root("/home/u/doc.txt"), Some(PathBuf::from("/home")));
+        assert_eq!(root("/home"), Some(PathBuf::from("/home")));
+        assert_eq!(root("/homework/x"), Some(PathBuf::from("/")), "component prefix, not string prefix");
+        assert_eq!(root("/run/user/1000/gvfs/sftp:host=x/a"), Some(PathBuf::from("/run/user/1000/gvfs")));
+        assert_eq!(root("/etc/fstab"), Some(PathBuf::from("/")));
+    }
+
+    #[test]
+    fn gvfs_names() {
+        assert_eq!(gvfs_label("smb-share:server=nas,share=media"), ("media on nas".into(), VolumeKind::Network));
+        assert_eq!(gvfs_label("sftp:host=example.org,user=me"), ("me@example.org (SFTP)".into(), VolumeKind::Network));
+        assert_eq!(gvfs_label("dav:host=cloud.example,ssl=true").0, "cloud.example (WebDAV)");
+        assert_eq!(gvfs_label("mtp:host=Google_Pixel_7_ABC"), ("Google Pixel 7 ABC".into(), VolumeKind::Removable));
+        assert_eq!(gvfs_label("smb-share:server=nas,share=my%20files").0, "my files on nas");
+        assert_eq!(gvfs_label("odd").0, "odd");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn removable_lookup_does_not_panic() {
+        // Real block devices vary; only check that the sysfs walk is total.
+        let _ = imp::block_removable(Path::new("/dev/null"));
+        let _ = imp::block_removable(Path::new("/dev/does-not-exist"));
+        assert!(!imp::block_removable(Path::new("/nonexistent")));
     }
 
     #[test]
@@ -772,6 +1081,16 @@ mod tests {
             v.iter().any(|vol| vol.device == dev && (vol.mount == root || d.path().starts_with(&vol.mount))),
             "temp dir's volume {root:?} / {dev:?} not in {v:#?}"
         );
+        assert!(d.path().starts_with(&root), "{root:?}");
+        if cfg!(target_os = "linux") {
+            // A symlink belongs to the filesystem of its directory, not of its target.
+            #[cfg(unix)]
+            {
+                let link = d.path().join("to-root");
+                std::os::unix::fs::symlink("/", &link).unwrap();
+                assert_eq!(volume_root(&link).unwrap(), root);
+            }
+        }
     }
 
     #[test]
