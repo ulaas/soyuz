@@ -251,7 +251,7 @@ max_image_mp = 200               # largest image the image editor decodes
 status_column = true
 refresh_secs = 5
 
-[sync]                           # F8: scheduled sync profiles, two-way sync, previous versions
+[sync]                           # scheduled sync profiles, two-way sync, previous versions
 scheduler = true                 # run profiles on their schedules while Soyuz is open (no OS service)
 reports_kept = 20                # run / dry-run reports kept per profile
 change_debounce_secs = 10        # "on change" schedules wait this long after the last change
@@ -259,13 +259,13 @@ scheduled_dry_run = false        # scheduled runs only write a report of what wo
 previous_versions = true         # list Windows Volume Shadow Copies in "Previous versions"
 shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device can't be listed
 
-[updates]                        # D1: update check (manual; nothing installs without a click, no telemetry)
-repo = ""                        # GitHub "owner/name" or URL; empty = update check disabled
+[updates]                        # update check (manual; nothing installs without a click, no telemetry)
+repo = "ulaas/soyuz"             # GitHub "owner/name" or URL; empty = update check disabled
 weekly_check = false             # also check once a week at startup (notification only)
 include_prereleases = false      # offer release candidates / betas too
-[performance]                    # R5: startup and rendering
+[performance]                    # startup and rendering
 gpu_backend = "auto"             # auto | dx12 | vulkan | gl (next start; WGPU_BACKEND wins)
-[remote]                         # F2: SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
+[remote]                         # SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
 cache_ttl_secs = 30              # reuse a remote folder listing this long (Refresh always re-lists)
 poll_secs = 0                    # re-list visible remote folders this often (0 = never)
 connect_timeout_secs = 20

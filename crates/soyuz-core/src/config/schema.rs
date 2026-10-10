@@ -777,9 +777,9 @@ pub struct Git {
 }
 
 /// `[updates]`: user-initiated update check against GitHub Releases. Nothing
-/// is ever downloaded or installed without a click; there is no telemetry. Defaults: no
-/// repo (check disabled), no weekly check, stable releases only.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// is ever downloaded or installed without a click; there is no telemetry. Defaults: the
+/// official repository, no weekly check, stable releases only.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Updates {
     /// GitHub repository to check, `owner/name` or `https://github.com/owner/name`.
@@ -789,6 +789,16 @@ pub struct Updates {
     pub weekly_check: bool,
     /// Offer pre-releases (release candidates, betas) too.
     pub include_prereleases: bool,
+}
+
+/// The official repository, checked by "Check for updates" unless `[updates] repo` says
+/// otherwise.
+pub const DEFAULT_UPDATE_REPO: &str = "ulaas/soyuz";
+
+impl Default for Updates {
+    fn default() -> Self {
+        Updates { repo: DEFAULT_UPDATE_REPO.into(), weekly_check: false, include_prereleases: false }
+    }
 }
 
 /// Longest custom tag name, in characters (longer names are cut).

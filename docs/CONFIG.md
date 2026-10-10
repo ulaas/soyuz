@@ -460,11 +460,11 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 ## `[updates]`
 
-`[updates]`: user-initiated update check against GitHub Releases. Nothing is ever downloaded or installed without a click; there is no telemetry. Defaults: no repo (check disabled), no weekly check, stable releases only.
+`[updates]`: user-initiated update check against GitHub Releases. Nothing is ever downloaded or installed without a click; there is no telemetry. Defaults: the official repository, no weekly check, stable releases only.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `repo` | string | `""` | GitHub repository to check, `owner/name` or `https://github.com/owner/name`. Empty disables the update check. |
+| `repo` | string | `"ulaas/soyuz"` | GitHub repository to check, `owner/name` or `https://github.com/owner/name`. Empty disables the update check. |
 | `weekly_check` | boolean | `false` | Also check once a week at startup (off by default; only shows a notification). |
 | `include_prereleases` | boolean | `false` | Offer pre-releases (release candidates, betas) too. |
 
