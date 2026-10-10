@@ -360,6 +360,11 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             sidebar_sections(ui, &mut d.sidebar.sections);
         });
     });
+    any |= group(ui, q, ctx, tr!("settings-views-portal"), |r| {
+        r.block("", tr!("settings-views-portal-desc"), |ui| {
+            portal_pins(ui, &mut d.sidebar.portal);
+        });
+    });
     any |= group(ui, q, ctx, tr!("settings-views-toolbar"), |r| {
         r.block(tr!("settings-views-toolbar-items"), tr!("settings-views-toolbar-items-desc"), |ui| {
             lines_editor(ui, "toolbar", &mut d.toolbar.items, 5);
@@ -436,12 +441,13 @@ fn sidebar_sections(ui: &mut Ui, sections: &mut Vec<SidebarSection>) {
     let all = [
         (SidebarSection::Favorites, tr!("settings-views-section-favorites")),
         (SidebarSection::Devices, tr!("settings-views-section-devices")),
-        (SidebarSection::Cloud, tr!("settings-views-section-cloud")),
+        (SidebarSection::Portal, tr!("settings-views-section-portal")),
         (SidebarSection::Tags, tr!("settings-views-section-tags")),
-        (SidebarSection::Network, tr!("settings-views-section-network")),
         (SidebarSection::Trash, tr!("settings-views-section-trash")),
-        (SidebarSection::Tree, tr!("settings-views-folder-tree")),
+        (SidebarSection::Network, tr!("settings-views-section-network")),
+        (SidebarSection::Cloud, tr!("settings-views-section-cloud")),
         (SidebarSection::Smart, tr!("settings-views-section-smart")),
+        (SidebarSection::Tree, tr!("settings-views-section-tree")),
     ];
     let mut action: Option<(usize, bool)> = None;
     for (i, s) in sections.clone().iter().enumerate() {
@@ -480,6 +486,57 @@ fn sidebar_sections(ui: &mut Ui, sections: &mut Vec<SidebarSection>) {
             }
             ui.label(RichText::new(label).color(p.text_tertiary));
         });
+    }
+}
+
+/// The Portal's pinned folders: label (empty = folder name), path, reorder, unpin.
+fn portal_pins(ui: &mut Ui, pins: &mut Vec<soyuz_core::config::PortalPin>) {
+    let p = palette(ui.ctx());
+    if pins.is_empty() {
+        ui.label(RichText::new(tr!("settings-views-portal-empty")).color(p.text_tertiary));
+        return;
+    }
+    let mut action: Option<(usize, bool)> = None;
+    let n = pins.len();
+    for (i, pin) in pins.iter_mut().enumerate() {
+        ui.push_id(("soyuz.settings.portal", i), |ui| {
+            ui.horizontal(|ui| {
+                let hint = soyuz_core::entry::display_name(&pin.path);
+                text(ui, &mut pin.name, &hint, 150.0);
+                let path = soyuz_fs::strip_verbatim(&pin.path).display().to_string();
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if small_button(ui, Some(ph::PUSH_PIN_SLASH), "", true)
+                        .on_hover_text(tr!("settings-views-portal-unpin"))
+                        .clicked()
+                    {
+                        action = Some((i, false));
+                    }
+                    if i + 1 < n
+                        && small_button(ui, Some(ph::ARROW_DOWN), "", false)
+                            .on_hover_text(tr!("settings-views-portal-down"))
+                            .clicked()
+                    {
+                        action = Some((i, true));
+                    }
+                    if i > 0
+                        && small_button(ui, Some(ph::ARROW_UP), "", false)
+                            .on_hover_text(tr!("settings-views-portal-up"))
+                            .clicked()
+                    {
+                        action = Some((i - 1, true));
+                    }
+                    ui.add(egui::Label::new(RichText::new(&path).color(p.text_secondary)).truncate())
+                        .on_hover_text(&path);
+                });
+            });
+        });
+    }
+    if let Some((i, swap)) = action {
+        if swap {
+            pins.swap(i, i + 1);
+        } else {
+            pins.remove(i);
+        }
     }
 }
 

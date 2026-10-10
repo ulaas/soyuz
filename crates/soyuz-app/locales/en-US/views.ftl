@@ -179,7 +179,7 @@ views-pane-empty-sub = Drop files here or create something new.
 views-tree-home = Home
 views-tree-filter = Filter folders
 views-tree-clear-filter = Clear filter
-views-tree-a11y = Folder tree
+views-tree-a11y = Disk tree
 views-col-resize = Resize the { $column } column
 views-tree-no-matches = No matching folders
 views-tree-open = Open
@@ -194,8 +194,8 @@ views-tree-properties = Properties
 views-tree-read-failed = Couldn't read the folder
 # Name given to a folder created from the tree's context menu.
 views-tree-new-folder-name = New folder
-views-tree-hidden = Folder tree hidden
-views-tree-shown = Folder tree shown
+views-tree-hidden = Disk tree hidden
+views-tree-shown = Disk tree shown
 
 ## Preview pane (ui/preview)
 

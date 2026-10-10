@@ -146,7 +146,7 @@ app-sidebar-cloud = Cloud
 app-sidebar-tags = Tags
 app-sidebar-network = Network
 app-sidebar-other = Other
-app-sidebar-folders = Folders
+app-sidebar-folders = Disk tree
 app-sidebar-smart = Smart folders
 app-sidebar-settings = Settings
 # $key is a keyboard shortcut ("Ctrl+,").
@@ -158,6 +158,33 @@ app-sidebar-volume-tip = { $path }
     { $free } free of { $total }
 app-sidebar-scanning = Scanning…
 app-sidebar-trash = Trash
+# Icon bar at the top of the sidebar: switch between the sections and the disk tree.
+app-sidebar-view-bar = Sidebar view
+app-sidebar-view-places = Places
+app-sidebar-view-places-tip = Places: favorites, devices, portal, tags and more
+app-sidebar-view-tree = Disk tree
+app-sidebar-view-tree-tip = Disk tree: your drives and home folder as one folder tree
+# $tip is one of the tips above, $key a keyboard shortcut ("Ctrl+Shift+E").
+app-sidebar-view-tip-key = { $tip }  ({ $key })
+
+## Portal: folders pinned by dropping them on the sidebar section (ui/portal.rs)
+
+app-sidebar-portal = Portal
+app-portal-empty = Drop folders here to pin them
+app-portal-missing = missing
+# $path is the pinned folder.
+app-portal-missing-tip = { $path }
+    The folder was not found (moved, renamed or on a drive that is not connected).
+app-portal-drop-badge = Pin to Portal
+app-portal-open = Open
+app-portal-rename = Rename label…
+app-portal-reset-name = Use the folder's name
+app-portal-unpin = Unpin from Portal
+# $name is a folder name.
+app-portal-pinned = Pinned “{ $name }” to Portal
+app-portal-pinned-many = Pinned { $count } folders to Portal
+app-portal-folders-only = Only folders can be pinned to Portal
+app-portal-already = Already pinned to Portal
 app-place-home = Home
 app-place-desktop = Desktop
 app-place-documents = Documents

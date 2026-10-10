@@ -1,12 +1,15 @@
-//! Left sidebar: Favorites (user-ordered, drag to reorder, plus config bookmarks),
-//! Devices (volumes with free-space bars), Cloud folders and Trash, in collapsible
-//! sections ordered by `[sidebar] sections`.
+//! Left sidebar: a mini icon bar on top switches between the places sections and the
+//! full-height disk tree (`[sidebar] mode`). The places view has Favorites (user-ordered,
+//! drag to reorder, plus config bookmarks), Devices (volumes with free-space bars), Portal
+//! (folders pinned by dropping them, see `ui::portal`), Tags, Other (Recent, Timeline,
+//! Trash), Network, Cloud folders and Smart folders, in collapsible sections ordered by
+//! `[sidebar] sections`.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use egui::{Align2, CursorIcon, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
-use soyuz_core::config::{Bookmark, SidebarMode, SidebarSection};
+use soyuz_core::config::{Bookmark, PortalPin, SidebarMode, SidebarSection};
 use soyuz_core::{Location, SizeStyle, format_size};
 use soyuz_fs::VolumeInfo;
 
@@ -139,6 +142,8 @@ pub struct SidebarState {
     places_applied: bool,
     /// `i18n::generation()` the default favorites were labelled in.
     lang_gen: u64,
+    /// The Portal section (pinned folders).
+    pub portal: crate::ui::portal::PortalState,
 }
 
 impl Default for SidebarState {
@@ -156,6 +161,7 @@ impl SidebarState {
             drag: None,
             places_applied: places_probed(),
             lang_gen: crate::i18n::generation(),
+            portal: Default::default(),
         }
     }
 }
@@ -181,6 +187,10 @@ pub struct SidebarCtx<'a> {
     pub settings_key: Option<String>,
     /// Folder tree state and options (`[sidebar] mode` decides where it shows).
     pub tree: crate::ui::tree::TreeArgs<'a>,
+    /// Folders pinned to the Portal section (`[[sidebar.portal]]`).
+    pub portal: &'a [PortalPin],
+    /// Shortcut of `Action::ToggleTreeSidebar`, shown in the icon bar's tooltips.
+    pub tree_key: Option<String>,
 }
 
 /// Section heading shown to the user.
@@ -188,6 +198,7 @@ fn section_name(s: SidebarSection) -> &'static str {
     match s {
         SidebarSection::Favorites => tr!("app-sidebar-favorites"),
         SidebarSection::Devices => tr!("app-sidebar-devices"),
+        SidebarSection::Portal => tr!("app-sidebar-portal"),
         SidebarSection::Cloud => tr!("app-sidebar-cloud"),
         SidebarSection::Tags => tr!("app-sidebar-tags"),
         SidebarSection::Network => tr!("app-sidebar-network"),
@@ -202,6 +213,7 @@ fn section_key(s: SidebarSection) -> &'static str {
     match s {
         SidebarSection::Favorites => "Favorites",
         SidebarSection::Devices => "Devices",
+        SidebarSection::Portal => "Portal",
         SidebarSection::Cloud => "Cloud",
         SidebarSection::Tags => "Tags",
         SidebarSection::Network => "Network",
@@ -243,6 +255,9 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             } else {
                 ui.add_space(2.0);
             }
+            // Set again while the Portal section is drawn (OS drops over it pin).
+            s.portal.rect = None;
+            view_bar(ui, c);
             Panel::bottom("soyuz.sidebar.footer")
                 .resizable(false)
                 .show_separator_line(false)
@@ -265,6 +280,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                         SidebarSection::Tree if c.tree.mode == SidebarMode::Both => tree_section(ui, s, c),
                         SidebarSection::Favorites => favorites(ui, s, c),
                         SidebarSection::Devices => devices(ui, s, c),
+                        SidebarSection::Portal => portal(ui, s, c),
                         SidebarSection::Cloud if !c.cloud.is_empty() => cloud(ui, s, c),
                         SidebarSection::Trash => other(ui, s, c),
                         SidebarSection::Network => {
@@ -291,7 +307,78 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         });
 }
 
-/// The "Folders" section: filter box and tree rows.
+/// The mini icon bar above the sections: Places (sections) | Disk tree (full height).
+/// `both` counts as Places (the tree is then a section at the bottom).
+fn view_bar(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
+    let tree = c.tree.mode == SidebarMode::Tree;
+    let items = [
+        (false, ph::BOOKMARKS_SIMPLE, tr!("app-sidebar-view-places"), tr!("app-sidebar-view-places-tip")),
+        (true, ph::TREE_STRUCTURE, tr!("app-sidebar-view-tree"), tr!("app-sidebar-view-tree-tip")),
+    ];
+    let bar = ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.add_space(4.0);
+        for (is_tree, glyph, name, tip) in items {
+            let on = is_tree == tree;
+            let tip = match &c.tree_key {
+                Some(k) => tr!("app-sidebar-view-tip-key", tip = tip, key = k),
+                None => tip.to_string(),
+            };
+            if view_button(ui, glyph, name, &tip, on).clicked() && !on {
+                let mode = if is_tree { SidebarMode::Tree } else { SidebarMode::Places };
+                c.cmds.push(Cmd::SetSidebarMode(mode));
+            }
+        }
+    });
+    crate::ui::a11y::container(ui.ctx(), bar.response.id, egui::accesskit::Role::Toolbar, tr!("app-sidebar-view-bar"));
+    ui.add_space(2.0);
+}
+
+/// One compact icon toggle of the view bar (subtle accent fill when active).
+fn view_button(ui: &mut Ui, glyph: &str, name: &str, tip: &str, on: bool) -> egui::Response {
+    let p = palette(ui.ctx());
+    let (rect, resp) = ui.allocate_exact_size(vec2(28.0, 24.0), Sense::click());
+    crate::ui::a11y::toggle(&resp, name, on);
+    if ui.is_rect_visible(rect) {
+        let rounding = egui::CornerRadius::same(crate::theme::tokens::radius::CONTROL);
+        let hover =
+            ui.ctx().animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(ui.ctx(), 0.10));
+        if on {
+            ui.painter().rect_filled(rect, rounding, p.accent_subtle);
+        } else if hover > 0.0 {
+            ui.painter().rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
+        }
+        let color = if on {
+            p.accent
+        } else if hover > 0.5 {
+            p.text_primary
+        } else {
+            p.text_tertiary
+        };
+        let font = if on { crate::theme::icons::font_fill(15.0) } else { crate::theme::icons::font(15.0) };
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, glyph, font, color);
+        if resp.has_focus() {
+            crate::ui::widgets::focus_ring(ui, rect);
+        }
+    }
+    resp.on_hover_text(tip)
+}
+
+/// The Portal section: folders pinned by dropping them on it (see `ui::portal`).
+fn portal(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
+    let key = section_key(SidebarSection::Portal);
+    let mut open = !s.collapsed.contains(key);
+    let resp = collapsible_header(ui, section_name(SidebarSection::Portal), &mut open);
+    if open {
+        s.collapsed.remove(key);
+    } else {
+        s.collapsed.insert(key.to_string());
+    }
+    let mut pc = crate::ui::portal::PortalCtx { pins: c.portal, current: c.current, pane: c.pane, cmds: &mut *c.cmds };
+    crate::ui::portal::section(ui, &mut s.portal, resp.rect, open, &mut pc);
+}
+
+/// The "Disk tree" section (`mode = "both"`): filter box and tree rows.
 fn tree_section(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     if !header(ui, s, SidebarSection::Tree) {
         return;

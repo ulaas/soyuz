@@ -17,6 +17,7 @@ pub mod native_chrome;
 pub mod pane_view;
 pub mod panels;
 pub mod path_picker;
+pub mod portal;
 pub mod preview;
 pub mod quicklook;
 pub mod remote;

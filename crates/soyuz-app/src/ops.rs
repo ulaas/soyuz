@@ -823,6 +823,8 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
+        Cmd::Portal(c) => crate::ui::portal::apply(app, ctx, c),
+        Cmd::SetSidebarMode(m) => crate::ui::tree::set_mode(app, ctx, m),
         Cmd::MoveFavorite { from, to } => {
             let s = &mut app.ui.sidebar;
             if from < s.favorites.len() {

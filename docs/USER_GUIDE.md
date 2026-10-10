@@ -21,12 +21,14 @@ of the *Explorer* preset; the command palette always shows the active ones.
 
 ```
 ┌ sidebar ─┬ tabs ────────────────────────────────────────────────┐
-│ Favorites│ ← → ↑  Home › Projects › soyuz        Filter   ⌘ ▤ ◫ │  toolbar + omnibar
-│ Devices  ├──────────────────────────────────────────────────────┤
-│ Cloud    │  file list (details / list / grid / gallery / Miller) │  preview pane →
+│ [▤] [⑃]  │ ← → ↑  Home › Projects › soyuz        Filter   ⌘ ▤ ◫ │  toolbar + omnibar
+│ Favorites├──────────────────────────────────────────────────────┤
+│ Devices  │  file list (details / list / grid / gallery / Miller) │  preview pane →
+│ Portal   │                                                      │
 │ Tags     │                                                      │
-│ Trash    ├──────────────────────────────────────────────────────┤
-│          │  terminal · activity (toggle with Ctrl+` / Ctrl+⇧J)  │
+│ Other    ├──────────────────────────────────────────────────────┤
+│ Network  │  terminal · activity (toggle with Ctrl+` / Ctrl+⇧J)  │
+│ Cloud    │                                                      │
 └──────────┴──────────────────────────────────────── status bar ──┘
 ```
 
@@ -37,6 +39,28 @@ of the *Explorer* preset; the command palette always shows the active ones.
   folders. Click the empty area or press `Ctrl+L` to type a path (with completion).
 - The **status bar** shows counts, selection size, free space, an icon-size slider, view
   and theme switches, and a ring when jobs are running.
+
+### The sidebar
+
+A small icon bar at the top of the sidebar switches between two views (`Ctrl+Shift+E`
+toggles too):
+
+- **Places**: collapsible sections, from top to bottom **Favorites**, **Devices**,
+  **Portal**, **Tags**, **Other** (Recent, Timeline, Trash), **Network**, **Cloud** and
+  Smart folders. Choose and reorder them in *Settings → Views → Sidebar sections*.
+- **Disk tree**: your drives and home folder as one folder tree that fills the whole
+  sidebar (with a filter box on top). *Settings → Views → Sidebar content → Both* shows the
+  tree as a section below the places instead.
+
+**Portal** is a drop zone for the folders you are working with: drag one or more folders
+onto the Portal section (from the file list, the disk tree, the shelf, or from Explorer)
+and they are pinned there. Dropping only pins (nothing is copied or moved); files,
+duplicates and folders that no longer exist are skipped. Click a pin to open it,
+middle-click to open it in a new tab, drag pins to reorder them, and right-click for open
+in a new tab / other pane, reveal, copy path, **Rename label…** and **Unpin**. A pin whose
+folder is gone is dimmed and marked *missing* until you unpin it or the folder returns.
+Pins are kept in `config.toml` (`[[sidebar.portal]]`) and can also be edited in
+*Settings → Views → Portal*.
 
 ## Moving around
 

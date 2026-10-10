@@ -41,6 +41,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[toolbar]`](#toolbar)
 - [`[context_menu]`](#context_menu)
 - [`[sidebar]`](#sidebar)
+- [`[[sidebar.portal]]`](#sidebarportal)
 - [`[columns]`](#columns)
 - [`[behaviour]`](#behaviour)
 - [`[jobs]`](#jobs)
@@ -80,7 +81,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `1` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `2` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -263,10 +264,21 @@ Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`, `"br
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `sections` | array of `"favorites"` \| `"devices"` \| `"cloud"` \| `"tags"` \| `"network"` \| `"trash"` \| `"tree"` \| `"smart"` | `["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"]` | Sidebar sections in display order; leave one out to hide it. |
-| `mode` | `"places"` \| `"tree"` \| `"both"` | `"both"` | `places` \| `tree` \| `both`. (`places`: Favorites, devices, cloud, tags … (no folder tree); `tree`: Only the folder tree (drives + home); `both`: The places sections with the folder tree as the `tree` section) |
+| `sections` | array of `"favorites"` \| `"devices"` \| `"portal"` \| `"cloud"` \| `"tags"` \| `"network"` \| `"trash"` \| `"tree"` \| `"smart"` | `["favorites", "devices", "portal", "tags", "trash", "network", "cloud", "smart"]` | Sidebar sections in display order; leave one out to hide it. |
+| `mode` | `"places"` \| `"tree"` \| `"both"` | `"places"` | `places` \| `tree` \| `both`. (`places`: Favorites, devices, portal, tags … (no disk tree); `tree`: Only the disk tree (drives + home), filling the sidebar; `both`: The places sections with the disk tree as the `tree` section) |
 | `tree_follow` | boolean | `true` | Expand the tree to the active pane's folder and highlight it. |
 | `tree_drag_expand_ms` | integer | `700` | Hovering a drag over a collapsed tree folder expands it after this delay (milliseconds; 0 = never). |
+
+## `[[sidebar.portal]]`
+
+A `[[sidebar.portal]]` entry: a folder pinned to the Portal section.
+
+A list of tables; empty by default. Defaults below are for a new entry's omitted keys.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `path` | string | — | The pinned folder. |
+| `name` | string | — | Label shown in the sidebar; empty = the folder's name. |
 
 ## `[columns]`
 

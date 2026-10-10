@@ -160,7 +160,10 @@ impl Section {
             Section::Views => {
                 c.columns = d.columns;
                 c.layout = d.layout;
+                // Pinned Portal folders are the user's data, not layout: keep them.
+                let portal = std::mem::take(&mut c.sidebar.portal);
                 c.sidebar = d.sidebar;
+                c.sidebar.portal = portal;
                 c.toolbar = d.toolbar;
                 c.context_menu = d.context_menu;
                 c.general.default_view = d.general.default_view;

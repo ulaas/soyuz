@@ -167,7 +167,7 @@ views-pane-empty-sub = Dosyaları buraya bırakın ya da yeni bir şey oluşturu
 views-tree-home = Giriş klasörü
 views-tree-filter = Klasörleri filtrele
 views-tree-clear-filter = Filtreyi temizle
-views-tree-a11y = Klasör ağacı
+views-tree-a11y = Disk ağacı
 views-col-resize = { $column } sütununu yeniden boyutlandır
 views-tree-no-matches = Eşleşen klasör yok
 views-tree-open = Aç
@@ -181,8 +181,8 @@ views-tree-add-favorite = Sık kullanılanlara ekle
 views-tree-properties = Özellikler
 views-tree-read-failed = Klasör okunamadı
 views-tree-new-folder-name = Yeni klasör
-views-tree-hidden = Klasör ağacı gizlendi
-views-tree-shown = Klasör ağacı gösteriliyor
+views-tree-hidden = Disk ağacı gizlendi
+views-tree-shown = Disk ağacı gösteriliyor
 
 ## Önizleme bölmesi (ui/preview)
 

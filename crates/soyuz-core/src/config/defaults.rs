@@ -164,10 +164,11 @@ impl Default for Sidebar {
     fn default() -> Self {
         use SidebarSection::*;
         Sidebar {
-            sections: vec![Favorites, Smart, Devices, Cloud, Tags, Network, Trash, Tree],
-            mode: SidebarMode::Both,
+            sections: vec![Favorites, Devices, Portal, Tags, Trash, Network, Cloud, Smart],
+            mode: SidebarMode::Places,
             tree_follow: true,
             tree_drag_expand_ms: 700,
+            portal: Vec::new(),
         }
     }
 }

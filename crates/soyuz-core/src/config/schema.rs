@@ -13,7 +13,7 @@ use crate::time::DateFormat;
 use super::keys::KeyPreset;
 
 /// Current schema version written by [`save_pretty`](super::save_pretty).
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -368,27 +368,43 @@ pub struct ContextMenu {
 pub enum SidebarSection {
     Favorites,
     Devices,
+    /// Portal: folders pinned by dropping them on the section (`[[sidebar.portal]]`).
+    Portal,
     /// OneDrive / CloudStorage folders detected via env + known dirs.
     Cloud,
     Tags,
     Network,
+    /// "Other": Recent, Timeline and Trash.
     Trash,
+    /// The disk tree as a section (only drawn in `mode = "both"`).
     Tree,
     /// Smart folders (saved live searches, F5). Shown last when not listed.
     Smart,
 }
 
-/// What the sidebar shows: the places sections, the folder tree, or both.
+/// What the sidebar shows: the places sections, the disk tree, or both. The icon bar at
+/// the top of the sidebar switches between `places` and `tree`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SidebarMode {
-    /// Favorites, devices, cloud, tags … (no folder tree).
-    Places,
-    /// Only the folder tree (drives + home).
-    Tree,
-    /// The places sections with the folder tree as the `tree` section.
+    /// Favorites, devices, portal, tags … (no disk tree).
     #[default]
+    Places,
+    /// Only the disk tree (drives + home), filling the sidebar.
+    Tree,
+    /// The places sections with the disk tree as the `tree` section.
     Both,
+}
+
+/// A `[[sidebar.portal]]` entry: a folder pinned to the Portal section.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PortalPin {
+    /// The pinned folder.
+    pub path: PathBuf,
+    /// Label shown in the sidebar; empty = the folder's name.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub name: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -403,6 +419,8 @@ pub struct Sidebar {
     /// Hovering a drag over a collapsed tree folder expands it after this delay
     /// (milliseconds; 0 = never).
     pub tree_drag_expand_ms: u32,
+    /// Folders pinned to the Portal section (drop folders on it to add), in order.
+    pub portal: Vec<PortalPin>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
