@@ -173,7 +173,11 @@ All from the palette or the context menu:
   pane, folder, tab or sidebar entry behind the tool, or out to the desktop / other apps;
   previous versions copy by default.
 - **Tags** — eight color labels (`Add tag` actions); the sidebar lists tagged items.
-  Tags follow files you rename or move inside Soyuz.
+  Tags follow files you rename or move inside Soyuz. To give a tag your own name,
+  right-click it in the sidebar → *Rename tag…* (Enter saves, Esc cancels; *Reset name*
+  brings the color name back), or edit Settings → Views & layout → Tag names
+  (`[tags] names` in `config.toml`). Items stay tagged by color, so renaming changes
+  nothing on disk; `tag:red` keeps working in searches.
 
 ## Search
 

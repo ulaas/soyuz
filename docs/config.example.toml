@@ -125,6 +125,9 @@ mode = "both"                    # places | tree (folder tree only) | both (tree
 tree_follow = true               # expand the tree to the active pane's folder
 tree_drag_expand_ms = 700        # drag-hover over a collapsed folder expands it (0 = never)
 
+[tags]                           # display names of the eight color tags (items stay tagged by color)
+names = ["", "", "", "", "", "", "", ""]  # red, orange, yellow, green, cyan, blue, purple, gray; "" = translated color name, max 40 chars
+
 [columns]
 details = ["name", "size", "kind", "modified"]
 widths = { name = 320, size = 90, kind = 120, modified = 150 }

@@ -41,6 +41,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[toolbar]`](#toolbar)
 - [`[context_menu]`](#context_menu)
 - [`[sidebar]`](#sidebar)
+- [`[tags]`](#tags)
 - [`[columns]`](#columns)
 - [`[behaviour]`](#behaviour)
 - [`[jobs]`](#jobs)
@@ -267,6 +268,14 @@ Editable toolbar: action names (§2.10) plus `"|"` (separator), `"spacer"`, `"br
 | `mode` | `"places"` \| `"tree"` \| `"both"` | `"both"` | `places` \| `tree` \| `both`. (`places`: Favorites, devices, cloud, tags … (no folder tree); `tree`: Only the folder tree (drives + home); `both`: The places sections with the folder tree as the `tree` section) |
 | `tree_follow` | boolean | `true` | Expand the tree to the active pane's folder and highlight it. |
 | `tree_drag_expand_ms` | integer | `700` | Hovering a drag over a collapsed tree folder expands it after this delay (milliseconds; 0 = never). |
+
+## `[tags]`
+
+`[tags]`: display names of the eight color tags. Membership is stored by color, so renaming a tag never touches the tagged items.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `names` | array of strings | `["", "", "", "", "", "", "", ""]` | Custom names in color order (red, orange, yellow, green, cyan, blue, purple, gray). An empty entry (or a missing one) shows the translated color name; names are trimmed and cut at 40 characters. |
 
 ## `[columns]`
 

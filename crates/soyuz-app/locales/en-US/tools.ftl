@@ -12,7 +12,7 @@ tools-toast-select-versions = Select one file or folder to see its previous vers
 tools-toast-no-profile = No sync profile named “{ $name }”
 tools-toast-versions-off = Previous versions are turned off
 tools-toast-versions-off-body = Turn them on in Settings › Jobs › Sync & versions.
-# $tag: tag color name (tools-tag-*).
+# $tag: tag name (the color name, or the name the user gave the tag).
 tools-toast-tagged = Tagged { $count ->
     [one] 1 item
    *[other] { $count } items
@@ -24,18 +24,14 @@ tools-toast-untagged = Removed { $tag } from { $count ->
 
 ## Tags
 
-tools-tag-red = Red
-tools-tag-orange = Orange
-tools-tag-yellow = Yellow
-tools-tag-green = Green
-tools-tag-cyan = Cyan
-tools-tag-blue = Blue
-tools-tag-purple = Purple
-tools-tag-gray = Gray
 tools-tags-menu = Tags
 tools-tags-section = Tags
 tools-tags-clear = Clear tags
 tools-tags-count = { $count } tags
+tools-tags-rename = Rename tag…
+tools-tags-reset-name = Reset name
+# $color: the tag's color name.
+tools-tags-color-tip = { $color } tag
 tools-recent = Recent
 
 ## Context menu rows

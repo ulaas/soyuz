@@ -403,9 +403,17 @@ pub fn flush() {
     });
 }
 
-/// Display name of a tag slug (`red` → `Red`, "Kırmızı" in Turkish).
+/// Display name of a tag slug (`red` → `Red`, "Kırmızı" in Turkish, or the user's
+/// name for it from `[tags] names`).
 pub fn display_name(slug: &str) -> String {
-    let Some(t) = from_name(slug) else { return slug.to_string() };
+    match from_name(slug) {
+        Some(t) => name(t),
+        None => slug.to_string(),
+    }
+}
+
+/// Translated color name of tag `t` (the name shown when the user has not renamed it).
+pub fn default_name(t: u8) -> &'static str {
     match t {
         0 => tr!("services-tag-red"),
         1 => tr!("services-tag-orange"),
@@ -416,7 +424,36 @@ pub fn display_name(slug: &str) -> String {
         6 => tr!("services-tag-purple"),
         _ => tr!("services-tag-gray"),
     }
-    .to_string()
+}
+
+thread_local! {
+    /// `[tags] names`, cleaned (empty = default), refreshed on every config apply.
+    static CUSTOM: RefCell<[String; TAG_COUNT]> = RefCell::new(Default::default());
+}
+
+/// Take the custom tag names from the config (`app::apply_live_settings`).
+pub fn set_custom_names(c: &soyuz_core::config::TagsSection) {
+    CUSTOM.with_borrow_mut(|names| {
+        for (i, n) in names.iter_mut().enumerate() {
+            *n = c.custom_name(i).unwrap_or_default();
+        }
+    });
+}
+
+/// The user's name for tag `t`, if renamed.
+pub fn custom_name(t: u8) -> Option<String> {
+    CUSTOM.with_borrow(|names| names.get(t as usize).filter(|n| !n.is_empty()).cloned())
+}
+
+/// Display name of tag `t`: the custom name, else the translated color name.
+pub fn name(t: u8) -> String {
+    resolve_name(custom_name(t).as_deref().unwrap_or(""), default_name(t))
+}
+
+/// `custom` (cleaned) unless it is blank, then `default`.
+pub fn resolve_name(custom: &str, default: &str) -> String {
+    let c = soyuz_core::config::clean_tag_name(custom);
+    if c.is_empty() { default.to_string() } else { c }
 }
 
 /// Whether there are unsaved changes (the UI keeps repainting until they are written).
@@ -594,6 +631,34 @@ pub fn stat_listing(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_tag_names() {
+        use soyuz_core::config::{TAG_NAME_MAX_CHARS, TagsSection};
+        assert_eq!(resolve_name("", "Red"), "Red");
+        assert_eq!(resolve_name("  \t ", "Red"), "Red");
+        assert_eq!(resolve_name("  Work ", "Red"), "Work");
+        assert_eq!(resolve_name(&"y".repeat(90), "Red").chars().count(), TAG_NAME_MAX_CHARS);
+
+        set_custom_names(&TagsSection::default());
+        let red = default_name(0).to_string();
+        assert_eq!(name(0), red);
+        assert_eq!(custom_name(0), None);
+        let names = vec!["  Work ".into(), "   ".into(), "z".repeat(90)];
+        set_custom_names(&TagsSection { names });
+        assert_eq!(name(0), "Work");
+        assert_eq!(display_name("red"), "Work");
+        assert_eq!(display_name("RED"), "Work");
+        assert_eq!(name(1), default_name(1), "blank = default");
+        assert_eq!(name(2).chars().count(), TAG_NAME_MAX_CHARS);
+        assert_eq!(name(7), default_name(7), "missing entry = default");
+        assert_eq!(display_name("nonsense"), "nonsense");
+        // Membership slugs never change with the name.
+        assert_eq!(from_name("red"), Some(0));
+        assert_eq!(from_name("Work"), None);
+        set_custom_names(&TagsSection::default());
+        assert_eq!(name(0), red);
+    }
 
     #[test]
     fn store_round_trip() {

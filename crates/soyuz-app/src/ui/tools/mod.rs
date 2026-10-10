@@ -57,6 +57,11 @@ pub enum ToolCmd {
         tag: u8,
     },
     ClearTags(Vec<PathBuf>),
+    /// Rename color tag `tag` (`[tags] names`); an empty name restores the color name.
+    RenameTag {
+        tag: u8,
+        name: String,
+    },
     ForgetRecent(Vec<PathBuf>),
     /// F8: the sync profiles window (schedules, reports).
     SyncProfiles,
@@ -274,7 +279,15 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     debug_open_once();
-    let cmds: Vec<ToolCmd> = QUEUE.with_borrow_mut(std::mem::take);
+    let mut cmds: Vec<ToolCmd> = QUEUE.with_borrow_mut(std::mem::take);
+    // Config edits run outside the tools borrow (applying a config touches many modules).
+    cmds.retain(|c| match c {
+        ToolCmd::RenameTag { tag, name } => {
+            rename_tag(app, ctx, *tag, name);
+            false
+        }
+        _ => true,
+    });
     TOOLS.with_borrow_mut(|t| {
         t.shelf.external_drops(ctx);
         for c in cmds {
@@ -370,11 +383,33 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             crate::services::tags::clear_many(&paths);
             refresh_tag_panes(app);
         }
+        // Handled in `begin_frame` before the tools borrow.
+        ToolCmd::RenameTag { .. } => {}
         ToolCmd::ForgetRecent(paths) => {
             crate::services::recent::forget(&paths);
             refresh_location(app, |l| matches!(l, Location::Recent));
         }
     }
+}
+
+/// Store a tag's display name in `config.toml` (applied live, saved like a settings
+/// edit, so an open settings window picks it up instead of overwriting it).
+fn rename_tag(app: &mut SoyuzApp, ctx: &egui::Context, tag: u8, name: &str) {
+    let i = tag as usize;
+    if i >= crate::services::tags::TAG_COUNT {
+        return;
+    }
+    let mut clean = soyuz_core::config::clean_tag_name(name);
+    if clean == crate::services::tags::default_name(tag) {
+        clean.clear();
+    }
+    crate::ui::settings::update_config(app, ctx, |c| {
+        let names = &mut c.tags.names;
+        if names.len() <= i {
+            names.resize(crate::services::tags::TAG_COUNT.max(i + 1), String::new());
+        }
+        names[i] = clean;
+    });
 }
 
 /// Re-list panes showing a tag listing (membership changed).

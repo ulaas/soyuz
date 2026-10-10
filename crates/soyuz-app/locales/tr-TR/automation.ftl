@@ -126,17 +126,6 @@ automation-step-tag = Etiketle
 automation-step-trash = Çöp Kutusu
 automation-step-script = Betik
 
-## Etiket renkleri (kural adımları)
-
-automation-tag-red = Kırmızı
-automation-tag-orange = Turuncu
-automation-tag-yellow = Sarı
-automation-tag-green = Yeşil
-automation-tag-cyan = Camgöbeği
-automation-tag-blue = Mavi
-automation-tag-purple = Mor
-automation-tag-gray = Gri
-
 ## Ayarlar → Betikler
 
 automation-scripts-group = Betik çalıştırma

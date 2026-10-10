@@ -146,7 +146,7 @@ pub fn paint_cell(
                     x += DOT_STEP + 2.0;
                 }
                 let label = if n == 1 {
-                    super::tags_ui::tag_name(tags::mask_tags(mask).next().unwrap_or(0)).to_string()
+                    super::tags_ui::tag_name(tags::mask_tags(mask).next().unwrap_or(0))
                 } else {
                     tr!("tools-tags-count", count = n)
                 };
