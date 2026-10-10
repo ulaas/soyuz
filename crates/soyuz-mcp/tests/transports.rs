@@ -3,7 +3,9 @@
 
 mod common;
 
-use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(windows)]
+use std::io::{BufRead, BufReader};
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::time::Duration;
 

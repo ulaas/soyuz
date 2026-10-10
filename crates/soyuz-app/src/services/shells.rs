@@ -153,7 +153,7 @@ pub fn matching<'a>(shells: &'a [Shell], program: &str, args: &[String]) -> Opti
         .or_else(|| shells.iter().find(|s| same(s) && s.args.is_empty()))
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
@@ -169,7 +169,6 @@ mod tests {
         }
     }
 
-    #[cfg(windows)]
     #[test]
     fn detects_windows_shells_and_wsl_distros() {
         let e = env(

@@ -172,14 +172,8 @@ fn via_window(r: &mut Render<'_>, pipe: Option<&str>, req: &Request) -> Option<i
     Some(r.code())
 }
 
-#[cfg(windows)]
 fn dup(s: &soyuz_mcp::pipe::ClientStream) -> std::io::Result<soyuz_mcp::pipe::ClientStream> {
     Ok(s.clone())
-}
-
-#[cfg(not(windows))]
-fn dup(s: &soyuz_mcp::pipe::ClientStream) -> std::io::Result<soyuz_mcp::pipe::ClientStream> {
-    s.try_clone()
 }
 
 fn headless_job(r: &mut Render<'_>, spec: JobSpec, history: Option<PathBuf>) -> i32 {

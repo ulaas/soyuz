@@ -1,10 +1,17 @@
-use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::path::Path;
+use std::path::PathBuf;
+#[cfg(windows)]
 use std::sync::Arc;
+#[cfg(windows)]
 use std::time::Duration;
 
-use soyuz_jobs::{EngineConfig, JobEngine, JobId, JobKind, JobSpec};
+use soyuz_jobs::JobKind;
+#[cfg(windows)]
+use soyuz_jobs::{EngineConfig, JobEngine, JobId, JobSpec};
 
 use super::client::{run_with, spec_for};
+#[cfg(windows)]
 use super::proto::{self, Host};
 use super::*;
 
@@ -88,6 +95,7 @@ fn job_specs() {
     assert_eq!(e.0, exit::NOT_FOUND, "missing destination folder");
 }
 
+#[cfg(windows)]
 fn engine() -> Arc<JobEngine> {
     JobEngine::new(EngineConfig::default(), Arc::new(soyuz_fs::RealProbe), Arc::new(|| {}))
 }
@@ -129,11 +137,13 @@ fn headless_copy_and_json() {
 }
 
 /// A stand-in for the window: submits straight to an engine, records open requests.
+#[cfg(windows)]
 struct TestHost {
     engine: Arc<JobEngine>,
     opened: parking_lot::Mutex<Vec<(PathBuf, bool)>>,
 }
 
+#[cfg(windows)]
 impl Host for TestHost {
     fn engine(&self) -> Arc<JobEngine> {
         self.engine.clone()

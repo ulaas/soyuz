@@ -143,9 +143,29 @@ pub fn connect(name: &str) -> std::io::Result<Option<ClientStream>> {
     windows::connect(name)
 }
 
-/// A connected client end (no pipe outside Windows yet).
+/// No local pipe off Windows yet: a stream type that can never exist (but satisfies the
+/// `Read + Write + Clone` bounds of the shared relay / serve code).
 #[cfg(not(windows))]
-pub type ClientStream = std::fs::File;
+#[derive(Clone, Debug)]
+pub struct ClientStream(std::convert::Infallible);
+
+#[cfg(not(windows))]
+impl Read for ClientStream {
+    fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+        match self.0 {}
+    }
+}
+
+#[cfg(not(windows))]
+impl Write for ClientStream {
+    fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+        match self.0 {}
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self.0 {}
+    }
+}
 
 #[cfg(not(windows))]
 pub fn connect(_name: &str) -> std::io::Result<Option<ClientStream>> {
