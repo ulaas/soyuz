@@ -1,4 +1,4 @@
-# Supply-chain checks (SECURITY.md, "Supply chain"): cargo-deny (licences, advisories, bans,
+# Supply-chain checks: cargo-deny (licences, advisories, bans,
 # sources; config in deny.toml) and cargo-audit (RustSec advisories). Runs on every change
 # to the dependency set, on PRs, and weekly so new advisories against an unchanged
 # Cargo.lock are caught.
