@@ -5,7 +5,10 @@
 //!   file system refuses it) — the entry data already carries attributes, times, size, file
 //!   id and the reparse tag, so no per-entry stat.
 //! * Linux: `getdents` (rustix `Dir`) + `statx(dirfd, name, AT_SYMLINK_NOFOLLOW)` relative to
-//!   the directory fd (falls back to `fstatat` on kernels without statx).
+//!   the directory fd (falls back to `fstatat` on kernels without statx); on network and
+//!   FUSE filesystems with `AT_STATX_DONT_SYNC`, so the listing is served from the
+//!   attribute cache instead of one server round trip per entry. Names listed in the
+//!   directory's `.hidden` file (the GNOME / KDE convention) are marked hidden.
 //! * macOS: `getdents`-style `readdir` + `fstatat(dirfd, name)`.
 
 use std::path::{Path, PathBuf};
@@ -26,11 +29,20 @@ pub struct ListOptions {
     pub owners: bool,
     /// Entries per streamed chunk (default 512).
     pub chunk: usize,
+    /// Unix: mark the names listed in the directory's `.hidden` file as hidden (default on).
+    pub dot_hidden: bool,
 }
 
 impl Default for ListOptions {
     fn default() -> Self {
-        ListOptions { follow_symlinks: false, include_hidden: true, stat_links: true, owners: false, chunk: 512 }
+        ListOptions {
+            follow_symlinks: false,
+            include_hidden: true,
+            stat_links: true,
+            owners: false,
+            chunk: 512,
+            dot_hidden: true,
+        }
     }
 }
 
@@ -210,6 +222,7 @@ pub fn walk(
         stat_links: false,
         owners: false,
         chunk: 0,
+        dot_hidden: false,
     };
     let max_depth = opts.max_depth.unwrap_or(usize::MAX);
     let mut stack: Vec<Frame> = Vec::new();
@@ -514,6 +527,7 @@ pub(crate) mod imp {
 
 #[cfg(unix)]
 pub(crate) mod imp {
+    use std::collections::HashSet;
     use std::ffi::OsStr;
     use std::io;
     use std::os::unix::ffi::OsStrExt;
@@ -597,12 +611,28 @@ pub(crate) mod imp {
         }
     }
 
-    fn build(dirfd: impl AsFd + Copy, name: &OsStr, path: PathBuf, opts: &ListOptions) -> io::Result<EntryInfo> {
-        let mut st = us::ustat_at(dirfd, name, false)?;
+    #[cfg(target_os = "linux")]
+    fn stat_entry(dirfd: impl AsFd, name: &OsStr, follow: bool, cached: bool) -> io::Result<UStat> {
+        if cached { us::ustat_at_cached(dirfd, name, follow) } else { us::ustat_at(dirfd, name, follow) }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn stat_entry(dirfd: impl AsFd, name: &OsStr, follow: bool, _cached: bool) -> io::Result<UStat> {
+        us::ustat_at(dirfd, name, follow)
+    }
+
+    fn build(
+        dirfd: impl AsFd + Copy,
+        name: &OsStr,
+        path: PathBuf,
+        opts: &ListOptions,
+        cached: bool,
+    ) -> io::Result<EntryInfo> {
+        let mut st = stat_entry(dirfd, name, false, cached)?;
         let is_link = st.mode & 0o170000 == 0o120000;
         if is_link
             && opts.follow_symlinks
-            && let Ok(t) = us::ustat_at(dirfd, name, true)
+            && let Ok(t) = stat_entry(dirfd, name, true, cached)
         {
             st = t;
         }
@@ -610,11 +640,49 @@ pub(crate) mod imp {
         Ok(entry_from_ustat(path, &st, lt, opts.owners))
     }
 
+    /// Largest `.hidden` file read (a list of names, one per line).
+    const HIDDEN_FILE_MAX: usize = 256 * 1024;
+
+    /// Names listed in the directory's `.hidden` file (empty when there is none).
+    fn hidden_names(dirfd: impl AsFd) -> HashSet<Vec<u8>> {
+        use std::io::Read;
+        let Ok(fd) = rustix::fs::openat(
+            dirfd,
+            ".hidden",
+            OFlags::RDONLY | OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::CLOEXEC,
+            Mode::empty(),
+        ) else {
+            return HashSet::new();
+        };
+        let mut buf = Vec::new();
+        let mut f = std::fs::File::from(fd);
+        if !f.metadata().is_ok_and(|m| m.is_file()) {
+            return HashSet::new();
+        }
+        if f.by_ref().take(HIDDEN_FILE_MAX as u64).read_to_end(&mut buf).is_err() {
+            return HashSet::new();
+        }
+        parse_hidden(&buf)
+    }
+
+    /// One name per line (`\n` or `\r\n`); blank lines are ignored.
+    pub(crate) fn parse_hidden(buf: &[u8]) -> HashSet<Vec<u8>> {
+        buf.split(|b| *b == b'\n')
+            .map(|l| l.strip_suffix(b"\r").unwrap_or(l))
+            .filter(|l| !l.is_empty() && !l.contains(&b'/'))
+            .map(<[u8]>::to_vec)
+            .collect()
+    }
+
     pub(crate) struct Iter {
         base: PathBuf,
         fd: OwnedFd,
         dir: Dir,
         opts: ListOptions,
+        /// Network / FUSE filesystem: stat from the attribute cache.
+        cached: bool,
+        /// Names from the directory's `.hidden` file.
+        hidden: HashSet<Vec<u8>>,
     }
 
     impl Iterator for Iter {
@@ -631,7 +699,14 @@ pub(crate) mod imp {
                     continue;
                 }
                 let path = self.base.join(name);
-                return Some(build(self.fd.as_fd(), name, path, &self.opts));
+                let mut res = build(self.fd.as_fd(), name, path, &self.opts, self.cached);
+                if let Ok(e) = &mut res
+                    && !self.hidden.is_empty()
+                    && self.hidden.contains(name.as_bytes())
+                {
+                    e.attrs |= Attributes::HIDDEN;
+                }
+                return Some(res);
             }
         }
     }
@@ -639,7 +714,12 @@ pub(crate) mod imp {
     pub(crate) fn open_dir(path: &Path, opts: &ListOptions) -> io::Result<Iter> {
         let fd = rustix::fs::openat(CWD, path, OFlags::RDONLY | OFlags::DIRECTORY | OFlags::CLOEXEC, Mode::empty())?;
         let dir = Dir::read_from(&fd)?;
-        Ok(Iter { base: path.to_path_buf(), fd, dir, opts: opts.clone() })
+        #[cfg(target_os = "linux")]
+        let cached = us::is_network_fd(&fd);
+        #[cfg(not(target_os = "linux"))]
+        let cached = false;
+        let hidden = if opts.dot_hidden { hidden_names(&fd) } else { HashSet::new() };
+        Ok(Iter { base: path.to_path_buf(), fd, dir, opts: opts.clone(), cached, hidden })
     }
 
     pub(crate) fn stat(path: &Path, follow: bool) -> io::Result<EntryInfo> {

@@ -57,7 +57,9 @@ fn long_form(path: &Path) -> Vec<u16> {
     path.to_string_lossy().encode_utf16().collect()
 }
 
-/// Remove a `\\?\` / `\\?\UNC\` prefix for display (lossless on Windows).
+/// Remove a `\\?\` / `\\?\UNC\` prefix for display (lossless on Windows). Unix paths
+/// have no verbatim form: they are returned unchanged, byte for byte (a backslash is an
+/// ordinary file-name character there, and names need not be UTF-8).
 pub fn strip_verbatim(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
@@ -74,14 +76,7 @@ pub fn strip_verbatim(path: &Path) -> PathBuf {
     }
     #[cfg(not(windows))]
     {
-        let s = path.to_string_lossy();
-        if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-            PathBuf::from(format!(r"\\{rest}"))
-        } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-            PathBuf::from(rest)
-        } else {
-            path.to_path_buf()
-        }
+        path.to_path_buf()
     }
 }
 
@@ -219,9 +214,23 @@ mod tests {
 
     #[test]
     fn verbatim() {
-        assert_eq!(strip_verbatim(Path::new(r"\\?\C:\x")), PathBuf::from(r"C:\x"));
-        assert_eq!(strip_verbatim(Path::new(r"\\?\UNC\srv\share\x")), PathBuf::from(r"\\srv\share\x"));
+        if cfg!(windows) {
+            assert_eq!(strip_verbatim(Path::new(r"\\?\C:\x")), PathBuf::from(r"C:\x"));
+            assert_eq!(strip_verbatim(Path::new(r"\\?\UNC\srv\share\x")), PathBuf::from(r"\\srv\share\x"));
+        } else {
+            // `\\?\x` is a legal (if odd) relative unix name: never rewritten.
+            assert_eq!(strip_verbatim(Path::new(r"\\?\C:\x")), PathBuf::from(r"\\?\C:\x"));
+        }
         assert_eq!(strip_verbatim(Path::new("/plain")), PathBuf::from("/plain"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn verbatim_is_byte_exact_on_unix() {
+        use std::os::unix::ffi::OsStrExt;
+        let raw: &[u8] = b"/tmp/caf\xe9-\xff\xfe.txt";
+        let p = Path::new(std::ffi::OsStr::from_bytes(raw));
+        assert_eq!(strip_verbatim(p).as_os_str().as_bytes(), raw);
     }
 
     #[cfg(windows)]

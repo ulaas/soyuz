@@ -75,14 +75,17 @@ mod statx_impl {
         if !NO_STATX.load(Ordering::Relaxed) {
             match rustix::fs::statx(&dirfd, name, flags, StatxFlags::BASIC_STATS | StatxFlags::BTIME) {
                 Ok(x) => {
+                    // Only attribute bits the filesystem says it supports are meaningful.
+                    let known = StatxAttributes::from_bits_retain(x.stx_attributes_mask.bits());
+                    let attrs = x.stx_attributes & known;
                     let mut extra = Attributes::empty();
-                    if x.stx_attributes.contains(StatxAttributes::IMMUTABLE) {
+                    if attrs.contains(StatxAttributes::IMMUTABLE) {
                         extra |= Attributes::IMMUTABLE;
                     }
-                    if x.stx_attributes.contains(StatxAttributes::COMPRESSED) {
+                    if attrs.contains(StatxAttributes::COMPRESSED) {
                         extra |= Attributes::COMPRESSED;
                     }
-                    if x.stx_attributes.contains(StatxAttributes::ENCRYPTED) {
+                    if attrs.contains(StatxAttributes::ENCRYPTED) {
                         extra |= Attributes::ENCRYPTED;
                     }
                     let btime = (x.stx_mask & StatxFlags::BTIME.bits() != 0)
@@ -111,6 +114,7 @@ mod statx_impl {
                 Err(e) => return Err(e.into()),
             }
         }
+        let flags = flags - AtFlags::STATX_DONT_SYNC;
         let s = if flags.contains(AtFlags::EMPTY_PATH) {
             rustix::fs::fstat(&dirfd)?
         } else {
@@ -138,6 +142,44 @@ mod statx_impl {
 #[cfg(target_os = "linux")]
 pub(crate) fn ustat_at(dirfd: impl AsFd, name: &OsStr, follow: bool) -> io::Result<UStat> {
     statx_impl::stat(dirfd, name, at_flags(follow))
+}
+
+/// [`ustat_at`] that may answer from the attribute cache (`AT_STATX_DONT_SYNC`): on network
+/// filesystems (NFS, SMB, Ceph, FUSE) a plain statx revalidates every entry with the server.
+#[cfg(target_os = "linux")]
+pub(crate) fn ustat_at_cached(dirfd: impl AsFd, name: &OsStr, follow: bool) -> io::Result<UStat> {
+    statx_impl::stat(dirfd, name, at_flags(follow) | AtFlags::STATX_DONT_SYNC)
+}
+
+/// `statfs` magic numbers of network / remote filesystems (`linux/magic.h` and the
+/// filesystems' own headers). FUSE counts too: sshfs, rclone, gvfs and friends.
+#[cfg(target_os = "linux")]
+pub(crate) fn is_network_magic(magic: u32) -> bool {
+    const NETWORK: &[u32] = &[
+        0x6969,      // NFS
+        0x517B,      // SMB (old smbfs)
+        0xFF53_4D42, // CIFS
+        0xFE53_4D42, // SMB2 / ksmbd clients
+        0x7375_7245, // Coda
+        0x5346_414F, // OpenAFS
+        0x6B41_4653, // kAFS
+        0x00C3_6400, // Ceph
+        0x0102_1997, // 9p (v9fs)
+        0x564C,      // NCP
+        0x6573_5546, // FUSE
+        0x1366_1366, // OrangeFS
+        0x0BD0_0BD0, // Lustre
+        0x0116_1970, // GFS2
+        0x7461_636F, // OCFS2
+    ];
+    NETWORK.contains(&magic)
+}
+
+/// Is the filesystem holding `fd` a network / FUSE filesystem (`fstatfs` magic)?
+#[cfg(target_os = "linux")]
+pub(crate) fn is_network_fd(fd: impl AsFd) -> bool {
+    #[allow(clippy::unnecessary_cast)]
+    rustix::fs::fstatfs(fd).is_ok_and(|s| is_network_magic(s.f_type as u32))
 }
 
 /// Metadata of an open file.

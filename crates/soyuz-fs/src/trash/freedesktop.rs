@@ -3,6 +3,8 @@
 //! * Home trash: `$XDG_DATA_HOME/Trash` (default `~/.local/share/Trash`), `Path=` absolute.
 //! * Other mounts: `$topdir/.Trash/$uid` when `$topdir/.Trash` is a sticky, non-symlink
 //!   directory, else `$topdir/.Trash-$uid` (created 0700); `Path=` relative to `$topdir`.
+//!   `$topdir` is the mount point from `/proc/self/mountinfo` ([`crate::volumes::volume_root`]);
+//!   a bin directory that is a symlink or owned by someone else is never used.
 //! * The name is reserved by creating `info/<name>.trashinfo` with `O_EXCL` first; then the
 //!   item is renamed into `files/<name>`. Directory sizes are cached in `directorysizes`.
 //!
@@ -58,6 +60,8 @@ impl Bin {
     pub(crate) fn trash(&self, path: &Path) -> FsResult<TrashItem> {
         let e = crate::list::stat(path, false).map_err(|e| FsError { op: "trash".into(), ..e })?;
         self.ensure()?;
+        // Ids are strings: a non-UTF-8 name is stored under its lossy form (U+FFFD); the
+        // exact original bytes stay in `Path=`, so restoring brings back the real name.
         let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).ok_or_else(|| {
             FsError::with_message(FsErrorKind::InvalidName, "trash", Some(path), "cannot trash a root")
         })?;
@@ -361,9 +365,15 @@ pub(crate) mod discover {
         (st.mode & 0o170000 == 0o040000 && st.mode & 0o1000 != 0).then(|| shared.join(uid.to_string()))
     }
 
+    /// A real directory (not a symlink) owned by `uid`.
     fn valid_private(dir: &Path, uid: u32) -> bool {
         us::ustat_at(rustix::fs::CWD, dir.as_os_str(), false)
             .is_ok_and(|st| st.mode & 0o170000 == 0o040000 && st.uid == uid)
+    }
+
+    /// `mkdir(dir, 0700)`: never briefly readable by others (no chmod after the fact).
+    fn mkdir_private(dir: &Path) -> rustix::io::Result<()> {
+        rustix::fs::mkdirat(rustix::fs::CWD, dir, rustix::fs::Mode::from_raw_mode(0o700))
     }
 
     /// The bin for `path` (created on demand for per-mount bins).
@@ -376,15 +386,16 @@ pub(crate) mod discover {
         let topdir = crate::volumes::volume_root(path)?;
         let uid = us::euid();
         if let Some(root) = shared_trash(&topdir, uid) {
-            let bin = Bin { root, topdir: Some(topdir.clone()) };
-            if bin.ensure().is_ok() {
-                return Ok(bin);
+            if !crate::list::exists_nofollow(&root) {
+                let _ = mkdir_private(&root);
+            }
+            if valid_private(&root, uid) {
+                return Ok(Bin { root, topdir: Some(topdir) });
             }
         }
         let private = topdir.join(format!(".Trash-{uid}"));
         if !crate::list::exists_nofollow(&private) {
-            let _ = crate::create::create_dir(&private);
-            let _ = crate::perms::set_mode(&private, 0o700);
+            let _ = mkdir_private(&private);
         }
         if valid_private(&private, uid) {
             return Ok(Bin { root: private, topdir: Some(topdir) });
@@ -431,8 +442,11 @@ pub(crate) mod discover {
     pub(crate) fn all_bins() -> Vec<Bin> {
         let mut out = vec![home_bin()];
         let uid = us::euid();
-        for v in crate::volumes::volumes() {
-            let top = v.mount;
+        #[cfg(target_os = "linux")]
+        let tops = crate::volumes::user_mounts();
+        #[cfg(not(target_os = "linux"))]
+        let tops: Vec<PathBuf> = crate::volumes::volumes().into_iter().map(|v| v.mount).collect();
+        for top in tops {
             let mut cands = Vec::new();
             if let Some(shared) = shared_trash(&top, uid) {
                 cands.push(shared);
@@ -450,6 +464,50 @@ pub(crate) mod discover {
     /// The bin a [`TrashItem`] belongs to (validated against the known bins).
     pub(crate) fn bin_of(trash_root: &Path) -> Option<Bin> {
         all_bins().into_iter().find(|b| b.root == trash_root)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        use super::*;
+
+        #[test]
+        fn shared_trash_needs_a_sticky_real_directory() {
+            let d = tempfile::tempdir().unwrap();
+            let top = d.path();
+            let uid = us::euid();
+            assert_eq!(shared_trash(top, uid), None, "no .Trash");
+            let shared = top.join(".Trash");
+            std::fs::create_dir(&shared).unwrap();
+            std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o777)).unwrap();
+            assert_eq!(shared_trash(top, uid), None, "not sticky");
+            std::fs::set_permissions(&shared, std::fs::Permissions::from_mode(0o1777)).unwrap();
+            assert_eq!(shared_trash(top, uid), Some(shared.join(uid.to_string())));
+            // A symlink to a sticky directory does not count.
+            let other = tempfile::tempdir().unwrap();
+            std::fs::remove_dir(&shared).unwrap();
+            let target = other.path().join("sticky");
+            std::fs::create_dir(&target).unwrap();
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o1777)).unwrap();
+            symlink(&target, &shared).unwrap();
+            assert_eq!(shared_trash(top, uid), None, "symlinked .Trash");
+        }
+
+        #[test]
+        fn private_bins_are_created_0700_and_validated() {
+            let d = tempfile::tempdir().unwrap();
+            let uid = us::euid();
+            let private = d.path().join(format!(".Trash-{uid}"));
+            mkdir_private(&private).unwrap();
+            let mode = std::fs::metadata(&private).unwrap().permissions().mode();
+            assert_eq!(mode & 0o077, 0, "never readable by others: {mode:o}");
+            assert!(valid_private(&private, uid));
+            assert!(!valid_private(&private, uid.wrapping_add(1)), "someone else's");
+            let link = d.path().join(".Trash-link");
+            symlink(&private, &link).unwrap();
+            assert!(!valid_private(&link, uid), "symlinked bin");
+        }
     }
 }
 
@@ -530,6 +588,54 @@ mod tests {
         let evil = TrashItem { id: "../work".into(), ..item2.clone() };
         assert!(bin.purge(&evil).is_err());
         assert!(work.exists());
+    }
+
+    /// Non-UTF-8 names: the id is the lossy form, `Path=` keeps the exact bytes
+    /// (percent-encoded), and a restore brings the original name back.
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_names_round_trip() {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let d = tempfile::tempdir().unwrap();
+        let bin = Bin { root: d.path().join("Trash"), topdir: Some(d.path().to_path_buf()) };
+        let raw = std::ffi::OsString::from_vec(b"caf\xe9 \xff.txt".to_vec());
+        let f = d.path().join(&raw);
+        std::fs::write(&f, b"x").unwrap();
+        let item = bin.trash(&f).unwrap();
+        assert_eq!(item.id, "caf\u{FFFD} \u{FFFD}.txt");
+        let info = std::fs::read_to_string(bin.info().join(format!("{}.trashinfo", item.id))).unwrap();
+        assert!(info.contains("Path=caf%E9%20%FF.txt\n"), "{info}");
+        let listed = bin.list();
+        assert_eq!(listed[0].original.file_name().unwrap().as_bytes(), raw.as_bytes());
+        let back = bin.restore(&listed[0], None).unwrap();
+        assert_eq!(back, f);
+        assert!(f.exists());
+    }
+
+    /// DeletionDate is local time without a zone, `directorysizes` lines are
+    /// `<bytes> <info mtime> <percent-encoded name>`.
+    #[test]
+    fn info_date_and_directorysizes_format() {
+        let d = tempfile::tempdir().unwrap();
+        let bin = Bin { root: d.path().join("Trash"), topdir: None };
+        let dir = d.path().join("my dir");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("a"), b"123").unwrap();
+        let before = Local::now().naive_local() - chrono::Duration::seconds(2);
+        let item = bin.trash(&dir).unwrap();
+        let info = std::fs::read_to_string(bin.info().join("my dir.trashinfo")).unwrap();
+        let (path, date) = parse_trashinfo(&info).unwrap();
+        assert_eq!(percent_decode(&path), path_bytes(&dir));
+        let date = date.unwrap();
+        assert!(date >= before && date <= Local::now().naive_local() + chrono::Duration::seconds(2), "{date}");
+        let sizes = std::fs::read_to_string(bin.root.join("directorysizes")).unwrap();
+        let line = sizes.lines().next().unwrap();
+        let parts: Vec<&str> = line.splitn(3, ' ').collect();
+        assert_eq!(parts[0], "3");
+        assert_eq!(parts[1].parse::<u64>().unwrap(), info_mtime_secs(&bin.info().join("my dir.trashinfo")));
+        assert_eq!(parts[2], "my%20dir");
+        bin.purge(&item).unwrap();
+        assert_eq!(std::fs::read_to_string(bin.root.join("directorysizes")).unwrap(), "");
     }
 
     #[test]

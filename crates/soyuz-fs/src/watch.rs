@@ -14,6 +14,12 @@
 //! A liveness thread also guards against watches that stop reporting for any reason
 //! (see [`spawn_liveness`]): a directory whose modification time changes while its
 //! watch stays silent is re-armed and reported as [`WatchKind::Rescan`].
+//!
+//! When the kernel watch limit is reached (inotify `ENOSPC`, i.e.
+//! `fs.inotify.max_user_watches`, or `EMFILE` for `max_user_instances`), watches fall back
+//! to a polling backend (notify's `PollWatcher`, every [`Watcher::set_poll_interval`])
+//! instead of failing: changes still arrive, only later. [`Watcher::degraded`] and
+//! [`Watcher::is_polled`] expose that state so the UI can say why updates are slow.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -55,6 +61,8 @@ struct Watched {
     /// `/var/...`); reported paths under it are mapped back onto `dir`.
     canon: Option<PathBuf>,
     recursive: bool,
+    /// Served by the polling backend (the liveness check only tracks existence).
+    polled: bool,
     /// `Lost` was already reported (by an event or the liveness check).
     lost: bool,
     /// Raw notifications seen for this watch (any path inside it, or the directory
@@ -64,7 +72,7 @@ struct Watched {
 
 impl Watched {
     fn new(dir: PathBuf, canon: Option<PathBuf>, recursive: bool) -> Self {
-        Watched { dir, canon, recursive, lost: false, activity: 0 }
+        Watched { dir, canon, recursive, polled: false, lost: false, activity: 0 }
     }
 
     /// `p` expressed under `dir` (mapping a canonical prefix back), if it is inside.
@@ -85,13 +93,29 @@ impl Watched {
 
 type Registry = Arc<Mutex<HashMap<WatchId, Watched>>>;
 type Backend = Debouncer<notify::RecommendedWatcher, NoCache>;
+type PollBackend = Debouncer<notify::PollWatcher, NoCache>;
 
-/// Owns one notify backend; `Send`.
+/// Default scan interval of polled watches (after the kernel watch limit was reached).
+pub const DEFAULT_POLL_INTERVAL: Duration = Duration::from_secs(2);
+
+/// Owns one notify backend (plus a polling backend created on demand); `Send`.
 pub struct Watcher {
+    /// Native backend (`None` when it could not even start: inotify instance limit).
     /// Shared with the liveness thread, which re-arms silent watches.
-    debouncer: Arc<Mutex<Backend>>,
+    debouncer: Option<Arc<Mutex<Backend>>>,
+    /// Polling backend for watches the native one refused for lack of resources.
+    poller: Option<Arc<Mutex<PollBackend>>>,
     registry: Registry,
     next_id: u64,
+    tx: crossbeam_channel::Sender<WatchEvent>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+    debounce: Duration,
+    poll_interval: Duration,
+    /// Why some watches are polled (first resource error), if any are.
+    degraded: Option<String>,
+    /// Test hook: every new watch is polled.
+    #[cfg(test)]
+    force_poll: bool,
 }
 
 impl std::fmt::Debug for Watcher {
@@ -109,32 +133,54 @@ impl Watcher {
         wake: Arc<dyn Fn() + Send + Sync>,
     ) -> FsResult<Self> {
         let registry: Registry = Arc::default();
-        let reg = registry.clone();
-        let liveness_tx = tx.clone();
-        let liveness_wake = wake.clone();
-        let handler = move |res: DebounceEventResult| {
-            let events = dispatch(&reg, res);
-            if events.is_empty() {
-                return;
+        let handler = event_handler(registry.clone(), tx.clone(), wake.clone());
+        let mut degraded = None;
+        let debouncer = match new_debouncer_opt(debounce, None, handler, NoCache::new(), notify::Config::default()) {
+            Ok(d) => Some(Arc::new(Mutex::new(d))),
+            Err(e) if is_resource_limit(&e) => {
+                log::warn!("native file watching unavailable ({e}); polling instead");
+                degraded = Some(limit_message(&e));
+                None
             }
-            for ev in events {
-                if tx.send(ev).is_err() {
-                    return;
-                }
-            }
-            wake();
+            Err(e) => return Err(notify_err("watch", None, e)),
         };
-        let debouncer = new_debouncer_opt(debounce, None, handler, NoCache::new(), notify::Config::default())
-            .map_err(|e| notify_err("watch", None, e))?;
-        let debouncer = Arc::new(Mutex::new(debouncer));
         spawn_liveness(Liveness {
             reg: Arc::downgrade(&registry),
-            backend: Arc::downgrade(&debouncer),
-            tx: liveness_tx,
-            wake: liveness_wake,
+            backend: debouncer.as_ref().map(Arc::downgrade).unwrap_or_default(),
+            tx: tx.clone(),
+            wake: wake.clone(),
             grace: stale_grace(debounce),
         });
-        Ok(Watcher { debouncer, registry, next_id: 1 })
+        Ok(Watcher {
+            debouncer,
+            poller: None,
+            registry,
+            next_id: 1,
+            tx,
+            wake,
+            debounce,
+            poll_interval: DEFAULT_POLL_INTERVAL,
+            degraded,
+            #[cfg(test)]
+            force_poll: false,
+        })
+    }
+
+    /// Scan interval of polled watches; applies to the polling backend created after this
+    /// call (it is created when the first watch has to be polled).
+    pub fn set_poll_interval(&mut self, interval: Duration) {
+        self.poll_interval = interval.max(Duration::from_millis(250));
+    }
+
+    /// Why some watches are polled instead of pushed by the OS (`None` = none are), e.g.
+    /// "the system limit of watched folders is reached (fs.inotify.max_user_watches)".
+    pub fn degraded(&self) -> Option<&str> {
+        self.degraded.as_deref()
+    }
+
+    /// Is the watch `id` served by polling (changes show up after the poll interval)?
+    pub fn is_polled(&self, id: WatchId) -> bool {
+        self.registry.lock().get(&id).is_some_and(|w| w.polled)
     }
 
     pub fn watch(&mut self, dir: &Path, recursive: bool) -> FsResult<WatchId> {
@@ -147,23 +193,103 @@ impl Watcher {
             ));
         }
         let mode = if recursive { RecursiveMode::Recursive } else { RecursiveMode::NonRecursive };
-        self.debouncer.lock().watch(dir, mode).map_err(|e| notify_err("watch", Some(dir), e))?;
+        #[cfg(test)]
+        let force_poll = self.force_poll;
+        #[cfg(not(test))]
+        let force_poll = false;
+        let native = match &self.debouncer {
+            Some(d) if !force_poll => match d.lock().watch(dir, mode) {
+                Ok(()) => true,
+                Err(e) if is_resource_limit(&e) => {
+                    log::warn!("cannot watch {} natively ({e}); polling it", dir.display());
+                    if self.degraded.is_none() {
+                        self.degraded = Some(limit_message(&e));
+                    }
+                    false
+                }
+                Err(e) => return Err(notify_err("watch", Some(dir), e)),
+            },
+            _ => false,
+        };
+        if !native {
+            self.poll_backend()?.lock().watch(dir, mode).map_err(|e| notify_err("watch", Some(dir), e))?;
+        }
         let id = WatchId(self.next_id);
         self.next_id += 1;
         let canon =
             std::fs::canonicalize(dir).ok().map(|c| crate::path::strip_verbatim(&c)).filter(|c| c.as_path() != dir);
-        self.registry.lock().insert(id, Watched::new(dir.to_path_buf(), canon, recursive));
+        let mut w = Watched::new(dir.to_path_buf(), canon, recursive);
+        w.polled = !native;
+        self.registry.lock().insert(id, w);
         Ok(id)
+    }
+
+    /// The polling backend, created on first use.
+    fn poll_backend(&mut self) -> FsResult<&Arc<Mutex<PollBackend>>> {
+        if self.poller.is_none() {
+            let handler = event_handler(self.registry.clone(), self.tx.clone(), self.wake.clone());
+            let config = notify::Config::default().with_poll_interval(self.poll_interval);
+            let d = new_debouncer_opt(self.debounce, None, handler, NoCache::new(), config)
+                .map_err(|e| notify_err("watch", None, e))?;
+            self.poller = Some(Arc::new(Mutex::new(d)));
+        }
+        Ok(self.poller.as_ref().expect("just created"))
     }
 
     pub fn unwatch(&mut self, id: WatchId) {
         let removed = self.registry.lock().remove(&id);
         if let Some(w) = removed {
-            let still_used = self.registry.lock().values().any(|o| o.dir == w.dir);
+            let still_used = self.registry.lock().values().any(|o| o.dir == w.dir && o.polled == w.polled);
             if !still_used {
-                let _ = self.debouncer.lock().unwatch(&w.dir);
+                if w.polled {
+                    if let Some(p) = &self.poller {
+                        let _ = p.lock().unwatch(&w.dir);
+                    }
+                } else if let Some(d) = &self.debouncer {
+                    let _ = d.lock().unwatch(&w.dir);
+                }
             }
         }
+    }
+}
+
+/// The debouncer callback shared by the native and the polling backend.
+fn event_handler(
+    reg: Registry,
+    tx: crossbeam_channel::Sender<WatchEvent>,
+    wake: Arc<dyn Fn() + Send + Sync>,
+) -> impl FnMut(DebounceEventResult) + Send + 'static {
+    move |res: DebounceEventResult| {
+        let events = dispatch(&reg, res);
+        if events.is_empty() {
+            return;
+        }
+        for ev in events {
+            if tx.send(ev).is_err() {
+                return;
+            }
+        }
+        wake();
+    }
+}
+
+/// The OS ran out of watch resources (inotify watch / instance limits).
+fn is_resource_limit(e: &notify::Error) -> bool {
+    match &e.kind {
+        notify::ErrorKind::MaxFilesWatch => true,
+        #[cfg(unix)]
+        notify::ErrorKind::Io(io) => matches!(io.raw_os_error(), Some(libc::ENOSPC | libc::EMFILE)),
+        _ => false,
+    }
+}
+
+fn limit_message(e: &notify::Error) -> String {
+    match &e.kind {
+        #[cfg(unix)]
+        notify::ErrorKind::Io(io) if io.raw_os_error() == Some(libc::EMFILE) => {
+            "the system limit of file watchers is reached (fs.inotify.max_user_instances); folders are polled".into()
+        }
+        _ => "the system limit of watched folders is reached (fs.inotify.max_user_watches); folders are polled".into(),
     }
 }
 
@@ -255,18 +381,18 @@ fn spawn_liveness(l: Liveness) {
         let mut health: HashMap<WatchId, Health> = HashMap::new();
         loop {
             std::thread::sleep(LIVENESS_INTERVAL);
-            let snapshot: Vec<(WatchId, PathBuf, bool, u64)> = {
+            let snapshot: Vec<(WatchId, PathBuf, bool, u64, bool)> = {
                 let Some(reg) = l.reg.upgrade() else { return };
                 let reg = reg.lock();
                 health.retain(|id, _| reg.contains_key(id));
                 reg.iter()
                     .filter(|(_, w)| !w.lost)
-                    .map(|(id, w)| (*id, w.dir.clone(), w.recursive, w.activity))
+                    .map(|(id, w)| (*id, w.dir.clone(), w.recursive, w.activity, w.polled))
                     .collect()
             };
             let mut gone = Vec::new();
             let mut silent: Vec<(PathBuf, bool)> = Vec::new();
-            for (id, dir, recursive, activity) in snapshot {
+            for (id, dir, recursive, activity, polled) in snapshot {
                 let now = Instant::now();
                 let h = health.entry(id).or_insert_with(|| {
                     Health::new(now, if is_network_path(&dir) { LIVENESS_REMOTE_INTERVAL } else { LIVENESS_INTERVAL })
@@ -282,6 +408,9 @@ fn spawn_liveness(l: Liveness) {
                 h.due = Instant::now() + h.interval;
                 match probe {
                     None => gone.push(id),
+                    // A polled watch reports changes only once per poll interval: never
+                    // "silent" by the native backend's grace period.
+                    Some(_) if polled => {}
                     Some(mtime) => {
                         if h.observe(mtime, activity, Instant::now(), l.grace) == Verdict::Silent
                             && !silent.iter().any(|(d, _)| *d == dir)
@@ -599,7 +728,7 @@ mod tests {
         let (mut w, rx) = watcher();
         let id = w.watch(&dir, false).unwrap();
         std::thread::sleep(Duration::from_millis(1200)); // first liveness sample
-        w.debouncer.lock().unwatch(&dir).unwrap();
+        w.debouncer.as_ref().unwrap().lock().unwatch(&dir).unwrap();
         std::fs::write(dir.join("unseen.txt"), b"1").unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         let mut rescanned = false;
@@ -664,6 +793,40 @@ mod tests {
         }
         let missing: Vec<_> = survivors.iter().filter(|s| !seen.contains(*s)).collect();
         assert!(rescan || missing.is_empty(), "lost without a rescan: {missing:?}");
+    }
+
+    /// Watches the native backend cannot take (forced here, like inotify's ENOSPC) are
+    /// polled: creations, modifications and the removal still arrive.
+    #[test]
+    fn polled_watches_report_changes() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("polled");
+        std::fs::create_dir(&dir).unwrap();
+        let (mut w, rx) = watcher();
+        w.set_poll_interval(Duration::from_millis(250));
+        w.force_poll = true;
+        let id = w.watch(&dir, false).unwrap();
+        assert!(w.is_polled(id));
+        let f = dir.join("p.txt");
+        std::fs::write(&f, b"1").unwrap();
+        let evs = collect(&rx, |e| mentions(e, &f));
+        assert!(mentions(&evs, &f), "create not reported by polling: {evs:?}");
+        w.unwatch(id);
+        assert!(!w.is_polled(id));
+    }
+
+    #[test]
+    fn resource_limits_are_recognised() {
+        assert!(is_resource_limit(&notify::Error::new(notify::ErrorKind::MaxFilesWatch)));
+        #[cfg(unix)]
+        {
+            let e = notify::Error::io(std::io::Error::from_raw_os_error(libc::ENOSPC));
+            assert!(is_resource_limit(&e));
+            assert!(limit_message(&e).contains("max_user_watches"));
+            let e = notify::Error::io(std::io::Error::from_raw_os_error(libc::EMFILE));
+            assert!(limit_message(&e).contains("max_user_instances"));
+        }
+        assert!(!is_resource_limit(&notify::Error::path_not_found()));
     }
 
     #[test]

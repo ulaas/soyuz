@@ -275,3 +275,23 @@ fn junctions_and_reparse_tags() {
     let s = walk(d.path(), &WalkOptions::default(), &ctl, &mut |_| Control::Continue).unwrap();
     assert_eq!((s.files, s.links), (1, 1));
 }
+
+/// Names listed in a directory's `.hidden` file are hidden (GNOME / KDE convention);
+/// other names are not, and `.hidden` itself is a dot file.
+#[cfg(unix)]
+#[test]
+fn dot_hidden_file_hides_listed_names() {
+    let d = tempfile::tempdir().unwrap();
+    for n in ["shown.txt", "secret.txt", "folder", "with space"] {
+        write(&d.path().join(n), b"x");
+    }
+    write(&d.path().join(".hidden"), b"secret.txt\r\nwith space\n\nnot-there\n");
+    let all = read_dir(d.path(), &ListOptions::default()).unwrap();
+    let hidden = |n: &str| all.iter().find(|e| e.name == n).unwrap().is_hidden();
+    assert!(hidden("secret.txt") && hidden("with space") && hidden(".hidden"));
+    assert!(!hidden("shown.txt") && !hidden("folder"));
+    let visible = read_dir(d.path(), &ListOptions { include_hidden: false, ..ListOptions::default() }).unwrap();
+    let mut names: Vec<_> = visible.iter().map(|e| e.name.as_str()).collect();
+    names.sort();
+    assert_eq!(names, ["folder", "shown.txt"]);
+}
