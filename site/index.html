@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soyuz: a file explorer that never freezes</title>
+<meta name="description" content="Soyuz is a keyboard-first file explorer written in Rust. Every copy, move and delete is a background job you can pause, cancel and undo. Free, open source, no telemetry.">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Soyuz: a file explorer that never freezes">
+<meta property="og:description" content="Keyboard-first, written in Rust. Every file operation is a background job you can pause, cancel and undo. No telemetry.">
+<meta property="og:image" content="https://ulaas.github.io/soyuz/assets/shots/hero.png">
+<meta property="og:image:width" content="1600">
+<meta property="og:image:height" content="1000">
+<meta property="og:image:alt" content="The Soyuz window: a folder in details view with a preview pane on the right">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Soyuz: a file explorer that never freezes">
+<meta name="twitter:description" content="Keyboard-first, written in Rust. Every file operation is a background job you can pause, cancel and undo. No telemetry.">
+<meta name="twitter:image" content="https://ulaas.github.io/soyuz/assets/shots/hero.png">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="512x512" href="favicon.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preload" href="assets/fonts/InterVariable.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="assets/site.css">
+<script>try{var t=localStorage.getItem("soyuz-theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}document.documentElement.classList.add("js")</script>
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#top" aria-label="Soyuz, back to top">
+      <img src="favicon-32.png" width="28" height="28" alt="">
+      <span>Soyuz</span>
+    </a>
+    <nav class="nav" aria-label="Sections">
+      <ul>
+        <li><a href="#principles">Principles</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#ai">Assistant</a></li>
+        <li><a href="#download">Download</a></li>
+      </ul>
+    </nav>
+    <div class="top-tools">
+      <button class="tool palette-open" type="button" hidden aria-haspopup="dialog" aria-label="Open the page command palette (Ctrl K)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+        <kbd>Ctrl K</kbd>
+      </button>
+      <button class="tool theme-toggle" type="button" hidden aria-label="Switch to light theme">
+        <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.6 4.6l1.6 1.6M17.8 17.8l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.6 19.4l1.6-1.6M17.8 6.2l1.6-1.6"/></svg>
+        <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+      </button>
+      <a class="tool gh" href="https://github.com/ulaas/soyuz">
+        <svg viewBox="0 0 24 24" aria-hidden="true" class="fill"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+        <span>GitHub</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+  <section class="hero" id="top" aria-labelledby="hero-title">
+    <div class="wrap hero-copy">
+      <h1 id="hero-title">The file explorer that never freezes.</h1>
+      <p class="lede">Soyuz is keyboard-first and written in Rust. Every copy, move and delete runs as a background job you can pause, cancel and undo, so the window stays responsive even when a network share doesn't.</p>
+      <div class="cta">
+        <a class="btn primary" href="https://github.com/ulaas/soyuz/releases/latest">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+          Download for Windows
+        </a>
+        <a class="btn ghost" href="https://github.com/ulaas/soyuz">View on GitHub</a>
+      </div>
+      <p class="fine">Free and open source. Windows 10 and 11. No telemetry.</p>
+      <div class="try" hidden>
+        <span class="try-label">This page speaks keyboard too:</span>
+        <button type="button" class="key-btn" data-act="palette"><kbd>Ctrl</kbd><kbd>K</kbd><span>sections</span></button>
+        <button type="button" class="key-btn" data-act="help"><kbd>?</kbd><span>shortcuts</span></button>
+        <button type="button" class="key-btn" data-act="theme"><kbd>T</kbd><span>theme</span></button>
+      </div>
+    </div>
+    <div class="hero-stage">
+      <div class="limb" aria-hidden="true"></div>
+      <figure class="shot hero-shot">
+        <div class="frame">
+          <img src="assets/shots/hero.png" width="1600" height="1000" fetchpriority="high"
+               alt="The Soyuz window in its dark theme: a sidebar with favorites and drives, a folder shown in details view with name, size and date columns, and a preview pane showing the selected file.">
+        </div>
+        <figcaption>Details view with the preview pane. Folders with 100,000 entries still scroll smoothly.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section class="principles" id="principles" aria-labelledby="principles-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="principles-title">Built on a few firm rules</h2>
+        <p>Soyuz is named after the spacecraft that has kept flying for decades by being simple and dependable. The same rules apply here.</p>
+      </header>
+      <ul class="rules">
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 10h1M9.5 10h1M13 10h1M16.5 10h1M7.5 14h9"/></svg>
+          <h3>Keyboard-first</h3>
+          <p>A command palette lists every action with its shortcut, and every action can be rebound. Start from the Explorer, Commander, Finder or Vim preset.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l2.5-6 4 12 2.5-6H21"/></svg>
+          <h3>Never blocks</h3>
+          <p>Listing, previews, thumbnails and every disk access run off the interface thread. Listings stream in; a slow drive can't hang the window.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 9h10M7 13h6"/><path d="M15.5 13.5v3M18 13.5v3"/></svg>
+          <h3>Every operation is a job</h3>
+          <p>Copy, move, delete, extract and checksum jobs show real progress. Pause, resume or cancel them, and choose what happens when names collide.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7H5V3"/><path d="M5.5 7A8 8 0 1 1 4 12"/></svg>
+          <h3>Trash first, then undo</h3>
+          <p>Deleting goes to the trash by default. Copy, move, rename, trash, new items and archive edits can all be undone and redone.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6.5v5c0 4.6 3.4 8.4 8 9.5 4.6-1.1 8-4.9 8-9.5v-5Z"/><path d="m9 12 2 2 4-4"/></svg>
+          <h3>No shell backend</h3>
+          <p>Soyuz talks to the file system and the kernel directly instead of the Windows shell. Behaviour is predictable, cancellable and the same on every machine.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+          <h3>Fully configurable</h3>
+          <p>Every behaviour has a setting, in the Settings window and in one <code>config.toml</code>. Edit the file in any editor and Soyuz applies it within a second, comments kept.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></svg>
+          <h3>Private by default</h3>
+          <p>No telemetry, no accounts. Soyuz checks for updates only when you ask it to.</p>
+        </li>
+        <li data-reveal>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13"/></svg>
+          <h3>Open source</h3>
+          <p>Written in Rust and MIT licensed. Read the code, build it with stable Rust, and send fixes.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="features" id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="features-title">A tour of the cockpit</h2>
+        <p>Everything below is in the app today. Most of it is one shortcut away.</p>
+      </header>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Two panes, or four</h3>
+          <p>Work side by side with dual panes, or split into a 2×2 grid. Copy or move to the other pane with a single key. Tabs come with groups, pinning and tear-off windows, and layouts can be saved as workspaces.</p>
+          <p class="keys"><span><kbd>F9</kbd> dual pane</span><span><kbd>Shift</kbd><kbd>F9</kbd> quad</span><span><kbd>F5</kbd> copy across</span><span><kbd>F6</kbd> move across</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/dual-pane.png" width="1600" height="1000" loading="lazy" alt="Two folders side by side in two panes, each with its own tabs and breadcrumb path."></div>
+          <figcaption>Dual pane, each side with its own tabs and history.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Look before you open</h3>
+          <p>Quick Look and the preview pane show images, code with syntax highlighting, Markdown, PDF pages, Office documents, EPUB, fonts, 3D models, audio with a waveform and playback, video poster frames, hex for binaries, and a diff of two files. Archives open like folders.</p>
+          <p class="keys"><span><kbd>Space</kbd> Quick Look</span><span><kbd>Alt</kbd><kbd>P</kbd> preview pane</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/quick-look.png" width="1600" height="1000" loading="lazy" alt="Quick Look showing a large photo over the file list, with its name and dimensions underneath."></div>
+          <figcaption>Quick Look on a photo. Arrow keys move to the next file.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Every action, one search away</h3>
+          <p>The command palette finds any action by name and shows its shortcut, so you learn the keys as you go. Go to folder jumps to places you visit often. Bind anything, including chords and two-key sequences like <kbd>g</kbd> <kbd>g</kbd>.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>K</kbd> command palette</span><span><kbd>Ctrl</kbd><kbd>P</kbd> go to folder</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/palette.png" width="1600" height="1000" loading="lazy" alt="The command palette open over the window, listing matching actions with their keyboard shortcuts on the right."></div>
+          <figcaption>The command palette lists every action with its current shortcut.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Jobs you can steer</h3>
+          <p>The activity panel shows each job with its speed, a live graph and the time left. Jobs queue per drive, so two copies to one disk don't fight. Conflicts open a side-by-side comparison. After a crash or power cut, unfinished jobs resume where they stopped.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>J</kbd> activity panel</span><span><kbd>Ctrl</kbd><kbd>Z</kbd> undo</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/jobs.png" width="1600" height="1000" loading="lazy" alt="The activity panel with a copy job in progress: a progress bar, transfer speed, a speed graph and the remaining time, with pause and cancel buttons."></div>
+          <figcaption>A copy in progress, with pause and cancel at hand.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>A terminal that follows you</h3>
+          <p>Your own shell, docked under the file list and always in the current folder. It can also steer the pane: <code>cd</code> somewhere and the file list follows. <kbd>Ctrl</kbd>-click opens paths and links.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>`</kbd> terminal</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/terminal.png" width="1600" height="1000" loading="lazy" alt="A terminal panel docked below the file list, with a shell prompt in the same folder the pane is showing."></div>
+          <figcaption>The built-in terminal, opened in the current folder.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Find out where the space went</h3>
+          <p>The disk-usage treemap shows folders by size; click to zoom in. Compare two folders and sync them one way or both ways, with saved, scheduled profiles. Find duplicates by size and content, then send the extras to the trash.</p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/treemap.png" width="1600" height="1000" loading="lazy" alt="A disk-usage treemap: nested colored rectangles sized by folder size, with a list of the largest items beside it."></div>
+          <figcaption>The treemap tool, with the largest items listed beside it.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Make it yours</h3>
+          <p>Details, list, grid with thumbnails, gallery and Miller columns, remembered per folder. Five color themes, Orbit, Nord, Solarized, Rosé Pine and High Contrast, each in dark and light, plus your own theme files and the Windows accent color. The interface speaks English and Turkish and switches live.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>,</kbd> settings</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/light-grid.png" width="1600" height="1000" loading="lazy" alt="Soyuz in its light theme, showing a folder of photos as a grid of thumbnails, with folder icons that preview their contents."></div>
+          <figcaption>The light theme, grid view with thumbnails.</figcaption>
+        </figure>
+      </article>
+    </div>
+  </section>
+
+  <section class="more" id="more" aria-labelledby="more-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="more-title">Also on board</h2>
+      </header>
+      <div class="more-grid">
+        <div class="more-item" data-reveal>
+          <h3>Search and the index</h3>
+          <p>Search names and contents with a small query language. Turn on the background index and searches across your folders answer in milliseconds. Save a query as a smart folder that stays up to date.</p>
+          <p class="query"><code>kind:image size:&gt;5MB modified:&lt;7d -draft</code></p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Remote locations</h3>
+          <p>SFTP, WebDAV, FTP and FTPS, S3-compatible storage and network shares, with cached listings. Transfers between them are ordinary, resumable jobs.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Archives as folders</h3>
+          <p>Browse zip, 7z, tar, RAR, ISO, CAB, deb and rpm without extracting. Create and extract archives, with passwords. Zip files can be edited in place.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Tags and folder colors</h3>
+          <p>Eight color tags that follow files you move or rename inside Soyuz, folder colors and emblems, a drop shelf and a git status column.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Built-in editors</h3>
+          <p>A text editor with syntax highlighting and regex find and replace, a hex editor for files of any size, and an image editor for quick crops and rotations.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Scripts and automations</h3>
+          <p>Sandboxed Rhai scripts add actions, menu entries, columns and previewers. Folder rules move, rename or tag new files. Changes ask for approval and can be undone.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Command line</h3>
+          <p><code>soyuz cp</code>, <code>mv</code>, <code>rm</code> and friends queue jobs in the open window, with progress and conflict prompts there, or run in the terminal on their own.</p>
+        </div>
+        <div class="more-item" data-reveal>
+          <h3>Accessible</h3>
+          <p>Screen-reader support, a high-contrast theme, reduced motion, large touch targets, interface zoom and visible focus everywhere.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ai" id="ai" aria-labelledby="ai-title">
+    <div class="wrap ai-in">
+      <header class="sec-head" data-reveal>
+        <h2 id="ai-title">An assistant that asks first</h2>
+        <p>Optional and off by default. Bring your own key for Anthropic, OpenAI or Gemini, or run a local model through Ollama, LM Studio, llama.cpp or vLLM. The assistant never touches your files directly.</p>
+      </header>
+      <ol class="steps" data-reveal>
+        <li>
+          <h3>Ask in plain words</h3>
+          <p>“Move last month’s invoices into a folder per client.”</p>
+        </li>
+        <li>
+          <h3>Review the plan</h3>
+          <p>You get a dry run: every move, rename or delete it would make, before anything happens.</p>
+        </li>
+        <li>
+          <h3>Approve, and it runs as a job</h3>
+          <p>The plan runs like any other job, with conflict handling and undo.</p>
+        </li>
+      </ol>
+      <ul class="ai-notes" data-reveal>
+        <li>API keys stay in the operating system’s credential store, never in the config file.</li>
+        <li>Per-folder permissions decide what may be shared with a cloud model. File names and contents are treated as untrusted data.</li>
+        <li>An MCP server lets other assistants drive Soyuz under the same approval rules, and an audit log records what they did.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="download" id="download" aria-labelledby="download-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="download-title">Download</h2>
+        <p>Every release file comes with a SHA-256 checksum.</p>
+      </header>
+      <div class="dl" data-reveal>
+        <div class="platforms">
+          <h3 class="vh">Platforms</h3>
+          <dl>
+            <div class="plat ok">
+              <dt>Windows 10 and 11 <span class="arch">x64</span></dt>
+              <dd><span class="state">Supported</span> Built and tested here first.</dd>
+            </div>
+            <div class="plat exp">
+              <dt>Linux</dt>
+              <dd><span class="state">Experimental</span> Builds from source; not yet tested.</dd>
+            </div>
+            <div class="plat exp">
+              <dt>macOS</dt>
+              <dd><span class="state">Experimental</span> Builds from source; not yet tested.</dd>
+            </div>
+          </dl>
+        </div>
+        <div class="packages">
+          <h3>Pick a Windows package</h3>
+          <ul>
+            <li><strong>Installer (.msi)</strong> Installs for your user only, no admin rights needed.</li>
+            <li><strong>Zip</strong> Unzip anywhere and run <code>soyuz.exe</code>.</li>
+            <li><strong>Portable zip</strong> Keeps its settings next to the app, for USB sticks.</li>
+          </ul>
+          <a class="btn primary" href="https://github.com/ulaas/soyuz/releases/latest">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
+            Get the latest release
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="made" id="built-with-ai" aria-labelledby="made-title">
+    <div class="wrap made-in" data-reveal>
+      <h2 id="made-title">Built with AI, with a hint of human taste</h2>
+      <p>Soyuz was developed fully with AI. Every line of code, every test and most of these words were written by models, while a person decided what to build, tried each change, pushed back when something felt off and kept the result honest. It is an experiment in how far that partnership can go.</p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap foot-in">
+    <div class="foot-brand">
+      <img src="favicon-32.png" width="24" height="24" alt="">
+      <span>Soyuz</span>
+    </div>
+    <ul class="foot-links">
+      <li><a href="https://github.com/ulaas/soyuz">Source on GitHub</a></li>
+      <li><a href="https://github.com/ulaas/soyuz/releases">Releases</a></li>
+      <li><a href="https://github.com/ulaas/soyuz/blob/main/LICENSE">MIT licence</a></li>
+    </ul>
+    <p class="foot-note">No telemetry. This site sets no cookies and loads nothing from anywhere else.</p>
+  </div>
+</footer>
+
+<dialog class="pal" id="palette" aria-label="Jump to">
+  <form method="dialog" class="pal-form" role="search">
+    <label class="vh" for="pal-input">Jump to a section or action</label>
+    <input id="pal-input" type="text" autocomplete="off" spellcheck="false" placeholder="Jump to…"
+           role="combobox" aria-expanded="true" aria-controls="pal-list" aria-autocomplete="list">
+  </form>
+  <ul id="pal-list" role="listbox" aria-label="Results"></ul>
+  <p class="pal-hint"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> go</span><span><kbd>Esc</kbd> close</span></p>
+</dialog>
+
+<dialog class="help" id="help" aria-labelledby="help-title">
+  <h2 id="help-title">Keyboard shortcuts for this page</h2>
+  <dl>
+    <div><dt><kbd>Ctrl</kbd><kbd>K</kbd> or <kbd>/</kbd></dt><dd>Jump to a section</dd></div>
+    <div><dt><kbd>J</kbd> / <kbd>K</kbd></dt><dd>Next / previous section</dd></div>
+    <div><dt><kbd>T</kbd></dt><dd>Switch light and dark theme</dd></div>
+    <div><dt><kbd>D</kbd></dt><dd>Go to Download</dd></div>
+    <div><dt><kbd>?</kbd></dt><dd>Show this list</dd></div>
+    <div><dt><kbd>Esc</kbd></dt><dd>Close</dd></div>
+  </dl>
+  <form method="dialog"><button class="btn ghost small" type="submit">Close</button></form>
+</dialog>
+</body>
+</html>
