@@ -74,7 +74,7 @@
         </a>
         <a class="btn ghost" href="https://github.com/ulaas/soyuz">View on GitHub</a>
       </div>
-      <p class="fine">Free and open source. Windows 10 and 11. No telemetry.</p>
+      <p class="fine">Free and open source. Windows 10 and 11, with early Linux and macOS builds. No telemetry.</p>
       <div class="try" hidden>
         <span class="try-label">This page speaks keyboard too:</span>
         <button type="button" class="key-btn" data-act="palette"><kbd>Ctrl</kbd><kbd>K</kbd><span>sections</span></button>
@@ -312,7 +312,7 @@
     <div class="wrap">
       <header class="sec-head" data-reveal>
         <h2 id="download-title">Download</h2>
-        <p>Every release file comes with a SHA-256 checksum.</p>
+        <p>Ready-made builds for Windows, Linux and macOS. Every release file comes with a SHA-256 checksum.</p>
       </header>
       <div class="dl" data-reveal>
         <div class="platforms">
@@ -323,22 +323,24 @@
               <dd><span class="state">Supported</span> Built and tested here first.</dd>
             </div>
             <div class="plat exp">
-              <dt>Linux</dt>
-              <dd><span class="state">Experimental</span> Builds from source; not yet tested.</dd>
+              <dt>Linux <span class="arch">x64</span></dt>
+              <dd><span class="state">Experimental</span> Prebuilt download available; not yet tested on real machines.</dd>
             </div>
             <div class="plat exp">
-              <dt>macOS</dt>
-              <dd><span class="state">Experimental</span> Builds from source; not yet tested.</dd>
+              <dt>macOS <span class="arch">Apple silicon</span></dt>
+              <dd><span class="state">Experimental</span> Prebuilt download available; not yet tested on real machines.</dd>
             </div>
           </dl>
         </div>
         <div class="packages">
-          <h3>Pick a Windows package</h3>
+          <h3>Pick a package</h3>
           <ul>
-            <li><strong>Installer (.msi)</strong> Installs for your user only, no admin rights needed.</li>
-            <li><strong>Zip</strong> Unzip anywhere and run <code>soyuz.exe</code>.</li>
-            <li><strong>Portable zip</strong> Keeps its settings next to the app, for USB sticks.</li>
+            <li><strong>Windows installer (.msi)</strong> Installs for your user only, no admin rights needed.</li>
+            <li><strong>Windows zip</strong> Unzip anywhere and run <code>soyuz.exe</code>. The portable zip keeps its settings next to the app, for USB sticks.</li>
+            <li><strong>Linux (.tar.gz)</strong> Unpack anywhere and run <code>soyuz</code>.</li>
+            <li><strong>macOS (.tar.gz)</strong> For Apple silicon Macs. Unpack and run <code>soyuz</code>.</li>
           </ul>
+          <p class="note">Builds are not code-signed yet. Windows SmartScreen may warn on first launch (More info, then Run anyway), and macOS asks you to confirm the first time (right-click, then Open).</p>
           <a class="btn primary" href="https://github.com/ulaas/soyuz/releases/latest">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0-4.5-4.5M12 15l4.5-4.5M5 19.5h14"/></svg>
             Get the latest release

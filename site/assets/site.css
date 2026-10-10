@@ -336,6 +336,7 @@ section { position: relative; }
 .packages ul { margin: 1rem 0 1.6rem; display: grid; gap: .75rem; }
 .packages li { color: var(--ink-2); font-size: .97rem; }
 .packages strong { display: block; color: var(--ink); font-weight: 600; }
+.packages .note { margin: -.4rem 0 1.4rem; color: var(--ink-3); font-size: .9rem; line-height: 1.55; }
 
 /* Built with AI */
 .made-in > * { max-width: 46rem; }
