@@ -272,8 +272,11 @@ pub fn load_dir(ctx: &Context, dir: &Path, id: &str) -> Result<Loaded, String> {
 
 /// A pack-relative picture path; refuses anything that leaves the pack folder.
 fn resolve(dir: &Path, file: &str) -> Option<PathBuf> {
-    let rel = Path::new(file.trim());
+    // Packs are shared between OSes: accept `\` separators and reject drive prefixes everywhere.
+    let file = file.trim().replace('\\', "/");
+    let rel = Path::new(&file);
     let ok = !rel.as_os_str().is_empty()
+        && !file.contains(':')
         && rel.components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir));
     ok.then(|| dir.join(rel))
 }
@@ -468,6 +471,9 @@ mod tests {
         assert!(resolve(d, "sub/a.png").is_some());
         assert!(resolve(d, "../a.png").is_none());
         assert!(resolve(d, "C:/a.png").is_none());
+        assert!(resolve(d, "/a.png").is_none());
+        assert!(resolve(d, r"..\a.png").is_none());
+        assert_eq!(resolve(d, r"sub\a.png"), Some(d.join("sub").join("a.png")));
         assert!(resolve(d, "").is_none());
     }
 }
