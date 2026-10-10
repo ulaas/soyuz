@@ -78,6 +78,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             brand: !titlebar,
             settings_open: app.settings.is_open(),
             settings_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::Settings),
+            portal: &app.config.sidebar.portal,
+            tree_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::ToggleTreeSidebar),
             tree: crate::ui::tree::TreeArgs {
                 state: &mut app.ui.tree,
                 mode: app.config.sidebar.mode,

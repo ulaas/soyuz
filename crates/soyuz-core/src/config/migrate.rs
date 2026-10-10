@@ -32,8 +32,52 @@ impl std::fmt::Debug for Migration {
     }
 }
 
-/// The registered migrations (schema 1 is the first released schema: nothing yet).
-pub const MIGRATIONS: &[Migration] = &[];
+/// The registered migrations (schema 1 is the first released schema).
+pub const MIGRATIONS: &[Migration] = &[Migration {
+    from: 1,
+    describe: "sidebar: portal section, new section order, disk tree as its own view",
+    apply: sidebar_portal_v2,
+}];
+
+/// The schema 1 default `[sidebar] sections`.
+const SIDEBAR_V1_DEFAULT: [&str; 8] = ["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"];
+/// The schema 2 default `[sidebar] sections`.
+const SIDEBAR_V2_DEFAULT: [&str; 8] = ["favorites", "devices", "portal", "tags", "trash", "network", "cloud", "smart"];
+
+/// v1 → v2: a `[sidebar] sections` list equal to the old default becomes the new default
+/// (and `mode = "both"`, the old default, becomes `"places"`: the disk tree moved to its
+/// own full-height view). A customized list gets `portal` after `devices` (or at the end)
+/// and keeps the tree: a missing `mode` meant `both` in schema 1, so it is written out.
+fn sidebar_portal_v2(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(sidebar) = doc.get_mut("sidebar").and_then(|s| s.as_table_like_mut()) else { return Ok(()) };
+    let Some(arr) = sidebar.get("sections").and_then(|i| i.as_array()) else { return Ok(()) };
+    let names: Vec<String> = arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+    if names.len() != arr.len() {
+        return Err("`[sidebar] sections` must be a list of strings".into());
+    }
+    let mode = sidebar.get("mode").and_then(|m| m.as_str()).map(str::to_string);
+    if names.iter().map(String::as_str).eq(SIDEBAR_V1_DEFAULT) {
+        if let Some(a) = sidebar.get_mut("sections").and_then(|i| i.as_array_mut()) {
+            a.clear();
+            a.extend(SIDEBAR_V2_DEFAULT);
+        }
+        if mode.as_deref().is_none_or(|m| m == "both") {
+            sidebar.insert("mode", value("places"));
+        }
+        return Ok(());
+    }
+    if !names.iter().any(|n| n == "portal") {
+        let at = names.iter().position(|n| n == "devices").map_or(names.len(), |i| i + 1);
+        if let Some(a) = sidebar.get_mut("sections").and_then(|i| i.as_array_mut()) {
+            a.insert(at, "portal");
+            a.fmt();
+        }
+    }
+    if mode.is_none() {
+        sidebar.insert("mode", value("both"));
+    }
+    Ok(())
+}
 
 /// Result of a migration run.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,5 +288,64 @@ mod tests {
         let l = super::super::parse_str("version = 1\n").unwrap();
         assert!(l.warnings.is_empty(), "{:?}", l.warnings);
         assert_eq!(l.config.schema, 1);
+    }
+
+    fn migrate_sidebar(text: &str) -> super::super::Sidebar {
+        let (out, from) = migrate_text_with(text, MIGRATIONS, 2).unwrap().unwrap();
+        assert_eq!(from, 1);
+        assert!(out.contains("schema = 2"), "{out}");
+        // Running the migration again is a no-op (the schema key says it is done).
+        assert_eq!(migrate_text_with(&out, MIGRATIONS, 2).unwrap(), None);
+        let l = super::super::parse_str(&out).unwrap();
+        assert!(l.warnings.is_empty(), "{:?}", l.warnings);
+        l.config.sidebar
+    }
+
+    #[test]
+    fn sidebar_old_default_becomes_new_default() {
+        use super::super::{Sidebar, SidebarMode};
+        let text = "[sidebar]\nsections = [\"favorites\", \"smart\", \"devices\", \"cloud\", \"tags\", \"network\", \"trash\", \"tree\"]  # mine\nmode = \"both\"\ntree_follow = false\n";
+        let s = migrate_sidebar(text);
+        assert_eq!(s.sections, Sidebar::default().sections);
+        assert_eq!(s.mode, SidebarMode::Places);
+        assert!(!s.tree_follow, "other keys are kept");
+        let (out, _) = migrate_text_with(text, MIGRATIONS, 2).unwrap().unwrap();
+        assert!(out.contains("# mine"), "{out}");
+        // An explicit non-default mode is kept.
+        let s = migrate_sidebar(&text.replace("\"both\"", "\"tree\""));
+        assert_eq!(s.mode, SidebarMode::Tree);
+        // The default list with no mode key: the tree moves to its own view.
+        let s = migrate_sidebar(&text.replace("mode = \"both\"\n", ""));
+        assert_eq!(s.mode, SidebarMode::Places);
+    }
+
+    #[test]
+    fn sidebar_custom_list_gets_portal_once() {
+        use super::super::SidebarMode;
+        use super::super::SidebarSection::*;
+        let s = migrate_sidebar("[sidebar]\nsections = [\"devices\", \"favorites\", \"tree\"]\n");
+        assert_eq!(s.sections, vec![Devices, Portal, Favorites, Tree]);
+        assert_eq!(s.mode, SidebarMode::Both, "a missing mode meant both in schema 1");
+        let s = migrate_sidebar("[sidebar]\nsections = [\"favorites\", \"tags\"]\nmode = \"tree\"\n");
+        assert_eq!(s.sections, vec![Favorites, Tags, Portal]);
+        assert_eq!(s.mode, SidebarMode::Tree);
+        // Already listed: untouched.
+        let s = migrate_sidebar("[sidebar]\nsections = [\"portal\", \"favorites\"]\nmode = \"places\"\n");
+        assert_eq!(s.sections, vec![Portal, Favorites]);
+        assert_eq!(s.mode, SidebarMode::Places);
+        // The step itself is idempotent too.
+        let mut doc: DocumentMut = "[sidebar]\nsections = [\"devices\"]\n".parse().unwrap();
+        sidebar_portal_v2(&mut doc).unwrap();
+        sidebar_portal_v2(&mut doc).unwrap();
+        assert_eq!(doc["sidebar"]["sections"].as_array().unwrap().len(), 2, "{doc}");
+    }
+
+    #[test]
+    fn sidebar_without_sections_is_untouched() {
+        let (out, _) = migrate_text_with("[general]\nshow_hidden = true\n", MIGRATIONS, 2).unwrap().unwrap();
+        assert!(!out.contains("[sidebar]"), "{out}");
+        let (out, _) = migrate_text_with("[sidebar]\ntree_follow = false\n", MIGRATIONS, 2).unwrap().unwrap();
+        assert!(!out.contains("sections") && !out.contains("mode"), "{out}");
+        assert!(migrate_text_with("[sidebar]\nsections = [1]\n", MIGRATIONS, 2).is_err());
     }
 }

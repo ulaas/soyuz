@@ -90,6 +90,8 @@ pub struct TreeState {
     watched_version: Option<u64>,
     /// Mode to return to when the tree is toggled back on.
     pub last_tree_mode: Option<SidebarMode>,
+    /// Mode the sidebar icon bar's "Places" button returns to (`places` or `both`).
+    pub last_places_mode: Option<SidebarMode>,
     filter_id: Option<Id>,
 }
 
@@ -772,12 +774,34 @@ fn new_folder(app: &mut SoyuzApp, dir: PathBuf) {
     app.fileops.jobs.submit(spec, meta);
 }
 
-/// `Action::ToggleTreeSidebar`: places ↔ the last tree mode (`both` by default). Writes
+/// The sidebar icon bar: `Places` returns to the last places-like mode (`places` or
+/// `both`), `Tree` shows the full-height disk tree. Writes `[sidebar] mode` like Settings.
+pub fn set_mode(app: &mut SoyuzApp, ctx: &egui::Context, want: SidebarMode) {
+    let cur = app.config.sidebar.mode;
+    let next = match want {
+        SidebarMode::Tree => SidebarMode::Tree,
+        _ if cur == SidebarMode::Tree => app.ui.tree.last_places_mode.unwrap_or(want),
+        m => m,
+    };
+    if next == cur {
+        return;
+    }
+    if cur != SidebarMode::Tree {
+        app.ui.tree.last_places_mode = Some(cur);
+    }
+    if cur != SidebarMode::Places {
+        app.ui.tree.last_tree_mode = Some(cur);
+    }
+    crate::ui::settings::update_config(app, ctx, |c| c.sidebar.mode = next);
+}
+
+/// `Action::ToggleTreeSidebar`: places ↔ the last tree mode (the full-height disk tree by
+/// default). Writes
 /// `[sidebar] mode` like the Settings window would.
 pub fn toggle(app: &mut SoyuzApp, ctx: &egui::Context) {
     let cur = app.config.sidebar.mode;
     let next = match cur {
-        SidebarMode::Places => app.ui.tree.last_tree_mode.unwrap_or(SidebarMode::Both),
+        SidebarMode::Places => app.ui.tree.last_tree_mode.unwrap_or(SidebarMode::Tree),
         m => {
             app.ui.tree.last_tree_mode = Some(m);
             SidebarMode::Places

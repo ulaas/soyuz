@@ -4,7 +4,7 @@
 # macOS: ~/Library/Application Support/soyuz/config.toml, or <exe dir>/portable/config.toml
 # when a file named `portable` sits next to the executable). The file is hot-reloaded.
 
-schema = 1
+schema = 2
 
 [general]
 start_location = "home"          # "home" | "last" | "<path>"
@@ -120,10 +120,14 @@ hide = []                        # action names to hide
 order = []                       # optional explicit order; unknown names ignored
 
 [sidebar]
-sections = ["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"]
-mode = "both"                    # places | tree (folder tree only) | both (tree = the "tree" section)
+sections = ["favorites", "devices", "portal", "tags", "trash", "network", "cloud", "smart"]   # "trash" = Other; "tree" = disk tree section (mode = "both")
+mode = "places"                  # places | tree (disk tree fills the sidebar) | both (tree = the "tree" section)
 tree_follow = true               # expand the tree to the active pane's folder
 tree_drag_expand_ms = 700        # drag-hover over a collapsed folder expands it (0 = never)
+
+[[sidebar.portal]]               # folders pinned to the Portal section (drop folders on it); in order
+path = 'C:\Work\Projects'
+name = "Projects"                # optional label; empty / missing = the folder's name
 
 [tags]                           # display names of the eight color tags (items stay tagged by color)
 names = ["", "", "", "", "", "", "", ""]  # red, orange, yellow, green, cyan, blue, purple, gray; "" = translated color name, max 40 chars

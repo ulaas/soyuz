@@ -71,7 +71,7 @@ their usual editing keys.
 | Toggle terminal | <kbd>Ctrl</kbd>+<kbd>&#96;</kbd> | Show or hide the integrated terminal |
 | Toggle activity panel | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> | Show or hide running jobs |
 | Toggle AI assistant | <kbd>Ctrl</kbd>+<kbd>I</kbd> | Show or hide the AI assistant panel |
-| Toggle folder tree | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | Show or hide the folder tree |
+| Toggle disk tree | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | Switch the sidebar between places and the disk tree |
 
 ### Selection
 

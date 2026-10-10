@@ -297,6 +297,13 @@ pub fn trash_target(ui: &Ui, resp: &Response, cmds: &mut Vec<Cmd>) -> bool {
     true
 }
 
+/// Badge for a drop target that pins the dragged folders instead of transferring them
+/// (the sidebar Portal): `label` is what the badge says.
+pub fn set_pin_hover(ctx: &egui::Context, label: String) {
+    set_hover(ctx, label, None);
+    ctx.data_mut(|d| d.insert_temp(Id::new("soyuz.dnd.pin"), true));
+}
+
 /// Where the pointer was over a pane last frame (external drops have no pointer
 /// position on some platforms, so the last known pane wins, else the focused one).
 #[derive(Clone, Debug, Default)]
@@ -371,6 +378,7 @@ pub fn paint_badge(ctx: &egui::Context) {
         ctx.data_mut(|d| d.remove::<crate::ui::motion::HoverTimer>(spring_id()));
     }
     let to_trash: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.dnd.trash"))).unwrap_or(false);
+    let to_pin: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.dnd.pin"))).unwrap_or(false);
     let Some(payload) = payload(ctx) else { return };
     let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else { return };
     if !ctx.input(|i| i.pointer.primary_down()) {
@@ -381,6 +389,7 @@ pub fn paint_badge(ctx: &egui::Context) {
     let what = if n == 1 { soyuz_core::entry::display_name(&payload.paths[0]) } else { tr!("common-items", count = n) };
     let (glyph, line2, accent) = match &hover {
         Some(h) if to_trash => (ph::TRASH, tr!("ops-dnd-badge-trash", target = &h.label), p.danger),
+        Some(h) if to_pin => (ph::PUSH_PIN, h.label.clone(), p.accent),
         Some(h) => match h.effect {
             Some(e) => {
                 let line = match e {
@@ -396,6 +405,7 @@ pub fn paint_badge(ctx: &egui::Context) {
     };
     ctx.set_cursor_icon(match hover.as_ref().and_then(|h| h.effect) {
         _ if hover.is_none() => CursorIcon::NoDrop,
+        _ if to_pin => CursorIcon::Alias,
         Some(DropEffect::Copy) => CursorIcon::Copy,
         Some(DropEffect::Link) => CursorIcon::Alias,
         _ => CursorIcon::Grabbing,

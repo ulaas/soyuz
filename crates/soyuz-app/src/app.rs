@@ -662,6 +662,7 @@ impl SoyuzApp {
         crate::ui::panels::terminal::pump(self, &ctx);
         crate::ui::search::pump(self, &ctx);
         crate::ui::tools::begin_frame(self, &ctx);
+        crate::ui::portal::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
         crate::services::mcp_bridge::pump(self, &ctx);
         crate::ai::pump(self, &ctx);

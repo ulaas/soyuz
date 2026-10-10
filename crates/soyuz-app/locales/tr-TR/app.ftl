@@ -140,7 +140,7 @@ app-sidebar-cloud = Bulut
 app-sidebar-tags = Etiketler
 app-sidebar-network = Ağ
 app-sidebar-other = Diğer
-app-sidebar-folders = Klasörler
+app-sidebar-folders = Disk ağacı
 app-sidebar-smart = Akıllı klasörler
 app-sidebar-settings = Ayarlar
 # $key bir klavye kısayoludur ("Ctrl+,").
@@ -152,6 +152,33 @@ app-sidebar-volume-tip = { $path }
     { $total } alanın { $free } kadarı boş
 app-sidebar-scanning = Taranıyor…
 app-sidebar-trash = Çöp Kutusu
+# Kenar çubuğunun üstündeki simge çubuğu: bölümler ile disk ağacı arasında geçiş.
+app-sidebar-view-bar = Kenar çubuğu görünümü
+app-sidebar-view-places = Konumlar
+app-sidebar-view-places-tip = Konumlar: sık kullanılanlar, aygıtlar, portal, etiketler ve daha fazlası
+app-sidebar-view-tree = Disk ağacı
+app-sidebar-view-tree-tip = Disk ağacı: sürücüleriniz ve giriş klasörünüz tek bir klasör ağacında
+# $tip yukarıdaki ipuçlarından biri, $key bir klavye kısayoludur ("Ctrl+Shift+E").
+app-sidebar-view-tip-key = { $tip }  ({ $key })
+
+## Portal: kenar çubuğu bölümüne bırakılarak sabitlenen klasörler (ui/portal.rs)
+
+app-sidebar-portal = Portal
+app-portal-empty = Sabitlemek için klasörleri buraya bırakın
+app-portal-missing = bulunamadı
+# $path sabitlenen klasördür.
+app-portal-missing-tip = { $path }
+    Klasör bulunamadı (taşınmış, yeniden adlandırılmış ya da bağlı olmayan bir sürücüde olabilir).
+app-portal-drop-badge = Portala sabitle
+app-portal-open = Aç
+app-portal-rename = Etiketi yeniden adlandır…
+app-portal-reset-name = Klasörün adını kullan
+app-portal-unpin = Portaldan kaldır
+# $name bir klasör adıdır.
+app-portal-pinned = “{ $name }” portala sabitlendi
+app-portal-pinned-many = { $count } klasör portala sabitlendi
+app-portal-folders-only = Portala yalnızca klasörler sabitlenebilir
+app-portal-already = Zaten portala sabitlenmiş
 app-place-home = Giriş klasörü
 app-place-desktop = Masaüstü
 app-place-documents = Belgeler

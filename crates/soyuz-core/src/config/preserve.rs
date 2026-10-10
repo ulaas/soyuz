@@ -179,6 +179,25 @@ paste = [\"Shift+Insert\"]
     }
 
     #[test]
+    fn portal_pins_round_trip_and_unpin() {
+        use crate::config::PortalPin;
+        let mut c = parse_str(USER).unwrap().config;
+        c.sidebar.portal.push(PortalPin { path: "C:\\Work\\a".into(), name: String::new() });
+        c.sidebar.portal.push(PortalPin { path: "/b".into(), name: "Bee".into() });
+        let out = to_string_preserving(USER, &c).unwrap();
+        assert!(out.contains("# I like hidden files"), "{out}");
+        let back = parse_str(&out).unwrap();
+        assert!(back.warnings.is_empty(), "{:?}", back.warnings);
+        assert_eq!(back.config, c);
+        c.sidebar.portal.remove(0);
+        let out2 = to_string_preserving(&out, &c).unwrap();
+        assert_eq!(parse_str(&out2).unwrap().config, c, "{out2}");
+        c.sidebar.portal.clear();
+        let out3 = to_string_preserving(&out2, &c).unwrap();
+        assert_eq!(parse_str(&out3).unwrap().config, c, "{out3}");
+    }
+
+    #[test]
     fn falls_back_on_broken_or_empty_files() {
         let c = Config::default();
         assert_eq!(to_string_preserving("", &c).unwrap(), to_pretty_string(&c).unwrap());

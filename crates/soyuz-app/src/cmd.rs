@@ -60,6 +60,10 @@ pub enum Cmd {
         from: usize,
         to: usize,
     },
+    /// Sidebar Portal: pin / unpin / reorder / relabel folders (`[[sidebar.portal]]`).
+    Portal(crate::ui::portal::PortalCmd),
+    /// Sidebar icon bar: show the places sections or the disk tree (`[sidebar] mode`).
+    SetSidebarMode(soyuz_core::config::SidebarMode),
     SelectTab(usize),
     CloseTab(usize),
     CloseOtherTabs(usize),
