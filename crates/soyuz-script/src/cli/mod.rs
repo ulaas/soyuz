@@ -1,7 +1,8 @@
 //! The CLI companion: `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`.
 //!
 //! With a Soyuz window running (and `[cli] server_enabled`), job commands are sent to
-//! it over the local named pipe `\\.\pipe\soyuz-cli-<user>` ([`proto`]): they show in
+//! it over the local named pipe `\\.\pipe\soyuz-cli-<user>` (unix: the socket
+//! `$XDG_RUNTIME_DIR/soyuz/soyuz-cli.sock`) ([`proto`]): they show in
 //! the activity panel with progress, conflict prompts are answered in the window, and
 //! the command waits and streams progress (or returns at once with `--queue`).
 //! Without a window, the command runs on a private headless engine (same undo history)

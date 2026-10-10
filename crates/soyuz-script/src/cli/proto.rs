@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use soyuz_jobs::{JobEngine, JobId, JobSpec};
 
-/// `\\.\pipe\soyuz-cli-<user>`.
+/// `\\.\pipe\soyuz-cli-<user>` (unix: `$XDG_RUNTIME_DIR/soyuz/soyuz-cli.sock`).
 pub fn pipe_name() -> String {
     soyuz_mcp::pipe::user_pipe_name("soyuz-cli")
 }

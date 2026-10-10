@@ -1,4 +1,5 @@
-//! `soyuz --mcp` → running window: a local named pipe `\\.\pipe\soyuz-mcp-<user>`.
+//! `soyuz --mcp` → running window: a local named pipe `\\.\pipe\soyuz-mcp-<user>` on
+//! Windows, a Unix domain socket `$XDG_RUNTIME_DIR/soyuz/soyuz-mcp.sock` on unix.
 //!
 //! The `soyuz --mcp` process is a thin relay: it sends one hello line
 //! (`{"soyuz_mcp_attach":1,"client":…}`), then copies stdin → pipe and pipe → stdout. The
@@ -8,6 +9,9 @@
 #[cfg(windows)]
 #[allow(unsafe_code)]
 mod windows;
+
+#[cfg(unix)]
+mod unix;
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::sync::Arc;
@@ -23,7 +27,15 @@ pub fn pipe_name() -> String {
     user_pipe_name("soyuz-mcp")
 }
 
+/// A per-user endpoint name (the CLI companion uses `soyuz-cli`): the socket
+/// `<private per-user dir>/<prefix>.sock` (see `unix.rs`).
+#[cfg(unix)]
+pub fn user_pipe_name(prefix: &str) -> String {
+    unix::socket_path(prefix)
+}
+
 /// `\\.\pipe\<prefix>-<user>`: a per-user pipe name (the CLI companion uses `soyuz-cli`).
+#[cfg(not(unix))]
 pub fn user_pipe_name(prefix: &str) -> String {
     let user = std::env::var("USERNAME").or_else(|_| std::env::var("USER")).unwrap_or_default();
     let user = crate::trust::sanitize_name(&user);
@@ -54,6 +66,8 @@ pub fn parse_hello(line: &str) -> Option<Option<String>> {
 pub struct PipeServer {
     stop: Arc<AtomicBool>,
     name: String,
+    #[cfg(unix)]
+    accept: Option<(unix::Waker, std::thread::JoinHandle<()>)>,
 }
 
 impl PipeServer {
@@ -97,7 +111,43 @@ impl PipeServer {
         Ok(PipeServer { stop, name: name.to_string() })
     }
 
-    #[cfg(not(windows))]
+    /// Bind `name` (a socket in a private per-user directory, peers checked with
+    /// `SO_PEERCRED`, see `unix.rs`) and run `handler` for each connection on its own thread.
+    #[cfg(unix)]
+    pub fn serve<F>(name: &str, handler: F) -> std::io::Result<PipeServer>
+    where
+        F: Fn(ClientStream) + Send + Sync + 'static,
+    {
+        let handler = Arc::new(handler);
+        let listener = unix::PipeListener::bind(name)?;
+        let waker = listener.waker();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop2 = stop.clone();
+        let pipe = name.to_string();
+        let thread = std::thread::Builder::new().name("soyuz-pipe".into()).spawn(move || {
+            // The listener (socket file + single-server lock) lives exactly as long as this loop.
+            loop {
+                let res = listener.accept();
+                if stop2.load(Ordering::SeqCst) {
+                    break;
+                }
+                match res {
+                    Ok(stream) => {
+                        let handler = handler.clone();
+                        let _ =
+                            std::thread::Builder::new().name("soyuz-pipe-conn".into()).spawn(move || handler(stream));
+                    }
+                    Err(e) => {
+                        log::warn!("{pipe}: accept failed: {e}");
+                        std::thread::sleep(std::time::Duration::from_millis(500));
+                    }
+                }
+            }
+        })?;
+        Ok(PipeServer { stop, name: name.to_string(), accept: Some((waker, thread)) })
+    }
+
+    #[cfg(not(any(windows, unix)))]
     pub fn serve<F>(_name: &str, _handler: F) -> std::io::Result<PipeServer>
     where
         F: Fn(ClientStream) + Send + Sync + 'static,
@@ -113,6 +163,21 @@ impl PipeServer {
 impl Drop for PipeServer {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        #[cfg(unix)]
+        if let Some((waker, thread)) = self.accept.take() {
+            // Wake the accept loop and wait (briefly) for it to remove the socket and release
+            // the lock, so the name can be served again as soon as this drop returns.
+            waker.wake();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+            while !thread.is_finished() && std::time::Instant::now() < deadline {
+                let _ = connect(&self.name);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            if thread.is_finished() {
+                let _ = thread.join();
+            }
+            return;
+        }
         // Unblock the accept loop.
         let _ = connect(&self.name);
     }
@@ -143,20 +208,30 @@ pub fn connect(name: &str) -> std::io::Result<Option<ClientStream>> {
     windows::connect(name)
 }
 
-/// No local pipe off Windows yet: a stream type that can never exist (but satisfies the
+/// A connected client end.
+#[cfg(unix)]
+pub type ClientStream = unix::PipeStream;
+
+/// Connect to the running window; `Ok(None)` when no window serves the socket.
+#[cfg(unix)]
+pub fn connect(name: &str) -> std::io::Result<Option<ClientStream>> {
+    unix::connect(name)
+}
+
+/// No local pipe on this platform: a stream type that can never exist (but satisfies the
 /// `Read + Write + Clone` bounds of the shared relay / serve code).
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 #[derive(Clone, Debug)]
 pub struct ClientStream(std::convert::Infallible);
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 impl Read for ClientStream {
     fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
         match self.0 {}
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 impl Write for ClientStream {
     fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
         match self.0 {}
@@ -167,7 +242,7 @@ impl Write for ClientStream {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, unix)))]
 pub fn connect(_name: &str) -> std::io::Result<Option<ClientStream>> {
     Ok(None)
 }
