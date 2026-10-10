@@ -1,5 +1,10 @@
 //! The index worker thread: crawl, watch, journal catch-up, contents, tags.
 //!
+//! Roots the recursive watcher can't cover (Linux: `fs.inotify.max_user_watches` used
+//! up) are polled instead: every rescan interval the folders whose modification time
+//! changed are re-read, with a full verification crawl every [`FULL_VERIFY_EVERY`] passes
+//! (a file edited in place doesn't touch its folder's modification time).
+//!
 //! Runs in background mode (low CPU / I/O priority). Writes are batched into
 //! transactions (committed every few thousand changes or 300 ms, and before waiting);
 //! each commit bumps the shared generation and wakes the UI.
@@ -73,13 +78,52 @@ struct Worker {
     pending: HashSet<PathBuf>,
     pending_since: Option<Instant>,
     last_event: Instant,
+    /// Roots without a watcher, re-checked periodically.
+    polled: Vec<Polled>,
+    /// The running poll pass.
+    pass: Option<Pass>,
 }
+
+/// A root that is polled instead of watched.
+struct Polled {
+    root: PathBuf,
+    last: Instant,
+    passes: u32,
+    /// Modification time of the root folder itself at the last pass.
+    root_mtime: Option<SystemTime>,
+}
+
+/// One quick pass over a polled root: indexed folders in path order.
+struct Pass {
+    root: PathBuf,
+    /// Last folder checked (the cursor into the index).
+    after: String,
+    /// Folders changed at or after this time are re-read even when the stored
+    /// (whole-second) modification time matches.
+    recent: i64,
+}
+
+/// Every this many poll passes is a full verification crawl instead.
+const FULL_VERIFY_EVERY: u32 = 12;
+/// Folders checked per poll step.
+const POLL_BATCH: usize = 512;
 
 /// From the recursive watcher.
 enum WatchMsg {
     Paths(Vec<PathBuf>),
     /// The OS dropped events (buffer overflow): re-check everything.
     Rescan,
+    /// The watch limit is used up (while watching new folders below these paths; empty =
+    /// unknown): poll the affected roots instead.
+    Exhausted(Vec<PathBuf>),
+}
+
+/// Roots the tests treat as unwatchable (as if the watch limit were used up).
+#[cfg(test)]
+pub(crate) static FORCE_POLL: parking_lot::Mutex<Vec<PathBuf>> = parking_lot::Mutex::new(Vec::new());
+
+fn watch_limit(e: &notify::Error) -> bool {
+    matches!(e.kind, notify::ErrorKind::MaxFilesWatch)
 }
 
 /// Pending changes are applied after this long, even while events keep coming.
@@ -89,13 +133,16 @@ const PENDING_MAX: usize = 50_000;
 
 /// A plain recursive `notify` watcher per root. (`soyuz_fs::Watcher` uses the
 /// debouncer's file-id cache, which walks the whole tree up front — far too slow for a
-/// home folder.)
+/// home folder.) Returns the watcher, warnings and the roots to poll instead: those that
+/// hit the watch limit (their partial watches are removed again), or all of them when
+/// there is no watcher at all.
 fn start_watcher(
     roots: &[PathBuf],
     tx: crossbeam_channel::Sender<WatchMsg>,
-) -> (Option<notify::RecommendedWatcher>, Vec<String>) {
+) -> (Option<notify::RecommendedWatcher>, Vec<String>, Vec<PathBuf>) {
     use notify::{EventKind, RecursiveMode, Watcher as _};
     let mut warnings = Vec::new();
+    let mut exhausted = Vec::new();
     let handler = move |res: notify::Result<notify::Event>| match res {
         Ok(ev) if ev.need_rescan() => {
             let _ = tx.send(WatchMsg::Rescan);
@@ -104,21 +151,37 @@ fn start_watcher(
         Ok(ev) => {
             let _ = tx.send(WatchMsg::Paths(ev.paths));
         }
+        // New folders below a watched root couldn't be watched.
+        Err(e) if watch_limit(&e) => {
+            let _ = tx.send(WatchMsg::Exhausted(e.paths));
+        }
         Err(e) => log::debug!("index watcher: {e}"),
     };
     let mut w = match notify::recommended_watcher(handler) {
         Ok(w) => w,
         Err(e) => {
+            // E.g. Linux `fs.inotify.max_user_instances` used up: poll every root.
             warnings.push(format!("No change watcher: {e}"));
-            return (None, warnings);
+            return (None, warnings, roots.to_vec());
         }
     };
     for r in roots {
-        if let Err(e) = w.watch(r, RecursiveMode::Recursive) {
-            warnings.push(format!("Can't watch {}: {e}", r.display()));
+        #[cfg(test)]
+        if FORCE_POLL.lock().contains(r) {
+            exhausted.push(r.clone());
+            continue;
+        }
+        match w.watch(r, RecursiveMode::Recursive) {
+            Ok(()) => {}
+            Err(e) if watch_limit(&e) => {
+                // Free the watches it did get, so other roots (and other apps) can use them.
+                let _ = w.unwatch(r);
+                exhausted.push(r.clone());
+            }
+            Err(e) => warnings.push(format!("Can't watch {}: {e}", r.display())),
         }
     }
-    (Some(w), warnings)
+    (Some(w), warnings, exhausted)
 }
 
 pub(crate) fn run(cfg: IndexConfig, shared: Arc<Shared>, rx: Receiver<Msg>) {
@@ -170,6 +233,8 @@ pub(crate) fn run(cfg: IndexConfig, shared: Arc<Shared>, rx: Receiver<Msg>) {
         pending: HashSet::new(),
         pending_since: None,
         last_event: Instant::now(),
+        polled: Vec::new(),
+        pass: None,
         roots,
         cfg,
     };
@@ -198,6 +263,15 @@ impl Worker {
         self.shared.stop.load(Ordering::SeqCst)
     }
 
+    /// The NTFS change journal is only read on Windows.
+    fn usn(&self) -> bool {
+        self.cfg.usn && cfg!(windows)
+    }
+
+    fn rescan_interval(&self) -> Duration {
+        Duration::from_millis(self.shared.rescan_ms.load(Ordering::Relaxed))
+    }
+
     fn init(&mut self, wtx: crossbeam_channel::Sender<WatchMsg>) -> rusqlite::Result<()> {
         self.generation = self
             .conn
@@ -213,13 +287,22 @@ impl Worker {
             db::clear_contents(&self.conn)?;
         }
         // Watch first, so nothing that happens from here on is missed.
-        let (watcher, warnings) = start_watcher(&self.roots, wtx);
+        let (watcher, warnings, exhausted) = start_watcher(&self.roots, wtx);
         self._watcher = watcher;
         self.shared.status.lock().warnings.extend(warnings);
+        for r in exhausted {
+            self.poll_root(r);
+        }
         let mut ready = Vec::new();
         let roots = self.roots.clone();
-        let mut usn_state = if self.cfg.usn { None } else { Some(UsnState::Off) };
-        if self.cfg.usn {
+        let mut usn_state = if !self.cfg.usn {
+            Some(UsnState::Off)
+        } else if !cfg!(windows) {
+            Some(UsnState::Unsupported(crate::USN_NOT_WINDOWS.into()))
+        } else {
+            None
+        };
+        if self.usn() {
             // Probe every root's volume up front, so the status explains the journal.
             for root in &roots {
                 self.volume_for(root, &mut usn_state);
@@ -228,7 +311,7 @@ impl Worker {
         for root in roots {
             let state = db::root_state(&self.conn, &root)?;
             let complete = state.is_some_and(|s| s.complete);
-            let caught_up = complete && self.cfg.usn && self.catch_up(&root, &mut usn_state);
+            let caught_up = complete && self.usn() && self.catch_up(&root, &mut usn_state);
             if complete {
                 ready.push(root.clone());
             }
@@ -484,7 +567,181 @@ impl Worker {
                 }
             }
             WatchMsg::Rescan => self.rescan(),
+            WatchMsg::Exhausted(paths) => {
+                let roots: Vec<PathBuf> = if paths.is_empty() {
+                    self.roots.clone()
+                } else {
+                    paths.iter().filter_map(|p| self.root_of(p).cloned()).collect()
+                };
+                for r in roots {
+                    if !self.polled.iter().any(|p| p.root == r) {
+                        if let Some(w) = self._watcher.as_mut() {
+                            use notify::Watcher as _;
+                            let _ = w.unwatch(&r);
+                        }
+                        self.poll_root(r);
+                    }
+                }
+            }
         }
+    }
+
+    /// Stop relying on the watcher for `root`: re-check it every rescan interval.
+    fn poll_root(&mut self, root: PathBuf) {
+        if self.polled.iter().any(|p| p.root == root) {
+            return;
+        }
+        log::warn!(
+            "index: {} can't be watched for changes (watch limit used up); re-checking it every {:?}",
+            root.display(),
+            self.rescan_interval()
+        );
+        let root_mtime = soyuz_fs::stat(&root, false).ok().and_then(|e| e.modified);
+        self.polled.push(Polled { root: root.clone(), last: Instant::now(), passes: 0, root_mtime });
+        let mut st = self.shared.status.lock();
+        if !st.polled_roots.contains(&root) {
+            st.polled_roots.push(root);
+        }
+        drop(st);
+        (self.shared.wake)();
+    }
+
+    /// Time until the next poll pass is due (`None`: nothing is polled).
+    fn next_poll_in(&self) -> Option<Duration> {
+        let every = self.rescan_interval();
+        self.polled.iter().map(|p| every.saturating_sub(p.last.elapsed())).min()
+    }
+
+    /// Advance the running poll pass, or start one that is due. Returns whether there
+    /// was work.
+    fn poll_step(&mut self) -> bool {
+        if self.pass.is_none() && !self.start_pass() {
+            return false;
+        }
+        let Some(pass) = self.pass.as_ref() else { return false };
+        let (root, after, recent) = (pass.root.clone(), pass.after.clone(), pass.recent);
+        let dirs = db::dirs_after(&self.conn, &root, &after, POLL_BATCH).unwrap_or_default();
+        let Some((last, _)) = dirs.last() else {
+            self.pass = None;
+            self.commit();
+            return true;
+        };
+        if let Some(p) = self.pass.as_mut() {
+            p.after = last.clone();
+        }
+        for (dir, stored) in &dirs {
+            let dir = PathBuf::from(dir);
+            match soyuz_fs::stat(&dir, false) {
+                Ok(e) => {
+                    let now = e.modified.map(crate::query::unix_secs);
+                    if e.kind != EntryKind::Dir {
+                        self.apply_path(&dir, false);
+                    } else if now != *stored || now.is_some_and(|t| t >= recent) {
+                        self.relist(&root, &dir);
+                    }
+                }
+                Err(e) if e.kind == FsErrorKind::NotFound => {
+                    self.begin();
+                    self.ops += db::delete_tree(&self.conn, &dir).unwrap_or(0);
+                }
+                Err(e) => log::debug!("index: stat {}: {e}", dir.display()),
+            }
+            self.maybe_commit();
+        }
+        self.commit();
+        if self.cfg.throttle_ms > 0 {
+            std::thread::sleep(Duration::from_millis(self.cfg.throttle_ms));
+        }
+        true
+    }
+
+    /// Start a due poll pass (or, every [`FULL_VERIFY_EVERY`] passes, queue a full
+    /// verification crawl). Returns whether a quick pass started.
+    fn start_pass(&mut self) -> bool {
+        let every = self.rescan_interval();
+        let Some(i) = self
+            .polled
+            .iter()
+            .position(|p| p.last.elapsed() >= every && !self.crawls.iter().any(|c| c.full && c.root == p.root))
+        else {
+            return false;
+        };
+        let p = &mut self.polled[i];
+        // Rows written since (about) the previous pass may carry a modification time
+        // that a later change in the same second didn't move.
+        let recent = crate::query::unix_secs(SystemTime::now() - p.last.elapsed()) - 1;
+        p.last = Instant::now();
+        p.passes += 1;
+        let root = p.root.clone();
+        if p.passes.is_multiple_of(FULL_VERIFY_EVERY) {
+            p.root_mtime = soyuz_fs::stat(&root, false).ok().and_then(|e| e.modified);
+            self.rescan_root(&root);
+            return false;
+        }
+        // The root itself isn't a row: compare against the time seen last pass.
+        let mtime = soyuz_fs::stat(&root, false).ok().and_then(|e| e.modified);
+        if mtime.is_none() {
+            self.check_lost(&root);
+            return false;
+        }
+        let changed = mtime != p.root_mtime;
+        p.root_mtime = mtime;
+        if changed {
+            self.relist(&root, &root);
+        }
+        log::debug!("index: polling {}", root.display());
+        self.pass = Some(Pass { root, after: String::new(), recent });
+        true
+    }
+
+    /// Re-read one folder of a polled root: upsert what's there, drop what's gone,
+    /// crawl new folders.
+    fn relist(&mut self, root: &Path, dir: &Path) {
+        let opts = ListOptions { include_hidden: true, stat_links: false, ..Default::default() };
+        let entries = match soyuz_fs::read_dir(dir, &opts) {
+            Ok(v) => v,
+            Err(e) => {
+                if e.kind == FsErrorKind::NotFound && dir != root {
+                    self.begin();
+                    self.ops += db::delete_tree(&self.conn, dir).unwrap_or(0);
+                }
+                return;
+            }
+        };
+        let hidden_above =
+            if dir == root { false } else { db::hidden_of(&self.conn, dir).ok().flatten().unwrap_or(false) };
+        self.begin();
+        let mut seen = HashSet::new();
+        for e in &entries {
+            let name = e.path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+            if self.excl.is_excluded(&e.path, &name)
+                || (!self.db_dir.as_os_str().is_empty() && e.path.starts_with(&self.db_dir))
+            {
+                continue;
+            }
+            seen.insert(e.path.clone());
+            let was = db::kind_of(&self.conn, &e.path).ok().flatten();
+            let row = Row::from_entry(e, hidden_above);
+            let hidden = row.hidden;
+            if db::upsert(&self.conn, &row, self.generation).is_ok() {
+                self.ops += 1;
+            }
+            if e.kind == EntryKind::Dir && was != Some(KIND_DIR) {
+                self.crawls.push_back(Crawl {
+                    root: root.to_path_buf(),
+                    full: false,
+                    verify: false,
+                    stack: vec![(e.path.clone(), hidden)],
+                    started: false,
+                });
+            }
+        }
+        for gone in db::children(&self.conn, dir).unwrap_or_default() {
+            if !seen.contains(&gone) {
+                self.ops += db::delete_tree(&self.conn, &gone).unwrap_or(0);
+            }
+        }
+        self.content_dirty |= self.cfg.content;
     }
 
     /// Apply pending watcher changes once they settle. Returns whether it did.
@@ -513,16 +770,21 @@ impl Worker {
     /// The OS dropped events: re-check the roots (once each).
     fn rescan(&mut self) {
         for r in self.roots.clone() {
-            if !self.crawls.iter().any(|c| c.full && c.root == r) {
-                let ready = self.shared.status.lock().ready_roots.contains(&r);
-                self.crawls.push_back(Crawl {
-                    root: r.clone(),
-                    full: true,
-                    verify: ready,
-                    stack: vec![(r.clone(), false)],
-                    started: false,
-                });
-            }
+            self.rescan_root(&r);
+        }
+    }
+
+    /// Queue a full (verification) crawl of `r` unless one is queued.
+    fn rescan_root(&mut self, r: &Path) {
+        if !self.crawls.iter().any(|c| c.full && c.root == r) {
+            let ready = self.shared.status.lock().ready_roots.iter().any(|x| x == r);
+            self.crawls.push_back(Crawl {
+                root: r.to_path_buf(),
+                full: true,
+                verify: ready,
+                stack: vec![(r.to_path_buf(), false)],
+                started: false,
+            });
         }
     }
 
@@ -693,7 +955,7 @@ impl Worker {
     /// Expected number of entries below `root` from a whole-volume MFT enumeration
     /// (`FSCTL_ENUM_USN_DATA`), when the journal is usable.
     fn estimate(&mut self, root: &Path) -> Option<u64> {
-        if !self.cfg.usn {
+        if !self.usn() {
             return None;
         }
         let mut state = None;
@@ -824,7 +1086,7 @@ impl Worker {
             while let Ok(ev) = self.watch_rx.try_recv() {
                 self.on_watch(ev);
             }
-            if self.flush_pending(false) || self.crawl_step() || self.content_step() {
+            if self.flush_pending(false) || self.crawl_step() || self.content_step() || self.poll_step() {
                 continue;
             }
             // Idle.
@@ -841,7 +1103,10 @@ impl Worker {
             }
             self.checkpoint(false);
             self.commit();
-            let wait = if self.pending_since.is_some() { self.cfg.watch_debounce } else { CHECKPOINT_EVERY };
+            let mut wait = if self.pending_since.is_some() { self.cfg.watch_debounce } else { CHECKPOINT_EVERY };
+            if let Some(next) = self.next_poll_in() {
+                wait = wait.min(next.max(Duration::from_millis(10)));
+            }
             select! {
                 recv(rx) -> m => match m {
                     Ok(m) => {

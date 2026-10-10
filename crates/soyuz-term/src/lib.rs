@@ -20,6 +20,7 @@ mod backend;
 #[cfg(any(test, feature = "fuzzing"))]
 pub mod fuzzing;
 mod keys;
+pub mod osc7;
 #[allow(unsafe_code)]
 mod pty;
 mod render;
@@ -364,6 +365,33 @@ mod tests {
         }
         assert!(exited, "no Exited event");
         assert!(!term.is_alive());
+    }
+
+    /// The child starts in the requested folder.
+    #[cfg(unix)]
+    #[test]
+    fn pty_child_runs_in_cwd() {
+        let dir = tempfile_dir("pwd");
+        let settings = TermSettings {
+            shell: Some("/bin/sh".into()),
+            args: vec!["-c".into(), "pwd; sleep 0.2".into()],
+            shell_integration: false,
+            cwd: dir.clone(),
+            ..Default::default()
+        };
+        let term = Terminal::spawn(settings, egui::Context::default(), 9).expect("spawn");
+        let want = std::fs::canonicalize(&dir).unwrap();
+        let found = wait_for(&term, &want.to_string_lossy(), Duration::from_secs(10));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(found, "grid did not contain {}:\n{}", want.display(), term.screen_text());
+    }
+
+    /// A fresh folder under the temp dir (no `tempfile` dependency here).
+    #[cfg(unix)]
+    fn tempfile_dir(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("soyuz-term-test-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        d
     }
 
     /// The terminal answers a cursor-position query (`ESC[6n`) through `PtyWrite`.

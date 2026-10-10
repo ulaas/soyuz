@@ -51,6 +51,8 @@ pub struct Config {
     pub performance: Performance,
     /// Remote locations (SFTP, WebDAV, FTP/FTPS, S3) and network shares.
     pub remote: RemoteSection,
+    /// Linux desktop integration (ignored on other systems).
+    pub linux: LinuxSection,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
@@ -204,8 +206,9 @@ pub struct Appearance {
     /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
     /// `[preview] pdfium_dir`); without it PDFs keep their icon.
     pub pdf_thumbnails: bool,
-    /// Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only)
-    /// before decoding a file ourselves.
+    /// Reuse the thumbnails the system already made (Windows: Explorer's
+    /// `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`;
+    /// read-only) before decoding a file ourselves.
     pub os_thumbnail_cache: bool,
     /// File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in
     /// generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`.
@@ -665,7 +668,12 @@ pub struct SearchIndex {
     /// Folders to index; `~` is the home folder.
     pub roots: Vec<String>,
     /// Names (`node_modules`, `*.tmp`) or path endings (`AppData/Local/Temp`) to skip.
+    /// On Linux and macOS a pattern starting with `/` or `~/` is anchored there
+    /// (`/proc`, `~/snap`) instead of matching any path ending.
     pub exclude: Vec<String>,
+    /// Extra patterns (same syntax as `exclude`) used only on Linux: caches, the trash,
+    /// container and game stores, and the kernel's pseudo file systems.
+    pub linux_exclude: Vec<String>,
     /// Also index the words of small text files (`content:` queries).
     pub content: bool,
     /// Largest file whose contents are indexed (KiB).
@@ -681,6 +689,22 @@ pub struct SearchIndex {
     pub smart_refresh_secs: u64,
     /// Searches use the index when it covers the folder (off = always walk the disk).
     pub use_for_search: bool,
+    /// When a root can't be watched for changes (Linux: the inotify watch limit
+    /// `fs.inotify.max_user_watches` is used up), re-check its folders this often instead
+    /// (seconds; only folders whose modification time changed are re-read).
+    pub rescan_interval_secs: u64,
+}
+
+impl SearchIndex {
+    /// The exclusion patterns that apply on this system: `exclude`, plus
+    /// `linux_exclude` on Linux.
+    pub fn effective_exclude(&self) -> Vec<String> {
+        let mut v = self.exclude.clone();
+        if cfg!(target_os = "linux") {
+            v.extend(self.linux_exclude.iter().filter(|p| !v.contains(p)).cloned().collect::<Vec<_>>());
+        }
+        v
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -897,6 +921,33 @@ pub struct RemoteSection {
     pub preview_max_mb: u64,
     /// Typing `\\server` lists its shares (Windows `NetShareEnum`).
     pub share_enumeration: bool,
+}
+
+/// `[linux]`: Linux desktop integration. Ignored on Windows and macOS.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LinuxSection {
+    /// Display server the window uses (`auto` = Wayland when available, else X11).
+    /// `x11` runs through XWayland under a Wayland compositor, which makes drag and drop
+    /// with X11 apps work. Applies at the next start.
+    pub window_backend: WindowBackend,
+    /// While Soyuz runs, own `org.freedesktop.FileManager1` on the session bus, so
+    /// "Show in folder" from browsers and other apps opens Soyuz.
+    pub own_file_manager1: bool,
+    /// When the built-in clipboard fails, fall back to running `wl-copy` / `xclip`.
+    pub clipboard_fallback_tools: bool,
+}
+
+/// `[linux] window_backend`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowBackend {
+    #[default]
+    Auto,
+    /// Native Wayland.
+    Wayland,
+    /// X11 (XWayland under a Wayland compositor).
+    X11,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

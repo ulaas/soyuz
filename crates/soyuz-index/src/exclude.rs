@@ -2,8 +2,9 @@
 //!
 //! A pattern without a separator matches a file or folder **name** (`node_modules`,
 //! `*.tmp`); a pattern with `/` or `\` matches the end of a path (`AppData/Local/Temp`,
-//! `AppData/Local/**/Cache`). Matching is case-insensitive; excluded folders are not
-//! descended into.
+//! `AppData/Local/**/Cache`). On unix a pattern starting with `/` or `~/` is anchored
+//! instead (`/proc`, `~/snap`: only that folder, not every path ending in it). Matching is
+//! case-insensitive; excluded folders are not descended into.
 
 use std::path::Path;
 
@@ -21,6 +22,20 @@ impl Default for Excluder {
     }
 }
 
+/// The absolute glob of an anchored pattern (`/x`, `~`, `~/x`; unix only).
+fn anchored(p: &str) -> Option<String> {
+    if !cfg!(unix) {
+        return None;
+    }
+    if p.starts_with('/') {
+        return Some(p.to_string());
+    }
+    let rest = if p == "~" { "" } else { p.strip_prefix("~/")? };
+    let home = soyuz_fs::home().to_string_lossy().into_owned();
+    let home = globset::escape(home.trim_end_matches('/'));
+    Some(if rest.is_empty() { home } else { format!("{home}/{rest}") })
+}
+
 impl Excluder {
     /// Compile patterns; invalid ones are reported and skipped.
     pub fn new(patterns: &[String]) -> (Excluder, Vec<String>) {
@@ -33,7 +48,9 @@ impl Excluder {
             if p.is_empty() {
                 continue;
             }
-            let (pattern, set) = if p.contains('/') {
+            let (pattern, set) = if let Some(abs) = anchored(p) {
+                (abs, &mut paths)
+            } else if p.contains('/') {
                 (format!("**/{}", p.trim_start_matches('/')), &mut paths)
             } else {
                 (p.to_string(), &mut names)
@@ -100,6 +117,21 @@ mod tests {
         assert!(!e.is_excluded(Path::new("/Users/me/Temp"), "Temp"));
         assert!(e.is_excluded(Path::new("/u/AppData/Local/Google/Chrome/Cache"), "Cache"));
         assert!(!e.is_excluded(Path::new("/u/Projects/Cache"), "Cache"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn anchored_patterns() {
+        let e = ex(&["/proc", "~/snap", ".var/app/*/cache", ".local/share/Trash"]);
+        assert!(e.is_excluded(Path::new("/proc"), "proc"));
+        assert!(!e.is_excluded(Path::new("/home/me/src/proc"), "proc"));
+        assert!(e.excluded_below(Path::new("/"), Path::new("/proc/1/status")));
+        let home = soyuz_fs::home();
+        assert!(e.is_excluded(&home.join("snap"), "snap"));
+        assert!(!e.is_excluded(&home.join("work/snap"), "snap"));
+        assert!(e.is_excluded(&home.join(".var/app/org.gnome.Maps/cache"), "cache"));
+        assert!(!e.is_excluded(&home.join(".var/app/org.gnome.Maps/data"), "data"));
+        assert!(e.is_excluded(&home.join(".local/share/Trash"), "Trash"));
     }
 
     #[test]

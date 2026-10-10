@@ -22,11 +22,11 @@ pub(crate) enum ShellKind {
 }
 
 impl ShellKind {
+    /// Kind from a program path; `/` and `\` both separate (pure, so Windows paths are
+    /// recognised on unix too).
     pub(crate) fn detect(program: &str) -> ShellKind {
-        let stem = Path::new(program.trim_matches('"'))
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_ascii_lowercase())
-            .unwrap_or_default();
+        let file = program.trim_matches('"').rsplit(['/', '\\']).next().unwrap_or_default();
+        let stem = Path::new(file).file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         match stem.as_str() {
             "pwsh" | "powershell" | "pwsh-preview" => ShellKind::PowerShell,
             "cmd" => ShellKind::Cmd,

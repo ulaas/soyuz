@@ -30,7 +30,7 @@ pub use error::{FsError, FsErrorKind, FsResult};
 pub use filter::{Filter, NamePattern, NamePatternSpec, PatternError, PatternKind};
 pub use locale::{Locale, fold_for_match};
 pub use location::{Location, join_vpath, split_vpath};
-pub use naming::{NameError, natural_cmp, unique_name, validate_name, validate_name_with};
+pub use naming::{NameError, fs_needs_windows_names, natural_cmp, unique_name, validate_name, validate_name_with};
 pub use policy::{ConflictResolution, ErrorAction, Overwrite};
 pub use progress::{ByteProgress, HashAlgo, ProgressSink};
 pub use size::{SizeStyle, format_eta, format_size, format_speed};

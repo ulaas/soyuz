@@ -5,7 +5,10 @@
 //!   exclusions), keeps the index fresh from a recursive watcher, and on NTFS catches up
 //!   with changes made while Soyuz was closed by reading the USN change journal
 //!   (`soyuz_fs::usn`; needs administrator rights, otherwise it falls back to a
-//!   verification crawl). Optional content indexing stores the words of small text files.
+//!   verification crawl). Roots that can't be watched (Linux: the inotify watch limit is
+//!   used up) are re-checked periodically instead ([`IndexStatus::polled_roots`],
+//!   [`Index::set_rescan_interval`]). Optional content indexing stores the words of small
+//!   text files.
 //! * [`query::parse`] reads the query language (`kind:image size:>5MB modified:<7d
 //!   tag:red ext:pdf path:docs "exact phrase" -exclude a OR b`); [`sql::select`] maps it
 //!   to SQL + FTS for the index, and [`eval`] evaluates it against live search hits when
@@ -105,9 +108,16 @@ pub enum UsnState {
     Active,
     /// Opening the volume needs administrator rights.
     NeedsAdmin,
-    /// Not an NTFS volume, no journal, or not Windows.
+    /// Not an NTFS volume, no journal, or not Windows (reason [`USN_NOT_WINDOWS`]).
     Unsupported(String),
 }
+
+/// The [`UsnState::Unsupported`] reason off Windows (the journal is NTFS-only; the UI
+/// can hide the journal row when it sees this).
+pub const USN_NOT_WINDOWS: &str = "Windows NTFS only";
+
+/// Default for [`Index::set_rescan_interval`].
+pub const DEFAULT_RESCAN_INTERVAL: Duration = Duration::from_secs(600);
 
 /// A snapshot of the index for the UI.
 #[derive(Clone, Debug, Default)]
@@ -132,6 +142,10 @@ pub struct IndexStatus {
     pub content_enabled: bool,
     /// Non-fatal problems (bad exclusion patterns, unreadable roots …).
     pub warnings: Vec<String>,
+    /// Roots without a change watcher because the system's watch limit is used up
+    /// (Linux `fs.inotify.max_user_watches`): they're re-checked every rescan interval
+    /// (folders whose modification time changed are re-read), so changes show up late.
+    pub polled_roots: Vec<PathBuf>,
     /// Last time anything was written.
     pub updated: Option<SystemTime>,
 }
@@ -176,6 +190,8 @@ pub(crate) struct Shared {
     pub generation: AtomicU64,
     pub stop: AtomicBool,
     pub wake: Arc<dyn Fn() + Send + Sync>,
+    /// Polled roots are re-checked this often (ms).
+    pub rescan_ms: AtomicU64,
 }
 
 struct Inner {
@@ -205,6 +221,7 @@ impl Index {
             generation: AtomicU64::new(1),
             stop: AtomicBool::new(false),
             wake,
+            rescan_ms: AtomicU64::new(DEFAULT_RESCAN_INTERVAL.as_millis() as u64),
         });
         let (tx, rx) = crossbeam_channel::unbounded();
         let (done_tx, done) = crossbeam_channel::bounded(1);
@@ -222,6 +239,14 @@ impl Index {
 
     pub fn status(&self) -> IndexStatus {
         self.inner.shared.status.lock().clone()
+    }
+
+    /// How often roots without a change watcher ([`IndexStatus::polled_roots`]) are
+    /// re-checked (`[search.index] rescan_interval_secs`; at least 0.1 s). Takes
+    /// effect immediately.
+    pub fn set_rescan_interval(&self, every: Duration) {
+        let ms = every.as_millis().clamp(100, u64::MAX as u128) as u64;
+        self.inner.shared.rescan_ms.store(ms, Ordering::Relaxed);
     }
 
     /// Bumped after every committed batch of changes (smart folders refresh on it).
