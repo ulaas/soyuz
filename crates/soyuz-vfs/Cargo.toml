@@ -3,6 +3,7 @@ name = "soyuz-vfs"
 description = "Soyuz remote locations: provider trait, URI parsing, SFTP / WebDAV / FTP(S) / S3 providers, streaming transfers"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

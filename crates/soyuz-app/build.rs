@@ -16,7 +16,7 @@ fn main() {
     res.set_icon("assets/icon.ico")
         .set("ProductName", "Soyuz")
         .set("FileDescription", "Soyuz file explorer")
-        .set("LegalCopyright", "Licensed under MIT OR Apache-2.0");
+        .set("LegalCopyright", "Copyright (c) 2026 Aydemir Şahin and the Soyuz contributors. MIT License.");
     if let Err(e) = res.compile() {
         println!("cargo:warning=soyuz: icon not embedded ({e}); install the Windows SDK for rc.exe");
     }

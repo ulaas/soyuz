@@ -114,7 +114,7 @@ winresource = { version = "0.1.31", default-features = false }
 [package.metadata.deb]
 name = "soyuz"
 maintainer = "The Soyuz contributors"
-copyright = "The Soyuz contributors, MIT OR Apache-2.0"
+copyright = "Aydemir Şahin and the Soyuz contributors, MIT"
 extended-description = "A keyboard-first, non-blocking file explorer with tabs, dual panes, background jobs with undo, an integrated terminal, previews, search and archive browsing."
 section = "utils"
 priority = "optional"
@@ -134,7 +134,7 @@ icon = ["assets/icon.png"]
 category = "public.app-category.utilities"
 short_description = "Keyboard-first, non-blocking file explorer"
 long_description = "Tabs, dual panes, background jobs with undo, an integrated terminal, previews, search and archive browsing."
-copyright = "The Soyuz contributors, MIT OR Apache-2.0"
+copyright = "Aydemir Şahin and the Soyuz contributors, MIT"
 
 [lints]
 workspace = true

@@ -56,11 +56,11 @@
       <Component Id="Readme" Guid="*">
         <File Source="$(var.RootDir)\README.md" KeyPath="yes" />
       </Component>
-      <Component Id="LicenseMit" Guid="*">
-        <File Source="$(var.RootDir)\LICENSE-MIT" KeyPath="yes" />
+      <Component Id="License" Guid="*">
+        <File Source="$(var.RootDir)\LICENSE" KeyPath="yes" />
       </Component>
-      <Component Id="LicenseApache" Guid="*">
-        <File Source="$(var.RootDir)\LICENSE-APACHE" KeyPath="yes" />
+      <Component Id="ThirdPartyNotices" Guid="*">
+        <File Source="$(var.RootDir)\THIRD-PARTY-NOTICES.md" KeyPath="yes" />
       </Component>
       <Component Id="UserGuide" Directory="DocsFolder" Guid="*">
         <File Source="$(var.RootDir)\docs\USER_GUIDE.md" KeyPath="yes" />

@@ -35,7 +35,7 @@ dialogs-about-config = Config
 dialogs-about-memory = Memory
 # $thumbs / $previews: sizes like "12.5 MiB"; $thumb_count / $preview_count: cached entries.
 dialogs-about-memory-line = thumbnails { $thumbs } ({ $thumb_count }) · previews { $previews } ({ $preview_count })
-dialogs-about-license = Licensed under MIT OR Apache-2.0. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Icons: Phosphor (MIT).
+dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Icons: Phosphor (MIT).
 dialogs-about-copy-info = Copy info
 
 ## Keyboard shortcuts

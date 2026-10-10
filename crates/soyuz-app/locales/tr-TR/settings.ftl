@@ -732,7 +732,7 @@ settings-about-version = Sürüm { $version }
 settings-about-build = { $os } / { $arch } için { $kind ->
     [debug] hata ayıklama
    *[release] sürüm
-    } derlemesi. MIT OR Apache-2.0 lisanslıdır.
+    } derlemesi. MIT Lisansı ile lisanslanmıştır.
 settings-updates-privacy = Soyuz GitHub'dan yalnızca herkese açık sürüm listesini ister; sizinle veya dosyalarınızla ilgili hiçbir veri gönderilmez. İndirilenler doğrulanır (SHA-256 ve yükleyicinin imzası) ve siz tıklamadan asla yüklenmez.
 settings-updates-up-to-date = Güncelsiniz. En yeni sürüm { $latest }.
 settings-updates-failed = Güncelleme denetimi başarısız oldu: { $error }

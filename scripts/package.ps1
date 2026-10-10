@@ -58,8 +58,8 @@ try {
     $files = @(
         @($bin, $exe),
         @("README.md", "README.md"),
-        @("LICENSE-MIT", "LICENSE-MIT"),
-        @("LICENSE-APACHE", "LICENSE-APACHE"),
+        @("LICENSE", "LICENSE"),
+        @("THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"),
         @("docs/USER_GUIDE.md", "docs/USER_GUIDE.md"),
         @("docs/config.example.toml", "docs/config.example.toml")
     )

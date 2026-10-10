@@ -3,6 +3,7 @@ name = "soyuz-index"
 description = "Soyuz background file index (SQLite + FTS5), query language and NTFS USN journal reader"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 

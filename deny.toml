@@ -35,7 +35,7 @@ unsound = "all"
 ignore = []
 
 # ---------------------------------------------------------------------------
-# Licences. Soyuz is MIT OR Apache-2.0; only permissive licences (and the weak,
+# Licences. Soyuz is MIT; only permissive licences (and the weak,
 # file-level copyleft MPL-2.0) may enter the binary.
 # ---------------------------------------------------------------------------
 [licenses]

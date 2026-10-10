@@ -757,7 +757,7 @@ settings-about-version = Version { $version }
 settings-about-build = { $kind ->
     [debug] Debug
    *[release] Release
-    } build for { $os } / { $arch }. Licensed under MIT OR Apache-2.0.
+    } build for { $os } / { $arch }. Licensed under the MIT License.
 settings-updates-privacy = Soyuz only asks GitHub for the public release list; no data about you or your files is sent. Downloads are verified (SHA-256, and the installer's signature) and never installed without your click.
 settings-updates-up-to-date = You're up to date. The newest release is { $latest }.
 settings-updates-failed = Update check failed: { $error }

@@ -41,7 +41,7 @@ try {
     $stage = Join-Path $OutDir "msix-stage"
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force (Join-Path $stage "Assets") | Out-Null
-    Copy-Item $exe, README.md, LICENSE-MIT, LICENSE-APACHE $stage
+    Copy-Item $exe, README.md, LICENSE, THIRD-PARTY-NOTICES.md $stage
     (Get-Content installer/msix/AppxManifest.xml -Raw) -replace '@VERSION@', $pkgVersion -replace '@PUBLISHER@', [Security.SecurityElement]::Escape($Publisher) |
         Set-Content -Encoding utf8 (Join-Path $stage "AppxManifest.xml")
 

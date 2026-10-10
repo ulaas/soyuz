@@ -71,10 +71,11 @@ try {
 
     if ($UI) {
         New-Item -ItemType Directory -Force $obj | Out-Null
-        # The license page shows LICENSE-MIT (Soyuz is MIT OR Apache-2.0).
-        $text = (Get-Content LICENSE-MIT -Raw) -replace '\\', '\\\\' -replace '\{', '\{' -replace '\}', '\}'
+        # The license page shows LICENSE (MIT); non-ASCII characters become RTF \uN? escapes.
+        $text = (Get-Content LICENSE -Raw -Encoding utf8) -replace '\\', '\\\\' -replace '\{', '\{' -replace '\}', '\}'
+        $text = -join ($text.ToCharArray() | ForEach-Object { if ([int]$_ -gt 127) { "\u$([int]$_)?" } else { "$_" } })
         $body = ($text -split "`r?`n") -join "\par`r`n"
-        Set-Content -Encoding ascii $rtf "{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\fs18 Soyuz is dual-licensed under MIT OR Apache-2.0 (LICENSE-APACHE is installed alongside).\par\par`r`n$body}"
+        Set-Content -Encoding ascii $rtf "{\rtf1\ansi\deff0{\fonttbl{\f0 Segoe UI;}}\fs18 $body}"
         & $Wix extension add -g WixToolset.UI.wixext/5.0.2
         if ($LASTEXITCODE -ne 0) { throw "wix extension add failed ($LASTEXITCODE)" }
     }

@@ -33,8 +33,8 @@ fn package_script_dry_run() {
     for want in [
         format!("soyuz-{version}-"),
         "-portable.zip".to_string(),
-        "LICENSE-MIT".into(),
-        "LICENSE-APACHE".into(),
+        "LICENSE".into(),
+        "THIRD-PARTY-NOTICES.md".into(),
         "README.md".into(),
         "docs/config.example.toml".into(),
         "portable".into(),
@@ -55,7 +55,7 @@ fn installer_sources_are_consistent() {
     assert!(wxs.contains(r#"UpgradeCode="4d03f89e-9d28-4139-aa95-0e950320af14""#));
     assert!(wxs.contains(r#"Scope="perUserOrMachine""#), "per-user by default, per-machine optional");
     assert!(wxs.contains("<MajorUpgrade"));
-    for f in ["README.md", "LICENSE-MIT", "LICENSE-APACHE", "docs/USER_GUIDE.md", "docs/config.example.toml"] {
+    for f in ["README.md", "LICENSE", "THIRD-PARTY-NOTICES.md", "docs/USER_GUIDE.md", "docs/config.example.toml"] {
         assert!(root.join(f).is_file(), "{f} referenced by the installer is missing");
     }
     assert!(root.join("crates/soyuz-app/assets/icon.ico").is_file());

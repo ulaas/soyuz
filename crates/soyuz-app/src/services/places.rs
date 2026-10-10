@@ -27,7 +27,11 @@ impl PlacesService {
                 }
                 if first {
                     first = false;
-                    postman.send(UiMsg::CloudPlaces(detect_cloud(&soyuz_fs::home())));
+                    postman.send(UiMsg::CloudPlaces(if demo_mask() {
+                        Vec::new()
+                    } else {
+                        detect_cloud(&soyuz_fs::home())
+                    }));
                 }
                 match rx.recv_timeout(REFRESH) {
                     Ok(()) | Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
@@ -57,7 +61,27 @@ fn volumes_with_space() -> Vec<VolumeInfo> {
             vol.free = free;
         }
     }
+    if demo_mask() {
+        mask_volumes(&mut v);
+    }
     v
+}
+
+/// `SOYUZ_DEMO_MASK=1` (screenshots, `scripts/screenshots.ps1`): show volumes without
+/// anything machine-specific — fixed local disks only, no labels (the localized kind name
+/// is shown instead), and made-up sizes.
+fn demo_mask() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SOYUZ_DEMO_MASK").is_ok_and(|v| v == "1"))
+}
+
+fn mask_volumes(v: &mut Vec<VolumeInfo>) {
+    v.retain(|vol| vol.kind == soyuz_fs::VolumeKind::Fixed);
+    for (i, vol) in v.iter_mut().enumerate() {
+        vol.label.clear();
+        vol.total = 1_000_000_000_000;
+        vol.free = [412_000_000_000, 688_000_000_000, 231_000_000_000][i % 3];
+    }
 }
 
 /// Cloud storage roots: OneDrive variables (Windows), `~/Library/CloudStorage/*`

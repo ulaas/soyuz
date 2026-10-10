@@ -31,7 +31,7 @@ dialogs-about-renderer = Oluşturucu
 dialogs-about-config = Yapılandırma
 dialogs-about-memory = Bellek
 dialogs-about-memory-line = küçük resimler { $thumbs } ({ $thumb_count }) · önizlemeler { $previews } ({ $preview_count })
-dialogs-about-license = MIT VEYA Apache-2.0 lisansıyla dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Simgeler: Phosphor (MIT).
+dialogs-about-license = MIT Lisansı ile dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Simgeler: Phosphor (MIT).
 dialogs-about-copy-info = Bilgileri kopyala
 
 ## Keyboard shortcuts
