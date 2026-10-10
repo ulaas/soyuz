@@ -1,0 +1,6 @@
+# Changes to CI, release and repository settings files need the maintainer's review.
+/.github/            @ulaas
+/deny.toml           @ulaas
+/.gitleaks.toml      @ulaas
+/scripts/            @ulaas
+/installer/          @ulaas

@@ -1,0 +1,14 @@
+# gitleaks configuration (CI job "Secret scan" and scripts/public-check.ps1).
+# Default rules, plus allow-lists for deliberate test fixtures only.
+title = "Soyuz"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Throwaway SSH keys generated for the SFTP round-trip test"
+paths = ['''crates/soyuz-vfs/tests/sftp_roundtrip\.rs''']
+
+[[allowlists]]
+description = "Fake credentials in the AI redaction tests"
+regexes = ['''AKIAABCDEFGHIJKLMNOP''', '''sk-ant-(abcdefghijklmnop1234|REALLYSECRETKEY123456)''']

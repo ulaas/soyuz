@@ -18,12 +18,14 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  # Soyuz never uses shell32 / the COM shell (PLAN §2.1): fail fast if anything sneaks in.
+  # Soyuz never uses shell32 / the COM shell: fail fast if anything sneaks in.
   no-shell32:
     name: No shell APIs
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Forbid Win32_UI_Shell feature
         shell: bash
         run: |
@@ -39,12 +41,39 @@ jobs:
             exit 1
           fi
 
+  # No credentials in the repository, ever: gitleaks over the full history on every push and
+  # pull request (deliberate test fixtures are allow-listed in .gitleaks.toml). The release
+  # binary is pinned by version and verified against its published SHA-256.
+  secret-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: gitleaks
+        shell: bash
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          tarball="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$tarball" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$tarball"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$tarball" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --no-banner --redact -c .gitleaks.toml .
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
@@ -58,11 +87,13 @@ jobs:
         os: [windows-latest, ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
@@ -74,8 +105,8 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets --locked
       # Linux / macOS are built and linted, but their tests are not a gate yet: that code
-      # has never been run (the project notes "Platform scope"), so failures there are reported as
-      # warnings until the owner turns them into a gate.
+      # has not been verified on real machines yet, so failures there are reported as
+      # warnings until those platforms are supported.
       - name: Test
         continue-on-error: ${{ runner.os != 'Windows' }}
         run: cargo test --workspace --locked
@@ -103,13 +134,13 @@ jobs:
         run: |
           for c in trash rfd open opener webbrowser native-dialog tinyfiledialogs; do
             if cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c" >/dev/null 2>&1; then
-              echo "::error::crate '$c' wraps the Windows shell and is banned (the project notes)"
+              echo "::error::crate '$c' wraps the Windows shell and is banned (no Windows shell APIs)"
               cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c"
               exit 1
             fi
           done
 
-  # Keyboard-only GUI test (roadmap F10): launches the real window on the runner's desktop
+  # Keyboard-only GUI test: launches the real window on the runner's desktop
   # session and drives it with synthetic key events only (`SOYUZ_SCRIPT` `keys:` steps),
   # in English and Turkish. Hosted runners have no GPU, so wgpu is pointed at the WARP
   # software adapter (DX12). If the window never comes up the test skips with a warning
@@ -124,16 +155,18 @@ jobs:
       WGPU_BACKEND: dx12
       WGPU_ADAPTER_NAME: Microsoft Basic Render Driver
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Keyboard-only test
         run: cargo test -p soyuz-app --test keyboard_only --locked -- --ignored --nocapture --test-threads 1
 
   # Release binaries for every desktop OS (pushes to main and manual runs), downloadable
   # from the run's Artifacts: Windows x64 (.zip), Linux x64 (.tar.gz), macOS arm64
   # (.tar.gz, unsigned: Gatekeeper needs `xattr -d com.apple.quarantine soyuz` or
-  # right-click > Open). Linux / macOS binaries are built but untested (the project notes).
+  # right-click > Open). Linux / macOS binaries are built but untested.
   package:
     name: Package (${{ matrix.name }})
     if: github.event_name != 'pull_request'
@@ -148,9 +181,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Install Linux system libraries
         if: runner.os == 'Linux'
         run: |
@@ -162,7 +197,7 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: ./scripts/package.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-${{ matrix.name }}
           path: |
@@ -172,7 +207,7 @@ jobs:
             dist/SHA256SUMS-*.txt
           if-no-files-found: error
 
-  # Criterion benchmarks in quick mode (roadmap R5): listing 100k entries, natural sort 1M,
+  # Criterion benchmarks in quick mode: listing 100k entries, natural sort 1M,
   # thumbnail decode + downscale, search throughput. Windows only for now. On pull requests
   # the base branch is benchmarked first and changes over 15% are reported as warnings
   # (shared runners are too noisy for a hard gate; see docs/INTEGRATION_NOTES.md).
@@ -181,11 +216,12 @@ jobs:
     needs: no-shell32
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - name: Baseline (pull request base)
         if: github.event_name == 'pull_request'
         shell: pwsh
@@ -217,7 +253,7 @@ jobs:
               $pct = [math]::Round($mean * 100, 1)
               if ($mean -gt 0.15) { Write-Output "::warning::$name regressed by $pct%" } else { Write-Output "$name $pct%" }
             }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: criterion-windows
           path: target/criterion

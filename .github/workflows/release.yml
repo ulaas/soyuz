@@ -57,8 +57,10 @@ jobs:
     needs: signing-config
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: Install WiX Toolset v5
         # Pinned to v5 (MS-RL). WiX v6+ needs the OSMF EULA accepted; see installer/windows/build-msi.ps1.
         shell: pwsh
@@ -111,7 +113,7 @@ jobs:
           } | Set-Content -Encoding ascii dist/SHA256SUMS-windows.txt
           Get-Content dist/SHA256SUMS-windows.txt
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-windows-x64
           path: |
@@ -121,13 +123,15 @@ jobs:
             dist/SHA256SUMS-windows.txt
           if-no-files-found: error
 
-  # Linux x64 tarball (unsigned, untested: Linux verification is deferred, the project notes).
+  # Linux x64 tarball (unsigned; Linux is not verified on real machines yet).
   linux:
     name: Linux x64
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: Install Linux system libraries
         run: |
           sudo apt-get update
@@ -138,7 +142,7 @@ jobs:
       - name: Build and package
         shell: pwsh
         run: ./scripts/package.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-linux-x64
           path: |
@@ -156,12 +160,14 @@ jobs:
     if: needs.signing-config.outputs.macos != 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: Build and package
         shell: pwsh
         run: ./scripts/package.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-macos-arm64-unsigned
           path: |
@@ -177,8 +183,10 @@ jobs:
     if: needs.signing-config.outputs.macos == 'true'
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Install cargo-bundle
@@ -242,7 +250,7 @@ jobs:
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-macos-universal
           path: |
