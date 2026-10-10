@@ -12,12 +12,12 @@ use soyuz_core::{Location, ViewMode};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::keys::chord_label;
-use crate::theme::tokens::{radius, size};
+use crate::theme::tokens::{Rail, radius, size};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::breadcrumb::{self, OmnibarCtx};
 use crate::ui::context_menu::{group_items, sort_items, view_mode_items};
 use crate::ui::views::computer::volume_label;
-use crate::ui::widgets::{icon_button, icon_toggle, menu_caption, menu_check, menu_item, menu_separator, submenu};
+use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, rail_button, submenu};
 
 const FILTER_W: f32 = 210.0;
 
@@ -47,7 +47,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let nav = |ui: &mut Ui, x: &mut f32, glyph: &str, tip: String, enabled: bool| {
                 let r = Rect::from_min_size(pos2(*x, full.center().y - bsz / 2.0), vec2(bsz, bsz));
                 *x += bsz + 2.0;
-                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_button(ui, glyph, &tip, enabled)).inner
+                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| rail_button(ui, glyph, &tip, enabled, false)).inner
             };
             let back = nav(ui, &mut x, ph::ARROW_LEFT, tip(app, tr!("app-toolbar-back"), &Action::Back), can_back);
             let fwd = nav(ui, &mut x, ph::ARROW_RIGHT, tip(app, tr!("app-toolbar-forward"), &Action::Forward), can_fwd);
@@ -70,7 +70,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let mut right_btn = |ui: &mut Ui, glyph: &str, tip: &str, on: bool| {
                 let r = Rect::from_min_size(pos2(rx - bsz, full.center().y - bsz / 2.0), vec2(bsz, bsz));
                 rx -= bsz + 2.0;
-                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| icon_toggle(ui, glyph, tip, true, on)).inner
+                ui.scope_builder(UiBuilder::new().max_rect(r), |ui| rail_button(ui, glyph, tip, true, on)).inner
             };
             let settings_on = app.settings.is_open();
             if right_btn(ui, ph::GEAR_SIX, &tip(app, tr!("app-toolbar-settings"), &Action::Settings), settings_on)
@@ -350,25 +350,38 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     let focused = ui.memory(|m| m.has_focus(id));
     let pane = app.ws.pane_mut();
     let active = pane.filter_active();
-    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
-    let stroke = if focused {
-        Stroke::new(1.5, p.accent)
-    } else if active {
-        Stroke::new(1.0, p.accent.gamma_multiply(0.6))
+    // Borderless field: hover and focus change the fill (high contrast keeps outlines).
+    let hovered = ui.rect_contains_pointer(r);
+    let fill = if focused {
+        p.rail(Rail::FieldFocus)
+    } else if hovered {
+        p.rail(Rail::FieldHover)
     } else {
-        Stroke::new(1.0, p.border_subtle)
+        p.rail(Rail::Field)
     };
-    ui.painter().rect_stroke(r, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+    ui.painter().rect_filled(r, CornerRadius::same(radius::CARD), fill);
+    if p.high_contrast() {
+        let stroke = if focused {
+            Stroke::new(2.0, p.accent)
+        } else if active {
+            Stroke::new(1.0, p.accent)
+        } else {
+            Stroke::new(1.0, p.border_subtle)
+        };
+        ui.painter().rect_stroke(r, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+    }
     ui.painter().text(
         pos2(r.left() + 16.0, r.center().y),
         Align2::CENTER_CENTER,
         ph::FUNNEL_SIMPLE,
         icons::font(14.0),
-        if active { p.accent } else { p.text_tertiary },
+        if active || focused { p.accent } else { p.text_tertiary },
     );
     let mut text = pane.filter.clone();
-    let inner =
-        Rect::from_min_max(pos2(r.left() + 30.0, r.center().y - 11.0), pos2(r.right() - 28.0, r.center().y + 11.0));
+    // The text edit spans the field's full height and centers its row (typed text, hint
+    // and cursor alike): with a custom frame egui ignores `margin`, so a shorter child
+    // would pin the row to its top.
+    let inner = Rect::from_min_max(pos2(r.left() + 30.0, r.top()), pos2(r.right() - 28.0, r.bottom()));
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
     let resp = child.add(
@@ -376,9 +389,9 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             .id(id)
             .hint_text(tr!("app-toolbar-filter"))
             .frame(Frame::NONE)
-            .margin(Margin::symmetric(0, 2))
             .font(FontId::proportional(13.0))
             .vertical_align(egui::Align::Center)
+            .min_size(vec2(0.0, inner.height()))
             .desired_width(inner.width()),
     );
     crate::ui::a11y::name(&resp, tr!("app-toolbar-filter"));

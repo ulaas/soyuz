@@ -298,6 +298,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     }
 
     // ---- tabs ----
+    // Drawn rect and emphasis (1 = active / dragged, else hover) of every shown tab, for
+    // the separators.
+    let mut drawn: Vec<Option<(Rect, f32)>> = vec![None; n];
     for i in 0..n {
         if hidden[i] {
             continue;
@@ -323,6 +326,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let hover_t = ctx.animate_bool_with_time(resp.id.with("h"), hovered, crate::theme::anim(&ctx, 0.1));
         let tab_painter = if ghosted { faded(painter.clone()) } else { painter.clone() };
         paint_tab(ui, &tab_painter, app, i, r, active, dragging, hover_t);
+        drawn[i] = Some((r, if active || dragging { 1.0 } else { hover_t }));
         let pane = app.ws.tabs[i].active();
         let title = location_title(&pane.location);
         crate::ui::a11y::tab(&resp, &title, active);
@@ -374,6 +378,19 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             crate::ui::workspaces::tab_menu_extra(ui, app, &mut cmds, i);
         });
         app.cmds.extend(cmds);
+    }
+
+    // ---- italic separators between neighbouring tabs (not next to the active / hovered
+    // tab, nor where a group chip sits between the two) ----
+    let shown: Vec<usize> = order.iter().copied().filter(|&k| drawn[k].is_some()).collect();
+    for w in shown.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if groups_of[b].is_some() && groups_of[a] != groups_of[b] {
+            continue;
+        }
+        let (Some((ra, ea)), Some((rb, eb))) = (drawn[a], drawn[b]) else { continue };
+        let x = (ra.right() + rb.left()) / 2.0;
+        paint_separator(&painter, &p, x, ra.center().y, 1.0 - ea.max(eb));
     }
 
     // ---- dragging ----
@@ -442,18 +459,21 @@ fn paint_tab(
 ) {
     let p = palette(ui.ctx());
     let tab = &app.ws.tabs[i];
+    let (well, _, _) = p.tab_well();
     if active || dragging {
-        let shadow = egui::epaint::Shadow {
-            offset: [0, 1],
-            blur: 6,
-            spread: 0,
-            color: Color32::from_black_alpha(if p.dark { 60 } else { 18 }),
-        };
-        painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
-        painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
-        painter.rect_stroke(r, CornerRadius::same(radius::CARD), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
+        if dragging {
+            // Lifted while dragged: a soft drop shadow under the well.
+            let shadow = egui::epaint::Shadow {
+                offset: [0, 2],
+                blur: 8,
+                spread: 0,
+                color: Color32::from_black_alpha(if p.dark { 70 } else { 24 }),
+            };
+            painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
+        }
+        paint_well(painter, &p, r);
     } else if hover_t > 0.0 {
-        painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface2.gamma_multiply(hover_t * 0.8));
+        painter.rect_filled(r, CornerRadius::same(radius::CARD), p.tab_hover().gamma_multiply(hover_t));
     }
     // Group color: a bar along the bottom edge.
     if let Some(g) = tab.group.and_then(|g| app.ws.group(g)) {
@@ -506,8 +526,38 @@ fn paint_tab(
         && !(loading && active)
     {
         let at = if tab.pinned { r.center() } else { pos2(r.left() + 18.0, r.center().y) };
-        crate::ui::looks::paint_dot(painter, at + vec2(6.0, 5.0), c, if active { p.bg_surface1 } else { p.bg_window });
+        crate::ui::looks::paint_dot(painter, at + vec2(6.0, 5.0), c, if active { well } else { p.bg_window });
     }
+}
+
+/// The active tab: a borderless, slightly recessed ("engraved") well. Layered fills
+/// leave a 1 px inner shadow along the top and a 1 px highlight along the bottom that
+/// follow the rounded corners. High contrast themes add an outline.
+fn paint_well(painter: &egui::Painter, p: &crate::theme::Palette, r: Rect) {
+    let (fill, shadow, highlight) = p.tab_well();
+    let cr = CornerRadius::same(radius::CARD);
+    painter.rect_filled(r, cr, highlight);
+    painter.rect_filled(Rect::from_min_max(r.min, pos2(r.max.x, r.max.y - 1.0)), cr, shadow);
+    painter.rect_filled(Rect::from_min_max(pos2(r.min.x, r.min.y + 1.0), pos2(r.max.x, r.max.y - 1.0)), cr, fill);
+    // A softer second shadow row under the first one deepens the inset a touch.
+    let soft = shadow.gamma_multiply(0.35);
+    painter.rect_filled(Rect::from_min_max(pos2(r.min.x, r.min.y + 1.0), pos2(r.max.x, r.max.y - 1.0)), cr, soft);
+    painter.rect_filled(Rect::from_min_max(pos2(r.min.x, r.min.y + 2.0), pos2(r.max.x, r.max.y - 1.0)), cr, fill);
+    if p.high_contrast() {
+        painter.rect_stroke(r, cr, Stroke::new(1.0, p.border_strong), StrokeKind::Inside);
+    }
+}
+
+/// The italic (slanted, like "/") separator between two inactive tabs, centered on `x`.
+fn paint_separator(painter: &egui::Painter, p: &crate::theme::Palette, x: f32, cy: f32, alpha: f32) {
+    if alpha <= 0.01 {
+        return;
+    }
+    let (half_h, lean) = (7.0, 2.5);
+    painter.line_segment(
+        [pos2(x + lean, cy - half_h), pos2(x - lean, cy + half_h)],
+        Stroke::new(1.0, p.tab_separator().gamma_multiply(alpha)),
+    );
 }
 
 /// The dragged tab following the pointer once it left the strip, with what releasing does.
@@ -521,7 +571,6 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
     let shadow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(90) };
     painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
     painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
-    painter.rect_stroke(r, CornerRadius::same(radius::CARD), Stroke::new(1.0, p.accent), StrokeKind::Inside);
     let title = app.ws.tabs.get(d.from).map(|t| location_title(&t.active().location)).unwrap_or_default();
     painter.text(
         pos2(r.left() + 18.0, r.center().y),

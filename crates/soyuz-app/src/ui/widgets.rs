@@ -172,6 +172,18 @@ pub fn icon_button(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool) -> Re
 
 /// Icon button with an "on" state (accent glyph on a subtle accent fill).
 pub fn icon_toggle(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: bool) -> Response {
+    icon_toggle_styled(ui, glyph, tooltip, enabled, on, false)
+}
+
+/// Icon button of the toolbar rail: no outlines at all. Hover, press and keyboard
+/// focus are subtle fill changes (focus: an accent tint, distinct from hover). High
+/// contrast themes keep the focus ring.
+pub fn rail_button(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: bool) -> Response {
+    icon_toggle_styled(ui, glyph, tooltip, enabled, on, true)
+}
+
+fn icon_toggle_styled(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: bool, rail: bool) -> Response {
+    use crate::theme::tokens::Rail;
     let p = palette(ui.ctx());
     let side = (ui.spacing().interact_size.y + 6.0).max(30.0);
     let (rect, resp) = ui.allocate_exact_size(vec2(side, side), if enabled { Sense::click() } else { Sense::hover() });
@@ -187,17 +199,36 @@ pub fn icon_toggle(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: b
             crate::theme::anim(ui.ctx(), 0.10),
         );
         let rounding = CornerRadius::same(radius::ROW);
-        if on {
-            ui.painter().rect_filled(rect, rounding, p.accent_subtle);
-        } else if hover > 0.0 {
-            ui.painter().rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
-        }
-        if resp.is_pointer_button_down_on() && enabled {
-            ui.painter().rect_filled(rect, rounding, p.bg_surface3.gamma_multiply(0.6));
+        let ring = resp.has_focus() && (!rail || p.high_contrast());
+        let focus_fill = resp.has_focus() && rail && !ring;
+        if rail {
+            let fill = if resp.is_pointer_button_down_on() && enabled {
+                Some(p.rail(Rail::ButtonPressed))
+            } else if focus_fill {
+                Some(p.rail(Rail::ButtonFocus))
+            } else if on {
+                Some(p.accent_subtle)
+            } else if hover > 0.0 {
+                Some(p.rail(Rail::ButtonHover).gamma_multiply(hover))
+            } else {
+                None
+            };
+            if let Some(fill) = fill {
+                ui.painter().rect_filled(rect, rounding, fill);
+            }
+        } else {
+            if on {
+                ui.painter().rect_filled(rect, rounding, p.accent_subtle);
+            } else if hover > 0.0 {
+                ui.painter().rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
+            }
+            if resp.is_pointer_button_down_on() && enabled {
+                ui.painter().rect_filled(rect, rounding, p.bg_surface3.gamma_multiply(0.6));
+            }
         }
         let color = if !enabled {
             p.text_tertiary.gamma_multiply(0.6)
-        } else if on {
+        } else if on || focus_fill {
             p.accent
         } else if hover > 0.5 {
             p.text_primary
@@ -205,7 +236,7 @@ pub fn icon_toggle(ui: &mut Ui, glyph: &str, tooltip: &str, enabled: bool, on: b
             p.text_secondary
         };
         ui.painter().text(rect.center(), Align2::CENTER_CENTER, glyph, icons::font(size::ICON_TOOLBAR - 2.0), color);
-        if resp.has_focus() {
+        if ring {
             focus_ring(ui, rect);
         }
     }

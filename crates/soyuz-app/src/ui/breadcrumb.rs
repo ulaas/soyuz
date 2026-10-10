@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 
 use egui::text::{CCursor, CCursorRange};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Margin, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind,
-    TextEdit, Ui, UiBuilder, pos2, vec2,
+    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind, TextEdit,
+    Ui, UiBuilder, pos2, vec2,
 };
 use soyuz_core::Location;
 
@@ -15,7 +15,7 @@ use crate::cmd::Cmd;
 use crate::services::{AuxState, Services};
 use crate::state::crumbs::{Crumb, CrumbKind, completions, crumbs, split_for_completion};
 use crate::state::pane::PaneId;
-use crate::theme::tokens::radius;
+use crate::theme::tokens::{Rail, mix, radius};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{hidden_controls_tip, menu_item, paint_hidden_badge, spinner, trunc_galley};
@@ -61,15 +61,25 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let bg = ui.interact(field, Id::new("soyuz.omnibar.bg"), Sense::click());
     crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::Navigation, tr!("app-crumb-address"));
     let hover = bg.hovered() && !editing;
-    ui.painter().rect_filled(field, CornerRadius::same(radius::CARD), p.bg_surface1);
-    let stroke = if editing {
-        Stroke::new(1.5, p.accent)
+    // Borderless field: hover and editing change the fill (high contrast keeps outlines).
+    let fill = if editing || bg.has_focus() {
+        p.rail(Rail::FieldFocus)
     } else if hover {
-        Stroke::new(1.0, p.border_strong)
+        p.rail(Rail::FieldHover)
     } else {
-        Stroke::new(1.0, p.border_subtle)
+        p.rail(Rail::Field)
     };
-    ui.painter().rect_stroke(field, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+    ui.painter().rect_filled(field, CornerRadius::same(radius::CARD), fill);
+    if p.high_contrast() {
+        let stroke = if editing {
+            Stroke::new(2.0, p.accent)
+        } else if hover {
+            Stroke::new(1.0, p.border_strong)
+        } else {
+            Stroke::new(1.0, p.border_subtle)
+        };
+        ui.painter().rect_stroke(field, CornerRadius::same(radius::CARD), stroke, StrokeKind::Inside);
+    }
     if editing {
         editor(ui, field, c);
         return;
@@ -143,7 +153,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
                 let resp = ui.interact(r, Id::new("soyuz.crumb.more"), Sense::click());
                 crate::ui::a11y::button(&resp, tr!("app-crumb-hidden-parents"));
                 if resp.hovered() {
-                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+                    ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), seg_hover(&p));
                 }
                 ui.painter().text(
                     r.center(),
@@ -190,7 +200,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             },
         );
         if resp.hovered() {
-            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
+            ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), seg_hover(&p));
         }
         let color = if last || resp.hovered() { p.text_primary } else { p.text_secondary };
         let f = if last { semibold(13.0) } else { font.clone() };
@@ -198,7 +208,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         let badge = if hidden { 14.0 } else { 0.0 };
         let dot_w = if dots[i].is_some() { DOT_W } else { 0.0 };
         if let Some(dc) = dots[i] {
-            let ring = if resp.hovered() { p.bg_surface2 } else { p.bg_surface1 };
+            let ring = if resp.hovered() { seg_hover(&p) } else { fill };
             crate::ui::looks::paint_dot(ui.painter(), pos2(r.left() + CRUMB_PAD + 3.5, cy), dc, ring);
         }
         let tx = r.left() + CRUMB_PAD + dot_w;
@@ -236,7 +246,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let rresp = ui.interact(rr, Id::new("soyuz.omnibar.refresh"), Sense::click());
     crate::ui::a11y::button(&rresp, tr!("app-crumb-refresh"));
     if rresp.hovered() {
-        ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), p.bg_surface2);
+        ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), seg_hover(&p));
     }
     ui.painter().text(
         rr.center(),
@@ -251,6 +261,11 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     if bg.clicked() {
         start_edit(c);
     }
+}
+
+/// Hover fill of a crumb / chevron / button inside the (hovered) omnibar field.
+fn seg_hover(p: &crate::theme::Palette) -> Color32 {
+    mix(p.rail(Rail::FieldHover), p.text_primary, if p.dark { 0.06 } else { 0.05 })
 }
 
 fn start_edit(c: &mut OmnibarCtx<'_>) {
@@ -282,7 +297,7 @@ fn sep(
     crate::ui::a11y::button(&resp, tr!("app-crumb-subfolders"));
     let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&resp));
     if resp.hovered() || open {
-        ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), p.bg_surface2);
+        ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), seg_hover(&p));
     }
     let glyph = if open { ph::CARET_DOWN } else { ph::CARET_RIGHT };
     ui.painter().text(
@@ -352,7 +367,8 @@ fn sep(
 /// Path editor with completion.
 fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     let p = palette(ui.ctx());
-    let inner = field.shrink2(vec2(12.0, 4.0));
+    // Full field height: the text edit centers its row (see the filter in toolbar.rs).
+    let inner = field.shrink2(vec2(12.0, 0.0));
     let id = Id::new("soyuz.omnibar.edit");
     // Completion candidates for the typed parent folder.
     let (dir, prefix) = split_for_completion(&c.address.text).unwrap_or((PathBuf::new(), String::new()));
@@ -404,9 +420,9 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     let te = TextEdit::singleline(&mut c.address.text)
         .id(id)
         .frame(Frame::NONE)
-        .margin(Margin::symmetric(0, 4))
         .font(FontId::proportional(13.0))
         .desired_width(inner.width())
+        .min_size(vec2(0.0, inner.height()))
         .vertical_align(egui::Align::Center);
     let out = te.show(&mut child);
     let resp = out.response;
