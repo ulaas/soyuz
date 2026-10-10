@@ -1,5 +1,5 @@
 //! Behavioural tests for the public `soyuz-fs` API. They run against whatever
-//! implementation is active (M0 baseline or the raw per-OS paths), so they must keep
+//! implementation is active (the portable baseline or the raw per-OS paths), so they must keep
 //! passing when bodies are replaced.
 
 use std::fs;

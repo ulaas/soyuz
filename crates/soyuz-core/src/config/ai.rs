@@ -1,4 +1,4 @@
-//! `[ai]` section (roadmap Phase A1): provider profiles, per-task models, budgets, privacy
+//! `[ai]` section: provider profiles, per-task models, budgets, privacy
 //! and tool scopes. Secrets are never stored here: `key` holds a reference
 //! (`credential:<name>` for the OS credential store, `env:<VAR>` for an environment
 //! variable, empty for none). Consumed by the `soyuz-ai` crate and the app's AI services.
@@ -101,7 +101,7 @@ pub enum AiToolMode {
     Json,
 }
 
-/// What the assistant may see by default (A7 refines this per folder).
+/// What the assistant may see by default (per-folder rules refine this).
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AiPrivacy {
@@ -235,15 +235,15 @@ pub struct Ai {
     pub budget_warn_percent: u32,
     /// Price table (cost accounting); the first matching row wins.
     pub prices: Vec<AiPrice>,
-    /// `[ai.mcp]`: the Soyuz MCP server (A3).
+    /// `[ai.mcp]`: the Soyuz MCP server.
     pub mcp: super::mcp::AiMcp,
-    /// `[[ai.mcp_clients]]`: MCP clients allowed to drive Soyuz (A3).
+    /// `[[ai.mcp_clients]]`: MCP clients allowed to drive Soyuz.
     pub mcp_clients: Vec<super::mcp::AiMcpClient>,
-    /// `[[ai.mcp_servers]]`: external MCP servers mounted as assistant tools (A4).
+    /// `[[ai.mcp_servers]]`: external MCP servers mounted as assistant tools.
     pub mcp_servers: Vec<super::mcp::AiMcpServer>,
-    /// In-app agent harness limits and approval policy (A5 / A7).
+    /// In-app agent harness limits and approval policy.
     pub agent: super::ai_agent::AiAgent,
-    /// Per-folder AI permissions, inherited down the tree (A7). Folders without a rule use
+    /// Per-folder AI permissions, inherited down the tree. Folders without a rule use
     /// `privacy`.
     pub folders: Vec<super::ai_agent::AiFolderRule>,
 }

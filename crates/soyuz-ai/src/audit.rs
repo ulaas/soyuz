@@ -1,4 +1,4 @@
-//! The AI audit log (roadmap A7): `ai-audit.jsonl` in the config dir. Every tool call,
+//! The AI audit log: `ai-audit.jsonl` in the config dir. Every tool call,
 //! plan, approval and resulting job from the MCP server and the in-app assistant is
 //! appended as one JSON object per line.
 //!

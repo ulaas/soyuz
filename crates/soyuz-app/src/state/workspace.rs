@@ -1,7 +1,7 @@
 //! Tabs and the workspace (one window). Each tab owns one, two or four panes (the layout
 //! is per tab, like Files v4); extra panes are kept alive when the layout shrinks so
 //! switching back restores them. Tabs can be collected in named, colored, collapsible
-//! groups (F7); a group's tabs are always adjacent in the strip.
+//! groups; a group's tabs are always adjacent in the strip.
 
 use std::ops::Range;
 use std::sync::atomic::{AtomicU64, Ordering};

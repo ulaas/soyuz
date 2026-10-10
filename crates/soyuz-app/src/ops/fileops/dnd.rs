@@ -6,7 +6,7 @@
 //! link; otherwise `[behaviour] drag_default` (auto = move on the same volume, copy
 //! across volumes; `ask` shows a small menu at the drop point).
 //!
-//! Spring-loaded folders (B4): resting on a folder item, breadcrumb segment, tab or
+//! Spring-loaded folders: resting on a folder item, breadcrumb segment, tab or
 //! sidebar row for `[behaviour] spring_load_delay_ms` opens it, so a drag can go deeper.
 
 use std::cell::RefCell;

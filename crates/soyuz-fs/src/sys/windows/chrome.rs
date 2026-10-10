@@ -1,4 +1,4 @@
-//! Window chrome helpers for the app's custom title bar (roadmap B1): DWM attributes
+//! Window chrome helpers for the app's custom title bar: DWM attributes
 //! (corner preference, dark mode, Windows 11 system backdrop) and a comctl32 window
 //! subclass that reports the maximize button to the OS (`WM_NCHITTEST` → `HTMAXBUTTON`)
 //! so Windows 11 shows its Snap Layouts flyout.

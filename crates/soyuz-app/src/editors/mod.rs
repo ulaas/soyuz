@@ -1,4 +1,4 @@
-//! "Edit in Soyuz" (roadmap F4): built-in text, hex and image editors in a dockable
+//! "Edit in Soyuz": built-in text, hex and image editors in a dockable
 //! panel with one tab per document.
 //!
 //! * Open with `Action::OpenInEditor` (F4 in the file list, "Edit in Soyuz" in the

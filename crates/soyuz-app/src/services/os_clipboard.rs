@@ -1,4 +1,4 @@
-//! OS clipboard interop for files (PLAN M12): copy / cut in Soyuz puts the files on the
+//! OS clipboard interop for files: copy / cut in Soyuz puts the files on the
 //! system clipboard in the native format, and Paste reads files copied in Explorer /
 //! Finder / Nautilus, honouring move-vs-copy.
 //!

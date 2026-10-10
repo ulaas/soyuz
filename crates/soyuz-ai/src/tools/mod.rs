@@ -1,5 +1,5 @@
-//! The Soyuz tool catalog (roadmap A2), shared by the MCP server (A3) and the in-app
-//! harness (A5).
+//! The Soyuz tool catalog, shared by the MCP server and the in-app
+//! harness.
 //!
 //! * [`catalog`] lists every tool with its JSON Schema, [`Risk`] class, [`ScopeNeed`],
 //!   category and dry-run support; [`specs`] turns it into provider [`ToolSpec`]s.
@@ -329,7 +329,7 @@ pub fn frame_error(tool: &str, err: &ToolError) -> String {
     frame_untrusted(tool, &json!({"error": err.to_string()}))
 }
 
-/// Implemented by the app (A5) and the MCP server (A3); [`FsToolHost`] is the base.
+/// Implemented by the app and the MCP server; [`FsToolHost`] is the base.
 pub trait ToolHost: Send + Sync {
     /// The path scope enforced by [`dispatch`].
     fn scope(&self) -> &Scope;

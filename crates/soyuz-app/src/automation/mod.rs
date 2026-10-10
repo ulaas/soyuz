@@ -1,4 +1,4 @@
-//! Scripts, automation rules and the CLI companion inside the window (roadmap F6).
+//! Scripts, automation rules and the CLI companion inside the window.
 //!
 //! * Scripts (`scripts/*.rhai`, [`scripts`]): hot-reloaded on a thread; actions run on
 //!   a short-lived thread and come back as planned jobs (approval dialog when

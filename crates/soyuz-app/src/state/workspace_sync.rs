@@ -1,4 +1,4 @@
-//! Synchronized browsing (F7): when one pane of a tab navigates, the other visible panes
+//! Synchronized browsing: when one pane of a tab navigates, the other visible panes
 //! follow the same *relative* move (into `src/ui`, up two levels, over to a sibling)
 //! where the resulting folder exists. Pure path mapping; existence is probed off the UI
 //! thread by the lister.

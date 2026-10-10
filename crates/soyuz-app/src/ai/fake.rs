@@ -1,4 +1,4 @@
-//! Scripted fake provider (roadmap A8): replays a recorded transcript of model turns —
+//! Scripted fake provider: replays a recorded transcript of model turns —
 //! streamed text, tool calls and usage — so harness tests are deterministic and the
 //! assistant can be demoed without a model (`SOYUZ_AI_FAKE=<transcript.toml>`).
 //!

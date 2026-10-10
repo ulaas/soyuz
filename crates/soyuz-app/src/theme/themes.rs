@@ -1,4 +1,4 @@
-//! Theme files (roadmap B2): a named token palette with a dark and a light variant, an
+//! Theme files: a named token palette with a dark and a light variant, an
 //! optional accent and a corner-radius scale. Built-ins ship as embedded TOML (the same
 //! format users write in `<config dir>/themes/<id>.toml`), so every built-in is also a
 //! test of the parser.

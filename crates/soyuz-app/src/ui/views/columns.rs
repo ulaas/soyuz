@@ -93,7 +93,7 @@ pub fn cell_text(col: Column, e: &EntryInfo, cfg: &Config) -> String {
     }
 }
 
-/// Header label: script columns are named by their provider (F6).
+/// Header label: script columns are named by their provider.
 pub fn header_label(col: Column) -> String {
     crate::automation::scripts::column_label(col).unwrap_or_else(|| crate::i18n::labels::column(col).to_string())
 }

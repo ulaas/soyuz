@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Renders the font comparison sheets in docs/font-comparison/ from the real app.
+  Renders the font comparison sheets (default: target/font-comparison/) from the real app.
 
 .DESCRIPTION
   1. Creates the demo tree (scripts/demo-fixture.ps1) at <repo drive>:\SoyuzFontDemo plus a
@@ -38,7 +38,7 @@ Add-Type -AssemblyName System.Drawing
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'target\debug\soyuz.exe' }
 if (-not $Demo) { $Demo = Join-Path ((Split-Path -Qualifier $repo) + '\') 'SoyuzFontDemo' }
-if (-not $OutDir) { $OutDir = Join-Path $repo 'docs\font-comparison' }
+if (-not $OutDir) { $OutDir = Join-Path $repo 'target\font-comparison' }
 
 # Rendering: `before` = what Soyuz shipped (egui's default hinting and coverage curves),
 # `after` = the new defaults (crisp hinting, text gamma 0.45 dark / 0.80 light).

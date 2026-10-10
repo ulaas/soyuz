@@ -1,5 +1,5 @@
 //! "Soyuz closed during N operations": the startup recovery dialog for jobs found in a
-//! crash journal (ROADMAP R3). Per operation it shows what it was, how far it got and
+//! crash journal. Per operation it shows what it was, how far it got and
 //! when it started; the user picks Resume (run what is left, skipping what arrived),
 //! Roll back (undo the completed part, through the trash) or Discard. Leftover temp files
 //! under the touched folders are scanned on a worker thread and can be moved to the trash

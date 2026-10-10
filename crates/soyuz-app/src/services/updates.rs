@@ -1,4 +1,4 @@
-//! Update check against GitHub Releases (roadmap D1).
+//! Update check against GitHub Releases.
 //!
 //! * **User-initiated only.** "Check for updates" in Settings → About, or (opt-in,
 //!   `[updates] weekly_check`) one background check a week at startup that only shows a

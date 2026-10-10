@@ -147,13 +147,13 @@ views-trash-copy-original = Copy original path
 
 ## Pane body states (ui/pane_view.rs)
 
-views-pane-trash-pending = Browsing the trash arrives with the trash milestone.
+views-pane-trash-pending = Browsing the trash is not available here yet.
 views-pane-recent = Recent
 views-pane-recent-pending = Recent items are not tracked yet.
 views-pane-search = Search
 views-pane-search-pending = Search results will appear here.
 views-pane-archive = Archive
-views-pane-archive-pending = Browsing archives arrives with the archive milestone.
+views-pane-archive-pending = Browsing archives is not available here yet.
 views-pane-tags = Tags
 views-pane-tags-pending = Tags are not available yet.
 views-pane-access-denied = Access denied

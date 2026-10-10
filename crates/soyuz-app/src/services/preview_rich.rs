@@ -1,4 +1,4 @@
-//! Rich previews (roadmap F3): the dispatch between the generic preview loader
+//! Rich previews: the dispatch between the generic preview loader
 //! ([`super::preview`]) and the format modules — Office / ODF documents, EPUB, fonts,
 //! 3D models, audio (waveform + player), video poster frames (ffmpeg) and PDF (pdfium,
 //! with a pure-Rust text fallback).

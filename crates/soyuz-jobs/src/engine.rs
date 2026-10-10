@@ -1,4 +1,4 @@
-//! The job engine (PLAN §2.4 threading rules are binding for the implementation).
+//! The job engine (the threading rules below are binding for the implementation).
 //!
 //! # Threads
 //! * one scheduler/sampler thread (`soyuz-jobs-sched`): admits queued jobs, computes
@@ -21,7 +21,7 @@
 //! condvar mutex inside `OpControl` (pause/resume/cancel may be called under `state`;
 //! a worker parked in `checkpoint()` holds no engine lock).
 //!
-//! # Semantics decided here (beyond PLAN §2.4)
+//! # Semantics decided here (beyond the threading rules)
 //! * `has_active()` = any job that is not terminal (queued, paused, waiting included).
 //! * Only *active* jobs occupy a lane; `touched_roots` are held by every started,
 //!   unfinished job (see `scheduler.rs`). `resume()` continues immediately even if

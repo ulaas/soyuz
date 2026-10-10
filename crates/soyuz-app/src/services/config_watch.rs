@@ -1,4 +1,4 @@
-//! Config hot reload (PLAN §3): a `soyuz_fs::Watcher` on the config directory (editors
+//! Config hot reload: a `soyuz_fs::Watcher` on the config directory (editors
 //! often replace the file, so the folder is watched, not the file). On a change to
 //! `config.toml` the file is parsed on the watcher thread and the result is handed to
 //! the UI, which applies it live or shows the parse error (with line / column) and keeps

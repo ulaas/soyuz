@@ -110,9 +110,9 @@ pub enum Cmd {
     Workspace(crate::ui::workspaces::WsCmd),
     /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
     Ai(crate::ai::AiCmd),
-    /// Smart folders and the background index (F5): `ui::smart`.
+    /// Smart folders and the background index: `ui::smart`.
     Smart(crate::ui::smart::SmartCmd),
-    /// Scripts, automations and the CLI companion (F6): `automation`.
+    /// Scripts, automations and the CLI companion: `automation`.
     Automation(crate::automation::AutoCmd),
     /// Remote locations (connect dialog, saved connections, host keys): `ui::remote`.
     Remote(crate::ui::remote::RemoteCmd),

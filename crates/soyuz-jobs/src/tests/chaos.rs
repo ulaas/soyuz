@@ -1,4 +1,4 @@
-//! "Chaos copy" (ROADMAP R2): many small files plus a few large ones, copied or moved
+//! "Chaos copy": many small files plus a few large ones, copied or moved
 //! across "devices" while faults (disk full, I/O errors, access denied, files in use,
 //! sources vanishing, slow I/O) fire at random points and the job is paused, resumed and
 //! cancelled at random times. Every scenario is derived from a seed, printed on failure.

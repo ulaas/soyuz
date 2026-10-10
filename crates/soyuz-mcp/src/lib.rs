@@ -1,6 +1,6 @@
-//! `soyuz-mcp`: Soyuz and the Model Context Protocol (roadmap A3 + A4).
+//! `soyuz-mcp`: Soyuz and the Model Context Protocol.
 //!
-//! **Server (A3).** Exposes the soyuz-ai tool catalog, resources
+//! **Server.** Exposes the soyuz-ai tool catalog, resources
 //! (`soyuz://location/current`, `soyuz://selection`, `soyuz://history`, `file://` inside
 //! the client's folders) and prompts to MCP clients. Hand-rolled JSON-RPC 2.0, dual-era:
 //! the stateless 2026-07-28 revision and the `initialize` handshake of ≤ 2025-11-25.
@@ -15,7 +15,7 @@
 //! as a job after the user approves it in the window ([`server::Backend`]). Every call is
 //! appended to `ai-audit.jsonl` ([`soyuz_ai::audit`]). See [`trust`] for the client model.
 //!
-//! **Client (A4).** [`client`] connects to external MCP servers (stdio / HTTP) and offers
+//! **Client.** [`client`] connects to external MCP servers (stdio / HTTP) and offers
 //! their tools to the in-app assistant through [`client::ExternalTools`].
 //!
 //! Why not the official `rmcp` SDK (3.5, Apache-2.0, actively maintained): it is

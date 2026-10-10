@@ -111,7 +111,7 @@ impl Quoting {
     }
 }
 
-/// Quote a value for a cmd.exe command line (REVIEW-2 #4). Inside `"…"` cmd leaves
+/// Quote a value for a cmd.exe command line. Inside `"…"` cmd leaves
 /// `& | < > ^ ( )` alone, but it still expands `%VAR%`, and `"` toggles its quote state.
 /// Both are therefore emitted *outside* the quotes, caret-escaped: `a%b` becomes
 /// `"a"^%"b"`. The percent phase then only sees names like `"b"^`, which never exist, so
@@ -318,7 +318,7 @@ fn spawn_direct(program: &str, args: &[String], dir: &Path) -> std::io::Result<(
 
 /// Run a whole command line detached. On Windows the line was quoted for PowerShell
 /// (`Quoting::for_shell("")`), so it runs in PowerShell — previously it went to `cmd /C`
-/// with PowerShell quoting, so `a&calc&.txt` injected a command (REVIEW-2 #4). The script
+/// with PowerShell quoting, so `a&calc&.txt` injected a command. The script
 /// travels as `-EncodedCommand`, so neither cmd.exe nor the CRT re-parses it.
 fn spawn_shell(line: &str, dir: &Path) -> std::io::Result<()> {
     #[cfg(windows)]

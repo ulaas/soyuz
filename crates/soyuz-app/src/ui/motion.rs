@@ -1,4 +1,4 @@
-//! Motion helpers (roadmap B4): damped springs for live layout (tab reordering, zoom),
+//! Motion helpers: damped springs for live layout (tab reordering, zoom),
 //! eased transitions and the spring-loaded-folder hover timer. Everything collapses to
 //! the end state with `[appearance] reduced_motion` (see [`crate::theme::anim`]).
 

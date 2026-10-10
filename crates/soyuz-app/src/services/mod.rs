@@ -73,7 +73,7 @@ pub struct Services {
     pub thumbs: Thumbs,
     pub places: PlacesService,
     pub aux: HashMap<PathBuf, AuxState>,
-    /// MCP server of this window (named pipe / HTTP, approvals; roadmap A3).
+    /// MCP server of this window (named pipe / HTTP, approvals).
     pub mcp: mcp_bridge::McpBridge,
 }
 

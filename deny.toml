@@ -1,6 +1,5 @@
 # cargo-deny configuration (https://embarkstudios.github.io/cargo-deny/).
 # Run locally with `cargo deny check`; CI runs it in the `deny` job (.github/workflows/ci.yml).
-# See SECURITY.md for why each rule exists.
 
 [graph]
 # Check the dependency graph of every platform Soyuz ships on, not just the host.
@@ -70,7 +69,7 @@ exceptions = [
 ignore = true
 
 # ---------------------------------------------------------------------------
-# Banned crates. The hard rule from the project notes: no Windows shell backend, so crates that
+# Banned crates. Soyuz never uses the Windows shell backend, so crates that
 # wrap shell32 / IFileOperation / ShellExecute / Shell COM are banned outright.
 # ---------------------------------------------------------------------------
 [bans]

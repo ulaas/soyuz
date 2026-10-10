@@ -1,4 +1,4 @@
-//! The app-owned [`JobEngine`] (PLAN §2.4, §3): construction from `[jobs]`, the per-frame
+//! The app-owned [`JobEngine`]: construction from `[jobs]`, the per-frame
 //! drain of engine events, snapshot polling only while something is active (no idle
 //! repaint spin), a per-job metadata side table used for titles / completion handling,
 //! incremental log fetching and shutdown on exit.
@@ -118,7 +118,7 @@ pub struct JobMeta {
     pub ai_task: Option<u64>,
     /// Started by this MCP client (tags the card with its name).
     pub mcp_client: Option<String>,
-    /// Started by an automation rule, a script or the CLI (F6).
+    /// Started by an automation rule, a script or the CLI.
     pub origin: Option<JobOrigin>,
 }
 

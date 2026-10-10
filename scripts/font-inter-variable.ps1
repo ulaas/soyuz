@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-  Renders docs/font-comparison/inter-variable.png: the shipped static Inter against the
-  variable Inter with optical sizes ("Inter Variable (optical sizes)", roadmap B5).
+  Renders target/font-comparison/inter-variable.png: the shipped static Inter against the
+  variable Inter with optical sizes ("Inter Variable (optical sizes)").
 
 .DESCRIPTION
   Runs Soyuz once in portable mode, off-screen (SOYUZ_WINDOW_POS) and driven only by
@@ -28,7 +28,7 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Exe) { $Exe = Join-Path $repo 'target\debug\soyuz.exe' }
-if (-not $Out) { $Out = Join-Path $repo 'docs\font-comparison\inter-variable.png' }
+if (-not $Out) { $Out = Join-Path $repo 'target\font-comparison\inter-variable.png' }
 $exeDir = Split-Path -Parent (Resolve-Path $Exe)
 $marker = Join-Path $exeDir 'portable'
 $data = Join-Path $exeDir 'portable-data'

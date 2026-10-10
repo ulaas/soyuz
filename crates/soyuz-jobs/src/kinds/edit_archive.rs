@@ -1,4 +1,4 @@
-//! `edit_archive` job executor (F9): add / delete / rename entries inside a zip.
+//! `edit_archive` job executor: add / delete / rename entries inside a zip.
 //!
 //! Steps: rewrite into a hidden sibling (`soyuz_archive::rewrite_zip`: unchanged entries
 //! are copied raw), move the original to the trash (the undo backup), then rename the new

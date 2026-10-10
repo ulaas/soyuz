@@ -1,4 +1,4 @@
-//! Painters for the rich previews (roadmap F3): Office / ODF documents, spreadsheets,
+//! Painters for the rich previews: Office / ODF documents, spreadsheets,
 //! slides, EPUB, font specimens, 3D models, audio (waveform + player), video posters
 //! and PDF pages. Shared by the preview pane and Quick Look (`interactive`).
 //!

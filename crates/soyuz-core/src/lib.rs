@@ -1,6 +1,6 @@
 //! `soyuz-core`: the shared, GUI-free vocabulary of the Soyuz file explorer.
 //!
-//! Every type that is used by two or more Soyuz crates lives here (see PLAN §2.2):
+//! Every type that is used by two or more Soyuz crates lives here:
 //! entries and locations, errors, cooperative operation control, progress sinks,
 //! prompt policies, formatting helpers, sorting/filtering and the configuration schema
 //! (including key bindings and the [`Action`](config::Action) enum).

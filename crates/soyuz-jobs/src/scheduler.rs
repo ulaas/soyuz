@@ -1,4 +1,4 @@
-//! Admission rules (PLAN §2.4), implemented in [`crate::engine`] (`Inner::admit`,
+//! Admission rules, implemented in [`crate::engine`] (`Inner::admit`,
 //! `Inner::compute_lanes`) because they operate directly on the engine state:
 //!
 //! * a queued job starts when `active < max_parallel` (active = `Planning | Running |

@@ -1,4 +1,4 @@
-//! Fault injection for torture tests (cargo feature `fault-inject`, ROADMAP R2).
+//! Fault injection for torture tests (cargo feature `fault-inject`).
 //!
 //! The copy / move / rename / delete / mkdir internals call [`hit`] at their I/O points:
 //! opening a source, creating a destination, every data chunk written, every rename and

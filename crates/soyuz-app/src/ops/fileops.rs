@@ -1,4 +1,4 @@
-//! File operations integration (M2/M3): every copy / move / delete / rename / create is a
+//! File operations integration: every copy / move / delete / rename / create is a
 //! background job on the app's [`JobsService`]. This module owns the glue: the internal
 //! clipboard, drag and drop, inline rename, the prompt queue, completion toasts with
 //! Undo, undo/redo, and the per-frame hooks (`begin_frame` / `end_frame`) called by
@@ -362,7 +362,7 @@ pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
     paste_into_with(app, dest, false);
 }
 
-/// Paste; `verify` hash-compares every copied file (F8 "Copy and verify"), whatever
+/// Paste; `verify` hash-compares every copied file ("Copy and verify"), whatever
 /// `jobs.verify_after_copy` says.
 pub fn paste_into_with(app: &mut SoyuzApp, dest: PathBuf, verify: bool) {
     let Some((mode, paths)) = Clipboard::os_paths_hook().or_else(|| app.fileops.clipboard.for_paste()) else {
@@ -392,7 +392,7 @@ pub fn transfer_with(
     effect: DropEffect,
     verify: bool,
 ) -> Option<JobId> {
-    // F2: remote sources or destination stream through a `JobKind::Remote` job.
+    // Remote sources or destination stream through a `JobKind::Remote` job.
     if crate::services::remote::is_remote_path(&dest)
         || paths.iter().any(|p| crate::services::remote::is_remote_path(p))
     {

@@ -1,4 +1,4 @@
-//! F2: jobs across providers (local ↔ in-memory fake server): upload / download trees,
+//! Jobs across providers (local ↔ in-memory fake server): upload / download trees,
 //! conflicts, resume after a dropped connection, cancel, moves and undo.
 
 use std::sync::Arc;

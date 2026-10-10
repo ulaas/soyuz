@@ -1,4 +1,4 @@
-//! Folder compare (M12) — blocking, run on a worker thread.
+//! Folder compare — blocking, run on a worker thread.
 //!
 //! Rules (all paths relative to the roots, sorted, symlinks never followed):
 //! - an entry present on one side only goes to `only_left` / `only_right`; for a missing

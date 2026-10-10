@@ -1,4 +1,4 @@
-//! Streamable HTTP (token / Host / Origin / header validation, legacy sessions, the A4
+//! Streamable HTTP (token / Host / Origin / header validation, legacy sessions, the
 //! HTTP client) and the named-pipe attach round trip (Windows).
 
 mod common;

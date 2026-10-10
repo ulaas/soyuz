@@ -1,4 +1,4 @@
-//! Native window-chrome helpers for the app's custom title bar (roadmap B1).
+//! Native window-chrome helpers for the app's custom title bar.
 //!
 //! The raw calls live in `sys/windows/chrome.rs` (dwmapi / user32 / comctl32, no shell
 //! APIs) because `unsafe` is confined to `sys/*`. Every function takes the window as a

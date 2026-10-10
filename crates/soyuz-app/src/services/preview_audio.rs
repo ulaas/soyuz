@@ -1,4 +1,4 @@
-//! Audio previews (roadmap F3): a waveform (decoded with Symphonia, pure Rust), tags,
+//! Audio previews: a waveform (decoded with Symphonia, pure Rust), tags,
 //! duration, bitrate and cover art, plus a tiny player (rodio → cpal → WASAPI on
 //! Windows; no shell APIs) with play / pause / seek.
 //!

@@ -15,7 +15,7 @@
 //! * swept when its code stops drawing it (the viewport closes with it); a modal dialog's
 //!   disabled owner is re-enabled *before* the window goes so Windows activates the owner.
 //!
-//! Off Windows, with the setting off, during the CPU-drawn first frames (R5) and in test
+//! Off Windows, with the setting off, during the CPU-drawn first frames and in test
 //! harnesses without real viewports everything falls back to the in-window rendering.
 
 pub mod dialog;
@@ -85,7 +85,7 @@ struct Slot {
 #[derive(Default)]
 struct Registry {
     slots: HashMap<ViewportId, Slot>,
-    /// HWNDs of viewports we did not create (F7 windows), matched by rect.
+    /// HWNDs of viewports we did not create (secondary in-process windows), matched by rect.
     known: HashMap<ViewportId, isize>,
 }
 
@@ -201,7 +201,7 @@ pub fn work_area_at(ctx: &Context, vp: ViewportId, p: Pos2) -> Rect {
     Rect::from_min_size(Pos2::ZERO, size)
 }
 
-/// The native window handle of viewport `vp` (main window, one of ours, or an F7
+/// The native window handle of viewport `vp` (main window, one of ours, or a secondary
 /// window matched by its rect).
 pub fn hwnd_of(ctx: &Context, vp: ViewportId) -> Option<isize> {
     if vp == ViewportId::ROOT {

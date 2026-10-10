@@ -1,4 +1,4 @@
-//! Duplicate finder (PLAN M6/M12): pick roots and a minimum size, then
+//! Duplicate finder: pick roots and a minimum size, then
 //! `soyuz_search::find_duplicates` streams groups of identical files (size → head hash →
 //! full BLAKE3) while it runs. Each group offers keep-one helpers (newest, oldest,
 //! shortest path); marked files go to the trash through the jobs engine. A group can

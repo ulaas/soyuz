@@ -1,4 +1,4 @@
-//! Scheduled sync profiles (ROADMAP F8).
+//! Scheduled sync profiles.
 //!
 //! Profiles (`sync_profiles.toml`) carry a [`Schedule`]: manual, every N minutes, daily
 //! at a time, when a file changes (recursive watcher on both folders), or once when the

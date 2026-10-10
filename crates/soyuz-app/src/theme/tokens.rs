@@ -1,4 +1,4 @@
-//! Design tokens (PLAN §1.2): the "Orbit Dark" / "Orbit Light" palettes plus the spacing,
+//! Design tokens: the "Orbit Dark" / "Orbit Light" palettes plus the spacing,
 //! radius, size and typography scales. Everything visual in the app reads from here.
 
 use std::collections::BTreeMap;

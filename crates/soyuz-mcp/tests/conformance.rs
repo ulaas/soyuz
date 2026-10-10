@@ -320,7 +320,7 @@ fn cancellation_stops_the_call_and_suppresses_the_response() {
 
 #[test]
 fn stream_round_trip_with_the_mcp_client() {
-    // Server on one end of two OS pipes, the A4 client (modern probe) on the other.
+    // Server on one end of two OS pipes, the MCP client (modern probe) on the other.
     let fx = Fixture::new();
     let (server, _) = fx.headless(fx.ai());
     let (c2s_r, c2s_w) = std::io::pipe().unwrap();

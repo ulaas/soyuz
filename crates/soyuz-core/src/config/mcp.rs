@@ -1,4 +1,4 @@
-//! MCP settings inside `[ai]` (roadmap A3 + A4):
+//! MCP settings inside `[ai]`:
 //!
 //! * `[ai.mcp]` — the Soyuz MCP server: the local named pipe that `soyuz --mcp` attaches
 //!   to, and the optional Streamable HTTP transport on 127.0.0.1.

@@ -1,4 +1,4 @@
-//! "Where was I?" — the per-tab history graph popup (F7). Every place the tab's panes
+//! "Where was I?" — the per-tab history graph popup. Every place the tab's panes
 //! visited, as a tree that keeps the branches back/forward history forgets, with the time
 //! of the last visit. Click a place to go back there.
 

@@ -1,4 +1,4 @@
-//! `soyuz-index`: the optional background file index (roadmap F5).
+//! `soyuz-index`: the optional background file index.
 //!
 //! * [`Index::start`] opens (or creates) an SQLite database with FTS5 tables and runs a
 //!   low-priority worker thread that crawls the configured roots (throttled, skipping

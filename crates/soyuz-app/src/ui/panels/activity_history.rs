@@ -58,7 +58,7 @@ pub fn describe(job: &JobKind) -> (OpKind, String) {
     (op, names::job_title(&meta, false, None, ""))
 }
 
-/// F8: a copy / move / sync that ran with hash verification and had no failures.
+/// A copy / move / sync that ran with hash verification and had no failures.
 pub fn is_verified(h: &HistoryEntry) -> bool {
     let verify = h.options.as_ref().is_some_and(|o| o.copy.verify.is_some());
     let done = soyuz_jobs::JobState::Done(h.summary.clone());

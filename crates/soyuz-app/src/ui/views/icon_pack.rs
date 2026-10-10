@@ -1,4 +1,4 @@
-//! Icon packs (roadmap B3): picture icons for file types, kinds and named folders,
+//! Icon packs: picture icons for file types, kinds and named folders,
 //! `[appearance] icon_pack`.
 //!
 //! * `""`: the built-in Phosphor glyphs (default; nothing is loaded).

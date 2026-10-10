@@ -1,4 +1,4 @@
-//! MCP client (roadmap A4): Soyuz consumes external MCP servers (`[[ai.mcp_servers]]`)
+//! MCP client: Soyuz consumes external MCP servers (`[[ai.mcp_servers]]`)
 //! and offers their tools to the in-app assistant through [`ExternalTools`].
 //!
 //! * Transports: stdio (the server is started with `std::process::Command` — no shell)

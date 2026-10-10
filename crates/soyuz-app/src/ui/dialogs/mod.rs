@@ -1,5 +1,5 @@
 //! Modal dialog host — the extension point for conflict/error/properties/batch-rename
-//! dialogs of later milestones. A dialog implements [`Dialog`]; push it with
+//! dialogs. A dialog implements [`Dialog`]; push it with
 //! [`Dialogs::push`]. The host draws the top-most dialog in a styled modal (fade +
 //! scale-in, backdrop, Esc / click-outside to cancel) and routes results as [`Cmd`]s.
 

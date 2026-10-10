@@ -1,4 +1,4 @@
-//! Debug-build guard against filesystem calls on the UI thread (roadmap R4).
+//! Debug-build guard against filesystem calls on the UI thread.
 //!
 //! The app calls [`register_ui_thread`] once from its UI thread. In debug builds, every
 //! guarded public entry point of this crate then logs a warning, naming the caller's

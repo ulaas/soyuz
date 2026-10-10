@@ -1,4 +1,4 @@
-//! Archive browsing (PLAN M7): `Location::Archive` listings on a worker thread that keeps
+//! Archive browsing: `Location::Archive` listings on a worker thread that keeps
 //! a few opened readers cached (their `dir_index` makes nested navigation cheap),
 //! extracting single entries to a temp folder for "open", per-archive passwords, and a
 //! hand-off queue so worker threads can submit extract jobs to the app's `JobsService`.

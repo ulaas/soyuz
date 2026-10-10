@@ -1,4 +1,4 @@
-//! Name-keyed selection (PLAN §2.8): survives sorting, filtering, watcher patches and
+//! Name-keyed selection: survives sorting, filtering, watcher patches and
 //! relists because it never stores indices. All operations take the *visible order* of
 //! keys when they need ordering (ranges, select-all, invert).
 

@@ -1,4 +1,4 @@
-//! Archive integration in the UI (PLAN M7): Enter on a supported archive browses it as
+//! Archive integration in the UI: Enter on a supported archive browses it as
 //! `Location::Archive`; entries inside open (folders navigate, files are extracted to a
 //! temp folder and launched); extract here / to "name/" / to… / selected entries and
 //! "Compress…" submit soyuz-jobs Extract / Compress jobs via `Cmd::SubmitJob`; a
@@ -727,7 +727,7 @@ mod tests {
     }
 }
 
-// ---- editing inside a zip (F9) --------------------------------------------------------
+// ---- editing inside a zip --------------------------------------------------------
 
 /// Whether `archive` (by name) is a zip that can be edited (not a split `.001` set).
 fn is_editable_zip_name(archive: &Path) -> bool {

@@ -1,4 +1,4 @@
-//! Smart search (roadmap A6): natural language → a structured query shown as editable
+//! Smart search: natural language → a structured query shown as editable
 //! pills (`kind:image modified:2026-06..2026-08 size:>5MB`) that become a
 //! `soyuz_search::SearchQuery` only when the user runs it. A local parser covers the
 //! common phrasings (no model needed); a model's `search` tool call can fill the same

@@ -1,4 +1,4 @@
-//! The in-app agent harness (roadmap A5 / A7 / A8).
+//! The in-app agent harness.
 //!
 //! * [`agent`] — the agent loop on a worker thread: context → model call with the tool
 //!   catalog filtered by scope and risk → streamed text → read tools run automatically

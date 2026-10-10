@@ -1,4 +1,4 @@
-//! Client trust model (roadmap A3): who is calling, what it may touch, and whether its
+//! Client trust model: who is calling, what it may touch, and whether its
 //! write tools need approval in Soyuz.
 //!
 //! * Clients are listed in `[[ai.mcp_clients]]`. Over stdio a client is named by

@@ -1,4 +1,4 @@
-//! Settings → Preview & search → tr!("settings-index") (F5): turn the background index on, choose
+//! Settings → Preview & search → tr!("settings-index"): turn the background index on, choose
 //! the indexed folders and exclusions, content indexing, the NTFS change journal,
 //! throttling; live status and tr!("settings-index-rebuild").
 

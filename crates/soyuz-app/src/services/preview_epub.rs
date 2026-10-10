@@ -1,4 +1,4 @@
-//! EPUB previews (roadmap F3): metadata from the OPF package (title, authors, language,
+//! EPUB previews: metadata from the OPF package (title, authors, language,
 //! publisher, date), the cover image, and the table of contents from the EPUB 3 nav
 //! document or the EPUB 2 NCX. Reading goes through the size-capped office
 //! [`Container`], so hostile archives stay bounded.

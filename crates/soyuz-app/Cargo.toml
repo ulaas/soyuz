@@ -73,12 +73,12 @@ rodio.workspace = true
 similar.workspace = true
 zip.workspace = true
 flate2.workspace = true
-# Update check (roadmap D1): GitHub Releases JSON + asset download, rustls/ring only.
+# Update check: GitHub Releases JSON + asset download, rustls/ring only.
 reqwest.workspace = true
 rustls.workspace = true
 tokio.workspace = true
 sha2.workspace = true
-# Localization (F10).
+# Localization.
 fluent-bundle.workspace = true
 fluent-langneg.workspace = true
 intl-memoizer.workspace = true

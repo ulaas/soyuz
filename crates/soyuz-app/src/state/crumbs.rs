@@ -160,7 +160,7 @@ pub fn location_title(loc: &Location) -> String {
         Location::Recent => tr!("ops-place-recent").into(),
         Location::Timeline => tr!("ops-place-timeline").into(),
         Location::Tags(t) => tr!("ops-place-tag", name = crate::services::tags::display_name(t)),
-        // Smart folders show their name (F5).
+        // Smart folders show their name.
         Location::Search(id) => {
             crate::services::search::spec(*id).and_then(|s| s.smart).unwrap_or_else(|| tr!("ops-place-search").into())
         }

@@ -1,4 +1,4 @@
-//! Live highlights (roadmap A6): files the assistant or an MCP client is reading,
+//! Live highlights: files the assistant or an MCP client is reading,
 //! planning to change or changing get a subtle animated outline and a badge in the file
 //! views and the treemap. The harness marks paths through [`mark`], the MCP bridge
 //! through [`mark_mcp`]; views call [`paint`] per visible row (a read lock and an empty

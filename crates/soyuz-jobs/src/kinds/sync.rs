@@ -1,4 +1,4 @@
-//! `sync` job executor (M12): apply a precomputed [`SyncPlan`] — copies overwrite the
+//! `sync` job executor: apply a precomputed [`SyncPlan`] — copies overwrite the
 //! other side, deletions go to the trash when available (else permanent, journaled as
 //! irreversible).
 

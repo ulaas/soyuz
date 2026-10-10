@@ -1,4 +1,4 @@
-//! Drag-out (B4): an internal drag that leaves the window becomes an OS drag, so items
+//! Drag-out: an internal drag that leaves the window becomes an OS drag, so items
 //! can be dropped on the desktop, into Explorer, editors, mail clients, ...
 //!
 //! * **Trigger** ([`should_hand_off`]): an internal [`DragPayload`] is active, the primary

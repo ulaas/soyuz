@@ -26,7 +26,7 @@ soyuz-index = { path = "crates/soyuz-index" }
 soyuz-script = { path = "crates/soyuz-script" }
 soyuz-vfs = { path = "crates/soyuz-vfs" }
 
-# --- GUI (pinned exactly, see PLAN §7) ---
+# --- GUI (pinned exactly) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
 egui = "=0.36.2"
 egui_extras = { version = "=0.36.2", features = ["image", "svg", "file", "syntect"] }
@@ -84,7 +84,7 @@ infer = "0.22.0"
 # --- media / preview ---
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }
 syntect = { version = "5.3.0", default-features = false, features = ["default-syntaxes", "default-themes", "parsing", "regex-fancy"] }
-# Rich previews (roadmap F3). pdfium is loaded at runtime (pdfium.dll next to the exe or
+# Rich previews. pdfium is loaded at runtime (pdfium.dll next to the exe or
 # in the config dir); nothing is downloaded or linked at build time.
 pdfium-render = { version = "0.9.4", default-features = false, features = ["thread_safe", "pdfium_latest"] }
 lopdf = { version = "0.45.0", default-features = false }
@@ -116,10 +116,10 @@ schemars = "1.2.2"
 # MCP (soyuz-mcp): token generation and the `=?base64?…?=` header encoding.
 getrandom = "0.3.4"
 
-# --- index (F5): SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
+# --- index: SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "functions", "cache"] }
 
-# --- localization (F10): Project Fluent, pure Rust ---
+# --- localization: Project Fluent, pure Rust ---
 fluent-bundle = "0.16.0"
 fluent-langneg = "0.13.1"
 intl-memoizer = "0.5.3"

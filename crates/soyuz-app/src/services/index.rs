@@ -1,4 +1,4 @@
-//! App side of the background index (roadmap F5).
+//! App side of the background index.
 //!
 //! * [`pump`] (every frame) starts / restarts / stops the `soyuz-index` worker when
 //!   `[search.index]` changes (debounced, so typing a root doesn't restart it per key),

@@ -1,4 +1,4 @@
-//! Properties dialog (Alt+Enter, PLAN M10) and the dispatcher for the metadata actions
+//! Properties dialog (Alt+Enter) and the dispatcher for the metadata actions
 //! (Properties, checksums, batch rename, bulk attributes / timestamps, touch, links).
 //!
 //! Tabs: **General** (icon or thumbnail, editable name, type, location, size / size on
@@ -222,7 +222,7 @@ pub enum Tab {
     Security,
     Checksums,
     Details,
-    /// F8: earlier versions from shadow copies.
+    /// Earlier versions from shadow copies.
     Versions,
 }
 

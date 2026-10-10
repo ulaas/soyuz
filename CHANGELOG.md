@@ -1,7 +1,7 @@
 # Changelog
 
-All notable changes to Soyuz. Grouped by roadmap phase (see docs/ROADMAP.md): M = the
-original milestones (docs/PLAN.md), R = rigidity, B = looks, F = features, A = AI,
+All notable changes to Soyuz. Grouped by the commit prefix: M = the
+original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
@@ -64,26 +64,8 @@ with `cliff.toml`); commit hashes refer to the main branch.
 
 ### Fixes and security
 
-- fix(core): no panic parsing paths with multibyte chars near prefix boundary (crash loop on session restore); docs: review 2 (9762293)
-- fix: review-1 data-safety findings (undo identity stamps, rename failed deps, dupes aliasing, link loops, trash serialization, no rundll32) (ea9bd0e)
-- fix: review-2 findings (git hardening, terminal control chars, command quoting, preview hardening, store backups, close confirmation, open-with, new window, flat view, settings wired) (8014b59)
+- fix(core): no panic parsing paths with multibyte chars near prefix boundary (crash loop on session restore) (9762293)
+- fix: data-safety audit fixes (undo identity stamps, rename failed deps, dupes aliasing, link loops, trash serialization, no rundll32) (ea9bd0e)
+- fix: second audit fixes (git hardening, terminal control chars, command quoting, preview hardening, store backups, close confirmation, open-with, new window, flat view, settings wired) (8014b59)
 - security: OSC 52 consent, strip special bits, decompression-bomb limits, reveal hidden bidi chars in names, pin toolchain (4798fba)
 - fix(app): draw the terminal OSC 52 clipboard consent prompt; add policy/preview tests (8d00d54)
-
-### Documentation
-
-- docs: research notes and implementation plan (4a55570)
-- docs: integration notes for search and jobs (688f908)
-- docs: terminal integration notes (883f8bc)
-- docs: resolve PLAN.md merge markers (term + archive notes) (ccb87df)
-- docs: fs integration notes (c4ac624)
-- docs: review 1 findings (fs/jobs data safety) (d54db63)
-- docs: the project notes (rules, permissions, status) and ROADMAP.md (053cd69)
-- docs: roadmap Phase A — AI providers, MCP server/client, in-app agent harness with visual plans (6e7b7b6)
-- docs: defer Linux/macOS builds, CI and tests (owner decision) (c86ec4b)
-- docs: allow unsafe in soyuz-ai Windows credential module (bdcdd45)
-- docs: forbid synthetic mouse/keyboard input in agent testing (cff7c6f)
-
-### Other
-
-- chore: ignore .claude worktrees (1a824b9)

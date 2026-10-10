@@ -1,4 +1,4 @@
-//! NTFS change journal (USN journal) access for the background index (F5).
+//! NTFS change journal (USN journal) access for the background index.
 //!
 //! [`UsnVolume::open`] opens the volume device (`\\.\C:`), which Windows only allows for
 //! administrators on most systems: callers get `FsErrorKind::PermissionDenied` and should

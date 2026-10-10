@@ -1,4 +1,4 @@
-//! Regression tests for the data-safety review (docs/REVIEW-1.md).
+//! Regression tests for the data-safety audit.
 
 use soyuz_core::{ConflictResolution, FsErrorKind};
 

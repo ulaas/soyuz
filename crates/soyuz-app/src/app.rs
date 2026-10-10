@@ -75,7 +75,7 @@ pub struct UiState {
     pub welcome_seen: bool,
     /// Window frame currently in effect (`[appearance] custom_titlebar`).
     pub chrome: crate::ui::titlebar::Chrome,
-    /// Folder tree sidebar (F1).
+    /// Folder tree sidebar.
     pub tree: crate::ui::tree::TreeState,
 }
 
@@ -96,13 +96,13 @@ pub struct SoyuzApp {
     views_path: PathBuf,
     last_session: Option<String>,
     last_session_check: Instant,
-    /// Command palette / go-to-folder state and persistent palette memory (M11).
+    /// Command palette / go-to-folder state and persistent palette memory.
     pub palette: crate::palette::PaletteState,
-    /// Settings window (M11).
+    /// Settings window.
     pub settings: crate::ui::settings::SettingsState,
-    /// `config.toml` hot reload (M11).
+    /// `config.toml` hot reload.
     pub config_watch: crate::services::config_watch::ConfigWatch,
-    /// Pending multi-key sequence / mark (M11).
+    /// Pending multi-key sequence / mark.
     pub keyseq: crate::keys::sequence::Sequencer,
     /// `SOYUZ_SCRIPT` automation / `SOYUZ_FRAME_LOG` (debug hooks).
     pub devscript: crate::devscript::DevScript,
@@ -110,13 +110,13 @@ pub struct SoyuzApp {
     pub secondary: bool,
     /// Close-request handling while jobs are pending.
     pub quit: QuitState,
-    /// Built-in text / hex / image editors (F4).
+    /// Built-in text / hex / image editors.
     pub editors: crate::editors::Editors,
-    /// The in-app assistant (AI panel, agent tasks, highlights; roadmap A5–A7).
+    /// The in-app assistant (AI panel, agent tasks, highlights).
     pub ai: crate::ai::AiState,
-    /// Saved workspaces, the other windows of this process, group editing (F7).
+    /// Saved workspaces, the other windows of this process, group editing.
     pub workspaces: crate::ui::workspaces::WorkspacesState,
-    /// Scripts, automation rules and the CLI pipe (roadmap F6).
+    /// Scripts, automation rules and the CLI pipe.
     pub automation: crate::automation::AutomationState,
 }
 
@@ -688,7 +688,7 @@ impl SoyuzApp {
         crate::devscript::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.update_title(&ctx);
-        // The other in-process windows (F7), drawn as immediate viewports.
+        // The other in-process windows, drawn as immediate viewports.
         crate::ui::workspaces::windows::show(self, &ctx);
         crate::ui::native::popup::end_frame();
         crate::ui::native::end_frame(&ctx);

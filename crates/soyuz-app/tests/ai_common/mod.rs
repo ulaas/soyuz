@@ -104,7 +104,7 @@ pub struct Harness {
     pub budget: Option<soyuz_app::ai::agent::Budget>,
     /// Files attached to the first message ("Suggest names").
     pub attachments: soyuz_app::ai::agent::Attachments,
-    /// External MCP tools offered to the model (A4).
+    /// External MCP tools offered to the model.
     pub external: Option<Arc<dyn soyuz_mcp::client::ExternalTools>>,
 }
 

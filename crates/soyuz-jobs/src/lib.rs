@@ -1,5 +1,5 @@
 //! `soyuz-jobs`: the background operation engine — queue with per-device lanes,
-//! pause/resume/cancel, conflict/error prompts, history and undo (PLAN §2.4).
+//! pause/resume/cancel, conflict/error prompts, history and undo.
 //!
 //! Drive it from the UI with [`JobEngine::submit`], poll [`JobEngine::snapshots`] while
 //! [`JobEngine::has_active`], drain [`JobEngine::events`] each frame, answer

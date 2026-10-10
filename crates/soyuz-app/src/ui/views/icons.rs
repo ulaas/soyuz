@@ -1,4 +1,4 @@
-//! File-type glyphs and colors (PLAN §1.2 `glyph.*` tokens).
+//! File-type glyphs and colors (`glyph.*` design tokens).
 
 use egui::Color32;
 use soyuz_core::{EntryInfo, EntryKind, LinkTarget};

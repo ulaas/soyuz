@@ -1,4 +1,4 @@
-//! Per-folder color and emblem (roadmap B2): right-click a folder → "Folder color". The
+//! Per-folder color and emblem: right-click a folder → "Folder color". The
 //! choice shows as a tinted folder icon (with an optional emblem glyph) in the views and
 //! as a colored dot in the breadcrumb and on tabs.
 //!

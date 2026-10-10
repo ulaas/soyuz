@@ -1,4 +1,4 @@
-//! Previous versions (ROADMAP F8): earlier copies of a file or folder from snapshots
+//! Previous versions: earlier copies of a file or folder from snapshots
 //! (Windows Volume Shadow Copies via `soyuz_fs::snapshots`, no shell / VSS COM).
 //!
 //! [`VersionsPanel`] lists the versions (date, size, modified) with Open / Compare /

@@ -165,7 +165,7 @@ fn widget(bg: Color32, weak_bg: Color32, stroke: Stroke, fg: Color32, r: u8) -> 
     }
 }
 
-/// Token → `Visuals` mapping (PLAN §1.2 table).
+/// Token → `Visuals` mapping.
 pub fn visuals(p: &Palette) -> Visuals {
     let mut v = if p.dark { Visuals::dark() } else { Visuals::light() };
     let hover_fill = if p.dark { p.bg_surface3 } else { p.bg_sunken };

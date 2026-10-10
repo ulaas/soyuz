@@ -107,7 +107,7 @@ fn geometry(style: Style, pane: &Pane, avail_w: f32, row_h: f32, zoom: f32) -> G
 /// Draw the pane's listing into `rect`.
 pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style: Style) {
     let row_h = v.config.appearance.density.row_height();
-    // Icon sizes glide between zoom levels (B4); the layout follows the animated size.
+    // Icon sizes glide between zoom levels; the layout follows the animated size.
     let zoom = if matches!(style, Style::Grid | Style::Gallery) {
         ui.ctx().animate_value_with_time(
             Id::new(("soyuz.flow.zoom", pane.id.0)),

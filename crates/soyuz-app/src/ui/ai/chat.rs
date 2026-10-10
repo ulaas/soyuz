@@ -650,7 +650,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
 }
 
 /// "Tools" chip: the tool picker with Soyuz's catalog and the connected external MCP
-/// servers (A4). Picking a tool asks the assistant to use it.
+/// servers. Picking a tool asks the assistant to use it.
 fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     let ext = app.ai.external.tools();
     let status = app.ai.external.status();

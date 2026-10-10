@@ -1,7 +1,7 @@
 //! Shared persistence helpers for the small per-user stores next to `config.toml`
 //! (tags, recent items, palette memory, rename presets, saved searches, sync profiles).
 //!
-//! Two guarantees (REVIEW-2 #7 / #8):
+//! Two guarantees:
 //!
 //! * **A file that exists but does not parse is never overwritten.** [`load`] copies it
 //!   to `<file>.bak` (or `.bak.1` … when that exists), logs, and marks the path as

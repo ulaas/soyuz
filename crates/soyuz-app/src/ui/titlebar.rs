@@ -540,7 +540,7 @@ pub fn frame(ctx: &Context, app: &SoyuzApp) {
 }
 
 /// The 1 px window edge and (with `resizable`) the edge resize zones of a borderless
-/// window: the main / F7 windows and the native dialog windows.
+/// window: the main / secondary windows and the native dialog windows.
 pub fn border_and_resize(ctx: &Context, focused: bool, resizable: bool) {
     let ws = WindowState { focused, ..Default::default() };
     let p = palette(ctx);

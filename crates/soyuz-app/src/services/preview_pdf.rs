@@ -1,4 +1,4 @@
-//! PDF previews (roadmap F3).
+//! PDF previews.
 //!
 //! * **Pages** render through pdfium (cargo feature `pdf`, on by default). Soyuz never
 //!   downloads or links pdfium at build time: the library is loaded at run time from

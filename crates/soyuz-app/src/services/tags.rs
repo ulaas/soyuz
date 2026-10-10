@@ -1,4 +1,4 @@
-//! Color tags / labels (PLAN M12): eight colors matching the `tag.*` design tokens,
+//! Color tags / labels: eight colors matching the `tag.*` design tokens,
 //! stored per path in `tags.toml` next to the config (portable-aware), plus a
 //! best-effort read of macOS Finder tags (`com.apple.metadata:_kMDItemUserTags`, a
 //! binary plist) shown alongside.

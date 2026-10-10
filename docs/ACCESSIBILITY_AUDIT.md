@@ -95,7 +95,7 @@ in the script:
   Add a state to the script before relying on any of these.
 - **Remaining icon labels.** About 60 `ui.label(icons::icon(…))` calls in other panels still
   expose their glyph. Converting them is mechanical (`widgets::icon_label`), but it touches
-  files other agents were editing in this wave, so it was left out. G5 will flag each one as
+  many files, so it was left out of this pass. G5 will flag each one as
   soon as its state is audited.
 - **What the audit cannot check.** It does not judge reading order, live-region
   announcements (toasts are not announced yet; see ACCESSIBILITY.md), or keyboard focus

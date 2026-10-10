@@ -1,4 +1,4 @@
-//! Folder tree sidebar (roadmap F1): a lazily loaded tree of the drives and the home
+//! Folder tree sidebar: a lazily loaded tree of the drives and the home
 //! folder. Child folders are listed by [`TreeService`] on worker threads; the UI only
 //! drains results. The tree follows the active pane (`[sidebar] tree_follow`), filters as
 //! you type, expands on drag-hover and accepts drops (same effect rules and jobs as every
