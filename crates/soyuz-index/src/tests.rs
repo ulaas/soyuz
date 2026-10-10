@@ -201,6 +201,51 @@ fn bad_database_path_fails_cleanly() {
     wait_until("failure", || matches!(ix.status().phase, Phase::Failed(_)));
 }
 
+#[test]
+fn unwatchable_roots_are_polled() {
+    let (root, db) = tree();
+    let croot = canonical(root.path());
+    crate::worker::FORCE_POLL.lock().push(croot.clone());
+    let ix = Index::start(cfg(root.path(), db.path()), Arc::new(|| {}));
+    ix.set_rescan_interval(Duration::from_millis(200));
+    wait_idle(&ix);
+    let st = ix.status();
+    assert_eq!(st.polled_roots, std::slice::from_ref(&croot));
+    assert!(st.warnings.is_empty(), "polling isn't a warning: {:?}", st.warnings);
+    assert_eq!(names(&ix, "photo"), ["photo.jpg"]);
+
+    // Changes deep down, at the root, new subtrees and deletions show up on a later pass.
+    std::fs::write(root.path().join("docs/2026/later.txt"), "x").unwrap();
+    std::fs::write(root.path().join("top.txt"), "x").unwrap();
+    std::fs::create_dir_all(root.path().join("fresh/deep")).unwrap();
+    std::fs::write(root.path().join("fresh/deep/inner.rs"), "fn main() {}").unwrap();
+    std::fs::remove_file(root.path().join("docs/notes.txt")).unwrap();
+    std::fs::remove_dir_all(root.path().join("node_modules")).unwrap();
+    std::fs::write(root.path().join("node_modules"), "now a file, still excluded").unwrap();
+    wait_until("polled changes", || {
+        names(&ix, "later") == ["later.txt"]
+            && names(&ix, "top") == ["top.txt"]
+            && names(&ix, "inner") == ["inner.rs"]
+            && names(&ix, "notes").is_empty()
+    });
+    std::fs::remove_dir_all(root.path().join("docs")).unwrap();
+    wait_until("polled delete", || names(&ix, "report").is_empty() && names(&ix, "later").is_empty());
+    assert!(names(&ix, "node_modules").is_empty());
+    crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
+}
+
+#[cfg(not(windows))]
+#[test]
+fn journal_reads_as_unavailable_off_windows() {
+    let (root, db) = tree();
+    let ix = Index::start(IndexConfig { usn: true, ..cfg(root.path(), db.path()) }, Arc::new(|| {}));
+    wait_idle(&ix);
+    let st = ix.status();
+    assert_eq!(st.usn, UsnState::Unsupported(USN_NOT_WINDOWS.into()));
+    assert!(st.warnings.is_empty(), "{:?}", st.warnings);
+    assert!(st.polled_roots.is_empty());
+}
+
 /// Diagnostic: what the NTFS journal access does on this machine (run with
 /// `cargo test -p soyuz-index journal_probe -- --ignored --nocapture`).
 #[test]

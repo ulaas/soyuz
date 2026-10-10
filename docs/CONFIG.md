@@ -58,6 +58,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[updates]`](#updates)
 - [`[performance]`](#performance)
 - [`[remote]`](#remote)
+- [`[linux]`](#linux)
 - [`[keys]`](#keys)
 - [`[ai]`](#ai)
 - [`[[ai.profiles]]`](#aiprofiles)
@@ -133,7 +134,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `folder_thumbnails` | boolean | `true` | 2×2 mosaic of the first images inside folders (grid / gallery views). |
 | `video_thumbnails` | boolean | `true` | First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found). |
 | `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
-| `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails Explorer already made (Windows `thumbcache_*.db`, read-only) before decoding a file ourselves. |
+| `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails the system already made (Windows: Explorer's `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`; read-only) before decoding a file ourselves. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |
 | `thumb_disk_cache_mib` | integer | `256` | On-disk thumbnail cache in `thumbs/` (MiB; 0 = off). Thumbnails survive restarts. |
 
@@ -386,7 +387,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `enabled` | boolean | `false` | Build and use the background index. |
 | `roots` | array of strings | `["~"]` | Folders to index; `~` is the home folder. |
-| `exclude` | array of strings | `["node_modules", ".git", ".hg", ".svn", "target", "__pycache__", ".cache", "$REC…` | Names (`node_modules`, `*.tmp`) or path endings (`AppData/Local/Temp`) to skip. |
+| `exclude` | array of strings | `["node_modules", ".git", ".hg", ".svn", "target", "__pycache__", ".cache", "$REC…` | Names (`node_modules`, `*.tmp`) or path endings (`AppData/Local/Temp`) to skip. On Linux and macOS a pattern starting with `/` or `~/` is anchored there (`/proc`, `~/snap`) instead of matching any path ending. |
+| `linux_exclude` | array of strings | `[".local/share/Trash", ".var/app/*/cache", ".local/share/containers", ".local/sh…` | Extra patterns (same syntax as `exclude`) used only on Linux: caches, the trash, container and game stores, and the kernel's pseudo file systems. |
 | `content` | boolean | `false` | Also index the words of small text files (`content:` queries). |
 | `content_max_kib` | integer | `1024` | Largest file whose contents are indexed (KiB). |
 | `content_extensions` | array of strings | `["txt", "md", "markdown", "rst", "org", "log", "csv", "json", "toml", "yaml", "y…` | Extensions whose contents are indexed. |
@@ -394,6 +396,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `throttle_ms` | integer | `2` | Pause after every 1000 crawled entries (ms); higher is gentler on the disk. |
 | `smart_refresh_secs` | integer | `2` | Smart folders refresh at most this often while the index changes (seconds). |
 | `use_for_search` | boolean | `true` | Searches use the index when it covers the folder (off = always walk the disk). |
+| `rescan_interval_secs` | integer | `600` | When a root can't be watched for changes (Linux: the inotify watch limit `fs.inotify.max_user_watches` is used up), re-check its folders this often instead (seconds; only folders whose modification time changed are re-read). |
 
 ## `[preview]`
 
@@ -489,6 +492,16 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `preview_cache_mb` | integer | `512` | Remote files are downloaded for preview / open into a per-user temp cache of at most this size (oldest files are evicted). |
 | `preview_max_mb` | integer | `64` | Larger remote files are not downloaded just for a preview. |
 | `share_enumeration` | boolean | `true` | Typing `\\server` lists its shares (Windows `NetShareEnum`). |
+
+## `[linux]`
+
+`[linux]`: Linux desktop integration. Ignored on Windows and macOS.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `window_backend` | `"auto"` \| `"wayland"` \| `"x11"` | `"auto"` | Display server the window uses (`auto` = Wayland when available, else X11). `x11` runs through XWayland under a Wayland compositor, which makes drag and drop with X11 apps work. Applies at the next start. (`wayland`: Native Wayland; `x11`: X11 (XWayland under a Wayland compositor)) |
+| `own_file_manager1` | boolean | `false` | While Soyuz runs, own `org.freedesktop.FileManager1` on the session bus, so "Show in folder" from browsers and other apps opens Soyuz. |
+| `clipboard_fallback_tools` | boolean | `false` | When the built-in clipboard fails, fall back to running `wl-copy` / `xclip`. |
 
 ## `[keys]`
 

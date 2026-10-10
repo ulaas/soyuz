@@ -47,7 +47,7 @@ extension_badges = true          # extension labels on file icons (grid / galler
 folder_thumbnails = true         # 2x2 mosaic of the first images inside folders
 video_thumbnails = true          # first frame via an `ffmpeg` binary on PATH, when present
 pdf_thumbnails = true            # first page via pdfium.dll (see [preview] pdfium_dir), when present
-os_thumbnail_cache = true        # Windows: reuse Explorer's thumbcache_*.db thumbnails (read-only)
+os_thumbnail_cache = true        # reuse the system's thumbnails (Windows thumbcache_*.db, Linux ~/.cache/thumbnails; read-only)
 icon_pack = ""                   # "" = built-in glyphs | "flat" (built-in) | "<folder in icons/>" with a pack.toml
 thumb_disk_cache_mib = 256       # on-disk thumbnail cache in thumbs/ (0 = off)
 
@@ -197,7 +197,10 @@ exclude = ["node_modules", ".git", ".hg", ".svn", "target", "__pycache__", ".cac
            "System Volume Information", "AppData/Local/Temp", "AppData/Local/Packages",
            "AppData/Local/Microsoft/Windows/INetCache", "AppData/Local/**/Cache", "AppData/Local/**/Code Cache",
            "AppData/Local/**/GPUCache", "AppData/Local/CrashDumps", "AppData/Roaming/**/Cache", "Library/Caches"]
-                                 # a name (node_modules, *.tmp) or a path ending (AppData/Local/Temp)
+                                 # a name (node_modules, *.tmp) or a path ending (AppData/Local/Temp); Linux/macOS: /x or ~/x is anchored
+linux_exclude = [".local/share/Trash", ".var/app/*/cache", ".local/share/containers", ".local/share/Steam",
+                 "~/snap", "/proc", "/sys", "/dev", "/run"]
+                                 # extra exclusions used only on Linux
 content = false                  # index the words of small text files (content: queries)
 content_max_kib = 1024
 content_extensions = ["txt", "md", "markdown", "rst", "org", "log", "csv", "json", "toml", "yaml", "yml", "ini",
@@ -207,6 +210,7 @@ usn_journal = true               # NTFS: catch up via the change journal (needs 
 throttle_ms = 2                  # pause after every 1000 crawled entries
 smart_refresh_secs = 2           # smart folders refresh at most this often while the index changes
 use_for_search = true            # searches inside indexed folders use the index
+rescan_interval_secs = 600       # roots that can't be watched (inotify limit) are re-checked this often
 
 [[search.saved]]                 # SavedSearch entries; `query` uses soyuz_search::SearchQuery fields
 name = "Large videos"
@@ -273,6 +277,10 @@ io_timeout_secs = 60             # give up when a server stops answering mid-ope
 preview_cache_mb = 512           # temp cache for remote files opened / previewed (oldest evicted)
 preview_max_mb = 64              # larger remote files are not downloaded just for a preview
 share_enumeration = true         # typing \\server lists its shares (Windows NetShareEnum)
+[linux]                          # Linux desktop integration (ignored elsewhere)
+window_backend = "auto"          # auto | wayland | x11 (XWayland: drag and drop with X11 apps; next start)
+own_file_manager1 = false        # own org.freedesktop.FileManager1 while running ("Show in folder" opens Soyuz)
+clipboard_fallback_tools = false # run wl-copy / xclip when the built-in clipboard fails
 
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true

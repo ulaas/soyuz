@@ -37,6 +37,7 @@ impl Default for Config {
             updates: Updates::default(),
             performance: Performance::default(),
             remote: RemoteSection::default(),
+            linux: LinuxSection::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),
@@ -295,6 +296,17 @@ impl Default for SearchIndex {
                 "AppData/Roaming/**/Cache",
                 "Library/Caches",
             ]),
+            linux_exclude: s(&[
+                ".local/share/Trash",
+                ".var/app/*/cache",
+                ".local/share/containers",
+                ".local/share/Steam",
+                "~/snap",
+                "/proc",
+                "/sys",
+                "/dev",
+                "/run",
+            ]),
             content: false,
             content_max_kib: 1024,
             content_extensions: s(&[
@@ -306,7 +318,14 @@ impl Default for SearchIndex {
             throttle_ms: 2,
             smart_refresh_secs: 2,
             use_for_search: true,
+            rescan_interval_secs: 600,
         }
+    }
+}
+
+impl Default for LinuxSection {
+    fn default() -> Self {
+        LinuxSection { window_backend: WindowBackend::Auto, own_file_manager1: false, clipboard_fallback_tools: false }
     }
 }
 
@@ -630,6 +649,15 @@ mod tests {
             assert!(km.prefix_conflicts().is_empty(), "{p:?}: {:?}", km.prefix_conflicts());
             assert!(km.bindings.len() > 40);
         }
+    }
+
+    #[test]
+    fn linux_index_exclusions_apply_only_on_linux() {
+        let ix = SearchIndex::default();
+        let eff = ix.effective_exclude();
+        assert!(eff.starts_with(&ix.exclude));
+        assert_eq!(eff.iter().any(|p| p == "/proc"), cfg!(target_os = "linux"));
+        assert!(ix.linux_exclude.iter().all(|p| !ix.exclude.contains(p)));
     }
 
     #[test]

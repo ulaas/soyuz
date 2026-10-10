@@ -216,6 +216,34 @@ pub fn hidden_of(conn: &Connection, path: &Path) -> rusqlite::Result<Option<bool
         .optional()
 }
 
+/// Up to `limit` indexed folders strictly below `root` whose path sorts after `after`
+/// (`""` = from the start), in path order, with their stored modification time.
+pub fn dirs_after(
+    conn: &Connection,
+    root: &Path,
+    after: &str,
+    limit: usize,
+) -> rusqlite::Result<Vec<(String, Option<i64>)>> {
+    let (lo, hi) = sql::descendant_bounds(root);
+    let from = if after.is_empty() || after < lo.as_str() { lo.as_str() } else { after };
+    let mut st = conn.prepare_cached(
+        "SELECT path, mtime FROM files WHERE path > ?1 AND path >= ?2 AND path < ?3 AND kind = ?4 ORDER BY path LIMIT ?5",
+    )?;
+    let rows = st.query_map(params![from, lo, hi, sql::KIND_DIR, limit as i64], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    rows.collect()
+}
+
+/// Indexed direct children of `dir`.
+pub fn children(conn: &Connection, dir: &Path) -> rusqlite::Result<Vec<PathBuf>> {
+    let (lo, hi) = sql::descendant_bounds(dir);
+    let mut st = conn
+        .prepare_cached("SELECT path FROM files WHERE path >= ?1 AND path < ?2 AND instr(substr(path, ?3), ?4) = 0")?;
+    let start = lo.chars().count() as i64 + 1;
+    let sep = std::path::MAIN_SEPARATOR.to_string();
+    let rows = st.query_map(params![lo, hi, start, sep], |r| r.get::<_, String>(0))?;
+    rows.map(|r| r.map(PathBuf::from)).collect()
+}
+
 /// Kind code of an indexed path.
 pub fn kind_of(conn: &Connection, path: &Path) -> rusqlite::Result<Option<i64>> {
     conn.prepare_cached("SELECT kind FROM files WHERE path = ?1")?

@@ -186,6 +186,42 @@ pub fn validate_name_with(name: &str, windows_rules: bool) -> Result<(), NameErr
     Ok(())
 }
 
+/// Whether names on a file system of this type (as `/proc/self/mountinfo` or `statfs`
+/// tools spell it: `vfat`, `exfat`, `ntfs3`, `fuseblk`, `cifs` …) must follow the Windows
+/// rules ([`validate_name_with`]`(name, true)`): FAT, exFAT, NTFS (kernel `ntfs3` or
+/// `ntfs-3g` through FUSE), SMB shares and WSL's `drvfs`. Case-insensitive; a FUSE
+/// subtype (`fuse.ntfs-3g`, `fuseblk.exfat`) is judged by the subtype. Plain `fuseblk`
+/// (no subtype; in practice ntfs-3g or exfat-fuse) counts as Windows-like.
+pub fn fs_needs_windows_names(fs_type: &str) -> bool {
+    let t = fs_type.trim().to_ascii_lowercase();
+    let t = match t.split_once('.') {
+        Some(("fuse" | "fuseblk", sub)) if !sub.is_empty() => sub.to_string(),
+        _ => t,
+    };
+    matches!(
+        t.as_str(),
+        "vfat"
+            | "fat"
+            | "fat12"
+            | "fat16"
+            | "fat32"
+            | "msdos"
+            | "umsdos"
+            | "exfat"
+            | "exfat-fuse"
+            | "ntfs"
+            | "ntfs3"
+            | "ntfs-3g"
+            | "lowntfs-3g"
+            | "fuseblk"
+            | "cifs"
+            | "smb3"
+            | "smbfs"
+            | "smb"
+            | "drvfs"
+    )
+}
+
 fn is_windows_reserved(base: &str) -> bool {
     let upper = base.to_uppercase();
     if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$") {
@@ -411,6 +447,30 @@ mod tests {
         assert_eq!(reveal_controls("a\nb"), "a\u{27E8}U+000A\u{27E9}b");
         assert_eq!(reveal_controls("\u{E0041}"), "\u{27E8}U+E0041\u{27E9}");
         assert_eq!(control_token('\u{200F}'), "\u{27E8}U+200F\u{27E9}");
+    }
+
+    #[test]
+    fn windows_name_rules_by_fs_type() {
+        for t in [
+            "vfat",
+            "VFAT",
+            "msdos",
+            "exfat",
+            "ntfs",
+            "ntfs3",
+            "fuseblk",
+            "fuse.ntfs-3g",
+            "fuseblk.exfat",
+            "cifs",
+            "smb3",
+            " smbfs ",
+            "drvfs",
+        ] {
+            assert!(fs_needs_windows_names(t), "{t}");
+        }
+        for t in ["ext4", "btrfs", "xfs", "tmpfs", "nfs4", "fuse.sshfs", "fuse", "overlay", "zfs", "", "9p"] {
+            assert!(!fs_needs_windows_names(t), "{t}");
+        }
     }
 
     #[test]
