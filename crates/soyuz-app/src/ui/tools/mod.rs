@@ -419,15 +419,21 @@ const WINDOW_IDS: [&str; 6] = ["treemap", "compare", "dupes", "split", "sync_pro
 
 /// A dimmed, full-screen layer right under the tool windows: it takes every click, hover
 /// and wheel event aimed at the panes, so they stay untouched while a tool is open.
+/// While a drag is in flight (an internal payload or files from another app) it lets the
+/// pointer through, so the drag can be dropped on a pane, folder, tab or sidebar row.
 fn backdrop(ctx: &egui::Context) {
     let p = palette(ctx);
     let screen = ctx.content_rect();
+    let dragging = crate::ops::fileops::dnd::payload(ctx).is_some() || ctx.input(|i| !i.raw.hovered_files.is_empty());
     let layer = egui::Area::new(Id::new("soyuz.tools.backdrop"))
         .order(Order::Middle)
         .fixed_pos(screen.min)
+        .interactable(!dragging)
         .show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, Color32::from_black_alpha(if p.dark { 110 } else { 60 }));
-            ui.allocate_rect(screen, Sense::click_and_drag());
+            if !dragging {
+                ui.allocate_rect(screen, Sense::click_and_drag());
+            }
         })
         .response
         .layer_id;
