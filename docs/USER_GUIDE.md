@@ -166,6 +166,12 @@ All from the palette or the context menu:
   .rpm like folders, including split `.7z.001` / `.zip.001` sets; inside a zip, paste to
   add files, Rename and Delete edit the archive, and the original goes to the trash so it
   can be undone).
+- Tool windows (treemap, compare, duplicates, previous versions, split / join, sync
+  profiles) sit over a dimmed main window that ignores clicks and shortcuts until you close
+  them (Esc closes the frontmost one). Result rows in **Compare** (left / right column =
+  that side's copy), **Find duplicates** and **Previous versions** can be dragged onto a
+  pane, folder, tab or sidebar entry behind the tool, or out to the desktop / other apps;
+  previous versions copy by default.
 - **Tags** — eight color labels (`Add tag` actions); the sidebar lists tagged items.
   Tags follow files you rename or move inside Soyuz.
 

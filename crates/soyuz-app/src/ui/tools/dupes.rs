@@ -474,6 +474,7 @@ impl DupesWindow {
             .collect();
         let total: f32 = heights.iter().sum();
         let cfg = app.config.general.clone();
+        let drag_default = app.config.behaviour.drag_default;
         let roots = self.roots.clone();
         let mut reveal = None;
         ScrollArea::vertical().id_salt("dupes.list").max_height(height).auto_shrink([false, false]).show_viewport(
@@ -580,7 +581,7 @@ impl DupesWindow {
                     for fi in 0..g.files.len() {
                         let rr =
                             Rect::from_min_size(pos2(card.left(), hr.bottom() + fi as f32 * row_h), vec2(width, row_h));
-                        let resp = ui.interact(rr, ui.id().with(("dupes.r", gi, fi)), Sense::click());
+                        let resp = ui.interact(rr, ui.id().with(("dupes.r", gi, fi)), Sense::click_and_drag());
                         if resp.hovered() {
                             ui.painter().rect_filled(
                                 rr.shrink2(vec2(4.0, 1.0)),
@@ -655,6 +656,7 @@ impl DupesWindow {
                         if resp.double_clicked() {
                             reveal = Some(e.path.clone());
                         }
+                        super::drag_source(&resp, drag_default, || vec![e.path.clone()]);
                         let path = e.path.clone();
                         crate::ui::native::popup::context_menu(
                             &resp.on_hover_text(tr!("tools-dupes-row-tip", path = path.display().to_string())),

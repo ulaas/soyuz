@@ -42,6 +42,8 @@
 //!   `save <name>`, `open <n>`, `layout single|dual|stacked|quad`, `sync`, `tear <tab>`,
 //!   `move <tab> <window>`, `close <window>`, `merge`, `select <tab>`;
 //! * `click:<x>,<y>[,right]` — synthetic egui click at a point of the main window;
+//!   `press:<x>,<y>` / `move:<x>,<y>` / `release:<x>,<y>` — its parts, chained for a
+//!   synthetic drag (`press:300,140;move:320,150;move:900,400;release:900,400`);
 //! * `native:list` / `native:move <x>,<y>` / `native:moveby <dx>,<dy>` — native dialog / popup
 //!   windows (`ui::native`): log their handles and rects, move the dialog (physical pixels);
 //!   `keys:` goes to the newest native window while one is open;
@@ -350,7 +352,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "ai" => crate::ai::state::script(app, ctx, arg),
             "native" => crate::ui::native::devscript(ctx, arg),
-            "click" | "press" | "release" => {
+            "click" | "press" | "move" | "release" => {
                 // `click:<x>,<y>[,right]` — synthetic egui pointer click (points), spread
                 // over three frames (move, press, release) like a real one.
                 let parts: Vec<&str> = arg.split(',').map(str::trim).collect();
@@ -369,6 +371,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                             app.devscript.steps.push_front(format!("press:{arg}"));
                         }
                         "press" => app.devscript.raw.push(ev(true)),
+                        "move" => app.devscript.raw.push(egui::Event::PointerMoved(pos)),
                         _ => app.devscript.raw.push(ev(false)),
                     }
                 }

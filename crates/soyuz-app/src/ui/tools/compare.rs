@@ -1056,6 +1056,9 @@ impl CompareWindow {
             Stroke::new(1.0, p.border_subtle),
         );
         let cfg = &app.config.general;
+        let drag_default = app.config.behaviour.drag_default;
+        // The folders the rows are relative to.
+        let bases = self.compared.clone();
         let two_way = self.two_way.is_some();
         let mut changed = false;
         let mut hovered = None;
@@ -1066,8 +1069,24 @@ impl CompareWindow {
             |ui, range| {
                 for k in range {
                     let i = vis[k];
-                    let (r, resp) = ui.allocate_exact_size(vec2(width, row_h), Sense::hover());
+                    let (r, resp) = ui.allocate_exact_size(vec2(width, row_h), Sense::drag());
                     let row = &self.rows[i];
+                    // Dragging the left / right column takes that side's copy; the name
+                    // column takes the left one when it exists.
+                    if let Some((lb, rb)) = &bases {
+                        super::drag_source(&resp, drag_default, || {
+                            let x = ui.input(|i| i.pointer.press_origin()).map_or(r.center().x, |p| p.x);
+                            let left = if x < r.left() + meta_w {
+                                true
+                            } else if x > r.right() - meta_w {
+                                false
+                            } else {
+                                row.left.is_some()
+                            };
+                            let (side, base) = if left { (&row.left, lb) } else { (&row.right, rb) };
+                            side.as_ref().map(|_| vec![base.join(&row.rel)]).unwrap_or_default()
+                        });
+                    }
                     let painter = ui.painter();
                     if resp.hovered() {
                         hovered = Some(i);

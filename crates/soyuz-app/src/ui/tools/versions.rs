@@ -14,6 +14,7 @@ use std::time::SystemTime;
 
 use crossbeam_channel::{Receiver, bounded};
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Ui, pos2, vec2};
+use soyuz_core::config::DragDefault;
 use soyuz_core::{DateFormat, SizeStyle, format_size, format_time};
 use soyuz_fs::snapshots::{PathVersion, VersionOptions, VersionsReport};
 use soyuz_jobs::JobKind;
@@ -91,11 +92,15 @@ pub struct VersionsPanel {
     selected: Option<usize>,
     compare: Option<(usize, Option<Receiver<Comparison>>, Option<Comparison>)>,
     current: Option<(u64, Option<SystemTime>)>,
+    /// Rows can be dragged out (copy by default: snapshots are read-only). Only in the
+    /// tool window, which shares the main window; the Properties tab is its own OS window.
+    drag: bool,
 }
 
 impl VersionsPanel {
     pub fn new(path: PathBuf, is_dir: bool, current: Option<(u64, Option<SystemTime>)>) -> Self {
-        let mut p = VersionsPanel { path, is_dir, rx: None, report: None, selected: None, compare: None, current };
+        let mut p =
+            VersionsPanel { path, is_dir, rx: None, report: None, selected: None, compare: None, current, drag: false };
         p.refresh();
         p
     }
@@ -217,7 +222,11 @@ impl VersionsPanel {
             .show_rows(ui, row_h, report.versions.len(), |ui, range| {
                 for i in range {
                     let v = &report.versions[i];
-                    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
+                    let sense = if self.drag { Sense::click_and_drag() } else { Sense::click() };
+                    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), sense);
+                    if self.drag {
+                        super::drag_source(&resp, DragDefault::Copy, || vec![v.path.clone()]);
+                    }
                     let sel = self.selected == Some(i);
                     if sel {
                         ui.painter().rect_filled(r, CornerRadius::same(6), p.accent.gamma_multiply(0.16));
@@ -465,7 +474,9 @@ pub struct VersionsWindow {
 impl VersionsWindow {
     pub fn new(path: PathBuf, is_dir: bool, current: Option<(u64, Option<SystemTime>)>) -> Self {
         let title = soyuz_core::entry::display_name(&path);
-        VersionsWindow { open: true, title, panel: VersionsPanel::new(path, is_dir, current) }
+        let mut panel = VersionsPanel::new(path, is_dir, current);
+        panel.drag = true;
+        VersionsWindow { open: true, title, panel }
     }
 
     pub fn path(&self) -> &Path {

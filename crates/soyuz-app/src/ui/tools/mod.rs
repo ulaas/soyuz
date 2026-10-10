@@ -32,10 +32,11 @@ use egui::{
     Vec2, pos2, vec2,
 };
 use soyuz_core::Location;
-use soyuz_core::config::Action;
+use soyuz_core::config::{Action, DragDefault};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::ops::fileops::dnd;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
@@ -424,7 +425,7 @@ const WINDOW_IDS: [&str; 6] = ["treemap", "compare", "dupes", "split", "sync_pro
 fn backdrop(ctx: &egui::Context) {
     let p = palette(ctx);
     let screen = ctx.content_rect();
-    let dragging = crate::ops::fileops::dnd::payload(ctx).is_some() || ctx.input(|i| !i.raw.hovered_files.is_empty());
+    let dragging = dnd::payload(ctx).is_some() || ctx.input(|i| !i.raw.hovered_files.is_empty());
     let layer = egui::Area::new(Id::new("soyuz.tools.backdrop"))
         .order(Order::Middle)
         .fixed_pos(screen.min)
@@ -517,6 +518,19 @@ fn restore(slot: &mut Tools, t: Tools) {
 
 // ---------------------------------------------------------------------------------------
 // Shared chrome.
+
+/// Let a tool's result row start an internal drag: it can be dropped on a pane, folder,
+/// tab or sidebar row behind the tool window (the backdrop lets drags through), or out of
+/// the window onto the desktop / another app (drag-out). `paths` runs only when the drag
+/// starts. The row needs a drag sense (`Sense::click_and_drag()` / `Sense::drag()`).
+pub fn drag_source(resp: &egui::Response, default: DragDefault, paths: impl FnOnce() -> Vec<PathBuf>) {
+    if resp.drag_started() && dnd::payload(&resp.ctx).is_none() {
+        let paths = paths();
+        if !paths.is_empty() {
+            egui::DragAndDrop::set_payload(&resp.ctx, dnd::DragPayload { paths, source_pane: None, default });
+        }
+    }
+}
 
 /// A tool window: rounded surface, custom header (icon, title, subtitle, close button),
 /// resizable, constrained to the screen. Returns `false` when the user closed it.
