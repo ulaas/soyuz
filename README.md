@@ -5,7 +5,7 @@
 <h1 align="center">Soyuz</h1>
 
 <p align="center">
-  <b>A keyboard-first file explorer that never freezes.</b><br>
+  <b>A keyboard-first file explorer.</b><br>
   Written in Rust with <a href="https://github.com/emilk/egui">egui</a>. One TOML file configures everything.
 </p>
 

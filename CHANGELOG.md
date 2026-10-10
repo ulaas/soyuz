@@ -81,7 +81,7 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - fix: hardening fixes (git hardening, terminal control chars, command quoting, preview hardening, store backups, close confirmation, open-with, new window, flat view, settings wired) (3fac50e)
 - security: OSC 52 consent, strip special bits, decompression-bomb limits, reveal hidden bidi chars in names, pin toolchain (311b1bc)
 - fix(app): draw the terminal OSC 52 clipboard consent prompt; add policy/preview tests (e095fe9)
-- fix(app): empty-state classifier (protected system files ≠ hidden), Name column fills/never freezes wide, slick constant-height toasts with hover details (c86ee3e)
+- fix(app): empty-state classifier (protected system files ≠ hidden), Name column fills wide, slick constant-height toasts with hover details (c86ee3e)
 - fix: watcher dropped events under load (debouncer file-id cache) — no cache, re-arm silent watches, relist panes after jobs, manual refresh always relists (0fa3443)
 - fix(app): remove startup placeholder and CPU first frame; maximize hidden window before first show — single window launch (c5afed1)
 - fix(app): Quick Look and tool windows are modal — panes beneath get no clicks, hover, wheel or shortcuts; Esc closes the frontmost tool window (a300a1b)
