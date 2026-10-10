@@ -87,3 +87,7 @@ harness = false
 
 [lints]
 workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus.workspace = true
+skrifa.workspace = true
