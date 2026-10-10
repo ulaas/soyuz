@@ -18,7 +18,7 @@
   Maximum width of the committed PNGs (default 1600).
 
 .PARAMETER Only
-  Run only the sessions whose names match (main, activity, ai, treemap, compare).
+  Run only the sessions whose names match (main, activity, treemap).
 
 .EXAMPLE
   ./scripts/screenshots.ps1
@@ -67,7 +67,7 @@ function D([string]$rel) { if ($rel) { Join-Path $Demo $rel } else { $Demo } }
 
 function Write-Config([string]$extra = '') {
     $cfg = @"
-schema = 1
+schema = 2
 
 [general]
 start_location = $(Q $Demo)
@@ -83,9 +83,20 @@ restore_session = true
 auto_open_activity = true
 
 [sidebar]
-# The drive and cloud sections would show this machine's volume labels.
+# No devices / cloud sections: they would list this machine's drives (SOYUZ_DEMO_MASK also
+# genericizes volume labels and sizes wherever a volume still shows, e.g. the breadcrumb).
 mode = "places"
-sections = ["favorites", "smart", "tags", "trash"]
+sections = ["favorites", "portal", "tags", "smart", "trash"]
+
+[[sidebar.portal]]
+path = $(Q (D 'Projects\orbit-tracker'))
+
+[[sidebar.portal]]
+path = $(Q (D 'Photos\2026 Summer trip'))
+name = "Summer trip"
+
+[[sidebar.portal]]
+path = $(Q (D 'Documents\Reports'))
 
 [terminal]
 shell = "cmd.exe"
@@ -127,6 +138,7 @@ function Invoke-Session([string]$name, [string[]]$steps, [hashtable]$envs = @{})
     $psi.WorkingDirectory = $exeDir
     $psi.Environment['SOYUZ_SCRIPT'] = $script
     $psi.Environment["RUST_LOG"] = "info,wgpu_core=warn,wgpu_hal=warn,naga=warn"
+    $psi.Environment["SOYUZ_DEMO_MASK"] = "1"
     foreach ($k in $envs.Keys) { $psi.Environment[$k] = $envs[$k] }
     $p = [System.Diagnostics.Process]::Start($psi)
     $errTask = $p.StandardError.ReadToEndAsync()
@@ -149,7 +161,7 @@ function Shot([string]$file) { "wait:300"; "shot:{raw}\$file" }
 New-Item -ItemType Directory -Path $data | Out-Null
 New-Item -ItemType File -Path $marker | Out-Null
 try {
-    # ---- Main tour: views, panes, preview, terminal, palette, settings, editors, themes, Turkish.
+    # ---- Main tour: the screenshots used by the website and the README.
     Write-Config
     Write-Session @(
         , @('Photos')
@@ -160,63 +172,31 @@ try {
     )
     Invoke-Session 'main' (@(
             'size:1600x1000', 'wait:2500'
-            'select:Sunset over the bay.jpg', 'toggle_preview_pane', 'wait:2000') + (Shot '01-details-preview.png') + @(
-            'toggle_preview_pane', 'view_grid', 'wait:2500') + (Shot '02-grid-thumbnails.png') + @(
-            'view_gallery', 'select:Alpine lake.jpg', 'wait:2000') + (Shot '03-gallery.png') + @(
-            'view_details', 'select:Northern lights.jpg', 'quick_look', 'wait:1500') + (Shot '04-quick-look.png') + @(
+            'select:Sunset over the bay.jpg', 'toggle_preview_pane', 'wait:2000') + (Shot 'hero.png') + @(
+            'toggle_preview_pane'
+            'select:Northern lights.jpg', 'quick_look', 'wait:1500') + (Shot 'quick-look.png') + @(
             'keys:{Escape}', 'wait:400'
-            'select_tab:2', 'wait:1500') + (Shot '05-dual-pane.png') + @(
-            'select_tab:3', 'wait:1200', 'select:README.md', 'toggle_terminal', 'wait:3000') + (Shot '06-terminal.png') + @(
+            'select_tab:2', 'wait:1500') + (Shot 'dual-pane.png') + @(
+            'select_tab:3', 'wait:1200', 'select:README.md', 'toggle_terminal', 'wait:3000') + (Shot 'terminal.png') + @(
             'toggle_terminal', 'focus_list', 'wait:300'
-            "cd:$(D 'Projects\orbit-tracker\src')", 'wait:1200', 'select:orbit.rs', 'toggle_preview_pane', 'wait:1500') + (Shot '07-code-preview.png') + @(
-            'toggle_preview_pane'
-            "cd:$(D 'Projects\website\assets\icons\svg')", 'wait:1200', 'select:rocket.svg', 'view_miller', 'wait:1500') + (Shot '08-miller-columns.png') + @(
-            'view_details'
-            'select_tab:4', 'wait:1000', 'select:Engine rumble.wav', 'toggle_preview_pane', 'wait:2500') + (Shot '09-audio-preview.png') + @(
-            'toggle_preview_pane'
-            'select_tab:1', 'wait:500', 'command_palette', 'wait:300', 'keys:copy', 'wait:800') + (Shot '10-command-palette.png') + @(
+            'select_tab:1', 'wait:500', 'command_palette', 'wait:300', 'keys:copy', 'wait:800') + (Shot 'palette.png') + @(
             # The first Esc clears the query, the second closes the palette.
             'keys:{Escape}', 'wait:200', 'keys:{Escape}', 'wait:300', 'expect:palette=closed'
-            'settings:appearance', 'wait:1200') + (Shot '11-settings-appearance.png') + @(
-            'settings:keyboard', 'wait:800') + (Shot '12-settings-keyboard.png') + @(
-            'settings:close', 'wait:400'
-            "edit:$(D 'Projects\orbit-tracker\src\orbit.rs')", 'wait:1500') + (Shot '13-text-editor.png') + @(
-            'toggle_editor_panel', 'wait:300'
-            'select_tab:2', 'wait:600', 'ws:layout quad', 'wait:1500') + (Shot '14-quad-layout.png') + @(
-            'ws:layout dual', 'wait:600'
-            'select_tab:5', 'theme:light', 'wait:1200') + (Shot '15-light-theme.png') + @(
-            'theme:dark', 'config:appearance.color_theme="nord"', 'select_tab:1', 'view_grid', 'wait:1500') + (Shot '16-nord-theme.png') + @(
-            'config:appearance.color_theme="rose-pine"', 'theme:light', 'select_tab:3', 'select:orbit.rs', 'toggle_preview_pane', 'wait:1500') + (Shot '17-rose-pine-light.png') + @(
-            'toggle_preview_pane', 'config:appearance.color_theme="orbit"', 'theme:dark'
-            'config:general.language="tr-TR"', 'wait:800', 'select_tab:5', 'wait:800') + (Shot '18-turkish-ui.png') + @(
-            'command_palette', 'wait:300', 'keys:kopyala', 'wait:800') + (Shot '19-turkish-palette.png') + @(
-            'keys:{Escape}', 'wait:300', 'quit')) @{}
+            'view_grid', 'theme:light', 'wait:2500') + (Shot 'light-grid.png') + @(
+            'view_details', 'theme:dark', 'quit')) @{}
 
     # ---- A copy job in flight (throttled) with the activity panel.
     Write-Config
     Write-Session @(, @('Downloads', 'Archive'))
     Invoke-Session 'activity' (@(
-            'size:1600x1000', 'wait:2500', 'select:Telemetry dump.dat', 'copy_to_other_pane', 'wait:4500') + (Shot '20-activity-copy.png') + @(
+            'size:1600x1000', 'wait:2500', 'select:Telemetry dump.dat', 'copy_to_other_pane', 'wait:4500') + (Shot 'jobs.png') + @(
             'jobs_cancel_all', 'wait:1500', 'quit')) @{ SOYUZ_THROTTLE_MBPS = '6' }
-
-    # ---- The assistant with the scripted fake provider: a plan card waiting for approval.
-    Write-Config "`n[ai.scope]`nallowed_roots = [$(Q $Demo)]"
-    Write-Session @(, @('Photos\2026 Summer trip'))
-    Invoke-Session 'ai' (@(
-            'size:1600x1000', 'wait:2500', 'ai:Tidy up this folder', 'wait:5000') + (Shot '21-ai-plan.png') + @(
-            'ai:!smart photos from last summer larger than 5 MB', 'wait:1200') + (Shot '22-ai-smart-search.png') + @(
-            'quit')) @{ SOYUZ_AI_FAKE = (Join-Path $PSScriptRoot 'demo\assistant.toml') }
 
     # ---- Tools opened at startup (without the big job file, which would fill the treemap).
     Remove-Item -LiteralPath (D 'Downloads\Telemetry dump.dat') -Force -ErrorAction SilentlyContinue
     Write-Config
     Write-Session @(, @(''))
-    Invoke-Session 'treemap' (@('size:1600x1000', 'wait:4000') + (Shot '23-treemap.png') + @('quit')) @{ SOYUZ_OPEN_TOOL = "treemap=$Demo" }
-    Write-Config
-    Write-Session @(, @('Documents\Reports', 'Archive\Reports'))
-    Invoke-Session 'compare' (@('size:1600x1000', 'wait:4000') + (Shot '24-folder-compare.png') + @('quit')) @{
-        SOYUZ_OPEN_TOOL = "compare=$(D 'Documents\Reports')|$(D 'Archive\Reports')"
-    }
+    Invoke-Session 'treemap' (@('size:1600x1000', 'wait:4000') + (Shot 'treemap.png') + @('quit')) @{ SOYUZ_OPEN_TOOL = "treemap=$Demo" }
 
     # ---- Downscale into the output folder (replacing the previous screenshots).
     if ((Get-ChildItem -LiteralPath $raw -Filter *.png).Count -gt 0 -and $Only.Count -eq 0) {
