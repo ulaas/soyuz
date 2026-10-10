@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for software centers (GNOME Software, KDE Discover).
+     Installed as share/metainfo/io.github.ulaas.Soyuz.metainfo.xml by scripts/package.sh
+     and installer/linux/soyuz.spec. The window app_id and the desktop file stay `soyuz`
+     (crates/soyuz-app/src/main.rs), hence the explicit <launchable>. -->
+<component type="desktop-application">
+  <id>io.github.ulaas.Soyuz</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>Soyuz</name>
+  <summary>Keyboard-first file manager that never blocks</summary>
+  <developer id="io.github.ulaas">
+    <name>The Soyuz contributors</name>
+  </developer>
+
+  <description>
+    <p>
+      Soyuz is a file manager built around one promise: the window never stops responding.
+      Every copy, move, delete, extract or checksum runs as a background job with real
+      progress, pause, resume and cancel, conflict handling, history and undo.
+    </p>
+    <ul>
+      <li>Tabs, dual panes and workspaces, all driven from the keyboard and a command palette</li>
+      <li>Background jobs with undo; deletes go to the trash first</li>
+      <li>Previews for images, text, code, audio and archives, plus Quick Look</li>
+      <li>Streaming search, folder sizes, a treemap, duplicate finder and folder compare</li>
+      <li>Browse and create zip, tar and 7z archives</li>
+      <li>An embedded terminal and remote locations over SFTP, WebDAV, FTP and S3</li>
+      <li>One TOML file configures everything, editable from the Settings window</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">soyuz.desktop</launchable>
+  <provides>
+    <binary>soyuz</binary>
+    <id>soyuz.desktop</id>
+  </provides>
+
+  <url type="homepage">https://ulaas.github.io/soyuz/</url>
+  <url type="bugtracker">https://github.com/ulaas/soyuz/issues</url>
+  <url type="vcs-browser">https://github.com/ulaas/soyuz</url>
+
+  <categories>
+    <category>System</category>
+    <category>FileTools</category>
+    <category>FileManager</category>
+  </categories>
+  <keywords>
+    <keyword>files</keyword>
+    <keyword>folders</keyword>
+    <keyword>explorer</keyword>
+    <keyword>file manager</keyword>
+  </keywords>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>A folder in details view with the preview pane</caption>
+      <image>https://ulaas.github.io/soyuz/assets/shots/hero.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Dual pane with a folder comparison</caption>
+      <image>https://ulaas.github.io/soyuz/assets/shots/dual-pane.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>A copy job running in the activity panel</caption>
+      <image>https://ulaas.github.io/soyuz/assets/shots/jobs.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>The command palette</caption>
+      <image>https://ulaas.github.io/soyuz/assets/shots/palette.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Folder sizes as a treemap</caption>
+      <image>https://ulaas.github.io/soyuz/assets/shots/treemap.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1"/>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <releases>
+    <release version="0.1.0" date="2026-10-11" type="development">
+      <description>
+        <p>First public build. Linux packages are new and less tested than the Windows build.</p>
+      </description>
+    </release>
+  </releases>
+</component>
