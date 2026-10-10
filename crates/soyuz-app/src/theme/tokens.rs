@@ -228,6 +228,50 @@ impl Palette {
         if lum > 165.0 { hex(0x10131A) } else { Color32::WHITE }
     }
 
+    /// High-contrast palettes (borders at ≥ 3:1 against the window) keep outlines on
+    /// controls that are otherwise borderless (toolbar fields, tabs).
+    pub fn high_contrast(&self) -> bool {
+        contrast(self.border_subtle, self.bg_window) >= 3.0
+    }
+
+    /// Fills of the borderless toolbar rail (omnibar, filter, icon buttons), derived
+    /// from the palette so every theme gets them. The fields rest on `bg.surface1`.
+    pub fn rail(&self, state: Rail) -> Color32 {
+        let field = self.bg_surface1;
+        match state {
+            Rail::Field => field,
+            Rail::FieldHover => mix(field, self.text_primary, 0.045),
+            Rail::FieldFocus => mix(field, self.accent, if self.dark { 0.13 } else { 0.07 }),
+            Rail::ButtonHover => mix(self.bg_window, self.text_primary, if self.dark { 0.07 } else { 0.055 }),
+            Rail::ButtonPressed => mix(self.bg_window, self.text_primary, if self.dark { 0.12 } else { 0.10 }),
+            Rail::ButtonFocus => mix(self.bg_window, self.accent, if self.dark { 0.28 } else { 0.18 }),
+        }
+    }
+
+    /// The recessed ("engraved") well of the active tab and its edge shades: `(fill,
+    /// inner shadow along the top, highlight along the bottom)`.
+    pub fn tab_well(&self) -> (Color32, Color32, Color32) {
+        if self.dark {
+            (mix(self.bg_window, Color32::BLACK, 0.32), Color32::from_black_alpha(150), Color32::from_white_alpha(14))
+        } else {
+            (
+                mix(self.bg_window, self.text_primary, 0.065),
+                Color32::from_black_alpha(34),
+                Color32::from_white_alpha(200),
+            )
+        }
+    }
+
+    /// Hover fill of an inactive tab.
+    pub fn tab_hover(&self) -> Color32 {
+        mix(self.bg_window, self.text_primary, if self.dark { 0.05 } else { 0.04 })
+    }
+
+    /// The slanted separators between inactive tabs.
+    pub fn tab_separator(&self) -> Color32 {
+        if self.high_contrast() { self.border_subtle } else { self.border_strong }
+    }
+
     /// A token by name (`bg.window`, `tag.red`, …), as accepted by [`Self::apply_overrides`].
     pub fn token(&self, token: &str) -> Option<Color32> {
         self.clone().slot_mut(token).map(|c| *c)
@@ -294,6 +338,44 @@ impl Palette {
             _ => return None,
         })
     }
+}
+
+/// States of a borderless toolbar-rail control ([`Palette::rail`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Rail {
+    /// Omnibar / filter field at rest.
+    Field,
+    FieldHover,
+    /// Editing / keyboard focus: a soft accent tint.
+    FieldFocus,
+    ButtonHover,
+    ButtonPressed,
+    /// Keyboard focus on an icon button: a stronger accent tint (replaces the ring).
+    ButtonFocus,
+}
+
+/// `a` blended toward `b` by `t` (0..=1), alpha included (premultiplied space).
+pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let l = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round() as u8;
+    let (a, b) = (a.to_array(), b.to_array());
+    // Keep `a`'s alpha so translucent (Mica) fills stay translucent.
+    let alpha = a[3];
+    let scale = |c: u8| if b[3] == 0 { 0 } else { (u16::from(c) * u16::from(alpha) / u16::from(b[3])) as u8 };
+    Color32::from_rgba_premultiplied(l(a[0], scale(b[0])), l(a[1], scale(b[1])), l(a[2], scale(b[2])), alpha)
+}
+
+/// WCAG contrast ratio of two opaque colors.
+pub fn contrast(a: Color32, b: Color32) -> f32 {
+    fn lum(c: Color32) -> f32 {
+        let f = |v: u8| {
+            let v = f32::from(v) / 255.0;
+            if v <= 0.03928 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * f(c.r()) + 0.7152 * f(c.g()) + 0.0722 * f(c.b())
+    }
+    let (x, y) = (lum(a), lum(b));
+    (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
 
 /// Hover and subtle (selection fill) shades of an accent color.
@@ -492,6 +574,24 @@ mod tests {
         assert_ne!(d.on_accent(), Color32::WHITE, "light accents get dark text");
         d.radius_scale = 1.5;
         assert_eq!(d.radius(radius::ROW), 9);
+    }
+
+    #[test]
+    fn rail_and_tab_shades() {
+        assert_eq!(mix(Color32::BLACK, Color32::WHITE, 0.0), Color32::BLACK);
+        assert_eq!(mix(Color32::BLACK, Color32::WHITE, 1.0), Color32::WHITE);
+        let half = mix(Color32::BLACK.gamma_multiply(0.5), Color32::WHITE, 1.0);
+        assert_eq!(half.a(), Color32::BLACK.gamma_multiply(0.5).a(), "keeps the base alpha (Mica)");
+        assert!(ORBIT_HC_DARK.high_contrast() && ORBIT_HC_LIGHT.high_contrast());
+        assert!(!ORBIT_DARK.high_contrast() && !ORBIT_LIGHT.high_contrast());
+        for p in [&ORBIT_DARK, &ORBIT_LIGHT] {
+            let field = p.rail(Rail::Field);
+            for s in [Rail::FieldHover, Rail::FieldFocus] {
+                assert_ne!(p.rail(s), field, "{s:?} differs from rest");
+            }
+            assert_ne!(p.rail(Rail::ButtonFocus), p.rail(Rail::ButtonHover), "focus is not just hover");
+            assert_ne!(p.tab_well().0, p.bg_window, "the active tab is recessed");
+        }
     }
 
     #[test]
