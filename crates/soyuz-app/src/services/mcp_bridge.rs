@@ -278,7 +278,7 @@ pub struct McpBridge {
     /// Plan cards of MCP requests (shared with the modal card dialog).
     pub approvals: Arc<Mutex<McpApprovals>>,
     /// A modal card is open (`approval_ui = "dialog"`).
-    modal_open: Arc<AtomicBool>,
+    pub(crate) modal_open: Arc<AtomicBool>,
     pub status: BridgeStatus,
     disabled: bool,
 }
@@ -443,8 +443,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
                 && !app.services.mcp.modal_open.load(Ordering::SeqCst)
             {
                 app.services.mcp.modal_open.store(true, Ordering::SeqCst);
-                let flag = app.services.mcp.modal_open.clone();
-                app.ui.dialogs.push(crate::ui::dialogs::mcp_approval::McpApprovalDialog::new(id, approvals, flag));
+                app.frontend.push(crate::models::frontend::FrontendCmd::McpApproval(id));
             }
         }
     }

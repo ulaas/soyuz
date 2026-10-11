@@ -8,7 +8,6 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
 use egui::{
     Align2, Area, CornerRadius, DragAndDrop, FontId, Frame, Id, Margin, Order, Panel, Rect, ScrollArea, Sense, Stroke,
     StrokeKind, Ui, pos2, vec2,
@@ -26,18 +25,11 @@ use crate::theme::{icons, icons::ph, palette};
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_button, menu_item, trunc_galley};
 
-pub struct ShelfItem {
-    pub path: PathBuf,
-    pub entry: Option<EntryInfo>,
-    pub missing: bool,
-}
+pub use crate::models::tools::{ShelfData, ShelfItem};
 
+/// The shelf panel's view state (the items live in [`ShelfData`]).
 pub struct Shelf {
-    pub open: bool,
-    pub items: Vec<ShelfItem>,
     selected: BTreeSet<usize>,
-    stat_tx: Sender<(PathBuf, Option<EntryInfo>)>,
-    stat_rx: Receiver<(PathBuf, Option<EntryInfo>)>,
     /// Panel rect of the last frame (OS drops are matched against it).
     last_rect: Option<Rect>,
     /// Items are re-checked periodically while the shelf is open (moved / deleted).
@@ -47,80 +39,14 @@ pub struct Shelf {
 
 impl Default for Shelf {
     fn default() -> Self {
-        let (stat_tx, stat_rx) = unbounded();
-        Shelf {
-            open: false,
-            items: Vec::new(),
-            selected: BTreeSet::new(),
-            stat_tx,
-            stat_rx,
-            last_rect: None,
-            width: 250.0,
-            last_check: std::time::Instant::now(),
-        }
+        Shelf { selected: BTreeSet::new(), last_rect: None, width: 250.0, last_check: std::time::Instant::now() }
     }
 }
 
 impl Shelf {
-    /// Add paths (duplicates ignored) and stat them in the background.
-    pub fn add(&mut self, paths: Vec<PathBuf>) {
-        let fresh: Vec<PathBuf> =
-            paths.into_iter().filter(|p| !self.items.iter().any(|i| &i.path == p)).collect::<Vec<_>>();
-        if fresh.is_empty() {
-            return;
-        }
-        for p in &fresh {
-            self.items.push(ShelfItem { path: p.clone(), entry: None, missing: false });
-        }
-        self.stat(fresh);
-    }
-
-    /// Stat `paths` on a worker; results arrive through `poll`.
-    fn stat(&self, fresh: Vec<PathBuf>) {
-        let tx = self.stat_tx.clone();
-        let wake = super::wake();
-        let _ = std::thread::Builder::new().name("soyuz-shelf-stat".into()).spawn(move || {
-            for p in fresh {
-                let e = soyuz_fs::stat(&p, false).ok();
-                if tx.send((p, e)).is_err() {
-                    break;
-                }
-            }
-            wake();
-        });
-    }
-
-    fn poll(&mut self) {
-        for (p, e) in self.stat_rx.try_iter() {
-            if let Some(item) = self.items.iter_mut().find(|i| i.path == p) {
-                item.missing = e.is_none();
-                item.entry = e;
-            }
-        }
-    }
-
-    fn remove(&mut self, idx: &BTreeSet<usize>) {
-        let mut i = 0;
-        self.items.retain(|_| {
-            let keep = !idx.contains(&i);
-            i += 1;
-            keep
-        });
-        self.selected.clear();
-    }
-
-    /// Paths an action applies to: the selection, else everything.
-    fn targets(&self) -> Vec<PathBuf> {
-        if self.selected.is_empty() {
-            self.items.iter().filter(|i| !i.missing).map(|i| i.path.clone()).collect()
-        } else {
-            self.selected.iter().filter_map(|&i| self.items.get(i)).map(|i| i.path.clone()).collect()
-        }
-    }
-
     /// OS file drops over the shelf are collected instead of being copied into a pane.
-    pub fn external_drops(&mut self, ctx: &egui::Context) {
-        let Some(rect) = self.last_rect.filter(|_| self.open) else { return };
+    pub fn external_drops(&mut self, ctx: &egui::Context, d: &mut ShelfData) {
+        let Some(rect) = self.last_rect.filter(|_| d.open) else { return };
         let over = ctx.input(|i| i.pointer.latest_pos()).is_some_and(|p| rect.contains(p));
         if !over {
             return;
@@ -130,23 +56,19 @@ impl Shelf {
         });
         if !dropped.is_empty() {
             ctx.input_mut(|i| i.raw.dropped_files.clear());
-            self.add(dropped);
+            d.add(dropped);
         }
     }
 
-    pub fn show(&mut self, root: &mut Ui, app: &mut SoyuzApp) {
-        self.poll();
+    pub fn show(&mut self, root: &mut Ui, app: &mut SoyuzApp, d: &mut ShelfData) {
+        d.poll();
         let focused = root.ctx().input(|i| i.focused);
-        if self.open
-            && focused
-            && !self.items.is_empty()
-            && self.last_check.elapsed() > std::time::Duration::from_secs(2)
-        {
+        if d.open && focused && !d.items.is_empty() && self.last_check.elapsed() > std::time::Duration::from_secs(2) {
             self.last_check = std::time::Instant::now();
-            self.stat(self.items.iter().map(|i| i.path.clone()).collect());
+            d.stat(d.items.iter().map(|i| i.path.clone()).collect());
             root.ctx().request_repaint_after(std::time::Duration::from_secs(2));
         }
-        if !self.open {
+        if !d.open {
             self.last_rect = None;
             return;
         }
@@ -173,7 +95,7 @@ impl Shelf {
                     StrokeKind::Inside,
                 );
                 ui.allocate_rect(card, Sense::hover());
-                self.contents(ui, card, app, dest.clone(), drag_default);
+                self.contents(ui, card, app, d, dest.clone(), drag_default);
                 card
             });
         self.width = resp.response.rect.width();
@@ -187,6 +109,7 @@ impl Shelf {
         ui: &mut Ui,
         card: Rect,
         app: &mut SoyuzApp,
+        d: &mut ShelfData,
         dest: Option<PathBuf>,
         drag_default: DragDefault,
     ) {
@@ -207,11 +130,11 @@ impl Shelf {
             crate::ui::views::flow::semibold(13.5),
             p.text_primary,
         );
-        if !self.items.is_empty() {
+        if !d.items.is_empty() {
             ui.painter().text(
                 pos2(hr.left() + 80.0, hr.center().y),
                 Align2::LEFT_CENTER,
-                self.items.len().to_string(),
+                d.items.len().to_string(),
                 FontId::proportional(11.5),
                 p.text_tertiary,
             );
@@ -219,12 +142,12 @@ impl Shelf {
         let close = Rect::from_center_size(pos2(hr.right() - 20.0, hr.center().y), vec2(30.0, 30.0));
         let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(close));
         if icon_button(&mut cu, ph::X, tr!("tools-shelf-hide"), true).clicked() {
-            self.open = false;
+            d.open = false;
         }
         let clear = Rect::from_center_size(pos2(hr.right() - 50.0, hr.center().y), vec2(30.0, 30.0));
         let mut cu = ui.new_child(egui::UiBuilder::new().max_rect(clear));
-        if icon_button(&mut cu, ph::BROOM, tr!("tools-shelf-clear"), !self.items.is_empty()).clicked() {
-            self.items.clear();
+        if icon_button(&mut cu, ph::BROOM, tr!("tools-shelf-clear"), !d.items.is_empty()).clicked() {
+            d.items.clear();
             self.selected.clear();
         }
         ui.painter().line_segment(
@@ -232,7 +155,7 @@ impl Shelf {
             Stroke::new(1.0, p.border_subtle),
         );
 
-        let footer_h = if self.items.is_empty() { 0.0 } else { 78.0 };
+        let footer_h = if d.items.is_empty() { 0.0 } else { 78.0 };
         let list = Rect::from_min_max(
             pos2(card.left() + 6.0, hr.bottom() + 6.0),
             pos2(card.right() - 6.0, card.bottom() - footer_h - 4.0),
@@ -256,11 +179,11 @@ impl Shelf {
             if ctx.input(|i| i.pointer.any_released())
                 && let Some(pl) = DragAndDrop::take_payload::<DragPayload>(&ctx)
             {
-                self.add(pl.paths.clone());
+                d.add(pl.paths.clone());
             }
         }
 
-        if self.items.is_empty() {
+        if d.items.is_empty() {
             let c = list.center();
             ui.painter().text(
                 c - vec2(0.0, 30.0),
@@ -294,10 +217,10 @@ impl Shelf {
         ScrollArea::vertical().id_salt("shelf.list").auto_shrink([false, false]).show_rows(
             &mut child,
             row_h,
-            self.items.len(),
+            d.items.len(),
             |ui, range| {
                 for i in range {
-                    let item = &self.items[i];
+                    let item = &d.items[i];
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click_and_drag());
                     let selected = sel_snapshot.contains(&i);
                     let painter = ui.painter();
@@ -365,7 +288,7 @@ impl Shelf {
                     }
                     if resp.drag_started() {
                         let paths: Vec<PathBuf> = if selected && self.selected.len() > 1 {
-                            self.selected.iter().filter_map(|&k| self.items.get(k)).map(|it| it.path.clone()).collect()
+                            self.selected.iter().filter_map(|&k| d.items.get(k)).map(|it| it.path.clone()).collect()
                         } else {
                             vec![item.path.clone()]
                         };
@@ -395,7 +318,8 @@ impl Shelf {
             },
         );
         if let Some(r) = remove {
-            self.remove(&r);
+            d.remove(&r);
+            self.selected.clear();
         }
         if let Some(path) = reveal {
             app.cmds.push(Cmd::RevealPath(path));
@@ -412,7 +336,7 @@ impl Shelf {
                 .max_rect(fr.shrink2(vec2(0.0, 6.0)))
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
-        let n = if self.selected.is_empty() { self.items.len() } else { self.selected.len() };
+        let n = if self.selected.is_empty() { d.items.len() } else { self.selected.len() };
         let to = dest.as_deref().map(soyuz_core::entry::display_name).unwrap_or_else(|| "—".into());
         fu.label(
             egui::RichText::new(tr!(
@@ -427,30 +351,30 @@ impl Shelf {
         fu.horizontal(|ui| {
             let ok = dest.is_some();
             if button(ui, Some(ph::COPY), tr!("tools-shelf-copy-here"), 1, ok).clicked()
-                && let Some(d) = &dest
+                && let Some(to) = &dest
             {
-                let paths = self.targets();
-                app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer { paths, dest: d.clone(), effect: DropEffect::Copy }));
+                let paths = d.targets(&self.selected);
+                app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer { paths, dest: to.clone(), effect: DropEffect::Copy }));
             }
             if button(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("tools-shelf-move-here"), 0, ok).clicked()
-                && let Some(d) = &dest
+                && let Some(to) = &dest
             {
-                let paths = self.targets();
+                let paths = d.targets(&self.selected);
                 app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer {
                     paths: paths.clone(),
-                    dest: d.clone(),
+                    dest: to.clone(),
                     effect: DropEffect::Move,
                 }));
                 // Moved items are delivered: take them off the shelf.
-                self.items.retain(|i| !paths.contains(&i.path));
+                d.items.retain(|i| !paths.contains(&i.path));
                 self.selected.clear();
             }
         });
     }
 
     /// A slim drop strip at the right edge while dragging files with the shelf closed.
-    pub fn drag_strip(&mut self, ctx: &egui::Context) {
-        if self.open {
+    pub fn drag_strip(&mut self, ctx: &egui::Context, d: &mut ShelfData) {
+        if d.open {
             return;
         }
         let Some(pl) = payload(ctx) else { return };
@@ -500,8 +424,8 @@ impl Shelf {
             && ctx.input(|i| i.pointer.any_released())
             && let Some(pl) = DragAndDrop::take_payload::<DragPayload>(ctx)
         {
-            self.open = true;
-            self.add(pl.paths.clone());
+            d.open = true;
+            d.add(pl.paths.clone());
         }
     }
 }

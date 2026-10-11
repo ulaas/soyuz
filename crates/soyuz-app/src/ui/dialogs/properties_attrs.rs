@@ -303,14 +303,7 @@ impl ModeEdit {
     }
 }
 
-/// One `SetMeta` job.
-#[derive(Clone, Debug, PartialEq)]
-pub struct MetaJob {
-    pub paths: Vec<PathBuf>,
-    pub times: Option<TimesSet>,
-    pub attrs: Option<AttrSet>,
-    pub mode: Option<u32>,
-}
+pub use crate::models::properties::MetaJob;
 
 /// Turn edits into jobs: one per resulting mode (a job carries a single mode), plus one
 /// for entries whose mode does not change. Empty when nothing changed.

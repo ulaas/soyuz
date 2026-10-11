@@ -5,7 +5,6 @@
 //! operations with Undo / Redo / Retry failed. Also provides the compact status-bar
 //! indicator (ring + job count).
 
-use std::collections::HashSet;
 use std::f32::consts::TAU;
 use std::time::Duration;
 
@@ -15,7 +14,7 @@ use egui::{
 };
 use soyuz_core::config::Action;
 use soyuz_core::{SizeStyle, format_eta, format_size, format_speed};
-use soyuz_jobs::{JobId, JobSnapshot, JobState, LogLevel, Priority};
+use soyuz_jobs::{JobSnapshot, JobState, LogLevel, Priority};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
@@ -27,18 +26,7 @@ use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{icon_button, menu_check, menu_item, menu_separator, submenu, trunc_galley};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ActivityTab {
-    #[default]
-    Jobs,
-    History,
-}
-
-#[derive(Default)]
-pub struct ActivityState {
-    pub tab: ActivityTab,
-    pub expanded: HashSet<JobId>,
-}
+pub use crate::models::panels::{ActivityState, ActivityTab, Indicator, fraction, indicator, verify_badge};
 
 /// Glyph and color for an operation.
 pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
@@ -58,58 +46,6 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
         OpKind::Retry => (ph::ARROW_CLOCKWISE, p.accent),
         OpKind::Other => (ph::GEAR_SIX, p.text_secondary),
     }
-}
-
-/// Overall fraction done, `None` while unknown.
-/// Badge for jobs whose copies are hash-verified (copy / move / sync): "Verifying"
-/// while running, "Verified" when done without failures.
-pub fn verify_badge(kind: soyuz_jobs::JobKindBrief, verify: bool, state: &JobState) -> Option<&'static str> {
-    use soyuz_jobs::JobKindBrief as K;
-    if !verify || !matches!(kind, K::Copy | K::Move | K::Sync) {
-        return None;
-    }
-    match state {
-        JobState::Done(sum) if sum.items_failed == 0 => Some(tr!("panels-verified")),
-        JobState::Done(_) | JobState::Failed(_) | JobState::Cancelled => None,
-        _ => Some(tr!("panels-verifying")),
-    }
-}
-
-pub fn fraction(s: &JobSnapshot) -> Option<f32> {
-    if matches!(s.state, JobState::Done(_)) {
-        return Some(1.0);
-    }
-    let pr = &s.progress;
-    if pr.bytes_total > 0 {
-        Some((pr.bytes_done as f64 / pr.bytes_total as f64).clamp(0.0, 1.0) as f32)
-    } else if pr.items_total > 0 && pr.totals_known {
-        Some((pr.items_done as f64 / pr.items_total as f64).clamp(0.0, 1.0) as f32)
-    } else {
-        None
-    }
-}
-
-/// Data for the status-bar indicator.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Indicator {
-    pub pending: usize,
-    pub progress: Option<f32>,
-    pub waiting: bool,
-    pub paused: bool,
-}
-
-pub fn indicator(app: &SoyuzApp) -> Indicator {
-    let mut ind = Indicator::default();
-    let (mut done, mut total) = (0u64, 0u64);
-    for s in app.fileops.jobs.pending() {
-        ind.pending += 1;
-        ind.waiting |= s.pending_prompt.is_some();
-        ind.paused |= s.state == JobState::Paused;
-        done += s.progress.bytes_done;
-        total += s.progress.bytes_total;
-    }
-    ind.progress = (total > 0).then(|| (done as f64 / total as f64) as f32);
-    ind
 }
 
 /// Ring progress arc (or a spinning partial ring when unknown).

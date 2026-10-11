@@ -174,15 +174,12 @@ fn handle(app: &mut SoyuzApp, host: &dyn Host, req: Request) {
                 app.ws.pane_mut().pending_cursor = select;
             }
             let pane = app.ws.pane().id;
-            let d = crate::ui::dialogs::properties::PropertiesDialog::new(
+            app.frontend.push(crate::models::frontend::FrontendCmd::Properties {
                 pane,
                 entries,
-                app.config.general.size_style,
-                crate::ui::dialogs::properties::Tab::General,
-                None,
-            )
-            .naming(app);
-            app.ui.dialogs.push(d);
+                tab: crate::models::properties::Tab::General,
+                start: None,
+            });
             raise(host);
         }
     }

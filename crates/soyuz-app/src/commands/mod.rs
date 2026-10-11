@@ -289,7 +289,7 @@ pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, host: &dyn Host) {
     let dir = pctx.dir.clone().unwrap_or_else(soyuz_fs::home);
     if cmd.terminal {
         let line = command_line(cmd, &pctx, Quoting::for_shell(&app.config.terminal.shell));
-        crate::ui::panels::terminal::run_command(app, crate::host::egui_ctx(host), dir, &line);
+        crate::models::terminal::run_command(app, host, dir, &line);
         return;
     }
     let program = expand_str(cmd.command.trim(), &pctx, Quoting::None);

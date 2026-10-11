@@ -28,14 +28,14 @@ use soyuz_jobs::{
 };
 
 use crate::app::SoyuzApp;
+use crate::models::panels::{ActivityState, ActivityTab};
 use crate::models::toasts::Toast;
+use crate::models::trash::TrashState;
 use crate::services::jobs::{AfterJob, JobMeta, JobsService, OpKind};
 use crate::state::pane::PaneId;
 use crate::ui::dialogs::conflict::{PromptDialog, PromptShared};
 use crate::ui::dialogs::delete_confirm::DeleteConfirmDialog;
-use crate::ui::dialogs::new_item::{LinkChoice, LinkDialog, TransferDialog};
-use crate::ui::panels::activity::{ActivityState, ActivityTab};
-use crate::ui::views::trash::TrashState;
+use crate::ui::dialogs::new_item::{LinkChoice, LinkDialog};
 
 use crate::host::Host;
 use clipboard::{ClipMode, Clipboard};
@@ -123,7 +123,7 @@ impl FileOps {
             rename: None,
             prompts: PromptQueue::default(),
             dnd: DndFrame::default(),
-            trash: TrashState::new(ctx),
+            trash: TrashState::new(crate::host::egui_wake(ctx)),
             activity: ActivityState::default(),
             prompt_dialog: None,
             pending_rename: None,
@@ -252,7 +252,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             }
             let start = other_pane_dir(app).or(dir).unwrap_or_default();
             let mv = action == A::MoveTo;
-            app.ui.dialogs.push(TransferDialog::new(sel, start, mv));
+            app.frontend.push(crate::models::frontend::FrontendCmd::Transfer { paths: sel, start, mv });
         }
         A::Duplicate => {
             if let Some(d) = dir

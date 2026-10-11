@@ -376,10 +376,7 @@ pub fn recent_row(ui: &mut Ui, current: &Location, pane: PaneId, cmds: &mut Vec<
     }
 }
 
-/// Whether `path` is shown by a virtual listing (Recent / Tags) and may be dragged.
-pub fn is_virtual_listing(loc: &Location) -> bool {
-    matches!(loc, Location::Recent | Location::Tags(_) | Location::Timeline)
-}
+pub use crate::models::tools::is_virtual_listing;
 
 /// Display text for a path in tool windows (no verbatim prefix).
 pub fn show_path(p: &Path) -> String {

@@ -11,112 +11,16 @@ use egui::{Align2, CornerRadius, FontId, Frame, Margin, Panel, Sense, Stroke, Ui
 
 use soyuz_core::config::ActivityPlacement;
 
-use crate::theme::tokens::{radius, size};
+use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BottomTab {
-    Terminal,
-    Activity,
-}
+pub use crate::models::panels::{BottomPanel, BottomTab};
 
-impl BottomTab {
-    fn label(self) -> &'static str {
-        match self {
-            BottomTab::Terminal => tr!("panels-tab-terminal"),
-            BottomTab::Activity => tr!("panels-tab-activity"),
-        }
-    }
-
-    fn glyph(self) -> &'static str {
-        match self {
-            BottomTab::Terminal => ph::TERMINAL_WINDOW,
-            BottomTab::Activity => ph::PULSE,
-        }
-    }
-}
-
-pub struct BottomPanel {
-    pub open: bool,
-    pub tab: BottomTab,
-    pub height: f32,
-    /// Apply `height` on the next frame even if the user resized the panel before
-    /// (`[layout] terminal_height` changed).
-    pub reset_height: bool,
-    /// `[layout] activity_panel`: a bottom-panel tab, a right side panel or a window.
-    pub activity_placement: ActivityPlacement,
-    /// The activity panel is shown (right / floating placements).
-    pub activity_open: bool,
-}
-
-impl Default for BottomPanel {
-    fn default() -> Self {
-        BottomPanel {
-            open: false,
-            tab: BottomTab::Terminal,
-            height: size::TERMINAL_DEFAULT,
-            reset_height: false,
-            activity_placement: ActivityPlacement::Bottom,
-            activity_open: false,
-        }
-    }
-}
-
-impl BottomPanel {
-    /// Toggle `tab`: opens the panel on it, switches to it, or closes when already shown.
-    pub fn toggle(&mut self, tab: BottomTab) {
-        if tab == BottomTab::Activity && self.activity_placement != ActivityPlacement::Bottom {
-            self.activity_open = !self.activity_open;
-            return;
-        }
-        if self.open && self.tab == tab {
-            self.open = false;
-        } else {
-            self.open = true;
-            self.tab = tab;
-        }
-    }
-
-    /// Show the activity panel wherever it is placed.
-    pub fn open_activity(&mut self) {
-        if self.activity_placement == ActivityPlacement::Bottom {
-            self.open = true;
-            self.tab = BottomTab::Activity;
-        } else {
-            self.activity_open = true;
-        }
-    }
-
-    pub fn activity_shown(&self) -> bool {
-        match self.activity_placement {
-            ActivityPlacement::Bottom => self.open && self.tab == BottomTab::Activity,
-            _ => self.activity_open,
-        }
-    }
-
-    /// Move the activity panel (keeps it visible if it was).
-    pub fn set_activity_placement(&mut self, placement: ActivityPlacement) {
-        if placement == self.activity_placement {
-            return;
-        }
-        let shown = self.activity_shown();
-        if self.activity_placement == ActivityPlacement::Bottom && shown {
-            self.open = false;
-            self.tab = BottomTab::Terminal;
-        }
-        self.activity_placement = placement;
-        self.activity_open = false;
-        if shown {
-            self.open_activity();
-        }
-    }
-
-    fn tabs(&self) -> &'static [BottomTab] {
-        if self.activity_placement == ActivityPlacement::Bottom {
-            &[BottomTab::Terminal, BottomTab::Activity]
-        } else {
-            &[BottomTab::Terminal]
-        }
+/// Tab glyph.
+fn tab_glyph(tab: BottomTab) -> &'static str {
+    match tab {
+        BottomTab::Terminal => ph::TERMINAL_WINDOW,
+        BottomTab::Activity => ph::PULSE,
     }
 }
 
@@ -249,7 +153,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 ui.painter().text(
                     pos2(r.left() + 16.0, r.center().y),
                     Align2::CENTER_CENTER,
-                    tab.glyph(),
+                    tab_glyph(tab),
                     icons::font(14.0),
                     c,
                 );
