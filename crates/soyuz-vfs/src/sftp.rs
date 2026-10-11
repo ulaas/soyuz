@@ -23,7 +23,7 @@ use tokio::io::AsyncSeekExt;
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream};
 use crate::registry::{Credentials, net_settings, verify_host_key};
 use crate::rt::{BlockingRead, BlockingWrite, block_on, runtime};
-use crate::uri::{RemoteUri, name_of, normalize_path};
+use crate::uri::{RemoteUri, normalize_path, remote_name_of};
 
 struct Client {
     host: String,
@@ -319,11 +319,12 @@ impl Provider for SftpProvider {
             }
             Ok(out)
         })
+        .map(|l| crate::provider::sanitize_listing("SFTP", path, l))
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {
         let p = normalize_path(path);
-        let name = name_of(&p).to_string();
+        let name = remote_name_of(&p).to_string();
         self.run("stat", &p, async move |sftp, p| Ok(entry(name, &sftp.metadata(p).await?)))
     }
 

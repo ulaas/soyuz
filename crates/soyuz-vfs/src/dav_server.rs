@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine;
 
-use crate::uri::{normalize_path, pct_decode, url_encode_path};
+use crate::uri::{normalize_user_path as normalize_path, pct_decode, url_encode_path};
 
 pub struct DavServer {
     pub port: u16,

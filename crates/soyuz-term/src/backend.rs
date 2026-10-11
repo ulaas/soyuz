@@ -58,11 +58,52 @@ pub(crate) struct Shared {
     pub title: Mutex<String>,
     default_title: String,
     pub cwd: Mutex<Option<PathBuf>>,
-    /// The shell reported its cwd itself (OSC 7 or the title hook); `/proc` polling is
-    /// then no longer consulted.
-    pub cwd_reported: AtomicBool,
+    /// Arbitrates between what the shell reports (OSC 7, title hook) and `/proc` polling.
+    pub cwd_tracker: Mutex<CwdTracker>,
+    /// The child's pid (set right after spawning), for `/proc` lookups.
+    pub pid: OnceLock<u32>,
     pub window_size: Mutex<WindowSize>,
     colors: Mutex<ColorAnswers>,
+}
+
+/// Which cwd source wins: the shell's own reports (OSC 7 / title hook) or `/proc`.
+///
+/// A report wins while the shell's `/proc` cwd stays where it was at the report; once
+/// `/proc` moves (a shell without integration ran `cd` after a stray OSC 7 from a nested
+/// shell or a `cat`ted file), `/proc` wins again until the next report.
+#[derive(Debug, Default)]
+pub struct CwdTracker {
+    reported: bool,
+    /// `/proc` cwd when the shell last reported (`None` = unknown).
+    proc_at_report: Option<PathBuf>,
+}
+
+impl CwdTracker {
+    /// The shell reported its cwd; `proc_now` is the `/proc` value at that moment.
+    pub fn on_report(&mut self, proc_now: Option<PathBuf>) {
+        self.reported = true;
+        self.proc_at_report = proc_now;
+    }
+
+    /// Whether a polled `/proc` value should be taken.
+    pub fn use_proc(&mut self, proc_now: &std::path::Path) -> bool {
+        if !self.reported {
+            return true;
+        }
+        match &self.proc_at_report {
+            Some(p) if p == proc_now => false,
+            // Unknown at report time: take this as the baseline.
+            None => {
+                self.proc_at_report = Some(proc_now.to_path_buf());
+                false
+            }
+            Some(_) => {
+                self.reported = false;
+                self.proc_at_report = None;
+                true
+            }
+        }
+    }
 }
 
 /// Colors reported for OSC 4/10/11/12 queries.
@@ -138,10 +179,19 @@ impl Shared {
     }
 
     /// A cwd reported by the shell (OSC 7 from the PTY tee, or the title hook). The
-    /// latest report wins.
+    /// latest report wins until `/proc` shows the shell moved without reporting.
     pub fn report_cwd(&self, path: PathBuf) {
-        self.cwd_reported.store(true, Ordering::Release);
+        let proc_now = self.pid.get().and_then(|&pid| pty::process_cwd(pid));
+        self.cwd_tracker.lock().on_report(proc_now);
         self.set_cwd(path);
+    }
+
+    /// Poll `/proc` (Linux) and take its value unless a shell report is still current.
+    pub fn poll_proc_cwd(&self) {
+        let Some(proc_now) = self.pid.get().and_then(|&pid| pty::process_cwd(pid)) else { return };
+        if self.cwd_tracker.lock().use_proc(&proc_now) {
+            self.set_cwd(proc_now);
+        }
     }
 
     pub fn set_theme(&self, theme: &TermTheme) {
@@ -283,7 +333,8 @@ impl Backend {
             title: Mutex::new(default_title.clone()),
             default_title,
             cwd: Mutex::new(cmd.cwd.clone()),
-            cwd_reported: AtomicBool::new(false),
+            cwd_tracker: Mutex::new(CwdTracker::default()),
+            pid: OnceLock::new(),
             window_size: Mutex::new(window_size(INITIAL)),
             colors: Mutex::new(ColorAnswers::new(&TermTheme::default())),
         });
@@ -325,6 +376,9 @@ impl Backend {
         let pid = pty.child_watcher().pid().map(|p| p.get());
         #[cfg(not(windows))]
         let pid = Some(pty.child().id());
+        if let Some(p) = pid {
+            let _ = shared.pid.set(p);
+        }
 
         // OSC 7 is dropped by alacritty's parser: observe the raw output on the way in.
         let pty = TeePty::new(pty, shared.clone());
@@ -358,5 +412,35 @@ impl Backend {
             drop(join);
         }
         self.shared.mark_exited(None);
+    }
+}
+
+#[cfg(test)]
+mod cwd_tracker_tests {
+    use super::CwdTracker;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn proc_wins_until_a_report_and_again_once_it_moves() {
+        let mut t = CwdTracker::default();
+        assert!(t.use_proc(Path::new("/a")), "no report yet: /proc tracks");
+        // A stray OSC 7 (nested shell, `cat` of a file) while the shell sits in /a.
+        t.on_report(Some(PathBuf::from("/a")));
+        assert!(!t.use_proc(Path::new("/a")), "the report stays while /proc has not moved");
+        // The shell (no integration) runs `cd /b`: /proc wins again, and keeps winning.
+        assert!(t.use_proc(Path::new("/b")));
+        assert!(t.use_proc(Path::new("/c")));
+        // A shell with integration reports every change: its report stays current.
+        t.on_report(Some(PathBuf::from("/c")));
+        assert!(!t.use_proc(Path::new("/c")));
+    }
+
+    #[test]
+    fn unknown_proc_at_report_takes_the_next_poll_as_baseline() {
+        let mut t = CwdTracker::default();
+        t.on_report(None);
+        assert!(!t.use_proc(Path::new("/x")));
+        assert!(!t.use_proc(Path::new("/x")));
+        assert!(t.use_proc(Path::new("/y")));
     }
 }

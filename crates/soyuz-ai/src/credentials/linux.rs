@@ -118,30 +118,27 @@ impl<'a> Service<'a> {
 
     /// Run a prompt object (`/` = none) and wait for its `Completed` signal. Returns the
     /// prompt's result value, or `None` when there was no prompt.
+    ///
+    /// The wait runs on this (worker) thread with a deadline: there is no waiter thread
+    /// that could outlive a failed `Prompt` call or a service that never answers, and the
+    /// signal subscription (holding the bus connection) is dropped on every return path.
     fn prompt(&self, path: &OwnedObjectPath, what: &str) -> AiResult<Option<OwnedValue>> {
         if is_none(path) {
             return Ok(None);
         }
         let p = proxy(self.conn, path.as_ref(), PROMPT_IFACE)?;
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().map_err(|e| err("Prompt", e))?;
         // Subscribe before starting the prompt so the signal cannot be missed.
-        let signals = p.receive_signal("Completed").map_err(|e| err("Prompt", e))?;
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::Builder::new()
-            .name("soyuz-secret-prompt".into())
-            .spawn(move || {
-                let mut signals = signals;
-                if let Some(msg) = signals.next() {
-                    let _ = tx.send(msg.body().deserialize::<(bool, OwnedValue)>());
-                }
-            })
-            .map_err(|e| err("Prompt", e))?;
+        let signals = rt.block_on(p.inner().receive_signal("Completed")).map_err(|e| err("Prompt", e))?;
         p.call::<_, _, ()>("Prompt", &("",)).map_err(|e| err("Prompt", e))?;
-        match rx.recv_timeout(PROMPT_TIMEOUT) {
-            Ok(Ok((false, result))) => Ok(Some(result)),
-            Ok(Ok((true, _))) => Err(AiError::Credential(format!("{what}: the keyring prompt was dismissed"))),
-            Ok(Err(e)) => Err(err("Prompt", e)),
-            Err(_) => {
-                // Close the dialog; the service then emits `Completed`, which ends the thread.
+        let completed = wait_first(&rt, signals, PROMPT_TIMEOUT);
+        match completed.map(|m| m.map(|m| m.body().deserialize::<(bool, OwnedValue)>())) {
+            Some(Some(Ok((false, result)))) => Ok(Some(result)),
+            Some(Some(Ok((true, _)))) => Err(AiError::Credential(format!("{what}: the keyring prompt was dismissed"))),
+            Some(Some(Err(e))) => Err(err("Prompt", e)),
+            Some(None) => Err(err("Prompt", "the bus connection closed")),
+            None => {
+                // Close the dialog (best effort; nobody waits for its `Completed`).
                 let _ = p.call::<_, _, ()>("Dismiss", &());
                 Err(AiError::Credential(format!("{what}: the keyring prompt timed out")))
             }
@@ -204,6 +201,17 @@ impl<'a> Service<'a> {
         }
         Ok(unlocked)
     }
+}
+
+/// The first item of `stream`, waiting at most `timeout`: `None` on timeout,
+/// `Some(None)` when the stream ended. The stream is dropped before returning.
+fn wait_first<S: futures_util::Stream + Unpin>(
+    rt: &tokio::runtime::Runtime,
+    mut stream: S,
+    timeout: Duration,
+) -> Option<Option<S::Item>> {
+    use futures_util::StreamExt;
+    rt.block_on(async { tokio::time::timeout(timeout, stream.next()).await }).ok()
 }
 
 pub fn store(target: &str, secret: &str) -> AiResult<()> {
@@ -299,6 +307,17 @@ mod tests {
         assert_eq!(label("x.y"), "Soyuz: x.y");
         assert!(is_none(&ObjectPath::from_static_str_unchecked("/")));
         assert!(!is_none(&ObjectPath::from_static_str_unchecked("/org/freedesktop/secrets/prompt/p1")));
+    }
+
+    #[test]
+    fn prompt_wait_is_bounded() {
+        let rt = tokio::runtime::Builder::new_current_thread().enable_time().build().unwrap();
+        let t = std::time::Instant::now();
+        let never = futures_util::stream::pending::<u8>();
+        assert_eq!(wait_first(&rt, never, Duration::from_millis(50)), None, "a silent service times out");
+        assert!(t.elapsed() < Duration::from_secs(5));
+        assert_eq!(wait_first(&rt, futures_util::stream::iter([7u8]), Duration::from_secs(5)), Some(Some(7)));
+        assert_eq!(wait_first(&rt, futures_util::stream::empty::<u8>(), Duration::from_secs(5)), Some(None));
     }
 
     /// Real keyring round trip; needs a desktop session (`SOYUZ_DBUS_TESTS=1`).

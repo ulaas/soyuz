@@ -13,7 +13,7 @@ use parking_lot::Mutex;
 use soyuz_core::{FsErrorKind, FsResult};
 
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream, err};
-use crate::uri::{RemoteUri, Scheme, join_path, name_of, normalize_path, parent_path};
+use crate::uri::{RemoteUri, Scheme, join_path, normalize_path, parent_path, remote_name_of};
 
 #[derive(Clone, Debug)]
 enum Node {
@@ -36,6 +36,8 @@ pub struct FakeProvider {
     caps: Mutex<Capabilities>,
     /// Bytes written through `create_write` (resume tests check what was re-sent).
     pub bytes_written: Arc<AtomicU64>,
+    /// Entries appended to a folder's listing unfiltered ([`FakeProvider::inject_unchecked`]).
+    unchecked: Mutex<Vec<(String, RemoteEntry)>>,
 }
 
 impl FakeProvider {
@@ -56,6 +58,7 @@ impl FakeProvider {
                 watch: false,
             }),
             bytes_written: Arc::new(AtomicU64::new(0)),
+            unchecked: Mutex::new(Vec::new()),
         }
     }
 
@@ -87,6 +90,13 @@ impl FakeProvider {
         let mut f = self.faults.lock();
         f.fail_after = Some(n);
         f.moved = 0;
+    }
+
+    /// Append `e` to every listing of `dir` without the unsafe-name filter, the way a
+    /// provider that forgot [`crate::provider::sanitize_listing`] would (defence-in-depth
+    /// tests: hostile names such as `..\\..\\Other\\x`).
+    pub fn inject_unchecked(&self, dir: &str, e: RemoteEntry) {
+        self.unchecked.lock().push((normalize_path(dir), e));
     }
 
     pub fn set_delay(&self, d: Option<Duration>) {
@@ -128,7 +138,7 @@ impl FakeProvider {
     }
 
     fn entry(path: &str, n: &Node) -> RemoteEntry {
-        let name = name_of(path).to_string();
+        let name = remote_name_of(path).to_string();
         match n {
             Node::Dir { modified } => RemoteEntry::dir(name, Some(*modified)),
             Node::File { data, modified } => RemoteEntry::file(name, data.len() as u64, Some(*modified)),
@@ -178,11 +188,14 @@ impl Provider for FakeProvider {
             Some(_) => return Err(err(FsErrorKind::NotDirectory, "list", &path, "not a folder")),
             None => return Err(err(FsErrorKind::NotFound, "list", &path, "no such folder")),
         }
-        Ok(nodes
+        let list = nodes
             .iter()
             .filter(|(p, _)| p.as_str() != "/" && parent_path(p).as_deref() == Some(path.as_str()))
             .map(|(p, n)| Self::entry(p, n))
-            .collect())
+            .collect();
+        let mut list = crate::provider::sanitize_listing("test server", &path, list);
+        list.extend(self.unchecked.lock().iter().filter(|(d, _)| *d == path).map(|(_, e)| e.clone()));
+        Ok(list)
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {

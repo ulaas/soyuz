@@ -52,16 +52,22 @@ impl End {
         }
     }
 
-    fn child(&self, name: &str) -> End {
+    /// `name` inside this folder. A name that is not one safe segment (`..`, a `/` or,
+    /// on a server, a `\` a hostile listing planted) is refused with `InvalidName`
+    /// instead of being joined into a path outside this folder.
+    fn child(&self, name: &str) -> FsResult<End> {
+        soyuz_vfs::provider::check_child_name("copy", &self.path, name, self.is_remote())?;
         let path = match &self.uri {
             Some(_) => soyuz_vfs::uri::join_path(&self.path, name),
             None => Path::new(&self.path).join(name).to_string_lossy().into_owned(),
         };
-        End { prov: self.prov.clone(), path, uri: self.uri.clone() }
+        Ok(End { prov: self.prov.clone(), path, uri: self.uri.clone() })
     }
 
-    fn sibling(&self, name: &str) -> End {
-        match &self.uri {
+    /// `name` next to this entry (checked like [`End::child`]).
+    fn sibling(&self, name: &str) -> FsResult<End> {
+        soyuz_vfs::provider::check_child_name("rename", &self.path, name, self.is_remote())?;
+        Ok(match &self.uri {
             Some(_) => {
                 let parent = soyuz_vfs::uri::parent_path(&self.path).unwrap_or_else(|| "/".into());
                 End { prov: self.prov.clone(), path: soyuz_vfs::uri::join_path(&parent, name), uri: self.uri.clone() }
@@ -70,7 +76,7 @@ impl End {
                 let p = Path::new(&self.path).with_file_name(name);
                 End { prov: self.prov.clone(), path: p.to_string_lossy().into_owned(), uri: None }
             }
-        }
+        })
     }
 
     fn name(&self) -> &str {
@@ -100,11 +106,11 @@ fn unique_sibling(dst: &End) -> End {
     let name = dst.name().to_string();
     let exists = |p: &Path| {
         let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        dst.sibling(&n).stat_opt().ok().flatten().is_some()
+        dst.sibling(&n).and_then(|s| s.stat_opt()).ok().flatten().is_some()
     };
     let p = soyuz_core::unique_name(Path::new(""), &name, "", &exists);
     let n = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or(name);
-    dst.sibling(&n)
+    dst.sibling(&n).unwrap_or_else(|_| dst.clone())
 }
 
 fn conflict(src: &End, se: &RemoteEntry, dst: &End, de: &RemoteEntry) -> ConflictInfo {
@@ -159,7 +165,10 @@ fn count(ctx: &JobCtx, end: &End, e: &RemoteEntry, bytes: &mut u64, items: &mut 
     }
     if let Ok(children) = end.prov.list(&end.path) {
         for c in children {
-            count(ctx, &end.child(&c.name), &c, bytes, items)?;
+            // Unsafe names are reported (and skipped) by the copy itself.
+            if let Ok(child) = end.child(&c.name) {
+                count(ctx, &child, &c, bytes, items)?;
+            }
         }
     }
     Ok(())
@@ -198,7 +207,13 @@ fn run_transfer(ctx: &JobCtx, sources: &[PathBuf], dest_dir: &Path, mv: bool) ->
     ctx.set_running();
     for (src, st) in plan {
         ctx.checkpoint()?;
-        let dst = dest.child(&st.name);
+        let dst = match dest.child(&st.name) {
+            Ok(d) => d,
+            Err(e) => {
+                ctx.item_failed(&src.display(), e, st.size);
+                continue;
+            }
+        };
         if is_within(&dst, &src) {
             let e = FsError::with_message(
                 FsErrorKind::InvalidName,
@@ -262,7 +277,13 @@ fn settle(ctx: &JobCtx, src: &End, se: &RemoteEntry, mut dst: End) -> FsResult<O
                 return Ok(None);
             }
             ConflictResolution::KeepBoth => dst = unique_sibling(&dst),
-            ConflictResolution::Rename(n) => dst = dst.sibling(&n),
+            ConflictResolution::Rename(n) => match dst.sibling(&n) {
+                Ok(d) => dst = d,
+                Err(e) => {
+                    ctx.item_failed(&src.display(), e, credit);
+                    return Ok(None);
+                }
+            },
             ConflictResolution::Cancel => return Err(ctx.cancel_now()),
             _ if se.is_dir && de.is_dir => return Ok(Some((dst, true))),
             _ if se.is_dir != de.is_dir => {
@@ -324,7 +345,15 @@ fn copy_entry(ctx: &JobCtx, src: &End, se: &RemoteEntry, dst: End, parent_new: b
         };
         for c in children {
             ctx.checkpoint()?;
-            copy_entry(ctx, &src.child(&c.name), &c, dst.child(&c.name), parent_new || created)?;
+            let (sc, dc) = match src.child(&c.name).and_then(|s| Ok((s, dst.child(&c.name)?))) {
+                Ok(p) => p,
+                Err(e) => {
+                    // Never follow a listed name out of the folder being copied.
+                    ctx.item_failed(&src.display(), e, if c.is_dir { 0 } else { c.size });
+                    continue;
+                }
+            };
+            copy_entry(ctx, &sc, &c, dc, parent_new || created)?;
         }
         return Ok(());
     }

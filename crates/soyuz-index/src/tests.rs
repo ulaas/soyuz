@@ -302,3 +302,86 @@ fn bench_tree() {
         println!("{q:>28}: {n:>6} hits in {:?}", t.elapsed());
     }
 }
+
+#[test]
+fn root_checks_tell_gone_from_unavailable() {
+    use crate::worker::{RootCheck, check_root};
+    let d = tempfile::tempdir().unwrap();
+    assert_eq!(check_root(d.path()), RootCheck::Present);
+    assert_eq!(check_root(&d.path().join("deleted")), RootCheck::Gone);
+    std::fs::write(d.path().join("file"), "x").unwrap();
+    assert_eq!(check_root(&d.path().join("file")), RootCheck::Gone);
+    // The parent (mount point / drive) is missing too: unplugged, not deleted.
+    assert!(matches!(check_root(&d.path().join("mnt/disk/root")), RootCheck::Unavailable(_)));
+}
+
+/// A polled root whose volume goes away (its parent folder vanishes, like an unmounted
+/// disk) keeps its index; when it's back, a full rescan picks up what changed.
+#[test]
+fn unplugged_roots_keep_their_index_and_are_rescanned() {
+    let base = tempfile::tempdir().unwrap();
+    let mnt = base.path().join("mnt");
+    let root = mnt.join("root");
+    std::fs::create_dir_all(root.join("docs")).unwrap();
+    std::fs::write(root.join("docs/kept.txt"), "x").unwrap();
+    let db = tempfile::tempdir().unwrap();
+    let croot = canonical(&root);
+    crate::worker::FORCE_POLL.lock().push(croot.clone());
+    let ix = Index::start(cfg(&root, db.path()), Arc::new(|| {}));
+    ix.set_rescan_interval(Duration::from_millis(100));
+    wait_idle(&ix);
+    assert_eq!(names(&ix, "kept"), ["kept.txt"]);
+
+    let away = base.path().join("away");
+    std::fs::rename(&mnt, &away).unwrap();
+    wait_until("unavailable", || ix.status().unavailable_roots == std::slice::from_ref(&croot));
+    // Several passes later the rows are still there.
+    std::thread::sleep(Duration::from_millis(500));
+    assert_eq!(names(&ix, "kept"), ["kept.txt"]);
+    assert_eq!(ix.status().ready_roots, std::slice::from_ref(&croot));
+
+    std::fs::write(away.join("root/docs/new.txt"), "x").unwrap();
+    std::fs::rename(&away, &mnt).unwrap();
+    wait_until("rescanned", || ix.status().unavailable_roots.is_empty() && names(&ix, "new") == ["new.txt"]);
+    assert_eq!(names(&ix, "kept"), ["kept.txt"]);
+    // Really deleted (parent still there): dropped.
+    std::fs::remove_dir_all(&root).unwrap();
+    wait_until("dropped", || names(&ix, "kept").is_empty());
+    crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
+}
+
+/// A polled root that can't be reached (permission denied on its parent: `stat` fails
+/// with EACCES, not NotFound) keeps its index across quick passes and full verifies.
+#[cfg(unix)]
+#[test]
+fn unreadable_roots_keep_their_index() {
+    use std::os::unix::fs::PermissionsExt;
+    let base = tempfile::tempdir().unwrap();
+    let parent = base.path().join("p");
+    let root = parent.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("kept.txt"), "x").unwrap();
+    let db = tempfile::tempdir().unwrap();
+    let croot = canonical(&root);
+    crate::worker::FORCE_POLL.lock().push(croot.clone());
+    let ix = Index::start(cfg(&root, db.path()), Arc::new(|| {}));
+    ix.set_rescan_interval(Duration::from_millis(50));
+    wait_idle(&ix);
+    assert_eq!(names(&ix, "kept"), ["kept.txt"]);
+    let mode = |m| std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(m)).unwrap();
+    mode(0o000);
+    if std::fs::metadata(&root).is_ok() {
+        mode(0o755); // Running as root: permissions don't apply.
+        crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
+        return;
+    }
+    wait_until("unavailable", || ix.status().unavailable_roots == std::slice::from_ref(&croot));
+    // Long enough for quick passes and a full verification (every 12th pass).
+    std::thread::sleep(Duration::from_millis(1000));
+    let kept = names(&ix, "kept");
+    mode(0o755);
+    assert_eq!(kept, ["kept.txt"], "an unreachable root must not be wiped");
+    std::fs::write(root.join("new.txt"), "x").unwrap();
+    wait_until("back", || ix.status().unavailable_roots.is_empty() && names(&ix, "new") == ["new.txt"]);
+    crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
+}

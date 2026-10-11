@@ -12,7 +12,7 @@ use soyuz_core::{FsError, FsErrorKind, FsResult};
 use crate::http::{BodyReader, BodyWriter, client, send, send_text, status_error};
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream, err};
 use crate::registry::{Credentials, net_settings};
-use crate::uri::{RemoteUri, Scheme, name_of, normalize_path, pct_decode, url_encode_path};
+use crate::uri::{RemoteUri, Scheme, normalize_path, pct_decode, remote_name_of, url_encode_path};
 
 const PROPFIND_BODY: &str = r#"<?xml version="1.0" encoding="utf-8"?>
 <D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/><D:getcontentlength/><D:getlastmodified/></D:prop></D:propfind>"#;
@@ -241,11 +241,11 @@ impl Provider for WebDavProvider {
     fn list(&self, path: &str) -> FsResult<Vec<RemoteEntry>> {
         let me = normalize_path(path);
         let all = self.propfind(&me, "1")?;
-        Ok(all
+        let list = all
             .into_iter()
             .filter(|e| e.path != me)
             .map(|e| RemoteEntry {
-                name: name_of(&e.path).to_string(),
+                name: remote_name_of(&e.path).to_string(),
                 is_dir: e.is_dir,
                 is_link: false,
                 size: e.size,
@@ -253,7 +253,8 @@ impl Provider for WebDavProvider {
                 mode: None,
             })
             .filter(|e| !e.name.is_empty())
-            .collect())
+            .collect();
+        Ok(crate::provider::sanitize_listing("WebDAV", &me, list))
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {
@@ -264,7 +265,7 @@ impl Provider for WebDavProvider {
             .next()
             .ok_or_else(|| err(FsErrorKind::NotFound, "stat", &me, "not found"))?;
         Ok(RemoteEntry {
-            name: name_of(&me).to_string(),
+            name: remote_name_of(&me).to_string(),
             is_dir: e.is_dir,
             is_link: false,
             size: e.size,

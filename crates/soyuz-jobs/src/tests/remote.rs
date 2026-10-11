@@ -6,6 +6,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use soyuz_core::{ConflictResolution, ErrorAction};
+use soyuz_vfs::RemoteEntry;
 use soyuz_vfs::fake::FakeProvider;
 
 use super::*;
@@ -254,4 +255,71 @@ fn unknown_server_fails_cleanly() {
     spec.options.errors = Some(ErrorAction::Skip);
     let s = h.ok(h.engine.submit(spec));
     assert_eq!(s.items_failed, 1);
+}
+
+/// Names a hostile client can plant on a share (SMB maps `\` to U+F026 and back; SFTP
+/// allows it literally), plus plain traversal names a broken server could report.
+const HOSTILE: [&str; 4] = ["..\\..\\Other\\victim.txt", "..", "../../Other/victim.txt", "x\\..\\..\\..\\Other"];
+
+#[test]
+fn hostile_names_never_escape_a_remote_delete() {
+    let h = H::new();
+    let fake = server("jobs-hostile-del");
+    fake.put("/share/dir/a.txt", b"a");
+    fake.put("/Other/victim.txt", b"v");
+    fake.put("/share/victim.txt", b"v");
+    for n in HOSTILE {
+        fake.inject_unchecked("/share/dir", RemoteEntry::file(n, 1, None));
+    }
+    fake.inject_unchecked("/share/dir", RemoteEntry::dir("..\\..\\Other", None));
+    let mut spec =
+        JobSpec::new(JobKind::Remote(RemoteOp::Delete { paths: vec![uri("jobs-hostile-del", "/share/dir")] }));
+    spec.options.errors = Some(ErrorAction::Skip);
+    let s = h.ok(h.engine.submit(spec));
+    assert_eq!(s.items_failed, 1, "{s:?}");
+    assert_eq!(fake.get("/Other/victim.txt").as_deref(), Some(&b"v"[..]));
+    assert!(fake.exists("/Other"));
+    assert!(fake.exists("/share/victim.txt"));
+}
+
+#[test]
+fn hostile_names_never_escape_a_download() {
+    let h = H::new();
+    let fake = server("jobs-hostile-down");
+    fake.put("/share/dir/a.txt", b"a");
+    for n in HOSTILE {
+        fake.inject_unchecked("/share/dir", RemoteEntry::file(n, 1, None));
+    }
+    std::fs::create_dir_all(h.p("in/deep")).unwrap();
+    let mut spec = JobSpec::new(transfer(vec![uri("jobs-hostile-down", "/share/dir")], h.p("in/deep"), false));
+    spec.options.errors = Some(ErrorAction::Skip);
+    let s = h.ok(h.engine.submit(spec));
+    assert_eq!(s.items_failed, HOSTILE.len() as u64, "{s:?}");
+    assert_eq!(std::fs::read(h.p("in/deep/dir/a.txt")).unwrap(), b"a");
+    let names: Vec<_> = std::fs::read_dir(h.p("in/deep/dir")).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(names, ["a.txt"]);
+    assert!(!h.p("Other").exists() && !h.p("in/Other").exists());
+}
+
+#[test]
+fn hostile_names_never_escape_an_upload_between_servers() {
+    let h = H::new();
+    let src = server("jobs-hostile-src");
+    let dst = server("jobs-hostile-dst");
+    src.put("/dir/a.txt", b"a");
+    for n in HOSTILE {
+        src.inject_unchecked("/dir", RemoteEntry::file(n, 1, None));
+    }
+    dst.mkdirs("/share/in");
+    dst.put("/Other/victim.txt", b"v");
+    let mut spec =
+        JobSpec::new(transfer(vec![uri("jobs-hostile-src", "/dir")], uri("jobs-hostile-dst", "/share/in"), false));
+    spec.options.errors = Some(ErrorAction::Skip);
+    let s = h.ok(h.engine.submit(spec));
+    assert_eq!(s.items_failed, HOSTILE.len() as u64, "{s:?}");
+    assert_eq!(dst.get("/share/in/dir/a.txt").as_deref(), Some(&b"a"[..]));
+    assert_eq!(dst.get("/Other/victim.txt").as_deref(), Some(&b"v"[..]));
+    let mut paths = dst.paths();
+    paths.retain(|p| !p.starts_with("/share/in/dir") && !p.starts_with("/Other"));
+    assert_eq!(paths, ["/", "/share", "/share/in"]);
 }

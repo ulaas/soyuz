@@ -179,24 +179,51 @@ impl Drop for StdioTransport {
         let mut child = self.child.lock();
         let deadline = Instant::now() + Duration::from_millis(500);
         while Instant::now() < deadline {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                kill_group(&child);
-                return;
+            if exited_unreaped(&mut child) {
+                break;
             }
             std::thread::sleep(Duration::from_millis(25));
         }
+        // The leader is not reaped yet (at most a zombie), so its pid, and with it the
+        // group id, cannot have been reused: the group kill only hits the server's own
+        // leftovers. Reap afterwards.
         kill_group(&child);
         let _ = child.kill();
         let _ = child.wait();
     }
 }
 
+/// Has the child exited? On unix this peeks without reaping (`waitid` with `WNOWAIT`),
+/// so the pid / process group id stays reserved until [`Child::wait`].
+#[cfg(unix)]
+fn exited_unreaped(child: &mut Child) -> bool {
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+    let pid = Pid::from_child(child);
+    let opts = WaitIdOptions::EXITED | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT;
+    match waitid(WaitId::Pid(pid), opts) {
+        Ok(status) => status.is_some(),
+        // Already reaped (ECHILD) or unknown: stop waiting; `kill_group` checks again.
+        Err(_) => true,
+    }
+}
+
+#[cfg(not(unix))]
+fn exited_unreaped(child: &mut Child) -> bool {
+    matches!(child.try_wait(), Ok(Some(_)))
+}
+
 /// Kill whatever is left of the server's process group (`npx` / `uvx` launchers leave the
-/// real server as a grandchild). The group id is the child's pid (`process_group(0)`); the
-/// kernel does not reuse a pid while a group of that id has members.
+/// real server as a grandchild). The group id is the child's pid (`process_group(0)`).
+/// Only called while the leader is unreaped (so the id cannot have been reused); if it
+/// was reaped somehow (`waitid` fails with `ECHILD`), nothing is killed.
 #[cfg(unix)]
 fn kill_group(child: &Child) {
-    let pid = rustix::process::Pid::from_child(child);
+    use rustix::process::{Pid, WaitId, WaitIdOptions, waitid};
+    let pid = Pid::from_child(child);
+    let opts = WaitIdOptions::EXITED | WaitIdOptions::STOPPED | WaitIdOptions::CONTINUED;
+    if waitid(WaitId::Pid(pid), opts | WaitIdOptions::NOHANG | WaitIdOptions::NOWAIT).is_err() {
+        return;
+    }
     let _ = rustix::process::kill_process_group(pid, rustix::process::Signal::KILL);
 }
 
@@ -226,6 +253,51 @@ mod tests {
         assert!(proc_dir.exists());
         drop(t);
         // The orphaned grandchild is reaped by init / the subreaper shortly after the kill.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let gone = || {
+            std::fs::read_to_string(proc_dir.join("stat")).map_or(true, |s| s.contains(") Z ") || !s.contains("sleep"))
+        };
+        while !gone() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(gone(), "the grandchild survived the drop");
+    }
+
+    /// Exit is detected without reaping: the leader stays a zombie (its pid, and so the
+    /// group id, reserved) until the group was killed and `wait` reaps it.
+    #[test]
+    fn exit_check_does_not_reap() {
+        let mut child = Command::new("/bin/true").spawn().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !exited_unreaped(&mut child) {
+            assert!(Instant::now() < deadline, "/bin/true did not exit");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let stat = std::fs::read_to_string(format!("/proc/{}/stat", child.id())).expect("still a zombie");
+        assert!(stat.contains(") Z "), "{stat}");
+        assert!(child.try_wait().unwrap().is_some());
+        // Reaped now: the group kill is skipped instead of hitting a possibly reused id.
+        kill_group(&child);
+    }
+
+    /// The leader exits first (a launcher that forked the real server): the leftover group
+    /// is still killed on drop.
+    #[test]
+    fn drop_kills_the_group_after_the_leader_exited() {
+        let d = tempfile::tempdir().unwrap();
+        let pidfile = d.path().join("pid");
+        let script = format!("sleep 30 & echo $! > '{}'; exit 0", pidfile.display());
+        let t = StdioTransport::spawn("/bin/sh", &["-c".into(), script], &Default::default(), "test").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let pid = loop {
+            if let Some(p) = std::fs::read_to_string(&pidfile).ok().and_then(|s| s.trim().parse::<i32>().ok()) {
+                break p;
+            }
+            assert!(Instant::now() < deadline, "the script did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+        drop(t);
         let deadline = Instant::now() + Duration::from_secs(5);
         let gone = || {
             std::fs::read_to_string(proc_dir.join("stat")).map_or(true, |s| s.contains(") Z ") || !s.contains("sleep"))
