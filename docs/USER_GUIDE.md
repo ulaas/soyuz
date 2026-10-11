@@ -423,11 +423,12 @@ you install system-wide yourself.
 - **Window system** — *General → Linux desktop → Window system*: Automatic uses Wayland when
   available, else X11. Choosing X11 runs Soyuz through XWayland under a Wayland compositor.
   Takes effect after a restart.
-- **Drag and drop** — files dropped on Soyuz from other apps are accepted under X11.
-  Drag-in on Wayland: see below. Under a Wayland compositor, dragging between Soyuz and
-  X11-only apps works best with *Window system* set to X11.
-  <!-- TODO(orchestrator): adjust once Wayland drag-in and drag-out land. --> Wayland
-  drag-in and dragging items out of Soyuz are being worked on; check the release notes.
+- **Drag and drop** — works both ways under Wayland and X11. Files dragged in from other
+  apps are always copied (the source app keeps its files). Dragging out offers the files as
+  `text/uri-list` and the GNOME file list; `Ctrl` copies and `Shift` moves. After a move
+  under Wayland Soyuz only refreshes the folder (the target app moves the files), and under
+  X11 the sources go to the trash only when the target asks for it. Dragging out of Soyuz
+  and back in again works once per drag under Wayland.
 - **Not available on Linux** — the Mica / Acrylic backdrop, Snap Layouts, dialogs as separate
   windows, the NTFS change journal, Windows attributes and `\\server` share listing are
   Windows features; their settings are hidden on Linux.
