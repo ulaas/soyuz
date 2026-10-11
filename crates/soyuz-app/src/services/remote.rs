@@ -363,9 +363,7 @@ pub fn disconnect(uri: &RemoteUri) {
 /// Normalize a remote location typed by the user: strips a `user:password@` password
 /// into the session secrets. `Err` = not a valid remote address.
 pub fn normalize(loc: Location) -> Result<Location, String> {
-    if let Some(msg) = smb_unsupported(&loc) {
-        return Err(msg);
-    }
+    let loc = smb_location(loc)?;
     // Generic code builds `Dir(entry.path)` for folders; remote entry paths are URIs.
     let loc = match loc {
         Location::Dir(p) if is_remote_path(&p) => Location::Remote(p.to_string_lossy().into_owned()),
@@ -384,29 +382,34 @@ pub fn normalize(loc: Location) -> Result<Location, String> {
     }
 }
 
-/// Off Windows there is no SMB provider (and no share enumeration): `smb://server`,
-/// `cifs://…` and `\\server\share` get a friendly hint instead of a raw error.
+/// Off Windows, `\\server\share\folder` is opened with the SMB provider as
+/// `smb://server/share/folder` (only the backslash form: `//x` is a local path there).
 #[cfg(not(windows))]
-fn smb_unsupported(loc: &Location) -> Option<String> {
-    let s = match loc {
-        Location::Remote(s) => s.as_str(),
-        Location::Dir(p) => p.to_str()?,
-        _ => return None,
+fn smb_location(loc: Location) -> Result<Location, String> {
+    let unc = match &loc {
+        Location::Dir(p) => p.to_str().map(str::to_string),
+        Location::Remote(s) => Some(s.clone()),
+        _ => None,
     };
-    let lower = s.trim_start().to_ascii_lowercase();
-    let smb = lower.starts_with("smb://") || lower.starts_with("cifs://") || lower.starts_with(r"\\");
-    smb.then(smb_hint)
+    match unc.filter(|s| s.trim_start().starts_with(r"\\")) {
+        Some(s) => soyuz_vfs::uri::smb_from_unc(&s)
+            .map(|u| Location::Remote(u.display()))
+            .ok_or_else(|| tr!("remote-smb-bad-unc").to_string()),
+        None => Ok(loc),
+    }
 }
 
+/// On Windows `smb://server/share/folder` opens through the kernel redirector as
+/// `\\server\share\folder` (UNC paths are not changed).
 #[cfg(windows)]
-fn smb_unsupported(_: &Location) -> Option<String> {
-    None
-}
-
-/// "SMB shares can't be opened directly yet …" (non-Windows).
-#[cfg(not(windows))]
-fn smb_hint() -> String {
-    tr!("remote-smb-unsupported").to_string()
+fn smb_location(loc: Location) -> Result<Location, String> {
+    let Location::Remote(s) = &loc else { return Ok(loc) };
+    let lower = s.trim_start().to_ascii_lowercase();
+    if !(lower.starts_with("smb://") || lower.starts_with("cifs://")) {
+        return Ok(loc);
+    }
+    let u = RemoteUri::parse(s).map_err(|e| e.to_string())?;
+    u.to_unc().map(|p| Location::Dir(PathBuf::from(p))).ok_or_else(|| tr!("remote-smb-port-windows").to_string())
 }
 
 /// The remote URI behind a pane / entry path.
@@ -451,22 +454,35 @@ fn to_entries(dir: &RemoteUri, list: Vec<soyuz_vfs::RemoteEntry>) -> Vec<EntryIn
 /// paths (shares), `None` for everything else. `force` bypasses the cache.
 pub fn list_blocking(path: &Path, force: bool) -> Option<FsResult<Vec<EntryInfo>>> {
     let s = path.to_str()?;
+    #[cfg(windows)]
     if soyuz_fs::shares::is_bare_server(s) {
         if !st().cfg.read().share_enumeration {
             return None;
         }
-        #[cfg(not(windows))]
-        return Some(Err(FsError::with_message(FsErrorKind::Unsupported, "list_shares", Some(path), smb_hint())));
-        #[cfg(windows)]
         return Some(list_shares(s));
     }
-    if !soyuz_core::location::looks_remote(s) {
+    // Off Windows a `\\server\share` path is listed over SMB (only the backslash form:
+    // `//x` is a local path there).
+    #[cfg(not(windows))]
+    let unc = s.starts_with(r"\\").then(|| soyuz_vfs::uri::smb_from_unc(s)).flatten();
+    #[cfg(windows)]
+    let unc: Option<RemoteUri> = None;
+    if unc.is_none() && !soyuz_core::location::looks_remote(s) {
         return None;
     }
-    let uri = match RemoteUri::parse(s) {
+    let uri = match unc.map_or_else(|| RemoteUri::parse(s), Ok) {
         Ok(u) => u,
         Err(e) => return Some(Err(FsError::with_message(FsErrorKind::InvalidName, "list", Some(path), e.to_string()))),
     };
+    // `smb://server/`: the server's shares (srvsvc over SMB), unless turned off.
+    if uri.scheme == Scheme::Smb && uri.is_root() && !st().cfg.read().share_enumeration {
+        return Some(Err(FsError::with_message(
+            FsErrorKind::Unsupported,
+            "list_shares",
+            Some(path),
+            tr!("remote-smb-shares-off").to_string(),
+        )));
+    }
     let key = uri.display();
     if !force
         && let Some((at, entries)) = st().cache.lock().get(&key)
@@ -694,10 +710,38 @@ mod tests {
         assert!(normalize(Location::Remote("gopher://x".into())).is_err());
         #[cfg(not(windows))]
         {
-            let e = normalize(Location::Remote("smb://nas/share".into())).unwrap_err();
-            assert!(e.contains("SMB"), "{e}");
-            assert!(normalize(Location::Dir(PathBuf::from(r"\\nas\share"))).is_err());
+            assert_eq!(
+                normalize(Location::Remote("smb://alice:pw@NAS/share".into())).unwrap(),
+                Location::Remote("smb://alice@nas/share".into())
+            );
+            assert_eq!(
+                normalize(Location::Remote("cifs://nas/share/a".into())).unwrap(),
+                Location::Remote("smb://nas/share/a".into())
+            );
+            assert_eq!(
+                normalize(Location::Dir(PathBuf::from(r"\\NAS\share\Films"))).unwrap(),
+                Location::Remote("smb://nas/share/Films".into())
+            );
+            assert_eq!(
+                normalize(Location::Dir(PathBuf::from(r"\\nas"))).unwrap(),
+                Location::Remote("smb://nas/".into())
+            );
+            assert!(normalize(Location::Dir(PathBuf::from(r"\\?\C:\x"))).is_err());
+            assert_eq!(normalize(Location::Dir(PathBuf::from("//home/x"))).unwrap(), Location::Dir("//home/x".into()));
             assert!(normalize(Location::Dir(PathBuf::from("/home"))).is_ok());
+            assert!(list_blocking(Path::new("//home"), false).is_none(), "`//x` stays a local path");
+        }
+        #[cfg(windows)]
+        {
+            assert_eq!(
+                normalize(Location::Remote("smb://nas/share/a".into())).unwrap(),
+                Location::Dir(PathBuf::from(r"\\nas\share\a"))
+            );
+            assert!(normalize(Location::Remote("smb://nas:4455/share".into())).is_err());
+            assert_eq!(
+                normalize(Location::Dir(PathBuf::from(r"\\nas\share"))).unwrap(),
+                Location::Dir(PathBuf::from(r"\\nas\share"))
+            );
         }
         assert_eq!(normalize(Location::Trash).unwrap(), Location::Trash);
         assert_eq!(

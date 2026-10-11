@@ -497,7 +497,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `io_timeout_secs` | integer | `60` | Give up on a server that stops answering mid-operation after this long. |
 | `preview_cache_mb` | integer | `512` | Remote files are downloaded for preview / open into a per-user temp cache of at most this size (oldest files are evicted). |
 | `preview_max_mb` | integer | `64` | Larger remote files are not downloaded just for a preview. |
-| `share_enumeration` | boolean | `true` | Typing `\\server` lists its shares (Windows `NetShareEnum`). |
+| `share_enumeration` | boolean | `true` | Typing `\\server` or `smb://server` lists its shares (Windows `NetShareEnum`; elsewhere srvsvc over SMB). |
 
 ## `[linux]`
 

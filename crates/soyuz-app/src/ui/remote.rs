@@ -539,9 +539,19 @@ fn text_field(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> eg
     )
 }
 
-/// Protocols offered by the connect dialog.
-const PROTOCOLS: [(Scheme, &str); 4] =
-    [(Scheme::Sftp, "SFTP"), (Scheme::WebDav, "WebDAV"), (Scheme::Ftp, "FTP"), (Scheme::S3, "S3")];
+/// Protocols offered by the connect dialog. Windows opens SMB shares as `\\server\share`
+/// paths through its own redirector, so SMB is offered elsewhere only.
+#[cfg(not(windows))]
+const PROTOCOLS: &[(Scheme, &str)] = &[
+    (Scheme::Sftp, "SFTP"),
+    (Scheme::Smb, "SMB"),
+    (Scheme::WebDav, "WebDAV"),
+    (Scheme::Ftp, "FTP"),
+    (Scheme::S3, "S3"),
+];
+#[cfg(windows)]
+const PROTOCOLS: &[(Scheme, &str)] =
+    &[(Scheme::Sftp, "SFTP"), (Scheme::WebDav, "WebDAV"), (Scheme::Ftp, "FTP"), (Scheme::S3, "S3")];
 
 pub struct ConnectDialog {
     /// Editing this saved connection (id).
@@ -693,6 +703,9 @@ impl ConnectDialog {
                 (AuthKind::Password, tr!("remote-auth-access-keys")),
                 (AuthKind::Anonymous, tr!("remote-auth-public")),
             ],
+            Scheme::Smb => {
+                vec![(AuthKind::Password, tr!("remote-auth-password")), (AuthKind::Anonymous, tr!("remote-auth-guest"))]
+            }
             _ => vec![
                 (AuthKind::Password, tr!("remote-auth-password")),
                 (AuthKind::Anonymous, tr!("remote-auth-anonymous")),
@@ -728,7 +741,7 @@ impl Dialog for ConnectDialog {
         field_label(ui, tr!("remote-protocol"));
         ui.horizontal(|ui| {
             let mut proto = self.proto;
-            crate::ui::settings::widgets::segmented(ui, &mut proto, &PROTOCOLS);
+            crate::ui::settings::widgets::segmented(ui, &mut proto, PROTOCOLS);
             if proto != self.proto {
                 self.proto = proto;
                 if !self.auth_options().iter().any(|(a, _)| *a == self.auth) {
@@ -775,7 +788,12 @@ impl Dialog for ConnectDialog {
                 let (a, b) = cols.split_at_mut(1);
                 let ui = &mut a[0];
                 field_label(ui, if s3 { tr!("remote-access-key") } else { tr!("remote-user") });
-                text_field(ui, &mut self.user, if s3 { "AKIA…" } else { tr!("remote-user-hint") }, false);
+                let hint = match self.proto {
+                    Scheme::S3 => "AKIA…",
+                    Scheme::Smb => tr!("remote-user-hint-smb"),
+                    _ => tr!("remote-user-hint"),
+                };
+                text_field(ui, &mut self.user, hint, false);
                 let ui = &mut b[0];
                 let (label, hint) = match (self.auth, s3) {
                     (_, true) => (tr!("remote-secret-key"), ""),
@@ -800,8 +818,13 @@ impl Dialog for ConnectDialog {
                 ui.label(RichText::new(note).size(11.5).color(p.text_tertiary));
             }
         }
-        field_label(ui, if s3 { tr!("remote-prefix") } else { tr!("remote-folder") });
-        text_field(ui, &mut self.path, "/", false);
+        let (label, hint) = match self.proto {
+            Scheme::S3 => (tr!("remote-prefix"), "/"),
+            Scheme::Smb => (tr!("remote-share-folder"), "/share/folder"),
+            _ => (tr!("remote-folder"), "/"),
+        };
+        field_label(ui, label);
+        text_field(ui, &mut self.path, hint, false);
         // Save.
         ui.add_space(10.0);
         ui.checkbox(&mut self.save, tr!("remote-save"));

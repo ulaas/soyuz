@@ -949,7 +949,8 @@ pub struct RemoteSection {
     pub preview_cache_mb: u64,
     /// Larger remote files are not downloaded just for a preview.
     pub preview_max_mb: u64,
-    /// Typing `\\server` lists its shares (Windows `NetShareEnum`).
+    /// Typing `\\server` or `smb://server` lists its shares (Windows `NetShareEnum`;
+    /// elsewhere srvsvc over SMB).
     pub share_enumeration: bool,
 }
 

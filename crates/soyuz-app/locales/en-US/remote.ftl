@@ -119,4 +119,12 @@ remote-error-name = Enter a name without slashes.
 ## Linux (data)
 
 remote-secret-not-saved = The password was not saved
-remote-smb-unsupported = SMB shares can't be opened directly yet. Mount the share with your desktop (for example `gio mount smb://server/share`), then open it from Devices or its folder under /run/user.
+
+## smb
+
+remote-smb-bad-unc = Not a valid network path. Use \\server\share\folder or smb://server/share/folder.
+remote-smb-port-windows = Windows opens SMB shares on port 445 only: remove the port, or type \\server\share.
+remote-smb-shares-off = Listing a server's shares is turned off (Settings › Jobs › Remote locations). Type the share too, for example smb://server/share.
+remote-auth-guest = Guest
+remote-user-hint-smb = user or DOMAIN\user
+remote-share-folder = Share and folder

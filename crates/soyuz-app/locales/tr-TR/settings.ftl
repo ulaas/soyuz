@@ -361,7 +361,11 @@ settings-remote-download-cache = İndirme önbelleği
 settings-remote-download-cache-desc = Açılan ya da önizlenen uzak dosyalar bu boyuta kadar geçici bir klasörde tutulur.
 settings-remote-preview-max = Önizlenecek en büyük dosya
 settings-remote-preview-max-desc = Daha büyük uzak dosyalar yalnızca önizlemek için indirilmez.
-settings-remote-shares-desc = Yalnızca sunucu adı yazmak, sunucunun paylaşılan klasörlerini listeler (Windows).
+# $platform: "windows" | "other".
+settings-remote-shares-desc = { $platform ->
+    [windows] Yalnızca sunucu adı (\\sunucu) yazmak, sunucunun paylaşılan klasörlerini listeler.
+   *[other] \\sunucu veya smb://sunucu yazmak, sunucunun paylaşılan klasörlerini listeler (SMB üzerinden sorulur, diğer sunucular gibi oturum açılır).
+}
 settings-remote-trusted = Güvenilen SSH sunucuları
 settings-remote-forget = Unut
 

@@ -30,6 +30,11 @@ suppaftp = { version = "12.1.1", default-features = false, features = ["rustls-r
 rusty-s3 = "0.10.2"
 rustls-platform-verifier = "0.7.1"
 
+# SMB2/3 off Windows (pure Rust: NTLMv2, signing, encryption, srvsvc share enumeration).
+# Windows opens `\\server\share` through the kernel redirector instead.
+[target.'cfg(not(windows))'.dependencies]
+smb2 = { version = "0.27.2", default-features = false, features = ["tokio"] }
+
 [dev-dependencies]
 tempfile.workspace = true
 
