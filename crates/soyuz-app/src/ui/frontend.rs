@@ -19,6 +19,11 @@ pub fn drain(app: &mut SoyuzApp) {
                 app.ui.dialogs.push(crate::ui::workspaces::history::HistoryDialog::new(tab, pane))
             }
             FrontendCmd::CloseWindowPrompt { id, tabs } => crate::ui::workspaces::windows::close_prompt(app, id, tabs),
+            FrontendCmd::Properties(dir) => crate::ui::tree::properties(app, &dir),
+            FrontendCmd::UnlockDevice { object, name, kind, pane } => {
+                crate::ui::sidebar::unlock_dialog(app, object, name, kind, pane)
+            }
+            FrontendCmd::OfferReadOnlyMount { dev, name } => crate::ui::sidebar::offer_read_only(app, dev, name),
         }
     }
 }

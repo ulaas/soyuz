@@ -60,7 +60,7 @@ pub enum Cmd {
         to: usize,
     },
     /// Sidebar Portal: pin / unpin / reorder / relabel folders (`[[sidebar.portal]]`).
-    Portal(crate::ui::portal::PortalCmd),
+    Portal(crate::models::portal::PortalCmd),
     /// Sidebar icon bar: show the places sections or the disk tree (`[sidebar] mode`).
     SetSidebarMode(soyuz_core::config::SidebarMode),
     SelectTab(usize),
@@ -98,8 +98,8 @@ pub enum Cmd {
     FileOp(crate::ops::fileops::FileOpCmd),
     /// Metadata dialogs (properties, attributes, batch rename, links): `ui::dialogs::properties`.
     Meta(crate::ui::dialogs::properties::MetaCmd),
-    /// Folder tree effects (focus, new folder, properties): `ui::tree`.
-    Tree(crate::ui::tree::TreeCmd),
+    /// Folder tree effects (focus, new folder, properties): `models::tree`.
+    Tree(crate::models::tree::TreeCmd),
     /// Close confirmed while jobs are pending: now, or once they have finished.
     Quit {
         when_idle: bool,
@@ -119,6 +119,6 @@ pub enum Cmd {
     Automation(crate::automation::AutoCmd),
     /// Remote locations (connect dialog, saved connections, host keys): `ui::remote`.
     Remote(crate::ui::remote::RemoteCmd),
-    /// Sidebar devices (unlock dialog, read-only mount offer, hide): `ui::sidebar`.
-    Device(crate::ui::sidebar::DeviceCmd),
+    /// Sidebar devices (unlock dialog, read-only mount offer, hide): `models::devices`.
+    Device(crate::models::devices::DeviceCmd),
 }

@@ -601,7 +601,7 @@ pub fn drain_watcher(app: &mut SoyuzApp) {
             .toasts
             .push(Toast::info(tr!("services-watch-degraded")).body(tr!("services-watch-degraded-body", secs = secs)));
     }
-    if crate::ui::sidebar::take_volumes_stale() {
+    if crate::models::devices::take_volumes_stale() {
         app.services.places.refresh();
     }
     let events = app.services.watcher.drain();
@@ -835,9 +835,9 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
-        Cmd::Portal(c) => crate::ui::portal::apply(app, crate::host::egui_ctx(host), c),
-        Cmd::SetSidebarMode(m) => crate::ui::tree::set_mode(app, crate::host::egui_ctx(host), m),
-        Cmd::Device(c) => crate::ui::sidebar::apply_device(app, crate::host::egui_ctx(host), c),
+        Cmd::Portal(c) => crate::models::portal::apply(app, host, c),
+        Cmd::SetSidebarMode(m) => crate::models::tree::set_mode(app, host, m),
+        Cmd::Device(c) => crate::models::devices::apply(app, host, c),
         Cmd::MoveFavorite { from, to } => {
             let s = &mut app.ui.sidebar;
             if from < s.favorites.len() {
@@ -893,7 +893,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
         Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, crate::host::egui_ctx(host), dir),
         Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, crate::host::egui_ctx(host)),
-        Cmd::Tree(c) => crate::ui::tree::apply(app, c),
+        Cmd::Tree(c) => crate::models::tree::apply(app, c),
         Cmd::Ai(c) => crate::ai::apply_cmd(app, c, crate::host::egui_ctx(host)),
         Cmd::Automation(c) => crate::automation::apply(app, c, crate::host::egui_ctx(host)),
         Cmd::Quit { when_idle } => app.confirm_quit(crate::host::egui_ctx(host), when_idle),

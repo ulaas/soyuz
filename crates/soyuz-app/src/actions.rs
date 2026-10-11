@@ -51,7 +51,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         }
         A::Refresh => ops::refresh(app),
         A::ToggleSidebar => app.ui.sidebar_visible = !app.ui.sidebar_visible,
-        A::ToggleTreeSidebar => crate::ui::tree::toggle(app, crate::host::egui_ctx(host)),
+        A::ToggleTreeSidebar => crate::models::tree::toggle(app, host),
         A::FocusSidebar => {
             app.ui.sidebar_visible = true;
             app.ui.focus = Focus::Sidebar;
