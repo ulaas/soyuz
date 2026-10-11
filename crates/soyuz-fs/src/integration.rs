@@ -38,13 +38,14 @@ pub struct AssocKeys {
 }
 
 impl AssocKeys {
-    /// The real per-user association keys (Linux / BSD: the real XDG folders).
+    /// The real per-user association keys (Linux / BSD: the real XDG folders; inside
+    /// Flatpak the host's, not the app's private `~/.var/app/<id>/…`).
     pub fn user() -> Self {
         if cfg!(all(unix, not(target_os = "macos"))) {
             let s = |p: PathBuf| p.to_string_lossy().into_owned();
             return AssocKeys {
-                classes: s(crate::launch::linux::config_home()),
-                state: s(crate::launch::linux::data_home()),
+                classes: s(crate::launch::linux::host_config_home()),
+                state: s(crate::launch::linux::host_data_home()),
             };
         }
         AssocKeys { classes: r"Software\Classes".into(), state: r"Software\Soyuz\DefaultFileManager".into() }

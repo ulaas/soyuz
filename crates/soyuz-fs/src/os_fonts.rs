@@ -72,7 +72,7 @@ pub fn user_font_dir() -> Option<PathBuf> {
     if cfg!(target_os = "macos") {
         return Some(crate::path::home().join("Library/Fonts"));
     }
-    Some(crate::launch::linux::data_home().join("fonts"))
+    Some(crate::launch::linux::host_data_home().join("fonts"))
 }
 
 /// Every installed font registered with the OS (machine first, then per-user).
@@ -376,6 +376,11 @@ mod scan {
             ("/usr/local/share/fonts".into(), false),
             (data_home.join("fonts"), true),
             (home.join(".fonts"), true),
+            // Inside Flatpak: the host's fonts, which Flatpak mounts here (the runtime's
+            // own fonts are the `/usr/share/fonts` above). Absent elsewhere.
+            ("/run/host/fonts".into(), false),
+            ("/run/host/local-fonts".into(), false),
+            ("/run/host/user-fonts".into(), true),
         ];
         let mut queue = vec![PathBuf::from("/etc/fonts/fonts.conf")];
         let mut seen = std::collections::HashSet::new();

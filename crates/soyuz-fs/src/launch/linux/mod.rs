@@ -67,9 +67,108 @@ pub(crate) fn config_home() -> PathBuf {
     env_dir("XDG_CONFIG_HOME").unwrap_or_else(|| crate::path::home().join(".config"))
 }
 
-/// `$XDG_CACHE_HOME` (`~/.cache`).
-pub(crate) fn cache_home() -> PathBuf {
-    env_dir("XDG_CACHE_HOME").unwrap_or_else(|| crate::path::home().join(".cache"))
+// ---------------------------------------------------------------------------------------
+// Flatpak
+
+/// The Flatpak app id when running inside a Flatpak sandbox (`/.flatpak-info` exists):
+/// `$FLATPAK_ID`, else the `name=` of its `[Application]` group.
+pub(crate) fn flatpak_id() -> Option<String> {
+    static ID: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    ID.get_or_init(|| {
+        let info = std::fs::read_to_string("/.flatpak-info").ok()?;
+        std::env::var("FLATPAK_ID").ok().filter(|s| !s.is_empty()).or_else(|| flatpak_info_name(&info))
+    })
+    .clone()
+}
+
+/// `name=` of the `[Application]` group of a `.flatpak-info` file.
+fn flatpak_info_name(info: &str) -> Option<String> {
+    let mut in_app = false;
+    for l in info.lines().map(str::trim) {
+        if l.starts_with('[') {
+            in_app = l == "[Application]";
+        } else if in_app && let Some(v) = l.strip_prefix("name=") {
+            return Some(v.trim().to_string()).filter(|v| !v.is_empty());
+        }
+    }
+    None
+}
+
+/// The host's own XDG base folder. Inside Flatpak `$XDG_*_HOME` points at the app's
+/// private `~/.var/app/<id>/…`; settings shared with the desktop (`mimeapps.list`,
+/// `user-dirs.dirs`, D-Bus service files, the thumbnail cache) live in the host's folder,
+/// which Flatpak passes as `$HOST_XDG_*_HOME` when it was set (else the default under
+/// `~`, reachable through `--filesystem=host`). Outside Flatpak: the normal folder.
+fn host_home(var: &str, default: &str) -> PathBuf {
+    if flatpak_id().is_some() {
+        return env_dir(&format!("HOST_{var}")).unwrap_or_else(|| crate::path::home().join(default));
+    }
+    env_dir(var).unwrap_or_else(|| crate::path::home().join(default))
+}
+
+/// The desktop's `$XDG_CONFIG_HOME` (see [`host_home`]).
+pub(crate) fn host_config_home() -> PathBuf {
+    host_home("XDG_CONFIG_HOME", ".config")
+}
+
+/// The desktop's `$XDG_DATA_HOME` (see [`host_home`]).
+pub(crate) fn host_data_home() -> PathBuf {
+    host_home("XDG_DATA_HOME", ".local/share")
+}
+
+/// The desktop's `$XDG_CACHE_HOME` (see [`host_home`]).
+pub(crate) fn host_cache_home() -> PathBuf {
+    host_home("XDG_CACHE_HOME", ".cache")
+}
+
+/// `argv` as a command that runs on the host: inside Flatpak through the sandbox's
+/// `flatpak-spawn --host` (the `org.freedesktop.Flatpak` Development API, needs
+/// `--talk-name=org.freedesktop.Flatpak`), with the working directory and startup token
+/// passed explicitly; elsewhere `argv` itself.
+fn host_command(argv: &[OsString], cwd: Option<&Path>, token: Option<&str>) -> Command {
+    if flatpak_id().is_none() {
+        let mut c = Command::new(&argv[0]);
+        c.args(&argv[1..]);
+        if let Some(d) = cwd {
+            c.current_dir(d);
+        }
+        child_env(&mut c, token);
+        return c;
+    }
+    let mut c = Command::new("flatpak-spawn");
+    c.args(flatpak_spawn_args(argv, cwd, token));
+    c
+}
+
+/// Arguments of `flatpak-spawn` for [`host_command`].
+fn flatpak_spawn_args(argv: &[OsString], cwd: Option<&Path>, token: Option<&str>) -> Vec<OsString> {
+    let mut v: Vec<OsString> = vec!["--host".into()];
+    if let Some(d) = cwd {
+        let mut a = OsString::from("--directory=");
+        a.push(d.as_os_str());
+        v.push(a);
+    }
+    if let Some(t) = token {
+        v.push(format!("--env=XDG_ACTIVATION_TOKEN={t}").into());
+        v.push(format!("--env=DESKTOP_STARTUP_ID={t}").into());
+    }
+    v.extend(argv.iter().cloned());
+    v
+}
+
+/// Whether `prog` is found on the host's `PATH` (inside Flatpak: `flatpak-spawn --host
+/// which`, blocking; call off the UI thread).
+fn host_has(prog: &str) -> bool {
+    if flatpak_id().is_none() {
+        return which(prog).is_some();
+    }
+    Command::new("flatpak-spawn")
+        .args(["--host", "which", prog])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// Data dirs, highest precedence first: `$XDG_DATA_HOME`, then `$XDG_DATA_DIRS`.
@@ -373,12 +472,8 @@ pub(crate) fn launch_entry(app: &AppEntry, targets: &[Target], op: &'static str,
         } else {
             argv
         };
-        let mut cmd = Command::new(&argv[0]);
-        cmd.args(&argv[1..]);
-        if let Some(d) = &cwd {
-            cmd.current_dir(d);
-        }
-        child_env(&mut cmd, if i == 0 { token.as_deref() } else { None });
+        // Inside Flatpak the entry is a host (or other Flatpak) program: run it there.
+        let cmd = host_command(&argv, cwd.as_deref(), if i == 0 { token.as_deref() } else { None });
         super::spawn_detached(cmd, op, path)?;
     }
     Ok(())
@@ -524,7 +619,7 @@ fn portal_open_uri(url: &str) -> FsResult<()> {
 /// Whether a desktop entry launches this very program (avoid handing folders back to
 /// ourselves when Soyuz is the default file manager).
 fn is_self(app: &AppEntry) -> bool {
-    if app.id.starts_with("soyuz") {
+    if app.id.starts_with("soyuz") || flatpak_id().is_some_and(|f| app.id.starts_with(f.as_str())) {
         return true;
     }
     let Ok(me) = std::env::current_exe().and_then(std::fs::canonicalize) else { return false };
@@ -535,7 +630,7 @@ const FILE_MANAGER1: &str = "org.freedesktop.FileManager1";
 
 /// Path of the per-user D-Bus service file for `FileManager1`.
 pub(crate) fn file_manager1_service_file() -> PathBuf {
-    data_home().join("dbus-1/services/org.freedesktop.FileManager1.service")
+    host_data_home().join("dbus-1/services/org.freedesktop.FileManager1.service")
 }
 
 /// `ShowItems([uri], "")` on the session's file manager, unless that would be us.
@@ -551,8 +646,10 @@ fn show_items(path: &Path) -> Result<(), String> {
         if !bus::activatable(&conn, FILE_MANAGER1) {
             return Err("no FileManager1 service".into());
         }
-        // Our own (opt-in) service file would start another Soyuz.
-        let me = std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
+        // Our own (opt-in) service file would start another Soyuz (inside Flatpak it runs
+        // `flatpak run … <app id>`).
+        let me = flatpak_id()
+            .unwrap_or_else(|| std::env::current_exe().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default());
         if !me.is_empty()
             && std::fs::read_to_string(file_manager1_service_file()).is_ok_and(|t| t.contains(me.as_str()))
         {
@@ -589,6 +686,18 @@ pub(crate) fn reveal(path: &Path) -> FsResult<()> {
     match show_items(path) {
         Ok(()) => return Ok(()),
         Err(e) => log::debug!("FileManager1.ShowItems: {e}"),
+    }
+    // Sandboxed: the host's folder handlers can't be started from here; the portal
+    // opens the folder holding `path` in the desktop's file manager.
+    #[cfg(target_os = "linux")]
+    if sandboxed() {
+        let f = std::fs::File::open(path).map_err(crate::err::map("reveal", path))?;
+        let token = take_activation_token();
+        return portal_call(
+            "OpenDirectory",
+            &("", zbus::zvariant::Fd::from(&f), portal_options(token.as_deref())),
+            path,
+        );
     }
     let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(path);
     let index = app_index();
@@ -646,6 +755,11 @@ const TERMINALS: &[TermSpec] = &[
 /// `$TERMINAL`, then the table. Each item is `(program words, spec)`; unknown programs
 /// get `-e` and the working directory only.
 fn terminal_candidates(preferred: Option<&str>) -> Vec<(Vec<String>, TermSpec)> {
+    terminal_candidates_with(preferred, &host_has)
+}
+
+/// [`terminal_candidates`] with `exists` deciding whether a program is installed.
+fn terminal_candidates_with(preferred: Option<&str>, exists: &dyn Fn(&str) -> bool) -> Vec<(Vec<String>, TermSpec)> {
     let unknown = TermSpec { name: "", pre: &[], dir: DirArg::Cwd, exec: &["-e"] };
     let spec_of = |prog: &str| {
         let base = Path::new(prog).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -654,7 +768,7 @@ fn terminal_candidates(preferred: Option<&str>) -> Vec<(Vec<String>, TermSpec)> 
     let mut out: Vec<(Vec<String>, TermSpec)> = Vec::new();
     let mut push = |words: Vec<String>, must_exist: bool| {
         let Some(prog) = words.first() else { return };
-        if must_exist && which(prog).is_none() {
+        if must_exist && !exists(prog) {
             return;
         }
         if !out.iter().any(|(w, _)| w == &words) {
@@ -710,9 +824,7 @@ pub(crate) fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<
     let mut last_err = None;
     for (words, spec) in terminal_candidates(preferred) {
         let argv = term_argv(&words, &spec, Some(dir), None);
-        let mut c = Command::new(&argv[0]);
-        c.args(&argv[1..]).current_dir(dir);
-        child_env(&mut c, take_activation_token().as_deref());
+        let c = host_command(&argv, Some(dir), take_activation_token().as_deref());
         match super::spawn_detached(c, "open_terminal", dir) {
             Ok(()) => return Ok(()),
             Err(e) => last_err = Some(e),
@@ -791,6 +903,30 @@ mod tests {
         let c = terminal_candidates(Some("my-term --flag"));
         assert_eq!(c[0].0, ["my-term", "--flag"]);
         assert_eq!(c[0].1.exec, ["-e"]);
+    }
+
+    #[test]
+    fn flatpak_helpers() {
+        let info = "[Application]\nname=io.github.ulaas.Soyuz\nruntime=runtime/org.freedesktop.Platform/x86_64/25.08\n\n[Instance]\nname=x\n";
+        assert_eq!(flatpak_info_name(info).as_deref(), Some("io.github.ulaas.Soyuz"));
+        assert_eq!(flatpak_info_name("[Instance]\nname=x\n"), None);
+        let argv = [OsString::from("ptyxis"), OsString::from("--new-window")];
+        let s = |v: Vec<OsString>| v.into_iter().map(|a| a.to_string_lossy().into_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            s(flatpak_spawn_args(&argv, Some(Path::new("/w d")), Some("tok"))),
+            [
+                "--host",
+                "--directory=/w d",
+                "--env=XDG_ACTIVATION_TOKEN=tok",
+                "--env=DESKTOP_STARTUP_ID=tok",
+                "ptyxis",
+                "--new-window"
+            ]
+        );
+        assert_eq!(s(flatpak_spawn_args(&argv, None, None)), ["--host", "ptyxis", "--new-window"]);
+        // Installed-ness comes from the probe (the host's PATH inside Flatpak).
+        let c = terminal_candidates_with(None, &|p| p == "konsole");
+        assert_eq!(c.iter().map(|(w, _)| w[0].as_str()).collect::<Vec<_>>(), ["konsole"]);
     }
 
     #[test]

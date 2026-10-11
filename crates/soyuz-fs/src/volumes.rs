@@ -341,6 +341,35 @@ pub(crate) fn mount_for<'a>(path: &Path, mounts: &'a [MountInfo]) -> Option<&'a 
     best
 }
 
+/// Inside Flatpak: drop the sandbox's own plumbing (its tmpfs `/`, the runtime at `/usr`,
+/// the app at `/app`, the `/etc` files, Flatpak's private folders under home) and, for
+/// the filesystem holding `home`, every mount but the one `home` is on (the host's
+/// `/mnt`, `/opt`, `/srv` show up as bind mounts of it; without this [`dedupe_mounts`]
+/// would name the system disk after one of them, or after the runtime's `/usr`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn flatpak_visible(mounts: Vec<MountInfo>, home: &Path) -> Vec<MountInfo> {
+    const SANDBOX: &[&str] = &["/usr", "/app", "/etc", "/run", "/.hcwd", "/.profile", "/afs"];
+    let plumbing = |m: &MountInfo| {
+        m.mount == Path::new("/")
+            || SANDBOX.iter().any(|p| m.mount.starts_with(p))
+            || m.mount.starts_with(home.join(".local/share/flatpak"))
+            || m.mount.starts_with(home.join(".var/app"))
+    };
+    let mounts: Vec<MountInfo> = mounts.into_iter().filter(|m| !plumbing(m)).collect();
+    let home_mount = mounts
+        .iter()
+        .filter(|m| home.starts_with(&m.mount))
+        .max_by_key(|m| m.mount.components().count())
+        .map(|m| (m.major, m.minor, m.fstype.clone(), m.mount.clone()));
+    match home_mount {
+        Some((major, minor, fstype, at)) => mounts
+            .into_iter()
+            .filter(|m| !(m.major == major && m.minor == minor && m.fstype == fstype) || m.mount == at)
+            .collect(),
+        None => mounts,
+    }
+}
+
 /// One entry per filesystem: mounts sharing `major:minor` (btrfs subvolumes, bind mounts)
 /// collapse into the mount of the filesystem root (`root == "/"`), else the one with the
 /// shortest mount path. Order is kept.
@@ -596,8 +625,8 @@ mod imp {
     use soyuz_core::{DeviceId, FsResult};
 
     use super::{
-        FsCaps, MountInfo, QUERY_DEADLINE, VolumeInfo, VolumeKind, caps_for, dedupe_mounts, gvfs_label,
-        is_pseudo_mount, kind_for, mount_for, parallel_with_deadline, parse_mountinfo,
+        FsCaps, MountInfo, QUERY_DEADLINE, VolumeInfo, VolumeKind, caps_for, dedupe_mounts, flatpak_visible,
+        gvfs_label, is_pseudo_mount, kind_for, mount_for, parallel_with_deadline, parse_mountinfo,
     };
     use crate::err;
 
@@ -710,7 +739,11 @@ mod imp {
     pub(super) fn volumes() -> Vec<VolumeInfo> {
         let table = mounts();
         let gvfs = gvfs_mounts(&table);
-        let all: Vec<MountInfo> = dedupe_mounts(table.into_iter().filter(|m| !is_pseudo_mount(m)).collect());
+        let mut visible: Vec<MountInfo> = table.into_iter().filter(|m| !is_pseudo_mount(m)).collect();
+        if crate::launch::linux::flatpak_id().is_some() {
+            visible = flatpak_visible(visible, &crate::path::home());
+        }
+        let all: Vec<MountInfo> = dedupe_mounts(visible);
         let mut cands: Vec<Cand> = all.into_iter().map(|m| Cand { m, label: None, kind: None }).collect();
         cands.extend(gvfs);
         let labels = labels();
@@ -1033,6 +1066,31 @@ mod tests {
         );
         let tmp = parse_mountinfo(BTRFS).into_iter().find(|m| m.mount == Path::new("/tmp")).unwrap();
         assert_eq!(kind_for(&tmp.fstype, &tmp.source, &tmp.mount), VolumeKind::Ram);
+    }
+
+    /// A Flatpak sandbox with `--filesystem=host` on the layout above (trimmed).
+    const FLATPAK: &str = "\
+1 0 0:90 / / rw - tmpfs tmpfs rw
+2 1 0:35 /root/var/lib/flatpak/runtime/org.freedesktop.Platform/files /usr ro - btrfs /dev/sdd3 rw
+3 1 0:35 /root/var/lib/flatpak/app/io.github.ulaas.Soyuz/files /app ro - btrfs /dev/sdd3 rw
+4 1 0:35 /root/etc/machine-id /etc/machine-id ro - btrfs /dev/sdd3 rw
+5 1 0:35 /root/afs /afs rw - btrfs /dev/sdd3 rw
+6 1 0:35 /home /home rw - btrfs /dev/sdd3 rw
+7 6 0:96 / /home/u/.local/share/flatpak rw - tmpfs tmpfs rw
+8 1 0:35 /root/mnt /mnt rw - btrfs /dev/sdd3 rw
+9 1 0:35 /root/srv /srv rw - btrfs /dev/sdd3 rw
+10 1 8:33 / /mnt/data rw - ext4 /dev/sdc1 rw
+11 1 0:29 /media /run/media rw - tmpfs tmpfs rw
+12 1 0:35 /root /run/host/root rw - btrfs /dev/sdd3 rw
+13 1 0:91 / /tmp rw - tmpfs tmpfs rw
+";
+
+    #[test]
+    fn flatpak_sandbox_mounts() {
+        let all: Vec<_> = parse_mountinfo(FLATPAK).into_iter().filter(|m| !is_pseudo_mount(m)).collect();
+        let vis = flatpak_visible(all, Path::new("/home/u"));
+        let mounts: Vec<PathBuf> = dedupe_mounts(vis).into_iter().map(|m| m.mount).collect();
+        assert_eq!(mounts, ["/home", "/mnt/data", "/tmp"].map(PathBuf::from));
     }
 
     #[test]
