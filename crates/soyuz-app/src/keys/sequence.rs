@@ -3,15 +3,15 @@
 //!
 //! A chord that starts a sequence waits up to [`TIMEOUT`] for the next key; when the
 //! same chord is also bound on its own, that binding fires on timeout (like Vim's
-//! `timeoutlen`). Consumed plain keys also swallow the `Text` event egui emits for them,
+//! `timeoutlen`). Consumed plain keys also swallow the `Text` event the frontend reports,
 //! so type-ahead does not see letters used as commands.
 
 use std::time::{Duration, Instant};
 
-use egui::Event;
 use soyuz_core::Location;
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, KeyPreset, Keymap, Mods, SeqMatch};
 
+use super::input::{InputEvent, InputFrame};
 use crate::app::SoyuzApp;
 use crate::host::Host;
 use crate::ops::{self, NavOpts};
@@ -173,65 +173,80 @@ pub fn marks_enabled(app: &SoyuzApp) -> bool {
     app.config.keys.marks || app.config.keys.preset == KeyPreset::Vim
 }
 
-/// One frame of keyboard dispatch for the main window (replaces the plain
-/// `keys::dispatch` loop): actions, sequences and marks.
-pub fn dispatch_all(app: &mut SoyuzApp, host: &dyn Host, kctx: KeyContext, text_focused: bool) {
+/// Feed this frame's chords through the keymap, sequences and marks, marking what was
+/// taken in `frame`. A consumed plain chord also swallows the next `Text` event, so
+/// type-ahead does not see letters used as commands.
+pub fn feed_frame(
+    frame: &mut InputFrame,
+    km: &Keymap,
+    seq: &mut Sequencer,
+    kctx: KeyContext,
+    text_focused: bool,
+    marks: bool,
+    now: Instant,
+) -> Vec<Feed> {
+    let mut out: Vec<Feed> = Vec::new();
+    let mut swallow_text = false;
+    for i in 0..frame.events.len() {
+        if frame.consumed[i] {
+            continue;
+        }
+        let chord = match &frame.events[i] {
+            InputEvent::Text(_) if swallow_text => {
+                swallow_text = false;
+                frame.consumed[i] = true;
+                continue;
+            }
+            InputEvent::Chord(c) => *c,
+            _ => continue,
+        };
+        if text_focused && super::is_text_editing(chord) {
+            continue;
+        }
+        let plain = !chord.mods.intersects(Mods::CTRL | Mods::ALT | Mods::CMD);
+        // While a text field is focused, sequences never start.
+        let mut f = if text_focused {
+            match km.lookup(kctx, chord) {
+                Some(a) => Feed::Action(a.clone()),
+                None => Feed::Pass,
+            }
+        } else {
+            seq.feed(km, kctx, chord, now, marks)
+        };
+        if let Feed::Abandoned(fb) = f {
+            if let Some(a) = fb {
+                out.push(Feed::Action(a));
+            }
+            f = seq.feed(km, kctx, chord, now, marks);
+            if let Feed::Abandoned(_) = f {
+                f = Feed::Pass;
+            }
+        }
+        match f {
+            Feed::Pass => {}
+            other => {
+                if plain {
+                    swallow_text = true;
+                }
+                if !matches!(other, Feed::Pending) {
+                    out.push(other);
+                }
+                frame.consumed[i] = true;
+            }
+        }
+    }
+    out
+}
+
+/// One frame of keyboard dispatch for the main window: actions, sequences and marks.
+pub fn dispatch_all(app: &mut SoyuzApp, host: &dyn Host, frame: &mut InputFrame, kctx: KeyContext, text_focused: bool) {
     let now = Instant::now();
     let mut out: Vec<Feed> = Vec::new();
     if let Some(a) = app.keyseq.tick(now) {
         out.push(Feed::Action(a));
     }
     let marks = marks_enabled(app) && kctx == KeyContext::FileList && !text_focused;
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
-    {
-        let km = &app.keymap;
-        let seq = &mut app.keyseq;
-        crate::host::egui_ctx(host).input_mut(|i| {
-            let current = i.modifiers;
-            let mut swallow_text = false;
-            i.events.retain(|ev| {
-                if swallow_text && matches!(ev, Event::Text(_)) {
-                    swallow_text = false;
-                    return false;
-                }
-                let Some(chord) = super::event_chord(ev, current, cmd_is_ctrl) else { return true };
-                if text_focused && super::is_text_editing(chord) {
-                    return true;
-                }
-                let plain = !chord.mods.intersects(Mods::CTRL | Mods::ALT | Mods::CMD);
-                // While a text field is focused, sequences never start.
-                let mut f = if text_focused {
-                    match km.lookup(kctx, chord) {
-                        Some(a) => Feed::Action(a.clone()),
-                        None => Feed::Pass,
-                    }
-                } else {
-                    seq.feed(km, kctx, chord, now, marks)
-                };
-                if let Feed::Abandoned(fb) = f {
-                    if let Some(a) = fb {
-                        out.push(Feed::Action(a));
-                    }
-                    f = seq.feed(km, kctx, chord, now, marks);
-                    if let Feed::Abandoned(_) = f {
-                        f = Feed::Pass;
-                    }
-                }
-                match f {
-                    Feed::Pass => true,
-                    other => {
-                        if plain {
-                            swallow_text = true;
-                        }
-                        if !matches!(other, Feed::Pending) {
-                            out.push(other);
-                        }
-                        false
-                    }
-                }
-            });
-        });
-    }
+    out.extend(feed_frame(frame, &app.keymap, &mut app.keyseq, kctx, text_focused, marks, now));
     if app.keyseq.is_pending() {
         host.redraw_after(TIMEOUT);
     }

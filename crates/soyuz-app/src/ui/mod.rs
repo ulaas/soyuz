@@ -10,6 +10,7 @@ pub mod breadcrumb;
 pub mod context_menu;
 pub mod dialogs;
 pub mod empty_state;
+pub mod input;
 pub mod looks;
 pub mod motion;
 pub mod native;

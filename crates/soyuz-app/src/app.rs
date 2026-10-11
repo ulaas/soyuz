@@ -26,9 +26,7 @@ use crate::ui::panels::BottomPanel;
 use crate::ui::shell;
 use crate::ui::sidebar::SidebarState;
 use crate::ui::toasts::Toasts;
-use crate::ui::views::layout::NavDir;
 use crate::{actions, ops};
-use soyuz_core::ViewMode;
 
 /// Where keyboard input goes when no text field has focus.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -452,53 +450,9 @@ impl SoyuzApp {
                 }
             }
         }
-        keys::sequence::dispatch_all(self, ctx, kctx, text_focused);
-        // Mouse back/forward buttons.
-        let (back, fwd) = ctx.input(|i| {
-            (
-                i.pointer.button_pressed(egui::PointerButton::Extra1),
-                i.pointer.button_pressed(egui::PointerButton::Extra2),
-            )
-        });
-        if back {
-            actions::execute(self, config::Action::Back, ctx);
-        }
-        if fwd {
-            actions::execute(self, config::Action::Forward, ctx);
-        }
-        if kctx == KeyContext::FileList && !text_focused {
-            // Unbound Tab switches panes in dual mode instead of moving egui focus.
-            if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Tab)) && self.ws.tab().dual {
-                actions::execute(self, config::Action::FocusOtherPane, ctx);
-            }
-            // Left/Right: horizontal movement in the icon/list views, Miller in/out.
-            for (key, dir) in [(egui::Key::ArrowLeft, NavDir::Left), (egui::Key::ArrowRight, NavDir::Right)] {
-                let (plain, shift) = ctx.input_mut(|i| {
-                    (i.consume_key(egui::Modifiers::NONE, key), i.consume_key(egui::Modifiers::SHIFT, key))
-                });
-                if !plain && !shift {
-                    continue;
-                }
-                match self.ws.pane().view.mode {
-                    ViewMode::Grid | ViewMode::Gallery | ViewMode::List => actions::cursor(self, dir, shift, false),
-                    ViewMode::Miller if dir == NavDir::Left => actions::execute(self, config::Action::Up, ctx),
-                    ViewMode::Miller => {
-                        let pane = self.ws.pane();
-                        let target = pane.cursor.as_deref().and_then(|c| pane.entry(c)).filter(|e| e.is_dir_like());
-                        if let Some(e) = target {
-                            let key = e.name.clone();
-                            let id = pane.id;
-                            ops::open_entry(self, id, &key);
-                        }
-                    }
-                    ViewMode::Details => {}
-                }
-            }
-            let typed = keys::typed_text(ctx);
-            if !typed.is_empty() {
-                ops::type_ahead(self, &typed);
-            }
-        }
+        let mut frame = crate::ui::input::frame(ctx, self.config.keys.cmd_is_ctrl);
+        keys::input::handle(self, ctx, &mut frame, kctx, text_focused);
+        crate::ui::input::strip(ctx, &frame, self.config.keys.cmd_is_ctrl);
     }
 
     /// Apply queued commands (commands may queue more; bounded to avoid loops).

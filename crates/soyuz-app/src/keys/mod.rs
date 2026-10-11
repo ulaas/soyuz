@@ -5,6 +5,7 @@
 //! editing keys reach the keymap.
 
 pub mod conflicts;
+pub mod input;
 pub mod sequence;
 
 use egui::{Event, Key, Modifiers};
@@ -199,22 +200,6 @@ pub fn dispatch(
         });
     });
     out
-}
-
-/// Printable text typed this frame (for type-ahead), without consuming it.
-pub fn typed_text(ctx: &egui::Context) -> String {
-    ctx.input(|i| {
-        if i.modifiers.ctrl || i.modifiers.alt || i.modifiers.mac_cmd {
-            return String::new();
-        }
-        i.events
-            .iter()
-            .filter_map(|e| match e {
-                Event::Text(t) => Some(t.as_str()),
-                _ => None,
-            })
-            .collect()
-    })
 }
 
 /// Pretty chord text for menus/tooltips (`Ctrl+Shift+P`).
