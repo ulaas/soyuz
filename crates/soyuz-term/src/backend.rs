@@ -12,16 +12,19 @@ use std::time::{Duration, Instant};
 use alacritty_terminal::event::{Event, EventListener, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg, State};
 use alacritty_terminal::grid::Dimensions;
+use alacritty_terminal::index::Column;
 use alacritty_terminal::sync::FairMutex;
+use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::{self, Osc52, Term};
 use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as VteCursorStyle, Rgb};
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 
+use crate::color::{TermColor, TermPalette, xterm256};
 use crate::pty::{self, ShellKind};
 use crate::tty_tee::TeePty;
-use crate::{CursorStyle, TermError, TermEvent, TermSettings, TermTheme};
+use crate::{CursorStyle, TermError, TermEvent, TermSettings, Wake};
 
 /// `WindowSize` does not implement `Dimensions`; this does (no scrollback: `Term` adds it).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,7 +49,8 @@ impl Dimensions for GridSize {
 /// Never lock the term from inside these methods: the PTY thread calls them while
 /// holding the term lock.
 pub(crate) struct Shared {
-    ctx: egui::Context,
+    /// Asks the host UI for a redraw (egui: `Context::request_repaint`). Any thread.
+    wake: Wake,
     events_tx: Sender<TermEvent>,
     sender: OnceLock<EventLoopSender>,
     pub alive: AtomicBool,
@@ -108,27 +112,27 @@ impl CwdTracker {
 
 /// Colors reported for OSC 4/10/11/12 queries.
 struct ColorAnswers {
-    palette: [egui::Color32; 256],
-    fg: egui::Color32,
-    bg: egui::Color32,
-    cursor: egui::Color32,
+    palette: [TermColor; 256],
+    fg: TermColor,
+    bg: TermColor,
+    cursor: TermColor,
 }
 
 impl ColorAnswers {
-    fn new(theme: &TermTheme) -> Self {
-        ColorAnswers { palette: theme.palette256(), fg: theme.fg, bg: theme.bg, cursor: theme.cursor }
+    fn new(fg: TermColor, bg: TermColor, cursor: TermColor, ansi: &[TermColor; 16]) -> Self {
+        ColorAnswers { palette: xterm256(ansi), fg, bg, cursor }
     }
 }
 
 impl Shared {
     fn repaint(&self) {
         if !self.repaint_pending.swap(true, Ordering::AcqRel) {
-            self.ctx.request_repaint();
+            (self.wake)();
         }
     }
 
     pub fn force_repaint(&self) {
-        self.ctx.request_repaint();
+        (self.wake)();
     }
 
     fn send(&self, ev: TermEvent) {
@@ -194,10 +198,12 @@ impl Shared {
         }
     }
 
-    pub fn set_theme(&self, theme: &TermTheme) {
+    /// Colors reported for OSC 4/10/11/12 queries (only `r`, `g`, `b` are reported).
+    /// Cheap when unchanged: the UI may call it every frame.
+    pub fn set_colors(&self, fg: TermColor, bg: TermColor, cursor: TermColor, ansi: &[TermColor; 16]) {
         let mut c = self.colors.lock();
-        if c.fg != theme.fg || c.bg != theme.bg || c.cursor != theme.cursor || c.palette[..16] != theme.ansi {
-            *c = ColorAnswers::new(theme);
+        if c.fg != fg || c.bg != bg || c.cursor != cursor || c.palette[..16] != ansi[..] {
+            *c = ColorAnswers::new(fg, bg, cursor, ansi);
         }
     }
 
@@ -210,7 +216,7 @@ impl Shared {
             258 => c.cursor,
             _ => c.fg,
         };
-        Rgb { r: col.r(), g: col.g(), b: col.b() }
+        Rgb { r: col.r, g: col.g, b: col.b }
     }
 
     fn set_title(&self, title: String) {
@@ -311,7 +317,7 @@ fn window_size((cols, rows, cw, ch): (u16, u16, u16, u16)) -> WindowSize {
 impl Backend {
     pub fn spawn(
         settings: &TermSettings,
-        ctx: egui::Context,
+        wake: Wake,
         id: u64,
         events_tx: Sender<TermEvent>,
     ) -> Result<Backend, TermError> {
@@ -322,7 +328,7 @@ impl Backend {
             .unwrap_or_else(|| cmd.program.clone());
 
         let shared = Arc::new(Shared {
-            ctx,
+            wake,
             events_tx,
             sender: OnceLock::new(),
             alive: AtomicBool::new(true),
@@ -336,7 +342,10 @@ impl Backend {
             cwd_tracker: Mutex::new(CwdTracker::default()),
             pid: OnceLock::new(),
             window_size: Mutex::new(window_size(INITIAL)),
-            colors: Mutex::new(ColorAnswers::new(&TermTheme::default())),
+            colors: Mutex::new({
+                let p = TermPalette::default();
+                ColorAnswers::new(p.fg, p.bg, p.cursor, &p.ansi)
+            }),
         });
         let listener = Listener(shared.clone());
 
@@ -413,6 +422,29 @@ impl Backend {
         }
         self.shared.mark_exited(None);
     }
+}
+
+/// Wide-char spacer cells (skipped when reading text).
+pub(crate) fn is_spacer(cell: &Cell) -> bool {
+    cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
+}
+
+/// Text left / right of the cursor on the cursor line (for the prompt heuristic).
+pub(crate) fn cursor_line_text(term: &Term<Listener>) -> (String, String) {
+    let grid = term.grid();
+    let point = grid.cursor.point;
+    let row = &grid[point.line];
+    let mut left = String::new();
+    let mut right = String::new();
+    for col in 0..term.columns() {
+        let cell = &row[Column(col)];
+        if is_spacer(cell) {
+            continue;
+        }
+        let c = if cell.c == '\0' { ' ' } else { cell.c };
+        if col < point.column.0 { left.push(c) } else { right.push(c) }
+    }
+    (left, right)
 }
 
 #[cfg(test)]
