@@ -429,9 +429,14 @@ you install system-wide yourself.
   under Wayland Soyuz only refreshes the folder (the target app moves the files), and under
   X11 the sources go to the trash only when the target asks for it. Dragging out of Soyuz
   and back in again works once per drag under Wayland.
+- **Windows shares (SMB)** — type `smb://server/share/folder` or `\\server\share\folder` in
+  the path bar, or use *Connect to server* with SMB. `smb://server` lists the server's
+  shares (turn off with *Remote → List shares for \\\\server*). Sign in as `user` or `DOMAIN\user`, or as a
+  guest; saved passwords go to the Secret Service keyring. SMB 2 and 3 with signing and
+  encryption are supported; Kerberos sign-in is not yet.
 - **Not available on Linux** — the Mica / Acrylic backdrop, Snap Layouts, dialogs as separate
-  windows, the NTFS change journal, Windows attributes and `\\server` share listing are
-  Windows features; their settings are hidden on Linux.
+  windows, the NTFS change journal and Windows attributes are Windows features; their
+  settings are hidden on Linux.
 
 ## macOS
 
