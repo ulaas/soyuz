@@ -196,6 +196,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             ui.allocate_rect(card, Sense::hover());
             activity::show(ui, body, app);
         });
+    crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.activity", tr!("app-a11y-resize-activity"));
     if close {
         app.ui.bottom.activity_open = false;
     }

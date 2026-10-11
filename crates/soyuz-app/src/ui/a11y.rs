@@ -60,6 +60,34 @@ pub fn decorative(resp: &Response) {
     with(&resp.ctx, resp.id, |n| n.set_hidden());
 }
 
+/// Name the window itself (the AccessKit root node). UI Automation takes the window
+/// name from the native title bar, but AT-SPI (Linux) reads the root node's label, so
+/// without this Orca announces an unnamed frame. Call once per frame.
+pub fn window_name(ctx: &Context, title: &str) {
+    with(ctx, egui::accesskit_root_id(), |n| n.set_label(title));
+}
+
+/// Name the resize handle of a resizable [`egui::Panel`] (egui gives it no role or
+/// name). Call right after the panel's `show`, with the same id the panel was built
+/// with, so the handle exists this frame.
+pub fn panel_splitter(ctx: &Context, panel_id: impl Into<Id>, label: &str) {
+    if !active(ctx) {
+        return;
+    }
+    with(ctx, panel_id.into().with("__resize"), |n| {
+        n.set_role(Role::Splitter);
+        n.set_label(label);
+    });
+}
+
+/// A drag handle between two areas (pane splitters).
+pub fn splitter(resp: &Response, label: &str) {
+    with(&resp.ctx, resp.id, |n| {
+        n.set_role(Role::Splitter);
+        n.set_label(label);
+    });
+}
+
 /// Give a container (the file list, a panel, a dialog) a role and a name.
 pub fn container(ctx: &Context, id: Id, role: Role, label: &str) {
     with(ctx, id, |n| {
@@ -217,6 +245,19 @@ mod tests {
         assert_eq!(find(&nodes, Role::ListItem, "video.mp4").description(), Some("1,2 GB"));
         assert_eq!(find(&nodes, Role::Terminal, "Terminal 1").value(), Some(r"PS C:\> dir"));
         assert_eq!(find(&nodes, Role::ProgressIndicator, "Kopyalanıyor").numeric_value(), Some(25.0));
+    }
+
+    #[test]
+    fn window_name_and_splitters() {
+        let nodes = tree(|ui| {
+            window_name(ui.ctx(), "Belgeler — Soyuz");
+            let r = ui.button("|");
+            splitter(&r, "Bölmeleri yeniden boyutlandır");
+        });
+        let root = egui::accesskit_root_id().accesskit_id();
+        let root = nodes.iter().find(|(id, _)| *id == root).map(|(_, n)| n).expect("root");
+        assert_eq!(root.label(), Some("Belgeler — Soyuz"));
+        find(&nodes, Role::Splitter, "Bölmeleri yeniden boyutlandır");
     }
 
     #[test]

@@ -177,6 +177,7 @@ impl Shelf {
                 card
             });
         self.width = resp.response.rect.width();
+        crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.shelf", tr!("app-a11y-resize-shelf"));
         self.last_rect = Some(resp.inner);
         let _ = ctx;
     }

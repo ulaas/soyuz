@@ -152,7 +152,7 @@ pub fn status_indicator(ui: &mut Ui, ind: &Indicator) -> Option<Response> {
     };
     let text =
         if ind.waiting { tr!("panels-needs-input").to_string() } else { tr!("panels-jobs-count", count = ind.pending) };
-    let g = ui.painter().layout_no_wrap(text, FontId::proportional(11.5), p.text_secondary);
+    let g = ui.painter().layout_no_wrap(text.clone(), FontId::proportional(11.5), p.text_secondary);
     let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 28.0, 18.0), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(r.expand2(vec2(2.0, 1.0)), CornerRadius::same(4), p.bg_surface2);
@@ -160,7 +160,9 @@ pub fn status_indicator(ui: &mut Ui, ind: &Indicator) -> Option<Response> {
     let frac = if ind.paused || ind.waiting { ind.progress.or(Some(0.0)) } else { ind.progress };
     ring(ui, pos2(r.left() + 9.0, r.center().y), 5.5, 2.0, frac, color, p.border_strong);
     ui.painter().galley(pos2(r.left() + 20.0, r.center().y - g.size().y / 2.0), g, p.text_secondary);
-    Some(resp.on_hover_text(tr!("panels-show-activity-tip")))
+    let tip = tr!("panels-show-activity-tip");
+    crate::ui::a11y::button(&resp, &format!("{text}, {tip}"));
+    Some(resp.on_hover_text(tip))
 }
 
 /// Speed sparkline: gradient area + line, last two minutes.
@@ -232,6 +234,7 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
         let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(g.size().x + 20.0, 24.0));
         let resp = ui.interact(r, Id::new(("soyuz.activity.tab", tab as u8)), Sense::click());
         let active = app.fileops.activity.tab == tab;
+        crate::ui::a11y::tab(&resp, g.text(), active);
         if active {
             ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.accent_subtle);
         } else if resp.hovered() {

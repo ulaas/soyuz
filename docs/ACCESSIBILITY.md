@@ -115,14 +115,40 @@ Repeat steps 2–11 with Narrator (`Win+Ctrl+Enter`), using scan mode (`Caps Loc
 dialogs. Also check with Narrator's "Inspect" mode (or Accessibility Insights for Windows →
 FastPass) that no focusable element is unnamed.
 
-### Orca (Linux) and VoiceOver (macOS) — deferred
+### Orca (Linux)
 
-Linux and macOS are out of scope for now: only Windows is tested.
-When they come back, repeat the NVDA list with Orca (AT-SPI through `accesskit_unix`) and
-VoiceOver (`accesskit_macos`, VO+arrow navigation).
+AccessKit reaches Orca through AT-SPI (`accesskit_unix`). The automated AT-SPI audit
+(`scripts/atspi-audit.py`, results in [ACCESSIBILITY_AUDIT.md](ACCESSIBILITY_AUDIT.md#linux-at-spi-audit))
+covers the same six states as the UIA audit and is clean, but only with a patched
+`accesskit_unix` (see below). The human Orca run is still to do: repeat the NVDA list with
+Orca (`Super+Alt+S`; on niri / other compositors start `orca` from a terminal), using
+`Orca+Space` preferences for verbosity and flat-review (`KP_Add`/`KP_8`) for the status bar.
+
+Linux notes:
+
+- **Activation.** AccessKit builds no tree until the session's accessibility flag is on
+  (`org.a11y.Status` on the session bus). Orca turns it on. Check it with
+  `busctl --user get-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled`.
+- **Blocker on at-spi2-core 2.62+ (Fedora 45).** egui 0.36 links `accesskit_unix` 0.21, which
+  waits for the `ScreenReaderEnabled` property. Newer at-spi2-core only has `IsEnabled`, so
+  Soyuz stays invisible to Orca until `accesskit_unix` is patched (a one-line change,
+  upstream since 0.23) or egui moves to `accesskit` 0.25. Older distributions that still
+  have `ScreenReaderEnabled` work as they are.
+- **Window name.** AT-SPI reads the window name from the AccessKit root node, not from the
+  Wayland / X11 title, so Soyuz sets the root label to the window title every frame.
+- **Expanded state.** `accesskit_atspi_common` 0.18 does not map AccessKit's `expanded`
+  state yet, so Orca does not announce dropdowns and folder-tree rows as expanded or
+  collapsed.
+
+### VoiceOver (macOS) — deferred
+
+macOS is out of scope for now. When it comes back, repeat the NVDA list with VoiceOver
+(`accesskit_macos`, VO+arrow navigation).
 
 ## Known gaps
 
+- **Linux: AccessKit does not activate on at-spi2-core 2.62+** without a patched
+  `accesskit_unix` (see "Orca (Linux)" above).
 - **No screen-reader run has been recorded yet.** The checklist above is the certification
   script, and its results go into this file. The automated UIA audit
   (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader

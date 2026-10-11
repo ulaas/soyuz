@@ -46,7 +46,12 @@ pub fn gallery(ui: &mut Ui, density: &mut Density) -> bool {
                 crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
                     n.set_role(Role::RadioButton);
                     n.set_label(tr!("settings-density-a11y", name = label));
-                    n.set_selected(selected);
+                    // Radio buttons report "checked" through the toggled state (UIA and AT-SPI).
+                    n.set_toggled(if selected {
+                        egui::accesskit::Toggled::True
+                    } else {
+                        egui::accesskit::Toggled::False
+                    });
                 });
                 if resp.clicked() && !selected {
                     *density = d;

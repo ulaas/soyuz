@@ -297,6 +297,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             });
         });
     app.ai.panel.width = resp.response.rect.width();
+    crate::ui::a11y::panel_splitter(&ctx, "soyuz.ai", crate::tr!("app-a11y-resize-assistant"));
     apply(app, &ctx, acts);
 }
 

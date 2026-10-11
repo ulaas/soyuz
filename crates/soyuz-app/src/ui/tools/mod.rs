@@ -885,6 +885,7 @@ pub fn shelf_toggle(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
         );
     }
     let tip = if n > 0 { tr!("tools-shelf-tip-count", count = n) } else { tr!("tools-shelf-tip-empty").into() };
+    crate::ui::a11y::toggle(&resp, &tip, open);
     if resp.on_hover_text(tip).clicked() {
         cmds.push(Cmd::Action(Action::ToggleShelf));
     }

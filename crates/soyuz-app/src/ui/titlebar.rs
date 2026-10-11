@@ -584,6 +584,8 @@ pub fn border_and_resize(ctx: &Context, focused: bool, resizable: bool) {
             .interactable(true)
             .show(ctx, |ui| {
                 let (_, resp) = ui.allocate_exact_size(strip.size(), Sense::click_and_drag());
+                // Pointer-only affordance (the window manager resizes from the keyboard).
+                crate::ui::a11y::decorative(&resp);
                 if !resp.hovered() && !resp.is_pointer_button_down_on() {
                     return;
                 }
