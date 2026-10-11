@@ -132,6 +132,8 @@ fn run(lang: &str, palette_query: &str) {
 
     let mut child = Command::new(&exe)
         .env("SOYUZ_SCRIPT", script(&data, lang, palette_query))
+        // Linux: keep freedesktop thumbnail writes out of the real ~/.cache.
+        .env("XDG_CACHE_HOME", tmp.path().join("cache"))
         .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())

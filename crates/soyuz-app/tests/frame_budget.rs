@@ -89,6 +89,8 @@ fn scripted_tour_stays_within_frame_budget() {
     let mut child = Command::new(&exe)
         .env("SOYUZ_SCRIPT", script)
         .env("SOYUZ_FRAME_LOG", "1")
+        // Linux: keep freedesktop thumbnail writes out of the real ~/.cache.
+        .env("XDG_CACHE_HOME", tmp.path().join("cache"))
         .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
