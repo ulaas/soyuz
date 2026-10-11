@@ -831,9 +831,8 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any
 }
 
-/// Dragging items out to other apps works on this platform (the OLE drag source is
-/// Windows-only so far; switch this to the drag-out module's own check once other
-/// platforms get one).
+/// Dragging items out to other apps works here (OLE on Windows, XDND on X11, a
+/// `wl_data_source` on Wayland once the drag-and-drop thread is up).
 fn drag_out_supported() -> bool {
     crate::ops::fileops::dragout::supported()
 }
