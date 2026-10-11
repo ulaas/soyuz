@@ -107,6 +107,7 @@ impl Default for Appearance {
             video_thumbnails: true,
             pdf_thumbnails: true,
             os_thumbnail_cache: true,
+            write_os_thumbnails: true,
             icon_pack: String::new(),
             thumb_disk_cache_mib: 256,
         }

@@ -601,6 +601,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ui::views::icon_pack::apply(ctx, &c.appearance.icon_pack);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
     crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
+    crate::services::thumbs::set_write_os_cache(c.appearance.write_os_thumbnails);
     crate::services::lister::set_dot_hidden(c.general.honour_dot_hidden);
     crate::ai::state::set_rules(&c.ai);
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
