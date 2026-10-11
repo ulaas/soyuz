@@ -82,6 +82,9 @@ pub trait Host {
     fn set_theme(&self, pref: ThemePref);
     /// Send a command to a window.
     fn window(&self, id: WindowId, cmd: WindowCmd);
+    /// The active configuration changed from `old` to `new`: re-apply what the frontend
+    /// derives from it (styles, fonts, scale, input timings).
+    fn config_changed(&self, old: &soyuz_core::config::Config, new: &soyuz_core::config::Config);
     /// Transitional escape hatch while modules move out of `ui/` (Phase T0): lets a
     /// GUI-only callee get the toolkit back. Removed when `soyuz-appcore` is extracted.
     fn as_any(&self) -> &dyn Any;
@@ -150,6 +153,18 @@ impl Host for egui::Context {
             WindowId::Root => self.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
         }
     }
+    fn config_changed(&self, old: &soyuz_core::config::Config, c: &soyuz_core::config::Config) {
+        if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
+            for w in crate::theme::install(self, &c.appearance, &c.fonts, &c.theme.colors) {
+                log::warn!("{w}");
+            }
+            let scale = if c.appearance.ui_scale > 0.25 { c.appearance.ui_scale.clamp(0.5, 3.0) } else { 1.0 };
+            if (self.zoom_factor() - scale).abs() > f32::EPSILON {
+                self.set_zoom_factor(scale);
+            }
+        }
+        crate::app::apply_live_settings(self, c);
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -175,6 +190,7 @@ impl Host for NullHost {
     fn window(&self, id: WindowId, cmd: WindowCmd) {
         self.windows.lock().unwrap_or_else(|e| e.into_inner()).push((id, cmd));
     }
+    fn config_changed(&self, _old: &soyuz_core::config::Config, _new: &soyuz_core::config::Config) {}
     fn as_any(&self) -> &dyn Any {
         self
     }

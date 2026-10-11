@@ -217,7 +217,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     };
     if super::widgets::icon_at(ui, br(2.0), id.with("dock"), dg, dt, !maximized, &p) {
         let next = if dock == EditorDock::Right { EditorDock::Bottom } else { EditorDock::Right };
-        crate::ui::settings::update_config(app, &ctx, |c| c.editor.dock = next);
+        crate::models::settings::update_config(app, &ctx, |c| c.editor.dock = next);
     }
     ui.painter().hline(rect.x_range(), header.bottom(), Stroke::new(1.0, p.border_subtle));
 
@@ -309,10 +309,10 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         super::save(app, idx);
     }
     if toggle_wrap {
-        crate::ui::settings::update_config(app, &ctx, |c| c.editor.wrap = !c.editor.wrap);
+        crate::models::settings::update_config(app, &ctx, |c| c.editor.wrap = !c.editor.wrap);
     }
     if toggle_ws {
-        crate::ui::settings::update_config(app, &ctx, |c| c.editor.show_whitespace = !c.editor.show_whitespace);
+        crate::models::settings::update_config(app, &ctx, |c| c.editor.show_whitespace = !c.editor.show_whitespace);
     }
     match external_answer {
         Some(0) => super::reload(app, idx),

@@ -456,7 +456,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 fn register(app: &mut SoyuzApp, host: &dyn Host, name: String, transport: Transport) {
     let known = app.config.ai.mcp_clients.iter().any(|c| soyuz_mcp::trust::sanitize_name(&c.name) == name);
     if !known {
-        crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| {
+        crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| {
             c.ai.mcp_clients.push(AiMcpClient { name: name.clone(), pending: true, ..Default::default() })
         });
         app.ui.toasts.push(

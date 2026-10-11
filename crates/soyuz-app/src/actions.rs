@@ -8,6 +8,7 @@ use soyuz_core::{Column, GroupBy, Location, SortDir, ViewMode};
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
 use crate::host::Host;
+use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::state::layout::NavDir;
@@ -398,7 +399,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
                 A::UiZoomOut => ui_zoom_step(cur, -1),
                 _ => 1.0,
             };
-            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.ui_scale = next);
+            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.ui_scale = next);
             let percent = format!("{:.0}", next * 100.0);
             let mut t = Toast::info(tr!("actions-ui-zoom")).body(tr!("actions-ui-zoom-body", percent = percent));
             t.duration = Some(1.5);
@@ -406,21 +407,27 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         }
         A::ToggleHighContrast => {
             let on = !app.config.appearance.high_contrast;
-            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.high_contrast = on);
+            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| {
+                c.appearance.high_contrast = on
+            });
             app.ui.toasts.push(Toast::info(if on {
                 tr!("actions-high-contrast-on")
             } else {
                 tr!("actions-high-contrast-off")
             }));
         }
-        A::ShowKeybindings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Keyboard)),
+        A::ShowKeybindings => {
+            app.frontend.push(FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Keyboard)))
+        }
         A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
         A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
-        A::Settings => crate::ui::settings::open(app, None),
+        A::Settings => app.frontend.push(FrontendCmd::OpenSettings(None)),
         A::CustomCommand(name) => crate::commands::run_named(app, &name, crate::host::egui_ctx(host)),
         A::RunScript(id) => crate::automation::run_action(app, &id),
-        A::OpenScripts => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Scripts)),
-        A::OpenAutomations => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Automations)),
+        A::OpenScripts => app.frontend.push(FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Scripts))),
+        A::OpenAutomations => {
+            app.frontend.push(FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Automations)))
+        }
         A::ReloadScripts => crate::automation::reload_scripts(app),
         A::EditConfigFile => {
             let path = soyuz_core::config::default_path();

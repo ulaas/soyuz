@@ -724,7 +724,7 @@ pub fn devscript(app: &mut SoyuzApp, host: &dyn Host, verb: &str, arg: &str) {
             } else {
                 soyuz_core::config::EditorDock::Right
             };
-            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.editor.dock = dock);
+            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| c.editor.dock = dock);
         }
         _ => {
             let Some(d) = app.editors.docs.get_mut(idx) else { return };

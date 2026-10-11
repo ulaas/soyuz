@@ -493,7 +493,7 @@ fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
     if spawned.is_err() {
         ops::navigate(app, pane, Location::Dir(dir), NavOpts::user());
     }
-    crate::ui::settings::close(app);
+    app.frontend.push(crate::models::frontend::FrontendCmd::CloseSettings);
 }
 
 // --- rules ---

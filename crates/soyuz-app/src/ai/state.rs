@@ -700,7 +700,7 @@ pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, host: &dyn Host) {
 
 /// Add / change / remove the `[[ai.folders]]` rule of `path` (applies live, saved soon).
 pub fn set_folder_access(app: &mut SoyuzApp, host: &dyn Host, path: PathBuf, access: Option<AiAccess>) {
-    crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| {
+    crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| {
         let same = |r: &AiFolderRule| super::safety::expand(&r.path) == path;
         c.ai.folders.retain(|r| !same(r));
         if let Some(a) = access {
@@ -1708,7 +1708,8 @@ pub fn script(app: &mut SoyuzApp, host: &dyn Host, arg: &str) {
             save_recipe(app, task, name.trim().to_string());
         }
     } else if arg == "!settings" {
-        crate::ui::settings::open(app, Some(crate::ui::settings::Section::Ai));
+        app.frontend
+            .push(crate::models::frontend::FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Ai)));
     } else if let Some(tab) = arg.strip_prefix("!tab") {
         app.ai.panel.open = true;
         app.ai.panel.tab = match tab.trim() {

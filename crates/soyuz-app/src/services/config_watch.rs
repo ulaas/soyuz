@@ -170,14 +170,8 @@ pub fn reload_now(app: &mut SoyuzApp, host: &dyn Host) {
 pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
     let old = std::mem::replace(&mut app.config, new);
     let c = &app.config;
+    host.config_changed(&old, c);
     if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
-        for w in crate::theme::install(crate::host::egui_ctx(host), &c.appearance, &c.fonts, &c.theme.colors) {
-            log::warn!("{w}");
-        }
-        let scale = if c.appearance.ui_scale > 0.25 { c.appearance.ui_scale.clamp(0.5, 3.0) } else { 1.0 };
-        if (crate::host::egui_ctx(host).zoom_factor() - scale).abs() > f32::EPSILON {
-            crate::host::egui_ctx(host).set_zoom_factor(scale);
-        }
         app.ui.reduced_motion = c.appearance.reduced_motion;
         if old.appearance.theme != c.appearance.theme {
             app.ui.theme = crate::host::ThemePref::from_config(&c.appearance.theme);
@@ -205,7 +199,6 @@ pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
     app.keymap = km;
     crate::ui::workspaces::bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
     app.keyseq.reset();
-    crate::app::apply_live_settings(crate::host::egui_ctx(host), c);
     if old.layout.terminal_height != c.layout.terminal_height {
         // The panel remembers a size the user dragged; the setting is the default height.
         app.ui.bottom.height = c.layout.terminal_height.clamp(120.0, 720.0);

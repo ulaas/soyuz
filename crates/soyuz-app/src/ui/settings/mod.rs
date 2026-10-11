@@ -17,7 +17,7 @@ mod themes_ui;
 pub mod widgets;
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use egui::emath::TSTransform;
 use egui::{
@@ -41,182 +41,30 @@ enum PickPurpose {
 }
 
 /// Delay between the last edit and writing `config.toml`.
-const SAVE_DELAY: Duration = Duration::from_millis(700);
 const NAV_W: f32 = 236.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Section {
-    General,
-    Appearance,
-    Fonts,
-    Views,
-    Behaviour,
-    Jobs,
-    Terminal,
-    Preview,
-    Editor,
-    Keyboard,
-    Commands,
-    Bookmarks,
-    Scripts,
-    Automations,
-    Ai,
-    Advanced,
-    About,
-}
+pub use crate::models::settings::Section;
 
-impl Section {
-    pub const ALL: [Section; 17] = [
-        Section::General,
-        Section::Appearance,
-        Section::Fonts,
-        Section::Views,
-        Section::Behaviour,
-        Section::Jobs,
-        Section::Terminal,
-        Section::Preview,
-        Section::Editor,
-        Section::Keyboard,
-        Section::Commands,
-        Section::Bookmarks,
-        Section::Scripts,
-        Section::Automations,
-        Section::Ai,
-        Section::Advanced,
-        Section::About,
-    ];
-
-    /// Stable, untranslated id (`general`, `appearance`, …): dev scripts and the Fluent
-    /// keys `settings-section-<id>` / `…-desc` use it.
-    pub fn id(self) -> &'static str {
-        match self {
-            Section::General => "general",
-            Section::Appearance => "appearance",
-            Section::Fonts => "fonts",
-            Section::Views => "views",
-            Section::Behaviour => "behaviour",
-            Section::Jobs => "jobs",
-            Section::Terminal => "terminal",
-            Section::Preview => "preview",
-            Section::Editor => "editor",
-            Section::Keyboard => "keyboard",
-            Section::Commands => "commands",
-            Section::Bookmarks => "bookmarks",
-            Section::Scripts => "scripts",
-            Section::Automations => "automations",
-            Section::Ai => "ai",
-            Section::Advanced => "advanced",
-            Section::About => "about",
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        // i18n-dynamic: settings-section-
-        crate::i18n::t_dyn(&format!("settings-section-{}", self.id()))
-    }
-
-    /// English title (dev scripts select sections by it whatever the UI language).
-    pub fn english_title(self) -> &'static str {
-        crate::i18n::t_in(&format!("settings-section-{}", self.id()), soyuz_core::Locale::EnUs)
-    }
-
-    pub fn icon(self) -> &'static str {
-        match self {
-            Section::General => ph::GEAR_SIX,
-            Section::Appearance => ph::PALETTE,
-            Section::Fonts => ph::TEXT_AA,
-            Section::Views => ph::LAYOUT,
-            Section::Behaviour => ph::CURSOR_CLICK,
-            Section::Jobs => ph::COPY,
-            Section::Terminal => ph::TERMINAL_WINDOW,
-            Section::Preview => ph::EYE,
-            Section::Editor => ph::NOTE_PENCIL,
-            Section::Keyboard => ph::KEYBOARD,
-            Section::Commands => ph::LIGHTNING,
-            Section::Bookmarks => ph::BOOKMARK_SIMPLE,
-            Section::Scripts => ph::CODE,
-            Section::Automations => ph::ROBOT,
-            Section::Ai => ph::SPARKLE,
-            Section::Advanced => ph::FILE_CODE,
-            Section::About => ph::PLANET,
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        // i18n-dynamic: settings-section-
-        crate::i18n::t_dyn(&format!("settings-section-{}-desc", self.id()))
-    }
-
-    /// Reset this section of `c` to defaults.
-    fn reset(self, c: &mut Config) {
-        let d = Config::default();
-        match self {
-            Section::General => c.general = d.general,
-            Section::Appearance => {
-                c.appearance = d.appearance;
-                c.theme = d.theme;
-            }
-            Section::Fonts => c.fonts = d.fonts,
-            Section::Views => {
-                c.columns = d.columns;
-                c.layout = d.layout;
-                // Pinned Portal folders are the user's data, not layout: keep them.
-                let portal = std::mem::take(&mut c.sidebar.portal);
-                c.sidebar = d.sidebar;
-                c.tags = d.tags;
-                c.sidebar.portal = portal;
-                c.toolbar = d.toolbar;
-                c.context_menu = d.context_menu;
-                c.general.default_view = d.general.default_view;
-                c.general.natural_sort = d.general.natural_sort;
-                c.general.case_insensitive_sort = d.general.case_insensitive_sort;
-                c.general.folders_first = d.general.folders_first;
-            }
-            Section::Behaviour => {
-                c.behaviour = d.behaviour;
-                c.general.single_click_open = d.general.single_click_open;
-                c.general.confirm_delete = d.general.confirm_delete;
-                c.general.confirm_permanent_delete = d.general.confirm_permanent_delete;
-                c.general.double_click_speed_ms = d.general.double_click_speed_ms;
-                c.general.open_folders_in = d.general.open_folders_in;
-            }
-            Section::Jobs => {
-                c.jobs = d.jobs;
-                c.sync = d.sync;
-            }
-            Section::Terminal => c.terminal = d.terminal,
-            Section::Preview => {
-                c.preview = d.preview;
-                c.git = d.git;
-                let saved = std::mem::take(&mut c.search.saved);
-                c.search = d.search;
-                c.search.saved = saved;
-            }
-            Section::Editor => c.editor = d.editor,
-            Section::Keyboard => c.keys = d.keys,
-            Section::Commands => c.custom_commands = d.custom_commands,
-            Section::Bookmarks => c.bookmarks = d.bookmarks,
-            Section::Scripts => c.scripting = d.scripting,
-            Section::Automations => {
-                // Keep the rules; reset the switches.
-                let rules = std::mem::take(&mut c.automation.rules);
-                c.automation = d.automation;
-                c.automation.rules = rules;
-                c.cli = d.cli;
-            }
-            Section::Ai => {
-                // Keep the user's provider profiles and MCP connections; reset everything else.
-                let profiles = std::mem::take(&mut c.ai.profiles);
-                let clients = std::mem::take(&mut c.ai.mcp_clients);
-                let servers = std::mem::take(&mut c.ai.mcp_servers);
-                c.ai = d.ai;
-                c.ai.profiles = profiles;
-                c.ai.mcp_clients = clients;
-                c.ai.mcp_servers = servers;
-            }
-            Section::Advanced => *c = d,
-            Section::About => c.updates = d.updates,
-        }
+/// Icon of a settings section.
+pub fn section_icon(sec: Section) -> &'static str {
+    match sec {
+        Section::General => ph::GEAR_SIX,
+        Section::Appearance => ph::PALETTE,
+        Section::Fonts => ph::TEXT_AA,
+        Section::Views => ph::LAYOUT,
+        Section::Behaviour => ph::CURSOR_CLICK,
+        Section::Jobs => ph::COPY,
+        Section::Terminal => ph::TERMINAL_WINDOW,
+        Section::Preview => ph::EYE,
+        Section::Editor => ph::NOTE_PENCIL,
+        Section::Keyboard => ph::KEYBOARD,
+        Section::Commands => ph::LIGHTNING,
+        Section::Bookmarks => ph::BOOKMARK_SIMPLE,
+        Section::Scripts => ph::CODE,
+        Section::Automations => ph::ROBOT,
+        Section::Ai => ph::SPARKLE,
+        Section::Advanced => ph::FILE_CODE,
+        Section::About => ph::PLANET,
     }
 }
 
@@ -238,8 +86,6 @@ pub struct SettingsState {
     query: String,
     opened_at: f64,
     focus_search: bool,
-    save_due: Option<Instant>,
-    saved_flash: Option<Instant>,
     recorder: Option<Recorder>,
     key_cache: Option<KeyCache>,
     // Page-local UI state.
@@ -267,8 +113,6 @@ impl Default for SettingsState {
             query: String::new(),
             opened_at: 0.0,
             focus_search: false,
-            save_due: None,
-            saved_flash: None,
             recorder: None,
             key_cache: None,
             keys_filter: String::new(),
@@ -314,33 +158,8 @@ pub fn close(app: &mut SoyuzApp) {
     flush_save(app);
 }
 
-/// Write `config.toml` now if a save is pending.
 fn flush_save(app: &mut SoyuzApp) {
-    if app.settings.save_due.take().is_none() {
-        return;
-    }
-    let path = app.config_watch.path().to_path_buf();
-    // Merge into the user's file so comments and formatting survive (toml_edit).
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    match config::to_string_preserving(&existing, &app.config) {
-        Ok(text) => {
-            if let Some(dir) = path.parent() {
-                let _ = soyuz_fs::create_dir_all(dir);
-            }
-            match soyuz_fs::write_atomic(&path, text.as_bytes()) {
-                Ok(()) => {
-                    app.config_watch.last_text = Some(text);
-                    app.settings.saved_flash = Some(Instant::now());
-                }
-                Err(e) => {
-                    app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
-                }
-            }
-        }
-        Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
-        }
-    }
+    crate::models::settings::flush(app);
 }
 
 fn key_cache(s: &mut SettingsState) -> &KeyCache {
@@ -479,7 +298,7 @@ fn apply_and_save(ctx: &egui::Context, app: &mut SoyuzApp) {
         let draft = app.settings.draft.clone();
         crate::services::config_watch::apply_config(app, ctx, draft.clone());
         app.settings.applied = draft;
-        app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
+        app.config_save.schedule();
     }
     pump_save(ctx, app);
 }
@@ -565,34 +384,11 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     apply_and_save(ctx, app);
 }
 
-/// Write `config.toml` once the debounce delay has passed.
 fn pump_save(ctx: &egui::Context, app: &mut SoyuzApp) {
-    if let Some(due) = app.settings.save_due {
-        if Instant::now() >= due {
-            flush_save(app);
-        } else {
-            ctx.request_repaint_after(due - Instant::now());
-        }
-    }
+    crate::models::settings::pump(app, ctx);
 }
 
-/// Change the active configuration from outside the settings window (UI zoom keys,
-/// quick toggles): applies live and writes `config.toml` shortly after.
-pub fn update_config(app: &mut SoyuzApp, ctx: &egui::Context, edit: impl FnOnce(&mut Config)) {
-    let mut c = app.config.clone();
-    edit(&mut c);
-    if c == app.config {
-        return;
-    }
-    crate::services::config_watch::apply_config(app, ctx, c);
-    app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
-    ctx.request_repaint_after(SAVE_DELAY);
-}
-
-/// Flush a pending save (on exit).
-pub fn save_now(app: &mut SoyuzApp) {
-    flush_save(app);
-}
+pub use crate::models::settings::update_config;
 
 fn apply_recorded(s: &mut SettingsState, target: RecordTarget, binding: String) {
     match target {
@@ -682,7 +478,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
                 ui.painter().text(
                     pos2(r.left() + 14.0, r.center().y),
                     Align2::LEFT_CENTER,
-                    sec.icon(),
+                    section_icon(sec),
                     glyph_font,
                     if active { p.accent } else { p.text_tertiary },
                 );
@@ -721,9 +517,9 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     // Bottom: save status + config file shortcuts.
     let mut close = false;
     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-        let status = if s.save_due.is_some() {
+        let status = if app.config_save.due.is_some() {
             (ph::CIRCLE_NOTCH, tr!("settings-status-saving"), p.text_tertiary)
-        } else if s.saved_flash.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
+        } else if app.config_save.flashed.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
             (ph::CHECK_CIRCLE, tr!("settings-status-saved"), p.success)
         } else {
@@ -770,7 +566,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     .color(p.text_primary),
             );
         } else {
-            crate::ui::widgets::icon_label(ui, icons::icon(sec.icon(), 20.0).color(p.accent));
+            crate::ui::widgets::icon_label(ui, icons::icon(section_icon(sec), 20.0).color(p.accent));
             ui.label(RichText::new(sec.title()).font(crate::theme::fonts::heading(19.0)).color(p.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(30.0);

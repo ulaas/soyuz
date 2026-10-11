@@ -119,6 +119,10 @@ pub struct SoyuzApp {
     pub automation: crate::automation::AutomationState,
     /// Asks the frontend for another frame (background threads keep a clone).
     pub wake: crate::host::Wake,
+    /// Debounced writes of `config.toml`.
+    pub config_save: crate::models::settings::ConfigSave,
+    /// Requests for the frontend (open its settings window, …), drained every frame.
+    pub frontend: Vec<crate::models::frontend::FrontendCmd>,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -278,6 +282,8 @@ impl SoyuzApp {
             editors: Default::default(),
             ai: crate::ai::AiState::new(wake.clone()),
             wake,
+            config_save: Default::default(),
+            frontend: Vec::new(),
             workspaces: crate::ui::workspaces::WorkspacesState::load(),
             automation: Default::default(),
         };
@@ -464,8 +470,10 @@ impl SoyuzApp {
             let cmds = std::mem::take(&mut self.cmds);
             for c in cmds {
                 ops::apply(self, c, host);
+                crate::ui::frontend::drain(self);
             }
         }
+        crate::ui::frontend::drain(self);
     }
 
     /// Window close requests: with pending jobs, cancel the close and ask first (quitting
@@ -719,7 +727,7 @@ impl eframe::App for SoyuzApp {
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
         self.save_state();
-        crate::ui::settings::save_now(self);
+        crate::models::settings::flush(self);
         self.palette.save_now();
         // Debounced tag / recent changes are queued now and written before we return
         // (eframe calls this on exit too), in order, on the single store worker.
