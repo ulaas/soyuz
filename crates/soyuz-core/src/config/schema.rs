@@ -88,6 +88,8 @@ pub struct General {
     pub confirm_permanent_delete: bool,
     /// Show hidden files and folders (also toggled with Ctrl+H).
     pub show_hidden: bool,
+    /// Also hide the names listed in a folder's `.hidden` file (the GNOME / KDE convention).
+    pub honour_dot_hidden: bool,
     /// Windows system files.
     pub show_system: bool,
     /// Show file name extensions.
@@ -500,6 +502,9 @@ pub struct Behaviour {
     pub auto_refresh: bool,
     /// Collect file-system change events for this long before refreshing (ms).
     pub watch_debounce_ms: u64,
+    /// When the system's change-notification limit is used up (Linux: inotify
+    /// `fs.inotify.max_user_watches`), open folders are polled this often instead (ms).
+    pub watch_poll_interval_ms: u64,
     /// Typing in the file list `jump`s to the first match or `filter`s the list.
     pub type_ahead: TypeAhead,
     /// Middle-clicking a folder opens it in a `new_tab`, the `other_pane`, or does `nothing`.

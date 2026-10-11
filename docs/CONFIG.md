@@ -95,6 +95,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `confirm_delete` | boolean | `true` | Confirm moving to trash. |
 | `confirm_permanent_delete` | boolean | `true` | Confirm before deleting permanently (Shift+Del). |
 | `show_hidden` | boolean | `false` | Show hidden files and folders (also toggled with Ctrl+H). |
+| `honour_dot_hidden` | boolean | `true` | Also hide the names listed in a folder's `.hidden` file (the GNOME / KDE convention). |
 | `show_system` | boolean | `false` | Windows system files. |
 | `show_extensions` | boolean | `true` | Show file name extensions. |
 | `natural_sort` | boolean | `true` | Natural sort: `file2` before `file10`. |
@@ -308,6 +309,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `restore_session` | boolean | `true` | Reopen the tabs, panes and windows of the last session at startup. |
 | `auto_refresh` | boolean | `true` | Watch open folders and refresh them when files change. |
 | `watch_debounce_ms` | integer | `250` | Collect file-system change events for this long before refreshing (ms). |
+| `watch_poll_interval_ms` | integer | `2000` | When the system's change-notification limit is used up (Linux: inotify `fs.inotify.max_user_watches`), open folders are polled this often instead (ms). |
 | `type_ahead` | `"jump"` \| `"filter"` | `"jump"` | Typing in the file list `jump`s to the first match or `filter`s the list. |
 | `middle_click` | `"new_tab"` \| `"other_pane"` \| `"nothing"` | `"new_tab"` | Middle-clicking a folder opens it in a `new_tab`, the `other_pane`, or does `nothing`. |
 | `spring_loaded_folders` | boolean | `true` | Hovering a folder during a drag opens it (Explorer / Finder "spring-loaded folders"). |
