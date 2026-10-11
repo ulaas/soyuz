@@ -880,7 +880,7 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 /// Dragging items out to other apps works here (OLE on Windows, XDND on X11, a
 /// `wl_data_source` on Wayland once the drag-and-drop thread is up).
 fn drag_out_supported() -> bool {
-    crate::ops::fileops::dragout::supported()
+    crate::ui::dnd::dragout::supported()
 }
 
 pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {

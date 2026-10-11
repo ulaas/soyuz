@@ -36,9 +36,9 @@ use soyuz_core::config::{Action, DragDefault};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd;
 use crate::ui::toasts::Toast;
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::icon_button;

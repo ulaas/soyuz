@@ -26,9 +26,9 @@ use soyuz_fs::VolumeInfo;
 
 use crate::cmd::Cmd;
 use crate::models::tree::KeyInput;
-use crate::ops::fileops::dnd::{self, DragPayload};
 use crate::theme::tokens::{alpha, radius, size};
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::widgets::{focus_ring, menu_item, menu_separator};
 use model::{Nav, RootKind};
 

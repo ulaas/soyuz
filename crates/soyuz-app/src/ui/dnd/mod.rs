@@ -1,141 +1,49 @@
-//! Drag and drop. Internal drags carry a [`DragPayload`] through egui's
+//! Drag and drop, the egui side. Internal drags carry a [`DragPayload`] through egui's
 //! `DragAndDrop` (panes, tabs, sidebar favorites/devices/trash and breadcrumb segments
 //! are drop targets); external drops come from `raw.dropped_files` and always copy.
-//!
-//! Modifier semantics (Explorer-like): Ctrl = copy, Shift = move, Alt (or Ctrl+Shift) =
-//! link; otherwise `[behaviour] drag_default` (auto = move on the same volume, copy
-//! across volumes; `ask` shows a small menu at the drop point).
+//! Effects, valid targets and the external drop target are decided in
+//! [`crate::ops::fileops::drop`] (modifier semantics there).
 //!
 //! Spring-loaded folders: resting on a folder item, breadcrumb segment, tab or
 //! sidebar row for `[behaviour] spring_load_delay_ms` opens it, so a drag can go deeper.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::path::{Component, Path, PathBuf};
+pub mod dragout;
+pub mod linux_dnd;
+
+use std::path::{Path, PathBuf};
 
 use egui::{
-    Align2, Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, Id, Order, Pos2, Rect, Response, Stroke,
-    StrokeKind, Ui, pos2, vec2,
+    Align2, Color32, CornerRadius, CursorIcon, DragAndDrop, FontId, Id, Order, Rect, Response, Stroke, StrokeKind, Ui,
+    pos2, vec2,
 };
 use soyuz_core::config::DragDefault;
 
-use super::FileOpCmd;
+use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::ops::fileops::drop::{self, is_noop};
+pub use crate::ops::fileops::drop::{DndFrame, DragPayload, DropEffect, DropMods, valid_target};
+use crate::ops::fileops::{self, FileOpCmd};
 use crate::state::pane::{Pane, PaneId};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::geom;
 
-/// What an internal drag carries.
-#[derive(Clone, Debug)]
-pub struct DragPayload {
-    pub paths: Vec<PathBuf>,
-    pub source_pane: Option<PaneId>,
-    pub default: DragDefault,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DropEffect {
-    Copy,
-    Move,
-    Link,
-}
-
-impl DropEffect {
-    fn glyph(self) -> &'static str {
-        match self {
-            DropEffect::Copy => ph::COPY,
-            DropEffect::Move => ph::ARROW_BEND_DOWN_RIGHT,
-            DropEffect::Link => ph::LINK,
-        }
-    }
-}
-
-/// Modifier state relevant to a drop.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct DropMods {
-    pub ctrl: bool,
-    pub shift: bool,
-    pub alt: bool,
-}
-
-impl DropMods {
-    pub fn from_egui(m: egui::Modifiers) -> Self {
-        DropMods { ctrl: m.command || m.ctrl, shift: m.shift, alt: m.alt }
-    }
-}
-
-/// Effect of a drop; `None` = ask the user (`drag_default = "ask"` without modifiers).
-pub fn resolve_effect(m: DropMods, same_volume: bool, default: DragDefault) -> Option<DropEffect> {
-    if m.alt || (m.ctrl && m.shift) {
-        return Some(DropEffect::Link);
-    }
-    if m.ctrl {
-        return Some(DropEffect::Copy);
-    }
-    if m.shift {
-        return Some(DropEffect::Move);
-    }
-    match default {
-        DragDefault::Auto => Some(if same_volume { DropEffect::Move } else { DropEffect::Copy }),
-        DragDefault::Copy => Some(DropEffect::Copy),
-        DragDefault::Move => Some(DropEffect::Move),
-        DragDefault::Ask => None,
-    }
-}
-
-/// Can `paths` be dropped into `dest`? Not into one of the dragged items or below it.
-pub fn valid_target(paths: &[PathBuf], dest: &Path) -> bool {
-    !paths.is_empty() && !paths.iter().any(|p| dest == p.as_path() || dest.starts_with(p))
-}
-
-/// A move into the folder the items already live in does nothing.
-pub fn is_noop(paths: &[PathBuf], dest: &Path, effect: Option<DropEffect>) -> bool {
-    effect == Some(DropEffect::Move) && paths.iter().all(|p| p.parent() == Some(dest))
-}
-
-/// Volume identity derived from the path alone (drive letter / UNC share) on Windows.
-pub fn volume_key(p: &Path) -> Option<String> {
-    let stripped = soyuz_fs::strip_verbatim(p);
-    match stripped.components().next()? {
-        Component::Prefix(pre) => {
-            use std::path::Prefix as P;
-            Some(match pre.kind() {
-                P::Disk(d) | P::VerbatimDisk(d) => (d as char).to_ascii_uppercase().to_string(),
-                P::UNC(s, h) | P::VerbatimUNC(s, h) => {
-                    format!("\\\\{}\\{}", s.to_string_lossy().to_lowercase(), h.to_string_lossy().to_lowercase())
-                }
-                _ => return None,
-            })
-        }
-        _ => None,
-    }
-}
-
-thread_local! {
-    static DEVICES: RefCell<HashMap<PathBuf, Option<u64>>> = RefCell::new(HashMap::new());
-}
-
-/// Whether two paths live on the same volume (decides move vs copy for plain drags).
-pub fn same_volume(a: &Path, b: &Path) -> bool {
-    if let (Some(x), Some(y)) = (volume_key(a), volume_key(b)) {
-        return x == y;
-    }
-    let dev = |p: &Path| {
-        DEVICES.with(|c| {
-            *c.borrow_mut().entry(p.to_path_buf()).or_insert_with(|| soyuz_fs::device_of(p).ok().map(|d| d.0))
-        })
-    };
-    match (dev(a), dev(b)) {
-        (Some(x), Some(y)) => x == y,
-        _ => true,
-    }
+/// Drop modifiers from egui's (Cmd counts as Ctrl).
+pub fn drop_mods(m: egui::Modifiers) -> DropMods {
+    DropMods { ctrl: m.command || m.ctrl, shift: m.shift, alt: m.alt }
 }
 
 /// Effect for the current modifiers, dropping `payload` into `dest`.
 pub fn effect_for(ctx: &egui::Context, payload: &DragPayload, dest: &Path) -> Option<DropEffect> {
-    let mods = DropMods::from_egui(ctx.input(|i| i.modifiers));
-    let same = payload.paths.first().is_none_or(|p| same_volume(p, dest));
-    resolve_effect(mods, same, payload.default)
+    drop::effect_for(drop_mods(ctx.input(|i| i.modifiers)), payload, dest)
+}
+
+fn effect_glyph(e: DropEffect) -> &'static str {
+    match e {
+        DropEffect::Copy => ph::COPY,
+        DropEffect::Move => ph::ARROW_BEND_DOWN_RIGHT,
+        DropEffect::Link => ph::LINK,
+    }
 }
 
 /// Start an internal drag with the pane's selection.
@@ -146,7 +54,7 @@ pub fn begin(ctx: &egui::Context, pane: &Pane, default: DragDefault) {
     if paths.is_empty() || !draggable {
         return;
     }
-    DEVICES.with(|c| c.borrow_mut().clear());
+    drop::reset_volume_cache();
     DragAndDrop::set_payload(ctx, DragPayload { paths, source_pane: Some(pane.id), default });
 }
 
@@ -257,6 +165,7 @@ pub fn target_rect_spring(
     set_hover(ctx, format!("\u{201c}{}\u{201d}", soyuz_core::entry::display_name(dest)), effect);
     if released && let Some(p) = DragAndDrop::take_payload::<DragPayload>(ctx) {
         ctx.data_mut(|d| d.remove::<Option<DropEffect>>(key));
+        let pos = geom::point(pos);
         cmds.push(Cmd::FileOp(FileOpCmd::Drop { paths: p.paths.clone(), dest: dest.to_path_buf(), effect, pos }));
     }
     true
@@ -304,24 +213,6 @@ pub fn set_pin_hover(ctx: &egui::Context, label: String) {
     ctx.data_mut(|d| d.insert_temp(Id::new("soyuz.dnd.pin"), true));
 }
 
-/// Where the pointer was over a pane last frame (external drops have no pointer
-/// position on some platforms, so the last known pane wins, else the focused one).
-#[derive(Clone, Debug, Default)]
-pub struct DndFrame {
-    pub panes: Vec<(PaneId, Rect, Option<PathBuf>)>,
-    /// A folder item claimed the hover this frame (the pane background yields).
-    pub item_claimed: bool,
-    pub ask: Option<AskMenu>,
-}
-
-/// "Copy here / Move here / Link here" menu for `drag_default = "ask"`.
-#[derive(Clone, Debug)]
-pub struct AskMenu {
-    pub paths: Vec<PathBuf>,
-    pub dest: PathBuf,
-    pub pos: Pos2,
-}
-
 /// Pane-level target: drop into the pane's folder (background, empty folder state),
 /// plus the external-drop highlight. Called once per drawn pane.
 pub fn pane_zone(ui: &Ui, rect: Rect, pane: &Pane, frame: &mut DndFrame, cmds: &mut Vec<Cmd>) {
@@ -329,7 +220,7 @@ pub fn pane_zone(ui: &Ui, rect: Rect, pane: &Pane, frame: &mut DndFrame, cmds: &
         soyuz_core::Location::Dir(d) => Some(d.clone()),
         _ => None,
     };
-    frame.panes.push((pane.id, rect, dir.clone()));
+    frame.panes.push((pane.id, geom::area(rect), dir.clone()));
     let Some(dir) = dir else { return };
     let ctx = ui.ctx();
     let external = ctx.input(|i| !i.raw.hovered_files.is_empty());
@@ -360,16 +251,6 @@ pub fn item_target(ui: &Ui, pane: &Pane, hit: Option<(usize, Rect)>, frame: &mut
     }
 }
 
-/// External drop target: the pane under the pointer, else the focused pane.
-pub fn external_target(frame: &DndFrame, pointer: Option<Pos2>, focused: PaneId) -> Option<PathBuf> {
-    if let Some(pos) = pointer
-        && let Some((_, _, dir)) = frame.panes.iter().find(|(_, r, _)| r.contains(pos))
-    {
-        return dir.clone();
-    }
-    frame.panes.iter().find(|(id, _, _)| *id == focused).and_then(|(_, _, d)| d.clone())
-}
-
 /// Floating badge next to the pointer: item count, effect and target.
 pub fn paint_badge(ctx: &egui::Context) {
     let hover: Option<HoverInfo> = ctx.data_mut(|d| d.remove_temp(hover_id()));
@@ -397,7 +278,7 @@ pub fn paint_badge(ctx: &egui::Context) {
                     DropEffect::Move => tr!("ops-dnd-badge-move", target = &h.label),
                     DropEffect::Link => tr!("ops-dnd-badge-link", target = &h.label),
                 };
-                (e.glyph(), line, p.accent)
+                (effect_glyph(e), line, p.accent)
             }
             None => (ph::QUESTION, tr!("ops-dnd-badge-drop", target = &h.label), p.accent),
         },
@@ -473,69 +354,67 @@ pub fn paint_badge(ctx: &egui::Context) {
     ctx.request_repaint();
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// End of frame: hand a drag that left the window to the OS, paint the drag badge, show
+/// the "ask" drop menu.
+pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
+    dragout::end_frame(app, ctx);
+    paint_badge(ctx);
+    ask_menu(app, ctx);
+}
 
-    const NONE: DropMods = DropMods { ctrl: false, shift: false, alt: false };
-
-    #[test]
-    fn modifier_semantics() {
-        let ctrl = DropMods { ctrl: true, ..NONE };
-        let shift = DropMods { shift: true, ..NONE };
-        let alt = DropMods { alt: true, ..NONE };
-        let ctrl_shift = DropMods { ctrl: true, shift: true, alt: false };
-        for same in [true, false] {
-            assert_eq!(resolve_effect(ctrl, same, DragDefault::Auto), Some(DropEffect::Copy));
-            assert_eq!(resolve_effect(shift, same, DragDefault::Auto), Some(DropEffect::Move));
-            assert_eq!(resolve_effect(alt, same, DragDefault::Auto), Some(DropEffect::Link));
-            assert_eq!(resolve_effect(ctrl_shift, same, DragDefault::Copy), Some(DropEffect::Link));
-        }
-        assert_eq!(resolve_effect(NONE, true, DragDefault::Auto), Some(DropEffect::Move), "same device moves");
-        assert_eq!(resolve_effect(NONE, false, DragDefault::Auto), Some(DropEffect::Copy), "cross device copies");
-        assert_eq!(resolve_effect(NONE, true, DragDefault::Copy), Some(DropEffect::Copy));
-        assert_eq!(resolve_effect(NONE, false, DragDefault::Move), Some(DropEffect::Move));
-        assert_eq!(resolve_effect(NONE, true, DragDefault::Ask), None);
-        assert_eq!(resolve_effect(ctrl, true, DragDefault::Ask), Some(DropEffect::Copy), "modifiers win over ask");
+/// "Move here / Copy here / Link here" at the drop point (`drag_default = "ask"`).
+fn ask_menu(app: &mut SoyuzApp, ctx: &egui::Context) {
+    let Some(menu) = app.fileops.dnd.ask.clone() else { return };
+    let mut close = false;
+    let mut chosen = None;
+    let resp = egui::Area::new(Id::new("soyuz.dnd.ask"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(geom::pos(menu.pos))
+        .show(ctx, |ui| {
+            egui::Frame::menu(ui.style()).show(ui, |ui| {
+                ui.set_min_width(200.0);
+                use crate::ui::widgets::{menu_item, menu_separator};
+                if menu_item(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("ops-dnd-move-here"), None, true).clicked() {
+                    chosen = Some(DropEffect::Move);
+                }
+                if menu_item(ui, Some(ph::COPY), tr!("ops-dnd-copy-here"), None, true).clicked() {
+                    chosen = Some(DropEffect::Copy);
+                }
+                if menu_item(ui, Some(ph::LINK), tr!("ops-dnd-link-here"), None, true).clicked() {
+                    chosen = Some(DropEffect::Link);
+                }
+                menu_separator(ui);
+                if menu_item(ui, Some(ph::X), tr!("common-cancel"), None, true).clicked() {
+                    close = true;
+                }
+            });
+        });
+    let clicked_outside = ctx.input(|i| i.pointer.any_pressed())
+        && !ctx.input(|i| i.pointer.interact_pos()).is_some_and(|p| resp.response.rect.contains(p));
+    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || clicked_outside {
+        close = true;
     }
-
-    #[test]
-    fn targets() {
-        let paths = vec![PathBuf::from("/a/x"), PathBuf::from("/a/y")];
-        assert!(valid_target(&paths, Path::new("/b")));
-        assert!(!valid_target(&paths, Path::new("/a/x")), "not into itself");
-        assert!(!valid_target(&paths, Path::new("/a/x/sub")), "not below itself");
-        assert!(valid_target(&paths, Path::new("/a")));
-        assert!(!valid_target(&[], Path::new("/a")));
-        assert!(is_noop(&paths, Path::new("/a"), Some(DropEffect::Move)));
-        assert!(!is_noop(&paths, Path::new("/a"), Some(DropEffect::Copy)), "copy into the same folder duplicates");
-        assert!(!is_noop(&paths, Path::new("/b"), Some(DropEffect::Move)));
+    if let Some(effect) = chosen {
+        app.fileops.dnd.ask = None;
+        fileops::transfer(app, menu.paths, menu.dest, effect);
+    } else if close {
+        app.fileops.dnd.ask = None;
     }
+}
 
-    #[cfg(windows)]
-    #[test]
-    fn windows_volume_keys() {
-        assert_eq!(volume_key(Path::new(r"c:\Users\x")), Some("C".into()));
-        assert_eq!(volume_key(Path::new(r"\\?\C:\Users\x")), Some("C".into()));
-        assert_eq!(volume_key(Path::new(r"\\Server\Share\dir")), Some(r"\\server\share".into()));
-        assert!(same_volume(Path::new(r"C:\a"), Path::new(r"c:\b\c")));
-        assert!(!same_volume(Path::new(r"C:\a"), Path::new(r"D:\a")));
-        assert!(!same_volume(Path::new(r"\\s\one\a"), Path::new(r"\\s\two\a")));
-    }
-
-    #[test]
-    fn external_target_prefers_pane_under_pointer() {
-        let a = PaneId(1);
-        let b = PaneId(2);
-        let f = DndFrame {
-            panes: vec![
-                (a, Rect::from_min_size(pos2(0.0, 0.0), vec2(100.0, 100.0)), Some("/a".into())),
-                (b, Rect::from_min_size(pos2(100.0, 0.0), vec2(100.0, 100.0)), Some("/b".into())),
-            ],
-            ..Default::default()
-        };
-        assert_eq!(external_target(&f, Some(pos2(150.0, 50.0)), a), Some("/b".into()));
-        assert_eq!(external_target(&f, None, a), Some("/a".into()));
-        assert_eq!(external_target(&f, Some(pos2(500.0, 50.0)), b), Some("/b".into()));
-    }
+/// Files dropped onto the window from other apps this frame: copied into the pane under
+/// the pointer (else the focused one).
+pub fn external_drops(app: &mut SoyuzApp, ctx: &egui::Context) {
+    let (dropped, pointer) = ctx.input(|i| {
+        (
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect::<Vec<PathBuf>>(),
+            i.pointer.latest_pos(),
+        )
+    });
+    fileops::drop_external(app, dropped, pointer.map(geom::point));
 }

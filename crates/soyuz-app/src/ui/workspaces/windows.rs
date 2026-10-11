@@ -146,7 +146,7 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
     app.apply_cmds(&ctx);
     crate::ui::shell::show(ui, app);
     if super::overlays_here(app) {
-        crate::palette::show(&ctx, app);
+        crate::ui::palette::show(&ctx, app);
         crate::ui::settings::show(&ctx, app);
         crate::ops::fileops::end_frame(app, &ctx);
     }

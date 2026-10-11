@@ -232,7 +232,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             c.cmds.push(Cmd::OpenInNewTab { location: list[i].location.clone(), activate: false });
         }
         if let soyuz_core::Location::Dir(d) = &list[i].location {
-            crate::ops::fileops::dnd::target_open(ui, &resp, d, c.pane, c.cmds);
+            crate::ui::dnd::target_open(ui, &resp, d, c.pane, c.cmds);
         }
         x += r.width();
         if x + SEP_W > right {

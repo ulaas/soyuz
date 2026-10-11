@@ -9,7 +9,7 @@ use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
 use crate::cmd::Cmd;
 use crate::ops::fileops::FileOpCmd;
-use crate::ops::fileops::dnd::DropEffect;
+use crate::ops::fileops::drop::DropEffect;
 use crate::theme::{icons::ph, palette};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

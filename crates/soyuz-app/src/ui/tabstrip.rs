@@ -363,9 +363,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         if let soyuz_core::Location::Dir(d) = &app.ws.tabs[i].active().location {
             let d = d.clone();
             if active {
-                crate::ops::fileops::dnd::target(ui, &resp, &d, &mut app.cmds);
+                crate::ui::dnd::target(ui, &resp, &d, &mut app.cmds);
             } else {
-                crate::ops::fileops::dnd::target_with(ui, &resp, &d, Cmd::SelectTab(i), &mut app.cmds);
+                crate::ui::dnd::target_with(ui, &resp, &d, Cmd::SelectTab(i), &mut app.cmds);
             }
         }
         if resp.clicked() {

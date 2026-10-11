@@ -21,10 +21,10 @@ use crate::models::portal::{label, same_path};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd::{self, DragPayload};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::radius;
 use crate::theme::{icons::ph, palette};
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::widgets::{NavRow, menu_item, menu_separator};
 
 /// Before the panes see them: OS drops over the Portal section, then the model's finished

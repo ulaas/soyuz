@@ -6,9 +6,8 @@
 //! `actions::execute` forwards file-op actions to [`execute`].
 
 pub mod clipboard;
-pub mod dnd;
 pub mod dragout;
-pub mod linux_dnd;
+pub mod drop;
 pub mod names;
 pub mod prompts;
 pub mod rename;
@@ -19,7 +18,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use egui::{Id, Pos2};
 use soyuz_core::config::{Action, Config, PasteConflict, TrashUnsupportedPolicy};
 use soyuz_core::{ConflictResolution, Location};
 use soyuz_fs::{LinkKind, TrashItem};
@@ -28,6 +26,7 @@ use soyuz_jobs::{
 };
 
 use crate::app::SoyuzApp;
+use crate::geom::Point;
 use crate::models::toasts::Toast;
 use crate::services::jobs::{AfterJob, JobMeta, JobsService, OpKind};
 use crate::state::pane::PaneId;
@@ -39,7 +38,7 @@ use crate::ui::views::trash::TrashState;
 
 use crate::host::Host;
 use clipboard::{ClipMode, Clipboard};
-use dnd::{DndFrame, DropEffect};
+use drop::{DndFrame, DropEffect};
 use prompts::PromptQueue;
 use rename::InlineRename;
 
@@ -51,7 +50,7 @@ pub enum FileOpCmd {
         paths: Vec<PathBuf>,
         dest: PathBuf,
         effect: Option<DropEffect>,
-        pos: Pos2,
+        pos: Point,
     },
     /// Copy / move / link `paths` into `dest`.
     Transfer {
@@ -409,7 +408,7 @@ pub fn transfer_with(
     {
         return crate::models::remote::transfer(app, paths, dest, effect == DropEffect::Move, false);
     }
-    if paths.is_empty() || !dnd::valid_target(&paths, &dest) {
+    if paths.is_empty() || !drop::valid_target(&paths, &dest) {
         if !paths.is_empty() {
             app.ui.toasts.push(Toast::warning(tr!("ops-drop-into-itself")));
         }
@@ -564,7 +563,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
             Some(e) => {
                 transfer(app, paths, dest, e);
             }
-            None => app.fileops.dnd.ask = Some(dnd::AskMenu { paths, dest, pos }),
+            None => app.fileops.dnd.ask = Some(drop::AskMenu { paths, dest, pos }),
         },
         FileOpCmd::Transfer { paths, dest, effect } => {
             transfer(app, paths, dest, effect);
@@ -639,7 +638,7 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
     }
     reconcile_prompts(app);
     auto_open_activity(app);
-    external_drops(app, crate::host::egui_ctx(host));
+    crate::ui::dnd::external_drops(app, crate::host::egui_ctx(host));
     pending_rename(app);
     check_rename(app);
     app.fileops.trash.poll();
@@ -650,52 +649,11 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
     }
 }
 
-/// End of every frame: drag badge and the "ask" drop menu.
-pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    dragout::end_frame(app, ctx);
-    dnd::paint_badge(ctx);
-    if let Some(menu) = app.fileops.dnd.ask.clone() {
-        let mut close = false;
-        let mut chosen = None;
-        let resp = egui::Area::new(Id::new("soyuz.dnd.ask")).order(egui::Order::Foreground).fixed_pos(menu.pos).show(
-            ctx,
-            |ui| {
-                egui::Frame::menu(ui.style()).show(ui, |ui| {
-                    ui.set_min_width(200.0);
-                    use crate::theme::icons::ph;
-                    use crate::ui::widgets::{menu_item, menu_separator};
-                    if menu_item(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("ops-dnd-move-here"), None, true).clicked() {
-                        chosen = Some(DropEffect::Move);
-                    }
-                    if menu_item(ui, Some(ph::COPY), tr!("ops-dnd-copy-here"), None, true).clicked() {
-                        chosen = Some(DropEffect::Copy);
-                    }
-                    if menu_item(ui, Some(ph::LINK), tr!("ops-dnd-link-here"), None, true).clicked() {
-                        chosen = Some(DropEffect::Link);
-                    }
-                    menu_separator(ui);
-                    if menu_item(ui, Some(ph::X), tr!("common-cancel"), None, true).clicked() {
-                        close = true;
-                    }
-                });
-            },
-        );
-        let clicked_outside = ctx.input(|i| i.pointer.any_pressed())
-            && !ctx.input(|i| i.pointer.interact_pos()).is_some_and(|p| resp.response.rect.contains(p));
-        if ctx.input(|i| i.key_pressed(egui::Key::Escape)) || clicked_outside {
-            close = true;
-        }
-        if let Some(effect) = chosen {
-            app.fileops.dnd.ask = None;
-            transfer(app, menu.paths, menu.dest, effect);
-        } else if close {
-            app.fileops.dnd.ask = None;
-        }
-    }
-    // Pane rects are re-recorded by the next frame's draw.
-    let ask = app.fileops.dnd.ask.take();
-    let panes = std::mem::take(&mut app.fileops.dnd.panes);
-    app.fileops.dnd = DndFrame { panes, item_claimed: false, ask };
+/// End of every frame: drag-out hand-off, drag badge and the "ask" drop menu (GUI), then
+/// the drag-and-drop frame state rolls over.
+pub fn end_frame(app: &mut SoyuzApp, host: &dyn Host) {
+    crate::ui::dnd::end_frame(app, crate::host::egui_ctx(host));
+    app.fileops.dnd.next_frame();
 }
 
 fn on_prompt(app: &mut SoyuzApp, id: JobId) {
@@ -881,23 +839,14 @@ fn auto_open_activity(app: &mut SoyuzApp) {
     }
 }
 
-fn external_drops(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let (dropped, pointer) = ctx.input(|i| {
-        (
-            i.raw
-                .dropped_files
-                .iter()
-                .map(|f| f.path().to_path_buf())
-                .filter(|p| !p.as_os_str().is_empty())
-                .collect::<Vec<_>>(),
-            i.pointer.latest_pos(),
-        )
-    });
+/// Files dropped onto the window from other apps (`pointer` = where, when known): copied
+/// into the pane under the pointer, else the focused one.
+pub fn drop_external(app: &mut SoyuzApp, dropped: Vec<PathBuf>, pointer: Option<Point>) {
     if dropped.is_empty() {
         return;
     }
     let focused = app.ws.pane().id;
-    match dnd::external_target(&app.fileops.dnd, pointer, focused) {
+    match drop::external_target(&app.fileops.dnd, pointer, focused) {
         Some(dest) => {
             transfer(app, dropped, dest, DropEffect::Copy);
         }

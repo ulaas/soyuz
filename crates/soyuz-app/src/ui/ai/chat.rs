@@ -15,10 +15,10 @@ use super::{PanelAct, Tone, button, chip, tokens};
 use crate::ai::agent::Finish;
 use crate::ai::state::{self, CardState, ChatItem, TaskEnd, ToolStatus, UndoState};
 use crate::app::SoyuzApp;
-use crate::ops::fileops::dnd::DragPayload;
 use crate::theme::Palette;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
+use crate::ui::dnd::DragPayload;
 use crate::ui::views::flow::semibold;
 
 const COMPOSER_ID: &str = "soyuz.ai.composer";

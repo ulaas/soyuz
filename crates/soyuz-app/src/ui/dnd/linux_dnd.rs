@@ -6,7 +6,7 @@
 //!   exactly what winit produces on X11 / Windows: `raw.hovered_files` while a file drag
 //!   is over the window, `PointerMoved` for its position (the compositor sends no pointer
 //!   events during a drag), and `raw.dropped_files` on drop. Everything downstream (pane
-//!   highlight, Portal pinning, shelf, `external_drops`) is unchanged.
+//!   highlight, Portal pinning, shelf, `ui::dnd::external_drops`) is unchanged.
 //! * **Drag-out**: which window system the window is on ([`window_system`]) decides how
 //!   `dragout::end_frame` hands an internal drag to the OS (X11 XDND or Wayland
 //!   `wl_data_source`).
@@ -346,16 +346,20 @@ mod tests {
         let (paths, pos) = seen.unwrap();
         assert_eq!(paths, vec![PathBuf::from("/tmp/x")]);
         assert_eq!(pos, Some(Pos2::new(300.0, 200.0)));
-        let frame = super::super::dnd::DndFrame {
+        let frame = crate::ops::fileops::drop::DndFrame {
             panes: vec![(
                 crate::state::pane::PaneId(1),
-                egui::Rect::from_min_size(Pos2::new(200.0, 100.0), egui::vec2(400.0, 400.0)),
+                crate::geom::Rect::from_min_size(crate::geom::pt(200.0, 100.0), crate::geom::vec2(400.0, 400.0)),
                 Some(PathBuf::from("/dest")),
             )],
             ..Default::default()
         };
         assert_eq!(
-            super::super::dnd::external_target(&frame, pos, crate::state::pane::PaneId(2)),
+            crate::ops::fileops::drop::external_target(
+                &frame,
+                pos.map(crate::ui::geom::point),
+                crate::state::pane::PaneId(2)
+            ),
             Some(PathBuf::from("/dest"))
         );
     }

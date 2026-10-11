@@ -2,23 +2,17 @@
 //! selection stem → extension → whole name, Enter / click-away commits, Tab commits and
 //! moves to the next item (Shift+Tab: previous), Esc cancels. Validation errors are shown
 //! under the editor and block the commit.
+//!
+//! This is the state and the commit logic; the GUI editor is `crate::ui::views::rename`.
 
 use std::path::{Path, PathBuf};
 
-use egui::text::{CCursor, CCursorRange};
-use egui::text_edit::TextEditState;
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Id, Key, Margin, Modifiers, Order, Rect, Stroke, TextEdit, Ui, vec2,
-};
 use soyuz_core::EntryInfo;
 use soyuz_core::config::RenameSelects;
 
 use super::FileOpCmd;
 use crate::cmd::Cmd;
 use crate::state::pane::{Pane, PaneId};
-use crate::theme::palette;
-use crate::theme::tokens::radius;
-use crate::ui::views::ViewCtx;
 
 /// Which part of the name is selected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -138,116 +132,72 @@ impl InlineRename {
             error: None,
         }
     }
-
-    fn id(&self) -> Id {
-        Id::new(("soyuz.rename", self.pane.0, self.key.as_str()))
-    }
 }
 
-enum Outcome {
+/// How the edit ends this frame.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
     Editing,
+    /// Esc.
     Cancel,
+    /// Enter or a click elsewhere.
     Commit,
+    /// Tab (+1) / Shift+Tab (-1): commit and rename the next / previous item.
     CommitAndMove(i32),
 }
 
-/// Draw the editor over `rect` (the item's name area). Called by the views for the
-/// item being renamed.
-pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut ViewCtx<'_>) {
-    let Some(r) = v.fileops.rename.as_mut() else { return };
-    if r.pane != pane.id {
-        return;
-    }
-    let p = palette(ui.ctx());
-    let id = r.id();
-    let first = r.apply_sel;
-    let has_focus = ui.memory(|m| m.has_focus(id));
-    let (esc, enter, tab, back_tab, f2) = if has_focus || first {
-        ui.input_mut(|i| {
-            (
-                i.key_pressed(Key::Escape),
-                i.key_pressed(Key::Enter),
-                i.consume_key(Modifiers::NONE, Key::Tab),
-                i.consume_key(Modifiers::SHIFT, Key::Tab),
-                i.consume_key(Modifiers::NONE, Key::F2),
-            )
-        })
-    } else {
-        (false, false, false, false, false)
-    };
-    if f2 {
-        r.sel = next_sel(&r.text, r.is_dir, r.sel);
-        r.apply_sel = true;
-    }
-    if r.apply_sel {
-        let (a, b) = sel_range(&r.text, r.is_dir, r.sel);
-        let mut st = TextEditState::load(ui.ctx(), id).unwrap_or_default();
-        st.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(a), CCursor::new(b))));
-        st.store(ui.ctx(), id);
-        // Keep applying until the editor owns the focus (gaining focus resets the cursor).
-        if has_focus {
-            r.apply_sel = false;
-        }
-    }
-    // Opaque backing so the painted name underneath does not show through.
-    ui.painter().rect_filled(rect.expand(1.0), CornerRadius::same(radius::CONTROL), p.bg_surface1);
-    let te = TextEdit::singleline(&mut r.text)
-        .id(id)
-        .font(font)
-        .margin(Margin::symmetric(4, 2))
-        .lock_focus(true)
-        .desired_width(rect.width() - 8.0);
-    let out = ui.put(rect, te);
-    if first && !has_focus {
-        out.request_focus();
-    }
-    // Validation (siblings from the listing; no I/O).
+/// Validate the edited name against the listing of `pane` (no I/O) and store the error;
+/// returns the trimmed name.
+pub fn revalidate(
+    r: &mut InlineRename,
+    pane: &Pane,
+    strict_windows_names: bool,
+    volumes: &[soyuz_fs::VolumeInfo],
+) -> String {
     let dir = pane.location.as_fs_path();
-    let windows_rules = windows_rules_for(v.config.general.strict_windows_names, v.volumes, dir);
+    let windows_rules = windows_rules_for(strict_windows_names, volumes, dir);
     // FAT / exFAT / NTFS / SMB volumes compare names case-insensitively, also off Windows.
-    let ci = super::names::case_insensitive_fs() || dir.is_some_and(|d| volume_needs_windows_names(v.volumes, d));
+    let ci = super::names::case_insensitive_fs() || dir.is_some_and(|d| volume_needs_windows_names(volumes, d));
     let text = r.text.trim().to_string();
     r.error = validate(&text, &r.key, pane.entries.iter().map(|e| e.name.as_str()), windows_rules, ci).err();
-    let stroke = if r.error.is_some() { p.danger } else { p.accent };
-    ui.painter().rect_stroke(
-        rect.expand(1.0),
-        CornerRadius::same(radius::CONTROL),
-        Stroke::new(1.5, stroke),
-        egui::StrokeKind::Outside,
-    );
-    if let Some(err) = &r.error {
-        error_bubble(ui, rect, err, &p);
-    }
+    text
+}
 
-    let outcome = if esc {
-        Outcome::Cancel
-    } else if tab || back_tab {
-        Outcome::CommitAndMove(if back_tab { -1 } else { 1 })
-    } else if (enter && has_focus) || out.lost_focus() {
-        Outcome::Commit
-    } else {
-        Outcome::Editing
-    };
+/// Apply `outcome` to the inline rename in `slot` (the item of `pane`); `text` is the
+/// trimmed new name. `clicked_away`: the editor lost the focus without Enter / Tab.
+/// Returns `true` when the editor must keep (take back) the focus: the name is invalid.
+pub fn finish(
+    slot: &mut Option<InlineRename>,
+    pane: &mut Pane,
+    outcome: Outcome,
+    text: String,
+    clicked_away: bool,
+    selects: RenameSelects,
+    cmds: &mut Vec<Cmd>,
+) -> bool {
+    let Some(r) = slot.as_ref() else { return false };
     match outcome {
-        Outcome::Editing => {}
-        Outcome::Cancel => v.fileops.rename = None,
+        Outcome::Editing => false,
+        Outcome::Cancel => {
+            *slot = None;
+            false
+        }
         Outcome::Commit | Outcome::CommitAndMove(_) => {
             if r.error.is_some() {
-                if out.lost_focus() && !enter && !tab && !back_tab {
+                if clicked_away {
                     // Clicked away with an invalid name: drop the edit.
-                    v.fileops.rename = None;
-                } else {
-                    // Keep editing until the name is valid.
-                    out.request_focus();
+                    *slot = None;
+                    return false;
                 }
-                return;
+                // Keep editing until the name is valid.
+                return true;
             }
             let (key, path) = (r.key.clone(), r.path.clone());
             let changed = text != key;
             if changed {
-                v.cmds.push(Cmd::FileOp(FileOpCmd::Rename { pane: pane.id, from: path, to: text.clone() }));
+                cmds.push(Cmd::FileOp(FileOpCmd::Rename { pane: pane.id, from: path, to: text.clone() }));
             }
-            v.fileops.rename = None;
+            *slot = None;
             if let Outcome::CommitAndMove(d) = outcome {
                 let pos = pane.visible_pos(&key).map(|p| p as i64 + d as i64).filter(|p| *p >= 0).map(|p| p as usize);
                 if let Some(pos) = pos
@@ -256,29 +206,14 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
                     pane.selection.select_only(k.clone());
                     pane.cursor = Some(k);
                     pane.scroll_to_cursor = true;
-                    v.fileops.rename = Some(InlineRename::new(pane.id, &next, v.config.behaviour.rename_selects));
+                    *slot = Some(InlineRename::new(pane.id, &next, selects));
                 }
             } else if changed {
                 pane.pending_cursor = Some(text);
             }
+            false
         }
     }
-}
-
-fn error_bubble(ui: &Ui, rect: Rect, msg: &str, p: &crate::theme::Palette) {
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.rename.err")));
-    let galley = painter.layout(msg.to_string(), FontId::proportional(11.5), Color32::WHITE, 280.0);
-    let size = galley.size() + vec2(16.0, 10.0);
-    let r = Rect::from_min_size(rect.left_bottom() + vec2(0.0, 5.0), size);
-    painter.rect_filled(r, CornerRadius::same(radius::ROW), p.danger);
-    painter.galley(r.min + vec2(8.0, 5.0), galley, Color32::WHITE);
-    painter.text(
-        r.left_top() + vec2(12.0, 0.0),
-        Align2::CENTER_BOTTOM,
-        "\u{25b2}",
-        FontId::proportional(7.0),
-        p.danger,
-    );
 }
 
 #[cfg(test)]
