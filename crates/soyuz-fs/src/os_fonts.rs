@@ -18,8 +18,8 @@
 //!
 //! macOS: CoreText's font file list (`CTFontManagerCopyAvailableFontURLs`: system fonts,
 //! `/Library/Fonts`, `~/Library/Fonts`, activated fonts), each file's faces read with the
-//! same `name`-table parser as Linux, so the result has the same shape (untested on
-//! macOS). `.dfont` / resource-fork fonts have no readable `name` table and are skipped.
+//! same `name`-table parser as Linux, so the result has the same shape.
+//! `.dfont` / resource-fork fonts have no readable `name` table and are skipped.
 //!
 //! Other platforms return nothing.
 

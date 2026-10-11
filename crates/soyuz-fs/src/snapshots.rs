@@ -25,7 +25,7 @@
 //!   e.g. while the Time Machine browser or Finder shows them). A backed-up volume maps to
 //!   the live one through `/Volumes/<volume name>` (the boot volume is a symlink to `/`;
 //!   `<name> - Data` maps like `<name>`). Local APFS snapshots that are not mounted need
-//!   root (`tmutil` / `mount_apfs -s`) and are not listed. Untested on macOS.
+//!   root (`tmutil` / `mount_apfs -s`) and are not listed.
 //!
 //! The mapping / filtering / de-duplication logic is pure and unit-tested with fake device
 //! lists.

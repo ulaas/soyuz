@@ -1,8 +1,6 @@
 //! LaunchServices (CoreServices) and AppKit's `NSWorkspace` for opening files, the
 //! "Open with" list, Finder reveal and alias resolution. No `open` / `osascript`
 //! processes are spawned.
-//!
-//! Untested on macOS: compile-checked from Linux only.
 
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};

@@ -5,7 +5,6 @@
 //!
 //! The first read by a new build may show the Keychain's "allow access" prompt (the
 //! item's access list names the binary that created it); call off the UI thread.
-//! Untested on macOS: compile-checked from Linux only.
 
 use security_framework::passwords::{delete_generic_password, get_generic_password, set_generic_password};
 

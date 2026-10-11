@@ -1,7 +1,5 @@
 //! CoreFoundation helpers: URLs, strings and the global preferences domain
 //! (`CFPreferencesCopyAppValue(key, kCFPreferencesAnyApplication)`, i.e. NSGlobalDomain).
-//!
-//! Untested on macOS: compile-checked from Linux only.
 
 use std::ffi::c_void;
 use std::path::Path;

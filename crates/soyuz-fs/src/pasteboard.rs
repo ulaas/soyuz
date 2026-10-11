@@ -1,7 +1,7 @@
 //! macOS general pasteboard (`NSPasteboard`) for file copy / paste: file URLs
 //! (`public.file-url`, one pasteboard item per file) plus the paths as plain text.
 //! macOS has no standard "cut" flavour, so callers keep their own cut state keyed by
-//! [`change_count`]. Untested on macOS: compile-checked from Linux only.
+//! [`change_count`].
 
 use std::path::PathBuf;
 

@@ -2,7 +2,7 @@
 //!
 //! Windows: kernel32 `GetUserDefaultUILanguage` (the display language, not the regional
 //! format). macOS: the first of `AppleLanguages`, else `AppleLocale`, from the global
-//! preferences domain (CoreFoundation; untested on macOS), then the variables below.
+//! preferences domain (CoreFoundation), then the variables below.
 //! Unix: `LC_ALL` / `LC_MESSAGES` / `LANG` (`tr_TR.UTF-8` → `tr-TR`).
 
 /// BCP-47 name of the UI language (`"en-US"`, `"tr-TR"`), `None` when unknown.

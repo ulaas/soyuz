@@ -1,8 +1,7 @@
 //! The general pasteboard (`NSPasteboard`): file URLs plus the paths as text.
 //!
 //! AppKit's pasteboard may be used from any thread; every call runs inside an
-//! autorelease pool so background threads do not leak. Untested on macOS: compile-checked
-//! from Linux only.
+//! autorelease pool so background threads do not leak.
 
 use std::path::PathBuf;
 

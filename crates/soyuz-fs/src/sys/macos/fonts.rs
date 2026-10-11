@@ -1,6 +1,4 @@
 //! CoreText's list of available font files (`CTFontManagerCopyAvailableFontURLs`).
-//!
-//! Untested on macOS: compile-checked from Linux only.
 
 use std::path::PathBuf;
 

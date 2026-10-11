@@ -42,5 +42,5 @@ workspace = true
 zbus.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
-# Keychain generic passwords (SecItem* in Security.framework); untested on macOS.
+# Keychain generic passwords (SecItem* in Security.framework).
 security-framework.workspace = true

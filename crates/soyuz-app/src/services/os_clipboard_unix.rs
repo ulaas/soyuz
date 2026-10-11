@@ -13,7 +13,7 @@
 //! macOS: the general `NSPasteboard` through `soyuz_fs::pasteboard` (file URLs, one item
 //! per file, plus the paths as text); no tool is spawned. macOS has no standard cut
 //! flavour: a cut is remembered here with the pasteboard's change count and only
-//! reported while nobody else has written to the pasteboard (untested on macOS).
+//! reported while nobody else has written to the pasteboard.
 //!
 //! Every child process (Linux / BSD) runs with a short timeout so a hung tool cannot stall the UI.
 //! stdin is written and stdout drained on helper threads, so payloads above the pipe

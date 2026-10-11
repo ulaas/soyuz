@@ -104,9 +104,9 @@ jobs:
             libgl1-mesa-dev libfontconfig1-dev
       - name: Build
         run: cargo build --workspace --all-targets --locked
-      # Windows and Linux tests are a gate. macOS is built and linted, but its tests are not a
-      # gate yet: that code has not been verified on a real machine, so failures there are
-      # reported as warnings until the platform is supported.
+      # Windows and Linux tests are a gate. macOS is verified on real machines and is built
+      # and linted here; its tests become a gate once they are confirmed green on hosted
+      # runners, until then failures there are reported as warnings.
       - name: Test
         continue-on-error: ${{ runner.os == 'macOS' }}
         run: cargo test --workspace --locked
@@ -169,7 +169,7 @@ jobs:
   # Release binaries for every desktop OS (pushes to main and manual runs), downloadable
   # from the run's Artifacts: Windows x64 (.zip), Linux x64 (.tar.gz), macOS arm64
   # (.tar.gz, unsigned: Gatekeeper needs `xattr -d com.apple.quarantine soyuz` or
-  # right-click > Open). macOS binaries are built but untested.
+  # right-click > Open).
   package:
     name: Package (${{ matrix.name }})
     if: github.event_name != 'pull_request'

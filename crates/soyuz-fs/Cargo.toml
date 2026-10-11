@@ -104,7 +104,7 @@ wayland-backend.workspace = true
 # Font `name` tables (same parser as Linux, over CoreText's font file list).
 skrifa.workspace = true
 # CoreFoundation / LaunchServices / CoreText FFI (`sys/macos/`), AppKit pasteboard and
-# Finder reveal. All untested on macOS (compile-checked from Linux only).
+# Finder reveal.
 core-foundation.workspace = true
 objc2.workspace = true
 objc2-foundation.workspace = true

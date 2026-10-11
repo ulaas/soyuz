@@ -463,9 +463,9 @@ you install system-wide yourself.
 
 ## macOS
 
-**Status: implemented but untested.** The macOS integration below compiles, but it has
-never been run on a Mac; expect rough edges and please report them. There are no macOS
-packages yet (build from source).
+Soyuz runs natively on Apple silicon Macs. Releases ship a `soyuz-<version>-macos-arm64.tar.gz`:
+unpack it and run `soyuz` (the build is not signed yet, so macOS asks once: right-click, then
+Open).
 
 - **Opening files** goes through LaunchServices, the same mechanism Finder uses (no `open`
   process). *Open with* lists every application LaunchServices knows for the file, the

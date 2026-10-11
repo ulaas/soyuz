@@ -4,7 +4,7 @@
 //!   Manager via advapi32 `CredWriteW` / `CredReadW` / `CredDeleteW`; on Linux the
 //!   freedesktop Secret Service over D-Bus, item `Soyuz: <name>` with the attributes
 //!   `service = soyuz`, `account = <name>`; on macOS the login Keychain, a generic
-//!   password with service `soyuz` and account `<name>` — untested on macOS). The environment variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
+//!   password with service `soyuz` and account `<name>`). The environment variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
 //!   it, for CI and headless use.
 //! * `env:<VAR>` — read the environment variable `VAR`.
 //! * empty — no key.

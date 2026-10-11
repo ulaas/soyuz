@@ -10,7 +10,7 @@
 //!   `Exec=`, terminal wrapping); the OpenURI portal inside Flatpak / Snap;
 //!   `org.freedesktop.FileManager1` for "show in folder" (see `linux`).
 //! * macOS: LaunchServices (`LSOpenFromURLSpec`, `LSCopyApplicationURLsForURL`) and
-//!   `NSWorkspace` for Finder reveal; no `open` process (see `macos`; untested on macOS).
+//!   `NSWorkspace` for Finder reveal; no `open` process (see `macos`).
 
 pub(crate) mod linux;
 pub(crate) mod lnk;
@@ -482,7 +482,7 @@ pub fn reveal_in_system(path: &Path) -> FsResult<()> {
 }
 
 /// Target of a Windows `.lnk` (MS-SHLLINK parser, any OS) / `.desktop` `Exec=` or `URL=`
-/// (unix); a Finder alias (macOS, bookmark data; untested on macOS); other files → `None`.
+/// (unix); a Finder alias (macOS, bookmark data); other files → `None`.
 pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {

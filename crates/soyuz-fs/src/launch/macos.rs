@@ -2,8 +2,6 @@
 //! `LSCopyDefaultApplicationURLForURL`) and `NSWorkspace` for Finder reveal; no `open`
 //! process is spawned. Finder aliases resolve through their bookmark data. Elevation
 //! (`run_elevated`) is not offered on macOS.
-//!
-//! Untested on macOS: compile-checked from Linux only.
 #![cfg_attr(not(target_os = "macos"), allow(dead_code))]
 
 use std::path::{Path, PathBuf};

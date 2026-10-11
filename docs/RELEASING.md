@@ -101,8 +101,9 @@ The whole path was exercised locally with a throwaway self-signed certificate. T
 - **Tags `v*`** (*Release*): Windows zip / portable zip / MSI (Authenticode-signed when the
   secrets exist), a Linux x86_64 PREFIX tarball and `.rpm` (see "Linux" below), and either the signed + notarized macOS universal
   app (Apple secrets) or an unsigned macOS arm64 tarball.
-- Linux and macOS binaries are built and clippy-clean but **untested** on real machines;
-  their test runs in CI are reported as warnings, not failures. Linux runners
+- Linux and macOS builds are supported and verified on real machines. In CI the Linux tests
+  are a gate; the macOS test step is still `continue-on-error` (reported as warnings) until it
+  has been confirmed green on hosted runners. Linux runners
   need `libasound2-dev` (audio preview via rodio / cpal / ALSA) besides the X11 / Wayland /
   GL / fontconfig dev packages.
 

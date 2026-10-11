@@ -11,7 +11,7 @@
 //! * macOS: the global preferences domain through CoreFoundation
 //!   (`CFPreferencesCopyAppValue(…, kCFPreferencesAnyApplication)` after
 //!   `CFPreferencesAppSynchronize`, cheap enough for the 1.5 s poll): `AppleInterfaceStyle`
-//!   and `AppleAccentColor` (untested on macOS).
+//!   and `AppleAccentColor`.
 //! * Other platforms report `None` (the app then keeps its own defaults).
 
 /// The system accent color as `[r, g, b]`.
