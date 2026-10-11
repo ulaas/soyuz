@@ -215,7 +215,6 @@ services-crash-restart-failed = Güvenli modda yeniden başlatılamadı
 ## OS clipboard (Linux / macOS)
 
 services-clipboard-no-tool = ne wl-copy ne de xclip kullanılabilir
-services-clipboard-mac-single = macOS panosuna yalnızca tek bir dosya konabilir
 
 ## Search
 
@@ -318,3 +317,6 @@ services-update-install-changed = indirilen dosya doğrulandıktan sonra değiş
 # $path: folder of the running soyuz executable.
 services-update-install-no-permission = { $path } klasörüne yazılamıyor ({ $error }). Soyuz sistem genelinde kurulduysa sudo ile güncelleyin, örneğin “sudo tar -C /usr/local --strip-components=1 -xf <dosya>”.
 services-update-install-failed = güncelleme kurulamadı: { $error }
+
+## macos
+services-clipboard-mac-failed = dosyalar macOS panosuna konamadı

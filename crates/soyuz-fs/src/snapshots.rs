@@ -18,8 +18,14 @@
 //!   device). Unmounted btrfs read-only subvolumes outside these layouts are not found.
 //!   Linux snapshot paths map byte-exact ([`map_under`]); the `.snapshots` folder of a
 //!   snapper config is usually root-only, which is reported as [`VersionsReport::denied`].
-//! * macOS Time Machine is deferred; it would plug in as a further provider
-//!   (`/Volumes/<backup>/Backups.backupdb/…`).
+//! * macOS — Time Machine backups that are already mounted and readable without root
+//!   ([`TimeMachineProvider`]): HFS+ backup disks (`/Volumes/<disk>/Backups.backupdb/
+//!   <computer>/<YYYY-MM-DD-HHMMSS>/<volume>/…`) and APFS backups whose snapshots macOS
+//!   has mounted (`/Volumes/.timemachine/<uuid>/<YYYY-MM-DD-HHMMSS>.backup/…/<volume>/…`,
+//!   e.g. while the Time Machine browser or Finder shows them). A backed-up volume maps to
+//!   the live one through `/Volumes/<volume name>` (the boot volume is a symlink to `/`;
+//!   `<name> - Data` maps like `<name>`). Local APFS snapshots that are not mounted need
+//!   root (`tmutil` / `mount_apfs -s`) and are not listed. Untested on macOS.
 //!
 //! The mapping / filtering / de-duplication logic is pure and unit-tested with fake device
 //! lists.
@@ -475,6 +481,137 @@ impl SnapshotProvider for TimeshiftProvider {
     }
 }
 
+/// `2024-03-05-140709` (local time), optionally followed by `.backup` / `.inProgress` /
+/// `.previous` / `.interrupted` (Time Machine snapshot folder names).
+pub fn time_machine_date(name: &str) -> Option<SystemTime> {
+    use chrono::TimeZone;
+    let stem = name.get(..17)?;
+    let rest = &name[17..];
+    if !(rest.is_empty() || rest.starts_with('.')) {
+        return None;
+    }
+    let t = chrono::NaiveDateTime::parse_from_str(stem, "%Y-%m-%d-%H%M%S").ok()?;
+    chrono::Local.from_local_datetime(&t).earliest().map(SystemTime::from)
+}
+
+/// The live root of a backed-up volume named `name`: `/Volumes/<name>` resolved (the boot
+/// volume's entry is a symlink to `/`); `Macintosh HD - Data` is looked up as
+/// `Macintosh HD`. `volumes_dir` is `/Volumes` outside tests.
+pub fn time_machine_live_root(volumes_dir: &Path, name: &str) -> Option<PathBuf> {
+    let try_name = |n: &str| {
+        let p = volumes_dir.join(n);
+        crate::list::exists_nofollow(&p).then(|| std::fs::canonicalize(&p).unwrap_or(p))
+    };
+    try_name(name).or_else(|| name.strip_suffix(" - Data").and_then(try_name))
+}
+
+/// Time Machine backups mounted below `/Volumes` (see the module docs).
+pub struct TimeMachineProvider {
+    /// Normally `/Volumes`.
+    pub volumes_dir: PathBuf,
+}
+
+impl TimeMachineProvider {
+    /// Scan `volumes_dir` for both backup layouts (pure filesystem walk; testable with
+    /// fake layouts).
+    pub fn scan(volumes_dir: &Path) -> SnapshotScan {
+        let mut scan = SnapshotScan::default();
+        let mut seq = 0u32;
+        let mut add = |scan: &mut SnapshotScan, date_dir: &Path, created: SystemTime| {
+            // Inside a snapshot folder: one folder per backed-up volume. APFS backups
+            // nest a second `<date>.backup` folder first.
+            let mut dir = date_dir.to_path_buf();
+            if let Ok(Some(entries)) = list_dir(&dir) {
+                let nested: Vec<_> = entries
+                    .iter()
+                    .filter(|e| time_machine_date(&e.file_name().to_string_lossy()).is_some())
+                    .map(|e| e.path())
+                    .collect();
+                if let [one] = nested.as_slice() {
+                    dir = one.clone();
+                }
+            }
+            let entries = match list_dir(&dir) {
+                Ok(Some(e)) => e,
+                Ok(None) => return,
+                Err(()) => {
+                    scan.denied += 1;
+                    return;
+                }
+            };
+            for e in entries {
+                let vol = e.file_name().to_string_lossy().into_owned();
+                if vol.starts_with('.') || !e.path().is_dir() {
+                    continue;
+                }
+                let Some(live) = time_machine_live_root(volumes_dir, &vol) else { continue };
+                seq += 1;
+                scan.snapshots.push(Snapshot {
+                    provider: "Time Machine",
+                    id: format!("{}/{vol}", date_dir.file_name().unwrap_or_default().to_string_lossy()),
+                    root: e.path(),
+                    volume: live,
+                    created: Some(created),
+                    seq,
+                });
+            }
+        };
+        let Ok(Some(disks)) = list_dir(volumes_dir) else { return scan };
+        for disk in disks {
+            let name = disk.file_name().to_string_lossy().into_owned();
+            // APFS: `/Volumes/.timemachine/<uuid>/<date>.backup`.
+            let machines = if name == ".timemachine" {
+                match list_dir(&disk.path()) {
+                    Ok(Some(e)) => e.into_iter().map(|e| e.path()).collect(),
+                    Ok(None) => Vec::new(),
+                    Err(()) => {
+                        scan.denied += 1;
+                        Vec::new()
+                    }
+                }
+            } else {
+                // HFS+: `/Volumes/<disk>/Backups.backupdb/<computer>/<date>`.
+                match list_dir(&disk.path().join("Backups.backupdb")) {
+                    Ok(Some(e)) => e.into_iter().map(|e| e.path()).collect(),
+                    Ok(None) => Vec::new(),
+                    Err(()) => {
+                        scan.denied += 1;
+                        Vec::new()
+                    }
+                }
+            };
+            for m in machines {
+                let Ok(Some(dates)) = list_dir(&m) else { continue };
+                for d in dates {
+                    let n = d.file_name().to_string_lossy().into_owned();
+                    if n.ends_with(".inProgress") || n.ends_with(".interrupted") {
+                        continue;
+                    }
+                    if let Some(created) = time_machine_date(&n) {
+                        add(&mut scan, &d.path(), created);
+                    }
+                }
+            }
+        }
+        sort_newest_first(&mut scan.snapshots);
+        scan
+    }
+}
+
+impl SnapshotProvider for TimeMachineProvider {
+    fn name(&self) -> &'static str {
+        "Time Machine"
+    }
+
+    fn snapshots(&self, _volume_root: &Path) -> FsResult<SnapshotScan> {
+        Ok(Self::scan(&self.volumes_dir))
+    }
+
+    fn map(&self, snap: &Snapshot, path: &Path) -> Option<PathBuf> {
+        map_under(path, &snap.volume, &snap.root)
+    }
+}
+
 /// Providers for this platform.
 pub fn providers(opts: &VersionOptions) -> Vec<Box<dyn SnapshotProvider>> {
     #[cfg(windows)]
@@ -490,7 +627,12 @@ pub fn providers(opts: &VersionOptions) -> Vec<Box<dyn SnapshotProvider>> {
             Box::new(TimeshiftProvider { mounts: crate::volumes::block_device_mounts() }),
         ]
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        let _ = opts;
+        vec![Box::new(TimeMachineProvider { volumes_dir: PathBuf::from("/Volumes") })]
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = opts;
         Vec::new()
@@ -547,8 +689,8 @@ pub fn previous_versions(path: &Path, opts: &VersionOptions) -> FsResult<Version
     Ok(report)
 }
 
-/// Is `path` inside a snapshot (read-only)? Shadow copies everywhere; snapper, ZFS and
-/// Timeshift layouts on unix.
+/// Is `path` inside a snapshot (read-only)? Shadow copies everywhere; snapper, ZFS,
+/// Timeshift and Time Machine layouts on unix.
 pub fn is_snapshot_path(path: &Path) -> bool {
     let s = path.to_string_lossy();
     if s.len() > GLOBALROOT.len() && s[..GLOBALROOT.len()].eq_ignore_ascii_case(GLOBALROOT) && s.contains(SHADOW_PREFIX)
@@ -564,7 +706,11 @@ pub fn is_snapshot_path(path: &Path) -> bool {
             || ((w[0] == "timeshift" || w[0] == "timeshift-btrfs")
                 && w[1] == "snapshots"
                 && timeshift_date(&w[2]).is_some())
-    }) || parts.windows(2).any(|w| w[0] == ".zfs" && w[1] == "snapshot")
+    }) || parts.windows(2).any(|w| {
+        (w[0] == ".zfs" && w[1] == "snapshot")
+            || (w[0] == "Backups.backupdb")
+            || (w[0] == ".timemachine" && !w[1].is_empty())
+    })
 }
 
 #[cfg(test)]
@@ -701,6 +847,8 @@ mod tests {
             assert!(is_snapshot_path(Path::new("/tank/data/.zfs/snapshot/daily/x")));
             assert!(is_snapshot_path(Path::new("/mnt/b/timeshift/snapshots/2024-03-05_14-07-09/localhost/etc")));
             assert!(!is_snapshot_path(Path::new("/home/u/.snapshots/notes.txt")));
+            assert!(is_snapshot_path(Path::new("/Volumes/TM/Backups.backupdb/Mac/2024-03-05-140709/Macintosh HD/x")));
+            assert!(is_snapshot_path(Path::new("/Volumes/.timemachine/ABC/2024-03-05-140709.backup/x")));
         }
     }
 
@@ -767,6 +915,46 @@ mod tests {
         assert!(!distinct_versions(cur, found).is_empty());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn time_machine_fake_layouts() {
+        assert!(time_machine_date("2024-03-05-140709").is_some());
+        assert!(time_machine_date("2024-03-05-140709.backup").is_some());
+        assert!(time_machine_date("2024-03-05-140709x").is_none());
+        assert!(time_machine_date("Latest").is_none());
+        let d = tempfile::tempdir().unwrap();
+        let vols = d.path().join("Volumes");
+        let live = d.path().join("live");
+        std::fs::create_dir_all(live.join("Users").join("u")).unwrap();
+        std::fs::create_dir_all(&vols).unwrap();
+        std::os::unix::fs::symlink(&live, vols.join("Macintosh HD")).unwrap();
+        // HFS+ layout, plus an interrupted backup and a `Latest` link that are skipped.
+        let db = vols.join("TM").join("Backups.backupdb").join("Mac");
+        let old = db.join("2024-01-01-100000").join("Macintosh HD").join("Users").join("u");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("a.txt"), b"old").unwrap();
+        std::fs::create_dir_all(db.join("2024-01-02-100000.inProgress").join("Macintosh HD")).unwrap();
+        std::fs::create_dir_all(db.join("Latest")).unwrap();
+        // APFS layout: nested `<date>.backup` and a `- Data` volume.
+        let apfs = vols.join(".timemachine").join("UUID").join("2024-02-01-100000.backup");
+        let new = apfs.join("2024-02-01-100000.backup").join("Macintosh HD - Data").join("Users").join("u");
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(new.join("a.txt"), b"new").unwrap();
+        // A backed-up volume that is not attached now: skipped.
+        std::fs::create_dir_all(apfs.join("2024-02-01-100000.backup").join("Gone")).unwrap();
+
+        let scan = TimeMachineProvider::scan(&vols);
+        let ids: Vec<&str> = scan.snapshots.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["2024-02-01-100000.backup/Macintosh HD - Data", "2024-01-01-100000/Macintosh HD"]);
+        let live_root = std::fs::canonicalize(&live).unwrap();
+        assert!(scan.snapshots.iter().all(|s| s.volume == live_root));
+        let prov = TimeMachineProvider { volumes_dir: vols.clone() };
+        let file = live_root.join("Users").join("u").join("a.txt");
+        let got: Vec<Vec<u8>> =
+            scan.snapshots.iter().map(|s| std::fs::read(prov.map(s, &file).unwrap()).unwrap()).collect();
+        assert_eq!(got, [b"new".to_vec(), b"old".to_vec()]);
+    }
+
     #[test]
     fn previous_versions_of_a_temp_file_reports_cleanly() {
         let dir = tempfile::tempdir().unwrap();
@@ -775,7 +963,7 @@ mod tests {
         // No elevation / no shadow copies on CI: must not fail, just report nothing (or
         // the copies that exist when elevated).
         let r = previous_versions(&f, &VersionOptions { probe_max: 2 });
-        if cfg!(any(windows, target_os = "linux")) {
+        if cfg!(any(windows, target_os = "linux", target_os = "macos")) {
             let r = r.expect("report");
             assert!(r.unsupported.is_none());
             assert!(r.versions.iter().all(|v| v.path.to_string_lossy().ends_with("a.txt")));

@@ -1,5 +1,12 @@
 //! macOS shims for calls rustix does not wrap: `getfsstat`, `chflags`/`fchflags`,
-//! `setattrlist(ATTR_CMN_CRTIME)` and the ACL part of `fcopyfile`.
+//! `setattrlist(ATTR_CMN_CRTIME)` and the ACL part of `fcopyfile`; plus CoreFoundation /
+//! LaunchServices / CoreText / AppKit glue in the submodules (all untested on macOS:
+//! compile-checked from Linux only).
+
+pub(crate) mod cf;
+pub(crate) mod fonts;
+pub(crate) mod launch;
+pub(crate) mod pasteboard;
 
 use std::ffi::CString;
 use std::fs::File;

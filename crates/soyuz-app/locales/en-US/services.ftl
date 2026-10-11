@@ -239,7 +239,6 @@ services-crash-restart-failed = Couldn't restart in safe mode
 ## OS clipboard (Linux / macOS)
 
 services-clipboard-no-tool = neither wl-copy nor xclip is available
-services-clipboard-mac-single = only a single file can be put on the macOS clipboard
 
 ## Search
 
@@ -347,3 +346,6 @@ services-update-install-changed = the downloaded file changed after it was verif
 # $path: folder of the running soyuz executable.
 services-update-install-no-permission = cannot write to { $path } ({ $error }). If Soyuz was installed system-wide, update it with sudo, e.g. “sudo tar -C /usr/local --strip-components=1 -xf <file>”.
 services-update-install-failed = installing the update failed: { $error }
+
+## macos
+services-clipboard-mac-failed = the files could not be put on the macOS pasteboard
