@@ -23,7 +23,7 @@ use soyuz_core::{FsError, FsErrorKind, FsResult};
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream};
 use crate::registry::{Credentials, net_settings};
 use crate::rt::runtime;
-use crate::uri::{RemoteUri, name_of, normalize_path};
+use crate::uri::{RemoteUri, normalize_path, remote_name_of};
 
 /// Bytes fetched per positioned read (split into `MaxReadSize` READs by the client).
 const READ_CHUNK: u64 = 4 * 1024 * 1024;
@@ -146,6 +146,16 @@ impl Shared {
         f: impl AsyncFnOnce(Ctx<'_>) -> Result<T, smb2::Error>,
     ) -> FsResult<T> {
         let path = normalize_path(path);
+        // `\` is a separator on the wire: a provider path segment holding one would
+        // address something else than it names (a hostile `..\..\Other\x`).
+        if path.contains('\\') {
+            return Err(FsError::with_message(
+                FsErrorKind::InvalidName,
+                op,
+                Some(std::path::Path::new(&path)),
+                "SMB names cannot contain a backslash",
+            ));
+        }
         let share = split_share(&path);
         let timeout = self.timeout();
         let connect_timeout = net_settings().connect_timeout * 2;
@@ -263,29 +273,34 @@ impl Provider for SmbProvider {
 
     fn list(&self, path: &str) -> FsResult<Vec<RemoteEntry>> {
         if split_share(path).is_none() {
-            return Ok(self.shares()?.into_iter().map(|s| RemoteEntry::dir(s.name, None)).collect());
+            let shares = self.shares()?.into_iter().map(|s| RemoteEntry::dir(s.name, None)).collect();
+            return Ok(crate::provider::sanitize_listing("SMB", path, shares));
         }
-        self.shared.run("list", path, async |mut cx| {
-            let t = tree(&mut cx.tree)?;
-            let list = cx.client.list_directory(t, &cx.rel).await?;
-            Ok(list
-                .into_iter()
-                .filter(|e| e.name != "." && e.name != "..")
-                .map(|e| RemoteEntry {
-                    is_dir: e.is_directory,
-                    is_link: false,
-                    size: if e.is_directory { 0 } else { e.size },
-                    modified: time(e.modified),
-                    mode: None,
-                    name: e.name,
-                })
-                .collect())
-        })
+        self.shared
+            .run("list", path, async |mut cx| {
+                let t = tree(&mut cx.tree)?;
+                let list = cx.client.list_directory(t, &cx.rel).await?;
+                Ok(list
+                    .into_iter()
+                    .filter(|e| e.name != "." && e.name != "..")
+                    .map(|e| RemoteEntry {
+                        is_dir: e.is_directory,
+                        is_link: false,
+                        size: if e.is_directory { 0 } else { e.size },
+                        modified: time(e.modified),
+                        mode: None,
+                        name: e.name,
+                    })
+                    .collect())
+            })
+            // smb2 has already decoded U+F026 back to `\` here, so a name planted as
+            // `..\..\Other\x` by a Windows / Mac client is caught.
+            .map(|l| crate::provider::sanitize_listing("SMB", path, l))
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {
         let p = normalize_path(path);
-        let name = name_of(&p).to_string();
+        let name = remote_name_of(&p).to_string();
         match split_share(&p) {
             None => Ok(RemoteEntry::dir(self.shared.uri.host.clone(), None)),
             // The share root: connecting its tree proves it exists.

@@ -20,7 +20,7 @@ use crate::http::{BodyReader, client, send, send_text, status_error};
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream, err};
 use crate::registry::{Credentials, net_settings};
 use crate::rt::runtime;
-use crate::uri::{RemoteUri, name_of, normalize_path};
+use crate::uri::{RemoteUri, normalize_path, remote_name_of};
 
 /// Smallest part size S3 accepts (except the last part) and the multipart threshold.
 pub const MULTIPART_MIN: u64 = 8 * 1024 * 1024;
@@ -252,7 +252,7 @@ impl Provider for S3Provider {
                 None => break,
             }
         }
-        Ok(out)
+        Ok(crate::provider::sanitize_listing("S3", path, out))
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {
@@ -261,11 +261,11 @@ impl Provider for S3Provider {
             return Ok(RemoteEntry::dir("", None));
         }
         if let Some((size, modified)) = self.head(&key)? {
-            return Ok(RemoteEntry::file(name_of(&key), size, modified));
+            return Ok(RemoteEntry::file(remote_name_of(&key), size, modified));
         }
         let r = self.list_page(&format!("{key}/"), true, None)?;
         if !r.contents.is_empty() || !r.common_prefixes.is_empty() {
-            return Ok(RemoteEntry::dir(name_of(&key), None));
+            return Ok(RemoteEntry::dir(remote_name_of(&key), None));
         }
         Err(err(FsErrorKind::NotFound, "stat", path, "not found"))
     }

@@ -16,7 +16,7 @@ use suppaftp::{FtpError, Mode, RustlsConnector, RustlsFtpStream, TlsStream, Tran
 
 use crate::provider::{Capabilities, Provider, RemoteEntry, WriteOpts, WriteStream, err};
 use crate::registry::{Credentials, net_settings};
-use crate::uri::{RemoteUri, Scheme, name_of, normalize_path, parent_path};
+use crate::uri::{RemoteUri, Scheme, normalize_path, parent_path, remote_name_of};
 
 type Conn = RustlsFtpStream;
 
@@ -143,7 +143,7 @@ impl FtpProvider {
 
 fn entry_of(f: &FtpFile) -> RemoteEntry {
     RemoteEntry {
-        name: name_of(f.name()).to_string(),
+        name: remote_name_of(f.name()).to_string(),
         is_dir: f.is_directory(),
         is_link: f.is_symlink(),
         size: f.size() as u64,
@@ -170,16 +170,17 @@ impl Provider for FtpProvider {
     }
 
     fn list(&self, path: &str) -> FsResult<Vec<RemoteEntry>> {
-        Ok(self.list_raw(path)?.iter().map(entry_of).collect())
+        let list = self.list_raw(path)?.iter().map(entry_of).collect();
+        Ok(crate::provider::sanitize_listing("FTP", path, list))
     }
 
     fn stat(&self, path: &str) -> FsResult<RemoteEntry> {
         let p = normalize_path(path);
         let Some(parent) = parent_path(&p) else { return Ok(RemoteEntry::dir("", None)) };
-        let name = name_of(&p);
+        let name = remote_name_of(&p);
         self.list_raw(&parent)?
             .iter()
-            .find(|f| name_of(f.name()) == name)
+            .find(|f| remote_name_of(f.name()) == name)
             .map(entry_of)
             .ok_or_else(|| err(FsErrorKind::NotFound, "stat", &p, "not found"))
     }

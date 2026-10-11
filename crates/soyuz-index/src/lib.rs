@@ -146,6 +146,10 @@ pub struct IndexStatus {
     /// (Linux `fs.inotify.max_user_watches`): they're re-checked every rescan interval
     /// (folders whose modification time changed are re-read), so changes show up late.
     pub polled_roots: Vec<PathBuf>,
+    /// Roots that can't be read right now (permission denied, I/O error, drive or mount
+    /// away). Their index is kept (searches still find the old rows); they're re-checked
+    /// every rescan interval and fully rescanned once they're back.
+    pub unavailable_roots: Vec<PathBuf>,
     /// Last time anything was written.
     pub updated: Option<SystemTime>,
 }

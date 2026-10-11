@@ -82,6 +82,42 @@ struct Worker {
     polled: Vec<Polled>,
     /// The running poll pass.
     pass: Option<Pass>,
+    /// Roots that exist (or may) but can't be read right now (permission denied, I/O
+    /// error, drive / mount gone): their index is kept, nothing is crawled, and they're
+    /// re-checked every rescan interval; a full rescan is queued when they're back.
+    unavailable: Vec<PathBuf>,
+    last_unavailable_check: Instant,
+}
+
+/// What a root folder looks like right now.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum RootCheck {
+    /// A readable folder.
+    Present,
+    /// Really gone (deleted, or replaced by a file): drop its index.
+    Gone,
+    /// Can't be read now (the reason): keep its index.
+    Unavailable(String),
+}
+
+/// Check a root. Only a real `NotFound` whose parent is still there counts as gone; a
+/// missing parent means the drive / mount is away (an unplugged disk), and any other
+/// error (permission denied, I/O error, drive not ready) is temporary.
+pub(crate) fn check_root(r: &Path) -> RootCheck {
+    use std::io::ErrorKind;
+    match std::fs::metadata(r) {
+        Ok(m) if m.is_dir() => match std::fs::read_dir(r) {
+            Ok(_) => RootCheck::Present,
+            Err(e) => RootCheck::Unavailable(e.to_string()),
+        },
+        Ok(_) => RootCheck::Gone,
+        // A drive root (`E:\`) has no parent: a missing one is an unplugged drive.
+        Err(e) if e.kind() == ErrorKind::NotFound => match r.parent().filter(|p| !p.as_os_str().is_empty()) {
+            Some(parent) if std::fs::metadata(parent).is_ok() => RootCheck::Gone,
+            _ => RootCheck::Unavailable("its drive or mount is not there".into()),
+        },
+        Err(e) => RootCheck::Unavailable(e.to_string()),
+    }
 }
 
 /// A root that is polled instead of watched.
@@ -199,11 +235,17 @@ pub(crate) fn run(cfg: IndexConfig, shared: Arc<Shared>, rx: Receiver<Msg>) {
     };
     let (excl, mut warnings) = Excluder::new(&cfg.exclude);
     let mut roots: Vec<PathBuf> = Vec::new();
+    let mut unavailable: Vec<(PathBuf, String)> = Vec::new();
     for r in &cfg.roots {
         let c = crate::canonical(r);
-        if !c.is_dir() {
-            warnings.push(format!("{} isn't a folder; skipped", r.display()));
-            continue;
+        match check_root(&c) {
+            RootCheck::Present => {}
+            RootCheck::Gone => {
+                warnings.push(format!("{} isn't a folder; skipped", r.display()));
+                continue;
+            }
+            // Keep it (and its index); it's re-checked until it's back.
+            RootCheck::Unavailable(why) => unavailable.push((c.clone(), why)),
         }
         // Nested roots are covered by their parent.
         if !roots.iter().any(|o| o == &c || c.starts_with(o)) {
@@ -235,6 +277,8 @@ pub(crate) fn run(cfg: IndexConfig, shared: Arc<Shared>, rx: Receiver<Msg>) {
         last_event: Instant::now(),
         polled: Vec::new(),
         pass: None,
+        unavailable: Vec::new(),
+        last_unavailable_check: Instant::now(),
         roots,
         cfg,
     };
@@ -245,7 +289,7 @@ pub(crate) fn run(cfg: IndexConfig, shared: Arc<Shared>, rx: Receiver<Msg>) {
         st.content_enabled = w.cfg.content;
     }
     let t_init = Instant::now();
-    if let Err(e) = w.init(wtx) {
+    if let Err(e) = w.init(wtx, unavailable) {
         log::error!("index init: {e}");
         w.shared.status.lock().phase = Phase::Failed(format!("Index error: {e}"));
         (w.shared.wake)();
@@ -272,7 +316,11 @@ impl Worker {
         Duration::from_millis(self.shared.rescan_ms.load(Ordering::Relaxed))
     }
 
-    fn init(&mut self, wtx: crossbeam_channel::Sender<WatchMsg>) -> rusqlite::Result<()> {
+    fn init(
+        &mut self,
+        wtx: crossbeam_channel::Sender<WatchMsg>,
+        unavailable: Vec<(PathBuf, String)>,
+    ) -> rusqlite::Result<()> {
         self.generation = self
             .conn
             .query_row("SELECT value FROM meta WHERE key='gen'", [], |r| r.get::<_, String>(0))
@@ -286,8 +334,12 @@ impl Worker {
         if !self.cfg.content && db::content_count(&self.conn)? > 0 {
             db::clear_contents(&self.conn)?;
         }
+        for (r, why) in unavailable {
+            self.mark_unavailable(&r, &why);
+        }
         // Watch first, so nothing that happens from here on is missed.
-        let (watcher, warnings, exhausted) = start_watcher(&self.roots, wtx);
+        let watch: Vec<PathBuf> = self.roots.iter().filter(|r| !self.unavailable.contains(r)).cloned().collect();
+        let (watcher, warnings, exhausted) = start_watcher(&watch, wtx);
         self._watcher = watcher;
         self.shared.status.lock().warnings.extend(warnings);
         for r in exhausted {
@@ -311,11 +363,12 @@ impl Worker {
         for root in roots {
             let state = db::root_state(&self.conn, &root)?;
             let complete = state.is_some_and(|s| s.complete);
-            let caught_up = complete && self.usn() && self.catch_up(&root, &mut usn_state);
+            let caught_up =
+                complete && self.usn() && !self.unavailable.contains(&root) && self.catch_up(&root, &mut usn_state);
             if complete {
                 ready.push(root.clone());
             }
-            if !caught_up {
+            if !caught_up && !self.unavailable.contains(&root) {
                 self.crawls.push_back(Crawl {
                     root: root.clone(),
                     full: true,
@@ -609,7 +662,22 @@ impl Worker {
     /// Time until the next poll pass is due (`None`: nothing is polled).
     fn next_poll_in(&self) -> Option<Duration> {
         let every = self.rescan_interval();
-        self.polled.iter().map(|p| every.saturating_sub(p.last.elapsed())).min()
+        let unavailable =
+            (!self.unavailable.is_empty()).then(|| every.saturating_sub(self.last_unavailable_check.elapsed()));
+        self.polled.iter().map(|p| every.saturating_sub(p.last.elapsed())).chain(unavailable).min()
+    }
+
+    /// Re-check unavailable roots once per rescan interval. Returns whether it ran.
+    fn recheck_unavailable(&mut self) -> bool {
+        if self.unavailable.is_empty() || self.last_unavailable_check.elapsed() < self.rescan_interval() {
+            return false;
+        }
+        self.last_unavailable_check = Instant::now();
+        for r in self.unavailable.clone() {
+            self.check_lost(&r);
+        }
+        self.commit();
+        true
     }
 
     /// Advance the running poll pass, or start one that is due. Returns whether there
@@ -680,7 +748,8 @@ impl Worker {
         }
         // The root itself isn't a row: compare against the time seen last pass.
         let mtime = soyuz_fs::stat(&root, false).ok().and_then(|e| e.modified);
-        if mtime.is_none() {
+        if mtime.is_none() || self.unavailable.contains(&root) {
+            // Gone, unreadable, or back after being away (then a full rescan is queued).
             self.check_lost(&root);
             return false;
         }
@@ -776,6 +845,9 @@ impl Worker {
 
     /// Queue a full (verification) crawl of `r` unless one is queued.
     fn rescan_root(&mut self, r: &Path) {
+        if self.unavailable.iter().any(|u| u == r) {
+            return; // Queued when it's back.
+        }
         if !self.crawls.iter().any(|c| c.full && c.root == r) {
             let ready = self.shared.status.lock().ready_roots.iter().any(|x| x == r);
             self.crawls.push_back(Crawl {
@@ -788,16 +860,80 @@ impl Worker {
         }
     }
 
-    /// A root itself changed: drop it when it's gone.
+    /// A root itself changed: drop its index only when it's really gone ([`check_root`]);
+    /// keep it while it can't be read, and rescan it once it's back.
     fn check_lost(&mut self, r: &Path) {
-        if r.exists() {
+        match check_root(r) {
+            RootCheck::Present => {
+                if self.unavailable.iter().any(|u| u == r) {
+                    self.mark_available(r);
+                }
+            }
+            RootCheck::Unavailable(why) => self.mark_unavailable(r, &why),
+            RootCheck::Gone => {
+                self.clear_unavailable(r);
+                self.begin();
+                self.ops += db::delete_tree(&self.conn, r).unwrap_or(0);
+                let _ = db::set_root_state(&self.conn, r, RootState::default());
+                self.shared.status.lock().ready_roots.retain(|x| x != r);
+                self.shared.status.lock().warnings.push(format!("{} was removed", r.display()));
+            }
+        }
+    }
+
+    /// `r` can't be read now: keep its rows, stop crawling / polling it until it's back.
+    fn mark_unavailable(&mut self, r: &Path, why: &str) {
+        self.crawls.retain(|c| c.root != r);
+        if self.pass.as_ref().is_some_and(|p| p.root == r) {
+            self.pass = None;
+        }
+        if self.unavailable.iter().any(|u| u == r) {
             return;
         }
-        self.begin();
-        self.ops += db::delete_tree(&self.conn, r).unwrap_or(0);
-        let _ = db::set_root_state(&self.conn, r, RootState::default());
-        self.shared.status.lock().ready_roots.retain(|x| x != r);
-        self.shared.status.lock().warnings.push(format!("{} was removed", r.display()));
+        log::warn!("index: {} is not available ({why}); keeping its index", r.display());
+        self.unavailable.push(r.to_path_buf());
+        if self.unavailable.len() == 1 {
+            self.last_unavailable_check = Instant::now();
+        }
+        let mut st = self.shared.status.lock();
+        st.unavailable_roots.push(r.to_path_buf());
+        st.warnings.push(format!("{} is not available ({why}); its index is kept until it is back", r.display()));
+        drop(st);
+        (self.shared.wake)();
+    }
+
+    fn clear_unavailable(&mut self, r: &Path) {
+        self.unavailable.retain(|u| u != r);
+        self.shared.status.lock().unavailable_roots.retain(|u| u != r);
+    }
+
+    /// `r` is readable again: watch it again (its watch died with the mount) and queue
+    /// a full verification crawl.
+    fn mark_available(&mut self, r: &Path) {
+        log::info!("index: {} is available again; rescanning", r.display());
+        self.clear_unavailable(r);
+        if !self.polled.iter().any(|p| p.root == r) {
+            let watched = match self._watcher.as_mut() {
+                Some(w) => {
+                    use notify::Watcher as _;
+                    #[cfg(test)]
+                    let forced = FORCE_POLL.lock().iter().any(|p| p == r);
+                    #[cfg(not(test))]
+                    let forced = false;
+                    !forced && w.watch(r, notify::RecursiveMode::Recursive).is_ok()
+                }
+                None => false,
+            };
+            if !watched {
+                if let Some(w) = self._watcher.as_mut() {
+                    use notify::Watcher as _;
+                    let _ = w.unwatch(r);
+                }
+                self.poll_root(r.to_path_buf());
+            }
+        }
+        self.rescan_root(r);
+        (self.shared.wake)();
     }
 
     fn on_msg(&mut self, m: Msg) -> bool {
@@ -908,8 +1044,13 @@ impl Worker {
             Ok(v) => v,
             Err(e) => {
                 log::debug!("index: list {}: {e}", dir.display());
-                if dir == root && e.kind == FsErrorKind::NotFound {
-                    self.shared.status.lock().warnings.push(format!("{} is gone", root.display()));
+                if dir == root {
+                    // Never finish (and sweep) a crawl that couldn't read its root: that
+                    // would empty the index of an unreadable or unplugged root.
+                    if self.crawls.front().is_some_and(|c| c.root == root) {
+                        self.crawls.pop_front();
+                    }
+                    self.check_lost(&root);
                 }
                 return true;
             }
@@ -1086,7 +1227,12 @@ impl Worker {
             while let Ok(ev) = self.watch_rx.try_recv() {
                 self.on_watch(ev);
             }
-            if self.flush_pending(false) || self.crawl_step() || self.content_step() || self.poll_step() {
+            if self.flush_pending(false)
+                || self.crawl_step()
+                || self.content_step()
+                || self.poll_step()
+                || self.recheck_unavailable()
+            {
                 continue;
             }
             // Idle.

@@ -237,4 +237,20 @@ fn smb_provider_against_samba() {
     w.commit().unwrap();
     assert!(smb.list("/secret").unwrap().iter().any(|e| e.name == "what?.txt"));
     smb.delete("/secret/what?.txt", false).unwrap();
+
+    // A hostile name: a Windows / Mac client stores `..\..\pub\victim.txt` (Samba keeps
+    // the `\` as U+F026 on disk, smb2 decodes it back to `\`). It must not be listed, and a
+    // recursive delete must not follow it into another share.
+    std::fs::write(share_dir.join("victim.txt"), b"v").unwrap();
+    std::fs::create_dir(share_dir.join("hostile")).unwrap();
+    std::fs::write(share_dir.join("hostile").join("ok.txt"), b"o").unwrap();
+    std::fs::write(share_dir.join("hostile").join("..\u{F026}..\u{F026}pub\u{F026}victim.txt"), b"x").unwrap();
+    let names: Vec<String> = smb.list("/secret/hostile").unwrap().into_iter().map(|e| e.name).collect();
+    assert_eq!(names, ["ok.txt"]);
+    assert_eq!(smb.stat("/secret/hostile/..\\..\\pub\\victim.txt").unwrap_err().kind, FsErrorKind::InvalidName);
+    let e = soyuz_vfs::provider::delete_tree(&smb, "/secret/hostile", true, &|| Ok(())).unwrap_err();
+    assert_eq!(e.kind, FsErrorKind::NotEmpty, "{e}");
+    assert!(!share_dir.join("hostile").join("ok.txt").exists());
+    assert_eq!(std::fs::read(share_dir.join("victim.txt")).unwrap(), b"v");
+    assert!(smb.stat("/pub/victim.txt").is_ok());
 }

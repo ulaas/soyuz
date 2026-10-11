@@ -154,11 +154,25 @@ fn to_path(raw: Vec<u8>) -> Option<PathBuf> {
 
 #[cfg(not(unix))]
 fn to_path(raw: Vec<u8>) -> Option<PathBuf> {
-    let s = String::from_utf8(raw).ok()?;
-    // `file:///C:/dir` → `C:/dir`.
+    windows_path(&String::from_utf8(raw).ok()?).map(PathBuf::from)
+}
+
+/// The Windows path of a decoded OSC 7 path: only drive paths `/X:/…` (→ `X:\…`) are
+/// accepted. Paths from a shell that sees another filesystem layout (WSL's `/home/me`,
+/// MSYS / Cygwin's `/c/Users`) are dropped instead of becoming `\home\me` on the
+/// current drive. Pure (and tested) on every OS.
+#[cfg_attr(unix, allow(dead_code))]
+fn windows_path(s: &str) -> Option<String> {
     let b = s.as_bytes();
-    let s = if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' { &s[1..] } else { &s };
-    Some(PathBuf::from(s.replace('/', "\\")))
+    if b.len() < 3 || b[0] != b'/' || !b[1].is_ascii_alphabetic() || b[2] != b':' {
+        return None;
+    }
+    let rest = &s[3..];
+    if !rest.is_empty() && !rest.starts_with('/') {
+        return None; // `/C:dir`: drive-relative, not a real location.
+    }
+    let rest = rest.replace('/', "\\");
+    Some(format!("{}:{}", b[1].to_ascii_uppercase() as char, if rest.is_empty() { "\\" } else { &rest }))
 }
 
 /// This machine's host name (Linux: `/proc/sys/kernel/hostname`; elsewhere
@@ -193,6 +207,24 @@ mod tests {
         // Non-UTF-8 bytes survive on unix.
         use std::os::unix::ffi::OsStrExt;
         assert_eq!(p("file:///a%FF").unwrap().as_os_str().as_bytes(), b"/a\xff");
+    }
+
+    #[test]
+    fn windows_paths_only_from_drive_paths() {
+        assert_eq!(windows_path("/C:/Users/me").as_deref(), Some("C:\\Users\\me"));
+        assert_eq!(windows_path("/d:/").as_deref(), Some("D:\\"));
+        assert_eq!(windows_path("/e:").as_deref(), Some("E:\\"));
+        for bad in ["/home/me", "/c/Users/me", "/mnt/c/Users", "/", "", "C:/x", "/C:x", "/1:/x"] {
+            assert_eq!(windows_path(bad), None, "{bad:?}");
+        }
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn parses_windows_file_uris() {
+        assert_eq!(p("file:///C:/Users/me%20x"), Some(PathBuf::from("C:\\Users\\me x")));
+        assert_eq!(p("file://localhost/home/me"), None, "WSL path");
+        assert_eq!(p("file:///c/Users/me"), None, "MSYS path");
     }
 
     #[test]

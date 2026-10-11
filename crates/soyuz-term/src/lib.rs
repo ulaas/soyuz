@@ -203,14 +203,9 @@ impl Terminal {
     }
 
     /// Last known working directory: what the shell reported (OSC 7 or the title hook,
-    /// latest wins), else `/proc` polling (Linux), else the spawn cwd.
+    /// latest wins) unless `/proc` (Linux) shows the shell moved since, else the spawn cwd.
     pub fn cwd(&self) -> Option<PathBuf> {
-        if !self.backend.shared.cwd_reported.load(Ordering::Acquire)
-            && let Some(pid) = self.backend.pid
-            && let Some(cwd) = pty::process_cwd(pid)
-        {
-            self.backend.shared.set_cwd(cwd);
-        }
+        self.backend.shared.poll_proc_cwd();
         self.backend.shared.cwd.lock().clone()
     }
 
@@ -439,6 +434,39 @@ mod tests {
         // OSC 7 is invisible on screen.
         assert!(wait_for(&term, "done", Duration::from_secs(10)), "{}", term.screen_text());
         assert!(!term.screen_text().contains("file://"), "{}", term.screen_text());
+        term.kill();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// One stray OSC 7 (a nested shell, a `cat`ted file) must not stop `/proc` tracking:
+    /// once the shell moves without reporting, `/proc` wins again.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn pty_stray_osc7_does_not_stop_proc_tracking() {
+        let base = tempfile_dir("stray");
+        let dir = base.join("later");
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = format!(r#"printf '\033]7;file:///usr\007'; sleep 0.5; cd '{}'; sleep 3"#, dir.display());
+        let settings = TermSettings {
+            shell: Some("/bin/sh".into()),
+            args: vec!["-c".into(), script],
+            shell_integration: false,
+            cwd: base.clone(),
+            ..Default::default()
+        };
+        let term = Terminal::spawn(settings, egui::Context::default(), 13).expect("spawn");
+        let start = Instant::now();
+        let mut seen_usr = false;
+        while start.elapsed() < Duration::from_secs(10) {
+            let c = term.cwd();
+            seen_usr |= c.as_deref() == Some(Path::new("/usr"));
+            if seen_usr && c.as_deref() == Some(dir.as_path()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(seen_usr, "the OSC 7 report was not taken");
+        assert_eq!(term.cwd().as_deref(), Some(dir.as_path()), "/proc did not win after the shell moved");
         term.kill();
         let _ = std::fs::remove_dir_all(&base);
     }

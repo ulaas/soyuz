@@ -203,7 +203,7 @@ impl RemoteUri {
             })
             .unwrap_or_default();
         let host = if scheme == Scheme::S3 { host.to_string() } else { host.to_ascii_lowercase() };
-        let uri = RemoteUri { scheme, user, host, port, path: normalize_path(&pct_decode(path)), query };
+        let uri = RemoteUri { scheme, user, host, port, path: normalize_user_path(&pct_decode(path)), query };
         Ok((uri, password.filter(|p| !p.is_empty())))
     }
 
@@ -330,7 +330,7 @@ pub fn smb_from_unc(s: &str) -> Option<RemoteUri> {
         user: None,
         host: host.to_ascii_lowercase(),
         port: None,
-        path: normalize_path(path),
+        path: normalize_user_path(path),
         query: Vec::new(),
     })
 }
@@ -350,10 +350,24 @@ impl RemoteUri {
     }
 }
 
-/// Normalize an absolute `/`-separated path (`\` accepted; `..` never escapes the root).
+/// Normalize an absolute `/`-separated provider path (`..` never escapes the root).
+///
+/// Only `/` separates segments: a `\` is part of a name here, so a hostile remote name
+/// such as `..\..\Other\x` stays one (rejected) segment instead of becoming a path.
+/// User-typed URIs and UNC paths go through [`normalize_user_path`], which accepts `\`.
 pub fn normalize_path(p: &str) -> String {
+    normalize_split(p, &['/'])
+}
+
+/// [`normalize_path`] for what a user typed (URI, UNC path, a `PathBuf` joined on
+/// Windows): `\` separates segments too.
+pub fn normalize_user_path(p: &str) -> String {
+    normalize_split(p, &['/', '\\'])
+}
+
+fn normalize_split(p: &str, seps: &[char]) -> String {
     let mut parts: Vec<&str> = Vec::new();
-    for seg in p.split(['/', '\\']) {
+    for seg in p.split(seps) {
         match seg {
             "" | "." => {}
             ".." => {
@@ -381,6 +395,11 @@ pub fn parent_path(p: &str) -> Option<String> {
         Some(i) => Some(t[..i].to_string()),
         None => Some("/".into()),
     }
+}
+
+/// Last segment of a `/`-separated provider path (a `\` is part of the name).
+pub fn remote_name_of(p: &str) -> &str {
+    p.trim_end_matches('/').rsplit('/').next().unwrap_or(p)
 }
 
 /// Last segment of a `/`- (or, for local paths, `\`-) separated path.
@@ -450,6 +469,18 @@ pub fn url_encode_path(p: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_paths_keep_backslashes_in_names() {
+        assert_eq!(normalize_path("/share/dir/..\\..\\Other\\v.txt"), "/share/dir/..\\..\\Other\\v.txt");
+        assert_eq!(normalize_path("/a/../b"), "/b");
+        assert_eq!(normalize_user_path("/share\\dir\\..\\x"), "/share/x");
+        assert_eq!(remote_name_of("/d/..\\x"), "..\\x");
+        let u = RemoteUri::parse("sftp://h/a").unwrap();
+        assert_eq!(u.join("..\\..\\etc").path, "/a/..\\..\\etc");
+        // Typed URIs (and URIs a Windows `PathBuf::join` extended) still accept `\`.
+        assert_eq!(RemoteUri::parse("smb://h/share\\a").unwrap().path, "/share/a");
+    }
 
     #[test]
     fn parse_full_sftp() {
