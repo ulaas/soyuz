@@ -27,8 +27,8 @@ use io::{Answer, LoadResult, Msg, Stamp, Want};
 
 use crate::app::{Focus, SoyuzApp};
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::services::mailbox::Wake;
-use crate::ui::toasts::Toast;
 
 /// Most files one "Edit in Soyuz" opens at once.
 const MAX_OPEN_AT_ONCE: usize = 20;

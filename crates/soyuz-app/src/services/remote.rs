@@ -21,7 +21,7 @@ use soyuz_vfs::registry::{self, ConnState, Credentials, Hooks, HostKeyPrompt, Ne
 use soyuz_vfs::{RemoteUri, Scheme};
 
 use super::mailbox::{Postman, UiMsg, Wake};
-use crate::ui::toasts::Toast;
+use crate::models::toasts::Toast;
 
 /// How a saved connection signs in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]

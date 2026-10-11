@@ -16,13 +16,13 @@ use soyuz_fs::WatchKind;
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::services::mailbox::UiMsg;
 use crate::services::{AuxState, Services};
 use crate::state::history::HistoryEntry;
 use crate::state::pane::{ListingStatus, Pane, PaneId};
 use crate::state::session::{FavoriteEntry, PaneSession, TabSession};
 use crate::state::workspace::{ClosedTab, Tab, Workspace};
-use crate::ui::toasts::Toast;
 
 /// Options for [`navigate`].
 #[derive(Clone, Debug, Default)]

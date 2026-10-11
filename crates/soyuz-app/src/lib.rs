@@ -24,6 +24,7 @@ pub mod editors;
 pub mod geom;
 pub mod host;
 pub mod keys;
+pub mod models;
 pub mod ops;
 pub mod palette;
 pub mod rename;

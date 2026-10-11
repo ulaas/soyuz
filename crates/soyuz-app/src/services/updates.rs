@@ -1140,7 +1140,7 @@ pub fn pump(app: &mut crate::app::SoyuzApp) {
     };
     if let Some(v) = notice {
         app.ui.toasts.push(
-            crate::ui::toasts::Toast::info(tr!("services-update-available", version = v.to_string()))
+            crate::models::toasts::Toast::info(tr!("services-update-available", version = v.to_string()))
                 .body(tr!("services-update-available-body")),
         );
     }

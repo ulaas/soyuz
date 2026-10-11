@@ -7,8 +7,8 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use soyuz_core::{EntryInfo, FsError, Location};
 use soyuz_fs::VolumeInfo;
 
+use crate::models::toasts::Toast;
 use crate::state::pane::PaneId;
-use crate::ui::toasts::Toast;
 
 pub use crate::host::Wake;
 

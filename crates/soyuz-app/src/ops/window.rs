@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use soyuz_core::Location;
 
 use crate::app::SoyuzApp;
-use crate::ui::toasts::Toast;
+use crate::models::toasts::Toast;
 
 /// Folder a new window should open for `loc` (virtual locations fall back to home).
 fn window_dir(loc: &Location) -> PathBuf {

@@ -15,6 +15,7 @@ use soyuz_fs::VolumeInfo;
 use crate::cmd::Cmd;
 use crate::host::Host;
 use crate::keys;
+use crate::models::toasts::Toasts;
 use crate::services::Services;
 use crate::state::pane::Pane;
 use crate::state::session::{FavoriteEntry, Session};
@@ -25,7 +26,6 @@ use crate::ui::dialogs::Dialogs;
 use crate::ui::panels::BottomPanel;
 use crate::ui::shell;
 use crate::ui::sidebar::SidebarState;
-use crate::ui::toasts::Toasts;
 use crate::{actions, ops};
 
 /// Where keyboard input goes when no text field has focus.
@@ -508,7 +508,7 @@ impl SoyuzApp {
     fn close_cancelled(&mut self) {
         if crate::services::updates::cancel_restart() {
             self.workspaces.quitting = false;
-            self.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("app-restart-cancelled")));
+            self.ui.toasts.push(crate::models::toasts::Toast::info(tr!("app-restart-cancelled")));
         }
     }
 
@@ -516,7 +516,7 @@ impl SoyuzApp {
     pub fn confirm_quit(&mut self, host: &dyn Host, when_idle: bool) {
         if when_idle {
             self.quit.when_idle = true;
-            self.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("app-quit-when-finished")));
+            self.ui.toasts.push(crate::models::toasts::Toast::info(tr!("app-quit-when-finished")));
             host.redraw();
         } else {
             self.quit.allowed = true;

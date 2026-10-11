@@ -406,8 +406,8 @@ fn log_panes(app: &SoyuzApp, label: &str) {
 }
 
 /// `toast:` step → a toast that stays for 30 s.
-fn script_toast(arg: &str) -> crate::ui::toasts::Toast {
-    use crate::ui::toasts::{Toast, ToastKind};
+fn script_toast(arg: &str) -> crate::models::toasts::Toast {
+    use crate::models::toasts::{Toast, ToastKind};
     let mut parts = arg.split('|');
     let kind = match parts.next().unwrap_or("").trim() {
         "success" => ToastKind::Success,

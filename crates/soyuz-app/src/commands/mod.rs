@@ -16,9 +16,9 @@ use soyuz_core::config::{Action, CommandContext, Config, CustomCommand};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::state::pane::PaneId;
 use crate::theme::icons::ph;
-use crate::ui::toasts::Toast;
 use crate::ui::widgets::{menu_item, menu_separator};
 
 /// What the placeholders expand to.

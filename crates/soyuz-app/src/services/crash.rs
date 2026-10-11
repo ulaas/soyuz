@@ -24,8 +24,8 @@ use soyuz_jobs::{DeleteMode, JobKind, JournalJob};
 
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
-use crate::ui::toasts::Toast;
 
 /// Log lines kept for crash reports.
 pub const RING_LINES: usize = 200;

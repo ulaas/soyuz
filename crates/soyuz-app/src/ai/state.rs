@@ -34,8 +34,8 @@ use super::{CancelFlag, TaskId, Wake};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
-use crate::ui::toasts::Toast;
 
 /// Commands from widgets (applied after the UI pass via `Cmd::Ai`).
 #[derive(Clone, Debug)]

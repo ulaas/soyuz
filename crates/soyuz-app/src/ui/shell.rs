@@ -142,7 +142,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     // Toasts stay clear of the assistant panel.
     let right = screen.right() - if app.ai.panel.open { app.ai.panel.width } else { 0.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
-    for action in app.ui.toasts.show(&ctx, anchor, app.ui.reduced_motion) {
+    for action in crate::ui::toasts::show(&mut app.ui.toasts, &ctx, anchor, app.ui.reduced_motion) {
         app.cmds.push(Cmd::Action(action));
     }
 }

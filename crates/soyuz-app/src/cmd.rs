@@ -9,9 +9,9 @@ use soyuz_core::Location;
 use soyuz_core::config::Action;
 use soyuz_fs::AppInfo;
 
+use crate::models::toasts::Toast;
 use crate::state::pane::PaneId;
 use crate::state::selection::EntryKey;
-use crate::ui::toasts::Toast;
 
 #[derive(Clone, Debug)]
 pub enum Cmd {

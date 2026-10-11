@@ -14,8 +14,8 @@ use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, KeyPreset, Keyma
 use super::input::{InputEvent, InputFrame};
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
-use crate::ui::toasts::Toast;
 
 /// How long a partial sequence waits for its next key.
 pub const TIMEOUT: Duration = Duration::from_millis(1000);

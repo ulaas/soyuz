@@ -36,9 +36,9 @@ use soyuz_mcp::{ApprovalDecision, ApprovalRequest, Backend, Mode, ProgressFn, Se
 use crate::ai::mcp::{McpApprovals, PendingMcpApproval};
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, OpKind};
-use crate::ui::toasts::Toast;
 
 /// Repaint callback.
 pub use crate::host::Wake;

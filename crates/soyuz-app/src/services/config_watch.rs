@@ -13,8 +13,8 @@ use soyuz_fs::{WatchKind, Watcher};
 
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::state::view_memory::ViewState;
-use crate::ui::toasts::Toast;
 
 /// Debounce for config changes (well inside the 1 s budget).
 const DEBOUNCE: Duration = Duration::from_millis(120);

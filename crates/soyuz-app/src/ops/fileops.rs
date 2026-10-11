@@ -28,13 +28,13 @@ use soyuz_jobs::{
 };
 
 use crate::app::SoyuzApp;
+use crate::models::toasts::Toast;
 use crate::services::jobs::{AfterJob, JobMeta, JobsService, OpKind};
 use crate::state::pane::PaneId;
 use crate::ui::dialogs::conflict::{PromptDialog, PromptShared};
 use crate::ui::dialogs::delete_confirm::DeleteConfirmDialog;
 use crate::ui::dialogs::new_item::{LinkChoice, LinkDialog, TransferDialog};
 use crate::ui::panels::activity::{ActivityState, ActivityTab};
-use crate::ui::toasts::Toast;
 use crate::ui::views::trash::TrashState;
 
 use crate::host::Host;

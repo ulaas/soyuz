@@ -30,11 +30,11 @@ use soyuz_script::{ActionCtx, PlannedJob, ScriptSet, UiOp};
 
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, JobOrigin, OpKind};
 use crate::services::mailbox::Wake;
 use crate::theme::icons::ph;
-use crate::ui::toasts::Toast;
 
 /// Commands from dialogs / settings pages.
 #[derive(Clone, Debug)]

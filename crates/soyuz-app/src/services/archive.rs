@@ -14,8 +14,8 @@ use soyuz_core::{FsError, FsErrorKind};
 use soyuz_jobs::JobSpec;
 
 use super::mailbox::{Postman, UiMsg};
+use crate::models::toasts::Toast;
 use crate::state::pane::PaneId;
-use crate::ui::toasts::Toast;
 
 // ---- passwords ----------------------------------------------------------------------
 

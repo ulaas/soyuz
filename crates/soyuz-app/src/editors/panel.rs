@@ -335,7 +335,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             TabCmd::Close(i) => super::close(app, i, false),
             TabCmd::Reopen(i, want) => {
                 if app.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
-                    app.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("editors-reopen-dirty")));
+                    app.ui.toasts.push(crate::models::toasts::Toast::info(tr!("editors-reopen-dirty")));
                 } else {
                     super::reopen_as(app, i, want);
                 }
