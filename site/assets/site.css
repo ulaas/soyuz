@@ -191,14 +191,20 @@ main:focus { outline: none; }
 @media (min-width: 1000px) {
   .hero-copy:has(.try) {
     display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 4rem;
-    grid-template-areas: "h h" "lede act" "lede fine" "try try";
+    grid-template-areas: "eye eye" "h h" "lede act" "lede fine" "try try";
   }
+  .hero-copy .eyebrow { grid-area: eye; }
   .hero h1 { grid-area: h; max-width: 15ch; }
   .hero-copy .lede { grid-area: lede; }
   .hero-copy .cta { grid-area: act; align-self: end; flex-wrap: nowrap; }
   .hero-copy .fine { grid-area: fine; align-self: start; }
   .hero-copy .try { grid-area: try; }
 }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: .6rem; margin-bottom: 1.2rem;
+  color: var(--accent); font-size: .82rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase;
+}
+.eyebrow::before { content: ""; width: 1.6rem; height: 1px; background: currentColor; opacity: .7; }
 .lede { margin-top: 1.6rem; max-width: 36rem; font-size: clamp(1.08rem, 1.6vw, 1.25rem); color: var(--ink-2); line-height: 1.55; }
 .cta { margin-top: 2.2rem; display: flex; flex-wrap: wrap; gap: .75rem; }
 .btn {
@@ -246,6 +252,19 @@ main:focus { outline: none; }
   will-change: transform;
 }
 .hero-shot figcaption { padding-bottom: clamp(3rem, 7vw, 5rem); }
+
+/* At a glance */
+.stats { background: var(--bg-deep); }
+.stats-in {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.5rem 2rem;
+  padding-top: clamp(1rem, 3vw, 2rem); padding-bottom: clamp(1rem, 3vw, 2rem);
+}
+.stats li { display: grid; align-content: start; gap: .35rem; padding-left: 1.1rem; border-left: 2px solid var(--line-strong); }
+.stats li:first-child { border-left-color: var(--accent-solid); }
+.stats strong { font-size: clamp(1.5rem, 3vw, 2.1rem); font-weight: 680; letter-spacing: -.03em; line-height: 1.1; color: var(--ink); }
+.stats span { color: var(--ink-2); font-size: .95rem; line-height: 1.45; }
+@media (max-width: 860px) { .stats-in { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 400px) { .stats-in { grid-template-columns: minmax(0, 1fr); } }
 
 /* Screenshots */
 .shot { margin: 0; }
