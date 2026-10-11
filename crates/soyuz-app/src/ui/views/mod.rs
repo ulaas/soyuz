@@ -56,6 +56,8 @@ pub struct ViewCtx<'a> {
     pub checkbox_mode: bool,
     pub show_hidden: bool,
     pub show_system: bool,
+    /// Volumes the Computer view lists: `app.ui.volumes` minus rclone mounts shown under
+    /// Cloud (`services::places::drive_volumes`).
     pub volumes: &'a [VolumeInfo],
     /// Dual pane is available (enables "open in other pane").
     pub dual: bool,

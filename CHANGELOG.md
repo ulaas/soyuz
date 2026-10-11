@@ -5,7 +5,54 @@ original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
-## Unreleased (0.1.0, last change 2026-10-11)
+## Unreleased
+
+### Other features
+
+- feat(packaging): Linux desktop entry, hicolor icons, AppStream metainfo, rpm spec, PREFIX tarball script, demo/screenshot scripts (17ea026)
+- feat(ai,mcp): Secret Service credential store and Unix-socket local IPC (MCP attach, CLI, automation lock) on Linux (9772419)
+- feat(index,term,core): inotify-limit polling fallback, Linux index excludes, [linux] config section, fs naming helper, OSC 7 parser, shell detection fix (1d5ad93)
+- feat(fs): Linux core — mountinfo volume roots and dedupe, gvfs/sysfs removable, POSIX ACL view, inode flags, byte-safe temp names, .hidden, snapper/ZFS/Timeshift snapshots, idle I/O priority, inotify-limit polling, spec-checked trash topdirs (1ea4c6b)
+- feat(fs): Linux desktop — shared-mime-info with magic, Desktop Entry launching and D-Bus activation, mimeapps resolution, icon themes, FileManager1 reveal, portal theme, fontconfig dirs scan, XDG user dirs, mimeapps default-file-manager with exact undo, freedesktop thumbnail cache, UDisks2 (917f854)
+- feat(core): general.honour_dot_hidden and behaviour.watch_poll_interval_ms keys (17fd973)
+- feat(app): Linux data wiring — XDG places, GTK bookmarks, UDisks2 mount/unmount/eject in the sidebar, freedesktop thumbnails, index rescan/excludes, watch-limit polling, .hidden, per-volume naming rules, credential calls off the UI thread; fix(jobs): trash test race (121a23e)
+- feat(app): Linux settings and wording — Linux desktop group, default file manager via mimeapps + FileManager1 service opt-in, previous versions (Snapper/ZFS/Timeshift), inode-flag editor, Secret Service label, Windows-only rows hidden, Linux user guide; feat(core): tags.sync_xdg_tags, sidebar.gtk_bookmarks (2aa95bd)
+- feat(app): Linux platform services — native Wayland (ext-data-control) and X11 file clipboard, FileManager1 D-Bus service, window backend choice, file:// and multi-path arguments, tarball self-update, user.xdg.tags, gvfs/rclone cloud places, fontconfig-free font catalog with coverage-based fallback, pdfium system paths, /etc/shells (b033207)
+- feat(fs,app): Linux drag and drop — Wayland drop target on winit's display (own queue), X11 XDND drag source, Wayland drag source via own pointer serial; dragout::supported() (bfc3bdf)
+- feat(app): Linux wiring — xdg tags display + sync key, GTK bookmarks key, pdfium via system loader, tarball Install & restart, FileManager1 status, per-volume naming in all name dialogs, Linux palette descriptions, rclone shown once, user guide fixes (3c548a4)
+- feat(app,fs): unmounted and locked devices in the sidebar — NTFS/exFAT/etc. and BitLocker/LUKS from UDisks2, distinct styling, mount / read-only / unlock / lock / hide, Fast Startup guidance; sidebar.unmounted_devices and sidebar.hidden_devices keys (fe74e9f)
+- feat(term): OSC 7 cwd tracking through a PTY tee (tty_tee.rs); shell-reported cwd wins over /proc polling (a01f32d)
+- feat(fs,app): write Soyuz-made thumbnails to the freedesktop cache (appearance.write_os_thumbnails, Linux) (5067050)
+- feat(macos): Keychain credentials, LaunchServices launching and reveal, CFPreferences theme/locale, CoreText font catalog, NSPasteboard file clipboard, Time Machine previous versions (untested on macOS) (86ec83c)
+- feat(vfs,app): SMB2/3 provider off Windows (smb2 crate) with share enumeration; smb:// and \\server\share in the path bar (144bdf9)
+- feat(a11y): Linux AT-SPI audit script; name the window, status-bar toggles, splitters and pane headers; tabs/toggles expose state (4cf16e3)
+
+### Fixes and security
+
+- fix(app): icon pack paths resolve the same on every OS (backslashes, drive prefixes) (4d3291c)
+- fix(app): OLE drag-format test runs on Windows only (af03cc0)
+- fix(app): drag-out setting follows runtime drag-out support (X11 / Wayland) (c5d67bf)
+- fix(mcp): socket test tolerates descriptors briefly held by forked children (81db025)
+- fix(term): drop the macOS proc_pidinfo cwd fallback (unsafe outside the allowlist; OSC 7 covers it) (bbf9d7b)
+- fix(a11y): vendor accesskit_unix 0.21.1 with the IsEnabled fix so Orca sees Soyuz on at-spi2-core 2.62+ (6c675e9)
+
+### Documentation
+
+- docs(site): download section lists the Linux x64 and macOS arm64 builds and notes that builds are unsigned (861c263)
+- docs(site): present Soyuz as a Windows, Linux and macOS app across the page; Linux and macOS builds are tested (324b29f)
+- docs: README lists Linux and macOS as tested platforms (38f0d6e)
+- docs(app): drag-out support comment (683b596)
+- docs: Linux drag-and-drop behaviour in the user guide (de90200)
+- docs,app: SMB in the Linux user guide; quiet smb2 INFO logs (4cc10da)
+
+### Other
+
+- build: workspace deps for Linux desktop integration (zbus, x11rb, wayland) (5274623)
+- build: Linux scaffolding for platform work (per-crate deps, sys/linux module dir, xdg_dirs/udisks stubs) (b8918bd)
+- ci: Linux tests are a gate, banned-crate check covers the Linux graph, Linux package job uses package.sh (0030c2c)
+- test(app): GUI tests use a private XDG_CACHE_HOME (829fb6f)
+
+## 0.1.0 (2026-10-11)
 
 ### Milestones (M0–M13)
 
@@ -94,6 +141,7 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - docs: README for the public release (db97961)
 - docs: drop references to internal planning documents and milestone tags from comments and docs (f336626)
 - docs: privacy-safe screenshots for the website and README (demo tree, SOYUZ_DEMO_MASK) (758676d)
+- docs: regenerate changelog (f2d3c95)
 
 ### Other
 
@@ -103,3 +151,6 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - ci: package Windows/Linux/macOS binaries (zip / tar.gz) on main and tags; install libasound2-dev on Linux; Linux/macOS tests non-gating until unix verification is lifted (d9cce28)
 - chore: MIT license (single LICENSE), THIRD-PARTY-NOTICES.md generated by cargo-about (scripts/notices.ps1) and shipped in zip/MSI/MSIX; SOYUZ_DEMO_MASK hides volume labels/sizes/cloud for screenshots (b4af861)
 - ci: pin Actions to commit SHAs, no persisted checkout credentials, gitleaks secret-scan job, Pages deploy workflow, Dependabot, CODEOWNERS, .github/SECURITY.md; scripts/public-check.ps1 pre-publish privacy check (a8708d6)
+- everything freezes under right circumstances (5cddb8e)
+- ci: release workflow drafts a GitHub Release with all artifacts; update check defaults to the official repo (d0d7546)
+- ci: drop a stale doc reference (85578c4)

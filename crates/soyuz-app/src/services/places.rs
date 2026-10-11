@@ -87,8 +87,10 @@ fn mask_volumes(v: &mut Vec<VolumeInfo>) {
     }
 }
 
-/// Volumes listed under Drives: rclone FUSE mounts that the Cloud section already shows
-/// are left out (they would appear twice). Borrows when there is nothing to drop.
+/// Volumes listed as drives (the sidebar's Drives section and the Computer view): rclone
+/// FUSE mounts that the Cloud section already shows are left out, so they appear only under
+/// Cloud. `app.ui.volumes` itself stays complete (breadcrumbs, per-volume rules, the
+/// device list). Borrows when there is nothing to drop.
 pub fn drive_volumes<'a>(vols: &'a [VolumeInfo], cloud: &[(String, PathBuf)]) -> std::borrow::Cow<'a, [VolumeInfo]> {
     let in_cloud = |v: &VolumeInfo| v.fs == "fuse.rclone" && cloud.iter().any(|(_, p)| *p == v.mount);
     if vols.iter().any(in_cloud) {
@@ -268,11 +270,25 @@ mod tests {
             device: soyuz_core::DeviceId(0),
             supports: soyuz_fs::FsCaps::empty(),
         };
-        let vols = vec![vol("/", "btrfs"), vol("/mnt/g", "fuse.rclone"), vol("/mnt/h", "fuse.rclone")];
-        let cloud = vec![("g (rclone)".to_string(), PathBuf::from("/mnt/g"))];
+        let vols = vec![
+            vol("/", "btrfs"),
+            vol("/mnt/g", "fuse.rclone"),
+            vol("/run/media/me/usb", "exfat"),
+            vol("/mnt/h", "fuse.rclone"),
+            vol("/mnt/gvfs-like", "fuse.gvfsd-fuse"),
+        ];
+        let cloud = vec![
+            ("g (rclone)".to_string(), PathBuf::from("/mnt/g")),
+            ("Google Drive".to_string(), PathBuf::from("/mnt/gvfs-like")),
+        ];
         let d = drive_volumes(&vols, &cloud);
         let mounts: Vec<_> = d.iter().map(|v| v.mount.to_string_lossy().into_owned()).collect();
-        assert_eq!(mounts, ["/", "/mnt/h"], "only rclone mounts shown under Cloud are dropped");
+        assert_eq!(
+            mounts,
+            ["/", "/run/media/me/usb", "/mnt/h", "/mnt/gvfs-like"],
+            "only rclone mounts shown under Cloud are dropped (sidebar Drives and Computer view), order kept"
+        );
+        assert_eq!(vols.len(), 5, "the full volume list is left untouched");
         assert!(matches!(drive_volumes(&vols, &[]), std::borrow::Cow::Borrowed(_)));
     }
 

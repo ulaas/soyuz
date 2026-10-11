@@ -199,6 +199,8 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
         return;
     }
     if shown < 2 {
+        // rclone mounts appear under Cloud only, also in the Computer view.
+        let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
         let tab = &mut app.ws.tabs[ti];
         let idx = focused.min(tab.panes.len() - 1);
         let pane = &mut tab.panes[idx];
@@ -212,7 +214,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             checkbox_mode: app.ui.checkbox_mode,
             show_hidden: app.ui.show_hidden,
             show_system: app.ui.show_system,
-            volumes: &app.ui.volumes,
+            volumes: &drives,
             dual: false,
             fileops: &mut app.fileops,
         };
@@ -258,6 +260,8 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
     if sresp.double_clicked() {
         app.ws.tabs[ti].split = 0.5;
     }
+    // rclone mounts appear under Cloud only, also in the Computer view.
+    let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
     for (i, rect) in [(0usize, a), (1usize, b)] {
         let tab = &mut app.ws.tabs[ti];
         let pane = &mut tab.panes[i];
@@ -271,7 +275,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             checkbox_mode: app.ui.checkbox_mode,
             show_hidden: app.ui.show_hidden,
             show_system: app.ui.show_system,
-            volumes: &app.ui.volumes,
+            volumes: &drives,
             dual: true,
             fileops: &mut app.fileops,
         };
@@ -333,6 +337,8 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             }
         }
     }
+    // rclone mounts appear under Cloud only, also in the Computer view.
+    let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
     for (i, rect) in cells.into_iter().enumerate() {
         let tab = &mut app.ws.tabs[ti];
         let pane = &mut tab.panes[i];
@@ -346,7 +352,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             checkbox_mode: app.ui.checkbox_mode,
             show_hidden: app.ui.show_hidden,
             show_system: app.ui.show_system,
-            volumes: &app.ui.volumes,
+            volumes: &drives,
             dual: true,
             fileops: &mut app.fileops,
         };

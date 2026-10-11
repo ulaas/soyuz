@@ -1,6 +1,7 @@
 # git-cliff configuration (https://git-cliff.org). Generate the changelog with
 #   git cliff -o CHANGELOG.md
-# Without git-cliff installed, `scripts/changelog.ps1` produces the same grouping.
+# Without git-cliff installed, `scripts/changelog.ps1` (Windows) or `scripts/changelog.sh`
+# (Linux / macOS) produces the same grouping.
 #
 # Soyuz commits are not Conventional Commits: they start with an area id
 # (`M7:`, `F2:`, `R4/R5/B1:`, `A5-A8:`) or a type (`fix:`, `fix(app):`, `docs:`, `security:`).

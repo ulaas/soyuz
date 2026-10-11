@@ -106,6 +106,15 @@ The whole path was exercised locally with a throwaway self-signed certificate. T
   need `libasound2-dev` (audio preview via rodio / cpal / ALSA) besides the X11 / Wayland /
   GL / fontconfig dev packages.
 
+## Changelog
+
+`CHANGELOG.md` is generated from `git log`, grouped by commit prefix the same way as
+`cliff.toml`: run `scripts/changelog.ps1` on Windows or `scripts/changelog.sh` on Linux /
+macOS (both produce byte-identical output; `--no-cliff` / `-NoCliff` forces the built-in
+grouping). Both use `git cliff` when it is installed, only read the repository and never
+commit. Commits after the newest tag go under *Unreleased*; regenerate before tagging.
+Hand edits to entries are overwritten on the next run; re-apply them afterwards.
+
 ## Linux
 
 ### Artifacts
