@@ -25,6 +25,12 @@
 //! Explorer keeps writing these files while we read them, so every hit is re-validated
 //! (signature, hash, sizes) before its data is returned, and an index is rebuilt when the
 //! file's length or modification time changes. Decoding the picture is the caller's job.
+//!
+//! **Linux / BSD** use the freedesktop thumbnail cache instead ("Thumbnail Managing
+//! Standard" 0.9): `$XDG_CACHE_HOME/thumbnails/{normal,large,x-large,xx-large}/
+//! <md5 of the file URI>.png`, written by the desktop's thumbnailers (GNOME, KDE, …). An
+//! entry is only used when its `Thumb::URI` and `Thumb::MTime` text chunks match the
+//! file, so stale thumbnails of replaced files are never shown. Read-only.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -179,12 +185,16 @@ pub fn lookup_in_bytes(file: &[u8], id: u64) -> Option<(u32, u32, Vec<u8>)> {
     Some((e.width, e.height, data.to_vec()))
 }
 
-/// The folder holding the caches (`%LOCALAPPDATA%\Microsoft\Windows\Explorer`).
+/// The folder holding the caches (`%LOCALAPPDATA%\Microsoft\Windows\Explorer`;
+/// `$XDG_CACHE_HOME/thumbnails` on Linux / BSD; `None` on macOS).
 pub fn cache_dir() -> Option<PathBuf> {
-    if !cfg!(windows) {
-        return None;
+    if cfg!(windows) {
+        return std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("Microsoft\\Windows\\Explorer"));
     }
-    std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("Microsoft\\Windows\\Explorer"))
+    if cfg!(all(unix, not(target_os = "macos"))) {
+        return Some(crate::launch::linux::cache_home().join("thumbnails"));
+    }
+    None
 }
 
 struct DbIndex {
@@ -238,8 +248,13 @@ fn read_entry(db: &Path, id: u64, e: Entry) -> Option<Vec<u8>> {
 /// The cached picture of `path` closest to `px` (longest edge), when Explorer has one
 /// that is at least three quarters of `px`: size classes ≥ `px` are tried smallest first,
 /// then smaller ones largest first.
+///
+/// Linux / BSD: the freedesktop cache ([`lookup_freedesktop`]) with the same size rule.
 pub fn lookup(path: &Path, px: u32) -> Option<OsThumb> {
     let dir = cache_dir()?;
+    if cfg!(all(unix, not(target_os = "macos"))) {
+        return lookup_freedesktop(&dir, path, px);
+    }
     let id = cache_id(path)?;
     lookup_id(&dir, id, px)
 }
@@ -261,6 +276,93 @@ pub fn lookup_id(dir: &Path, id: u64, px: u32) -> Option<OsThumb> {
                 None => continue,
             }
         }
+    }
+    None
+}
+
+/// Freedesktop size classes (folder, longest edge in px), smallest first.
+pub const FREEDESKTOP_SIZES: [(&str, u32); 4] = [("normal", 128), ("large", 256), ("x-large", 512), ("xx-large", 1024)];
+
+/// Cache file name of a URI: lowercase hex MD5 of the URI + `.png`.
+pub fn freedesktop_thumb_name(uri: &str) -> String {
+    use md5::Digest;
+    let d = md5::Md5::digest(uri.as_bytes());
+    let mut s = String::with_capacity(36);
+    for b in d {
+        s.push_str(&format!("{b:02x}"));
+    }
+    s.push_str(".png");
+    s
+}
+
+/// The `file://` URI the thumbnailers key `path` by (absolute, percent-encoded).
+pub fn freedesktop_uri(path: &Path) -> String {
+    crate::launch::linux::uri::file_uri(path)
+}
+
+/// `(keyword, text)` pairs of a PNG's `tEXt` chunks.
+pub type TextChunks = Vec<(String, String)>;
+
+/// `tEXt` chunks and the IHDR size of a PNG (`None` when it is not a PNG).
+pub fn png_text_chunks(png: &[u8]) -> Option<(u32, u32, TextChunks)> {
+    let mut rest = png.strip_prefix(b"\x89PNG\r\n\x1a\n")?;
+    let (mut w, mut h) = (0, 0);
+    let mut texts = Vec::new();
+    while rest.len() >= 12 {
+        let len = u32::from_be_bytes(rest[..4].try_into().ok()?) as usize;
+        let kind = &rest[4..8];
+        let data = rest.get(8..8 + len)?;
+        match kind {
+            b"IHDR" if len >= 8 => {
+                w = u32::from_be_bytes(data[..4].try_into().ok()?);
+                h = u32::from_be_bytes(data[4..8].try_into().ok()?);
+            }
+            b"tEXt" => {
+                if let Some(z) = data.iter().position(|&c| c == 0) {
+                    // Keywords are Latin-1; the values we compare are ASCII URIs / numbers.
+                    let k: String = data[..z].iter().map(|&c| c as char).collect();
+                    let v = String::from_utf8_lossy(&data[z + 1..]).into_owned();
+                    texts.push((k, v));
+                }
+            }
+            b"IDAT" | b"IEND" => break,
+            _ => {}
+        }
+        rest = rest.get(12 + len..)?;
+    }
+    Some((w, h, texts))
+}
+
+/// A freedesktop thumbnail is valid for a file with this URI and mtime (whole seconds;
+/// a fractional `Thumb::MTime` written by some thumbnailers is truncated).
+pub fn freedesktop_thumb_valid(texts: &[(String, String)], uri: &str, mtime_secs: i64) -> bool {
+    let get = |k: &str| texts.iter().find(|(key, _)| key == k).map(|(_, v)| v.trim());
+    let mtime_ok =
+        get("Thumb::MTime").and_then(|v| v.parse::<f64>().ok()).is_some_and(|m| m.trunc() as i64 == mtime_secs);
+    get("Thumb::URI") == Some(uri) && mtime_ok
+}
+
+/// The cached thumbnail of `path` in the freedesktop cache under `dir`, closest to `px`
+/// (classes ≥ `px` smallest first, then smaller ones largest first; at least three
+/// quarters of `px`). Stale entries (other URI / mtime) are skipped.
+pub fn lookup_freedesktop(dir: &Path, path: &Path, px: u32) -> Option<OsThumb> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta.modified().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs() as i64;
+    let abs = if path.is_absolute() { path.to_path_buf() } else { std::fs::canonicalize(path).ok()? };
+    let uri = freedesktop_uri(&abs);
+    let name = freedesktop_thumb_name(&uri);
+    let mut order: Vec<(&str, u32)> = FREEDESKTOP_SIZES.iter().copied().filter(|s| s.1 >= px).collect();
+    order.extend(FREEDESKTOP_SIZES.iter().rev().copied().filter(|s| s.1 < px));
+    for (folder, class) in order {
+        let Ok(data) = std::fs::read(dir.join(folder).join(&name)) else { continue };
+        let Some((w, h, texts)) = png_text_chunks(&data) else { continue };
+        if !freedesktop_thumb_valid(&texts, &uri, mtime) {
+            continue;
+        }
+        if w.max(h) * 4 < px * 3 {
+            break;
+        }
+        return Some(OsThumb { data, width: w, height: h, db_size: class });
     }
     None
 }
@@ -359,6 +461,67 @@ mod tests {
         // because nothing ≥ 512 exists and 256 * 4 < 512 * 3.
         assert_eq!(lookup_id(dir.path(), 5, 512), None);
         assert_eq!(lookup_id(dir.path(), 6, 64), None);
+    }
+
+    fn png(w: u32, h: u32, texts: &[(&str, &str)]) -> Vec<u8> {
+        fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            out.extend_from_slice(&[0; 4]); // CRC (not checked)
+        }
+        let mut p = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&w.to_be_bytes());
+        ihdr.extend_from_slice(&h.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        chunk(&mut p, b"IHDR", &ihdr);
+        for (k, v) in texts {
+            chunk(&mut p, b"tEXt", &[k.as_bytes(), b"\0", v.as_bytes()].concat());
+        }
+        chunk(&mut p, b"IDAT", &[0; 4]);
+        chunk(&mut p, b"IEND", &[]);
+        p
+    }
+
+    #[test]
+    fn freedesktop_names_and_chunks() {
+        // Value from the Thumbnail Managing Standard's example.
+        assert_eq!(freedesktop_thumb_name("file:///home/jens/photos/me.png"), "c6ee772d9e49320e97ec29a7eb5b1697.png");
+        let p = png(256, 192, &[("Thumb::URI", "file:///x.jpg"), ("Thumb::MTime", "1700000000")]);
+        let (w, h, t) = png_text_chunks(&p).unwrap();
+        assert_eq!((w, h), (256, 192));
+        assert!(freedesktop_thumb_valid(&t, "file:///x.jpg", 1_700_000_000));
+        assert!(!freedesktop_thumb_valid(&t, "file:///x.jpg", 1_700_000_001), "stale mtime");
+        assert!(!freedesktop_thumb_valid(&t, "file:///y.jpg", 1_700_000_000), "other file");
+        assert!(png_text_chunks(b"GIF89a").is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn freedesktop_lookup_validates_and_picks_sizes() {
+        let d = tempfile::tempdir().unwrap();
+        let cache = d.path().join("thumbnails");
+        let f = d.path().join("photo 1.jpg");
+        std::fs::write(&f, b"jpeg").unwrap();
+        let mtime =
+            std::fs::metadata(&f).unwrap().modified().unwrap().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        let uri = freedesktop_uri(&f);
+        assert!(uri.starts_with("file:///") && uri.ends_with("/photo%201.jpg"), "{uri}");
+        let name = freedesktop_thumb_name(&uri);
+        let put = |folder: &str, w: u32, h: u32, mt: u64| {
+            std::fs::create_dir_all(cache.join(folder)).unwrap();
+            let p = png(w, h, &[("Thumb::URI", &uri), ("Thumb::MTime", &mt.to_string())]);
+            std::fs::write(cache.join(folder).join(&name), p).unwrap();
+        };
+        put("normal", 128, 96, mtime);
+        put("large", 256, 192, mtime + 5); // stale
+        assert_eq!(lookup_freedesktop(&cache, &f, 128).map(|t| (t.db_size, t.width)), Some((128, 128)));
+        assert_eq!(lookup_freedesktop(&cache, &f, 160).map(|t| t.db_size), Some(128), "stale large is skipped");
+        assert_eq!(lookup_freedesktop(&cache, &f, 256), None, "128 px is too small for 256");
+        put("large", 256, 192, mtime);
+        assert_eq!(lookup_freedesktop(&cache, &f, 200).map(|t| t.db_size), Some(256));
+        assert_eq!(lookup_freedesktop(&cache, &d.path().join("missing.jpg"), 128), None);
     }
 
     /// Reads the real caches of this machine (Windows only, prints a summary).
