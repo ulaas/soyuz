@@ -108,6 +108,9 @@ xattr.workspace = true
 # `[linux] window_backend`: `EventLoopBuilderExt{X11,Wayland}` for eframe's event-loop
 # hook. Same version eframe already uses (no new crate in the lockfile).
 winit = { version = "0.30.13", default-features = false }
+# wl_display / wl_surface / X11 window of the eframe window for external drag and drop
+# (`ops::fileops::linux_dnd`).
+raw-window-handle = "0.6.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 xattr.workspace = true

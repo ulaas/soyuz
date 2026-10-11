@@ -4,6 +4,9 @@
 
 use std::io;
 
+pub(crate) mod wayland_dnd;
+pub(crate) mod xdnd;
+
 const IOPRIO_WHO_PROCESS: libc::c_int = 1;
 const IOPRIO_CLASS_IDLE: libc::c_int = 3;
 const IOPRIO_CLASS_SHIFT: libc::c_int = 13;

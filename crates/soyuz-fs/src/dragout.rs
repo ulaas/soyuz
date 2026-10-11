@@ -1,11 +1,29 @@
-//! Drag files out of the app into other applications (Windows: OLE `DoDragDrop`).
+//! Drag files out of the app into other applications (Windows: OLE `DoDragDrop`; X11:
+//! an XDND drag source), plus the Wayland drop target (files dragged *into* the window).
 //!
 //! The caller prepares the clipboard-format payloads (`CF_HDROP` `DROPFILES`, text, ...);
 //! this module hands them to a hand-written `IDataObject` / `IDropSource` pair in
 //! `sys/windows/dragdrop.rs` (ole32 + user32 + kernel32 only, no shell APIs) and reports
-//! what the target did. Unsupported (always an error) on other platforms.
+//! what the target did.
+//!
+//! Linux:
+//! * **X11 drag-out** ([`start_x11_drag`]): a non-modal XDND source on its own X
+//!   connection and background thread (`sys/linux/xdnd.rs`). It owns `XdndSelection`,
+//!   offers `text/uri-list` + `x-special/gnome-copied-files` + plain text, follows the
+//!   pointer with `QueryPointer` (the implicit button grab stays with the app window, so
+//!   no grab is needed), talks `XdndEnter/Position/Leave/Drop` to `XdndAware` windows and
+//!   maps `XdndFinished` (and a `DELETE` conversion) to a [`DragReport`] ([`xdnd_report`]).
+//! * **Wayland drop target** ([`start_wayland_drop_target`]): winit 0.30 has no Wayland
+//!   drag-and-drop, so `sys/linux/wayland_dnd.rs` attaches to the window's own
+//!   `wl_display` with a separate event queue (dispatched on a background thread), binds
+//!   `wl_data_device` for the seat and reports drags over the window's `wl_surface` as
+//!   [`DropTargetEvent`]s. Only copy is accepted ([`drop_actions`]).
+//! * **Wayland drag-out** ([`start_wayland_drag`]): a `wl_data_source` on the same
+//!   thread, started with the press serial our own `wl_pointer` saw; see
+//!   [`wayland_drag_report`] for how its result is read.
 
 use std::io;
+use std::path::PathBuf;
 
 /// `DROPEFFECT_*` values.
 pub const DROPEFFECT_NONE: u32 = 0;
@@ -102,13 +120,19 @@ pub fn do_drag(data: &DragData, allowed: u32, return_hwnd: isize) -> io::Result<
 }
 
 /// The primary mouse button is physically held right now (guards against starting a
-/// drag after a release the app never saw). `false` off Windows.
+/// drag after a release the app never saw). Wayland (drop target running): the state
+/// our own `wl_pointer` saw; X11: `QueryPointer` on `$DISPLAY`. `false` elsewhere.
 pub fn primary_button_down() -> bool {
     #[cfg(windows)]
     {
         crate::sys::windows::dragdrop::primary_button_down()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        use crate::sys::linux::{wayland_dnd, xdnd};
+        if wayland_dnd::running() { wayland_dnd::button_down() } else { xdnd::primary_button_down() }
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         false
     }
@@ -157,4 +181,308 @@ fn resolve(data: &DragData) -> io::Result<Vec<(u16, Vec<u8>)>> {
             Ok((id, bytes.clone()))
         })
         .collect()
+}
+
+// ---------------------------------------------------------------------------------------
+// freedesktop drag and drop (X11 XDND source, Wayland drop target). The pure parts below
+// compile everywhere so they are unit-tested on every OS.
+
+/// The file-list MIME type of the freedesktop drag-and-drop / clipboard world (RFC 2483).
+pub const MIME_URI_LIST: &str = "text/uri-list";
+/// GNOME's file-list type: `copy` / `cut`, then one URI per line.
+pub const MIME_GNOME_FILES: &str = "x-special/gnome-copied-files";
+
+/// `wl_data_device_manager.dnd_action` bits.
+pub const DND_ACTION_COPY: u32 = 1;
+pub const DND_ACTION_MOVE: u32 = 2;
+pub const DND_ACTION_ASK: u32 = 4;
+
+/// The local paths of a `text/uri-list` (CRLF or LF lines, `#` comments) or
+/// `x-special/gnome-copied-files` (leading `copy` / `cut` line) payload. Non-`file:`
+/// URIs and remote hosts are skipped. The text is untrusted: nothing but `file:` URIs
+/// with an absolute path come out.
+pub fn parse_uri_list(text: &str) -> Vec<PathBuf> {
+    text.lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty() && !l.starts_with('#') && *l != "copy" && *l != "cut")
+        .filter_map(crate::launch::path_from_file_uri)
+        .collect()
+}
+
+/// `text/uri-list` for `paths` (CRLF-terminated lines, as RFC 2483 asks).
+pub fn uri_list(paths: &[PathBuf]) -> String {
+    paths.iter().map(|p| crate::launch::file_uri(p) + "\r\n").collect()
+}
+
+/// `x-special/gnome-copied-files` for `paths` (`cut` when the drag suggests a move).
+pub fn gnome_copied_files(paths: &[PathBuf], cut: bool) -> String {
+    let mut s = String::from(if cut { "cut" } else { "copy" });
+    for p in paths {
+        s.push('\n');
+        s.push_str(&crate::launch::file_uri(p));
+    }
+    s
+}
+
+/// The MIME type to receive from a drag offer: `text/uri-list`, else GNOME's file list;
+/// `None` when the offer carries no files.
+pub fn pick_mime(offered: &[String]) -> Option<&'static str> {
+    [MIME_URI_LIST, MIME_GNOME_FILES].into_iter().find(|m| offered.iter().any(|o| o == m))
+}
+
+/// `(actions, preferred)` to answer a Wayland drag offer with, given the source's
+/// `dnd_action` mask (0 = a pre-v3 source without action negotiation).
+///
+/// External drops are always *copied* into the app (`transfer(.., Copy)` behind
+/// [`DropTargetEvent::Files`]), so only copy is accepted: accepting "move" would let the
+/// source delete its files as soon as the drop finishes, before the copy job has run.
+/// `None` when the source cannot copy (the drag shows "not accepted").
+pub fn drop_actions(source_actions: u32) -> Option<(u32, u32)> {
+    (source_actions == 0 || source_actions & DND_ACTION_COPY != 0).then_some((DND_ACTION_COPY, DND_ACTION_COPY))
+}
+
+/// A drag of files over the app's window, as seen by the Wayland drop target. Positions
+/// are surface-local logical pixels.
+#[derive(Clone, Debug, PartialEq)]
+pub enum DropTargetEvent {
+    /// A drag carrying files entered the window.
+    Enter {
+        x: f64,
+        y: f64,
+    },
+    Motion {
+        x: f64,
+        y: f64,
+    },
+    /// The drag left (or was cancelled) without a drop.
+    Leave,
+    /// Dropped here; the paths follow as [`DropTargetEvent::Files`] once read.
+    Drop {
+        x: f64,
+        y: f64,
+    },
+    /// The dropped paths (empty when the source sent nothing usable).
+    Files(Vec<PathBuf>),
+    /// The app's own Wayland drag-out came back over the window (the internal drag
+    /// resumes while the compositor drag goes on).
+    OwnEnter {
+        x: f64,
+        y: f64,
+    },
+    OwnMotion {
+        x: f64,
+        y: f64,
+    },
+    /// It left the window again.
+    OwnLeave,
+    /// It was dropped on the window: an internal drop at that position.
+    OwnDrop {
+        x: f64,
+        y: f64,
+    },
+}
+
+/// Receives [`DropTargetEvent`]s on the drop target's background threads.
+pub type DropSink = Box<dyn Fn(DropTargetEvent) + Send + Sync>;
+
+/// Wayland: become a drop target for files on the app window. `display` is the window's
+/// `wl_display*` and `surface` its `wl_surface*` (from its raw window / display handles);
+/// both must stay valid until [`stop_wayland_drop_target`] runs (call it before the
+/// window and its connection go away). A separate event queue on the same connection is
+/// dispatched on a background thread; the window toolkit's own queue is never touched.
+/// Errors when the compositor has no `wl_data_device_manager` / `wl_seat` (logged by
+/// the caller; drops then simply do nothing). Unsupported off Linux.
+pub fn start_wayland_drop_target(display: usize, surface: usize, sink: DropSink) -> io::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::sys::linux::wayland_dnd::start(display, surface, sink)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (display, surface, sink);
+        Err(io::Error::new(io::ErrorKind::Unsupported, "Wayland drop target is Linux-only"))
+    }
+}
+
+/// Stop the Wayland drop target (releases the data device, ends the thread). Idempotent.
+pub fn stop_wayland_drop_target() {
+    #[cfg(target_os = "linux")]
+    crate::sys::linux::wayland_dnd::stop();
+}
+
+/// The `DragReport` of an XDND drag that ended with a drop: `finished` is
+/// `Some((accepted, action))` from `XdndFinished` (`None` when the target never sent it
+/// in time), `action` a `DROPEFFECT_*` value, `delete_requested` whether the target
+/// converted `XdndSelection` to `DELETE` (the XDND way of asking the source to remove a
+/// moved item).
+///
+/// A move without `DELETE` means the target moved the files itself (file managers do):
+/// reported as an optimized move (`DROPEFFECT_NONE` + logical move), so the app only
+/// refreshes and never deletes anything on its own.
+pub fn xdnd_report(finished: Option<(bool, u32)>, delete_requested: bool) -> DragReport {
+    let Some((true, action)) = finished else {
+        return DragReport::plain(Outcome::Dropped, DROPEFFECT_NONE);
+    };
+    if action & DROPEFFECT_MOVE != 0 {
+        if delete_requested {
+            let mut r = DragReport::plain(Outcome::Dropped, DROPEFFECT_MOVE);
+            r.performed = Some(DROPEFFECT_MOVE);
+            return r;
+        }
+        let mut r = DragReport::plain(Outcome::Dropped, DROPEFFECT_NONE);
+        r.logical_performed = Some(DROPEFFECT_MOVE);
+        return r;
+    }
+    DragReport::plain(Outcome::Dropped, action & (DROPEFFECT_COPY | DROPEFFECT_LINK))
+}
+
+/// The `DragReport` of a Wayland drag-out that finished (`dnd_finished`) with the
+/// `dnd_action` bits last announced. Wayland has no way for the target to say it moved
+/// the files itself, and file managers do move them themselves (asynchronously, so the
+/// sources may still exist when `dnd_finished` arrives): a move is therefore always
+/// reported as an optimized move (the app refreshes, never deletes).
+pub fn wayland_drag_report(finished: bool, action: u32) -> DragReport {
+    if !finished {
+        return DragReport::plain(Outcome::Cancelled, DROPEFFECT_NONE);
+    }
+    if action & DND_ACTION_MOVE != 0 {
+        let mut r = DragReport::plain(Outcome::Dropped, DROPEFFECT_NONE);
+        r.logical_performed = Some(DROPEFFECT_MOVE);
+        return r;
+    }
+    let effect = if action & DND_ACTION_COPY != 0 { DROPEFFECT_COPY } else { DROPEFFECT_NONE };
+    DragReport::plain(Outcome::Dropped, effect)
+}
+
+/// A running non-modal drag-out (X11 XDND or Wayland). Poll it every frame until it
+/// reports.
+#[cfg(target_os = "linux")]
+pub struct DragSession {
+    rx: crossbeam_channel::Receiver<DragReport>,
+    cancel: Box<dyn Fn() + Send + Sync>,
+}
+
+#[cfg(target_os = "linux")]
+impl DragSession {
+    /// The final report once the drag is over (`Some` exactly once).
+    pub fn poll(&self) -> Option<DragReport> {
+        self.rx.try_recv().ok()
+    }
+
+    /// End the drag as cancelled (Esc in the app window).
+    pub fn cancel(&self) {
+        (self.cancel)();
+    }
+}
+
+/// X11: start a non-modal XDND drag of `paths` on a background thread. `preferred` is
+/// the `DROPEFFECT_*` suggested when no modifier is held (Ctrl = copy, Shift = move,
+/// Ctrl+Shift = link, read from the pointer's modifier mask); `own_window` is the app's
+/// X11 window (the pointer coming back over it ends the drag with
+/// [`Outcome::Returned`]). The primary button must be held: releasing it drops.
+#[cfg(target_os = "linux")]
+pub fn start_x11_drag(paths: &[PathBuf], preferred: u32, own_window: u32) -> io::Result<DragSession> {
+    let paths = absolute(paths)?;
+    let (rx, cancel) = crate::sys::linux::xdnd::start(paths, preferred, own_window)?;
+    Ok(DragSession { rx, cancel: Box::new(move || cancel.store(true, std::sync::atomic::Ordering::Relaxed)) })
+}
+
+/// Wayland: start a drag of `paths` from the window the drop target runs on
+/// ([`start_wayland_drop_target`]), using the serial of the primary-button press that
+/// is still held. The target / compositor picks copy or move (modifiers).
+#[cfg(target_os = "linux")]
+pub fn start_wayland_drag(paths: &[PathBuf]) -> io::Result<DragSession> {
+    let paths = absolute(paths)?;
+    let rx = crate::sys::linux::wayland_dnd::start_drag(paths)?;
+    Ok(DragSession { rx, cancel: Box::new(crate::sys::linux::wayland_dnd::cancel_drag) })
+}
+
+/// Whether a Wayland drag-out can start (the drop target thread is up with a pointer).
+pub fn wayland_drag_ready() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        crate::sys::linux::wayland_dnd::drag_ready()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn absolute(paths: &[PathBuf]) -> io::Result<Vec<PathBuf>> {
+    let paths: Vec<PathBuf> = paths.iter().filter(|p| p.is_absolute()).cloned().collect();
+    if paths.is_empty() {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "nothing to drag"));
+    }
+    Ok(paths)
+}
+
+/// Plain-text form of a dragged file list (one path per line).
+pub fn plain_text(paths: &[PathBuf]) -> String {
+    paths.iter().map(|p| p.to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n")
+}
+
+#[cfg(test)]
+mod fd_tests {
+    use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn uri_lists_round_trip() {
+        let paths = vec![PathBuf::from("/home/u/My Docs/a#b.txt"), PathBuf::from("/tmp/ü")];
+        let list = uri_list(&paths);
+        assert_eq!(list, "file:///home/u/My%20Docs/a%23b.txt\r\nfile:///tmp/%C3%BC\r\n");
+        assert_eq!(parse_uri_list(&list), paths);
+        let gnome = gnome_copied_files(&paths, true);
+        assert!(gnome.starts_with("cut\nfile:///home/"));
+        assert_eq!(parse_uri_list(&gnome), paths);
+        assert_eq!(parse_uri_list(&gnome_copied_files(&paths, false)), paths);
+        assert_eq!(plain_text(&paths), "/home/u/My Docs/a#b.txt\n/tmp/ü");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn uri_list_parsing_is_strict() {
+        let text = "# comment\r\nfile:///a/b\r\n\r\nhttps://example.com/x\nfile://otherhost/c\nfile://localhost/d%20e\n  file:///f  \nrelative/path\n";
+        assert_eq!(parse_uri_list(text), vec![PathBuf::from("/a/b"), PathBuf::from("/d e"), PathBuf::from("/f")]);
+        assert!(parse_uri_list("").is_empty());
+    }
+
+    #[test]
+    fn mime_and_action_choice() {
+        let s = |v: &[&str]| v.iter().map(|m| m.to_string()).collect::<Vec<_>>();
+        assert_eq!(pick_mime(&s(&["text/plain", MIME_URI_LIST])), Some(MIME_URI_LIST));
+        assert_eq!(pick_mime(&s(&[MIME_GNOME_FILES, MIME_URI_LIST])), Some(MIME_URI_LIST));
+        assert_eq!(pick_mime(&s(&[MIME_GNOME_FILES])), Some(MIME_GNOME_FILES));
+        assert_eq!(pick_mime(&s(&["text/plain", "image/png"])), None);
+        assert_eq!(drop_actions(DND_ACTION_COPY | DND_ACTION_MOVE), Some((DND_ACTION_COPY, DND_ACTION_COPY)));
+        assert_eq!(drop_actions(DND_ACTION_COPY | DND_ACTION_ASK), Some((DND_ACTION_COPY, DND_ACTION_COPY)));
+        assert_eq!(drop_actions(0), Some((DND_ACTION_COPY, DND_ACTION_COPY)), "pre-v3 source");
+        assert_eq!(drop_actions(DND_ACTION_MOVE), None, "never accept a move-only drag");
+        assert_eq!(drop_actions(DND_ACTION_ASK), None);
+    }
+
+    #[test]
+    fn wayland_reports() {
+        assert_eq!(wayland_drag_report(false, DND_ACTION_COPY).outcome, Outcome::Cancelled);
+        assert_eq!(wayland_drag_report(true, DND_ACTION_COPY), DragReport::plain(Outcome::Dropped, DROPEFFECT_COPY));
+        assert_eq!(wayland_drag_report(true, 0), DragReport::plain(Outcome::Dropped, DROPEFFECT_NONE));
+        let r = wayland_drag_report(true, DND_ACTION_MOVE);
+        assert_eq!((r.effect, r.logical_performed), (DROPEFFECT_NONE, Some(DROPEFFECT_MOVE)), "never delete");
+    }
+
+    #[test]
+    fn xdnd_reports() {
+        assert_eq!(xdnd_report(None, false), DragReport::plain(Outcome::Dropped, DROPEFFECT_NONE));
+        assert_eq!(xdnd_report(Some((false, DROPEFFECT_COPY)), false).effect, DROPEFFECT_NONE);
+        assert_eq!(xdnd_report(Some((true, DROPEFFECT_COPY)), false).effect, DROPEFFECT_COPY);
+        assert_eq!(xdnd_report(Some((true, DROPEFFECT_LINK)), false).effect, DROPEFFECT_LINK);
+        // Target moved the files itself: optimized move.
+        let r = xdnd_report(Some((true, DROPEFFECT_MOVE)), false);
+        assert_eq!((r.effect, r.logical_performed), (DROPEFFECT_NONE, Some(DROPEFFECT_MOVE)));
+        // Target asked the source to delete: unoptimized move.
+        let r = xdnd_report(Some((true, DROPEFFECT_MOVE)), true);
+        assert_eq!((r.effect, r.performed), (DROPEFFECT_MOVE, Some(DROPEFFECT_MOVE)));
+    }
 }

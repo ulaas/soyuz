@@ -149,6 +149,7 @@ impl SoyuzApp {
     pub fn new(cc: &CreationContext<'_>, config: Config, renderer: &'static str, startup: Startup) -> Self {
         let transparent = crate::ui::native_chrome::backdrop_active();
         crate::ui::native_chrome::init(cc, &config, transparent);
+        crate::ops::fileops::linux_dnd::init(cc);
         soyuz_fs::register_ui_thread();
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
@@ -720,6 +721,10 @@ impl eframe::App for SoyuzApp {
         crate::ops::fileops::dragout::raw_input(ctx, raw_input);
         crate::devscript::raw_input(self, raw_input);
         crate::devscript::raw_input_hook(self, raw_input);
+    }
+
+    fn on_exit(&mut self) {
+        crate::ops::fileops::linux_dnd::shutdown();
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

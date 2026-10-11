@@ -6489,7 +6489,10 @@ dependencies = [
  "skrifa",
  "soyuz-core",
  "tempfile",
+ "wayland-backend",
+ "wayland-client",
  "windows-sys 0.61.2",
+ "x11rb",
  "xattr",
  "zbus",
 ]
