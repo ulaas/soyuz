@@ -21,6 +21,11 @@
 //! * **Wayland drag-out** ([`start_wayland_drag`]): a `wl_data_source` on the same
 //!   thread, started with the press serial our own `wl_pointer` saw; see
 //!   [`wayland_drag_report`] for how its result is read.
+//!
+//! macOS: not implemented (stub). A native drag-out would need an `NSDraggingSource` on
+//! the window's `NSView` (`beginDraggingSessionWithItems:event:source:`), which winit does
+//! not expose; [`do_drag`] reports `Unsupported` and [`primary_button_down`] is `false`.
+//! Files dragged *into* the window work through winit.
 
 use std::io;
 use std::path::PathBuf;
@@ -115,7 +120,7 @@ pub fn do_drag(data: &DragData, allowed: u32, return_hwnd: isize) -> io::Result<
     #[cfg(not(windows))]
     {
         let _ = (data, allowed, return_hwnd);
-        Err(io::Error::new(io::ErrorKind::Unsupported, "drag-out is only implemented on Windows"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "drag-out is not implemented on this platform"))
     }
 }
 
@@ -161,7 +166,7 @@ pub fn read_back(data: &DragData) -> io::Result<Vec<(Format, Vec<u8>)>> {
     #[cfg(not(windows))]
     {
         let _ = data;
-        Err(io::Error::new(io::ErrorKind::Unsupported, "drag-out is only implemented on Windows"))
+        Err(io::Error::new(io::ErrorKind::Unsupported, "drag-out is not implemented on this platform"))
     }
 }
 

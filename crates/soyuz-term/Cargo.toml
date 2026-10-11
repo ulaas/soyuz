@@ -21,6 +21,10 @@ parking_lot.workspace = true
 thiserror.workspace = true
 log.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# `proc_pidinfo(PROC_PIDVNODEPATHINFO)`: the shell's working directory without integration.
+libc.workspace = true
+
 [dev-dependencies]
 eframe.workspace = true
 

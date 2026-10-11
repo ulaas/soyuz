@@ -47,6 +47,13 @@ wayland-client = "0.31.15"
 wayland-backend = { version = "0.3.17", features = ["client_system"] }
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
 xattr = "1.6.1"
+# macOS (all already in the lockfile via eframe/winit/rustls): CoreFoundation wrappers,
+# AppKit (NSPasteboard / NSWorkspace) and the Keychain (Security.framework SecItem*).
+core-foundation = "0.10.1"
+objc2 = "0.6.5"
+objc2-foundation = { version = "0.3.2", default-features = false, features = ["std", "NSArray", "NSString", "NSURL", "NSDictionary", "NSObject", "NSValue"] }
+objc2-app-kit = { version = "0.3.2", default-features = false, features = ["std", "NSPasteboard", "NSPasteboardItem", "NSWorkspace"] }
+security-framework = { version = "3.7.0", default-features = false }
 filetime = "0.2.29"
 
 # --- concurrency / fs ---

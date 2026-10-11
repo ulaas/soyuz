@@ -16,6 +16,11 @@
 //! in collection order) so the app parses both the same way; [`InstalledFont::faces`]
 //! has the details. Cached per file (path, size, mtime).
 //!
+//! macOS: CoreText's font file list (`CTFontManagerCopyAvailableFontURLs`: system fonts,
+//! `/Library/Fonts`, `~/Library/Fonts`, activated fonts), each file's faces read with the
+//! same `name`-table parser as Linux, so the result has the same shape (untested on
+//! macOS). `.dfont` / resource-fork fonts have no readable `name` table and are skipped.
+//!
 //! Other platforms return nothing.
 
 use std::path::PathBuf;
@@ -28,7 +33,7 @@ pub struct InstalledFont {
     pub file: PathBuf,
     /// From the per-user font key / folder.
     pub per_user: bool,
-    /// The faces in the file, in collection order (Linux; empty on Windows, where the
+    /// The faces in the file, in collection order (Linux / macOS; empty on Windows, where the
     /// registry name is all there is).
     pub faces: Vec<FontFace>,
 }
@@ -98,7 +103,11 @@ pub fn installed() -> Vec<InstalledFont> {
     {
         scan::installed()
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        mac::installed()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Vec::new()
     }
@@ -127,13 +136,13 @@ pub fn find_in(fonts: &[InstalledFont], family: &str) -> Option<(PathBuf, u32)> 
         .map(|(f, x)| (f.file.clone(), x.index))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Faces of an in-memory font file (`name` table parsing; tests and fuzzing).
 pub fn faces_of_bytes(data: &[u8]) -> Vec<FontFace> {
     names::faces(&mut std::io::Cursor::new(data)).unwrap_or_default()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// The per-face name lookup, reading only what is needed from a file.
 mod names {
     use std::io::{Read, Seek, SeekFrom};
@@ -249,13 +258,70 @@ mod names {
     }
 }
 
-#[cfg(target_os = "linux")]
-mod scan {
+/// Per-file cache of parsed faces (path, size, mtime).
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod cache {
     use std::collections::HashMap;
     use std::path::{Path, PathBuf};
     use std::time::SystemTime;
 
-    use super::{FontFace, InstalledFont, names};
+    use super::{FontFace, names};
+
+    type Key = (PathBuf, u64, Option<SystemTime>);
+
+    static CACHE: parking_lot::Mutex<Option<HashMap<Key, Vec<FontFace>>>> = parking_lot::Mutex::new(None);
+
+    pub(super) fn faces_cached(p: &Path, meta: &std::fs::Metadata) -> Vec<FontFace> {
+        let key = (p.to_path_buf(), meta.len(), meta.modified().ok());
+        if let Some(v) = CACHE.lock().as_ref().and_then(|c| c.get(&key)) {
+            return v.clone();
+        }
+        let faces =
+            std::fs::File::open(p).ok().and_then(|f| names::faces(&mut std::io::BufReader::new(f))).unwrap_or_default();
+        CACHE.lock().get_or_insert_with(HashMap::new).insert(key, faces.clone());
+        faces
+    }
+
+    /// The Windows-style display name: `Full A & Full B (TrueType)`.
+    pub(super) fn display_name(faces: &[FontFace], ext: &str) -> String {
+        let kind = if matches!(ext, "otf" | "otc") { "OpenType" } else { "TrueType" };
+        let names: Vec<&str> = faces.iter().map(|f| f.full_name.as_str()).collect();
+        format!("{} ({kind})", names.join(" & "))
+    }
+}
+
+/// macOS: CoreText's file list, faces from the `name` tables.
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::InstalledFont;
+    use super::cache::{display_name, faces_cached};
+
+    pub(super) fn installed() -> Vec<InstalledFont> {
+        let user = super::user_font_dir();
+        let mut out = Vec::new();
+        for p in crate::sys::macos::fonts::available_font_files() {
+            let Ok(meta) = std::fs::metadata(&p) else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let faces = faces_cached(&p, &meta);
+            if faces.is_empty() {
+                continue;
+            }
+            let ext = p.extension().map(|x| x.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+            let per_user = user.as_ref().is_some_and(|u| p.starts_with(u));
+            out.push(InstalledFont { name: display_name(&faces, &ext), file: p, per_user, faces });
+        }
+        out
+    }
+}
+
+#[cfg(target_os = "linux")]
+mod scan {
+    use std::path::{Path, PathBuf};
+
+    use super::InstalledFont;
+    use super::cache::{display_name, faces_cached};
 
     /// `<dir>` / `<include>` values of a fontconfig file (`prefix="xdg"` → relative to
     /// `$XDG_DATA_HOME`, `~` → home; relative includes → relative to the file's folder).
@@ -343,22 +409,6 @@ mod scan {
         dirs
     }
 
-    type Key = (PathBuf, u64, Option<SystemTime>);
-
-    /// Per-file cache of parsed faces.
-    static CACHE: parking_lot::Mutex<Option<HashMap<Key, Vec<FontFace>>>> = parking_lot::Mutex::new(None);
-
-    fn faces_cached(p: &Path, meta: &std::fs::Metadata) -> Vec<FontFace> {
-        let key = (p.to_path_buf(), meta.len(), meta.modified().ok());
-        if let Some(v) = CACHE.lock().as_ref().and_then(|c| c.get(&key)) {
-            return v.clone();
-        }
-        let faces =
-            std::fs::File::open(p).ok().and_then(|f| names::faces(&mut std::io::BufReader::new(f))).unwrap_or_default();
-        CACHE.lock().get_or_insert_with(HashMap::new).insert(key, faces.clone());
-        faces
-    }
-
     pub(super) fn installed() -> Vec<InstalledFont> {
         let mut out: Vec<InstalledFont> = Vec::new();
         let mut seen_files = std::collections::HashSet::new();
@@ -392,14 +442,7 @@ mod scan {
                     if faces.is_empty() {
                         continue;
                     }
-                    let kind = if matches!(ext.as_str(), "otf" | "otc") { "OpenType" } else { "TrueType" };
-                    let names: Vec<&str> = faces.iter().map(|f| f.full_name.as_str()).collect();
-                    out.push(InstalledFont {
-                        name: format!("{} ({kind})", names.join(" & ")),
-                        file: p,
-                        per_user,
-                        faces,
-                    });
+                    out.push(InstalledFont { name: display_name(&faces, &ext), file: p, per_user, faces });
                 }
             }
         }

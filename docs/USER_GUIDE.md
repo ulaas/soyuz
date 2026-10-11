@@ -433,6 +433,38 @@ you install system-wide yourself.
   windows, the NTFS change journal, Windows attributes and `\\server` share listing are
   Windows features; their settings are hidden on Linux.
 
+## macOS
+
+**Status: implemented but untested.** The macOS integration below compiles, but it has
+never been run on a Mac; expect rough edges and please report them. There are no macOS
+packages yet (build from source).
+
+- **Opening files** goes through LaunchServices, the same mechanism Finder uses (no `open`
+  process). *Open with* lists every application LaunchServices knows for the file, the
+  default first, with the name from the app's `Info.plist`. *Show in Finder* selects the
+  item in a Finder window. Finder aliases open their target (folders open in Soyuz).
+  *Open terminal here* uses Terminal.app, or the app you set in Settings (a bundle path or
+  name such as `iTerm`).
+- **Copy and paste between Soyuz and Finder** uses the general pasteboard: copied files go
+  out as file URLs (any number of files) with their paths as text, and files copied in
+  Finder paste into Soyuz. macOS has no standard "cut" on the pasteboard, so a cut made in
+  Soyuz is a move only when pasted in Soyuz (and only until another app copies something);
+  in Finder use ⌥⌘V to move.
+- **AI provider keys** are stored in your login Keychain (service `soyuz`, account = the
+  credential name). macOS may ask once whether Soyuz may use the item.
+- **Appearance and language** follow System Settings: dark / light mode, the accent color
+  (with "Multicolor" Soyuz keeps its own accent) and the first preferred language.
+- **Fonts**: the font pickers list the fonts CoreText reports (system, `/Library/Fonts`,
+  `~/Library/Fonts`).
+- **Previous versions** shows files from Time Machine backups that are already mounted
+  and readable: an attached HFS+ backup disk (`Backups.backupdb`) or APFS backups that
+  macOS has mounted under `/Volumes/.timemachine` (for example while you browse them in
+  Time Machine). Local snapshots that are not mounted need root and are not listed.
+- **Terminal panel**: when the shell has no Soyuz integration, the panel still follows its
+  working directory.
+- **Not available on macOS**: *Run as administrator* (use `sudo` in a terminal), dragging
+  files out of Soyuz to other apps, and the OS thumbnail cache (Soyuz uses its own).
+
 ## Portable mode and data files
 
 Put an empty file named `portable` next to the executable and Soyuz keeps everything in

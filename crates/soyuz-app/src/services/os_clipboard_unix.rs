@@ -9,17 +9,22 @@
 //! * Wayland: `wl-copy --type x-special/gnome-copied-files` / `wl-paste --type …`;
 //! * X11: `xclip -selection clipboard -t x-special/gnome-copied-files` (reads also try
 //!   `text/uri-list`, which KDE and most toolkits offer);
-//! * macOS: `osascript` sets / reads a `public.file-url` (single file), otherwise the
-//!   caller falls back to text.
 //!
-//! Every child process runs with a short timeout so a hung tool cannot stall the UI.
+//! macOS: the general `NSPasteboard` through `soyuz_fs::pasteboard` (file URLs, one item
+//! per file, plus the paths as text); no tool is spawned. macOS has no standard cut
+//! flavour: a cut is remembered here with the pasteboard's change count and only
+//! reported while nobody else has written to the pasteboard (untested on macOS).
+//!
+//! Every child process (Linux / BSD) runs with a short timeout so a hung tool cannot stall the UI.
 //! stdin is written and stdout drained on helper threads, so payloads above the pipe
 //! buffer (64 KB) cannot deadlock against the child. Writes (`set_files`, `clear`) run
 //! on a background thread; reads wait for pending writes so a paste right after a copy
 //! sees the new contents.
 
+#[cfg(not(target_os = "macos"))]
 use std::io::{Read, Write};
 use std::path::PathBuf;
+#[cfg(not(target_os = "macos"))]
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
@@ -54,6 +59,7 @@ fn wait_writes() {
 }
 
 /// `name` is an executable somewhere on `PATH` (no process is spawned).
+#[cfg(not(target_os = "macos"))]
 fn in_path(name: &str) -> bool {
     use std::os::unix::fs::PermissionsExt;
     std::env::var_os("PATH").is_some_and(|path| {
@@ -63,6 +69,7 @@ fn in_path(name: &str) -> bool {
 }
 
 /// Run `cmd args`, feeding `input` on stdin; returns stdout on success.
+#[cfg(not(target_os = "macos"))]
 fn run(cmd: &str, args: &[&str], input: Option<&[u8]>) -> Option<Vec<u8>> {
     let mut child = Command::new(cmd)
         .args(args)
@@ -142,7 +149,7 @@ pub(super) fn can_set(_n: usize) -> bool {
 
 #[cfg(target_os = "macos")]
 pub(super) fn can_set(n: usize) -> bool {
-    n == 1 && in_path("osascript")
+    n > 0
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -225,27 +232,36 @@ pub(super) fn clear() {
     }
 }
 
+/// The cut this process put on the macOS pasteboard: `(change count after the write,
+/// mode)`. Any later write by another app bumps the change count and ends the cut.
 #[cfg(target_os = "macos")]
-fn applescript_string(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
-}
+static MAC_OWNED: parking_lot::Mutex<Option<(isize, ClipMode)>> = parking_lot::Mutex::new(None);
 
 #[cfg(target_os = "macos")]
-pub(super) fn set_files(_mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
-    let [one] = paths else { return Err(tr!("services-clipboard-mac-single").into()) };
-    let script = format!("set the clipboard to (POSIX file {})", applescript_string(&one.to_string_lossy()));
-    run("osascript", &["-e", &script], None).map(|_| ()).ok_or_else(|| "osascript failed".into())
+pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
+    let text = super::paths_text(paths);
+    let count = soyuz_fs::pasteboard::write_files(paths, &text)
+        .ok_or_else(|| tr!("services-clipboard-mac-failed").to_string())?;
+    *MAC_OWNED.lock() = Some((count, mode));
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn read_files() -> Option<(ClipMode, Vec<PathBuf>)> {
-    let out = run("osascript", &["-e", "POSIX path of (the clipboard as «class furl»)"], None)?;
-    let p = String::from_utf8_lossy(&out).trim().to_string();
-    (!p.is_empty()).then(|| (ClipMode::Copy, vec![PathBuf::from(p)]))
+    let paths = soyuz_fs::pasteboard::read_files()?;
+    let owned = *MAC_OWNED.lock();
+    let mode = match owned {
+        Some((count, mode)) if count == soyuz_fs::pasteboard::change_count() => mode,
+        _ => ClipMode::Copy,
+    };
+    Some((mode, paths))
 }
 
 #[cfg(target_os = "macos")]
-pub(super) fn clear() {}
+pub(super) fn clear() {
+    *MAC_OWNED.lock() = None;
+    soyuz_fs::pasteboard::clear();
+}
 
 pub(super) fn has_files() -> bool {
     false

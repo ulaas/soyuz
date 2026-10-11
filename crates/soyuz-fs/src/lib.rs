@@ -39,6 +39,8 @@ pub mod mv;
 pub mod os_fonts;
 pub mod os_locale;
 pub mod os_theme;
+#[cfg(target_os = "macos")]
+pub mod pasteboard;
 pub mod path;
 pub mod perms;
 pub mod shares;

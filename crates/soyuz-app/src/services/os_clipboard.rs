@@ -12,7 +12,8 @@
 //!   background thread until another application replaces it. Only when neither works
 //!   and `[linux] clipboard_fallback_tools` is on, `wl-copy` / `xclip` are run.
 //! * Other unix: the same formats through `wl-copy` / `xclip` when installed; best effort.
-//! * macOS: `public.file-url` via `osascript` for a single file, text otherwise; best effort.
+//! * macOS: the general `NSPasteboard` (file URLs + text) through `soyuz_fs::pasteboard`;
+//!   cut state is kept in-process (untested on macOS).
 //!
 //! The codecs (DROPFILES, uri-list, gnome-copied-files) are pure and unit-tested on every
 //! OS. [`paste_key_fallback`] covers egui-winit not emitting any event for Ctrl+V when

@@ -3,13 +3,11 @@
 //! * `credential:<name>` — the OS store entry `soyuz:ai:<name>` (Windows Credential
 //!   Manager via advapi32 `CredWriteW` / `CredReadW` / `CredDeleteW`; on Linux the
 //!   freedesktop Secret Service over D-Bus, item `Soyuz: <name>` with the attributes
-//!   `service = soyuz`, `account = <name>`). The environment variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
+//!   `service = soyuz`, `account = <name>`; on macOS the login Keychain, a generic
+//!   password with service `soyuz` and account `<name>` — untested on macOS). The environment variable `SOYUZ_AI_KEY_<NAME>` (name upper-cased, non-alphanumerics → `_`) overrides
 //!   it, for CI and headless use.
 //! * `env:<VAR>` — read the environment variable `VAR`.
 //! * empty — no key.
-//!
-//! The macOS (Keychain) backend is not implemented yet: there the store reports
-//! `Unsupported` and only the environment works.
 
 #[cfg(windows)]
 #[allow(unsafe_code)]
@@ -17,6 +15,9 @@ mod windows;
 
 #[cfg(target_os = "linux")]
 mod linux;
+
+#[cfg(target_os = "macos")]
+mod macos;
 
 use crate::error::{AiError, AiResult};
 
@@ -132,7 +133,7 @@ pub fn store_available() -> bool {
     }
     #[cfg(not(target_os = "linux"))]
     {
-        cfg!(windows)
+        cfg!(any(windows, target_os = "macos"))
     }
 }
 
@@ -164,9 +165,12 @@ use windows as imp;
 #[cfg(target_os = "linux")]
 use linux as imp;
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+use macos as imp;
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 mod imp {
-    //! Placeholder until the Keychain (macOS) backend lands.
+    //! No OS credential store backend on this platform.
     use crate::error::{AiError, AiResult};
 
     fn unsupported() -> AiError {

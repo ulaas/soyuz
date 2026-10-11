@@ -9,7 +9,8 @@
 //!   and `.desktop` resolution, then the entry is launched directly (D-Bus activation,
 //!   `Exec=`, terminal wrapping); the OpenURI portal inside Flatpak / Snap;
 //!   `org.freedesktop.FileManager1` for "show in folder" (see `linux`).
-//! * macOS: `open` / `open -a`.
+//! * macOS: LaunchServices (`LSOpenFromURLSpec`, `LSCopyApplicationURLsForURL`) and
+//!   `NSWorkspace` for Finder reveal; no `open` process (see `macos`; untested on macOS).
 
 pub(crate) mod linux;
 pub(crate) mod lnk;
@@ -56,8 +57,8 @@ pub fn open_default(path: &Path) -> FsResult<()> {
 
 /// Open a URL (`https:`, `mailto:`, `file:` …) with the application registered for its
 /// scheme. Linux / BSD: `x-scheme-handler/<scheme>` (the OpenURI portal when sandboxed);
-/// macOS: `open`; Windows: `file:` URLs only (other schemes go through the app's own
-/// URL opener there).
+/// macOS: LaunchServices; Windows: `file:` URLs only (other schemes go through the app's
+/// own URL opener there).
 pub fn open_url(url: &str) -> FsResult<()> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
@@ -65,9 +66,7 @@ pub fn open_url(url: &str) -> FsResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        let mut c = Command::new("open");
-        c.arg(url);
-        spawn_detached(c, "open", Path::new(url))
+        macos::open_url(url)
     }
     #[cfg(windows)]
     {
@@ -85,20 +84,28 @@ pub fn open_with_many(paths: &[PathBuf], app: &AppInfo) -> FsResult<()> {
     {
         linux::open_with_many(paths, app)
     }
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::open_with_many(paths, app)
+    }
+    #[cfg(windows)]
     {
         paths.iter().try_for_each(|p| open_with(p, app))
     }
 }
 
-/// The application [`open_default`] would use for `path` (Linux / BSD; `None` elsewhere
-/// or when nothing is associated).
+/// The application [`open_default`] would use for `path` (Linux / BSD / macOS; `None` on
+/// Windows or when nothing is associated).
 pub fn default_app_for(path: &Path) -> Option<AppInfo> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
         linux::default_app_for(path)
     }
-    #[cfg(any(windows, target_os = "macos"))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::default_app_for(path)
+    }
+    #[cfg(windows)]
     {
         let _ = path;
         None
@@ -191,7 +198,7 @@ pub fn open_with(path: &Path, app: &AppInfo) -> FsResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        macos::open_with(path, app)
+        macos::open_with_many(&[path.to_path_buf()], app)
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
@@ -231,7 +238,8 @@ pub(crate) fn open_with_generic(path: &Path, app: &AppInfo) -> FsResult<()> {
     spawn_detached(cmd, "open_with", path)
 }
 
-/// Applications registered for `path`'s type (default first). Empty on macOS.
+/// Applications registered for `path`'s type (default first). macOS: every LaunchServices
+/// role, `exec` is the `.app` bundle.
 pub fn apps_for(path: &Path) -> Vec<AppInfo> {
     #[cfg(windows)]
     {
@@ -239,8 +247,7 @@ pub fn apps_for(path: &Path) -> Vec<AppInfo> {
     }
     #[cfg(target_os = "macos")]
     {
-        let _ = path;
-        Vec::new()
+        macos::apps_for(path)
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
@@ -278,6 +285,8 @@ pub(crate) fn spawn_detached(mut cmd: Command, op: &'static str, path: &Path) ->
 /// Open an external terminal in `dir` (`preferred` = executable name / path, may carry
 /// arguments on Linux). Linux / BSD: `xdg-terminal-exec`, `$TERMINAL`, then the known
 /// emulators (ptyxis, kgx, gnome-terminal, konsole, …) with their working-directory flag.
+/// macOS: `preferred` as an app bundle (path or name) or program, else Terminal.app, via
+/// LaunchServices.
 pub fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<()> {
     let dir_plain = crate::path::strip_verbatim(dir);
     let dir = dir_plain.as_path();
@@ -285,7 +294,11 @@ pub fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<()> {
     {
         linux::open_terminal_at(dir, preferred)
     }
-    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::open_terminal_at(dir, preferred)
+    }
+    #[cfg(not(unix))]
     {
         let mut candidates: Vec<Command> = Vec::new();
         if let Some(p) = preferred.filter(|p| !p.trim().is_empty()) {
@@ -305,12 +318,6 @@ pub fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<()> {
                 c.current_dir(dir).creation_flags(CREATE_NEW_CONSOLE);
                 candidates.push(c);
             }
-        }
-        #[cfg(target_os = "macos")]
-        {
-            let mut c = Command::new("open");
-            c.arg("-a").arg("Terminal").arg(dir);
-            candidates.push(c);
         }
         let mut last_err = None;
         for cmd in candidates {
@@ -400,7 +407,9 @@ fn elevate_script(exe: &str, args: &[String]) -> String {
 }
 
 /// Run `exe` elevated (UAC prompt via an external `powershell Start-Process -Verb RunAs`
-/// on Windows, `pkexec` on Linux). `Unsupported` on macOS.
+/// on Windows, `pkexec` on Linux). `Unsupported` on macOS: there is no supported
+/// non-deprecated way to start an elevated process without a privileged helper tool
+/// (`AuthorizationExecuteWithPrivileges` is deprecated); use `sudo` in a terminal.
 pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     #[cfg(windows)]
     {
@@ -424,7 +433,7 @@ pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     }
 }
 
-/// `explorer.exe /select,`, `open -R`; Linux / BSD: `org.freedesktop.FileManager1`
+/// `explorer.exe /select,`; macOS: `NSWorkspace activateFileViewerSelectingURLs`; Linux / BSD: `org.freedesktop.FileManager1`
 /// `ShowItems`, else the parent folder with the default folder handler (never Soyuz).
 pub fn reveal_in_system(path: &Path) -> FsResult<()> {
     #[cfg(windows)]
@@ -436,9 +445,7 @@ pub fn reveal_in_system(path: &Path) -> FsResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        let mut c = Command::new("open");
-        c.arg("-R").arg(path);
-        spawn_detached(c, "reveal", path)
+        macos::reveal(path)
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
@@ -447,7 +454,7 @@ pub fn reveal_in_system(path: &Path) -> FsResult<()> {
 }
 
 /// Target of a Windows `.lnk` (MS-SHLLINK parser, any OS) / `.desktop` `Exec=` or `URL=`
-/// (unix); macOS aliases and other files → `None`.
+/// (unix); a Finder alias (macOS, bookmark data; untested on macOS); other files → `None`.
 pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     match ext.as_str() {
@@ -457,6 +464,9 @@ pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
             Err(e) => Err(err::io("shortcut_target", path, e)),
         },
         "desktop" if cfg!(unix) => linux::desktop_target(path).map_err(err::map("shortcut_target", path)),
+        #[cfg(target_os = "macos")]
+        _ => Ok(macos::alias_target(path)),
+        #[cfg(not(target_os = "macos"))]
         _ => Ok(None),
     }
 }

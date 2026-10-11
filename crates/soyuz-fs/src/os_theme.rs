@@ -8,13 +8,18 @@
 //!   app's 1.5 s poll only reads two atomics. Without a portal (or when it has no
 //!   preference) KDE's `kdeglobals` and GTK's `settings.ini` are read instead (cached by
 //!   modification time).
+//! * macOS: the global preferences domain through CoreFoundation
+//!   (`CFPreferencesCopyAppValue(…, kCFPreferencesAnyApplication)` after
+//!   `CFPreferencesAppSynchronize`, cheap enough for the 1.5 s poll): `AppleInterfaceStyle`
+//!   and `AppleAccentColor` (untested on macOS).
 //! * Other platforms report `None` (the app then keeps its own defaults).
 
 /// The system accent color as `[r, g, b]`.
 ///
 /// Windows: `HKCU\Software\Microsoft\Windows\DWM\AccentColor` (`0xAABBGGRR`), falling
 /// back to `ColorizationColor` (`0xAARRGGBB`). Linux: the portal's `accent-color`, else
-/// KDE's `[General] AccentColor`.
+/// KDE's `[General] AccentColor`. macOS: `AppleAccentColor` mapped to the system palette
+/// (absent = "Multicolor", where every app keeps its own accent → `None`).
 pub fn accent_color() -> Option<[u8; 3]> {
     #[cfg(windows)]
     {
@@ -29,7 +34,11 @@ pub fn accent_color() -> Option<[u8; 3]> {
     {
         linux::accent_color()
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::sys::macos::cf::global_int("AppleAccentColor", true).and_then(mac_accent_rgb)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         None
     }
@@ -40,7 +49,8 @@ pub fn accent_color() -> Option<[u8; 3]> {
 /// Windows: `HKCU\…\Themes\Personalize\AppsUseLightTheme`. Linux: the portal's
 /// `color-scheme` (1 = dark, 2 = light; 0 = no preference falls through to the files),
 /// else KDE's color scheme and GTK's `gtk-application-prefer-dark-theme` /
-/// `-dark` theme name.
+/// `-dark` theme name. macOS: `AppleInterfaceStyle` is `Dark` in dark mode (also while
+/// "Auto" has switched to dark) and absent in light mode.
 pub fn apps_use_light_theme() -> Option<bool> {
     #[cfg(windows)]
     {
@@ -56,10 +66,31 @@ pub fn apps_use_light_theme() -> Option<bool> {
     {
         linux::apps_use_light_theme()
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        let style = crate::sys::macos::cf::global_string("AppleInterfaceStyle", true);
+        Some(!style.is_some_and(|s| s.eq_ignore_ascii_case("dark")))
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         None
     }
+}
+
+/// macOS `AppleAccentColor` (-1 graphite, 0 red, 1 orange, 2 yellow, 3 green, 4 blue,
+/// 5 purple, 6 pink) → the system accent color (light-appearance values).
+pub fn mac_accent_rgb(v: i64) -> Option<[u8; 3]> {
+    Some(match v {
+        -1 => [0x98, 0x98, 0x98],
+        0 => [0xE0, 0x38, 0x3E],
+        1 => [0xF7, 0x82, 0x1B],
+        2 => [0xFF, 0xC7, 0x26],
+        3 => [0x62, 0xBA, 0x46],
+        4 => [0x00, 0x7A, 0xFF],
+        5 => [0x95, 0x3D, 0x96],
+        6 => [0xF7, 0x4F, 0x9E],
+        _ => return None,
+    })
 }
 
 /// `0xAABBGGRR` (DWM `AccentColor`) → `[r, g, b]`.
@@ -287,6 +318,13 @@ mod linux {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mac_accents() {
+        assert_eq!(mac_accent_rgb(4), Some([0x00, 0x7A, 0xFF]));
+        assert_eq!(mac_accent_rgb(-1), Some([0x98, 0x98, 0x98]));
+        assert_eq!(mac_accent_rgb(7), None);
+    }
 
     #[test]
     fn byte_orders() {
