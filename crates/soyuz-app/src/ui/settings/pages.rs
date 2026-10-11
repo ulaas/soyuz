@@ -1088,12 +1088,16 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-remote-preview-max"), tr!("settings-remote-preview-max-desc"), "preview", |ui| {
             number(ui, &mut d.remote.preview_max_mb, 1..=4096, " MB");
         });
-        // `\\server` share listing uses Windows NetShareEnum.
-        if cfg!(windows) {
-            r.row_kw(tr!("settings-remote-shares"), tr!("settings-remote-shares-desc"), "smb unc netshareenum", |ui| {
+        // `\\server` share listing: Windows NetShareEnum; elsewhere srvsvc over SMB.
+        let platform = if cfg!(windows) { "windows" } else { "other" };
+        r.row_kw(
+            tr!("settings-remote-shares"),
+            &tr!("settings-remote-shares-desc", platform = platform),
+            "smb cifs samba unc netshareenum",
+            |ui| {
                 switch(ui, &mut d.remote.share_enumeration);
-            });
-        }
+            },
+        );
         let hosts = soyuz_vfs::registry::known_hosts().entries();
         r.row_kw(
             tr!("settings-remote-trusted"),

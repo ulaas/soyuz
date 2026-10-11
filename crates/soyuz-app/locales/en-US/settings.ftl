@@ -370,7 +370,11 @@ settings-remote-download-cache = Download cache
 settings-remote-download-cache-desc = Remote files opened or previewed are kept in a temp folder up to this size.
 settings-remote-preview-max = Preview files up to
 settings-remote-preview-max-desc = Larger remote files are not downloaded just to preview them.
-settings-remote-shares-desc = Typing a bare server name lists its shared folders (Windows).
+# $platform: "windows" | "other".
+settings-remote-shares-desc = { $platform ->
+    [windows] Typing a bare server name (\\server) lists its shared folders.
+   *[other] Typing \\server or smb://server lists its shared folders (asked over SMB, signed in like any other server).
+}
 settings-remote-trusted = Trusted SSH servers
 settings-remote-forget = Forget
 

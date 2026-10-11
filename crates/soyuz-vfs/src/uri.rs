@@ -20,12 +20,15 @@ pub enum Scheme {
     WebDav,
     WebDavs,
     S3,
+    /// SMB 2 / 3 (`smb://[domain;]user@server/share/path`; off Windows, see [`crate::smb`]).
+    Smb,
     /// In-memory provider (tests and the `SOYUZ_FAKE_REMOTE` debug hook).
     Fake,
 }
 
 impl Scheme {
-    pub const ALL: [Scheme; 6] = [Scheme::Sftp, Scheme::WebDavs, Scheme::WebDav, Scheme::Ftps, Scheme::Ftp, Scheme::S3];
+    pub const ALL: [Scheme; 7] =
+        [Scheme::Sftp, Scheme::WebDavs, Scheme::WebDav, Scheme::Ftps, Scheme::Ftp, Scheme::S3, Scheme::Smb];
 
     pub fn parse(s: &str) -> Option<Scheme> {
         Some(match s.to_ascii_lowercase().as_str() {
@@ -35,6 +38,7 @@ impl Scheme {
             "webdav" | "dav" => Scheme::WebDav,
             "webdavs" | "davs" => Scheme::WebDavs,
             "s3" => Scheme::S3,
+            "smb" | "cifs" => Scheme::Smb,
             "fake" => Scheme::Fake,
             _ => return None,
         })
@@ -48,6 +52,7 @@ impl Scheme {
             Scheme::WebDav => "webdav",
             Scheme::WebDavs => "webdavs",
             Scheme::S3 => "s3",
+            Scheme::Smb => "smb",
             Scheme::Fake => "fake",
         }
     }
@@ -60,6 +65,7 @@ impl Scheme {
             Scheme::WebDav => "WebDAV",
             Scheme::WebDavs => "WebDAV (HTTPS)",
             Scheme::S3 => "S3",
+            Scheme::Smb => "SMB",
             Scheme::Fake => "Test",
         }
     }
@@ -71,6 +77,7 @@ impl Scheme {
             Scheme::Ftp | Scheme::Ftps => 21,
             Scheme::WebDav => 80,
             Scheme::WebDavs => 443,
+            Scheme::Smb => 445,
             Scheme::S3 | Scheme::Fake => 0,
         }
     }
@@ -305,6 +312,44 @@ impl fmt::Display for RemoteUri {
     }
 }
 
+/// A UNC path (`\\server\share\folder`, `//server/share`, or a bare `\\server`) as an
+/// `smb://server/share/folder` URI. `None` for anything else, including the Windows
+/// device namespaces `\\?\…` and `\\.\…`.
+pub fn smb_from_unc(s: &str) -> Option<RemoteUri> {
+    let s = s.trim();
+    let rest = s.strip_prefix(r"\\").or_else(|| s.strip_prefix("//"))?;
+    let (host, path) = match rest.find(['\\', '/']) {
+        Some(i) => (&rest[..i], &rest[i..]),
+        None => (rest, ""),
+    };
+    if host.is_empty() || host == "?" || host == "." || host.contains([':', '@']) {
+        return None;
+    }
+    Some(RemoteUri {
+        scheme: Scheme::Smb,
+        user: None,
+        host: host.to_ascii_lowercase(),
+        port: None,
+        path: normalize_path(path),
+        query: Vec::new(),
+    })
+}
+
+impl RemoteUri {
+    /// `\\server\share\folder` for an `smb://` URI on the default port (what the Windows
+    /// redirector opens); `None` for other schemes or a custom port.
+    pub fn to_unc(&self) -> Option<String> {
+        if self.scheme != Scheme::Smb || self.port.is_some() {
+            return None;
+        }
+        let mut s = format!(r"\\{}", self.host);
+        if !self.is_root() {
+            s.push_str(&self.path.replace('/', r"\"));
+        }
+        Some(s)
+    }
+}
+
 /// Normalize an absolute `/`-separated path (`\` accepted; `..` never escapes the root).
 pub fn normalize_path(p: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
@@ -506,5 +551,34 @@ mod tests {
         let u = RemoteUri::parse("ftps://u@h/x/y.txt").unwrap();
         assert_eq!(RemoteUri::from_path(&u.to_path_buf()), Some(u));
         assert_eq!(RemoteUri::from_path(Path::new("C:/x")), None);
+    }
+
+    #[test]
+    fn smb_uris_and_unc() {
+        let u = RemoteUri::parse("smb://CORP;alice@NAS:445/Media/Films").unwrap();
+        assert_eq!(u.scheme, Scheme::Smb);
+        assert_eq!(u.user.as_deref(), Some("CORP;alice"));
+        assert_eq!(u.host, "nas");
+        assert_eq!(u.port, None, "445 is the default");
+        assert_eq!(u.path, "/Media/Films");
+        assert_eq!(RemoteUri::parse("cifs://nas/x").unwrap().scheme, Scheme::Smb);
+        let u = RemoteUri::parse(r"smb://CORP%5Calice@nas:4455/").unwrap();
+        assert_eq!(u.user.as_deref(), Some(r"CORP\alice"));
+        assert_eq!(u.port, Some(4455));
+        assert_eq!(RemoteUri::parse(&u.display()).unwrap(), u, "{}", u.display());
+
+        let u = smb_from_unc(r"\\NAS\Media\Films\").unwrap();
+        assert_eq!(u.display(), "smb://nas/Media/Films");
+        assert_eq!(u.to_unc().as_deref(), Some(r"\\nas\Media\Films"));
+        assert_eq!(smb_from_unc("//nas/share").unwrap().path, "/share");
+        let bare = smb_from_unc(r"\\nas").unwrap();
+        assert!(bare.is_root());
+        assert_eq!(bare.to_unc().as_deref(), Some(r"\\nas"));
+        assert_eq!(smb_from_unc(r"\\?\C:\x"), None);
+        assert_eq!(smb_from_unc(r"\\.\pipe\x"), None);
+        assert_eq!(smb_from_unc(r"\\"), None);
+        assert_eq!(smb_from_unc("/home/x"), None);
+        assert_eq!(RemoteUri::parse("smb://nas:4455/a").unwrap().to_unc(), None);
+        assert_eq!(RemoteUri::parse("sftp://nas/a").unwrap().to_unc(), None);
     }
 }

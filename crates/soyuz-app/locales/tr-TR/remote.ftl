@@ -107,4 +107,12 @@ remote-error-name = Eğik çizgi içermeyen bir ad girin.
 ## Linux (data)
 
 remote-secret-not-saved = Parola kaydedilmedi
-remote-smb-unsupported = SMB paylaşımları henüz doğrudan açılamıyor. Paylaşımı masaüstünüzle bağlayın (örneğin `gio mount smb://sunucu/paylasim`), sonra Aygıtlar'dan veya /run/user altındaki klasöründen açın.
+
+## smb
+
+remote-smb-bad-unc = Geçerli bir ağ yolu değil. \\sunucu\paylasim\klasor veya smb://sunucu/paylasim/klasor kullanın.
+remote-smb-port-windows = Windows SMB paylaşımlarını yalnızca 445 numaralı bağlantı noktasından açar: bağlantı noktasını kaldırın veya \\sunucu\paylasim yazın.
+remote-smb-shares-off = Sunucu paylaşımlarını listeleme kapalı (Ayarlar › İşler › Uzak konumlar). Paylaşımı da yazın, örneğin smb://sunucu/paylasim.
+remote-auth-guest = Konuk
+remote-user-hint-smb = kullanıcı veya ETKİALANI\kullanıcı
+remote-share-folder = Paylaşım ve klasör

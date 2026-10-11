@@ -283,7 +283,7 @@ connect_timeout_secs = 20
 io_timeout_secs = 60             # give up when a server stops answering mid-operation
 preview_cache_mb = 512           # temp cache for remote files opened / previewed (oldest evicted)
 preview_max_mb = 64              # larger remote files are not downloaded just for a preview
-share_enumeration = true         # typing \\server lists its shares (Windows NetShareEnum)
+share_enumeration = true         # typing \\server or smb://server lists its shares
 [linux]                          # Linux desktop integration (ignored elsewhere)
 window_backend = "auto"          # auto | wayland | x11 (XWayland: drag and drop with X11 apps; next start)
 own_file_manager1 = false        # own org.freedesktop.FileManager1 while running ("Show in folder" opens Soyuz)

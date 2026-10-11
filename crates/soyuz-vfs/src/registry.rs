@@ -200,6 +200,19 @@ fn connect(uri: &RemoteUri) -> FsResult<Arc<dyn Provider>> {
         Scheme::WebDav | Scheme::WebDavs => Arc::new(crate::webdav::WebDavProvider::connect(root, creds)?),
         Scheme::Ftp | Scheme::Ftps => Arc::new(crate::ftp::FtpProvider::connect(root, creds)?),
         Scheme::S3 => Arc::new(crate::s3::S3Provider::connect(root, creds)?),
+        #[cfg(not(windows))]
+        Scheme::Smb => Arc::new(crate::smb::SmbProvider::connect(root, creds)?),
+        // Windows opens `\\server\share` through the kernel redirector (the app turns
+        // `smb://` into a UNC path before it gets here).
+        #[cfg(windows)]
+        Scheme::Smb => {
+            return Err(FsError::with_message(
+                FsErrorKind::Unsupported,
+                "connect",
+                None,
+                "open SMB shares as \\\\server\\share paths on Windows",
+            ));
+        }
         Scheme::Fake => {
             return Err(FsError::with_message(
                 FsErrorKind::NotFound,
