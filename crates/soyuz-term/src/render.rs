@@ -24,7 +24,7 @@ use egui::{
     Stroke, StrokeKind, TextFormat, Ui, Vec2, pos2, vec2,
 };
 
-use crate::backend::Listener;
+use crate::backend::{Listener, cursor_line_text, is_spacer};
 use crate::keys::{self, ALT_IS_META};
 use crate::selection::{ClickTracker, row_span, selection_type};
 use crate::theme::lerp_rgb;
@@ -236,10 +236,6 @@ impl Fnv {
     }
 }
 
-fn is_spacer(cell: &Cell) -> bool {
-    cell.flags.intersects(Flags::WIDE_CHAR_SPACER | Flags::LEADING_WIDE_CHAR_SPACER)
-}
-
 /// Text of a viewport row with a char-index → column map (spacers skipped).
 fn row_text(cells: &[Cell]) -> (String, Vec<usize>) {
     let mut s = String::with_capacity(cells.len());
@@ -252,24 +248,6 @@ fn row_text(cells: &[Cell]) -> (String, Vec<usize>) {
         map.push(col);
     }
     (s, map)
-}
-
-/// Text left / right of the cursor on the cursor line (for the prompt heuristic).
-pub(crate) fn cursor_line_text(term: &Term<Listener>) -> (String, String) {
-    let grid = term.grid();
-    let point = grid.cursor.point;
-    let row = &grid[point.line];
-    let mut left = String::new();
-    let mut right = String::new();
-    for col in 0..term.columns() {
-        let cell = &row[Column(col)];
-        if is_spacer(cell) {
-            continue;
-        }
-        let c = if cell.c == '\0' { ' ' } else { cell.c };
-        if col < point.column.0 { left.push(c) } else { right.push(c) }
-    }
-    (left, right)
 }
 
 struct Geometry {
@@ -359,7 +337,9 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
             &fallback_theme
         }
     };
-    shared.set_theme(theme);
+    // OSC 4/10/11/12 answers report the theme's (premultiplied) RGB channels.
+    let answer = |c: Color32| crate::color::TermColor::rgb(c.r(), c.g(), c.b());
+    shared.set_colors(answer(theme.fg), answer(theme.bg), answer(theme.cursor), &theme.ansi.map(answer));
     let font = view.font.clone().unwrap_or_else(|| egui::TextStyle::Monospace.resolve(ui.style()));
     let ctx = ui.ctx().clone();
     let ppp = ctx.pixels_per_point();
@@ -1062,7 +1042,7 @@ mod tests {
                 env: vec![("PS1".into(), "$ ".into())],
                 ..Default::default()
             };
-            let term = Terminal::spawn(settings, ctx.clone(), 42).expect("spawn");
+            let term = Terminal::spawn(settings, crate::egui_wake(ctx.clone()), 42).expect("spawn");
             Harness { ctx, term, font: FontId::monospace(14.0) }
         }
 

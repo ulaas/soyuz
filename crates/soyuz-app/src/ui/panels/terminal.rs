@@ -172,7 +172,7 @@ fn spawn_session(app: &mut SoyuzApp, ctx: &egui::Context, cwd: PathBuf) -> u64 {
     let unique = UNIQUE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let id = t.next_id;
     let settings = settings_for(app, &cwd);
-    let (term, error) = match Terminal::spawn(settings, ctx.clone(), 0x5052_0000 + unique) {
+    let (term, error) = match Terminal::spawn(settings, soyuz_term::egui_wake(ctx.clone()), 0x5052_0000 + unique) {
         Ok(term) => (Some(term), None),
         Err(e) => (None, Some(e.to_string())),
     };
