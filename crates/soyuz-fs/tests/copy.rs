@@ -432,3 +432,19 @@ fn inode_flags_are_preserved() {
     copy_file(&src, &plain, &o, &OpControl::new(), &mut ()).unwrap();
     assert!(!inode_flags(&plain).unwrap().intersects(InodeFlags::NODUMP | InodeFlags::NOATIME));
 }
+
+/// Overwriting a file whose name leaves no room for the usual temp suffix still goes
+/// through a (hash-shortened) temp sibling instead of failing with ENAMETOOLONG.
+#[test]
+fn replacing_a_file_with_a_long_name() {
+    let d = tempfile::tempdir().unwrap();
+    let src = d.path().join("src");
+    write(&src, b"new contents");
+    let dst = d.path().join(format!("{}.txt", "n".repeat(236)));
+    write(&dst, b"old");
+    let o = CopyOptions { overwrite: Overwrite::Always, ..CopyOptions::default() };
+    copy_file(&src, &dst, &o, &OpControl::new(), &mut ()).unwrap();
+    assert_eq!(fs::read(&dst).unwrap(), b"new contents");
+    let names: Vec<_> = fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(names.len(), 2, "no temp left behind: {names:?}");
+}

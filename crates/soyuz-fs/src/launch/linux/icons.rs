@@ -183,10 +183,12 @@ impl Lookup {
             };
             let index = parse_index(&index);
             // Parents come before hicolor (which is always last).
-            let at = queue.iter().position(|q| q == "hicolor").unwrap_or(queue.len());
-            for (i, p) in index.inherits.iter().enumerate() {
+            // A separate cursor: skipped entries must not advance the insertion point.
+            let mut at = queue.iter().position(|q| q == "hicolor").unwrap_or(queue.len());
+            for p in &index.inherits {
                 if p != "hicolor" && !order.contains(p) {
-                    queue.insert(at + i, p.clone());
+                    queue.insert(at, p.clone());
+                    at += 1;
                 }
             }
             themes.push(Theme { roots, index });
@@ -357,6 +359,24 @@ mod tests {
         assert_eq!(l.find("missing", 16, 1), None);
         assert_eq!(l.find(&svg.to_string_lossy(), 16, 1), Some(svg), "absolute icon paths");
         assert_eq!(l.find("../escape", 16, 1), None);
+    }
+
+    #[test]
+    fn inherits_with_skipped_entries_keeps_order_and_does_not_panic() {
+        let d = tempfile::tempdir().unwrap();
+        let base = d.path().join("icons");
+        let theme = |name: &str, inherits: &str| {
+            std::fs::create_dir_all(base.join(name)).unwrap();
+            let text = format!("[Icon Theme]\nInherits={inherits}\nDirectories=\n");
+            std::fs::write(base.join(name).join("index.theme"), text).unwrap();
+        };
+        theme("Mine", "hicolor,Mine,Extra,Other");
+        theme("Extra", "");
+        theme("Other", "");
+        theme("hicolor", "");
+        let l = Lookup::new(Some("Mine"), std::slice::from_ref(&base), Vec::new());
+        let names: Vec<_> = l.themes.iter().map(|t| t.roots[0].file_name().unwrap().to_owned()).collect();
+        assert_eq!(names, ["Mine", "Extra", "Other", "hicolor"]);
     }
 
     #[test]

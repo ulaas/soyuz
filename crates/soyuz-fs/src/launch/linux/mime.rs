@@ -50,7 +50,12 @@ pub(crate) struct MagicRule {
 impl MagicRule {
     /// Last byte any matchlet can look at.
     fn extent(&self) -> usize {
-        self.matchlets.iter().map(|m| (m.offset + m.range) as usize + m.value.len()).max().unwrap_or(0)
+        // Saturating: offsets and ranges come from untrusted `magic` files.
+        self.matchlets
+            .iter()
+            .map(|m| (m.offset as usize).saturating_add(m.range as usize).saturating_add(m.value.len()))
+            .max()
+            .unwrap_or(0)
     }
 
     pub fn matches(&self, data: &[u8]) -> bool {
@@ -87,8 +92,9 @@ fn subtree_matches(list: &[Matchlet], i: usize, data: &[u8]) -> bool {
 
 fn matchlet_matches(m: &Matchlet, data: &[u8]) -> bool {
     let len = m.value.len();
-    for start in m.offset as usize..(m.offset + m.range.max(1)) as usize {
-        let Some(window) = data.get(start..start + len) else { return false };
+    let end = (m.offset as usize).saturating_add(m.range.max(1) as usize);
+    for start in m.offset as usize..end {
+        let Some(window) = start.checked_add(len).and_then(|e| data.get(start..e)) else { return false };
         let ok = match &m.mask {
             None => window == m.value.as_slice(),
             Some(mask) => window.iter().zip(&m.value).zip(mask).all(|((d, v), k)| d & k == v & k),
@@ -764,6 +770,17 @@ pub(crate) mod tests {
         )
         .unwrap();
         MimeDb::load(&[d.path().to_path_buf()])
+    }
+
+    #[test]
+    fn huge_offsets_and_ranges_do_not_overflow() {
+        let m = Matchlet { indent: 0, offset: u32::MAX - 1, range: u32::MAX, value: b"ab".to_vec(), mask: None };
+        assert!(!matchlet_matches(&m, b"abc"));
+        let rule = MagicRule { priority: 50, mime: "x/y".into(), matchlets: vec![m] };
+        assert!(rule.extent() >= u32::MAX as usize);
+        assert!(!rule.matches(b"ab"));
+        let parsed = parse_magic(&magic_file(&[(50, "x/y", vec![ml(0, u32::MAX, b"ab", None, Some(u32::MAX))])]));
+        assert!(!parsed.is_empty() && !parsed[0].matches(b"ab"));
     }
 
     #[test]

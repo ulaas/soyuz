@@ -290,17 +290,37 @@ pub enum DropTargetEvent {
 /// Receives [`DropTargetEvent`]s on the drop target's background threads.
 pub type DropSink = Box<dyn Fn(DropTargetEvent) + Send + Sync>;
 
-/// Wayland: become a drop target for files on the app window. `display` is the window's
-/// `wl_display*` and `surface` its `wl_surface*` (from its raw window / display handles);
-/// both must stay valid until [`stop_wayland_drop_target`] runs (call it before the
-/// window and its connection go away). A separate event queue on the same connection is
-/// dispatched on a background thread; the window toolkit's own queue is never touched.
-/// Errors when the compositor has no `wl_data_device_manager` / `wl_seat` (logged by
-/// the caller; drops then simply do nothing). Unsupported off Linux.
-pub fn start_wayland_drop_target(display: usize, surface: usize, sink: DropSink) -> io::Result<()> {
+/// Wayland: become a drop target for files on the app window. `window` is the app's
+/// window (its display and window handles must be Wayland ones, else `InvalidInput`).
+///
+/// # Lifetime contract
+/// The drop target keeps using the window's `wl_display` and `wl_surface` after this
+/// call returns: the window and its Wayland connection must stay alive until
+/// [`stop_wayland_drop_target`] runs (call it before the window goes away, e.g. from the
+/// app's exit hook). The typed handles (instead of raw pointers) make sure what is
+/// passed really is a live Wayland display / surface at the time of the call.
+///
+/// A separate event queue on the same connection is dispatched on a background thread;
+/// the window toolkit's own queue is never touched. Errors when the compositor has no
+/// `wl_data_device_manager` / `wl_seat` (logged by the caller; drops then simply do
+/// nothing). Unsupported off Linux.
+pub fn start_wayland_drop_target<W>(window: &W, sink: DropSink) -> io::Result<()>
+where
+    W: raw_window_handle::HasDisplayHandle + raw_window_handle::HasWindowHandle + ?Sized,
+{
+    use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
+    let display = window.display_handle().map_err(|e| io::Error::other(e.to_string()))?.as_raw();
+    let surface = window.window_handle().map_err(|e| io::Error::other(e.to_string()))?.as_raw();
+    let (RawDisplayHandle::Wayland(display), RawWindowHandle::Wayland(surface)) = (display, surface) else {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a Wayland window"));
+    };
     #[cfg(target_os = "linux")]
     {
-        crate::sys::linux::wayland_dnd::start(display, surface, sink)
+        crate::sys::linux::wayland_dnd::start(
+            display.display.as_ptr() as usize,
+            surface.surface.as_ptr() as usize,
+            sink,
+        )
     }
     #[cfg(not(target_os = "linux"))]
     {
@@ -489,5 +509,29 @@ mod fd_tests {
         // Target asked the source to delete: unoptimized move.
         let r = xdnd_report(Some((true, DROPEFFECT_MOVE)), true);
         assert_eq!((r.effect, r.performed), (DROPEFFECT_MOVE, Some(DROPEFFECT_MOVE)));
+    }
+}
+
+#[cfg(test)]
+mod drop_target_tests {
+    use raw_window_handle::{DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, WindowHandle};
+
+    /// A window without Wayland handles (here: a web display, no window handle).
+    struct NotWayland;
+    impl HasDisplayHandle for NotWayland {
+        fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+            Ok(DisplayHandle::web())
+        }
+    }
+    impl HasWindowHandle for NotWayland {
+        fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
+            Err(HandleError::Unavailable)
+        }
+    }
+
+    #[test]
+    fn drop_target_needs_live_wayland_handles() {
+        let r = super::start_wayland_drop_target(&NotWayland, Box::new(|_| {}));
+        assert!(r.is_err(), "no raw pointer is ever made up from a non-Wayland window");
     }
 }

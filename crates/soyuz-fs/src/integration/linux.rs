@@ -37,6 +37,10 @@ pub struct State {
     pub created_list: bool,
     /// Previous content of `soyuz.desktop` (`None` = we created it).
     pub desktop_prev: Option<String>,
+    /// What we wrote to `soyuz.desktop` (restore only undoes it while it is unchanged).
+    /// Missing in backups from older versions.
+    #[serde(default)]
+    pub desktop_written: Option<String>,
 }
 
 /// Lines with their terminators.
@@ -214,6 +218,47 @@ fn write(path: &Path, text: &str) -> io::Result<()> {
     crate::write_atomic(path, text.as_bytes()).map_err(io::Error::other)
 }
 
+/// Where writes to `path` should go: the final target when `path` is a symlink (a
+/// dotfile manager's `mimeapps.list` link, e.g. stow / chezmoi / home-manager, stays a
+/// link and its target is updated), else `path` itself.
+fn write_target(path: &Path) -> PathBuf {
+    let Ok(meta) = std::fs::symlink_metadata(path) else { return path.to_path_buf() };
+    if !meta.file_type().is_symlink() {
+        return path.to_path_buf();
+    }
+    if let Ok(real) = std::fs::canonicalize(path) {
+        return real;
+    }
+    // Dangling: follow the link chain by hand (bounded) to the missing file.
+    let mut cur = path.to_path_buf();
+    for _ in 0..40 {
+        match std::fs::read_link(&cur) {
+            Ok(t) => cur = cur.parent().map_or_else(|| t.clone(), |d| d.join(&t)),
+            Err(_) => break,
+        }
+    }
+    cur
+}
+
+/// [`write`] through a symlink (the link itself is kept).
+fn write_through(path: &Path, text: &str) -> io::Result<()> {
+    write(&write_target(path), text)
+}
+
+/// Whether `soyuz.desktop` still holds what [`register`] wrote.
+fn desktop_is_ours(text: &str, state: &State) -> bool {
+    match &state.desktop_written {
+        Some(w) => text == w,
+        // Older backups: our marker and the command we registered.
+        None => {
+            text.lines().any(|l| l.trim() == "X-Soyuz-Managed=true")
+                && crate::launch::linux::desktop::parse_desktop_with(text, None)
+                    .and_then(|e| e.exec)
+                    .is_some_and(|e| e == state.command)
+        }
+    }
+}
+
 fn read_state(keys: &AssocKeys) -> Option<State> {
     serde_json::from_slice(&std::fs::read(state_path(keys)).ok()?).ok()
 }
@@ -254,10 +299,18 @@ pub fn register(keys: &AssocKeys, exe: &Path) -> io::Result<()> {
     };
     let desktop_prev = std::fs::read_to_string(desktop_path(keys)).ok();
     let (new_text, change) = set_default(&text, MIME, DESKTOP_ID);
-    let state = State { version: 1, command: open_command(exe), change, created_list, desktop_prev };
+    let desktop_written = desktop_file(exe);
+    let state = State {
+        version: 1,
+        command: open_command(exe),
+        change,
+        created_list,
+        desktop_prev,
+        desktop_written: Some(desktop_written.clone()),
+    };
     // Backup first, then the desktop file, then the association.
     write(&state_path(keys), &serde_json::to_string_pretty(&state).map_err(io::Error::other)?)?;
-    let res = write(&desktop_path(keys), &desktop_file(exe)).and_then(|()| write(&list, &new_text));
+    let res = write(&desktop_path(keys), &desktop_written).and_then(|()| write_through(&list, &new_text));
     if let Err(e) = res {
         let _ = restore(keys);
         return Err(e);
@@ -273,19 +326,23 @@ pub fn restore(keys: &AssocKeys) -> io::Result<()> {
     let list = list_path(keys);
     if let Ok(text) = std::fs::read_to_string(&list) {
         let restored = undo_default(&text, MIME, DESKTOP_ID, &state.change);
-        if restored.is_empty() && state.created_list {
+        let is_link = std::fs::symlink_metadata(&list).is_ok_and(|m| m.file_type().is_symlink());
+        if restored.is_empty() && state.created_list && !is_link {
             std::fs::remove_file(&list)?;
         } else if restored != text {
-            write(&list, &restored)?;
+            write_through(&list, &restored)?;
         }
     }
+    // Only undo our own desktop file; a later change by someone else is kept.
     let desktop = desktop_path(keys);
-    match &state.desktop_prev {
-        Some(prev) => write(&desktop, prev)?,
-        None => match std::fs::remove_file(&desktop) {
-            Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
-            _ => {}
-        },
+    if std::fs::read_to_string(&desktop).is_ok_and(|t| desktop_is_ours(&t, &state)) {
+        match &state.desktop_prev {
+            Some(prev) => write(&desktop, prev)?,
+            None => match std::fs::remove_file(&desktop) {
+                Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
+                _ => {}
+            },
+        }
     }
     std::fs::remove_file(state_path(keys))?;
     let _ = std::fs::remove_dir(data(keys).join("soyuz"));
@@ -450,6 +507,55 @@ mod tests {
         register_file_manager(&keys, Path::new("/usr/bin/soyuz")).unwrap();
         restore_explorer(&keys).unwrap();
         assert!(!list.exists(), "a list we created is removed again");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_mimeapps_list_stays_a_link() {
+        let (d, keys) = sandbox();
+        let cfg = PathBuf::from(&keys.classes);
+        std::fs::create_dir_all(&cfg).unwrap();
+        let dotfiles = d.path().join("dotfiles");
+        std::fs::create_dir_all(&dotfiles).unwrap();
+        let real = dotfiles.join("mimeapps.list");
+        let original = "[Default Applications]\ninode/directory=org.gnome.Nautilus.desktop\n";
+        std::fs::write(&real, original).unwrap();
+        let list = cfg.join("mimeapps.list");
+        std::os::unix::fs::symlink(&real, &list).unwrap();
+        register_file_manager(&keys, Path::new("/usr/bin/soyuz")).unwrap();
+        assert!(std::fs::symlink_metadata(&list).unwrap().file_type().is_symlink(), "still a link");
+        assert!(std::fs::read_to_string(&real).unwrap().contains(DESKTOP_ID), "target updated");
+        restore_explorer(&keys).unwrap();
+        assert!(std::fs::symlink_metadata(&list).unwrap().file_type().is_symlink(), "still a link after restore");
+        assert_eq!(std::fs::read_to_string(&real).unwrap(), original);
+    }
+
+    #[test]
+    fn restore_keeps_a_desktop_file_changed_by_someone_else() {
+        let (_d, keys) = sandbox();
+        register_file_manager(&keys, Path::new("/usr/bin/soyuz")).unwrap();
+        let desk = desktop_path(&keys);
+        let theirs = "[Desktop Entry]\nType=Application\nName=Mine\nExec=/usr/bin/mine %U\n";
+        std::fs::write(&desk, theirs).unwrap();
+        restore_explorer(&keys).unwrap();
+        assert_eq!(std::fs::read_to_string(&desk).unwrap(), theirs, "not ours any more: kept");
+        // Unchanged: removed as before.
+        std::fs::remove_file(&desk).unwrap();
+        register_file_manager(&keys, Path::new("/usr/bin/soyuz")).unwrap();
+        restore_explorer(&keys).unwrap();
+        assert!(!desk.exists());
+        // A backup from an older version (no `desktop_written`) still matches by marker + command.
+        let st = State {
+            version: 1,
+            command: open_command(Path::new("/usr/bin/soyuz")),
+            change: Change::Appended { suffix: String::new() },
+            created_list: false,
+            desktop_prev: None,
+            desktop_written: None,
+        };
+        assert!(desktop_is_ours(&desktop_file(Path::new("/usr/bin/soyuz")), &st));
+        assert!(!desktop_is_ours(&desktop_file(Path::new("/opt/other")), &st));
+        assert!(!desktop_is_ours(theirs, &st));
     }
 
     #[test]

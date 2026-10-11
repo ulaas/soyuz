@@ -438,22 +438,74 @@ pub(crate) mod discover {
         }
     }
 
+    /// Mount points to look for per-mount bins on, each with "may hang" (network / FUSE).
+    fn tops() -> Vec<(PathBuf, bool)> {
+        #[cfg(target_os = "linux")]
+        return crate::volumes::user_mounts();
+        #[cfg(not(target_os = "linux"))]
+        crate::volumes::volumes()
+            .into_iter()
+            .map(|v| {
+                let slow = v.kind == crate::volumes::VolumeKind::Network;
+                (v.mount, slow)
+            })
+            .collect()
+    }
+
+    /// The valid bins on one mount (`$top/.Trash/$uid`, `$top/.Trash-$uid`).
+    fn probe_top(top: &Path, uid: u32) -> Vec<PathBuf> {
+        let mut cands = Vec::new();
+        if let Some(shared) = shared_trash(top, uid) {
+            cands.push(shared);
+        }
+        cands.push(top.join(format!(".Trash-{uid}")));
+        cands.retain(|r| valid_private(r, uid));
+        cands
+    }
+
     /// Home bin plus every existing per-mount bin.
     pub(crate) fn all_bins() -> Vec<Bin> {
-        let mut out = vec![home_bin()];
-        let uid = us::euid();
-        #[cfg(target_os = "linux")]
-        let tops = crate::volumes::user_mounts();
-        #[cfg(not(target_os = "linux"))]
-        let tops: Vec<PathBuf> = crate::volumes::volumes().into_iter().map(|v| v.mount).collect();
-        for top in tops {
-            let mut cands = Vec::new();
-            if let Some(shared) = shared_trash(&top, uid) {
-                cands.push(shared);
-            }
-            cands.push(top.join(format!(".Trash-{uid}")));
-            for root in cands {
-                if valid_private(&root, uid) && !out.iter().any(|b| b.root == root) {
+        collect_bins(home_bin(), tops(), us::euid(), probe_top, crate::volumes::QUERY_DEADLINE)
+    }
+
+    /// Probe local mounts inline and network / FUSE mounts on worker threads under
+    /// `deadline`: a stale hard NFS mount or dead sshfs blocks `lstat` forever, and must
+    /// not hang trash listing / emptying. Mounts that miss the deadline are skipped.
+    pub(super) fn collect_bins(
+        home: Bin,
+        tops: Vec<(PathBuf, bool)>,
+        uid: u32,
+        probe: fn(&Path, u32) -> Vec<PathBuf>,
+        deadline: std::time::Duration,
+    ) -> Vec<Bin> {
+        let slow: Vec<PathBuf> = tops.iter().filter(|(_, s)| *s).map(|(t, _)| t.clone()).collect();
+        let jobs: Vec<Box<dyn FnOnce() -> Vec<PathBuf> + Send>> = slow
+            .iter()
+            .map(|t| {
+                let t = t.clone();
+                Box::new(move || probe(&t, uid)) as Box<dyn FnOnce() -> Vec<PathBuf> + Send>
+            })
+            .collect();
+        let mut slow_results =
+            if jobs.is_empty() { Vec::new() } else { crate::volumes::parallel_with_deadline(jobs, deadline) };
+        let mut out = vec![home];
+        let mut slow_i = 0;
+        for (top, is_slow) in tops {
+            let roots = if is_slow {
+                let r = slow_results.get_mut(slow_i).and_then(Option::take);
+                slow_i += 1;
+                match r {
+                    Some(r) => r,
+                    None => {
+                        log::warn!("trash: skipped {} (no answer before the deadline)", top.display());
+                        continue;
+                    }
+                }
+            } else {
+                probe(&top, uid)
+            };
+            for root in roots {
+                if !out.iter().any(|b| b.root == root) {
                     out.push(Bin { root, topdir: Some(top.clone()) });
                 }
             }
@@ -461,9 +513,36 @@ pub(crate) mod discover {
         out
     }
 
-    /// The bin a [`TrashItem`] belongs to (validated against the known bins).
+    /// The bin a [`TrashItem`] belongs to, validated without scanning every mount: the
+    /// root must be the home bin, or `$top/.Trash-$uid` / `$top/.Trash/$uid` on a known
+    /// mount point `$top` (only that mount is touched).
     pub(crate) fn bin_of(trash_root: &Path) -> Option<Bin> {
-        all_bins().into_iter().find(|b| b.root == trash_root)
+        let home = home_bin();
+        if trash_root == home.root {
+            return Some(home);
+        }
+        let uid = us::euid();
+        let top = bin_topdir(trash_root, uid)?;
+        if !tops().iter().any(|(t, _)| t == top) {
+            return None;
+        }
+        probe_top(top, uid)
+            .iter()
+            .any(|r| r == trash_root)
+            .then(|| Bin { root: trash_root.to_path_buf(), topdir: Some(top.to_path_buf()) })
+    }
+
+    /// `$top` for a per-mount bin path of `uid` (`$top/.Trash-$uid` or `$top/.Trash/$uid`).
+    pub(super) fn bin_topdir(root: &Path, uid: u32) -> Option<&Path> {
+        let name = root.file_name()?.to_str()?;
+        let parent = root.parent()?;
+        if name == format!(".Trash-{uid}") {
+            Some(parent)
+        } else if name == uid.to_string() && parent.file_name()? == ".Trash" {
+            parent.parent()
+        } else {
+            None
+        }
     }
 
     #[cfg(test)]
@@ -507,6 +586,42 @@ pub(crate) mod discover {
             let link = d.path().join(".Trash-link");
             symlink(&private, &link).unwrap();
             assert!(!valid_private(&link, uid), "symlinked bin");
+        }
+
+        #[test]
+        fn hanging_network_mounts_are_skipped_after_the_deadline() {
+            fn probe(top: &Path, uid: u32) -> Vec<PathBuf> {
+                if top.ends_with("stale-nfs") {
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                }
+                vec![top.join(format!(".Trash-{uid}"))]
+            }
+            let home = Bin { root: "/home/u/.local/share/Trash".into(), topdir: None };
+            let tops = vec![("/mnt/local".into(), false), ("/mnt/stale-nfs".into(), true), ("/mnt/sshfs".into(), true)];
+            let t = std::time::Instant::now();
+            let bins = collect_bins(home, tops, 7, probe, std::time::Duration::from_millis(300));
+            assert!(t.elapsed() < std::time::Duration::from_secs(3), "did not wait for the stale mount");
+            let roots: Vec<_> = bins.iter().map(|b| b.root.clone()).collect();
+            assert_eq!(
+                roots,
+                [
+                    PathBuf::from("/home/u/.local/share/Trash"),
+                    "/mnt/local/.Trash-7".into(),
+                    "/mnt/sshfs/.Trash-7".into()
+                ]
+            );
+            assert_eq!(bins[2].topdir.as_deref(), Some(Path::new("/mnt/sshfs")));
+        }
+
+        #[test]
+        fn bin_topdir_derivation() {
+            assert_eq!(bin_topdir(Path::new("/mnt/x/.Trash-7"), 7), Some(Path::new("/mnt/x")));
+            assert_eq!(bin_topdir(Path::new("/mnt/x/.Trash/7"), 7), Some(Path::new("/mnt/x")));
+            assert_eq!(bin_topdir(Path::new("/mnt/x/.Trash-8"), 7), None);
+            assert_eq!(bin_topdir(Path::new("/mnt/x/Trash/7"), 7), None);
+            assert_eq!(bin_topdir(Path::new("/mnt/x/elsewhere"), 7), None);
+            // Not on a known mount point: rejected without probing.
+            assert!(bin_of(Path::new("/definitely/not/a/mount/.Trash-0")).is_none());
         }
     }
 }

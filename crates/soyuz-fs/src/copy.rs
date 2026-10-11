@@ -174,7 +174,9 @@ pub fn copy_file(
 
     // The data always goes to a hidden temp sibling first, so a crash or kill mid-copy
     // never leaves a truncated file under the final name (only a `.soyuz-part-` file the
-    // recovery scan finds). Names too long for the temp suffix are written in place.
+    // recovery scan finds). New files whose names are too long for the temp suffix are
+    // written in place; a replaced file always goes through a temp (a hash-shortened name
+    // when the usual one would not fit), so the overwrite stays atomic.
     let staged = replacing || temp_fits(dst);
     let target = if staged { temp_sibling(dst) } else { dst.to_path_buf() };
     let result = (|| -> FsResult<CopyMethod> {
@@ -239,13 +241,19 @@ fn name_len(n: &std::ffi::OsStr) -> usize {
 }
 
 /// `.<name>.soyuz-part-<pid>-<n>` next to `dst`, built from the raw name (never lossy, so
-/// non-UTF-8 unix names keep their bytes).
+/// non-UTF-8 unix names keep their bytes). When that would exceed the file-name limit,
+/// `.<hash>.soyuz-part-<pid>-<n>` (16 hex digits of the name's BLAKE3 hash) instead.
 fn temp_sibling(dst: &Path) -> PathBuf {
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, Ordering::Relaxed);
     let mut name = std::ffi::OsString::from(".");
     if let Some(n) = dst.file_name() {
-        name.push(n);
+        if temp_fits(dst) {
+            name.push(n);
+        } else {
+            let hash = blake3::hash(n.as_encoded_bytes());
+            name.push(&hash.to_hex()[..16]);
+        }
     }
     name.push(format!("{PART_MARKER}{}-{seq}", std::process::id()));
     dst.with_file_name(name)
