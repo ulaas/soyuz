@@ -527,3 +527,16 @@ dialogs-rename-err-token = bilinmeyen belirteç {"{"}{ $token }{"}"}
 dialogs-rename-err-rule = kural { $rule }: { $error }
 dialogs-rename-err-no-target = hedef yok
 dialogs-rename-err-lines = { $count } öğe için { $lines } satır var: her satırda tam olarak bir ad bırakın
+
+## Linux (devices)
+# $name: the volume's name.
+dialogs-unlock-title = { $name } kilidini aç
+dialogs-unlock-intro = Bu birim şifrelenmiş. Kilidini açıp bağlamak için parolasını girin.
+dialogs-unlock-intro-bitlocker = Bu birim BitLocker ile şifrelenmiş. Kilidini açıp bağlamak için parolasını veya kurtarma anahtarını girin.
+dialogs-unlock-hint = Parola
+dialogs-unlock-hint-bitlocker = Parola veya kurtarma anahtarı
+dialogs-unlock-show = Parolayı göster
+dialogs-unlock-hide = Parolayı gizle
+dialogs-unlock-working = Kilit açılıyor…
+dialogs-unlock-recovery-note = Kurtarma anahtarı, BitLocker açılırken Windows'un gösterdiği 48 basamaklı anahtardır (altışar basamaklı sekiz grup; tireler isteğe bağlı).
+dialogs-unlock-button = Kilidi aç

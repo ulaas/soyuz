@@ -120,4 +120,6 @@ pub enum Cmd {
     Automation(crate::automation::AutoCmd),
     /// Remote locations (connect dialog, saved connections, host keys): `ui::remote`.
     Remote(crate::ui::remote::RemoteCmd),
+    /// Sidebar devices (unlock dialog, read-only mount offer, hide): `ui::sidebar`.
+    Device(crate::ui::sidebar::DeviceCmd),
 }

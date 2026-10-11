@@ -49,6 +49,7 @@ egui-phosphor.workspace = true
 resvg.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
+zeroize.workspace = true
 log.workspace = true
 env_logger.workspace = true
 serde.workspace = true

@@ -59,6 +59,17 @@ pub struct BlockDevice {
     pub removable: bool,
     pub ejectable: bool,
     pub can_power_off: bool,
+    /// Partition type: a GPT type GUID (lower case) or an MBR type (`0x07`); empty when
+    /// the device is not a partition.
+    pub partition_type: String,
+    /// Partition number (1-based; 0 when not a partition).
+    pub partition_number: u32,
+    /// The partition table's block object (the whole disk), when a partition.
+    pub partition_table: Option<String>,
+    /// An MBR extended partition (a container of logical partitions).
+    pub is_container: bool,
+    /// A loop device (see [`BlockDevice::loop_file`] for its backing file).
+    pub is_loop: bool,
 }
 
 impl BlockDevice {
@@ -86,6 +97,276 @@ impl BlockDevice {
         }
         let dev = self.device.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
         if self.drive_model.trim().is_empty() { dev } else { format!("{} ({dev})", self.drive_model.trim()) }
+    }
+}
+
+/// GPT partition types never offered for mounting.
+mod part_types {
+    pub const EFI_SYSTEM: &str = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+    pub const MS_RESERVED: &str = "e3c9e316-0b5c-4db8-817d-f92df00215ae";
+    pub const WIN_RECOVERY: &str = "de94bba4-06d1-4d40-a16a-bfd50179d6ac";
+    pub const BIOS_BOOT: &str = "21686148-6449-6e6f-744e-656564454649";
+    pub const LINUX_SWAP: &str = "0657fd6d-a4ab-43c4-84e5-0933c84b4f4f";
+    pub const LDM_METADATA: &str = "5808c8aa-7e8f-42e0-85d2-e1e90434cfb3";
+    /// MBR types: EFI system, Windows recovery (hidden NTFS WinRE), Linux swap, extended.
+    pub const MBR_EFI: u8 = 0xef;
+    pub const MBR_RECOVERY: u8 = 0x27;
+    pub const MBR_SWAP: u8 = 0x82;
+    pub const MBR_EXTENDED: [u8; 3] = [0x05, 0x0f, 0x85];
+}
+
+/// Filesystems Linux has no (usable) driver for: shown, but not mountable.
+const UNSUPPORTED_FS: [&str; 2] = ["apfs", "refs"];
+
+/// Encrypted container types the sidebar offers to unlock (UDisks2 2.11 / libblockdev).
+fn is_unlockable(fs_type: &str) -> bool {
+    matches!(fs_type.to_ascii_lowercase().as_str(), "crypto_luks" | "bitlocker" | "crypto_bitlk")
+}
+
+/// Short display name of a filesystem / container type (`NTFS`, `exFAT`, `BitLocker`).
+pub fn fs_display_name(fs_type: &str) -> String {
+    let n = match fs_type.to_ascii_lowercase().as_str() {
+        "ntfs" | "ntfs3" => "NTFS",
+        "exfat" => "exFAT",
+        "vfat" | "fat" | "msdos" => "FAT",
+        "bitlocker" | "crypto_bitlk" => "BitLocker",
+        "crypto_luks" => "LUKS",
+        "hfsplus" => "HFS+",
+        "hfs" => "HFS",
+        "apfs" => "APFS",
+        "refs" => "ReFS",
+        "btrfs" => "Btrfs",
+        "xfs" => "XFS",
+        "f2fs" => "F2FS",
+        "udf" => "UDF",
+        "iso9660" => "ISO 9660",
+        "zfs_member" => "ZFS",
+        _ => return fs_type.to_string(),
+    };
+    n.to_string()
+}
+
+/// How an unmounted device appears in the sidebar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CandidateState {
+    /// A filesystem that can be mounted.
+    Unmounted,
+    /// An encrypted container (LUKS, BitLocker) that must be unlocked first.
+    Locked,
+    /// A filesystem Linux can't mount (APFS, ReFS, …): listed but disabled.
+    Unsupported,
+}
+
+/// An unmounted device the user can mount or unlock (see [`sidebar_candidates`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Candidate {
+    /// The device to mount / unlock. For an unlocked container this is the cleartext
+    /// device, with the drive details, label and partition position of its container.
+    pub dev: BlockDevice,
+    pub state: CandidateState,
+    /// For an unlocked (cleartext) device: the container's object (the handle for [`lock`]).
+    pub container: Option<String>,
+    /// The container's filesystem type for an unlocked device (`BitLocker`, `crypto_LUKS`).
+    pub container_type: String,
+}
+
+impl Candidate {
+    /// The key "Hide from sidebar" stores: the filesystem / container UUID, else the
+    /// device node.
+    pub fn hide_key(&self) -> String {
+        hide_key(&self.dev)
+    }
+}
+
+/// `[sidebar] hidden_devices` key of a device: its UUID, else its device node.
+pub fn hide_key(d: &BlockDevice) -> String {
+    if d.uuid.trim().is_empty() { d.device.to_string_lossy().into_owned() } else { d.uuid.clone() }
+}
+
+impl BlockDevice {
+    /// Removable media: the drive says so, or it sits on a hot-plug bus (USB, SD, FireWire).
+    pub fn is_removable_media(&self) -> bool {
+        self.removable || self.ejectable || matches!(self.connection_bus.as_str(), "usb" | "sdio" | "ieee1394")
+    }
+
+    /// A partition type that holds no user data (EFI system partition, Microsoft
+    /// reserved, Windows recovery, BIOS boot, swap, LDM metadata, MBR extended).
+    /// The EFI system partition of a removable drive is not excluded.
+    pub fn is_system_partition(&self) -> bool {
+        use part_types::*;
+        let t = self.partition_type.as_str();
+        if self.is_container {
+            return true;
+        }
+        if let Some(hex) = t.strip_prefix("0x") {
+            let Ok(n) = u8::from_str_radix(hex, 16) else { return false };
+            return (n == MBR_EFI && !self.is_removable_media())
+                || n == MBR_RECOVERY
+                || n == MBR_SWAP
+                || MBR_EXTENDED.contains(&n);
+        }
+        (t == EFI_SYSTEM && !self.is_removable_media())
+            || [MS_RESERVED, WIN_RECOVERY, BIOS_BOOT, LINUX_SWAP, LDM_METADATA].contains(&t)
+    }
+
+    /// Never a candidate: zram / ram disks, and loop devices without a user backing
+    /// file (detached, or snap / flatpak / system images).
+    fn is_virtual_noise(&self) -> bool {
+        let dev = self.device.to_string_lossy();
+        if dev.starts_with("/dev/zram") || dev.starts_with("/dev/ram") {
+            return true;
+        }
+        if self.is_loop || dev.starts_with("/dev/loop") {
+            return match &self.loop_file {
+                None => true,
+                Some(f) => ["/var/lib", "/snap", "/usr", "/var/cache"].iter().any(|r| f.starts_with(r)),
+            };
+        }
+        false
+    }
+
+    /// Sort key: the whole disk, then the partition number.
+    fn position(&self) -> (String, u32, String) {
+        let disk = self.partition_table.clone().unwrap_or_else(|| self.object.clone());
+        (disk, self.partition_number, self.object.clone())
+    }
+}
+
+/// The unmounted devices the sidebar offers to mount or unlock, in drive / partition
+/// order. Mounted filesystems are not listed (they are mounted volumes already), nor
+/// are system partitions, swap, RAID / LVM members, the other members of a mounted
+/// multi-device filesystem (btrfs), devices UDisks marks as ignored, and `hidden` ones
+/// (UUIDs or device nodes, see [`hide_key`]). `removable_only` keeps removable media.
+pub fn sidebar_candidates(all: &[BlockDevice], removable_only: bool, hidden: &[String]) -> Vec<Candidate> {
+    let by_object = |o: &str| all.iter().find(|d| d.object == o);
+    // Filesystem UUIDs in use (a btrfs RAID mounted through one member).
+    let mounted_uuids: std::collections::HashSet<&str> =
+        all.iter().filter(|d| !d.mount_points.is_empty() && !d.uuid.is_empty()).map(|d| d.uuid.as_str()).collect();
+    let mut out: Vec<Candidate> = Vec::new();
+    for d in all {
+        // An unlocked container: judged as its container (partition type, drive, label).
+        let backing = d.crypto_backing.as_deref().and_then(by_object);
+        let outer = backing.unwrap_or(d);
+        if d.hint_ignore || outer.hint_ignore || outer.is_system_partition() || outer.is_virtual_noise() {
+            continue;
+        }
+        if removable_only && !outer.is_removable_media() {
+            continue;
+        }
+        let hide = hidden.iter().any(|h| {
+            let h = h.trim();
+            !h.is_empty()
+                && [d, outer].iter().any(|x| h == x.uuid || std::path::Path::new(h) == x.device || h == x.object)
+        });
+        if hide {
+            continue;
+        }
+        let state = match d.usage.as_str() {
+            "filesystem" => {
+                if !d.mount_points.is_empty() || (!d.uuid.is_empty() && mounted_uuids.contains(d.uuid.as_str())) {
+                    continue;
+                }
+                let fs = d.fs_type.to_ascii_lowercase();
+                if fs == "zfs_member" || fs.is_empty() {
+                    continue;
+                }
+                if !d.has_filesystem || UNSUPPORTED_FS.contains(&fs.as_str()) {
+                    CandidateState::Unsupported
+                } else {
+                    CandidateState::Unmounted
+                }
+            }
+            "crypto" if d.encrypted && d.cleartext.is_none() && is_unlockable(&d.fs_type) => CandidateState::Locked,
+            _ => continue,
+        };
+        let mut dev = d.clone();
+        if let Some(b) = backing {
+            if dev.label.trim().is_empty() {
+                dev.label = b.label.clone();
+            }
+            for (field, from) in [
+                (&mut dev.drive_model, &b.drive_model),
+                (&mut dev.drive_vendor, &b.drive_vendor),
+                (&mut dev.connection_bus, &b.connection_bus),
+            ] {
+                if field.is_empty() {
+                    *field = from.clone();
+                }
+            }
+            if dev.drive.is_none() {
+                dev.drive = b.drive.clone();
+            }
+            dev.removable |= b.removable;
+            dev.ejectable |= b.ejectable;
+            dev.partition_table = b.partition_table.clone();
+            dev.partition_number = b.partition_number;
+        }
+        out.push(Candidate {
+            dev,
+            state,
+            container: backing.map(|b| b.object.clone()),
+            container_type: backing.map(|b| b.fs_type.clone()).unwrap_or_default(),
+        });
+    }
+    out.sort_by_key(|c| c.dev.position());
+    out
+}
+
+/// Why a UDisks2 operation failed, from its error text (see [`classify_error`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Failure {
+    /// polkit refused (no authentication agent could ask, or the policy says no).
+    NotAuthorized,
+    /// The authentication prompt was dismissed.
+    Dismissed,
+    /// The device is in use.
+    Busy,
+    /// NTFS left in an unsafe state by Windows (hibernated / Fast Startup, or dirty):
+    /// only a read-only mount is possible.
+    WindowsHibernated,
+    /// The kernel has no driver for the filesystem.
+    UnsupportedFs,
+    /// Unlock: the passphrase / recovery key is wrong.
+    WrongPassphrase,
+    /// No UDisks2 on this system.
+    NoUdisks,
+    /// Something else (the text is the best explanation).
+    Other,
+}
+
+/// Classify a UDisks2 error (`fs_type`: the device's filesystem, for hints that are
+/// only meaningful for NTFS).
+pub fn classify_error(e: &io::Error, fs_type: &str) -> Failure {
+    let m = e.to_string();
+    let l = m.to_ascii_lowercase();
+    let ntfs = fs_type.eq_ignore_ascii_case("ntfs") || fs_type.eq_ignore_ascii_case("ntfs3");
+    if l.contains("notauthorizeddismissed") || l.contains("dismissed") {
+        Failure::Dismissed
+    } else if l.contains("notauthorized") || e.kind() == io::ErrorKind::PermissionDenied {
+        Failure::NotAuthorized
+    } else if l.contains("hibernat")
+        || l.contains("unclean file system")
+        || l.contains("volume is dirty")
+        || l.contains("metadata kept in windows cache")
+        || l.contains("fast restart")
+        || (ntfs && (l.contains("wrong fs type") || l.contains("bad superblock") || l.contains("dirty")))
+    {
+        Failure::WindowsHibernated
+    } else if l.contains("devicebusy") || l.contains("target is busy") || l.contains("is busy") {
+        Failure::Busy
+    } else if l.contains("incorrect passphrase")
+        || l.contains("no key available")
+        || l.contains("wrong passphrase")
+        || l.contains("failed to activate device: operation not permitted")
+        || (l.contains("error unlocking") && l.contains("operation not permitted"))
+    {
+        Failure::WrongPassphrase
+    } else if l.contains("unknown filesystem type") || (l.contains("not supported") && l.contains("filesystem")) {
+        Failure::UnsupportedFs
+    } else if e.kind() == io::ErrorKind::Unsupported {
+        Failure::NoUdisks
+    } else {
+        Failure::Other
     }
 }
 
@@ -139,6 +420,13 @@ mod imp {
     fn u(p: &Props, k: &str) -> u64 {
         match p.get(k).map(|v| &**v) {
             Some(Value::U64(n)) => *n,
+            _ => 0,
+        }
+    }
+
+    fn u32_(p: &Props, k: &str) -> u32 {
+        match p.get(k).map(|v| &**v) {
+            Some(Value::U32(n)) => *n,
             _ => 0,
         }
     }
@@ -221,6 +509,8 @@ mod imp {
             let Some(blk) = ifaces.get(&format!("{P}Block")) else { continue };
             let fs = ifaces.get(&format!("{P}Filesystem"));
             let enc = ifaces.get(&format!("{P}Encrypted"));
+            let part = ifaces.get(&format!("{P}Partition"));
+            let lp = ifaces.get(&format!("{P}Loop"));
             let drive = obj(blk, "Drive");
             let dp = drive
                 .as_ref()
@@ -245,7 +535,7 @@ mod imp {
                 encrypted: enc.is_some(),
                 cleartext: enc.and_then(|e| obj(e, "CleartextDevice")),
                 crypto_backing: obj(blk, "CryptoBackingDevice"),
-                loop_file: ifaces.get(&format!("{P}Loop")).and_then(|l| path(l, "BackingFile")),
+                loop_file: lp.and_then(|l| path(l, "BackingFile")),
                 drive,
                 drive_model: s(dp, "Model"),
                 drive_vendor: s(dp, "Vendor"),
@@ -253,6 +543,11 @@ mod imp {
                 removable: b(dp, "Removable") || b(dp, "MediaRemovable"),
                 ejectable: b(dp, "Ejectable"),
                 can_power_off: b(dp, "CanPowerOff"),
+                partition_type: part.map(|p| s(p, "Type").to_ascii_lowercase()).unwrap_or_default(),
+                partition_number: part.map(|p| u32_(p, "Number")).unwrap_or(0),
+                partition_table: part.and_then(|p| obj(p, "Table")),
+                is_container: part.is_some_and(|p| b(p, "IsContainer")),
+                is_loop: lp.is_some(),
             });
         }
         out.sort_by(|a, b| a.device.cmp(&b.device));
@@ -424,6 +719,253 @@ mod tests {
         assert_eq!(d.display_name(), "STICK");
     }
 
+    const BD: &str = "/org/freedesktop/UDisks2/block_devices/";
+    const GPT_DATA: &str = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7";
+    const GPT_LINUX: &str = "0fc63daf-8483-4772-8e79-3d69d8477de4";
+
+    /// A partition of an internal disk (`HintSystem`), like `udisksctl dump` shows.
+    #[allow(clippy::too_many_arguments)]
+    fn part(name: &str, disk: &str, n: u32, ptype: &str, fs: &str, usage: &str, label: &str, gb: u64) -> BlockDevice {
+        BlockDevice {
+            object: format!("{BD}{name}"),
+            device: format!("/dev/{name}").into(),
+            label: label.into(),
+            uuid: format!("uuid-{name}"),
+            size: gb * 1_000_000_000,
+            fs_type: fs.into(),
+            usage: usage.into(),
+            has_filesystem: usage == "filesystem",
+            hint_system: true,
+            encrypted: usage == "crypto",
+            drive: Some(format!("/org/freedesktop/UDisks2/drives/{disk}")),
+            drive_model: format!("Model {disk}"),
+            partition_type: ptype.into(),
+            partition_number: n,
+            partition_table: Some(format!("{BD}{disk}")),
+            ..Default::default()
+        }
+    }
+
+    /// This machine's layout (lsblk / `udisksctl dump`, 2026-10).
+    fn this_machine() -> Vec<BlockDevice> {
+        let mut v = vec![
+            part("sda1", "sda", 1, "0x07", "BitLocker", "crypto", "RBYODA Source 19.03.2026", 500),
+            part("sdb1", "sdb", 1, "0x07", "ntfs", "filesystem", "Games", 1000),
+            part("sdc1", "sdc", 1, part_types::MS_RESERVED, "", "", "", 0),
+            part("sdc2", "sdc", 2, GPT_DATA, "ntfs", "filesystem", "GameLot", 8000),
+            part("sdd1", "sdd", 1, part_types::EFI_SYSTEM, "vfat", "filesystem", "", 1),
+            part("sdd2", "sdd", 2, GPT_LINUX, "ext4", "filesystem", "", 2),
+            part("sdd3", "sdd", 3, GPT_LINUX, "btrfs", "filesystem", "fedora", 2000),
+            part("sde1", "sde", 1, part_types::MS_RESERVED, "", "", "", 0),
+            part("sde2", "sde", 2, GPT_DATA, "ntfs", "filesystem", "barn", 2000),
+            part("nvme1n1p1", "nvme1n1", 1, part_types::MS_RESERVED, "", "", "", 0),
+            part("nvme1n1p2", "nvme1n1", 2, GPT_DATA, "BitLocker", "crypto", "RBYODA Source2 19.03.2026", 2000),
+            part("nvme2n1p1", "nvme2n1", 1, "0x07", "ntfs", "filesystem", "GameH", 1000),
+            part("nvme0n1p1", "nvme0n1", 1, part_types::EFI_SYSTEM, "vfat", "filesystem", "", 0),
+            part("nvme0n1p2", "nvme0n1", 2, part_types::MS_RESERVED, "", "", "", 0),
+            part("nvme0n1p3", "nvme0n1", 3, GPT_DATA, "BitLocker", "crypto", "RBYODA C: 19.03.2026", 2000),
+            part("nvme0n1p4", "nvme0n1", 4, part_types::WIN_RECOVERY, "ntfs", "filesystem", "", 1),
+        ];
+        let mount = |v: &mut Vec<BlockDevice>, name: &str, m: &[&str]| {
+            let d = v.iter_mut().find(|d| d.object.ends_with(&format!("/{name}"))).unwrap();
+            d.mount_points = m.iter().map(PathBuf::from).collect();
+        };
+        mount(&mut v, "sdd1", &["/boot/efi"]);
+        mount(&mut v, "sdd2", &["/boot"]);
+        mount(&mut v, "sdd3", &["/home", "/"]);
+        // UDisks marks these ignored itself; the classification must not rely on it.
+        for d in &mut v {
+            d.hint_ignore = false;
+        }
+        // Whole disks (partition tables) and zram swap.
+        for disk in ["sda", "sdb", "sdc", "sdd", "sde", "nvme0n1", "nvme1n1", "nvme2n1"] {
+            v.push(BlockDevice {
+                object: format!("{BD}{disk}"),
+                device: format!("/dev/{disk}").into(),
+                hint_system: true,
+                ..Default::default()
+            });
+        }
+        v.push(BlockDevice {
+            object: format!("{BD}zram0"),
+            device: "/dev/zram0".into(),
+            fs_type: "swap".into(),
+            usage: "other".into(),
+            ..Default::default()
+        });
+        v
+    }
+
+    fn names(c: &[Candidate]) -> Vec<String> {
+        c.iter().map(|c| c.dev.label.clone()).collect()
+    }
+
+    #[test]
+    fn classifies_this_machine() {
+        let all = this_machine();
+        let c = sidebar_candidates(&all, false, &[]);
+        let mut unmounted: Vec<String> =
+            c.iter().filter(|c| c.state == CandidateState::Unmounted).map(|c| c.dev.label.clone()).collect();
+        unmounted.sort();
+        assert_eq!(unmounted, ["GameH", "GameLot", "Games", "barn"]);
+        let locked: Vec<&Candidate> = c.iter().filter(|c| c.state == CandidateState::Locked).collect();
+        assert_eq!(locked.len(), 3, "{:?}", names(&c));
+        assert!(locked.iter().all(|c| fs_display_name(&c.dev.fs_type) == "BitLocker"));
+        for gone in
+            ["sdc1", "sde1", "nvme1n1p1", "nvme0n1p1", "nvme0n1p2", "nvme0n1p4", "sdd1", "sdd2", "sdd3", "zram0"]
+        {
+            assert!(!c.iter().any(|c| c.dev.object.ends_with(&format!("/{gone}"))), "{gone} must not be offered");
+        }
+        assert!(!c.iter().any(|c| c.dev.object.ends_with("/sda")), "whole disks are not candidates");
+        // Drive then partition order (object path order of the disks).
+        let order: Vec<&str> = c.iter().map(|c| c.dev.object.rsplit('/').next().unwrap()).collect();
+        assert_eq!(order, ["nvme0n1p3", "nvme1n1p2", "nvme2n1p1", "sda1", "sdb1", "sdc2", "sde2"]);
+        // Only removable media: none here.
+        assert!(sidebar_candidates(&all, true, &[]).is_empty());
+        // Hidden by UUID or by device node.
+        let hidden = ["uuid-sdb1".to_string(), "/dev/sde2".to_string()];
+        let c = sidebar_candidates(&all, false, &hidden);
+        assert!(!names(&c).contains(&"Games".to_string()) && !names(&c).contains(&"barn".to_string()));
+        assert_eq!(c.len(), 5);
+    }
+
+    #[test]
+    fn unlocked_containers_show_their_cleartext() {
+        let mut all = this_machine();
+        let c3 = all.iter_mut().find(|d| d.object.ends_with("/nvme0n1p3")).unwrap();
+        c3.cleartext = Some(format!("{BD}dm_2d0"));
+        all.push(BlockDevice {
+            object: format!("{BD}dm_2d0"),
+            device: "/dev/mapper/bitlk-abc".into(),
+            uuid: "ntfs-inside".into(),
+            size: 1_999_000_000_000,
+            fs_type: "ntfs".into(),
+            usage: "filesystem".into(),
+            has_filesystem: true,
+            hint_system: true,
+            crypto_backing: Some(format!("{BD}nvme0n1p3")),
+            ..Default::default()
+        });
+        let c = sidebar_candidates(&all, false, &[]);
+        assert_eq!(c.iter().filter(|c| c.state == CandidateState::Locked).count(), 2);
+        let open = c.iter().find(|c| c.dev.object.ends_with("/dm_2d0")).unwrap();
+        assert_eq!(open.state, CandidateState::Unmounted);
+        assert_eq!(open.dev.label, "RBYODA C: 19.03.2026", "label of the container");
+        assert_eq!(open.dev.drive_model, "Model nvme0n1");
+        assert_eq!(open.container.as_deref(), Some(format!("{BD}nvme0n1p3").as_str()));
+        assert_eq!(fs_display_name(&open.container_type), "BitLocker");
+        assert_eq!(c[0].dev.object, open.dev.object, "keeps the container's position");
+        // Mounted cleartext: listed as a volume, not here.
+        all.last_mut().unwrap().mount_points = vec!["/run/media/u/C".into()];
+        assert!(!sidebar_candidates(&all, false, &[]).iter().any(|c| c.dev.object.ends_with("/dm_2d0")));
+    }
+
+    #[test]
+    fn exclusions_and_flags() {
+        let mut usb = part("sdx1", "sdx", 1, part_types::EFI_SYSTEM, "vfat", "filesystem", "BOOTSTICK", 8);
+        usb.connection_bus = "usb".into();
+        usb.hint_system = false;
+        let mut mbr_esp = part("sdy1", "sdy", 1, "0xef", "vfat", "filesystem", "", 1);
+        mbr_esp.hint_system = true;
+        let winre = part("sdy2", "sdy", 2, "0x27", "ntfs", "filesystem", "", 1);
+        let ext = BlockDevice { is_container: true, ..part("sdy3", "sdy", 3, "0x05", "", "", "", 0) };
+        let swap = part("sdy5", "sdy", 5, part_types::LINUX_SWAP, "swap", "other", "", 8);
+        let lvm = part("sdy6", "sdy", 6, GPT_LINUX, "LVM2_member", "raid", "", 100);
+        let apfs =
+            BlockDevice { has_filesystem: false, ..part("sdz1", "sdz", 1, GPT_DATA, "apfs", "filesystem", "Mac", 500) };
+        let refs = part("sdz2", "sdz", 2, GPT_DATA, "refs", "filesystem", "Pool", 500);
+        let mut btrfs_a = part("sdw1", "sdw", 1, GPT_LINUX, "btrfs", "filesystem", "raid", 500);
+        btrfs_a.uuid = "same".into();
+        btrfs_a.mount_points = vec!["/data".into()];
+        let mut btrfs_b = part("sdv1", "sdv", 1, GPT_LINUX, "btrfs", "filesystem", "raid", 500);
+        btrfs_b.uuid = "same".into();
+        let snap = BlockDevice {
+            is_loop: true,
+            loop_file: Some("/var/lib/snapd/snaps/core.snap".into()),
+            ..part("loop0", "loop0", 0, "", "squashfs", "filesystem", "", 1)
+        };
+        let iso = BlockDevice {
+            is_loop: true,
+            loop_file: Some("/home/u/Downloads/fedora.iso".into()),
+            partition_table: None,
+            ..part("loop1", "loop1", 0, "", "iso9660", "filesystem", "Fedora", 2)
+        };
+        let ignored =
+            BlockDevice { hint_ignore: true, ..part("sdu1", "sdu", 1, GPT_DATA, "ntfs", "filesystem", "X", 1) };
+        let luks = part("sdt1", "sdt", 1, GPT_LINUX, "crypto_LUKS", "crypto", "", 100);
+        let tcrypt = part("sdt2", "sdt", 2, GPT_LINUX, "crypto_TCRYPT", "crypto", "", 100);
+        let all = [usb, mbr_esp, winre, ext, swap, lvm, apfs, refs, btrfs_a, btrfs_b, snap, iso, ignored, luks, tcrypt];
+        let c = sidebar_candidates(&all, false, &[]);
+        let got: Vec<(&str, CandidateState)> =
+            c.iter().map(|c| (c.dev.object.rsplit('/').next().unwrap(), c.state)).collect();
+        use CandidateState::*;
+        assert_eq!(
+            got,
+            [("loop1", Unmounted), ("sdt1", Locked), ("sdx1", Unmounted), ("sdz1", Unsupported), ("sdz2", Unsupported),]
+        );
+        let removable = sidebar_candidates(&all, true, &[]);
+        assert_eq!(removable.len(), 1);
+        assert_eq!(removable[0].dev.label, "BOOTSTICK");
+    }
+
+    #[test]
+    fn display_names_and_errors() {
+        assert_eq!(fs_display_name("ntfs"), "NTFS");
+        assert_eq!(fs_display_name("BitLocker"), "BitLocker");
+        assert_eq!(fs_display_name("crypto_LUKS"), "LUKS");
+        assert_eq!(fs_display_name("vfat"), "FAT");
+        assert_eq!(fs_display_name("ext4"), "ext4");
+        let d = BlockDevice { device: "/dev/sdb1".into(), ..Default::default() };
+        assert_eq!(hide_key(&d), "/dev/sdb1");
+        let e = |m: &str| io::Error::other(m.to_string());
+        use Failure::*;
+        let cases = [
+            (
+                "UDisks2: org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized to perform operation",
+                "ntfs",
+                NotAuthorized,
+            ),
+            (
+                "UDisks2: org.freedesktop.UDisks2.Error.NotAuthorizedDismissed: The authentication dialog was dismissed",
+                "ntfs",
+                Dismissed,
+            ),
+            (
+                "Error mounting /dev/sdb1 at /run/media/u/Games: Windows is hibernated, refused to mount.",
+                "ntfs",
+                WindowsHibernated,
+            ),
+            (
+                "The disk contains an unclean file system (0, 0). Metadata kept in Windows cache, refused to mount.",
+                "ntfs",
+                WindowsHibernated,
+            ),
+            (
+                "Error mounting /dev/sdb1: wrong fs type, bad option, bad superblock on /dev/sdb1, missing codepage or helper program, or other error",
+                "ntfs",
+                WindowsHibernated,
+            ),
+            ("Error mounting /dev/sdb1: wrong fs type, bad option, bad superblock on /dev/sdb1", "ext4", Other),
+            ("org.freedesktop.UDisks2.Error.DeviceBusy: Error unmounting: target is busy", "ext4", Busy),
+            (
+                "org.freedesktop.UDisks2.Error.Failed: Error unlocking /dev/sda1: Failed to activate device: Operation not permitted",
+                "BitLocker",
+                WrongPassphrase,
+            ),
+            (
+                "Error unlocking /dev/sdt1: Failed to activate device: Incorrect passphrase.",
+                "crypto_LUKS",
+                WrongPassphrase,
+            ),
+            ("Error mounting /dev/sdz1: unknown filesystem type 'apfs'", "apfs", UnsupportedFs),
+            ("weird", "ext4", Other),
+        ];
+        for (m, fs, want) in cases {
+            assert_eq!(classify_error(&e(m), fs), want, "{m}");
+        }
+        assert_eq!(classify_error(&io::Error::new(io::ErrorKind::Unsupported, "no bus"), ""), NoUdisks);
+    }
+
     #[test]
     fn rejects_foreign_object_paths() {
         if cfg!(target_os = "linux") {
@@ -465,5 +1007,20 @@ mod tests {
             );
         }
         assert!(devs.iter().any(|d| d.mount_points.iter().any(|m| m == std::path::Path::new("/")) || d.has_filesystem));
+        println!("-- sidebar candidates --");
+        for c in sidebar_candidates(&devs, false, &[]) {
+            println!(
+                "{:?} {:?} {} label={:?} size={} part={} {} drive={:?} removable={}",
+                c.state,
+                c.dev.device,
+                fs_display_name(&c.dev.fs_type),
+                c.dev.label,
+                c.dev.size,
+                c.dev.partition_number,
+                c.dev.partition_type,
+                c.dev.drive_model,
+                c.dev.is_removable_media()
+            );
+        }
     }
 }

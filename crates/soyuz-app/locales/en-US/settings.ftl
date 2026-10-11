@@ -1206,3 +1206,13 @@ settings-linux-fm1-serving = Serving
 settings-linux-fm1-pending = Starting…
 settings-linux-fm1-off = Off
 settings-fonts-interface-desc-linux = Labels, menus, buttons and file names. Default: the embedded Inter; installed fonts such as Noto Sans or Cantarell work too.
+
+## Linux (devices)
+settings-views-unmounted-devices = Unmounted devices
+settings-views-unmounted-devices-desc = Disks and partitions that aren't mounted, listed under Devices: click one to mount it, or to unlock a BitLocker / LUKS volume. Mounting goes through UDisks2, which may ask for your password.
+settings-views-unmounted-all = All
+settings-views-unmounted-removable = Removable only
+settings-views-unmounted-off = Off
+settings-views-hidden-devices = Hidden devices
+settings-views-hidden-devices-desc = Devices hidden with "Hide from sidebar", one filesystem UUID or device path (/dev/sdb1) per line.
+settings-views-hidden-devices-clear = Show all again

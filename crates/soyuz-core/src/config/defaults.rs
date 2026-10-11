@@ -179,6 +179,8 @@ impl Default for Sidebar {
             tree_drag_expand_ms: 700,
             portal: Vec::new(),
             gtk_bookmarks: true,
+            unmounted_devices: UnmountedDevices::All,
+            hidden_devices: Vec::new(),
         }
     }
 }

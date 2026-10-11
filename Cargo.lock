@@ -6416,6 +6416,7 @@ dependencies = [
  "x11rb",
  "xattr",
  "zbus",
+ "zeroize",
  "zip",
 ]
 

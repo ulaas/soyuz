@@ -1153,3 +1153,13 @@ settings-linux-fm1-serving = Hizmet veriyor
 settings-linux-fm1-pending = Başlatılıyor…
 settings-linux-fm1-off = Kapalı
 settings-fonts-interface-desc-linux = Etiketler, menüler, düğmeler ve dosya adları. Varsayılan: yerleşik Inter; Noto Sans veya Cantarell gibi yüklü yazı tipleri de kullanılabilir.
+
+## Linux (devices)
+settings-views-unmounted-devices = Bağlı olmayan aygıtlar
+settings-views-unmounted-devices-desc = Bağlı olmayan diskler ve bölümler Aygıtlar altında listelenir: bağlamak ya da bir BitLocker / LUKS biriminin kilidini açmak için tıklayın. Bağlama işlemi UDisks2 üzerinden yapılır; parolanız sorulabilir.
+settings-views-unmounted-all = Tümü
+settings-views-unmounted-removable = Yalnızca çıkarılabilir
+settings-views-unmounted-off = Kapalı
+settings-views-hidden-devices = Gizlenen aygıtlar
+settings-views-hidden-devices-desc = "Kenar çubuğunda gizle" ile gizlenen aygıtlar; her satırda bir dosya sistemi UUID'si veya aygıt yolu (/dev/sdb1).
+settings-views-hidden-devices-clear = Tümünü yeniden göster
