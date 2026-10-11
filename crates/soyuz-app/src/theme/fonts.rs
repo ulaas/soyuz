@@ -624,7 +624,20 @@ fn offsets_id() -> egui::Id {
 /// Returns notices for fonts that are not installed.
 pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
     let t = std::time::Instant::now();
+    sysfonts::take_missed();
     let roles = resolve(fonts, &sysfonts::locate, &is_variable_file);
+    if sysfonts::take_missed() {
+        // Linux: a system font was asked for while the font catalog is still being built
+        // in the background; install again (with the latest `[fonts]`) once it is.
+        let ctx = ctx.clone();
+        sysfonts::when_catalog_ready(move || {
+            let last = LAST.lock().clone();
+            if let Some(fonts) = last {
+                let _ = install(&ctx, &fonts);
+                ctx.request_repaint();
+            }
+        });
+    }
     let defs = build(fonts, &roles, &load_static);
     ctx.set_fonts(defs);
     if PREVIEWS_WANTED.load(std::sync::atomic::Ordering::Relaxed)

@@ -5,8 +5,13 @@
 //! * Windows: `CF_HDROP` (a hand-built `DROPFILES` block) + the registered
 //!   `"Preferred DropEffect"` format + `CF_UNICODETEXT`, through raw user32/kernel32
 //!   calls (`os_clipboard_windows.rs`). No shell or COM APIs.
-//! * Linux: `x-special/gnome-copied-files` / `text/uri-list` through `wl-copy` /
-//!   `wl-paste` (Wayland) or `xclip` (X11) when installed; best effort.
+//! * Linux: `x-special/gnome-copied-files`, `text/uri-list`,
+//!   `application/x-kde-cutselection` and the paths as text, served natively: the Wayland
+//!   `ext-data-control-v1` protocol on our own connection (`os_clipboard_wayland.rs`), or
+//!   the X11 `CLIPBOARD` selection (`os_clipboard_x11.rs`). The selection is owned by a
+//!   background thread until another application replaces it. Only when neither works
+//!   and `[linux] clipboard_fallback_tools` is on, `wl-copy` / `xclip` are run.
+//! * Other unix: the same formats through `wl-copy` / `xclip` when installed; best effort.
 //! * macOS: `public.file-url` via `osascript` for a single file, text otherwise; best effort.
 //!
 //! The codecs (DROPFILES, uri-list, gnome-copied-files) are pure and unit-tested on every
@@ -29,6 +34,30 @@ mod imp;
 #[cfg(not(windows))]
 #[path = "os_clipboard_unix.rs"]
 mod imp;
+
+#[cfg(target_os = "linux")]
+#[path = "os_clipboard_wayland.rs"]
+mod wayland;
+
+#[cfg(target_os = "linux")]
+#[path = "os_clipboard_x11.rs"]
+mod x11;
+
+/// `[linux] clipboard_fallback_tools` (kept current by `services::filemanager1::pump`).
+static FALLBACK_TOOLS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Apply `[linux] clipboard_fallback_tools`; the first call also probes the native
+/// clipboard in the background, so the first copy does not wait for it.
+pub fn set_fallback_tools(on: bool) {
+    FALLBACK_TOOLS.store(on, std::sync::atomic::Ordering::Relaxed);
+    #[cfg(target_os = "linux")]
+    imp::probe_in_background();
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn fallback_tools() -> bool {
+    FALLBACK_TOOLS.load(std::sync::atomic::Ordering::Relaxed)
+}
 
 /// Put `paths` on the system clipboard as files (plus their paths as text where the
 /// format allows both). Returns `false` when no native mechanism is available, so the
@@ -369,6 +398,52 @@ pub fn paths_text(paths: &[PathBuf]) -> String {
     crate::ops::fileops::clipboard::Clipboard::os_text(paths)
 }
 
+/// `application/x-kde-cutselection`: present with `1` on a cut (KDE / Dolphin).
+pub const KDE_CUT: &str = "application/x-kde-cutselection";
+pub const GNOME_FILES: &str = "x-special/gnome-copied-files";
+pub const URI_LIST: &str = "text/uri-list";
+/// Text MIME types (and the X11 text targets) the paths are offered as.
+pub const TEXT_TYPES: &[&str] = &["text/plain;charset=utf-8", "text/plain", "UTF8_STRING", "STRING", "TEXT"];
+
+/// The MIME types (and bodies) a file selection is offered as, preferred first.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn selection_formats(mode: ClipMode, paths: &[PathBuf]) -> Vec<(String, Vec<u8>)> {
+    let mut out = vec![
+        (GNOME_FILES.to_string(), encode_gnome(mode, paths).into_bytes()),
+        (URI_LIST.to_string(), encode_uri_list(paths).into_bytes()),
+    ];
+    if mode == ClipMode::Cut {
+        out.push((KDE_CUT.to_string(), b"1".to_vec()));
+    }
+    let text = paths_text(paths).into_bytes();
+    out.extend(TEXT_TYPES.iter().map(|t| (t.to_string(), text.clone())));
+    out
+}
+
+/// Files from a selection offering `types`, reading bodies with `read`: GNOME's format
+/// first, then `text/uri-list` (a cut when KDE's cut marker says `1`).
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub fn files_from_selection(
+    types: &[String],
+    mut read: impl FnMut(&str) -> Option<Vec<u8>>,
+) -> Option<(ClipMode, Vec<PathBuf>)> {
+    let has = |t: &str| types.iter().any(|x| x == t);
+    if has(GNOME_FILES)
+        && let Some(r) = read(GNOME_FILES).and_then(|b| decode_gnome(&String::from_utf8_lossy(&b)))
+    {
+        return Some(r);
+    }
+    if !has(URI_LIST) {
+        return None;
+    }
+    let list = decode_uri_list(&String::from_utf8_lossy(&read(URI_LIST)?));
+    if list.is_empty() {
+        return None;
+    }
+    let cut = has(KDE_CUT) && read(KDE_CUT).is_some_and(|b| b.first() == Some(&b'1'));
+    Some((if cut { ClipMode::Cut } else { ClipMode::Copy }, list))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -437,6 +512,24 @@ mod tests {
         let text = encode_uri_list(&paths);
         assert!(text.ends_with("\r\n"));
         assert_eq!(decode_uri_list(&format!("# comment\r\n{text}\r\nhttp://x/y\r\n")), paths);
+    }
+
+    #[test]
+    fn selection_formats_round_trip() {
+        let paths = if cfg!(windows) { vec![pb(r"C:\x y")] } else { vec![pb("/x y"), pb("/z")] };
+        for mode in [ClipMode::Copy, ClipMode::Cut] {
+            let f = selection_formats(mode, &paths);
+            let types: Vec<String> = f.iter().map(|(t, _)| t.clone()).collect();
+            assert_eq!(types[0], GNOME_FILES);
+            assert_eq!(types.contains(&KDE_CUT.to_string()), mode == ClipMode::Cut);
+            let read = |t: &str| f.iter().find(|(x, _)| x == t).map(|(_, b)| b.clone());
+            assert_eq!(files_from_selection(&types, read), Some((mode, paths.clone())));
+            // Without GNOME's format: uri-list plus KDE's cut marker.
+            let kde: Vec<String> = types.iter().filter(|t| *t != GNOME_FILES).cloned().collect();
+            assert_eq!(files_from_selection(&kde, read), Some((mode, paths.clone())));
+        }
+        let text_only = vec!["text/plain".to_string()];
+        assert_eq!(files_from_selection(&text_only, |_| Some(b"/etc".to_vec())), None);
     }
 
     #[test]

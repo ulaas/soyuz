@@ -200,6 +200,7 @@ ops-elevate-select = Select a program to run as administrator
 # $platform: "windows" | "other".
 ops-elevate-needs = { $platform ->
     [windows] Run as administrator needs an .exe, .msi, .bat or .cmd file
+    [linux] Run as administrator needs a program file with execute permission (it runs through pkexec)
    *[other] Run as administrator needs an executable file
 }
 # $name: program file name.
@@ -219,3 +220,7 @@ ops-bucket-today = Today
 ops-bucket-yesterday = Yesterday
 ops-bucket-this-week = This week
 ops-bucket-earlier = Earlier
+
+## Linux (platform)
+
+ops-elevate-no-pkexec = Running programs as administrator uses polkit's pkexec, which isn't installed. Install the polkit package (it provides pkexec) and try again.

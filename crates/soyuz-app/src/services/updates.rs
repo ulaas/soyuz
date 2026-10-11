@@ -8,6 +8,14 @@
 //!   folder, its SHA-256 is verified against the release's `SHA256SUMS*` file (and/or the
 //!   asset digest GitHub reports), installers get an Authenticode check, and only then is
 //!   the user offered to run the installer.
+//! * **Linux.** Releases ship `soyuz-<ver>-linux-<arch>.tar.gz` (`scripts/package.sh`)
+//!   with `SHA256SUMS-linux.txt` / `<file>.sha256`. There is no Authenticode, so the
+//!   signature is reported as [`Signature::Unknown`]. A copy installed from that tarball
+//!   (e.g. under `~/.local`) can replace itself: [`install_tarball`] re-verifies the
+//!   download, extracts `bin/soyuz` next to the running executable and renames it over it
+//!   atomically; [`request_restart`] + [`take_restart`] / [`exec_restart`] start the new
+//!   build. Package-manager, Flatpak and AppImage copies are never overwritten
+//!   ([`install_kind`], [`self_update_note`]).
 //!
 //! Network work runs on short-lived worker threads with their own tiny tokio runtime; the
 //! UI reads a shared [`Phase`] snapshot and is woken with `request_repaint`.
@@ -314,6 +322,7 @@ pub fn pick_asset<'a>(release: &'a Release, os: &str, arch: &str, portable: bool
     let order: &[(&str, Option<bool>)] = match (os, portable) {
         ("windows", false) => &[(".msi", None), (".zip", Some(false)), (".zip", None)],
         ("windows", true) => &[(".zip", Some(true)), (".zip", None)],
+        ("linux", _) => &[(".tar.gz", None), (".tgz", None), (".zip", None)],
         (_, true) => &[(".zip", Some(true)), (".zip", None), (".tar.gz", None)],
         _ => &[(".zip", Some(false)), (".zip", None), (".tar.gz", None), (".dmg", None)],
     };
@@ -568,7 +577,9 @@ pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
         let phase = match res {
             Ok((path, sha256)) => {
                 let lower = path.to_string_lossy().to_ascii_lowercase();
-                let signature = if lower.ends_with(".msi") || lower.ends_with(".exe") {
+                // Authenticode exists on Windows only: other platforms report `Unknown`
+                // honestly instead of "unsigned".
+                let signature = if cfg!(windows) && (lower.ends_with(".msi") || lower.ends_with(".exe")) {
                     soyuz_fs::integration::authenticode(&path)
                 } else {
                     Signature::Unknown
@@ -697,6 +708,286 @@ fn unique_path(dir: &Path, name: &str) -> PathBuf {
         _ => (name, String::new()),
     };
     (1..1000).map(|n| dir.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
+}
+
+// ---- Linux self-update -----------------------------------------------------------------
+
+/// How the running copy was installed (decides whether it may replace itself).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallKind {
+    /// Windows / macOS: installers are run by the user ([`run_installer`]).
+    Installer,
+    /// Linux, unpacked from the release tarball (`~/.local`, `/usr/local`, `/opt`, a
+    /// build folder): [`install_tarball`] can update it in place.
+    Tarball,
+    /// Linux, under `/usr` (rpm / deb / distribution package).
+    Package,
+    Flatpak,
+    AppImage,
+}
+
+impl InstallKind {
+    /// `$kind` selector of `services-update-package-managed`.
+    pub fn key(self) -> &'static str {
+        match self {
+            InstallKind::Installer | InstallKind::Tarball => "other",
+            InstallKind::Package => "system",
+            InstallKind::Flatpak => "flatpak",
+            InstallKind::AppImage => "appimage",
+        }
+    }
+}
+
+/// [`InstallKind`] of an executable at `exe` on `os`, with environment lookup `env`.
+pub fn install_kind_for(os: &str, exe: &Path, env: impl Fn(&str) -> Option<std::ffi::OsString>) -> InstallKind {
+    if os != "linux" {
+        return InstallKind::Installer;
+    }
+    let set = |k: &str| env(k).is_some_and(|v| !v.is_empty());
+    if set("FLATPAK_ID") || exe.starts_with("/app") {
+        InstallKind::Flatpak
+    } else if set("APPIMAGE") || (set("APPDIR") && env("APPDIR").is_some_and(|d| exe.starts_with(d))) {
+        InstallKind::AppImage
+    } else if exe.starts_with("/usr") && !exe.starts_with("/usr/local") {
+        InstallKind::Package
+    } else {
+        InstallKind::Tarball
+    }
+}
+
+/// [`InstallKind`] of the running copy.
+pub fn install_kind() -> InstallKind {
+    let exe = std::env::current_exe().unwrap_or_default();
+    install_kind_for(std::env::consts::OS, &exe, |k| std::env::var_os(k))
+}
+
+/// Linux copies that must be updated elsewhere: what to tell the user (`None` = this
+/// copy can update itself, or the platform uses installers).
+pub fn self_update_note() -> Option<String> {
+    match install_kind() {
+        InstallKind::Installer | InstallKind::Tarball => None,
+        k => Some(tr!("services-update-package-managed", kind = k.key())),
+    }
+}
+
+/// Largest `bin/soyuz` accepted from a tarball.
+const MAX_BINARY: u64 = 512 << 20;
+
+/// ELF `e_machine` of this build's architecture (`None` = not checked).
+fn elf_machine() -> Option<u16> {
+    match std::env::consts::ARCH {
+        "x86_64" => Some(62),
+        "aarch64" => Some(183),
+        "x86" => Some(3),
+        "arm" => Some(40),
+        "riscv64" => Some(243),
+        _ => None,
+    }
+}
+
+/// Whether `head` (the first bytes of a file) is an ELF executable for `machine`.
+fn is_elf_for(head: &[u8], machine: Option<u16>) -> bool {
+    if head.len() < 20 || &head[..4] != b"\x7fELF" {
+        return false;
+    }
+    let m =
+        if head[5] == 2 { u16::from_be_bytes([head[18], head[19]]) } else { u16::from_le_bytes([head[18], head[19]]) };
+    machine.is_none_or(|want| want == m)
+}
+
+/// Octal number of a tar header field (NUL / space padded).
+fn tar_octal(field: &[u8]) -> Option<u64> {
+    let s: String = field.iter().take_while(|b| **b != 0).map(|b| *b as char).collect();
+    let s = s.trim();
+    if s.is_empty() { Some(0) } else { u64::from_str_radix(s, 8).ok() }
+}
+
+/// Copy the `bin/soyuz` entry of a release tarball (`<top>/bin/soyuz`, or `bin/soyuz`)
+/// from the uncompressed tar stream `r` into `out`. Only that regular file is read; the
+/// output path is ours, so entry names can never escape anywhere.
+fn extract_binary(mut r: impl std::io::Read, out: &mut impl std::io::Write) -> Result<u64, String> {
+    use std::io::Read as _;
+    let mut header = [0u8; 512];
+    let mut long_name: Option<String> = None;
+    loop {
+        if r.read_exact(&mut header).is_err() || header.iter().all(|b| *b == 0) {
+            return Err(tr!("services-update-install-no-binary").into());
+        }
+        let field = |a: usize, b: usize| String::from_utf8_lossy(&header[a..b]).trim_end_matches('\0').to_string();
+        let size = tar_octal(&header[124..136]).ok_or(tr!("services-update-install-bad-archive"))?;
+        let kind = header[156];
+        let mut name = field(0, 100);
+        if &header[257..262] == b"ustar" {
+            let prefix = field(345, 500);
+            if !prefix.is_empty() {
+                name = format!("{prefix}/{name}");
+            }
+        }
+        if let Some(n) = long_name.take() {
+            name = n;
+        }
+        let padded = size.div_ceil(512) * 512;
+        let mut body = (&mut r).take(padded);
+        match kind {
+            // GNU long name / pax extended header: names the next entry.
+            b'L' | b'x' => {
+                if size > 64 << 10 {
+                    return Err(tr!("services-update-install-bad-archive").into());
+                }
+                let mut buf = Vec::new();
+                body.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+                buf.truncate(size as usize);
+                if kind == b'L' {
+                    long_name = Some(String::from_utf8_lossy(&buf).trim_end_matches('\0').to_string());
+                } else {
+                    long_name = String::from_utf8_lossy(&buf).lines().find_map(|l| {
+                        l.split_once(' ').and_then(|(_, kv)| kv.strip_prefix("path=")).map(str::to_string)
+                    });
+                }
+                continue;
+            }
+            b'0' | 0 => {
+                let rel = name.trim_start_matches("./");
+                let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
+                let wanted = matches!(parts.as_slice(), ["bin", "soyuz"] | [_, "bin", "soyuz"]);
+                if wanted {
+                    if size > MAX_BINARY {
+                        return Err(tr!("services-update-install-bad-archive").into());
+                    }
+                    let mut data = body.take(size);
+                    let n = std::io::copy(&mut data, out).map_err(|e| e.to_string())?;
+                    if n != size {
+                        return Err(tr!("services-update-install-bad-archive").into());
+                    }
+                    return Ok(n);
+                }
+            }
+            _ => {}
+        }
+        std::io::copy(&mut body, &mut std::io::sink()).map_err(|e| e.to_string())?;
+    }
+}
+
+/// Replace the running executable `exe` with `bin/soyuz` from the downloaded release
+/// tarball `archive` (blocking: call it off the UI thread). The archive is hashed again
+/// first (it sat in the Downloads folder) and must match `sha256`. The new binary is
+/// written to a temporary file next to `exe`, checked to be an ELF executable for this
+/// CPU, made executable, synced and renamed over `exe` (atomic; the running process
+/// keeps its old inode). Returns the path to restart into.
+pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: InstallKind) -> Result<PathBuf, String> {
+    if kind != InstallKind::Tarball {
+        return Err(tr!("services-update-package-managed", kind = kind.key()));
+    }
+    let lower = archive.to_string_lossy().to_ascii_lowercase();
+    if !(lower.ends_with(".tar.gz") || lower.ends_with(".tgz")) {
+        return Err(tr!("services-update-install-not-tarball").into());
+    }
+    let fail = |e: &dyn std::fmt::Display| tr!("services-update-install-failed", error = e.to_string());
+    // 1. Re-verify the archive.
+    let mut f = std::fs::File::open(archive).map_err(|e| fail(&e))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut f, &mut hasher).map_err(|e| fail(&e))?;
+    if !hex(&hasher.finalize()).eq_ignore_ascii_case(sha256) {
+        return Err(tr!("services-update-install-changed").into());
+    }
+    // 2. Extract bin/soyuz next to the executable (same filesystem → atomic rename).
+    let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
+    let dir = exe.parent().ok_or_else(|| fail(&"no parent folder"))?;
+    let tmp = dir.join(format!(".soyuz-update-{}.tmp", std::process::id()));
+    let result = (|| -> Result<(), String> {
+        let f = std::fs::File::open(archive).map_err(|e| fail(&e))?;
+        let mut out = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&tmp).map_err(|e| {
+            tr!("services-update-install-no-permission", path = dir.display().to_string(), error = e.to_string())
+        })?;
+        extract_binary(flate2::read::GzDecoder::new(std::io::BufReader::new(f)), &mut out)?;
+        out.sync_all().map_err(|e| fail(&e))?;
+        drop(out);
+        let mut head = [0u8; 64];
+        let n = std::io::Read::read(&mut std::fs::File::open(&tmp).map_err(|e| fail(&e))?, &mut head)
+            .map_err(|e| fail(&e))?;
+        if !is_elf_for(&head[..n], elf_machine()) {
+            return Err(tr!("services-update-install-not-elf").into());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
+        }
+        std::fs::rename(&tmp, &exe).map_err(|e| fail(&e))
+    })();
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(e);
+    }
+    Ok(exe)
+}
+
+/// [`install_tarball_to`] for the running executable.
+pub fn install_tarball(archive: &Path, sha256: &str) -> Result<PathBuf, String> {
+    let exe = std::env::current_exe().map_err(|e| tr!("services-update-install-failed", error = e.to_string()))?;
+    // `/proc/self/exe` of a replaced binary reads `… (deleted)`.
+    let exe = exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")).map(PathBuf::from).unwrap_or(exe);
+    install_tarball_to(archive, sha256, &exe, install_kind())
+}
+
+/// Result of the last background install started with [`install_async`]
+/// (`None` = none finished yet).
+static INSTALLED: Mutex<Option<Result<PathBuf, String>>> = Mutex::new(None);
+static INSTALLING: AtomicBool = AtomicBool::new(false);
+
+/// Run [`install_tarball`] on a worker thread; poll [`install_status`].
+pub fn install_async(archive: PathBuf, sha256: String, ctx: egui::Context) {
+    if INSTALLING.swap(true, AtomicOrdering::SeqCst) {
+        return;
+    }
+    *INSTALLED.lock() = None;
+    let spawned = std::thread::Builder::new().name("soyuz-update-install".into()).spawn(move || {
+        let r = install_tarball(&archive, &sha256);
+        *INSTALLED.lock() = Some(r);
+        INSTALLING.store(false, AtomicOrdering::SeqCst);
+        ctx.request_repaint();
+    });
+    if let Err(e) = spawned {
+        INSTALLING.store(false, AtomicOrdering::SeqCst);
+        *INSTALLED.lock() = Some(Err(tr!("services-update-cannot-start", error = e.to_string())));
+    }
+}
+
+/// `(installing, last result)` of [`install_async`].
+pub fn install_status() -> (bool, Option<Result<PathBuf, String>>) {
+    (INSTALLING.load(AtomicOrdering::SeqCst), INSTALLED.lock().clone())
+}
+
+static RESTART: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Restart into `exe` once the window has closed (the caller then sends
+/// `ViewportCommand::Close`; `main` calls [`take_restart`] after the event loop ends).
+pub fn request_restart(exe: PathBuf) {
+    *RESTART.lock() = Some(exe);
+}
+
+/// The executable to restart into, if a restart was requested.
+pub fn take_restart() -> Option<PathBuf> {
+    RESTART.lock().take()
+}
+
+/// Start `exe` with this process's arguments: on unix the process image is replaced
+/// (`execv`, same PID), elsewhere a new process is spawned. Returns only on failure.
+pub fn exec_restart(exe: &Path) -> std::io::Error {
+    let mut cmd = std::process::Command::new(exe);
+    cmd.args(std::env::args_os().skip(1));
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.exec()
+    }
+    #[cfg(not(unix))]
+    {
+        match cmd.spawn() {
+            Ok(_) => std::process::exit(0),
+            Err(e) => e,
+        }
+    }
 }
 
 /// Start the downloaded installer (`msiexec /i`) — only ever called from an explicit click.
@@ -949,5 +1240,156 @@ mod tests {
             let text = rt.block_on(get_text(&client, &s.url, MAX_SUMS)).unwrap();
             assert!(parse_sums(&text, &asset.name).is_some(), "{text}");
         }
+    }
+
+    fn linux_release() -> Release {
+        let mut r = parse_releases(FIXTURE, false).unwrap();
+        for n in ["soyuz-0.2.0-linux-x86_64.tar.gz", "soyuz-0.2.0-linux-x86_64.tar.gz.sha256", "SHA256SUMS-linux.txt"] {
+            r.assets.push(Asset { name: n.into(), url: format!("https://example.invalid/{n}"), size: 1, sha256: None });
+        }
+        r
+    }
+
+    #[test]
+    fn linux_tarball_asset_and_checksums() {
+        let r = linux_release();
+        let a = pick_asset(&r, "linux", "x86_64", false).unwrap();
+        assert_eq!(a.name, "soyuz-0.2.0-linux-x86_64.tar.gz");
+        assert_eq!(pick_asset(&r, "linux", "x86_64", true).unwrap().name, a.name, "portable copies too");
+        assert_eq!(pick_asset(&r, "linux", "aarch64", false), None);
+        // The older x64 spelling still matches.
+        let mut old = parse_releases(FIXTURE, false).unwrap();
+        old.assets.push(Asset {
+            name: "soyuz-0.1.0-linux-x64.tar.gz".into(),
+            url: "https://x/y".into(),
+            size: 1,
+            sha256: None,
+        });
+        assert_eq!(pick_asset(&old, "linux", "x86_64", false).unwrap().name, "soyuz-0.1.0-linux-x64.tar.gz");
+        let sums: Vec<&str> = checksum_assets(&r, &a.name).iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(sums[0], "soyuz-0.2.0-linux-x86_64.tar.gz.sha256", "own .sha256 first");
+        assert!(sums.contains(&"SHA256SUMS-linux.txt"));
+    }
+
+    #[test]
+    fn install_kinds() {
+        let none = |_: &str| None;
+        let k = |exe: &str| install_kind_for("linux", Path::new(exe), none);
+        assert_eq!(k("/usr/bin/soyuz"), InstallKind::Package);
+        assert_eq!(k("/usr/local/bin/soyuz"), InstallKind::Tarball);
+        assert_eq!(k("/home/me/.local/bin/soyuz"), InstallKind::Tarball);
+        assert_eq!(k("/app/bin/soyuz"), InstallKind::Flatpak);
+        let flatpak = |v: &str| (v == "FLATPAK_ID").then(|| "io.github.x".into());
+        assert_eq!(install_kind_for("linux", Path::new("/opt/x"), flatpak), InstallKind::Flatpak);
+        let appimage = |v: &str| (v == "APPIMAGE").then(|| "/home/me/Soyuz.AppImage".into());
+        assert_eq!(
+            install_kind_for("linux", Path::new("/tmp/.mount_x/usr/bin/soyuz"), appimage),
+            InstallKind::AppImage
+        );
+        assert_eq!(install_kind_for("windows", Path::new("C:/x/soyuz.exe"), none), InstallKind::Installer);
+    }
+
+    /// A minimal ustar archive with `entries` (name, data, type flag).
+    fn tar(entries: &[(&str, &[u8], u8)]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for (name, data, kind) in entries {
+            let mut h = [0u8; 512];
+            h[..name.len()].copy_from_slice(name.as_bytes());
+            h[100..107].copy_from_slice(b"0000755");
+            h[124..135].copy_from_slice(format!("{:011o}", data.len()).as_bytes());
+            h[156] = *kind;
+            h[257..262].copy_from_slice(b"ustar");
+            out.extend_from_slice(&h);
+            out.extend_from_slice(data);
+            out.resize(out.len().div_ceil(512) * 512, 0);
+        }
+        out.extend_from_slice(&[0u8; 1024]);
+        out
+    }
+
+    fn elf() -> Vec<u8> {
+        let mut e = vec![0u8; 64];
+        e[..4].copy_from_slice(b"\x7fELF");
+        e[4] = 2;
+        e[5] = 1;
+        let m = elf_machine().unwrap_or(62);
+        e[18..20].copy_from_slice(&m.to_le_bytes());
+        e.extend_from_slice(b"new build");
+        e
+    }
+
+    fn gz(data: &[u8]) -> Vec<u8> {
+        let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(data).unwrap();
+        enc.finish().unwrap()
+    }
+
+    #[test]
+    fn tar_extraction() {
+        let bin = elf();
+        let long = format!("soyuz-0.2.0-linux-x86_64/{}/x", "d".repeat(120));
+        let t = tar(&[
+            ("soyuz-0.2.0-linux-x86_64/", b"", b'5'),
+            ("././@LongLink", long.as_bytes(), b'L'),
+            ("soyuz-0.2.0-linux-x86_64/ddd", b"long-named file", b'0'),
+            ("soyuz-0.2.0-linux-x86_64/share/doc/soyuz/README.md", b"readme", b'0'),
+            ("soyuz-0.2.0-linux-x86_64/bin/soyuz", &bin, b'0'),
+        ]);
+        let mut out = Vec::new();
+        assert_eq!(extract_binary(&t[..], &mut out).unwrap(), bin.len() as u64);
+        assert_eq!(out, bin);
+        // Nested deeper, a symlink, or missing: not taken.
+        let t = tar(&[("a/b/bin/soyuz", b"x", b'0'), ("top/bin/soyuz", b"", b'2')]);
+        assert!(extract_binary(&t[..], &mut Vec::new()).is_err());
+        assert!(extract_binary(&b"short"[..], &mut Vec::new()).is_err());
+        assert!(is_elf_for(&bin, elf_machine()));
+        assert!(!is_elf_for(b"#!/bin/sh\n echo hi ........", None));
+        let mut other = bin.clone();
+        other[18..20].copy_from_slice(&0xBEEFu16.to_le_bytes());
+        assert!(!is_elf_for(&other, Some(62)));
+    }
+
+    #[test]
+    fn tarball_install_replaces_the_executable() {
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("bin").join("soyuz");
+        std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+        std::fs::write(&exe, b"old build").unwrap();
+        let archive = d.path().join("soyuz-0.2.0-linux-x86_64.tar.gz");
+        std::fs::write(&archive, gz(&tar(&[("soyuz-0.2.0-linux-x86_64/bin/soyuz", &elf(), b'0')]))).unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&archive).unwrap()));
+
+        // Package-managed copies and tampered downloads are refused, nothing changes.
+        assert!(install_tarball_to(&archive, &sha, &exe, InstallKind::Package).is_err());
+        assert!(install_tarball_to(&archive, &"0".repeat(64), &exe, InstallKind::Tarball).is_err());
+        assert_eq!(std::fs::read(&exe).unwrap(), b"old build");
+
+        let new = install_tarball_to(&archive, &sha, &exe, InstallKind::Tarball).unwrap();
+        assert_eq!(new, std::fs::canonicalize(&exe).unwrap());
+        assert_eq!(std::fs::read(&exe).unwrap(), elf());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&exe).unwrap().permissions().mode() & 0o777, 0o755);
+        }
+        let leftovers: Vec<_> =
+            std::fs::read_dir(exe.parent().unwrap()).unwrap().flatten().map(|e| e.file_name()).collect();
+        assert_eq!(leftovers.len(), 1, "no temp file left: {leftovers:?}");
+
+        // Not an ELF binary for this CPU: refused, temp file removed.
+        let bad = d.path().join("bad.tar.gz");
+        std::fs::write(&bad, gz(&tar(&[("x/bin/soyuz", b"#!/bin/sh\necho pwned\n", b'0')]))).unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&bad).unwrap()));
+        assert!(install_tarball_to(&bad, &sha, &exe, InstallKind::Tarball).is_err());
+        assert_eq!(std::fs::read(&exe).unwrap(), elf());
+        assert_eq!(std::fs::read_dir(exe.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn restart_request_round_trip() {
+        assert_eq!(take_restart(), None);
+        request_restart(PathBuf::from("/x/soyuz"));
+        assert_eq!(take_restart(), Some(PathBuf::from("/x/soyuz")));
+        assert_eq!(take_restart(), None);
     }
 }

@@ -1,7 +1,9 @@
 //! Color tags / labels: eight colors matching the `tag.*` design tokens,
 //! stored per path in `tags.toml` next to the config (portable-aware), plus a
 //! best-effort read of macOS Finder tags (`com.apple.metadata:_kMDItemUserTags`, a
-//! binary plist) shown alongside.
+//! binary plist) shown alongside. On Linux the tags are mirrored into the freedesktop
+//! `user.xdg.tags` extended attribute (Dolphin / Baloo read and write it), and tags found
+//! there are shown too (`[tags] sync_xdg_tags`, see [`set_sync_xdg_tags`]).
 //!
 //! The store is UI-thread-local; it loads on a worker at startup and is written back
 //! (debounced, atomically) on a worker after changes. `Location::Tags(slug)` lists every
@@ -281,16 +283,162 @@ pub fn finder_mask(tags: &[(String, Option<u8>)]) -> TagMask {
 }
 
 #[cfg(target_os = "macos")]
-fn read_finder(path: &Path) -> TagMask {
+fn read_finder(path: &Path, _names: &TagNames) -> TagMask {
     match xattr::get(path, "com.apple.metadata:_kMDItemUserTags") {
         Ok(Some(data)) => parse_finder_tags(&data).map(|t| finder_mask(&t)).unwrap_or(0),
         _ => 0,
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn read_finder(_path: &Path) -> TagMask {
+#[cfg(target_os = "linux")]
+fn read_finder(path: &Path, names: &TagNames) -> TagMask {
+    match xattr::get(path, XDG_TAGS_XATTR) {
+        Ok(Some(data)) => names.mask(&parse_xdg_tags(&data)),
+        _ => 0,
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn read_finder(_path: &Path, _names: &TagNames) -> TagMask {
     0
+}
+
+// ---------------------------------------------------------------------------------------
+// Linux: freedesktop `user.xdg.tags` (Common Extended Attributes; Dolphin / Baloo write
+// it): a comma-separated list of free-text tags. Tags whose name is one of ours (the
+// English color name, its translation, or the user's name for it) show as that color;
+// edits in Soyuz rewrite only those names and keep every other tag.
+
+/// The extended attribute holding freedesktop tags.
+pub const XDG_TAGS_XATTR: &str = "user.xdg.tags";
+
+/// Mirror tag edits into `user.xdg.tags` and show tags found there (Linux; on by
+/// default). Set from `[tags] sync_xdg_tags` by `app::apply_live_settings`.
+static SYNC_XDG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// `[tags] sync_xdg_tags`.
+pub fn set_sync_xdg_tags(on: bool) {
+    SYNC_XDG.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether tags are synced with `user.xdg.tags` (Linux and the setting on).
+pub fn xdg_sync() -> bool {
+    cfg!(target_os = "linux") && SYNC_XDG.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether tags stored by the OS on the files themselves are read for visible folders
+/// (macOS Finder tags; Linux `user.xdg.tags` when synced).
+pub fn os_tags_enabled() -> bool {
+    cfg!(target_os = "macos") || xdg_sync()
+}
+
+/// Tags of a `user.xdg.tags` value (comma-separated; blanks dropped).
+pub fn parse_xdg_tags(data: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(data).split(',').map(str::trim).filter(|t| !t.is_empty()).map(str::to_string).collect()
+}
+
+/// Name ↔ tag mapping used off the UI thread (a snapshot of the current names).
+#[derive(Clone, Debug, Default)]
+pub struct TagNames {
+    /// Lowercased name → tag (English, translated and custom names).
+    known: Vec<(String, u8)>,
+    /// Name written for each tag (the custom name, else the English color name).
+    write: [String; TAG_COUNT],
+}
+
+impl TagNames {
+    /// Build from the translated and custom names (`None` = not renamed).
+    pub fn new(translated: &[String; TAG_COUNT], custom: &[Option<String>; TAG_COUNT]) -> Self {
+        let mut known = Vec::new();
+        let mut write: [String; TAG_COUNT] = Default::default();
+        for t in 0..TAG_COUNT {
+            let mut add = |n: &str| {
+                let n = n.trim().to_lowercase();
+                if !n.is_empty() && !known.iter().any(|(k, _)| *k == n) {
+                    known.push((n, t as u8));
+                }
+            };
+            if let Some(c) = &custom[t] {
+                add(c);
+            }
+            add(TAG_NAMES[t]);
+            add(&translated[t]);
+            if t == 7 {
+                add("grey");
+            }
+            write[t] = custom[t].clone().filter(|c| !c.trim().is_empty()).unwrap_or_else(|| TAG_NAMES[t].to_string());
+        }
+        TagNames { known, write }
+    }
+
+    /// The current names (UI thread).
+    pub fn current() -> Self {
+        let translated: [String; TAG_COUNT] = std::array::from_fn(|t| default_name(t as u8).to_string());
+        let custom: [Option<String>; TAG_COUNT] = std::array::from_fn(|t| custom_name(t as u8));
+        TagNames::new(&translated, &custom)
+    }
+
+    /// Our tag for a free-text tag name.
+    pub fn tag_of(&self, name: &str) -> Option<u8> {
+        let n = name.trim().to_lowercase();
+        self.known.iter().find(|(k, _)| *k == n).map(|(_, t)| *t)
+    }
+
+    /// Our tags among free-text tags.
+    pub fn mask(&self, tags: &[String]) -> TagMask {
+        tags.iter().filter_map(|t| self.tag_of(t)).fold(0, |m, t| m | (1 << t))
+    }
+
+    /// `existing` with our tags replaced by the ones in `mask` (others keep their order).
+    pub fn merge(&self, existing: &[String], mask: TagMask) -> Vec<String> {
+        let mut out: Vec<String> = existing.iter().filter(|t| self.tag_of(t).is_none()).cloned().collect();
+        out.extend(mask_tags(mask).map(|t| self.write[t as usize].replace(',', " ")));
+        out
+    }
+}
+
+/// Write our tags (`mask`) into the file's `user.xdg.tags`, keeping its other tags. A
+/// filesystem without user xattrs (vfat, some network mounts) is skipped quietly.
+#[cfg(target_os = "linux")]
+fn write_xdg(path: &Path, mask: TagMask, names: &TagNames) {
+    let existing = match xattr::get(path, XDG_TAGS_XATTR) {
+        Ok(v) => v.map(|d| parse_xdg_tags(&d)).unwrap_or_default(),
+        Err(e) => {
+            log::debug!("xdg tags: cannot read {}: {e}", path.display());
+            return;
+        }
+    };
+    let merged = names.merge(&existing, mask);
+    if merged == existing {
+        return;
+    }
+    let res = if merged.is_empty() {
+        xattr::remove(path, XDG_TAGS_XATTR)
+    } else {
+        xattr::set(path, XDG_TAGS_XATTR, merged.join(",").as_bytes())
+    };
+    if let Err(e) = res {
+        log::debug!("xdg tags: cannot write {}: {e}", path.display());
+    }
+}
+
+/// Mirror new masks into `user.xdg.tags` on a worker (Linux, when synced).
+fn sync_xdg(changes: Vec<(PathBuf, TagMask)>) {
+    if !xdg_sync() || changes.is_empty() {
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let names = TagNames::current();
+        let spawned = std::thread::Builder::new().name("soyuz-xdg-tags".into()).spawn(move || {
+            for (p, m) in changes {
+                write_xdg(&p, m, &names);
+            }
+        });
+        if spawned.is_err() {
+            log::warn!("cannot spawn the xdg tags writer");
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------------------
@@ -310,9 +458,13 @@ struct Registry {
     rx: Option<Receiver<Reply>>,
     tx: Option<crossbeam_channel::Sender<Reply>>,
     path: PathBuf,
-    /// Finder tags per path (read-only, macOS).
+    /// Tags stored on the files themselves, per path: macOS Finder tags (read-only), Linux
+    /// `user.xdg.tags` (kept equal to the store for paths edited here).
     finder: HashMap<PathBuf, TagMask>,
     finder_dirs: HashSet<PathBuf>,
+    /// Paths tagged in Soyuz this session: a folder read started before the edit must
+    /// not bring back the old file tags.
+    os_edited: HashSet<PathBuf>,
     /// Bumped on every change (sidebar counts cache).
     version: u64,
 }
@@ -330,6 +482,7 @@ impl Default for Registry {
             path: soyuz_core::config::config_dir().join("tags.toml"),
             finder: HashMap::new(),
             finder_dirs: HashSet::new(),
+            os_edited: HashSet::new(),
             version: 0,
         }
     }
@@ -372,10 +525,14 @@ pub fn pump(wake: &std::sync::Arc<dyn Fn() + Send + Sync>) -> bool {
                     r.version += 1;
                 }
                 Reply::Finder { dir, tags } => {
-                    r.finder.retain(|p, _| p.parent() != Some(dir.as_path()));
+                    let edited = std::mem::take(&mut r.os_edited);
+                    r.finder.retain(|p, _| p.parent() != Some(dir.as_path()) || edited.contains(p));
                     for (p, m) in tags {
-                        r.finder.insert(p, m);
+                        if !edited.contains(&p) {
+                            r.finder.insert(p, m);
+                        }
                     }
+                    r.os_edited = edited;
                     r.version += 1;
                 }
             }
@@ -461,7 +618,8 @@ pub fn pending_save() -> bool {
     REG.with_borrow(|r| r.dirty)
 }
 
-/// Tags of a path: user tags plus Finder tags. Cheap; call per row.
+/// Tags of a path: user tags plus tags stored on the file (Finder / `user.xdg.tags`).
+/// Cheap; call per row.
 pub fn tags_of(path: &Path) -> TagMask {
     REG.with_borrow(|r| {
         let own = r.store.get(path);
@@ -469,9 +627,10 @@ pub fn tags_of(path: &Path) -> TagMask {
     })
 }
 
-/// Read Finder tags for the entries of `dir` once (macOS; no-op elsewhere).
+/// Read the tags stored on the entries of `dir` once: macOS Finder tags, Linux
+/// `user.xdg.tags` (when synced, see [`os_tags_enabled`]); a no-op elsewhere.
 pub fn request_finder(dir: &Path, wake: &std::sync::Arc<dyn Fn() + Send + Sync>) {
-    if !cfg!(target_os = "macos") {
+    if !os_tags_enabled() {
         return;
     }
     REG.with_borrow_mut(|r| {
@@ -481,12 +640,13 @@ pub fn request_finder(dir: &Path, wake: &std::sync::Arc<dyn Fn() + Send + Sync>)
         let Some(tx) = r.tx.clone() else { return };
         let dir = dir.to_path_buf();
         let wake = wake.clone();
+        let names = TagNames::current();
         let _ = std::thread::Builder::new().name("soyuz-finder-tags".into()).spawn(move || {
             let mut tags = Vec::new();
             if let Ok(rd) = std::fs::read_dir(&dir) {
                 for e in rd.flatten() {
                     let p = e.path();
-                    let m = read_finder(&p);
+                    let m = read_finder(&p, &names);
                     if m != 0 {
                         tags.push((p, m));
                     }
@@ -504,30 +664,60 @@ fn changed(r: &mut Registry) {
     r.version += 1;
 }
 
+/// The mask a path shows: with xdg sync, tags found on the file count as set (so
+/// toggling a tag that came from Dolphin removes it).
+fn effective(r: &Registry, p: &Path, xdg: bool) -> TagMask {
+    let own = r.store.get(p);
+    if xdg { own | r.finder.get(&norm(p)).copied().unwrap_or(0) } else { own }
+}
+
+/// Record `mask` as the file tags of `p` (xdg sync) and return the change to write.
+fn os_set(r: &mut Registry, p: &Path, mask: TagMask) -> (PathBuf, TagMask) {
+    let p = norm(p);
+    if mask == 0 {
+        r.finder.remove(&p);
+    } else {
+        r.finder.insert(p.clone(), mask);
+    }
+    r.os_edited.insert(p.clone());
+    (p, mask)
+}
+
 /// Toggle `tag` on every path: when all already carry it, remove it; else add it.
 pub fn toggle_many(paths: &[PathBuf], tag: u8) -> bool {
-    REG.with_borrow_mut(|r| {
-        let all = paths.iter().all(|p| r.store.get(p) & (1 << tag) != 0);
+    let xdg = xdg_sync();
+    let (added, writes) = REG.with_borrow_mut(|r| {
+        let all = paths.iter().all(|p| effective(r, p, xdg) & (1 << tag) != 0);
+        let mut writes = Vec::new();
         for p in paths {
-            if all {
-                let m = r.store.get(p) & !(1 << tag);
-                r.store.set(p, m);
-            } else {
-                r.store.add(p, tag);
+            let m = effective(r, p, xdg);
+            let m = if all { m & !(1 << tag) } else { m | (1 << tag) };
+            r.store.set(p, m);
+            if xdg {
+                writes.push(os_set(r, p, m));
             }
         }
         changed(r);
-        !all
-    })
+        (!all, writes)
+    });
+    sync_xdg(writes);
+    added
 }
 
 pub fn clear_many(paths: &[PathBuf]) {
-    REG.with_borrow_mut(|r| {
+    let xdg = xdg_sync();
+    let writes = REG.with_borrow_mut(|r| {
+        let mut writes = Vec::new();
         for p in paths {
             r.store.clear(p);
+            if xdg {
+                writes.push(os_set(r, p, 0));
+            }
         }
         changed(r);
+        writes
     });
+    sync_xdg(writes);
 }
 
 /// Keep tags attached to a renamed / moved item.
@@ -536,6 +726,14 @@ pub fn rename(from: &Path, to: &Path) {
         if r.store.get(from) != 0 || r.store.map.keys().any(|p| p.starts_with(norm(from))) {
             r.store.rename(from, to);
             changed(r);
+        }
+        // Tags stored on the file move with it.
+        let (f, t) = (norm(from), norm(to));
+        if r.finder.keys().any(|p| p.starts_with(&f)) {
+            let mut os = TagStore { map: std::mem::take(&mut r.finder) };
+            os.rename(&f, &t);
+            r.finder = os.map;
+            r.version += 1;
         }
     });
 }
@@ -702,6 +900,66 @@ mod tests {
         assert_eq!(from_name("3"), Some(2));
         assert_eq!(from_name("9"), None);
         assert_eq!(from_name("teal"), None);
+    }
+
+    fn names_with(custom0: Option<&str>) -> TagNames {
+        let translated: [String; TAG_COUNT] =
+            ["Kırmızı", "Turuncu", "Sarı", "Yeşil", "Camgöbeği", "Mavi", "Mor", "Gri"].map(String::from);
+        let mut custom: [Option<String>; TAG_COUNT] = Default::default();
+        custom[0] = custom0.map(String::from);
+        TagNames::new(&translated, &custom)
+    }
+
+    #[test]
+    fn xdg_tags_parse_and_map() {
+        assert_eq!(parse_xdg_tags(b"Red, work ,,Mavi"), ["Red", "work", "Mavi"]);
+        assert!(parse_xdg_tags(b"").is_empty());
+        let n = names_with(Some("Urgent"));
+        assert_eq!(n.tag_of("red"), Some(0));
+        assert_eq!(n.tag_of("URGENT"), Some(0));
+        assert_eq!(n.tag_of("kırmızı"), Some(0));
+        assert_eq!(n.tag_of("Grey"), Some(7));
+        assert_eq!(n.tag_of("work"), None);
+        let tags = parse_xdg_tags(b"Mavi,work,Gray");
+        assert_eq!(n.mask(&tags), (1 << 5) | (1 << 7));
+    }
+
+    #[test]
+    fn xdg_merge_keeps_foreign_tags() {
+        let n = names_with(None);
+        let existing: Vec<String> = ["work", "Red", "holiday", "Blue"].map(String::from).to_vec();
+        // Red stays, Blue goes, Green arrives; foreign tags keep their order.
+        assert_eq!(n.merge(&existing, (1 << 0) | (1 << 3)), ["work", "holiday", "Red", "Green"]);
+        assert_eq!(n.merge(&existing, 0), ["work", "holiday"]);
+        assert!(n.merge(&[], 0).is_empty());
+        // A custom name is what gets written, and a comma cannot split it.
+        let c = names_with(Some("To do, soon"));
+        assert_eq!(c.merge(&[], 1), ["To do  soon"]);
+    }
+
+    /// Writes and reads `user.xdg.tags` on a temp file (skipped when the temp filesystem
+    /// has no user xattrs, e.g. tmpfs without `user_xattr`).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn xdg_tags_round_trip_on_disk() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("a.txt");
+        std::fs::write(&f, b"x").unwrap();
+        if xattr::set(&f, XDG_TAGS_XATTR, b"work,Blue").is_err() {
+            eprintln!("no user xattrs on {}: skipped", d.path().display());
+            return;
+        }
+        let n = names_with(None);
+        assert_eq!(read_finder(&f, &n), 1 << 5);
+        write_xdg(&f, (1 << 0) | (1 << 5), &n);
+        assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap().unwrap(), b"work,Red,Blue");
+        write_xdg(&f, 0, &n);
+        assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap().unwrap(), b"work");
+        xattr::remove(&f, XDG_TAGS_XATTR).unwrap();
+        write_xdg(&f, 0, &n);
+        assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap(), None, "nothing written for no tags");
+        write_xdg(&f, 1 << 3, &n);
+        assert_eq!(read_finder(&f, &n), 1 << 3);
     }
 
     /// Build a bplist00 with an array of ASCII strings (test encoder).

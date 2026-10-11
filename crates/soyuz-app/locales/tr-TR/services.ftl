@@ -290,3 +290,25 @@ services-update-checksum-mismatch = sağlama toplamı uyuşmuyor (beklenen { $ex
 services-update-cannot-rename = indirilen dosya yeniden adlandırılamıyor: { $error }
 services-update-available = Soyuz { $version } kullanıma sunuldu
 services-update-available-body = Sürüm notlarını okumak ve indirmek için Ayarlar → Hakkında ve güncellemeler bölümünü açın.
+
+## Linux (platform)
+
+services-clipboard-unavailable = pano kullanılamıyor (Wayland data-control ve X11 ekranı yok)
+services-fm1-failed = "Klasörde göster" kaydedilemedi (org.freedesktop.FileManager1): { $error }
+services-fm1-taken = "Klasörde göster" isteklerini zaten başka bir uygulama ({ $owner }) karşılıyor (org.freedesktop.FileManager1). O uygulamayı kapatın ya da dosya yöneticisi hizmetini kapatın, sonra bu ayarı kapatıp yeniden açın.
+
+# $kind: "system" | "flatpak" | "appimage" | "other".
+services-update-package-managed = { $kind ->
+    [system] Soyuz'un bu kopyası sisteminizin paket yöneticisiyle kuruldu. Güncellemeyi oradan yapın (örneğin dnf, apt veya yazılım merkezi); Soyuz paket yöneticisine ait dosyaların üzerine asla yazmaz.
+    [flatpak] Soyuz'un bu kopyası Flatpak olarak çalışıyor. “flatpak update” komutuyla veya yazılım merkezinden güncelleyin.
+    [appimage] Soyuz'un bu kopyası AppImage olarak çalışıyor. Yeni AppImage dosyasını indirip eskisinin yerine koyun.
+   *[other] Soyuz'un bu kopyası kendini güncelleyemez. Yeni sürümü bunu kurduğunuz yolla kurun.
+}
+services-update-install-not-tarball = yerinde yalnızca Linux sürüm arşivi (.tar.gz) kurulabilir
+services-update-install-no-binary = arşivde bin/soyuz yok
+services-update-install-bad-archive = arşiv bozuk ya da bir Soyuz sürümü değil
+services-update-install-not-elf = arşivdeki bin/soyuz bu bilgisayarın işlemcisi için bir program değil; hiçbir şey değiştirilmedi
+services-update-install-changed = indirilen dosya doğrulandıktan sonra değişti; yeniden indirin
+# $path: folder of the running soyuz executable.
+services-update-install-no-permission = { $path } klasörüne yazılamıyor ({ $error }). Soyuz sistem genelinde kurulduysa sudo ile güncelleyin, örneğin “sudo tar -C /usr/local --strip-components=1 -xf <dosya>”.
+services-update-install-failed = güncelleme kurulamadı: { $error }

@@ -179,6 +179,7 @@ ops-window-keeps-tab = Bir pencerede en az bir sekme kalmalıdır
 ops-elevate-select = Yönetici olarak çalıştırılacak bir program seçin
 ops-elevate-needs = { $platform ->
     [windows] Yönetici olarak çalıştırmak için bir .exe, .msi, .bat veya .cmd dosyası gerekir
+    [linux] Yönetici olarak çalıştırmak için çalıştırma izni olan bir program dosyası gerekir (pkexec ile çalıştırılır)
    *[other] Yönetici olarak çalıştırmak için çalıştırılabilir bir dosya gerekir
 }
 ops-elevate-failed = { $name } yönetici olarak çalıştırılamadı
@@ -196,3 +197,7 @@ ops-bucket-today = Bugün
 ops-bucket-yesterday = Dün
 ops-bucket-this-week = Bu hafta
 ops-bucket-earlier = Daha önce
+
+## Linux (platform)
+
+ops-elevate-no-pkexec = Programları yönetici olarak çalıştırmak için polkit'in pkexec aracı kullanılır, ancak kurulu değil. polkit paketini kurun (pkexec onunla gelir) ve yeniden deneyin.

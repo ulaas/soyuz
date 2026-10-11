@@ -668,6 +668,7 @@ impl SoyuzApp {
         crate::ai::pump(self, &ctx);
         crate::automation::pump(self, &ctx);
         crate::services::updates::pump(self, &ctx);
+        crate::services::filemanager1::pump(self, &ctx);
         crate::ui::remote::pump(self, &ctx);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
