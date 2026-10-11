@@ -15,6 +15,7 @@ use soyuz_fs::VolumeInfo;
 use crate::cmd::Cmd;
 use crate::host::Host;
 use crate::keys;
+use crate::models::panels::BottomPanel;
 use crate::models::sidebar::SidebarState;
 use crate::models::toasts::Toasts;
 use crate::services::Services;
@@ -24,7 +25,6 @@ use crate::state::view_memory::{ViewMemory, ViewState};
 use crate::state::workspace::{Tab, Workspace};
 use crate::theme;
 use crate::ui::dialogs::Dialogs;
-use crate::ui::panels::BottomPanel;
 use crate::ui::shell;
 use crate::{actions, ops};
 
@@ -64,9 +64,9 @@ pub struct UiState {
     pub theme: crate::host::ThemePref,
     pub reduced_motion: bool,
     pub title: String,
-    pub terminal: crate::ui::panels::terminal::TerminalPanel,
+    pub terminal: crate::models::terminal::TerminalPanel,
     pub preview: crate::ui::preview::PreviewPane,
-    pub quicklook: crate::ui::quicklook::QuickLook,
+    pub quicklook: crate::models::quicklook::QuickLook,
     pub search: crate::models::search::SearchState,
     /// Show the welcome / onboarding card (first run, or `Action::Welcome`).
     pub welcome: bool,
@@ -246,7 +246,7 @@ impl SoyuzApp {
         if let Some(s) = &session {
             ui.tree.restore_expanded(s.tree_expanded.iter().cloned());
         }
-        crate::ui::tools::restore_shelf(shelf);
+        crate::models::tools::restore_shelf(shelf);
 
         let opened = startup.open.as_deref().and_then(startup_target);
         let start = match &opened {
@@ -361,7 +361,7 @@ impl SoyuzApp {
             sidebar_visible: Some(self.ui.sidebar_visible),
             checkbox_mode: self.ui.checkbox_mode,
             welcome_seen: self.ui.welcome_seen,
-            shelf: crate::ui::tools::shelf_paths(),
+            shelf: crate::models::tools::shelf_paths(),
             tree_expanded: self.ui.tree.session_expanded(),
             editors: crate::editors::session_paths(self),
             ..Session::default()
@@ -405,14 +405,14 @@ impl SoyuzApp {
         if self.ui.dialogs.is_open()
             || crate::palette::owns_keyboard(self)
             || crate::ui::widgets::dropdown::any_open(ctx)
-            || crate::ui::tools::any_window_open()
+            || crate::models::tools::any_window_open()
         {
             return; // the modal (or an open dropdown / tool window) owns the keyboard
         }
         if crate::ui::quicklook::handle_keys(self, ctx) {
             return;
         }
-        if crate::ui::panels::terminal::owns_keyboard(self) {
+        if crate::models::terminal::owns_keyboard(self) {
             let actions = crate::ui::panels::terminal::dispatch_keys(ctx, &self.keymap, self.config.keys.cmd_is_ctrl);
             for a in actions {
                 actions::execute(self, a, ctx);
@@ -470,10 +470,10 @@ impl SoyuzApp {
             let cmds = std::mem::take(&mut self.cmds);
             for c in cmds {
                 ops::apply(self, c, host);
-                crate::ui::frontend::drain(self);
+                crate::ui::frontend::drain(self, host);
             }
         }
-        crate::ui::frontend::drain(self);
+        crate::ui::frontend::drain(self, host);
     }
 
     /// Window close requests: with pending jobs, cancel the close and ask first (quitting
@@ -508,7 +508,7 @@ impl SoyuzApp {
         if !self.quit.prompting.swap(true, Ordering::SeqCst) {
             host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
             host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
-            self.ui.dialogs.push(crate::ui::dialogs::quit::QuitDialog::new(pending, self.quit.prompting.clone()));
+            self.frontend.push(crate::models::frontend::FrontendCmd::ConfirmQuit { pending });
         }
     }
 
@@ -658,10 +658,10 @@ impl SoyuzApp {
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);
         crate::models::devices::pump(self);
-        crate::ui::dialogs::properties::pump(self, &ctx);
+        crate::models::properties::pump(self, &ctx);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, &ctx);
-        crate::ui::panels::terminal::pump(self, &ctx);
+        crate::models::terminal::pump(self, &ctx);
         crate::models::search::pump(self, &ctx);
         crate::ui::tools::begin_frame(self, &ctx);
         crate::ui::portal::begin_frame(self, &ctx);

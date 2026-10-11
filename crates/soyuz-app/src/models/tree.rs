@@ -368,7 +368,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
     match cmd {
         TreeCmd::Focus => app.ui.focus = Focus::Sidebar,
         TreeCmd::NewFolder(dir) => new_folder(app, dir),
-        TreeCmd::Properties(dir) => app.frontend.push(FrontendCmd::Properties(dir)),
+        TreeCmd::Properties(dir) => app.frontend.push(FrontendCmd::FolderProperties(dir)),
     }
 }
 

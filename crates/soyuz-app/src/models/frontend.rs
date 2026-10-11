@@ -2,9 +2,15 @@
 //! frontend can do, such as opening its settings window. Core code pushes onto
 //! `SoyuzApp::frontend`; the frontend drains the queue every frame.
 
-use super::settings::Section;
+use std::path::PathBuf;
 
-#[derive(Clone, Debug, PartialEq)]
+use soyuz_core::EntryInfo;
+
+use super::settings::Section;
+use crate::cmd::Cmd;
+use crate::state::pane::PaneId;
+
+#[derive(Clone, Debug)]
 pub enum FrontendCmd {
     /// Open the settings, optionally on a page.
     OpenSettings(Option<Section>),
@@ -19,7 +25,7 @@ pub enum FrontendCmd {
     /// Window `id` (with `tabs` tabs) is closing: ask whether to move or close its tabs.
     CloseWindowPrompt { id: crate::state::workspace_windows::WindowId, tabs: usize },
     /// Show the properties of a folder (from the folder tree).
-    Properties(std::path::PathBuf),
+    FolderProperties(std::path::PathBuf),
     /// Ask for the passphrase / recovery key of a locked device container, then mount it
     /// into `pane`.
     UnlockDevice { object: String, name: String, kind: String, pane: crate::state::pane::PaneId },
@@ -32,4 +38,35 @@ pub enum FrontendCmd {
     Remote(super::remote::RemotePrompt),
     /// An archive dialog (`models::archive`).
     Archive(super::archive::ArchivePrompt),
+    /// No widget keeps the keyboard (the terminal gave it back to the file list).
+    ReleaseFocus,
+    /// The About window.
+    About,
+    /// Ask before running `on_confirm`.
+    Confirm { title: String, message: String, confirm: String, on_confirm: Cmd },
+    /// Select by pattern in a pane.
+    SelectByPattern(PaneId),
+    /// Choose the columns of a pane's details view.
+    ChooseColumns(PaneId),
+    /// Pick the app a file opens with.
+    OpenWith(PathBuf),
+    /// The Properties dialog for `entries` of `pane`.
+    Properties {
+        pane: PaneId,
+        entries: Vec<EntryInfo>,
+        tab: super::properties::Tab,
+        start: Option<super::properties::Start>,
+    },
+    /// Batch rename / bulk attributes / new link, on the focused pane's selection.
+    MetaDialog(super::properties::MetaDialog),
+    /// Copy (or move, `mv`) `paths` to a folder picked starting at `start`.
+    Transfer { paths: Vec<PathBuf>, start: PathBuf, mv: bool },
+    /// Quitting would cancel `pending` jobs: ask first.
+    ConfirmQuit { pending: usize },
+    /// Crash reports from the last run.
+    CrashReports(Vec<crate::services::crash::CrashReport>),
+    /// Interrupted jobs found in the journal (resume / discard).
+    RecoveredJobs(Vec<soyuz_jobs::journal::Recovered>),
+    /// Approve the MCP client request `id`.
+    McpApproval(u64),
 }

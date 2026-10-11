@@ -891,13 +891,13 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
             }
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
-        Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, crate::host::egui_ctx(host), dir),
-        Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, crate::host::egui_ctx(host)),
+        Cmd::OpenTerminalPanel(dir) => crate::models::terminal::open_at(app, host, dir),
+        Cmd::Meta(m) => crate::models::properties::apply(app, m, host),
         Cmd::Tree(c) => crate::models::tree::apply(app, c),
         Cmd::Ai(c) => crate::ai::apply_cmd(app, c, crate::host::egui_ctx(host)),
         Cmd::Automation(c) => crate::automation::apply(app, c, crate::host::egui_ctx(host)),
         Cmd::Quit { when_idle } => app.confirm_quit(crate::host::egui_ctx(host), when_idle),
-        Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
+        Cmd::ChooseOpenWith(path) => app.frontend.push(crate::models::frontend::FrontendCmd::OpenWith(path)),
         Cmd::NewWindow(loc) => {
             if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
                 crate::models::windows::open_location(app, loc);

@@ -172,15 +172,4 @@ fn load_reason(e: &FsError) -> String {
     }
 }
 
-/// Plain-language reason for a failed change.
-pub fn apply_reason(e: &FsError, touched: InodeFlags) -> String {
-    match e.kind {
-        FsErrorKind::PermissionDenied if touched.intersects(InodeFlags::IMMUTABLE | InodeFlags::APPEND) => {
-            tr!("dialogs-inode-needs-root").to_string()
-        }
-        FsErrorKind::PermissionDenied => tr!("dialogs-inode-denied").to_string(),
-        FsErrorKind::Unsupported => tr!("dialogs-inode-unsupported").to_string(),
-        FsErrorKind::ReadOnlyFs => tr!("dialogs-inode-read-only-fs").to_string(),
-        _ => e.to_string(),
-    }
-}
+pub use crate::models::properties::apply_reason;

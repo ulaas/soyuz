@@ -13,7 +13,6 @@ use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::state::layout::NavDir;
 use crate::state::view_memory::{ZOOM_MAX, ZOOM_MIN};
-use crate::ui::dialogs::{AboutDialog, ConfirmDialog, PatternDialog};
 
 pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     use Action as A;
@@ -208,7 +207,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             pane.dirty = true;
             app.cmds.push(Cmd::ViewChanged(pane_id));
         }
-        A::ChooseColumns => app.ui.dialogs.push(crate::ui::dialogs::ColumnsDialog::new(pane_id)),
+        A::ChooseColumns => app.frontend.push(FrontendCmd::ChooseColumns(pane_id)),
         A::ResetFolderView => {
             let loc = app.ws.pane().location.clone();
             app.views.reset(&loc);
@@ -219,22 +218,22 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             app.ui.toasts.push(Toast::info(tr!("actions-folder-view-reset")));
         }
         A::ApplyViewToAll => {
-            app.ui.dialogs.push(ConfirmDialog::new(
-                tr!("actions-apply-view-title"),
-                tr!("actions-apply-view-message"),
-                tr!("actions-apply-view-confirm"),
-                Cmd::ApplyViewToAll(pane_id),
-            ));
+            app.frontend.push(FrontendCmd::Confirm {
+                title: tr!("actions-apply-view-title").into(),
+                message: tr!("actions-apply-view-message").into(),
+                confirm: tr!("actions-apply-view-confirm").into(),
+                on_confirm: Cmd::ApplyViewToAll(pane_id),
+            });
         }
         A::ToggleStatusBar => app.ui.status_visible = !app.ui.status_visible,
         A::ToggleCheckboxes => app.ui.checkbox_mode = !app.ui.checkbox_mode,
-        A::ToggleTerminal => crate::ui::panels::terminal::toggle(app, crate::host::egui_ctx(host)),
-        A::FocusTerminal => crate::ui::panels::terminal::focus(app, crate::host::egui_ctx(host)),
+        A::ToggleTerminal => crate::models::terminal::toggle(app, host),
+        A::FocusTerminal => crate::models::terminal::focus(app, host),
         A::TogglePreviewPane => app.ui.preview.toggle(),
         A::ToggleInfoPane => app.ui.preview.toggle_info(),
         A::ToggleFlatView => crate::models::search::toggle_flat_view(app),
         A::ToggleHexPreview => app.ui.preview.toggle_hex(),
-        A::ToggleActivityPanel => app.ui.bottom.toggle(crate::ui::panels::BottomTab::Activity),
+        A::ToggleActivityPanel => app.ui.bottom.toggle(crate::models::panels::BottomTab::Activity),
 
         // ---- selection ----
         A::SelectAll => {
@@ -276,7 +275,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
                 pane.selection.insert(k);
             }
         }
-        A::SelectByPattern => app.ui.dialogs.push(PatternDialog::new(pane_id)),
+        A::SelectByPattern => app.frontend.push(FrontendCmd::SelectByPattern(pane_id)),
         A::MarkToggle | A::MarkAndMoveDown => {
             let pane = app.ws.pane_mut();
             if let Some(k) = pane.cursor.clone() {
@@ -390,7 +389,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             host.window(crate::host::WindowId::Root, crate::host::WindowCmd::Close);
         }
 
-        A::About => app.ui.dialogs.push(AboutDialog::new(app.renderer)),
+        A::About => app.frontend.push(FrontendCmd::About),
         A::Welcome => app.ui.welcome = true,
         A::UiZoomIn | A::UiZoomOut | A::UiZoomReset => {
             let cur = if app.config.appearance.ui_scale > 0.25 { app.config.appearance.ui_scale } else { 1.0 };
@@ -442,7 +441,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         A::ReloadConfig => crate::services::config_watch::reload_now(app, crate::host::egui_ctx(host)),
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
-                crate::ui::quicklook::toggle(app);
+                crate::models::quicklook::toggle(app);
             }
         }
         A::CreateArchive => crate::models::archive::create_dialog(app),
@@ -451,10 +450,8 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         A::ExtractTo => crate::models::archive::extract_to_dialog(app),
         A::TestArchive => crate::models::archive::test_archive(app),
         a if crate::models::remote::handles(app, &a) => crate::models::remote::execute(app, a, host),
-        a if crate::ui::dialogs::properties::handles(app, &a) => {
-            crate::ui::dialogs::properties::execute(app, a, crate::host::egui_ctx(host))
-        }
-        a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, crate::host::egui_ctx(host)),
+        a if crate::models::properties::handles(app, &a) => crate::models::properties::execute(app, a, host),
+        a if crate::models::tools::handles(&a) => crate::models::tools::execute(app, a, host),
         a if crate::models::archive::handles_edit(app, &a) => crate::models::archive::execute_edit(app, a),
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, crate::host::egui_ctx(host)),

@@ -340,13 +340,10 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
                 );
             }
             if !p.crashes.is_empty() {
-                app.ui.dialogs.push(crate::ui::dialogs::recovery_crash::CrashDialog::new(p.crashes.clone()));
+                app.frontend.push(crate::models::frontend::FrontendCmd::CrashReports(p.crashes.clone()));
             }
             if !p.recovered.is_empty() {
-                app.ui.dialogs.push(crate::ui::dialogs::recovery::RecoveryDialog::new(
-                    crate::host::egui_ctx(host),
-                    p.recovered.clone(),
-                ));
+                app.frontend.push(crate::models::frontend::FrontendCmd::RecoveredJobs(p.recovered.clone()));
             }
         }
     }
