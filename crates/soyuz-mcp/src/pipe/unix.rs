@@ -259,8 +259,21 @@ mod tests {
         // A stale socket file (crashed server) is replaced.
         drop(UnixListener::bind(&name).unwrap());
         assert!(Path::new(&name).exists());
-        assert!(connect(&name).unwrap().is_none(), "stale socket reads as not served");
-        let _l = PipeListener::bind(&name).unwrap();
+        // Other tests in this process spawn children: between fork and exec a child briefly
+        // holds copies of our descriptors (the lock, the listening socket), so allow that
+        // window to pass before calling the socket stale / free.
+        assert!(eventually(|| connect(&name).unwrap().is_none()), "stale socket reads as not served");
+        assert!(eventually(|| PipeListener::bind(&name).is_ok()), "a stale socket is replaced");
+    }
+
+    /// `ok()` holds within 2 s.
+    fn eventually(ok: impl Fn() -> bool) -> bool {
+        (0..100).any(|_| {
+            ok() || {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                false
+            }
+        })
     }
 
     #[test]
