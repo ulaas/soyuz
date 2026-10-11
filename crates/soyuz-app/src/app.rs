@@ -636,6 +636,16 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
 /// The location (and entry to put the cursor on) for a command-line path: a folder
 /// opens itself, a file opens its parent with the file under the cursor.
 pub fn startup_target(path: &std::path::Path) -> Option<(Location, Option<String>)> {
+    // Desktop files pass `%U`: besides `file://`, launchers hand over `sftp://`, `smb://` …
+    if crate::services::remote::is_remote_path(path) {
+        return match crate::services::remote::normalize(Location::Remote(path.to_string_lossy().into_owned())) {
+            Ok(loc) => Some((loc, None)),
+            Err(e) => {
+                log::warn!("{}: {e}; opening the start folder instead", path.display());
+                None
+            }
+        };
+    }
     let abs = if path.is_absolute() { path.to_path_buf() } else { std::env::current_dir().ok()?.join(path) };
     match std::fs::metadata(&abs) {
         Ok(m) if m.is_dir() => Some((Location::Dir(abs), None)),
@@ -773,5 +783,17 @@ impl eframe::App for SoyuzApp {
         } else {
             visuals.panel_fill.to_normalized_gamma_f32()
         }
+    }
+}
+
+#[cfg(test)]
+mod startup_tests {
+    use super::*;
+
+    #[test]
+    fn remote_uris_open_as_remote_locations() {
+        let (loc, select) = startup_target(std::path::Path::new("sftp://host/srv/data")).expect("remote target");
+        assert!(matches!(&loc, Location::Remote(s) if s.starts_with("sftp://host")), "{loc:?}");
+        assert!(select.is_none());
     }
 }
