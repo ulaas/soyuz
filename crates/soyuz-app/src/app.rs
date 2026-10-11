@@ -154,7 +154,7 @@ impl SoyuzApp {
     pub fn new(cc: &CreationContext<'_>, config: Config, renderer: &'static str, startup: Startup) -> Self {
         let transparent = crate::ui::native_chrome::backdrop_active();
         crate::ui::native_chrome::init(cc, &config, transparent);
-        crate::ops::fileops::linux_dnd::init(cc);
+        crate::ui::dnd::linux_dnd::init(cc);
         soyuz_fs::register_ui_thread();
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }
@@ -680,7 +680,7 @@ impl SoyuzApp {
         // Overlays live in the focused window (the main one unless another has focus).
         let overlays = crate::ui::workspaces::overlays_here(self);
         if overlays {
-            crate::palette::show(&ctx, self);
+            crate::ui::palette::show(&ctx, self);
             crate::ui::settings::show(&ctx, self);
         }
         crate::ui::titlebar::frame(&ctx, self);
@@ -714,7 +714,7 @@ impl eframe::App for SoyuzApp {
     }
 
     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-        crate::ops::fileops::dragout::raw_input(ctx, raw_input);
+        crate::ui::dnd::dragout::raw_input(ctx, raw_input);
         crate::devscript::raw_input(self, raw_input);
         crate::devscript::raw_input_hook(self, raw_input);
     }
@@ -722,7 +722,7 @@ impl eframe::App for SoyuzApp {
     fn on_exit(&mut self) {
         // The close went through: an "Install & restart" now restarts.
         crate::services::updates::arm_restart();
-        crate::ops::fileops::linux_dnd::shutdown();
+        crate::ui::dnd::linux_dnd::shutdown();
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

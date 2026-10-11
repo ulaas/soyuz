@@ -8,9 +8,9 @@ use egui::{Align2, Color32, CornerRadius, FontId, Frame, Id, Margin, Modal, Rich
 use soyuz_core::config::{Action, KeyChord, Keymap, format_sequence};
 
 use crate::keys::conflicts::users_of;
-use crate::palette::widgets::{chips_width_scaled, paint_chips_scaled};
 use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
+use crate::ui::palette::widgets::{chips_width_scaled, paint_chips_scaled};
 use crate::ui::widgets::pill_button;
 
 /// What the recorded binding is for.

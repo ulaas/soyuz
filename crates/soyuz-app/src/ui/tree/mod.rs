@@ -27,11 +27,11 @@ use soyuz_fs::VolumeInfo;
 
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd::{self, DragPayload};
 use crate::services::tree::{TreeMsg, TreeService};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::{alpha, radius, size};
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::toasts::Toast;
 use crate::ui::widgets::{focus_ring, menu_item, menu_separator};
 use model::{Flat, Nav, NavOutcome, Reveal, Root, RootKind, RowKey, TreeModel, Visibility};

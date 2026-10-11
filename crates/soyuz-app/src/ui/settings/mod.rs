@@ -802,7 +802,7 @@ fn import(app: &mut SoyuzApp, path: &std::path::Path) {
 
 /// A pill showing a chord binding with a hover "×"; returns (clicked, remove clicked).
 fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removable: bool) -> (bool, bool) {
-    let w = crate::palette::widgets::chips_width(ui, binding) + if removable { 18.0 } else { 6.0 };
+    let w = crate::ui::palette::widgets::chips_width(ui, binding) + if removable { 18.0 } else { 6.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
     let hover = resp.hovered();
     let fill = if conflict {
@@ -822,7 +822,7 @@ fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removab
         );
     }
     let right = if removable { rect.right() - 16.0 } else { rect.right() - 3.0 };
-    crate::palette::widgets::paint_chips(ui, p, binding, right, rect.center().y, false);
+    crate::ui::palette::widgets::paint_chips(ui, p, binding, right, rect.center().y, false);
     let mut removed = false;
     if removable {
         let xr = Rect::from_center_size(pos2(rect.right() - 9.0, rect.center().y), vec2(14.0, 14.0));

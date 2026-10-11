@@ -293,7 +293,7 @@ fn body(
     // Inline rename editor (registered after the background so it gets the clicks).
     if let Some(r) = rename_at {
         let font = FontId::proportional(if matches!(style, Style::Grid | Style::Gallery) { 12.5 } else { 13.0 });
-        crate::ops::fileops::rename::editor(ui, r, font, pane, v);
+        crate::ui::views::rename::editor(ui, r, font, pane, v);
     }
 
     // ---- interaction ----
@@ -402,7 +402,7 @@ fn body(
                         pane.selection.select_only(key.clone());
                     }
                     pane.cursor = Some(key);
-                    crate::ops::fileops::dnd::begin(ui.ctx(), pane, v.config.behaviour.drag_default);
+                    crate::ui::dnd::begin(ui.ctx(), pane, v.config.behaviour.drag_default);
                 }
                 v.cmds.push(Cmd::FocusPane(pane.id));
             } else {
@@ -458,13 +458,13 @@ fn body(
     }
 
     // Drag and drop onto folder items.
-    if crate::ops::fileops::dnd::payload(ui.ctx()).is_some() {
+    if crate::ui::dnd::payload(ui.ctx()).is_some() {
         let hit = ui
             .input(|i| i.pointer.latest_pos())
             .filter(|p| list_area.contains(*p))
             .and_then(|p| layout.hit(to_layout(p)))
             .and_then(|i| layout.item_rect(i).map(|r| (i, to_screen(r))));
-        crate::ops::fileops::dnd::item_target(ui, pane, hit, &mut v.fileops.dnd, v.cmds);
+        crate::ui::dnd::item_target(ui, pane, hit, &mut v.fileops.dnd, v.cmds);
     }
 
     // Ctrl + wheel zooms the icon views.

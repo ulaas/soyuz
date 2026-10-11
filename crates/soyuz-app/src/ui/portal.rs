@@ -24,10 +24,10 @@ use soyuz_core::config::PortalPin;
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd::{self, DragPayload};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::radius;
 use crate::theme::{icons::ph, palette};
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::toasts::Toast;
 use crate::ui::widgets::{NavRow, menu_item, menu_separator};
 

@@ -5,42 +5,34 @@
 //! recursive search, `>` shell command in the terminal panel, `#` switch tab. Recently
 //! used commands float to the top; folder visits are tracked with frecency and
 //! persisted in `palette.toml` together with recent shell commands and marks.
+//!
+//! This module is the frontend-free half: state, result building, key handling and
+//! execution. The GUI draws it in `crate::ui::palette`.
 
 pub mod catalog;
+pub mod chips;
 pub mod frecency;
 pub mod fuzzy;
 pub mod query;
-pub mod widgets;
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use egui::emath::TSTransform;
-use egui::{
-    Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Margin, Modal, Modifiers, Order, Rect, RichText,
-    Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
-};
 use soyuz_core::Location;
-use soyuz_core::config::{Action, KeyContext};
+use soyuz_core::config::Action;
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::geom::Point;
+use crate::host::Host;
 use crate::ops::{self, NavOpts};
 use crate::state::crumbs::{location_title, split_for_completion};
 use crate::theme::icons::ph;
-use crate::theme::{Palette, icons, palette};
-use crate::ui::widgets::trunc_galley;
 
 use frecency::{Memory, now_secs};
 use fuzzy::Fuzzy;
 use query::Mode;
-use widgets::{highlighted, icon_tile, paint_chips};
 
-const ROW_H: f32 = 46.0;
-const HEADER_H: f32 = 26.0;
-const INPUT_H: f32 = 54.0;
-const FOOTER_H: f32 = 36.0;
-const MAX_LIST_H: f32 = 430.0;
 const MAX_RESULTS: usize = 200;
 
 /// What running an item does.
@@ -111,14 +103,17 @@ impl Item {
 
 pub struct PaletteState {
     pub open: bool,
-    base: Mode,
+    pub base: Mode,
     pub input: String,
-    selected: usize,
-    opened_at: f64,
-    focus_input: bool,
-    cursor_to_end: bool,
-    scroll_to_selected: bool,
-    results: Vec<Item>,
+    pub selected: usize,
+    /// Frontend time the palette opened at (`NAN` until its first drawn frame).
+    pub opened_at: f64,
+    /// Focus the input on the next frame.
+    pub focus_input: bool,
+    /// Move the input cursor to the end on the next frame.
+    pub cursor_to_end: bool,
+    pub scroll_to_selected: bool,
+    pub results: Vec<Item>,
     /// Input, base mode, source version and `i18n::generation()` of the cached results.
     results_key: Option<(String, Mode, u64, u64)>,
     /// Bumped whenever sources change (forces a rebuild).
@@ -128,7 +123,8 @@ pub struct PaletteState {
     memory_path: PathBuf,
     last_save: Instant,
     last_dir: Option<PathBuf>,
-    pointer_at_open: Option<egui::Pos2>,
+    /// Pointer position when the palette opened (hover selects only after it moved).
+    pub pointer_at_open: Option<Point>,
 }
 
 impl PaletteState {
@@ -201,8 +197,8 @@ pub fn owns_keyboard(app: &SoyuzApp) -> bool {
 }
 
 /// Per frame, before input: folder frecency, config hot reload, throttled saves.
-pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    crate::services::config_watch::pump(app, ctx);
+pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
+    crate::services::config_watch::pump(app, host);
     if let Some(dir) = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim)
         && app.palette.last_dir.as_deref() != Some(dir.as_path())
     {
@@ -751,7 +747,20 @@ fn build(app: &mut SoyuzApp) -> Vec<Item> {
 // Execution
 // ---------------------------------------------------------------------------
 
-fn run(app: &mut SoyuzApp, ctx: &egui::Context, exec: Exec, mods: Modifiers) {
+/// Modifiers held when an item runs: `command` opens folders in a new tab, `shift` turns
+/// a folder completion into "complete only" (no navigation).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunMods {
+    pub command: bool,
+    pub shift: bool,
+}
+
+impl RunMods {
+    pub const NONE: RunMods = RunMods { command: false, shift: false };
+}
+
+/// Run `exec` (Enter, a click, Tab completion, a prefix chip).
+pub fn run(app: &mut SoyuzApp, host: &dyn Host, exec: Exec, mods: RunMods) {
     match exec {
         Exec::Action(a) => {
             app.palette.memory.used_command(&a.to_string());
@@ -784,7 +793,7 @@ fn run(app: &mut SoyuzApp, ctx: &egui::Context, exec: Exec, mods: Modifiers) {
             app.palette.dirty = true;
             close(app);
             let dir = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim).unwrap_or_else(soyuz_fs::home);
-            crate::ui::panels::terminal::run_command(app, ctx, dir, &line);
+            crate::ui::panels::terminal::run_command(app, crate::host::egui_ctx(host), dir, &line);
         }
         Exec::Tab(i) => {
             close(app);
@@ -825,44 +834,12 @@ fn completion_of(item: &Item) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Drawing
+// Per frame
 // ---------------------------------------------------------------------------
 
-fn tint_color(p: &Palette, t: Tint) -> Color32 {
-    match t {
-        Tint::Accent => p.accent,
-        Tint::Folder => p.glyph_folder,
-        Tint::Neutral => p.text_tertiary,
-        Tint::Success => p.success,
-        Tint::Warning => p.warning,
-        Tint::Info => p.info,
-    }
-}
-
-/// Draw the palette (when open) and the pending key-sequence hint.
-pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
-    sequence_hint(ctx, app);
-    if !app.palette.open {
-        return;
-    }
-    let p = palette(ctx);
-    let now = ctx.input(|i| i.time);
-    if app.palette.opened_at.is_nan() {
-        app.palette.opened_at = now;
-    }
-    let t = if app.ui.reduced_motion { 1.0 } else { ((now - app.palette.opened_at) / 0.16).clamp(0.0, 1.0) as f32 };
-    let ease = 1.0 - (1.0 - t).powi(3);
-    if t < 1.0 {
-        ctx.request_repaint();
-    }
-
-    // Keyboard first (before the text field sees the keys).
-    handle_keys(ctx, app);
-    if !app.palette.open {
-        return;
-    }
-
-    // (Re)build results when the query or sources changed; paths rebuild while listing.
+/// (Re)build the results when the query or the sources changed; `:` paths rebuild every
+/// frame while their folder is listed. Keeps the selection in range.
+pub fn refresh_results(app: &mut SoyuzApp) {
     let key = (app.palette.input.clone(), app.palette.base, app.palette.version, crate::i18n::generation());
     let mode = app.palette.mode();
     if app.palette.results_key.as_ref() != Some(&key) || mode == Mode::Path {
@@ -878,135 +855,72 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     if n > 0 && app.palette.selected >= n {
         app.palette.selected = n - 1;
     }
-
-    let screen = ctx.content_rect();
-    let width = (screen.width() - 32.0).clamp(320.0, 660.0);
-    let top = (screen.height() * 0.13).clamp(24.0, 120.0);
-    let id = Id::new("soyuz.palette");
-    let area = Modal::default_area(id).anchor(Align2::CENTER_TOP, vec2(0.0, top));
-    let frame = Frame::new()
-        .fill(p.bg_surface3)
-        .stroke(Stroke::new(1.0, p.border_strong))
-        .corner_radius(CornerRadius::same(14))
-        .inner_margin(Margin::ZERO)
-        .shadow(egui::epaint::Shadow {
-            offset: [0, 18],
-            blur: 56,
-            spread: 0,
-            color: Color32::from_black_alpha((p.shadow_alpha * 255.0 * 1.2).min(255.0) as u8),
-        });
-    let mut clicked: Option<(Exec, Modifiers)> = None;
-    let resp = Modal::new(id)
-        .area(area)
-        .frame(frame)
-        .backdrop_color(Color32::from_black_alpha(((if p.dark { 140.0 } else { 80.0 }) * ease) as u8))
-        .show(ctx, |ui| {
-            ui.set_width(width);
-            ui.set_opacity(ease);
-            crate::ui::a11y::container(
-                ui.ctx(),
-                ui.unique_id(),
-                egui::accesskit::Role::Dialog,
-                tr!("action-command-palette"),
-            );
-            ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-            input_row(ui, app, &p, width);
-            divider(ui, &p);
-            clicked = list(ui, app, &p, width);
-            footer(ui, app, &p, width, &mut clicked);
-        });
-    // Scale-in from 97 % around the top center, sliding down 8 px.
-    let s = 0.97 + 0.03 * ease;
-    let pivot = pos2(screen.center().x, top);
-    let tr = TSTransform::new(pivot.to_vec2() * (1.0 - s) + vec2(0.0, -8.0 * (1.0 - ease)), s);
-    ctx.set_transform_layer(LayerId::new(Order::Foreground, id), tr);
-    if let Some((exec, mods)) = clicked {
-        run(app, ctx, exec, mods);
-    } else if resp.backdrop_response.clicked() {
-        close(app);
-    }
 }
 
-fn handle_keys(ctx: &egui::Context, app: &mut SoyuzApp) {
+/// The palette keys of one frame, read by the frontend before the input field sees them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeyInput {
+    /// A global palette chord (command palette / jump to folder): toggles or switches mode.
+    pub toggle: Option<Mode>,
+    /// Esc: clears the input, or closes the palette when the input is empty (or only a
+    /// mode prefix). The frontend reads no other key in that frame.
+    pub escape: bool,
+    /// Down / Ctrl+J / Ctrl+N.
+    pub down: bool,
+    /// Up / Ctrl+K / Ctrl+P.
+    pub up: bool,
+    pub page_down: bool,
+    pub page_up: bool,
+    /// Enter, with its modifiers.
+    pub enter: Option<RunMods>,
+    /// Tab: complete the selected item.
+    pub tab: bool,
+}
+
+/// Apply one frame's palette keys (selection, Esc, Enter, Tab, mode toggles).
+pub fn apply_keys(app: &mut SoyuzApp, host: &dyn Host, k: KeyInput) {
     let n = app.palette.results.len();
-    let mut exec: Option<(Exec, Modifiers)> = None;
-    let mut toggle: Option<Mode> = None;
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
-    let km = &app.keymap;
+    let mut exec: Option<(Exec, RunMods)> = None;
     let pal = &mut app.palette;
-    ctx.input_mut(|i| {
-        let mods = i.modifiers;
-        // Global palette chords toggle / switch modes.
-        i.events.retain(|ev| {
-            let Some(chord) = crate::keys::event_chord(ev, mods, cmd_is_ctrl) else { return true };
-            if chord.mods.is_empty() {
-                return true;
-            }
-            match km.lookup(KeyContext::Global, chord) {
-                Some(Action::CommandPalette) => {
-                    toggle = Some(Mode::Commands);
-                    false
-                }
-                Some(Action::JumpToFolderDialog) => {
-                    toggle = Some(Mode::Folders);
-                    false
-                }
-                _ => true,
-            }
-        });
-        if i.consume_key(Modifiers::NONE, Key::Escape) {
-            if pal.input.is_empty() || pal.input.chars().count() == 1 && pal.mode().prefix().is_some() {
-                pal.open = false;
-            } else {
-                pal.input.clear();
-                pal.cursor_to_end = true;
-            }
-            return;
+    if k.escape {
+        if pal.input.is_empty() || pal.input.chars().count() == 1 && pal.mode().prefix().is_some() {
+            pal.open = false;
+        } else {
+            pal.input.clear();
+            pal.cursor_to_end = true;
         }
-        let down = i.consume_key(Modifiers::NONE, Key::ArrowDown)
-            || i.consume_key(Modifiers::CTRL, Key::J)
-            || i.consume_key(Modifiers::CTRL, Key::N);
-        let up = i.consume_key(Modifiers::NONE, Key::ArrowUp)
-            || i.consume_key(Modifiers::CTRL, Key::K)
-            || i.consume_key(Modifiers::CTRL, Key::P);
-        let pgdn = i.consume_key(Modifiers::NONE, Key::PageDown);
-        let pgup = i.consume_key(Modifiers::NONE, Key::PageUp);
+    } else {
         if n > 0 {
             let cur = pal.selected.min(n - 1);
-            let next = if down {
+            let next = if k.down {
                 (cur + 1) % n
-            } else if up {
+            } else if k.up {
                 (cur + n - 1) % n
-            } else if pgdn {
+            } else if k.page_down {
                 (cur + 8).min(n - 1)
-            } else if pgup {
+            } else if k.page_up {
                 cur.saturating_sub(8)
             } else {
                 cur
             };
-            if next != cur || down || up {
+            if next != cur || k.down || k.up {
                 pal.selected = next;
                 pal.scroll_to_selected = true;
             }
         }
-        let enter_mods = [Modifiers::NONE, Modifiers::CTRL, Modifiers::SHIFT, Modifiers::COMMAND];
-        for m in enter_mods {
-            if i.consume_key(m, Key::Enter) {
-                if let Some(item) = pal.results.get(pal.selected) {
-                    exec = Some((item.exec.clone(), m));
-                }
-                break;
-            }
+        if let Some(m) = k.enter
+            && let Some(item) = pal.results.get(pal.selected)
+        {
+            exec = Some((item.exec.clone(), m));
         }
-        if i.consume_key(Modifiers::NONE, Key::Tab)
+        if k.tab
             && let Some(item) = pal.results.get(pal.selected)
             && let Some(text) = completion_of(item)
         {
-            exec = Some((Exec::Complete { text, go: None }, Modifiers::NONE));
+            exec = Some((Exec::Complete { text, go: None }, RunMods::NONE));
         }
-        i.consume_key(Modifiers::SHIFT, Key::Tab);
-    });
-    if let Some(mode) = toggle {
+    }
+    if let Some(mode) = k.toggle {
         if app.palette.base == mode && !app.palette.input.is_empty() || app.palette.base != mode {
             open(app, mode, "");
         } else {
@@ -1015,276 +929,12 @@ fn handle_keys(ctx: &egui::Context, app: &mut SoyuzApp) {
         return;
     }
     if let Some((e, m)) = exec {
-        run(app, ctx, e, m);
-    }
-}
-
-fn divider(ui: &mut Ui, p: &Palette) {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
-    ui.painter().rect_filled(r, 0.0, p.border_subtle);
-}
-
-fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, INPUT_H), Sense::hover());
-    let mode = app.palette.mode();
-    let painter = ui.painter();
-    let mut x = rect.left() + 18.0;
-    let glyph = match mode {
-        Mode::Commands => ph::COMMAND,
-        Mode::Folders | Mode::Path => ph::FOLDER_OPEN,
-        Mode::Bookmarks => ph::BOOKMARK_SIMPLE,
-        Mode::Search => ph::MAGNIFYING_GLASS,
-        Mode::Shell => ph::TERMINAL,
-        Mode::Tabs => ph::BROWSERS,
-    };
-    painter.text(pos2(x + 9.0, rect.center().y), Align2::CENTER_CENTER, glyph, icons::font(19.0), p.accent);
-    x += 30.0;
-    // Mode chip for prefixed / folder modes.
-    if mode != Mode::Commands {
-        let label = mode.label();
-        let g = painter.layout_no_wrap(label.to_string(), FontId::proportional(11.5), p.accent);
-        let chip = Rect::from_min_size(pos2(x, rect.center().y - 11.0), vec2(g.size().x + 16.0, 22.0));
-        painter.rect_filled(chip, CornerRadius::same(11), p.accent_subtle);
-        painter.galley(pos2(chip.left() + 8.0, chip.center().y - g.size().y / 2.0), g, p.accent);
-        x = chip.right() + 8.0;
-    }
-    // "esc" hint on the right.
-    let esc_left = paint_chips(ui, p, "Esc", rect.right() - 16.0, rect.center().y, false);
-    let edit_rect = Rect::from_min_max(pos2(x, rect.top() + 8.0), pos2(esc_left - 10.0, rect.bottom() - 8.0));
-    let hint = mode.placeholder();
-    let mut child = ui
-        .new_child(egui::UiBuilder::new().max_rect(edit_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let te = TextEdit::singleline(&mut app.palette.input)
-        .id(Id::new("soyuz.palette.input"))
-        .frame(Frame::NONE)
-        .font(FontId::proportional(16.5))
-        .text_color(p.text_primary)
-        .hint_text(RichText::new(hint).color(p.text_tertiary).size(15.0))
-        .desired_width(edit_rect.width())
-        .margin(Margin::symmetric(0, 4));
-    let out = te.show(&mut child);
-    crate::ui::a11y::name(&out.response, hint);
-    if app.palette.focus_input {
-        out.response.request_focus();
-        app.palette.focus_input = false;
-    }
-    if !out.response.has_focus() {
-        // Keep typing in the palette even after a click elsewhere in it.
-        out.response.request_focus();
-    }
-    if app.palette.cursor_to_end {
-        app.palette.cursor_to_end = false;
-        let mut state = out.state.clone();
-        let end = egui::text::CCursor::new(app.palette.input.chars().count());
-        state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
-        state.store(ui.ctx(), out.response.id);
-    }
-}
-
-fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exec, Modifiers)> {
-    let items = &app.palette.results;
-    let mut clicked = None;
-    if items.is_empty() {
-        let (rect, _) = ui.allocate_exact_size(vec2(width, 120.0), Sense::hover());
-        let painter = ui.painter();
-        painter.text(
-            rect.center() - vec2(0.0, 14.0),
-            Align2::CENTER_CENTER,
-            ph::MAGNIFYING_GLASS,
-            icons::font(26.0),
-            p.text_tertiary,
-        );
-        painter.text(
-            rect.center() + vec2(0.0, 16.0),
-            Align2::CENTER_CENTER,
-            tr!("actions-palette-no-matches"),
-            FontId::proportional(13.0),
-            p.text_secondary,
-        );
-        return None;
-    }
-    // Heights with section headers.
-    let mut total = 8.0;
-    let mut last: Option<&str> = None;
-    for it in items {
-        if last != Some(it.section) {
-            total += HEADER_H;
-            last = Some(it.section);
-        }
-        total += ROW_H;
-    }
-    let height = total.min(MAX_LIST_H);
-    let selected = app.palette.selected;
-    let scroll_to = std::mem::take(&mut app.palette.scroll_to_selected);
-    // Mouse hover selects only after the pointer moved (not when the palette opens under it).
-    let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
-    let moved = match (app.palette.pointer_at_open, pointer) {
-        (None, Some(pp)) => {
-            app.palette.pointer_at_open = Some(pp);
-            false
-        }
-        (Some(a), Some(b)) => a.distance(b) > 3.0,
-        _ => false,
-    };
-    let mut hover_sel = None;
-    egui::ScrollArea::vertical().max_height(height).min_scrolled_height(height).auto_shrink([false, true]).show(
-        ui,
-        |ui| {
-            ui.set_width(width);
-            ui.add_space(4.0);
-            let mut last: Option<&str> = None;
-            for (i, it) in items.iter().enumerate() {
-                if last != Some(it.section) {
-                    let (r, _) = ui.allocate_exact_size(vec2(width, HEADER_H), Sense::hover());
-                    ui.painter().text(
-                        pos2(r.left() + 20.0, r.bottom() - 7.0),
-                        Align2::LEFT_BOTTOM,
-                        upper(it.section),
-                        FontId::proportional(10.5),
-                        p.text_tertiary,
-                    );
-                    last = Some(it.section);
-                }
-                let (outer, resp) = ui.allocate_exact_size(vec2(width, ROW_H), Sense::click());
-                let r = outer.shrink2(vec2(8.0, 2.0));
-                let is_sel = i == selected;
-                let total = items.len();
-                crate::ui::a11y::with(ui.ctx(), resp.id, |n| {
-                    n.set_role(egui::accesskit::Role::ListBoxOption);
-                    if it.detail.is_empty() {
-                        n.set_label(it.title.as_str());
-                    } else {
-                        n.set_label(format!("{}, {}", it.title, it.detail));
-                    }
-                    if let Some(k) = &it.chord {
-                        n.set_keyboard_shortcut(k.as_str());
-                    }
-                    n.set_selected(is_sel);
-                    n.set_position_in_set(i + 1);
-                    n.set_size_of_set(total);
-                });
-                if scroll_to && is_sel {
-                    ui.scroll_to_rect(outer.expand2(vec2(0.0, 6.0)), None);
-                }
-                if moved && resp.hovered() && !is_sel {
-                    hover_sel = Some(i);
-                }
-                if resp.clicked() {
-                    clicked = Some((it.exec.clone(), ui.input(|i| i.modifiers)));
-                }
-                if !ui.is_rect_visible(outer) {
-                    continue;
-                }
-                let sel_t = ui.ctx().animate_bool_with_time(
-                    Id::new(("soyuz.palette.row", i)),
-                    is_sel,
-                    crate::theme::anim(ui.ctx(), 0.08),
-                );
-                if sel_t > 0.0 {
-                    ui.painter().rect_filled(r, CornerRadius::same(9), p.accent_subtle.gamma_multiply(sel_t));
-                    let bar = Rect::from_min_size(pos2(r.left(), r.center().y - 9.0), vec2(3.0, 18.0));
-                    ui.painter().rect_filled(bar, CornerRadius::same(2), p.accent.gamma_multiply(sel_t));
-                }
-                row(ui, p, it, r, is_sel);
-            }
-            ui.add_space(4.0);
-        },
-    );
-    if let Some(h) = hover_sel {
-        app.palette.selected = h;
-    }
-    clicked
-}
-
-fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool) {
-    let tile = Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(30.0, 30.0));
-    let tint = tint_color(p, it.tint);
-    icon_tile(ui, tile, it.icon, tint, 16.0);
-    // Right side: chips + tag.
-    let mut right = r.right() - 12.0;
-    if let Some(c) = &it.chord {
-        right = paint_chips(ui, p, c, right, r.center().y, selected) - 6.0;
-    }
-    if let Some(tag) = &it.tag {
-        let g = ui.painter().layout_no_wrap(tag.clone(), FontId::proportional(10.5), p.text_tertiary);
-        let pos = pos2(right - g.size().x, r.center().y - g.size().y / 2.0);
-        right = pos.x - 10.0;
-        ui.painter().galley(pos, g, p.text_tertiary);
-    }
-    let text_left = tile.right() + 12.0;
-    let max_w = (right - text_left).max(40.0);
-    let title_color = if selected { p.text_primary } else { p.text_primary.gamma_multiply(0.92) };
-    let mut job = highlighted(&it.title, &it.hl, 13.5, title_color, p.accent);
-    job.wrap = egui::text::TextWrapping::truncate_at_width(max_w);
-    let title = ui.painter().layout_job(job);
-    let has_detail = !it.detail.is_empty();
-    let ty = if has_detail { r.center().y - 9.0 } else { r.center().y };
-    ui.painter().galley(pos2(text_left, ty - title.size().y / 2.0), title, title_color);
-    if has_detail {
-        let g = trunc_galley(ui.painter(), &it.detail, FontId::proportional(11.5), p.text_tertiary, max_w);
-        ui.painter().galley(pos2(text_left, r.center().y + 9.0 - g.size().y / 2.0), g, p.text_tertiary);
-    }
-}
-
-fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Option<(Exec, Modifiers)>) {
-    divider(ui, p);
-    let (rect, _) = ui.allocate_exact_size(vec2(width, FOOTER_H), Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        CornerRadius { nw: 0, ne: 0, sw: 14, se: 14 },
-        if p.dark { p.bg_surface2.gamma_multiply(0.6) } else { p.bg_surface2 },
-    );
-    let cy = rect.center().y;
-    let mut x = rect.left() + 16.0;
-    let hint = |x: &mut f32, keys: &str, label: &str| {
-        let w = widgets::chips_width(ui, keys);
-        paint_chips(ui, p, keys, *x + w, cy, false);
-        *x += w + 4.0;
-        let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(11.0), p.text_tertiary);
-        ui.painter().galley(pos2(*x, cy - g.size().y / 2.0), g.clone(), p.text_tertiary);
-        *x += g.size().x + 12.0;
-    };
-    hint(&mut x, "↑↓", tr!("actions-palette-hint-move"));
-    hint(&mut x, "Enter", tr!("actions-palette-hint-run"));
-    if matches!(app.palette.mode(), Mode::Path | Mode::Shell | Mode::Folders | Mode::Bookmarks) {
-        hint(&mut x, "Tab", tr!("actions-palette-hint-complete"));
-    }
-    // Prefix legend (clickable), right-aligned.
-    let mut rx = rect.right() - 12.0;
-    for m in Mode::PREFIXED.iter().rev() {
-        let c = m.prefix().unwrap_or(' ');
-        let label = format!("{c} {}", m.legend());
-        let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.0), p.text_secondary);
-        let r = Rect::from_min_size(pos2(rx - g.size().x - 12.0, cy - 10.0), vec2(g.size().x + 12.0, 20.0));
-        if r.left() < x {
-            break;
-        }
-        let resp = ui.interact(r, Id::new(("soyuz.palette.prefix", c)), Sense::click());
-        let active = app.palette.mode() == *m;
-        crate::ui::a11y::toggle(&resp, &format!("{c} {}", m.legend()), active);
-        let fill = if active {
-            p.accent_subtle
-        } else if resp.hovered() {
-            p.bg_surface3
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(r, CornerRadius::same(10), fill);
-        if !active {
-            ui.painter().rect_stroke(r, CornerRadius::same(10), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
-        }
-        let color = if active { p.accent } else { p.text_secondary };
-        ui.painter().galley(pos2(r.left() + 6.0, cy - g.size().y / 2.0), g, color);
-        if resp.clicked() {
-            *clicked = Some((Exec::Prefix(c), Modifiers::NONE));
-        }
-        rx = r.left() - 5.0;
+        run(app, host, e, m);
     }
 }
 
 /// Uppercase section header text; Turkish maps i → İ and ı → I.
-fn upper(s: &str) -> String {
+pub fn upper(s: &str) -> String {
     if crate::i18n::current() == soyuz_core::Locale::TrTr {
         s.chars()
             .flat_map(|c| match c {
@@ -1296,37 +946,6 @@ fn upper(s: &str) -> String {
     } else {
         s.to_uppercase()
     }
-}
-
-/// Bottom-center chip while a key sequence or mark is pending ("G …").
-fn sequence_hint(ctx: &egui::Context, app: &SoyuzApp) {
-    let Some(label) = app.keyseq.pending_label() else { return };
-    let p = palette(ctx);
-    let screen = ctx.content_rect();
-    let font = FontId::proportional(12.5);
-    let g = ctx.fonts_mut(|f| f.layout_no_wrap(label, font, p.text_primary));
-    let size = vec2(g.size().x + 46.0, 30.0);
-    let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - 60.0), size);
-    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("soyuz.keyseq")));
-    painter.add(
-        egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
-            .as_shape(rect, CornerRadius::same(15)),
-    );
-    painter.rect_filled(rect, CornerRadius::same(15), p.bg_surface3);
-    painter.rect_stroke(
-        rect,
-        CornerRadius::same(15),
-        Stroke::new(1.0, p.accent.gamma_multiply(0.6)),
-        StrokeKind::Inside,
-    );
-    painter.text(
-        pos2(rect.left() + 21.0, rect.center().y),
-        Align2::CENTER_CENTER,
-        ph::KEYBOARD,
-        icons::font(14.0),
-        p.accent,
-    );
-    painter.galley(pos2(rect.left() + 34.0, rect.center().y - g.size().y / 2.0), g, p.text_primary);
 }
 
 #[cfg(test)]

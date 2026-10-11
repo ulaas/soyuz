@@ -1,56 +1,14 @@
 //! Small widgets shared by the palette and the settings window: keyboard chips, match
-//! highlighting, icon tiles.
+//! highlighting, icon tiles (key splitting lives in `crate::palette::chips`).
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{
     Align2, Color32, CornerRadius, FontFamily, FontId, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2,
 };
 
+use crate::palette::chips::split_keys;
 use crate::theme::fonts::SEMIBOLD;
 use crate::theme::{Palette, icons};
-
-/// Display form of one key name (`"Up"` → `"↑"`).
-pub fn key_glyph(k: &str) -> String {
-    match k {
-        "Up" => "↑".into(),
-        "Down" => "↓".into(),
-        "Left" => "←".into(),
-        "Right" => "→".into(),
-        "Enter" => "↵".into(),
-        "Backspace" => "⌫".into(),
-        "Tab" => "⇥".into(),
-        "PageUp" => "PgUp".into(),
-        "PageDown" => "PgDn".into(),
-        "Cmd" if cfg!(target_os = "macos") => "⌘".into(),
-        "Alt" if cfg!(target_os = "macos") => "⌥".into(),
-        "Shift" if cfg!(target_os = "macos") => "⇧".into(),
-        "Ctrl" if cfg!(target_os = "macos") => "⌃".into(),
-        other => other.to_string(),
-    }
-}
-
-/// Split `"Ctrl+Shift+P"` / `"G G"` / `"Ctrl++"` into key groups (one group per chord of
-/// a sequence, one entry per key of a chord).
-pub fn split_keys(binding: &str) -> Vec<Vec<String>> {
-    binding
-        .split_whitespace()
-        .map(|chord| {
-            let mut keys: Vec<String> = Vec::new();
-            let (head, plus) = match chord.strip_suffix("++") {
-                Some(h) => (h, true),
-                None if chord == "+" => ("", true),
-                None => (chord, false),
-            };
-            if !head.is_empty() {
-                keys.extend(head.split('+').filter(|s| !s.is_empty()).map(key_glyph));
-            }
-            if plus {
-                keys.push("+".into());
-            }
-            keys
-        })
-        .collect()
-}
 
 /// Paint keyboard chips for `binding` right-aligned ending at `right`, vertically centered
 /// on `cy`. Returns the left edge.
@@ -171,15 +129,6 @@ pub fn icon_tile(ui: &Ui, rect: Rect, glyph: &str, tint: Color32, size: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn key_splitting() {
-        assert_eq!(split_keys("Ctrl+Shift+P"), vec![vec!["Ctrl", "Shift", "P"]]);
-        assert_eq!(split_keys("G G"), vec![vec!["G"], vec!["G"]]);
-        assert_eq!(split_keys("Ctrl++"), vec![vec!["Ctrl", "+"]]);
-        assert_eq!(split_keys("Alt+Up"), vec![vec!["Alt".to_string(), "↑".to_string()]]);
-        assert!(split_keys("").is_empty());
-    }
 
     #[test]
     fn highlight_runs() {

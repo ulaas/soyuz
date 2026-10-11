@@ -17,11 +17,11 @@ use soyuz_core::config::{Action, Keymap, TAG_NAME_MAX_CHARS};
 use super::{ToolCmd, queue};
 use crate::cmd::Cmd;
 use crate::keys::chord_label;
-use crate::ops::fileops::dnd::{self, DragPayload};
 use crate::services::tags::{self, TAG_COUNT};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, submenu, trunc_galley};
 
 /// Display name of a tag: the user's name for it (`[tags] names`), else the translated

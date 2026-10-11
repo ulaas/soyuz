@@ -9,6 +9,7 @@ pub mod icon_pack;
 pub mod icons;
 pub mod layout;
 pub mod miller;
+pub mod rename;
 pub mod trash;
 
 use soyuz_core::config::{Config, Keymap};

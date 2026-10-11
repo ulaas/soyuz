@@ -20,9 +20,9 @@ use super::button;
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::ops::fileops::FileOpCmd;
-use crate::ops::fileops::dnd::{DragPayload, DropEffect, payload};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd::{DragPayload, DropEffect, payload};
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_button, menu_item, trunc_galley};
 

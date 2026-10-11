@@ -420,7 +420,7 @@ pub fn transfer(app: &mut SoyuzApp, paths: Vec<PathBuf>, dest: PathBuf, mv: bool
     let any_remote = svc::is_remote_path(&dest) || paths.iter().any(|p| svc::is_remote_path(p));
     if !any_remote {
         let effect =
-            if mv { crate::ops::fileops::dnd::DropEffect::Move } else { crate::ops::fileops::dnd::DropEffect::Copy };
+            if mv { crate::ops::fileops::drop::DropEffect::Move } else { crate::ops::fileops::drop::DropEffect::Copy };
         return crate::ops::fileops::transfer(app, paths, dest, effect);
     }
     if mv
