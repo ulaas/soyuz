@@ -104,14 +104,14 @@ jobs:
             libgl1-mesa-dev libfontconfig1-dev
       - name: Build
         run: cargo build --workspace --all-targets --locked
-      # Linux / macOS are built and linted, but their tests are not a gate yet: that code
-      # has not been verified on real machines yet, so failures there are reported as
-      # warnings until those platforms are supported.
+      # Windows and Linux tests are a gate. macOS is built and linted, but its tests are not a
+      # gate yet: that code has not been verified on a real machine, so failures there are
+      # reported as warnings until the platform is supported.
       - name: Test
-        continue-on-error: ${{ runner.os != 'Windows' }}
+        continue-on-error: ${{ runner.os == 'macOS' }}
         run: cargo test --workspace --locked
       - name: Test each crate in isolation
-        continue-on-error: ${{ runner.os != 'Windows' }}
+        continue-on-error: ${{ runner.os == 'macOS' }}
         shell: bash
         run: |
           for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-term soyuz-app; do
@@ -127,15 +127,18 @@ jobs:
       - name: Clippy (no default features, Windows)
         if: runner.os == 'Windows'
         run: cargo clippy -p soyuz-app --no-default-features --all-targets --locked -- -D warnings
-      # The dependency graph must not pull in a shell-wrapping crate (deny.toml [bans]).
-      - name: Banned crates (Windows target graph)
-        if: runner.os == 'Windows'
+      # The dependency graph must not pull in a shell-wrapping crate (deny.toml [bans]): on
+      # Windows they wrap the shell, on Linux they spawn xdg-open / gio instead of the
+      # native XDG implementation in soyuz-fs.
+      - name: Banned crates (target graph)
+        if: runner.os != 'macOS'
         shell: bash
         run: |
+          if [[ $RUNNER_OS == Windows ]]; then target=x86_64-pc-windows-msvc; else target=x86_64-unknown-linux-gnu; fi
           for c in trash rfd open opener webbrowser native-dialog tinyfiledialogs; do
-            if cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c" >/dev/null 2>&1; then
-              echo "::error::crate '$c' wraps the Windows shell and is banned (no Windows shell APIs)"
-              cargo tree --locked --target x86_64-pc-windows-msvc -e normal -i "$c"
+            if cargo tree --locked --target "$target" -e normal -i "$c" >/dev/null 2>&1; then
+              echo "::error::crate '$c' wraps the system shell / xdg-open and is banned"
+              cargo tree --locked --target "$target" -e normal -i "$c"
               exit 1
             fi
           done
@@ -166,7 +169,7 @@ jobs:
   # Release binaries for every desktop OS (pushes to main and manual runs), downloadable
   # from the run's Artifacts: Windows x64 (.zip), Linux x64 (.tar.gz), macOS arm64
   # (.tar.gz, unsigned: Gatekeeper needs `xattr -d com.apple.quarantine soyuz` or
-  # right-click > Open). Linux / macOS binaries are built but untested.
+  # right-click > Open). macOS binaries are built but untested.
   package:
     name: Package (${{ matrix.name }})
     if: github.event_name != 'pull_request'
@@ -195,8 +198,14 @@ jobs:
             libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             libgl1-mesa-dev libfontconfig1-dev
       - name: Build and package
+        if: runner.os != 'Linux'
         shell: pwsh
         run: ./scripts/package.ps1
+      # Linux: relocatable PREFIX tree (bin, desktop entry, hicolor icons, metainfo).
+      - name: Build and package (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: ./scripts/package.sh
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: soyuz-${{ matrix.name }}
