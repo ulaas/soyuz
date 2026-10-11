@@ -54,6 +54,8 @@ pub enum WindowId {
     Current,
     /// The main (root) window of the process.
     Root,
+    /// A window of this process (`MAIN` is the root window).
+    Window(crate::state::workspace_windows::WindowId),
 }
 
 /// A request to the window system.
@@ -66,6 +68,10 @@ pub enum WindowCmd {
     Minimized(bool),
     Maximized(bool),
     Title(String),
+    /// Move the window's outer top-left corner to this screen point.
+    OuterPosition(crate::geom::Point),
+    /// Resize the window's inner area.
+    InnerSize(crate::geom::Vec2),
 }
 
 /// What app logic may ask of the frontend.
@@ -147,10 +153,13 @@ impl Host for egui::Context {
             WindowCmd::Minimized(b) => egui::ViewportCommand::Minimized(b),
             WindowCmd::Maximized(b) => egui::ViewportCommand::Maximized(b),
             WindowCmd::Title(t) => egui::ViewportCommand::Title(t),
+            WindowCmd::OuterPosition(p) => egui::ViewportCommand::OuterPosition(crate::ui::geom::pos(p)),
+            WindowCmd::InnerSize(s) => egui::ViewportCommand::InnerSize(crate::ui::geom::vec(s)),
         };
         match id {
             WindowId::Current => self.send_viewport_cmd(cmd),
             WindowId::Root => self.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
+            WindowId::Window(w) => self.send_viewport_cmd_to(crate::ui::workspaces::windows::viewport_id(w), cmd),
         }
     }
     fn config_changed(&self, old: &soyuz_core::config::Config, c: &soyuz_core::config::Config) {

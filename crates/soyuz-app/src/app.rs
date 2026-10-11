@@ -114,7 +114,7 @@ pub struct SoyuzApp {
     /// The in-app assistant (AI panel, agent tasks, highlights).
     pub ai: crate::ai::AiState,
     /// Saved workspaces, the other windows of this process, group editing.
-    pub workspaces: crate::ui::workspaces::WorkspacesState,
+    pub workspaces: crate::models::workspaces::WorkspacesState,
     /// Scripts, automation rules and the CLI pipe.
     pub automation: crate::automation::AutomationState,
     /// Asks the frontend for another frame (background threads keep a clone).
@@ -284,10 +284,10 @@ impl SoyuzApp {
             wake,
             config_save: Default::default(),
             frontend: Vec::new(),
-            workspaces: crate::ui::workspaces::WorkspacesState::load(),
+            workspaces: crate::models::workspaces::WorkspacesState::load(),
             automation: Default::default(),
         };
-        crate::ui::workspaces::bind_hotkeys(&mut app);
+        crate::models::workspaces::bind_hotkeys(&mut app);
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
         if let Some(s) = &session
             && app.config.workspace.restore_windows
@@ -337,7 +337,7 @@ impl SoyuzApp {
             ..Default::default()
         };
         // Tabs (up to four panes each, pinned first), groups and layouts.
-        match crate::ui::workspaces::build_workspace(self, &win, false) {
+        match crate::models::workspaces::build_workspace(self, &win, false) {
             Some(ws) => {
                 self.ws = ws;
                 true
@@ -348,12 +348,12 @@ impl SoyuzApp {
 
     /// Snapshot of the current session.
     pub fn session(&self) -> Session {
-        let main = crate::ui::workspaces::window_session(&self.ws, false);
+        let main = crate::models::workspaces::window_session(&self.ws, false);
         Session {
             active_tab: main.active_tab,
             tabs: main.tabs,
             groups: main.groups,
-            windows: crate::ui::workspaces::windows::session_windows(self),
+            windows: crate::models::windows::session_windows(self),
             favorites: self.ui.sidebar.favorites_customized.then(|| self.ui.sidebar.favorites.clone()),
             show_hidden: Some(self.ui.show_hidden),
             theme: Some(theme_name(self.ui.theme).to_string()),
@@ -480,8 +480,9 @@ impl SoyuzApp {
     /// cancels the jobs). Runs in `logic`, so it also works while the window is minimized.
     fn handle_close_request(&mut self, host: &dyn Host) {
         use std::sync::atomic::Ordering;
+        let close_requested = crate::host::egui_ctx(host).input(|i| i.viewport().close_requested());
         // Other windows open: closing the main window closes just this window.
-        if crate::ui::workspaces::windows::intercept_main_close(self, crate::host::egui_ctx(host)) {
+        if crate::models::windows::intercept_main_close(self, host, close_requested) {
             self.close_cancelled();
             return;
         }
@@ -499,7 +500,7 @@ impl SoyuzApp {
         if self.quit.when_idle {
             host.redraw_after(Duration::from_millis(250));
         }
-        if !crate::host::egui_ctx(host).input(|i| i.viewport().close_requested()) || self.quit.allowed || pending == 0 {
+        if !close_requested || self.quit.allowed || pending == 0 {
             return;
         }
         host.window(crate::host::WindowId::Current, crate::host::WindowCmd::CancelClose);
@@ -678,7 +679,7 @@ impl SoyuzApp {
         crate::ui::native_chrome::sync_theme(&ctx);
         shell::show(ui, self);
         // Overlays live in the focused window (the main one unless another has focus).
-        let overlays = crate::ui::workspaces::overlays_here(self);
+        let overlays = crate::models::workspaces::overlays_here(self);
         if overlays {
             crate::palette::show(&ctx, self);
             crate::ui::settings::show(&ctx, self);

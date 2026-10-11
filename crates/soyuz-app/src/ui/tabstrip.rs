@@ -620,7 +620,11 @@ fn finish_drag(
 ) {
     if far {
         if let Some(t) = away.filter(|t| !matches!(t, DropTarget::Reorder | DropTarget::Nothing)) {
-            app.cmds.push(Cmd::Workspace(WsCmd::DropTab { tab: d.tab, target: t, grab: d.grab }));
+            app.cmds.push(Cmd::Workspace(WsCmd::DropTab {
+                tab: d.tab,
+                target: t,
+                grab: crate::ui::geom::size(d.grab),
+            }));
         }
         return;
     }

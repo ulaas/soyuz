@@ -109,8 +109,8 @@ pub enum Cmd {
     /// Open a path in a new Soyuz window (in-process or a new process, see
     /// `[workspace] new_window` and `ops::window`).
     NewWindow(Location),
-    /// Tab groups, saved workspaces, layouts, windows, history graph: `ui::workspaces`.
-    Workspace(crate::ui::workspaces::WsCmd),
+    /// Tab groups, saved workspaces, layouts, windows, history graph: `models::workspaces`.
+    Workspace(crate::models::workspaces::WsCmd),
     /// The in-app assistant (folder access, prefilled prompts): `ai::state`.
     Ai(crate::ai::AiCmd),
     /// Smart folders and the background index: `ui::smart`.

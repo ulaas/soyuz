@@ -42,7 +42,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     }
 
     let titlebar = app.ui.chrome.has_titlebar();
-    let main = crate::ui::workspaces::main_frame(app);
+    let main = crate::models::workspaces::main_frame(app);
     if titlebar {
         crate::ui::titlebar::show(ui, app);
     }
@@ -128,7 +128,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         });
 
     // Overlays (in the focused window only).
-    if !crate::ui::workspaces::overlays_here(app) {
+    if !crate::models::workspaces::overlays_here(app) {
         return;
     }
     crate::ui::tools::show_windows(&ctx, app);

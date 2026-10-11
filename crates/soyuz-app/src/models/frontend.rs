@@ -10,4 +10,12 @@ pub enum FrontendCmd {
     OpenSettings(Option<Section>),
     /// Close the settings (writes a pending `config.toml` save).
     CloseSettings,
+    /// "Save workspace as…", with a suggested name.
+    SaveWorkspace(String),
+    /// "Manage workspaces".
+    ManageWorkspaces,
+    /// The history graph of `tab`, starting at `pane`.
+    TabHistory { tab: crate::state::workspace::TabId, pane: crate::state::pane::PaneId },
+    /// Window `id` (with `tabs` tabs) is closing: ask whether to move or close its tabs.
+    CloseWindowPrompt { id: crate::state::workspace_windows::WindowId, tabs: usize },
 }

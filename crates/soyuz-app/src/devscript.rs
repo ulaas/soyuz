@@ -326,7 +326,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 app.workspaces.quitting = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            "ws" => crate::ui::workspaces::devscript(app, ctx, arg),
+            "ws" => crate::models::workspaces::devscript(app, arg),
             "smart" => {
                 // `smart:<name>` opens a smart folder; `smart:` opens the "new" dialog.
                 if arg.trim().is_empty() {

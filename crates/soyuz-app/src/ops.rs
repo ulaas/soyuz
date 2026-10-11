@@ -513,7 +513,7 @@ pub fn drain_mailbox(app: &mut SoyuzApp, host: &dyn Host) {
         // Messages for panes of another window are handled with that window swapped in.
         match msg_pane(&msg) {
             Some(p) if app.ws.find_pane(p).is_none() => {
-                crate::ui::workspaces::windows::with_pane_window(app, p, move |app| handle_msg(app, msg));
+                crate::models::windows::with_pane_window(app, p, move |app| handle_msg(app, msg));
             }
             _ => handle_msg(app, msg),
         }
@@ -615,7 +615,7 @@ pub fn drain_watcher(app: &mut SoyuzApp) {
     }
     for (id, kind) in events {
         // Panes of other windows are found with that window swapped in.
-        crate::ui::workspaces::windows::with_pane_window(app, id, move |app| on_watch(app, id, kind));
+        crate::models::windows::with_pane_window(app, id, move |app| on_watch(app, id, kind));
     }
 }
 
@@ -707,7 +707,7 @@ pub fn refresh_affected(app: &mut SoyuzApp, paths: &[std::path::PathBuf]) {
         ids.extend(panes_showing(&w.ws, &dirs));
     }
     for id in ids {
-        crate::ui::workspaces::windows::with_pane_window(app, id, move |app| {
+        crate::models::windows::with_pane_window(app, id, move |app| {
             if let Some(pane) = app.ws.find_pane_mut(id) {
                 relist_for_job(pane, &mut app.services);
             }
@@ -900,12 +900,12 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
         Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
         Cmd::NewWindow(loc) => {
             if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
-                crate::ui::workspaces::windows::open_location(app, crate::host::egui_ctx(host), loc);
+                crate::models::windows::open_location(app, loc);
             } else {
                 window::spawn_window(app, &loc);
             }
         }
-        Cmd::Workspace(c) => crate::ui::workspaces::apply(app, c, crate::host::egui_ctx(host)),
+        Cmd::Workspace(c) => crate::models::workspaces::apply(app, c),
 
         Cmd::SubmitJob(spec) => {
             crate::ui::archive::submit_job(app, *spec);

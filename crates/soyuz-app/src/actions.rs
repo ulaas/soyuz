@@ -22,7 +22,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         return;
     }
     // Tab groups, workspaces, quad layout, windows, history graph, timeline.
-    if crate::ui::workspaces::action(app, &action, crate::host::egui_ctx(host)) {
+    if crate::models::workspaces::action(app, &action) {
         return;
     }
     let pane_id = app.ws.pane().id;

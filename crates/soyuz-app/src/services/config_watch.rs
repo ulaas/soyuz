@@ -197,7 +197,7 @@ pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
         log::warn!("{w}");
     }
     app.keymap = km;
-    crate::ui::workspaces::bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
+    crate::models::workspaces::bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
     app.keyseq.reset();
     if old.layout.terminal_height != c.layout.terminal_height {
         // The panel remembers a size the user dragged; the setting is the default height.

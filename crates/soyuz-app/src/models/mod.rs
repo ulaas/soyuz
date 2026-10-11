@@ -4,3 +4,5 @@
 pub mod frontend;
 pub mod settings;
 pub mod toasts;
+pub mod windows;
+pub mod workspaces;

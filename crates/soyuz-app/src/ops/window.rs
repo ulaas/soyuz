@@ -1,6 +1,6 @@
 //! Window-level actions: new window / move tab to a new window and "Run as
 //! administrator". With `[workspace] new_window = "in_process"` (the default) windows are
-//! viewports of this process (`ui::workspaces::windows`); otherwise each window is its
+//! viewports of this process (`models::windows`); otherwise each window is its
 //! own process, started as `soyuz --new-window -- <path>` so it neither restores nor
 //! overwrites the primary window's session.
 
@@ -62,7 +62,7 @@ pub fn tab_to_new_window(app: &mut SoyuzApp) {
     if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
         if app.ws.tabs.len() > 1 {
             let i = app.ws.active;
-            app.cmds.push(crate::cmd::Cmd::Workspace(crate::ui::workspaces::WsCmd::TabToNewWindow(i)));
+            app.cmds.push(crate::cmd::Cmd::Workspace(crate::models::workspaces::WsCmd::TabToNewWindow(i)));
         } else {
             app.ui.toasts.push(Toast::info(tr!("ops-window-keeps-tab")));
         }
