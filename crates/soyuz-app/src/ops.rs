@@ -880,7 +880,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
             new_tab(app);
         }
         Cmd::SetTheme(pref) => {
-            host.set_theme(pref.into());
+            host.set_theme(pref);
             app.ui.theme = pref;
         }
         Cmd::ApplyViewToAll(id) => {

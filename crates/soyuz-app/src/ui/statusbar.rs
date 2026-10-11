@@ -26,7 +26,7 @@ pub struct StatusInfo {
     pub free: Option<(u64, u64)>,
     pub mode: ViewMode,
     pub zoom: u16,
-    pub theme: ThemePreference,
+    pub theme: crate::host::ThemePref,
     pub size_style: SizeStyle,
     /// Jobs indicator (ring + count) shown while operations run.
     pub activity: crate::ui::panels::activity::Indicator,
@@ -139,7 +139,8 @@ pub fn show(root: &mut Ui, info: &StatusInfo, cmds: &mut Vec<Cmd>, zoom_out: &mu
 }
 
 /// System / light / dark switch.
-fn theme_switch(ui: &mut Ui, current: ThemePreference, cmds: &mut Vec<Cmd>) {
+fn theme_switch(ui: &mut Ui, current: crate::host::ThemePref, cmds: &mut Vec<Cmd>) {
+    let current = ThemePreference::from(current);
     let p = palette(ui.ctx());
     let items = [
         (ThemePreference::System, ph::CIRCLE_HALF, tr!("app-status-theme-system")),
@@ -159,7 +160,7 @@ fn theme_switch(ui: &mut Ui, current: ThemePreference, cmds: &mut Vec<Cmd>) {
         let color = if active { p.accent } else { p.text_tertiary };
         ui.painter().text(r.center(), Align2::CENTER_CENTER, *glyph, icons::font(12.0), color);
         if resp.on_hover_text(*tip).clicked() {
-            cmds.push(Cmd::SetTheme(*pref));
+            cmds.push(Cmd::SetTheme((*pref).into()));
         }
     }
 }

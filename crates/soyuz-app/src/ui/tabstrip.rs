@@ -195,8 +195,14 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let inner = ctx.input(|i| i.viewport().inner_rect);
     if let Some(inner) = inner {
         let off = inner.min.to_vec2();
-        let tabs = (0..n).filter(|&i| !hidden[i]).map(|i| (i, rects[i].translate(off))).collect();
-        app.workspaces.set_geom(WindowGeom { id: window, inner, strip: full.translate(off), tabs });
+        let tabs =
+            (0..n).filter(|&i| !hidden[i]).map(|i| (i, crate::ui::geom::area(rects[i].translate(off)))).collect();
+        app.workspaces.set_geom(WindowGeom {
+            id: window,
+            inner: crate::ui::geom::area(inner),
+            strip: crate::ui::geom::area(full.translate(off)),
+            tabs,
+        });
     }
 
     let distance = app.config.workspace.tear_off_distance.clamp(8.0, 400.0);
@@ -209,9 +215,13 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         outside || pp.y > full.bottom() + distance || pp.y < full.top() - distance
     });
     let away_target = match (drag, far, inner) {
-        (Some(d), true, Some(inner)) if can_give => {
-            Some(resolve_drop(window, inner.min + d.last.to_vec2(), &app.workspaces.geoms, distance, tear_ok))
-        }
+        (Some(d), true, Some(inner)) if can_give => Some(resolve_drop(
+            window,
+            crate::ui::geom::point(inner.min + d.last.to_vec2()),
+            &app.workspaces.geoms,
+            distance,
+            tear_ok,
+        )),
         _ => None,
     };
 

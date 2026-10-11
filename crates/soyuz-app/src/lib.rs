@@ -21,6 +21,7 @@ pub mod cmd;
 pub mod commands;
 pub mod devscript;
 pub mod editors;
+pub mod geom;
 pub mod host;
 pub mod keys;
 pub mod ops;

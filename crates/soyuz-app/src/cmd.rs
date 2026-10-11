@@ -5,7 +5,6 @@
 
 use std::path::PathBuf;
 
-use egui::ThemePreference;
 use soyuz_core::Location;
 use soyuz_core::config::Action;
 use soyuz_fs::AppInfo;
@@ -75,7 +74,7 @@ pub enum Cmd {
         to: usize,
     },
     NewTabAfter(usize),
-    SetTheme(ThemePreference),
+    SetTheme(crate::host::ThemePref),
     SetSplit(f32),
     /// Make the pane's view the default for every folder (after confirmation).
     ApplyViewToAll(PaneId),

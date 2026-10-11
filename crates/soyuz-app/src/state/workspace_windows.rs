@@ -2,7 +2,7 @@
 //! when it is released — reordered in its own strip, moved into another window's strip
 //! (or anywhere over another window), or torn off into a new window.
 
-use egui::{Pos2, Rect, vec2};
+use crate::geom::{Point as Pos2, Rect, vec2};
 
 /// A Soyuz window of this process. `WindowId::MAIN` is the root viewport.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord)]
@@ -88,7 +88,7 @@ pub fn resolve_drop(src: WindowId, pos: Pos2, wins: &[WindowGeom], distance: f32
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui::pos2;
+    use crate::geom::pt as pos2;
 
     fn geom(id: u64, x: f32) -> WindowGeom {
         let inner = Rect::from_min_size(pos2(x, 0.0), vec2(800.0, 600.0));

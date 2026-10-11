@@ -25,6 +25,27 @@ pub enum ThemePref {
     Light,
 }
 
+impl ThemePref {
+    /// `[appearance] theme`: `dark`, `light`, anything else (`system`, a theme name)
+    /// follows the system.
+    pub fn from_config(theme: &str) -> ThemePref {
+        match theme.trim().to_ascii_lowercase().as_str() {
+            "dark" => ThemePref::Dark,
+            "light" => ThemePref::Light,
+            _ => ThemePref::System,
+        }
+    }
+
+    /// The name stored in the session.
+    pub fn name(self) -> &'static str {
+        match self {
+            ThemePref::Dark => "dark",
+            ThemePref::Light => "light",
+            ThemePref::System => "system",
+        }
+    }
+}
+
 /// Which window a [`WindowCmd`] is for.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum WindowId {

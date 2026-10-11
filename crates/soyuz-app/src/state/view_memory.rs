@@ -116,7 +116,9 @@ impl ViewState {
 }
 
 /// Minimum (and stored) width of the name column; see [`ViewState::sanitize`].
-const NAME_MIN_W: f32 = crate::ui::views::columns::MIN_NAME_W;
+/// Narrowest the Name column gets in the details view.
+pub const MIN_NAME_W: f32 = 160.0;
+const NAME_MIN_W: f32 = MIN_NAME_W;
 
 fn default_columns(c: &Config) -> Vec<ColumnSpec> {
     let mut cols: Vec<ColumnSpec> = c

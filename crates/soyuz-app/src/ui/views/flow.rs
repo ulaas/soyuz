@@ -118,10 +118,22 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
         f32::from(pane.view.zoom)
     };
     let g = geometry(style, pane, rect.width(), row_h, zoom);
-    let sig = LayoutSig { vis_version: pane.vis_version, width: rect.width(), cell: g.cell, mode: style.code() };
+    let sig = LayoutSig {
+        vis_version: pane.vis_version,
+        width: rect.width(),
+        cell: crate::ui::geom::size(g.cell),
+        mode: style.code(),
+    };
     if pane.layout_sig != Some(sig) || pane.layout.is_none() {
-        pane.layout =
-            Some(FlowLayout::new(pane.visible.len(), &pane.groups, g.content_w, g.cell, g.gap, g.pad, GROUP_H));
+        pane.layout = Some(FlowLayout::new(
+            pane.visible.len(),
+            &pane.groups,
+            g.content_w,
+            crate::ui::geom::size(g.cell),
+            crate::ui::geom::size(g.gap),
+            crate::ui::geom::size(g.pad),
+            GROUP_H,
+        ));
         pane.layout_sig = Some(sig);
     }
     let Some(layout) = pane.layout.take() else { return };
@@ -158,8 +170,8 @@ fn body(
     ui.set_min_size(vec2(g.content_w, g.header_h + layout.total_h));
     let vis = Rect::from_min_size(origin + viewport.min.to_vec2(), viewport.size());
     let list_top = origin.y + g.header_h;
-    let to_layout = |pos: Pos2| pos2(pos.x - origin.x, pos.y - list_top);
-    let to_screen = |r: Rect| r.translate(vec2(origin.x, list_top));
+    let to_layout = |pos: Pos2| crate::geom::pt(pos.x - origin.x, pos.y - list_top);
+    let to_screen = |r: crate::geom::Rect| crate::ui::geom::rect(r).translate(vec2(origin.x, list_top));
     let id = Id::new(("soyuz.flow.bg", pane.id.0));
     let bg = ui.interact(vis, id, Sense::click_and_drag());
     let list_area = Rect::from_min_max(pos2(vis.left(), vis.top() + g.header_h), vis.max);
@@ -205,9 +217,9 @@ fn body(
     for line in &layout.lines()[layout.lines_in(y0, y1)] {
         match line.kind {
             LineKind::Header(gi) => {
-                let r = to_screen(Rect::from_min_size(
-                    pos2(g.pad.x, line.top),
-                    vec2(g.content_w - 2.0 * g.pad.x, line.height),
+                let r = to_screen(crate::geom::Rect::from_min_size(
+                    crate::geom::pt(g.pad.x, line.top),
+                    crate::geom::vec2(g.content_w - 2.0 * g.pad.x, line.height),
                 ));
                 if let Some(span) = pane.groups.get(gi) {
                     let collapsed = pane.collapsed_groups.contains(&span.label);
@@ -310,8 +322,13 @@ fn body(
             if let Some(key) = key {
                 let on_checkbox = v.checkbox_mode
                     && pos.is_some_and(|pp| {
-                        checkbox_rect(style, to_screen(layout.item_rect(i).unwrap_or(Rect::NOTHING)), &g.cols, origin.x)
-                            .contains(pp)
+                        checkbox_rect(
+                            style,
+                            to_screen(layout.item_rect(i).unwrap_or(crate::geom::Rect::NOTHING)),
+                            &g.cols,
+                            origin.x,
+                        )
+                        .contains(pp)
                     });
                 let single_open = v.config.general.single_click_open
                     && !mods.any()
@@ -418,7 +435,7 @@ fn body(
                 ui.ctx().request_repaint();
             }
         }
-        let band_rect = Rect::from_two_pos(band.start, band.current);
+        let band_rect = crate::geom::Rect::from_two_pos(band.start, band.current);
         let hits: Vec<_> =
             layout.items_in_rect(band_rect).into_iter().filter_map(|i| pane.key_at(i).cloned()).collect();
         let under = layout.hit(band.current).and_then(|i| pane.key_at(i).cloned());

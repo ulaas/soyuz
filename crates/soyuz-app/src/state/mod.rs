@@ -3,6 +3,7 @@
 
 pub mod crumbs;
 pub mod history;
+pub mod layout;
 pub mod listing;
 pub mod pane;
 pub mod selection;

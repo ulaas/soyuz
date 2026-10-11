@@ -62,8 +62,8 @@ impl TypeAhead {
 /// An in-progress rubber-band drag (content coordinates).
 #[derive(Clone, Debug)]
 pub struct Band {
-    pub start: egui::Pos2,
-    pub current: egui::Pos2,
+    pub start: crate::geom::Point,
+    pub current: crate::geom::Point,
     pub base: Selection,
     pub mode: super::selection::BandMode,
 }
@@ -120,7 +120,7 @@ pub struct Pane {
     /// Items shown per "page" in the last draw (PageUp/PageDown).
     pub page_rows: usize,
     /// Layout of the last draw (keyboard navigation uses it); rebuilt when `layout_sig` changes.
-    pub layout: Option<crate::ui::views::layout::FlowLayout>,
+    pub layout: Option<crate::state::layout::FlowLayout>,
     pub layout_sig: Option<LayoutSig>,
     /// Height of the list viewport in the last draw.
     pub viewport_h: f32,
@@ -132,12 +132,12 @@ pub struct Pane {
     pub col_drag: Option<(usize, f32)>,
 }
 
-/// Inputs that determine a [`FlowLayout`](crate::ui::views::layout::FlowLayout).
+/// Inputs that determine a [`FlowLayout`](crate::state::layout::FlowLayout).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LayoutSig {
     pub vis_version: u64,
     pub width: f32,
-    pub cell: egui::Vec2,
+    pub cell: crate::geom::Vec2,
     pub mode: u8,
 }
 

@@ -180,9 +180,9 @@ pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
         }
         app.ui.reduced_motion = c.appearance.reduced_motion;
         if old.appearance.theme != c.appearance.theme {
-            app.ui.theme = crate::theme::preference_from_config(&c.appearance.theme);
+            app.ui.theme = crate::host::ThemePref::from_config(&c.appearance.theme);
         }
-        host.set_theme(app.ui.theme.into());
+        host.set_theme(app.ui.theme);
     }
     if old.archive != c.archive {
         app.fileops.jobs.reconfigure(c);

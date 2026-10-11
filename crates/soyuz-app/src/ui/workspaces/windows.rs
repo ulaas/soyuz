@@ -16,7 +16,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use egui::{Pos2, Rect, Ui, Vec2, ViewportBuilder, ViewportCommand, ViewportId, vec2};
+use egui::{Pos2, Ui, Vec2, ViewportBuilder, ViewportCommand, ViewportId, vec2};
 use soyuz_core::Location;
 use soyuz_core::config::CloseWindowTabs;
 
@@ -370,6 +370,7 @@ pub fn drop_tab(app: &mut SoyuzApp, ctx: &egui::Context, tab: TabId, target: Dro
         DropTarget::Reorder | DropTarget::Nothing => {}
         DropTarget::TearOff { pos } => match app.ws.take_tab(i) {
             Some((t, group)) => {
+                let pos = crate::ui::geom::pos(pos);
                 let pos = (pos != Pos2::ZERO).then(|| pos - grab - vec2(8.0, 8.0));
                 app.workspaces.ops.push(WinOp::OpenTabs { tabs: vec![t], group, pos, size });
             }
@@ -446,7 +447,12 @@ fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
         app.workspaces.owner = id;
     }
     if let Some(inner) = inner {
-        app.workspaces.set_geom(WindowGeom { id, inner, strip: Rect::NOTHING, tabs: Vec::new() });
+        app.workspaces.set_geom(WindowGeom {
+            id,
+            inner: crate::ui::geom::area(inner),
+            strip: crate::geom::Rect::NOTHING,
+            tabs: Vec::new(),
+        });
     }
 }
 

@@ -9,10 +9,10 @@ use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
 use crate::host::Host;
 use crate::ops::{self, NavOpts};
+use crate::state::layout::NavDir;
 use crate::state::view_memory::{ZOOM_MAX, ZOOM_MIN};
 use crate::ui::dialogs::{AboutDialog, ConfirmDialog, PatternDialog};
 use crate::ui::toasts::Toast;
-use crate::ui::views::layout::NavDir;
 
 pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     use Action as A;

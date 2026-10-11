@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use eframe::CreationContext;
-use egui::{TextEdit, ThemePreference};
+use egui::TextEdit;
 use soyuz_core::Location;
 use soyuz_core::config::{self, Config, KeyContext, Keymap};
 use soyuz_fs::VolumeInfo;
@@ -61,7 +61,7 @@ pub struct UiState {
     pub cloud: Vec<(String, PathBuf)>,
     pub dialogs: Dialogs,
     pub bottom: BottomPanel,
-    pub theme: ThemePreference,
+    pub theme: crate::host::ThemePref,
     pub reduced_motion: bool,
     pub title: String,
     pub terminal: crate::ui::panels::terminal::TerminalPanel,
@@ -204,8 +204,8 @@ impl SoyuzApp {
         let theme_pref = session
             .as_ref()
             .and_then(|s| s.theme.as_deref())
-            .map(theme::preference_from_config)
-            .unwrap_or_else(|| theme::preference_from_config(&config.appearance.theme));
+            .map(crate::host::ThemePref::from_config)
+            .unwrap_or_else(|| crate::host::ThemePref::from_config(&config.appearance.theme));
         ctx.set_theme(theme_pref);
 
         let mut ui = UiState {
@@ -535,12 +535,8 @@ impl SoyuzApp {
     }
 }
 
-pub fn theme_name(p: ThemePreference) -> &'static str {
-    match p {
-        ThemePreference::Dark => "dark",
-        ThemePreference::Light => "light",
-        ThemePreference::System => "system",
-    }
+pub fn theme_name(p: crate::host::ThemePref) -> &'static str {
+    p.name()
 }
 
 /// Load `config.toml` (defaults when missing or invalid; problems are logged).
@@ -668,7 +664,7 @@ impl SoyuzApp {
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
-        crate::theme::library::sync(&ctx, &self.config, self.ui.theme);
+        crate::theme::library::sync(&ctx, &self.config, self.ui.theme.into());
         crate::ui::looks::begin_frame(&ctx);
         crate::ui::titlebar::sync(&ctx, self);
         crate::ui::native_chrome::sync_theme(&ctx);

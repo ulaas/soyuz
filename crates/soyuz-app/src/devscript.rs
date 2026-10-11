@@ -267,7 +267,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 }
             }
             "theme" => {
-                app.ui.theme = crate::theme::preference_from_config(arg);
+                app.ui.theme = crate::host::ThemePref::from_config(arg);
                 ctx.set_theme(app.ui.theme);
             }
             "config" => match edited(&app.config, arg) {

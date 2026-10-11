@@ -14,7 +14,7 @@ pub mod windows;
 
 use std::path::PathBuf;
 
-use egui::{Pos2, Ui};
+use egui::Ui;
 use soyuz_core::Location;
 use soyuz_core::config::{Action, KeyContext};
 
@@ -457,7 +457,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: WsCmd, ctx: &egui::Context) {
         WsCmd::DropTab { tab, target, grab } => windows::drop_tab(app, ctx, tab, target, grab),
         WsCmd::TabToNewWindow(i) if i < n => {
             let id = app.ws.tabs[i].id;
-            windows::drop_tab(app, ctx, id, DropTarget::TearOff { pos: Pos2::ZERO }, egui::Vec2::ZERO);
+            windows::drop_tab(app, ctx, id, DropTarget::TearOff { pos: crate::geom::Point::ZERO }, egui::Vec2::ZERO);
         }
         WsCmd::TabToWindow(i, w) if i < n => {
             let id = app.ws.tabs[i].id;
@@ -857,7 +857,7 @@ pub fn devscript(app: &mut SoyuzApp, ctx: &egui::Context, arg: &str) {
                 let dist = app.config.workspace.tear_off_distance;
                 let target = crate::state::workspace_windows::resolve_drop(
                     app.workspaces.current,
-                    pt,
+                    crate::ui::geom::point(pt),
                     &app.workspaces.geoms,
                     dist,
                     app.ws.tabs.len() > 1,

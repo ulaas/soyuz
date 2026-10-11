@@ -9,7 +9,7 @@ use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 
 use crate::app::SoyuzApp;
 use crate::host::Host;
-use crate::ui::views::layout::NavDir;
+use crate::state::layout::NavDir;
 use crate::{actions, ops};
 
 #[derive(Clone, Debug, PartialEq)]
