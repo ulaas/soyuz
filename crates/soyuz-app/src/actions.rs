@@ -398,7 +398,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
                 A::UiZoomOut => ui_zoom_step(cur, -1),
                 _ => 1.0,
             };
-            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.ui_scale = next);
+            crate::models::settings::update_config(app, host, |c| c.appearance.ui_scale = next);
             let percent = format!("{:.0}", next * 100.0);
             let mut t = Toast::info(tr!("actions-ui-zoom")).body(tr!("actions-ui-zoom-body", percent = percent));
             t.duration = Some(1.5);
@@ -406,9 +406,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         }
         A::ToggleHighContrast => {
             let on = !app.config.appearance.high_contrast;
-            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| {
-                c.appearance.high_contrast = on
-            });
+            crate::models::settings::update_config(app, host, |c| c.appearance.high_contrast = on);
             app.ui.toasts.push(Toast::info(if on {
                 tr!("actions-high-contrast-on")
             } else {
