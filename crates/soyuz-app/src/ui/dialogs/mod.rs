@@ -1,7 +1,14 @@
-//! Modal dialog host — the extension point for conflict/error/properties/batch-rename
-//! dialogs. A dialog implements [`Dialog`]; push it with
-//! [`Dialogs::push`]. The host draws the top-most dialog in a styled modal (fade +
-//! scale-in, backdrop, Esc / click-outside to cancel) and routes results as [`Cmd`]s.
+//! Modal dialog host. Two kinds of dialogs share it:
+//!
+//! * core prompts ([`DialogModel`], pushed onto `SoyuzApp::dialogs` by core logic: job
+//!   prompts, delete confirmations, new link, Copy / Move to, quit, MCP and script
+//!   approvals), drawn here by free functions per model;
+//! * GUI-only dialogs implementing [`Dialog`] (About, columns, properties, …), pushed
+//!   with [`Dialogs::push`].
+//!
+//! The host draws the top-most dialog of either kind (the most recently opened) in a
+//! styled modal (fade + scale-in, backdrop, Esc / click-outside to cancel) and routes
+//! results as [`Cmd`]s.
 
 pub mod attributes;
 pub mod batch_rename;
@@ -30,6 +37,7 @@ use soyuz_core::config::{ActionCategory, Keymap};
 use soyuz_core::{Column, NamePatternSpec, PatternKind};
 
 use crate::cmd::Cmd;
+use crate::models::dialogs::{DialogModel, DialogStack, next_seq};
 use crate::state::pane::PaneId;
 use crate::state::workspace::Workspace;
 use crate::theme::tokens::radius;
@@ -66,22 +74,148 @@ pub trait Dialog {
 
 #[derive(Default)]
 pub struct Dialogs {
-    stack: Vec<Box<dyn Dialog>>,
+    /// GUI-only dialogs with their ordering stamp ([`next_seq`]), top-most last.
+    stack: Vec<(u64, Box<dyn Dialog>)>,
+}
+
+/// Window kind of a core prompt for the remembered native window position (the type
+/// names of the dialogs these models replaced, so remembered positions carry over).
+fn model_kind(m: &DialogModel) -> &'static str {
+    match m {
+        DialogModel::Prompt(_) => "soyuz_app::ui::dialogs::conflict::PromptDialog",
+        DialogModel::DeleteConfirm(_) => "soyuz_app::ui::dialogs::delete_confirm::DeleteConfirmDialog",
+        DialogModel::NewLink(_) => "soyuz_app::ui::dialogs::new_item::LinkDialog",
+        DialogModel::Transfer(_) => "soyuz_app::ui::dialogs::new_item::TransferDialog",
+        DialogModel::Quit(_) => "soyuz_app::ui::dialogs::quit::QuitDialog",
+        DialogModel::McpApproval(_) => "soyuz_app::ui::dialogs::mcp_approval::McpApprovalDialog",
+        DialogModel::ScriptApproval(_) => "soyuz_app::ui::automation::approval::ScriptApprovalDialog",
+    }
+}
+
+fn model_icon(m: &DialogModel) -> Option<&'static str> {
+    Some(match m {
+        DialogModel::Prompt(m) => conflict::icon(m),
+        DialogModel::DeleteConfirm(m) => delete_confirm::icon(m),
+        DialogModel::NewLink(_) => ph::LINK,
+        DialogModel::Transfer(m) => new_item::transfer_icon(m),
+        DialogModel::Quit(_) => ph::WARNING,
+        DialogModel::McpApproval(m) => mcp_approval::icon(m),
+        DialogModel::ScriptApproval(m) => crate::ui::automation::approval::icon(m),
+    })
+}
+
+fn model_width(m: &DialogModel) -> f32 {
+    match m {
+        DialogModel::Prompt(m) => conflict::width(m),
+        DialogModel::DeleteConfirm(_) => 440.0,
+        DialogModel::NewLink(_) | DialogModel::Transfer(_) => 480.0,
+        DialogModel::Quit(_) => 460.0,
+        DialogModel::McpApproval(_) => 600.0,
+        DialogModel::ScriptApproval(_) => 560.0,
+    }
+}
+
+/// Draw a core prompt's body. Returns `false` to close.
+fn show_model(ui: &mut Ui, m: &mut DialogModel, ctx: &mut DialogCtx<'_>) -> bool {
+    match m {
+        DialogModel::Prompt(m) => conflict::show(ui, m, ctx),
+        DialogModel::DeleteConfirm(m) => delete_confirm::show(ui, m, ctx),
+        DialogModel::NewLink(m) => new_item::show_link(ui, m, ctx),
+        DialogModel::Transfer(m) => new_item::show_transfer(ui, m, ctx),
+        DialogModel::Quit(m) => quit::show(ui, m, ctx),
+        DialogModel::McpApproval(m) => mcp_approval::show(ui, m, ctx),
+        DialogModel::ScriptApproval(m) => crate::ui::automation::approval::show(ui, m, ctx),
+    }
+}
+
+/// The top-most dialog, of either kind.
+enum Top<'a> {
+    Gui(&'a mut Box<dyn Dialog>),
+    Model(&'a mut DialogModel),
+}
+
+impl Top<'_> {
+    fn title(&self) -> &str {
+        match self {
+            Top::Gui(d) => d.title(),
+            Top::Model(m) => m.title(),
+        }
+    }
+
+    fn icon(&self) -> Option<&'static str> {
+        match self {
+            Top::Gui(d) => d.icon(),
+            Top::Model(m) => model_icon(m),
+        }
+    }
+
+    fn width(&self) -> f32 {
+        match self {
+            Top::Gui(d) => d.width(),
+            Top::Model(m) => model_width(m),
+        }
+    }
+
+    fn alert(&self) -> bool {
+        match self {
+            Top::Gui(d) => d.alert(),
+            Top::Model(m) => m.alert(),
+        }
+    }
+
+    fn kind_name(&self) -> &'static str {
+        match self {
+            Top::Gui(d) => d.kind_name(),
+            Top::Model(m) => model_kind(m),
+        }
+    }
+
+    fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
+        match self {
+            Top::Gui(d) => d.show(ui, ctx),
+            Top::Model(m) => show_model(ui, m, ctx),
+        }
+    }
 }
 
 impl Dialogs {
     pub fn push(&mut self, d: impl Dialog + 'static) {
-        self.stack.push(Box::new(d));
+        self.stack.push((next_seq(), Box::new(d)));
     }
 
+    /// A GUI-only dialog is open (`SoyuzApp::dialog_open` also counts core prompts).
     pub fn is_open(&self) -> bool {
         !self.stack.is_empty()
     }
 
-    /// Draw the top-most dialog.
-    pub fn show(&mut self, ctx: &egui::Context, dctx: &mut DialogCtx<'_>) {
-        let depth = self.stack.len();
-        let Some(top) = self.stack.last_mut() else { return };
+    /// Draw the top-most dialog: the most recently opened of the GUI-only dialogs and
+    /// the core prompts in `models`.
+    pub fn show(&mut self, ctx: &egui::Context, models: &mut DialogStack, dctx: &mut DialogCtx<'_>) {
+        let depth = self.stack.len() + models.len();
+        let gui_seq = self.stack.last().map(|(s, _)| *s);
+        let model_on_top = match (gui_seq, models.top_seq()) {
+            (_, None) => false,
+            (None, Some(_)) => true,
+            (Some(g), Some(m)) => m > g,
+        };
+        let mut top = if model_on_top {
+            let Some(m) = models.top_mut() else { return };
+            Top::Model(m)
+        } else {
+            let Some((_, d)) = self.stack.last_mut() else { return };
+            Top::Gui(d)
+        };
+        if Self::draw(ctx, depth, &mut top, dctx) {
+            if model_on_top {
+                models.close_top();
+            } else {
+                self.stack.pop();
+            }
+        }
+    }
+
+    /// Draw `top`; returns whether it closes.
+    fn draw(ctx: &egui::Context, depth: usize, top: &mut Top<'_>, dctx: &mut DialogCtx<'_>) -> bool {
         if crate::ui::native::active(ctx) {
             let kind = Id::new(top.kind_name());
             let title = top.title().to_string();
@@ -94,10 +228,7 @@ impl Dialogs {
             w.alert = top.alert();
             w.width = top.width();
             let shown = w.show(ctx, |ui| top.show(ui, dctx));
-            if shown.close || shown.inner == Some(false) {
-                self.stack.pop();
-            }
-            return;
+            return shown.close || shown.inner == Some(false);
         }
         // Keyed by the dialog's identity too, so a smaller dialog opened after a larger
         // one doesn't inherit the remembered size of the previous modal.
@@ -138,9 +269,7 @@ impl Dialogs {
                 ui.add_space(12.0);
                 keep = top.show(ui, dctx);
             });
-        if resp.should_close() || !keep {
-            self.stack.pop();
-        }
+        resp.should_close() || !keep
     }
 }
 

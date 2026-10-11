@@ -31,6 +31,11 @@ use super::{CancelFlag, TaskId};
 /// Label prefix of jobs started by MCP clients (`MCP claude-desktop · Move 3 items …`).
 pub const JOB_PREFIX: &str = "MCP ";
 
+/// Tools whose effect cannot be undone: never approved in bulk for an MCP client.
+pub fn irreversible(tool: &str) -> bool {
+    matches!(tool, "delete_permanent" | "empty_trash" | "run_custom_command" | "sync_apply")
+}
+
 /// Job label for a plan an MCP client ran.
 pub fn job_label(client: &str, summary: &str) -> String {
     format!("{JOB_PREFIX}{client} \u{00b7} {}", summary.trim_start_matches("AI: ").trim())
@@ -157,7 +162,7 @@ impl McpApprovals {
         };
         touch::mark_mcp(&card.paths(), TouchKind::Planned);
         let auto = self.approve_kinds.contains(&(p.client.clone(), p.tool.clone()))
-            && !crate::ui::ai::cards::irreversible(&p.tool)
+            && !irreversible(&p.tool)
             && p.plan.executable;
         let call_key = p.call_key;
         self.cards.push(McpCard { card, call_key, pending: Some(p), job: None, resolved: None });
@@ -219,7 +224,7 @@ impl McpApprovals {
     pub fn approve_kind(&mut self, id: u64) {
         let Some(c) = self.card(id) else { return };
         let (client, tool) = (c.client().to_string(), c.card.tool.clone());
-        if crate::ui::ai::cards::irreversible(&tool) {
+        if irreversible(&tool) {
             self.decide(id, Decision::Approve);
             return;
         }

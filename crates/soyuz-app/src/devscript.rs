@@ -442,7 +442,7 @@ fn expect(app: &SoyuzApp, check: &str) -> Result<(), String> {
         }
         "settings" => open(app.settings.is_open()),
         "palette" => open(app.palette.open),
-        "dialog" => open(app.ui.dialogs.is_open()),
+        "dialog" => open(app.dialog_open()),
         // Debug hook only: a one-off metadata probe on the UI thread is fine here.
         "exists" => {
             if std::path::Path::new(want).exists() {

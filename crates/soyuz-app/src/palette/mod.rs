@@ -233,7 +233,7 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
         .filter(|a| {
             !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm)
                 && !crate::actions::unavailable(a)
-                && crate::ui::workspaces::palette_shows(app, a)
+                && crate::models::workspaces::palette_shows(app, a)
         })
         .collect();
     v.extend(
@@ -249,7 +249,7 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
 
 fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
     let e = catalog::entry(a);
-    let title = crate::ui::workspaces::palette_title(app, a).unwrap_or(e.title);
+    let title = crate::models::workspaces::palette_title(app, a).unwrap_or(e.title);
     let mut it = Item::new(Exec::Action(a.clone()), title, e.icon, section);
     it.detail = match a {
         Action::OpenBookmark(n) => app
@@ -321,7 +321,7 @@ pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
         .iter()
         .map(|a| {
             let mut e = catalog::entry(a);
-            if let Some(t) = crate::ui::workspaces::palette_title(app, a) {
+            if let Some(t) = crate::models::workspaces::palette_title(app, a) {
                 e.title = t;
             }
             (a.clone(), e)
@@ -788,16 +788,16 @@ pub fn run(app: &mut SoyuzApp, host: &dyn Host, exec: Exec, mods: RunMods) {
         }
         Exec::Search { text, content } => {
             close(app);
-            crate::ui::search::open(app, content);
+            crate::models::search::open(app, content);
             app.ui.search.form.text = text;
-            crate::ui::search::run(app);
+            crate::models::search::run(app);
         }
         Exec::Shell(line) => {
             app.palette.memory.used_shell(&line);
             app.palette.dirty = true;
             close(app);
             let dir = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim).unwrap_or_else(soyuz_fs::home);
-            crate::ui::panels::terminal::run_command(app, crate::host::egui_ctx(host), dir, &line);
+            crate::models::terminal::run_command(app, host, dir, &line);
         }
         Exec::Tab(i) => {
             close(app);

@@ -443,7 +443,11 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
                 && !app.services.mcp.modal_open.load(Ordering::SeqCst)
             {
                 app.services.mcp.modal_open.store(true, Ordering::SeqCst);
-                app.frontend.push(crate::models::frontend::FrontendCmd::McpApproval(id));
+                app.dialogs.push(crate::models::dialogs::McpApprovalModel::new(
+                    id,
+                    app.services.mcp.approvals.clone(),
+                    app.services.mcp.modal_open.clone(),
+                ));
             }
         }
     }

@@ -6,9 +6,9 @@
 //! keeps running. Several jobs may wait at once; `ops::fileops` shows one prompt at a time
 //! and passes the count. Esc / clicking outside defers the prompt (the job's activity card
 //! offers "Resolve…").
+//!
+//! The state and the answers are the core's [`PromptModel`]; this file only draws it.
 
-use std::cell::RefCell;
-use std::rc::Rc;
 use std::time::SystemTime;
 
 use egui::{
@@ -16,35 +16,16 @@ use egui::{
     TextEdit, Ui, pos2, vec2,
 };
 use soyuz_core::{ConflictResolution, EntryInfo, SizeStyle, format_size};
-use soyuz_jobs::{ConflictInfo, ConflictKind, JobId, JobPrompt, PromptResponse};
+use soyuz_jobs::{ConflictInfo, ConflictKind, JobPrompt};
 
-use super::{Dialog, DialogCtx};
-use crate::cmd::Cmd;
-use crate::ops::fileops::FileOpCmd;
+use super::DialogCtx;
+pub use crate::models::dialogs::PromptShared;
+use crate::models::dialogs::{PromptAnswer as Answer, PromptModel};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::views::icons;
 use crate::ui::widgets::trunc_galley;
-
-/// State shared between the dialog and `ops::fileops` (which owns the prompt queue).
-#[derive(Clone, Debug, Default)]
-pub struct PromptShared {
-    /// Still on the dialog stack.
-    pub alive: bool,
-    /// An answer (or cancel) was sent.
-    pub answered: bool,
-    /// The job no longer waits (cancelled / answered elsewhere): close immediately.
-    pub stale: bool,
-    /// Prompts waiting to be shown, this one included.
-    pub total: usize,
-}
-
-/// What a prompt body decided.
-pub(crate) enum Answer {
-    Respond(PromptResponse),
-    CancelJob,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Btn {
@@ -105,321 +86,230 @@ fn count_badge(ui: &Ui, total: usize) {
     ui.painter().galley(r.center() - g.size() / 2.0, g, p.warning);
 }
 
-pub struct PromptDialog {
-    job: JobId,
-    prompt: JobPrompt,
-    job_title: String,
-    title: String,
-    shared: Rc<RefCell<PromptShared>>,
-    pub(crate) apply_all: bool,
-    rename: Option<String>,
-    focus_rename: bool,
-    pub(crate) password: String,
-    pub(crate) focus_password: bool,
-    /// Validate rename-on-conflict names with the Windows rules.
-    windows_rules: bool,
-}
-
-impl PromptDialog {
-    pub fn new(job: JobId, prompt: JobPrompt, job_title: String, shared: Rc<RefCell<PromptShared>>) -> Self {
-        let title = match &prompt {
-            JobPrompt::Conflict(c) => match c.kind {
-                ConflictKind::FileExists => tr!("dialogs-conflict-title-file"),
-                ConflictKind::DirExists => tr!("dialogs-conflict-title-dir"),
-                ConflictKind::FileVsDir => tr!("dialogs-conflict-title-kind"),
-                ConflictKind::SameFile => tr!("dialogs-conflict-title-same"),
-                ConflictKind::MoveIntoSelf => tr!("dialogs-conflict-title-into-self"),
-                ConflictKind::CaseOnly => tr!("dialogs-conflict-title-case"),
-            },
-            JobPrompt::Error { error, .. } if error.op == soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP => {
-                tr!("dialogs-prompt-title-archive-limit")
-            }
-            JobPrompt::Error { .. } => tr!("dialogs-prompt-title-error"),
-            JobPrompt::NotEnoughSpace { .. } => tr!("dialogs-prompt-title-space"),
-            JobPrompt::TrashUnsupported { .. } => tr!("dialogs-prompt-title-trash"),
-            JobPrompt::ReadOnlyItem { .. } => tr!("dialogs-prompt-title-read-only"),
-            JobPrompt::Password { .. } => tr!("dialogs-prompt-title-password"),
-        }
-        .to_string();
-        PromptDialog {
-            job,
-            prompt,
-            job_title,
-            title,
-            shared,
-            apply_all: false,
-            rename: None,
-            focus_rename: false,
-            password: String::new(),
-            focus_password: true,
-            windows_rules: cfg!(windows),
-        }
-    }
-
-    /// Validate rename-on-conflict names with the Windows rules (target on a
-    /// Windows-family volume, or strict names).
-    pub fn windows_rules(mut self, on: bool) -> Self {
-        self.windows_rules = on;
-        self
+/// Glyph of a job prompt.
+pub(crate) fn icon(m: &PromptModel) -> &'static str {
+    match &m.prompt {
+        JobPrompt::Conflict(_) => ph::COPY,
+        JobPrompt::Error { .. } => ph::WARNING_CIRCLE,
+        JobPrompt::NotEnoughSpace { .. } => ph::HARD_DRIVE,
+        JobPrompt::TrashUnsupported { .. } => ph::TRASH,
+        JobPrompt::ReadOnlyItem { .. } => ph::LOCK_SIMPLE,
+        JobPrompt::Password { .. } => ph::KEY,
     }
 }
 
-impl Drop for PromptDialog {
-    fn drop(&mut self) {
-        self.shared.borrow_mut().alive = false;
+pub(crate) fn width(m: &PromptModel) -> f32 {
+    match m.prompt {
+        JobPrompt::Conflict(_) => 600.0,
+        _ => 460.0,
     }
 }
 
-impl Dialog for PromptDialog {
-    fn title(&self) -> &str {
-        &self.title
+/// Draw a job prompt. Returns `false` to close.
+pub(crate) fn show(ui: &mut Ui, m: &mut PromptModel, ctx: &mut DialogCtx<'_>) -> bool {
+    if !m.poll() {
+        return false;
     }
-
-    fn alert(&self) -> bool {
-        true
-    }
-
-    fn icon(&self) -> Option<&'static str> {
-        Some(match &self.prompt {
-            JobPrompt::Conflict(_) => ph::COPY,
-            JobPrompt::Error { .. } => ph::WARNING_CIRCLE,
-            JobPrompt::NotEnoughSpace { .. } => ph::HARD_DRIVE,
-            JobPrompt::TrashUnsupported { .. } => ph::TRASH,
-            JobPrompt::ReadOnlyItem { .. } => ph::LOCK_SIMPLE,
-            JobPrompt::Password { .. } => ph::KEY,
-        })
-    }
-
-    fn width(&self) -> f32 {
-        match self.prompt {
-            JobPrompt::Conflict(_) => 600.0,
-            _ => 460.0,
+    let p = palette(ui.ctx());
+    count_badge(ui, m.total());
+    ui.label(RichText::new(&m.job_title).font(FontId::proportional(11.5)).color(p.text_tertiary));
+    ui.add_space(8.0);
+    let answer = match m.prompt.clone() {
+        JobPrompt::Conflict(info) => conflict(ui, m, &info, &p),
+        other => super::error::body(ui, &other, m, &p),
+    };
+    match answer {
+        Some(a) => {
+            ctx.cmds.push(m.answer(a));
+            false
         }
-    }
-
-    fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
-        let (stale, total) = {
-            let s = self.shared.borrow();
-            (s.stale, s.total)
-        };
-        if stale {
-            self.shared.borrow_mut().answered = true;
-            return false;
-        }
-        let p = palette(ui.ctx());
-        count_badge(ui, total);
-        ui.label(RichText::new(&self.job_title).font(FontId::proportional(11.5)).color(p.text_tertiary));
-        ui.add_space(8.0);
-        let answer = match self.prompt.clone() {
-            JobPrompt::Conflict(info) => self.conflict(ui, &info, &p),
-            other => super::error::body(ui, &other, self, &p),
-        };
-        match answer {
-            Some(Answer::Respond(r)) => {
-                ctx.cmds.push(Cmd::FileOp(FileOpCmd::Respond { job: self.job, response: r }));
-                self.shared.borrow_mut().answered = true;
-                false
-            }
-            Some(Answer::CancelJob) => {
-                ctx.cmds.push(Cmd::FileOp(FileOpCmd::CancelJob(self.job)));
-                self.shared.borrow_mut().answered = true;
-                false
-            }
-            None => true,
-        }
+        None => true,
     }
 }
 
-impl PromptDialog {
-    fn conflict(&mut self, ui: &mut Ui, c: &ConflictInfo, p: &Palette) -> Option<Answer> {
-        let name = crate::ui::widgets::shown_name(&c.dst.name);
-        let msg = match c.kind {
-            ConflictKind::FileExists => tr!("dialogs-conflict-file-exists", name = &name),
-            ConflictKind::DirExists => tr!("dialogs-conflict-dir-exists", name = &name),
-            ConflictKind::FileVsDir => tr!("dialogs-conflict-kind-differs", name = &name),
-            ConflictKind::SameFile => tr!("dialogs-conflict-same").to_string(),
-            ConflictKind::MoveIntoSelf => {
-                tr!("dialogs-conflict-into-self", name = crate::ui::widgets::shown_name(&c.src.name))
-            }
-            ConflictKind::CaseOnly => tr!("dialogs-conflict-case", name = &name),
-        };
-        ui.label(RichText::new(msg).color(p.text_secondary));
-        crate::ui::widgets::hidden_note(ui, &c.dst.name);
-        if c.src.name != c.dst.name {
-            crate::ui::widgets::hidden_note(ui, &c.src.name);
+fn conflict(ui: &mut Ui, m: &mut PromptModel, c: &ConflictInfo, p: &Palette) -> Option<Answer> {
+    let name = crate::ui::widgets::shown_name(&c.dst.name);
+    let msg = match c.kind {
+        ConflictKind::FileExists => tr!("dialogs-conflict-file-exists", name = &name),
+        ConflictKind::DirExists => tr!("dialogs-conflict-dir-exists", name = &name),
+        ConflictKind::FileVsDir => tr!("dialogs-conflict-kind-differs", name = &name),
+        ConflictKind::SameFile => tr!("dialogs-conflict-same").to_string(),
+        ConflictKind::MoveIntoSelf => {
+            tr!("dialogs-conflict-into-self", name = crate::ui::widgets::shown_name(&c.src.name))
         }
-        ui.add_space(12.0);
+        ConflictKind::CaseOnly => tr!("dialogs-conflict-case", name = &name),
+    };
+    ui.label(RichText::new(msg).color(p.text_secondary));
+    crate::ui::widgets::hidden_note(ui, &c.dst.name);
+    if c.src.name != c.dst.name {
+        crate::ui::widgets::hidden_note(ui, &c.src.name);
+    }
+    ui.add_space(12.0);
 
-        // Side-by-side cards.
-        let w = ui.available_width();
-        let card_w = (w - 12.0) / 2.0;
-        let (row, _) = ui.allocate_exact_size(vec2(w, 132.0), Sense::hover());
-        let left = Rect::from_min_size(row.min, vec2(card_w, row.height()));
-        let right = Rect::from_min_size(pos2(row.left() + card_w + 12.0, row.top()), vec2(card_w, row.height()));
-        let newer = cmp_time(c.src.modified, c.dst.modified);
-        let larger = (!c.src.is_dir_like() && !c.dst.is_dir_like()).then(|| c.src.size.cmp(&c.dst.size));
-        entry_card(
-            ui,
-            left,
-            tr!("dialogs-conflict-source"),
-            &c.src,
-            newer == Some(std::cmp::Ordering::Greater),
-            larger == Some(std::cmp::Ordering::Greater),
-            p,
+    // Side-by-side cards.
+    let w = ui.available_width();
+    let card_w = (w - 12.0) / 2.0;
+    let (row, _) = ui.allocate_exact_size(vec2(w, 132.0), Sense::hover());
+    let left = Rect::from_min_size(row.min, vec2(card_w, row.height()));
+    let right = Rect::from_min_size(pos2(row.left() + card_w + 12.0, row.top()), vec2(card_w, row.height()));
+    let newer = cmp_time(c.src.modified, c.dst.modified);
+    let larger = (!c.src.is_dir_like() && !c.dst.is_dir_like()).then(|| c.src.size.cmp(&c.dst.size));
+    entry_card(
+        ui,
+        left,
+        tr!("dialogs-conflict-source"),
+        &c.src,
+        newer == Some(std::cmp::Ordering::Greater),
+        larger == Some(std::cmp::Ordering::Greater),
+        p,
+    );
+    entry_card(
+        ui,
+        right,
+        tr!("dialogs-conflict-destination"),
+        &c.dst,
+        newer == Some(std::cmp::Ordering::Less),
+        larger == Some(std::cmp::Ordering::Less),
+        p,
+    );
+    ui.add_space(10.0);
+
+    let blocked = matches!(c.kind, ConflictKind::MoveIntoSelf);
+    if m.rename.is_some() {
+        ui.label(
+            RichText::new(tr!("dialogs-conflict-new-name")).font(FontId::proportional(11.5)).color(p.text_secondary),
         );
-        entry_card(
-            ui,
-            right,
-            tr!("dialogs-conflict-destination"),
-            &c.dst,
-            newer == Some(std::cmp::Ordering::Less),
-            larger == Some(std::cmp::Ordering::Less),
-            p,
-        );
-        ui.add_space(10.0);
-
-        let blocked = matches!(c.kind, ConflictKind::MoveIntoSelf);
-        if let Some(text) = self.rename.as_mut() {
-            ui.label(
-                RichText::new(tr!("dialogs-conflict-new-name"))
-                    .font(FontId::proportional(11.5))
-                    .color(p.text_secondary),
-            );
-            let r = ui.add(TextEdit::singleline(text).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 6)));
-            if self.focus_rename {
-                r.request_focus();
-                self.focus_rename = false;
-            }
-            let valid =
-                soyuz_core::validate_name_with(text.trim(), self.windows_rules).is_ok() && text.trim() != c.dst.name;
-            if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && valid {
-                return Some(resolve(ConflictResolution::Rename(text.trim().to_string()), false));
-            }
-            ui.add_space(6.0);
+        let focus = std::mem::take(&mut m.focus_rename);
+        let text = m.rename.get_or_insert_with(String::new);
+        let r = ui.add(TextEdit::singleline(text).desired_width(f32::INFINITY).margin(Margin::symmetric(10, 6)));
+        if focus {
+            r.request_focus();
         }
-        if !blocked {
-            ui.checkbox(&mut self.apply_all, tr!("dialogs-conflict-apply-all"));
+        if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && m.rename_differs() {
+            return m.commit_rename();
         }
-        ui.add_space(14.0);
+        ui.add_space(6.0);
+    }
+    if !blocked {
+        ui.checkbox(&mut m.apply_all, tr!("dialogs-conflict-apply-all"));
+    }
+    ui.add_space(14.0);
 
-        let mut out = None;
-        ui.horizontal(|ui| {
-            if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
-                out = Some(Answer::CancelJob);
-            }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                let all = self.apply_all;
-                if let Some(text) = self.rename.clone() {
-                    let valid = soyuz_core::validate_name_with(text.trim(), self.windows_rules).is_ok();
-                    if button(ui, tr!("common-rename"), Btn::Primary).clicked() && valid {
-                        out = Some(resolve(ConflictResolution::Rename(text.trim().to_string()), false));
-                    }
-                    if button(ui, tr!("dialogs-conflict-back"), Btn::Secondary).clicked() {
-                        self.rename = None;
-                    }
-                    return;
+    let renaming = m.rename.is_some();
+    let mut pick: Option<ConflictResolution> = None;
+    let (mut cancel_job, mut commit, mut back, mut start_rename) = (false, false, false, false);
+    ui.horizontal(|ui| {
+        if button(ui, tr!("dialogs-prompt-cancel-op"), Btn::Ghost).clicked() {
+            cancel_job = true;
+        }
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            if renaming {
+                if button(ui, tr!("common-rename"), Btn::Primary).clicked() {
+                    commit = true;
                 }
-                match c.kind {
-                    ConflictKind::MoveIntoSelf => {
-                        if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
-                            out = Some(resolve(ConflictResolution::Skip, false));
-                        }
-                    }
-                    ConflictKind::SameFile => {
-                        if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Primary).clicked() {
-                            out = Some(resolve(ConflictResolution::KeepBoth, all));
-                        }
-                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
-                            out = Some(resolve(ConflictResolution::Skip, all));
-                        }
-                    }
-                    _ => {
-                        let dir = c.kind == ConflictKind::DirExists;
-                        let (primary, res) = if dir {
-                            (tr!("dialogs-conflict-merge"), ConflictResolution::MergeDir)
-                        } else {
-                            (tr!("dialogs-conflict-replace"), ConflictResolution::Overwrite)
-                        };
-                        if button(ui, primary, Btn::Primary).clicked() {
-                            out = Some(resolve(res, all));
-                        }
-                        if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Secondary).clicked() {
-                            out = Some(resolve(ConflictResolution::KeepBoth, all));
-                        }
-                        if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
-                            out = Some(resolve(ConflictResolution::Skip, all));
-                        }
-                        let more = button(ui, tr!("dialogs-conflict-more"), Btn::Ghost);
-                        crate::ui::native::popup::Menu::menu(&more).show(|ui| {
-                            ui.set_min_width(220.0);
-                            use crate::ui::widgets::menu_item;
-                            if dir
-                                && menu_item(ui, Some(ph::SWAP), tr!("dialogs-conflict-replace-folder"), None, true)
-                                    .clicked()
-                            {
-                                out = Some(resolve(ConflictResolution::Overwrite, all));
-                            }
-                            if !dir {
-                                if menu_item(
-                                    ui,
-                                    Some(ph::CLOCK_CLOCKWISE),
-                                    tr!("dialogs-conflict-replace-newer"),
-                                    None,
-                                    true,
-                                )
-                                .clicked()
-                                {
-                                    out = Some(resolve(ConflictResolution::OverwriteIfNewer, all));
-                                }
-                                if menu_item(
-                                    ui,
-                                    Some(ph::ARROWS_OUT_SIMPLE),
-                                    tr!("dialogs-conflict-replace-larger"),
-                                    None,
-                                    true,
-                                )
-                                .clicked()
-                                {
-                                    out = Some(resolve(ConflictResolution::OverwriteIfLarger, all));
-                                }
-                                if menu_item(
-                                    ui,
-                                    Some(ph::SCALES),
-                                    tr!("dialogs-conflict-replace-different"),
-                                    None,
-                                    true,
-                                )
-                                .clicked()
-                                {
-                                    out = Some(resolve(ConflictResolution::OverwriteIfDifferent, all));
-                                }
-                            }
-                            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("dialogs-conflict-rename"), None, true)
-                                .clicked()
-                            {
-                                self.rename = Some(c.suggested_name.clone());
-                                self.focus_rename = true;
-                            }
-                        });
+                if button(ui, tr!("dialogs-conflict-back"), Btn::Secondary).clicked() {
+                    back = true;
+                }
+                return;
+            }
+            match c.kind {
+                ConflictKind::MoveIntoSelf => {
+                    if button(ui, tr!("common-skip"), Btn::Primary).clicked() {
+                        pick = Some(ConflictResolution::Skip);
                     }
                 }
-            });
+                ConflictKind::SameFile => {
+                    if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Primary).clicked() {
+                        pick = Some(ConflictResolution::KeepBoth);
+                    }
+                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                        pick = Some(ConflictResolution::Skip);
+                    }
+                }
+                _ => {
+                    let dir = c.kind == ConflictKind::DirExists;
+                    let (primary, res) = if dir {
+                        (tr!("dialogs-conflict-merge"), ConflictResolution::MergeDir)
+                    } else {
+                        (tr!("dialogs-conflict-replace"), ConflictResolution::Overwrite)
+                    };
+                    if button(ui, primary, Btn::Primary).clicked() {
+                        pick = Some(res);
+                    }
+                    if button(ui, tr!("dialogs-conflict-keep-both"), Btn::Secondary).clicked() {
+                        pick = Some(ConflictResolution::KeepBoth);
+                    }
+                    if button(ui, tr!("common-skip"), Btn::Secondary).clicked() {
+                        pick = Some(ConflictResolution::Skip);
+                    }
+                    let more = button(ui, tr!("dialogs-conflict-more"), Btn::Ghost);
+                    crate::ui::native::popup::Menu::menu(&more).show(|ui| {
+                        ui.set_min_width(220.0);
+                        use crate::ui::widgets::menu_item;
+                        if dir
+                            && menu_item(ui, Some(ph::SWAP), tr!("dialogs-conflict-replace-folder"), None, true)
+                                .clicked()
+                        {
+                            pick = Some(ConflictResolution::Overwrite);
+                        }
+                        if !dir {
+                            if menu_item(
+                                ui,
+                                Some(ph::CLOCK_CLOCKWISE),
+                                tr!("dialogs-conflict-replace-newer"),
+                                None,
+                                true,
+                            )
+                            .clicked()
+                            {
+                                pick = Some(ConflictResolution::OverwriteIfNewer);
+                            }
+                            if menu_item(
+                                ui,
+                                Some(ph::ARROWS_OUT_SIMPLE),
+                                tr!("dialogs-conflict-replace-larger"),
+                                None,
+                                true,
+                            )
+                            .clicked()
+                            {
+                                pick = Some(ConflictResolution::OverwriteIfLarger);
+                            }
+                            if menu_item(ui, Some(ph::SCALES), tr!("dialogs-conflict-replace-different"), None, true)
+                                .clicked()
+                            {
+                                pick = Some(ConflictResolution::OverwriteIfDifferent);
+                            }
+                        }
+                        if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("dialogs-conflict-rename"), None, true).clicked()
+                        {
+                            start_rename = true;
+                        }
+                    });
+                }
+            }
         });
-        // Keyboard: Enter = primary for the plain file case.
-        if out.is_none()
-            && self.rename.is_none()
-            && c.kind == ConflictKind::FileExists
-            && ui.input(|i| i.key_pressed(Key::Enter))
-        {
-            out = Some(resolve(ConflictResolution::Overwrite, self.apply_all));
-        }
-        out
+    });
+    // Later widgets win, as when each click overwrote the answer in turn.
+    let mut out = if cancel_job { Some(Answer::CancelJob) } else { None };
+    if commit && let Some(a) = m.commit_rename() {
+        out = Some(a);
     }
-}
-
-fn resolve(resolution: ConflictResolution, apply_to_all: bool) -> Answer {
-    Answer::Respond(PromptResponse::Conflict { resolution, apply_to_all })
+    if back {
+        m.cancel_rename();
+    }
+    if let Some(r) = pick {
+        out = Some(m.resolve(r));
+    }
+    if start_rename {
+        m.start_rename();
+    }
+    // Keyboard: Enter = primary for the plain file case.
+    if out.is_none() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        out = m.default_answer();
+    }
+    out
 }
 
 fn cmp_time(a: Option<SystemTime>, b: Option<SystemTime>) -> Option<std::cmp::Ordering> {

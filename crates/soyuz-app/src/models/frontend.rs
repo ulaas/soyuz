@@ -59,16 +59,10 @@ pub enum FrontendCmd {
     },
     /// Batch rename / bulk attributes / new link, on the focused pane's selection.
     MetaDialog(super::properties::MetaDialog),
-    /// Copy (or move, `mv`) `paths` to a folder picked starting at `start`.
-    Transfer { paths: Vec<PathBuf>, start: PathBuf, mv: bool },
-    /// Quitting would cancel `pending` jobs: ask first.
-    ConfirmQuit { pending: usize },
     /// Crash reports from the last run.
     CrashReports(Vec<crate::services::crash::CrashReport>),
     /// Interrupted jobs found in the journal (resume / discard).
     RecoveredJobs(Vec<soyuz_jobs::journal::Recovered>),
-    /// Approve the MCP client request `id`.
-    McpApproval(u64),
     /// "Save changes?" for an editor document or before quitting.
     EditorUnsaved(crate::editors::UnsavedPrompt),
 }

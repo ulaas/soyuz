@@ -134,7 +134,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     crate::ui::tools::show_windows(&ctx, app);
     crate::ui::welcome::show(&ctx, app, if app.ui.status_visible { 24.0 } else { 0.0 });
     let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
-    app.ui.dialogs.show(&ctx, &mut dctx);
+    app.ui.dialogs.show(&ctx, &mut app.dialogs, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);
     crate::ui::panels::terminal::clipboard_prompt(&ctx, app);
     let screen = ctx.content_rect();

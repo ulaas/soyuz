@@ -35,7 +35,7 @@ fn tip_text(action: &Action) -> &'static str {
 
 /// Draw the card when it is due. `bottom` is the space taken by the status bar.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
-    if !app.ui.welcome || app.ui.dialogs.is_open() || app.settings.is_open() {
+    if !app.ui.welcome || app.dialog_open() || app.settings.is_open() {
         return;
     }
     let p = palette(ctx);

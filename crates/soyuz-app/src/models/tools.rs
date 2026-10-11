@@ -17,7 +17,6 @@ use soyuz_jobs::JobKind;
 
 use crate::app::SoyuzApp;
 use crate::host::{Host, Wake};
-use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
 
@@ -501,7 +500,7 @@ pub fn apply_version(app: &mut SoyuzApp, cmd: VersionCmd) {
             app.fileops.jobs.submit(spec, meta);
         }
         VersionCmd::CopyTo { version, start } => {
-            app.frontend.push(FrontendCmd::Transfer { paths: vec![version], start, mv: false });
+            app.dialogs.push(crate::models::dialogs::TransferModel::new(vec![version], start, false));
         }
         VersionCmd::Elevate => {
             let postman = app.services.mailbox.postman();

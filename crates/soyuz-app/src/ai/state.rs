@@ -1112,7 +1112,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     // Esc stops a running task while the panel is open.
     if app.ai.running.is_some()
         && app.ai.panel.open
-        && !app.ui.dialogs.is_open()
+        && !app.dialog_open()
         && crate::host::egui_ctx(host).input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         app.ai.stop();

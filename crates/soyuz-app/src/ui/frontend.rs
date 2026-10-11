@@ -61,12 +61,6 @@ pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
                     dialogs::links::open(app, choice)
                 }
             },
-            FrontendCmd::Transfer { paths, start, mv } => {
-                app.ui.dialogs.push(dialogs::new_item::TransferDialog::new(paths, start, mv))
-            }
-            FrontendCmd::ConfirmQuit { pending } => {
-                app.ui.dialogs.push(dialogs::quit::QuitDialog::new(pending, app.quit.prompting.clone()))
-            }
             FrontendCmd::CrashReports(reports) => {
                 app.ui.dialogs.push(dialogs::recovery_crash::CrashDialog::new(reports))
             }
@@ -74,11 +68,6 @@ pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
                 app.ui.dialogs.push(dialogs::recovery::RecoveryDialog::new(crate::host::egui_ctx(host), recovered))
             }
             FrontendCmd::EditorUnsaved(p) => app.ui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
-            FrontendCmd::McpApproval(id) => {
-                let approvals = app.services.mcp.approvals.clone();
-                let flag = app.services.mcp.modal_open.clone();
-                app.ui.dialogs.push(dialogs::mcp_approval::McpApprovalDialog::new(id, approvals, flag))
-            }
         }
     }
 }

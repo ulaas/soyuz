@@ -27,14 +27,12 @@ use soyuz_jobs::{
 
 use crate::app::SoyuzApp;
 use crate::geom::Point;
+use crate::models::dialogs::{DeleteConfirmModel, LinkChoice, LinkModel, PromptModel, PromptShared, TransferModel};
 use crate::models::panels::{ActivityState, ActivityTab};
 use crate::models::toasts::Toast;
 use crate::models::trash::TrashState;
 use crate::services::jobs::{AfterJob, JobMeta, JobsService, OpKind};
 use crate::state::pane::PaneId;
-use crate::ui::dialogs::conflict::{PromptDialog, PromptShared};
-use crate::ui::dialogs::delete_confirm::DeleteConfirmDialog;
-use crate::ui::dialogs::new_item::{LinkChoice, LinkDialog};
 
 use crate::host::Host;
 use clipboard::{ClipMode, Clipboard};
@@ -251,7 +249,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             }
             let start = other_pane_dir(app).or(dir).unwrap_or_default();
             let mv = action == A::MoveTo;
-            app.frontend.push(crate::models::frontend::FrontendCmd::Transfer { paths: sel, start, mv });
+            app.dialogs.push(TransferModel::new(sel, start, mv));
         }
         A::Duplicate => {
             if let Some(d) = dir
@@ -291,13 +289,13 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             let names: Vec<String> = app.ws.pane().entries.iter().map(|e| e.name.clone()).collect();
             let windows_rules =
                 rename::windows_rules_for(app.config.general.strict_windows_names, &app.ui.volumes, Some(&d));
-            app.ui.dialogs.push(LinkDialog::new(d, sel.first().cloned(), choice, names).windows_rules(windows_rules));
+            app.dialogs.push(LinkModel::new(d, sel.first().cloned(), choice, names).windows_rules(windows_rules));
         }
         A::Delete | A::DeletePermanent | A::SecureWipe => {
             if in_trash {
                 let items = app.fileops.trash.selected_items();
                 if !items.is_empty() {
-                    app.ui.dialogs.push(DeleteConfirmDialog::purge(items));
+                    app.dialogs.push(DeleteConfirmModel::purge(items));
                 }
                 return;
             }
@@ -315,14 +313,14 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
                 DeleteMode::Wipe { .. } => true,
             };
             if confirm {
-                app.ui.dialogs.push(DeleteConfirmDialog::new(sel, mode));
+                app.dialogs.push(DeleteConfirmModel::new(sel, mode));
             } else {
                 delete(app, sel, mode);
             }
         }
         A::Undo => undo(app),
         A::Redo => redo(app),
-        A::EmptyTrash => app.ui.dialogs.push(DeleteConfirmDialog::empty_trash(app.fileops.trash.items().len())),
+        A::EmptyTrash => app.dialogs.push(DeleteConfirmModel::empty_trash(app.fileops.trash.items().len())),
         A::RestoreFromTrash => {
             let items = app.fileops.trash.selected_items();
             if !items.is_empty() {
@@ -598,11 +596,11 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
             app.fileops.jobs.submit(spec, JobMeta::new(OpKind::EmptyTrash, &[], None));
         }
         FileOpCmd::ConfirmEmptyTrash => {
-            app.ui.dialogs.push(DeleteConfirmDialog::empty_trash(app.fileops.trash.items().len()));
+            app.dialogs.push(DeleteConfirmModel::empty_trash(app.fileops.trash.items().len()));
         }
         FileOpCmd::ConfirmPurge(items) => {
             if !items.is_empty() {
-                app.ui.dialogs.push(DeleteConfirmDialog::purge(items));
+                app.dialogs.push(DeleteConfirmModel::purge(items));
             }
         }
         FileOpCmd::TrashRestore(items) => restore(app, items),
@@ -617,7 +615,8 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
 }
 
 /// Start of every frame (after the mailbox): drain engine events, toasts, prompts,
-/// auto-open of the activity panel, external drops and deferred inline renames.
+/// auto-open of the activity panel and deferred inline renames. External drops come
+/// from the frontend ([`drop_external`], right after this in the GUI frame).
 pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
     let events = app.fileops.jobs.poll(host);
     for ev in events {
@@ -638,7 +637,6 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
     }
     reconcile_prompts(app);
     auto_open_activity(app);
-    crate::ui::dnd::external_drops(app, crate::host::egui_ctx(host));
     pending_rename(app);
     check_rename(app);
     app.fileops.trash.poll();
@@ -649,10 +647,9 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
     }
 }
 
-/// End of every frame: drag-out hand-off, drag badge and the "ask" drop menu (GUI), then
-/// the drag-and-drop frame state rolls over.
-pub fn end_frame(app: &mut SoyuzApp, host: &dyn Host) {
-    crate::ui::dnd::end_frame(app, crate::host::egui_ctx(host));
+/// End of every frame, after the frontend's drag-and-drop pass (drag-out hand-off, drag
+/// badge, the "ask" drop menu): the drag-and-drop frame state rolls over.
+pub fn end_frame(app: &mut SoyuzApp, _host: &dyn Host) {
     app.fileops.dnd.next_frame();
 }
 
@@ -723,7 +720,7 @@ fn reconcile_prompts(app: &mut SoyuzApp) {
             }
             _ => cfg!(windows),
         };
-        app.ui.dialogs.push(PromptDialog::new(job, prompt, title, shared).windows_rules(windows_rules));
+        app.dialogs.push(PromptModel::new(job, prompt, title, shared).windows_rules(windows_rules));
     }
 }
 

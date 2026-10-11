@@ -23,7 +23,7 @@ pub use crate::models::workspaces::{WsCmd, overlays_here, palette_shows, palette
 
 /// A modal owns the keyboard / overlays (don't move the overlay owner then).
 pub fn modal_open(app: &SoyuzApp) -> bool {
-    app.ui.dialogs.is_open() || app.palette.open || app.settings.is_open()
+    app.dialog_open() || app.palette.open || app.settings.is_open()
 }
 
 // ---------------------------------------------------------------------------

@@ -1,13 +1,14 @@
 //! Bodies of the non-conflict job prompts: error (Retry / Skip / Skip all / Abort), not
 //! enough space, trash unsupported (offer permanent delete), read-only item and archive
-//! password. Hosted by [`PromptDialog`](super::conflict::PromptDialog).
+//! password, for a [`PromptModel`] (drawn by `super::conflict::show`).
 
 use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use soyuz_core::{ErrorAction, SizeStyle, format_size};
 use soyuz_jobs::kinds::extract::ARCHIVE_LIMIT_OP;
 use soyuz_jobs::{JobPrompt, PromptResponse};
 
-use super::conflict::{Answer, Btn, PromptDialog, button};
+use super::conflict::{Btn, button};
+use crate::models::dialogs::{PromptAnswer as Answer, PromptModel};
 use crate::theme::Palette;
 
 /// Display name for the messages (they add the quotes themselves).
@@ -31,7 +32,7 @@ fn path_box(ui: &mut Ui, path: &std::path::Path, p: &Palette) {
         });
 }
 
-pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptDialog, p: &Palette) -> Option<Answer> {
+pub(crate) fn body(ui: &mut Ui, prompt: &JobPrompt, d: &mut PromptModel, p: &Palette) -> Option<Answer> {
     let mut out = None;
     match prompt {
         JobPrompt::Error { path, error, .. } if error.op == ARCHIVE_LIMIT_OP => {

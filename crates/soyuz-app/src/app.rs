@@ -123,6 +123,9 @@ pub struct SoyuzApp {
     pub config_save: crate::models::settings::ConfigSave,
     /// Requests for the frontend (open its settings window, …), drained every frame.
     pub frontend: Vec<crate::models::frontend::FrontendCmd>,
+    /// Prompts raised by core logic (job prompts, delete confirmations, approvals, …),
+    /// drawn by the frontend (`models::dialogs`).
+    pub dialogs: crate::models::dialogs::DialogStack,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -149,6 +152,11 @@ pub struct QuitState {
 }
 
 impl SoyuzApp {
+    /// A modal dialog is open: a core prompt ([`Self::dialogs`]) or a GUI-only dialog.
+    pub fn dialog_open(&self) -> bool {
+        self.dialogs.is_open() || self.ui.dialogs.is_open()
+    }
+
     /// Construct from the configuration loaded by [`load_config`] (the window
     /// attributes in `main.rs` are derived from the same config).
     pub fn new(cc: &CreationContext<'_>, config: Config, renderer: &'static str, startup: Startup) -> Self {
@@ -288,6 +296,7 @@ impl SoyuzApp {
             wake,
             config_save: Default::default(),
             frontend: Vec::new(),
+            dialogs: Default::default(),
             workspaces: crate::models::workspaces::WorkspacesState::load(),
             automation: Default::default(),
         };
@@ -390,7 +399,7 @@ impl SoyuzApp {
 
     /// Keyboard context + whether a text field owns the keyboard.
     fn key_context(&self, ctx: &egui::Context) -> (KeyContext, bool) {
-        if self.ui.dialogs.is_open() {
+        if self.dialog_open() {
             return (KeyContext::Dialog, true);
         }
         let text_focused = ctx.memory(|m| m.focused()).is_some_and(|id| TextEdit::load_state(ctx, id).is_some());
@@ -406,7 +415,7 @@ impl SoyuzApp {
     }
 
     pub(crate) fn handle_input(&mut self, ctx: &egui::Context) {
-        if self.ui.dialogs.is_open()
+        if self.dialog_open()
             || crate::palette::owns_keyboard(self)
             || crate::ui::widgets::dropdown::any_open(ctx)
             || crate::models::tools::any_window_open()
@@ -512,7 +521,7 @@ impl SoyuzApp {
         if !self.quit.prompting.swap(true, Ordering::SeqCst) {
             host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
             host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
-            self.frontend.push(crate::models::frontend::FrontendCmd::ConfirmQuit { pending });
+            self.dialogs.push(crate::models::dialogs::QuitModel::new(pending, self.quit.prompting.clone()));
         }
     }
 
@@ -670,6 +679,7 @@ impl SoyuzApp {
         crate::ui::tools::begin_frame(self, &ctx);
         crate::ui::portal::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
+        crate::ui::dnd::external_drops(self, &ctx);
         crate::services::mcp_bridge::pump(self, &ctx);
         crate::ai::pump(self, &ctx);
         crate::automation::pump(self, &ctx);
@@ -693,6 +703,7 @@ impl SoyuzApp {
         }
         crate::ui::titlebar::frame(&ctx, self);
         if overlays {
+            crate::ui::dnd::end_frame(self, &ctx);
             ops::fileops::end_frame(self, &ctx);
         }
         crate::devscript::pump(self, &ctx);

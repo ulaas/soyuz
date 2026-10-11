@@ -357,7 +357,7 @@ fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
         return;
     }
     if app.config.scripting.approve_writes {
-        app.ui.dialogs.push(crate::ui::automation::approval::ScriptApprovalDialog::new(d.title, jobs));
+        app.dialogs.push(crate::models::dialogs::ScriptApprovalModel::new(d.title, jobs));
     } else {
         submit_planned(app, &d.title, jobs);
     }

@@ -3,6 +3,7 @@
 
 pub mod archive;
 pub mod devices;
+pub mod dialogs;
 pub mod frontend;
 pub mod panels;
 pub mod portal;
