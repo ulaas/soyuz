@@ -7,10 +7,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use egui::Color32;
 use syntect::highlighting::{FontStyle, HighlightIterator, HighlightState, Highlighter as SynHighlighter, Theme};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference};
 
+use crate::services::preview_gfx::{Rgba, rgb};
 use crate::services::preview_text;
 
 /// Lines between saved parser states.
@@ -29,7 +29,8 @@ const MAX_CACHED: usize = 20_000;
 pub struct Span {
     pub start: u32,
     pub end: u32,
-    pub color: Color32,
+    /// Premultiplied sRGBA (opaque).
+    pub color: Rgba,
     pub italic: bool,
 }
 
@@ -161,7 +162,7 @@ impl Highlighter {
                         spans.push(Span {
                             start: pos,
                             end,
-                            color: Color32::from_rgb(c.r, c.g, c.b),
+                            color: rgb(c.r, c.g, c.b),
                             italic: style.font_style.contains(FontStyle::ITALIC),
                         });
                     }

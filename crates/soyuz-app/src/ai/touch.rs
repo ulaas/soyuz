@@ -1,18 +1,15 @@
 //! Live highlights: files the assistant or an MCP client is reading,
 //! planning to change or changing get a subtle animated outline and a badge in the file
 //! views and the treemap. The harness marks paths through [`mark`], the MCP bridge
-//! through [`mark_mcp`]; views call [`paint`] per visible row (a read lock and an empty
-//! check when nothing is marked). MCP marks carry a plug badge instead of the sparkle.
+//! through [`mark_mcp`]; views draw them per visible row (`ui::ai::touch::paint`: a
+//! read lock and an empty check when nothing is marked). MCP marks carry a plug badge
+//! instead of the sparkle.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use egui::{Align2, Color32, CornerRadius, Painter, Rect, Stroke, StrokeKind, pos2};
 use parking_lot::RwLock;
-
-use crate::theme::Palette;
-use crate::theme::icons::{self, ph};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TouchKind {
@@ -27,7 +24,8 @@ pub enum TouchKind {
 }
 
 impl TouchKind {
-    fn ttl(self) -> Duration {
+    /// How long a mark stays (`Reading` / `Done` fade out over it).
+    pub fn ttl(self) -> Duration {
         match self {
             TouchKind::Reading => Duration::from_secs(5),
             TouchKind::Planned => Duration::from_secs(900),
@@ -145,49 +143,24 @@ pub fn get_within(dir: &Path) -> Option<AiTouch> {
     map.iter().filter(|(p, _)| p.starts_with(&k)).map(|(_, t)| *t).max_by_key(rank)
 }
 
+impl AiTouch {
+    /// Seconds since the mark was set.
+    pub fn age(&self) -> f32 {
+        self.at.elapsed().as_secs_f32()
+    }
+
+    /// Opacity 1 → 0 over the lifetime of fading kinds (`Reading`, `Done`), else 1.
+    pub fn fade(&self, age: f32) -> f32 {
+        match self.kind {
+            TouchKind::Reading | TouchKind::Done => (1.0 - age / self.kind.ttl().as_secs_f32()).clamp(0.0, 1.0),
+            _ => 1.0,
+        }
+    }
+}
+
 /// Whether anything is marked (views skip per-item lookups otherwise).
 pub fn any() -> bool {
     TOUCHES.read().as_ref().is_some_and(|m| !m.is_empty())
-}
-
-fn color(kind: TouchKind, p: &Palette) -> Color32 {
-    match kind {
-        TouchKind::Reading => p.info,
-        TouchKind::Planned => p.warning,
-        TouchKind::Changing => p.accent,
-        TouchKind::Done => p.success,
-    }
-}
-
-/// Outline + badge on a row / cell of `path` (no-op when untouched).
-pub fn paint(painter: &Painter, p: &Palette, rect: Rect, path: &Path, reduced_motion: bool) {
-    let Some(t) = get(path) else { return };
-    paint_touch(painter, p, rect, t, reduced_motion);
-}
-
-/// Outline (+ badge when the rect is big enough) for a known mark.
-pub fn paint_touch(painter: &Painter, p: &Palette, rect: Rect, t: AiTouch, reduced_motion: bool) {
-    let age = t.at.elapsed().as_secs_f32();
-    let fade = match t.kind {
-        TouchKind::Reading | TouchKind::Done => (1.0 - age / t.kind.ttl().as_secs_f32()).clamp(0.0, 1.0),
-        _ => 1.0,
-    };
-    let pulse = if reduced_motion { 0.8 } else { 0.55 + 0.45 * (age * 3.2).sin().abs() };
-    let c = color(t.kind, p);
-    let r = rect.shrink(1.0);
-    let small = r.width() < 26.0 || r.height() < 14.0;
-    let round = CornerRadius::same(if small { 2 } else { 6 });
-    painter.rect_filled(r, round, c.gamma_multiply(if small { 0.18 } else { 0.07 } * fade));
-    painter.rect_stroke(r, round, Stroke::new(1.5, c.gamma_multiply(pulse * fade)), StrokeKind::Inside);
-    if small {
-        return;
-    }
-    // Badge at the right edge: a sparkle (assistant) or a plug (MCP client).
-    let center = pos2(r.right() - 11.0, r.top() + 10.0_f32.min(r.height() / 2.0));
-    painter.circle_filled(center, 7.5, c.gamma_multiply(0.9 * fade));
-    let glyph = if t.mcp { ph::PLUGS_CONNECTED } else { ph::SPARKLE };
-    let font = if t.mcp { icons::font(9.5) } else { icons::font_fill(9.5) };
-    painter.text(center, Align2::CENTER_CENTER, glyph, font, Color32::WHITE.gamma_multiply(fade));
 }
 
 #[cfg(test)]

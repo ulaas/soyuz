@@ -9,29 +9,55 @@
 //! * Open files are watched: a clean document reloads by itself, a modified one shows a
 //!   prompt. Closing a modified document (or the window) asks first.
 //! * The open paths are part of the session.
+//!
+//! This module is the toolkit-free model (documents, I/O, commands, key routing);
+//! `ui::editors` draws the panel and the views and feeds them input.
 
 pub mod hex;
 pub mod image;
 pub mod io;
-mod panel;
 pub mod text;
-pub mod widgets;
 
 use std::path::{Path, PathBuf};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use egui::Id;
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 
 use io::{Answer, LoadResult, Msg, Stamp, Want};
 
 use crate::app::{Focus, SoyuzApp};
 use crate::host::Host;
+use crate::keys::input::{InputEvent, InputFrame};
+use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
 use crate::services::mailbox::Wake;
+use crate::services::preview_gfx::{Uploader, no_upload};
 
 /// Most files one "Edit in Soyuz" opens at once.
 const MAX_OPEN_AT_ONCE: usize = 20;
+
+/// Modifier state of a key press as the editors read it (`command` is Ctrl, or Cmd on
+/// macOS).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct KeyMods {
+    pub shift: bool,
+    pub command: bool,
+    pub alt: bool,
+}
+
+/// One input event for a focused editor view (the frontend converts its own events).
+#[derive(Clone, Debug, PartialEq)]
+pub enum EditInput {
+    /// Typed text.
+    Text(String),
+    /// Text committed by an input method.
+    ImeCommit(String),
+    Copy,
+    Cut,
+    Paste(String),
+    /// A key press (repeats included); `None` for keys without a neutral name.
+    Key(Option<KeyName>, KeyMods),
+}
 
 pub enum DocKind {
     Loading,
@@ -55,7 +81,8 @@ pub struct Doc {
     pub kind: DocKind,
     pub want: Want,
     stamp: Option<Stamp>,
-    saving: bool,
+    /// A save is running.
+    pub saving: bool,
     save_token: Option<(u64, text::encoding::Eol)>,
     pub external: Option<External>,
     close_after_save: bool,
@@ -71,7 +98,8 @@ impl Doc {
         }
     }
 
-    fn request_focus(&mut self) {
+    /// Ask the frontend to focus the document's view.
+    pub fn request_focus(&mut self) {
         match &mut self.kind {
             DocKind::Text(t) => t.focus_request = true,
             DocKind::Hex(h) => h.focus_request = true,
@@ -92,8 +120,8 @@ pub struct Editors {
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     watcher: Option<io::DocWatcher>,
-    /// Focusable widgets of the editor drawn last frame.
-    pub(crate) focus_ids: Vec<Id>,
+    /// Makes the image editor's textures (the frontend's uploader).
+    upload: Uploader,
     /// "Save all and quit" is in progress.
     quit_after_save: bool,
     /// The user chose to quit without saving.
@@ -103,6 +131,13 @@ pub struct Editors {
 
 impl Default for Editors {
     fn default() -> Self {
+        Editors::new(no_upload())
+    }
+}
+
+impl Editors {
+    /// `upload` makes the frontend's textures for the image editor.
+    pub fn new(upload: Uploader) -> Self {
         let (tx, rx) = unbounded();
         Editors {
             docs: Vec::new(),
@@ -113,15 +148,13 @@ impl Default for Editors {
             tx,
             rx,
             watcher: None,
-            focus_ids: Vec::new(),
+            upload,
             quit_after_save: false,
             quit_allowed: false,
             prompting_quit: false,
         }
     }
-}
 
-impl Editors {
     pub fn active_doc(&self) -> Option<&Doc> {
         self.docs.get(self.active)
     }
@@ -276,8 +309,8 @@ pub fn save(app: &mut SoyuzApp, idx: usize) {
 pub fn close(app: &mut SoyuzApp, idx: usize, force: bool) {
     let Some(d) = app.editors.docs.get(idx) else { return };
     if d.is_dirty() && !force {
-        let dialog = panel::UnsavedDialog::close(&d.name, d.id, app.editors.tx.clone());
-        app.ui.dialogs.push(dialog);
+        let prompt = UnsavedPrompt::close(&d.name, d.id, app.editors.tx.clone());
+        app.frontend.push(FrontendCmd::EditorUnsaved(prompt));
         return;
     }
     let d = app.editors.docs.remove(idx);
@@ -348,6 +381,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 
 fn on_loaded(app: &mut SoyuzApp, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
     let wake = app.wake.clone();
+    let upload = app.editors.upload.clone();
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.id == doc) else { return };
     d.stamp = stamp;
     d.external = None;
@@ -362,7 +396,9 @@ fn on_loaded(app: &mut SoyuzApp, doc: u64, reload: bool, stamp: Option<Stamp>, r
             h.too_large_for_text = too_large;
             d.kind = DocKind::Hex(Box::new(h));
         }
-        (LoadResult::Image(l), _) => d.kind = DocKind::Image(Box::new(image::ImageDoc::new(d.path.clone(), l, wake))),
+        (LoadResult::Image(l), _) => {
+            d.kind = DocKind::Image(Box::new(image::ImageDoc::new(d.path.clone(), l, wake, upload)))
+        }
         (LoadResult::Error(e), _) => {
             if reload {
                 app.ui.toasts.push(Toast::error(tr!("editors-reload-failed", name = &d.name)).body(e));
@@ -451,37 +487,14 @@ pub fn reload(app: &mut SoyuzApp, idx: usize) {
     }
 }
 
-// ---- drawing ------------------------------------------------------------------------
-
-/// The docked panel (call from the shell before the central panel).
-pub fn show(ui: &mut egui::Ui, app: &mut SoyuzApp) {
-    let ctx = ui.ctx().clone();
-    pump(app, &ctx);
-    if !app.editors.open || app.editors.maximized {
-        if !app.editors.open {
-            app.editors.focus_ids.clear();
-        }
-        return;
-    }
-    panel::docked(ui, app);
-}
+// ---- view ----------------------------------------------------------------------------
 
 /// Whether the editor replaces the file panes this frame.
 pub fn maximized(app: &SoyuzApp) -> bool {
     app.editors.open && app.editors.maximized
 }
 
-/// Draw the editor into the central area (maximized).
-pub fn show_central(ui: &mut egui::Ui, rect: egui::Rect, app: &mut SoyuzApp) {
-    panel::card(ui, rect, app);
-}
-
 // ---- keyboard -----------------------------------------------------------------------
-
-/// A widget of the editor has keyboard focus.
-pub fn owns_keyboard(app: &SoyuzApp, ctx: &egui::Context) -> bool {
-    app.editors.open && ctx.memory(|m| m.focused()).is_some_and(|f| app.editors.focus_ids.contains(&f))
-}
 
 /// Chords the editor keeps for itself while it has focus (everything else reaches the
 /// app's global bindings).
@@ -544,49 +557,55 @@ enum EdKey {
     PrevDoc,
 }
 
+/// What the frontend does after [`handle_keys`].
+#[derive(Debug, Default)]
+pub struct EditorKeys {
+    /// Esc had nothing to close: drop keyboard focus (back to the file list).
+    pub release_focus: bool,
+    /// Global bindings to run (after the consumed events are removed).
+    pub actions: Vec<Action>,
+}
+
 /// Keyboard dispatch while the editor has focus: editor shortcuts first, then global
-/// app bindings that the editor does not reserve.
-pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
+/// app bindings that the editor does not reserve. Marks the chords it takes in `frame`.
+pub fn handle_keys(app: &mut SoyuzApp, frame: &mut InputFrame) -> EditorKeys {
     let mut ed: Vec<EdKey> = Vec::new();
-    let mut actions: Vec<Action> = Vec::new();
+    let mut out = EditorKeys::default();
     let km = &app.keymap;
-    ctx.input_mut(|i| {
-        i.events.retain(|ev| {
-            let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else { return true };
-            let Some(name) = crate::keys::key_name(*key) else { return true };
-            let chord = KeyChord::new(crate::keys::mods(*modifiers), name).normalized(cmd_is_ctrl);
-            let ctrl = chord.mods.contains(Mods::CTRL) && !chord.mods.contains(Mods::ALT);
-            let shift = chord.mods.contains(Mods::SHIFT);
-            let k = match chord.key {
-                KeyName::S if ctrl && !shift => Some(EdKey::Save),
-                KeyName::F if ctrl && !shift => Some(EdKey::Find),
-                KeyName::H if ctrl && !shift => Some(EdKey::Replace),
-                KeyName::G if ctrl && !shift => Some(EdKey::Goto),
-                KeyName::W if ctrl && !shift => Some(EdKey::Close),
-                KeyName::F3 if chord.mods.is_empty() => Some(EdKey::Next),
-                KeyName::F3 if chord.mods == Mods::SHIFT => Some(EdKey::Prev),
-                KeyName::Escape if chord.mods.is_empty() => Some(EdKey::Escape),
-                KeyName::PageDown if ctrl && !shift => Some(EdKey::NextDoc),
-                KeyName::PageUp if ctrl && !shift => Some(EdKey::PrevDoc),
-                _ => None,
-            };
-            if let Some(k) = k {
-                ed.push(k);
-                return false;
-            }
-            if editor_reserved(chord) {
-                return true;
-            }
-            match km.lookup(KeyContext::Global, chord) {
-                Some(a) => {
-                    actions.push(a.clone());
-                    false
-                }
-                None => true,
-            }
-        });
-    });
+    for i in 0..frame.events.len() {
+        if frame.consumed[i] {
+            continue;
+        }
+        let InputEvent::Chord(chord) = &frame.events[i] else { continue };
+        let chord = *chord;
+        let ctrl = chord.mods.contains(Mods::CTRL) && !chord.mods.contains(Mods::ALT);
+        let shift = chord.mods.contains(Mods::SHIFT);
+        let k = match chord.key {
+            KeyName::S if ctrl && !shift => Some(EdKey::Save),
+            KeyName::F if ctrl && !shift => Some(EdKey::Find),
+            KeyName::H if ctrl && !shift => Some(EdKey::Replace),
+            KeyName::G if ctrl && !shift => Some(EdKey::Goto),
+            KeyName::W if ctrl && !shift => Some(EdKey::Close),
+            KeyName::F3 if chord.mods.is_empty() => Some(EdKey::Next),
+            KeyName::F3 if chord.mods == Mods::SHIFT => Some(EdKey::Prev),
+            KeyName::Escape if chord.mods.is_empty() => Some(EdKey::Escape),
+            KeyName::PageDown if ctrl && !shift => Some(EdKey::NextDoc),
+            KeyName::PageUp if ctrl && !shift => Some(EdKey::PrevDoc),
+            _ => None,
+        };
+        if let Some(k) = k {
+            ed.push(k);
+            frame.consumed[i] = true;
+            continue;
+        }
+        if editor_reserved(chord) {
+            continue;
+        }
+        if let Some(a) = km.lookup(KeyContext::Global, chord) {
+            out.actions.push(a.clone());
+            frame.consumed[i] = true;
+        }
+    }
     let idx = app.editors.active;
     for k in ed {
         match k {
@@ -649,26 +668,20 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
                 if !handled && matches!(other, EdKey::Escape) {
                     // Esc with nothing to close: back to the file list.
                     app.ui.focus = Focus::List;
-                    ctx.memory_mut(|m| {
-                        if let Some(id) = m.focused() {
-                            m.surrender_focus(id);
-                        }
-                    });
+                    out.release_focus = true;
                 }
             }
         }
     }
-    for a in actions {
-        crate::actions::execute(app, a, ctx);
-    }
+    out
 }
 
 // ---- window close / session -------------------------------------------------------
 
 /// Window close with unsaved documents: cancel it and ask. Returns `true` when the
 /// close request was taken over.
-pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host) -> bool {
-    if !crate::host::egui_ctx(host).input(|i| i.viewport().close_requested()) || app.editors.quit_allowed {
+pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host, close_requested: bool) -> bool {
+    if !close_requested || app.editors.quit_allowed {
         return false;
     }
     let dirty = app.editors.dirty_count();
@@ -681,7 +694,7 @@ pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host) -> bool {
         host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
         host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
         let names: Vec<String> = app.editors.docs.iter().filter(|d| d.is_dirty()).map(|d| d.name.clone()).collect();
-        app.ui.dialogs.push(panel::UnsavedDialog::quit(&names, app.editors.tx.clone()));
+        app.frontend.push(FrontendCmd::EditorUnsaved(UnsavedPrompt::quit(&names, app.editors.tx.clone())));
     }
     true
 }
@@ -698,6 +711,57 @@ pub fn restore(app: &mut SoyuzApp, paths: &[PathBuf]) {
     }
     if !app.editors.docs.is_empty() {
         app.editors.active = 0;
+    }
+}
+
+// ---- "save changes?" ---------------------------------------------------------------
+
+/// "Save changes?" for one document or for the whole window: the frontend shows it
+/// ([`FrontendCmd::EditorUnsaved`]) and calls [`UnsavedPrompt::answer`] once; a prompt
+/// dismissed without an answer must answer [`Answer::Cancel`].
+#[derive(Clone, Debug)]
+pub struct UnsavedPrompt {
+    pub title: String,
+    pub body: String,
+    /// The document to close (`None`: quitting).
+    pub target: Option<u64>,
+    tx: Sender<Msg>,
+}
+
+impl UnsavedPrompt {
+    pub fn close(name: &str, doc: u64, tx: Sender<Msg>) -> Self {
+        UnsavedPrompt {
+            title: tr!("editors-unsaved-title", name = name),
+            body: tr!("editors-unsaved-body").into(),
+            target: Some(doc),
+            tx,
+        }
+    }
+
+    pub fn quit(names: &[String], tx: Sender<Msg>) -> Self {
+        let title = if names.len() == 1 {
+            tr!("editors-unsaved-title", name = &names[0])
+        } else {
+            tr!("editors-unsaved-quit-title", count = names.len())
+        };
+        let body = if names.len() > 1 {
+            let mut list = names.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
+            if names.len() > 6 {
+                list.push_str(", …");
+            }
+            tr!("editors-unsaved-quit-body-list", names = list)
+        } else {
+            tr!("editors-unsaved-quit-body").to_string()
+        };
+        UnsavedPrompt { title, body, target: None, tx }
+    }
+
+    /// Deliver the answer (applied by the next [`pump`]).
+    pub fn answer(&self, a: Answer) {
+        let _ = self.tx.send(match self.target {
+            Some(doc) => Msg::Close { doc, answer: a },
+            None => Msg::Quit(a),
+        });
     }
 }
 
@@ -724,7 +788,7 @@ pub fn devscript(app: &mut SoyuzApp, host: &dyn Host, verb: &str, arg: &str) {
             } else {
                 soyuz_core::config::EditorDock::Right
             };
-            crate::models::settings::update_config(app, crate::host::egui_ctx(host), |c| c.editor.dock = dock);
+            crate::models::settings::update_config(app, host, |c| c.editor.dock = dock);
         }
         _ => {
             let Some(d) = app.editors.docs.get_mut(idx) else { return };

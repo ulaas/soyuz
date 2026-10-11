@@ -421,7 +421,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
         A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
         A::Settings => app.frontend.push(FrontendCmd::OpenSettings(None)),
-        A::CustomCommand(name) => crate::commands::run_named(app, &name, crate::host::egui_ctx(host)),
+        A::CustomCommand(name) => crate::commands::run_named(app, &name, host),
         A::RunScript(id) => crate::automation::run_action(app, &id),
         A::OpenScripts => app.frontend.push(FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Scripts))),
         A::OpenAutomations => {

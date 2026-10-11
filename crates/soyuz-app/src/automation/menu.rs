@@ -2,14 +2,8 @@
 
 use std::path::PathBuf;
 
-use egui::Ui;
 use soyuz_core::config::{Action, CommandContext};
 use soyuz_script::{ActionCtx, MenuContext};
-
-use crate::cmd::Cmd;
-use crate::state::pane::PaneId;
-use crate::theme::icons::ph;
-use crate::ui::widgets::{menu_item, menu_separator};
 
 /// Palette entries: every script action that wants to be in the palette.
 pub fn palette_actions() -> Vec<Action> {
@@ -29,17 +23,19 @@ pub fn palette_detail(id: &str) -> Option<String> {
     Some(format!("{desc} · {}", sc.file))
 }
 
+/// One script action in the right-click menu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContextEntry {
+    pub id: String,
+    pub title: String,
+    /// Hotkey hint (may be blank).
+    pub hotkey: String,
+}
+
 /// Right-click entries of script actions whose conditions hold for the selection.
 /// `selected` are the selected paths (empty for the folder background).
-pub fn context_items(
-    ui: &mut Ui,
-    cmds: &mut Vec<Cmd>,
-    pane: PaneId,
-    kinds: &[CommandContext],
-    dir: Option<PathBuf>,
-    selected: &[PathBuf],
-) {
-    let Some(set) = super::scripts::current() else { return };
+pub fn context_entries(kinds: &[CommandContext], dir: Option<PathBuf>, selected: &[PathBuf]) -> Vec<ContextEntry> {
+    let Some(set) = super::scripts::current() else { return Vec::new() };
     let kinds: Vec<MenuContext> = kinds
         .iter()
         .map(|k| match k {
@@ -54,21 +50,9 @@ pub fn context_items(
         .filter_map(|n| soyuz_script::api::name_ext(&n.to_string_lossy()).map(str::to_ascii_lowercase))
         .collect();
     let ctx = ActionCtx { dir, focused: selected.first().cloned(), selected: selected.to_vec(), other_dir: None };
-    let items: Vec<(String, String, String)> = set
-        .actions()
+    set.actions()
         .filter(|(_, _, a)| a.menu)
         .filter(|(id, ..)| set.applies(id, &ctx, &kinds, &exts))
-        .map(|(id, _, a)| (id, a.title.clone(), a.hotkey.clone()))
-        .collect();
-    if items.is_empty() {
-        return;
-    }
-    menu_separator(ui);
-    for (id, title, hotkey) in items {
-        let hint = (!hotkey.trim().is_empty()).then_some(hotkey.as_str());
-        if menu_item(ui, Some(ph::CODE), &title, hint, true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, Action::RunScript(id)));
-            ui.close();
-        }
-    }
+        .map(|(id, _, a)| ContextEntry { id, title: a.title.clone(), hotkey: a.hotkey.clone() })
+        .collect()
 }

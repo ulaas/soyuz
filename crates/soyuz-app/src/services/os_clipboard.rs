@@ -16,12 +16,11 @@
 //!   cut state is kept in-process.
 //!
 //! The codecs (DROPFILES, uri-list, gnome-copied-files) are pure and unit-tested on every
-//! OS. [`paste_key_fallback`] covers egui-winit not emitting any event for Ctrl+V when
+//! OS. [`paste_key_fallback`] covers the GUI toolkit (winit) not emitting any event for Ctrl+V when
 //! the clipboard holds files but no text.
 
 use std::path::{Path, PathBuf};
 
-use egui::{Event, Id, Key};
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Keymap, Mods};
 
 use crate::keys::Dispatched;
@@ -212,8 +211,9 @@ pub fn clear_cut() {
 // Ctrl+V without a paste event
 // ---------------------------------------------------------------------------------------
 
-#[derive(Clone, Copy, Default)]
-struct PasteKeyState {
+/// State of the Ctrl+V fallback across frames (the frontend keeps one per window).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PasteKeyState {
     /// A Paste event (or the fallback) handled the current V press.
     handled: bool,
     /// Ctrl+V was physically down last frame (Windows key-state polling).
@@ -222,16 +222,32 @@ struct PasteKeyState {
     fired_at: Option<f64>,
 }
 
-/// egui-winit turns Ctrl+V into `Event::Paste(text)` and drops the key event; when the
-/// clipboard holds files but no text, nothing at all reaches the app. Detect the chord
+/// This frame's input as the Ctrl+V fallback sees it (gathered by the frontend).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct PasteKeyInput {
+    /// Seconds since start (frame time).
+    pub now: f64,
+    /// The window has keyboard focus.
+    pub focused: bool,
+    /// Modifiers of a V key-release event this frame, if any.
+    pub v_released: Option<Mods>,
+}
+
+/// The GUI toolkit (winit) turns Ctrl+V into a paste-text event and drops the key
+/// event; when the clipboard holds files but no text, nothing at all reaches the app.
+/// Detect the chord
 /// from the native key state (Windows: fires on key-down) or from the V key-release
 /// event (everywhere) and append the action bound to it in the file list. A Paste event
 /// arriving right after the fallback fired for the same press is dropped, so a paste
-/// never runs twice. Call once per frame while the file list owns the keyboard.
-pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut Vec<Dispatched>) {
-    let id = Id::new("soyuz.os_clipboard.paste_key");
-    let mut st: PasteKeyState = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
-    let now = ctx.input(|i| i.time);
+/// never runs twice. Call once per frame while the file list owns the keyboard
+/// (`ui::keys::paste_key_fallback` gathers the input).
+pub fn paste_key_fallback(
+    st: &mut PasteKeyState,
+    input: PasteKeyInput,
+    keymap: &Keymap,
+    dispatched: &mut Vec<Dispatched>,
+) {
+    let now = input.now;
     let is_v = |c: &KeyChord| c.key == KeyName::V && c.mods.contains(Mods::CTRL) && !c.mods.contains(Mods::ALT);
     if dispatched.iter().any(|d| is_v(&d.chord)) {
         if st.fired_at.is_some_and(|t| now - t < 0.75) {
@@ -242,22 +258,17 @@ pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut
     }
     let mut fire: Option<KeyChord> = None;
     if let Some((ctrl, shift, v)) = imp::paste_keys_down() {
-        let down = ctrl && v && ctx.input(|i| i.focused);
+        let down = ctrl && v && input.focused;
         if down && !st.down && !st.handled {
             let mods = if shift { Mods::CTRL | Mods::SHIFT } else { Mods::CTRL };
             fire = Some(KeyChord::new(mods, KeyName::V));
         }
         st.down = down;
     }
-    let released = ctx.input(|i| {
-        i.events.iter().find_map(|e| match e {
-            Event::Key { key: Key::V, pressed: false, modifiers, .. } => Some(*modifiers),
-            _ => None,
-        })
-    });
+    let released = input.v_released;
     if let Some(m) = released {
-        if (m.ctrl || m.command) && !m.alt && !st.handled && fire.is_none() {
-            let mods = if m.shift { Mods::CTRL | Mods::SHIFT } else { Mods::CTRL };
+        if m.intersects(Mods::CTRL | Mods::CMD) && !m.contains(Mods::ALT) && !st.handled && fire.is_none() {
+            let mods = if m.contains(Mods::SHIFT) { Mods::CTRL | Mods::SHIFT } else { Mods::CTRL };
             fire = Some(KeyChord::new(mods, KeyName::V));
         }
         st.handled = false;
@@ -273,7 +284,6 @@ pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut
         st.handled = released.is_none();
         st.fired_at = Some(now);
     }
-    ctx.data_mut(|d| d.insert_temp(id, st));
 }
 
 // ---------------------------------------------------------------------------------------
@@ -541,6 +551,28 @@ pub fn files_from_selection(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paste_key_fallback_fires_once_per_press() {
+        use soyuz_core::config::{Config, keymap};
+        let (km, _) = keymap(&Config::default());
+        let mut st = PasteKeyState::default();
+        // The V key is released with Ctrl held and no paste event came: paste.
+        let mut d = Vec::new();
+        let release = PasteKeyInput { now: 1.0, focused: false, v_released: Some(Mods::CTRL) };
+        paste_key_fallback(&mut st, release, &km, &mut d);
+        assert_eq!(d.len(), 1);
+        assert_eq!(d[0].action, Action::Paste);
+        // A late paste event for the same press is dropped.
+        let mut late = vec![Dispatched { action: Action::Paste, chord: KeyChord::new(Mods::CTRL, KeyName::V) }];
+        paste_key_fallback(&mut st, PasteKeyInput { now: 1.1, ..Default::default() }, &km, &mut late);
+        assert!(late.is_empty());
+        // A release without Ctrl does nothing.
+        let mut d = Vec::new();
+        let plain = PasteKeyInput { now: 3.0, focused: false, v_released: Some(Mods::empty()) };
+        paste_key_fallback(&mut st, plain, &km, &mut d);
+        assert!(d.is_empty());
+    }
 
     fn pb(s: &str) -> PathBuf {
         PathBuf::from(s)

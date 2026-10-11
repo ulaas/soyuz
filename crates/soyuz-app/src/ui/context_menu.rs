@@ -216,9 +216,9 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         action_item(ui, km, cmds, id, ph::CHART_PIE, tr!("app-ctx-folder-sizes"), Action::FolderSize);
     }
     let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
-    crate::commands::context_items(ui, v.config, cmds, id, &kinds);
+    crate::ui::commands::context_items(ui, v.config, cmds, id, &kinds);
     let paths: Vec<std::path::PathBuf> = sel_paths.iter().map(|(p, _)| p.clone()).collect();
-    crate::automation::menu::context_items(
+    crate::ui::automation::menu::context_items(
         ui,
         cmds,
         id,
@@ -302,8 +302,8 @@ fn background_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
     }
     action_item(ui, km, cmds, id, ph::SELECTION_ALL, tr!("app-ctx-select-all"), Action::SelectAll);
     action_item(ui, km, cmds, id, ph::CHART_PIE, tr!("app-ctx-folder-sizes"), Action::FolderSize);
-    crate::commands::context_items(ui, v.config, cmds, id, &[soyuz_core::config::CommandContext::Background]);
-    crate::automation::menu::context_items(
+    crate::ui::commands::context_items(ui, v.config, cmds, id, &[soyuz_core::config::CommandContext::Background]);
+    crate::ui::automation::menu::context_items(
         ui,
         cmds,
         id,

@@ -120,7 +120,7 @@ fn read_keys(ctx: &egui::Context, app: &SoyuzApp) -> KeyInput {
         let mods = i.modifiers;
         // Global palette chords toggle / switch modes.
         i.events.retain(|ev| {
-            let Some(chord) = crate::keys::event_chord(ev, mods, cmd_is_ctrl) else { return true };
+            let Some(chord) = crate::ui::keys::event_chord(ev, mods, cmd_is_ctrl) else { return true };
             if chord.mods.is_empty() {
                 return true;
             }

@@ -493,7 +493,7 @@ impl TreemapWindow {
                     crate::ai::touch::get(&n.path)
                 };
                 if let Some(t) = t {
-                    crate::ai::touch::paint_touch(&painter, &p, *r, t, reduced);
+                    crate::ui::ai::touch::paint_touch(&painter, &p, *r, t, reduced);
                 }
             }
         }
