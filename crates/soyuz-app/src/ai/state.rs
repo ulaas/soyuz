@@ -1631,7 +1631,7 @@ pub fn run_smart_search(app: &mut SoyuzApp) {
         Ok(q) => {
             app.ai.smart.error = None;
             let title = format!("\u{2728} {}", app.ai.smart.query_text.trim());
-            crate::ui::search::run_query(app, q, title);
+            crate::models::search::run_query(app, q, title);
         }
         Err(e) => app.ai.smart.error = Some(e),
     }

@@ -10,4 +10,10 @@ pub enum FrontendCmd {
     OpenSettings(Option<Section>),
     /// Close the settings (writes a pending `config.toml` save).
     CloseSettings,
+    /// A smart-folder dialog (`models::smart`).
+    Smart(super::smart::SmartPrompt),
+    /// A remote-location dialog (`models::remote`).
+    Remote(super::remote::RemotePrompt),
+    /// An archive dialog (`models::archive`).
+    Archive(super::archive::ArchivePrompt),
 }

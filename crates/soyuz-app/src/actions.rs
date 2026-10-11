@@ -232,7 +232,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         A::FocusTerminal => crate::ui::panels::terminal::focus(app, crate::host::egui_ctx(host)),
         A::TogglePreviewPane => app.ui.preview.toggle(),
         A::ToggleInfoPane => app.ui.preview.toggle_info(),
-        A::ToggleFlatView => crate::ui::search::toggle_flat_view(app),
+        A::ToggleFlatView => crate::models::search::toggle_flat_view(app),
         A::ToggleHexPreview => app.ui.preview.toggle_hex(),
         A::ToggleActivityPanel => app.ui.bottom.toggle(crate::ui::panels::BottomTab::Activity),
 
@@ -295,9 +295,9 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         A::ExtendUp => cursor(app, NavDir::Up, true, false),
         A::ExtendDown => cursor(app, NavDir::Down, true, false),
         A::Filter => app.ui.filter_focus = true,
-        A::Search => crate::ui::search::open(app, false),
-        A::SearchContent => crate::ui::search::open(app, true),
-        A::FolderSize => crate::ui::search::folder_sizes(app),
+        A::Search => crate::models::search::open(app, false),
+        A::SearchContent => crate::models::search::open(app, true),
+        A::FolderSize => crate::models::search::folder_sizes(app),
         A::ClearFilter => app.ws.pane_mut().set_filter(""),
         A::TypeAheadToggle => {
             let b = &mut app.config.behaviour;
@@ -445,17 +445,17 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
                 crate::ui::quicklook::toggle(app);
             }
         }
-        A::CreateArchive => crate::ui::archive::create_dialog(app),
-        A::ExtractHere => crate::ui::archive::extract_here(app),
-        A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
-        A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
-        A::TestArchive => crate::ui::archive::test_archive(app),
-        a if crate::ui::remote::handles(app, &a) => crate::ui::remote::execute(app, a, crate::host::egui_ctx(host)),
+        A::CreateArchive => crate::models::archive::create_dialog(app),
+        A::ExtractHere => crate::models::archive::extract_here(app),
+        A::ExtractToFolder => crate::models::archive::extract_to_folder(app),
+        A::ExtractTo => crate::models::archive::extract_to_dialog(app),
+        A::TestArchive => crate::models::archive::test_archive(app),
+        a if crate::models::remote::handles(app, &a) => crate::models::remote::execute(app, a, host),
         a if crate::ui::dialogs::properties::handles(app, &a) => {
             crate::ui::dialogs::properties::execute(app, a, crate::host::egui_ctx(host))
         }
         a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, crate::host::egui_ctx(host)),
-        a if crate::ui::archive::handles_edit(app, &a) => crate::ui::archive::execute_edit(app, a),
+        a if crate::models::archive::handles_edit(app, &a) => crate::models::archive::execute_edit(app, a),
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, crate::host::egui_ctx(host)),
         other => {

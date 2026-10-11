@@ -67,7 +67,7 @@ pub struct UiState {
     pub terminal: crate::ui::panels::terminal::TerminalPanel,
     pub preview: crate::ui::preview::PreviewPane,
     pub quicklook: crate::ui::quicklook::QuickLook,
-    pub search: crate::ui::search::SearchUi,
+    pub search: crate::models::search::SearchState,
     /// Show the welcome / onboarding card (first run, or `Action::Welcome`).
     pub welcome: bool,
     /// The welcome card was dismissed at least once (persisted in the session).
@@ -237,7 +237,7 @@ impl SoyuzApp {
             terminal: Default::default(),
             preview: crate::ui::preview::PreviewPane::new(config.layout.preview_pane),
             quicklook: Default::default(),
-            search: crate::ui::search::SearchUi::new(&config),
+            search: crate::models::search::SearchState::new(&config),
             welcome: !welcome_seen,
             welcome_seen,
             chrome: crate::ui::titlebar::Chrome::for_config(config.appearance.custom_titlebar),
@@ -658,7 +658,7 @@ impl SoyuzApp {
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, &ctx);
         crate::ui::panels::terminal::pump(self, &ctx);
-        crate::ui::search::pump(self, &ctx);
+        crate::models::search::pump(self, &ctx);
         crate::ui::tools::begin_frame(self, &ctx);
         crate::ui::portal::begin_frame(self, &ctx);
         ops::fileops::begin_frame(self, &ctx);
@@ -667,7 +667,7 @@ impl SoyuzApp {
         crate::automation::pump(self, &ctx);
         crate::services::updates::pump(self);
         crate::services::filemanager1::pump(self, &ctx);
-        crate::ui::remote::pump(self, &ctx);
+        crate::models::remote::pump(self, &ctx);
         crate::services::os_clipboard::pump(self);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);

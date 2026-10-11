@@ -9,6 +9,9 @@ pub fn drain(app: &mut SoyuzApp) {
         match c {
             FrontendCmd::OpenSettings(section) => crate::ui::settings::open(app, section),
             FrontendCmd::CloseSettings => crate::ui::settings::close(app),
+            FrontendCmd::Smart(p) => crate::ui::smart::prompt(app, p),
+            FrontendCmd::Remote(p) => crate::ui::remote::prompt(app, p),
+            FrontendCmd::Archive(p) => crate::ui::archive::prompt(app, p),
         }
     }
 }
