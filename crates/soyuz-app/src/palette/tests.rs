@@ -58,7 +58,7 @@ fn every_action_is_runnable_from_the_palette() {
     let all = score_actions(&e, &[], "");
     assert_eq!(all.len(), Action::all().len());
     for (a, entry) in &e {
-        assert!(!entry.title.is_empty() && !entry.icon.is_empty() && !entry.description.is_empty(), "{a}");
+        assert!(!entry.title.is_empty() && !entry.description.is_empty(), "{a}");
         // The item runs the action itself (no remapping).
         let item = Item::new(Exec::Action(a.clone()), entry.title.clone(), entry.icon, "Commands");
         assert_eq!(item.exec, Exec::Action(a.clone()));
@@ -69,12 +69,12 @@ fn every_action_is_runnable_from_the_palette() {
 
 #[test]
 fn completion_texts() {
-    let it = Item::new(Exec::Shell("git status".into()), "x", ph::TERMINAL, "s");
+    let it = Item::new(Exec::Shell("git status".into()), "x", IconId::Terminal, "s");
     assert_eq!(completion_of(&it).as_deref(), Some(">git status"));
-    let it = Item::new(Exec::Action(Action::Copy), "x", ph::COPY, "s");
+    let it = Item::new(Exec::Action(Action::Copy), "x", IconId::Copy, "s");
     assert_eq!(completion_of(&it), None);
     let dir = std::env::temp_dir();
-    let it = Item::new(Exec::Go(Location::Dir(dir.clone())), "x", ph::FOLDER, "s");
+    let it = Item::new(Exec::Go(Location::Dir(dir.clone())), "x", IconId::Folder, "s");
     let text = completion_of(&it).unwrap();
     assert!(text.starts_with(':') && text.ends_with(std::path::MAIN_SEPARATOR));
 }

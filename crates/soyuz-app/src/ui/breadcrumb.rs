@@ -110,7 +110,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let dots: Vec<Option<Color32>> = list
         .iter()
         .map(|cr| match &cr.location {
-            soyuz_core::Location::Dir(d) => crate::services::folder_colors::color_of(d, &p),
+            soyuz_core::Location::Dir(d) => crate::ui::looks::folder_color_of(d, &p),
             _ => None,
         })
         .collect();

@@ -26,7 +26,7 @@ use super::preview_office::{self, Office, OfficeKind};
 use super::preview_pdf::{self, PdfInfo, PdfSrc};
 use super::preview_text;
 use super::preview_video;
-use crate::theme::icons::ph;
+use crate::icon::IconId;
 
 /// Per-request switches and caps (from `[preview]`).
 #[derive(Clone, Debug, PartialEq)]
@@ -158,7 +158,7 @@ pub fn route(name: &str, head: &[u8], detected: Kind, lim: &RichLimits) -> Optio
     }
 }
 
-fn card(kind: Kind, icon: &'static str, title: impl Into<String>, body: impl Into<String>) -> Loaded {
+fn card(kind: Kind, icon: IconId, title: impl Into<String>, body: impl Into<String>) -> Loaded {
     Loaded {
         kind,
         content: Content::Message { icon, title: title.into(), body: body.into() },
@@ -235,7 +235,7 @@ pub fn load(
     }
 }
 
-fn too_large(kind: Kind, icon: &'static str, len: u64, cap: u64, key: &str) -> Loaded {
+fn too_large(kind: Kind, icon: IconId, len: u64, cap: u64, key: &str) -> Loaded {
     card(
         kind,
         icon,
@@ -251,9 +251,9 @@ fn too_large(kind: Kind, icon: &'static str, len: u64, cap: u64, key: &str) -> L
 
 fn office(k: OfficeKind, reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits) -> Loaded {
     let (kind, icon) = match k {
-        OfficeKind::Docx | OfficeKind::Odt => (Kind::Document, ph::FILE_DOC),
-        OfficeKind::Xlsx | OfficeKind::Ods => (Kind::Spreadsheet, ph::FILE_XLS),
-        OfficeKind::Pptx | OfficeKind::Odp => (Kind::Presentation, ph::FILE_PPT),
+        OfficeKind::Docx | OfficeKind::Odt => (Kind::Document, IconId::FileDoc),
+        OfficeKind::Xlsx | OfficeKind::Ods => (Kind::Spreadsheet, IconId::FileXls),
+        OfficeKind::Pptx | OfficeKind::Odp => (Kind::Presentation, IconId::FilePpt),
     };
     // The container may be large (embedded media); each part is capped on its own.
     if len > lim.max_document.saturating_mul(8) {
@@ -298,13 +298,13 @@ fn office(k: OfficeKind, reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits) 
             }
             loaded(kind, Rich::Office(Arc::new(o)), facts)
         }
-        Err(e) => card(kind, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-document"), e),
+        Err(e) => card(kind, IconId::WarningCircle, tr!("services-preview-cant-read-document"), e),
     }
 }
 
 fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id: u64, ppp: f32) -> Loaded {
     if len > lim.max_document.saturating_mul(8) {
-        return too_large(Kind::Ebook, ph::BOOK_OPEN, len, lim.max_document * 8, "max_document_mib");
+        return too_large(Kind::Ebook, IconId::BookOpen, len, lim.max_document * 8, "max_document_mib");
     }
     let _ = reader.seek(SeekFrom::Start(0));
     match preview_epub::parse(&mut *reader, lim.max_document) {
@@ -329,36 +329,36 @@ fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id
             }
             loaded(Kind::Ebook, Rich::Epub { model: Arc::new(m), cover }, facts)
         }
-        Err(e) => card(Kind::Ebook, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-ebook"), e),
+        Err(e) => card(Kind::Ebook, IconId::WarningCircle, tr!("services-preview-cant-read-ebook"), e),
     }
 }
 
 fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id: u64, ppp: f32) -> Loaded {
     if len > lim.max_document {
-        return too_large(Kind::Font, ph::TEXT_AA, len, lim.max_document, "max_document_mib");
+        return too_large(Kind::Font, IconId::TextAa, len, lim.max_document, "max_document_mib");
     }
     let data = match read_all(reader, lim.max_document) {
         Ok(d) => d,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
+        Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-read-font"), e),
     };
     let data = match preview_font::format_of(&data) {
         Some("WOFF") => match preview_font::woff_to_sfnt(&data, lim.max_document as usize) {
             Ok(d) => d,
-            Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
+            Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-read-font"), e),
         },
         Some("WOFF 2") => {
-            return card(Kind::Font, ph::TEXT_AA, tr!("services-preview-woff2"), tr!("services-preview-woff2-body"));
+            return card(Kind::Font, IconId::TextAa, tr!("services-preview-woff2"), tr!("services-preview-woff2-body"));
         }
         _ => data,
     };
     let meta = match preview_font::meta(&data) {
         Ok(m) => m,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-font"), e),
+        Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-read-font"), e),
     };
     let width = (lim.width_pt() * ppp) as usize;
     let strips = match preview_font::specimen(&data, &meta.family, width, ppp) {
         Ok(s) => s,
-        Err(e) => return card(Kind::Font, ph::WARNING_CIRCLE, tr!("services-preview-cant-render-font"), e),
+        Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-render-font"), e),
     };
     let strips: Vec<(String, Tex)> = strips
         .into_iter()
@@ -398,11 +398,11 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id
 
 fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, lim: &RichLimits) -> Loaded {
     if len > lim.max_model {
-        return too_large(Kind::Model, ph::CUBE, len, lim.max_model, "max_model_mib");
+        return too_large(Kind::Model, IconId::Cube, len, lim.max_model, "max_model_mib");
     }
     let data = match read_all(reader, lim.max_model) {
         Ok(d) => d,
-        Err(e) => return card(Kind::Model, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-model"), e),
+        Err(e) => return card(Kind::Model, IconId::WarningCircle, tr!("services-preview-cant-read-model"), e),
     };
     let dir = path.and_then(Path::parent);
     match preview_model::parse(&data, ext, dir, lim.max_model) {
@@ -421,7 +421,7 @@ fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, li
             fact(&mut facts, "Bounds", format!("{} × {} × {}", fmt_len(x), fmt_len(y), fmt_len(z)));
             loaded(Kind::Model, Rich::Model { model: Arc::new(m), turntable: lim.turntable }, facts)
         }
-        Err(e) => card(Kind::Model, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-model"), e),
+        Err(e) => card(Kind::Model, IconId::WarningCircle, tr!("services-preview-cant-read-model"), e),
     }
 }
 
@@ -457,13 +457,13 @@ fn audio(
         Some(p) => AudioSrc::File(p.to_path_buf()),
         None => match read_all(reader, len) {
             Ok(b) => AudioSrc::Mem(b.into()),
-            Err(e) => return card(Kind::Audio, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
+            Err(e) => return card(Kind::Audio, IconId::WarningCircle, tr!("services-preview-cant-read-file"), e),
         },
     };
     let waveform = lim.waveform && len <= lim.max_audio;
     let mut info = match preview_audio::analyze(&src, ext, waveform, stale) {
         Ok(i) => i,
-        Err(e) if e == "stale" => return card(Kind::Audio, ph::WAVEFORM, "", ""),
+        Err(e) if e == "stale" => return card(Kind::Audio, IconId::Waveform, "", ""),
         Err(e) => {
             // Unsupported codec (e.g. Opus, WMA): keep the header facts, no waveform.
             fact(&mut facts, "Waveform", e);
@@ -519,7 +519,7 @@ fn video(
             let w = ((if lim.big { 1280.0 } else { 640.0 }) * ppp).min(1920.0) as u32;
             match preview_video::poster(&ff, p, preview_video::poster_time(dur), w, stale) {
                 Ok(png) => (decode_image(up, format!("preview:poster:{id}"), &png, w), None),
-                Err(e) if e == "stale" => return card(Kind::Video, ph::FILM_SLATE, "", ""),
+                Err(e) if e == "stale" => return card(Kind::Video, IconId::FilmSlate, "", ""),
                 Err(e) => (None, Some(e)),
             }
         }
@@ -542,7 +542,7 @@ fn pdf(
         Some(p) => PdfSrc::File(p.to_path_buf()),
         None => match read_all(reader, len) {
             Ok(b) => PdfSrc::Mem(b.into()),
-            Err(e) => return card(Kind::Pdf, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
+            Err(e) => return card(Kind::Pdf, IconId::WarningCircle, tr!("services-preview-cant-read-file"), e),
         },
     };
     let dirs = preview_pdf::pdfium_dirs(&lim.pdfium_dir);
@@ -562,13 +562,13 @@ fn pdf(
                             first =
                                 Some(upload(up, format!("preview:pdf:{id}:0"), &pg.rgba, pg.width, pg.height, false))
                         }
-                        Err(e) if e == "stale" => return card(Kind::Pdf, ph::FILE_PDF, "", ""),
+                        Err(e) if e == "stale" => return card(Kind::Pdf, IconId::FilePdf, "", ""),
                         Err(e) => no_render = Some(e),
                     }
                 }
                 info = Some(i);
             }
-            Err(e) if e == "stale" => return card(Kind::Pdf, ph::FILE_PDF, "", ""),
+            Err(e) if e == "stale" => return card(Kind::Pdf, IconId::FilePdf, "", ""),
             Err(e) => no_render = Some(e),
         }
     }
@@ -579,7 +579,7 @@ fn pdf(
     }
     if info.is_none() {
         if len > lim.max_document {
-            let mut l = too_large(Kind::Pdf, ph::FILE_PDF, len, lim.max_document, "max_document_mib");
+            let mut l = too_large(Kind::Pdf, IconId::FilePdf, len, lim.max_document, "max_document_mib");
             if let Content::Message { body, .. } = &mut l.content
                 && let Some(why) = &no_render
             {
@@ -596,7 +596,7 @@ fn pdf(
                     body.push_str("\n\n");
                     body.push_str(why);
                 }
-                return card(Kind::Pdf, ph::FILE_PDF, tr!("services-preview-cant-read-pdf"), body);
+                return card(Kind::Pdf, IconId::FilePdf, tr!("services-preview-cant-read-pdf"), body);
             }
         }
     }

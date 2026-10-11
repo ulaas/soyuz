@@ -25,9 +25,9 @@ use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::geom::Point;
 use crate::host::Host;
+use crate::icon::IconId;
 use crate::ops::{self, NavOpts};
 use crate::state::crumbs::{location_title, split_for_completion};
-use crate::theme::icons::ph;
 
 use frecency::{Memory, now_secs};
 use fuzzy::Fuzzy;
@@ -72,7 +72,7 @@ pub struct Item {
     pub exec: Exec,
     pub title: String,
     pub detail: String,
-    pub icon: &'static str,
+    pub icon: IconId,
     pub tint: Tint,
     /// Shortcut shown as chips.
     pub chord: Option<String>,
@@ -85,7 +85,7 @@ pub struct Item {
 }
 
 impl Item {
-    fn new(exec: Exec, title: impl Into<String>, icon: &'static str, section: &'static str) -> Self {
+    fn new(exec: Exec, title: impl Into<String>, icon: IconId, section: &'static str) -> Self {
         Item {
             exec,
             title: title.into(),
@@ -449,9 +449,9 @@ pub fn rank_folders(app: &SoyuzApp, q: &str, bookmarks_first: bool) -> Vec<Item>
             (true, _) => tr!("actions-section-bookmarks-favorites"),
         };
         let glyph = match kind {
-            "Bookmark" => ph::BOOKMARK_SIMPLE,
-            "Favorite" => ph::STAR,
-            _ => crate::ui::sidebar::favorite_glyph(&path),
+            "Bookmark" => IconId::BookmarkSimple,
+            "Favorite" => IconId::Star,
+            _ => crate::models::sidebar::favorite_icon(&path),
         };
         let mut it = Item::new(Exec::Go(Location::Dir(path.clone())), label, glyph, section);
         it.detail = path_text;
@@ -534,7 +534,7 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
         let mut it = Item::new(
             Exec::Go(loc.clone()),
             tr!("actions-palette-go-to", path = loc.display()),
-            ph::ARROW_SQUARE_RIGHT,
+            IconId::ArrowSquareRight,
             tr!("actions-section-path"),
         );
         it.detail = tr!("actions-palette-go-hint").into();
@@ -558,7 +558,7 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
             let mut it = Item::new(
                 Exec::Complete { text, go: Some(Location::Dir(target.clone())) },
                 e.name.clone(),
-                crate::ui::sidebar::favorite_glyph(&target),
+                crate::models::sidebar::favorite_icon(&target),
                 tr!("actions-section-folders"),
             );
             it.detail = shown;
@@ -585,7 +585,7 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
         }
     } else if loading {
         let mut it =
-            Item::new(Exec::Nothing, tr!("actions-palette-listing"), ph::HOURGLASS, tr!("actions-section-folders"));
+            Item::new(Exec::Nothing, tr!("actions-palette-listing"), IconId::Hourglass, tr!("actions-section-folders"));
         it.detail = soyuz_fs::strip_verbatim(&dir).to_string_lossy().into_owned();
         it.tint = Tint::Neutral;
         out.push(it);
@@ -603,7 +603,7 @@ fn rank_search(app: &SoyuzApp, q: &str) -> Vec<Item> {
         .unwrap_or_else(|| tr!("actions-palette-this-folder").into());
     let section = tr!("actions-section-search");
     if q.trim().is_empty() {
-        let mut it = Item::new(Exec::Nothing, tr!("actions-palette-search-empty"), ph::MAGNIFYING_GLASS, section);
+        let mut it = Item::new(Exec::Nothing, tr!("actions-palette-search-empty"), IconId::MagnifyingGlass, section);
         it.detail = tr!("actions-palette-search-empty-detail", dir = &dir);
         it.tint = Tint::Neutral;
         return vec![it];
@@ -611,14 +611,14 @@ fn rank_search(app: &SoyuzApp, q: &str) -> Vec<Item> {
     let mut a = Item::new(
         Exec::Search { text: q.to_string(), content: false },
         tr!("actions-palette-search-names", query = q),
-        ph::MAGNIFYING_GLASS,
+        IconId::MagnifyingGlass,
         section,
     );
     a.detail = tr!("actions-palette-in-subfolders", dir = &dir);
     let mut b = Item::new(
         Exec::Search { text: q.to_string(), content: true },
         tr!("actions-palette-search-contents", query = q),
-        ph::FILE_SEARCH,
+        IconId::FileSearch,
         section,
     );
     b.detail = tr!("actions-palette-in-subfolders", dir = &dir);
@@ -639,7 +639,7 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
         let mut it = Item::new(
             Exec::Shell(q.to_string()),
             tr!("actions-palette-run", command = q),
-            ph::TERMINAL,
+            IconId::Terminal,
             tr!("actions-section-shell"),
         );
         it.detail = tr!("actions-palette-run-detail", dir = &dir);
@@ -655,7 +655,7 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
         let mut it = Item::new(
             Exec::Complete { text: format!(">{line}"), go: None },
             line.clone(),
-            ph::CLOCK_COUNTER_CLOCKWISE,
+            IconId::ClockCounterClockwise,
             tr!("actions-section-recent-commands"),
         );
         it.detail = tr!("actions-palette-shell-recent-hint").into();
@@ -667,8 +667,12 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
         out.push(it);
     }
     if out.is_empty() {
-        let mut it =
-            Item::new(Exec::Nothing, tr!("actions-palette-shell-empty"), ph::TERMINAL, tr!("actions-section-shell"));
+        let mut it = Item::new(
+            Exec::Nothing,
+            tr!("actions-palette-shell-empty"),
+            IconId::Terminal,
+            tr!("actions-section-shell"),
+        );
         it.detail = tr!("actions-palette-in-dir", dir = &dir);
         it.tint = Tint::Neutral;
         out.push(it);
@@ -692,7 +696,7 @@ fn rank_tabs(app: &SoyuzApp, q: &str) -> Vec<Item> {
         let mut it = Item::new(
             Exec::Tab(i),
             label,
-            if t.pinned { ph::PUSH_PIN } else { ph::BROWSERS },
+            if t.pinned { IconId::PushPin } else { IconId::Browsers },
             tr!("actions-section-tabs"),
         );
         it.detail = detail;

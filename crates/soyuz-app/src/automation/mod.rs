@@ -30,11 +30,11 @@ use soyuz_script::{ActionCtx, PlannedJob, ScriptSet, UiOp};
 
 use crate::app::SoyuzApp;
 use crate::host::Host;
+use crate::icon::IconId;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, JobOrigin, OpKind};
 use crate::services::mailbox::Wake;
-use crate::theme::icons::ph;
 
 /// Commands from dialogs / settings pages.
 #[derive(Clone, Debug)]
@@ -153,11 +153,12 @@ impl Default for AutomationState {
 /// (editing a rule in Settings changes the config on every keystroke).
 const RULES_DEBOUNCE: Duration = Duration::from_millis(800);
 
-pub fn origin_glyph(o: JobOrigin) -> &'static str {
+/// Icon of a job's origin (activity panel).
+pub fn origin_icon(o: JobOrigin) -> IconId {
     match o {
-        JobOrigin::Automation => ph::ROBOT,
-        JobOrigin::Script => ph::CODE,
-        JobOrigin::Cli => ph::TERMINAL_WINDOW,
+        JobOrigin::Automation => IconId::Robot,
+        JobOrigin::Script => IconId::Code,
+        JobOrigin::Cli => IconId::TerminalWindow,
     }
 }
 
@@ -735,6 +736,6 @@ mod tests {
         let img = d.path().join("x.png");
         let out = set.run_rule("tidy-downloads", &img, "r").unwrap();
         assert_eq!(out.jobs.len(), 2, "mkdir Images + move");
-        assert_eq!(origin_glyph(JobOrigin::Cli), ph::TERMINAL_WINDOW);
+        assert_eq!(origin_icon(JobOrigin::Cli), IconId::TerminalWindow);
     }
 }

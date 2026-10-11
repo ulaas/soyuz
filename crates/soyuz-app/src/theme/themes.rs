@@ -260,8 +260,7 @@ impl ThemeDef {
 
 /// `#RRGGBB`, or `#RRGGBBAA` for translucent colors (unmultiplied).
 pub fn hex_string(c: Color32) -> String {
-    let [r, g, b, a] = c.to_srgba_unmultiplied();
-    if a == 255 { format!("#{r:02X}{g:02X}{b:02X}") } else { format!("#{r:02X}{g:02X}{b:02X}{a:02X}") }
+    crate::color::hex_string(super::tokens::rgba8(c))
 }
 
 /// WCAG contrast ratio of two opaque colors.

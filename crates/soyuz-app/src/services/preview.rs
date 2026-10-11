@@ -383,7 +383,7 @@ pub enum Content {
     Rich(super::preview_rich::Rich),
     /// Nothing to render but a message (e.g. too large, unsupported, error).
     Message {
-        icon: &'static str,
+        icon: crate::icon::IconId,
         title: String,
         body: String,
     },
@@ -544,7 +544,7 @@ fn run_load(job: LoadJob) {
                 .unwrap_or_else(|| tr!("services-preview-internal-error").into());
             message(
                 Kind::Binary,
-                crate::theme::icons::ph::WARNING_CIRCLE,
+                crate::icon::IconId::WarningCircle,
                 tr!("services-preview-failed"),
                 tr!("services-preview-crashed", reason = why),
             )
@@ -557,7 +557,7 @@ fn run_load(job: LoadJob) {
     (job.wake)();
 }
 
-fn message(kind: Kind, icon: &'static str, title: impl Into<String>, body: impl Into<String>) -> Loaded {
+fn message(kind: Kind, icon: crate::icon::IconId, title: impl Into<String>, body: impl Into<String>) -> Loaded {
     Loaded {
         kind,
         content: Content::Message { icon, title: title.into(), body: body.into() },
@@ -635,7 +635,7 @@ pub fn read_archive_entry(archive: &Path, inner: &str, cap: u64) -> Result<(Vec<
 }
 
 fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
-    use crate::theme::icons::ph;
+    use crate::icon::IconId;
     let name = job.source.name();
     if job.is_dir {
         return folder(&job.source);
@@ -652,7 +652,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     };
     let mut opened = match open_source(&job.source) {
         Ok(o) => o,
-        Err(e) => return message(Kind::Binary, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-file"), e),
+        Err(e) => return message(Kind::Binary, IconId::WarningCircle, tr!("services-preview-cant-read-file"), e),
     };
     let head = opened.head(8192);
     let kind = detect(&name, false, &head, job.force_hex);
@@ -697,7 +697,8 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             Loaded { kind, content: Content::Media { video: kind == Kind::Video }, facts, meta: None }
         }
         Kind::Pdf => {
-            let mut l = message(kind, ph::FILE_PDF, tr!("services-kind-pdf"), tr!("services-preview-pdf-no-feature"));
+            let mut l =
+                message(kind, IconId::FilePdf, tr!("services-kind-pdf"), tr!("services-preview-pdf-no-feature"));
             let head = String::from_utf8_lossy(&head[..head.len().min(16)]).into_owned();
             if let Some(v) = head.strip_prefix("%PDF-") {
                 l.facts.push(("PDF version".into(), v.chars().take(3).collect()));
@@ -753,7 +754,7 @@ fn hex(source: &Source, opened: &mut Opened) -> Loaded {
 }
 
 fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
-    use crate::theme::icons::ph;
+    use crate::icon::IconId;
     let limits = &job.limits;
     let reader: Box<dyn ReadSeek> = match opened {
         Opened::File(f, _) => match f.try_clone() {
@@ -764,7 +765,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
             Err(e) => {
                 return message(
                     Kind::Image,
-                    ph::WARNING_CIRCLE,
+                    IconId::WarningCircle,
                     tr!("services-preview-cant-read-image"),
                     e.to_string(),
                 );
@@ -775,7 +776,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     let reader = match image::ImageReader::new(std::io::BufReader::new(reader)).with_guessed_format() {
         Ok(r) => r,
         Err(e) => {
-            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-cant-read-image"), e.to_string());
+            return message(Kind::Image, IconId::WarningCircle, tr!("services-preview-cant-read-image"), e.to_string());
         }
     };
     let format = reader.format().map(|f| format!("{f:?}").to_uppercase());
@@ -786,7 +787,12 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     let mut decoder = match reader.into_decoder() {
         Ok(d) => d,
         Err(e) => {
-            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-unsupported-image"), e.to_string());
+            return message(
+                Kind::Image,
+                IconId::WarningCircle,
+                tr!("services-preview-unsupported-image"),
+                e.to_string(),
+            );
         }
     };
     let (w, h) = image::ImageDecoder::dimensions(&decoder);
@@ -800,7 +806,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     if mp > limits.max_image_mp as u64 * 1_000_000 {
         let mut l = message(
             Kind::Image,
-            ph::IMAGE,
+            IconId::Image,
             tr!("services-preview-image-too-large"),
             tr!(
                 "services-preview-image-too-large-body",
@@ -812,20 +818,25 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
         return l;
     }
     if stale() {
-        return message(Kind::Image, ph::IMAGE, "", "");
+        return message(Kind::Image, IconId::Image, "", "");
     }
     let orientation = image::ImageDecoder::orientation(&mut decoder).ok();
     let mut img = match image::DynamicImage::from_decoder(decoder) {
         Ok(i) => i,
         Err(e) => {
-            return message(Kind::Image, ph::WARNING_CIRCLE, tr!("services-preview-cant-decode-image"), e.to_string());
+            return message(
+                Kind::Image,
+                IconId::WarningCircle,
+                tr!("services-preview-cant-decode-image"),
+                e.to_string(),
+            );
         }
     };
     if let Some(o) = orientation {
         img.apply_orientation(o);
     }
     if stale() {
-        return message(Kind::Image, ph::IMAGE, "", "");
+        return message(Kind::Image, IconId::Image, "", "");
     }
     let max = limits.max_image_px.max(64);
     if img.width() > max || img.height() > max {
@@ -838,7 +849,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
 
 /// A script previewer's result as preview content.
 fn script_preview(r: Result<soyuz_script::Preview, soyuz_script::ScriptError>) -> Loaded {
-    use crate::theme::icons::ph;
+    use crate::icon::IconId;
     let facts = vec![("Previewer".to_string(), tr!("services-preview-script").to_string())];
     match r {
         Ok(soyuz_script::Preview::Markdown(md)) => Loaded {
@@ -862,7 +873,8 @@ fn script_preview(r: Result<soyuz_script::Preview, soyuz_script::ScriptError>) -
             }
         }
         Err(e) => {
-            let mut l = message(Kind::Text, ph::WARNING_CIRCLE, tr!("services-preview-script-failed"), e.to_string());
+            let mut l =
+                message(Kind::Text, IconId::WarningCircle, tr!("services-preview-script-failed"), e.to_string());
             l.facts = facts;
             l
         }
@@ -909,12 +921,12 @@ fn text(opened: &mut Opened, name: &str, kind: Kind, job: &LoadJob, stale: &dyn 
 }
 
 fn archive(source: &Source, opened: &mut Opened) -> Loaded {
-    use crate::theme::icons::ph;
+    use crate::icon::IconId;
     let Source::File(path) = source else {
         let _ = opened;
         return message(
             Kind::Archive,
-            ph::FILE_ZIP,
+            IconId::FileZip,
             tr!("services-preview-nested-archive"),
             tr!("services-preview-nested-archive-body"),
         );
@@ -925,7 +937,7 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
         Err(soyuz_archive::ArchiveError::PasswordRequired) => {
             return message(
                 Kind::Archive,
-                ph::LOCK_SIMPLE,
+                IconId::LockSimple,
                 tr!("services-preview-password"),
                 tr!("services-preview-password-body"),
             );
@@ -933,7 +945,7 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
         Err(e) => {
             return message(
                 Kind::Archive,
-                ph::WARNING_CIRCLE,
+                IconId::WarningCircle,
                 tr!("services-preview-cant-read-archive"),
                 e.to_string(),
             );
@@ -945,7 +957,7 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
         Err(soyuz_archive::ArchiveError::PasswordRequired) => {
             return message(
                 Kind::Archive,
-                ph::LOCK_SIMPLE,
+                IconId::LockSimple,
                 tr!("services-preview-password"),
                 tr!("services-preview-password-body"),
             );
@@ -953,7 +965,7 @@ fn archive(source: &Source, opened: &mut Opened) -> Loaded {
         Err(e) => {
             return message(
                 Kind::Archive,
-                ph::WARNING_CIRCLE,
+                IconId::WarningCircle,
                 tr!("services-preview-cant-read-archive"),
                 e.to_string(),
             );

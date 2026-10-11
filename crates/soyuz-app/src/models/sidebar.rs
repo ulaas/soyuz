@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use soyuz_core::config::SidebarSection;
 
+use crate::icon::IconId;
 use crate::models::devices::DevicesCache;
 use crate::models::portal::PortalState;
 use crate::state::session::FavoriteEntry;
@@ -156,6 +157,24 @@ pub fn place_role(path: &Path) -> Option<PlaceRole> {
         return PlaceRole::STANDARD.into_iter().find(|r| r.english().eq_ignore_ascii_case(n));
     }
     None
+}
+
+/// Icon of a standard place.
+pub fn place_icon(role: PlaceRole) -> IconId {
+    match role {
+        PlaceRole::Home => IconId::House,
+        PlaceRole::Desktop => IconId::Desktop,
+        PlaceRole::Documents => IconId::FileText,
+        PlaceRole::Downloads => IconId::DownloadSimple,
+        PlaceRole::Pictures => IconId::Image,
+        PlaceRole::Music => IconId::MusicNotes,
+        PlaceRole::Videos => IconId::FilmStrip,
+    }
+}
+
+/// Icon for a favorite path (standard places get their own icons).
+pub fn favorite_icon(path: &Path) -> IconId {
+    place_role(path).map_or(IconId::FolderSimple, place_icon)
 }
 
 pub struct SidebarState {

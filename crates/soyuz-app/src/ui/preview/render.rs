@@ -768,7 +768,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             }
         }
         Content::Message { icon, title, body } => {
-            centered_message(ui, rect, icon, p.text_tertiary, title, body);
+            centered_message(ui, rect, crate::ui::icons::glyph(*icon), p.text_tertiary, title, body);
             if loaded.kind == Kind::Pdf || loaded.kind == Kind::Image {
                 let br = Rect::from_center_size(rect.center() + vec2(0.0, 74.0), vec2(120.0, 26.0));
                 let mut child = ui.new_child(UiBuilder::new().max_rect(br));

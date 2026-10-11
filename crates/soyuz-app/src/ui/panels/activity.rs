@@ -355,7 +355,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.text(b, Align2::CENTER_CENTER, ph::PLUGS_CONNECTED, ticons::font(8.5), Color32::WHITE);
     } else if let Some(origin) = meta.origin {
         // Started by an automation rule, a script or the CLI.
-        let glyph = crate::automation::origin_glyph(origin);
+        let glyph = crate::ui::icons::glyph(crate::automation::origin_icon(origin));
         let b = pos2(ic.x + 14.0, ic.y + 14.0);
         painter.circle_filled(b, 8.5, p.bg_window);
         painter.circle_filled(b, 7.0, p.info);

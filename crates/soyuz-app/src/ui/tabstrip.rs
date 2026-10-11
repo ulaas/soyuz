@@ -501,7 +501,7 @@ fn paint_tab(
         _ => ph::FOLDER,
     };
     let folder_color = match &pane.location {
-        soyuz_core::Location::Dir(d) => crate::services::folder_colors::color_of(d, &p),
+        soyuz_core::Location::Dir(d) => crate::ui::looks::folder_color_of(d, &p),
         _ => None,
     };
     let gcolor = match folder_color {

@@ -116,9 +116,15 @@ pub fn folder_color_menu(ui: &mut Ui, dirs: &[PathBuf]) {
         menu_separator(ui);
         submenu(ui, Some(ph::SPARKLE), tr!("app-looks-emblem"), |ui| {
             ui.set_width(180.0);
-            for (id, _, glyph) in EMBLEMS {
+            for (id, _, icon) in EMBLEMS {
                 let on = current.emblem.as_deref() == Some(id);
-                let resp = menu_item(ui, Some(glyph), emblem_label(id), if on { Some("✓") } else { None }, true);
+                let resp = menu_item(
+                    ui,
+                    Some(crate::ui::icons::glyph(icon)),
+                    emblem_label(id),
+                    if on { Some("✓") } else { None },
+                    true,
+                );
                 if resp.clicked() {
                     folder_colors::set_emblem(dirs, if on { None } else { Some(id) });
                     ui.close();
@@ -133,9 +139,22 @@ pub fn folder_color_menu(ui: &mut Ui, dirs: &[PathBuf]) {
     });
 }
 
+/// A folder color resolved against the palette (tag colors follow the theme).
+pub fn resolve_folder_color(c: FolderColor, p: &Palette) -> Color32 {
+    match c {
+        FolderColor::Tag(i) => p.tags[(i as usize).min(7)],
+        FolderColor::Rgb(c) => crate::theme::tokens::color32(c),
+    }
+}
+
+/// The folder's own color, resolved against the palette.
+pub fn folder_color_of(path: &std::path::Path, p: &Palette) -> Option<Color32> {
+    folder_colors::folder_color(path).map(|c| resolve_folder_color(c, p))
+}
+
 /// Folder glyph color: the folder's own color, else `default`.
 pub fn folder_tint(path: &std::path::Path, p: &Palette, default: Color32) -> Color32 {
-    folder_colors::color_of(path, p).unwrap_or(default)
+    folder_color_of(path, p).unwrap_or(default)
 }
 
 /// The folder's emblem drawn on a folder glyph centered at `c` (glyph size `size`).
@@ -144,7 +163,7 @@ pub fn paint_emblem(painter: &Painter, path: &std::path::Path, c: Pos2, size: f3
     if size < 22.0 {
         return;
     }
-    let Some(g) = folder_colors::emblem_of(path) else { return };
+    let Some(g) = folder_colors::emblem_of(path).map(crate::ui::icons::glyph) else { return };
     // The folder body sits a little below the glyph's center.
     let at = c + vec2(0.0, size * 0.07);
     let fg = if luminance(folder) > 0.55 { Color32::from_black_alpha(170) } else { Color32::from_white_alpha(230) };
@@ -318,5 +337,14 @@ mod tests {
         assert_eq!(enter_direction(r"C:\ab", r"C:\a"), 0.0, "prefix of a name is not an ancestor");
         assert_eq!(enter_direction(r"C:\a", r"D:\a"), 0.0);
         assert_eq!(enter_direction("/home/x", "/home/x/y"), 1.0);
+    }
+
+    #[test]
+    fn folder_colors_resolve_against_the_palette() {
+        let p = crate::theme::ORBIT_DARK.clone();
+        assert_eq!(resolve_folder_color(FolderColor::Tag(3), &p), p.tags[3]);
+        assert_eq!(resolve_folder_color(FolderColor::Tag(42), &p), p.tags[7]);
+        let red = FolderColor::Rgb(crate::color::Rgba8::rgb(255, 0, 0));
+        assert_eq!(resolve_folder_color(red, &p), Color32::RED);
     }
 }

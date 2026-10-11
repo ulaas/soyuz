@@ -345,7 +345,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
 fn row(ui: &Ui, p: &Palette, it: &Item, r: Rect, selected: bool) {
     let tile = Rect::from_center_size(pos2(r.left() + 24.0, r.center().y), vec2(30.0, 30.0));
     let tint = tint_color(p, it.tint);
-    icon_tile(ui, tile, it.icon, tint, 16.0);
+    icon_tile(ui, tile, crate::ui::icons::glyph(it.icon), tint, 16.0);
     // Right side: chips + tag.
     let mut right = r.right() - 12.0;
     if let Some(c) = &it.chord {

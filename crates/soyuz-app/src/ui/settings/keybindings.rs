@@ -239,7 +239,13 @@ fn action_row(
         ui.set_min_height(34.0);
         ui.add_space(6.0);
         let (ir, _) = ui.allocate_exact_size(vec2(18.0, 18.0), Sense::hover());
-        ui.painter().text(ir.center(), Align2::CENTER_CENTER, e.icon, icons::font(14.0), p.text_secondary);
+        ui.painter().text(
+            ir.center(),
+            Align2::CENTER_CENTER,
+            crate::ui::icons::glyph(e.icon),
+            icons::font(14.0),
+            p.text_secondary,
+        );
         ui.add_space(6.0);
         let title = ui.label(RichText::new(&e.title).size(13.0).color(p.text_primary));
         title.on_hover_text(format!("{}\n{}", e.description, a));

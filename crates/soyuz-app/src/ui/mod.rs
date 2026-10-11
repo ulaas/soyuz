@@ -14,6 +14,7 @@ pub mod empty_state;
 pub mod frontend;
 pub mod geom;
 pub mod gfx;
+pub mod icons;
 pub mod input;
 pub mod looks;
 pub mod motion;

@@ -11,61 +11,53 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, unbounded};
-use egui::Color32;
 use serde::{Deserialize, Serialize};
 
-use crate::theme::Palette;
-use crate::theme::icons::ph;
-use crate::theme::tokens::parse_hex;
+use crate::color::{Rgba8, hex_string, parse_hex};
+use crate::icon::IconId;
 
-/// A folder color: one of the eight tag colors (follows the theme) or a fixed color.
+/// A folder color: one of the eight tag colors (follows the theme; the frontend resolves
+/// it against its palette) or a fixed, opaque color.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FolderColor {
     Tag(u8),
-    Rgb(Color32),
+    Rgb(Rgba8),
 }
 
 impl FolderColor {
-    pub fn resolve(self, p: &Palette) -> Color32 {
-        match self {
-            FolderColor::Tag(i) => p.tags[(i as usize).min(7)],
-            FolderColor::Rgb(c) => c,
-        }
-    }
-
     fn to_config(self) -> String {
         match self {
             FolderColor::Tag(i) => super::tags::slug(i),
-            FolderColor::Rgb(c) => crate::theme::themes::hex_string(c),
+            FolderColor::Rgb(c) => hex_string(c),
         }
     }
 
     fn parse(s: &str) -> Option<FolderColor> {
         if s.trim().starts_with('#') {
-            return parse_hex(s).map(|c| FolderColor::Rgb(c.to_opaque()));
+            return parse_hex(s).map(|c| FolderColor::Rgb(c.opaque()));
         }
         super::tags::from_name(s).map(FolderColor::Tag)
     }
 }
 
-/// Emblems offered in the menu: `(id, label, glyph)`.
-pub const EMBLEMS: [(&str, &str, &str); 12] = [
-    ("star", "Star", ph::STAR),
-    ("heart", "Heart", ph::HEART),
-    ("code", "Code", ph::CODE),
-    ("image", "Pictures", ph::IMAGE),
-    ("music", "Music", ph::MUSIC_NOTE),
-    ("film", "Video", ph::FILM_STRIP),
-    ("briefcase", "Work", ph::BRIEFCASE),
-    ("book", "Books", ph::BOOK_OPEN),
-    ("cloud", "Cloud", ph::CLOUD),
-    ("lock", "Private", ph::LOCK_SIMPLE),
-    ("game", "Games", ph::GAME_CONTROLLER),
-    ("archive", "Archive", ph::ARCHIVE),
+/// Emblems offered in the menu: `(id, label, icon)`. The ids are the stored format.
+pub const EMBLEMS: [(&str, &str, IconId); 12] = [
+    ("star", "Star", IconId::Star),
+    ("heart", "Heart", IconId::Heart),
+    ("code", "Code", IconId::Code),
+    ("image", "Pictures", IconId::Image),
+    ("music", "Music", IconId::MusicNote),
+    ("film", "Video", IconId::FilmStrip),
+    ("briefcase", "Work", IconId::Briefcase),
+    ("book", "Books", IconId::BookOpen),
+    ("cloud", "Cloud", IconId::Cloud),
+    ("lock", "Private", IconId::LockSimple),
+    ("game", "Games", IconId::GameController),
+    ("archive", "Archive", IconId::Archive),
 ];
 
-/// Glyph of an emblem id.
-pub fn emblem_glyph(id: &str) -> Option<&'static str> {
+/// Icon of an emblem id.
+pub fn emblem_icon(id: &str) -> Option<IconId> {
     EMBLEMS.iter().find(|(e, _, _)| *e == id).map(|(_, _, g)| *g)
 }
 
@@ -153,7 +145,7 @@ impl Store {
         for (p, e) in f.items {
             let style = FolderStyle {
                 color: FolderColor::parse(&e.color),
-                emblem: emblem_glyph(&e.emblem).map(|_| e.emblem.clone()),
+                emblem: emblem_icon(&e.emblem).map(|_| e.emblem.clone()),
             };
             s.set(Path::new(&p), style);
         }
@@ -238,14 +230,14 @@ pub fn style_of(path: &Path) -> Option<FolderStyle> {
     REG.with_borrow(|r| r.store.get(path).cloned())
 }
 
-/// The folder's color, resolved against the palette.
-pub fn color_of(path: &Path, p: &Palette) -> Option<Color32> {
-    REG.with_borrow(|r| r.store.get(path).and_then(|s| s.color).map(|c| c.resolve(p)))
+/// The folder's color (unresolved: a tag color follows the frontend's palette).
+pub fn folder_color(path: &Path) -> Option<FolderColor> {
+    REG.with_borrow(|r| r.store.get(path).and_then(|s| s.color))
 }
 
-/// The folder's emblem glyph.
-pub fn emblem_of(path: &Path) -> Option<&'static str> {
-    REG.with_borrow(|r| r.store.get(path).and_then(|s| s.emblem.as_deref()).and_then(emblem_glyph))
+/// The folder's emblem icon.
+pub fn emblem_of(path: &Path) -> Option<IconId> {
+    REG.with_borrow(|r| r.store.get(path).and_then(|s| s.emblem.as_deref()).and_then(emblem_icon))
 }
 
 fn edit(paths: &[PathBuf], f: impl Fn(&mut FolderStyle)) {
@@ -276,7 +268,7 @@ mod tests {
     fn store_round_trip() {
         let mut s = Store::default();
         s.set(Path::new("/a"), FolderStyle { color: Some(FolderColor::Tag(5)), emblem: Some("star".into()) });
-        s.set(Path::new("/b"), FolderStyle { color: Some(FolderColor::Rgb(Color32::from_rgb(1, 2, 3))), emblem: None });
+        s.set(Path::new("/b"), FolderStyle { color: Some(FolderColor::Rgb(Rgba8::rgb(1, 2, 3))), emblem: None });
         s.set(Path::new("/c"), FolderStyle::default());
         assert_eq!(s.len(), 2, "empty styles are not stored");
         let back = Store::from_toml(&s.to_toml()).unwrap();
@@ -290,7 +282,7 @@ mod tests {
             "[items.\"/x\"]\ncolor = \"chartreuse\"\nemblem = \"../../evil\"\n[items.\"/y\"]\ncolor = \"#00FF0080\"\n";
         let s = Store::from_toml(t).unwrap();
         assert!(s.get(Path::new("/x")).is_none(), "unknown color and emblem: nothing stored");
-        assert_eq!(s.get(Path::new("/y")).unwrap().color, Some(FolderColor::Rgb(Color32::GREEN)), "opaque");
+        assert_eq!(s.get(Path::new("/y")).unwrap().color, Some(FolderColor::Rgb(Rgba8::rgb(0, 255, 0))), "opaque");
         assert!(Store::from_toml("items = 3").is_err());
     }
 
@@ -313,12 +305,11 @@ mod tests {
     }
 
     #[test]
-    fn colors_resolve_against_the_palette() {
-        let p = crate::theme::ORBIT_DARK.clone();
-        assert_eq!(FolderColor::Tag(3).resolve(&p), p.tags[3]);
+    fn colors_and_emblems_parse() {
         assert_eq!(FolderColor::parse("blue"), Some(FolderColor::Tag(5)));
-        assert_eq!(FolderColor::parse("#FF0000"), Some(FolderColor::Rgb(Color32::RED)));
+        assert_eq!(FolderColor::parse("#FF0000"), Some(FolderColor::Rgb(Rgba8::rgb(255, 0, 0))));
         assert_eq!(FolderColor::parse("nope"), None);
-        assert!(EMBLEMS.iter().all(|(id, _, _)| emblem_glyph(id).is_some()));
+        assert!(EMBLEMS.iter().all(|(id, _, _)| emblem_icon(id).is_some()));
+        assert_eq!(emblem_icon("star"), Some(IconId::Star));
     }
 }

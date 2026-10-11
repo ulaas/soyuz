@@ -159,7 +159,7 @@ fn rows(ui: &mut Ui, st: &mut PortalState, c: &mut PortalCtx<'_>) -> Rect {
                     },
                     label: &shown_label,
                     active: matches!(c.current, Location::Dir(d) if d == &pin.path),
-                    icon_color: crate::services::folder_colors::color_of(&pin.path, &p),
+                    icon_color: crate::ui::looks::folder_color_of(&pin.path, &p),
                     usage: None,
                 }
                 .show(ui)

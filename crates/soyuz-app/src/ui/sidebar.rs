@@ -24,26 +24,19 @@ use crate::models::sidebar::{PlaceRole, section_name};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::size;
 use crate::theme::{icons::ph, palette};
+use crate::ui::icons::glyph;
 use crate::ui::views::computer::{volume_glyph, volume_label};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, trunc_galley};
 
 /// Glyph of a standard place.
 pub fn place_glyph(role: PlaceRole) -> &'static str {
-    match role {
-        PlaceRole::Home => ph::HOUSE,
-        PlaceRole::Desktop => ph::DESKTOP,
-        PlaceRole::Documents => ph::FILE_TEXT,
-        PlaceRole::Downloads => ph::DOWNLOAD_SIMPLE,
-        PlaceRole::Pictures => ph::IMAGE,
-        PlaceRole::Music => ph::MUSIC_NOTES,
-        PlaceRole::Videos => ph::FILM_STRIP,
-    }
+    glyph(crate::models::sidebar::place_icon(role))
 }
 
 /// Glyph for a favorite path (standard places get their own icons).
 pub fn favorite_glyph(path: &Path) -> &'static str {
-    crate::models::sidebar::place_role(path).map_or(ph::FOLDER_SIMPLE, place_glyph)
+    glyph(crate::models::sidebar::favorite_icon(path))
 }
 
 fn bookmark_glyph(name: &str) -> &'static str {
@@ -361,7 +354,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             label: &f.name,
             active: is_current(c, &f.path),
             // A folder color tints the favorite's icon.
-            icon_color: crate::services::folder_colors::color_of(&f.path, &p),
+            icon_color: crate::ui::looks::folder_color_of(&f.path, &p),
             usage: None,
         }
         .show(ui);
