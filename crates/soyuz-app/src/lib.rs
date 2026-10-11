@@ -31,3 +31,7 @@ pub mod theme;
 pub mod ui;
 
 pub use app::SoyuzApp;
+
+/// The git commit this binary is built from (short hash, `-dirty` with uncommitted
+/// changes, `unknown` outside a checkout); stamped by `build.rs`.
+pub const GIT_SHA: &str = env!("SOYUZ_GIT_SHA");

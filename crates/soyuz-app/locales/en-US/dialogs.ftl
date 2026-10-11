@@ -28,6 +28,7 @@ dialogs-about-title = About Soyuz
 dialogs-about-version-line = Version { $version }
 dialogs-about-tagline = A keyboard-first, non-blocking file explorer.
 dialogs-about-version = Version
+dialogs-about-commit = Commit
 dialogs-about-build = Build
 dialogs-about-platform = Platform
 dialogs-about-renderer = Renderer

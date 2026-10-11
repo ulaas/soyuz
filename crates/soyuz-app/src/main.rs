@@ -248,7 +248,7 @@ Run `soyuz <command> --help` for usage."
             return ExitCode::SUCCESS;
         }
         Cli::Version => {
-            println!("soyuz {}", env!("CARGO_PKG_VERSION"));
+            println!("soyuz {} ({})", env!("CARGO_PKG_VERSION"), soyuz_app::GIT_SHA);
             return ExitCode::SUCCESS;
         }
         Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),

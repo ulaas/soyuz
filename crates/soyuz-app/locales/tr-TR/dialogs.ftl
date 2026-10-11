@@ -25,6 +25,7 @@ dialogs-about-title = Soyuz hakkında
 dialogs-about-version-line = Sürüm { $version }
 dialogs-about-tagline = Klavye öncelikli, hiç takılmayan bir dosya gezgini.
 dialogs-about-version = Sürüm
+dialogs-about-commit = Commit
 dialogs-about-build = Derleme
 dialogs-about-platform = Platform
 dialogs-about-renderer = Oluşturucu

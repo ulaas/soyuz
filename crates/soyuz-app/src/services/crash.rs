@@ -108,7 +108,7 @@ pub fn report_text(message: &str, location: &str, thread: &str, backtrace: &str,
     let _ = writeln!(s, "==================");
     let _ = writeln!(s, "This file was written on this computer and is never sent anywhere.");
     let _ = writeln!(s);
-    let _ = writeln!(s, "Version:  soyuz {}", env!("CARGO_PKG_VERSION"));
+    let _ = writeln!(s, "Version:  soyuz {} ({})", env!("CARGO_PKG_VERSION"), crate::GIT_SHA);
     let _ = writeln!(s, "OS:       {} {} ({})", std::env::consts::OS, std::env::consts::ARCH, std::env::consts::FAMILY);
     let _ = writeln!(s, "Time:     {}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S %z"));
     let _ = writeln!(s, "Thread:   {thread}");

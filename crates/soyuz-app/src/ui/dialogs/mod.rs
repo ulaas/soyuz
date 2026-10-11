@@ -342,6 +342,7 @@ impl AboutDialog {
     pub fn facts(&self) -> Vec<(&'static str, String)> {
         vec![
             ("Version", env!("CARGO_PKG_VERSION").to_string()),
+            ("Commit", crate::GIT_SHA.to_string()),
             ("Build", if cfg!(debug_assertions) { "debug".into() } else { "release".into() }),
             ("Platform", format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)),
             ("Renderer", self.renderer.to_string()),
@@ -353,6 +354,7 @@ impl AboutDialog {
     /// Translated label of a [`facts`](Self::facts) entry.
     fn fact_label(key: &str) -> &'static str {
         match key {
+            "Commit" => tr!("dialogs-about-commit"),
             "Build" => tr!("dialogs-about-build"),
             "Platform" => tr!("dialogs-about-platform"),
             "Renderer" => tr!("dialogs-about-renderer"),
