@@ -664,6 +664,8 @@ impl SoyuzApp {
         self.services.thumbs.begin_frame();
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);
+        crate::ui::sidebar::pump(self);
+        crate::ui::dialogs::properties::pump(self, &ctx);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, &ctx);
         crate::ui::panels::terminal::pump(self, &ctx);

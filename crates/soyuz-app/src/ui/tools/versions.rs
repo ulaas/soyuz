@@ -56,7 +56,8 @@ pub fn begin_frame(app: &SoyuzApp) {
 }
 
 /// Previous versions are on in the config and this platform has a snapshot provider
-/// (Windows: shadow copies; Linux: snapper, ZFS and Timeshift snapshots). Whether the
+/// (Windows: shadow copies; Linux: snapper, ZFS and Timeshift snapshots; macOS: mounted
+/// Time Machine backups). Whether the
 /// volume of a given file has snapshots is only known after the (blocking) scan, which the
 /// panel runs on a worker and explains when it finds none.
 pub fn enabled() -> bool {
@@ -65,11 +66,14 @@ pub fn enabled() -> bool {
 
 /// `soyuz_fs::snapshots::providers()` is non-empty on this platform.
 pub fn supported() -> bool {
-    cfg!(any(windows, target_os = "linux"))
+    cfg!(any(windows, target_os = "linux", target_os = "macos"))
 }
 
 /// Linux wording (snapshots instead of shadow copies, no elevation).
 const LINUX: bool = cfg!(target_os = "linux");
+
+/// macOS wording (Time Machine backups, no elevation).
+const MACOS: bool = cfg!(target_os = "macos");
 
 fn cfg() -> Cfg {
     CFG.with_borrow(|c| c.clone())
@@ -165,9 +169,15 @@ impl VersionsPanel {
         let mut out = None;
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(if LINUX { tr!("tools-versions-intro-linux") } else { tr!("tools-versions-intro") })
-                    .font(FontId::proportional(11.5))
-                    .color(p.text_tertiary),
+                RichText::new(if LINUX {
+                    tr!("tools-versions-intro-linux")
+                } else if MACOS {
+                    tr!("tools-versions-intro-macos")
+                } else {
+                    tr!("tools-versions-intro")
+                })
+                .font(FontId::proportional(11.5))
+                .color(p.text_tertiary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if crate::ui::widgets::icon_button(
@@ -189,6 +199,8 @@ impl VersionsPanel {
                 ui.label(
                     RichText::new(if LINUX {
                         tr!("tools-versions-looking-linux")
+                    } else if MACOS {
+                        tr!("tools-versions-looking-macos")
                     } else {
                         tr!("tools-versions-looking")
                     })
@@ -228,6 +240,8 @@ impl VersionsPanel {
             ui.label(
                 RichText::new(if LINUX {
                     tr!("tools-versions-denied-more-linux", count = report.denied)
+                } else if MACOS {
+                    tr!("tools-versions-denied-more-macos", count = report.denied)
                 } else {
                     tr!("tools-versions-denied-more", count = report.denied)
                 })
@@ -424,6 +438,18 @@ pub fn empty_text(r: &VersionsReport, is_dir: bool) -> (String, String) {
             )
         } else {
             (tr!("tools-versions-no-copies-linux").into(), tr!("tools-versions-no-copies-body-linux").into())
+        };
+    }
+    if MACOS {
+        return if r.denied > 0 {
+            (tr!("tools-versions-denied-macos").into(), tr!("tools-versions-denied-macos-body", count = r.denied))
+        } else if r.snapshots_seen > 0 {
+            (
+                tr!("tools-versions-none").into(),
+                tr!("tools-versions-none-body-macos", count = r.snapshots_seen, kind = kind),
+            )
+        } else {
+            (tr!("tools-versions-no-copies-macos").into(), tr!("tools-versions-no-copies-body-macos").into())
         };
     }
     if r.denied > 0 {
@@ -646,7 +672,17 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    fn empty_results_explain_why_macos() {
+        assert!(supported());
+        let none = VersionsReport::default();
+        assert_eq!(empty_text(&none, false).0, "No Time Machine backups found");
+        let seen = VersionsReport { snapshots_seen: 2, ..VersionsReport::default() };
+        assert!(empty_text(&seen, false).1.contains("2 Time Machine backups"));
+    }
+
+    #[test]
+    #[cfg(windows)]
     fn empty_results_explain_why() {
         let none = VersionsReport::default();
         assert_eq!(empty_text(&none, false).0, "No shadow copies on this volume");

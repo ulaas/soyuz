@@ -168,8 +168,9 @@ not built by CI.
 - **Desktop entry:** `crates/soyuz-app/assets/soyuz.desktop` (one copy for every package).
   Its name matches the window's Wayland `app_id` / X11 `WM_CLASS` (`soyuz`, set in
   `crates/soyuz-app/src/main.rs`, also `StartupWMClass`), so docks and task switchers group
-  the window under the launcher and show its icon. `Exec=soyuz %f` passes one local path:
-  the app opens one folder (a file opens its folder with it selected). The `new-window`
+  the window under the launcher and show its icon. `Exec=soyuz %U` passes any number of
+  paths as `file://` URIs: the app opens each folder as a tab (a file opens its folder with
+  it selected). The `new-window`
   action runs `soyuz --new-window`. `MimeType=inode/directory` makes Soyuz *available* for
   folders; it does not make it the default. Check it with
   `desktop-file-validate crates/soyuz-app/assets/soyuz.desktop`.
@@ -214,15 +215,16 @@ No package makes Soyuz the default file manager or claims the D-Bus name
   `xdg-mime default soyuz.desktop inode/directory`.
 - **"Show in folder" from other apps** (browsers' download lists, terminals, IDEs) calls
   `org.freedesktop.FileManager1` (`ShowFolders`, `ShowItems`, `ShowItemProperties`) on the
-  session bus. With the same opt-in, a running Soyuz claims that name, and Soyuz writes
-  `installer/linux/org.freedesktop.FileManager1.service.in`, with `@BINDIR@` replaced by
-  the directory of the running executable, to
+  session bus. With the same opt-in, a running Soyuz claims that name, and Soyuz writes a
+  D-Bus activation file (`Exec="<path of the running soyuz>" --dbus-file-manager`) to
   `$XDG_DATA_HOME/dbus-1/services/org.freedesktop.FileManager1.service`
   (`~/.local/share/dbus-1/services/`), so D-Bus starts Soyuz when no file manager is
   running. Turning the option off deletes that file and releases the name. A user service
   file overrides the system one (`/usr/share/dbus-1/services/`, e.g. Nautilus or Dolphin)
   for that user only.
-- The template is **not** installed by `package.sh` or `soyuz.spec`, on purpose: a package
+- `installer/linux/org.freedesktop.FileManager1.service.in` is a reference copy of that
+  file (the app generates the real one; replace `@BINDIR@` to install it by hand). It is
+  **not** installed by `package.sh` or `soyuz.spec`, on purpose: a package
   that ships it would take "show in folder" away from the desktop's own file manager for
   every user of the machine.
 

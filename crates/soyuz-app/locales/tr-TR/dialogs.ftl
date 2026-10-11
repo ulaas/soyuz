@@ -540,3 +540,10 @@ dialogs-unlock-hide = Parolayı gizle
 dialogs-unlock-working = Kilit açılıyor…
 dialogs-unlock-recovery-note = Kurtarma anahtarı, BitLocker açılırken Windows'un gösterdiği 48 basamaklı anahtardır (altışar basamaklı sekiz grup; tireler isteğe bağlı).
 dialogs-unlock-button = Kilidi aç
+
+## fix-ui
+
+dialogs-inode-applying = Uygulanıyor…
+# $failed / $total: item counts.
+dialogs-inode-failed-some = { $total } öğeden { $failed } tanesinin inode bayrakları değiştirilemedi
+dialogs-unlock-interrupted = Kilit açma başlamadı: bu aygıtta başka bir işlem hâlâ sürüyor. Parolayı yeniden yazıp tekrar deneyin.

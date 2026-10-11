@@ -571,3 +571,30 @@ tools-versions-different-bytes = Same size, different bytes.
 tools-versions-job-label = Restore previous version of “{ $name }”
 tools-versions-elevate-failed = Couldn't start Soyuz as administrator
 tools-versions-open-failed = Couldn't open that version
+
+## fix-ui
+
+tools-versions-intro-macos = Earlier versions from Time Machine backups that are mounted on this Mac.
+tools-versions-looking-macos = Looking for Time Machine backups…
+tools-versions-denied-more-macos = { $count ->
+    [one] { $count } more backup could not be read (Soyuz may need Full Disk Access).
+   *[other] { $count } more backups could not be read (Soyuz may need Full Disk Access).
+}
+tools-versions-denied-macos = Time Machine backups aren't readable
+tools-versions-denied-macos-body = { $count ->
+    [one] A Time Machine backup was found
+   *[other] { $count } Time Machine backups were found
+    }, but macOS didn't let Soyuz read { $count ->
+    [one] it
+   *[other] them
+    }. Give Soyuz Full Disk Access (System Settings › Privacy & Security) and look again.
+# $kind: "file" | "folder".
+tools-versions-none-body-macos = None of the { $count ->
+    [one] { $count } Time Machine backup
+   *[other] { $count } Time Machine backups
+    } holds a different version of this { $kind ->
+    [folder] folder
+   *[other] file
+    }.
+tools-versions-no-copies-macos = No Time Machine backups found
+tools-versions-no-copies-body-macos = Soyuz reads Time Machine backups that are mounted: an attached backup disk (Backups.backupdb) or APFS backups macOS has mounted under /Volumes/.timemachine (for example while you browse them in Time Machine). Local snapshots that aren't mounted need root and aren't listed.

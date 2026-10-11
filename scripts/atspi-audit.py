@@ -383,9 +383,7 @@ def main():
                  hold("progress") + ["jobs_cancel_all", "wait:1500"]
     steps.append("quit")
 
-    data.mkdir()
-    marker.touch()
-    (data / "config.toml").write_text(f"""schema = 1
+    config_toml = f"""schema = 1
 
 [general]
 start_location = {toml_str(D('Documents/Reports'))}
@@ -403,8 +401,8 @@ auto_open_activity = true
 [sidebar]
 mode = "both"
 sections = ["favorites", "tree", "trash"]
-""", encoding="utf-8")
-    (data / "session.toml").write_text(f"""version = 1
+"""
+    session_toml = f"""version = 1
 active_tab = 0
 welcome_seen = true
 
@@ -423,12 +421,18 @@ split = 0.5
 location = {toml_str(D('Downloads'))}
 [[tabs.panes]]
 location = {toml_str(D('Archive'))}
-""", encoding="utf-8")
+"""
 
     saved = {}
     proc = None
     log_lines = []
     try:
+        # Inside the try: the finally block removes the marker and portable-data/ even
+        # when writing them fails half-way.
+        data.mkdir()
+        marker.touch()
+        (data / "config.toml").write_text(config_toml, encoding="utf-8")
+        (data / "session.toml").write_text(session_toml, encoding="utf-8")
         # at-spi2-core 2.62+ dropped ScreenReaderEnabled (only IsEnabled remains).
         for prop in ("IsEnabled", "ScreenReaderEnabled"):
             try:
