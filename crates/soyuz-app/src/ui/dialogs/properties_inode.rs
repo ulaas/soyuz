@@ -1,11 +1,15 @@
 //! Linux inode flags in the Properties dialog (Attributes tab): append-only, no-dump,
 //! no-atime, no copy-on-write, compress and immutable (`chattr` / `lsattr`). The flags
 //! are read on a worker thread when the tab is first shown; Apply changes them on a
-//! worker thread too (quick ioctls, but on a slow or hung mount any call can block) and
+//! worker thread too (quick ioctls, but on a slow or hung mount any call can block),
+//! ordered around the rename / meta jobs of the same Apply (`properties::FlagPlan`),
 //! reports failures as a toast with a plain-language reason (root for immutable /
-//! append-only, unsupported file systems).
+//! append-only, unsupported file systems) and then re-reads the flags from disk.
+//! Flag changes are not undoable (no job kind; like chown).
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{FontId, RichText, Ui};
 use soyuz_core::{FsError, FsErrorKind};
@@ -38,21 +42,40 @@ pub struct InodeEdit {
     rows: Vec<(InodeFlags, Tri, Tri)>,
     /// Why nothing can be edited (no entry's flags could be read).
     unavailable: Option<String>,
+    /// An Apply is running: `(finished, the paths afterwards)`; the flags are re-read
+    /// from disk once it finished.
+    applying: Option<(Arc<AtomicBool>, Vec<PathBuf>)>,
 }
 
 impl InodeEdit {
     pub fn new(paths: Vec<PathBuf>) -> Self {
-        InodeEdit { paths, load: None, rows: Vec::new(), unavailable: None }
+        InodeEdit { paths, load: None, rows: Vec::new(), unavailable: None, applying: None }
     }
 
-    /// The edits become the baseline (after Apply queued them).
-    pub fn commit(&mut self) {
+    /// An Apply was queued: hold the edits until it finished, then re-read the flags of
+    /// `paths` (the items as they are after a rename).
+    pub fn applying(&mut self, done: Arc<AtomicBool>, paths: Vec<PathBuf>) {
         for r in &mut self.rows {
             r.2 = r.1;
         }
+        self.applying = Some((done, paths));
+    }
+
+    /// An Apply is still running.
+    pub fn busy(&self) -> bool {
+        self.applying.is_some()
     }
 
     fn poll(&mut self, ctx: &egui::Context) {
+        if let Some((done, _)) = &self.applying {
+            if !done.load(Ordering::Relaxed) {
+                ctx.request_repaint_after(std::time::Duration::from_millis(150));
+                return;
+            }
+            if let Some((_, paths)) = self.applying.take() {
+                *self = InodeEdit::new(paths);
+            }
+        }
         if self.load.is_none() {
             let paths = self.paths.clone();
             self.load = Some(Bg::spawn(ctx, move || paths.iter().map(|p| soyuz_fs::attrs::inode_flags(p)).collect()));
@@ -78,6 +101,9 @@ impl InodeEdit {
 
     /// Flags switched on / off relative to the loaded state (`None` = unchanged).
     pub fn changes(&self) -> Option<(InodeFlags, InodeFlags)> {
+        if self.busy() {
+            return None;
+        }
         let mut set = InodeFlags::empty();
         let mut clear = InodeFlags::empty();
         for (f, now, orig) in &self.rows {
@@ -105,10 +131,11 @@ impl InodeEdit {
             ui.add(egui::Label::new(RichText::new(why).font(FontId::proportional(11.5)).color(p.text_tertiary)).wrap());
             return;
         }
-        if self.rows.is_empty() {
+        if self.rows.is_empty() || self.busy() {
+            let text = if self.busy() { tr!("dialogs-inode-applying") } else { tr!("dialogs-props-reading") };
             ui.horizontal(|ui| {
                 ui.spinner();
-                ui.label(RichText::new(tr!("dialogs-props-reading")).color(p.text_tertiary));
+                ui.label(RichText::new(text).color(p.text_tertiary));
             });
             return;
         }

@@ -606,3 +606,10 @@ dialogs-unlock-hide = Hide passphrase
 dialogs-unlock-working = Unlocking…
 dialogs-unlock-recovery-note = A recovery key is the 48-digit key Windows showed when BitLocker was turned on (eight groups of six digits, dashes optional).
 dialogs-unlock-button = Unlock
+
+## fix-ui
+
+dialogs-inode-applying = Applying…
+# $failed / $total: item counts.
+dialogs-inode-failed-some = Couldn't change the inode flags of { $failed } of { $total } items
+dialogs-unlock-interrupted = The unlock didn't start: another operation is still running on this device. Type the passphrase again and retry.

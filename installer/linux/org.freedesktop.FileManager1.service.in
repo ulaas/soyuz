@@ -2,14 +2,16 @@
 # from browsers, terminals and other apps).
 #
 # OPT-IN ONLY. No Soyuz package installs this file: whoever owns this bus name becomes the
-# desktop's file manager for "show in folder", which must stay the user's choice. Soyuz
-# writes it (with @BINDIR@ replaced by the directory holding the running `soyuz`) to
+# desktop's file manager for "show in folder", which must stay the user's choice. This
+# file is a reference copy: Soyuz itself writes the real one (soyuz-fs
+# `integration::linux`, with the quoted absolute path of the running `soyuz`) to
 # $XDG_DATA_HOME/dbus-1/services/ (default ~/.local/share/dbus-1/services/) only when the
 # user turns on "default file manager" in Settings, and removes it when they turn it off.
+# To install it by hand, replace @BINDIR@ with the directory holding `soyuz`.
 # See docs/RELEASING.md, "Linux".
 #
 # When activated, `soyuz` starts normally, claims the name and handles the call
 # (ShowFolders / ShowItems / ShowItemProperties) that triggered the activation.
 [D-BUS Service]
 Name=org.freedesktop.FileManager1
-Exec=@BINDIR@/soyuz
+Exec=@BINDIR@/soyuz --dbus-file-manager

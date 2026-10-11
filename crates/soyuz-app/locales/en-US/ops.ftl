@@ -197,7 +197,7 @@ ops-rename-exists = An item named “{ $name }” already exists here.
 ops-new-window-failed = Couldn't open a new window
 ops-window-keeps-tab = A window keeps at least one tab
 ops-elevate-select = Select a program to run as administrator
-# $platform: "windows" | "other".
+# $platform: "windows" | "linux" | "other" (ops/window.rs elevate_platform).
 ops-elevate-needs = { $platform ->
     [windows] Run as administrator needs an .exe, .msi, .bat or .cmd file
     [linux] Run as administrator needs a program file with execute permission (it runs through pkexec)

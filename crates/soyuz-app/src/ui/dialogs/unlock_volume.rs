@@ -26,6 +26,9 @@ pub struct UnlockVolumeDialog {
     focus: bool,
     error: Option<String>,
     pending: Option<Receiver<Result<(), String>>>,
+    /// The passphrase field's widget id and context: egui keeps a copy of the text (with
+    /// undo snapshots) in its memory, removed on submit, cancel and close.
+    field: Option<(egui::Context, egui::Id)>,
 }
 
 impl UnlockVolumeDialog {
@@ -42,11 +45,19 @@ impl UnlockVolumeDialog {
             focus: true,
             error: None,
             pending: None,
+            field: None,
         }
     }
 
     fn bitlocker(&self) -> bool {
         is_bitlocker(&self.kind)
+    }
+
+    /// Drop egui's copy of the passphrase (the text edit state and its undo history).
+    fn forget_field(&self) {
+        if let Some((ctx, id)) = &self.field {
+            ctx.data_mut(|d| d.remove::<egui::text_edit::TextEditState>(*id));
+        }
     }
 }
 
@@ -56,18 +67,25 @@ fn is_bitlocker(kind: &str) -> bool {
 
 /// A BitLocker recovery key as typed: 48 digits in eight dash-separated groups (spaces
 /// and missing dashes are tolerated); `None` when the text is not one.
-fn recovery_key(text: &str) -> Option<String> {
-    let digits: String = text.chars().filter(|c| !c.is_whitespace() && *c != '-').collect();
+fn recovery_key(text: &str) -> Option<Zeroizing<String>> {
+    let digits: Zeroizing<String> = Zeroizing::new(text.chars().filter(|c| !c.is_whitespace() && *c != '-').collect());
     if digits.len() != 48 || !digits.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    let groups: Vec<&str> = (0..8).map(|i| &digits[i * 6..i * 6 + 6]).collect();
-    Some(groups.join("-"))
+    let mut key = Zeroizing::new(String::with_capacity(55));
+    for i in 0..8 {
+        if i > 0 {
+            key.push('-');
+        }
+        key.push_str(&digits[i * 6..i * 6 + 6]);
+    }
+    Some(key)
 }
 
 impl Drop for UnlockVolumeDialog {
     fn drop(&mut self) {
         self.pass.zeroize();
+        self.forget_field();
     }
 }
 
@@ -94,7 +112,12 @@ impl Dialog for UnlockVolumeDialog {
                     self.pending = None;
                     self.focus = true;
                 }
-                Err(TryRecvError::Disconnected) => self.pending = None,
+                // The worker never ran (another operation on this device) or died.
+                Err(TryRecvError::Disconnected) => {
+                    self.error = Some(tr!("dialogs-unlock-interrupted").to_string());
+                    self.pending = None;
+                    self.focus = true;
+                }
                 Err(TryRecvError::Empty) => ui.ctx().request_repaint_after(std::time::Duration::from_millis(100)),
             }
         }
@@ -103,6 +126,7 @@ impl Dialog for UnlockVolumeDialog {
         ui.label(RichText::new(intro).color(p.text_secondary));
         ui.add_space(10.0);
         let id = ui.make_persistent_id(("soyuz.unlock.pass", &self.object));
+        self.field = Some((ui.ctx().clone(), id));
         let hint = if self.bitlocker() { tr!("dialogs-unlock-hint-bitlocker") } else { tr!("dialogs-unlock-hint") };
         let mut submit = false;
         ui.horizontal(|ui| {
@@ -170,16 +194,19 @@ impl Dialog for UnlockVolumeDialog {
                 && let Some(k) = recovery_key(&typed)
             {
                 typed.zeroize();
-                Zeroizing::new(k)
+                k
             } else {
                 typed
             };
             // Drop egui's copy of the text (undo history) too.
-            ui.ctx().data_mut(|d| d.remove::<egui::text_edit::TextEditState>(id));
+            self.forget_field();
             let (tx, rx) = channel();
             crate::ui::sidebar::unlock_device(&self.object, self.name.clone(), secret, self.pane, tx);
             self.pending = Some(rx);
             self.error = None;
+        }
+        if cancel {
+            self.forget_field();
         }
         !cancel
     }
@@ -192,11 +219,12 @@ mod tests {
     #[test]
     fn recovery_keys_are_normalized() {
         let k = "123456-234567-345678-456789-567890-678901-789012-890123";
-        assert_eq!(recovery_key(k).as_deref(), Some(k));
-        assert_eq!(recovery_key(&k.replace('-', "")).as_deref(), Some(k));
-        assert_eq!(recovery_key(&k.replace('-', " ")).as_deref(), Some(k));
-        assert_eq!(recovery_key("hunter2"), None);
-        assert_eq!(recovery_key(&"1".repeat(47)), None);
+        let key = |t: &str| recovery_key(t).map(|z| z.as_str().to_string());
+        assert_eq!(key(k).as_deref(), Some(k));
+        assert_eq!(key(&k.replace('-', "")).as_deref(), Some(k));
+        assert_eq!(key(&k.replace('-', " ")).as_deref(), Some(k));
+        assert_eq!(key("hunter2"), None);
+        assert_eq!(key(&"1".repeat(47)), None);
         assert!(is_bitlocker("BitLocker") && is_bitlocker("crypto_BITLK") && !is_bitlocker("crypto_LUKS"));
     }
 }

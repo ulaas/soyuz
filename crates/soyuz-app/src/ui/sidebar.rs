@@ -259,7 +259,7 @@ fn section_key(s: SidebarSection) -> &'static str {
 
 pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     let p = palette(root.ctx());
-    desk_pump(root.ctx(), c);
+    desk_start(root.ctx());
     if !s.places_applied {
         if places_probed() {
             s.places_applied = true;
@@ -648,7 +648,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         let dev = if desk_devices.is_empty() { None } else { device_at(&desk_devices, &v.mount) };
-        let removable_dev = dev.as_ref().filter(|d| d.drive.is_some() && (d.ejectable || d.can_power_off));
+        let removable_dev = dev.as_ref().filter(|d| eject_plan(d, &desk_devices).is_some());
         // Removable media: a small eject button on the right of the row.
         let eject_hit = removable_dev.and_then(|d| {
             let br = Rect::from_center_size(pos2(r.rect.right() - 14.0, r.rect.top() + 14.0), vec2(20.0, 20.0));
@@ -848,24 +848,34 @@ pub fn take_volumes_stale() -> bool {
     VOLUMES_STALE.swap(false, std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Per frame (sidebar shown): start the refresher, rescan when the volume list changed,
-/// turn finished device operations into toasts / navigation.
-fn desk_pump(ctx: &egui::Context, c: &mut SidebarCtx<'_>) {
+/// Per frame (from the frame loop, sidebar shown or not): rescan when the volume list
+/// changed, turn finished device operations into toasts / navigation.
+pub fn pump(app: &mut crate::app::SoyuzApp) {
     if !cfg!(target_os = "linux") {
         return;
     }
-    desk_start(ctx);
+    let ws = &app.ws;
+    let focused = ws.pane().id;
+    desk_pump(&app.ui.volumes, &mut app.cmds, |p| ws.find_pane(p).is_some(), focused);
+}
+
+/// The body of [`pump`]: `exists` says whether a pane id is still open (a mount that
+/// finishes after its pane was closed opens in `focused` instead).
+fn desk_pump(volumes: &[VolumeInfo], cmds: &mut Vec<Cmd>, exists: impl Fn(PaneId) -> bool, focused: PaneId) {
     let sig = {
         use std::hash::{Hash, Hasher};
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        for v in c.volumes {
+        for v in volumes {
             v.mount.hash(&mut h);
         }
         h.finish()
     };
     let events = {
         let mut d = desk().lock();
-        let rescan = d.vol_sig != sig;
+        if !d.started && d.events.is_empty() {
+            return;
+        }
+        let rescan = d.started && d.vol_sig != sig;
         d.vol_sig = sig;
         let ev = std::mem::take(&mut d.events);
         drop(d);
@@ -879,18 +889,19 @@ fn desk_pump(ctx: &egui::Context, c: &mut SidebarCtx<'_>) {
         VOLUMES_STALE.store(true, std::sync::atomic::Ordering::Relaxed);
         match ev {
             DeskEvent::Mounted { pane, path } => {
-                c.cmds.push(Cmd::FocusPane(pane));
-                c.cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
+                let pane = if exists(pane) { pane } else { focused };
+                cmds.push(Cmd::FocusPane(pane));
+                cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
             }
             DeskEvent::Unmounted { name } => {
-                c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-unmounted", name = name))))
+                cmds.push(Cmd::Toast(Toast::info(tr!("app-device-unmounted", name = name))))
             }
-            DeskEvent::Ejected { name } => c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-ejected", name = name)))),
+            DeskEvent::Ejected { name } => cmds.push(Cmd::Toast(Toast::info(tr!("app-device-ejected", name = name)))),
             DeskEvent::Locked { name } => {
-                c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-locked-done", name = name))))
+                cmds.push(Cmd::Toast(Toast::info(tr!("app-device-locked-done", name = name))))
             }
-            DeskEvent::Failed { title, body } => c.cmds.push(Cmd::Toast(Toast::error(title).body(body))),
-            DeskEvent::OfferReadOnly { dev, name } => c.cmds.push(Cmd::Device(DeviceCmd::OfferReadOnly { dev, name })),
+            DeskEvent::Failed { title, body } => cmds.push(Cmd::Toast(Toast::error(title).body(body))),
+            DeskEvent::OfferReadOnly { dev, name } => cmds.push(Cmd::Device(DeviceCmd::OfferReadOnly { dev, name })),
         }
     }
 }
@@ -1049,16 +1060,95 @@ pub fn unlock_device(
     }
 }
 
-/// Unmount every mounted file system of the drive, then eject it (or power it off when
-/// it can't eject, e.g. a USB disk).
-fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) {
-    let Some(drive) = dev.drive.clone() else { return };
-    let mounted: Vec<String> = all
+/// The drive a device lives on: its own, or (an unlocked container's cleartext device,
+/// which UDisks gives no drive) the drive of its encrypted container.
+fn drive_of<'a>(d: &'a soyuz_fs::udisks::BlockDevice, all: &'a [soyuz_fs::udisks::BlockDevice]) -> Option<&'a str> {
+    let mut cur = d;
+    // Follow the crypto backing chain (bounded: LUKS in LUKS is the deepest real case).
+    for _ in 0..4 {
+        if let Some(drive) = cur.drive.as_deref() {
+            return Some(drive);
+        }
+        let backing = cur.crypto_backing.as_deref()?;
+        cur = all.iter().find(|b| b.object == backing)?;
+    }
+    None
+}
+
+/// What "Eject" does for a drive: unmount `unmount` (deepest mount first), lock the
+/// unlocked containers `lock`, then eject the media (`eject`) or power the drive off.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct EjectPlan {
+    drive: String,
+    unmount: Vec<String>,
+    lock: Vec<String>,
+    eject: bool,
+}
+
+/// The [`EjectPlan`] for the drive of `dev`, or `None` when ejecting it must not be
+/// offered: the drive can neither eject nor power off, it is a system drive that is not
+/// removable media, or any file system on it is mounted where the running system lives
+/// (`/`, `/boot/efi`, `/home` … — a USB-booted system or a hot-plug disk holding a
+/// system mount would otherwise be unmounted and powered off).
+fn eject_plan(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) -> Option<EjectPlan> {
+    let drive = drive_of(dev, all)?.to_string();
+    let on_drive: Vec<&soyuz_fs::udisks::BlockDevice> =
+        all.iter().filter(|b| drive_of(b, all) == Some(drive.as_str())).collect();
+    // The drive's own properties live on the devices UDisks links to it directly.
+    let direct: Vec<&soyuz_fs::udisks::BlockDevice> =
+        on_drive.iter().copied().filter(|b| b.drive.as_deref() == Some(drive.as_str())).collect();
+    let holder = direct.first().copied().unwrap_or(dev);
+    let (ejectable, power_off) = (holder.ejectable, holder.can_power_off);
+    if !ejectable && !power_off {
+        return None;
+    }
+    if direct.iter().any(|b| b.hint_system && !b.is_removable_media()) {
+        return None;
+    }
+    if on_drive.iter().any(|b| b.mount_points.iter().any(|m| is_system_mount(m))) {
+        return None;
+    }
+    let mut mounted: Vec<(usize, String)> = on_drive
         .iter()
-        .filter(|b| b.drive.as_deref() == Some(drive.as_str()) && !b.mount_points.is_empty())
-        .map(|b| b.object.clone())
+        .filter(|b| !b.mount_points.is_empty())
+        .map(|b| {
+            let depth = b.mount_points.iter().map(|m| m.components().count()).max().unwrap_or(0);
+            (depth, b.object.clone())
+        })
         .collect();
-    let (ejectable, power_off) = (dev.ejectable, dev.can_power_off);
+    // Nested mounts first (a stick mounted inside another file system of the drive).
+    mounted.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    // Containers on the drive with an unlocked cleartext device, innermost first.
+    let mut lock: Vec<(usize, String)> = on_drive
+        .iter()
+        .filter(|b| b.encrypted && b.cleartext.is_some())
+        .map(|b| {
+            let mut depth = 0;
+            let mut cur = *b;
+            while let Some(up) = cur.crypto_backing.as_deref().and_then(|o| all.iter().find(|x| x.object == o)) {
+                depth += 1;
+                cur = up;
+                if depth > 4 {
+                    break;
+                }
+            }
+            (depth, b.object.clone())
+        })
+        .collect();
+    lock.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    Some(EjectPlan {
+        drive,
+        unmount: mounted.into_iter().map(|(_, o)| o).collect(),
+        lock: lock.into_iter().map(|(_, o)| o).collect(),
+        eject: ejectable,
+    })
+}
+
+/// Unmount every mounted file system of the drive, lock its unlocked containers, then
+/// eject it (or power it off when it can't eject, e.g. a USB disk). Refused (see
+/// [`eject_plan`]) for drives holding the running system.
+fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) {
+    let Some(plan) = eject_plan(dev, all) else { return };
     let name = dev.display_name();
     let fs = dev.fs_type.clone();
     desk_op(&dev.object, Work::Unmounting, move || {
@@ -1066,17 +1156,20 @@ fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::Bl
             title: tr!("app-device-eject-failed", name = name.clone()),
             body: udisks_reason(&e, &fs),
         };
-        for o in &mounted {
+        for o in &plan.unmount {
             if let Err(e) = soyuz_fs::udisks::unmount(o, false, true) {
                 return failed(e);
             }
         }
-        let r = if ejectable {
-            soyuz_fs::udisks::eject(&drive, true)
-        } else if power_off {
-            soyuz_fs::udisks::power_off(&drive, true)
+        for o in &plan.lock {
+            if let Err(e) = soyuz_fs::udisks::lock(o, true) {
+                return failed(e);
+            }
+        }
+        let r = if plan.eject {
+            soyuz_fs::udisks::eject(&plan.drive, true)
         } else {
-            Ok(())
+            soyuz_fs::udisks::power_off(&plan.drive, true)
         };
         match r {
             Ok(()) => DeskEvent::Ejected { name: name.clone() },
@@ -1120,8 +1213,7 @@ fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs
         lock_device(dev, container.clone(), name.to_string());
         ui.close();
     }
-    if dev.drive.is_some()
-        && (dev.ejectable || dev.can_power_off)
+    if eject_plan(dev, all).is_some()
         && menu_item(ui, Some(ph::EJECT_SIMPLE), tr!("app-device-eject"), None, true).clicked()
     {
         eject_device(dev, all);
@@ -1592,6 +1684,112 @@ mod tests {
         for part in ["Games", "/dev/sdb1", "NTFS", "1 TB", "Samsung SSD 860 EVO 1TB", "internal"] {
             assert!(tip.contains(part), "{part} missing in {tip}");
         }
+    }
+
+    fn blk(name: &str, drive: Option<&str>, mounts: &[&str]) -> soyuz_fs::udisks::BlockDevice {
+        soyuz_fs::udisks::BlockDevice {
+            object: format!("/org/freedesktop/UDisks2/block_devices/{name}"),
+            device: PathBuf::from(format!("/dev/{name}")),
+            drive: drive.map(|d| format!("/org/freedesktop/UDisks2/drives/{d}")),
+            mount_points: mounts.iter().map(PathBuf::from).collect(),
+            has_filesystem: true,
+            usage: "filesystem".into(),
+            ..Default::default()
+        }
+    }
+
+    fn usb(name: &str, mounts: &[&str]) -> soyuz_fs::udisks::BlockDevice {
+        soyuz_fs::udisks::BlockDevice {
+            connection_bus: "usb".into(),
+            removable: true,
+            can_power_off: true,
+            ..blk(name, Some("Stick"), mounts)
+        }
+    }
+
+    fn obj(name: &str) -> String {
+        format!("/org/freedesktop/UDisks2/block_devices/{name}")
+    }
+
+    #[test]
+    fn eject_unmounts_the_whole_drive_and_powers_it_off() {
+        let all = [usb("sdb1", &["/run/media/u/A"]), usb("sdb2", &["/run/media/u/A/inner"]), usb("sdb3", &[])];
+        let plan = eject_plan(&all[0], &all).expect("a plain USB stick can be ejected");
+        assert_eq!(plan.drive, "/org/freedesktop/UDisks2/drives/Stick");
+        assert_eq!(plan.unmount, vec![obj("sdb2"), obj("sdb1")], "nested mount first, unmounted ones skipped");
+        assert!(plan.lock.is_empty());
+        assert!(!plan.eject, "USB disks are powered off");
+    }
+
+    #[test]
+    fn eject_refuses_drives_holding_a_system_mount() {
+        // A USB-booted system: `/` and `/boot/efi` live on the same stick as the data.
+        for sys in ["/", "/boot/efi", "/home", "/var"] {
+            let all = [usb("sdb1", &["/run/media/u/Data"]), usb("sdb2", &[sys])];
+            assert!(eject_plan(&all[0], &all).is_none(), "{sys} on the drive");
+        }
+        // A system mount on an unlocked container of the drive counts too.
+        let mut luks = usb("sdb2", &[]);
+        luks.encrypted = true;
+        luks.cleartext = Some(obj("dm0"));
+        let mut root = blk("dm0", None, &["/"]);
+        root.crypto_backing = Some(obj("sdb2"));
+        let all = [usb("sdb1", &["/run/media/u/Data"]), luks, root];
+        assert!(eject_plan(&all[0], &all).is_none(), "encrypted root on the stick");
+        // Another drive's system mount does not matter.
+        let all = [usb("sdb1", &["/run/media/u/Data"]), blk("nvme0n1p2", Some("Nvme"), &["/"])];
+        assert!(eject_plan(&all[0], &all).is_some());
+    }
+
+    #[test]
+    fn eject_refuses_internal_system_drives_and_fixed_disks() {
+        let mut internal = blk("sda1", Some("Ssd"), &["/run/media/u/Games"]);
+        internal.hint_system = true;
+        internal.can_power_off = true;
+        assert!(eject_plan(&internal, std::slice::from_ref(&internal)).is_none(), "internal system disk");
+        let mut fixed = blk("sda1", Some("Ssd"), &["/run/media/u/Games"]);
+        fixed.hint_system = false;
+        assert!(eject_plan(&fixed, std::slice::from_ref(&fixed)).is_none(), "cannot eject or power off");
+        let mut card = blk("mmcblk0p1", Some("Card"), &["/run/media/u/SD"]);
+        card.hint_system = true;
+        card.connection_bus = "sdio".into();
+        card.ejectable = true;
+        let plan = eject_plan(&card, std::slice::from_ref(&card)).expect("removable media flagged system");
+        assert!(plan.eject);
+    }
+
+    #[test]
+    fn eject_locks_unlocked_containers_after_unmounting() {
+        let mut luks = usb("sdb1", &[]);
+        luks.encrypted = true;
+        luks.usage = "crypto".into();
+        luks.cleartext = Some(obj("dm0"));
+        let mut clear = blk("dm0", None, &["/run/media/u/Secret"]);
+        clear.crypto_backing = Some(obj("sdb1"));
+        let locked = soyuz_fs::udisks::BlockDevice { encrypted: true, cleartext: None, ..usb("sdb2", &[]) };
+        let all = [luks, clear.clone(), locked];
+        // Ejecting from the cleartext row (UDisks gives it no drive) finds the stick.
+        let plan = eject_plan(&clear, &all).expect("cleartext device of a stick");
+        assert_eq!(plan.unmount, vec![obj("dm0")]);
+        assert_eq!(plan.lock, vec![obj("sdb1")], "only unlocked containers are locked");
+        assert_eq!(drive_of(&clear, &all), Some("/org/freedesktop/UDisks2/drives/Stick"));
+    }
+
+    #[test]
+    fn finished_mounts_open_in_a_pane_that_still_exists() {
+        if !cfg!(target_os = "linux") {
+            return;
+        }
+        let path = PathBuf::from("/run/media/u/STICK");
+        desk().lock().events.push(DeskEvent::Mounted { pane: PaneId(9_001), path: path.clone() });
+        let mut cmds = Vec::new();
+        desk_pump(&[], &mut cmds, |p| p != PaneId(9_001), PaneId(7));
+        let nav = cmds.iter().find_map(|c| match c {
+            Cmd::Navigate { pane, location: Location::Dir(p), .. } if *p == path => Some(*pane),
+            _ => None,
+        });
+        assert_eq!(nav, Some(PaneId(7)), "the closed pane is replaced by the focused one");
+        assert!(take_volumes_stale());
     }
 
     #[test]

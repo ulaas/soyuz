@@ -465,3 +465,23 @@ tools-versions-different-bytes = Boyutlar aynı, baytlar farklı.
 tools-versions-job-label = “{ $name }” öğesinin önceki sürümünü geri yükle
 tools-versions-elevate-failed = Soyuz yönetici olarak başlatılamadı
 tools-versions-open-failed = Bu sürüm açılamadı
+
+## fix-ui
+
+tools-versions-intro-macos = Bu Mac'e bağlı Time Machine yedeklerindeki önceki sürümler.
+tools-versions-looking-macos = Time Machine yedekleri aranıyor…
+tools-versions-denied-more-macos = { $count ->
+   *[other] { $count } yedek daha okunamadı (Soyuz'un Tam Disk Erişimi'ne ihtiyacı olabilir).
+}
+tools-versions-denied-macos = Time Machine yedekleri okunamıyor
+tools-versions-denied-macos-body = { $count ->
+    [one] Bir Time Machine yedeği bulundu
+   *[other] { $count } Time Machine yedeği bulundu
+    }, ancak macOS Soyuz'un okumasına izin vermedi. Soyuz'a Tam Disk Erişimi verin (Sistem Ayarları › Gizlilik ve Güvenlik) ve yeniden bakın.
+# $kind: "file" | "folder".
+tools-versions-none-body-macos = { $count } Time Machine yedeğinin hiçbirinde bu { $kind ->
+    [folder] klasörün
+   *[other] dosyanın
+    } farklı bir sürümü yok.
+tools-versions-no-copies-macos = Time Machine yedeği bulunamadı
+tools-versions-no-copies-body-macos = Soyuz bağlı Time Machine yedeklerini okur: takılı bir yedekleme diski (Backups.backupdb) ya da macOS'un /Volumes/.timemachine altına bağladığı APFS yedekleri (örneğin Time Machine'de gezinirken). Bağlı olmayan yerel anlık görüntüler root gerektirir ve listelenmez.
