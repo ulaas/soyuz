@@ -36,7 +36,7 @@ pub fn entry_in(a: &Action, l: Locale) -> Entry {
         title: title_in(a, l),
         title_en: title_in(a, Locale::EnUs),
         icon,
-        description: description_in(a, l),
+        description: shown_description_in(a, l),
         keywords,
         category: a.category(),
     }
@@ -77,10 +77,25 @@ pub fn title_in(a: &Action, l: Locale) -> String {
     }
 }
 
-/// One-line description in `l`.
+/// One-line description in `l` (the generated keyboard reference uses this
+/// platform-independent text; the palette shows [`shown_description_in`]).
 pub fn description_in(a: &Action, l: Locale) -> String {
     // i18n-dynamic: action-
     t_in(&format!("{}-desc", key_of(a)), l).to_string()
+}
+
+/// [`description_in`] as shown on this platform: on Linux an
+/// `action-<name>-desc-linux` variant, when present, replaces wording that only fits
+/// Windows (shadow copies, administrator, …).
+pub fn shown_description_in(a: &Action, l: Locale) -> String {
+    if cfg!(target_os = "linux") {
+        let linux = format!("{}-desc-linux", key_of(a));
+        if crate::i18n::has_in(&linux, l) {
+            // i18n-dynamic: action-
+            return t_in(&linux, l).to_string();
+        }
+    }
+    description_in(a, l)
 }
 
 /// Column name in `l`: the core labels are the English source; `labels::column` follows
@@ -394,6 +409,16 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn linux_descriptions_replace_windows_wording() {
+        for l in [Locale::EnUs, Locale::TrTr] {
+            let shown = shown_description_in(&Action::PreviousVersions, l);
+            assert_eq!(shown.contains("Snapper"), cfg!(target_os = "linux"), "{shown}");
+            assert!(!description_in(&Action::PreviousVersions, l).contains("Snapper"), "docs keep the base text");
+        }
+        assert_eq!(crate::actions::unavailable(&Action::NewJunction), !cfg!(windows));
     }
 
     #[test]

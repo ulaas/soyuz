@@ -359,7 +359,7 @@ fn pdf_available() -> bool {
         return false;
     }
     let dirs = super::preview_pdf::pdfium_dirs(&PDFIUM_DIR.lock());
-    super::preview_pdf::find_pdfium(&dirs).is_some()
+    super::preview_pdf::pdfium_available(&dirs)
 }
 
 /// The first page rendered by pdfium, fitted into `key.px` square (on the pdfium thread).

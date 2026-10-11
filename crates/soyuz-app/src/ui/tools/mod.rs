@@ -270,8 +270,8 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
     versions::begin_frame(app);
     sync_sched::tick(app, ctx);
-    // macOS Finder tags for the visible folders.
-    if cfg!(target_os = "macos") {
+    // OS tags for the visible folders (macOS Finder tags, Linux `user.xdg.tags`).
+    if crate::services::tags::os_tags_enabled() {
         for p in app.ws.tab().panes.iter() {
             if let Location::Dir(d) = &p.location {
                 crate::services::tags::request_finder(d, &wake);

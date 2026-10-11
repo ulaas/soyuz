@@ -288,7 +288,9 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 _ => LinkChoice::Symlink,
             };
             let names: Vec<String> = app.ws.pane().entries.iter().map(|e| e.name.clone()).collect();
-            app.ui.dialogs.push(LinkDialog::new(d, sel.first().cloned(), choice, names));
+            let windows_rules =
+                rename::windows_rules_for(app.config.general.strict_windows_names, &app.ui.volumes, Some(&d));
+            app.ui.dialogs.push(LinkDialog::new(d, sel.first().cloned(), choice, names).windows_rules(windows_rules));
         }
         A::Delete | A::DeletePermanent | A::SecureWipe => {
             if in_trash {
@@ -747,7 +749,14 @@ fn reconcile_prompts(app: &mut SoyuzApp) {
             total: fo.prompts.visible_len(),
         }));
         fo.prompt_dialog = Some((job, shared.clone()));
-        app.ui.dialogs.push(PromptDialog::new(job, prompt, title, shared));
+        // Rename-on-conflict names follow the target volume's rules.
+        let windows_rules = match &prompt {
+            JobPrompt::Conflict(c) => {
+                rename::windows_rules_for(app.config.general.strict_windows_names, &app.ui.volumes, c.dst.path.parent())
+            }
+            _ => cfg!(windows),
+        };
+        app.ui.dialogs.push(PromptDialog::new(job, prompt, title, shared).windows_rules(windows_rules));
     }
 }
 

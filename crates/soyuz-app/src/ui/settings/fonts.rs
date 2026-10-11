@@ -25,7 +25,11 @@ fn roles() -> [RoleInfo; 6] {
         RoleInfo {
             kind: FontRoleKind::Ui,
             label: tr!("settings-fonts-interface"),
-            desc: tr!("settings-fonts-interface-desc"),
+            desc: if cfg!(target_os = "linux") {
+                tr!("settings-fonts-interface-desc-linux")
+            } else {
+                tr!("settings-fonts-interface-desc")
+            },
             hint: Fonts::DEFAULT_UI,
             sample: tr!("settings-fonts-sample-ui"),
         },

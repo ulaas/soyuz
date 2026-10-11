@@ -263,7 +263,7 @@ pub enum Start {
 pub fn open(app: &mut SoyuzApp, tab: Tab, start: Option<Start>) {
     match targets(app) {
         Ok((pane, entries)) => {
-            let d = PropertiesDialog::new(pane, entries, app.config.general.size_style, tab, start);
+            let d = PropertiesDialog::new(pane, entries, app.config.general.size_style, tab, start).naming(app);
             app.ui.dialogs.push(d);
         }
         Err(e) => {
@@ -400,6 +400,8 @@ pub struct PropertiesDialog {
     checksums: Option<Checksums>,
     start: Option<Start>,
     error: Option<String>,
+    /// Validate a new name with the Windows rules (see `rename::windows_rules_for`).
+    windows_rules: bool,
     thumb: Option<Bg<Option<egui::ColorImage>>>,
     thumb_tex: Option<egui::TextureHandle>,
     /// Link target of a single symlink / junction, read once in the background (it used
@@ -477,6 +479,7 @@ impl PropertiesDialog {
             checksums: file.then(|| Checksums::new(first.path.clone())),
             start,
             error: None,
+            windows_rules: cfg!(windows),
             thumb: None,
             thumb_tex: None,
             link_target: None,
@@ -487,6 +490,18 @@ impl PropertiesDialog {
                 .then(|| super::properties_inode::InodeEdit::new(entries.iter().map(|e| e.path.clone()).collect())),
             entries,
         }
+    }
+
+    /// Name rules of the item's folder (Windows rules on FAT / exFAT / NTFS volumes
+    /// or with `[general] strict_windows_names`; cached volume list, no I/O).
+    pub fn naming(mut self, app: &crate::app::SoyuzApp) -> Self {
+        let dir = self.entries.first().and_then(|e| e.path.parent());
+        self.windows_rules = crate::ops::fileops::rename::windows_rules_for(
+            app.config.general.strict_windows_names,
+            &app.ui.volumes,
+            dir,
+        );
+        self
     }
 
     fn single(&self) -> Option<&EntryInfo> {
@@ -826,7 +841,7 @@ impl PropertiesDialog {
         let rename = match self.single() {
             Some(e) if self.name.trim() != e.name => {
                 let n = self.name.trim().to_string();
-                if let Err(err) = soyuz_core::validate_name(&n) {
+                if let Err(err) = soyuz_core::validate_name_with(&n, self.windows_rules) {
                     self.error = Some(tr!("dialogs-props-invalid-name", error = err.to_string()));
                     return false;
                 }

@@ -23,6 +23,8 @@ use crate::theme::{icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
+    // Junctions are NTFS-only: a bound key elsewhere opens the symbolic link dialog.
+    let kind = if kind == LinkChoice::Junction && !cfg!(windows) { LinkChoice::Symlink } else { kind };
     let pane = app.ws.pane();
     let Some(dir) = pane.location.as_fs_path().map(Path::to_path_buf) else {
         app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
@@ -34,7 +36,12 @@ pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
     }
     let target = if pane.selection.is_empty() { None } else { pane.selected_entries().first().map(|e| e.path.clone()) };
     let names: Vec<String> = pane.entries.iter().map(|e| e.name.clone()).collect();
-    app.ui.dialogs.push(LinkDialog::new(dir, target, kind, names));
+    let windows_rules = crate::ops::fileops::rename::windows_rules_for(
+        app.config.general.strict_windows_names,
+        &app.ui.volumes,
+        Some(&dir),
+    );
+    app.ui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
 }
 
 /// `target` relative to `base` (`None` when they share no root, e.g. other drive).
@@ -130,6 +137,8 @@ pub struct LinkDialog {
     edited_at: Option<std::time::Instant>,
     /// Apply the probe's `browse` suggestion once it arrives (typed edits only).
     follow_browse: bool,
+    /// Validate the name with the Windows rules (see `rename::windows_rules_for`).
+    windows_rules: bool,
 }
 
 impl LinkDialog {
@@ -154,7 +163,14 @@ impl LinkDialog {
             probe: None,
             edited_at: None,
             follow_browse: false,
+            windows_rules: cfg!(windows),
         }
+    }
+
+    /// Validate names with the Windows rules (Windows-family volume or strict names).
+    pub fn windows_rules(mut self, on: bool) -> Self {
+        self.windows_rules = on;
+        self
     }
 
     fn target_path(&self) -> PathBuf {
@@ -196,7 +212,8 @@ impl LinkDialog {
         if self.listing.as_ref().is_none_or(|(d, _)| *d != dir) {
             let d2 = dir.clone();
             let bg = Bg::spawn(ui.ctx(), move || {
-                let opts = ListOptions { include_hidden: false, ..ListOptions::default() };
+                let dot_hidden = crate::services::lister::dot_hidden();
+                let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
                 soyuz_fs::read_dir(&d2, &opts).map_err(|e| e.to_string()).map(|mut v| {
                     v.sort_by(|a, b| {
                         b.is_dir_like()
@@ -454,7 +471,7 @@ impl Dialog for LinkDialog {
         let target = self.target_path();
         let err: Option<String> = if self.target.trim().is_empty() {
             Some(tr!("dialogs-link-choose-target").into())
-        } else if let Err(e) = soyuz_core::validate_name(&name) {
+        } else if let Err(e) = soyuz_core::validate_name_with(&name, self.windows_rules) {
             Some(tr!("dialogs-props-invalid-name", error = e.to_string()))
         } else if self.existing.iter().any(|e| e.eq_ignore_ascii_case(&name)) {
             Some(tr!("dialogs-link-exists", name = &name))

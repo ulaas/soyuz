@@ -211,6 +211,7 @@ fn linux_group(ui: &mut Ui, q: &str, d: &mut soyuz_core::config::Config) -> bool
             "dbus filemanager1 show in folder reveal browser",
             |ui| {
                 switch(ui, &mut d.linux.own_file_manager1);
+                fm1_status(ui, d.linux.own_file_manager1);
             },
         );
         r.row_kw(
@@ -222,6 +223,22 @@ fn linux_group(ui: &mut Ui, q: &str, d: &mut soyuz_core::config::Config) -> bool
             },
         );
     })
+}
+
+/// State of the FileManager1 service next to its switch (a snapshot; never blocks).
+fn fm1_status(ui: &mut Ui, wanted: bool) {
+    let p = palette(ui.ctx());
+    let (text, color) = match crate::services::filemanager1::status() {
+        Some(Ok(())) => (tr!("settings-linux-fm1-serving").to_string(), p.success),
+        Some(Err(why)) => (why, p.warning),
+        None if wanted => {
+            // Starting (or the change is not applied yet): look again shortly.
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs(1));
+            (tr!("settings-linux-fm1-pending").to_string(), p.text_tertiary)
+        }
+        None => (tr!("settings-linux-fm1-off").to_string(), p.text_tertiary),
+    };
+    ui.label(RichText::new(text).size(11.5).color(color));
 }
 
 fn modes() -> [dd::Item<ViewMode>; 5] {

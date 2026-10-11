@@ -87,6 +87,17 @@ fn mask_volumes(v: &mut Vec<VolumeInfo>) {
     }
 }
 
+/// Volumes listed under Drives: rclone FUSE mounts that the Cloud section already shows
+/// are left out (they would appear twice). Borrows when there is nothing to drop.
+pub fn drive_volumes<'a>(vols: &'a [VolumeInfo], cloud: &[(String, PathBuf)]) -> std::borrow::Cow<'a, [VolumeInfo]> {
+    let in_cloud = |v: &VolumeInfo| v.fs == "fuse.rclone" && cloud.iter().any(|(_, p)| *p == v.mount);
+    if vols.iter().any(in_cloud) {
+        std::borrow::Cow::Owned(vols.iter().filter(|v| !in_cloud(v)).cloned().collect())
+    } else {
+        std::borrow::Cow::Borrowed(vols)
+    }
+}
+
 /// Cloud storage roots: OneDrive variables (Windows), `~/Library/CloudStorage/*`
 /// (macOS), gvfs cloud mounts and rclone mounts (Linux) and well-known folders under
 /// home. No shell APIs involved.
@@ -242,6 +253,27 @@ mod tests {
         assert!(found.iter().any(|(n, _)| n == "Dropbox"));
         assert!(found.iter().any(|(n, _)| n == "GoogleDrive me"));
         assert!(!found.iter().any(|(n, _)| n == "Nextcloud"));
+    }
+
+    #[test]
+    fn rclone_cloud_mounts_leave_drives() {
+        let vol = |mount: &str, fs: &str| VolumeInfo {
+            mount: PathBuf::from(mount),
+            label: String::new(),
+            fs: fs.into(),
+            kind: soyuz_fs::VolumeKind::Network,
+            total: 0,
+            free: 0,
+            read_only: false,
+            device: soyuz_core::DeviceId(0),
+            supports: soyuz_fs::FsCaps::empty(),
+        };
+        let vols = vec![vol("/", "btrfs"), vol("/mnt/g", "fuse.rclone"), vol("/mnt/h", "fuse.rclone")];
+        let cloud = vec![("g (rclone)".to_string(), PathBuf::from("/mnt/g"))];
+        let d = drive_volumes(&vols, &cloud);
+        let mounts: Vec<_> = d.iter().map(|v| v.mount.to_string_lossy().into_owned()).collect();
+        assert_eq!(mounts, ["/", "/mnt/h"], "only rclone mounts shown under Cloud are dropped");
+        assert!(matches!(drive_volumes(&vols, &[]), std::borrow::Cow::Borrowed(_)));
     }
 
     #[test]

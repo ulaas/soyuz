@@ -59,6 +59,8 @@ pub struct LinkDialog {
     existing: Vec<String>,
     focus: bool,
     name_touched: bool,
+    /// Validate the name with the Windows rules (see `rename::windows_rules_for`).
+    windows_rules: bool,
 }
 
 impl LinkDialog {
@@ -66,7 +68,22 @@ impl LinkDialog {
         let target_s = target.as_ref().map(|t| soyuz_fs::strip_verbatim(t).display().to_string()).unwrap_or_default();
         let refs: Vec<&str> = existing.iter().map(String::as_str).collect();
         let name = target.as_ref().map(|t| crate::ops::fileops::names::link_name(t, &refs)).unwrap_or_default();
-        LinkDialog { dir, target: target_s, name, kind, existing, focus: true, name_touched: false }
+        LinkDialog {
+            dir,
+            target: target_s,
+            name,
+            kind,
+            existing,
+            focus: true,
+            name_touched: false,
+            windows_rules: cfg!(windows),
+        }
+    }
+
+    /// Validate names with the Windows rules (Windows-family volume or strict names).
+    pub fn windows_rules(mut self, on: bool) -> Self {
+        self.windows_rules = on;
+        self
     }
 }
 
@@ -110,7 +127,7 @@ impl Dialog for LinkDialog {
         let target = self.target.trim().to_string();
         let err = if target.is_empty() {
             Some(tr!("dialogs-link-need-target").to_string())
-        } else if let Err(e) = soyuz_core::validate_name(&name) {
+        } else if let Err(e) = soyuz_core::validate_name_with(&name, self.windows_rules) {
             Some(tr!("dialogs-props-invalid-name", error = e.to_string()))
         } else if self.existing.iter().any(|e| e.eq_ignore_ascii_case(&name)) {
             Some(tr!("dialogs-link-exists", name = &name))

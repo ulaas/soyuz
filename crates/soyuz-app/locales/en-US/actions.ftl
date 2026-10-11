@@ -542,3 +542,10 @@ actions-command-empty = “{ $name }” has no command
 actions-command-run-failed = Couldn't run “{ $name }”
 actions-command-start-failed = Couldn't start the command
 actions-command-running = Running “{ $name }”
+
+## Linux (glue)
+action-root-desc-linux = Go to the file system root (/)
+action-run-elevated-desc-linux = Run the selection as root (asks through polkit)
+action-paste-shortcut-desc-linux = Paste the clipboard as symbolic links
+action-set-attributes-desc-linux = Change permissions, file flags and timestamps
+action-previous-versions-desc-linux = Browse and restore earlier versions from Btrfs / ZFS snapshots (Snapper, Timeshift)
