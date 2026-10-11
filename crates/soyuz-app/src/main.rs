@@ -5,6 +5,21 @@
 
 use std::process::ExitCode;
 
+/// `println!` / `eprintln!` that never panic: a GUI-subsystem binary may have no stream,
+/// and a caller may close its pipe early (a panic there would write a crash report).
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout(), $($t)*);
+    }};
+}
+macro_rules! err {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($t)*);
+    }};
+}
+
 /// Renderer requested on the command line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RendererChoice {
@@ -106,7 +121,7 @@ fn resolve_renderer(choice: RendererChoice) -> (eframe::Renderer, &'static str) 
         RendererChoice::Glow => (eframe::Renderer::Glow, "glow"),
         #[cfg(not(feature = "glow"))]
         RendererChoice::Glow => {
-            eprintln!(
+            err!(
                 "soyuz: this build has no OpenGL renderer; rebuild with `cargo build --features glow`. \
                  Falling back to wgpu."
             );
@@ -214,7 +229,7 @@ fn main() -> ExitCode {
         Ok(None) => {}
         Err(e) => {
             soyuz_fs::console::attach_parent();
-            eprintln!(
+            err!(
                 "soyuz: {e}
 
 Run `soyuz <command> --help` for usage."
@@ -227,7 +242,7 @@ Run `soyuz <command> --help` for usage."
         Ok(Some(opts)) => return ExitCode::from(soyuz_mcp::cli::run(opts).clamp(0, 255) as u8),
         Ok(None) => {}
         Err(e) => {
-            eprintln!(
+            err!(
                 "soyuz: {e}
 
 {USAGE}"
@@ -238,17 +253,19 @@ Run `soyuz <command> --help` for usage."
     let cli = match parse_args(args) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("soyuz: {e}\n\n{USAGE}");
+            err!("soyuz: {e}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     let renderer = match cli {
         Cli::Help => {
-            println!("{USAGE}");
+            soyuz_fs::console::attach_parent();
+            out!("{USAGE}");
             return ExitCode::SUCCESS;
         }
         Cli::Version => {
-            println!("soyuz {} ({})", env!("CARGO_PKG_VERSION"), soyuz_app::GIT_SHA);
+            soyuz_fs::console::attach_parent();
+            out!("soyuz {} ({})", env!("CARGO_PKG_VERSION"), soyuz_app::GIT_SHA);
             return ExitCode::SUCCESS;
         }
         Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),
@@ -356,13 +373,13 @@ Run `soyuz <command> --help` for usage."
     if let Some(exe) = soyuz_app::services::updates::take_restart() {
         let e = soyuz_app::services::updates::exec_restart(&exe);
         log::error!("soyuz: restart failed: {e}");
-        eprintln!("soyuz: restart failed: {e}");
+        err!("soyuz: restart failed: {e}");
     }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             log::error!("soyuz: {e}");
-            eprintln!("soyuz: {e}");
+            err!("soyuz: {e}");
             ExitCode::FAILURE
         }
     }
