@@ -557,6 +557,7 @@ impl SoyuzApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(t.clone()));
             self.ui.title = t;
         }
+        crate::ui::a11y::window_name(ctx, &self.ui.title);
     }
 }
 

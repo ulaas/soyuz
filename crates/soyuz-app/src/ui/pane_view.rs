@@ -54,6 +54,10 @@ fn header(ui: &mut Ui, r: Rect, pane: &Pane, v: &mut ViewCtx<'_>) {
         v.cmds.push(Cmd::FocusPane(pane.id));
     }
     let active = v.focused;
+    if crate::ui::a11y::active(ui.ctx()) {
+        let name = format!("{}, {}", location_title(&pane.location), pane.location.display());
+        crate::ui::a11y::toggle(&resp, &name, active);
+    }
     let dot = pos2(r.left() + 16.0, r.center().y);
     ui.painter().circle_filled(dot, 3.5, if active { p.accent } else { p.border_strong });
     let title = location_title(&pane.location);

@@ -251,6 +251,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             }
         });
     app.ui.preview.width = resp.response.rect.width();
+    crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.preview", crate::tr!("app-a11y-resize-preview"));
     if close {
         app.ui.preview.toggle();
     }
