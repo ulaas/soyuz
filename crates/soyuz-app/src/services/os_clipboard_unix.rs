@@ -138,11 +138,18 @@ fn tools_allowed() -> bool {
     !cfg!(target_os = "linux") || super::fallback_tools()
 }
 
+/// Never blocks (called on the UI thread on Copy / Cut): before the native backend has
+/// been probed, the answer is "yes" and the write (on its own thread) finds out.
 #[cfg(not(target_os = "macos"))]
 pub(super) fn can_set(_n: usize) -> bool {
     #[cfg(target_os = "linux")]
-    if native::backend().is_some() {
-        return true;
+    match native::probed() {
+        Some(Some(_)) => return true,
+        Some(None) => {}
+        None => {
+            probe_in_background();
+            return true;
+        }
     }
     tools_allowed() && tools_can_set()
 }
@@ -180,7 +187,19 @@ pub(super) fn get_files() -> Option<(ClipMode, Vec<PathBuf>)> {
 }
 
 /// Empty the clipboard if it still holds a cut (runs on a background writer thread).
+/// Linux: a cut we own is dropped by its owner thread (only while it is still ours); a
+/// cut from another application is cleared only if its owner did not change since it
+/// was read.
 pub(super) fn clear_if_cut() {
+    #[cfg(target_os = "linux")]
+    match native::clear_if_cut() {
+        Ok(()) => return,
+        Err(e) if !tools_allowed() => {
+            log::debug!("clipboard: {e}");
+            return;
+        }
+        Err(e) => log::debug!("clipboard: {e}; trying the fallback tools"),
+    }
     if let Some((ClipMode::Cut, _)) = read_files() {
         clear();
     }
@@ -287,13 +306,12 @@ pub(super) fn probe_in_background() {
 #[cfg(target_os = "linux")]
 pub(super) mod native {
     use std::path::PathBuf;
-    use std::sync::Arc;
     use std::sync::OnceLock;
-    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::atomic::Ordering;
 
     use parking_lot::Mutex;
 
-    use super::super::{files_from_selection, selection_formats, wayland, x11};
+    use super::super::{SelectionOwner, files_from_selection, selection_formats, wayland, x11};
     use crate::ops::fileops::clipboard::ClipMode;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -304,7 +322,13 @@ pub(super) mod native {
 
     static BACKEND: OnceLock<Option<Backend>> = OnceLock::new();
 
-    /// The usable backend (probed once: one Wayland roundtrip / one X connection).
+    /// The backend if the probe already ran (`None` = not probed yet). Never blocks.
+    pub fn probed() -> Option<Option<Backend>> {
+        BACKEND.get().copied()
+    }
+
+    /// The usable backend (probed once: one Wayland roundtrip / one X connection, each
+    /// bounded by a timeout). Blocks on the first call: call off the UI thread.
     pub fn backend() -> Option<Backend> {
         *BACKEND.get_or_init(|| {
             let set = |v: &str| std::env::var_os(v).is_some_and(|x| !x.is_empty());
@@ -324,24 +348,27 @@ pub(super) mod native {
     struct Owned {
         mode: ClipMode,
         paths: Vec<PathBuf>,
-        alive: Arc<AtomicBool>,
+        owner: SelectionOwner,
     }
 
     static OWNED: Mutex<Option<Owned>> = Mutex::new(None);
 
     fn owned() -> Option<(ClipMode, Vec<PathBuf>)> {
         let g = OWNED.lock();
-        g.as_ref().filter(|o| o.alive.load(Ordering::SeqCst)).map(|o| (o.mode, o.paths.clone()))
+        g.as_ref().filter(|o| o.owner.alive.load(Ordering::SeqCst)).map(|o| (o.mode, o.paths.clone()))
     }
 
     pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
         let formats = selection_formats(mode, paths);
-        let alive = match backend() {
+        let owner = match backend() {
             Some(Backend::Wayland) => wayland::set(formats)?,
             Some(Backend::X11) => x11::set(formats)?,
             None => return Err(tr!("services-clipboard-unavailable").into()),
         };
-        *OWNED.lock() = Some(Owned { mode, paths: paths.to_vec(), alive });
+        // The new selection replaces the previous one; make sure its thread ends.
+        if let Some(old) = OWNED.lock().replace(Owned { mode, paths: paths.to_vec(), owner }) {
+            old.owner.release.store(true, Ordering::SeqCst);
+        }
         Ok(())
     }
 
@@ -363,8 +390,32 @@ pub(super) mod native {
         read(|types, rd| files_from_selection(types, rd))
     }
 
+    /// Empty the clipboard if it holds a cut: ours is released by its owner thread
+    /// (which gives it up only while still the owner); another application's is cleared
+    /// only if the selection did not change since it was read.
+    pub fn clear_if_cut() -> Result<(), String> {
+        {
+            let mut g = OWNED.lock();
+            if let Some(o) = g.as_ref().filter(|o| o.owner.alive.load(Ordering::SeqCst)) {
+                if o.mode == ClipMode::Cut {
+                    o.owner.release.store(true, Ordering::SeqCst);
+                    *g = None;
+                }
+                return Ok(());
+            }
+        }
+        let is_cut = |r: &Option<(ClipMode, Vec<PathBuf>)>| matches!(r, Some((ClipMode::Cut, _)));
+        match backend() {
+            Some(Backend::Wayland) => wayland::read_and_clear_if(|t, rd| files_from_selection(t, rd), is_cut).map(drop),
+            Some(Backend::X11) => x11::read_and_clear_if(|t, rd| files_from_selection(t, rd), is_cut).map(drop),
+            None => Err(tr!("services-clipboard-unavailable").into()),
+        }
+    }
+
     pub fn clear() -> Result<(), String> {
-        *OWNED.lock() = None;
+        if let Some(old) = OWNED.lock().take() {
+            old.owner.release.store(true, Ordering::SeqCst);
+        }
         match backend() {
             Some(Backend::Wayland) => wayland::clear(),
             Some(Backend::X11) => x11::clear(),
@@ -379,6 +430,31 @@ pub(super) mod native {
         fn wl_paste(args: &[&str]) -> Option<String> {
             let out = std::process::Command::new("wl-paste").args(args).output().ok()?;
             out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        }
+
+        /// A cut is cleared after a paste, a copy is left alone; our own selection is
+        /// released by its owner thread.
+        #[test]
+        fn clear_if_cut_only_clears_cuts() {
+            if std::env::var_os("SOYUZ_CLIPBOARD_TESTS").is_none() {
+                return;
+            }
+            assert!(backend().is_some(), "no native clipboard backend");
+            let through_server = || read(|types, rd| files_from_selection(types, rd)).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let a = dir.path().join("a.txt");
+            std::fs::write(&a, b"a").unwrap();
+            set_files(ClipMode::Copy, std::slice::from_ref(&a)).unwrap();
+            clear_if_cut().unwrap();
+            assert_eq!(through_server(), Some((ClipMode::Copy, vec![a.clone()])), "a copy stays");
+            set_files(ClipMode::Cut, std::slice::from_ref(&a)).unwrap();
+            clear_if_cut().unwrap();
+            assert_eq!(owned(), None);
+            let start = std::time::Instant::now();
+            while through_server().is_some() && start.elapsed() < std::time::Duration::from_secs(2) {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            assert_eq!(through_server(), None, "the released cut is gone");
         }
 
         /// Copies files to the real session clipboard, reads them back through our own

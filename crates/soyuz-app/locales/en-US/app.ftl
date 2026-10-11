@@ -338,3 +338,6 @@ app-a11y-resize-shelf = Resize the shelf
 app-a11y-resize-preview = Resize the preview pane
 app-a11y-resize-assistant = Resize the assistant panel
 app-a11y-resize-panes = Resize the panes
+
+## fix-svc
+app-restart-cancelled = Restart cancelled. The update is installed and is used from the next start.

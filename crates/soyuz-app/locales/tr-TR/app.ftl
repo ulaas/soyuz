@@ -332,3 +332,6 @@ app-a11y-resize-shelf = Rafı yeniden boyutlandır
 app-a11y-resize-preview = Önizleme bölmesini yeniden boyutlandır
 app-a11y-resize-assistant = Asistan panelini yeniden boyutlandır
 app-a11y-resize-panes = Bölmeleri yeniden boyutlandır
+
+## fix-svc
+app-restart-cancelled = Yeniden başlatma iptal edildi. Güncelleme kuruldu, bir sonraki açılışta kullanılacak.

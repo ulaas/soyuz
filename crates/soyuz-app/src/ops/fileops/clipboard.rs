@@ -1,6 +1,6 @@
 //! Internal file clipboard (copy / cut). Copy / cut also put the files on the OS
 //! clipboard (`services::os_clipboard`: CF_HDROP, `x-special/gnome-copied-files`, …) and
-//! paste prefers files found there, see [`Clipboard::os_paths_hook`].
+//! paste prefers files found there, see `services::os_clipboard::with_files`.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -69,12 +69,6 @@ impl Clipboard {
     /// Text placed on the OS clipboard: one path per line.
     pub fn os_text(paths: &[PathBuf]) -> String {
         paths.iter().map(|p| soyuz_fs::strip_verbatim(p).to_string_lossy().into_owned()).collect::<Vec<_>>().join("\n")
-    }
-
-    /// Files on the system clipboard (copied in Soyuz or in another file manager), with
-    /// copy-vs-move from the clipboard's drop effect. `None` → the internal clipboard.
-    pub fn os_paths_hook() -> Option<(ClipMode, Vec<PathBuf>)> {
-        crate::services::os_clipboard::get_files()
     }
 }
 

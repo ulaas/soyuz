@@ -624,18 +624,20 @@ fn offsets_id() -> egui::Id {
 /// Returns notices for fonts that are not installed.
 pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
     let t = std::time::Instant::now();
+    // Recorded first: a re-install scheduled below must see this `[fonts]`, even when
+    // the catalog becomes ready while this install is still running.
+    *LAST.lock() = Some(fonts.clone());
     sysfonts::take_missed();
     let roles = resolve(fonts, &sysfonts::locate, &is_variable_file);
     if sysfonts::take_missed() {
         // Linux: a system font was asked for while the font catalog is still being built
-        // in the background; install again (with the latest `[fonts]`) once it is.
+        // in the background; install again (with the latest `[fonts]`) once it is, on
+        // the UI thread at the start of the next frame ([`begin_frame`]). The hook only
+        // flags it: it may run right away (catalog just finished), inside this install.
         let ctx = ctx.clone();
         sysfonts::when_catalog_ready(move || {
-            let last = LAST.lock().clone();
-            if let Some(fonts) = last {
-                let _ = install(&ctx, &fonts);
-                ctx.request_repaint();
-            }
+            REINSTALL_DUE.store(true, std::sync::atomic::Ordering::SeqCst);
+            ctx.request_repaint();
         });
     }
     let defs = build(fonts, &roles, &load_static);
@@ -645,7 +647,6 @@ pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
     {
         PREVIEWS_FROM.store(ctx.cumulative_pass_nr(), std::sync::atomic::Ordering::Relaxed);
     }
-    *LAST.lock() = Some(fonts.clone());
     let offsets: [f32; 6] = std::array::from_fn(|i| fonts.role(FontRoleKind::ALL[i]).offset());
     ctx.data_mut(|d| d.insert_temp(offsets_id(), offsets));
     log::debug!(
@@ -657,6 +658,22 @@ pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
         roles.iter().filter_map(|r| r.notice.as_ref().map(|n| format!("[fonts.{}] {n}", r.role.key()))).collect();
     *STATUS.lock() = roles;
     notices
+}
+
+/// The system font catalog became ready after an install that needed it.
+static REINSTALL_DUE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Re-install the last `[fonts]` when the system font catalog became ready since (call
+/// once per frame, on the UI thread, before anything is drawn).
+pub fn begin_frame(ctx: &Context) {
+    if !REINSTALL_DUE.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let last = LAST.lock().clone();
+    if let Some(fonts) = last {
+        let _ = install(ctx, &fonts);
+        ctx.request_repaint();
+    }
 }
 
 /// `[fonts.<role>] size_offset` (points) as installed.
@@ -706,6 +723,17 @@ mod tests {
                 .find(|h| sysfonts::norm(h) == sysfonts::norm(name))
                 .map(|h| (PathBuf::from(format!("C:/F/{}.ttf", sysfonts::norm(h))), 0))
         }
+    }
+
+    #[test]
+    fn catalog_ready_reinstalls_on_the_next_frame() {
+        let ctx = Context::default();
+        let fonts = Fonts::default();
+        let _ = install(&ctx, &fonts);
+        assert!(LAST.lock().is_some(), "recorded by install");
+        REINSTALL_DUE.store(true, std::sync::atomic::Ordering::SeqCst);
+        begin_frame(&ctx);
+        assert!(!REINSTALL_DUE.load(std::sync::atomic::Ordering::SeqCst), "handled once, on the frame");
     }
 
     fn src(r: &[Resolved], role: FontRoleKind) -> Source {

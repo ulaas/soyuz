@@ -512,9 +512,11 @@ impl SoyuzApp {
         use std::sync::atomic::Ordering;
         // Other windows open: closing the main window closes just this window.
         if crate::ui::workspaces::windows::intercept_main_close(self, ctx) {
+            self.close_cancelled();
             return;
         }
         if crate::editors::intercept_close(self, ctx) {
+            self.close_cancelled();
             return;
         }
         let pending = self.fileops.jobs.pending().count();
@@ -531,10 +533,20 @@ impl SoyuzApp {
             return;
         }
         ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        self.close_cancelled();
         if !self.quit.prompting.swap(true, Ordering::SeqCst) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             self.ui.dialogs.push(crate::ui::dialogs::quit::QuitDialog::new(pending, self.quit.prompting.clone()));
+        }
+    }
+
+    /// A window close was cancelled (to ask first): an "Install & restart" that started
+    /// it no longer restarts; the update stays installed for the next start.
+    fn close_cancelled(&mut self) {
+        if crate::services::updates::cancel_restart() {
+            self.workspaces.quitting = false;
+            self.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("app-restart-cancelled")));
         }
     }
 
@@ -662,6 +674,7 @@ impl SoyuzApp {
         crate::devscript::inject(self, &ctx);
         crate::ui::workspaces::windows::begin_main_frame(self, &ctx);
         self.services.thumbs.begin_frame();
+        crate::theme::fonts::begin_frame(&ctx);
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);
         crate::ui::sidebar::pump(self);
@@ -679,6 +692,7 @@ impl SoyuzApp {
         crate::services::updates::pump(self, &ctx);
         crate::services::filemanager1::pump(self, &ctx);
         crate::ui::remote::pump(self, &ctx);
+        crate::services::os_clipboard::pump(self);
         self.apply_cmds(&ctx);
         self.handle_input(&ctx);
         self.apply_cmds(&ctx);
@@ -730,6 +744,8 @@ impl eframe::App for SoyuzApp {
     }
 
     fn on_exit(&mut self) {
+        // The close went through: an "Install & restart" now restarts.
+        crate::services::updates::arm_restart();
         crate::ops::fileops::linux_dnd::shutdown();
     }
 
