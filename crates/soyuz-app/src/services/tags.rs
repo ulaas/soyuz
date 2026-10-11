@@ -471,6 +471,8 @@ impl XdgQueue {
 /// Mirror tag edits into `user.xdg.tags` (Linux, when synced) on one serial writer
 /// thread: edits to the same file are applied in order (coalesced when they queue up),
 /// so a later edit can never be overtaken by an earlier one.
+// The early return is the last statement when the Linux block is compiled out.
+#[cfg_attr(not(target_os = "linux"), allow(clippy::needless_return))]
 fn sync_xdg(changes: Vec<(PathBuf, XdgEdit)>) {
     if !xdg_sync() || changes.is_empty() {
         return;

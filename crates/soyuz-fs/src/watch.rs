@@ -852,8 +852,12 @@ mod tests {
         let id = w.watch(&dir, true).unwrap();
         assert!(w.is_polled(id));
         assert!(w.degraded().is_some());
-        let native = w.debouncer.clone().unwrap();
-        assert!(native.lock().unwatch(&dir).is_err(), "the native watch was already removed");
+        // notify's Windows backend reports Ok for any unwatch, so only unix can tell.
+        #[cfg(not(windows))]
+        {
+            let native = w.debouncer.clone().unwrap();
+            assert!(native.lock().unwatch(&dir).is_err(), "the native watch was already removed");
+        }
         w.unwatch(id);
     }
 

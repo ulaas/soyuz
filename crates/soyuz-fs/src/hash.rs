@@ -23,7 +23,7 @@ impl Hasher {
             HashAlgo::Blake3 => Hasher::Blake3(Box::new(blake3::Hasher::new())),
             HashAlgo::Sha256 => Hasher::Sha256(sha2::Sha256::new()),
             HashAlgo::Sha1 => Hasher::Sha1(sha1::Sha1::new()),
-            HashAlgo::Md5 => Hasher::Md5(md5::Md5::new()),
+            HashAlgo::Md5 => Hasher::Md5(<md5::Md5 as md5::Digest>::new()),
             HashAlgo::Crc32 => Hasher::Crc32(crc32fast::Hasher::new()),
         }
     }
@@ -36,7 +36,8 @@ impl Hasher {
             }
             Hasher::Sha256(x) => x.update(data),
             Hasher::Sha1(x) => x.update(data),
-            Hasher::Md5(x) => x.update(data),
+            // md-5 is on digest 0.11, sha1 / sha2 on 0.10: name its own trait.
+            Hasher::Md5(x) => md5::Digest::update(x, data),
             Hasher::Crc32(x) => x.update(data),
         }
     }
@@ -47,7 +48,7 @@ impl Hasher {
             Hasher::Blake3(x) => x.finalize().to_hex().to_string(),
             Hasher::Sha256(x) => hex(&x.finalize()),
             Hasher::Sha1(x) => hex(&x.finalize()),
-            Hasher::Md5(x) => hex(&x.finalize()),
+            Hasher::Md5(x) => hex(&md5::Digest::finalize(x)),
             Hasher::Crc32(x) => format!("{:08x}", x.finalize()),
         }
     }
