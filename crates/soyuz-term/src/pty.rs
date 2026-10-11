@@ -267,32 +267,15 @@ pub(crate) fn looks_like_prompt(left: &str, right: &str) -> bool {
     matches!(trimmed.chars().last(), Some('>' | '$' | '%' | '#' | '❯' | '➜' | 'λ' | '»' | '›'))
 }
 
-/// Fallback cwd discovery for shells without integration (Linux `/proc`; macOS
-/// `proc_pidinfo(PROC_PIDVNODEPATHINFO)`, untested on macOS).
+/// Fallback cwd discovery for shells without integration (Linux `/proc`). Other OSes rely
+/// on OSC 7 and the title hook: macOS' `proc_pidinfo` would need `unsafe`, which this crate
+/// only allows in `tty_tee.rs`.
 pub(crate) fn process_cwd(pid: u32) -> Option<PathBuf> {
     #[cfg(target_os = "linux")]
     {
         std::fs::read_link(format!("/proc/{pid}/cwd")).ok()
     }
-    #[cfg(target_os = "macos")]
-    {
-        use std::os::unix::ffi::OsStrExt;
-        let pid = libc::c_int::try_from(pid).ok()?;
-        // SAFETY: all-zero is a valid `proc_vnodepathinfo` (plain integers and arrays).
-        let mut info: libc::proc_vnodepathinfo = unsafe { std::mem::zeroed() };
-        let size = std::mem::size_of::<libc::proc_vnodepathinfo>();
-        // SAFETY: `info` is a writable buffer of exactly `size` bytes for this flavor.
-        let n = unsafe {
-            libc::proc_pidinfo(pid, libc::PROC_PIDVNODEPATHINFO, 0, (&raw mut info).cast(), size as libc::c_int)
-        };
-        if usize::try_from(n).ok() != Some(size) {
-            return None;
-        }
-        let raw = &info.pvi_cdir.vip_path;
-        let bytes: Vec<u8> = raw.iter().flatten().take_while(|&&c| c != 0).map(|&c| c as u8).collect();
-        (!bytes.is_empty()).then(|| PathBuf::from(std::ffi::OsStr::from_bytes(&bytes)))
-    }
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    #[cfg(not(target_os = "linux"))]
     {
         let _ = pid;
         None
