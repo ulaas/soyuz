@@ -250,6 +250,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     switch(ui, &mut d.appearance.os_thumbnail_cache);
                 },
             );
+            r.row_kw(
+                tr!("settings-appearance-write-os-thumbs"),
+                tr!("settings-appearance-write-os-thumbs-desc"),
+                "thumbcache freedesktop thumbnails cache write share nautilus dolphin",
+                |ui| {
+                    switch(ui, &mut d.appearance.write_os_thumbnails);
+                },
+            );
         }
         r.row_kw(
             tr!("settings-appearance-gpu-backend"),

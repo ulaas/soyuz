@@ -1216,3 +1216,7 @@ settings-views-unmounted-off = Off
 settings-views-hidden-devices = Hidden devices
 settings-views-hidden-devices-desc = Devices hidden with "Hide from sidebar", one filesystem UUID or device path (/dev/sdb1) per line.
 settings-views-hidden-devices-clear = Show all again
+
+## thumbs
+settings-appearance-write-os-thumbs = Share thumbnails with other apps
+settings-appearance-write-os-thumbs-desc = Save the thumbnails Soyuz makes into the freedesktop thumbnail cache (~/.cache/thumbnails), so file managers and file choosers can show them without decoding the files again.

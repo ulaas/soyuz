@@ -8,7 +8,9 @@
 //! Besides pictures, workers make video thumbnails (ffmpeg, `thumb_video`) with a
 //! duration label, PDF first pages (pdfium, when the library is found; otherwise PDFs
 //! keep their icon) and folder mosaics (`thumb_folder`); every decoded result also goes
-//! through the on-disk cache (`thumb_disk`) so it survives restarts.
+//! through the on-disk cache (`thumb_disk`) so it survives restarts. On Linux / BSD,
+//! pictures, video frames and PDF pages Soyuz makes itself are also written to the shared
+//! freedesktop cache (`[appearance] write_os_thumbnails`, [`set_write_os_cache`]).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -104,6 +106,18 @@ pub fn set_os_cache(on: bool) {
 
 /// This platform has an OS thumbnail cache reader in `soyuz_fs::thumbcache`.
 const OS_CACHE_SUPPORTED: bool = cfg!(any(windows, all(unix, not(target_os = "macos"))));
+
+/// `[appearance] write_os_thumbnails` (read by the workers).
+static WRITE_OS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Write the thumbnails Soyuz makes itself into the freedesktop cache, at the size class
+/// matching each request (Linux / BSD only; ignored elsewhere).
+pub fn set_write_os_cache(on: bool) {
+    WRITE_OS.store(on && WRITE_OS_SUPPORTED, Ordering::Relaxed);
+}
+
+/// This platform has a shared thumbnail cache Soyuz writes to.
+const WRITE_OS_SUPPORTED: bool = cfg!(all(unix, not(target_os = "macos")));
 
 /// A PDF that gets a first-page thumbnail (when pdfium turns out to be available).
 pub fn is_pdf_thumbnailable(path: &Path) -> bool {
@@ -323,6 +337,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
         return (None, None);
     }
     let img = match kind {
+        Kind::Image | Kind::Video | Kind::Pdf if WRITE_OS.load(Ordering::Relaxed) => make_shared(key, kind),
         Kind::Image => decode(key),
         Kind::Video => super::thumb_video::frame(&key.path, key.px),
         Kind::Pdf => pdf_first_page(key),
@@ -335,6 +350,68 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
         thumb_disk::put(disk_key, i);
     }
     (img, label)
+}
+
+/// Make the picture at the freedesktop size class matching `key.px` (never upscaled),
+/// write it to the shared cache unless the file changed meanwhile, then fit it into
+/// `key.px` for display (as [`decode`] / [`thumb_video::frame`] / [`pdf_first_page`]
+/// would have made it).
+///
+/// [`thumb_video::frame`]: super::thumb_video::frame
+fn make_shared(key: &ThumbKey, kind: Kind) -> Option<ColorImage> {
+    let (_, class_px) = soyuz_fs::thumbcache::freedesktop_class(key.px);
+    let before = std::fs::metadata(&key.path).and_then(|m| m.modified()).ok();
+    let class_key = ThumbKey { px: class_px, ..key.clone() };
+    let rgba = match kind {
+        Kind::Image => {
+            let img = decode_full(key)?;
+            if img.width() > class_px || img.height() > class_px { img.thumbnail(class_px, class_px) } else { img }
+                .to_rgba8()
+        }
+        Kind::Video => color_to_rgba(&super::thumb_video::frame(&key.path, class_px)?)?,
+        Kind::Pdf => color_to_rgba(&pdf_first_page(&class_key)?)?,
+        Kind::Folder => return None,
+    };
+    if before.is_some() {
+        share_thumb(&key.path, &rgba, class_px, before);
+    }
+    let fit = if kind == Kind::Image || rgba.width() > key.px || rgba.height() > key.px {
+        image::DynamicImage::ImageRgba8(rgba).thumbnail(key.px, key.px).to_rgba8()
+    } else {
+        rgba
+    };
+    Some(ColorImage::from_rgba_unmultiplied([fit.width() as usize, fit.height() as usize], fit.as_raw()))
+}
+
+fn color_to_rgba(c: &ColorImage) -> Option<image::RgbaImage> {
+    let raw: Vec<u8> = c.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
+    image::RgbaImage::from_raw(c.size[0] as u32, c.size[1] as u32, raw)
+}
+
+/// Encode `rgba` and write it as the freedesktop thumbnail of `path` (class `class_px`),
+/// unless a valid one of that class is already there. Errors are only logged.
+fn share_thumb(path: &Path, rgba: &image::RgbaImage, class_px: u32, before: Option<SystemTime>) {
+    if soyuz_fs::thumbcache::lookup(path, class_px).is_some_and(|t| t.db_size == class_px) {
+        return;
+    }
+    let png = match encode_png(rgba) {
+        Ok(png) => png,
+        Err(e) => {
+            log::debug!("thumbnail PNG for {}: {e}", path.display());
+            return;
+        }
+    };
+    if let Err(e) = soyuz_fs::thumbcache::write_freedesktop(path, &png, class_px, before) {
+        log::debug!("cannot share the thumbnail of {}: {e}", path.display());
+    }
+}
+
+/// 8-bit RGBA PNG of `rgba`.
+fn encode_png(rgba: &image::RgbaImage) -> image::ImageResult<Vec<u8>> {
+    let mut png = Vec::new();
+    let enc = image::codecs::png::PngEncoder::new(&mut png);
+    image::ImageEncoder::write_image(enc, rgba.as_raw(), rgba.width(), rgba.height(), image::ExtendedColorType::Rgba8)?;
+    Ok(png)
 }
 
 /// The picture the OS cached for `key.path` (Explorer's `thumbcache_*.db` or the
@@ -387,6 +464,13 @@ fn pdf_first_page(_key: &ThumbKey) -> Option<ColorImage> {
 }
 
 fn decode(key: &ThumbKey) -> Option<ColorImage> {
+    let thumb = decode_full(key)?.thumbnail(key.px, key.px).to_rgba8();
+    let size = [thumb.width() as usize, thumb.height() as usize];
+    Some(ColorImage::from_rgba_unmultiplied(size, thumb.as_raw()))
+}
+
+/// The whole picture, EXIF orientation applied (within the decode limits).
+fn decode_full(key: &ThumbKey) -> Option<image::DynamicImage> {
     if key.size > MAX_FILE_BYTES {
         return None;
     }
@@ -402,9 +486,7 @@ fn decode(key: &ThumbKey) -> Option<ColorImage> {
     if let Some(o) = orientation {
         img.apply_orientation(o);
     }
-    let thumb = img.thumbnail(key.px, key.px).to_rgba8();
-    let size = [thumb.width() as usize, thumb.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, thumb.as_raw()))
+    Some(img)
 }
 
 #[cfg(test)]
@@ -468,6 +550,46 @@ mod tests {
         assert_eq!(fit_os_thumb(&t, 512).unwrap().size, [256, 192]);
         let bad = soyuz_fs::thumbcache::OsThumb { data: b"junk".to_vec(), width: 1, height: 1, db_size: 96 };
         assert!(fit_os_thumb(&bad, 64).is_none());
+    }
+
+    #[test]
+    fn write_os_cache_only_where_supported() {
+        set_write_os_cache(true);
+        assert_eq!(WRITE_OS.load(Ordering::Relaxed), cfg!(all(unix, not(target_os = "macos"))));
+        set_write_os_cache(false);
+        assert!(!WRITE_OS.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn color_images_convert_back_to_rgba() {
+        let c = ColorImage::filled([3, 2], egui::Color32::from_rgb(10, 20, 30));
+        let r = color_to_rgba(&c).unwrap();
+        assert_eq!(r.dimensions(), (3, 2));
+        assert_eq!(r.get_pixel(2, 1).0, [10, 20, 30, 255]);
+    }
+
+    /// What the workers encode is accepted by the freedesktop writer, read back by the
+    /// lookup and still decodes as a picture with its text chunks in place.
+    #[cfg(unix)]
+    #[test]
+    fn shared_thumbs_round_trip_through_a_private_cache() {
+        let d = tempfile::tempdir().unwrap();
+        let (cache, trash) = (d.path().join("thumbnails"), d.path().join("Trash"));
+        let src = d.path().join("pic.png");
+        image::RgbaImage::from_pixel(600, 300, image::Rgba([200, 100, 50, 255])).save(&src).unwrap();
+        let before = std::fs::metadata(&src).unwrap().modified().ok();
+        let key = ThumbKey { path: src.clone(), mtime: None, size: 1, px: 64 };
+        let (_, class_px) = soyuz_fs::thumbcache::freedesktop_class(key.px);
+        let rgba = decode_full(&key).unwrap().thumbnail(class_px, class_px).to_rgba8();
+        assert_eq!(rgba.dimensions(), (128, 64));
+        let png = encode_png(&rgba).unwrap();
+        soyuz_fs::thumbcache::write_freedesktop_in(&cache, &trash, &src, &png, class_px, before, Some("image/png"))
+            .unwrap()
+            .unwrap();
+        let t = soyuz_fs::thumbcache::lookup_freedesktop(&cache, &src, 128).unwrap();
+        assert_eq!((t.width, t.height), (128, 64));
+        let back = image::load_from_memory(&t.data).unwrap().to_rgba8();
+        assert_eq!(back.get_pixel(5, 5).0, [200, 100, 50, 255]);
     }
 
     #[test]

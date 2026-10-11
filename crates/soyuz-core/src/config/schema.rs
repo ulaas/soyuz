@@ -212,6 +212,10 @@ pub struct Appearance {
     /// `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`;
     /// read-only) before decoding a file ourselves.
     pub os_thumbnail_cache: bool,
+    /// Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop
+    /// cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them.
+    /// Ignored on Windows and macOS.
+    pub write_os_thumbnails: bool,
     /// File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in
     /// generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`.
     pub icon_pack: String,

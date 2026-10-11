@@ -30,7 +30,8 @@
 //! Standard" 0.9): `$XDG_CACHE_HOME/thumbnails/{normal,large,x-large,xx-large}/
 //! <md5 of the file URI>.png`, written by the desktop's thumbnailers (GNOME, KDE, …). An
 //! entry is only used when its `Thumb::URI` and `Thumb::MTime` text chunks match the
-//! file, so stale thumbnails of replaced files are never shown. Read-only.
+//! file, so stale thumbnails of replaced files are never shown. Thumbnails Soyuz decodes
+//! itself are written back ([`write_freedesktop`]) so other apps can reuse them.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -367,6 +368,149 @@ pub fn lookup_freedesktop(dir: &Path, path: &Path, px: u32) -> Option<OsThumb> {
     None
 }
 
+/// The freedesktop class a thumbnail requested at `px` is written to: the smallest class
+/// ≥ `px` (`xx-large` for anything bigger).
+pub fn freedesktop_class(px: u32) -> (&'static str, u32) {
+    FREEDESKTOP_SIZES.iter().copied().find(|s| s.1 >= px).unwrap_or(FREEDESKTOP_SIZES[3])
+}
+
+/// `png` with `tEXt` chunks inserted right after its IHDR (`None` when it is not a PNG
+/// or a keyword is not 1–79 Latin-1 bytes without NUL).
+pub fn png_with_text(png: &[u8], texts: &[(&str, &str)]) -> Option<Vec<u8>> {
+    const SIG: &[u8] = b"\x89PNG\r\n\x1a\n";
+    let rest = png.strip_prefix(SIG)?;
+    if rest.get(4..8)? != b"IHDR" {
+        return None;
+    }
+    let ihdr_end = SIG.len() + 12 + u32::from_be_bytes(rest.get(..4)?.try_into().ok()?) as usize;
+    if ihdr_end > png.len() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(png.len() + texts.iter().map(|(k, v)| k.len() + v.len() + 13).sum::<usize>());
+    out.extend_from_slice(&png[..ihdr_end]);
+    for (k, v) in texts {
+        if k.is_empty() || k.len() > 79 || k.bytes().any(|b| b == 0) || v.bytes().any(|b| b == 0) {
+            return None;
+        }
+        let data = [k.as_bytes(), b"\0", v.as_bytes()].concat();
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut crc = crc32fast::Hasher::new();
+        crc.update(b"tEXt");
+        crc.update(&data);
+        out.extend_from_slice(b"tEXt");
+        out.extend_from_slice(&data);
+        out.extend_from_slice(&crc.finalize().to_be_bytes());
+    }
+    out.extend_from_slice(&png[ihdr_end..]);
+    Some(out)
+}
+
+/// Files whose thumbnails are never written: anything inside the thumbnail cache `dir`
+/// itself, and items in a trash (`trash_home` = `$XDG_DATA_HOME/Trash`, or any
+/// `.Trash` / `.Trash-<uid>` folder on a volume).
+pub fn freedesktop_skip(dir: &Path, trash_home: &Path, path: &Path) -> bool {
+    path.starts_with(dir)
+        || path.starts_with(trash_home)
+        || path.components().any(|c| {
+            let s = c.as_os_str().to_string_lossy();
+            s == ".Trash" || s.starts_with(".Trash-")
+        })
+}
+
+/// Write `png` (an RGBA PNG whose longest edge is at most `class_px`, without text chunks)
+/// as the freedesktop thumbnail of `path` into the cache under `dir` (`<dir>/<class>/
+/// <md5 of the URI>.png`), with the `Thumb::URI`, `Thumb::MTime`, `Thumb::Size`,
+/// `Thumb::Mimetype` (when given) and `Software` chunks. Atomic: a 0600 temp file in the
+/// same folder, then a rename; missing folders are created 0700.
+///
+/// `expected_mtime` is the file's mtime before it was decoded: when the file changed
+/// since (or is gone, or is in a trash / the cache itself), nothing is written and
+/// `Ok(None)` is returned. Otherwise the written path.
+pub fn write_freedesktop_in(
+    dir: &Path,
+    trash_home: &Path,
+    path: &Path,
+    png: &[u8],
+    class_px: u32,
+    expected_mtime: Option<std::time::SystemTime>,
+    mime: Option<&str>,
+) -> std::io::Result<Option<PathBuf>> {
+    use std::io::Write;
+    let abs = if path.is_absolute() { path.to_path_buf() } else { std::path::absolute(path)? };
+    if freedesktop_skip(dir, trash_home, &abs) {
+        return Ok(None);
+    }
+    let meta = std::fs::metadata(&abs)?;
+    let mtime = meta.modified()?;
+    if !meta.is_file() || expected_mtime.is_some_and(|e| e != mtime) {
+        return Ok(None);
+    }
+    let secs = mtime.duration_since(std::time::UNIX_EPOCH).map_err(std::io::Error::other)?.as_secs();
+    let uri = freedesktop_uri(&abs);
+    let (secs, size) = (secs.to_string(), meta.len().to_string());
+    let mut texts = vec![("Thumb::URI", uri.as_str()), ("Thumb::MTime", secs.as_str()), ("Thumb::Size", size.as_str())];
+    if let Some(m) = mime.filter(|m| !m.is_empty()) {
+        texts.push(("Thumb::Mimetype", m));
+    }
+    texts.push(("Software", "Soyuz"));
+    let invalid = || std::io::Error::new(std::io::ErrorKind::InvalidData, "not a PNG");
+    let data = png_with_text(png, &texts).ok_or_else(invalid)?;
+    let (w, h, _) = png_text_chunks(&data).ok_or_else(invalid)?;
+    if w == 0 || h == 0 || w.max(h) > class_px {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "thumbnail larger than its class"));
+    }
+    let folder = FREEDESKTOP_SIZES
+        .iter()
+        .find(|s| s.1 == class_px)
+        .map(|s| s.0)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a freedesktop size class"))?;
+    let target_dir = dir.join(folder);
+    let mut db = std::fs::DirBuilder::new();
+    db.recursive(true);
+    #[cfg(unix)]
+    std::os::unix::fs::DirBuilderExt::mode(&mut db, 0o700);
+    db.create(&target_dir)?;
+    let name = freedesktop_thumb_name(&uri);
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = target_dir.join(format!(".{name}.soyuz-{}-{seq}.tmp", std::process::id()));
+    let mut oo = std::fs::OpenOptions::new();
+    oo.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut oo, 0o600);
+    let result = (|| {
+        let mut f = oo.open(&tmp)?;
+        f.write_all(&data)?;
+        f.flush()?;
+        drop(f);
+        let dest = target_dir.join(&name);
+        std::fs::rename(&tmp, &dest)?;
+        Ok(dest)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map(Some)
+}
+
+/// [`write_freedesktop_in`] into the user's cache (`$XDG_CACHE_HOME/thumbnails`), with
+/// the file's MIME type. Linux / BSD only (`Ok(None)` elsewhere). Blocking: call it on a
+/// worker thread.
+pub fn write_freedesktop(
+    path: &Path,
+    png: &[u8],
+    class_px: u32,
+    expected_mtime: Option<std::time::SystemTime>,
+) -> std::io::Result<Option<PathBuf>> {
+    if !cfg!(all(unix, not(target_os = "macos"))) {
+        return Ok(None);
+    }
+    let Some(dir) = cache_dir() else { return Ok(None) };
+    let trash_home = crate::launch::linux::data_home().join("Trash");
+    let mime = crate::launch::mime_type(path);
+    write_freedesktop_in(&dir, &trash_home, path, png, class_px, expected_mtime, mime.as_deref())
+}
+
 /// BMP, JPEG or PNG magic.
 fn looks_like_picture(d: &[u8]) -> bool {
     d.starts_with(b"BM") || d.starts_with(&[0xFF, 0xD8, 0xFF]) || d.starts_with(b"\x89PNG\r\n\x1a\n")
@@ -522,6 +666,145 @@ mod tests {
         put("large", 256, 192, mtime);
         assert_eq!(lookup_freedesktop(&cache, &f, 200).map(|t| t.db_size), Some(256));
         assert_eq!(lookup_freedesktop(&cache, &d.path().join("missing.jpg"), 128), None);
+    }
+
+    /// A real (zlib-compressed) RGBA PNG, as the app's encoder makes it.
+    fn rgba_png(w: u32, h: u32) -> Vec<u8> {
+        // Stored deflate blocks: enough for a valid tiny PNG without a zlib dependency.
+        let row = 1 + w as usize * 4;
+        let raw: Vec<u8> =
+            (0..h).flat_map(|_| std::iter::once(0u8).chain(std::iter::repeat_n(0x80, row - 1))).collect();
+        let mut z = vec![0x78, 0x01];
+        for (i, block) in raw.chunks(65_535).enumerate() {
+            let last = (i + 1) * 65_535 >= raw.len();
+            z.push(u8::from(last));
+            z.extend_from_slice(&(block.len() as u16).to_le_bytes());
+            z.extend_from_slice(&(!(block.len() as u16)).to_le_bytes());
+            z.extend_from_slice(block);
+        }
+        let (mut a, mut b) = (1u32, 0u32);
+        for &x in &raw {
+            a = (a + u32::from(x)) % 65_521;
+            b = (b + a) % 65_521;
+        }
+        z.extend_from_slice(&((b << 16) | a).to_be_bytes());
+        fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+            out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+            let mut c = crc32fast::Hasher::new();
+            c.update(kind);
+            c.update(data);
+            out.extend_from_slice(kind);
+            out.extend_from_slice(data);
+            out.extend_from_slice(&c.finalize().to_be_bytes());
+        }
+        let mut p = b"\x89PNG\r\n\x1a\n".to_vec();
+        let mut ihdr = Vec::new();
+        ihdr.extend_from_slice(&w.to_be_bytes());
+        ihdr.extend_from_slice(&h.to_be_bytes());
+        ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+        chunk(&mut p, b"IHDR", &ihdr);
+        chunk(&mut p, b"IDAT", &z);
+        chunk(&mut p, b"IEND", &[]);
+        p
+    }
+
+    /// Every chunk's CRC is right and the chunk sequence ends with IEND.
+    fn chunks_valid(png: &[u8]) -> bool {
+        let Some(mut rest) = png.strip_prefix(b"\x89PNG\r\n\x1a\n") else { return false };
+        while rest.len() >= 12 {
+            let len = u32::from_be_bytes(rest[..4].try_into().unwrap()) as usize;
+            let Some(body) = rest.get(4..8 + len) else { return false };
+            let crc = u32::from_be_bytes(rest[8 + len..12 + len].try_into().unwrap());
+            if crc32fast::hash(body) != crc {
+                return false;
+            }
+            if &body[..4] == b"IEND" {
+                return rest.len() == 12;
+            }
+            rest = &rest[12 + len..];
+        }
+        false
+    }
+
+    #[test]
+    fn text_chunks_are_inserted_with_valid_crcs() {
+        let p = rgba_png(4, 3);
+        assert!(chunks_valid(&p));
+        let t = png_with_text(&p, &[("Thumb::URI", "file:///a%20b.png"), ("Software", "Soyuz")]).unwrap();
+        assert!(chunks_valid(&t));
+        let (w, h, texts) = png_text_chunks(&t).unwrap();
+        assert_eq!((w, h), (4, 3));
+        assert_eq!(texts[0], ("Thumb::URI".into(), "file:///a%20b.png".into()));
+        assert_eq!(texts[1], ("Software".into(), "Soyuz".into()));
+        assert!(png_with_text(b"GIF89a", &[]).is_none());
+        assert!(png_with_text(&p, &[("", "x")]).is_none());
+        assert!(png_with_text(&p, &[("k", "a\0b")]).is_none());
+    }
+
+    #[test]
+    fn classes_and_skips() {
+        assert_eq!(freedesktop_class(64), ("normal", 128));
+        assert_eq!(freedesktop_class(128), ("normal", 128));
+        assert_eq!(freedesktop_class(129), ("large", 256));
+        assert_eq!(freedesktop_class(512), ("x-large", 512));
+        assert_eq!(freedesktop_class(4000), ("xx-large", 1024));
+        let (cache, trash) = (Path::new("/c/thumbnails"), Path::new("/d/Trash"));
+        assert!(freedesktop_skip(cache, trash, Path::new("/c/thumbnails/normal/x.png")));
+        assert!(freedesktop_skip(cache, trash, Path::new("/d/Trash/files/a.jpg")));
+        assert!(freedesktop_skip(cache, trash, Path::new("/mnt/usb/.Trash-1000/files/a.jpg")));
+        assert!(freedesktop_skip(cache, trash, Path::new("/mnt/usb/.Trash/1000/files/a.jpg")));
+        assert!(!freedesktop_skip(cache, trash, Path::new("/home/u/Pictures/a.jpg")));
+        assert!(!freedesktop_skip(cache, trash, Path::new("/home/u/.Trashy/a.jpg")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn freedesktop_write_round_trips_atomically_with_private_modes() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let cache = d.path().join("cache/thumbnails");
+        let trash = d.path().join("data/Trash");
+        let f = d.path().join("my photo #1.png");
+        std::fs::write(&f, b"source").unwrap();
+        let mtime = std::fs::metadata(&f).unwrap().modified().unwrap();
+        let png = rgba_png(128, 96);
+        let out = write_freedesktop_in(&cache, &trash, &f, &png, 128, Some(mtime), Some("image/png")).unwrap().unwrap();
+        assert_eq!(out, cache.join("normal").join(freedesktop_thumb_name(&freedesktop_uri(&f))));
+        // Read back through the normal lookup.
+        let t = lookup_freedesktop(&cache, &f, 128).unwrap();
+        assert_eq!((t.width, t.height, t.db_size), (128, 96, 128));
+        assert!(chunks_valid(&t.data));
+        let (_, _, texts) = png_text_chunks(&t.data).unwrap();
+        let get = |k: &str| texts.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+        assert_eq!(get("Thumb::Size").as_deref(), Some("6"));
+        assert_eq!(get("Thumb::Mimetype").as_deref(), Some("image/png"));
+        assert_eq!(get("Software").as_deref(), Some("Soyuz"));
+        let secs = mtime.duration_since(std::time::UNIX_EPOCH).unwrap().as_secs().to_string();
+        assert_eq!(get("Thumb::MTime"), Some(secs), "integer seconds");
+        // Modes: 0600 file, 0700 folders (umask can only remove bits).
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&out), 0o600);
+        assert_eq!(mode(&cache), 0o700);
+        assert_eq!(mode(&cache.join("normal")), 0o700);
+        // No temp files left behind; a rewrite replaces the entry in place.
+        write_freedesktop_in(&cache, &trash, &f, &png, 128, Some(mtime), None).unwrap().unwrap();
+        let names: Vec<_> = std::fs::read_dir(cache.join("normal")).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(names.len(), 1, "{names:?}");
+        // Changed during decoding → nothing written.
+        let other = mtime - std::time::Duration::from_secs(10);
+        assert_eq!(write_freedesktop_in(&cache, &trash, &f, &png, 256, Some(other), None).unwrap(), None);
+        assert!(!cache.join("large").exists());
+        // Too big for the class, or not a class.
+        assert!(write_freedesktop_in(&cache, &trash, &f, &rgba_png(200, 10), 128, None, None).is_err());
+        assert!(write_freedesktop_in(&cache, &trash, &f, &png, 100, None, None).is_err());
+        // Files in the trash or the cache itself are skipped.
+        std::fs::create_dir_all(trash.join("files")).unwrap();
+        let trashed = trash.join("files/x.png");
+        std::fs::write(&trashed, b"x").unwrap();
+        assert_eq!(write_freedesktop_in(&cache, &trash, &trashed, &png, 128, None, None).unwrap(), None);
+        assert_eq!(write_freedesktop_in(&cache, &trash, &out, &png, 128, None, None).unwrap(), None);
+        // Missing source.
+        assert!(write_freedesktop_in(&cache, &trash, &d.path().join("gone.png"), &png, 128, None, None).is_err());
     }
 
     /// Reads the real caches of this machine (Windows only, prints a summary).

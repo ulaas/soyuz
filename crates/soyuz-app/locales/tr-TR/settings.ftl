@@ -1163,3 +1163,7 @@ settings-views-unmounted-off = Kapalı
 settings-views-hidden-devices = Gizlenen aygıtlar
 settings-views-hidden-devices-desc = "Kenar çubuğunda gizle" ile gizlenen aygıtlar; her satırda bir dosya sistemi UUID'si veya aygıt yolu (/dev/sdb1).
 settings-views-hidden-devices-clear = Tümünü yeniden göster
+
+## thumbs
+settings-appearance-write-os-thumbs = Küçük resimleri diğer uygulamalarla paylaş
+settings-appearance-write-os-thumbs-desc = Soyuz'un hazırladığı küçük resimleri freedesktop küçük resim önbelleğine (~/.cache/thumbnails) kaydeder; dosya yöneticileri ve dosya seçiciler dosyaları yeniden çözmeden bunları gösterebilir.
