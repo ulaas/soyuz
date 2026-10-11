@@ -122,11 +122,12 @@ has a `.sha256`, and `SHA256SUMS-<os>.txt` lists them all.
 | `soyuz-<version>-windows-x64.msi` | Per-user install to `%LOCALAPPDATA%\Programs\Soyuz`, no admin rights. Optional "Open in Soyuz" folder context-menu entry and PATH entry. |
 | `soyuz-<version>-windows-x64.zip` | Unzip anywhere and run `soyuz.exe`. Settings go to `%APPDATA%\soyuz`. |
 | `soyuz-<version>-windows-x64-portable.zip` | Same, plus an empty `portable` file next to the exe: settings stay in `portable-data\` beside it. |
-| `soyuz-<version>-linux-x64.tar.gz` | Experimental, not yet tested. |
-| `soyuz-<version>-macos-arm64.tar.gz` | Experimental, not yet tested, unsigned (right-click → Open the first time). |
+| `soyuz-<version>-linux-x64.tar.gz` | Unpack anywhere and run `soyuz`. Newer than the Windows build. |
+| `soyuz-<version>-macos-arm64.tar.gz` | Apple silicon. Unpack and run `soyuz`; unsigned (right-click → Open the first time). Newer than the Windows build. |
 
-**Platforms.** Soyuz is built and verified on **Windows 10 and 11**. Linux and macOS builds
-compile and are published, but have not been tested on real machines yet.
+**Platforms.** Soyuz runs on **Windows 10 and 11**, **Linux** and **macOS**. Windows is the
+main platform and has had the most testing; the Linux and macOS builds are tested but newer,
+so expect rough edges. Release builds are not code-signed yet.
 
 PDF page rendering needs `pdfium.dll` next to `soyuz.exe` or in the config folder (Soyuz
 never downloads it; without it PDFs preview as text). Video posters use an `ffmpeg` found
