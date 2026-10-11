@@ -14,12 +14,13 @@ use alacritty_terminal::event_loop::{EventLoop, EventLoopSender, Msg, State};
 use alacritty_terminal::grid::Dimensions;
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{self, Osc52, Term};
-use alacritty_terminal::tty::{self, Pty};
+use alacritty_terminal::tty;
 use alacritty_terminal::vte::ansi::{CursorShape, CursorStyle as VteCursorStyle, Rgb};
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
 
 use crate::pty::{self, ShellKind};
+use crate::tty_tee::TeePty;
 use crate::{CursorStyle, TermError, TermEvent, TermSettings, TermTheme};
 
 /// `WindowSize` does not implement `Dimensions`; this does (no scrollback: `Term` adds it).
@@ -57,6 +58,9 @@ pub(crate) struct Shared {
     pub title: Mutex<String>,
     default_title: String,
     pub cwd: Mutex<Option<PathBuf>>,
+    /// The shell reported its cwd itself (OSC 7 or the title hook); `/proc` polling is
+    /// then no longer consulted.
+    pub cwd_reported: AtomicBool,
     pub window_size: Mutex<WindowSize>,
     colors: Mutex<ColorAnswers>,
 }
@@ -133,6 +137,13 @@ impl Shared {
         }
     }
 
+    /// A cwd reported by the shell (OSC 7 from the PTY tee, or the title hook). The
+    /// latest report wins.
+    pub fn report_cwd(&self, path: PathBuf) {
+        self.cwd_reported.store(true, Ordering::Release);
+        self.set_cwd(path);
+    }
+
     pub fn set_theme(&self, theme: &TermTheme) {
         let mut c = self.colors.lock();
         if c.fg != theme.fg || c.bg != theme.bg || c.cursor != theme.cursor || c.palette[..16] != theme.ansi {
@@ -156,7 +167,7 @@ impl Shared {
         let title = match pty::parse_cwd_title(&title) {
             Some(path) => {
                 let shown = path.to_string_lossy().into_owned();
-                self.set_cwd(path);
+                self.report_cwd(path);
                 shown
             }
             None => title,
@@ -227,7 +238,7 @@ impl EventListener for Listener {
     }
 }
 
-type LoopHandle = JoinHandle<(EventLoop<Pty, Listener>, State)>;
+type LoopHandle = JoinHandle<(EventLoop<TeePty, Listener>, State)>;
 
 /// The running session.
 pub(crate) struct Backend {
@@ -272,6 +283,7 @@ impl Backend {
             title: Mutex::new(default_title.clone()),
             default_title,
             cwd: Mutex::new(cmd.cwd.clone()),
+            cwd_reported: AtomicBool::new(false),
             window_size: Mutex::new(window_size(INITIAL)),
             colors: Mutex::new(ColorAnswers::new(&TermTheme::default())),
         });
@@ -314,6 +326,8 @@ impl Backend {
         #[cfg(not(windows))]
         let pid = Some(pty.child().id());
 
+        // OSC 7 is dropped by alacritty's parser: observe the raw output on the way in.
+        let pty = TeePty::new(pty, shared.clone());
         let event_loop = EventLoop::new(term.clone(), listener, pty, true, false).map_err(TermError::EventLoop)?;
         let _ = shared.sender.set(event_loop.channel());
         let join = event_loop.spawn();

@@ -6615,6 +6615,7 @@ dependencies = [
  "egui",
  "log",
  "parking_lot",
+ "polling",
  "thiserror 2.0.21",
 ]
 

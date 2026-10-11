@@ -21,11 +21,13 @@ mod backend;
 pub mod fuzzing;
 mod keys;
 pub mod osc7;
-#[allow(unsafe_code)]
 mod pty;
 mod render;
 mod selection;
 pub mod theme;
+// The only `unsafe` in the crate: forwarding alacritty's `unsafe fn register`.
+#[allow(unsafe_code)]
+mod tty_tee;
 mod url;
 
 use std::borrow::Cow;
@@ -200,9 +202,11 @@ impl Terminal {
         self.backend.shared.alive.load(Ordering::Acquire)
     }
 
-    /// Last known working directory (shell integration, `/proc` polling, or the spawn cwd).
+    /// Last known working directory: what the shell reported (OSC 7 or the title hook,
+    /// latest wins), else `/proc` polling (Linux), else the spawn cwd.
     pub fn cwd(&self) -> Option<PathBuf> {
-        if let Some(pid) = self.backend.pid
+        if !self.backend.shared.cwd_reported.load(Ordering::Acquire)
+            && let Some(pid) = self.backend.pid
             && let Some(cwd) = pty::process_cwd(pid)
         {
             self.backend.shared.set_cwd(cwd);
@@ -392,6 +396,79 @@ mod tests {
         let d = std::env::temp_dir().join(format!("soyuz-term-test-{tag}-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    /// Waits for a `CwdChanged(want)` event, then checks `cwd()` agrees.
+    #[cfg(unix)]
+    fn wait_for_cwd(term: &Terminal, want: &Path) {
+        let start = Instant::now();
+        let mut seen = Vec::new();
+        while start.elapsed() < Duration::from_secs(10) && !seen.iter().any(|p: &PathBuf| p == want) {
+            std::thread::sleep(Duration::from_millis(20));
+            seen.extend(term.events().try_iter().filter_map(|e| match e {
+                TermEvent::CwdChanged(p) => Some(p),
+                _ => None,
+            }));
+        }
+        assert!(seen.iter().any(|p| p == want), "no CwdChanged({}); saw {seen:?}", want.display());
+        assert_eq!(term.cwd().as_deref(), Some(want));
+    }
+
+    /// OSC 7 from program output (dropped by alacritty's parser) is seen by the PTY tee,
+    /// including a percent-encoded path with spaces, and overrides `/proc` polling.
+    #[cfg(unix)]
+    #[test]
+    fn pty_osc7_sets_cwd() {
+        let base = tempfile_dir("osc7");
+        let dir = base.join("a b%c");
+        std::fs::create_dir_all(&dir).unwrap();
+        let encoded = dir.to_string_lossy().replace('%', "%25").replace(' ', "%20");
+        // Split across two printf calls so the sequence may straddle reads; ST terminator.
+        let script = format!(
+            r#"printf '\033]7;file://localhost%s' '{encoded}'; sleep 0.05; printf '\033\\'; echo done; sleep 0.5"#
+        );
+        let settings = TermSettings {
+            shell: Some("/bin/sh".into()),
+            args: vec!["-c".into(), script],
+            shell_integration: false,
+            cwd: base.clone(),
+            ..Default::default()
+        };
+        let term = Terminal::spawn(settings, egui::Context::default(), 11).expect("spawn");
+        wait_for_cwd(&term, &dir);
+        // OSC 7 is invisible on screen.
+        assert!(wait_for(&term, "done", Duration::from_secs(10)), "{}", term.screen_text());
+        assert!(!term.screen_text().contains("file://"), "{}", term.screen_text());
+        term.kill();
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// OSC 7 and the title hook interleave: the last report wins.
+    #[cfg(unix)]
+    #[test]
+    fn pty_osc7_and_title_hook_latest_wins() {
+        let script = r#"printf '\033]7;file:///tmp\007'; sleep 0.3; printf '\033]0;soyuz-cwd:/usr\007'; sleep 0.3; printf '\033]7;file:///var\007'; sleep 0.5"#;
+        let settings = TermSettings {
+            shell: Some("/bin/sh".into()),
+            args: vec!["-c".into(), script.into()],
+            shell_integration: false,
+            cwd: PathBuf::from("/"),
+            ..Default::default()
+        };
+        let term = Terminal::spawn(settings, egui::Context::default(), 12).expect("spawn");
+        let want: Vec<PathBuf> = ["/tmp", "/usr", "/var"].iter().map(PathBuf::from).collect();
+        let start = Instant::now();
+        let mut seen = Vec::new();
+        while start.elapsed() < Duration::from_secs(10) && seen.last() != want.last() {
+            std::thread::sleep(Duration::from_millis(20));
+            seen.extend(term.events().try_iter().filter_map(|e| match e {
+                TermEvent::CwdChanged(p) => Some(p),
+                _ => None,
+            }));
+        }
+        assert_eq!(seen, want);
+        assert_eq!(term.cwd().as_deref(), Some(Path::new("/var")));
+        term.kill();
     }
 
     /// The terminal answers a cursor-position query (`ESC[6n`) through `PtyWrite`.
