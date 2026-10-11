@@ -204,8 +204,7 @@ mod tests {
             pages: HashMap::from([(0u64, Arc::<[u8]>::from((0u8..40).collect::<Vec<_>>()))]),
         };
         let mut d = HexDoc::new(&init);
-        let ctx = egui::Context::default();
-        let c = PreviewClient::new(&ctx);
+        let c = PreviewClient::new(crate::host::no_wake(), crate::services::preview_gfx::no_upload());
         assert_eq!(d.row(0, &c).unwrap(), (0u8..16).collect::<Vec<_>>());
         assert_eq!(d.row(2, &c).unwrap(), (32u8..40).collect::<Vec<_>>());
         d.on_page(2, 0, None);

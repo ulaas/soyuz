@@ -24,7 +24,7 @@ const WAIT: Duration = Duration::from_secs(10);
 fn services() -> Services {
     Services::new(
         crate::host::no_wake(),
-        crate::services::thumbs::Thumbs::new(egui::Context::default(), 1),
+        crate::services::thumbs::Thumbs::new(crate::host::no_wake(), crate::services::preview_gfx::no_upload(), 1),
         Duration::from_millis(50),
     )
 }

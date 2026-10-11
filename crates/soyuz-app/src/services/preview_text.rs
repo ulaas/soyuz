@@ -1,16 +1,16 @@
 //! Text-side preview helpers: text/binary sniffing and decoding, syntect highlighting
-//! into egui `LayoutJob`s (run on the preview workers), and a small Markdown block
+//! into toolkit-neutral [`StyledLine`]s (run on the preview workers), and a small Markdown block
 //! parser whose output the preview pane renders "nicely but plainly".
 
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use egui::text::{LayoutJob, TextFormat};
-use egui::{Color32, FontId};
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{FontStyle, ThemeSet};
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
+
+use super::preview_gfx::{self as gfx, Rgba, RunStyle, StyledLine, TextFont};
 
 /// Longest line we lay out (longer ones are cut with an ellipsis).
 pub const MAX_LINE_CHARS: usize = 2_000;
@@ -89,7 +89,7 @@ pub fn set_syntax_theme(name: &str) -> Option<String> {
 /// The syntect themes with their background / foreground colors, for the theme
 /// dropdown. `None` while the assets load (the first call starts loading them on a
 /// background thread, then calls `wake`).
-pub fn syntax_theme_list(wake: impl Fn() + Send + 'static) -> Option<Vec<(String, egui::Color32, egui::Color32)>> {
+pub fn syntax_theme_list(wake: impl Fn() + Send + 'static) -> Option<Vec<(String, Rgba, Rgba)>> {
     static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if SYNTAX_ASSETS.get().is_none() {
         if !STARTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
@@ -103,21 +103,13 @@ pub fn syntax_theme_list(wake: impl Fn() + Send + 'static) -> Option<Vec<(String
         }
         return None;
     }
-    let c = |c: Option<syntect::highlighting::Color>, d: egui::Color32| {
-        c.map_or(d, |c| egui::Color32::from_rgb(c.r, c.g, c.b))
-    };
+    let c = |c: Option<syntect::highlighting::Color>, d: Rgba| c.map_or(d, |c| gfx::rgb(c.r, c.g, c.b));
     Some(
         syntax()
             .1
             .themes
             .iter()
-            .map(|(name, t)| {
-                (
-                    name.clone(),
-                    c(t.settings.background, egui::Color32::BLACK),
-                    c(t.settings.foreground, egui::Color32::WHITE),
-                )
-            })
+            .map(|(name, t)| (name.clone(), c(t.settings.background, gfx::BLACK), c(t.settings.foreground, gfx::WHITE)))
             .collect(),
     )
 }
@@ -162,17 +154,17 @@ pub fn language_name(name: &str) -> Option<String> {
         .map(|s| s.name.clone())
 }
 
-/// Highlight `text` into one `LayoutJob` per line. Lines past `budget` (or after
+/// Highlight `text` into one [`StyledLine`] per line. Lines past `budget` (or after
 /// `cancelled` returns true) fall back to plain text in `fg`.
 pub fn highlight(
     text: &str,
     name: &str,
     dark: bool,
-    font: FontId,
-    fg: Color32,
+    font: TextFont,
+    fg: Rgba,
     budget: Duration,
     cancelled: &dyn Fn() -> bool,
-) -> Vec<LayoutJob> {
+) -> Vec<StyledLine> {
     let (ss, ts) = syntax();
     let lang = language_name(name);
     let syntax = lang.as_deref().and_then(|l| ss.find_syntax_by_name(l));
@@ -186,7 +178,7 @@ pub fn highlight(
         if hl.is_some() && i % 64 == 0 && (start.elapsed() > budget || cancelled()) {
             hl = None;
         }
-        let mut job = LayoutJob::default();
+        let mut job = StyledLine::default();
         let clean = clean_line(line);
         match hl.as_mut().and_then(|h| h.highlight_line(line, ss).ok()) {
             Some(ranges) => {
@@ -199,29 +191,26 @@ pub fn highlight(
                     let take: String = piece.chars().take(MAX_LINE_CHARS - used).collect();
                     used += take.chars().count();
                     let c = style.foreground;
-                    let mut color = Color32::from_rgb(c.r, c.g, c.b);
-                    if !dark && color == Color32::from_rgb(0x32, 0x32, 0x32) {
+                    let mut color = gfx::rgb(c.r, c.g, c.b);
+                    if !dark && color == gfx::rgb(0x32, 0x32, 0x32) {
                         color = fg;
                     }
-                    let fmt = TextFormat {
-                        font_id: font.clone(),
-                        color,
-                        italics: style.font_style.contains(FontStyle::ITALIC),
-                        ..Default::default()
+                    let fmt = RunStyle {
+                        italic: style.font_style.contains(FontStyle::ITALIC),
+                        ..RunStyle::plain(font, color)
                     };
-                    job.append(&take, 0.0, fmt);
+                    job.append(&take, fmt);
                 }
             }
             None => {
                 let take: String = clean.chars().take(MAX_LINE_CHARS).collect();
-                job.append(&take, 0.0, TextFormat { font_id: font.clone(), color: fg, ..Default::default() });
+                job.append(&take, RunStyle::plain(font, fg));
             }
         }
-        job.wrap.max_rows = 1;
         jobs.push(job);
     }
     if jobs.is_empty() {
-        jobs.push(LayoutJob::default());
+        jobs.push(StyledLine::default());
     }
     jobs
 }
@@ -492,15 +481,15 @@ mod tests {
     #[test]
     fn highlighting_produces_one_job_per_line() {
         let src = "fn main() {\n\tprintln!(\"hi\");\n}\n";
-        let jobs =
-            highlight(src, "a.rs", true, FontId::monospace(12.0), Color32::WHITE, Duration::from_secs(5), &|| false);
+        let mono = TextFont::monospace(12.0);
+        let jobs = highlight(src, "a.rs", true, mono, gfx::WHITE, Duration::from_secs(5), &|| false);
         assert_eq!(jobs.len(), 3);
         assert_eq!(jobs[1].text, "    println!(\"hi\");");
-        assert!(jobs[0].sections.len() > 1, "keywords get their own colors");
-        // Zero budget → plain text but still one job per line.
-        let plain = highlight(src, "a.rs", true, FontId::monospace(12.0), Color32::WHITE, Duration::ZERO, &|| true);
+        assert!(jobs[0].runs.len() > 1, "keywords get their own colors");
+        // Zero budget → plain text but still one line each.
+        let plain = highlight(src, "a.rs", true, mono, gfx::WHITE, Duration::ZERO, &|| true);
         assert_eq!(plain.len(), 3);
-        assert_eq!(plain[0].sections.len(), 1);
+        assert_eq!(plain[0].runs.len(), 1);
     }
 
     #[test]

@@ -25,6 +25,7 @@ use crate::services::preview_pdf;
 use crate::services::preview_rich::{PdfView, Rich, Tex, pdf_page_async};
 use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
+use crate::ui::gfx::{self, TexExt};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{pill_button, spinner, trunc_galley};
 
@@ -366,7 +367,7 @@ fn epub(ui: &mut Ui, rect: Rect, m: &EpubModel, cover: Option<&Tex>, id: Id, p: 
                     egui::epaint::Shadow { offset: [0, 4], blur: 14, spread: 0, color: Color32::from_black_alpha(70) }
                         .as_shape(r, CornerRadius::same(3)),
                 );
-                ui.painter().image(t.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
         };
         if wide {
@@ -409,7 +410,7 @@ fn font(ui: &mut Ui, rect: Rect, strips: &Arc<Vec<(String, Tex)>>, id: Id, p: &P
             let natural = vec2(t.size[0] as f32, t.size[1] as f32) / ppp;
             let s = (w / natural.x).min(1.0);
             let (r, _) = ui.allocate_exact_size(natural * s, Sense::hover());
-            ui.painter().image(t.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), p.text_primary);
+            ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), p.text_primary);
             ui.add_space(4.0);
         }
     });
@@ -490,8 +491,9 @@ fn model_view(
     let tint = [p.accent.r() as f32 / 255.0, p.accent.g() as f32 / 255.0, p.accent.b() as f32 / 255.0];
     // Mostly neutral with a hint of the accent.
     let tint = [0.75 + 0.25 * tint[0], 0.75 + 0.25 * tint[1], 0.75 + 0.25 * tint[2]];
-    let mesh = preview_model::project(m, st.view, center, radius, tint);
-    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).add(Shape::mesh(mesh));
+    let mut mesh = gfx::MeshSink(egui::epaint::Mesh::default());
+    preview_model::project(m, st.view, [center.x, center.y], radius, tint, &mut mesh);
+    ui.painter().with_clip_rect(rect.intersect(ui.clip_rect())).add(Shape::mesh(mesh.0));
     let hint = if interactive { tr!("views-rich-model-hint-full") } else { tr!("views-rich-model-hint") };
     ui.painter().text(
         rect.left_bottom() + vec2(12.0, -12.0),
@@ -543,7 +545,7 @@ fn audio(
                 egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
                     .as_shape(r, CornerRadius::same(8)),
             );
-            ui.painter().image(t.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         }
         None => {
             ui.painter().rect_filled(art_r, CornerRadius::same(20), p.glyph_audio.gamma_multiply(0.14));
@@ -670,7 +672,7 @@ fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note:
             let size = image_fit(t, avail.size() - vec2(0.0, 26.0), ppp);
             let r = Rect::from_center_size(avail.center() - vec2(0.0, 12.0), size);
             ui.painter().rect_filled(rect, 0.0, Color32::from_gray(12));
-            ui.painter().image(t.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             let badge = Rect::from_min_size(r.left_top() + vec2(10.0, 10.0), vec2(30.0, 30.0));
             ui.painter().circle_filled(badge.center(), 15.0, Color32::from_black_alpha(150));
             ui.painter().text(
@@ -801,7 +803,8 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
     // Fetch the wanted page.
     if can_render && nav.shown.as_ref().is_none_or(|(pg, _)| *pg != nav.page) {
         if nav.pending.as_ref().is_none_or(|(pg, _)| *pg != nav.page) {
-            nav.pending = Some((nav.page, pdf_page_async(v, nav.page, ui.ctx())));
+            let (wake, up) = (crate::host::egui_wake(ui.ctx()), gfx::egui_uploader(ui.ctx()));
+            nav.pending = Some((nav.page, pdf_page_async(v, nav.page, &wake, &up)));
             nav.error = None;
         }
         if let Some((_, rx)) = &nav.pending
@@ -859,7 +862,7 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
                     egui::epaint::Shadow { offset: [0, 3], blur: 12, spread: 0, color: Color32::from_black_alpha(60) }
                         .as_shape(r, CornerRadius::ZERO),
                 );
-                ui.painter().image(t.tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
+                ui.painter().image(t.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
                 ui.add_space(10.0);
             });
             if dim {

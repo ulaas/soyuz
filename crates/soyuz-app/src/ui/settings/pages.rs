@@ -1276,7 +1276,8 @@ fn syntax_theme_choice(ui: &mut Ui, theme: &mut String) {
     match &list {
         Some(l) => {
             for (name, bg, fg) in l {
-                items.push(dd::Item::new(name.clone(), name.clone()).swatch(*bg).swatch(*fg));
+                let (bg, fg) = (crate::ui::gfx::color32(*bg), crate::ui::gfx::color32(*fg));
+                items.push(dd::Item::new(name.clone(), name.clone()).swatch(bg).swatch(fg));
             }
         }
         None => items.push(dd::Item::new(theme.clone(), theme.clone())),

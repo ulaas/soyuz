@@ -13,6 +13,7 @@ pub mod dnd;
 pub mod empty_state;
 pub mod frontend;
 pub mod geom;
+pub mod gfx;
 pub mod input;
 pub mod looks;
 pub mod motion;

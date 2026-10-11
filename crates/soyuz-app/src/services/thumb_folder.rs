@@ -4,7 +4,6 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::ColorImage;
 use image::{RgbaImage, imageops};
 
 /// Directory entries examined per folder.
@@ -77,20 +76,11 @@ fn fill(img: &RgbaImage, w: u32, h: u32) -> RgbaImage {
 }
 
 /// Decode the first pictures of `dir` and compose the mosaic (worker threads only).
-pub fn mosaic(dir: &Path, px: u32, decode: impl Fn(&Path, u32) -> Option<ColorImage>) -> Option<ColorImage> {
+pub fn mosaic(dir: &Path, px: u32, decode: impl Fn(&Path, u32) -> Option<RgbaImage>) -> Option<RgbaImage> {
     let picks = pick_images(dir);
     let tile_px = if picks.len() == 1 { px } else { px / 2 };
-    let tiles: Vec<RgbaImage> = picks
-        .iter()
-        .filter_map(|p| decode(p, tile_px.max(32)))
-        .filter_map(|c| {
-            let raw: Vec<u8> = c.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
-            RgbaImage::from_raw(c.size[0] as u32, c.size[1] as u32, raw)
-        })
-        .collect();
-    let out = compose(&tiles, px)?;
-    let size = [out.width() as usize, out.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, out.as_raw()))
+    let tiles: Vec<RgbaImage> = picks.iter().filter_map(|p| decode(p, tile_px.max(32))).collect();
+    compose(&tiles, px)
 }
 
 #[cfg(test)]
@@ -139,12 +129,8 @@ mod tests {
     fn mosaic_from_real_files() {
         let dir = tempfile::tempdir().unwrap();
         solid(40, 40, [9, 9, 9, 255]).save(dir.path().join("a.png")).unwrap();
-        let m = mosaic(dir.path(), 64, |p, px| {
-            let img = image::open(p).ok()?.thumbnail(px, px).to_rgba8();
-            Some(ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw()))
-        })
-        .unwrap();
-        assert_eq!(m.size, [64, 64]);
+        let m = mosaic(dir.path(), 64, |p, px| Some(image::open(p).ok()?.thumbnail(px, px).to_rgba8())).unwrap();
+        assert_eq!(m.dimensions(), (64, 64));
         assert!(mosaic(&dir.path().join("missing"), 64, |_, _| None).is_none());
     }
 }

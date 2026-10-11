@@ -9,8 +9,6 @@ use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use egui::ColorImage;
-
 /// Longest a single ffmpeg run may take.
 const TIMEOUT: Duration = Duration::from_secs(8);
 /// Largest PNG accepted from ffmpeg.
@@ -72,12 +70,12 @@ pub fn ffmpeg_args(input: &Path, seek: f32, px: u32) -> Vec<std::ffi::OsString> 
 }
 
 /// One frame of `path` (at ~1 s, falling back to the very first frame), fitted to `px`.
-pub fn frame(path: &Path, px: u32) -> Option<ColorImage> {
+pub fn frame(path: &Path, px: u32) -> Option<image::RgbaImage> {
     let ff = ffmpeg_path()?;
     [1.0, 0.0].into_iter().find_map(|seek| run(&ff, &ffmpeg_args(path, seek, px)))
 }
 
-fn run(ff: &Path, args: &[std::ffi::OsString]) -> Option<ColorImage> {
+fn run(ff: &Path, args: &[std::ffi::OsString]) -> Option<image::RgbaImage> {
     let mut cmd = Command::new(ff);
     cmd.args(args).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
     #[cfg(windows)]
@@ -106,9 +104,7 @@ fn run(ff: &Path, args: &[std::ffi::OsString]) -> Option<ColorImage> {
         }
     }
     let bytes = reader.join().ok()?;
-    let img = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()?.to_rgba8();
-    let size = [img.width() as usize, img.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+    Some(image::load_from_memory_with_format(&bytes, image::ImageFormat::Png).ok()?.to_rgba8())
 }
 
 /// `3:25`-style duration of a video, from the container headers.
