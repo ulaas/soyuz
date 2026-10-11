@@ -55,11 +55,14 @@ fn rgb(hex: u32) -> [f32; 3] {
     [((hex >> 16) & 0xFF) as f32 / 255.0, ((hex >> 8) & 0xFF) as f32 / 255.0, (hex & 0xFF) as f32 / 255.0]
 }
 
-/// Color + coverage at normalized coordinates (0..1).
+/// How much larger the planet, ring and capsule are drawn than their unit layout.
+const ART_SCALE: f32 = 1.22;
+
+/// Color + coverage at normalized coordinates (0..1). The tile fills the whole canvas.
 fn sample(u: f32, v: f32) -> [f32; 4] {
     // Rounded square tile.
     let (cx, cy) = (u - 0.5, v - 0.5);
-    let half = 0.46;
+    let half = 0.497;
     let r = 0.2;
     let qx = (cx.abs() - (half - r)).max(0.0);
     let qy = (cy.abs() - (half - r)).max(0.0);
@@ -68,8 +71,10 @@ fn sample(u: f32, v: f32) -> [f32; 4] {
         return [0.0; 4];
     }
     let mut col = mix(rgb(0x232B45), rgb(0x0E1118), (v * 0.9 + u * 0.1).clamp(0.0, 1.0));
+    // The artwork, scaled up to fill the tile.
+    let (ax, ay) = (cx / ART_SCALE, cy / ART_SCALE);
     // Planet.
-    let (px, py) = (cx + 0.02, cy + 0.03);
+    let (px, py) = (ax + 0.02, ay + 0.03);
     let pr = 0.19;
     let pd = (px * px + py * py).sqrt();
     // Orbit ring: a tilted ellipse around the planet.
@@ -102,7 +107,7 @@ fn sample(u: f32, v: f32) -> [f32; 4] {
     let t: f32 = -0.75;
     let (ox, oy) = (a * t.cos(), b * t.sin());
     let (sx, sy) = (ox * ca + oy * sa - 0.02, -ox * sa + oy * ca - 0.03);
-    let sd = ((cx - sx).powi(2) + (cy - sy).powi(2)).sqrt();
+    let sd = ((ax - sx).powi(2) + (ay - sy).powi(2)).sqrt();
     let sr = 0.055;
     if sd < sr + 0.012 {
         let k = ((sr + 0.012 - sd) / 0.012).clamp(0.0, 1.0);
