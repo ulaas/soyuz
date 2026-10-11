@@ -290,3 +290,9 @@ services-update-checksum-mismatch = sağlama toplamı uyuşmuyor (beklenen { $ex
 services-update-cannot-rename = indirilen dosya yeniden adlandırılamıyor: { $error }
 services-update-available = Soyuz { $version } kullanıma sunuldu
 services-update-available-body = Sürüm notlarını okumak ve indirmek için Ayarlar → Hakkında ve güncellemeler bölümünü açın.
+
+## Linux (data)
+
+services-watch-degraded = Değişiklik izleme sınırlı
+# $secs = poll interval in whole seconds.
+services-watch-degraded-body = Sistemin izlenen klasör sınırına ulaşıldı; bu yüzden bazı klasörler bunun yerine her { $secs } sn'de bir yeniden denetleniyor.

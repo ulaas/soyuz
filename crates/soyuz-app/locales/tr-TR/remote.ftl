@@ -101,3 +101,8 @@ remote-new-folder-title = Yeni klasör
 remote-name = Ad
 remote-create = Oluştur
 remote-error-name = Eğik çizgi içermeyen bir ad girin.
+
+## Linux (data)
+
+remote-secret-not-saved = Parola kaydedilmedi
+remote-smb-unsupported = SMB paylaşımları henüz doğrudan açılamıyor. Paylaşımı masaüstünüzle bağlayın (örneğin `gio mount smb://sunucu/paylasim`), sonra Aygıtlar'dan veya /run/user altındaki klasöründen açın.

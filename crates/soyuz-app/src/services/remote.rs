@@ -16,7 +16,7 @@ use crossbeam_channel::{Sender, bounded};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use soyuz_core::config::RemoteSection;
-use soyuz_core::{EntryInfo, EntryKind, FsError, FsErrorKind, FsResult, Location};
+use soyuz_core::{EntryInfo, FsError, FsErrorKind, FsResult, Location};
 use soyuz_vfs::registry::{self, ConnState, Credentials, Hooks, HostKeyPrompt, NetSettings};
 use soyuz_vfs::{RemoteUri, Scheme};
 
@@ -85,6 +85,8 @@ struct State {
     fetching: Mutex<HashMap<String, Instant>>,
     cfg: RwLock<RemoteSection>,
     wake: Mutex<Option<Wake>>,
+    /// Warnings from background credential-store work, shown as toasts by the UI pump.
+    notices: Mutex<Vec<(String, String)>>,
 }
 
 fn st() -> &'static State {
@@ -100,6 +102,7 @@ fn st() -> &'static State {
         fetching: Mutex::new(HashMap::new()),
         cfg: RwLock::new(RemoteSection::default()),
         wake: Mutex::new(None),
+        notices: Mutex::new(Vec::new()),
     })
 }
 
@@ -230,6 +233,9 @@ fn new_id() -> String {
 
 /// Save (or update, by id) a connection; `secret` goes to the OS credential store.
 /// Returns a warning when the secret could not be stored.
+///
+/// Blocking (the credential store may wait on an unlock prompt, e.g. the Secret Service
+/// on Linux): call it from a worker thread, never the UI thread.
 pub fn save_connection(mut conn: SavedConn, secret: Option<&str>) -> Option<String> {
     if conn.id.is_empty() {
         conn.id = new_id();
@@ -240,7 +246,7 @@ pub fn save_connection(mut conn: SavedConn, secret: Option<&str>) -> Option<Stri
             match soyuz_ai::credentials::store(&conn.credential_name(), &soyuz_ai::credentials::Secret::new(s)) {
                 Ok(()) => conn.has_secret = true,
                 Err(e) => {
-                    warning = Some(format!("The password was not saved: {e}"));
+                    warning = Some(e.to_string());
                     conn.has_secret = false;
                 }
             }
@@ -251,23 +257,43 @@ pub fn save_connection(mut conn: SavedConn, secret: Option<&str>) -> Option<Stri
         }
         None => {}
     }
-    let mut conns = st().conns.write();
-    match conns.iter_mut().find(|c| c.id == conn.id) {
-        Some(c) => *c = conn,
-        None => conns.push(conn),
+    {
+        let mut conns = st().conns.write();
+        match conns.iter_mut().find(|c| c.id == conn.id) {
+            Some(c) => *c = conn,
+            None => conns.push(conn),
+        }
+        save_store(&conns);
     }
-    save_store(&conns);
+    if let Some(w) = &warning {
+        st().notices.lock().push((tr!("remote-secret-not-saved").to_string(), w.clone()));
+        wake();
+    }
     warning
 }
 
-/// Forget a saved connection (and its stored secret).
+/// Forget a saved connection (and its stored secret). Safe on the UI thread: the
+/// sidebar entry goes away at once; the credential-store delete and the JSON write run
+/// on a worker thread.
 pub fn remove_connection(id: &str) {
-    let mut conns = st().conns.write();
-    if let Some(c) = conns.iter().find(|c| c.id == id) {
-        let _ = soyuz_ai::credentials::delete(&c.credential_name());
-    }
-    conns.retain(|c| c.id != id);
-    save_store(&conns);
+    let removed = {
+        let mut conns = st().conns.write();
+        let removed = conns.iter().find(|c| c.id == id).cloned();
+        conns.retain(|c| c.id != id);
+        removed.map(|r| (r, conns.clone()))
+    };
+    let Some((conn, remaining)) = removed else { return };
+    let _ = std::thread::Builder::new().name("soyuz-remote-forget".into()).spawn(move || {
+        save_store(&remaining);
+        // Unconditional (`has_secret` may be stale); a missing secret is not an error.
+        let _ = soyuz_ai::credentials::delete(&conn.credential_name());
+    });
+}
+
+/// Next warning (title, details) from background credential-store work (shown as a toast).
+pub fn take_notice() -> Option<(String, String)> {
+    let mut q = st().notices.lock();
+    if q.is_empty() { None } else { Some(q.remove(0)) }
 }
 
 /// Remember a secret / auth choice for this session (connect dialog without saving, or
@@ -293,6 +319,9 @@ pub fn saved_for(uri: &RemoteUri) -> Option<SavedConn> {
     connections().into_iter().find(|c| c.parsed().is_some_and(|u| u.conn_key() == key))
 }
 
+/// Credentials for a connection. Only ever called from `registry::connect` (lister,
+/// download and job worker threads), never the UI thread: loading a stored secret may
+/// block on the OS credential store (Secret Service unlock prompt on Linux).
 fn credentials_for(uri: &RemoteUri) -> Credentials {
     let key = uri.conn_key();
     let session_secret = st().secrets.lock().get(&key).cloned();
@@ -334,6 +363,9 @@ pub fn disconnect(uri: &RemoteUri) {
 /// Normalize a remote location typed by the user: strips a `user:password@` password
 /// into the session secrets. `Err` = not a valid remote address.
 pub fn normalize(loc: Location) -> Result<Location, String> {
+    if let Some(msg) = smb_unsupported(&loc) {
+        return Err(msg);
+    }
     // Generic code builds `Dir(entry.path)` for folders; remote entry paths are URIs.
     let loc = match loc {
         Location::Dir(p) if is_remote_path(&p) => Location::Remote(p.to_string_lossy().into_owned()),
@@ -350,6 +382,31 @@ pub fn normalize(loc: Location) -> Result<Location, String> {
         }
         Err(e) => Err(e.to_string()),
     }
+}
+
+/// Off Windows there is no SMB provider (and no share enumeration): `smb://server`,
+/// `cifs://…` and `\\server\share` get a friendly hint instead of a raw error.
+#[cfg(not(windows))]
+fn smb_unsupported(loc: &Location) -> Option<String> {
+    let s = match loc {
+        Location::Remote(s) => s.as_str(),
+        Location::Dir(p) => p.to_str()?,
+        _ => return None,
+    };
+    let lower = s.trim_start().to_ascii_lowercase();
+    let smb = lower.starts_with("smb://") || lower.starts_with("cifs://") || lower.starts_with(r"\\");
+    smb.then(smb_hint)
+}
+
+#[cfg(windows)]
+fn smb_unsupported(_: &Location) -> Option<String> {
+    None
+}
+
+/// "SMB shares can't be opened directly yet …" (non-Windows).
+#[cfg(not(windows))]
+fn smb_hint() -> String {
+    tr!("remote-smb-unsupported").to_string()
 }
 
 /// The remote URI behind a pane / entry path.
@@ -398,6 +455,9 @@ pub fn list_blocking(path: &Path, force: bool) -> Option<FsResult<Vec<EntryInfo>
         if !st().cfg.read().share_enumeration {
             return None;
         }
+        #[cfg(not(windows))]
+        return Some(Err(FsError::with_message(FsErrorKind::Unsupported, "list_shares", Some(path), smb_hint())));
+        #[cfg(windows)]
         return Some(list_shares(s));
     }
     if !soyuz_core::location::looks_remote(s) {
@@ -433,6 +493,7 @@ pub fn list_blocking(path: &Path, force: bool) -> Option<FsResult<Vec<EntryInfo>
     Some(r)
 }
 
+#[cfg(windows)]
 fn list_shares(server: &str) -> FsResult<Vec<EntryInfo>> {
     let base = format!(r"\\{}", server.trim_start_matches(['\\', '/']).trim_end_matches(['\\', '/']));
     let shares = soyuz_fs::shares::list_shares(&base)?;
@@ -440,7 +501,7 @@ fn list_shares(server: &str) -> FsResult<Vec<EntryInfo>> {
         .into_iter()
         .filter(|s| s.disk)
         .map(|s| {
-            let mut e = EntryInfo::minimal(PathBuf::from(format!(r"{base}\{}", s.name)), EntryKind::Dir);
+            let mut e = EntryInfo::minimal(PathBuf::from(format!(r"{base}\{}", s.name)), soyuz_core::EntryKind::Dir);
             e.name = s.name;
             if s.special {
                 e.attrs |= soyuz_core::Attributes::HIDDEN;
@@ -622,6 +683,7 @@ pub fn poll_interval() -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use soyuz_core::EntryKind;
 
     #[test]
     fn normalize_strips_password() {
@@ -630,6 +692,13 @@ mod tests {
         let u = RemoteUri::parse("ftp://bob@example.org/").unwrap();
         assert_eq!(credentials_for(&u).secret.as_deref(), Some("hunter2"));
         assert!(normalize(Location::Remote("gopher://x".into())).is_err());
+        #[cfg(not(windows))]
+        {
+            let e = normalize(Location::Remote("smb://nas/share".into())).unwrap_err();
+            assert!(e.contains("SMB"), "{e}");
+            assert!(normalize(Location::Dir(PathBuf::from(r"\\nas\share"))).is_err());
+            assert!(normalize(Location::Dir(PathBuf::from("/home"))).is_ok());
+        }
         assert_eq!(normalize(Location::Trash).unwrap(), Location::Trash);
         assert_eq!(
             normalize(Location::Dir(PathBuf::from("sftp://u@h/x"))).unwrap(),

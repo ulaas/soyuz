@@ -276,3 +276,20 @@ app-hidden-controls-tip = Name contains hidden direction/format characters
 app-icon-size = Icon size
 app-toast-dismiss = Dismiss
 app-quit-when-finished = Soyuz will close when the operations finish
+
+## Linux (data)
+
+app-device-mount = Mount
+app-device-mounting = Mounting { $name }…
+# $device = device node (/dev/sdb1), $size = formatted size, $fs = file system (ext4, vfat …).
+app-device-unmounted-tip = { $device } · { $size } { $fs } · not mounted, click to mount
+app-device-mount-failed = Couldn't mount { $name }
+app-device-unmount = Unmount
+app-device-unmounted = { $name } was unmounted
+app-device-unmount-failed = Couldn't unmount { $name }
+app-device-eject = Eject
+app-device-ejected = { $name } can be removed safely
+app-device-eject-failed = Couldn't eject { $name }
+app-device-not-authorized = Not allowed. Is a polkit authentication agent running?
+app-device-busy = The device is in use. Close the files and programs using it, then try again.
+app-device-no-udisks = UDisks2 is not available on this system.

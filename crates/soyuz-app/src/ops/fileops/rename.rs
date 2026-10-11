@@ -3,7 +3,7 @@
 //! moves to the next item (Shift+Tab: previous), Esc cancels. Validation errors are shown
 //! under the editor and block the commit.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -62,6 +62,24 @@ pub fn next_sel(name: &str, is_dir: bool, cur: RenameSel) -> RenameSel {
         }
     }
     cur
+}
+
+/// The volume holding `dir` uses a Windows-family file system (FAT, exFAT, NTFS, SMB …;
+/// [`soyuz_core::fs_needs_windows_names`]): names there must follow the Windows rules
+/// even on Linux / macOS. Reads the cached volume list only (no I/O): the volume with
+/// the longest mount path that contains `dir`.
+pub fn volume_needs_windows_names(volumes: &[soyuz_fs::VolumeInfo], dir: &Path) -> bool {
+    volumes
+        .iter()
+        .filter(|v| !v.mount.as_os_str().is_empty() && dir.starts_with(&v.mount))
+        .max_by_key(|v| v.mount.components().count())
+        .is_some_and(|v| soyuz_core::fs_needs_windows_names(&v.fs))
+}
+
+/// Should names created in `dir` follow the Windows rules? Always on Windows; elsewhere
+/// with `[general] strict_windows_names`, or when `dir` is on a Windows-family volume.
+pub fn windows_rules_for(strict: bool, volumes: &[soyuz_fs::VolumeInfo], dir: Option<&Path>) -> bool {
+    cfg!(windows) || strict || dir.is_some_and(|d| volume_needs_windows_names(volumes, d))
 }
 
 /// Validate a new name for an item called `original` among `siblings`.
@@ -184,8 +202,10 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
         out.request_focus();
     }
     // Validation (siblings from the listing; no I/O).
-    let windows_rules = cfg!(windows) || v.config.general.strict_windows_names;
-    let ci = super::names::case_insensitive_fs();
+    let dir = pane.location.as_fs_path();
+    let windows_rules = windows_rules_for(v.config.general.strict_windows_names, v.volumes, dir);
+    // FAT / exFAT / NTFS / SMB volumes compare names case-insensitively, also off Windows.
+    let ci = super::names::case_insensitive_fs() || dir.is_some_and(|d| volume_needs_windows_names(v.volumes, d));
     let text = r.text.trim().to_string();
     r.error = validate(&text, &r.key, pane.entries.iter().map(|e| e.name.as_str()), windows_rules, ci).err();
     let stroke = if r.error.is_some() { p.danger } else { p.accent };
@@ -286,6 +306,34 @@ mod tests {
         // No extension: stem == all, so the cycle stays on the whole name.
         assert_eq!(next_sel("folder", true, RenameSel::Stem), RenameSel::Stem);
         assert_eq!(next_sel("Makefile", false, RenameSel::All), RenameSel::All);
+    }
+
+    fn vol(mount: &str, fs: &str) -> soyuz_fs::VolumeInfo {
+        soyuz_fs::VolumeInfo {
+            mount: PathBuf::from(mount),
+            label: String::new(),
+            fs: fs.into(),
+            kind: soyuz_fs::VolumeKind::Fixed,
+            total: 0,
+            free: 0,
+            read_only: false,
+            device: soyuz_core::DeviceId(0),
+            supports: soyuz_fs::FsCaps::empty(),
+        }
+    }
+
+    #[test]
+    fn windows_names_follow_the_volume() {
+        let vols = [vol("/", "btrfs"), vol("/run/media/u/STICK", "vfat"), vol("/mnt/win", "fuseblk")];
+        assert!(!volume_needs_windows_names(&vols, Path::new("/home/u")));
+        assert!(volume_needs_windows_names(&vols, Path::new("/run/media/u/STICK/photos")));
+        assert!(volume_needs_windows_names(&vols, Path::new("/mnt/win")));
+        assert!(!volume_needs_windows_names(&vols, Path::new("/run/media/u/STICK2")), "path components, not prefixes");
+        assert!(!volume_needs_windows_names(&[], Path::new("/x")));
+        assert!(windows_rules_for(true, &vols, Some(Path::new("/home"))), "strict setting");
+        assert_eq!(windows_rules_for(false, &vols, Some(Path::new("/home"))), cfg!(windows));
+        assert!(windows_rules_for(false, &vols, Some(Path::new("/mnt/win/x"))));
+        assert_eq!(windows_rules_for(false, &vols, None), cfg!(windows));
     }
 
     #[test]

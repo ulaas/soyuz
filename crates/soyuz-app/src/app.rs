@@ -172,7 +172,8 @@ impl SoyuzApp {
         for w in warnings {
             log::warn!("{w}");
         }
-        let services = Services::new(ctx, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
+        let mut services = Services::new(ctx, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
+        services.watcher.set_poll_interval(Duration::from_millis(config.behaviour.watch_poll_interval_ms));
         let dir = config::config_dir();
         let session_path = dir.join("session.toml");
         let views_path = dir.join("views.toml");
@@ -599,6 +600,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ui::views::icon_pack::apply(ctx, &c.appearance.icon_pack);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
     crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
+    crate::services::lister::set_dot_hidden(c.general.honour_dot_hidden);
     crate::ai::state::set_rules(&c.ai);
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
     crate::services::tags::set_custom_names(&c.tags);

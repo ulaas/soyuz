@@ -167,15 +167,22 @@ fn trash_unsupported_skip_and_native_failure() {
     assert_eq!(h.ok(id).items_skipped, 1);
     assert!(h.p("x").exists());
     // Probe claims native support but the bin is unavailable (baseline fs): same flow.
+    // Ask the real file system *before* submitting (the job may trash `x` right away),
+    // and never put anything in a real trash can unless SOYUZ_TRASH_TESTS=1.
+    let native = soyuz_fs::trash::trash_support(&h.p("x")) == TrashSupport::Native;
+    if native && std::env::var_os("SOYUZ_TRASH_TESTS").is_none() {
+        return;
+    }
     *h.probe.trash.lock() = TrashSupport::Native;
     let id = h.submit(JobKind::Delete { paths: vec![h.p("x")], mode: DeleteMode::Trash });
-    if soyuz_fs::trash::trash_support(&h.p("x")) != TrashSupport::Native {
+    if native {
+        h.ok(id);
+        assert!(!h.p("x").exists());
+    } else {
         assert!(matches!(h.prompt(id), JobPrompt::TrashUnsupported { .. }));
         h.engine.respond(id, PromptResponse::Cancelled);
         assert_eq!(h.done(id), JobState::Cancelled);
         assert!(h.p("x").exists());
-    } else {
-        h.ok(id);
     }
 }
 

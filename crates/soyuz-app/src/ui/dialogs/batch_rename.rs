@@ -47,8 +47,19 @@ pub fn open(app: &mut SoyuzApp) {
     let items: Vec<Item> = entries.iter().map(|e| Item::new(e.path.clone(), e.is_dir_like(), e.modified)).collect();
     let known: HashSet<PathBuf> = pane.entries.iter().map(|e| e.path.clone()).collect();
     let listed_dir = pane.location.as_fs_path().map(Path::to_path_buf);
-    let windows_rules = cfg!(windows) || app.config.general.strict_windows_names;
-    let d = BatchRenameDialog::new(pane.id, items, known, listed_dir, windows_rules);
+    // Windows-family volumes (FAT, exFAT, NTFS, SMB) need the Windows rules and compare
+    // names case-insensitively, also off Windows (search results: any item's folder).
+    let windows_fs = items.iter().any(|it| {
+        it.path.parent().is_some_and(|d| crate::ops::fileops::rename::volume_needs_windows_names(&app.ui.volumes, d))
+    });
+    let windows_rules = windows_fs
+        || crate::ops::fileops::rename::windows_rules_for(
+            app.config.general.strict_windows_names,
+            &app.ui.volumes,
+            listed_dir.as_deref(),
+        );
+    let mut d = BatchRenameDialog::new(pane.id, items, known, listed_dir, windows_rules);
+    d.case_insensitive = crate::ops::fileops::names::case_insensitive_fs() || windows_fs;
     app.ui.dialogs.push(d);
 }
 
@@ -70,6 +81,8 @@ pub struct BatchRenameDialog {
     known_lower: HashSet<String>,
     listed_dir: Option<PathBuf>,
     windows_rules: bool,
+    /// Names compare case-insensitively (Windows / macOS, or a Windows-family volume).
+    case_insensitive: bool,
     spec: Spec,
     mode: Mode,
     editor: String,
@@ -112,6 +125,7 @@ impl BatchRenameDialog {
             known,
             listed_dir,
             windows_rules,
+            case_insensitive: crate::ops::fileops::names::case_insensitive_fs(),
             spec,
             mode: Mode::Rules,
             editor,
@@ -136,8 +150,7 @@ impl BatchRenameDialog {
             return soyuz_fs::exists_nofollow(p);
         }
         // Case-insensitive file systems: compare names case-insensitively.
-        crate::ops::fileops::names::case_insensitive_fs()
-            && self.known_lower.contains(&p.to_string_lossy().to_lowercase())
+        self.case_insensitive && self.known_lower.contains(&p.to_string_lossy().to_lowercase())
     }
 
     fn ensure_exif(&mut self, ctx: &egui::Context) {
@@ -191,7 +204,7 @@ impl BatchRenameDialog {
                 }
             },
         };
-        let ci = crate::ops::fileops::names::case_insensitive_fs();
+        let ci = self.case_insensitive;
         let rows = rename::validate(&self.items, &names, &|p| self.exists(p), self.windows_rules, ci);
         self.cycles = rename::count_cycles(&rename::pairs(&self.items, &rows), ci);
         self.rows = rows;

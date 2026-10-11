@@ -303,6 +303,15 @@ mod tests {
         assert!(s.get(Path::new(r"\\?\C:\WORK")).is_some());
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn unix_lookup_is_case_sensitive() {
+        let mut s = Store::default();
+        s.set(Path::new("/home/u/Work"), FolderStyle { color: Some(FolderColor::Tag(0)), emblem: None });
+        assert!(s.get(Path::new("/home/u/Work")).is_some());
+        assert!(s.get(Path::new("/home/u/work")).is_none(), "Work and work are different folders");
+    }
+
     #[test]
     fn colors_resolve_against_the_palette() {
         let p = crate::theme::ORBIT_DARK.clone();

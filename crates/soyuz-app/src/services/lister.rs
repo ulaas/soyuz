@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
@@ -148,8 +148,27 @@ fn case_fixed(path: &Path, queried: &str, e: EntryInfo) -> (Option<EntryInfo>, O
     }
 }
 
+/// `[general] honour_dot_hidden` (read by the workers).
+static DOT_HIDDEN: AtomicBool = AtomicBool::new(true);
+
+/// Unix: names listed in a folder's `.hidden` file count as hidden (`[general]
+/// honour_dot_hidden`); applies to the next listing (refresh to see it in open panes).
+pub fn set_dot_hidden(on: bool) {
+    DOT_HIDDEN.store(on, Ordering::Relaxed);
+}
+
+/// Current `[general] honour_dot_hidden` (for other listings: pickers, tree).
+pub fn dot_hidden() -> bool {
+    DOT_HIDDEN.load(Ordering::Relaxed)
+}
+
 fn list_options() -> ListOptions {
-    ListOptions { include_hidden: true, chunk: 512, ..ListOptions::default() }
+    ListOptions {
+        include_hidden: true,
+        chunk: 512,
+        dot_hidden: DOT_HIDDEN.load(Ordering::Relaxed),
+        ..ListOptions::default()
+    }
 }
 
 fn run(job: Job, postman: &Postman) {
