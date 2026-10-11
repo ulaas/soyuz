@@ -2,7 +2,6 @@
 //! send a [`UiMsg`] and wake the UI; `SoyuzApp::ui` drains it at frame start.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use soyuz_core::{EntryInfo, FsError, Location};
@@ -11,8 +10,7 @@ use soyuz_fs::VolumeInfo;
 use crate::state::pane::PaneId;
 use crate::ui::toasts::Toast;
 
-/// Wake-up callback (`ctx.request_repaint`).
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use crate::host::Wake;
 
 #[derive(Debug)]
 pub enum UiMsg {

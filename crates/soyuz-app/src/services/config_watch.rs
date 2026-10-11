@@ -5,7 +5,6 @@
 //! the previous configuration.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::time::Duration;
 
 use crossbeam_channel::{Receiver, unbounded};
@@ -35,17 +34,15 @@ pub struct ConfigWatch {
 impl ConfigWatch {
     /// Start watching `path`'s directory (created when missing). Never fails: without a
     /// watcher the app simply has no hot reload.
-    pub fn start(ctx: &egui::Context, path: PathBuf) -> Self {
+    pub fn start(wake: crate::host::Wake, path: PathBuf) -> Self {
         let last_text = std::fs::read_to_string(&path).ok();
         let (tx, rx) = unbounded::<Reloaded>();
-        let ctx = ctx.clone();
         let file = path.clone();
         let spawned = std::thread::Builder::new().name("soyuz-config-watch".into()).spawn(move || {
             let Some(dir) = file.parent().map(Path::to_path_buf) else { return };
             let _ = soyuz_fs::create_dir_all(&dir);
             let (ev_tx, ev_rx) = unbounded();
-            let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(|| {});
-            let mut watcher = match Watcher::new(ev_tx, DEBOUNCE, wake) {
+            let mut watcher = match Watcher::new(ev_tx, DEBOUNCE, crate::host::no_wake()) {
                 Ok(w) => w,
                 Err(e) => {
                     log::warn!("config hot reload unavailable: {e}");
@@ -70,7 +67,7 @@ impl ConfigWatch {
                 if tx.send(reloaded).is_err() {
                     return;
                 }
-                ctx.request_repaint();
+                wake();
             }
         });
         let rx = match spawned {

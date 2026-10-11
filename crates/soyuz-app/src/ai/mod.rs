@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize};
 pub use state::{AiCmd, AiState, apply_cmd, execute_action, handles, pump};
 
 /// Repaint / wake-up callback.
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use crate::host::Wake;
 
 /// One assistant task (a user message and everything the agent did for it).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, PartialOrd, Ord, Serialize, Deserialize)]

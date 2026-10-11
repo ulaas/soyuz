@@ -117,7 +117,7 @@ pub struct FileOps {
 impl FileOps {
     pub fn new(ctx: &egui::Context, config: &Config) -> Self {
         FileOps {
-            jobs: JobsService::new(ctx, config),
+            jobs: JobsService::new(crate::host::egui_wake(ctx), config),
             clipboard: Clipboard::default(),
             rename: None,
             prompts: PromptQueue::default(),

@@ -120,11 +120,10 @@ thread_local! {
 }
 
 /// Install the repaint hook and thread count (idempotent; called every frame by the UI).
-pub fn init(ctx: &egui::Context, threads: usize) {
+pub fn init(wake: &crate::host::Wake, threads: usize) {
     REG.with_borrow_mut(|r| {
         if r.wake.is_none() {
-            let c = ctx.clone();
-            r.wake = Some(Arc::new(move || c.request_repaint()));
+            r.wake = Some(wake.clone());
         }
         r.threads = threads;
     });
@@ -949,8 +948,7 @@ mod tests {
         std::fs::write(dir.path().join("a/b/needle.txt"), "x").unwrap();
         std::fs::write(dir.path().join("a/needle.md"), "x").unwrap();
         std::fs::write(dir.path().join("hay.txt"), "x").unwrap();
-        let ctx = egui::Context::default();
-        init(&ctx, 2);
+        init(&crate::host::no_wake(), 2);
         let f = SearchForm { text: "needle".into(), root: dir.path().to_path_buf(), ..Default::default() };
         let id = register(SearchSpec::new(f.build(SystemTime::now(), 1 << 20).unwrap(), f.title()));
         let pane = Pane::new(soyuz_core::Location::Search(id), crate::state::view_memory::ViewState::default());

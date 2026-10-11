@@ -25,7 +25,7 @@ const PROBE_LIMIT: usize = 400;
 /// At most this many folders are watched (the first open folders, roots first).
 pub const WATCH_LIMIT: usize = 64;
 
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use crate::host::Wake;
 
 /// A result for the UI.
 #[derive(Debug)]

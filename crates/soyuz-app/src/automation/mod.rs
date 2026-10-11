@@ -175,17 +175,12 @@ pub fn action_title(id: &str) -> String {
         .unwrap_or_else(|| tr!("automation-script-fallback-title", id = id))
 }
 
-fn wake_of(ctx: &egui::Context) -> Wake {
-    let c = ctx.clone();
-    Arc::new(move || c.request_repaint())
-}
-
 /// Per frame.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     let st = &mut app.automation;
     if !st.started {
         st.started = true;
-        let wake = wake_of(ctx);
+        let wake = app.wake.clone();
         scripts::set_wake(wake.clone());
         st.wake = Some(wake.clone());
         st.loader = Some(scripts::Loader::start(soyuz_script::scripts_dir(), app.config.scripting.clone(), wake));
@@ -524,7 +519,7 @@ fn pump_rules(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     if st.lock.is_some() && st.worker.is_none() {
-        let wake = st.wake.clone().unwrap_or_else(|| wake_of(ctx));
+        let wake = st.wake.clone().unwrap_or_else(|| app.wake.clone());
         let debounce = Duration::from_millis(app.config.behaviour.watch_debounce_ms.max(50));
         let w = worker::spawn(app.fileops.jobs.engine_arc(), wake, debounce);
         if let Some(set) = &st.set {
@@ -614,7 +609,7 @@ fn pump_cli(app: &mut SoyuzApp, ctx: &egui::Context) {
         st.cli_failed = false;
         st.cli_status = None;
     } else if st.cli.is_none() && !st.cli_failed {
-        let wake = st.wake.clone().unwrap_or_else(|| wake_of(ctx));
+        let wake = st.wake.clone().unwrap_or_else(|| app.wake.clone());
         match cli_server::CliServer::start(app.fileops.jobs.engine_arc(), wake) {
             Ok(s) => {
                 st.cli_status = Some(Ok(s.name.clone()));

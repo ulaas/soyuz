@@ -41,7 +41,9 @@ pub fn spring_delay() -> Option<f64> {
 
 /// Once per frame (before the shell draws).
 pub fn begin_frame(ctx: &egui::Context) {
-    folder_colors::pump(ctx);
+    if folder_colors::pump(&crate::host::egui_wake(ctx)) {
+        ctx.request_repaint_after(std::time::Duration::from_millis(450));
+    }
 }
 
 /// Translated name of tag color `i` (`TAG_NAMES` order).

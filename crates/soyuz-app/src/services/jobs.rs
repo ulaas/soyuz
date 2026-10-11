@@ -232,9 +232,7 @@ impl AffectedPaths {
 }
 
 impl JobsService {
-    pub fn new(ctx: &egui::Context, config: &Config) -> Self {
-        let c = ctx.clone();
-        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || c.request_repaint());
+    pub fn new(wake: crate::host::Wake, config: &Config) -> Self {
         let engine = JobEngine::new(engine_config(config), Arc::new(RealProbe), wake);
         let throttle_bps = std::env::var("SOYUZ_THROTTLE_MBPS")
             .ok()

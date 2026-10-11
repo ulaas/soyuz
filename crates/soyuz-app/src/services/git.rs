@@ -553,11 +553,10 @@ fn key(p: &Path) -> PathBuf {
 }
 
 /// Install the repaint hook (idempotent; called every frame).
-pub fn init(ctx: &egui::Context, enabled: bool) {
+pub fn init(wake: &crate::host::Wake, enabled: bool) {
     REG.with_borrow_mut(|r| {
         if r.wake.is_none() {
-            let c = ctx.clone();
-            r.wake = Some(Arc::new(move || c.request_repaint()));
+            r.wake = Some(wake.clone());
         }
         r.enabled = enabled;
     });

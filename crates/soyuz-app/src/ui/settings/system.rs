@@ -96,7 +96,7 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         updates::reset();
     }
     if check {
-        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, ui.ctx().clone());
+        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, crate::host::egui_wake(ui.ctx()));
     }
     if !matches!(phase, Phase::Idle) {
         let mut reveal: Option<PathBuf> = None;
@@ -143,9 +143,9 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                     {
                         // Resolving the Downloads folder reads the registry: do it on the worker.
                         let rel = rel.clone();
-                        let ctx = ui.ctx().clone();
+                        let wake = crate::host::egui_wake(ui.ctx());
                         std::thread::spawn(move || {
-                            updates::download(rel, integration::downloads_dir(), ctx);
+                            updates::download(rel, integration::downloads_dir(), wake);
                         });
                     }
                     ui.label(RichText::new(format!("{} · {}", a.name, mib(a.size))).size(11.5).color(p.text_tertiary));
@@ -274,7 +274,7 @@ fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
                 .clicked()
             {
                 ui.ctx().data_mut(|d| d.insert_temp(started_id, true));
-                updates::install_async(path.to_path_buf(), sha256.to_string(), ui.ctx().clone());
+                updates::install_async(path.to_path_buf(), sha256.to_string(), crate::host::egui_wake(ui.ctx()));
             }
         });
         if installing {

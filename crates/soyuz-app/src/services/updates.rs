@@ -24,6 +24,8 @@ use std::cmp::Ordering;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use crate::host::Wake;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -452,9 +454,9 @@ pub fn phase() -> Phase {
     STATE.lock().phase.clone()
 }
 
-fn set(phase: Phase, ctx: &egui::Context) {
+fn set(phase: Phase, wake: &Wake) {
     STATE.lock().phase = phase;
-    ctx.request_repaint();
+    wake();
 }
 
 fn busy() -> bool {
@@ -528,11 +530,11 @@ async fn fetch_latest(repo: &str, prereleases: bool) -> Result<Release, String> 
 }
 
 /// Start a manual check in the background ("Check for updates").
-pub fn check(repo: String, prereleases: bool, ctx: egui::Context) {
+pub fn check(repo: String, prereleases: bool, wake: Wake) {
     if busy() {
         return;
     }
-    set(Phase::Checking, &ctx);
+    set(Phase::Checking, &wake);
     spawn("soyuz-update-check", move || {
         detect_portable();
         let res = runtime().map_err(|e| e.to_string()).and_then(|rt| rt.block_on(fetch_latest(&repo, prereleases)));
@@ -542,7 +544,7 @@ pub fn check(repo: String, prereleases: bool, ctx: egui::Context) {
             Ok(r) => Phase::UpToDate { latest: r.version.to_string() },
             Err(e) => Phase::Failed(e),
         };
-        set(phase, &ctx);
+        set(phase, &wake);
     });
 }
 
@@ -554,12 +556,12 @@ fn spawn(name: &str, f: impl FnOnce() + Send + 'static) {
 }
 
 /// Download `asset` of `release` into `dir`, verify it, and report [`Phase::Downloaded`].
-pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
+pub fn download(release: Arc<Release>, dir: PathBuf, wake: Wake) {
     if busy() {
         return;
     }
     let Some(asset) = asset_for_this_copy(&release).cloned() else {
-        set(Phase::Failed(tr!("services-update-no-asset").into()), &ctx);
+        set(Phase::Failed(tr!("services-update-no-asset").into()), &wake);
         return;
     };
     let cancel = Arc::new(AtomicBool::new(false));
@@ -568,11 +570,11 @@ pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
         s.cancel = Some(cancel.clone());
         s.phase = Phase::Downloading { release: release.clone(), asset: asset.name.clone(), got: 0, total: asset.size };
     }
-    ctx.request_repaint();
+    wake();
     spawn("soyuz-update-download", move || {
         let res = runtime()
             .map_err(|e| e.to_string())
-            .and_then(|rt| rt.block_on(download_verified(&release, &asset, &dir, &cancel, &ctx)));
+            .and_then(|rt| rt.block_on(download_verified(&release, &asset, &dir, &cancel, &wake)));
         STATE.lock().cancel = None;
         let phase = match res {
             Ok((path, sha256)) => {
@@ -594,7 +596,7 @@ pub fn download(release: Arc<Release>, dir: PathBuf, ctx: egui::Context) {
             }
             Err(e) => Phase::Failed(e),
         };
-        set(phase, &ctx);
+        set(phase, &wake);
     });
 }
 
@@ -603,7 +605,7 @@ async fn download_verified(
     asset: &Asset,
     dir: &Path,
     cancel: &AtomicBool,
-    ctx: &egui::Context,
+    wake: &Wake,
 ) -> Result<(PathBuf, String), String> {
     let client = client()?;
     // Expected hash: every source that exists must agree.
@@ -675,7 +677,7 @@ async fn download_verified(
                 *g = got;
                 *t = total;
             }
-            ctx.request_repaint();
+            wake();
         }
     }
     if let Err(e) = file.sync_all() {
@@ -981,7 +983,7 @@ static INSTALLED: Mutex<Option<Result<PathBuf, String>>> = Mutex::new(None);
 static INSTALLING: AtomicBool = AtomicBool::new(false);
 
 /// Run [`install_tarball`] on a worker thread; poll [`install_status`].
-pub fn install_async(archive: PathBuf, sha256: String, ctx: egui::Context) {
+pub fn install_async(archive: PathBuf, sha256: String, wake: Wake) {
     if INSTALLING.swap(true, AtomicOrdering::SeqCst) {
         return;
     }
@@ -990,7 +992,7 @@ pub fn install_async(archive: PathBuf, sha256: String, ctx: egui::Context) {
         let r = install_tarball(&archive, &sha256);
         *INSTALLED.lock() = Some(r);
         INSTALLING.store(false, AtomicOrdering::SeqCst);
-        ctx.request_repaint();
+        wake();
     });
     if let Err(e) = spawned {
         INSTALLING.store(false, AtomicOrdering::SeqCst);
@@ -1099,14 +1101,14 @@ pub fn weekly_due(last: Option<SystemTime>, now: SystemTime) -> bool {
 
 /// Per-frame hook: starts the opt-in weekly check once per session and turns its result
 /// into a notification.
-pub fn pump(app: &mut crate::app::SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut crate::app::SoyuzApp) {
     let notice = {
         let mut s = STATE.lock();
         if !s.started_weekly {
             s.started_weekly = true;
             let u = &app.config.updates;
             if u.weekly_check && !u.repo.trim().is_empty() {
-                let (repo, pre, ctx) = (u.repo.clone(), u.include_prereleases, ctx.clone());
+                let (repo, pre, wake) = (u.repo.clone(), u.include_prereleases, app.wake.clone());
                 drop(s);
                 spawn("soyuz-update-weekly", move || {
                     detect_portable();
@@ -1129,7 +1131,7 @@ pub fn pump(app: &mut crate::app::SoyuzApp, ctx: &egui::Context) {
                         }
                     };
                     drop(s);
-                    ctx.request_repaint();
+                    wake();
                 });
                 return;
             }

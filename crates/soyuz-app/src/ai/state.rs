@@ -312,9 +312,8 @@ pub struct AiState {
 }
 
 impl AiState {
-    pub fn new(ctx: &egui::Context) -> Self {
+    pub fn new(wake: Wake) -> Self {
         let (ui_tx, ui_rx) = crossbeam_channel::unbounded();
-        let c = ctx.clone();
         AiState {
             panel: PanelUi::default(),
             chat: Vec::new(),
@@ -340,7 +339,7 @@ impl AiState {
             save_rx: Vec::new(),
             last_snapshot: None,
             session: chrono::Local::now().format("%Y%m%d-%H%M%S").to_string(),
-            wake: Arc::new(move || c.request_repaint()),
+            wake,
         }
     }
 

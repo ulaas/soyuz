@@ -309,14 +309,14 @@ fn pending() -> &'static Mutex<Vec<JobSpec>> {
     P.get_or_init(Default::default)
 }
 
-fn ctx_slot() -> &'static OnceLock<egui::Context> {
-    static C: OnceLock<egui::Context> = OnceLock::new();
-    &C
+fn wake_slot() -> &'static OnceLock<crate::host::Wake> {
+    static W: OnceLock<crate::host::Wake> = OnceLock::new();
+    &W
 }
 
-/// Remember the egui context so worker threads can wake the UI after queueing a job.
-pub fn remember_ctx(ctx: &egui::Context) {
-    let _ = ctx_slot().set(ctx.clone());
+/// Remember the wake-up so worker threads can wake the UI after queueing a job.
+pub fn remember_wake(wake: &crate::host::Wake) {
+    let _ = wake_slot().set(wake.clone());
 }
 
 /// Queue a job from a worker thread; the UI submits it on its next frame.
@@ -324,8 +324,8 @@ pub fn submit_job_detached(spec: JobSpec) {
     if let Ok(mut q) = pending().lock() {
         q.push(spec);
     }
-    if let Some(ctx) = ctx_slot().get() {
-        ctx.request_repaint();
+    if let Some(wake) = wake_slot().get() {
+        wake();
     }
 }
 

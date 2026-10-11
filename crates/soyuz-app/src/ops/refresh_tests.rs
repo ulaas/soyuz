@@ -22,7 +22,11 @@ use crate::state::workspace::{Tab, Workspace};
 const WAIT: Duration = Duration::from_secs(10);
 
 fn services() -> Services {
-    Services::new(&egui::Context::default(), Duration::from_millis(50))
+    Services::new(
+        crate::host::no_wake(),
+        crate::services::thumbs::Thumbs::new(egui::Context::default(), 1),
+        Duration::from_millis(50),
+    )
 }
 
 fn names(p: &Pane) -> Vec<String> {

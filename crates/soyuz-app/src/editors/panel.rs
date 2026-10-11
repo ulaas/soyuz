@@ -306,7 +306,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     }
     app.editors.focus_ids = focus;
     if save_now {
-        super::save(app, &ctx, idx);
+        super::save(app, idx);
     }
     if toggle_wrap {
         crate::ui::settings::update_config(app, &ctx, |c| c.editor.wrap = !c.editor.wrap);
@@ -315,7 +315,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         crate::ui::settings::update_config(app, &ctx, |c| c.editor.show_whitespace = !c.editor.show_whitespace);
     }
     match external_answer {
-        Some(0) => super::reload(app, &ctx, idx),
+        Some(0) => super::reload(app, idx),
         Some(_) => {
             if let Some(d) = app.editors.docs.get_mut(idx) {
                 d.external = None;
@@ -331,16 +331,16 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                     d.request_focus();
                 }
             }
-            TabCmd::Save(i) => super::save(app, &ctx, i),
+            TabCmd::Save(i) => super::save(app, i),
             TabCmd::Close(i) => super::close(app, i, false),
             TabCmd::Reopen(i, want) => {
                 if app.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
                     app.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("editors-reopen-dirty")));
                 } else {
-                    super::reopen_as(app, &ctx, i, want);
+                    super::reopen_as(app, i, want);
                 }
             }
-            TabCmd::Reload(i) => super::reload(app, &ctx, i),
+            TabCmd::Reload(i) => super::reload(app, i),
             TabCmd::Reveal(i) => {
                 if let Some(d) = app.editors.docs.get(i) {
                     app.cmds.push(crate::cmd::Cmd::RevealPath(d.path.clone()));

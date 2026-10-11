@@ -271,12 +271,12 @@ fn expand_home(p: &Path) -> PathBuf {
 
 /// Per frame: stream search hits / folder sizes into panes, surface errors.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
-    svc::init(ctx, app.config.search.threads);
+    svc::init(&app.wake, app.config.search.threads);
     crate::ui::smart::pump(app, ctx);
     for n in svc::pump(&mut app.ws) {
         app.ui.toasts.push(Toast::error(tr!("views-search-failed")).body(n));
     }
-    crate::ui::archive::pump(app, ctx);
+    crate::ui::archive::pump(app);
     if svc::sizing() {
         ctx.request_repaint_after(std::time::Duration::from_millis(200));
     }

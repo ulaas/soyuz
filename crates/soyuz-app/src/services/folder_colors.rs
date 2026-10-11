@@ -193,18 +193,19 @@ thread_local! {
 }
 
 /// Start loading (idempotent), merge the loaded store, write changes back debounced.
-pub fn pump(ctx: &egui::Context) {
+/// Returns `true` while a write is pending (the caller draws again in ~450 ms).
+pub fn pump(wake: &crate::host::Wake) -> bool {
     REG.with_borrow_mut(|r| {
         if !r.started {
             r.started = true;
             let (tx, rx) = unbounded();
             r.rx = Some(rx);
             let path = r.path.clone();
-            let ctx = ctx.clone();
+            let wake = wake.clone();
             let _ = std::thread::Builder::new().name("soyuz-folder-colors-load".into()).spawn(move || {
                 let store = super::store_file::load(&path, Store::from_toml).value();
                 let _ = tx.send(store);
-                ctx.request_repaint();
+                wake();
             });
         }
         if let Some(mut s) = r.rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
@@ -217,10 +218,9 @@ pub fn pump(ctx: &egui::Context) {
         if r.dirty && r.loaded && r.last_change.elapsed() > Duration::from_millis(400) {
             r.dirty = false;
             super::store_file::save_async(r.path.clone(), r.store.to_toml().into_bytes());
-        } else if r.dirty {
-            ctx.request_repaint_after(Duration::from_millis(450));
         }
-    });
+        r.dirty
+    })
 }
 
 /// Queue pending changes now (app exit).

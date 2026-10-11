@@ -3,7 +3,6 @@
 //! results come back over channels and wake the UI.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crossbeam_channel::Receiver;
 use soyuz_ai::credentials::{self, KeyRef};
@@ -11,7 +10,7 @@ use soyuz_ai::{NetSettings, ProbeReport, Provider, Secret, UsageLedger};
 use soyuz_core::config::{Ai, AiProfile};
 
 /// Repaint callback.
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use crate::host::Wake;
 
 fn spawn<T: Send + 'static>(name: &str, wake: Wake, f: impl FnOnce() -> T + Send + 'static) -> Receiver<T> {
     let (tx, rx) = crossbeam_channel::bounded(1);

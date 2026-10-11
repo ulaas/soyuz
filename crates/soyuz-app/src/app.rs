@@ -118,6 +118,8 @@ pub struct SoyuzApp {
     pub workspaces: crate::ui::workspaces::WorkspacesState,
     /// Scripts, automation rules and the CLI pipe.
     pub automation: crate::automation::AutomationState,
+    /// Asks the frontend for another frame (background threads keep a clone).
+    pub wake: crate::host::Wake,
 }
 
 /// Command-line startup options (see `main.rs`).
@@ -173,7 +175,11 @@ impl SoyuzApp {
         for w in warnings {
             log::warn!("{w}");
         }
-        let mut services = Services::new(ctx, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
+        let wake = crate::host::egui_wake(ctx);
+        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
+        let thumbs = crate::services::thumbs::Thumbs::new(ctx.clone(), cores.saturating_sub(1).clamp(1, 4));
+        let mut services =
+            Services::new(wake.clone(), thumbs, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
         services.watcher.set_poll_interval(Duration::from_millis(config.behaviour.watch_poll_interval_ms));
         let dir = config::config_dir();
         let session_path = dir.join("session.toml");
@@ -263,7 +269,7 @@ impl SoyuzApp {
             palette: crate::palette::PaletteState::new(dir.join("palette.toml")),
             settings: Default::default(),
             config_watch: crate::services::config_watch::ConfigWatch::start(
-                ctx,
+                wake.clone(),
                 if startup.safe_mode { crate::services::crash::safe_config_path() } else { config::default_path() },
             ),
             keyseq: Default::default(),
@@ -271,7 +277,8 @@ impl SoyuzApp {
             secondary: startup.secondary,
             quit: QuitState::default(),
             editors: Default::default(),
-            ai: crate::ai::AiState::new(ctx),
+            ai: crate::ai::AiState::new(wake.clone()),
+            wake,
             workspaces: crate::ui::workspaces::WorkspacesState::load(),
             automation: Default::default(),
         };
@@ -283,7 +290,7 @@ impl SoyuzApp {
             app.workspaces.restore = s.windows.clone();
         }
         if let Some(s) = &session {
-            crate::editors::restore(&mut app, ctx, &s.editors);
+            crate::editors::restore(&mut app, &s.editors);
         }
         if restored {
             if let Some((loc, select)) = opened {
@@ -699,7 +706,7 @@ impl SoyuzApp {
         crate::services::mcp_bridge::pump(self, &ctx);
         crate::ai::pump(self, &ctx);
         crate::automation::pump(self, &ctx);
-        crate::services::updates::pump(self, &ctx);
+        crate::services::updates::pump(self);
         crate::services::filemanager1::pump(self, &ctx);
         crate::ui::remote::pump(self, &ctx);
         crate::services::os_clipboard::pump(self);

@@ -40,7 +40,7 @@ use crate::services::jobs::{JobMeta, OpKind};
 use crate::ui::toasts::Toast;
 
 /// Repaint callback.
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use crate::host::Wake;
 
 /// How long a server thread waits for the UI to answer a non-approval request.
 const UI_TIMEOUT: Duration = Duration::from_secs(30);
@@ -383,11 +383,6 @@ impl McpBridge {
     }
 }
 
-fn wake_of(ctx: &egui::Context) -> Wake {
-    let c = ctx.clone();
-    Arc::new(move || c.request_repaint())
-}
-
 /// Per frame: (re)start servers on config changes, answer UI requests, show approvals.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if app.secondary {
@@ -398,7 +393,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if app.services.mcp.applied.as_ref() != Some(&app.config.ai) {
         let ai = app.config.ai.clone();
         let engine = app.fileops.jobs.engine_arc();
-        app.services.mcp.reconfigure(&ai, engine, wake_of(ctx));
+        app.services.mcp.reconfigure(&ai, engine, app.wake.clone());
         app.services.mcp.applied = Some(ai);
     }
     if let Some(rx) = &app.services.mcp.tokens_rx

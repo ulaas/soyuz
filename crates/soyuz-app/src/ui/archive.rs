@@ -284,8 +284,8 @@ pub fn test_archive(app: &mut SoyuzApp) {
 }
 
 /// Per frame: password prompts and job completion toasts.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
-    svc::remember_ctx(ctx);
+pub fn pump(app: &mut SoyuzApp) {
+    svc::remember_wake(&app.wake);
     pump_edits(app);
     if let Some((pane, archive, wrong)) = svc::take_password_request() {
         app.ui.dialogs.push(PasswordDialog::new(pane, archive, wrong));

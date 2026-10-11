@@ -255,7 +255,7 @@ fn init(ctx: &egui::Context) {
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     init(ctx);
     let wake = wake();
-    crate::services::git::init(ctx, app.config.git.status_column);
+    crate::services::git::init(&app.wake, app.config.git.status_column);
     let git_pending = crate::services::git::pump(app.config.git.refresh_secs);
     let tags_arrived = crate::services::tags::pump(&wake);
     let recent_arrived = crate::services::recent::pump(&wake);

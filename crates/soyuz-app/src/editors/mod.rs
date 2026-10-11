@@ -18,7 +18,6 @@ pub mod text;
 pub mod widgets;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use egui::Id;
@@ -92,7 +91,6 @@ pub struct Editors {
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
     watcher: Option<io::DocWatcher>,
-    wake: Option<Wake>,
     /// Focusable widgets of the editor drawn last frame.
     pub(crate) focus_ids: Vec<Id>,
     /// "Save all and quit" is in progress.
@@ -114,7 +112,6 @@ impl Default for Editors {
             tx,
             rx,
             watcher: None,
-            wake: None,
             focus_ids: Vec::new(),
             quit_after_save: false,
             quit_allowed: false,
@@ -136,17 +133,7 @@ impl Editors {
         self.docs.iter().filter(|d| d.is_dirty()).count()
     }
 
-    fn wake(&mut self, ctx: &egui::Context) -> Wake {
-        self.wake
-            .get_or_insert_with(|| {
-                let c = ctx.clone();
-                Arc::new(move || c.request_repaint())
-            })
-            .clone()
-    }
-
-    fn watcher(&mut self, ctx: &egui::Context) -> &io::DocWatcher {
-        let wake = self.wake(ctx);
+    fn watcher(&mut self, wake: Wake) -> &io::DocWatcher {
         let tx = self.tx.clone();
         self.watcher.get_or_insert_with(|| io::DocWatcher::start(tx, wake))
     }
@@ -158,7 +145,7 @@ pub fn handles(a: &Action) -> bool {
     matches!(a, Action::OpenInEditor | Action::ToggleEditorPanel)
 }
 
-pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
+pub fn execute(app: &mut SoyuzApp, a: Action) {
     match a {
         Action::OpenInEditor => {
             let files: Vec<PathBuf> = app
@@ -175,7 +162,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
                 return;
             }
             for f in files {
-                open_path(app, ctx, &f, Want::Auto);
+                open_path(app, &f, Want::Auto);
             }
         }
         Action::ToggleEditorPanel => {
@@ -195,7 +182,8 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
 }
 
 /// Open (or switch to) `path` in the editor panel.
-pub fn open_path(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, want: Want) {
+pub fn open_path(app: &mut SoyuzApp, path: &Path, want: Want) {
+    let wake = app.wake.clone();
     let e = &mut app.editors;
     e.open = true;
     if let Some(i) = e.docs.iter().position(|d| d.path == path) {
@@ -219,8 +207,8 @@ pub fn open_path(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, want: Wan
         close_after_save: false,
     });
     e.active = e.docs.len() - 1;
-    e.watcher(ctx).add(path);
-    start_load(app, ctx, id, false);
+    e.watcher(wake).add(path);
+    start_load(app, id, false);
 }
 
 fn limits(app: &SoyuzApp) -> io::Limits {
@@ -230,9 +218,9 @@ fn limits(app: &SoyuzApp) -> io::Limits {
     }
 }
 
-fn start_load(app: &mut SoyuzApp, ctx: &egui::Context, doc: u64, reload: bool) {
+fn start_load(app: &mut SoyuzApp, doc: u64, reload: bool) {
     let limits = limits(app);
-    let wake = app.editors.wake(ctx);
+    let wake = app.wake.clone();
     let tx = app.editors.tx.clone();
     if let Some(d) = app.editors.docs.iter().find(|d| d.id == doc) {
         io::spawn_load(doc, d.path.clone(), d.want, limits, reload, tx, wake);
@@ -240,20 +228,20 @@ fn start_load(app: &mut SoyuzApp, ctx: &egui::Context, doc: u64, reload: bool) {
 }
 
 /// Reopen a document as text or hex (discarding unsaved changes is asked by the UI).
-pub fn reopen_as(app: &mut SoyuzApp, ctx: &egui::Context, idx: usize, want: Want) {
+pub fn reopen_as(app: &mut SoyuzApp, idx: usize, want: Want) {
     let Some(d) = app.editors.docs.get_mut(idx) else { return };
     d.want = want;
     d.kind = DocKind::Loading;
     d.external = None;
     let id = d.id;
-    start_load(app, ctx, id, false);
+    start_load(app, id, false);
 }
 
 /// Save document `idx` (no-op while a save is running or nothing changed).
-pub fn save(app: &mut SoyuzApp, ctx: &egui::Context, idx: usize) {
+pub fn save(app: &mut SoyuzApp, idx: usize) {
     let backup = app.config.editor.backup_to_trash;
     let quality = app.config.editor.jpeg_quality;
-    let wake = app.editors.wake(ctx);
+    let wake = app.wake.clone();
     let tx = app.editors.tx.clone();
     let Some(d) = app.editors.docs.get_mut(idx) else { return };
     if d.saving || !d.is_dirty() {
@@ -316,15 +304,15 @@ pub fn close(app: &mut SoyuzApp, idx: usize, force: bool) {
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     while let Ok(msg) = app.editors.rx.try_recv() {
         match msg {
-            Msg::Loaded { doc, reload, stamp, result } => on_loaded(app, ctx, doc, reload, stamp, result),
-            Msg::Saved { doc, result, backup } => on_saved(app, ctx, doc, result, backup),
-            Msg::Changed { path, stamp } => on_changed(app, ctx, &path, stamp),
+            Msg::Loaded { doc, reload, stamp, result } => on_loaded(app, doc, reload, stamp, result),
+            Msg::Saved { doc, result, backup } => on_saved(app, doc, result, backup),
+            Msg::Changed { path, stamp } => on_changed(app, &path, stamp),
             Msg::Close { doc, answer } => {
                 let Some(idx) = app.editors.docs.iter().position(|d| d.id == doc) else { continue };
                 match answer {
                     Answer::Save => {
                         app.editors.docs[idx].close_after_save = true;
-                        save(app, ctx, idx);
+                        save(app, idx);
                     }
                     Answer::Discard => close(app, idx, true),
                     Answer::Cancel => app.editors.docs[idx].request_focus(),
@@ -336,7 +324,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     Answer::Save => {
                         app.editors.quit_after_save = true;
                         for i in 0..app.editors.docs.len() {
-                            save(app, ctx, i);
+                            save(app, i);
                         }
                     }
                     Answer::Discard => {
@@ -357,8 +345,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
 }
 
-fn on_loaded(app: &mut SoyuzApp, ctx: &egui::Context, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
-    let wake = app.editors.wake(ctx);
+fn on_loaded(app: &mut SoyuzApp, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
+    let wake = app.wake.clone();
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.id == doc) else { return };
     d.stamp = stamp;
     d.external = None;
@@ -384,13 +372,7 @@ fn on_loaded(app: &mut SoyuzApp, ctx: &egui::Context, doc: u64, reload: bool, st
     }
 }
 
-fn on_saved(
-    app: &mut SoyuzApp,
-    ctx: &egui::Context,
-    doc: u64,
-    result: Result<Option<Stamp>, String>,
-    backup: Option<String>,
-) {
+fn on_saved(app: &mut SoyuzApp, doc: u64, result: Result<Option<Stamp>, String>, backup: Option<String>) {
     let Some(idx) = app.editors.docs.iter().position(|d| d.id == doc) else { return };
     let d = &mut app.editors.docs[idx];
     d.saving = false;
@@ -417,7 +399,7 @@ fn on_saved(
             let close_now = d.close_after_save;
             if reload {
                 let id = d.id;
-                start_load(app, ctx, id, true);
+                start_load(app, id, true);
             }
             let mut t = Toast::success(tr!("editors-saved", name = &name));
             if let Some(note) = backup {
@@ -440,7 +422,7 @@ fn on_saved(
     }
 }
 
-fn on_changed(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, stamp: Option<Stamp>) {
+fn on_changed(app: &mut SoyuzApp, path: &Path, stamp: Option<Stamp>) {
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.path == path) else { return };
     if d.saving || d.stamp == stamp || matches!(d.kind, DocKind::Loading) {
         return;
@@ -451,7 +433,7 @@ fn on_changed(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, stamp: Optio
         Some(_) => {
             let id = d.id;
             let name = d.name.clone();
-            start_load(app, ctx, id, true);
+            start_load(app, id, true);
             let mut t = Toast::info(tr!("editors-reloaded", name = name)).body(tr!("editors-reloaded-body"));
             t.duration = Some(2.5);
             app.ui.toasts.push_replacing(t);
@@ -460,11 +442,11 @@ fn on_changed(app: &mut SoyuzApp, ctx: &egui::Context, path: &Path, stamp: Optio
 }
 
 /// Reload document `idx` from disk (drops unsaved changes).
-pub fn reload(app: &mut SoyuzApp, ctx: &egui::Context, idx: usize) {
+pub fn reload(app: &mut SoyuzApp, idx: usize) {
     if let Some(d) = app.editors.docs.get_mut(idx) {
         d.external = None;
         let id = d.id;
-        start_load(app, ctx, id, true);
+        start_load(app, id, true);
     }
 }
 
@@ -607,7 +589,7 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
     let idx = app.editors.active;
     for k in ed {
         match k {
-            EdKey::Save => save(app, ctx, idx),
+            EdKey::Save => save(app, idx),
             EdKey::Close => close(app, idx, false),
             EdKey::NextDoc | EdKey::PrevDoc => {
                 let n = app.editors.docs.len();
@@ -709,9 +691,9 @@ pub fn session_paths(app: &SoyuzApp) -> Vec<PathBuf> {
 }
 
 /// Reopen the documents of the last session (missing files are skipped).
-pub fn restore(app: &mut SoyuzApp, ctx: &egui::Context, paths: &[PathBuf]) {
+pub fn restore(app: &mut SoyuzApp, paths: &[PathBuf]) {
     for p in paths.iter().filter(|p| p.is_file()).take(MAX_OPEN_AT_ONCE) {
-        open_path(app, ctx, p, Want::Auto);
+        open_path(app, p, Want::Auto);
     }
     if !app.editors.docs.is_empty() {
         app.editors.active = 0;
@@ -726,13 +708,13 @@ pub fn restore(app: &mut SoyuzApp, ctx: &egui::Context, paths: &[PathBuf]) {
 pub fn devscript(app: &mut SoyuzApp, ctx: &egui::Context, verb: &str, arg: &str) {
     let arg = arg.trim();
     if verb == "edit" {
-        open_path(app, ctx, Path::new(arg), Want::Auto);
+        open_path(app, Path::new(arg), Want::Auto);
         return;
     }
     let (cmd, val) = arg.split_once('=').unwrap_or((arg, ""));
     let idx = app.editors.active;
     match cmd {
-        "save" => save(app, ctx, idx),
+        "save" => save(app, idx),
         "close" => close(app, idx, false),
         "maximize" => app.editors.maximized = !app.editors.maximized,
         "dock" => {

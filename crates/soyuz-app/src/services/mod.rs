@@ -50,7 +50,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use egui::Context;
 use soyuz_core::{EntryInfo, FsError};
 
 use lister::Lister;
@@ -82,16 +81,14 @@ pub struct Services {
 const AUX_TTL: Duration = Duration::from_secs(5);
 
 impl Services {
-    pub fn new(ctx: &Context, watch_debounce: Duration) -> Self {
-        let c = ctx.clone();
-        let wake: Wake = Arc::new(move || c.request_repaint());
+    /// `thumbs` is built by the frontend (thumbnails are uploaded as its textures).
+    pub fn new(wake: Wake, thumbs: Thumbs, watch_debounce: Duration) -> Self {
         let mailbox = Mailbox::new(wake.clone());
         let postman = mailbox.postman();
-        let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
         Services {
             lister: Lister::new(postman.clone(), 3),
             watcher: WatchService::new(watch_debounce, wake),
-            thumbs: Thumbs::new(ctx.clone(), cores.saturating_sub(1).clamp(1, 4)),
+            thumbs,
             places: PlacesService::new(postman),
             mailbox,
             aux: HashMap::new(),
