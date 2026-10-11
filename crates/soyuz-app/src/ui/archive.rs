@@ -794,18 +794,21 @@ pub fn execute_edit(app: &mut SoyuzApp, a: soyuz_core::config::Action) {
             }
         },
         A::Paste => {
-            let clip = crate::ops::fileops::clipboard::Clipboard::os_paths_hook()
-                .or_else(|| app.fileops.clipboard.for_paste());
-            let Some((_, sources)) = clip.filter(|(_, p)| !p.is_empty()) else {
-                app.ui.toasts.push(
-                    Toast::info(tr!("views-archive-nothing-to-add")).body(tr!("views-archive-nothing-to-add-body")),
-                );
-                return;
+            // The system clipboard may answer a few frames later (Linux: another process).
+            let then = move |app: &mut crate::app::SoyuzApp, os: crate::services::os_clipboard::Files| {
+                let clip = os.or_else(|| app.fileops.clipboard.for_paste());
+                let Some((_, sources)) = clip.filter(|(_, p)| !p.is_empty()) else {
+                    app.ui.toasts.push(
+                        Toast::info(tr!("views-archive-nothing-to-add")).body(tr!("views-archive-nothing-to-add-body")),
+                    );
+                    return;
+                };
+                let n = sources.len();
+                let edits = vec![soyuz_archive::ZipEdit::Add { sources, dest_dir: inner }];
+                let label = tr!("views-archive-job-add", count = n, archive = &zip_name);
+                app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
             };
-            let n = sources.len();
-            let edits = vec![soyuz_archive::ZipEdit::Add { sources, dest_dir: inner }];
-            let label = tr!("views-archive-job-add", count = n, archive = &zip_name);
-            app.cmds.push(Cmd::SubmitJob(Box::new(edit_spec(&archive, edits, label, level))));
+            crate::services::os_clipboard::with_files(app, Box::new(then));
         }
         _ => {}
     }

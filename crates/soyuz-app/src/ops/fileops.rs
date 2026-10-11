@@ -367,8 +367,15 @@ pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
 
 /// Paste; `verify` hash-compares every copied file ("Copy and verify"), whatever
 /// `jobs.verify_after_copy` says.
+/// The system clipboard is read first (files copied in another application win); it
+/// lives in another process on Linux, so the paste may run a few frames later
+/// ([`crate::services::os_clipboard::with_files`]).
 pub fn paste_into_with(app: &mut SoyuzApp, dest: PathBuf, verify: bool) {
-    let Some((mode, paths)) = Clipboard::os_paths_hook().or_else(|| app.fileops.clipboard.for_paste()) else {
+    crate::services::os_clipboard::with_files(app, Box::new(move |app, os| paste_files(app, os, dest, verify)));
+}
+
+fn paste_files(app: &mut SoyuzApp, os: crate::services::os_clipboard::Files, dest: PathBuf, verify: bool) {
+    let Some((mode, paths)) = os.or_else(|| app.fileops.clipboard.for_paste()) else {
         app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-paste")).body(tr!("ops-nothing-to-paste-body")));
         return;
     };

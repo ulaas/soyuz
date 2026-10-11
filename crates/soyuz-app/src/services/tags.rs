@@ -389,18 +389,38 @@ impl TagNames {
         tags.iter().filter_map(|t| self.tag_of(t)).fold(0, |m, t| m | (1 << t))
     }
 
-    /// `existing` with our tags replaced by the ones in `mask` (others keep their order).
-    pub fn merge(&self, existing: &[String], mask: TagMask) -> Vec<String> {
-        let mut out: Vec<String> = existing.iter().filter(|t| self.tag_of(t).is_none()).cloned().collect();
-        out.extend(mask_tags(mask).map(|t| self.write[t as usize].replace(',', " ")));
+    /// `existing` with `edit` applied: tags in `edit.remove` are dropped (every spelling
+    /// that maps to them), tags in `edit.add` are appended unless already present. Tags
+    /// that are not ours, and ours that the edit does not touch, keep their place.
+    pub fn apply(&self, existing: &[String], edit: XdgEdit) -> Vec<String> {
+        let mut out: Vec<String> =
+            existing.iter().filter(|t| self.tag_of(t).is_none_or(|g| edit.remove & (1 << g) == 0)).cloned().collect();
+        let have = self.mask(&out);
+        out.extend(mask_tags(edit.add & !have).map(|t| self.write[t as usize].replace(',', " ")));
         out
     }
 }
 
-/// Write our tags (`mask`) into the file's `user.xdg.tags`, keeping its other tags. A
-/// filesystem without user xattrs (vfat, some network mounts) is skipped quietly.
+/// A change to a file's `user.xdg.tags`: our tags to add and to remove. Written as a
+/// delta against what the file holds at write time, so tags another application set
+/// (Dolphin's "Blue") survive an edit made where the file's tags were never read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct XdgEdit {
+    pub add: TagMask,
+    pub remove: TagMask,
+}
+
+impl XdgEdit {
+    /// `self` followed by `next`, as one edit.
+    pub fn then(self, next: XdgEdit) -> XdgEdit {
+        XdgEdit { add: (self.add & !next.remove) | next.add, remove: (self.remove & !next.add) | next.remove }
+    }
+}
+
+/// Apply `edit` to the file's `user.xdg.tags`, keeping its other tags. A filesystem
+/// without user xattrs (vfat, some network mounts) is skipped quietly.
 #[cfg(target_os = "linux")]
-fn write_xdg(path: &Path, mask: TagMask, names: &TagNames) {
+fn write_xdg(path: &Path, edit: XdgEdit, names: &TagNames) {
     let existing = match xattr::get(path, XDG_TAGS_XATTR) {
         Ok(v) => v.map(|d| parse_xdg_tags(&d)).unwrap_or_default(),
         Err(e) => {
@@ -408,7 +428,7 @@ fn write_xdg(path: &Path, mask: TagMask, names: &TagNames) {
             return;
         }
     };
-    let merged = names.merge(&existing, mask);
+    let merged = names.apply(&existing, edit);
     if merged == existing {
         return;
     }
@@ -422,21 +442,70 @@ fn write_xdg(path: &Path, mask: TagMask, names: &TagNames) {
     }
 }
 
-/// Mirror new masks into `user.xdg.tags` on a worker (Linux, when synced).
-fn sync_xdg(changes: Vec<(PathBuf, TagMask)>) {
+/// Edits waiting for the writer, coalesced per path (first-request order kept).
+#[derive(Default)]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+struct XdgQueue {
+    order: Vec<PathBuf>,
+    edits: HashMap<PathBuf, XdgEdit>,
+}
+
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+impl XdgQueue {
+    fn push(&mut self, p: PathBuf, e: XdgEdit) {
+        match self.edits.get_mut(&p) {
+            Some(cur) => *cur = cur.then(e),
+            None => {
+                self.order.push(p.clone());
+                self.edits.insert(p, e);
+            }
+        }
+    }
+
+    fn drain(&mut self) -> Vec<(PathBuf, XdgEdit)> {
+        let mut edits = std::mem::take(&mut self.edits);
+        self.order.drain(..).filter_map(|p| edits.remove(&p).map(|e| (p, e))).collect()
+    }
+}
+
+/// Mirror tag edits into `user.xdg.tags` (Linux, when synced) on one serial writer
+/// thread: edits to the same file are applied in order (coalesced when they queue up),
+/// so a later edit can never be overtaken by an earlier one.
+fn sync_xdg(changes: Vec<(PathBuf, XdgEdit)>) {
     if !xdg_sync() || changes.is_empty() {
         return;
     }
     #[cfg(target_os = "linux")]
     {
-        let names = TagNames::current();
-        let spawned = std::thread::Builder::new().name("soyuz-xdg-tags".into()).spawn(move || {
-            for (p, m) in changes {
-                write_xdg(&p, m, &names);
+        type Batch = (Vec<(PathBuf, XdgEdit)>, TagNames);
+        static WRITER: std::sync::OnceLock<Option<crossbeam_channel::Sender<Batch>>> = std::sync::OnceLock::new();
+        let tx = WRITER.get_or_init(|| {
+            let (tx, rx) = crossbeam_channel::unbounded::<Batch>();
+            let spawned = std::thread::Builder::new().name("soyuz-xdg-tags".into()).spawn(move || {
+                while let Ok(first) = rx.recv() {
+                    let mut queue = XdgQueue::default();
+                    let mut names = TagNames::default();
+                    for (changes, n) in std::iter::once(first).chain(rx.try_iter()) {
+                        for (p, e) in changes {
+                            queue.push(p, e);
+                        }
+                        names = n;
+                    }
+                    for (p, e) in queue.drain() {
+                        write_xdg(&p, e, &names);
+                    }
+                }
+            });
+            match spawned {
+                Ok(_) => Some(tx),
+                Err(e) => {
+                    log::warn!("cannot spawn the xdg tags writer: {e}");
+                    None
+                }
             }
         });
-        if spawned.is_err() {
-            log::warn!("cannot spawn the xdg tags writer");
+        if let Some(tx) = tx {
+            let _ = tx.send((changes, TagNames::current()));
         }
     }
 }
@@ -671,8 +740,8 @@ fn effective(r: &Registry, p: &Path, xdg: bool) -> TagMask {
     if xdg { own | r.finder.get(&norm(p)).copied().unwrap_or(0) } else { own }
 }
 
-/// Record `mask` as the file tags of `p` (xdg sync) and return the change to write.
-fn os_set(r: &mut Registry, p: &Path, mask: TagMask) -> (PathBuf, TagMask) {
+/// Record `mask` as the file tags of `p` (xdg sync) and return the edit to write.
+fn os_set(r: &mut Registry, p: &Path, mask: TagMask, edit: XdgEdit) -> (PathBuf, XdgEdit) {
     let p = norm(p);
     if mask == 0 {
         r.finder.remove(&p);
@@ -680,7 +749,7 @@ fn os_set(r: &mut Registry, p: &Path, mask: TagMask) -> (PathBuf, TagMask) {
         r.finder.insert(p.clone(), mask);
     }
     r.os_edited.insert(p.clone());
-    (p, mask)
+    (p, edit)
 }
 
 /// Toggle `tag` on every path: when all already carry it, remove it; else add it.
@@ -688,13 +757,14 @@ pub fn toggle_many(paths: &[PathBuf], tag: u8) -> bool {
     let xdg = xdg_sync();
     let (added, writes) = REG.with_borrow_mut(|r| {
         let all = paths.iter().all(|p| effective(r, p, xdg) & (1 << tag) != 0);
+        let edit = if all { XdgEdit { add: 0, remove: 1 << tag } } else { XdgEdit { add: 1 << tag, remove: 0 } };
         let mut writes = Vec::new();
         for p in paths {
             let m = effective(r, p, xdg);
             let m = if all { m & !(1 << tag) } else { m | (1 << tag) };
             r.store.set(p, m);
             if xdg {
-                writes.push(os_set(r, p, m));
+                writes.push(os_set(r, p, m, edit));
             }
         }
         changed(r);
@@ -704,14 +774,17 @@ pub fn toggle_many(paths: &[PathBuf], tag: u8) -> bool {
     added
 }
 
+/// Remove every tag from `paths` (with xdg sync: only our tags on the file; tags of
+/// other applications stay).
 pub fn clear_many(paths: &[PathBuf]) {
     let xdg = xdg_sync();
+    let all: TagMask = (0..TAG_COUNT).fold(0, |m, t| m | (1 << t));
     let writes = REG.with_borrow_mut(|r| {
         let mut writes = Vec::new();
         for p in paths {
             r.store.clear(p);
             if xdg {
-                writes.push(os_set(r, p, 0));
+                writes.push(os_set(r, p, 0, XdgEdit { add: 0, remove: all }));
             }
         }
         changed(r);
@@ -925,16 +998,40 @@ mod tests {
     }
 
     #[test]
-    fn xdg_merge_keeps_foreign_tags() {
+    fn xdg_edits_keep_foreign_tags() {
         let n = names_with(None);
+        let add = |t: u8| XdgEdit { add: 1 << t, remove: 0 };
+        let remove = |t: u8| XdgEdit { add: 0, remove: 1 << t };
         let existing: Vec<String> = ["work", "Red", "holiday", "Blue"].map(String::from).to_vec();
-        // Red stays, Blue goes, Green arrives; foreign tags keep their order.
-        assert_eq!(n.merge(&existing, (1 << 0) | (1 << 3)), ["work", "holiday", "Red", "Green"]);
-        assert_eq!(n.merge(&existing, 0), ["work", "holiday"]);
-        assert!(n.merge(&[], 0).is_empty());
+        // Green arrives; everything else keeps its place.
+        assert_eq!(n.apply(&existing, add(3)), ["work", "Red", "holiday", "Blue", "Green"]);
+        // Red already there (any spelling): nothing added.
+        assert_eq!(n.apply(&["red".to_string()], add(0)), ["red"]);
+        // Blue goes, the rest stays.
+        assert_eq!(n.apply(&existing, remove(5)), ["work", "Red", "holiday"]);
+        // Clearing removes only our tags.
+        assert_eq!(n.apply(&existing, XdgEdit { add: 0, remove: 0xff }), ["work", "holiday"]);
+        assert!(n.apply(&[], XdgEdit::default()).is_empty());
         // A custom name is what gets written, and a comma cannot split it.
         let c = names_with(Some("To do, soon"));
-        assert_eq!(c.merge(&[], 1), ["To do  soon"]);
+        assert_eq!(c.apply(&[], add(0)), ["To do  soon"]);
+    }
+
+    #[test]
+    fn xdg_edits_coalesce_in_order() {
+        let add = |t: u8| XdgEdit { add: 1 << t, remove: 0 };
+        let remove = |t: u8| XdgEdit { add: 0, remove: 1 << t };
+        assert_eq!(add(0).then(remove(0)), remove(0), "the later edit wins");
+        assert_eq!(remove(0).then(add(0)), add(0));
+        assert_eq!(add(0).then(add(1)), XdgEdit { add: 0b11, remove: 0 });
+        let mut q = XdgQueue::default();
+        q.push(PathBuf::from("/b"), add(0));
+        q.push(PathBuf::from("/a"), add(1));
+        q.push(PathBuf::from("/b"), remove(0));
+        q.push(PathBuf::from("/b"), add(2));
+        let d = q.drain();
+        assert_eq!(d, vec![(PathBuf::from("/b"), XdgEdit { add: 1 << 2, remove: 1 }), (PathBuf::from("/a"), add(1))]);
+        assert!(q.drain().is_empty());
     }
 
     /// Writes and reads `user.xdg.tags` on a temp file (skipped when the temp filesystem
@@ -950,15 +1047,17 @@ mod tests {
             return;
         }
         let n = names_with(None);
+        let add = |t: u8| XdgEdit { add: 1 << t, remove: 0 };
         assert_eq!(read_finder(&f, &n), 1 << 5);
-        write_xdg(&f, (1 << 0) | (1 << 5), &n);
-        assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap().unwrap(), b"work,Red,Blue");
-        write_xdg(&f, 0, &n);
+        // Adding Red where Blue was never read keeps Blue (no full-mask overwrite).
+        write_xdg(&f, add(0), &n);
+        assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap().unwrap(), b"work,Blue,Red");
+        write_xdg(&f, XdgEdit { add: 0, remove: 0xff }, &n);
         assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap().unwrap(), b"work");
         xattr::remove(&f, XDG_TAGS_XATTR).unwrap();
-        write_xdg(&f, 0, &n);
+        write_xdg(&f, XdgEdit { add: 0, remove: 0xff }, &n);
         assert_eq!(xattr::get(&f, XDG_TAGS_XATTR).unwrap(), None, "nothing written for no tags");
-        write_xdg(&f, 1 << 3, &n);
+        write_xdg(&f, add(3), &n);
         assert_eq!(read_finder(&f, &n), 1 << 3);
     }
 

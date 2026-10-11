@@ -883,43 +883,88 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
         return Err(tr!("services-update-install-not-tarball").into());
     }
     let fail = |e: &dyn std::fmt::Display| tr!("services-update-install-failed", error = e.to_string());
-    // 1. Re-verify the archive.
-    let mut f = std::fs::File::open(archive).map_err(|e| fail(&e))?;
-    let mut hasher = Sha256::new();
-    std::io::copy(&mut f, &mut hasher).map_err(|e| fail(&e))?;
-    if !hex(&hasher.finalize()).eq_ignore_ascii_case(sha256) {
-        return Err(tr!("services-update-install-changed").into());
-    }
-    // 2. Extract bin/soyuz next to the executable (same filesystem → atomic rename).
+    // One open of the archive: the bytes extracted are the bytes hashed (the file in
+    // ~/Downloads cannot be swapped between a check and the extraction).
+    let archive_file = std::fs::File::open(archive).map_err(|e| fail(&e))?;
     let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let dir = exe.parent().ok_or_else(|| fail(&"no parent folder"))?;
-    let tmp = dir.join(format!(".soyuz-update-{}.tmp", std::process::id()));
+    let (mut out, tmp) = create_temp_in(dir).map_err(|e| {
+        tr!("services-update-install-no-permission", path = dir.display().to_string(), error = e.to_string())
+    })?;
     let result = (|| -> Result<(), String> {
-        let f = std::fs::File::open(archive).map_err(|e| fail(&e))?;
-        let mut out = std::fs::OpenOptions::new().write(true).create(true).truncate(true).open(&tmp).map_err(|e| {
-            tr!("services-update-install-no-permission", path = dir.display().to_string(), error = e.to_string())
-        })?;
-        extract_binary(flate2::read::GzDecoder::new(std::io::BufReader::new(f)), &mut out)?;
+        use std::io::{Read as _, Seek as _};
+        // 1. Extract bin/soyuz into the temp file next to the executable (same
+        //    filesystem → atomic rename), hashing the archive on the way through.
+        let hashing = HashingReader { inner: archive_file, hasher: Sha256::new() };
+        let mut gz = flate2::read::GzDecoder::new(std::io::BufReader::new(hashing));
+        let extracted = extract_binary(&mut gz, &mut out);
+        // 2. Hash the rest of the archive (everything below the decoder was hashed as
+        //    it was read, buffered bytes included) and compare before anything else.
+        let mut hashing = gz.into_inner().into_inner();
+        std::io::copy(&mut hashing, &mut std::io::sink()).map_err(|e| fail(&e))?;
+        if !hex(&hashing.hasher.finalize()).eq_ignore_ascii_case(sha256) {
+            return Err(tr!("services-update-install-changed").into());
+        }
+        extracted?;
         out.sync_all().map_err(|e| fail(&e))?;
-        drop(out);
         let mut head = [0u8; 64];
-        let n = std::io::Read::read(&mut std::fs::File::open(&tmp).map_err(|e| fail(&e))?, &mut head)
-            .map_err(|e| fail(&e))?;
+        out.rewind().map_err(|e| fail(&e))?;
+        let n = out.read(&mut head).map_err(|e| fail(&e))?;
         if !is_elf_for(&head[..n], elf_machine()) {
             return Err(tr!("services-update-install-not-elf").into());
         }
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
+            out.set_permissions(std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
         }
+        // 3. Only a verified binary replaces the executable.
         std::fs::rename(&tmp, &exe).map_err(|e| fail(&e))
     })();
+    drop(out);
     if let Err(e) = result {
         let _ = std::fs::remove_file(&tmp);
         return Err(e);
     }
     Ok(exe)
+}
+
+/// A reader that hashes everything read through it.
+struct HashingReader<R> {
+    inner: R,
+    hasher: Sha256,
+}
+
+impl<R: std::io::Read> std::io::Read for HashingReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.hasher.update(&buf[..n]);
+        Ok(n)
+    }
+}
+
+/// A new temp file `.soyuz-update-<pid>-<random>.tmp` in `dir`, opened read + write.
+/// `create_new` (`O_CREAT | O_EXCL`) never opens an existing file and never follows a
+/// symlink planted at the name, so nobody can redirect the write.
+fn create_temp_in(dir: &Path) -> std::io::Result<(std::fs::File, PathBuf)> {
+    use std::hash::{BuildHasher, Hasher};
+    let mut last = None;
+    for attempt in 0..8u32 {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u32(attempt);
+        h.write_u128(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos());
+        let tmp = dir.join(format!(".soyuz-update-{}-{:016x}.tmp", std::process::id(), h.finish()));
+        let mut opts = std::fs::OpenOptions::new();
+        opts.read(true).write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+        match opts.open(&tmp) {
+            Ok(f) => return Ok((f, tmp)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => last = Some(e),
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last.unwrap_or_else(|| std::io::ErrorKind::AlreadyExists.into()))
 }
 
 /// [`install_tarball_to`] for the running executable.
@@ -958,17 +1003,35 @@ pub fn install_status() -> (bool, Option<Result<PathBuf, String>>) {
     (INSTALLING.load(AtomicOrdering::SeqCst), INSTALLED.lock().clone())
 }
 
+/// A restart asked for by the close in progress (dropped if that close is cancelled).
 static RESTART: Mutex<Option<PathBuf>> = Mutex::new(None);
+/// The restart confirmed when the app actually exited ([`arm_restart`]).
+static RESTART_ARMED: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-/// Restart into `exe` once the window has closed (the caller then sends
-/// `ViewportCommand::Close`; `main` calls [`take_restart`] after the event loop ends).
+/// Restart into `exe` if the window close that the caller now starts (by sending
+/// `ViewportCommand::Close`) goes through: the app calls [`arm_restart`] on exit and
+/// [`cancel_restart`] when it cancels the close; `main` calls [`take_restart`] after
+/// the event loop ends.
 pub fn request_restart(exe: PathBuf) {
     *RESTART.lock() = Some(exe);
 }
 
-/// The executable to restart into, if a restart was requested.
+/// The close was cancelled (pending jobs, unsaved documents): forget the restart, so a
+/// later, ordinary quit does not start the new binary. Returns whether one was pending.
+pub fn cancel_restart() -> bool {
+    RESTART.lock().take().is_some()
+}
+
+/// The app is exiting: a requested restart now happens.
+pub fn arm_restart() {
+    if let Some(exe) = RESTART.lock().take() {
+        *RESTART_ARMED.lock() = Some(exe);
+    }
+}
+
+/// The executable to restart into, if a restart was requested and the app exited.
 pub fn take_restart() -> Option<PathBuf> {
-    RESTART.lock().take()
+    RESTART_ARMED.lock().take()
 }
 
 /// Start `exe` with this process's arguments: on unix the process image is replaced
@@ -1386,10 +1449,28 @@ mod tests {
     }
 
     #[test]
+    fn temp_files_are_new_and_distinct() {
+        let d = tempfile::tempdir().unwrap();
+        let (_a, pa) = create_temp_in(d.path()).unwrap();
+        let (_b, pb) = create_temp_in(d.path()).unwrap();
+        assert_ne!(pa, pb);
+        assert!(pa.file_name().unwrap().to_string_lossy().starts_with(".soyuz-update-"));
+        assert_eq!(std::fs::read_dir(d.path()).unwrap().count(), 2);
+    }
+
+    #[test]
     fn restart_request_round_trip() {
         assert_eq!(take_restart(), None);
         request_restart(PathBuf::from("/x/soyuz"));
+        assert_eq!(take_restart(), None, "not before the app exits");
+        arm_restart();
         assert_eq!(take_restart(), Some(PathBuf::from("/x/soyuz")));
+        assert_eq!(take_restart(), None);
+        // A cancelled close forgets the restart: a later ordinary exit does not restart.
+        request_restart(PathBuf::from("/x/soyuz"));
+        assert!(cancel_restart());
+        assert!(!cancel_restart());
+        arm_restart();
         assert_eq!(take_restart(), None);
     }
 }

@@ -202,21 +202,47 @@ fn unescape_mountinfo(s: &str) -> String {
 }
 
 /// Entry names of the gvfs FUSE directory, listed under a deadline: gvfsd-fuse answers
-/// the listing and a hung backend must not stall the places thread.
+/// the listing and a hung backend must not stall the places thread. At most one listing
+/// is in flight: while an earlier one is stuck, no new thread is started and the names
+/// from the last listing that finished are used.
 #[cfg(target_os = "linux")]
 fn gvfs_names(dir: &Path) -> Vec<String> {
+    use std::sync::atomic::AtomicBool;
+    static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+    static LAST: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+    gvfs_names_with(dir, &IN_FLIGHT, &LAST, Duration::from_secs(2), |d| {
+        std::fs::read_dir(d)
+            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
+            .unwrap_or_default()
+    })
+}
+
+/// [`gvfs_names`] with its state and the listing passed in (tests).
+#[cfg(target_os = "linux")]
+fn gvfs_names_with(
+    dir: &Path,
+    in_flight: &'static std::sync::atomic::AtomicBool,
+    last: &'static parking_lot::Mutex<Vec<String>>,
+    timeout: Duration,
+    list: impl FnOnce(&Path) -> Vec<String> + Send + 'static,
+) -> Vec<String> {
+    use std::sync::atomic::Ordering;
+    if in_flight.swap(true, Ordering::SeqCst) {
+        return last.lock().clone();
+    }
     let (tx, rx) = bounded(1);
     let dir = dir.to_path_buf();
     let spawned = thread::Builder::new().name("soyuz-places-gvfs".into()).spawn(move || {
-        let names: Vec<String> = std::fs::read_dir(&dir)
-            .map(|rd| rd.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect())
-            .unwrap_or_default();
+        let names = list(&dir);
+        *last.lock() = names.clone();
+        in_flight.store(false, Ordering::SeqCst);
         let _ = tx.send(names);
     });
     if spawned.is_err() {
-        return Vec::new();
+        in_flight.store(false, Ordering::SeqCst);
+        return last.lock().clone();
     }
-    rx.recv_timeout(Duration::from_secs(2)).unwrap_or_default()
+    rx.recv_timeout(timeout).unwrap_or_else(|_| last.lock().clone())
 }
 
 /// Label of a gvfs mount that is cloud storage (`google-drive:host=gmail.com,user=me` →
@@ -245,6 +271,44 @@ fn gvfs_cloud(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_stuck_gvfs_listing_is_not_repeated() {
+        use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+        static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+        static LAST: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
+        static STARTED: AtomicUsize = AtomicUsize::new(0);
+        let dir = Path::new("/nonexistent");
+        let t = Duration::from_millis(50);
+        let quick = |names: &'static [&'static str]| {
+            move |_: &Path| {
+                STARTED.fetch_add(1, Ordering::SeqCst);
+                names.iter().map(|s| s.to_string()).collect::<Vec<_>>()
+            }
+        };
+        assert_eq!(gvfs_names_with(dir, &IN_FLIGHT, &LAST, t, quick(&["a"])), ["a"]);
+        // A hung listing: the call gives up with the last names...
+        let (release_tx, release_rx) = bounded::<()>(1);
+        let hung = move |_: &Path| {
+            STARTED.fetch_add(1, Ordering::SeqCst);
+            let _ = release_rx.recv();
+            vec!["b".to_string()]
+        };
+        assert_eq!(gvfs_names_with(dir, &IN_FLIGHT, &LAST, t, hung), ["a"]);
+        // ...and later refreshes start no new thread while it is stuck.
+        let before = STARTED.load(Ordering::SeqCst);
+        assert_eq!(gvfs_names_with(dir, &IN_FLIGHT, &LAST, t, quick(&["c"])), ["a"]);
+        assert_eq!(STARTED.load(Ordering::SeqCst), before);
+        // Once it returns, its names are used and probing resumes.
+        release_tx.send(()).unwrap();
+        let start = std::time::Instant::now();
+        while IN_FLIGHT.load(Ordering::SeqCst) && start.elapsed() < Duration::from_secs(2) {
+            thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(LAST.lock().clone(), ["b"]);
+        assert_eq!(gvfs_names_with(dir, &IN_FLIGHT, &LAST, t, quick(&["c"])), ["c"]);
+    }
 
     #[test]
     fn detects_known_folders() {

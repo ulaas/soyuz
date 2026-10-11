@@ -7,9 +7,12 @@
 //!   needed when serving (larger bodies are refused).
 //! * [`read`]: `ConvertSelection` into a property of a hidden window, with `INCR`
 //!   transfers handled, bounded by a timeout.
+//!
+//! Connecting is bounded too ([`connect`]): a `DISPLAY` naming an unreachable TCP host
+//! would otherwise block for the kernel's connect timeout.
 
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::os::fd::AsFd;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use x11rb::connection::{Connection, RequestConnection};
@@ -22,6 +25,23 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 const READ_TIMEOUT: Duration = Duration::from_millis(500);
+/// How long connecting to the X server may take.
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(1500);
+
+use super::SelectionOwner;
+
+/// `x11rb::connect(None)` on a helper thread, abandoned after [`CONNECT_TIMEOUT`] (the
+/// helper then finishes or fails on its own; its connection is dropped).
+fn connect() -> Result<(RustConnection, usize), String> {
+    let (tx, rx) = crossbeam_channel::bounded(1);
+    std::thread::Builder::new()
+        .name("soyuz-clip-x11-connect".into())
+        .spawn(move || {
+            let _ = tx.send(x11rb::connect(None).map_err(|e| format!("x11: {e}")));
+        })
+        .map_err(|e| e.to_string())?;
+    rx.recv_timeout(CONNECT_TIMEOUT).map_err(|_| "x11: the server did not answer".to_string())?
+}
 
 /// A connection and a hidden 1×1 input-only window.
 struct Session {
@@ -31,7 +51,7 @@ struct Session {
 
 impl Session {
     fn open(events: EventMask) -> Result<Session, String> {
-        let (conn, screen) = x11rb::connect(None).map_err(|e| format!("x11: {e}"))?;
+        let (conn, screen) = connect()?;
         let root = conn.setup().roots.get(screen).ok_or("x11: no screen")?.root;
         let win = conn.generate_id().map_err(|e| format!("x11: {e}"))?;
         conn.create_window(
@@ -71,19 +91,21 @@ type Owner = (Session, Atom, Atom, Vec<(Atom, Vec<u8>)>);
 
 /// An X server is reachable.
 pub(super) fn available() -> bool {
-    match x11rb::connect(None) {
+    match connect() {
         Ok(_) => true,
         Err(e) => {
-            log::info!("clipboard: x11: {e}");
+            log::info!("clipboard: {e}");
             false
         }
     }
 }
 
 /// Own `CLIPBOARD` with `data`, served on a background thread until another client
-/// takes the selection. The flag turns false then.
-pub(super) fn set(data: Vec<(String, Vec<u8>)>) -> Result<Arc<AtomicBool>, String> {
-    let (tx, rx) = crossbeam_channel::bounded::<Result<Arc<AtomicBool>, String>>(1);
+/// takes the selection or the owner is released. A thread whose answer arrives after the
+/// caller gave up gives the selection up again (no orphan owner).
+pub(super) fn set(data: Vec<(String, Vec<u8>)>) -> Result<SelectionOwner, String> {
+    // Rendezvous channel: a successful send means the caller has the owner.
+    let (tx, rx) = crossbeam_channel::bounded::<Result<SelectionOwner, String>>(0);
     std::thread::Builder::new()
         .name("soyuz-clipboard-x11".into())
         .spawn(move || {
@@ -115,19 +137,41 @@ pub(super) fn set(data: Vec<(String, Vec<u8>)>) -> Result<Arc<AtomicBool>, Strin
                     return;
                 }
             };
-            let alive = Arc::new(AtomicBool::new(true));
-            let _ = tx.send(Ok(alive.clone()));
+            let owner = SelectionOwner::default();
+            owner.alive.store(true, Ordering::SeqCst);
+            if tx.send(Ok(owner.clone())).is_err() {
+                log::debug!("clipboard: x11 owner abandoned (the caller gave up)");
+                owner.release.store(true, Ordering::SeqCst);
+            }
+            drop(tx);
             let max = s.conn.maximum_request_bytes().saturating_sub(1024);
-            loop {
-                let ev = match s.conn.wait_for_event() {
-                    Ok(ev) => ev,
+            let mut lost = false;
+            'serve: loop {
+                let ev = match s.conn.poll_for_event() {
+                    Ok(Some(ev)) => ev,
+                    Ok(None) => {
+                        if owner.release.load(Ordering::SeqCst) {
+                            break;
+                        }
+                        // Sleep until the server talks (or a release is due).
+                        let fd = s.conn.stream().as_fd();
+                        if let Err(e) = soyuz_fs::fdwait::poll(&[(fd, false)], Some(Duration::from_millis(250))) {
+                            log::debug!("clipboard: x11 owner: {e}");
+                            break;
+                        }
+                        continue;
+                    }
                     Err(e) => {
                         log::debug!("clipboard: x11 owner: {e}");
+                        lost = true;
                         break;
                     }
                 };
                 match ev {
-                    Event::SelectionClear(e) if e.selection == clipboard => break,
+                    Event::SelectionClear(e) if e.selection == clipboard => {
+                        lost = true;
+                        break 'serve;
+                    }
                     Event::SelectionRequest(e) => {
                         // Obsolete clients pass no property: use the target as the name.
                         let mut prop = if e.property == x11rb::NONE { e.target } else { e.property };
@@ -163,10 +207,19 @@ pub(super) fn set(data: Vec<(String, Vec<u8>)>) -> Result<Arc<AtomicBool>, Strin
                     _ => {}
                 }
             }
-            alive.store(false, Ordering::SeqCst);
+            owner.alive.store(false, Ordering::SeqCst);
+            // Released by us: give the selection up, but only while it is still ours.
+            if !lost
+                && let Ok(c) = s.conn.get_selection_owner(clipboard)
+                && c.reply().is_ok_and(|r| r.owner == s.win)
+            {
+                let _ = s.conn.set_selection_owner(x11rb::NONE, clipboard, x11rb::CURRENT_TIME);
+                let _ = s.conn.flush();
+            }
         })
         .map_err(|e| e.to_string())?;
-    rx.recv_timeout(Duration::from_secs(2)).map_err(|_| "x11: the server did not answer".to_string())?
+    rx.recv_timeout(CONNECT_TIMEOUT + Duration::from_millis(500))
+        .map_err(|_| "x11: the server did not answer".to_string())?
 }
 
 /// Wait (bounded by `deadline`) for an event matching `want`.
@@ -217,13 +270,23 @@ fn convert(s: &Session, clipboard: Atom, target: Atom, prop: Atom, incr: Atom) -
 
 /// Run `f` with the `CLIPBOARD` targets and a reader for them.
 pub(super) fn read<R>(f: impl FnOnce(&[String], &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> R) -> Result<R, String> {
+    read_and_clear_if(f, |_| false)
+}
+
+/// Read like [`read`] and give up `CLIPBOARD` when `clear(&result)` holds and the owner
+/// is still the one that was read.
+pub(super) fn read_and_clear_if<R>(
+    f: impl FnOnce(&[String], &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> R,
+    clear: impl FnOnce(&R) -> bool,
+) -> Result<R, String> {
     let s = Session::open(EventMask::PROPERTY_CHANGE)?;
     let clipboard = s.atom("CLIPBOARD")?;
     let targets_atom = s.atom("TARGETS")?;
     let incr = s.atom("INCR")?;
     let prop = s.atom("SOYUZ_CLIPBOARD")?;
     let owner = s.conn.get_selection_owner(clipboard).map_err(|e| format!("x11: {e}"))?.reply();
-    if owner.is_ok_and(|o| o.owner == x11rb::NONE) {
+    let owner = owner.map(|o| o.owner).unwrap_or(x11rb::NONE);
+    if owner == x11rb::NONE {
         let mut none = |_: &str| None;
         return Ok(f(&[], &mut none));
     }
@@ -234,7 +297,15 @@ pub(super) fn read<R>(f: impl FnOnce(&[String], &mut dyn FnMut(&str) -> Option<V
         let target = s.atom(mime).ok()?;
         convert(&s, clipboard, target, prop, incr)
     };
-    Ok(f(&types, &mut receive))
+    let r = f(&types, &mut receive);
+    if clear(&r) {
+        let now = s.conn.get_selection_owner(clipboard).map_err(|e| format!("x11: {e}"))?.reply();
+        if now.is_ok_and(|o| o.owner == owner) {
+            s.conn.set_selection_owner(x11rb::NONE, clipboard, x11rb::CURRENT_TIME).map_err(|e| format!("x11: {e}"))?;
+            s.conn.sync().map_err(|e| format!("x11: {e}"))?;
+        }
+    }
+    Ok(r)
 }
 
 /// Give up `CLIPBOARD` (whoever owns it).

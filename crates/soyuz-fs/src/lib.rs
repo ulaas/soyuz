@@ -26,6 +26,8 @@ pub mod delete;
 pub mod dragout;
 mod err;
 pub mod fault;
+#[cfg(target_os = "linux")]
+pub mod fdwait;
 #[cfg(any(test, feature = "fuzzing"))]
 pub mod fuzzing;
 pub mod guard;

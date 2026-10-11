@@ -20,7 +20,7 @@ use soyuz_vfs::{RemoteUri, Scheme};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::clipboard::{ClipMode, Clipboard};
+use crate::ops::fileops::clipboard::ClipMode;
 use crate::ops::{NavOpts, navigate};
 use crate::services::jobs::{AfterJob, JobMeta, OpKind};
 use crate::services::remote::{self as svc, AuthKind, FetchThen, SavedConn};
@@ -261,10 +261,6 @@ fn other_pane_location(app: &SoyuzApp) -> Option<Location> {
     app.ws.tab().other().map(|p| p.location.clone())
 }
 
-fn clipboard_paths(app: &SoyuzApp) -> Option<(ClipMode, Vec<PathBuf>)> {
-    app.fileops.clipboard.for_paste().or_else(Clipboard::os_paths_hook)
-}
-
 fn clipboard_has_remote(app: &SoyuzApp) -> bool {
     app.fileops.clipboard.for_paste().is_some_and(|(_, p)| p.iter().any(|p| svc::is_remote_path(p)))
 }
@@ -317,14 +313,22 @@ pub fn execute(app: &mut SoyuzApp, a: Action, ctx: &egui::Context) {
         }
         A::Paste | A::PasteAndVerify => {
             let Some(dest) = here_path else { return };
-            let Some((mode, paths)) = clipboard_paths(app) else {
-                app.ui
-                    .toasts
-                    .push(Toast::info(tr!("remote-nothing-to-paste")).body(tr!("remote-nothing-to-paste-body")));
-                return;
+            let paste = move |app: &mut SoyuzApp, clip: Option<(ClipMode, Vec<PathBuf>)>| {
+                let Some((mode, paths)) = clip else {
+                    app.ui
+                        .toasts
+                        .push(Toast::info(tr!("remote-nothing-to-paste")).body(tr!("remote-nothing-to-paste-body")));
+                    return;
+                };
+                let mv = mode == ClipMode::Cut;
+                transfer(app, paths, dest, mv, mv);
             };
-            let mv = mode == ClipMode::Cut;
-            transfer(app, paths, dest, mv, mv);
+            // The in-process clipboard first (memory only); the system clipboard may
+            // answer a few frames later (Linux: another process).
+            match app.fileops.clipboard.for_paste() {
+                Some(clip) => paste(app, Some(clip)),
+                None => crate::services::os_clipboard::with_files(app, Box::new(paste)),
+            }
         }
         A::CopyToOtherPane | A::MoveToOtherPane => {
             let dest = match other_pane_location(app) {

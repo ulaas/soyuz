@@ -44,6 +44,16 @@ mod wayland;
 #[path = "os_clipboard_x11.rs"]
 mod x11;
 
+/// A selection this process serves from a background thread (Linux native backends).
+#[cfg(target_os = "linux")]
+#[derive(Clone, Default)]
+struct SelectionOwner {
+    /// True while the selection is ours (false once another client took it).
+    alive: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Set to make the owner thread give the selection up (only while still ours).
+    release: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
 /// `[linux] clipboard_fallback_tools` (kept current by `services::filemanager1::pump`).
 static FALLBACK_TOOLS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -92,10 +102,93 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
     }
 }
 
-/// Files currently on the system clipboard (put there by any application).
-pub fn get_files() -> Option<(ClipMode, Vec<PathBuf>)> {
+/// Files on the clipboard, with copy-vs-move.
+pub type Files = Option<(ClipMode, Vec<PathBuf>)>;
+
+/// What to do with the clipboard's files once they are known (runs on the UI thread).
+pub type Then = Box<dyn FnOnce(&mut crate::app::SoyuzApp, Files) + Send>;
+
+/// Files currently on the system clipboard (put there by any application). Blocking
+/// outside Windows (a round trip to the clipboard owner): never call it on the UI thread
+/// there, use [`with_files`].
+pub fn get_files() -> Files {
     imp::get_files().filter(|(_, p)| !p.is_empty())
 }
+
+/// Read the files on the system clipboard and run `then` with them on the UI thread.
+/// Windows: right away (the clipboard read is a quick local call). Elsewhere the read
+/// waits for the clipboard owner (another process), so it runs on a worker thread and
+/// `then` runs from [`pump`] once it lands, at most a few frames later.
+pub fn with_files(app: &mut crate::app::SoyuzApp, then: Then) {
+    #[cfg(windows)]
+    then(app, get_files());
+    #[cfg(not(windows))]
+    {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let wake = app.services.mailbox.postman().wake();
+        let spawned = std::thread::Builder::new().name("soyuz-clip-read".into()).spawn(move || {
+            let _ = tx.send(get_files());
+            wake();
+        });
+        match spawned {
+            Ok(_) => PENDING.lock().push(rx, then),
+            Err(e) => {
+                log::debug!("os clipboard: cannot start the reader: {e}");
+                then(app, None);
+            }
+        }
+    }
+}
+
+/// Run the continuations of clipboard reads that have landed (call once per frame).
+pub fn pump(app: &mut crate::app::SoyuzApp) {
+    #[cfg(not(windows))]
+    {
+        let ready = PENDING.lock().take_ready();
+        for (then, files) in ready {
+            then(app, files);
+        }
+    }
+    #[cfg(windows)]
+    let _ = app;
+}
+
+/// Clipboard reads in flight, in request order.
+#[cfg_attr(windows, allow(dead_code))]
+struct Pending<T> {
+    reads: Vec<(crossbeam_channel::Receiver<Files>, T)>,
+}
+
+#[cfg_attr(windows, allow(dead_code))]
+impl<T> Pending<T> {
+    const fn new() -> Self {
+        Pending { reads: Vec::new() }
+    }
+
+    fn push(&mut self, rx: crossbeam_channel::Receiver<Files>, then: T) {
+        self.reads.push((rx, then));
+    }
+
+    /// The finished reads at the front of the queue (later ones wait for earlier ones, so
+    /// two pastes run in the order they were asked for). A reader that died counts as
+    /// "no files".
+    fn take_ready(&mut self) -> Vec<(T, Files)> {
+        let mut out = Vec::new();
+        while let Some((rx, _)) = self.reads.first() {
+            let files = match rx.try_recv() {
+                Ok(f) => f,
+                Err(crossbeam_channel::TryRecvError::Empty) => break,
+                Err(crossbeam_channel::TryRecvError::Disconnected) => None,
+            };
+            let (_, then) = self.reads.remove(0);
+            out.push((then, files));
+        }
+        out
+    }
+}
+
+#[cfg(not(windows))]
+static PENDING: parking_lot::Mutex<Pending<Then>> = parking_lot::Mutex::new(Pending::new());
 
 /// Cheap check used to enable "Paste" in menus (Windows only; elsewhere `false`, the
 /// internal clipboard decides).
@@ -451,6 +544,29 @@ mod tests {
 
     fn pb(s: &str) -> PathBuf {
         PathBuf::from(s)
+    }
+
+    #[test]
+    fn pending_reads_complete_in_request_order() {
+        let mut p: Pending<u32> = Pending::new();
+        let (tx1, rx1) = crossbeam_channel::bounded(1);
+        let (tx2, rx2) = crossbeam_channel::bounded(1);
+        let (tx3, rx3) = crossbeam_channel::bounded::<Files>(1);
+        p.push(rx1, 1);
+        p.push(rx2, 2);
+        p.push(rx3, 3);
+        assert!(p.take_ready().is_empty(), "nothing landed yet");
+        tx2.send(Some((ClipMode::Cut, vec![pb("/b")]))).unwrap();
+        assert!(p.take_ready().is_empty(), "the second read waits for the first");
+        tx1.send(None).unwrap();
+        let got = p.take_ready();
+        assert_eq!(got.len(), 2);
+        assert_eq!((got[0].0, got[0].1.clone()), (1, None));
+        assert_eq!((got[1].0, got[1].1.clone()), (2, Some((ClipMode::Cut, vec![pb("/b")]))));
+        drop(tx3); // a reader that died counts as "no files"
+        let got = p.take_ready();
+        assert_eq!((got[0].0, got[0].1.clone()), (3, None));
+        assert!(p.reads.is_empty());
     }
 
     #[test]
