@@ -9,6 +9,11 @@ pub fn drain(app: &mut SoyuzApp) {
         match c {
             FrontendCmd::OpenSettings(section) => crate::ui::settings::open(app, section),
             FrontendCmd::CloseSettings => crate::ui::settings::close(app),
+            FrontendCmd::Properties(dir) => crate::ui::tree::properties(app, &dir),
+            FrontendCmd::UnlockDevice { object, name, kind, pane } => {
+                crate::ui::sidebar::unlock_dialog(app, object, name, kind, pane)
+            }
+            FrontendCmd::OfferReadOnlyMount { dev, name } => crate::ui::sidebar::offer_read_only(app, dev, name),
         }
     }
 }

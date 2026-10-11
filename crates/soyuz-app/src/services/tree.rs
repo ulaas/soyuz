@@ -17,7 +17,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use soyuz_core::{Attributes, Control, EntryInfo, FsErrorKind, OpControl};
 use soyuz_fs::{ListOptions, WatchEvent, WatchId, WatchKind, Watcher};
 
-use crate::ui::tree::model::{ChildInfo, Probe};
+use crate::models::tree::model::{ChildInfo, Probe};
 
 /// Children probed for subfolders per listing (bigger folders probe lazily: unknown
 /// rows simply keep their chevron until opened).

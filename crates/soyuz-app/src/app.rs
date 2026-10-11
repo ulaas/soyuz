@@ -15,6 +15,7 @@ use soyuz_fs::VolumeInfo;
 use crate::cmd::Cmd;
 use crate::host::Host;
 use crate::keys;
+use crate::models::sidebar::SidebarState;
 use crate::models::toasts::Toasts;
 use crate::services::Services;
 use crate::state::pane::Pane;
@@ -25,7 +26,6 @@ use crate::theme;
 use crate::ui::dialogs::Dialogs;
 use crate::ui::panels::BottomPanel;
 use crate::ui::shell;
-use crate::ui::sidebar::SidebarState;
 use crate::{actions, ops};
 
 /// Where keyboard input goes when no text field has focus.
@@ -75,7 +75,7 @@ pub struct UiState {
     /// Window frame currently in effect (`[appearance] custom_titlebar`).
     pub chrome: crate::ui::titlebar::Chrome,
     /// Folder tree sidebar.
-    pub tree: crate::ui::tree::TreeState,
+    pub tree: crate::models::tree::TreeState,
 }
 
 pub struct SoyuzApp {
@@ -586,7 +586,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
     crate::services::tags::set_custom_names(&c.tags);
     crate::services::tags::set_sync_xdg_tags(c.tags.sync_xdg_tags);
-    crate::ui::sidebar::set_show_gtk_bookmarks(c.sidebar.gtk_bookmarks);
+    crate::models::devices::set_show_gtk_bookmarks(c.sidebar.gtk_bookmarks);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
         log::warn!("{w}");
     }
@@ -638,7 +638,10 @@ fn start_location(c: &Config) -> Location {
 
 /// Default favorites: Home plus the standard user folders that exist.
 pub fn default_favorites() -> Vec<FavoriteEntry> {
-    crate::ui::sidebar::standard_places().into_iter().map(|p| FavoriteEntry { name: p.label, path: p.path }).collect()
+    crate::models::sidebar::standard_places()
+        .into_iter()
+        .map(|p| FavoriteEntry { name: p.label, path: p.path })
+        .collect()
 }
 
 impl SoyuzApp {
@@ -653,7 +656,7 @@ impl SoyuzApp {
         crate::theme::fonts::begin_frame(&ctx);
         ops::drain_mailbox(self, &ctx);
         crate::services::crash::pump(self, &ctx);
-        crate::ui::sidebar::pump(self);
+        crate::models::devices::pump(self);
         crate::ui::dialogs::properties::pump(self, &ctx);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, &ctx);

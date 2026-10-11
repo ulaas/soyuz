@@ -71,7 +71,7 @@ impl PathPicker {
                         ["Desktop", "Documents", "Downloads"].iter().any(|s| s.eq_ignore_ascii_case(n))
                     })
             })
-            .map(|(_, p)| (p.label, p.icon, p.path))
+            .map(|(_, p)| (p.label, crate::ui::sidebar::place_glyph(p.role), p.path))
             .collect();
         let mut picker = PathPicker {
             id: Id::new(("soyuz.picker", title.to_string())),
