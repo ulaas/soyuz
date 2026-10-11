@@ -87,6 +87,11 @@
   </requires>
 
   <releases>
+    <release version="0.2.0" date="2026-10-11" type="development">
+      <description>
+        <p>Stability fixes; About shows the git commit the build comes from.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-10-11" type="development">
       <description>
         <p>First public build. Linux packages are new and less tested than the Windows build.</p>
