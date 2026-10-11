@@ -54,18 +54,16 @@ pub fn init(cc: &eframe::CreationContext<'_>) {
         let window = cc.window_handle().ok().map(|h| h.as_raw());
         let display = cc.display_handle().ok().map(|h| h.as_raw());
         let system = match (display, window) {
-            (Some(RawDisplayHandle::Wayland(d)), Some(RawWindowHandle::Wayland(w))) => {
+            (Some(RawDisplayHandle::Wayland(_)), Some(RawWindowHandle::Wayland(_))) => {
                 let (tx, rx) = crossbeam_channel::unbounded();
                 let ctx = cc.egui_ctx.clone();
                 let sink = Box::new(move |e: DropTargetEvent| {
                     let _ = tx.send(e);
                     ctx.request_repaint();
                 });
-                let started = soyuz_fs::dragout::start_wayland_drop_target(
-                    d.display.as_ptr() as usize,
-                    w.surface.as_ptr() as usize,
-                    sink,
-                );
+                // The window and its connection outlive the drop target: `shutdown`
+                // stops it from the app's exit hook (the documented lifetime contract).
+                let started = soyuz_fs::dragout::start_wayland_drop_target(cc, sink);
                 match started {
                     Ok(()) => {
                         SHARED.lock().events = Some(rx);

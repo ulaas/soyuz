@@ -169,11 +169,19 @@ pub fn system_file_manager_available() -> bool {
     }
 }
 
-/// The local path of a `file://` URI (percent-decoded, non-UTF-8 safe); `None` for other
-/// schemes / remote hosts. For command-line arguments received through a desktop
+/// The local path of a `file://` URI (percent-decoded, non-UTF-8 safe; scheme matched
+/// case-insensitively); `None` for other schemes / remote hosts. Windows: `file:///C:/x`
+/// → `C:\x` and `file://host/share/x` → `\\host\share\x`. For command-line arguments received through a desktop
 /// entry's `%U` (`soyuz.desktop` uses `Exec=soyuz %U`).
 pub fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
-    linux::uri::uri_to_path(uri)
+    #[cfg(windows)]
+    {
+        linux::uri::uri_to_windows_path(uri).map(PathBuf::from)
+    }
+    #[cfg(not(windows))]
+    {
+        linux::uri::uri_to_path(uri)
+    }
 }
 
 /// The `file://` URI of a local path (percent-encoded).
@@ -215,15 +223,8 @@ pub(crate) fn open_with_generic(path: &Path, app: &AppInfo) -> FsResult<()> {
     let p = path.to_string_lossy();
     let mut substituted = false;
     for a in &app.args {
-        if ["%1", "%L", "%f", "%F", "%u", "%U"].iter().any(|ph| a.contains(ph)) {
+        if let Some(r) = substitute_placeholders(a, &p) {
             substituted = true;
-            let r = a
-                .replace("%1", &p)
-                .replace("%L", &p)
-                .replace("%f", &p)
-                .replace("%F", &p)
-                .replace("%u", &p)
-                .replace("%U", &p);
             cmd.arg(r);
         } else {
             cmd.arg(a);
@@ -236,6 +237,33 @@ pub(crate) fn open_with_generic(path: &Path, app: &AppInfo) -> FsResult<()> {
         cmd.current_dir(dir);
     }
     spawn_detached(cmd, "open_with", path)
+}
+
+/// `arg` with every `%1 %L %f %F %u %U` replaced by `path` in a single pass (a path that
+/// itself contains e.g. `%U` is inserted verbatim, never substituted again); `None` when
+/// `arg` has no placeholder.
+#[cfg_attr(windows, allow(dead_code))]
+fn substitute_placeholders(arg: &str, path: &str) -> Option<String> {
+    let mut out = String::with_capacity(arg.len() + path.len());
+    let mut found = false;
+    let mut rest = arg;
+    while let Some(i) = rest.find('%') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        match after.chars().next() {
+            Some('1' | 'L' | 'f' | 'F' | 'u' | 'U') => {
+                out.push_str(path);
+                found = true;
+                rest = &after[1..];
+            }
+            _ => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    found.then_some(out)
 }
 
 /// Applications registered for `path`'s type (default first). macOS: every LaunchServices
@@ -474,6 +502,17 @@ pub fn shortcut_target(path: &Path) -> FsResult<Option<PathBuf>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn placeholders_are_substituted_in_one_pass() {
+        let sub = |a: &str, p: &str| substitute_placeholders(a, p);
+        assert_eq!(sub("%f", "/t/100%Ugly.txt").as_deref(), Some("/t/100%Ugly.txt"));
+        assert_eq!(sub("--file=%U", "C:\\a%L%f%1.txt").as_deref(), Some("--file=C:\\a%L%f%1.txt"));
+        assert_eq!(sub("%1 and %L", "x").as_deref(), Some("x and x"));
+        assert_eq!(sub("100%", "x"), None);
+        assert_eq!(sub("--no-placeholder %d", "x"), None);
+        assert_eq!(sub("50%%f", "x").as_deref(), Some("50%x"));
+    }
 
     #[test]
     fn powershell_quoting_covers_typographic_quotes() {

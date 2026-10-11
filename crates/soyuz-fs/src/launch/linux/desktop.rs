@@ -360,6 +360,13 @@ fn expand_token(t: &ExecToken, targets: &[Target], ctx: &ExecContext<'_>, argv: 
         "%d" | "%D" | "%n" | "%N" | "%v" | "%m" => return,
         _ => {}
     }
+    // Field codes inside a quoted argument are invalid per the Desktop Entry spec, yet
+    // `sh -c "unzip %f -d /tmp"` is common. Like GLib, substitute such values
+    // POSIX-shell-quoted so a file name can never break out into shell syntax. A
+    // quoted token that is just one field code (`"%f"`) is treated as unquoted.
+    let lone = t.text.len() == 2 && t.text.starts_with('%') && !t.text.ends_with('%');
+    let quote = t.quoted && !lone;
+    let value = |v: OsString| if quote { shell_quote(&v) } else { v };
     let mut out = OsString::new();
     let mut it = t.text.chars();
     let mut lit = String::new();
@@ -379,20 +386,20 @@ fn expand_token(t: &ExecToken, targets: &[Target], ctx: &ExecContext<'_>, argv: 
             Some('f' | 'F') => {
                 flush(&mut lit, &mut out);
                 if let Some(f) = targets.first() {
-                    out.push(f.as_file());
+                    out.push(value(f.as_file()));
                 }
             }
             Some('u' | 'U') => {
                 flush(&mut lit, &mut out);
                 if let Some(f) = targets.first() {
-                    out.push(f.as_url());
+                    out.push(value(f.as_url()));
                 }
             }
             Some('c') => lit.push_str(ctx.name),
             Some('k') => {
                 flush(&mut lit, &mut out);
                 if let Some(l) = ctx.location {
-                    out.push(l.as_os_str());
+                    out.push(value(l.as_os_str().to_owned()));
                 }
             }
             Some('i') => lit.push_str(ctx.icon.unwrap_or_default()),
@@ -402,6 +409,30 @@ fn expand_token(t: &ExecToken, targets: &[Target], ctx: &ExecContext<'_>, argv: 
     }
     flush(&mut lit, &mut out);
     argv.push(out);
+}
+
+/// POSIX-shell single-quote `v` (`'…'`, an embedded `'` becomes `'\''`), like
+/// `g_shell_quote`. Non-UTF-8 bytes pass through untouched on unix.
+fn shell_quote(v: &OsStr) -> OsString {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::{OsStrExt, OsStringExt};
+        let mut out = Vec::with_capacity(v.len() + 2);
+        out.push(b'\'');
+        for &b in v.as_bytes() {
+            if b == b'\'' {
+                out.extend_from_slice(b"'\\''");
+            } else {
+                out.push(b);
+            }
+        }
+        out.push(b'\'');
+        OsString::from_vec(out)
+    }
+    #[cfg(not(unix))]
+    {
+        OsString::from(format!("'{}'", v.to_string_lossy().replace('\'', "'\\''")))
+    }
 }
 
 /// Quote one argument for an `Exec=` line (and escape it for the desktop-file string
@@ -622,6 +653,26 @@ Exec=gedit --other
         let raw = PathBuf::from(OsStr::from_bytes(b"/tmp/\xff.bin"));
         let out = expand_exec("ed --x=%f", &[Target::Path(raw)], &ctx).unwrap();
         assert_eq!(out[0][1].as_bytes(), b"--x=/tmp/\xff.bin");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn quoted_field_codes_are_shell_quoted() {
+        let ctx = ExecContext::default();
+        let evil = [Target::Path("/t/$(id)".into())];
+        let ex = |e: &str, t: &[Target]| s(&expand_exec(e, t, &ctx).unwrap());
+        assert_eq!(ex(r#"sh -c "x %f""#, &evil), [vec!["sh", "-c", "x '/t/$(id)'"]]);
+        let quote = [Target::Path("/t/a'b; rm -rf ~".into())];
+        assert_eq!(
+            ex(r#"sh -c "unzip %f -d /tmp""#, &quote),
+            [vec!["sh", "-c", r"unzip '/t/a'\''b; rm -rf ~' -d /tmp"]]
+        );
+        // A lone quoted field code is the plain value (lenient, not shell-quoted).
+        assert_eq!(ex(r#"ed "%f""#, &evil), [vec!["ed", "/t/$(id)"]]);
+        // Unquoted tokens are unchanged (argv, no shell involved).
+        assert_eq!(ex("ed --x=%f", &evil), [vec!["ed", "--x=/t/$(id)"]]);
+        let k = ExecContext { location: Some(Path::new("/a/$(x).desktop")), ..ExecContext::default() };
+        assert_eq!(s(&expand_exec(r#"sh -c "run %k""#, &[], &k).unwrap()), [vec!["sh", "-c", "run '/a/$(x).desktop'"]]);
     }
 
     #[test]

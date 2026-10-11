@@ -78,7 +78,7 @@ pub(crate) fn file_uri(path: &Path) -> String {
 /// The local path of a `file:` URI (`file:///p`, `file://localhost/p`, `file:/p`);
 /// `None` for other schemes and remote hosts. A `?query` / `#fragment` is dropped.
 pub(crate) fn uri_to_path(uri: &str) -> Option<PathBuf> {
-    let rest = uri.strip_prefix("file:").or_else(|| uri.strip_prefix("FILE:"))?;
+    let rest = strip_file_scheme(uri)?;
     let rest = rest.split(['?', '#']).next().unwrap_or_default();
     let path = if let Some(after) = rest.strip_prefix("//") {
         let (host, p) = after.split_at(after.find('/')?);
@@ -90,6 +90,52 @@ pub(crate) fn uri_to_path(uri: &str) -> Option<PathBuf> {
         rest
     };
     path.starts_with('/').then(|| path_from_bytes(percent_decode(path)))
+}
+
+/// `uri` after a case-insensitive `file:` scheme.
+fn strip_file_scheme(uri: &str) -> Option<&str> {
+    uri.get(..5).filter(|s| s.eq_ignore_ascii_case("file:")).map(|_| &uri[5..])
+}
+
+/// The Windows path of a `file:` URI: `file:///C:/x` → `C:\x` (also `C|`),
+/// `file://host/share/x` and `file:////host/share/x` → `\\host\share\x`;
+/// `file://localhost/C:/x` is local. `None` for other schemes, a rooted path without a
+/// drive and a host without a share. Pure string logic, so it is tested on every OS.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn uri_to_windows_path(uri: &str) -> Option<String> {
+    let rest = strip_file_scheme(uri)?;
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (host, path) = match rest.strip_prefix("//") {
+        Some(after) => after.split_at(after.find('/').unwrap_or(after.len())),
+        None => ("", rest),
+    };
+    let decoded = String::from_utf8_lossy(&percent_decode(path)).into_owned();
+    let host = if host.eq_ignore_ascii_case("localhost") { "" } else { host };
+    let unc = |host: &str, path: &str| {
+        let path = path.trim_start_matches('/');
+        let share_ok = !host.is_empty() && path.split('/').next().is_some_and(|s| !s.is_empty());
+        share_ok.then(|| format!(r"\\{host}\{}", path.replace('/', "\\")))
+    };
+    if !host.is_empty() {
+        let host = String::from_utf8_lossy(&percent_decode(host)).into_owned();
+        return unc(&host, &decoded);
+    }
+    // `file:////server/share/x` (an empty authority, then a UNC path).
+    if let Some(after) = decoded.strip_prefix("//") {
+        let (h, p) = after.split_at(after.find('/').unwrap_or(after.len()));
+        return unc(h, p);
+    }
+    let p = decoded.strip_prefix('/').unwrap_or(&decoded);
+    let b = p.as_bytes();
+    let drive = b.len() >= 2
+        && b[0].is_ascii_alphabetic()
+        && matches!(b[1], b':' | b'|')
+        && (b.len() == 2 || matches!(b[2], b'/' | b'\\'));
+    if !drive {
+        return None;
+    }
+    let tail = p[2..].replace('/', "\\");
+    Some(format!("{}:{}", b[0] as char, if tail.is_empty() { "\\" } else { &tail }))
 }
 
 /// The scheme of a URL (`https`, `mailto`, …), lowercased; `None` for things that do not
@@ -105,6 +151,26 @@ pub(crate) fn scheme(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn windows_file_uris() {
+        let w = |u: &str| uri_to_windows_path(u);
+        assert_eq!(w("file:///C:/Users/a%20b/x.txt").as_deref(), Some(r"C:\Users\a b\x.txt"));
+        assert_eq!(w("FILE:///c:/x").as_deref(), Some(r"c:\x"));
+        assert_eq!(w("File:///D|/x/y").as_deref(), Some(r"D:\x\y"));
+        assert_eq!(w("file:///C:").as_deref(), Some(r"C:\"));
+        assert_eq!(w("file:///C:/").as_deref(), Some(r"C:\"));
+        assert_eq!(w("file://localhost/C:/x").as_deref(), Some(r"C:\x"));
+        assert_eq!(w("file:C:/x").as_deref(), Some(r"C:\x"));
+        assert_eq!(w("file://server/share/dir/f.txt").as_deref(), Some(r"\\server\share\dir\f.txt"));
+        assert_eq!(w("file:////server/share/f").as_deref(), Some(r"\\server\share\f"));
+        assert_eq!(w("file:///C:/x%23y?q#frag").as_deref(), Some(r"C:\x#y"));
+        assert_eq!(w("file:///C:/%C3%BC").as_deref(), Some(r"C:\ü"));
+        assert_eq!(w("file://server"), None, "no share");
+        assert_eq!(w("file:///usr/bin"), None, "no drive");
+        assert_eq!(w("https://x/C:/y"), None);
+        assert_eq!(w("fil"), None);
+    }
 
     #[cfg(unix)]
     #[test]

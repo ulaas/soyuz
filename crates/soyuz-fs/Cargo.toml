@@ -30,6 +30,9 @@ md-5.workspace = true
 crc32fast.workspace = true
 chrono.workspace = true
 serde_json.workspace = true
+# Typed window / display handles for the Wayland drop target (`dragout`), so callers
+# never pass raw pointers as integers. Same version eframe already uses.
+raw-window-handle = "0.6.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [

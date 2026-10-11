@@ -116,6 +116,9 @@ pub struct Watcher {
     /// Test hook: every new watch is polled.
     #[cfg(test)]
     force_poll: bool,
+    /// Test hook: the native watch succeeds, then reports ENOSPC (a partial recursive add).
+    #[cfg(test)]
+    fake_limit: bool,
 }
 
 impl std::fmt::Debug for Watcher {
@@ -163,6 +166,8 @@ impl Watcher {
             degraded,
             #[cfg(test)]
             force_poll: false,
+            #[cfg(test)]
+            fake_limit: false,
         })
     }
 
@@ -197,18 +202,35 @@ impl Watcher {
         let force_poll = self.force_poll;
         #[cfg(not(test))]
         let force_poll = false;
+        #[cfg(test)]
+        let fake_limit = self.fake_limit;
+        #[cfg(not(test))]
+        let fake_limit = false;
         let native = match &self.debouncer {
-            Some(d) if !force_poll => match d.lock().watch(dir, mode) {
-                Ok(()) => true,
-                Err(e) if is_resource_limit(&e) => {
-                    log::warn!("cannot watch {} natively ({e}); polling it", dir.display());
-                    if self.degraded.is_none() {
-                        self.degraded = Some(limit_message(&e));
+            Some(d) if !force_poll => {
+                // Bind first: a guard in the `match` scrutinee would live through the arms.
+                let res = d.lock().watch(dir, mode);
+                let res = res.and_then(|()| {
+                    if fake_limit { Err(notify::Error::new(notify::ErrorKind::MaxFilesWatch)) } else { Ok(()) }
+                });
+                match res {
+                    Ok(()) => true,
+                    Err(e) if is_resource_limit(&e) => {
+                        log::warn!("cannot watch {} natively ({e}); polling it", dir.display());
+                        // A recursive add that hit the limit half-way keeps the native watches it
+                        // did add; drop them (unless another native watch of `dir` uses them).
+                        let shared = self.registry.lock().values().any(|w| w.dir == dir && !w.polled);
+                        if !shared {
+                            let _ = d.lock().unwatch(dir);
+                        }
+                        if self.degraded.is_none() {
+                            self.degraded = Some(limit_message(&e));
+                        }
+                        false
                     }
-                    false
+                    Err(e) => return Err(notify_err("watch", Some(dir), e)),
                 }
-                Err(e) => return Err(notify_err("watch", Some(dir), e)),
-            },
+            }
             _ => false,
         };
         if !native {
@@ -813,6 +835,26 @@ mod tests {
         assert!(mentions(&evs, &f), "create not reported by polling: {evs:?}");
         w.unwatch(id);
         assert!(!w.is_polled(id));
+    }
+
+    /// A native watch that fails with a resource limit after a partial add is removed from
+    /// the native backend before falling back to polling.
+    #[test]
+    fn limit_fallback_drops_partial_native_watches() {
+        let d = tempfile::tempdir().unwrap();
+        let dir = d.path().join("deep");
+        std::fs::create_dir_all(dir.join("a/b")).unwrap();
+        let (mut w, _rx) = watcher();
+        if w.debouncer.is_none() {
+            return;
+        }
+        w.fake_limit = true;
+        let id = w.watch(&dir, true).unwrap();
+        assert!(w.is_polled(id));
+        assert!(w.degraded().is_some());
+        let native = w.debouncer.clone().unwrap();
+        assert!(native.lock().unwatch(&dir).is_err(), "the native watch was already removed");
+        w.unwatch(id);
     }
 
     #[test]

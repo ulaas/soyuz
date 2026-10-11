@@ -76,7 +76,7 @@ pub struct VolumeInfo {
 
 /// Total time budget for per-volume queries in [`volumes`].
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-const QUERY_DEADLINE: Duration = Duration::from_millis(2500);
+pub(crate) const QUERY_DEADLINE: Duration = Duration::from_millis(2500);
 
 /// Mounted volumes (drives and mounted folders on Windows), sorted by mount path.
 #[track_caller]
@@ -122,7 +122,7 @@ fn existing_ancestor(path: &Path) -> FsResult<PathBuf> {
 /// Run `jobs` on worker threads and collect the results that finish before `deadline`
 /// (`None` for the rest; their threads are left to finish on their own).
 #[cfg_attr(target_os = "macos", allow(dead_code))]
-fn parallel_with_deadline<T: Send + 'static>(
+pub(crate) fn parallel_with_deadline<T: Send + 'static>(
     jobs: Vec<Box<dyn FnOnce() -> T + Send>>,
     deadline: Duration,
 ) -> Vec<Option<T>> {
@@ -210,8 +210,13 @@ fn unescape_octal_bytes(s: &str) -> Vec<u8> {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'\\' && b.get(i + 1..i + 4).is_some_and(|d| d.iter().all(|c| (b'0'..=b'7').contains(c))) {
-            let v = (b[i + 1] - b'0') * 64 + (b[i + 2] - b'0') * 8 + (b[i + 3] - b'0');
+        let octal = |d: &[u8]| -> Option<u32> {
+            d.iter().try_fold(0u32, |v, c| (b'0'..=b'7').contains(c).then(|| v * 8 + u32::from(c - b'0')))
+        };
+        // `\400`..`\777` do not fit a byte: kept literally.
+        if b[i] == b'\\'
+            && let Some(v) = b.get(i + 1..i + 4).and_then(octal).and_then(|v| u8::try_from(v).ok())
+        {
             out.push(v);
             i += 4;
         } else {
@@ -829,16 +834,31 @@ mod imp {
     }
 
     /// Mount points of every user-visible filesystem, before de-duplication (per-mount
-    /// trash directories can live on any of them).
-    pub(crate) fn user_mounts() -> Vec<PathBuf> {
-        mounts().into_iter().filter(|m| !is_pseudo_mount(m)).map(|m| m.mount).collect()
+    /// trash directories can live on any of them), each with "may hang" (network / FUSE).
+    pub(crate) fn user_mounts() -> Vec<(PathBuf, bool)> {
+        mounts()
+            .into_iter()
+            .filter(|m| !is_pseudo_mount(m))
+            .map(|m| {
+                let slow = super::may_hang(&m.fstype, &m.source, &m.mount);
+                (m.mount, slow)
+            })
+            .collect()
     }
 }
 
-/// Mount points of every user-visible filesystem (btrfs subvolume and bind mounts included).
+/// Mount points of every user-visible filesystem (btrfs subvolume and bind mounts
+/// included), each with whether touching it may hang (network or FUSE: a stale hard NFS
+/// mount or a dead sshfs blocks `stat` forever, so probe those under a deadline).
 #[cfg(target_os = "linux")]
-pub(crate) fn user_mounts() -> Vec<PathBuf> {
+pub(crate) fn user_mounts() -> Vec<(PathBuf, bool)> {
     imp::user_mounts()
+}
+
+/// Network and FUSE filesystems: any syscall on them may block indefinitely.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(crate) fn may_hang(fstype: &str, source: &str, mount: &Path) -> bool {
+    fstype.starts_with("fuse") || kind_for(fstype, source, mount) == VolumeKind::Network
 }
 
 /// Mount points of every filesystem backed by a block device (`/dev/…` source), hidden
@@ -1036,6 +1056,9 @@ mod tests {
         assert!(caps_for("btrfs").contains(FsCaps::REFLINK));
         assert!(!caps_for("vfat").contains(FsCaps::HARDLINK));
         assert_eq!(unescape_octal(r"a\040b\134c"), "a b\\c");
+        // Out of byte range (would overflow a u8): kept as written.
+        assert_eq!(unescape_octal(r"x\777y\400"), r"x\777y\400");
+        assert_eq!(unescape_octal(r"\377"), "\u{fffd}");
     }
 
     /// Fedora's btrfs layout: `/` and `/home` are subvolumes of one filesystem.

@@ -312,7 +312,7 @@ pub fn png_text_chunks(png: &[u8]) -> Option<(u32, u32, TextChunks)> {
     while rest.len() >= 12 {
         let len = u32::from_be_bytes(rest[..4].try_into().ok()?) as usize;
         let kind = &rest[4..8];
-        let data = rest.get(8..8 + len)?;
+        let data = rest.get(8..8usize.checked_add(len)?)?;
         match kind {
             b"IHDR" if len >= 8 => {
                 w = u32::from_be_bytes(data[..4].try_into().ok()?);
@@ -329,7 +329,7 @@ pub fn png_text_chunks(png: &[u8]) -> Option<(u32, u32, TextChunks)> {
             b"IDAT" | b"IEND" => break,
             _ => {}
         }
-        rest = rest.get(12 + len..)?;
+        rest = rest.get(12usize.checked_add(len)?..)?;
     }
     Some((w, h, texts))
 }
@@ -360,7 +360,8 @@ pub fn lookup_freedesktop(dir: &Path, path: &Path, px: u32) -> Option<OsThumb> {
         if !freedesktop_thumb_valid(&texts, &uri, mtime) {
             continue;
         }
-        if w.max(h) * 4 < px * 3 {
+        // u64: width / height come from an untrusted PNG header.
+        if u64::from(w.max(h)) * 4 < u64::from(px) * 3 {
             break;
         }
         return Some(OsThumb { data, width: w, height: h, db_size: class });
@@ -666,6 +667,9 @@ mod tests {
         put("large", 256, 192, mtime);
         assert_eq!(lookup_freedesktop(&cache, &f, 200).map(|t| t.db_size), Some(256));
         assert_eq!(lookup_freedesktop(&cache, &d.path().join("missing.jpg"), 128), None);
+        // A hostile IHDR size must not overflow the size check.
+        put("x-large", u32::MAX, 1, mtime);
+        assert_eq!(lookup_freedesktop(&cache, &f, 400).map(|t| t.db_size), Some(512));
     }
 
     /// A real (zlib-compressed) RGBA PNG, as the app's encoder makes it.
