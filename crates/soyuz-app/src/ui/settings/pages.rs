@@ -835,7 +835,7 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 /// Windows-only so far; switch this to the drag-out module's own check once other
 /// platforms get one).
 fn drag_out_supported() -> bool {
-    cfg!(windows)
+    crate::ops::fileops::dragout::supported()
 }
 
 pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
