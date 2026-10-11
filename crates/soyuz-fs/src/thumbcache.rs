@@ -3,7 +3,7 @@
 //! shell API (`IThumbnailCache` is never used).
 //!
 //! **Cache key.** Every entry is keyed by the 64-bit `System.ThumbnailCacheId`. Explorer
-//! derives it in shell32 (`CalculateHashKey`); the algorithm was reverse engineered by
+//! derives it in the Windows shell (`CalculateHashKey`); the algorithm was reverse engineered by
 //! Y. Khatri ("Windows 7 Thumbcache hash algorithm", swiftforensics.com, 2012) and is
 //! re-implemented in Thumbcache Viewer (`map_entries.cpp`, E. Kutcher, with the Windows
 //! 8.1+ precision-loss step). Starting from the seed `0x95E729BA2C37FD21`, each input
@@ -36,7 +36,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-/// Seed of the cache-id hash (a constant in shell32.dll).
+/// Seed of the cache-id hash (a constant in the Windows shell).
 pub const SEED: u64 = 0x95E7_29BA_2C37_FD21;
 
 /// Fold `bytes` into the cache-id hash.
