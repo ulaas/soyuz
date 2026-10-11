@@ -26,6 +26,8 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - feat(macos): Keychain credentials, LaunchServices launching and reveal, CFPreferences theme/locale, CoreText font catalog, NSPasteboard file clipboard, Time Machine previous versions (untested on macOS) (86ec83c)
 - feat(vfs,app): SMB2/3 provider off Windows (smb2 crate) with share enumeration; smb:// and \\server\share in the path bar (144bdf9)
 - feat(a11y): Linux AT-SPI audit script; name the window, status-bar toggles, splitters and pane headers; tabs/toggles expose state (4cf16e3)
+- feat: scripts/changelog.sh (bash port of changelog.ps1); fix(app): Computer view lists rclone mounts under Cloud only (f68eee7)
+- feat(packaging): Flatpak manifest (io.github.ulaas.Soyuz) with sandbox-aware host paths, flatpak-spawn for terminals/Open With, host fonts, sandbox mount filtering (bf738c5)
 
 ### Fixes and security
 
@@ -35,6 +37,11 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - fix(mcp): socket test tolerates descriptors briefly held by forked children (81db025)
 - fix(term): drop the macOS proc_pidinfo cwd fallback (unsafe outside the allowlist; OSC 7 covers it) (bbf9d7b)
 - fix(a11y): vendor accesskit_unix 0.21.1 with the IsEnabled fix so Orca sees Soyuz on at-spi2-core 2.62+ (6c675e9)
+- fix(app): safe eject (never system drives; lock containers first), sequenced inode-flag apply with honest partial-failure state, device events drained every frame, unlock dialog secret hygiene, macOS previous versions, desktop Exec %U, audit cleanup (73eac02)
+- fix(fs): shell-quote field codes in quoted Exec args, trash never hangs on dead network mounts, icon-theme inherit panic, symlinked mimeapps.list kept, exact desktop-file restore, partial inotify watches dropped on fallback, handle-based Wayland drop target, overflow-safe parsers, single-pass Open With placeholders, Windows file: URIs, long-name overwrite (5e0305e)
+- fix(app): paste reads the OS clipboard off the UI thread with bounded waits, delta + serial xdg tag writes, restart only when the close proceeds, deferred font reinstall, single-pass verified update extract, single gvfs probe, clipboard owner/send edge cases (789c9a1)
+- fix(app): remote URIs on the command line (desktop %U) open as remote locations (34a047b)
+- fix(vfs,jobs,term,ai,mcp,index): hostile remote names never escape the tree, Windows OSC 7 drive paths only, /proc cwd tracking survives stray OSC 7, bounded keyring prompt wait, group kill before reaping, unavailable index roots keep their index (8c7d929)
 
 ### Documentation
 
