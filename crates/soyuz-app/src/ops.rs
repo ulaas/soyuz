@@ -239,11 +239,11 @@ pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
     let path = e.path.clone();
     let is_dir = e.is_dir_like();
     // Archives open as folders; entries inside archives navigate / extract-and-open.
-    if crate::ui::archive::open_entry(app, id, &path, is_dir) {
+    if crate::models::archive::open_entry(app, id, &path, is_dir) {
         return;
     }
     // Remote folders navigate; remote files are downloaded to the temp cache and opened.
-    if crate::ui::remote::open_entry(app, id, &path, is_dir) {
+    if crate::models::remote::open_entry(app, id, &path, is_dir) {
         return;
     }
     if is_dir {
@@ -908,15 +908,15 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
         Cmd::Workspace(c) => crate::models::workspaces::apply(app, c),
 
         Cmd::SubmitJob(spec) => {
-            crate::ui::archive::submit_job(app, *spec);
+            crate::models::archive::submit_job(app, *spec);
         }
         Cmd::ExtractEntries { archive, items, strip, dest } => {
-            crate::ui::archive::extract_entries(app, archive, items, strip, dest)
+            crate::models::archive::extract_entries(app, archive, items, strip, dest)
         }
-        Cmd::Remote(c) => crate::ui::remote::apply(app, c),
-        Cmd::RunSavedSearch(i) => crate::ui::search::run_saved(app, i),
-        Cmd::RemoveSavedSearch(i) => crate::ui::search::remove_saved(app, i),
-        Cmd::Smart(c) => crate::ui::smart::apply(app, c),
+        Cmd::Remote(c) => crate::models::remote::apply(app, c),
+        Cmd::RunSavedSearch(i) => crate::models::search::run_saved(app, i),
+        Cmd::RemoveSavedSearch(i) => crate::models::search::remove_saved(app, i),
+        Cmd::Smart(c) => crate::models::smart::apply(app, c),
         Cmd::RevealPath(path) => {
             let select = path.file_name().map(|n| n.to_string_lossy().into_owned());
             if let Some(parent) = path.parent() {

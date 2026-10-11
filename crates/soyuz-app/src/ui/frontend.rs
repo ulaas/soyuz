@@ -24,6 +24,9 @@ pub fn drain(app: &mut SoyuzApp) {
                 crate::ui::sidebar::unlock_dialog(app, object, name, kind, pane)
             }
             FrontendCmd::OfferReadOnlyMount { dev, name } => crate::ui::sidebar::offer_read_only(app, dev, name),
+            FrontendCmd::Smart(p) => crate::ui::smart::prompt(app, p),
+            FrontendCmd::Remote(p) => crate::ui::remote::prompt(app, p),
+            FrontendCmd::Archive(p) => crate::ui::archive::prompt(app, p),
         }
     }
 }

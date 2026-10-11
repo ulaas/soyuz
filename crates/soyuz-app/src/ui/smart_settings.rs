@@ -75,7 +75,7 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
                             _ => (ph::CIRCLE_NOTCH, p.accent),
                         };
                         ui.label(icons::icon(glyph, 14.0).color(color));
-                        ui.label(RichText::new(crate::ui::smart::status_line(st)).color(p.text_primary));
+                        ui.label(RichText::new(crate::models::smart::status_line(st)).color(p.text_primary));
                     }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
