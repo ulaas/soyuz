@@ -110,6 +110,39 @@ pub fn find_pdfium(dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter().map(|d| d.join(pdfium_file_name())).find(|p| p.is_file())
 }
 
+/// Whether pdfium can be loaded: found in `dirs`, or (Linux) reachable through the
+/// dynamic loader's own search path (`LD_LIBRARY_PATH`, `ld.so.cache`), which the
+/// pdfium thread tries last. Does file I/O; call off the UI thread.
+pub fn pdfium_available(dirs: &[PathBuf]) -> bool {
+    find_pdfium(dirs).is_some() || (cfg!(target_os = "linux") && loader_has_pdfium())
+}
+
+/// `libpdfium.so` in an `LD_LIBRARY_PATH` folder or listed in `/etc/ld.so.cache`
+/// (remembered for a minute: thumbnail workers ask once per PDF).
+fn loader_has_pdfium() -> bool {
+    static MEMO: std::sync::Mutex<Option<(std::time::Instant, bool)>> = std::sync::Mutex::new(None);
+    let mut memo = MEMO.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((at, found)) = *memo
+        && at.elapsed() < std::time::Duration::from_secs(60)
+    {
+        return found;
+    }
+    let found = loader_scan();
+    *memo = Some((std::time::Instant::now(), found));
+    found
+}
+
+fn loader_scan() -> bool {
+    let name = pdfium_file_name();
+    let env = std::env::var_os("LD_LIBRARY_PATH").unwrap_or_default();
+    if std::env::split_paths(&env).any(|d| !d.as_os_str().is_empty() && d.join(name).is_file()) {
+        return true;
+    }
+    // The cache lists library names as NUL-terminated strings.
+    let needle = format!("{name}\0");
+    std::fs::read("/etc/ld.so.cache").map(|b| b.windows(needle.len()).any(|w| w == needle.as_bytes())).unwrap_or(false)
+}
+
 /// Decode a PDF text string (UTF-16BE with BOM, UTF-8 with BOM, else PDFDocEncoding ≈ Latin-1).
 pub fn decode_pdf_string(b: &[u8]) -> String {
     if let Some(rest) = b.strip_prefix(&[0xFE, 0xFF]) {

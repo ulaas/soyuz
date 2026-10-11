@@ -351,9 +351,13 @@ you install system-wide yourself.
   prefix (`bin/soyuz`, `share/applications/soyuz.desktop`, icons, metainfo). For your account:
   `tar -C ~/.local --strip-components=1 -xf soyuz-<version>-linux-<arch>.tar.gz` (make sure
   `~/.local/bin` is on `PATH`); system-wide: the same with `sudo tar -C /usr/local …`.
-  Uninstall by deleting those files. The portable mode below works on Linux too.
-- **Install the RPM** — `sudo dnf install ./soyuz-<version>-*.rpm` (Fedora, openSUSE);
-  remove it with `sudo dnf remove soyuz`. Settings live in `~/.config/soyuz/`, the search
+  Uninstall by deleting those files. The portable mode below works on Linux too. A copy
+  installed this way updates itself: Settings → *About & updates* downloads the new tarball,
+  checks its SHA-256 checksum and offers **Install & restart** (a system-wide copy under
+  `/usr/local` needs the `sudo tar` command above instead).
+- **Install the RPM** — `sudo dnf install ./soyuz-<version>-1.*.<arch>.rpm` (Fedora,
+  openSUSE); remove it with `sudo dnf remove soyuz`. Package-managed copies are updated by
+  the package manager, never by Soyuz itself. Settings live in `~/.config/soyuz/`, the search
   index in `~/.local/share/soyuz/`.
 - **Desktop integration** — the desktop entry puts Soyuz in your app launcher. File types open with the app chosen in your desktop's settings
   (`mimeapps.list` and the installed desktop entries are read directly; no `xdg-open`), file
@@ -369,11 +373,15 @@ you install system-wide yourself.
   in browsers and other apps starts Soyuz; **Remove** restores what was there before. While
   Soyuz is running it can also answer those requests itself (Settings → *General* →
   *Linux desktop* → *Answer "Show in folder"*, off by default so it doesn't take over from
-  your desktop's file manager unasked).
+  your desktop's file manager unasked; the row shows whether Soyuz is serving or which
+  program already owns the name).
 - **Clipboard** — copy / cut put files on the system clipboard in the formats GNOME Files,
   Dolphin and other apps use (`text/uri-list`, `x-special/gnome-copied-files`), and paste
-  accepts files copied there. If the built-in clipboard fails in an unusual session, turn on
-  *Clipboard helper programs* (runs `wl-copy` / `xclip`).
+  accepts files copied there. Soyuz talks to the clipboard itself: through the Wayland
+  `ext-data-control` protocol (niri, Sway, KWin, Hyprland …) and otherwise through the X11
+  clipboard (also via XWayland, e.g. under GNOME). Only if neither works in an unusual
+  session, turn on *Clipboard helper programs* (*General → Linux desktop*), which then runs
+  `wl-copy` / `xclip`.
 - **Saved passwords and API keys** — remote-connection secrets and AI provider keys go to the
   Secret Service (GNOME Keyring, KWallet or another provider of `org.freedesktop.secrets`),
   never into `config.toml`. If no keyring is running or it stays locked, Soyuz says so in
@@ -382,7 +390,21 @@ you install system-wide yourself.
 - **Trash** — Delete moves items to the freedesktop trash (`~/.local/share/Trash`, or a
   `.Trash-<uid>` folder on other drives), so GNOME Files and Dolphin show and restore them too.
 - **Hidden files** — dotfiles are hidden, and so are the names listed in a folder's `.hidden`
-  file (turn that off with *General → Honour .hidden files*). Ctrl+H shows them.
+  file (turn that off with *General → Honour .hidden files*; the folder tree and pickers
+  follow it too). Ctrl+H shows them.
+- **File names on Windows drives** — on FAT, exFAT and NTFS drives (USB sticks, dual-boot
+  partitions) new names, renames, links and rename-on-conflict follow the Windows rules
+  (no `<>:"|?*`, no reserved names like `CON`), so files stay readable there.
+- **Tags** — color tags are also written to the `user.xdg.tags` extended attribute that
+  Dolphin and other KDE apps use, and tags set there show up in Soyuz (*Views → Tag names →
+  Share tags with other apps*, on by default).
+- **Sidebar** — Favorites include your GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared
+  with GNOME Files; *Views → Show GTK bookmarks*). Cloud lists GNOME Online Accounts drives
+  (gvfs) and rclone mounts; an rclone mount appears only there, not again under Drives.
+- **Thumbnails and PDF** — thumbnails other apps already made (`~/.cache/thumbnails`) are
+  reused (*Appearance → Shared thumbnail cache*). PDF pages and thumbnails need
+  `libpdfium.so`: next to the `soyuz` binary, in the config folder, in the folder set under
+  *Preview & search*, or in a system library folder (`/usr/lib64`, `/usr/local/lib`, …).
 - **Previous versions** — Properties → *Previous versions* and the context menu list earlier
   versions of a file or folder from Snapper (`<mount>/.snapshots`), ZFS
   (`<mount>/.zfs/snapshot`) and Timeshift snapshots. Snapper's `.snapshots` folder is usually
@@ -401,10 +423,11 @@ you install system-wide yourself.
 - **Window system** — *General → Linux desktop → Window system*: Automatic uses Wayland when
   available, else X11. Choosing X11 runs Soyuz through XWayland under a Wayland compositor.
   Takes effect after a restart.
-- **Drag and drop** — files dropped on Soyuz from other apps are accepted. Under a Wayland
-  compositor, dragging between Soyuz and X11-only apps works best with *Window system* set
-  to X11. Dragging items *out* of Soyuz into other apps isn't available on Linux yet (the
-  *Drag out* setting is Windows-only for now).
+- **Drag and drop** — files dropped on Soyuz from other apps are accepted under X11.
+  Drag-in on Wayland: see below. Under a Wayland compositor, dragging between Soyuz and
+  X11-only apps works best with *Window system* set to X11.
+  <!-- TODO(orchestrator): adjust once Wayland drag-in and drag-out land. --> Wayland
+  drag-in and dragging items out of Soyuz are being worked on; check the release notes.
 - **Not available on Linux** — the Mica / Acrylic backdrop, Snap Layouts, dialogs as separate
   windows, the NTFS change journal, Windows attributes and `\\server` share listing are
   Windows features; their settings are hidden on Linux.

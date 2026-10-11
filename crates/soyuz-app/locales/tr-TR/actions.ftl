@@ -541,3 +541,10 @@ actions-command-empty = “{ $name }” için komut tanımlanmamış
 actions-command-run-failed = “{ $name }” çalıştırılamadı
 actions-command-start-failed = Komut başlatılamadı
 actions-command-running = “{ $name }” çalıştırılıyor
+
+## Linux (glue)
+action-root-desc-linux = Dosya sisteminin köküne git (/)
+action-run-elevated-desc-linux = Seçimi root olarak çalıştır (polkit ile sorar)
+action-paste-shortcut-desc-linux = Panodakileri sembolik bağlantı olarak yapıştır
+action-set-attributes-desc-linux = İzinleri, dosya bayraklarını ve zaman damgalarını değiştir
+action-previous-versions-desc-linux = Btrfs / ZFS anlık görüntülerindeki önceki sürümlere göz at ve geri yükle (Snapper, Timeshift)

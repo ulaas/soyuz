@@ -135,7 +135,8 @@ fn child_info(e: &EntryInfo) -> ChildInfo {
 }
 
 fn options() -> ListOptions {
-    ListOptions { include_hidden: true, stat_links: true, chunk: 256, ..ListOptions::default() }
+    let dot_hidden = super::lister::dot_hidden();
+    ListOptions { include_hidden: true, stat_links: true, chunk: 256, dot_hidden, ..ListOptions::default() }
 }
 
 /// Child folders of `dir` (directories, junctions and links to directories).
@@ -150,7 +151,8 @@ pub fn list_dirs(dir: &Path) -> Result<Vec<ChildInfo>, String> {
 pub fn probe(dir: &Path) -> Probe {
     let mut p = Probe::default();
     let ctl = OpControl::new();
-    let opts = ListOptions { include_hidden: true, stat_links: false, chunk: 64, ..ListOptions::default() };
+    let dot_hidden = super::lister::dot_hidden();
+    let opts = ListOptions { include_hidden: true, stat_links: false, chunk: 64, dot_hidden, ..ListOptions::default() };
     let _ = soyuz_fs::read_dir_streaming(dir, &opts, &ctl, &mut |chunk| {
         for e in &chunk {
             let dirlike = e.is_dir_like() || matches!(e.kind, soyuz_core::EntryKind::Symlink { .. });

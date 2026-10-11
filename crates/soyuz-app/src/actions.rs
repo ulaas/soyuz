@@ -462,9 +462,10 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
 
 /// Actions without an implementation yet: hidden from the command palette and the
 /// keyboard settings (a binding in `config.toml` still answers with a "coming soon").
-pub fn unavailable(_a: &Action) -> bool {
-    // Every action is implemented (including the folder tree).
-    false
+pub fn unavailable(a: &Action) -> bool {
+    // Every action is implemented (including the folder tree); NTFS junctions exist
+    // on Windows only.
+    matches!(a, Action::NewJunction) && !cfg!(windows)
 }
 
 fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {

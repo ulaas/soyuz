@@ -739,7 +739,8 @@ pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
                     size_style,
                     crate::ui::dialogs::properties::Tab::General,
                     None,
-                );
+                )
+                .naming(app);
                 app.ui.dialogs.push(d);
             }
             Err(e) => {

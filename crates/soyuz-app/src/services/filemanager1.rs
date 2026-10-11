@@ -181,7 +181,8 @@ fn handle(app: &mut SoyuzApp, ctx: &egui::Context, req: Request) {
                 app.config.general.size_style,
                 crate::ui::dialogs::properties::Tab::General,
                 None,
-            );
+            )
+            .naming(app);
             app.ui.dialogs.push(d);
             raise(ctx);
         }

@@ -73,7 +73,12 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.updates.include_prereleases);
             },
         );
-        r.block("", tr!("settings-updates-privacy"), |ui| {
+        let privacy = if cfg!(target_os = "linux") {
+            tr!("settings-updates-privacy-linux")
+        } else {
+            tr!("settings-updates-privacy")
+        };
+        r.block("", privacy, |ui| {
             ui.horizontal(|ui| {
                 let can = !d.updates.repo.trim().is_empty() && !busy;
                 ui.add_enabled_ui(can, |ui| {
@@ -186,6 +191,9 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                 Signature::Valid => (tr!("settings-updates-sig-valid").to_string(), p.success),
                 Signature::Unsigned => (tr!("settings-updates-sig-unsigned").to_string(), p.warning),
                 Signature::Invalid(hr) => (tr!("settings-updates-sig-invalid", code = format!("0x{hr:08X}")), p.danger),
+                Signature::Unknown if cfg!(target_os = "linux") => {
+                    (tr!("settings-updates-sig-unknown-linux").to_string(), p.text_tertiary)
+                }
                 Signature::Unknown => (tr!("settings-updates-sig-unknown").to_string(), p.text_tertiary),
             };
             ui.label(RichText::new(sig_text).size(11.5).color(sig_color));
@@ -193,6 +201,12 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                 ui.label(RichText::new(tr!("settings-updates-detached-sig")).size(11.5).color(p.text_tertiary));
             }
             ui.add_space(6.0);
+            if cfg!(target_os = "linux") && linux_install(ui, path, sha256) {
+                // Installed: close every window (with the pending-jobs check); `main`
+                // then restarts into the new binary.
+                app.workspaces.quitting = true;
+                ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+            }
             let is_installer =
                 path.extension().is_some_and(|e| e.eq_ignore_ascii_case("msi") || e.eq_ignore_ascii_case("exe"));
             let confirm_id = egui::Id::new("soyuz.settings.update.confirm_run");
@@ -233,6 +247,57 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             ui.ctx().data_mut(|d| d.insert_temp(confirm_id, confirming));
         }
     }
+}
+
+/// Linux: "Install & restart" for a downloaded release tarball when this copy can
+/// update itself (unpacked from the tarball), else how to update it instead. True once
+/// the new binary is in place and a restart was requested.
+fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
+    let p = palette(ui.ctx());
+    if let Some(note) = updates::self_update_note() {
+        ui.label(RichText::new(note).size(11.5).color(p.text_secondary));
+        ui.add_space(4.0);
+        return false;
+    }
+    let tarball = path.to_string_lossy().to_ascii_lowercase().ends_with(".tar.gz");
+    if !tarball || updates::install_kind() != updates::InstallKind::Tarball {
+        return false;
+    }
+    // Set by the click so a result left over from an earlier install never restarts.
+    let started_id = egui::Id::new("soyuz.settings.update.install_started");
+    let started = ui.ctx().data(|d| d.get_temp::<bool>(started_id)).unwrap_or(false);
+    let (installing, result) = updates::install_status();
+    ui.horizontal(|ui| {
+        ui.add_enabled_ui(!installing, |ui| {
+            if small_button(ui, Some(ph::ROCKET_LAUNCH), tr!("settings-updates-install-restart"), false)
+                .on_hover_text(tr!("settings-updates-install-restart-tooltip"))
+                .clicked()
+            {
+                ui.ctx().data_mut(|d| d.insert_temp(started_id, true));
+                updates::install_async(path.to_path_buf(), sha256.to_string(), ui.ctx().clone());
+            }
+        });
+        if installing {
+            ui.spinner();
+            ui.label(RichText::new(tr!("settings-updates-installing")).size(11.5).color(p.text_secondary));
+        }
+    });
+    let mut restart = false;
+    if started && !installing {
+        match result {
+            Some(Ok(exe)) => {
+                ui.ctx().data_mut(|d| d.insert_temp(started_id, false));
+                updates::request_restart(exe);
+                restart = true;
+            }
+            Some(Err(e)) => {
+                ui.label(RichText::new(e).size(11.5).color(p.danger));
+            }
+            None => {}
+        }
+    }
+    ui.add_space(4.0);
+    restart
 }
 
 fn release_header(ui: &mut Ui, rel: &updates::Release) {

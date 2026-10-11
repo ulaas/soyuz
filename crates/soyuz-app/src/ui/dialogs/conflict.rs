@@ -116,6 +116,8 @@ pub struct PromptDialog {
     focus_rename: bool,
     pub(crate) password: String,
     pub(crate) focus_password: bool,
+    /// Validate rename-on-conflict names with the Windows rules.
+    windows_rules: bool,
 }
 
 impl PromptDialog {
@@ -150,7 +152,15 @@ impl PromptDialog {
             focus_rename: false,
             password: String::new(),
             focus_password: true,
+            windows_rules: cfg!(windows),
         }
+    }
+
+    /// Validate rename-on-conflict names with the Windows rules (target on a
+    /// Windows-family volume, or strict names).
+    pub fn windows_rules(mut self, on: bool) -> Self {
+        self.windows_rules = on;
+        self
     }
 }
 
@@ -280,7 +290,8 @@ impl PromptDialog {
                 r.request_focus();
                 self.focus_rename = false;
             }
-            let valid = soyuz_core::validate_name(text.trim()).is_ok() && text.trim() != c.dst.name;
+            let valid =
+                soyuz_core::validate_name_with(text.trim(), self.windows_rules).is_ok() && text.trim() != c.dst.name;
             if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && valid {
                 return Some(resolve(ConflictResolution::Rename(text.trim().to_string()), false));
             }
@@ -300,7 +311,7 @@ impl PromptDialog {
                 ui.spacing_mut().item_spacing.x = 6.0;
                 let all = self.apply_all;
                 if let Some(text) = self.rename.clone() {
-                    let valid = soyuz_core::validate_name(text.trim()).is_ok();
+                    let valid = soyuz_core::validate_name_with(text.trim(), self.windows_rules).is_ok();
                     if button(ui, tr!("common-rename"), Btn::Primary).clicked() && valid {
                         out = Some(resolve(ConflictResolution::Rename(text.trim().to_string()), false));
                     }

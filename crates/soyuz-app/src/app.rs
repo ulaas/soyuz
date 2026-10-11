@@ -605,6 +605,8 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ai::state::set_rules(&c.ai);
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
     crate::services::tags::set_custom_names(&c.tags);
+    crate::services::tags::set_sync_xdg_tags(c.tags.sync_xdg_tags);
+    crate::ui::sidebar::set_show_gtk_bookmarks(c.sidebar.gtk_bookmarks);
     for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
         log::warn!("{w}");
     }

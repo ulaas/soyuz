@@ -64,11 +64,12 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         let current = app.ws.pane().location.clone();
         let pane = app.ws.pane().id;
         let saved_searches = app.ui.search.names();
+        let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
         let mut sctx = SidebarCtx {
             saved_searches: &saved_searches,
             saved_config: app.ui.search.config_count(),
             bookmarks: &app.config.bookmarks,
-            volumes: &app.ui.volumes,
+            volumes: &drives,
             cloud: &app.ui.cloud,
             sections: &app.config.sidebar.sections,
             current: &current,
