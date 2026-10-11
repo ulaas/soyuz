@@ -3698,6 +3698,9 @@ name = "lzma-rust2"
 version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fde178a3caf126c440fa15628147772d8ee590a39477d711353fbe2e58a73a5b"
+dependencies = [
+ "sha2 0.11.0",
+]
 
 [[package]]
 name = "lzxd"
@@ -6527,7 +6530,7 @@ dependencies = [
  "filetime",
  "flate2",
  "log",
- "lzma-rust2 0.16.5",
+ "lzma-rust2 0.21.0",
  "lzxd",
  "rars",
  "ruzstd",
@@ -7177,7 +7180,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",

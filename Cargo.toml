@@ -85,7 +85,7 @@ tar = "0.4.46"
 flate2 = "1.1.10"
 zstd = "0.14.0"
 ruzstd = "0.8.3"
-lzma-rust2 = { version = "0.16.2", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "0.21.0", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bzip2 = "0.6.1"
 sevenz-rust2 = "0.23.0"
 lzxd = "0.2.7"
