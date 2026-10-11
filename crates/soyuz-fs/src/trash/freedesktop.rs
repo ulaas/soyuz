@@ -340,11 +340,9 @@ pub(crate) mod discover {
     use crate::trash::TrashSupport;
 
     pub(crate) fn home_bin() -> Bin {
-        let data = std::env::var_os("XDG_DATA_HOME")
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .unwrap_or_else(|| crate::path::home().join(".local").join("share"));
-        Bin { root: data.join("Trash"), topdir: None }
+        // The desktop's data folder, also inside Flatpak (whose `$XDG_DATA_HOME` is the
+        // app's private `~/.var/app/<id>/data`): one shared home trash.
+        Bin { root: crate::launch::linux::host_data_home().join("Trash"), topdir: None }
     }
 
     fn dev(p: &Path) -> Option<u64> {

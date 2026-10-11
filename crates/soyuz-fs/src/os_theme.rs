@@ -261,7 +261,7 @@ mod linux {
     static FILES: parking_lot::Mutex<Option<FileCache>> = parking_lot::Mutex::new(None);
 
     fn paths() -> Vec<PathBuf> {
-        let c = crate::launch::linux::config_home();
+        let c = crate::launch::linux::host_config_home();
         vec![c.join("kdeglobals"), c.join("gtk-4.0/settings.ini"), c.join("gtk-3.0/settings.ini")]
     }
 

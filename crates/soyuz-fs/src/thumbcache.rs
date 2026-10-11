@@ -193,7 +193,7 @@ pub fn cache_dir() -> Option<PathBuf> {
         return std::env::var_os("LOCALAPPDATA").map(|l| PathBuf::from(l).join("Microsoft\\Windows\\Explorer"));
     }
     if cfg!(all(unix, not(target_os = "macos"))) {
-        return Some(crate::launch::linux::cache_home().join("thumbnails"));
+        return Some(crate::launch::linux::host_cache_home().join("thumbnails"));
     }
     None
 }

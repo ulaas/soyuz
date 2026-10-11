@@ -129,7 +129,7 @@ pub fn parse_bookmarks(text: &str) -> Vec<Bookmark> {
 pub fn user_dirs() -> UserDirs {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let file = crate::launch::linux::config_home().join("user-dirs.dirs");
+        let file = crate::launch::linux::host_config_home().join("user-dirs.dirs");
         std::fs::read_to_string(file).map(|t| parse_user_dirs(&t, &crate::path::home())).unwrap_or_default()
     }
     #[cfg(not(all(unix, not(target_os = "macos"))))]
@@ -142,7 +142,7 @@ pub fn user_dirs() -> UserDirs {
 pub fn gtk_bookmarks() -> Vec<Bookmark> {
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let primary = crate::launch::linux::config_home().join("gtk-3.0/bookmarks");
+        let primary = crate::launch::linux::host_config_home().join("gtk-3.0/bookmarks");
         let legacy = crate::path::home().join(".gtk-bookmarks");
         std::fs::read_to_string(primary)
             .or_else(|_| std::fs::read_to_string(legacy))

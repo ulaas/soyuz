@@ -37,6 +37,15 @@ pub struct State {
     pub created_list: bool,
     /// Previous content of `soyuz.desktop` (`None` = we created it).
     pub desktop_prev: Option<String>,
+    /// The desktop id made the default when it is not our own `soyuz.desktop` (Flatpak:
+    /// the exported `<app id>.desktop`; no desktop file is written then).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desktop_id: Option<String>,
+}
+
+/// Inside Flatpak: the desktop id Flatpak exports for us (`<app id>.desktop`).
+fn flatpak_desktop_id() -> Option<String> {
+    crate::launch::linux::flatpak_id().map(|id| format!("{id}.desktop"))
 }
 
 /// Lines with their terminators.
@@ -230,11 +239,15 @@ fn effective_default(keys: &AssocKeys) -> Option<String> {
 
 pub fn status(keys: &AssocKeys) -> FileManagerStatus {
     let state = read_state(keys);
-    let ours = effective_default(keys).as_deref() == Some(DESKTOP_ID);
-    let command = std::fs::read_to_string(desktop_path(keys))
-        .ok()
-        .and_then(|t| crate::launch::linux::desktop::parse_desktop_with(&t, None))
-        .and_then(|e| e.exec);
+    let flatpak = flatpak_desktop_id();
+    let ours = effective_default(keys).as_deref() == Some(flatpak.as_deref().unwrap_or(DESKTOP_ID));
+    let command = match crate::launch::linux::flatpak_id() {
+        Some(id) => Some(format!("flatpak run {id} %U")),
+        None => std::fs::read_to_string(desktop_path(keys))
+            .ok()
+            .and_then(|t| crate::launch::linux::desktop::parse_desktop_with(&t, None))
+            .and_then(|e| e.exec),
+    };
     match (ours, command, state) {
         (true, Some(command), _) => FileManagerStatus::Registered { command },
         (_, _, Some(_)) => FileManagerStatus::Modified,
@@ -252,12 +265,17 @@ pub fn register(keys: &AssocKeys, exe: &Path) -> io::Result<()> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => (String::new(), true),
         Err(e) => return Err(e),
     };
-    let desktop_prev = std::fs::read_to_string(desktop_path(keys)).ok();
-    let (new_text, change) = set_default(&text, MIME, DESKTOP_ID);
-    let state = State { version: 1, command: open_command(exe), change, created_list, desktop_prev };
+    // Inside Flatpak the exported `<app id>.desktop` already runs the sandboxed app; a
+    // `soyuz.desktop` pointing at `/app/bin/soyuz` would not work on the host.
+    let flatpak = flatpak_desktop_id();
+    let desktop_prev = if flatpak.is_none() { std::fs::read_to_string(desktop_path(keys)).ok() } else { None };
+    let (new_text, change) = set_default(&text, MIME, flatpak.as_deref().unwrap_or(DESKTOP_ID));
+    let state =
+        State { version: 1, command: open_command(exe), change, created_list, desktop_prev, desktop_id: flatpak };
     // Backup first, then the desktop file, then the association.
     write(&state_path(keys), &serde_json::to_string_pretty(&state).map_err(io::Error::other)?)?;
-    let res = write(&desktop_path(keys), &desktop_file(exe)).and_then(|()| write(&list, &new_text));
+    let desktop = if state.desktop_id.is_none() { write(&desktop_path(keys), &desktop_file(exe)) } else { Ok(()) };
+    let res = desktop.and_then(|()| write(&list, &new_text));
     if let Err(e) = res {
         let _ = restore(keys);
         return Err(e);
@@ -272,7 +290,7 @@ pub fn restore(keys: &AssocKeys) -> io::Result<()> {
     };
     let list = list_path(keys);
     if let Ok(text) = std::fs::read_to_string(&list) {
-        let restored = undo_default(&text, MIME, DESKTOP_ID, &state.change);
+        let restored = undo_default(&text, MIME, state.desktop_id.as_deref().unwrap_or(DESKTOP_ID), &state.change);
         if restored.is_empty() && state.created_list {
             std::fs::remove_file(&list)?;
         } else if restored != text {
@@ -281,6 +299,7 @@ pub fn restore(keys: &AssocKeys) -> io::Result<()> {
     }
     let desktop = desktop_path(keys);
     match &state.desktop_prev {
+        _ if state.desktop_id.is_some() => {}
         Some(prev) => write(&desktop, prev)?,
         None => match std::fs::remove_file(&desktop) {
             Err(e) if e.kind() != io::ErrorKind::NotFound => return Err(e),
@@ -314,7 +333,17 @@ fn dbus_quote(s: &str) -> String {
 }
 
 pub fn service_file(exe: &Path) -> String {
-    format!("[D-BUS Service]\nName={SERVICE}\nExec={} --dbus-file-manager\n", dbus_quote(&exe.to_string_lossy()))
+    service_file_for(exe, crate::launch::linux::flatpak_id().as_deref())
+}
+
+/// The service file for `exe`, or inside Flatpak for the app `flatpak_id` (the host's
+/// D-Bus daemon starts it with `flatpak run`; `exe` is a sandbox path then).
+fn service_file_for(exe: &Path, flatpak_id: Option<&str>) -> String {
+    let cmd = match flatpak_id {
+        Some(id) => format!("/usr/bin/flatpak run --command=soyuz {}", dbus_quote(id)),
+        None => dbus_quote(&exe.to_string_lossy()),
+    };
+    format!("[D-BUS Service]\nName={SERVICE}\nExec={cmd} --dbus-file-manager\n")
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -470,5 +499,23 @@ mod tests {
         restore_file_manager1_service(&keys).unwrap();
         assert_eq!(std::fs::read_to_string(&svc).unwrap(), before);
         assert!(!file_manager1_service_registered(&keys));
+    }
+
+    #[test]
+    fn flatpak_service_file_runs_the_app() {
+        assert_eq!(
+            service_file_for(Path::new("/app/bin/soyuz"), Some("io.github.ulaas.Soyuz")),
+            "[D-BUS Service]\nName=org.freedesktop.FileManager1\n\
+             Exec=/usr/bin/flatpak run --command=soyuz \"io.github.ulaas.Soyuz\" --dbus-file-manager\n"
+        );
+    }
+
+    #[test]
+    fn older_state_files_still_parse() {
+        let st: State = serde_json::from_str(
+            r#"{"version":1,"command":"soyuz %U","change":{"Inserted":{"header_newline_added":false}},"created_list":false,"desktop_prev":null}"#,
+        )
+        .unwrap();
+        assert_eq!(st.desktop_id, None);
     }
 }

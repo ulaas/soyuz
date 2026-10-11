@@ -217,6 +217,108 @@ No package makes Soyuz the default file manager or claims the D-Bus name
   that ships it would take "show in folder" away from the desktop's own file manager for
   every user of the machine.
 
+### Flatpak
+
+`installer/linux/flatpak/io.github.ulaas.Soyuz.yml` builds Soyuz as the Flatpak app
+`io.github.ulaas.Soyuz` on `org.freedesktop.Platform` 25.08 with the
+`org.freedesktop.Sdk.Extension.rust-stable` extension. Not built by CI yet and not on
+Flathub (the permissions below, `--filesystem=host` and `--talk-name=org.freedesktop.Flatpak`
+in particular, would need Flathub's review).
+
+**Prerequisites** (the SDK and the Rust extension are only needed to build; nothing here is
+needed to run the repo's other packages):
+
+```sh
+flatpak install --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 \
+    org.freedesktop.Sdk.Extension.rust-stable//25.08
+# flatpak-builder: `dnf install flatpak-builder` / `apt install flatpak-builder`, or
+# `flatpak install flathub org.flatpak.Builder` (then `flatpak run org.flatpak.Builder …`)
+```
+
+**Offline crates.** flatpak-builder builds without network, so every crate in `Cargo.lock`
+is listed in `installer/linux/flatpak/cargo-sources.json` (git-ignored, regenerate after
+every `Cargo.lock` change) by `flatpak-cargo-generator` from
+[flatpak-builder-tools](https://github.com/flatpak/flatpak-builder-tools) (`cargo/`; needs
+Python with `aiohttp` and `tomlkit`):
+
+```sh
+FLATPAK_CARGO_GENERATOR=~/src/flatpak-builder-tools/cargo/flatpak-cargo-generator.py \
+    installer/linux/flatpak/gen-cargo-sources.sh
+# = python3 flatpak-cargo-generator.py Cargo.lock -o installer/linux/flatpak/cargo-sources.json
+```
+
+The crates are unpacked to `cargo/vendor` with a source-replacement config, and the manifest
+points `CARGO_HOME` at `/run/build/soyuz/cargo` and runs
+`cargo --offline build --release --locked -p soyuz-app`. The vendored `accesskit_unix`
+(`third_party/`) comes with the checkout. `rust-toolchain.toml` is not used (no rustup in
+the SDK); the extension's cargo must be at least the workspace `rust-version`.
+
+**Build, install, run** (from the repository root; the manifest's `dir` source is the
+checkout itself, minus `target/`, `.git/`, `site/` and build folders):
+
+```sh
+flatpak-builder --user --install --force-clean build-dir \
+    installer/linux/flatpak/io.github.ulaas.Soyuz.yml
+flatpak run io.github.ulaas.Soyuz
+flatpak run --command=sh io.github.ulaas.Soyuz        # a shell inside the sandbox
+# a single-file bundle instead of installing:
+flatpak-builder --repo=flatpak-repo --force-clean build-dir installer/linux/flatpak/io.github.ulaas.Soyuz.yml
+flatpak build-bundle flatpak-repo soyuz.flatpak io.github.ulaas.Soyuz
+```
+
+Remove with `flatpak uninstall --user io.github.ulaas.Soyuz` (add `--delete-data` to remove
+`~/.var/app/io.github.ulaas.Soyuz`).
+
+**Names.** Flatpak exports only files named after the app id, so the manifest installs
+`soyuz.desktop` as `io.github.ulaas.Soyuz.desktop` with `Icon=io.github.ulaas.Soyuz`, the
+hicolor PNGs as `io.github.ulaas.Soyuz.png`, and the metainfo with its `<launchable>` changed
+to the new desktop id. The window keeps Wayland `app_id` / `WM_CLASS` `soyuz` (one value for
+every package), and the desktop entry keeps `StartupWMClass=soyuz`: GNOME Shell and KDE
+Plasma use it to match the window to the launcher when app id and desktop id differ.
+Validate the renamed files the way the build makes them:
+
+```sh
+desktop-file-validate build-dir/files/share/applications/io.github.ulaas.Soyuz.desktop
+appstreamcli validate --no-net build-dir/files/share/metainfo/io.github.ulaas.Soyuz.metainfo.xml
+```
+
+**Permissions** (each is justified in the manifest): Wayland with X11 fallback, `ipc`, `dri`,
+PulseAudio (audio previews), network (remote locations, AI providers, update check),
+ssh-agent (SFTP), `--filesystem=host` (it is a file manager; covers `$HOME`, `/mnt`, `/media`,
+`/run/media`, and the host OS read-only under `/run/host`), `xdg-run/gvfs` (desktop SMB /
+SFTP / MTP mounts, read-write), `xdg-cache/thumbnails` (the shared thumbnail cache),
+`org.freedesktop.secrets` (Secret Service), UDisks2 on the system bus (devices),
+`org.freedesktop.FileManager1` (talk, for "show in folder"; own, used only when the opt-in
+setting is on), `org.freedesktop.Flatpak` (`flatpak-spawn --host`, below).
+
+**Sandbox-aware code** (all keyed on `/.flatpak-info`, so other packages are unchanged):
+
+- `soyuz-fs` `launch::linux`: default-app opening uses the OpenURI portal (`OpenFile`,
+  `OpenURI`); "show in folder" asks `FileManager1`, then the portal's `OpenDirectory`.
+  External terminals and *Open with* entries run on the host through `flatpak-spawn --host`
+  (the terminal list is probed on the host with `flatpak-spawn --host which`).
+- Desktop-shared files use the host's XDG folders (`$HOST_XDG_*_HOME`, else `~/.config`,
+  `~/.local/share`, `~/.cache`), not the app's private `~/.var/app/<id>/`: `mimeapps.list`
+  and the D-Bus service file (default file manager), the home trash, `user-dirs.dirs`, GTK
+  bookmarks, GTK / KDE theme files, the thumbnail cache and the per-user font folder.
+  Registering as the default file manager writes `inode/directory=io.github.ulaas.Soyuz.desktop`
+  and no desktop file of its own; the D-Bus service runs
+  `/usr/bin/flatpak run --command=soyuz io.github.ulaas.Soyuz --dbus-file-manager`.
+- Fonts: the host's fonts are scanned under `/run/host/fonts`, `/run/host/local-fonts` and
+  `/run/host/user-fonts` besides the runtime's.
+- Drives: the sandbox's own mounts (`/`, `/usr`, `/app`, `/etc`, Flatpak's folders) are
+  hidden, and the disk holding home is listed as its `/home` mount.
+- Updates: `InstallKind::Flatpak` only notifies.
+
+**Known limitations:** the built-in terminal runs inside the sandbox (runtime tools, not the
+host's); *Open with* lists only applications visible in the sandbox (other Flatpaks);
+*Run as administrator* (`pkexec`) is unavailable; the CLI companion / MCP attach sockets live
+in the sandbox's `$XDG_RUNTIME_DIR/soyuz/` (reach them with
+`flatpak run --command=soyuz io.github.ulaas.Soyuz …`). Not yet built end to end: the
+manifest was checked (YAML, renamed desktop entry and metainfo validated), but
+flatpak-builder, the SDK and the Rust extension were not installed on the machine that wrote
+it.
+
 ### Screenshots and demo tree on Linux
 
 `scripts/demo-fixture.sh [ROOT] [BIG_FILE_MB]` builds the same demo tree as

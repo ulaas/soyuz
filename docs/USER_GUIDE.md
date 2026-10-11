@@ -359,6 +359,29 @@ you install system-wide yourself.
   openSUSE); remove it with `sudo dnf remove soyuz`. Package-managed copies are updated by
   the package manager, never by Soyuz itself. Settings live in `~/.config/soyuz/`, the search
   index in `~/.local/share/soyuz/`.
+- **Flatpak** — `flatpak run io.github.ulaas.Soyuz` (built from
+  `installer/linux/flatpak/`, see `docs/RELEASING.md`). It has access to all your files
+  (`--filesystem=host`, including drives under `/run/media` and gvfs mounts), so browsing
+  works as with the other packages. Differences inside the sandbox:
+  - Settings and the search index live in `~/.var/app/io.github.ulaas.Soyuz/` (`config/soyuz/`,
+    `data/soyuz/`), not `~/.config/soyuz/`. Put `libpdfium.so` in that `config/soyuz/` folder
+    for PDF pages (the app's own `/app` folder is read-only).
+  - Updates come from `flatpak update`; Soyuz only tells you a new version exists.
+  - Files open with your default apps through the desktop portal (it may ask which app to
+    use the first time). *Open with*, *Open terminal here* and terminal apps run on the host
+    with `flatpak-spawn --host`; *Open with* lists only the apps the sandbox can see (other
+    Flatpak apps), so for a host app use the portal's chooser via *Open*.
+  - *Make Soyuz the default* writes `inode/directory=io.github.ulaas.Soyuz.desktop` to your
+    real `~/.config/mimeapps.list`, and *Install service* writes a D-Bus service that starts
+    `flatpak run … io.github.ulaas.Soyuz`; both are undone by their buttons as usual. The
+    trash, the GTK bookmarks, `user-dirs.dirs`, the shared thumbnail cache and your fonts
+    (also `~/.local/share/fonts` and the system's) are the desktop's, not copies.
+  - The built-in terminal runs inside the sandbox (the runtime's `bash` and tools, not your
+    host's); use *Open terminal here* for a host shell. *Run as administrator* (`pkexec`) is
+    not available.
+  - The window is called `soyuz` (Wayland app id) while the launcher is
+    `io.github.ulaas.Soyuz.desktop`; its `StartupWMClass=soyuz` lets GNOME and KDE match them
+    (other docks may show a generic icon).
 - **Desktop integration** — the desktop entry puts Soyuz in your app launcher. File types open with the app chosen in your desktop's settings
   (`mimeapps.list` and the installed desktop entries are read directly; no `xdg-open`), file
   and folder icons come from your icon theme, light / dark mode and the accent color follow
