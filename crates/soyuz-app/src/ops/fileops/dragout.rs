@@ -252,10 +252,13 @@ mod tests {
         assert_eq!(after_drop(&report(Outcome::Dropped, DROPEFFECT_MOVE), &[], all), AfterDrop::Refresh);
     }
 
+    #[cfg(windows)]
     fn named<'a>(d: &'a DragData, name: &str) -> Option<&'a Vec<u8>> {
         d.formats.iter().find(|(f, _)| *f == Format::Named(name.into())).map(|(_, b)| b)
     }
 
+    // OLE formats carry Windows paths; `\\?\` prefixes are only stripped on Windows.
+    #[cfg(windows)]
     #[test]
     fn format_list() {
         let one = vec![PathBuf::from(r"\\?\C:\dir\a.txt")];
