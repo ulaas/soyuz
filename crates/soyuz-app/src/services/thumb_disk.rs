@@ -15,8 +15,6 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use egui::ColorImage;
-
 /// Bump to invalidate every cached file (format or rendering changes).
 const FORMAT_VERSION: u32 = 1;
 /// Evict down to this share of the cap.
@@ -81,7 +79,7 @@ fn file_of(key: u64) -> PathBuf {
 }
 
 /// A cached thumbnail; refreshes its mtime (LRU order).
-pub fn get(key: u64) -> Option<ColorImage> {
+pub fn get(key: u64) -> Option<image::RgbaImage> {
     if !enabled() {
         return None;
     }
@@ -91,24 +89,22 @@ pub fn get(key: u64) -> Option<ColorImage> {
     if let Ok(f) = std::fs::File::options().write(true).open(&path) {
         let _ = f.set_modified(SystemTime::now());
     }
-    let size = [img.width() as usize, img.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+    Some(img)
 }
 
 /// Store a thumbnail, evicting old ones when over the cap.
-pub fn put(key: u64, img: &ColorImage) {
+pub fn put(key: u64, img: &image::RgbaImage) {
     if !enabled() {
         return;
     }
-    let [w, h] = img.size;
-    let rgba: Vec<u8> = img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect();
+    let (w, h) = img.dimensions();
     let mut png = Vec::new();
     let enc = image::codecs::png::PngEncoder::new_with_quality(
         &mut png,
         image::codecs::png::CompressionType::Fast,
         image::codecs::png::FilterType::Adaptive,
     );
-    if image::ImageEncoder::write_image(enc, &rgba, w as u32, h as u32, image::ExtendedColorType::Rgba8).is_err() {
+    if image::ImageEncoder::write_image(enc, img.as_raw(), w, h, image::ExtendedColorType::Rgba8).is_err() {
         return;
     }
     let _ = std::fs::create_dir_all(dir());

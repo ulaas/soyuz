@@ -4,9 +4,9 @@
 //! [`PreviewClient`]s. Each client owns a result channel and a "latest request" counter:
 //! issuing a new request makes every older one stale, and workers drop stale requests
 //! before (and during) heavy work, so moving the selection quickly never queues up
-//! decoding. Results carry ready-to-draw data — textures are uploaded on the worker via
-//! `ctx.load_texture`, text is highlighted into `LayoutJob`s — so the UI thread only
-//! paints.
+//! decoding. Results carry ready-to-draw data — textures are uploaded on the worker
+//! through the frontend's [`Uploader`], text is highlighted into [`StyledLine`]s — so the
+//! UI thread only paints.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -18,13 +18,13 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, SystemTime};
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
-use egui::text::LayoutJob;
-use egui::{Color32, ColorImage, Context, FontId, TextureHandle, TextureOptions};
 use soyuz_core::{EntryInfo, EntryKind, split_vpath};
 use soyuz_fs::ListOptions;
 
+use super::preview_gfx::{Rgba, StyledLine, Tex, TextFont, Uploader};
 use super::preview_media;
 use super::preview_text::{self, Block};
+use crate::host::Wake;
 
 /// Size of one hex page.
 pub const HEX_PAGE: u64 = 64 * 1024;
@@ -300,15 +300,17 @@ pub struct Limits {
     pub max_image_mp: u32,
     pub max_text_bytes: usize,
     pub dark: bool,
-    pub mono: FontId,
-    pub fg: Color32,
+    pub mono: TextFont,
+    pub fg: Rgba,
+    /// Display scale of the frontend (page-like renders are made at this density).
+    pub pixels_per_point: f32,
     /// Rich previewer switches and caps (`preview_rich`).
     pub rich: super::preview_rich::RichLimits,
 }
 
 #[derive(Clone)]
 pub struct ImageData {
-    pub tex: TextureHandle,
+    pub tex: Tex,
     /// Original dimensions.
     pub width: u32,
     pub height: u32,
@@ -316,7 +318,7 @@ pub struct ImageData {
 
 #[derive(Clone)]
 pub struct TextData {
-    pub lines: Arc<Vec<LayoutJob>>,
+    pub lines: Arc<Vec<StyledLine>>,
     pub truncated: bool,
     pub language: Option<String>,
     pub encoding: &'static str,
@@ -411,7 +413,8 @@ struct LoadJob {
     force_hex: bool,
     limits: Limits,
     tx: Sender<Msg>,
-    ctx: Context,
+    wake: Wake,
+    upload: Uploader,
 }
 
 struct PageJob {
@@ -419,7 +422,7 @@ struct PageJob {
     path: PathBuf,
     page: u64,
     tx: Sender<Msg>,
-    ctx: Context,
+    wake: Wake,
 }
 
 struct Pool {
@@ -446,7 +449,7 @@ fn pool() -> &'static Pool {
                 let bytes =
                     std::panic::catch_unwind(AssertUnwindSafe(|| read_page(&job.path, job.page).ok())).ok().flatten();
                 let _ = job.tx.send(Msg::Page { doc: job.doc, page: job.page, bytes });
-                job.ctx.request_repaint();
+                (job.wake)();
             }
         });
         Pool { loads: ltx, pages: ptx }
@@ -463,13 +466,16 @@ pub struct PreviewClient {
     latest: Arc<AtomicU64>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
-    ctx: Context,
+    wake: Wake,
+    upload: Uploader,
 }
 
 impl PreviewClient {
-    pub fn new(ctx: &Context) -> Self {
+    /// `wake` asks the frontend for a frame when a result lands; `upload` makes its
+    /// textures (on the workers).
+    pub fn new(wake: Wake, upload: Uploader) -> Self {
         let (tx, rx) = unbounded();
-        PreviewClient { latest: Arc::new(AtomicU64::new(0)), tx, rx, ctx: ctx.clone() }
+        PreviewClient { latest: Arc::new(AtomicU64::new(0)), tx, rx, wake, upload }
     }
 
     /// Request a preview; every older request of this client becomes stale.
@@ -484,7 +490,8 @@ impl PreviewClient {
             force_hex,
             limits,
             tx: self.tx.clone(),
-            ctx: self.ctx.clone(),
+            wake: self.wake.clone(),
+            upload: self.upload.clone(),
         };
         let _ = pool().loads.send(job);
         id
@@ -497,7 +504,7 @@ impl PreviewClient {
 
     /// Ask for one hex page of `path`.
     pub fn page(&self, doc: u64, path: &Path, page: u64) {
-        let job = PageJob { doc, path: path.to_path_buf(), page, tx: self.tx.clone(), ctx: self.ctx.clone() };
+        let job = PageJob { doc, path: path.to_path_buf(), page, tx: self.tx.clone(), wake: self.wake.clone() };
         let _ = pool().pages.send(job);
     }
 
@@ -547,7 +554,7 @@ fn run_load(job: LoadJob) {
         return;
     }
     let _ = job.tx.send(Msg::Loaded { id: job.id, loaded: Box::new(loaded) });
-    job.ctx.request_repaint();
+    (job.wake)();
 }
 
 fn message(kind: Kind, icon: &'static str, title: impl Into<String>, body: impl Into<String>) -> Loaded {
@@ -659,7 +666,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
             opened.reader(),
             len,
             &name,
-            &job.ctx,
+            &job.upload,
             job.id,
             &job.limits,
             stale,
@@ -825,12 +832,7 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
         img = img.resize(max, max, image::imageops::FilterType::Triangle);
     }
     let rgba = img.to_rgba8();
-    let size = [rgba.width() as usize, rgba.height() as usize];
-    let tex = job.ctx.load_texture(
-        format!("preview:{name}:{}", job.id),
-        ColorImage::from_rgba_unmultiplied(size, rgba.as_raw()),
-        TextureOptions::LINEAR,
-    );
+    let tex = Tex::upload_rgba(&job.upload, format!("preview:{name}:{}", job.id), &rgba);
     Loaded { kind: Kind::Image, content: Content::Image(ImageData { tex, width: w, height: h }), facts, meta: None }
 }
 
@@ -888,7 +890,7 @@ fn text(opened: &mut Opened, name: &str, kind: Kind, job: &LoadJob, stale: &dyn 
         &text,
         name,
         job.limits.dark,
-        job.limits.mono.clone(),
+        job.limits.mono,
         job.limits.fg,
         Duration::from_millis(400),
         stale,
@@ -1116,10 +1118,15 @@ mod tests {
             max_image_mp: 40,
             max_text_bytes: 512 * 1024,
             dark: true,
-            mono: FontId::monospace(12.0),
-            fg: Color32::WHITE,
+            mono: TextFont::monospace(12.0),
+            fg: crate::services::preview_gfx::WHITE,
+            pixels_per_point: 1.0,
             rich: Default::default(),
         }
+    }
+
+    fn test_client() -> PreviewClient {
+        PreviewClient::new(crate::host::no_wake(), crate::services::preview_gfx::no_upload())
     }
 
     fn wait(client: &PreviewClient) -> Loaded {
@@ -1136,8 +1143,7 @@ mod tests {
     #[test]
     fn loads_image_text_and_hex_off_thread() {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = Context::default();
-        let client = PreviewClient::new(&ctx);
+        let client = test_client();
 
         let png = dir.path().join("big.png");
         image::RgbaImage::from_pixel(1200, 600, image::Rgba([1, 2, 3, 255])).save(&png).unwrap();
@@ -1146,7 +1152,7 @@ mod tests {
         match l.content {
             Content::Image(img) => {
                 assert_eq!((img.width, img.height), (1200, 600));
-                assert_eq!(img.tex.size(), [256, 128], "downscaled on the worker");
+                assert_eq!(img.tex.size, [256, 128], "downscaled on the worker");
             }
             _ => panic!("expected an image"),
         }
@@ -1175,8 +1181,7 @@ mod tests {
     #[test]
     fn stale_requests_are_dropped() {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = Context::default();
-        let client = PreviewClient::new(&ctx);
+        let client = test_client();
         let a = dir.path().join("a.txt");
         let b = dir.path().join("b.txt");
         std::fs::write(&a, "aaa").unwrap();
@@ -1204,8 +1209,7 @@ mod tests {
         let p = dir.path().join("blob.bin");
         let data: Vec<u8> = (0..(HEX_PAGE as usize * 2 + 10)).map(|i| (i % 251) as u8).collect();
         std::fs::write(&p, &data).unwrap();
-        let ctx = Context::default();
-        let client = PreviewClient::new(&ctx);
+        let client = test_client();
         client.page(7, &p, 2);
         let start = Instant::now();
         loop {

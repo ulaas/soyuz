@@ -212,9 +212,10 @@ impl Default for DiffClient {
 }
 
 impl DiffClient {
-    pub fn request(&self, a: PathBuf, b: PathBuf, cap: u64, ctx: &egui::Context) -> u64 {
+    /// Diff `a` against `b` (each capped at `cap` bytes); `wake` runs when it is done.
+    pub fn request(&self, a: PathBuf, b: PathBuf, cap: u64, wake: &crate::host::Wake) -> u64 {
         let id = self.latest.fetch_add(1, Ordering::SeqCst) + 1;
-        let (tx, latest, ctx) = (self.tx.clone(), self.latest.clone(), ctx.clone());
+        let (tx, latest, wake) = (self.tx.clone(), self.latest.clone(), wake.clone());
         let _ = std::thread::Builder::new().name("soyuz-diff".into()).spawn(move || {
             if latest.load(Ordering::SeqCst) != id {
                 return;
@@ -224,7 +225,7 @@ impl DiffClient {
                 .map(Arc::new);
             if latest.load(Ordering::SeqCst) == id {
                 let _ = tx.send(DiffResult { id, pair: (a, b), result });
-                ctx.request_repaint();
+                wake();
             }
         });
         id

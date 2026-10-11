@@ -180,7 +180,11 @@ impl SoyuzApp {
         }
         let wake = crate::host::egui_wake(ctx);
         let cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4);
-        let thumbs = crate::services::thumbs::Thumbs::new(ctx.clone(), cores.saturating_sub(1).clamp(1, 4));
+        let thumbs = crate::services::thumbs::Thumbs::new(
+            wake.clone(),
+            crate::ui::gfx::egui_uploader(ctx),
+            cores.saturating_sub(1).clamp(1, 4),
+        );
         let mut services =
             Services::new(wake.clone(), thumbs, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
         services.watcher.set_poll_interval(Duration::from_millis(config.behaviour.watch_poll_interval_ms));

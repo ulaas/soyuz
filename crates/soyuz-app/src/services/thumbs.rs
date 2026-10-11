@@ -1,5 +1,5 @@
 //! Thumbnail pipeline: worker threads decode + downscale images and upload the
-//! texture themselves (`egui::Context` is `Send + Sync`), so the UI thread only looks
+//! texture themselves (through the frontend's [`Uploader`]), so the UI thread only looks
 //! textures up. Requests are served newest-first and dropped once their rows have been
 //! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps the
 //! decoded textures within a byte budget (`[preview] thumb_cache_mib`, see
@@ -19,8 +19,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::SystemTime;
 
-use egui::{ColorImage, Context, TextureHandle, TextureOptions};
+use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
+
+use super::preview_gfx::{Tex, Uploader};
+use crate::host::Wake;
 
 /// Default texture budget (bytes) until the config is applied.
 pub const DEFAULT_BUDGET: u64 = 128 * 1024 * 1024;
@@ -63,7 +66,7 @@ enum Slot {
         wanted: u64,
     },
     Ready {
-        tex: TextureHandle,
+        tex: Tex,
         used: u64,
         bytes: u64,
         label: Option<String>,
@@ -157,7 +160,9 @@ pub fn bucket(points: f32, pixels_per_point: f32) -> u32 {
 }
 
 impl Thumbs {
-    pub fn new(ctx: Context, threads: usize) -> Self {
+    /// `upload` makes the frontend's textures (on the workers); `wake` asks for a frame
+    /// when one is ready.
+    pub fn new(wake: Wake, upload: Uploader, threads: usize) -> Self {
         let shared = Arc::new(Shared {
             queue: Mutex::new(Vec::new()),
             cv: Condvar::new(),
@@ -166,8 +171,9 @@ impl Thumbs {
         });
         for i in 0..threads.max(1) {
             let shared = shared.clone();
-            let ctx = ctx.clone();
-            let spawned = thread::Builder::new().name(format!("soyuz-thumbs-{i}")).spawn(move || worker(&shared, &ctx));
+            let (wake, upload) = (wake.clone(), upload.clone());
+            let spawned =
+                thread::Builder::new().name(format!("soyuz-thumbs-{i}")).spawn(move || worker(&shared, &wake, &upload));
             if let Err(e) = spawned {
                 log::error!("cannot spawn thumbnail thread: {e}");
             }
@@ -182,13 +188,13 @@ impl Thumbs {
 
     /// The texture for `key` if ready; otherwise requests it (newest requests first).
     /// Pictures and videos (by extension).
-    pub fn get(&self, key: &ThumbKey) -> Option<TextureHandle> {
+    pub fn get(&self, key: &ThumbKey) -> Option<Tex> {
         self.get_labeled(key).0
     }
 
     /// Like [`Self::get`], plus the label to show on it (a video's duration). A video
     /// without a frame (no ffmpeg) returns `(None, Some(duration))`.
-    pub fn get_labeled(&self, key: &ThumbKey) -> (Option<TextureHandle>, Option<String>) {
+    pub fn get_labeled(&self, key: &ThumbKey) -> (Option<Tex>, Option<String>) {
         let kind = if super::thumb_video::is_video(&key.path) {
             Kind::Video
         } else if is_pdf_thumbnailable(&key.path) {
@@ -201,11 +207,11 @@ impl Thumbs {
 
     /// A 2x2 mosaic of the pictures inside the folder `key.path` (`key.mtime` = the
     /// folder's mtime, so adding files refreshes it).
-    pub fn get_folder(&self, key: &ThumbKey) -> Option<TextureHandle> {
+    pub fn get_folder(&self, key: &ThumbKey) -> Option<Tex> {
         self.request(key, Kind::Folder).0
     }
 
-    fn request(&self, key: &ThumbKey, kind: Kind) -> (Option<TextureHandle>, Option<String>) {
+    fn request(&self, key: &ThumbKey, kind: Kind) -> (Option<Tex>, Option<String>) {
         if !self.enabled {
             return (None, None);
         }
@@ -236,7 +242,7 @@ impl Thumbs {
     }
 }
 
-fn worker(shared: &Shared, ctx: &Context) {
+fn worker(shared: &Shared, wake: &Wake, upload: &Uploader) {
     loop {
         let (key, kind) = {
             let mut q = shared.queue.lock();
@@ -265,22 +271,22 @@ fn worker(shared: &Shared, ctx: &Context) {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| produce(&key, kind))).unwrap_or((None, None));
         let result = decoded.map(|img| {
             let name = format!("thumb:{}:{}", key.path.display(), key.px);
-            ctx.load_texture(name, img, TextureOptions::LINEAR)
+            Tex::upload_rgba(upload, name, &img)
         });
         let frame = shared.frame.load(Ordering::Relaxed);
         {
             let mut slots = shared.slots.lock();
             let slot = match result {
                 Some(tex) => {
-                    let [w, h] = tex.size();
-                    Slot::Ready { tex, used: frame, bytes: (w * h * 4) as u64, label }
+                    let bytes = tex.bytes();
+                    Slot::Ready { tex, used: frame, bytes, label }
                 }
                 None => Slot::Failed { label },
             };
             slots.insert(key, slot);
             evict(&mut slots, frame, BUDGET.load(Ordering::Relaxed));
         }
-        ctx.request_repaint();
+        wake();
     }
 }
 
@@ -314,7 +320,7 @@ fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
 }
 
 /// Make one thumbnail (disk cache first): `(picture, label)`.
-fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
+fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
     use super::thumb_disk;
     let label = if kind == Kind::Video { super::thumb_video::duration_label(&key.path) } else { None };
     let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
@@ -358,7 +364,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
 /// would have made it).
 ///
 /// [`thumb_video::frame`]: super::thumb_video::frame
-fn make_shared(key: &ThumbKey, kind: Kind) -> Option<ColorImage> {
+fn make_shared(key: &ThumbKey, kind: Kind) -> Option<RgbaImage> {
     let (_, class_px) = soyuz_fs::thumbcache::freedesktop_class(key.px);
     let before = std::fs::metadata(&key.path).and_then(|m| m.modified()).ok();
     let class_key = ThumbKey { px: class_px, ..key.clone() };
@@ -368,8 +374,8 @@ fn make_shared(key: &ThumbKey, kind: Kind) -> Option<ColorImage> {
             if img.width() > class_px || img.height() > class_px { img.thumbnail(class_px, class_px) } else { img }
                 .to_rgba8()
         }
-        Kind::Video => color_to_rgba(&super::thumb_video::frame(&key.path, class_px)?)?,
-        Kind::Pdf => color_to_rgba(&pdf_first_page(&class_key)?)?,
+        Kind::Video => super::thumb_video::frame(&key.path, class_px)?,
+        Kind::Pdf => pdf_first_page(&class_key)?,
         Kind::Folder => return None,
     };
     if before.is_some() {
@@ -380,12 +386,7 @@ fn make_shared(key: &ThumbKey, kind: Kind) -> Option<ColorImage> {
     } else {
         rgba
     };
-    Some(ColorImage::from_rgba_unmultiplied([fit.width() as usize, fit.height() as usize], fit.as_raw()))
-}
-
-fn color_to_rgba(c: &ColorImage) -> Option<image::RgbaImage> {
-    let raw: Vec<u8> = c.pixels.iter().flat_map(|p| p.to_srgba_unmultiplied()).collect();
-    image::RgbaImage::from_raw(c.size[0] as u32, c.size[1] as u32, raw)
+    Some(fit)
 }
 
 /// Encode `rgba` and write it as the freedesktop thumbnail of `path` (class `class_px`),
@@ -417,17 +418,16 @@ fn encode_png(rgba: &image::RgbaImage) -> image::ImageResult<Vec<u8>> {
 /// The picture the OS cached for `key.path` (Explorer's `thumbcache_*.db` or the
 /// freedesktop cache), fitted into `key.px` (`None` when it has none at a useful size,
 /// or on macOS).
-fn os_cached(key: &ThumbKey) -> Option<ColorImage> {
+fn os_cached(key: &ThumbKey) -> Option<RgbaImage> {
     let t = soyuz_fs::thumbcache::lookup(&key.path, key.px)?;
     fit_os_thumb(&t, key.px)
 }
 
 /// Decode an OS-cached picture and fit it into `px` (never upscaled).
-fn fit_os_thumb(t: &soyuz_fs::thumbcache::OsThumb, px: u32) -> Option<ColorImage> {
+fn fit_os_thumb(t: &soyuz_fs::thumbcache::OsThumb, px: u32) -> Option<RgbaImage> {
     let img = image::load_from_memory(&t.data).ok()?;
     let fit = if img.width() > px || img.height() > px { img.thumbnail(px, px) } else { img };
-    let rgba = fit.to_rgba8();
-    Some(ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
+    Some(fit.to_rgba8())
 }
 
 /// PDF thumbnails are on and the pdfium library is found (else the PDF icon shows).
@@ -441,7 +441,7 @@ fn pdf_available() -> bool {
 
 /// The first page rendered by pdfium, fitted into `key.px` square (on the pdfium thread).
 #[cfg(feature = "pdf")]
-fn pdf_first_page(key: &ThumbKey) -> Option<ColorImage> {
+fn pdf_first_page(key: &ThumbKey) -> Option<RgbaImage> {
     use super::preview_pdf::{PdfSrc, pdfium, pdfium_dirs};
     if key.size > MAX_FILE_BYTES {
         return None;
@@ -455,18 +455,16 @@ fn pdf_first_page(key: &ThumbKey) -> Option<ColorImage> {
     } else {
         fit
     };
-    Some(ColorImage::from_rgba_unmultiplied([fit.width() as usize, fit.height() as usize], fit.as_raw()))
+    Some(fit)
 }
 
 #[cfg(not(feature = "pdf"))]
-fn pdf_first_page(_key: &ThumbKey) -> Option<ColorImage> {
+fn pdf_first_page(_key: &ThumbKey) -> Option<RgbaImage> {
     None
 }
 
-fn decode(key: &ThumbKey) -> Option<ColorImage> {
-    let thumb = decode_full(key)?.thumbnail(key.px, key.px).to_rgba8();
-    let size = [thumb.width() as usize, thumb.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, thumb.as_raw()))
+fn decode(key: &ThumbKey) -> Option<RgbaImage> {
+    Some(decode_full(key)?.thumbnail(key.px, key.px).to_rgba8())
 }
 
 /// The whole picture, EXIF orientation applied (within the decode limits).
@@ -495,11 +493,9 @@ mod tests {
 
     #[test]
     fn eviction_keeps_the_budget_and_recent_textures() {
-        let ctx = egui::Context::default();
         let mut slots = HashMap::new();
-        let tex = |i: usize| {
-            ctx.load_texture(format!("t{i}"), ColorImage::filled([16, 16], egui::Color32::RED), TextureOptions::LINEAR)
-        };
+        let up = super::super::preview_gfx::no_upload();
+        let tex = |i: usize| Tex::upload_rgba(&up, format!("t{i}"), &RgbaImage::new(16, 16));
         // 10 textures of 1 KiB each, used in frames 0..10.
         for i in 0..10u64 {
             let key = ThumbKey { path: format!("/t{i}").into(), mtime: None, size: 1, px: 64 };
@@ -546,8 +542,8 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
             .unwrap();
         let t = soyuz_fs::thumbcache::OsThumb { data: png, width: 256, height: 192, db_size: 256 };
-        assert_eq!(fit_os_thumb(&t, 128).unwrap().size, [128, 96]);
-        assert_eq!(fit_os_thumb(&t, 512).unwrap().size, [256, 192]);
+        assert_eq!(fit_os_thumb(&t, 128).unwrap().dimensions(), (128, 96));
+        assert_eq!(fit_os_thumb(&t, 512).unwrap().dimensions(), (256, 192));
         let bad = soyuz_fs::thumbcache::OsThumb { data: b"junk".to_vec(), width: 1, height: 1, db_size: 96 };
         assert!(fit_os_thumb(&bad, 64).is_none());
     }
@@ -558,14 +554,6 @@ mod tests {
         assert_eq!(WRITE_OS.load(Ordering::Relaxed), cfg!(all(unix, not(target_os = "macos"))));
         set_write_os_cache(false);
         assert!(!WRITE_OS.load(Ordering::Relaxed));
-    }
-
-    #[test]
-    fn color_images_convert_back_to_rgba() {
-        let c = ColorImage::filled([3, 2], egui::Color32::from_rgb(10, 20, 30));
-        let r = color_to_rgba(&c).unwrap();
-        assert_eq!(r.dimensions(), (3, 2));
-        assert_eq!(r.get_pixel(2, 1).0, [10, 20, 30, 255]);
     }
 
     /// What the workers encode is accepted by the freedesktop writer, read back by the
@@ -600,6 +588,6 @@ mod tests {
         img.save(&p).unwrap();
         let key = ThumbKey { path: p, mtime: None, size: 1, px: 64 };
         let c = decode(&key).unwrap();
-        assert_eq!(c.size, [64, 32]);
+        assert_eq!(c.dimensions(), (64, 32));
     }
 }

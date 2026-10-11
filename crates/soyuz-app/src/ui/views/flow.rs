@@ -15,6 +15,7 @@ use super::columns::{self, ColGeom};
 use super::icons;
 use super::layout::{FlowLayout, LineKind};
 use crate::cmd::Cmd;
+use crate::services::preview_gfx::Tex;
 use crate::services::thumbs::{self, ThumbKey};
 use crate::state::pane::{Band, ContextTarget, LayoutSig, Pane};
 use crate::state::selection::{BandMode, ClickMods, Selection};
@@ -22,6 +23,7 @@ use crate::theme::fonts::SEMIBOLD;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
+use crate::ui::gfx::TexExt;
 use crate::ui::widgets::{hidden_controls_tip, paint_hidden_badge, trunc_galley, wrapped_galley};
 
 /// Width reserved for the hidden-characters badge after a name.
@@ -668,9 +670,9 @@ fn paint_details_row(
 #[derive(Default)]
 struct CellVisual {
     /// Picture / video frame.
-    tex: Option<egui::TextureHandle>,
+    tex: Option<Tex>,
     /// Folder mosaic of the first pictures inside.
-    mosaic: Option<egui::TextureHandle>,
+    mosaic: Option<Tex>,
     /// Video duration.
     label: Option<String>,
 }
@@ -753,15 +755,7 @@ fn paint_grid_cell(
 }
 
 /// A folder mosaic set into the body of the folder glyph drawn in `icon_box`.
-fn paint_folder_mosaic(
-    ui: &Ui,
-    painter: &Painter,
-    p: &Palette,
-    icon_box: Rect,
-    tex: &egui::TextureHandle,
-    folder: Color32,
-    a: f32,
-) {
+fn paint_folder_mosaic(ui: &Ui, painter: &Painter, p: &Palette, icon_box: Rect, tex: &Tex, folder: Color32, a: f32) {
     let z = icon_box.width();
     let body = Rect::from_center_size(icon_box.center() + vec2(0.0, z * 0.075), vec2(z * 0.66, z * 0.46));
     // Center-crop the square mosaic to the body's aspect.

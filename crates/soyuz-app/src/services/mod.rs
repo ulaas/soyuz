@@ -22,6 +22,7 @@ pub mod preview_cache;
 pub mod preview_diff;
 pub mod preview_epub;
 pub mod preview_font;
+pub mod preview_gfx;
 pub mod preview_media;
 pub mod preview_model;
 pub mod preview_office;

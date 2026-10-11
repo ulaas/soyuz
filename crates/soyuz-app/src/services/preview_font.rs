@@ -330,12 +330,10 @@ pub fn specimen(data: &[u8], family: &str, width: usize, scale: f32) -> Result<V
 mod tests {
     use super::*;
 
-    /// A font bundled with egui (Hack / Ubuntu Light), so the test needs no system files.
+    /// A font embedded in the app (Cascadia Mono), so the test needs no system files.
     fn system_font() -> Option<Vec<u8>> {
-        let defs = egui::FontDefinitions::default();
-        let mut keys: Vec<&String> = defs.font_data.keys().collect();
-        keys.sort_by_key(|k| !k.contains("Hack"));
-        keys.into_iter().map(|k| defs.font_data[k].font.to_vec()).find(|d| format_of(d) == Some("TrueType"))
+        let data = include_bytes!("../../assets/fonts/cascadia-mono/CascadiaMono-Regular.ttf").to_vec();
+        (format_of(&data) == Some("TrueType")).then_some(data)
     }
 
     #[test]

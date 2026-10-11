@@ -1,13 +1,14 @@
 //! 3D model previews: STL (binary / ASCII), Wavefront OBJ and glTF 2.0
 //! (`.gltf` with embedded or side-car buffers, `.glb`) are flattened into one triangle
 //! soup, centred and scaled to the unit sphere, and decimated to a display budget. The
-//! UI draws it as a flat-shaded `egui::Mesh` (painter's algorithm, two-sided lighting):
+//! UI draws it as a flat-shaded triangle mesh (painter's algorithm, two-sided lighting):
 //! no GPU callback, no z-buffer, robust on every backend including the glow fallback.
 
 use std::path::Path;
 
 use base64::Engine as _;
-use egui::{Color32, Pos2, epaint};
+
+use super::preview_gfx::{self as gfx, TriSink};
 
 /// Triangles drawn per frame at most (larger models are decimated).
 pub const DISPLAY_TRIS: usize = 80_000;
@@ -318,9 +319,10 @@ impl Default for View {
     }
 }
 
-/// Project, shade and depth-sort the model into an egui mesh centred on `center`, with
-/// the unit sphere `radius` points wide. `tint` multiplies the material colours.
-pub fn project(m: &Model, view: View, center: Pos2, radius: f32, tint: [f32; 3]) -> epaint::Mesh {
+/// Project, shade and depth-sort the model into `out` (back to front), centred on
+/// `center`, with the unit sphere `radius` points wide. `tint` multiplies the material
+/// colours.
+pub fn project(m: &Model, view: View, center: [f32; 2], radius: f32, tint: [f32; 3], out: &mut impl TriSink) {
     let (sy, cy) = view.yaw.sin_cos();
     let (sp, cp) = view.pitch.sin_cos();
     let rot = |p: &[f32; 3]| -> [f32; 3] {
@@ -334,9 +336,9 @@ pub fn project(m: &Model, view: View, center: Pos2, radius: f32, tint: [f32; 3])
     let pts: Vec<[f32; 3]> = m.positions.iter().map(rot).collect();
     let d = 4.0f32;
     let scale = radius * view.zoom;
-    let screen = |p: &[f32; 3]| -> Pos2 {
+    let screen = |p: &[f32; 3]| -> [f32; 2] {
         let f = d / (d - p[2]).max(0.5);
-        Pos2::new(center.x + p[0] * f * scale, center.y - p[1] * f * scale)
+        [center[0] + p[0] * f * scale, center[1] - p[1] * f * scale]
     };
     let light = {
         let l = [0.35f32, 0.55, 0.9];
@@ -352,9 +354,7 @@ pub fn project(m: &Model, view: View, center: Pos2, radius: f32, tint: [f32; 3])
         order.push(((a[2] + b[2] + c[2]) / 3.0, i));
     }
     order.sort_unstable_by(|x, y| x.0.total_cmp(&y.0));
-    let mut mesh = epaint::Mesh::default();
-    mesh.vertices.reserve(order.len() * 3);
-    mesh.indices.reserve(order.len() * 3);
+    out.reserve(order.len());
     for (_, i) in order {
         let t = m.tris[i];
         let (a, b, c) = (&pts[t[0] as usize], &pts[t[1] as usize], &pts[t[2] as usize]);
@@ -368,18 +368,10 @@ pub fn project(m: &Model, view: View, center: Pos2, radius: f32, tint: [f32; 3])
         let shade = 0.18 + 0.67 * lambert + 0.15 * facing;
         let base = m.colors.get(*m.tri_color.get(i).unwrap_or(&0) as usize).copied().unwrap_or([0.8; 3]);
         let to8 = |c: f32| ((c.clamp(0.0, 1.0)).powf(1.0 / 1.6) * 255.0) as u8;
-        let col = Color32::from_rgb(
-            to8(base[0] * tint[0] * shade),
-            to8(base[1] * tint[1] * shade),
-            to8(base[2] * tint[2] * shade),
-        );
-        let idx = mesh.vertices.len() as u32;
-        for p in [a, b, c] {
-            mesh.vertices.push(epaint::Vertex { pos: screen(p), uv: epaint::WHITE_UV, color: col });
-        }
-        mesh.indices.extend_from_slice(&[idx, idx + 1, idx + 2]);
+        let col =
+            gfx::rgb(to8(base[0] * tint[0] * shade), to8(base[1] * tint[1] * shade), to8(base[2] * tint[2] * shade));
+        out.tri([screen(a), screen(b), screen(c)], col);
     }
-    mesh
 }
 
 #[cfg(test)]
@@ -471,9 +463,10 @@ mod tests {
         assert_eq!(m.total_tris, DISPLAY_TRIS + 500);
         assert!(m.tris.len() <= DISPLAY_TRIS);
         let tet = parse(&binary_stl(&TET), "stl", None, 1 << 20).unwrap();
-        let mesh = project(&tet, View::default(), Pos2::new(100.0, 100.0), 50.0, [1.0; 3]);
-        assert_eq!(mesh.vertices.len(), 12);
-        assert_eq!(mesh.indices.len(), 12);
-        assert!(mesh.vertices.iter().all(|v| (30.0..=170.0).contains(&v.pos.x) && (30.0..=170.0).contains(&v.pos.y)));
+        let mut mesh = gfx::TriList::default();
+        project(&tet, View::default(), [100.0, 100.0], 50.0, [1.0; 3], &mut mesh);
+        assert_eq!(mesh.0.len(), 4);
+        let inside = |v: f32| (30.0..=170.0).contains(&v);
+        assert!(mesh.0.iter().flat_map(|(pts, _)| pts).all(|p| inside(p[0]) && inside(p[1])));
     }
 }

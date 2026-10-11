@@ -12,13 +12,14 @@ use std::io::{Read, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use egui::{ColorImage, Context, TextureHandle, TextureOptions};
 use soyuz_core::config::Preview as PreviewCfg;
 
 use super::preview::{Content, Kind, Limits, Loaded, ReadSeek, Source};
 use super::preview_audio::{self, AudioInfo, AudioSrc};
 use super::preview_epub::{self, EpubModel};
 use super::preview_font::{self, FontMeta};
+pub use super::preview_gfx::Tex;
+use super::preview_gfx::{Pixels, Uploader};
 use super::preview_media::{self, format_duration};
 use super::preview_model::{self, Model};
 use super::preview_office::{self, Office, OfficeKind};
@@ -93,13 +94,6 @@ pub enum RichKind {
     Audio,
     Video,
     Pdf,
-}
-
-/// An uploaded texture with its pixel size.
-#[derive(Clone)]
-pub struct Tex {
-    pub tex: TextureHandle,
-    pub size: [usize; 2],
 }
 
 #[derive(Clone)]
@@ -191,17 +185,12 @@ fn read_all(r: &mut dyn ReadSeek, cap: u64) -> Result<Vec<u8>, String> {
     Ok(buf)
 }
 
-pub fn upload(ctx: &Context, name: String, rgba: &[u8], w: usize, h: usize, premultiplied: bool) -> Tex {
-    let img = if premultiplied {
-        ColorImage::from_rgba_premultiplied([w, h], rgba)
-    } else {
-        ColorImage::from_rgba_unmultiplied([w, h], rgba)
-    };
-    Tex { tex: ctx.load_texture(name, img, TextureOptions::LINEAR), size: [w, h] }
+pub fn upload(up: &Uploader, name: String, rgba: &[u8], w: usize, h: usize, premultiplied: bool) -> Tex {
+    Tex::upload(up, name, Pixels { size: [w, h], rgba, premultiplied })
 }
 
 /// Decode an embedded image (cover art, poster) downscaled to `max` px.
-fn decode_image(ctx: &Context, name: String, bytes: &[u8], max: u32) -> Option<Tex> {
+fn decode_image(up: &Uploader, name: String, bytes: &[u8], max: u32) -> Option<Tex> {
     let mut r = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
     let mut lim = image::Limits::default();
     lim.max_alloc = Some(256 << 20);
@@ -211,7 +200,7 @@ fn decode_image(ctx: &Context, name: String, bytes: &[u8], max: u32) -> Option<T
         img = img.resize(max, max, image::imageops::FilterType::Triangle);
     }
     let rgba = img.to_rgba8();
-    Some(upload(ctx, name, rgba.as_raw(), rgba.width() as usize, rgba.height() as usize, false))
+    Some(Tex::upload_rgba(up, name, &rgba))
 }
 
 /// Load a rich preview. `path` is the file on disk (`None` for archive entries, which
@@ -223,7 +212,7 @@ pub fn load(
     reader: &mut dyn ReadSeek,
     len: u64,
     name: &str,
-    ctx: &Context,
+    up: &Uploader,
     id: u64,
     limits: &Limits,
     stale: &dyn Fn() -> bool,
@@ -234,15 +223,15 @@ pub fn load(
         Source::Entry { .. } => None,
     };
     let ext = ext_of(name);
-    let ppp = ctx.pixels_per_point().clamp(1.0, 4.0);
+    let ppp = limits.pixels_per_point.clamp(1.0, 4.0);
     match rk {
         RichKind::Office(k) => office(k, reader, len, lim),
-        RichKind::Epub => epub(reader, len, lim, ctx, id, ppp),
-        RichKind::Font => font(reader, len, lim, ctx, id, ppp),
+        RichKind::Epub => epub(reader, len, lim, up, id, ppp),
+        RichKind::Font => font(reader, len, lim, up, id, ppp),
         RichKind::Model => model(reader, len, &ext, path, lim),
-        RichKind::Audio => audio(reader, len, &ext, path, lim, ctx, id, stale),
-        RichKind::Video => video(reader, len, &ext, path, lim, ctx, id, ppp, stale),
-        RichKind::Pdf => pdf(reader, len, path, lim, ctx, id, ppp, stale),
+        RichKind::Audio => audio(reader, len, &ext, path, lim, up, id, stale),
+        RichKind::Video => video(reader, len, &ext, path, lim, up, id, ppp, stale),
+        RichKind::Pdf => pdf(reader, len, path, lim, up, id, ppp, stale),
     }
 }
 
@@ -313,7 +302,7 @@ fn office(k: OfficeKind, reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits) 
     }
 }
 
-fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id: u64, ppp: f32) -> Loaded {
+fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id: u64, ppp: f32) -> Loaded {
     if len > lim.max_document.saturating_mul(8) {
         return too_large(Kind::Ebook, ph::BOOK_OPEN, len, lim.max_document * 8, "max_document_mib");
     }
@@ -321,7 +310,7 @@ fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
     match preview_epub::parse(&mut *reader, lim.max_document) {
         Ok(mut m) => {
             let max = (if lim.big { 900.0 } else { 420.0 } * ppp) as u32;
-            let cover = m.cover.take().and_then(|b| decode_image(ctx, format!("preview:epub-cover:{id}"), &b, max));
+            let cover = m.cover.take().and_then(|b| decode_image(up, format!("preview:epub-cover:{id}"), &b, max));
             let mut facts = Vec::new();
             if let Some(t) = &m.title {
                 fact(&mut facts, "Title", t.clone());
@@ -344,7 +333,7 @@ fn epub(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
     }
 }
 
-fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id: u64, ppp: f32) -> Loaded {
+fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id: u64, ppp: f32) -> Loaded {
     if len > lim.max_document {
         return too_large(Kind::Font, ph::TEXT_AA, len, lim.max_document, "max_document_mib");
     }
@@ -375,7 +364,7 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, ctx: &Context, id
         .into_iter()
         .enumerate()
         .map(|(i, s)| {
-            let t = upload(ctx, format!("preview:font:{id}:{i}"), &s.rgba, s.width, s.height, true);
+            let t = upload(up, format!("preview:font:{id}:{i}"), &s.rgba, s.width, s.height, true);
             (s.caption, t)
         })
         .collect();
@@ -458,7 +447,7 @@ fn audio(
     ext: &str,
     path: Option<&Path>,
     lim: &RichLimits,
-    ctx: &Context,
+    up: &Uploader,
     id: u64,
     stale: &dyn Fn() -> bool,
 ) -> Loaded {
@@ -503,7 +492,7 @@ fn audio(
             tr!("services-preview-waveform-skipped", size = (lim.max_audio >> 20).to_string()),
         );
     }
-    let cover = info.cover.take().and_then(|b| decode_image(ctx, format!("preview:audio-cover:{id}"), &b, 512));
+    let cover = info.cover.take().and_then(|b| decode_image(up, format!("preview:audio-cover:{id}"), &b, 512));
     let rich = Rich::Audio { info: Arc::new(info), src, ext: ext.to_string(), playback: lim.playback, cover };
     loaded(Kind::Audio, rich, facts)
 }
@@ -515,7 +504,7 @@ fn video(
     ext: &str,
     path: Option<&Path>,
     lim: &RichLimits,
-    ctx: &Context,
+    up: &Uploader,
     id: u64,
     ppp: f32,
     stale: &dyn Fn() -> bool,
@@ -529,7 +518,7 @@ fn video(
             let dur = facts.iter().find(|(k, _)| k == "Duration").and_then(|(_, v)| preview_video::parse_duration(v));
             let w = ((if lim.big { 1280.0 } else { 640.0 }) * ppp).min(1920.0) as u32;
             match preview_video::poster(&ff, p, preview_video::poster_time(dur), w, stale) {
-                Ok(png) => (decode_image(ctx, format!("preview:poster:{id}"), &png, w), None),
+                Ok(png) => (decode_image(up, format!("preview:poster:{id}"), &png, w), None),
                 Err(e) if e == "stale" => return card(Kind::Video, ph::FILM_SLATE, "", ""),
                 Err(e) => (None, Some(e)),
             }
@@ -544,7 +533,7 @@ fn pdf(
     len: u64,
     path: Option<&Path>,
     lim: &RichLimits,
-    ctx: &Context,
+    up: &Uploader,
     id: u64,
     ppp: f32,
     stale: &dyn Fn() -> bool,
@@ -571,7 +560,7 @@ fn pdf(
                     match preview_pdf::pdfium::render(&src, &dirs, u64::MAX, 0, width_px, width_px * 3, stale) {
                         Ok(pg) => {
                             first =
-                                Some(upload(ctx, format!("preview:pdf:{id}:0"), &pg.rgba, pg.width, pg.height, false))
+                                Some(upload(up, format!("preview:pdf:{id}:0"), &pg.rgba, pg.width, pg.height, false))
                         }
                         Err(e) if e == "stale" => return card(Kind::Pdf, ph::FILE_PDF, "", ""),
                         Err(e) => no_render = Some(e),
@@ -585,7 +574,7 @@ fn pdf(
     }
     #[cfg(not(feature = "pdf"))]
     {
-        let _ = (ctx, id, stale, width_px);
+        let _ = (up, id, stale, width_px);
         no_render = Some(tr!("services-preview-no-pdf-renderer").into());
     }
     if info.is_none() {
@@ -639,20 +628,23 @@ fn pdf(
     loaded(Kind::Pdf, Rich::Pdf(view), facts)
 }
 
-/// Render another PDF page off the UI thread; the texture arrives on the receiver.
+/// Render another PDF page off the UI thread; the texture arrives on the receiver, then
+/// `wake` runs.
 pub fn pdf_page_async(
     view: &PdfView,
     page: u32,
-    ctx: &Context,
+    wake: &crate::host::Wake,
+    up: &Uploader,
 ) -> crossbeam_channel::Receiver<Result<(u32, Tex), String>> {
     let (tx, rx) = crossbeam_channel::bounded(1);
     #[cfg(feature = "pdf")]
     {
-        let (src, dirs, cap, w, ctx) = (view.src.clone(), view.dirs.clone(), view.cap, view.width_px, ctx.clone());
+        let (src, dirs, cap, w) = (view.src.clone(), view.dirs.clone(), view.cap, view.width_px);
+        let (wake, up) = (wake.clone(), up.clone());
         let _ = std::thread::Builder::new().name("soyuz-pdf-page".into()).spawn(move || {
             let r = preview_pdf::pdfium::render(&src, &dirs, cap, page, w, w * 3, &|| false).map(|pg| {
                 let t = upload(
-                    &ctx,
+                    &up,
                     format!("preview:pdfpage:{page}:{}", src_key(&src)),
                     &pg.rgba,
                     pg.width,
@@ -662,12 +654,12 @@ pub fn pdf_page_async(
                 (page, t)
             });
             let _ = tx.send(r);
-            ctx.request_repaint();
+            wake();
         });
     }
     #[cfg(not(feature = "pdf"))]
     {
-        let _ = (view, page, ctx);
+        let _ = (view, page, wake, up);
         let _ = tx.send(Err(tr!("services-preview-no-pdf-renderer-short").into()));
     }
     rx
@@ -721,8 +713,9 @@ mod tests {
             max_image_mp: 40,
             max_text_bytes: 512 * 1024,
             dark: true,
-            mono: egui::FontId::monospace(12.0),
-            fg: egui::Color32::WHITE,
+            mono: crate::services::preview_gfx::TextFont::monospace(12.0),
+            fg: crate::services::preview_gfx::WHITE,
+            pixels_per_point: 1.0,
             rich: RichLimits { ffmpeg_path: "definitely-missing-ffmpeg".into(), ..RichLimits::default() },
         }
     }
@@ -741,8 +734,7 @@ mod tests {
     #[test]
     fn end_to_end_through_the_preview_worker() {
         let dir = tempfile::tempdir().unwrap();
-        let ctx = Context::default();
-        let client = PreviewClient::new(&ctx);
+        let client = PreviewClient::new(crate::host::no_wake(), crate::services::preview_gfx::no_upload());
         let docx = dir.path().join("r.docx");
         std::fs::write(&docx, fixtures::docx()).unwrap();
         client.request(Source::File(docx), false, false, limits());

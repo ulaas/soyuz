@@ -62,14 +62,11 @@ pub fn memory() -> (u64, u64) {
 pub fn cost(l: &Loaded) -> Option<u64> {
     let facts: u64 = l.facts.iter().map(|(a, b)| (a.len() + b.len()) as u64).sum();
     let body = match &l.content {
-        Content::Image(img) => {
-            let [w, h] = img.tex.size();
-            (w * h * 4) as u64
-        }
+        Content::Image(img) => img.tex.bytes(),
         Content::Text(t) => t
             .lines
             .iter()
-            .map(|j| (j.text.len() + j.sections.len() * std::mem::size_of::<egui::text::LayoutSection>()) as u64)
+            .map(|j| (j.text.len() + j.runs.len() * std::mem::size_of::<super::preview_gfx::StyledRun>()) as u64)
             .sum(),
         Content::Markdown { blocks, .. } => blocks.len() as u64 * 256,
         Content::Svg { bytes, .. } => bytes.len() as u64,
