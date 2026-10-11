@@ -129,11 +129,11 @@ Linux notes:
 - **Activation.** AccessKit builds no tree until the session's accessibility flag is on
   (`org.a11y.Status` on the session bus). Orca turns it on. Check it with
   `busctl --user get-property org.a11y.Bus /org/a11y/bus org.a11y.Status IsEnabled`.
-- **Blocker on at-spi2-core 2.62+ (Fedora 45).** egui 0.36 links `accesskit_unix` 0.21, which
-  waits for the `ScreenReaderEnabled` property. Newer at-spi2-core only has `IsEnabled`, so
-  Soyuz stays invisible to Orca until `accesskit_unix` is patched (a one-line change,
-  upstream since 0.23) or egui moves to `accesskit` 0.25. Older distributions that still
-  have `ScreenReaderEnabled` work as they are.
+- **at-spi2-core 2.62+ (Fedora 45).** egui 0.36 links `accesskit_unix` 0.21, which waits for
+  the `ScreenReaderEnabled` property that newer at-spi2-core removed. Soyuz vendors that
+  crate with a one-line fix that follows `IsEnabled` instead (`third_party/accesskit_unix`, the
+  same change upstream made in 0.23), so Orca sees Soyuz on old and new distributions alike.
+  Drop the patch once egui moves to `accesskit` 0.25.
 - **Window name.** AT-SPI reads the window name from the AccessKit root node, not from the
   Wayland / X11 title, so Soyuz sets the root label to the window title every frame.
 - **Expanded state.** `accesskit_atspi_common` 0.18 does not map AccessKit's `expanded`
@@ -147,8 +147,8 @@ macOS is out of scope for now. When it comes back, repeat the NVDA list with Voi
 
 ## Known gaps
 
-- **Linux: AccessKit does not activate on at-spi2-core 2.62+** without a patched
-  `accesskit_unix` (see "Orca (Linux)" above).
+- **Linux: vendored `accesskit_unix` patch** for at-spi2-core 2.62+ (see "Orca (Linux)"
+  above); remove it once egui moves to `accesskit` 0.25.
 - **No screen-reader run has been recorded yet.** The checklist above is the certification
   script, and its results go into this file. The automated UIA audit
   (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader

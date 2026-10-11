@@ -148,32 +148,18 @@ It runs the same generic checks as on Windows, with AT-SPI roles (`button`, `tog
 
 ### Results (2026-10-11, Fedora 45, niri Wayland, at-spi2-core 2.62, release build)
 
-#### Blocker: the stock build is not accessible on this system
+#### at-spi2-core 2.62: the stock `accesskit_unix` never activated
 
 egui 0.36 links `accesskit_unix` 0.21.1. That version activates only when
 `org.a11y.Status.ScreenReaderEnabled` becomes true, and at-spi2-core 2.62 no longer has that
-property: the bus only has `IsEnabled`. So AccessKit never turns on, and Soyuz never appears
-in the AT-SPI registry. Orca gets nothing, and the audit stops with "no Soyuz application
-found".
+property (only `IsEnabled`). So AccessKit never turned on, Soyuz never appeared in the AT-SPI
+registry, and the first audit stopped with "no Soyuz application found". Upstream fixed it in
+`accesskit_unix` 0.23, which needs `accesskit` 0.25 (egui 0.36 pins 0.24).
 
-- **Upstream:** `accesskit_unix` 0.23 watches `IsEnabled` instead. It needs `accesskit` 0.25,
-  and egui 0.36 pins `accesskit_winit` 0.32 / `accesskit` 0.24, so no lockfile-only update
-  can reach it.
-- **Fix options:**
-  1. Vendor `accesskit_unix` 0.21.1 with the one-line change from
-     `receive_screen_reader_enabled_changed` to `receive_is_enabled_changed` in
-     `src/context.rs`, through `[patch.crates-io]`. The crate is MIT / Apache-2.0.
-  2. Wait for the egui release that moves to `accesskit` 0.25.
-- **How the results below were produced:** with option 1, applied only for the audit build
-  and without editing `Cargo.toml`:
-
-```sh
-cp -r ~/.cargo/registry/src/*/accesskit_unix-0.21.1 /tmp/aku
-sed -i 's/receive_screen_reader_enabled_changed/receive_is_enabled_changed/' /tmp/aku/src/context.rs
-CARGO_TARGET_DIR=/tmp/a11y-target cargo build --release -p soyuz-app \
-  --config 'patch.crates-io.accesskit_unix.path="/tmp/aku"'      # restore Cargo.lock afterwards
-python3 scripts/atspi-audit.py --exe /tmp/a11y-target/release/soyuz
-```
+**Fix:** `third_party/accesskit_unix` is 0.21.1 with the one-line change
+(`receive_screen_reader_enabled_changed` → `receive_is_enabled_changed` in `src/context.rs`),
+wired in through `[patch.crates-io]` in the workspace `Cargo.toml` (see
+`third_party/README.md`). The results below come from the normal release build with that patch.
 
 #### Findings
 
@@ -216,7 +202,7 @@ specific to AT-SPI.
 
 | | Windows (UIA) | Linux (AT-SPI) |
 |---|---|---|
-| Activation | the first UIA client request turns AccessKit on | the session flag `org.a11y.Status` must be on (set by the script, restored afterwards); see the blocker above |
+| Activation | the first UIA client request turns AccessKit on | the session flag `org.a11y.Status` must be on (set by the script, restored afterwards); see the at-spi2-core note above |
 | Window name | native title bar | AccessKit root node label (`a11y::window_name`) |
 | Selection / toggle state | `SelectionItem` / `Toggle` patterns, read live | state set (`SELECTABLE`, `SELECTED`, `CHECKABLE`, `CHECKED`, `PRESSED`); there are no patterns to read |
 | Expanded state | `ExpandCollapse` pattern | not mapped by `accesskit_atspi_common` 0.18 (G7e warning) |

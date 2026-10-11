@@ -171,3 +171,8 @@ codegen-units = 1
 debug = false
 strip = true
 panic = "unwind"
+
+# accesskit_unix 0.21.1 with a one-line fix so screen readers see Soyuz on at-spi2-core >= 2.62
+# (third_party/README.md). Remove once egui depends on accesskit_unix >= 0.23.
+[patch.crates-io]
+accesskit_unix = { path = "third_party/accesskit_unix" }
