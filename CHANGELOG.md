@@ -5,7 +5,7 @@ original milestones, R = rigidity, B = looks, F = features, A = AI,
 D = distribution. Generated from `git log` by `scripts/changelog.ps1` (or `git cliff`
 with `cliff.toml`); commit hashes refer to the main branch.
 
-## Unreleased
+## 0.2.0 (2026-10-11)
 
 ### Other features
 
@@ -28,6 +28,7 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - feat(a11y): Linux AT-SPI audit script; name the window, status-bar toggles, splitters and pane headers; tabs/toggles expose state (4cf16e3)
 - feat: scripts/changelog.sh (bash port of changelog.ps1); fix(app): Computer view lists rclone mounts under Cloud only (f68eee7)
 - feat(packaging): Flatpak manifest (io.github.ulaas.Soyuz) with sandbox-aware host paths, flatpak-spawn for terminals/Open With, host fonts, sandbox mount filtering (bf738c5)
+- feat(app): show the git commit the binary is built from (83e1d73)
 
 ### Fixes and security
 
@@ -42,6 +43,8 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - fix(app): paste reads the OS clipboard off the UI thread with bounded waits, delta + serial xdg tag writes, restart only when the close proceeds, deferred font reinstall, single-pass verified update extract, single gvfs probe, clipboard owner/send edge cases (789c9a1)
 - fix(app): remote URIs on the command line (desktop %U) open as remote locations (34a047b)
 - fix(vfs,jobs,term,ai,mcp,index): hostile remote names never escape the tree, Windows OSC 7 drive paths only, /proc cwd tracking survives stray OSC 7, bounded keyring prompt wait, group kill before reaping, unavailable index roots keep their index (8c7d929)
+- fix: restore a green main after dependabot bumps (78b75c7)
+- fix(app): --version / --help never panic on a closed or missing stdout (fa0cb27)
 
 ### Documentation
 
@@ -51,13 +54,24 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - docs(app): drag-out support comment (683b596)
 - docs: Linux drag-and-drop behaviour in the user guide (de90200)
 - docs,app: SMB in the Linux user guide; quiet smb2 INFO logs (4cc10da)
+- docs: regenerate changelog (414a4d6)
 
 ### Other
 
+- chore(deps): bump zstd from 0.13.3 to 0.14.0 (4186303)
 - build: workspace deps for Linux desktop integration (zbus, x11rb, wayland) (5274623)
 - build: Linux scaffolding for platform work (per-crate deps, sys/linux module dir, xdg_dirs/udisks stubs) (b8918bd)
 - ci: Linux tests are a gate, banned-crate check covers the Linux graph, Linux package job uses package.sh (0030c2c)
+- build(deps): bump the actions group across 1 directory with 6 updates (61d401b)
+- build(deps): bump resvg from 0.45.1 to 0.48.1 (640b8ae)
 - test(app): GUI tests use a private XDG_CACHE_HOME (829fb6f)
+- Reword thumbcache comments to satisfy no-shell-APIs grep check (49907f3)
+- Make package dry-run test platform-aware (79b7d0c)
+- build(deps): bump base64 from 0.22.1 to 0.23.1 (ae749f0)
+- build(deps): bump md-5 from 0.10.6 to 0.11.0 (1b56592)
+- build(deps): bump lzma-rust2 from 0.16.5 to 0.21.0 (bea86e4)
+- Keep keyboard-only dialogs in app window (e37f5f2)
+- release: 0.2.0 (403da2a)
 
 ## 0.1.0 (2026-10-11)
 
@@ -135,7 +149,7 @@ with `cliff.toml`); commit hashes refer to the main branch.
 - fix: hardening fixes (git hardening, terminal control chars, command quoting, preview hardening, store backups, close confirmation, open-with, new window, flat view, settings wired) (3fac50e)
 - security: OSC 52 consent, strip special bits, decompression-bomb limits, reveal hidden bidi chars in names, pin toolchain (311b1bc)
 - fix(app): draw the terminal OSC 52 clipboard consent prompt; add policy/preview tests (e095fe9)
-- fix(app): empty-state classifier (protected system files ≠ hidden), Name column fills wide, slick constant-height toasts with hover details (c86ee3e)
+- fix(app): empty-state classifier (protected system files ≠ hidden), Name column fills/never freezes wide, slick constant-height toasts with hover details (c86ee3e)
 - fix: watcher dropped events under load (debouncer file-id cache) — no cache, re-arm silent watches, relist panes after jobs, manual refresh always relists (0fa3443)
 - fix(app): remove startup placeholder and CPU first frame; maximize hidden window before first show — single window launch (c5afed1)
 - fix(app): Quick Look and tool windows are modal — panes beneath get no clicks, hover, wheel or shortcuts; Esc closes the frontmost tool window (a300a1b)
