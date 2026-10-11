@@ -4,10 +4,9 @@
 //! is kept under `[appearance] thumb_disk_cache_mib`: a hit refreshes the file's mtime and
 //! eviction removes the least recently used files first.
 //!
-//! Windows' own `thumbcache_*.db` is deliberately not read: its entries are keyed by a
-//! 64-bit cache id that Explorer derives (through `IThumbnailCache`) from the volume,
-//! the file id and the last-write time with an undocumented hash; without the shell (or
-//! Windows Search's `Windows.edb`) there is no way to map a path to its entry.
+//! The OS cache (Explorer's `thumbcache_*.db`, the freedesktop `~/.cache/thumbnails`)
+//! is read separately, read-only, by `thumbs::os_cached` (`soyuz_fs::thumbcache`); hits
+//! from it are copied in here.
 //!
 //! Every function here does file I/O and must only run on worker threads.
 
@@ -209,6 +208,14 @@ mod tests {
         let k = |p: &str| cache_key(Kind::Image, Path::new(p), 1, None, 64);
         assert_eq!(k(r"C:\Pics\A.png"), k(r"c:\pics\a.PNG"));
         assert_eq!(k(r"\\?\C:\Pics\A.png"), k(r"C:\Pics\A.png"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_paths_are_case_sensitive() {
+        let k = |p: &str| cache_key(Kind::Image, Path::new(p), 1, None, 64);
+        assert_ne!(k("/pics/A.png"), k("/pics/a.png"));
+        assert_eq!(k("/pics/A.png"), k("/pics/A.png"));
     }
 
     #[test]

@@ -110,7 +110,8 @@ impl PathPicker {
         let (tx, rx) = unbounded();
         self.rx = Some(rx);
         let _ = std::thread::Builder::new().name("soyuz-picker-list".into()).spawn(move || {
-            let opts = ListOptions { include_hidden: false, ..ListOptions::default() };
+            let dot_hidden = crate::services::lister::dot_hidden();
+            let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
             let _ = tx.send((dir.clone(), soyuz_fs::read_dir(&dir, &opts)));
         });
     }

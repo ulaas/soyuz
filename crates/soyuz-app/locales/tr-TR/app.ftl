@@ -270,3 +270,20 @@ app-hidden-controls-tip = Ad, gizli yön/biçim karakterleri içeriyor
 app-icon-size = Simge boyutu
 app-toast-dismiss = Kapat
 app-quit-when-finished = İşlemler bitince Soyuz kapanacak
+
+## Linux (data)
+
+app-device-mount = Bağla
+app-device-mounting = { $name } bağlanıyor…
+# $device = device node (/dev/sdb1), $size = formatted size, $fs = file system (ext4, vfat …).
+app-device-unmounted-tip = { $device } · { $size } { $fs } · bağlı değil, bağlamak için tıklayın
+app-device-mount-failed = { $name } bağlanamadı
+app-device-unmount = Bağlantıyı kes
+app-device-unmounted = { $name } bağlantısı kesildi
+app-device-unmount-failed = { $name } bağlantısı kesilemedi
+app-device-eject = Çıkar
+app-device-ejected = { $name } güvenle çıkarılabilir
+app-device-eject-failed = { $name } çıkarılamadı
+app-device-not-authorized = İzin verilmedi. Bir polkit kimlik doğrulama aracısı çalışıyor mu?
+app-device-busy = Aygıt kullanımda. Onu kullanan dosyaları ve programları kapatıp yeniden deneyin.
+app-device-no-udisks = Bu sistemde UDisks2 kullanılamıyor.

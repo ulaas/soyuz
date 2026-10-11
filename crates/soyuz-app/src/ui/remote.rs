@@ -77,6 +77,9 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     while let Some((prompt, tx)) = svc::take_host_prompt() {
         app.ui.dialogs.push(HostKeyDialog { prompt, tx: Some(tx) });
     }
+    while let Some((title, body)) = svc::take_notice() {
+        app.ui.toasts.push(Toast::warning(title).body(body));
+    }
     if let Some(uri) = svc::take_sign_in_request() {
         let note = Some(tr!("remote-sign-in-failed").to_string());
         app.ui.dialogs.push(ConnectDialog::for_uri(&uri, note));

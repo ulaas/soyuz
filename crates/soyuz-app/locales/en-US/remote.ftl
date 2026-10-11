@@ -113,3 +113,8 @@ remote-new-folder-title = New folder
 remote-name = Name
 remote-create = Create
 remote-error-name = Enter a name without slashes.
+
+## Linux (data)
+
+remote-secret-not-saved = The password was not saved
+remote-smb-unsupported = SMB shares can't be opened directly yet. Mount the share with your desktop (for example `gio mount smb://server/share`), then open it from Devices or its folder under /run/user.

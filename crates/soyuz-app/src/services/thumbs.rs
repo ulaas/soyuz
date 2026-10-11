@@ -96,10 +96,14 @@ pub fn set_pdf(on: bool, pdfium_dir: &str) {
 /// `[appearance] os_thumbnail_cache` (read by the workers).
 static OS_CACHE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
-/// Use Explorer's thumbnail cache (`thumbcache_*.db`) first (Windows).
+/// Use the OS thumbnail cache first: Explorer's `thumbcache_*.db` on Windows, the
+/// freedesktop cache (`~/.cache/thumbnails`) on Linux / BSD. Off on macOS (no reader).
 pub fn set_os_cache(on: bool) {
-    OS_CACHE.store(on && cfg!(windows), Ordering::Relaxed);
+    OS_CACHE.store(on && OS_CACHE_SUPPORTED, Ordering::Relaxed);
 }
+
+/// This platform has an OS thumbnail cache reader in `soyuz_fs::thumbcache`.
+const OS_CACHE_SUPPORTED: bool = cfg!(any(windows, all(unix, not(target_os = "macos"))));
 
 /// A PDF that gets a first-page thumbnail (when pdfium turns out to be available).
 pub fn is_pdf_thumbnailable(path: &Path) -> bool {
@@ -303,8 +307,8 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
     if let Some(img) = thumb_disk::get(disk_key) {
         return (Some(img), label);
     }
-    // Explorer's own cache (read-only): no decode, and videos / PDFs get a picture even
-    // without ffmpeg / pdfium.
+    // The OS cache (Explorer's / freedesktop, read-only): no decode, and videos / PDFs
+    // get a picture even without ffmpeg / pdfium.
     if kind != Kind::Folder
         && OS_CACHE.load(Ordering::Relaxed)
         && let Some(img) = os_cached(key)
@@ -333,12 +337,18 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<ColorImage>, Option<String>) {
     (img, label)
 }
 
-/// The picture Explorer cached for `key.path`, fitted into `key.px` (`None` when it has
-/// none at a useful size, or off Windows).
+/// The picture the OS cached for `key.path` (Explorer's `thumbcache_*.db` or the
+/// freedesktop cache), fitted into `key.px` (`None` when it has none at a useful size,
+/// or on macOS).
 fn os_cached(key: &ThumbKey) -> Option<ColorImage> {
     let t = soyuz_fs::thumbcache::lookup(&key.path, key.px)?;
+    fit_os_thumb(&t, key.px)
+}
+
+/// Decode an OS-cached picture and fit it into `px` (never upscaled).
+fn fit_os_thumb(t: &soyuz_fs::thumbcache::OsThumb, px: u32) -> Option<ColorImage> {
     let img = image::load_from_memory(&t.data).ok()?;
-    let fit = if img.width() > key.px || img.height() > key.px { img.thumbnail(key.px, key.px) } else { img };
+    let fit = if img.width() > px || img.height() > px { img.thumbnail(px, px) } else { img };
     let rgba = fit.to_rgba8();
     Some(ColorImage::from_rgba_unmultiplied([rgba.width() as usize, rgba.height() as usize], rgba.as_raw()))
 }
@@ -436,6 +446,28 @@ mod tests {
         assert!(is_thumbnailable(Path::new("a/b.JPG")));
         assert!(!is_thumbnailable(Path::new("a/b.txt")));
         assert!(!is_thumbnailable(Path::new("noext")));
+    }
+
+    #[test]
+    fn os_cache_is_supported_where_a_reader_exists() {
+        set_os_cache(true);
+        assert_eq!(OS_CACHE.load(Ordering::Relaxed), cfg!(any(windows, target_os = "linux")));
+        set_os_cache(false);
+        assert!(!OS_CACHE.load(Ordering::Relaxed));
+        set_os_cache(true);
+    }
+
+    #[test]
+    fn os_thumbs_are_fitted_not_upscaled() {
+        let mut png = Vec::new();
+        image::RgbaImage::from_pixel(256, 192, image::Rgba([1, 2, 3, 255]))
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let t = soyuz_fs::thumbcache::OsThumb { data: png, width: 256, height: 192, db_size: 256 };
+        assert_eq!(fit_os_thumb(&t, 128).unwrap().size, [128, 96]);
+        assert_eq!(fit_os_thumb(&t, 512).unwrap().size, [256, 192]);
+        let bad = soyuz_fs::thumbcache::OsThumb { data: b"junk".to_vec(), width: 1, height: 1, db_size: 96 };
+        assert!(fit_os_thumb(&bad, 64).is_none());
     }
 
     #[test]

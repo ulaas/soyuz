@@ -41,6 +41,8 @@ struct Reg {
     use_for_search: bool,
     tags_version: Option<u64>,
     status: Option<IndexStatus>,
+    /// `rescan_interval_secs` last handed to the running worker.
+    rescan_secs: Option<u64>,
     /// Smart folder panes: generation they last showed, and when.
     refreshed: HashMap<PaneId, (u64, Instant)>,
 }
@@ -64,7 +66,7 @@ pub fn index_config(c: &SearchIndex, debounce: Duration) -> IndexConfig {
     IndexConfig {
         db_path: index_dir().join("soyuz-index.db"),
         roots: c.roots.iter().filter(|r| !r.trim().is_empty()).map(|r| expand_root(r)).collect(),
-        exclude: c.exclude.clone(),
+        exclude: c.effective_exclude(),
         content: c.content,
         content_max_bytes: c.content_max_kib.max(1).saturating_mul(1024),
         content_extensions: c
@@ -86,6 +88,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     let desired = c.enabled.then(|| index_config(c, debounce));
     let refresh_every = Duration::from_secs(c.smart_refresh_secs.max(1));
     let use_for_search = c.use_for_search;
+    let rescan_secs = c.rescan_interval_secs.max(1);
     let changed = REG.with_borrow_mut(|r| {
         r.use_for_search = use_for_search;
         if desired == r.applied {
@@ -117,6 +120,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         r.applied = desired.clone();
         r.tags_version = None;
         r.status = None;
+        r.rescan_secs = None;
         true
     });
     if changed {
@@ -124,6 +128,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
     let index_gen = REG.with_borrow_mut(|r| {
         let ix = r.index.as_ref()?;
+        // Polled roots (watch limit reached): applied live, no restart needed.
+        if r.rescan_secs != Some(rescan_secs) {
+            r.rescan_secs = Some(rescan_secs);
+            ix.set_rescan_interval(Duration::from_secs(rescan_secs));
+        }
         let v = crate::services::tags::version();
         if r.tags_version != Some(v) {
             r.tags_version = Some(v);
@@ -178,6 +187,13 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
 /// Cached status (`None` when indexing is off).
 pub fn status() -> Option<IndexStatus> {
     REG.with_borrow(|r| r.status.clone())
+}
+
+/// Index roots without a change watcher (Linux: the inotify watch limit is used up);
+/// they are re-checked every `[search.index] rescan_interval_secs`, so changes show up
+/// late. Empty when indexing is off or every root is watched.
+pub fn polled_roots() -> Vec<PathBuf> {
+    REG.with_borrow(|r| r.status.as_ref().map(|s| s.polled_roots.clone()).unwrap_or_default())
 }
 
 pub fn is_enabled() -> bool {

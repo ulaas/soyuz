@@ -592,6 +592,17 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
 }
 
 pub fn drain_watcher(app: &mut SoyuzApp) {
+    let poll = Duration::from_millis(app.config.behaviour.watch_poll_interval_ms);
+    app.services.watcher.set_poll_interval(poll);
+    if app.services.watcher.take_degraded().is_some() {
+        let secs = poll.as_millis().div_ceil(1000).max(1).to_string();
+        app.ui
+            .toasts
+            .push(Toast::info(tr!("services-watch-degraded")).body(tr!("services-watch-degraded-body", secs = secs)));
+    }
+    if crate::ui::sidebar::take_volumes_stale() {
+        app.services.places.refresh();
+    }
     let events = app.services.watcher.drain();
     for (_, kind) in &events {
         if let WatchKind::Changed(paths) = kind {

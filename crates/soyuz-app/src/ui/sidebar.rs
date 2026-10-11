@@ -42,11 +42,34 @@ const STANDARD: [(&str, &str); 6] = [
 static PROBED: std::sync::OnceLock<Vec<Place>> = std::sync::OnceLock::new();
 static PROBE_STARTED: std::sync::Once = std::sync::Once::new();
 
-fn candidate_places() -> Vec<Place> {
+/// Home plus the standard folders: `~/<English name>`, or (Linux / BSD) the folder
+/// `user-dirs.dirs` names for that role (`~/Belgeler` on a Turkish desktop). A role
+/// set to the home folder itself (the XDG way of disabling it) is left out.
+fn candidate_places(xdg: Option<&soyuz_fs::xdg_dirs::UserDirs>) -> Vec<Place> {
     let home = soyuz_fs::home();
     let mut out = vec![Place { label: "Home".into(), icon: ph::HOUSE, path: home.clone() }];
-    out.extend(STANDARD.iter().map(|&(name, icon)| Place { label: name.into(), icon, path: home.join(name) }));
+    for &(name, icon) in &STANDARD {
+        let path = match xdg.and_then(|d| xdg_role(d, name)) {
+            Some(p) if p == home => continue,
+            Some(p) => p,
+            None => home.join(name),
+        };
+        out.push(Place { label: name.into(), icon, path });
+    }
     out
+}
+
+/// The XDG user folder for a standard place (English role name).
+fn xdg_role(d: &soyuz_fs::xdg_dirs::UserDirs, name: &str) -> Option<PathBuf> {
+    match name {
+        "Desktop" => d.desktop.clone(),
+        "Documents" => d.documents.clone(),
+        "Downloads" => d.downloads.clone(),
+        "Pictures" => d.pictures.clone(),
+        "Music" => d.music.clone(),
+        "Videos" => d.videos.clone(),
+        _ => None,
+    }
 }
 
 /// Translated label of a standard place (`label` is the English folder name, which is
@@ -81,7 +104,9 @@ pub fn standard_places() -> Vec<Place> {
     }
     PROBE_STARTED.call_once(|| {
         let _ = std::thread::Builder::new().name("soyuz-places".into()).spawn(|| {
-            let places: Vec<Place> = candidate_places()
+            // `user-dirs.dirs` (Linux / BSD; empty elsewhere): read here, never on the UI thread.
+            let xdg = soyuz_fs::xdg_dirs::user_dirs();
+            let places: Vec<Place> = candidate_places(Some(&xdg))
                 .into_iter()
                 .enumerate()
                 .filter(|(i, p)| *i == 0 || p.path.is_dir())
@@ -90,7 +115,7 @@ pub fn standard_places() -> Vec<Place> {
             let _ = PROBED.set(places);
         });
     });
-    localized(candidate_places())
+    localized(candidate_places(None))
 }
 
 /// The standard places probe has finished.
@@ -103,6 +128,10 @@ pub fn favorite_glyph(path: &Path) -> &'static str {
     let home = soyuz_fs::home();
     if path == home {
         return ph::HOUSE;
+    }
+    // XDG folders with localized names (`~/Belgeler`).
+    if let Some(p) = PROBED.get().and_then(|v| v.iter().find(|p| p.path == path)) {
+        return p.icon;
     }
     if path.parent() == Some(home.as_path())
         && let Some(n) = path.file_name().and_then(|n| n.to_str())
@@ -225,6 +254,7 @@ fn section_key(s: SidebarSection) -> &'static str {
 
 pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     let p = palette(root.ctx());
+    desk_pump(root.ctx(), c);
     if !s.places_applied {
         if places_probed() {
             s.places_applied = true;
@@ -573,6 +603,7 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         let cmds = &mut *c.cmds;
         crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &b.path, false));
     }
+    gtk_bookmarks(ui, s, c);
 }
 
 fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
@@ -588,6 +619,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Computer, select: None });
     }
     let vols: Vec<VolumeInfo> = c.volumes.to_vec();
+    let desk_devices = if cfg!(target_os = "linux") { desk().lock().devices.clone() } else { Vec::new() };
     for v in &vols {
         let usage = (v.total > 0).then(|| 1.0 - v.free as f32 / v.total as f32);
         let label = volume_label(v);
@@ -604,11 +636,40 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             v.mount.display().to_string()
         };
         let r = r.on_hover_text(tip);
-        row_clicks(&r, c, &v.mount);
+        let dev = if desk_devices.is_empty() { None } else { device_at(&desk_devices, &v.mount) };
+        // Removable media: a small eject button on the right of the row.
+        let eject_hit = dev.as_ref().filter(|d| d.drive.is_some() && (d.ejectable || d.can_power_off)).and_then(|d| {
+            let br = Rect::from_center_size(pos2(r.rect.right() - 14.0, r.rect.top() + 14.0), vec2(20.0, 20.0));
+            let er = ui.interact(br, r.id.with("eject"), Sense::click());
+            if ui.is_rect_visible(br) && (r.hovered() || er.hovered()) {
+                let p = palette(ui.ctx());
+                let color = if er.hovered() { p.text_primary } else { p.text_tertiary };
+                ui.painter().text(
+                    br.center(),
+                    Align2::CENTER_CENTER,
+                    ph::EJECT_SIMPLE,
+                    crate::theme::icons::font(13.0),
+                    color,
+                );
+            }
+            let er = er.on_hover_text(tr!("app-device-eject"));
+            er.clicked().then(|| d.clone())
+        });
+        if let Some(d) = eject_hit {
+            eject_device(&d, &desk_devices);
+        } else {
+            row_clicks(&r, c, &v.mount);
+        }
         crate::ops::fileops::dnd::target_open(ui, &r, &v.mount, c.pane, c.cmds);
         let cmds = &mut *c.cmds;
-        crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &v.mount, false));
+        crate::ui::native::popup::context_menu(&r, |ui| {
+            place_menu(ui, cmds, &v.mount, false);
+            if let Some(d) = &dev {
+                device_menu(ui, d, &desk_devices);
+            }
+        });
     }
+    unmounted_devices(ui, c);
     if vols.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
         let p = palette(ui.ctx());
@@ -619,6 +680,364 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
             FontId::proportional(12.0),
             p.text_tertiary,
         );
+    }
+}
+
+// ---- Linux desktop: GTK bookmarks and UDisks2 devices ------------------------------------
+//
+// One background thread ("soyuz-desktop-places", Linux only) re-reads the GTK bookmarks
+// file and the UDisks2 block devices every `DESKTOP_REFRESH` and whenever the volume list
+// changes. Mount / unmount / eject run on their own threads (polkit may prompt); their
+// results come back through `Desk::events` and are turned into toasts / navigation on the
+// next frame. Nothing here touches D-Bus or the disk on the UI thread.
+
+/// Background refresh of the GTK bookmarks and UDisks2 devices.
+const DESKTOP_REFRESH: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// `[sidebar] gtk_bookmarks`: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`)
+/// under Favorites (Linux; default on).
+static SHOW_GTK_BOOKMARKS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Show / hide the GTK bookmarks in the Favorites section.
+pub fn set_show_gtk_bookmarks(on: bool) {
+    SHOW_GTK_BOOKMARKS.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Result of a device operation, applied on the UI thread.
+enum DeskEvent {
+    Mounted { pane: PaneId, path: PathBuf },
+    Unmounted { name: String },
+    Ejected { name: String },
+    Failed { title: String, body: String },
+}
+
+#[derive(Default)]
+struct Desk {
+    started: bool,
+    /// UDisks2 answered (devices are listed); `false` hides the device extras.
+    available: bool,
+    /// User-visible block devices (mounted or not).
+    devices: Vec<soyuz_fs::udisks::BlockDevice>,
+    gtk: Vec<soyuz_fs::xdg_dirs::Bookmark>,
+    /// UDisks object paths with an operation running.
+    busy: BTreeSet<String>,
+    events: Vec<DeskEvent>,
+    trigger: Option<crossbeam_channel::Sender<()>>,
+    /// Signature of the volume list last seen (a change triggers a device rescan).
+    vol_sig: u64,
+}
+
+fn desk() -> &'static parking_lot::Mutex<Desk> {
+    static D: std::sync::OnceLock<parking_lot::Mutex<Desk>> = std::sync::OnceLock::new();
+    D.get_or_init(Default::default)
+}
+
+/// Start the refresher once (Linux only).
+fn desk_start(ctx: &egui::Context) {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    let mut d = desk().lock();
+    if d.started {
+        return;
+    }
+    d.started = true;
+    let (tx, rx) = crossbeam_channel::bounded::<()>(1);
+    d.trigger = Some(tx);
+    drop(d);
+    let ctx = ctx.clone();
+    let spawned = std::thread::Builder::new().name("soyuz-desktop-places".into()).spawn(move || {
+        let udisks = soyuz_fs::udisks::available();
+        loop {
+            let gtk = soyuz_fs::xdg_dirs::gtk_bookmarks();
+            let devices = if udisks {
+                match soyuz_fs::udisks::block_devices() {
+                    Ok(v) => Some(v.into_iter().filter(|b| b.user_visible()).collect::<Vec<_>>()),
+                    Err(e) => {
+                        log::debug!("udisks: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            let changed = {
+                let mut d = desk().lock();
+                let mut changed = d.gtk != gtk;
+                d.gtk = gtk;
+                if let Some(devices) = devices {
+                    changed |= d.devices != devices || !d.available;
+                    d.devices = devices;
+                    d.available = true;
+                }
+                changed
+            };
+            if changed {
+                ctx.request_repaint();
+            }
+            match rx.recv_timeout(DESKTOP_REFRESH) {
+                Ok(()) | Err(crossbeam_channel::RecvTimeoutError::Timeout) => {}
+                Err(crossbeam_channel::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        log::warn!("cannot spawn the desktop places thread: {e}");
+    }
+}
+
+/// Ask the refresher for a rescan now (after a device operation, or new volumes).
+fn desk_rescan() {
+    if let Some(t) = &desk().lock().trigger {
+        let _ = t.try_send(());
+    }
+}
+
+/// The volume list should be re-read now (a device was mounted / unmounted from the
+/// sidebar); taken by the frame loop, which asks the places service for a refresh.
+static VOLUMES_STALE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// A device was mounted / unmounted from the sidebar since the last call.
+pub fn take_volumes_stale() -> bool {
+    VOLUMES_STALE.swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Per frame (sidebar shown): start the refresher, rescan when the volume list changed,
+/// turn finished device operations into toasts / navigation.
+fn desk_pump(ctx: &egui::Context, c: &mut SidebarCtx<'_>) {
+    if !cfg!(target_os = "linux") {
+        return;
+    }
+    desk_start(ctx);
+    let sig = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for v in c.volumes {
+            v.mount.hash(&mut h);
+        }
+        h.finish()
+    };
+    let events = {
+        let mut d = desk().lock();
+        let rescan = d.vol_sig != sig;
+        d.vol_sig = sig;
+        let ev = std::mem::take(&mut d.events);
+        drop(d);
+        if rescan {
+            desk_rescan();
+        }
+        ev
+    };
+    for ev in events {
+        use crate::ui::toasts::Toast;
+        VOLUMES_STALE.store(true, std::sync::atomic::Ordering::Relaxed);
+        match ev {
+            DeskEvent::Mounted { pane, path } => {
+                c.cmds.push(Cmd::FocusPane(pane));
+                c.cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
+            }
+            DeskEvent::Unmounted { name } => {
+                c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-unmounted", name = name))))
+            }
+            DeskEvent::Ejected { name } => c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-ejected", name = name)))),
+            DeskEvent::Failed { title, body } => c.cmds.push(Cmd::Toast(Toast::error(title).body(body))),
+        }
+    }
+}
+
+/// A short, human reason for a failed UDisks2 call.
+fn udisks_reason(e: &std::io::Error) -> String {
+    let m = e.to_string();
+    if m.contains("NotAuthorized") {
+        tr!("app-device-not-authorized").to_string()
+    } else if m.contains("DeviceBusy") || m.contains("target is busy") || m.contains("is busy") {
+        tr!("app-device-busy").to_string()
+    } else if e.kind() == std::io::ErrorKind::Unsupported {
+        tr!("app-device-no-udisks").to_string()
+    } else {
+        m
+    }
+}
+
+/// Run a device operation on its own thread; `object` is marked busy meanwhile.
+fn desk_op(object: &str, op: impl FnOnce() -> DeskEvent + Send + 'static) {
+    let object = object.to_string();
+    if !desk().lock().busy.insert(object.clone()) {
+        return;
+    }
+    let key = object.clone();
+    let spawned = std::thread::Builder::new().name("soyuz-udisks-op".into()).spawn(move || {
+        let ev = op();
+        let mut d = desk().lock();
+        d.busy.remove(&key);
+        d.events.push(ev);
+        drop(d);
+        desk_rescan();
+    });
+    if let Err(e) = spawned {
+        desk().lock().busy.remove(&object);
+        log::warn!("cannot spawn a device thread: {e}");
+    }
+}
+
+/// Mount `dev` (polkit may ask), then open it in `pane`.
+fn mount_device(dev: &soyuz_fs::udisks::BlockDevice, pane: PaneId) {
+    let object = dev.object.clone();
+    let name = dev.display_name();
+    desk_op(&dev.object, move || {
+        let o = soyuz_fs::udisks::MountOptions { interactive: true, ..Default::default() };
+        match soyuz_fs::udisks::mount(&object, &o) {
+            Ok(path) => DeskEvent::Mounted { pane, path },
+            Err(e) => DeskEvent::Failed { title: tr!("app-device-mount-failed", name = name), body: udisks_reason(&e) },
+        }
+    });
+}
+
+fn unmount_device(dev: &soyuz_fs::udisks::BlockDevice) {
+    let object = dev.object.clone();
+    let name = dev.display_name();
+    desk_op(&dev.object, move || match soyuz_fs::udisks::unmount(&object, false, true) {
+        Ok(()) => DeskEvent::Unmounted { name },
+        Err(e) => DeskEvent::Failed { title: tr!("app-device-unmount-failed", name = name), body: udisks_reason(&e) },
+    });
+}
+
+/// Unmount every mounted file system of the drive, then eject it (or power it off when
+/// it can't eject, e.g. a USB disk).
+fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) {
+    let Some(drive) = dev.drive.clone() else { return };
+    let mounted: Vec<String> = all
+        .iter()
+        .filter(|b| b.drive.as_deref() == Some(drive.as_str()) && !b.mount_points.is_empty())
+        .map(|b| b.object.clone())
+        .collect();
+    let (ejectable, power_off) = (dev.ejectable, dev.can_power_off);
+    let name = dev.display_name();
+    desk_op(&dev.object, move || {
+        let failed = |e: std::io::Error| DeskEvent::Failed {
+            title: tr!("app-device-eject-failed", name = name.clone()),
+            body: udisks_reason(&e),
+        };
+        for o in &mounted {
+            if let Err(e) = soyuz_fs::udisks::unmount(o, false, true) {
+                return failed(e);
+            }
+        }
+        let r = if ejectable {
+            soyuz_fs::udisks::eject(&drive, true)
+        } else if power_off {
+            soyuz_fs::udisks::power_off(&drive, true)
+        } else {
+            Ok(())
+        };
+        match r {
+            Ok(()) => DeskEvent::Ejected { name: name.clone() },
+            Err(e) => failed(e),
+        }
+    });
+}
+
+/// The UDisks2 device mounted at `mount`, if it may be unmounted from the sidebar
+/// (removable / ejectable media, or a non-system disk).
+fn device_at(devices: &[soyuz_fs::udisks::BlockDevice], mount: &Path) -> Option<soyuz_fs::udisks::BlockDevice> {
+    devices
+        .iter()
+        .find(|b| b.mount_points.iter().any(|m| m == mount) && (b.removable || b.ejectable || !b.hint_system))
+        .cloned()
+}
+
+/// Unmount / Eject entries of a mounted device's context menu.
+fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) {
+    menu_separator(ui);
+    if menu_item(ui, Some(ph::ARROW_LINE_UP), tr!("app-device-unmount"), None, true).clicked() {
+        unmount_device(dev);
+        ui.close();
+    }
+    if dev.drive.is_some()
+        && (dev.ejectable || dev.can_power_off)
+        && menu_item(ui, Some(ph::EJECT_SIMPLE), tr!("app-device-eject"), None, true).clicked()
+    {
+        eject_device(dev, all);
+        ui.close();
+    }
+}
+
+/// Rows for user-visible block devices that are not mounted: click mounts (and opens).
+fn unmounted_devices(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
+    let (devices, busy) = {
+        let d = desk().lock();
+        if !d.available {
+            return;
+        }
+        (d.devices.clone(), d.busy.clone())
+    };
+    let p = palette(ui.ctx());
+    for dev in devices.iter().filter(|b| b.has_filesystem && b.mount_points.is_empty()) {
+        let name = dev.display_name();
+        let working = busy.contains(&dev.object);
+        let label = if working { tr!("app-device-mounting", name = name.clone()) } else { name.clone() };
+        let icon = if dev.removable { ph::USB } else { ph::HARD_DRIVE };
+        let r = NavRow { icon, label: &label, active: false, icon_color: Some(p.text_tertiary), usage: None }.show(ui);
+        let size = if dev.size > 0 { format_size(dev.size, SizeStyle::Decimal) } else { String::new() };
+        let r = r.on_hover_text(tr!(
+            "app-device-unmounted-tip",
+            device = dev.device.display().to_string(),
+            size = size,
+            fs = dev.fs_type.clone()
+        ));
+        if working {
+            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        if r.clicked() && !working {
+            mount_device(dev, c.pane);
+        }
+        let pane = c.pane;
+        crate::ui::native::popup::context_menu(&r, |ui| {
+            ui.set_width(220.0);
+            if menu_item(ui, Some(ph::HARD_DRIVE), tr!("app-device-mount"), None, !working).clicked() {
+                mount_device(dev, pane);
+                ui.close();
+            }
+        });
+    }
+}
+
+/// GTK bookmarks not already shown (favorites, config bookmarks).
+fn gtk_bookmarks(ui: &mut Ui, s: &SidebarState, c: &mut SidebarCtx<'_>) {
+    if !cfg!(target_os = "linux") || !SHOW_GTK_BOOKMARKS.load(std::sync::atomic::Ordering::Relaxed) {
+        return;
+    }
+    let marks = desk().lock().gtk.clone();
+    let p = palette(ui.ctx());
+    for b in &marks {
+        let loc = match &b.path {
+            Some(path) => {
+                if s.favorites.iter().any(|f| &f.path == path) || c.bookmarks.iter().any(|k| &k.path == path) {
+                    continue;
+                }
+                Location::Dir(path.clone())
+            }
+            None if soyuz_core::location::looks_remote(&b.uri) => Location::Remote(b.uri.clone()),
+            None => continue,
+        };
+        let label = b.display_name();
+        let active = c.current == &loc;
+        let icon = if b.path.is_some() { ph::BOOKMARK_SIMPLE } else { ph::GLOBE };
+        let r = NavRow { icon, label: &label, active, icon_color: Some(p.text_secondary), usage: None }.show(ui);
+        let tip = b.path.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| b.uri.clone());
+        let r = r.on_hover_text(tip);
+        if r.clicked() {
+            c.cmds.push(Cmd::FocusPane(c.pane));
+            c.cmds.push(Cmd::Navigate { pane: c.pane, location: loc.clone(), select: None });
+        }
+        if r.middle_clicked() {
+            c.cmds.push(Cmd::OpenInNewTab { location: loc.clone(), activate: false });
+        }
+        if let Some(path) = &b.path {
+            crate::ops::fileops::dnd::target_open(ui, &r, path, c.pane, c.cmds);
+            let cmds = &mut *c.cmds;
+            crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, path, false));
+        }
     }
 }
 
@@ -652,5 +1071,55 @@ fn other(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     if r.clicked() {
         c.cmds.push(Cmd::FocusPane(c.pane));
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Trash, select: None });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn xdg_folders_replace_the_english_defaults() {
+        let home = soyuz_fs::home();
+        let xdg = soyuz_fs::xdg_dirs::UserDirs {
+            documents: Some(home.join("Belgeler")),
+            desktop: Some(home.clone()), // disabled the XDG way
+            ..Default::default()
+        };
+        let places = candidate_places(Some(&xdg));
+        assert_eq!(places[0].path, home);
+        let docs = places.iter().find(|p| p.label == "Documents").unwrap();
+        assert_eq!(docs.path, home.join("Belgeler"));
+        assert!(places.iter().all(|p| p.label != "Desktop"), "a role pointing at home is left out");
+        assert_eq!(places.iter().find(|p| p.label == "Music").unwrap().path, home.join("Music"), "fallback");
+        assert_eq!(candidate_places(None).len(), 1 + STANDARD.len());
+    }
+
+    #[test]
+    fn devices_match_volumes_by_mount_point() {
+        let dev = |mount: &str, removable: bool, system: bool| soyuz_fs::udisks::BlockDevice {
+            object: format!("/org/freedesktop/UDisks2/block_devices/{}", mount.len()),
+            mount_points: if mount.is_empty() { vec![] } else { vec![PathBuf::from(mount)] },
+            removable,
+            hint_system: system,
+            has_filesystem: true,
+            ..Default::default()
+        };
+        let all = [dev("/run/media/u/STICK", true, true), dev("/", false, true), dev("/mnt/data", false, false)];
+        assert!(device_at(&all, Path::new("/run/media/u/STICK")).is_some());
+        assert!(device_at(&all, Path::new("/")).is_none(), "system disks are not offered for unmount");
+        assert!(device_at(&all, Path::new("/mnt/data")).is_some());
+        assert!(device_at(&all, Path::new("/nowhere")).is_none());
+    }
+
+    #[test]
+    fn udisks_errors_read_well() {
+        let e = std::io::Error::other("org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized");
+        assert!(udisks_reason(&e).contains("polkit"));
+        let e = std::io::Error::other("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy");
+        assert!(udisks_reason(&e).contains("in use"));
+        let e = std::io::Error::new(std::io::ErrorKind::Unsupported, "no bus");
+        assert!(udisks_reason(&e).contains("UDisks2"));
+        assert_eq!(udisks_reason(&std::io::Error::other("odd")), "odd");
     }
 }

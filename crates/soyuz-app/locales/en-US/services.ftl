@@ -319,3 +319,9 @@ services-update-checksum-mismatch = checksum mismatch (expected { $expected }…
 services-update-cannot-rename = cannot rename the download: { $error }
 services-update-available = Soyuz { $version } is available
 services-update-available-body = Open Settings → About & updates to read the release notes and download it.
+
+## Linux (data)
+
+services-watch-degraded = Change watching is limited
+# $secs = poll interval in whole seconds.
+services-watch-degraded-body = The system's limit of watched folders is reached, so some folders are re-checked every { $secs } s instead.
