@@ -5,7 +5,10 @@
 //! * Windows: registry association chain → `CreateProcessW` (also for `.url` schemes);
 //!   UWP / `DelegateExecute` (COM-only) associations and unresolvable shortcuts fail with
 //!   a "no application is associated" error — nothing is handed to a shell helper.
-//! * Linux/BSD: `xdg-open`, then `gio open`; Open-with list from `.desktop` files.
+//! * Linux/BSD: no `xdg-open` / `gio`: shared-mime-info type detection, `mimeapps.list`
+//!   and `.desktop` resolution, then the entry is launched directly (D-Bus activation,
+//!   `Exec=`, terminal wrapping); the OpenURI portal inside Flatpak / Snap;
+//!   `org.freedesktop.FileManager1` for "show in folder" (see `linux`).
 //! * macOS: `open` / `open -a`.
 
 pub(crate) mod linux;
@@ -47,25 +50,137 @@ pub fn open_default(path: &Path) -> FsResult<()> {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        crate::list::stat(path, true).map_err(|e| FsError { op: "open".into(), ..e })?;
-        let mut first_err = None;
-        for (prog, pre) in [("xdg-open", None), ("gio", Some("open"))] {
-            let mut c = Command::new(prog);
-            if let Some(p) = pre {
-                c.arg(p);
-            }
-            c.arg(path);
-            match spawn_detached(c, "open", path) {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    first_err.get_or_insert(e);
-                }
-            }
-        }
-        let mut e = first_err.unwrap_or_else(|| FsError::unsupported("open", Some(path)));
-        e.message = format!("{} (install xdg-utils to open files)", e.message);
-        Err(e)
+        linux::open_default(path)
     }
+}
+
+/// Open a URL (`https:`, `mailto:`, `file:` …) with the application registered for its
+/// scheme. Linux / BSD: `x-scheme-handler/<scheme>` (the OpenURI portal when sandboxed);
+/// macOS: `open`; Windows: `file:` URLs only (other schemes go through the app's own
+/// URL opener there).
+pub fn open_url(url: &str) -> FsResult<()> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::open_url(url)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut c = Command::new("open");
+        c.arg(url);
+        spawn_detached(c, "open", Path::new(url))
+    }
+    #[cfg(windows)]
+    {
+        match url.strip_prefix("file:///") {
+            Some(rest) => open_default(&linux::uri::path_from_bytes(linux::uri::percent_decode(rest))),
+            None => Err(err::unsupported("open", Path::new(url), "only file: URLs are opened here")),
+        }
+    }
+}
+
+/// Open several files with one application (one process when the application takes
+/// several files, else one per file).
+pub fn open_with_many(paths: &[PathBuf], app: &AppInfo) -> FsResult<()> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::open_with_many(paths, app)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        paths.iter().try_for_each(|p| open_with(p, app))
+    }
+}
+
+/// The application [`open_default`] would use for `path` (Linux / BSD; `None` elsewhere
+/// or when nothing is associated).
+pub fn default_app_for(path: &Path) -> Option<AppInfo> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::default_app_for(path)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// The MIME type of `path` from the shared-mime-info database (names, then content
+/// sniffing; directories are `inode/directory`). Linux / BSD only; `None` elsewhere.
+pub fn mime_type(path: &Path) -> Option<String> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::mime_of(path)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = path;
+        None
+    }
+}
+
+/// The file of a freedesktop icon-theme icon (`org.gnome.TextEditor`, `folder`, or an
+/// absolute path) at `size` logical px and `scale`, from the user's icon theme, its
+/// parents, `hicolor` and `pixmaps`. PNG, SVG or XPM; Linux / BSD only.
+pub fn icon_path(name: &str, size: u32, scale: u32) -> Option<PathBuf> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::icon_path(name, size, scale)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = (name, size, scale);
+        None
+    }
+}
+
+/// The theme icon file for a MIME type (`text/x-csrc` → `text-x-csrc`, its generic
+/// icon, …). Linux / BSD only.
+pub fn mime_icon_path(mime: &str, size: u32, scale: u32) -> Option<PathBuf> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::mime_icon_path(mime, size, scale)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = (mime, size, scale);
+        None
+    }
+}
+
+/// Whether a desktop file manager (other than this process) answers
+/// `org.freedesktop.FileManager1` on the session bus, i.e. whether [`reveal_in_system`]
+/// can select the item. Linux only; blocks for at most a few seconds (background thread).
+pub fn system_file_manager_available() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        linux::file_manager1_available()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        cfg!(any(windows, target_os = "macos"))
+    }
+}
+
+/// The local path of a `file://` URI (percent-decoded, non-UTF-8 safe); `None` for other
+/// schemes / remote hosts. For command-line arguments received through a desktop
+/// entry's `%U` (`soyuz.desktop` uses `Exec=soyuz %U`).
+pub fn path_from_file_uri(uri: &str) -> Option<PathBuf> {
+    linux::uri::uri_to_path(uri)
+}
+
+/// The `file://` URI of a local path (percent-encoded).
+pub fn file_uri(path: &Path) -> String {
+    linux::uri::file_uri(path)
+}
+
+/// An activation token (Wayland `xdg_activation_v1` / X11 startup id) to hand to the next
+/// application launched from here, so it may take focus. Single use; Linux / BSD only.
+pub fn set_activation_token(token: Option<String>) {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    linux::set_activation_token(token);
+    #[cfg(any(windows, target_os = "macos"))]
+    let _ = token;
 }
 
 /// Open `path` with a specific application (from [`apps_for`] or user-defined).
@@ -80,7 +195,7 @@ pub fn open_with(path: &Path, app: &AppInfo) -> FsResult<()> {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        open_with_generic(path, app)
+        linux::open_with_many(&[path.to_path_buf()], app)
     }
 }
 
@@ -133,8 +248,15 @@ pub fn apps_for(path: &Path) -> Vec<AppInfo> {
     }
 }
 
-/// Spawn and reap in the background so no zombie is left behind on unix.
+/// Spawn and reap in the background so no zombie is left behind on unix. On unix the
+/// child gets its own process group (no signals from our terminal / group reach it) and
+/// no stdin.
 pub(crate) fn spawn_detached(mut cmd: Command, op: &'static str, path: &Path) -> FsResult<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0).stdin(std::process::Stdio::null());
+    }
     match cmd.spawn() {
         Ok(mut child) => std::thread::Builder::new()
             .name("soyuz-reap".into())
@@ -153,70 +275,52 @@ pub(crate) fn spawn_detached(mut cmd: Command, op: &'static str, path: &Path) ->
     }
 }
 
-/// Open an external terminal in `dir` (`preferred` = executable name / path).
+/// Open an external terminal in `dir` (`preferred` = executable name / path, may carry
+/// arguments on Linux). Linux / BSD: `xdg-terminal-exec`, `$TERMINAL`, then the known
+/// emulators (ptyxis, kgx, gnome-terminal, konsole, …) with their working-directory flag.
 pub fn open_terminal_at(dir: &Path, preferred: Option<&str>) -> FsResult<()> {
     let dir_plain = crate::path::strip_verbatim(dir);
     let dir = dir_plain.as_path();
-    let mut candidates: Vec<Command> = Vec::new();
-    if let Some(p) = preferred.filter(|p| !p.trim().is_empty()) {
-        let mut c = Command::new(p);
-        c.current_dir(dir);
-        candidates.push(c);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
-        let mut wt = Command::new("wt.exe");
-        wt.arg("-d").arg(dir).current_dir(dir);
-        candidates.push(wt);
-        for exe in ["pwsh.exe", "powershell.exe", "cmd.exe"] {
-            let mut c = Command::new(exe);
-            c.current_dir(dir).creation_flags(CREATE_NEW_CONSOLE);
-            candidates.push(c);
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let mut c = Command::new("open");
-        c.arg("-a").arg("Terminal").arg(dir);
-        candidates.push(c);
-    }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let mut names: Vec<String> = Vec::new();
-        if let Ok(t) = std::env::var("TERMINAL") {
-            names.push(t);
-        }
-        names.extend(
-            [
-                "x-terminal-emulator",
-                "gnome-terminal",
-                "konsole",
-                "xfce4-terminal",
-                "kgx",
-                "alacritty",
-                "kitty",
-                "wezterm",
-                "foot",
-                "xterm",
-            ]
-            .map(String::from),
-        );
-        for n in names {
-            let mut c = Command::new(n);
+        linux::open_terminal_at(dir, preferred)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let mut candidates: Vec<Command> = Vec::new();
+        if let Some(p) = preferred.filter(|p| !p.trim().is_empty()) {
+            let mut c = Command::new(p);
             c.current_dir(dir);
             candidates.push(c);
         }
-    }
-    let mut last_err = None;
-    for cmd in candidates {
-        match spawn_detached(cmd, "open_terminal", dir) {
-            Ok(()) => return Ok(()),
-            Err(e) => last_err = Some(e),
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+            let mut wt = Command::new("wt.exe");
+            wt.arg("-d").arg(dir).current_dir(dir);
+            candidates.push(wt);
+            for exe in ["pwsh.exe", "powershell.exe", "cmd.exe"] {
+                let mut c = Command::new(exe);
+                c.current_dir(dir).creation_flags(CREATE_NEW_CONSOLE);
+                candidates.push(c);
+            }
         }
+        #[cfg(target_os = "macos")]
+        {
+            let mut c = Command::new("open");
+            c.arg("-a").arg("Terminal").arg(dir);
+            candidates.push(c);
+        }
+        let mut last_err = None;
+        for cmd in candidates {
+            match spawn_detached(cmd, "open_terminal", dir) {
+                Ok(()) => return Ok(()),
+                Err(e) => last_err = Some(e),
+            }
+        }
+        Err(last_err.unwrap_or_else(|| FsError::unsupported("open_terminal", Some(dir))))
     }
-    Err(last_err.unwrap_or_else(|| FsError::unsupported("open_terminal", Some(dir))))
 }
 
 /// Quote `s` as a PowerShell single-quoted string literal. PowerShell treats the
@@ -308,8 +412,9 @@ pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        let mut c = Command::new("pkexec");
-        c.arg(exe).args(args);
+        let argv = linux::elevate_argv(exe, args, |k| std::env::var_os(k));
+        let mut c = Command::new(&argv[0]);
+        c.args(&argv[1..]);
         spawn_detached(c, "run_elevated", exe)
     }
     #[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
@@ -319,7 +424,8 @@ pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     }
 }
 
-/// `explorer.exe /select,`, `open -R`, `xdg-open <parent>`.
+/// `explorer.exe /select,`, `open -R`; Linux / BSD: `org.freedesktop.FileManager1`
+/// `ShowItems`, else the parent folder with the default folder handler (never Soyuz).
 pub fn reveal_in_system(path: &Path) -> FsResult<()> {
     #[cfg(windows)]
     {
@@ -336,10 +442,7 @@ pub fn reveal_in_system(path: &Path) -> FsResult<()> {
     }
     #[cfg(not(any(windows, target_os = "macos")))]
     {
-        let dir = if path.is_dir() { path } else { path.parent().unwrap_or(path) };
-        let mut c = Command::new("xdg-open");
-        c.arg(dir);
-        spawn_detached(c, "reveal", path)
+        linux::reveal(path)
     }
 }
 

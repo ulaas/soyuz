@@ -47,11 +47,13 @@ pub mod sparse;
 pub mod thumbcache;
 pub mod times;
 pub mod trash;
+pub mod udisks;
 pub mod usn;
 pub mod volumes;
 pub mod watch;
 pub mod wsl;
 pub mod xattr;
+pub mod xdg_dirs;
 
 #[allow(unsafe_code)]
 mod sys;

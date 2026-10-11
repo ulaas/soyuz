@@ -6349,6 +6349,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows-sys 0.61.2",
+ "zbus",
 ]
 
 [[package]]
@@ -6480,10 +6481,12 @@ dependencies = [
  "serde_json",
  "sha1 0.10.7",
  "sha2 0.10.9",
+ "skrifa",
  "soyuz-core",
  "tempfile",
  "windows-sys 0.61.2",
  "xattr",
+ "zbus",
 ]
 
 [[package]]
@@ -6535,6 +6538,7 @@ dependencies = [
  "log",
  "parking_lot",
  "reqwest",
+ "rustix 1.1.5",
  "rustls",
  "serde",
  "serde_json",

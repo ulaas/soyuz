@@ -670,6 +670,8 @@ mod tests {
         assert_eq!(url_command(&r, "gopher"), None);
     }
 
+    // Windows paths (`C:\…` parents, drive-absolute) only parse as such on Windows.
+    #[cfg(windows)]
     #[test]
     fn command_line_splitting_and_expansion() {
         assert_eq!(
@@ -692,6 +694,8 @@ mod tests {
         assert_eq!(expand_args("100%% %1", f), r#"100% "C:\My Docs\a b.txt""#);
     }
 
+    // Windows paths (`C:\…` parents, drive-absolute) only parse as such on Windows.
+    #[cfg(windows)]
     #[test]
     fn open_with_list() {
         let r = sample();

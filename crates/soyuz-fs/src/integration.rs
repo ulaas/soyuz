@@ -2,8 +2,15 @@
 //!
 //! * the opt-in "default file manager" registration: per-user `HKCU\Software\Classes`
 //!   verbs for `Directory` and `Drive`, written with advapi32 only (no shell API), with an
-//!   exact undo ([`restore_explorer`]) driven by a backup stored under `HKCU\Software\Soyuz`;
-//! * the user's Downloads folder (from the registry, no `SHGetKnownFolderPath`);
+//!   exact undo ([`restore_explorer`]) driven by a backup stored under `HKCU\Software\Soyuz`.
+//!   Linux / BSD: `inode/directory=soyuz.desktop` in `[Default Applications]` of
+//!   `$XDG_CONFIG_HOME/mimeapps.list` (the rest of the file kept byte for byte) plus
+//!   `$XDG_DATA_HOME/applications/soyuz.desktop` pointing at the running executable; the
+//!   backup (`$XDG_DATA_HOME/soyuz/default-file-manager.json`) records exactly what was
+//!   changed so [`restore_explorer`] puts it back. A D-Bus activation file for
+//!   `org.freedesktop.FileManager1` is a separate opt-in ([`register_file_manager1_service`]);
+//! * the user's Downloads folder (from the registry, no `SHGetKnownFolderPath`; Linux:
+//!   `user-dirs.dirs`);
 //! * Authenticode verification of a downloaded installer ([`authenticode`]).
 //!
 //! `Folder` is deliberately left alone: it also covers shell-namespace folders (This PC,
@@ -18,7 +25,10 @@ pub const VERB: &str = "soyuz";
 /// Classes whose default "open" verb Soyuz takes over.
 pub const CLASSES: [&str; 2] = ["Directory", "Drive"];
 
-/// Where the registration is written (both relative to `HKEY_CURRENT_USER`).
+/// Where the registration is written. Windows: both relative to `HKEY_CURRENT_USER`.
+/// Linux / BSD: `classes` is the config folder holding `mimeapps.list`
+/// (`$XDG_CONFIG_HOME`) and `state` the data folder (`$XDG_DATA_HOME`) that receives
+/// `applications/soyuz.desktop`, `dbus-1/services/…` and the backup under `soyuz/`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssocKeys {
     /// The per-user classes root, normally `Software\Classes`.
@@ -28,13 +38,24 @@ pub struct AssocKeys {
 }
 
 impl AssocKeys {
-    /// The real per-user association keys.
+    /// The real per-user association keys (Linux / BSD: the real XDG folders).
     pub fn user() -> Self {
+        if cfg!(all(unix, not(target_os = "macos"))) {
+            let s = |p: PathBuf| p.to_string_lossy().into_owned();
+            return AssocKeys {
+                classes: s(crate::launch::linux::config_home()),
+                state: s(crate::launch::linux::data_home()),
+            };
+        }
         AssocKeys { classes: r"Software\Classes".into(), state: r"Software\Soyuz\DefaultFileManager".into() }
     }
 
     /// A sandbox under `HKCU\<base>` (tests): `<base>\Classes` and `<base>\State`.
+    /// Linux / BSD: `<base>/config` and `<base>/data` (`base` is a folder path).
     pub fn sandbox(base: &str) -> Self {
+        if cfg!(all(unix, not(target_os = "macos"))) {
+            return AssocKeys { classes: format!("{base}/config"), state: format!("{base}/data") };
+        }
         AssocKeys { classes: format!(r"{base}\Classes"), state: format!(r"{base}\State") }
     }
 }
@@ -52,8 +73,12 @@ pub enum FileManagerStatus {
     Unsupported,
 }
 
-/// Command line written for the verb: `"<exe>" "%1"`.
+/// Command line written for the verb: `"<exe>" "%1"`. Linux / BSD: the desktop entry's
+/// `Exec=` value, `<exe> %U` (quoted per the Desktop Entry spec when needed).
 pub fn open_command(exe: &Path) -> String {
+    if cfg!(all(unix, not(target_os = "macos"))) {
+        return format!("{} %U", crate::launch::linux::desktop::exec_quote(&exe.to_string_lossy()));
+    }
     format!("\"{}\" \"%1\"", crate::strip_verbatim(exe).display())
 }
 
@@ -195,12 +220,16 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(all(unix, not(target_os = "macos")))]
+#[path = "integration/linux.rs"]
+mod imp;
+
+#[cfg(not(any(windows, all(unix, not(target_os = "macos")))))]
 mod imp {
     use super::*;
 
     fn unsupported() -> io::Error {
-        io::Error::new(io::ErrorKind::Unsupported, "default file manager registration is Windows-only for now")
+        io::Error::new(io::ErrorKind::Unsupported, "default file manager registration is not supported here")
     }
 
     pub fn status(_keys: &AssocKeys) -> FileManagerStatus {
@@ -249,6 +278,63 @@ pub fn downloads_dir() -> PathBuf {
 /// Authenticode signature check (Windows); [`Signature::Unknown`] elsewhere.
 pub fn authenticode(path: &Path) -> Signature {
     imp::authenticode(path)
+}
+
+/// Install `$XDG_DATA_HOME/dbus-1/services/org.freedesktop.FileManager1.service` so
+/// D-Bus starts `exe --dbus-file-manager` when an application asks the file manager to
+/// show something. Opt-in and separate from [`register_file_manager`]; the previous file
+/// (if any) is backed up for [`restore_file_manager1_service`]. Linux / BSD only. The app
+/// must then own the bus name and implement `ShowFolders` / `ShowItems` /
+/// `ShowItemProperties`.
+pub fn register_file_manager1_service(keys: &AssocKeys, exe: &Path) -> io::Result<()> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        imp::register_service(keys, exe)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let _ = (keys, exe);
+        Err(io::Error::new(io::ErrorKind::Unsupported, "D-Bus services are Linux-only"))
+    }
+}
+
+/// Undo [`register_file_manager1_service`] (only when the file is still ours).
+pub fn restore_file_manager1_service(keys: &AssocKeys) -> io::Result<()> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        imp::restore_service(keys)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let _ = keys;
+        Ok(())
+    }
+}
+
+/// Whether our `FileManager1` D-Bus service file is installed.
+pub fn file_manager1_service_registered(keys: &AssocKeys) -> bool {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        imp::service_registered(keys)
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        let _ = keys;
+        false
+    }
+}
+
+/// The desktop file id that currently opens folders (`org.gnome.Nautilus.desktop`,
+/// `soyuz.desktop`, …), from the full `mimeapps.list` resolution. Linux / BSD only.
+pub fn folder_handler() -> Option<String> {
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        imp::folder_handler()
+    }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
+    {
+        None
+    }
 }
 
 #[cfg(all(test, windows))]
