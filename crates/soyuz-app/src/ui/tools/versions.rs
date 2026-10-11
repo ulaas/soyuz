@@ -55,10 +55,21 @@ pub fn begin_frame(app: &SoyuzApp) {
     });
 }
 
-/// Previous versions are on in the config and this platform has a snapshot provider.
+/// Previous versions are on in the config and this platform has a snapshot provider
+/// (Windows: shadow copies; Linux: snapper, ZFS and Timeshift snapshots). Whether the
+/// volume of a given file has snapshots is only known after the (blocking) scan, which the
+/// panel runs on a worker and explains when it finds none.
 pub fn enabled() -> bool {
-    cfg!(windows) && CFG.with_borrow(|c| c.enabled)
+    supported() && CFG.with_borrow(|c| c.enabled)
 }
+
+/// `soyuz_fs::snapshots::providers()` is non-empty on this platform.
+pub fn supported() -> bool {
+    cfg!(any(windows, target_os = "linux"))
+}
+
+/// Linux wording (snapshots instead of shadow copies, no elevation).
+const LINUX: bool = cfg!(target_os = "linux");
 
 fn cfg() -> Cfg {
     CFG.with_borrow(|c| c.clone())
@@ -154,7 +165,9 @@ impl VersionsPanel {
         let mut out = None;
         ui.horizontal(|ui| {
             ui.label(
-                RichText::new(tr!("tools-versions-intro")).font(FontId::proportional(11.5)).color(p.text_tertiary),
+                RichText::new(if LINUX { tr!("tools-versions-intro-linux") } else { tr!("tools-versions-intro") })
+                    .font(FontId::proportional(11.5))
+                    .color(p.text_tertiary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if crate::ui::widgets::icon_button(
@@ -174,9 +187,13 @@ impl VersionsPanel {
             None => {
                 super::progress_bar(ui, ui.available_width(), None);
                 ui.label(
-                    RichText::new(tr!("tools-versions-looking"))
-                        .font(FontId::proportional(12.0))
-                        .color(p.text_secondary),
+                    RichText::new(if LINUX {
+                        tr!("tools-versions-looking-linux")
+                    } else {
+                        tr!("tools-versions-looking")
+                    })
+                    .font(FontId::proportional(12.0))
+                    .color(p.text_secondary),
                 );
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
                 return None;
@@ -195,7 +212,10 @@ impl VersionsPanel {
         if report.versions.is_empty() {
             let (title, body) = empty_text(&report, self.is_dir);
             note(ui, if report.denied > 0 { ph::SHIELD_WARNING } else { ph::CLOCK_COUNTER_CLOCKWISE }, &title, &body);
+            // Elevation only helps on Windows; a root-only snapper folder needs snapper's
+            // ALLOW_USERS instead (explained in the note).
             if report.denied > 0
+                && cfg!(windows)
                 && button(ui, Some(ph::SHIELD_CHECK), tr!("tools-versions-elevate"), 0, true)
                     .on_hover_text(tr!("tools-versions-elevate-tip"))
                     .clicked()
@@ -206,9 +226,13 @@ impl VersionsPanel {
         }
         if report.denied > 0 {
             ui.label(
-                RichText::new(tr!("tools-versions-denied-more", count = report.denied))
-                    .font(FontId::proportional(11.5))
-                    .color(p.warning),
+                RichText::new(if LINUX {
+                    tr!("tools-versions-denied-more-linux", count = report.denied)
+                } else {
+                    tr!("tools-versions-denied-more", count = report.denied)
+                })
+                .font(FontId::proportional(11.5))
+                .color(p.warning),
             );
         }
         // List.
@@ -382,6 +406,26 @@ impl VersionsPanel {
 /// Title + body for an empty result, explaining why.
 pub fn empty_text(r: &VersionsReport, is_dir: bool) -> (String, String) {
     let kind = if is_dir { "folder" } else { "file" };
+    if LINUX {
+        return if r.denied > 0 {
+            (
+                tr!("tools-versions-denied-linux").into(),
+                tr!(
+                    "tools-versions-denied-linux-body",
+                    count = r.denied,
+                    kind = kind,
+                    user = std::env::var("USER").unwrap_or_else(|_| "<user>".into())
+                ),
+            )
+        } else if r.snapshots_seen > 0 {
+            (
+                tr!("tools-versions-none").into(),
+                tr!("tools-versions-none-body-linux", count = r.snapshots_seen, kind = kind),
+            )
+        } else {
+            (tr!("tools-versions-no-copies-linux").into(), tr!("tools-versions-no-copies-body-linux").into())
+        };
+    }
     if r.denied > 0 {
         (
             tr!("tools-versions-admin-needed").into(),
@@ -406,6 +450,7 @@ pub fn snapshot_label(v: &PathVersion, date: &DateFormat) -> String {
 fn provider_name(v: &PathVersion) -> &'static str {
     match v.snapshot.provider {
         "Shadow copy" => tr!("tools-versions-shadow-copy"),
+        "ZFS snapshot" => tr!("tools-versions-zfs-snapshot"),
         other => other,
     }
 }
@@ -586,6 +631,22 @@ mod tests {
     use std::time::Duration;
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn empty_results_explain_why_linux() {
+        let none = VersionsReport::default();
+        assert_eq!(empty_text(&none, false).0, "No snapshots on this volume");
+        let denied = VersionsReport { denied: 1, ..VersionsReport::default() };
+        let (t, b) = empty_text(&denied, true);
+        assert_eq!(t, "Snapshots aren't readable for your account");
+        assert!(b.contains("a snapshot folder") && b.contains("ALLOW_USERS") && b.contains("folder"), "{b}");
+        let seen = VersionsReport { snapshots_seen: 2, ..VersionsReport::default() };
+        assert!(
+            empty_text(&seen, false).1.contains("2 snapshots of this volume holds a different version of this file")
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
     fn empty_results_explain_why() {
         let none = VersionsReport::default();
         assert_eq!(empty_text(&none, false).0, "No shadow copies on this volume");

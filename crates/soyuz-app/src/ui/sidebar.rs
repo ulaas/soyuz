@@ -611,9 +611,14 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         return;
     }
     let active = matches!(c.current, Location::Computer);
-    let r =
-        NavRow { icon: ph::DESKTOP_TOWER, label: tr!("app-sidebar-this-pc"), active, icon_color: None, usage: None }
-            .show(ui);
+    let r = NavRow {
+        icon: ph::DESKTOP_TOWER,
+        label: if cfg!(windows) { tr!("app-sidebar-this-pc") } else { tr!("app-sidebar-computer") },
+        active,
+        icon_color: None,
+        usage: None,
+    }
+    .show(ui);
     if r.clicked() {
         c.cmds.push(Cmd::FocusPane(c.pane));
         c.cmds.push(Cmd::Navigate { pane: c.pane, location: Location::Computer, select: None });

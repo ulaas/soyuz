@@ -428,6 +428,9 @@ pub struct Sidebar {
     pub tree_drag_expand_ms: u32,
     /// Folders pinned to the Portal section (drop folders on it to add), in order.
     pub portal: Vec<PortalPin>,
+    /// Linux: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared with Nautilus
+    /// and other GTK file managers) under Favorites.
+    pub gtk_bookmarks: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -842,6 +845,9 @@ pub struct TagsSection {
     /// An empty entry (or a missing one) shows the translated color name; names are
     /// trimmed and cut at 40 characters.
     pub names: Vec<String>,
+    /// Linux: mirror color tags to the `user.xdg.tags` extended attribute, so Dolphin and
+    /// other apps that read it see them (no effect elsewhere).
+    pub sync_xdg_tags: bool,
 }
 
 impl TagsSection {

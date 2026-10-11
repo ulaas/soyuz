@@ -188,6 +188,7 @@ ops-elevate-failed = { $name } yönetici olarak çalıştırılamadı
 ops-place-home = Giriş
 ops-place-trash = Çöp Kutusu
 ops-place-computer = Bu bilgisayar
+ops-place-computer-unix = Bilgisayar
 ops-place-recent = Son kullanılanlar
 ops-place-timeline = Zaman çizelgesi
 ops-place-tag = Etiket: { $name }

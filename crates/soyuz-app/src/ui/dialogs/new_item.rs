@@ -30,7 +30,8 @@ impl LinkChoice {
 
     fn hint(self) -> &'static str {
         match self {
-            LinkChoice::Symlink => tr!("dialogs-link-symlink-hint"),
+            LinkChoice::Symlink if cfg!(windows) => tr!("dialogs-link-symlink-hint"),
+            LinkChoice::Symlink => tr!("dialogs-link-symlink-hint-unix"),
             LinkChoice::Hardlink => tr!("dialogs-link-hardlink-hint"),
             LinkChoice::Junction => tr!("dialogs-link-junction-hint"),
         }

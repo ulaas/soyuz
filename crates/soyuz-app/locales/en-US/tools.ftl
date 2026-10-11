@@ -487,8 +487,10 @@ tools-report-more = … and { $count } more
 tools-versions-title = Previous versions
 tools-versions-off = Previous versions are turned off (Settings › Jobs › Sync & versions).
 tools-versions-intro = Earlier versions from shadow copies (snapshots Windows takes for restore points and backups).
+tools-versions-intro-linux = Earlier versions from snapshots of this volume (Snapper, ZFS or Timeshift).
 tools-versions-look-again = Look again
 tools-versions-looking = Looking for shadow copies…
+tools-versions-looking-linux = Looking for snapshots…
 tools-versions-list-failed = Can't list previous versions
 tools-versions-unsupported = Not available here
 tools-versions-elevate = Open Soyuz as administrator
@@ -496,6 +498,10 @@ tools-versions-elevate-tip = Starts another Soyuz window with administrator righ
 tools-versions-denied-more = { $count ->
     [one] { $count } more shadow copy could not be read without administrator rights.
    *[other] { $count } more shadow copies could not be read without administrator rights.
+}
+tools-versions-denied-more-linux = { $count ->
+    [one] { $count } more snapshot folder could not be read with your account's rights.
+   *[other] { $count } more snapshot folders could not be read with your account's rights.
 }
 tools-versions-copy-to = Copy to…
 tools-versions-restore = Restore
@@ -518,6 +524,15 @@ tools-versions-admin-needed-body = This volume has { $count ->
     [folder] folder
    *[other] file
     }.
+tools-versions-denied-linux = Snapshots aren't readable for your account
+# $kind: "file" | "folder"; $user: the account name.
+tools-versions-denied-linux-body = This volume has { $count ->
+    [one] a snapshot folder
+   *[other] { $count } snapshot folders
+    } that only root may read (snapper's /.snapshots usually is). To see earlier versions of this { $kind ->
+    [folder] folder
+   *[other] file
+    }, let your user read them, e.g. sudo snapper -c root set-config ALLOW_USERS={ $user } SYNC_ACL=yes.
 tools-versions-none = No earlier versions
 tools-versions-none-body = None of the { $count ->
     [one] { $count } shadow copy
@@ -526,9 +541,19 @@ tools-versions-none-body = None of the { $count ->
     [folder] folder
    *[other] file
     }.
+tools-versions-none-body-linux = None of the { $count ->
+    [one] { $count } snapshot
+   *[other] { $count } snapshots
+    } of this volume holds a different version of this { $kind ->
+    [folder] folder
+   *[other] file
+    }.
 tools-versions-no-copies = No shadow copies on this volume
 tools-versions-no-copies-body = Windows creates shadow copies for restore points, Windows Backup and File History (System Protection must be on for the drive). None exist yet.
+tools-versions-no-copies-linux = No snapshots on this volume
+tools-versions-no-copies-body-linux = Soyuz reads Snapper snapshots (<mount>/.snapshots), ZFS snapshots (<mount>/.zfs/snapshot) and Timeshift snapshots on mounted drives. None were found for this volume.
 tools-versions-shadow-copy = Shadow copy
+tools-versions-zfs-snapshot = ZFS snapshot
 # $provider: snapshot kind ("Shadow copy").
 tools-versions-snapshot-time = { $provider }  ·  { $date }
 tools-versions-snapshot-seq = { $provider } #{ $seq }

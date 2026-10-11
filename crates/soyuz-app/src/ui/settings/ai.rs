@@ -722,6 +722,19 @@ fn model_choice(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile, ai: &Ai
 
 fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {
     let p = palette(ui.ctx());
+    if cfg!(target_os = "linux") && !prof.kind.is_local() && store_available(ui) == Some(false) {
+        ui.horizontal_top(|ui| {
+            ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
+            ui.add(
+                egui::Label::new(
+                    RichText::new(tr!("settings-ai-store-unavailable", store = store_name()))
+                        .size(11.5)
+                        .color(p.warning),
+                )
+                .wrap(),
+            );
+        });
+    }
     ui.horizontal(|ui| {
         let reference = prof.key.clone();
         match st.status(ui, &reference) {
@@ -791,7 +804,40 @@ fn key_row(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile) {
 }
 
 fn store_name() -> &'static str {
-    if cfg!(windows) { tr!("settings-ai-store-windows") } else { tr!("settings-ai-store-other") }
+    if cfg!(windows) {
+        tr!("settings-ai-store-windows")
+    } else if cfg!(target_os = "linux") {
+        tr!("settings-ai-store-linux")
+    } else {
+        tr!("settings-ai-store-other")
+    }
+}
+
+/// Whether the OS credential store answers (`None` while checking). Linux asks the
+/// Secret Service over D-Bus, which can take seconds: checked once on a worker thread.
+fn store_available(ui: &Ui) -> Option<bool> {
+    use std::sync::atomic::{AtomicU8, Ordering};
+    // 0 = not started, 1 = checking, 2 = unavailable, 3 = available.
+    static STATE: AtomicU8 = AtomicU8::new(0);
+    match STATE.load(Ordering::Acquire) {
+        2 => Some(false),
+        3 => Some(true),
+        1 => None,
+        _ => {
+            if STATE.compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+                let wake = wake_of(ui);
+                let spawned = std::thread::Builder::new().name("soyuz-keyring-probe".into()).spawn(move || {
+                    let ok = soyuz_ai::credentials::store_available();
+                    STATE.store(if ok { 3 } else { 2 }, Ordering::Release);
+                    wake();
+                });
+                if spawned.is_err() {
+                    STATE.store(2, Ordering::Release);
+                }
+            }
+            None
+        }
+    }
 }
 
 fn spend_row(ui: &mut Ui, st: &AiPageState, prof: &AiProfile, prices: &PriceTable, warn: u32) {

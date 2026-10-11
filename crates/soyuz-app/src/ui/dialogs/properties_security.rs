@@ -117,9 +117,13 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
             }
             Ok(Some(_)) => {
                 ui.label(
-                    RichText::new(tr!("dialogs-sec-owner-admin"))
-                        .font(FontId::proportional(11.5))
-                        .color(p.text_tertiary),
+                    RichText::new(if cfg!(windows) {
+                        tr!("dialogs-sec-owner-admin")
+                    } else {
+                        tr!("dialogs-sec-owner-root")
+                    })
+                    .font(FontId::proportional(11.5))
+                    .color(p.text_tertiary),
                 );
             }
             Ok(None) => {}
@@ -217,14 +221,12 @@ pub fn show(ui: &mut Ui, loaded: Option<&Loaded>, owner: Option<&mut OwnerEdit>)
                         }
                     });
                 });
-            if cfg!(windows) {
-                ui.add_space(4.0);
-                ui.label(
-                    RichText::new(tr!("dialogs-sec-read-only-view"))
-                        .font(FontId::proportional(11.0))
-                        .color(p.text_tertiary),
-                );
-            }
+            ui.add_space(4.0);
+            let note =
+                if cfg!(windows) { tr!("dialogs-sec-read-only-view") } else { tr!("dialogs-sec-read-only-view-unix") };
+            ui.add(
+                egui::Label::new(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary)).wrap(),
+            );
         }
     }
 }

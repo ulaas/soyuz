@@ -153,6 +153,7 @@ app-sidebar-settings = Settings
 app-sidebar-settings-tip = Settings  ({ $key })
 app-sidebar-remove-favorite = Remove from favorites
 app-sidebar-this-pc = This PC
+app-sidebar-computer = Computer
 # $path is the mount point; $free / $total are formatted sizes.
 app-sidebar-volume-tip = { $path }
     { $free } free of { $total }

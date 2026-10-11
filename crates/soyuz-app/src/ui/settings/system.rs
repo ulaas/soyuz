@@ -18,7 +18,7 @@ use crate::theme::palette;
 use crate::ui::toasts::Toast;
 
 const CTX_ABOUT: &str = "About updates version";
-const CTX_FM: &str = "General default file manager explorer folders drives integration os desktop";
+const CTX_FM: &str = "General default file manager explorer folders drives integration os desktop mimeapps dbus";
 
 fn mib(b: u64) -> String {
     format!("{} MiB", soyuz_core::locale::format_decimal(b as f64 / (1024.0 * 1024.0), 1))
@@ -285,11 +285,28 @@ struct FmState {
     busy: bool,
     /// Result of the last register / restore to report as a toast.
     outcome: Option<Result<&'static str, String>>,
+    /// Linux: display name of the app that opens folders now (mimeapps.list).
+    handler: Option<String>,
+    /// Linux: our `org.freedesktop.FileManager1` D-Bus service file is installed.
+    service: bool,
 }
 
-static FM: Mutex<FmState> = Mutex::new(FmState { status: None, busy: false, outcome: None });
+static FM: Mutex<FmState> =
+    Mutex::new(FmState { status: None, busy: false, outcome: None, handler: None, service: false });
 
-fn fm_refresh(ctx: &egui::Context, action: Option<bool>) {
+/// What a click asks the worker to do.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FmAction {
+    Register,
+    Restore,
+    /// Linux: install / remove the FileManager1 D-Bus service file.
+    RegisterService,
+    RestoreService,
+}
+
+const LINUX: bool = cfg!(target_os = "linux");
+
+fn fm_refresh(ctx: &egui::Context, action: Option<FmAction>) {
     {
         let mut s = FM.lock();
         if s.busy {
@@ -300,21 +317,32 @@ fn fm_refresh(ctx: &egui::Context, action: Option<bool>) {
     let ctx = ctx.clone();
     std::thread::spawn(move || {
         let keys = AssocKeys::user();
-        let outcome = match action {
-            Some(true) => Some(
-                std::env::current_exe()
-                    .and_then(|exe| integration::register_file_manager(&keys, &exe))
-                    .map(|()| tr!("settings-fm-registered"))
-                    .map_err(|e| e.to_string()),
-            ),
-            Some(false) => Some(
-                integration::restore_explorer(&keys).map(|()| tr!("settings-fm-restored")).map_err(|e| e.to_string()),
-            ),
-            None => None,
-        };
+        let outcome = action.map(|a| match a {
+            FmAction::Register => std::env::current_exe()
+                .and_then(|exe| integration::register_file_manager(&keys, &exe))
+                .map(|()| tr!("settings-fm-registered"))
+                .map_err(|e| e.to_string()),
+            FmAction::Restore => integration::restore_explorer(&keys)
+                .map(|()| if LINUX { tr!("settings-fm-restored-linux") } else { tr!("settings-fm-restored") })
+                .map_err(|e| e.to_string()),
+            FmAction::RegisterService => std::env::current_exe()
+                .and_then(|exe| integration::register_file_manager1_service(&keys, &exe))
+                .map(|()| tr!("settings-fm1-installed"))
+                .map_err(|e| e.to_string()),
+            FmAction::RestoreService => integration::restore_file_manager1_service(&keys)
+                .map(|()| tr!("settings-fm1-removed"))
+                .map_err(|e| e.to_string()),
+        });
         let status = integration::file_manager_status(&keys);
+        let (handler, service) = if LINUX {
+            (folder_handler_name(), integration::file_manager1_service_registered(&keys))
+        } else {
+            (None, false)
+        };
         let mut s = FM.lock();
         s.status = Some(status);
+        s.handler = handler;
+        s.service = service;
         s.busy = false;
         if outcome.is_some() {
             s.outcome = outcome;
@@ -324,16 +352,37 @@ fn fm_refresh(ctx: &egui::Context, action: Option<bool>) {
     });
 }
 
+/// Linux: the name of the app that opens folders now ("Files", "Dolphin", …), falling
+/// back to its desktop file id. Reads desktop entries: worker thread only.
+fn folder_handler_name() -> Option<String> {
+    let id = integration::folder_handler()?;
+    let name = soyuz_fs::launch::default_app_for(&soyuz_fs::home())
+        .filter(|a| a.id == id || a.id.trim_end_matches(".desktop") == id.trim_end_matches(".desktop"))
+        .map(|a| a.name)
+        .filter(|n| !n.trim().is_empty());
+    Some(name.unwrap_or_else(|| id.trim_end_matches(".desktop").to_string()))
+}
+
 fn exe_path() -> Option<PathBuf> {
     std::env::current_exe().ok()
+}
+
+/// This copy runs from a build folder or a temp folder (registering it is fragile).
+fn temp_copy(exe: &std::path::Path) -> bool {
+    let s = exe.to_string_lossy().to_ascii_lowercase();
+    if cfg!(windows) {
+        s.contains("\\target\\debug\\") || s.contains("\\target\\release\\") || s.contains("\\temp\\")
+    } else {
+        s.contains("/target/debug/") || s.contains("/target/release/") || s.starts_with("/tmp/")
+    }
 }
 
 /// Settings → General → "Default file manager" (first group on the page).
 pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
-    let (status, busy, outcome) = {
+    let (status, busy, outcome, handler, service) = {
         let mut s = FM.lock();
-        (s.status.clone(), s.busy, s.outcome.take())
+        (s.status.clone(), s.busy, s.outcome.take(), s.handler.clone(), s.service)
     };
     if status.is_none() && !busy {
         fm_refresh(ui.ctx(), None);
@@ -347,16 +396,25 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         }
         None => {}
     }
-    let mut act: Option<bool> = None;
+    let mut act: Option<FmAction> = None;
+    let handler = handler.unwrap_or_else(|| tr!("settings-fm-handler-unknown").to_string());
+    let desc =
+        if LINUX { tr!("settings-fm-desc-linux", handler = handler.as_str()) } else { tr!("settings-fm-desc").into() };
     let any = group(ui, q, CTX_FM, tr!("settings-fm"), |r| {
-        r.block(tr!("settings-fm-open-with"), tr!("settings-fm-desc"), |ui| {
+        r.block(tr!("settings-fm-open-with"), &desc, |ui| {
             let (label, color) = match &status {
                 None => (tr!("settings-fm-checking").to_string(), p.text_tertiary),
+                Some(FileManagerStatus::NotRegistered) if LINUX => {
+                    (tr!("settings-fm-status-other", handler = handler.as_str()), p.text_secondary)
+                }
                 Some(FileManagerStatus::NotRegistered) => {
                     (tr!("settings-fm-status-explorer").to_string(), p.text_secondary)
                 }
                 Some(FileManagerStatus::Registered { command }) => {
                     (tr!("settings-fm-status-soyuz", command = command), p.success)
+                }
+                Some(FileManagerStatus::Modified) if LINUX => {
+                    (tr!("settings-fm-status-modified-linux").to_string(), p.warning)
                 }
                 Some(FileManagerStatus::Modified) => (tr!("settings-fm-status-modified").to_string(), p.warning),
                 Some(FileManagerStatus::Unsupported) => {
@@ -364,15 +422,15 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             };
             ui.add(egui::Label::new(RichText::new(label).size(12.0).color(color)).wrap());
-            if let Some(exe) = exe_path() {
-                let s = exe.to_string_lossy().to_ascii_lowercase();
-                if s.contains("\\target\\debug\\") || s.contains("\\target\\release\\") || s.contains("\\temp\\") {
-                    ui.label(
-                        RichText::new(tr!("settings-fm-temp-copy", path = exe.display().to_string()))
-                            .size(11.5)
-                            .color(p.warning),
-                    );
-                }
+            if let Some(exe) = exe_path()
+                && temp_copy(&exe)
+            {
+                let note = if LINUX {
+                    tr!("settings-fm-temp-copy-linux", path = exe.display().to_string())
+                } else {
+                    tr!("settings-fm-temp-copy", path = exe.display().to_string())
+                };
+                ui.label(RichText::new(note).size(11.5).color(p.warning));
             }
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -382,12 +440,13 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     let label =
                         if registered { tr!("settings-fm-reregister") } else { tr!("settings-fm-make-default") };
                     if small_button(ui, Some(ph::FOLDER_OPEN), label, false).clicked() {
-                        act = Some(true);
+                        act = Some(FmAction::Register);
                     }
                     let can_restore = !matches!(status, Some(FileManagerStatus::NotRegistered));
                     ui.add_enabled_ui(can_restore, |ui| {
-                        if small_button(ui, Some(ph::ARROW_U_UP_LEFT), tr!("settings-fm-restore"), false).clicked() {
-                            act = Some(false);
+                        let label = if LINUX { tr!("settings-fm-restore-linux") } else { tr!("settings-fm-restore") };
+                        if small_button(ui, Some(ph::ARROW_U_UP_LEFT), label, false).clicked() {
+                            act = Some(FmAction::Restore);
                         }
                     });
                 });
@@ -396,6 +455,36 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             });
         });
+        // Linux: the D-Bus activation file that lets other apps' "Show in folder" start
+        // Soyuz. Separate from (and independent of) the folder handler.
+        if LINUX {
+            r.block(tr!("settings-fm1"), tr!("settings-fm1-desc"), |ui| {
+                let (label, color) = match (&status, service) {
+                    (None, _) => (tr!("settings-fm-checking"), p.text_tertiary),
+                    (_, true) => (tr!("settings-fm1-status-on"), p.success),
+                    (_, false) => (tr!("settings-fm1-status-off"), p.text_secondary),
+                };
+                ui.add(egui::Label::new(RichText::new(label).size(12.0).color(color)).wrap());
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    ui.add_enabled_ui(status.is_some() && !busy, |ui| {
+                        let label = if service { tr!("settings-fm-reregister") } else { tr!("settings-fm1-install") };
+                        if small_button(ui, Some(ph::PLUGS_CONNECTED), label, false).clicked() {
+                            act = Some(FmAction::RegisterService);
+                        }
+                        ui.add_enabled_ui(service, |ui| {
+                            if small_button(ui, Some(ph::ARROW_U_UP_LEFT), tr!("settings-fm1-remove"), false).clicked()
+                            {
+                                act = Some(FmAction::RestoreService);
+                            }
+                        });
+                    });
+                    if busy {
+                        ui.spinner();
+                    }
+                });
+            });
+        }
     });
     if let Some(a) = act {
         fm_refresh(ui.ctx(), Some(a));

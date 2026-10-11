@@ -271,6 +271,7 @@ Editable toolbar: action names plus `"|"` (separator), `"spacer"`, `"breadcrumb"
 | `mode` | `"places"` \| `"tree"` \| `"both"` | `"places"` | `places` \| `tree` \| `both`. (`places`: Favorites, devices, portal, tags … (no disk tree); `tree`: Only the disk tree (drives + home), filling the sidebar; `both`: The places sections with the disk tree as the `tree` section) |
 | `tree_follow` | boolean | `true` | Expand the tree to the active pane's folder and highlight it. |
 | `tree_drag_expand_ms` | integer | `700` | Hovering a drag over a collapsed tree folder expands it after this delay (milliseconds; 0 = never). |
+| `gtk_bookmarks` | boolean | `true` | Linux: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared with Nautilus and other GTK file managers) under Favorites. |
 
 ## `[[sidebar.portal]]`
 
@@ -290,6 +291,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `names` | array of strings | `["", "", "", "", "", "", "", ""]` | Custom names in color order (red, orange, yellow, green, cyan, blue, purple, gray). An empty entry (or a missing one) shows the translated color name; names are trimmed and cut at 40 characters. |
+| `sync_xdg_tags` | boolean | `true` | Linux: mirror color tags to the `user.xdg.tags` extended attribute, so Dolphin and other apps that read it see them (no effect elsewhere). |
 
 ## `[columns]`
 

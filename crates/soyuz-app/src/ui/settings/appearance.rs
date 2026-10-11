@@ -99,7 +99,12 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             },
         );
-        r.row_kw(tr!("settings-appearance-accent"), tr!("settings-appearance-accent-desc"), "color colour", |ui| {
+        let accent_desc = if cfg!(windows) {
+            tr!("settings-appearance-accent-desc")
+        } else {
+            tr!("settings-appearance-accent-desc-unix")
+        };
+        r.row_kw(tr!("settings-appearance-accent"), accent_desc, "color colour", |ui| {
             super::themes_ui::accent_row(ui, d, &p);
         });
         r.row_kw(
@@ -217,7 +222,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
         r.row_kw(
             tr!("settings-appearance-pdf-thumbs"),
-            tr!("settings-appearance-pdf-thumbs-desc"),
+            if cfg!(windows) {
+                tr!("settings-appearance-pdf-thumbs-desc")
+            } else {
+                tr!("settings-appearance-pdf-thumbs-desc-unix")
+            },
             "pdf pdfium page document",
             |ui| {
                 switch(ui, &mut d.appearance.pdf_thumbnails);
@@ -232,6 +241,15 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     switch(ui, &mut d.appearance.os_thumbnail_cache);
                 },
             );
+        } else if cfg!(target_os = "linux") {
+            r.row_kw(
+                tr!("settings-appearance-os-thumbs-linux"),
+                tr!("settings-appearance-os-thumbs-desc-linux"),
+                "thumbcache freedesktop thumbnails cache video",
+                |ui| {
+                    switch(ui, &mut d.appearance.os_thumbnail_cache);
+                },
+            );
         }
         r.row_kw(
             tr!("settings-appearance-gpu-backend"),
@@ -240,7 +258,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             |ui| {
                 use soyuz_core::config::GpuBackend;
                 let auto_desc = if cfg!(windows) { "Direct3D 12" } else { "" };
-                let items = [
+                let mut items = vec![
                     super::widgets::dd::Item::new(GpuBackend::Auto, tr!("settings-automatic"))
                         .secondary(auto_desc)
                         .icon(ph::MAGIC_WAND),
@@ -252,6 +270,10 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         .secondary(tr!("settings-appearance-gpu-compat"))
                         .icon(ph::CUBE),
                 ];
+                // Direct3D 12 is offered elsewhere only while a config still names it.
+                if !cfg!(windows) && d.performance.gpu_backend != GpuBackend::Dx12 {
+                    items.remove(1);
+                }
                 super::widgets::choice(ui, "gpu_backend", &mut d.performance.gpu_backend, &items, 190.0);
             },
         );
@@ -287,34 +309,42 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-appearance-titlebar"), desc, "titlebar window frame decorations chrome caption", |ui| {
             switch(ui, &mut d.appearance.custom_titlebar);
         });
-        r.row_kw(
-            tr!("settings-appearance-backdrop"),
-            tr!("settings-appearance-backdrop-desc"),
-            "mica acrylic translucent transparent blur material",
-            |ui| {
-                segmented(
-                    ui,
-                    &mut d.appearance.backdrop,
-                    &[(Backdrop::None, tr!("settings-none")), (Backdrop::Mica, "Mica"), (Backdrop::Acrylic, "Acrylic")],
-                );
-            },
-        );
-        r.row_kw(
-            tr!("settings-appearance-snap"),
-            tr!("settings-appearance-snap-desc"),
-            "snap maximize layouts flyout",
-            |ui| {
-                switch(ui, &mut d.appearance.snap_layouts);
-            },
-        );
-        r.row_kw(
-            tr!("settings-appearance-native-dialogs"),
-            tr!("settings-appearance-native-dialogs-desc"),
-            "native dialogs windows popup menus monitor outside clipped",
-            |ui| {
-                switch(ui, &mut d.appearance.native_dialogs);
-            },
-        );
+        // Mica / Acrylic, Snap Layouts and dialogs as separate OS windows are Windows-only
+        // (ui/native_chrome.rs and ui/native are no-ops elsewhere).
+        if cfg!(windows) {
+            r.row_kw(
+                tr!("settings-appearance-backdrop"),
+                tr!("settings-appearance-backdrop-desc"),
+                "mica acrylic translucent transparent blur material",
+                |ui| {
+                    segmented(
+                        ui,
+                        &mut d.appearance.backdrop,
+                        &[
+                            (Backdrop::None, tr!("settings-none")),
+                            (Backdrop::Mica, "Mica"),
+                            (Backdrop::Acrylic, "Acrylic"),
+                        ],
+                    );
+                },
+            );
+            r.row_kw(
+                tr!("settings-appearance-snap"),
+                tr!("settings-appearance-snap-desc"),
+                "snap maximize layouts flyout",
+                |ui| {
+                    switch(ui, &mut d.appearance.snap_layouts);
+                },
+            );
+            r.row_kw(
+                tr!("settings-appearance-native-dialogs"),
+                tr!("settings-appearance-native-dialogs-desc"),
+                "native dialogs windows popup menus monitor outside clipped",
+                |ui| {
+                    switch(ui, &mut d.appearance.native_dialogs);
+                },
+            );
+        }
     });
     any |= group(ui, q, ctx, tr!("settings-appearance-theme-colors"), |r| {
         r.block("", tr!("settings-appearance-theme-colors-desc"), |ui| {

@@ -156,7 +156,9 @@ pub fn location_title(loc: &Location) -> String {
             _ => soyuz_core::entry::display_name(archive),
         },
         Location::Trash => tr!("ops-place-trash").into(),
-        Location::Computer => tr!("ops-place-computer").into(),
+        Location::Computer => {
+            if cfg!(windows) { tr!("ops-place-computer") } else { tr!("ops-place-computer-unix") }.into()
+        }
         Location::Recent => tr!("ops-place-recent").into(),
         Location::Timeline => tr!("ops-place-timeline").into(),
         Location::Tags(t) => tr!("ops-place-tag", name = crate::services::tags::display_name(t)),
@@ -256,7 +258,7 @@ mod tests {
     #[test]
     fn titles() {
         assert_eq!(location_title(&Location::Dir(std::env::temp_dir().join("abc"))), "abc");
-        assert_eq!(location_title(&Location::Computer), "This PC");
+        assert_eq!(location_title(&Location::Computer), if cfg!(windows) { "This PC" } else { "Computer" });
         #[cfg(windows)]
         assert_eq!(location_title(&Location::Dir(r"C:\".into())), "C:");
     }

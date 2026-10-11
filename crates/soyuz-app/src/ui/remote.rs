@@ -796,7 +796,8 @@ impl Dialog for ConnectDialog {
             }
             if self.auth == AuthKind::Agent {
                 ui.add_space(4.0);
-                ui.label(RichText::new(tr!("remote-agent-note")).size(11.5).color(p.text_tertiary));
+                let note = if cfg!(windows) { tr!("remote-agent-note") } else { tr!("remote-agent-note-unix") };
+                ui.label(RichText::new(note).size(11.5).color(p.text_tertiary));
             }
         }
         field_label(ui, if s3 { tr!("remote-prefix") } else { tr!("remote-folder") });
@@ -817,7 +818,10 @@ impl Dialog for ConnectDialog {
             if self.auth != AuthKind::Anonymous && self.auth != AuthKind::Agent {
                 ui.horizontal(|ui| {
                     ui.add_space(24.0);
-                    ui.checkbox(&mut self.remember, tr!("remote-remember"));
+                    ui.checkbox(
+                        &mut self.remember,
+                        if cfg!(target_os = "linux") { tr!("remote-remember-linux") } else { tr!("remote-remember") },
+                    );
                 });
             }
         }
