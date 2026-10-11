@@ -8,6 +8,7 @@
 pub mod clipboard;
 pub mod dnd;
 pub mod dragout;
+pub mod linux_dnd;
 pub mod names;
 pub mod prompts;
 pub mod rename;

@@ -95,6 +95,11 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# wl_display / wl_surface / X11 window of the eframe window for external drag and drop
+# (`ops::fileops::linux_dnd`).
+raw-window-handle = "0.6.2"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 xattr.workspace = true
 

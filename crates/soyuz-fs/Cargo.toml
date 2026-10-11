@@ -91,3 +91,8 @@ workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true
 skrifa.workspace = true
+# External drag and drop: Wayland drop target on the window's own connection
+# (`sys/linux/wayland_dnd.rs`) and the X11 XDND drag source (`sys/linux/xdnd.rs`).
+x11rb.workspace = true
+wayland-client.workspace = true
+wayland-backend.workspace = true
