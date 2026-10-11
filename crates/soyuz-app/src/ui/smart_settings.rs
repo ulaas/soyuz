@@ -1,5 +1,5 @@
 //! Settings → Preview & search → tr!("settings-index"): turn the background index on, choose
-//! the indexed folders and exclusions, content indexing, the NTFS change journal,
+//! the indexed folders and exclusions, content indexing, the NTFS change journal (Windows),
 //! throttling; live status and tr!("settings-index-rebuild").
 
 use egui::{Id, RichText, TextEdit, Ui};
@@ -99,11 +99,28 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
                     ui.label(small(tr!("settings-index-journal-changes", count = st.journal_changes)));
                 }
                 ui.add_space(4.0);
-                let (glyph, text) = usn_text(&st.usn);
-                ui.horizontal_top(|ui| {
-                    ui.label(icons::icon(glyph, 13.0).color(p.text_tertiary));
-                    ui.add(egui::Label::new(small(text)).wrap());
-                });
+                // The NTFS change journal only exists on Windows.
+                if cfg!(windows) {
+                    let (glyph, text) = usn_text(&st.usn);
+                    ui.horizontal_top(|ui| {
+                        ui.label(icons::icon(glyph, 13.0).color(p.text_tertiary));
+                        ui.add(egui::Label::new(small(text)).wrap());
+                    });
+                }
+                let minutes = ix.rescan_interval_secs.div_ceil(60).max(1);
+                for root in &st.polled_roots {
+                    ui.horizontal_top(|ui| {
+                        ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
+                        ui.add(
+                            egui::Label::new(small(tr!(
+                                "settings-index-polled-root",
+                                root = root.display().to_string(),
+                                minutes = minutes
+                            )))
+                            .wrap(),
+                        );
+                    });
+                }
                 for w in &st.warnings {
                     ui.horizontal_top(|ui| {
                         ui.label(icons::icon(ph::WARNING, 13.0).color(p.warning));
@@ -166,6 +183,11 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
         r.block(tr!("settings-skip"), tr!("settings-index-skip-desc"), |ui| {
             list_field(ui, "exclude", &mut ix.exclude, "\n", true, "node_modules");
         });
+        if cfg!(target_os = "linux") {
+            r.block(tr!("settings-index-linux-exclude"), tr!("settings-index-linux-exclude-desc"), |ui| {
+                list_field(ui, "linux_exclude", &mut ix.linux_exclude, "\n", true, "~/.cache");
+            });
+        }
         r.row_kw(tr!("settings-index-content"), tr!("settings-index-content-desc"), "full text grep", |ui| {
             switch(ui, &mut ix.content);
         });
@@ -175,12 +197,22 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
         r.block(tr!("settings-index-content-types"), tr!("settings-index-content-types-desc"), |ui| {
             list_field(ui, "content_ext", &mut ix.content_extensions, ", ", false, "txt, md, rs");
         });
-        r.row_kw(tr!("settings-index-usn"), tr!("settings-index-usn-desc"), "usn admin fast startup", |ui| {
-            switch(ui, &mut ix.usn_journal);
-        });
+        if cfg!(windows) {
+            r.row_kw(tr!("settings-index-usn"), tr!("settings-index-usn-desc"), "usn admin fast startup", |ui| {
+                switch(ui, &mut ix.usn_journal);
+            });
+        }
         r.row_kw(tr!("settings-index-throttle"), tr!("settings-index-throttle-desc"), "throttle", |ui| {
             number(ui, &mut ix.throttle_ms, 0..=200, " ms");
         });
+        r.row_kw(
+            tr!("settings-index-rescan"),
+            tr!("settings-index-rescan-desc"),
+            "inotify watch limit poll rescan interval max_user_watches",
+            |ui| {
+                number(ui, &mut ix.rescan_interval_secs, 60..=86_400, " s");
+            },
+        );
         r.row(tr!("settings-index-smart-refresh"), tr!("settings-index-smart-refresh-desc"), |ui| {
             number(ui, &mut ix.smart_refresh_secs, 1..=120, " s");
         });

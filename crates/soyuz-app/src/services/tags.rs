@@ -645,7 +645,7 @@ mod tests {
         assert_eq!(name(0), red);
         assert_eq!(custom_name(0), None);
         let names = vec!["  Work ".into(), "   ".into(), "z".repeat(90)];
-        set_custom_names(&TagsSection { names });
+        set_custom_names(&TagsSection { names, ..Default::default() });
         assert_eq!(name(0), "Work");
         assert_eq!(display_name("red"), "Work");
         assert_eq!(display_name("RED"), "Work");

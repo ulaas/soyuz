@@ -405,13 +405,16 @@ tools-report-more = … ve { $count } tane daha
 tools-versions-title = Önceki sürümler
 tools-versions-off = Önceki sürümler kapalı (Ayarlar › İşler › Eşitleme ve sürümler).
 tools-versions-intro = Gölge kopyalardaki eski sürümler (Windows'un geri yükleme noktaları ve yedekler için aldığı anlık görüntüler).
+tools-versions-intro-linux = Bu birimin anlık görüntülerindeki eski sürümler (Snapper, ZFS ya da Timeshift).
 tools-versions-look-again = Yeniden ara
 tools-versions-looking = Gölge kopyalar aranıyor…
+tools-versions-looking-linux = Anlık görüntüler aranıyor…
 tools-versions-list-failed = Önceki sürümler listelenemiyor
 tools-versions-unsupported = Burada kullanılamaz
 tools-versions-elevate = Soyuz'u yönetici olarak aç
 tools-versions-elevate-tip = Yönetici haklarıyla yeni bir Soyuz penceresi açar (Windows önce onay ister)
 tools-versions-denied-more = { $count } gölge kopya daha yönetici hakları olmadan okunamadı.
+tools-versions-denied-more-linux = { $count } anlık görüntü klasörü daha hesabınızın haklarıyla okunamadı.
 tools-versions-copy-to = Şuraya kopyala…
 tools-versions-restore = Geri yükle
 tools-versions-restore-tip = Bu sürümü özgün konumuna geri kopyalar (değiştirmeden önce sorar; geri alınabilir)
@@ -427,14 +430,27 @@ tools-versions-admin-needed-body = Bu birimde { $count } gölge kopya var, ancak
     [folder] klasörün
    *[other] dosyanın
     } eski sürümlerini görmek için Soyuz'u yönetici olarak başlatın.
+tools-versions-denied-linux = Anlık görüntüler hesabınız için okunamıyor
+# $kind: "file" | "folder"; $user: the account name.
+tools-versions-denied-linux-body = Bu birimde yalnızca root'un okuyabildiği { $count } anlık görüntü klasörü var (snapper'ın /.snapshots klasörü genellikle böyledir). Bu { $kind ->
+    [folder] klasörün
+   *[other] dosyanın
+    } eski sürümlerini görmek için kullanıcınızın bunları okumasına izin verin, ör. sudo snapper -c root set-config ALLOW_USERS={ $user } SYNC_ACL=yes.
 tools-versions-none = Eski sürüm yok
 tools-versions-none-body = Bu birimdeki { $count } gölge kopyanın hiçbiri bu { $kind ->
     [folder] klasörün
    *[other] dosyanın
     } farklı bir sürümünü içermiyor.
+tools-versions-none-body-linux = Bu birimin { $count } anlık görüntüsünün hiçbirinde bu { $kind ->
+    [folder] klasörün
+   *[other] dosyanın
+    } farklı bir sürümü yok.
 tools-versions-no-copies = Bu birimde gölge kopya yok
 tools-versions-no-copies-body = Windows; geri yükleme noktaları, Windows Yedekleme ve Dosya Geçmişi için gölge kopyalar oluşturur (sürücüde Sistem Koruması açık olmalıdır). Henüz hiç gölge kopya yok.
+tools-versions-no-copies-linux = Bu birimde anlık görüntü yok
+tools-versions-no-copies-body-linux = Soyuz; Snapper (<bağlama>/.snapshots), ZFS (<bağlama>/.zfs/snapshot) ve bağlı sürücülerdeki Timeshift anlık görüntülerini okur. Bu birim için hiçbiri bulunamadı.
 tools-versions-shadow-copy = Gölge kopya
+tools-versions-zfs-snapshot = ZFS anlık görüntüsü
 tools-versions-snapshot-time = { $provider }  ·  { $date }
 tools-versions-snapshot-seq = { $provider } #{ $seq }
 tools-versions-detail-folder = Klasör  ·  değiştirilme { $modified }

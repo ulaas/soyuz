@@ -341,6 +341,74 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
   Special folders (This PC, Control Panel, Recycle Bin) always stay with File Explorer.
   Restore Explorer before moving or deleting a portable copy that is the default.
 
+## Linux
+
+Soyuz runs on Linux desktops (Wayland or X11; tested on Fedora with GNOME Keyring and the
+xdg-desktop-portal). Everything works without root; nothing system-wide is changed unless
+you install system-wide yourself.
+
+- **Install from the tarball** — `soyuz-<version>-linux-<arch>.tar.gz` is laid out like a
+  prefix (`bin/soyuz`, `share/applications/soyuz.desktop`, icons, metainfo). For your account:
+  `tar -C ~/.local --strip-components=1 -xf soyuz-<version>-linux-<arch>.tar.gz` (make sure
+  `~/.local/bin` is on `PATH`); system-wide: the same with `sudo tar -C /usr/local …`.
+  Uninstall by deleting those files. The portable mode below works on Linux too.
+- **Install the RPM** — `sudo dnf install ./soyuz-<version>-*.rpm` (Fedora, openSUSE);
+  remove it with `sudo dnf remove soyuz`. Settings live in `~/.config/soyuz/`, the search
+  index in `~/.local/share/soyuz/`.
+- **Desktop integration** — the desktop entry puts Soyuz in your app launcher. File types open with the app chosen in your desktop's settings
+  (`mimeapps.list` and the installed desktop entries are read directly; no `xdg-open`), file
+  and folder icons come from your icon theme, light / dark mode and the accent color follow
+  the desktop (portal or KDE settings), and the Computer view lists drives from the mount
+  table plus UDisks2 for mounting, unlocking and ejecting removable drives.
+- **Default file manager** — Settings → *General* (top) → **Make Soyuz the default** sets
+  Soyuz as the handler for folders (`inode/directory`) in `~/.config/mimeapps.list`, for your
+  account only. **Restore previous** puts back the handler that was there before (the settings
+  row names the current one). Separately, **Install service** under *"Show in folder" when
+  Soyuz isn't running* writes a D-Bus service file
+  (`~/.local/share/dbus-1/services/org.freedesktop.FileManager1.service`), so "Show in folder"
+  in browsers and other apps starts Soyuz; **Remove** restores what was there before. While
+  Soyuz is running it can also answer those requests itself (Settings → *General* →
+  *Linux desktop* → *Answer "Show in folder"*, off by default so it doesn't take over from
+  your desktop's file manager unasked).
+- **Clipboard** — copy / cut put files on the system clipboard in the formats GNOME Files,
+  Dolphin and other apps use (`text/uri-list`, `x-special/gnome-copied-files`), and paste
+  accepts files copied there. If the built-in clipboard fails in an unusual session, turn on
+  *Clipboard helper programs* (runs `wl-copy` / `xclip`).
+- **Saved passwords and API keys** — remote-connection secrets and AI provider keys go to the
+  Secret Service (GNOME Keyring, KWallet or another provider of `org.freedesktop.secrets`),
+  never into `config.toml`. If no keyring is running or it stays locked, Soyuz says so in
+  Settings and you can use an environment variable (`env:<VAR>`) for AI keys instead. The
+  first access may show your keyring's unlock prompt.
+- **Trash** — Delete moves items to the freedesktop trash (`~/.local/share/Trash`, or a
+  `.Trash-<uid>` folder on other drives), so GNOME Files and Dolphin show and restore them too.
+- **Hidden files** — dotfiles are hidden, and so are the names listed in a folder's `.hidden`
+  file (turn that off with *General → Honour .hidden files*). Ctrl+H shows them.
+- **Previous versions** — Properties → *Previous versions* and the context menu list earlier
+  versions of a file or folder from Snapper (`<mount>/.snapshots`), ZFS
+  (`<mount>/.zfs/snapshot`) and Timeshift snapshots. Snapper's `.snapshots` folder is usually
+  readable only by root; Soyuz then tells you how many snapshots it could not read. Let your
+  account read them with `sudo snapper -c root set-config ALLOW_USERS=<you> SYNC_ACL=yes`.
+- **Inode flags and ACLs** — Properties → *Attributes* shows and edits the inode flags
+  (append-only, no dump, no access time, no copy-on-write, compress, immutable — what `chattr`
+  sets); immutable and append-only need root. The *Security* tab shows the POSIX ACL entries
+  (read-only; change them with `setfacl`) and lets you change owner and group.
+- **Many folders and the inotify limit** — open folders and indexed roots are watched with
+  inotify. When the per-user limit (`fs.inotify.max_user_watches`) is used up, open folders are
+  polled instead (*Behaviour → Polling interval*) and the search index re-checks the roots it
+  can't watch (*Preview & search → Re-check unwatched folders*; the index status names them).
+  Raise the limit with `echo fs.inotify.max_user_watches=524288 | sudo tee
+  /etc/sysctl.d/90-inotify.conf && sudo sysctl --system`.
+- **Window system** — *General → Linux desktop → Window system*: Automatic uses Wayland when
+  available, else X11. Choosing X11 runs Soyuz through XWayland under a Wayland compositor.
+  Takes effect after a restart.
+- **Drag and drop** — files dropped on Soyuz from other apps are accepted. Under a Wayland
+  compositor, dragging between Soyuz and X11-only apps works best with *Window system* set
+  to X11. Dragging items *out* of Soyuz into other apps isn't available on Linux yet (the
+  *Drag out* setting is Windows-only for now).
+- **Not available on Linux** — the Mica / Acrylic backdrop, Snap Layouts, dialogs as separate
+  windows, the NTFS change journal, Windows attributes and `\\server` share listing are
+  Windows features; their settings are hidden on Linux.
+
 ## Portable mode and data files
 
 Put an empty file named `portable` next to the executable and Soyuz keeps everything in

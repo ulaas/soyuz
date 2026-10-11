@@ -33,7 +33,8 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 };
                 let before = mode;
                 if mode == 2 {
-                    text(ui, &mut d.general.start_location, "C:\\Users\\me\\Projects", 200.0);
+                    let hint = if cfg!(windows) { "C:\\Users\\me\\Projects" } else { "~/Projects" };
+                    text(ui, &mut d.general.start_location, hint, 200.0);
                 }
                 segmented(
                     ui,
@@ -76,24 +77,50 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     any |= group(ui, q, CTX_GENERAL, tr!("settings-general-files"), |r| {
-        r.row_kw(tr!("settings-general-show-hidden"), tr!("settings-general-show-hidden-desc"), "dotfiles", |ui| {
+        let hidden_desc = if cfg!(unix) {
+            tr!("settings-general-show-hidden-desc-unix")
+        } else {
+            tr!("settings-general-show-hidden-desc")
+        };
+        r.row_kw(tr!("settings-general-show-hidden"), hidden_desc, "dotfiles", |ui| {
             switch(ui, &mut d.general.show_hidden);
         });
-        r.row(tr!("settings-general-show-system"), tr!("settings-general-show-system-desc"), |ui| {
-            switch(ui, &mut d.general.show_system);
-        });
+        // `.hidden` files are a GNOME / KDE convention; Windows has its own hidden attribute.
+        if cfg!(unix) {
+            r.row_kw(
+                tr!("settings-general-dot-hidden"),
+                tr!("settings-general-dot-hidden-desc"),
+                "hidden dotfiles nautilus dolphin",
+                |ui| {
+                    switch(ui, &mut d.general.honour_dot_hidden);
+                },
+            );
+        }
+        // Protected operating-system files are a Windows attribute.
+        if cfg!(windows) {
+            r.row(tr!("settings-general-show-system"), tr!("settings-general-show-system-desc"), |ui| {
+                switch(ui, &mut d.general.show_system);
+            });
+        }
         r.row(tr!("settings-general-show-ext"), tr!("settings-general-show-ext-desc"), |ui| {
             switch(ui, &mut d.general.show_extensions);
         });
         r.row_kw(
             tr!("settings-general-strict-names"),
-            tr!("settings-general-strict-names-desc"),
-            "validate portable",
+            if cfg!(windows) {
+                tr!("settings-general-strict-names-desc")
+            } else {
+                tr!("settings-general-strict-names-desc-unix")
+            },
+            "validate portable fat exfat ntfs",
             |ui| {
                 switch(ui, &mut d.general.strict_windows_names);
             },
         );
     });
+    if cfg!(target_os = "linux") {
+        any |= linux_group(ui, q, d);
+    }
     any |= group(ui, q, CTX_GENERAL, tr!("settings-general-formats"), |r| {
         let sample = 1_288_490_189u64;
         r.row_kw(
@@ -156,6 +183,45 @@ pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     any
+}
+
+/// `[linux]`: Linux desktop integration (General page, Linux only).
+fn linux_group(ui: &mut Ui, q: &str, d: &mut soyuz_core::config::Config) -> bool {
+    use soyuz_core::config::WindowBackend;
+    group(ui, q, "General linux desktop wayland x11", tr!("settings-linux"), |r| {
+        r.row_kw(
+            tr!("settings-linux-window-backend"),
+            tr!("settings-linux-window-backend-desc"),
+            "wayland x11 xwayland display server drag drop",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.linux.window_backend,
+                    &[
+                        (WindowBackend::Auto, tr!("settings-auto")),
+                        (WindowBackend::Wayland, "Wayland"),
+                        (WindowBackend::X11, "X11"),
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-linux-file-manager1"),
+            tr!("settings-linux-file-manager1-desc"),
+            "dbus filemanager1 show in folder reveal browser",
+            |ui| {
+                switch(ui, &mut d.linux.own_file_manager1);
+            },
+        );
+        r.row_kw(
+            tr!("settings-linux-clipboard-tools"),
+            tr!("settings-linux-clipboard-tools-desc"),
+            "clipboard wl-copy xclip copy paste",
+            |ui| {
+                switch(ui, &mut d.linux.clipboard_fallback_tools);
+            },
+        );
+    })
 }
 
 fn modes() -> [dd::Item<ViewMode>; 5] {
@@ -359,6 +425,17 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.block("", tr!("settings-views-sidebar-sections-desc"), |ui| {
             sidebar_sections(ui, &mut d.sidebar.sections);
         });
+        // GTK bookmarks are a Linux desktop convention.
+        if cfg!(target_os = "linux") {
+            r.row_kw(
+                tr!("settings-views-gtk-bookmarks"),
+                tr!("settings-views-gtk-bookmarks-desc"),
+                "gtk bookmarks nautilus favorites places",
+                |ui| {
+                    switch(ui, &mut d.sidebar.gtk_bookmarks);
+                },
+            );
+        }
     });
     any |= group(ui, q, ctx, tr!("settings-views-portal"), |r| {
         r.block("", tr!("settings-views-portal-desc"), |ui| {
@@ -368,6 +445,17 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     any |= group(ui, q, ctx, tr!("settings-views-tag-names"), |r| {
         r.block("", tr!("settings-views-tag-names-desc"), |_| {});
         tag_name_rows(r, &mut d.tags.names);
+        // Extended attributes shared with Dolphin & co. are a Linux convention.
+        if cfg!(target_os = "linux") {
+            r.row_kw(
+                tr!("settings-views-tags-xdg"),
+                tr!("settings-views-tags-xdg-desc"),
+                "tags xattr dolphin baloo kde user.xdg.tags",
+                |ui| {
+                    switch(ui, &mut d.tags.sync_xdg_tags);
+                },
+            );
+        }
     });
     any |= group(ui, q, ctx, tr!("settings-views-toolbar"), |r| {
         r.block(tr!("settings-views-toolbar-items"), tr!("settings-views-toolbar-items-desc"), |ui| {
@@ -679,14 +767,20 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 number(ui, &mut d.behaviour.spring_load_delay_ms, 200..=3000, " ms");
             },
         );
-        r.row_kw(
-            tr!("settings-behaviour-drag-out"),
-            tr!("settings-behaviour-drag-out-desc"),
-            "drag out external desktop explorer other apps",
-            |ui| {
-                switch(ui, &mut d.behaviour.drag_out);
-            },
-        );
+        if drag_out_supported() {
+            r.row_kw(
+                tr!("settings-behaviour-drag-out"),
+                if cfg!(windows) {
+                    tr!("settings-behaviour-drag-out-desc")
+                } else {
+                    tr!("settings-behaviour-drag-out-desc-unix")
+                },
+                "drag out external desktop explorer other apps",
+                |ui| {
+                    switch(ui, &mut d.behaviour.drag_out);
+                },
+            );
+        }
     });
     any |= group(ui, q, ctx, tr!("settings-behaviour-typing"), |r| {
         r.row_kw(tr!("settings-behaviour-type-ahead"), tr!("settings-behaviour-type-ahead-desc"), "type ahead", |ui| {
@@ -722,8 +816,26 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row(tr!("settings-behaviour-debounce"), tr!("settings-behaviour-debounce-desc"), |ui| {
             number(ui, &mut d.behaviour.watch_debounce_ms, 50..=2000, " ms");
         });
+        // Only Linux runs out of change notifications (inotify's per-user watch limit).
+        if cfg!(target_os = "linux") {
+            r.row_kw(
+                tr!("settings-behaviour-watch-poll"),
+                tr!("settings-behaviour-watch-poll-desc"),
+                "inotify max_user_watches poll watch limit",
+                |ui| {
+                    number(ui, &mut d.behaviour.watch_poll_interval_ms, 500..=60_000, " ms");
+                },
+            );
+        }
     });
     any
+}
+
+/// Dragging items out to other apps works on this platform (the OLE drag source is
+/// Windows-only so far; switch this to the drag-out module's own check once other
+/// platforms get one).
+fn drag_out_supported() -> bool {
+    cfg!(windows)
 }
 
 pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
@@ -876,22 +988,30 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             r.row_kw(tr!("settings-jobs-reports"), tr!("settings-jobs-reports-desc"), "history log", |ui| {
                 number(ui, &mut d.sync.reports_kept, 1..=200, "");
             });
-            r.row_kw(
-                tr!("settings-jobs-previous-versions"),
-                tr!("settings-jobs-previous-versions-desc"),
-                "vss snapshot restore",
-                |ui| {
-                    switch(ui, &mut d.sync.previous_versions);
-                },
-            );
-            r.row_kw(
-                tr!("settings-jobs-shadow-probe"),
-                tr!("settings-jobs-shadow-probe-desc"),
-                "vss globalroot",
-                |ui| {
-                    number(ui, &mut d.sync.shadow_probe_max, 1..=512, "");
-                },
-            );
+            if crate::ui::tools::versions::supported() {
+                r.row_kw(
+                    tr!("settings-jobs-previous-versions"),
+                    if cfg!(windows) {
+                        tr!("settings-jobs-previous-versions-desc")
+                    } else {
+                        tr!("settings-jobs-previous-versions-desc-linux")
+                    },
+                    "vss snapshot restore snapper zfs timeshift btrfs",
+                    |ui| {
+                        switch(ui, &mut d.sync.previous_versions);
+                    },
+                );
+            }
+            if cfg!(windows) {
+                r.row_kw(
+                    tr!("settings-jobs-shadow-probe"),
+                    tr!("settings-jobs-shadow-probe-desc"),
+                    "vss globalroot",
+                    |ui| {
+                        number(ui, &mut d.sync.shadow_probe_max, 1..=512, "");
+                    },
+                );
+            }
         },
     );
     any |= group(ui, q, "Remote network sftp ssh webdav ftp s3 server cloud", tr!("settings-remote"), |r| {
@@ -923,9 +1043,12 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-remote-preview-max"), tr!("settings-remote-preview-max-desc"), "preview", |ui| {
             number(ui, &mut d.remote.preview_max_mb, 1..=4096, " MB");
         });
-        r.row_kw(tr!("settings-remote-shares"), tr!("settings-remote-shares-desc"), "smb unc netshareenum", |ui| {
-            switch(ui, &mut d.remote.share_enumeration);
-        });
+        // `\\server` share listing uses Windows NetShareEnum.
+        if cfg!(windows) {
+            r.row_kw(tr!("settings-remote-shares"), tr!("settings-remote-shares-desc"), "smb unc netshareenum", |ui| {
+                switch(ui, &mut d.remote.share_enumeration);
+            });
+        }
         let hosts = soyuz_vfs::registry::known_hosts().entries();
         r.row_kw(
             tr!("settings-remote-trusted"),
@@ -1129,11 +1252,18 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-preview-syntax"), tr!("settings-preview-syntax-desc"), "highlight code", |ui| {
             syntax_theme_choice(ui, &mut d.preview.syntax_theme);
         });
-        r.row_kw(tr!("settings-preview-pdf"), tr!("settings-preview-pdf-desc"), "pdfium document", |ui| {
+        let pdf_desc =
+            if cfg!(windows) { tr!("settings-preview-pdf-desc") } else { tr!("settings-preview-pdf-desc-unix") };
+        r.row_kw(tr!("settings-preview-pdf"), pdf_desc, "pdfium document", |ui| {
             switch(ui, &mut d.preview.pdf);
         });
-        r.row_kw(tr!("settings-preview-pdfium"), tr!("settings-preview-pdfium-desc"), "pdf dll", |ui| {
-            text(ui, &mut d.preview.pdfium_dir, tr!("settings-preview-pdfium-hint"), 220.0);
+        let (pdfium_desc, pdfium_hint) = if cfg!(windows) {
+            (tr!("settings-preview-pdfium-desc"), tr!("settings-preview-pdfium-hint"))
+        } else {
+            (tr!("settings-preview-pdfium-desc-unix"), tr!("settings-preview-pdfium-hint-unix"))
+        };
+        r.row_kw(tr!("settings-preview-pdfium"), pdfium_desc, "pdf dll so library", |ui| {
+            text(ui, &mut d.preview.pdfium_dir, pdfium_hint, 220.0);
         });
         r.row_kw(tr!("settings-preview-office"), tr!("settings-preview-office-desc"), "docx xlsx pptx odt ods", |ui| {
             switch(ui, &mut d.preview.office);

@@ -17,6 +17,7 @@ pub mod properties;
 pub mod properties_attrs;
 pub mod properties_checksum;
 pub mod properties_details;
+pub mod properties_inode;
 pub mod properties_security;
 pub mod properties_widgets;
 pub mod quit;

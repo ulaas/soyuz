@@ -48,6 +48,8 @@ pub enum MetaCmd {
     BatchRename { pane: PaneId, pairs: Vec<(PathBuf, PathBuf)> },
     /// Create a link (`Create` job) at `path` inside `dir`.
     Create { dir: PathBuf, path: PathBuf, kind: soyuz_jobs::CreateKind },
+    /// Linux: switch inode flags on / off (worker thread; not undoable, like chown).
+    InodeFlags { paths: Vec<PathBuf>, set: soyuz_fs::attrs::InodeFlags, clear: soyuz_fs::attrs::InodeFlags },
 }
 
 /// Actions handled here (routed by `actions::execute` before the file-op module).
@@ -129,6 +131,18 @@ pub fn apply(app: &mut SoyuzApp, cmd: MetaCmd, _ctx: &egui::Context) {
                 meta = meta.after(crate::services::jobs::AfterJob::Select { pane, name });
             }
             app.fileops.jobs.submit(spec, meta);
+        }
+        MetaCmd::InodeFlags { paths, set, clear } => {
+            let postman = app.services.mailbox.postman();
+            let _ = std::thread::Builder::new().name("soyuz-inode-flags".into()).spawn(move || {
+                let failed = paths.iter().find_map(|p| soyuz_fs::attrs::set_inode_flags(p, set, clear).err());
+                let toast = match failed {
+                    None => Toast::success(tr!("dialogs-inode-changed")),
+                    Some(e) => Toast::error(tr!("dialogs-inode-failed"))
+                        .body(super::properties_inode::apply_reason(&e, set | clear)),
+                };
+                postman.send(crate::services::mailbox::UiMsg::Notice(toast));
+            });
         }
         MetaCmd::Create { dir, path, kind } => {
             let spec = app.fileops.jobs.spec(JobKind::Create { path: path.clone(), kind });
@@ -397,6 +411,8 @@ pub struct PropertiesDialog {
     fresh_merged: bool,
     /// Previous versions tab (created when first shown).
     versions: Option<crate::ui::tools::versions::VersionsPanel>,
+    /// Linux inode flags (Attributes tab; they replace the generic attribute rows there).
+    inode: Option<super::properties_inode::InodeEdit>,
 }
 
 /// Decode a small thumbnail (worker thread).
@@ -467,6 +483,8 @@ impl PropertiesDialog {
             fresh: None,
             fresh_merged: false,
             versions: None,
+            inode: cfg!(target_os = "linux")
+                .then(|| super::properties_inode::InodeEdit::new(entries.iter().map(|e| e.path.clone()).collect())),
             entries,
         }
     }
@@ -708,8 +726,13 @@ impl PropertiesDialog {
 
     fn attributes(&mut self, ui: &mut Ui) {
         let p = palette(ui.ctx());
-        caption(ui, tr!("dialogs-props-attributes"));
-        self.attrs.show(ui);
+        match &mut self.inode {
+            Some(ie) => ie.show(ui),
+            None => {
+                caption(ui, tr!("dialogs-props-attributes"));
+                self.attrs.show(ui);
+            }
+        }
         let info: Vec<&str> = info_attrs()
             .into_iter()
             .filter(|(a, _)| self.entries.iter().any(|e| e.attrs.contains(*a)))
@@ -792,6 +815,7 @@ impl PropertiesDialog {
         renamed
             || self.times.iter().any(TimeEdit::changed)
             || self.attrs.changes().is_some()
+            || self.inode.as_ref().is_some_and(|i| i.changes().is_some())
             || self.mode.as_ref().is_some_and(ModeEdit::changed)
             || self.owner.as_ref().is_some_and(|o| matches!(o.changes(), Ok(Some(_))))
     }
@@ -829,6 +853,12 @@ impl PropertiesDialog {
         let jobs = plan_jobs(&self.entries, times, self.attrs.changes(), self.mode.as_ref());
         if !jobs.is_empty() {
             cmds.push(Cmd::Meta(MetaCmd::SetMeta(jobs)));
+        }
+        if let Some(ie) = &mut self.inode
+            && let Some((set, clear)) = ie.changes()
+        {
+            cmds.push(Cmd::Meta(MetaCmd::InodeFlags { paths: ie.paths().to_vec(), set, clear }));
+            ie.commit();
         }
         if let Some((uid, gid)) = owner {
             cmds.push(Cmd::Meta(MetaCmd::Chown {

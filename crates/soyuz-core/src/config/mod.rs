@@ -465,7 +465,7 @@ b	c"
         let turkish = "ğ".repeat(39) + " çok uzun";
         let cut = clean_tag_name(&turkish);
         assert_eq!(cut, "ğ".repeat(39));
-        let t = TagsSection { names: vec!["  ".into(), " Home ".into()] };
+        let t = TagsSection { names: vec!["  ".into(), " Home ".into()], ..Default::default() };
         assert_eq!(t.custom_name(0), None);
         assert_eq!(t.custom_name(1).as_deref(), Some("Home"));
     }

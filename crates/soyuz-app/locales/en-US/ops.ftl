@@ -210,6 +210,7 @@ ops-elevate-failed = Couldn't run { $name } as administrator
 ops-place-home = Home
 ops-place-trash = Trash
 ops-place-computer = This PC
+ops-place-computer-unix = Computer
 ops-place-recent = Recent
 ops-place-timeline = Timeline
 # $name: tag name.

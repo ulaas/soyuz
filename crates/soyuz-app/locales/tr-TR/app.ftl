@@ -147,6 +147,7 @@ app-sidebar-settings = Ayarlar
 app-sidebar-settings-tip = Ayarlar  ({ $key })
 app-sidebar-remove-favorite = Sık kullanılanlardan kaldır
 app-sidebar-this-pc = Bu bilgisayar
+app-sidebar-computer = Bilgisayar
 # $path bağlama noktasıdır; $free / $total biçimlendirilmiş boyutlardır.
 app-sidebar-volume-tip = { $path }
     { $total } alanın { $free } kadarı boş

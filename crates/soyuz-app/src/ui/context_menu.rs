@@ -130,7 +130,11 @@ fn items_menu(ui: &mut Ui, pane: &Pane, v: &mut ViewCtx<'_>) {
         cmds.push(Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone())));
         ui.close();
     }
-    if single && v.config.sync.previous_versions && cfg!(windows) && matches!(pane.location, Location::Dir(_)) {
+    if single
+        && v.config.sync.previous_versions
+        && crate::ui::tools::versions::supported()
+        && matches!(pane.location, Location::Dir(_))
+    {
         action_item(
             ui,
             km,

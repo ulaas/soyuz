@@ -51,7 +51,7 @@ impl Default for Config {
 
 impl Default for TagsSection {
     fn default() -> Self {
-        TagsSection { names: vec![String::new(); 8] }
+        TagsSection { names: vec![String::new(); 8], sync_xdg_tags: true }
     }
 }
 
@@ -178,6 +178,7 @@ impl Default for Sidebar {
             tree_follow: true,
             tree_drag_expand_ms: 700,
             portal: Vec::new(),
+            gtk_bookmarks: true,
         }
     }
 }
