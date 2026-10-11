@@ -1,6 +1,6 @@
 //! The frontend seam: what app logic outside `ui/` may ask of the window system.
 //!
-//! The GUI implements [`Host`] with [`EguiHost`]; headless tests use [`NullHost`]; the
+//! The GUI implements [`Host`] on `egui::Context`; headless tests use [`NullHost`]; the
 //! terminal UI (roadmap Phase T) gets its own. The host only has side effects: facts that
 //! change per frame (a close request, text-field focus) travel with the input instead.
 
@@ -66,16 +66,6 @@ pub trait Host {
     fn as_any(&self) -> &dyn Any;
 }
 
-/// The egui frontend's host.
-#[derive(Clone)]
-pub struct EguiHost(pub egui::Context);
-
-impl EguiHost {
-    pub fn new(ctx: &egui::Context) -> Self {
-        EguiHost(ctx.clone())
-    }
-}
-
 /// A [`Wake`] that repaints `ctx` (for GUI code that starts background work).
 pub fn egui_wake(ctx: &egui::Context) -> Wake {
     let c = ctx.clone();
@@ -84,7 +74,7 @@ pub fn egui_wake(ctx: &egui::Context) -> Wake {
 
 /// The egui context behind `host` (only for GUI callees during the T0 migration).
 pub fn egui_ctx(host: &dyn Host) -> &egui::Context {
-    &host.as_any().downcast_ref::<EguiHost>().expect("egui frontend").0
+    host.as_any().downcast_ref::<egui::Context>().expect("egui frontend")
 }
 
 impl From<ThemePref> for egui::ThemePreference {
@@ -107,21 +97,23 @@ impl From<egui::ThemePreference> for ThemePref {
     }
 }
 
-impl Host for EguiHost {
+/// The egui frontend's host is the context itself (transitional: a newtype once the core
+/// moves to its own crate, where this impl would break the orphan rule).
+impl Host for egui::Context {
     fn wake(&self) -> Wake {
-        egui_wake(&self.0)
+        egui_wake(self)
     }
     fn redraw(&self) {
-        self.0.request_repaint();
+        egui::Context::request_repaint(self);
     }
     fn redraw_after(&self, after: Duration) {
-        self.0.request_repaint_after(after);
+        egui::Context::request_repaint_after(self, after);
     }
     fn copy_text(&self, text: String) {
-        self.0.copy_text(text);
+        egui::Context::copy_text(self, text);
     }
     fn set_theme(&self, pref: ThemePref) {
-        self.0.set_theme(egui::ThemePreference::from(pref));
+        egui::Context::set_theme(self, egui::ThemePreference::from(pref));
     }
     fn window(&self, id: WindowId, cmd: WindowCmd) {
         let cmd = match cmd {
@@ -133,8 +125,8 @@ impl Host for EguiHost {
             WindowCmd::Title(t) => egui::ViewportCommand::Title(t),
         };
         match id {
-            WindowId::Current => self.0.send_viewport_cmd(cmd),
-            WindowId::Root => self.0.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
+            WindowId::Current => self.send_viewport_cmd(cmd),
+            WindowId::Root => self.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
         }
     }
     fn as_any(&self) -> &dyn Any {

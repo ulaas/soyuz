@@ -29,6 +29,7 @@ use soyuz_script::rules::worker::{self, Cmd as WorkerCmd, Event, LogEntry};
 use soyuz_script::{ActionCtx, PlannedJob, ScriptSet, UiOp};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, JobOrigin, OpKind};
 use crate::services::mailbox::Wake;
@@ -176,7 +177,7 @@ pub fn action_title(id: &str) -> String {
 }
 
 /// Per frame.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     let st = &mut app.automation;
     if !st.started {
         st.started = true;
@@ -230,8 +231,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         app.automation.rules_note = Some(tr!("automation-secondary-note").into());
         return;
     }
-    pump_rules(app, ctx);
-    pump_cli(app, ctx);
+    pump_rules(app, host);
+    pump_cli(app, host);
 }
 
 /// Script hotkeys (`hotkey` in `register_action`) unless `[keys.bindings]` names the
@@ -398,7 +399,7 @@ pub fn submit_planned(app: &mut SoyuzApp, title: &str, jobs: Vec<PlannedJob>) {
     }
 }
 
-pub fn apply(app: &mut SoyuzApp, c: AutoCmd, _ctx: &egui::Context) {
+pub fn apply(app: &mut SoyuzApp, c: AutoCmd, _host: &dyn Host) {
     match c {
         AutoCmd::SubmitPlanned { title, jobs } => submit_planned(app, &title, jobs),
         AutoCmd::RunRule(name) => {
@@ -505,7 +506,7 @@ fn send_rules(app: &mut SoyuzApp) {
     app.automation.sent = Some(a);
 }
 
-fn pump_rules(app: &mut SoyuzApp, ctx: &egui::Context) {
+fn pump_rules(app: &mut SoyuzApp, host: &dyn Host) {
     let st = &mut app.automation;
     let want = app.config.automation.enabled && !app.config.automation.rules.is_empty();
     if want && st.lock.is_none() && st.rules_note.is_none() {
@@ -536,12 +537,12 @@ fn pump_rules(app: &mut SoyuzApp, ctx: &egui::Context) {
                     st.pending = None;
                     send_rules(app);
                 } else {
-                    ctx.request_repaint_after(RULES_DEBOUNCE);
+                    host.redraw_after(RULES_DEBOUNCE);
                 }
             }
             _ => {
                 st.pending = Some((app.config.automation.clone(), now));
-                ctx.request_repaint_after(RULES_DEBOUNCE);
+                host.redraw_after(RULES_DEBOUNCE);
             }
         }
     }
@@ -601,7 +602,7 @@ pub fn rule_preview(app: &mut SoyuzApp, idx: usize, rule: &AutomationRule) -> Op
 
 // --- CLI ---
 
-fn pump_cli(app: &mut SoyuzApp, ctx: &egui::Context) {
+fn pump_cli(app: &mut SoyuzApp, host: &dyn Host) {
     let st = &mut app.automation;
     let want = app.config.cli.server_enabled;
     if !want {
@@ -653,8 +654,8 @@ fn pump_cli(app: &mut SoyuzApp, ctx: &egui::Context) {
                 } else {
                     open_path(app, path);
                 }
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
+                host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
                 let _ = reply.send(Ok(()));
             }
         }

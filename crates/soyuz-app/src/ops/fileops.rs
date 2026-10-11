@@ -37,6 +37,7 @@ use crate::ui::panels::activity::{ActivityState, ActivityTab};
 use crate::ui::toasts::Toast;
 use crate::ui::views::trash::TrashState;
 
+use crate::host::Host;
 use clipboard::{ClipMode, Clipboard};
 use dnd::{DndFrame, DropEffect};
 use prompts::PromptQueue;
@@ -192,7 +193,7 @@ fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
     })
 }
 
-pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
+pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     use Action as A;
     let (pane_id, dir, sel) = focused(app);
     let in_trash = matches!(app.ws.pane().location, Location::Trash);
@@ -206,7 +207,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             // Nautilus can paste them) plus the paths as text; without a native
             // mechanism, just the text (Ctrl+V then still reaches the app).
             if !crate::services::os_clipboard::set_files(mode, &sel) {
-                ctx.copy_text(Clipboard::os_text(&sel));
+                host.copy_text(Clipboard::os_text(&sel));
             }
             let n = sel.len();
             app.fileops.clipboard.set(mode, sel);
@@ -557,7 +558,7 @@ pub enum HistoryAction {
     Retry,
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _ctx: &egui::Context) {
+pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
     match cmd {
         FileOpCmd::Drop { paths, dest, effect, pos } => match effect {
             Some(e) => {
@@ -618,8 +619,8 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _ctx: &egui::Context) {
 
 /// Start of every frame (after the mailbox): drain engine events, toasts, prompts,
 /// auto-open of the activity panel, external drops and deferred inline renames.
-pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let events = app.fileops.jobs.poll(ctx);
+pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
+    let events = app.fileops.jobs.poll(host);
     for ev in events {
         match ev {
             JobEvent::Prompt(id) => on_prompt(app, id),
@@ -638,7 +639,7 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     }
     reconcile_prompts(app);
     auto_open_activity(app);
-    external_drops(app, ctx);
+    external_drops(app, crate::host::egui_ctx(host));
     pending_rename(app);
     check_rename(app);
     app.fileops.trash.poll();

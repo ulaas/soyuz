@@ -23,6 +23,7 @@ use soyuz_jobs::journal::{self, JournalSlot, Recovered};
 use soyuz_jobs::{DeleteMode, JobKind, JournalJob};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::ui::toasts::Toast;
 
@@ -328,7 +329,7 @@ pub fn journal_path() -> Option<PathBuf> {
 }
 
 /// Per frame: show the startup dialogs once, then carry out queued choices.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     {
         let mut pending = PENDING.lock();
         if let Some(p) = pending.as_mut().filter(|p| !p.shown) {
@@ -342,13 +343,16 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 app.ui.dialogs.push(crate::ui::dialogs::recovery_crash::CrashDialog::new(p.crashes.clone()));
             }
             if !p.recovered.is_empty() {
-                app.ui.dialogs.push(crate::ui::dialogs::recovery::RecoveryDialog::new(ctx, p.recovered.clone()));
+                app.ui.dialogs.push(crate::ui::dialogs::recovery::RecoveryDialog::new(
+                    crate::host::egui_ctx(host),
+                    p.recovered.clone(),
+                ));
             }
         }
     }
     let actions: Vec<RecoveryAction> = std::mem::take(&mut *ACTIONS.lock());
     for a in actions {
-        apply(app, ctx, a);
+        apply(app, host, a);
     }
 }
 
@@ -377,7 +381,7 @@ fn cleanup(app: &mut SoyuzApp, paths: Vec<PathBuf>) {
     app.fileops.jobs.submit(spec, meta);
 }
 
-fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
+fn apply(app: &mut SoyuzApp, host: &dyn Host, a: RecoveryAction) {
     match a {
         RecoveryAction::Resume { jobs, cleanup: c, dismiss } => {
             cleanup(app, c);
@@ -431,7 +435,7 @@ fn apply(app: &mut SoyuzApp, ctx: &egui::Context, a: RecoveryAction) {
         RecoveryAction::RestartSafeMode => match restart_in_safe_mode() {
             Ok(()) => {
                 app.quit.allowed = true;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close);
             }
             Err(e) => {
                 app.ui.toasts.push(Toast::error(tr!("services-crash-restart-failed")).body(e.to_string()));

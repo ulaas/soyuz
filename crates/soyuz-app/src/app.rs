@@ -13,6 +13,7 @@ use soyuz_core::config::{self, Config, KeyContext, Keymap};
 use soyuz_fs::VolumeInfo;
 
 use crate::cmd::Cmd;
+use crate::host::Host;
 use crate::keys;
 use crate::services::Services;
 use crate::state::pane::Pane;
@@ -501,28 +502,28 @@ impl SoyuzApp {
     }
 
     /// Apply queued commands (commands may queue more; bounded to avoid loops).
-    pub fn apply_cmds(&mut self, ctx: &egui::Context) {
+    pub fn apply_cmds(&mut self, host: &dyn Host) {
         for _ in 0..8 {
             if self.cmds.is_empty() {
                 break;
             }
             let cmds = std::mem::take(&mut self.cmds);
             for c in cmds {
-                ops::apply(self, c, ctx);
+                ops::apply(self, c, host);
             }
         }
     }
 
     /// Window close requests: with pending jobs, cancel the close and ask first (quitting
     /// cancels the jobs). Runs in `logic`, so it also works while the window is minimized.
-    fn handle_close_request(&mut self, ctx: &egui::Context) {
+    fn handle_close_request(&mut self, host: &dyn Host) {
         use std::sync::atomic::Ordering;
         // Other windows open: closing the main window closes just this window.
-        if crate::ui::workspaces::windows::intercept_main_close(self, ctx) {
+        if crate::ui::workspaces::windows::intercept_main_close(self, crate::host::egui_ctx(host)) {
             self.close_cancelled();
             return;
         }
-        if crate::editors::intercept_close(self, ctx) {
+        if crate::editors::intercept_close(self, host) {
             self.close_cancelled();
             return;
         }
@@ -530,20 +531,20 @@ impl SoyuzApp {
         if self.quit.when_idle && pending == 0 {
             self.quit.when_idle = false;
             self.quit.allowed = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close);
             return;
         }
         if self.quit.when_idle {
-            ctx.request_repaint_after(Duration::from_millis(250));
+            host.redraw_after(Duration::from_millis(250));
         }
-        if !ctx.input(|i| i.viewport().close_requested()) || self.quit.allowed || pending == 0 {
+        if !crate::host::egui_ctx(host).input(|i| i.viewport().close_requested()) || self.quit.allowed || pending == 0 {
             return;
         }
-        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::CancelClose);
         self.close_cancelled();
         if !self.quit.prompting.swap(true, Ordering::SeqCst) {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
             self.ui.dialogs.push(crate::ui::dialogs::quit::QuitDialog::new(pending, self.quit.prompting.clone()));
         }
     }
@@ -558,25 +559,25 @@ impl SoyuzApp {
     }
 
     /// The user answered the close confirmation.
-    pub fn confirm_quit(&mut self, ctx: &egui::Context, when_idle: bool) {
+    pub fn confirm_quit(&mut self, host: &dyn Host, when_idle: bool) {
         if when_idle {
             self.quit.when_idle = true;
             self.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("app-quit-when-finished")));
-            ctx.request_repaint();
+            host.redraw();
         } else {
             self.quit.allowed = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close);
         }
     }
 
-    fn update_title(&mut self, ctx: &egui::Context) {
+    fn update_title(&mut self, host: &dyn Host) {
         let pane = self.ws.pane();
         let t = format!("{} — Soyuz", crate::state::crumbs::location_title(&pane.location));
         if t != self.ui.title {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(t.clone()));
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Title(t.clone()));
             self.ui.title = t;
         }
-        crate::ui::a11y::window_name(ctx, &self.ui.title);
+        crate::ui::a11y::window_name(crate::host::egui_ctx(host), &self.ui.title);
     }
 }
 

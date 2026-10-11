@@ -14,13 +14,13 @@
 //! Requests land in a queue that [`pump`] drains on the UI thread each frame.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use parking_lot::Mutex;
 use soyuz_core::{EntryInfo, Location};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::services::mailbox::Wake;
 
 /// A request for the UI thread.
@@ -137,23 +137,22 @@ pub fn uris_to_paths(uris: &[String]) -> Vec<PathBuf> {
 
 /// Per-frame pump (UI thread): applies `[linux]` settings that live in background
 /// services (FileManager1 ownership, clipboard fallback tools) and handles the queue.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     {
         let mut w = WAKE.lock();
         if w.is_none() {
-            let c = ctx.clone();
-            *w = Some(Arc::new(move || c.request_repaint()));
+            *w = Some(host.wake());
         }
     }
     crate::services::os_clipboard::set_fallback_tools(app.config.linux.clipboard_fallback_tools);
     #[cfg(target_os = "linux")]
     service::sync(app.config.linux.own_file_manager1 || forced());
     for req in take_requests() {
-        handle(app, ctx, req);
+        handle(app, host, req);
     }
 }
 
-fn handle(app: &mut SoyuzApp, ctx: &egui::Context, req: Request) {
+fn handle(app: &mut SoyuzApp, host: &dyn Host, req: Request) {
     match req {
         Request::Open { targets, focus } => {
             // Command-line extras keep the first path's tab in front.
@@ -163,7 +162,7 @@ fn handle(app: &mut SoyuzApp, ctx: &egui::Context, req: Request) {
                 app.ws.pane_mut().pending_cursor = select;
             }
             if focus {
-                raise(ctx);
+                raise(host);
             } else if let Some(i) = front.and_then(|id| app.ws.tab_index(id)) {
                 app.ws.active = i;
             }
@@ -184,16 +183,16 @@ fn handle(app: &mut SoyuzApp, ctx: &egui::Context, req: Request) {
             )
             .naming(app);
             app.ui.dialogs.push(d);
-            raise(ctx);
+            raise(host);
         }
     }
 }
 
 /// Bring the window to the front (un-minimize + focus). Wayland compositors may only
 /// flash it: activation needs a token the window itself cannot take from the caller.
-fn raise(ctx: &egui::Context) {
-    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-    ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+fn raise(host: &dyn Host) {
+    host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
+    host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
 }
 
 /// State of the `org.freedesktop.FileManager1` service: `None` = off (or not Linux),

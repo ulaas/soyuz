@@ -33,6 +33,7 @@ use super::touch::{self, TouchKind};
 use super::{CancelFlag, TaskId, Wake};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::host::Host;
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::ui::toasts::Toast;
 
@@ -600,7 +601,7 @@ fn open_panel(app: &mut SoyuzApp) {
     app.ai.refresh_month();
 }
 
-pub fn execute_action(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
+pub fn execute_action(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     let has_sel = !app.ws.pane().selection.is_empty();
     let prompt = |p: &str| p.to_string();
     match action {
@@ -617,14 +618,14 @@ pub fn execute_action(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         Action::AiSuggestNames => {
             open_panel(app);
-            suggest_names(app, ctx);
+            suggest_names(app, host);
         }
         Action::AiSummarize => {
             open_panel(app);
             let shown = if has_sel { tr!("ai-user-summarize-selection") } else { tr!("ai-user-summarize-folder") };
             start_chat_shown(
                 app,
-                ctx,
+                host,
                 shown.to_string(),
                 prompt(if has_sel {
                     "Summarize the selected files in a few bullet points each. Read their text where you are allowed to; otherwise summarise from names, sizes and dates."
@@ -638,13 +639,13 @@ pub fn execute_action(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         Action::AiExplainFolder => {
             open_panel(app);
             let (p, r) = expand_slash("/explain", has_sel).unwrap_or_default_route();
-            start_chat(app, ctx, p, r, Vec::new());
+            start_chat(app, host, p, r, Vec::new());
         }
         Action::AiFindRelated => {
             open_panel(app);
             start_chat_shown(
                 app,
-                ctx,
+                host,
                 tr!("ai-user-find-related").to_string(),
                 prompt(
                     "Find files related to the selected items (similar names, same project, same dates, same type) in this folder and nearby folders. List the best matches and select them in the pane.",
@@ -683,13 +684,13 @@ impl OrDefaultRoute for Option<(String, Route)> {
     }
 }
 
-pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, ctx: &egui::Context) {
+pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, host: &dyn Host) {
     match cmd {
-        AiCmd::SetFolderAccess { path, access } => set_folder_access(app, ctx, path, access),
+        AiCmd::SetFolderAccess { path, access } => set_folder_access(app, host, path, access),
         AiCmd::Prompt { text, send } => {
             open_panel(app);
             if send {
-                submit_composer_text(app, ctx, text);
+                submit_composer_text(app, host, text);
             } else {
                 app.ai.panel.composer = text;
             }
@@ -698,8 +699,8 @@ pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, ctx: &egui::Context) {
 }
 
 /// Add / change / remove the `[[ai.folders]]` rule of `path` (applies live, saved soon).
-pub fn set_folder_access(app: &mut SoyuzApp, ctx: &egui::Context, path: PathBuf, access: Option<AiAccess>) {
-    crate::ui::settings::update_config(app, ctx, |c| {
+pub fn set_folder_access(app: &mut SoyuzApp, host: &dyn Host, path: PathBuf, access: Option<AiAccess>) {
+    crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| {
         let same = |r: &AiFolderRule| super::safety::expand(&r.path) == path;
         c.ai.folders.retain(|r| !same(r));
         if let Some(a) = access {
@@ -740,7 +741,7 @@ pub fn gather_context(app: &SoyuzApp) -> ContextInput {
 }
 
 /// Submit what the user typed (slash commands expanded).
-pub fn submit_composer_text(app: &mut SoyuzApp, ctx: &egui::Context, text: String) {
+pub fn submit_composer_text(app: &mut SoyuzApp, host: &dyn Host, text: String) {
     let text = text.trim().to_string();
     if text.is_empty() {
         return;
@@ -753,7 +754,7 @@ pub fn submit_composer_text(app: &mut SoyuzApp, ctx: &egui::Context, text: Strin
     };
     app.ai.chat.push(ChatItem::User { text: text.clone(), mentions: mentions.clone() });
     app.ai.panel.scroll_to_bottom = true;
-    start_chat_inner(app, ctx, prompt, route, mentions, Default::default(), false);
+    start_chat_inner(app, host, prompt, route, mentions, Default::default(), false);
 }
 
 /// "Suggest names" (context menu, palette): the selection (or the folder's files) with
@@ -761,7 +762,7 @@ pub fn submit_composer_text(app: &mut SoyuzApp, ctx: &egui::Context, text: Strin
 /// document files, a downscaled picture for images when the model accepts images —
 /// else names and metadata only. The model answers with one `batch_rename`, shown in
 /// the rename diff table for approval.
-pub fn suggest_names(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn suggest_names(app: &mut SoyuzApp, host: &dyn Host) {
     let cfg = &app.config.ai.agent;
     let max = cfg.name_max_files.clamp(1, 500) as usize;
     let pane = app.ws.pane();
@@ -797,21 +798,21 @@ pub fn suggest_names(app: &mut SoyuzApp, ctx: &egui::Context) {
     let short = tr!("ai-user-suggest-names", count = files.len());
     app.ai.chat.push(ChatItem::User { text: short, mentions: Vec::new() });
     app.ai.panel.scroll_to_bottom = true;
-    start_chat_inner(app, ctx, prompt, Route::Fast, Vec::new(), attachments, false);
+    start_chat_inner(app, host, prompt, Route::Fast, Vec::new(), attachments, false);
 }
 
 /// Start a chat task (also from inline actions).
-pub fn start_chat(app: &mut SoyuzApp, ctx: &egui::Context, prompt: String, route: Route, mentions: Vec<PathBuf>) {
+pub fn start_chat(app: &mut SoyuzApp, host: &dyn Host, prompt: String, route: Route, mentions: Vec<PathBuf>) {
     let short: String = prompt.chars().take(140).collect();
     let shown = if prompt.chars().count() > 140 { format!("{short}\u{2026}") } else { short };
-    start_chat_shown(app, ctx, shown, prompt, route, mentions);
+    start_chat_shown(app, host, shown, prompt, route, mentions);
 }
 
 /// [`start_chat`] with its own chat bubble text (`shown`, in the UI language) for a
 /// prompt written for the model.
 pub fn start_chat_shown(
     app: &mut SoyuzApp,
-    ctx: &egui::Context,
+    host: &dyn Host,
     shown: String,
     prompt: String,
     route: Route,
@@ -822,7 +823,7 @@ pub fn start_chat_shown(
     }
     app.ai.chat.push(ChatItem::User { text: shown, mentions: mentions.clone() });
     app.ai.panel.scroll_to_bottom = true;
-    start_chat_inner(app, ctx, prompt, route, mentions, Default::default(), false);
+    start_chat_inner(app, host, prompt, route, mentions, Default::default(), false);
 }
 
 fn profile_for(app: &SoyuzApp, route: Route) -> Option<(soyuz_core::config::AiProfile, String)> {
@@ -838,7 +839,7 @@ fn profile_for(app: &SoyuzApp, route: Route) -> Option<(soyuz_core::config::AiPr
 /// Start (or ask to confirm the cost of) a chat task.
 pub fn start_chat_inner(
     app: &mut SoyuzApp,
-    _ctx: &egui::Context,
+    _host: &dyn Host,
     prompt: String,
     route: Route,
     mentions: Vec<PathBuf>,
@@ -989,11 +990,11 @@ pub fn run_recipe(app: &mut SoyuzApp, r: &Recipe) {
 }
 
 /// Confirmed the cost estimate: start the stashed task.
-pub fn confirm_pending(app: &mut SoyuzApp, ctx: &egui::Context, go: bool) {
+pub fn confirm_pending(app: &mut SoyuzApp, host: &dyn Host, go: bool) {
     app.ai.chat.retain(|c| !matches!(c, ChatItem::Confirm { .. }));
     if let Some(p) = app.ai.pending.take() {
         if go {
-            start_chat_inner(app, ctx, p.prompt, p.route, p.mentions, p.attachments, true);
+            start_chat_inner(app, host, p.prompt, p.route, p.mentions, p.attachments, true);
         } else {
             app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-cancelled").into(), warn: false });
         }
@@ -1003,7 +1004,7 @@ pub fn confirm_pending(app: &mut SoyuzApp, ctx: &egui::Context, go: bool) {
 // ---------------------------------------------------------------------------------------
 // Per-frame pump
 
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     if let Some(rx) = &app.ai.month_rx
         && let Ok(l) = rx.try_recv()
     {
@@ -1036,7 +1037,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     // UI requests from the host / executor.
     let reqs: Vec<UiRequest> = app.ai.ui_rx.try_iter().collect();
     for r in reqs {
-        handle_request(app, ctx, r);
+        handle_request(app, host, r);
     }
     // Agent events.
     let events: Vec<AgentEvent> =
@@ -1112,12 +1113,12 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if app.ai.running.is_some()
         && app.ai.panel.open
         && !app.ui.dialogs.is_open()
-        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+        && crate::host::egui_ctx(host).input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         app.ai.stop();
     }
     if touch::prune() {
-        ctx.request_repaint_after(Duration::from_millis(if app.ui.reduced_motion { 500 } else { 50 }));
+        host.redraw_after(Duration::from_millis(if app.ui.reduced_motion { 500 } else { 50 }));
     }
 }
 
@@ -1201,14 +1202,14 @@ fn ok() -> Result<Value, ToolError> {
     Ok(json!({"ok": true}))
 }
 
-fn handle_request(app: &mut SoyuzApp, ctx: &egui::Context, req: UiRequest) {
+fn handle_request(app: &mut SoyuzApp, host: &dyn Host, req: UiRequest) {
     match req {
         UiRequest::Tool { input, reply } => {
             let r = ui_tool(app, input);
             let _ = reply.send(r);
         }
         UiRequest::Submit { task, plan, reply } => {
-            let r = submit(app, ctx, task, &plan);
+            let r = submit(app, host, task, &plan);
             let _ = reply.send(r);
         }
         UiRequest::Track { job, task } => {
@@ -1295,7 +1296,7 @@ fn ui_tool(app: &mut SoyuzApp, input: ToolInput) -> Result<Value, ToolError> {
 }
 
 /// Submit an approved plan through `JobsService` (UI thread).
-fn submit(app: &mut SoyuzApp, ctx: &egui::Context, task: TaskId, plan: &Plan) -> Result<Submitted, String> {
+fn submit(app: &mut SoyuzApp, host: &dyn Host, task: TaskId, plan: &Plan) -> Result<Submitted, String> {
     if !plan.executable {
         return Err("the plan has blocking conflicts".into());
     }
@@ -1319,7 +1320,7 @@ fn submit(app: &mut SoyuzApp, ctx: &egui::Context, task: TaskId, plan: &Plan) ->
             Ok(Submitted { job: Some(job), note: String::new(), shown: String::new() })
         }
         PlanAction::App { op, args } => {
-            app_action(app, ctx, op, args).map(|(note, shown)| Submitted { job: None, note, shown })
+            app_action(app, host, op, args).map(|(note, shown)| Submitted { job: None, note, shown })
         }
         PlanAction::None => {
             Ok(Submitted { job: None, note: "nothing to do".into(), shown: tr!("ai-note-nothing").into() })
@@ -1328,7 +1329,7 @@ fn submit(app: &mut SoyuzApp, ctx: &egui::Context, task: TaskId, plan: &Plan) ->
 }
 
 /// `(note for the model, note for the chat)`.
-fn app_action(app: &mut SoyuzApp, ctx: &egui::Context, op: &str, args: &Value) -> Result<(String, String), String> {
+fn app_action(app: &mut SoyuzApp, host: &dyn Host, op: &str, args: &Value) -> Result<(String, String), String> {
     match op {
         "tag" => {
             let a: soyuz_ai::tools::TagArgs = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
@@ -1357,7 +1358,7 @@ fn app_action(app: &mut SoyuzApp, ctx: &egui::Context, op: &str, args: &Value) -
         }
         "run_custom_command" => {
             let name = args.get("name").and_then(Value::as_str).ok_or("missing name")?.to_string();
-            crate::commands::run_named(app, &name, ctx);
+            crate::commands::run_named(app, &name, host);
             Ok((format!("custom command “{name}” started"), tr!("ai-note-command-started", name = &name)))
         }
         other => Err(format!("unsupported app action “{other}”")),
@@ -1672,7 +1673,7 @@ pub fn cached_access(path: &std::path::Path) -> (AiAccess, bool) {
 }
 
 /// `SOYUZ_SCRIPT` hook: `ai:<prompt>`, `ai:!approve`, `ai:!smart <text>`.
-pub fn script(app: &mut SoyuzApp, ctx: &egui::Context, arg: &str) {
+pub fn script(app: &mut SoyuzApp, host: &dyn Host, arg: &str) {
     let arg = arg.trim();
     if arg == "!approve" {
         if let Some(task) = app.ai.running.as_ref().map(|r| r.task) {
@@ -1726,6 +1727,6 @@ pub fn script(app: &mut SoyuzApp, ctx: &egui::Context, arg: &str) {
         app.ai.smart.pills = pills;
     } else {
         open_panel(app);
-        submit_composer_text(app, ctx, arg.to_string());
+        submit_composer_text(app, host, arg.to_string());
     }
 }

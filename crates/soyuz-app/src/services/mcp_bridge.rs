@@ -35,6 +35,7 @@ use soyuz_mcp::{ApprovalDecision, ApprovalRequest, Backend, Mode, ProgressFn, Se
 
 use crate::ai::mcp::{McpApprovals, PendingMcpApproval};
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::ops::{self, NavOpts};
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::ui::toasts::Toast;
@@ -384,7 +385,7 @@ impl McpBridge {
 }
 
 /// Per frame: (re)start servers on config changes, answer UI requests, show approvals.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     if app.secondary {
         // Secondary / safe-mode windows never serve MCP (the first window does).
         app.services.mcp.disabled = true;
@@ -412,7 +413,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 let r = answer(app, req.call);
                 let _ = req.reply.send(r);
             }
-            BridgeMsg::Register(name, transport) => register(app, ctx, name, transport),
+            BridgeMsg::Register(name, transport) => register(app, host, name, transport),
         }
     }
     // Cards: expire the ones whose call went away, follow their jobs.
@@ -428,8 +429,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     let busy = a.busy();
     drop(a);
     if arrived {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
+        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
     }
     match app.config.ai.mcp.approval_ui {
         AiMcpApprovalUi::Panel => {
@@ -448,14 +449,14 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     if busy {
-        ctx.request_repaint_after(Duration::from_millis(250));
+        host.redraw_after(Duration::from_millis(250));
     }
 }
 
-fn register(app: &mut SoyuzApp, ctx: &egui::Context, name: String, transport: Transport) {
+fn register(app: &mut SoyuzApp, host: &dyn Host, name: String, transport: Transport) {
     let known = app.config.ai.mcp_clients.iter().any(|c| soyuz_mcp::trust::sanitize_name(&c.name) == name);
     if !known {
-        crate::ui::settings::update_config(app, ctx, |c| {
+        crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| {
             c.ai.mcp_clients.push(AiMcpClient { name: name.clone(), pending: true, ..Default::default() })
         });
         app.ui.toasts.push(

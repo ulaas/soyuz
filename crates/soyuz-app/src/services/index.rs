@@ -26,6 +26,7 @@ use soyuz_index::{Expr, Index, IndexConfig, IndexStatus, KindClass, Phase, Searc
 use soyuz_search::{SearchHandle, SearchQuery};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::services::search::{DateRange, KindFilter, NameMode, SearchForm};
 use crate::state::pane::{ListingStatus, PaneId};
 
@@ -82,7 +83,7 @@ pub fn index_config(c: &SearchIndex, debounce: Duration) -> IndexConfig {
 }
 
 /// Per frame: reconcile the worker with the config, push tags, refresh smart folders.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     let c = &app.config.search.index;
     let debounce = Duration::from_millis(app.config.behaviour.watch_debounce_ms.clamp(100, 5000));
     let desired = c.enabled.then(|| index_config(c, debounce));
@@ -106,7 +107,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
         };
         if !ready {
-            ctx.request_repaint_after(RESTART_DEBOUNCE);
+            host.redraw_after(RESTART_DEBOUNCE);
             return false;
         }
         r.started = true;
@@ -115,8 +116,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             // Stopping waits for the worker (bounded); never on the UI thread.
             let _ = std::thread::Builder::new().name("soyuz-index-stop".into()).spawn(move || drop(old));
         }
-        let wake_ctx = ctx.clone();
-        r.index = desired.clone().map(|cfg| Index::start(cfg, Arc::new(move || wake_ctx.request_repaint())));
+        let wake = host.wake();
+        r.index = desired.clone().map(|cfg| Index::start(cfg, wake));
         r.applied = desired.clone();
         r.tags_version = None;
         r.status = None;
@@ -140,7 +141,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
         let st = ix.status();
         if !matches!(st.phase, Phase::Idle | Phase::Failed(_)) {
-            ctx.request_repaint_after(Duration::from_millis(400));
+            host.redraw_after(Duration::from_millis(400));
         }
         if r.status.as_ref().map(|o| &o.phase) != Some(&st.phase) {
             log::debug!("index phase: {:?}", st.phase);
@@ -173,7 +174,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     *e = (index_gen, Instant::now());
                     return true;
                 }
-                ctx.request_repaint_after(refresh_every);
+                host.redraw_after(refresh_every);
                 false
             });
             if due {

@@ -12,6 +12,7 @@ use soyuz_core::config::{self, Config, ConfigError, Loaded};
 use soyuz_fs::{WatchKind, Watcher};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::state::view_memory::ViewState;
 use crate::ui::toasts::Toast;
 
@@ -112,22 +113,22 @@ pub fn read(path: &Path) -> Reloaded {
 }
 
 /// Per frame: apply a pending external edit.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     let Some(r) = app.config_watch.poll() else { return };
     if r.text.is_some() && r.text == app.config_watch.last_text {
         return; // our own save (or no real change)
     }
     app.config_watch.last_text = r.text;
-    handle(app, ctx, r.result, false);
+    handle(app, host, r.result, false);
 }
 
 /// Apply a parse result: live-apply a good config, or toast the error and keep the old one.
-pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context, result: Result<Loaded, ConfigError>, explicit: bool) {
+pub fn handle(app: &mut SoyuzApp, host: &dyn Host, result: Result<Loaded, ConfigError>, explicit: bool) {
     match result {
         Ok(loaded) => {
             let changed = loaded.config != app.config;
             if changed {
-                apply_config(app, ctx, loaded.config);
+                apply_config(app, host, loaded.config);
             }
             if !loaded.warnings.is_empty() {
                 app.ui
@@ -158,30 +159,30 @@ pub fn handle(app: &mut SoyuzApp, ctx: &egui::Context, result: Result<Loaded, Co
 }
 
 /// `ReloadConfig`: re-read the file now.
-pub fn reload_now(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn reload_now(app: &mut SoyuzApp, host: &dyn Host) {
     let r = read(app.config_watch.path());
     app.config_watch.last_text = r.text.clone();
-    handle(app, ctx, r.result, true);
+    handle(app, host, r.result, true);
 }
 
 /// Make `new` the active configuration, applying everything that is not read live each
 /// frame: theme / fonts / scale, key map, default view, visibility toggles.
-pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
+pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
     let old = std::mem::replace(&mut app.config, new);
     let c = &app.config;
     if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
-        for w in crate::theme::install(ctx, &c.appearance, &c.fonts, &c.theme.colors) {
+        for w in crate::theme::install(crate::host::egui_ctx(host), &c.appearance, &c.fonts, &c.theme.colors) {
             log::warn!("{w}");
         }
         let scale = if c.appearance.ui_scale > 0.25 { c.appearance.ui_scale.clamp(0.5, 3.0) } else { 1.0 };
-        if (ctx.zoom_factor() - scale).abs() > f32::EPSILON {
-            ctx.set_zoom_factor(scale);
+        if (crate::host::egui_ctx(host).zoom_factor() - scale).abs() > f32::EPSILON {
+            crate::host::egui_ctx(host).set_zoom_factor(scale);
         }
         app.ui.reduced_motion = c.appearance.reduced_motion;
         if old.appearance.theme != c.appearance.theme {
             app.ui.theme = crate::theme::preference_from_config(&c.appearance.theme);
         }
-        ctx.set_theme(app.ui.theme);
+        host.set_theme(app.ui.theme.into());
     }
     if old.archive != c.archive {
         app.fileops.jobs.reconfigure(c);
@@ -204,7 +205,7 @@ pub fn apply_config(app: &mut SoyuzApp, ctx: &egui::Context, new: Config) {
     app.keymap = km;
     crate::ui::workspaces::bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
     app.keyseq.reset();
-    crate::app::apply_live_settings(ctx, c);
+    crate::app::apply_live_settings(crate::host::egui_ctx(host), c);
     if old.layout.terminal_height != c.layout.terminal_height {
         // The panel remembers a size the user dragged; the setting is the default height.
         app.ui.bottom.height = c.layout.terminal_height.clamp(120.0, 720.0);

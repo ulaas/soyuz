@@ -26,6 +26,7 @@ use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 use io::{Answer, LoadResult, Msg, Stamp, Want};
 
 use crate::app::{Focus, SoyuzApp};
+use crate::host::Host;
 use crate::services::mailbox::Wake;
 use crate::ui::toasts::Toast;
 
@@ -301,7 +302,7 @@ pub fn close(app: &mut SoyuzApp, idx: usize, force: bool) {
 // ---- per-frame ----------------------------------------------------------------------
 
 /// Apply worker results. Called every frame before drawing.
-pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     while let Ok(msg) = app.editors.rx.try_recv() {
         match msg {
             Msg::Loaded { doc, reload, stamp, result } => on_loaded(app, doc, reload, stamp, result),
@@ -329,7 +330,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     }
                     Answer::Discard => {
                         app.editors.quit_allowed = true;
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close);
                     }
                     Answer::Cancel => {}
                 }
@@ -340,7 +341,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         app.editors.quit_after_save = false;
         if app.editors.dirty_count() == 0 {
             app.editors.quit_allowed = true;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close);
         }
     }
 }
@@ -666,19 +667,19 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 /// Window close with unsaved documents: cancel it and ask. Returns `true` when the
 /// close request was taken over.
-pub fn intercept_close(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
-    if !ctx.input(|i| i.viewport().close_requested()) || app.editors.quit_allowed {
+pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host) -> bool {
+    if !crate::host::egui_ctx(host).input(|i| i.viewport().close_requested()) || app.editors.quit_allowed {
         return false;
     }
     let dirty = app.editors.dirty_count();
     if dirty == 0 {
         return false;
     }
-    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+    host.window(crate::host::WindowId::Current, crate::host::WindowCmd::CancelClose);
     if !app.editors.prompting_quit {
         app.editors.prompting_quit = true;
-        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
+        host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
         let names: Vec<String> = app.editors.docs.iter().filter(|d| d.is_dirty()).map(|d| d.name.clone()).collect();
         app.ui.dialogs.push(panel::UnsavedDialog::quit(&names, app.editors.tx.clone()));
     }
@@ -705,7 +706,7 @@ pub fn restore(app: &mut SoyuzApp, paths: &[PathBuf]) {
 /// `edit:<path>` opens a file; `editor:<command>` drives the active document:
 /// `save`, `close`, `type=<text>`, `goto=<line>`, `find=<text>`, `hex=<offset>=<byte>`,
 /// `image=<rr|rl|fh|fv>`, `maximize`, `dock=<right|bottom>`.
-pub fn devscript(app: &mut SoyuzApp, ctx: &egui::Context, verb: &str, arg: &str) {
+pub fn devscript(app: &mut SoyuzApp, host: &dyn Host, verb: &str, arg: &str) {
     let arg = arg.trim();
     if verb == "edit" {
         open_path(app, Path::new(arg), Want::Auto);
@@ -723,7 +724,7 @@ pub fn devscript(app: &mut SoyuzApp, ctx: &egui::Context, verb: &str, arg: &str)
             } else {
                 soyuz_core::config::EditorDock::Right
             };
-            crate::ui::settings::update_config(app, ctx, |c| c.editor.dock = dock);
+            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.editor.dock = dock);
         }
         _ => {
             let Some(d) = app.editors.docs.get_mut(idx) else { return };

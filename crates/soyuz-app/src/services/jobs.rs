@@ -17,6 +17,7 @@ use soyuz_jobs::{
     JobSpec, LogLine, QueueMode, UndoRecord,
 };
 
+use crate::host::Host;
 use crate::state::pane::PaneId;
 
 /// What the user asked for (drives titles, icons and the completion toast).
@@ -315,7 +316,7 @@ impl JobsService {
 
     /// Drain engine events and refresh snapshots when anything changed or a job is
     /// running. Repaints are requested at 10 Hz only while a job is actually working.
-    pub fn poll(&mut self, ctx: &egui::Context) -> Vec<JobEvent> {
+    pub fn poll(&mut self, host: &dyn Host) -> Vec<JobEvent> {
         let events: Vec<JobEvent> = self.engine.events().try_iter().collect();
         for e in &events {
             match e {
@@ -333,7 +334,7 @@ impl JobsService {
             self.refresh_snapshots();
         }
         if self.snapshots.iter().any(|s| s.state.is_active()) {
-            ctx.request_repaint_after(Duration::from_millis(100));
+            host.redraw_after(Duration::from_millis(100));
         }
         if self.history_dirty {
             self.refresh_history();

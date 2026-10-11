@@ -15,6 +15,7 @@ use soyuz_fs::WatchKind;
 
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::host::Host;
 use crate::services::mailbox::UiMsg;
 use crate::services::{AuxState, Services};
 use crate::state::history::HistoryEntry;
@@ -505,7 +506,7 @@ pub fn type_ahead(app: &mut SoyuzApp, text: &str) {
     }
 }
 
-pub fn drain_mailbox(app: &mut SoyuzApp, ctx: &egui::Context) {
+pub fn drain_mailbox(app: &mut SoyuzApp, host: &dyn Host) {
     let deadline = Instant::now() + Duration::from_millis(8);
     let mut handled = 0usize;
     while let Some(msg) = app.services.mailbox.try_recv() {
@@ -518,7 +519,7 @@ pub fn drain_mailbox(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
         handled += 1;
         if handled.is_multiple_of(16) && Instant::now() > deadline {
-            ctx.request_repaint();
+            host.redraw();
             break;
         }
     }
@@ -768,12 +769,12 @@ fn coming_soon(app: &mut SoyuzApp, action: &Action) {
     app.ui.toasts.push(Toast::info(tr!("ops-coming-soon", action = action.title())).body(tr!("ops-coming-soon-body")));
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
+pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
     match cmd {
-        Cmd::Action(a) => crate::actions::execute(app, a, ctx),
+        Cmd::Action(a) => crate::actions::execute(app, a, host),
         Cmd::PaneAction(id, a) => {
             focus_pane(app, id);
-            crate::actions::execute(app, a, ctx);
+            crate::actions::execute(app, a, host);
         }
         Cmd::Navigate { pane, location, select } => {
             navigate(app, pane, location, NavOpts { select, ..NavOpts::user() });
@@ -789,7 +790,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         Cmd::FocusPane(id) => focus_pane(app, id),
         Cmd::CopyText(t) => {
             let n = t.lines().count();
-            ctx.copy_text(t);
+            host.copy_text(t);
             app.ui.toasts.push(Toast::success(if n > 1 {
                 tr!("ops-copied-paths", count = n)
             } else {
@@ -808,7 +809,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             }
         }
         Cmd::ComingSoon(a) => coming_soon(app, &a),
-        Cmd::FileOp(c) => fileops::apply(app, c, ctx),
+        Cmd::FileOp(c) => fileops::apply(app, c, crate::host::egui_ctx(host)),
         Cmd::RevealInSystem(p) => {
             spawn_launch(app, tr!("ops-reveal-failed").into(), move || {
                 soyuz_fs::launch::reveal_in_system(&p).map_err(|e| e.to_string())
@@ -834,9 +835,9 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
-        Cmd::Portal(c) => crate::ui::portal::apply(app, ctx, c),
-        Cmd::SetSidebarMode(m) => crate::ui::tree::set_mode(app, ctx, m),
-        Cmd::Device(c) => crate::ui::sidebar::apply_device(app, ctx, c),
+        Cmd::Portal(c) => crate::ui::portal::apply(app, crate::host::egui_ctx(host), c),
+        Cmd::SetSidebarMode(m) => crate::ui::tree::set_mode(app, crate::host::egui_ctx(host), m),
+        Cmd::Device(c) => crate::ui::sidebar::apply_device(app, crate::host::egui_ctx(host), c),
         Cmd::MoveFavorite { from, to } => {
             let s = &mut app.ui.sidebar;
             if from < s.favorites.len() {
@@ -879,7 +880,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             new_tab(app);
         }
         Cmd::SetTheme(pref) => {
-            ctx.set_theme(pref);
+            host.set_theme(pref.into());
             app.ui.theme = pref;
         }
         Cmd::ApplyViewToAll(id) => {
@@ -890,21 +891,21 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
             }
         }
         Cmd::SetSplit(f) => app.ws.tab_mut().split = f.clamp(0.15, 0.85),
-        Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, ctx, dir),
-        Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, ctx),
+        Cmd::OpenTerminalPanel(dir) => crate::ui::panels::terminal::open_at(app, crate::host::egui_ctx(host), dir),
+        Cmd::Meta(m) => crate::ui::dialogs::properties::apply(app, m, crate::host::egui_ctx(host)),
         Cmd::Tree(c) => crate::ui::tree::apply(app, c),
-        Cmd::Ai(c) => crate::ai::apply_cmd(app, c, ctx),
-        Cmd::Automation(c) => crate::automation::apply(app, c, ctx),
-        Cmd::Quit { when_idle } => app.confirm_quit(ctx, when_idle),
+        Cmd::Ai(c) => crate::ai::apply_cmd(app, c, crate::host::egui_ctx(host)),
+        Cmd::Automation(c) => crate::automation::apply(app, c, crate::host::egui_ctx(host)),
+        Cmd::Quit { when_idle } => app.confirm_quit(crate::host::egui_ctx(host), when_idle),
         Cmd::ChooseOpenWith(path) => app.ui.dialogs.push(crate::ui::dialogs::open_with::OpenWithDialog::new(path)),
         Cmd::NewWindow(loc) => {
             if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
-                crate::ui::workspaces::windows::open_location(app, ctx, loc);
+                crate::ui::workspaces::windows::open_location(app, crate::host::egui_ctx(host), loc);
             } else {
                 window::spawn_window(app, &loc);
             }
         }
-        Cmd::Workspace(c) => crate::ui::workspaces::apply(app, c, ctx),
+        Cmd::Workspace(c) => crate::ui::workspaces::apply(app, c, crate::host::egui_ctx(host)),
 
         Cmd::SubmitJob(spec) => {
             crate::ui::archive::submit_job(app, *spec);

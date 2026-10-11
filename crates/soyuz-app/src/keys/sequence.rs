@@ -13,6 +13,7 @@ use soyuz_core::Location;
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, KeyPreset, Keymap, Mods, SeqMatch};
 
 use crate::app::SoyuzApp;
+use crate::host::Host;
 use crate::ops::{self, NavOpts};
 use crate::ui::toasts::Toast;
 
@@ -174,7 +175,7 @@ pub fn marks_enabled(app: &SoyuzApp) -> bool {
 
 /// One frame of keyboard dispatch for the main window (replaces the plain
 /// `keys::dispatch` loop): actions, sequences and marks.
-pub fn dispatch_all(app: &mut SoyuzApp, ctx: &egui::Context, kctx: KeyContext, text_focused: bool) {
+pub fn dispatch_all(app: &mut SoyuzApp, host: &dyn Host, kctx: KeyContext, text_focused: bool) {
     let now = Instant::now();
     let mut out: Vec<Feed> = Vec::new();
     if let Some(a) = app.keyseq.tick(now) {
@@ -185,7 +186,7 @@ pub fn dispatch_all(app: &mut SoyuzApp, ctx: &egui::Context, kctx: KeyContext, t
     {
         let km = &app.keymap;
         let seq = &mut app.keyseq;
-        ctx.input_mut(|i| {
+        crate::host::egui_ctx(host).input_mut(|i| {
             let current = i.modifiers;
             let mut swallow_text = false;
             i.events.retain(|ev| {
@@ -232,11 +233,11 @@ pub fn dispatch_all(app: &mut SoyuzApp, ctx: &egui::Context, kctx: KeyContext, t
         });
     }
     if app.keyseq.is_pending() {
-        ctx.request_repaint_after(TIMEOUT);
+        host.redraw_after(TIMEOUT);
     }
     for f in out {
         match f {
-            Feed::Action(a) => crate::actions::execute(app, a, ctx),
+            Feed::Action(a) => crate::actions::execute(app, a, host),
             Feed::Mark(op, c) => mark(app, op, c),
             _ => {}
         }

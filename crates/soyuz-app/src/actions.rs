@@ -7,20 +7,21 @@ use soyuz_core::{Column, GroupBy, Location, SortDir, ViewMode};
 
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::host::Host;
 use crate::ops::{self, NavOpts};
 use crate::state::view_memory::{ZOOM_MAX, ZOOM_MIN};
 use crate::ui::dialogs::{AboutDialog, ConfirmDialog, PatternDialog};
 use crate::ui::toasts::Toast;
 use crate::ui::views::layout::NavDir;
 
-pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
+pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     use Action as A;
     if crate::ai::handles(&action) {
-        crate::ai::execute_action(app, action, ctx);
+        crate::ai::execute_action(app, action, crate::host::egui_ctx(host));
         return;
     }
     // Tab groups, workspaces, quad layout, windows, history graph, timeline.
-    if crate::ui::workspaces::action(app, &action, ctx) {
+    if crate::ui::workspaces::action(app, &action, crate::host::egui_ctx(host)) {
         return;
     }
     let pane_id = app.ws.pane().id;
@@ -49,14 +50,14 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::Refresh => ops::refresh(app),
         A::ToggleSidebar => app.ui.sidebar_visible = !app.ui.sidebar_visible,
-        A::ToggleTreeSidebar => crate::ui::tree::toggle(app, ctx),
+        A::ToggleTreeSidebar => crate::ui::tree::toggle(app, crate::host::egui_ctx(host)),
         A::FocusSidebar => {
             app.ui.sidebar_visible = true;
             app.ui.focus = Focus::Sidebar;
         }
         A::FocusList => {
             app.ui.focus = Focus::List;
-            ctx.memory_mut(|m| {
+            crate::host::egui_ctx(host).memory_mut(|m| {
                 if let Some(id) = m.focused() {
                     m.surrender_focus(id);
                 }
@@ -145,7 +146,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::TabToNewWindow => ops::window::tab_to_new_window(app),
         // Closes this window (the main window hands over to another one, if any).
-        A::CloseWindow => ctx.send_viewport_cmd(egui::ViewportCommand::Close),
+        A::CloseWindow => host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Close),
         A::SyncNavigation => {
             let tab = app.ws.tab_mut();
             tab.sync_nav = !tab.sync_nav;
@@ -226,8 +227,8 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::ToggleStatusBar => app.ui.status_visible = !app.ui.status_visible,
         A::ToggleCheckboxes => app.ui.checkbox_mode = !app.ui.checkbox_mode,
-        A::ToggleTerminal => crate::ui::panels::terminal::toggle(app, ctx),
-        A::FocusTerminal => crate::ui::panels::terminal::focus(app, ctx),
+        A::ToggleTerminal => crate::ui::panels::terminal::toggle(app, crate::host::egui_ctx(host)),
+        A::FocusTerminal => crate::ui::panels::terminal::focus(app, crate::host::egui_ctx(host)),
         A::TogglePreviewPane => app.ui.preview.toggle(),
         A::ToggleInfoPane => app.ui.preview.toggle_info(),
         A::ToggleFlatView => crate::ui::search::toggle_flat_view(app),
@@ -385,7 +386,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::Quit => {
             // Every window: close the root viewport for real (with the job check).
             app.workspaces.quitting = true;
-            ctx.send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
+            host.window(crate::host::WindowId::Root, crate::host::WindowCmd::Close);
         }
 
         A::About => app.ui.dialogs.push(AboutDialog::new(app.renderer)),
@@ -397,7 +398,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
                 A::UiZoomOut => ui_zoom_step(cur, -1),
                 _ => 1.0,
             };
-            crate::ui::settings::update_config(app, ctx, |c| c.appearance.ui_scale = next);
+            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.ui_scale = next);
             let percent = format!("{:.0}", next * 100.0);
             let mut t = Toast::info(tr!("actions-ui-zoom")).body(tr!("actions-ui-zoom-body", percent = percent));
             t.duration = Some(1.5);
@@ -405,7 +406,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         }
         A::ToggleHighContrast => {
             let on = !app.config.appearance.high_contrast;
-            crate::ui::settings::update_config(app, ctx, |c| c.appearance.high_contrast = on);
+            crate::ui::settings::update_config(app, crate::host::egui_ctx(host), |c| c.appearance.high_contrast = on);
             app.ui.toasts.push(Toast::info(if on {
                 tr!("actions-high-contrast-on")
             } else {
@@ -416,7 +417,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::CommandPalette => crate::palette::open(app, crate::palette::query::Mode::Commands, ""),
         A::JumpToFolderDialog | A::OpenRecent => crate::palette::open(app, crate::palette::query::Mode::Folders, ""),
         A::Settings => crate::ui::settings::open(app, None),
-        A::CustomCommand(name) => crate::commands::run_named(app, &name, ctx),
+        A::CustomCommand(name) => crate::commands::run_named(app, &name, crate::host::egui_ctx(host)),
         A::RunScript(id) => crate::automation::run_action(app, &id),
         A::OpenScripts => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Scripts)),
         A::OpenAutomations => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Automations)),
@@ -431,7 +432,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
             }
             ops::launch(app, &path);
         }
-        A::ReloadConfig => crate::services::config_watch::reload_now(app, ctx),
+        A::ReloadConfig => crate::services::config_watch::reload_now(app, crate::host::egui_ctx(host)),
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
                 crate::ui::quicklook::toggle(app);
@@ -442,12 +443,14 @@ pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
         A::ExtractToFolder => crate::ui::archive::extract_to_folder(app),
         A::ExtractTo => crate::ui::archive::extract_to_dialog(app),
         A::TestArchive => crate::ui::archive::test_archive(app),
-        a if crate::ui::remote::handles(app, &a) => crate::ui::remote::execute(app, a, ctx),
-        a if crate::ui::dialogs::properties::handles(app, &a) => crate::ui::dialogs::properties::execute(app, a, ctx),
-        a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, ctx),
+        a if crate::ui::remote::handles(app, &a) => crate::ui::remote::execute(app, a, crate::host::egui_ctx(host)),
+        a if crate::ui::dialogs::properties::handles(app, &a) => {
+            crate::ui::dialogs::properties::execute(app, a, crate::host::egui_ctx(host))
+        }
+        a if crate::ui::tools::handles(&a) => crate::ui::tools::execute(app, a, crate::host::egui_ctx(host)),
         a if crate::ui::archive::handles_edit(app, &a) => crate::ui::archive::execute_edit(app, a),
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
-        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, ctx),
+        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, crate::host::egui_ctx(host)),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));

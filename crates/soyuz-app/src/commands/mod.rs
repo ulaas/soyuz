@@ -15,6 +15,7 @@ use soyuz_core::config::{Action, CommandContext, Config, CustomCommand};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::host::Host;
 use crate::state::pane::PaneId;
 use crate::theme::icons::ph;
 use crate::ui::toasts::Toast;
@@ -270,16 +271,16 @@ pub fn join_args(args: &[String]) -> String {
 }
 
 /// Run the custom command called `name` against the focused pane.
-pub fn run_named(app: &mut SoyuzApp, name: &str, ctx: &egui::Context) {
+pub fn run_named(app: &mut SoyuzApp, name: &str, host: &dyn Host) {
     let Some(cmd) = app.config.custom_commands.iter().find(|c| c.name == name).cloned() else {
         app.ui.toasts.push(Toast::warning(tr!("actions-command-not-found", name = name)));
         return;
     };
-    run(app, &cmd, ctx);
+    run(app, &cmd, host);
 }
 
 /// Run `cmd` (detached, or typed into the terminal panel).
-pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, ctx: &egui::Context) {
+pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, host: &dyn Host) {
     if cmd.command.trim().is_empty() {
         app.ui.toasts.push(Toast::warning(tr!("actions-command-empty", name = &cmd.name)));
         return;
@@ -288,7 +289,7 @@ pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, ctx: &egui::Context) {
     let dir = pctx.dir.clone().unwrap_or_else(soyuz_fs::home);
     if cmd.terminal {
         let line = command_line(cmd, &pctx, Quoting::for_shell(&app.config.terminal.shell));
-        crate::ui::panels::terminal::run_command(app, ctx, dir, &line);
+        crate::ui::panels::terminal::run_command(app, crate::host::egui_ctx(host), dir, &line);
         return;
     }
     let program = expand_str(cmd.command.trim(), &pctx, Quoting::None);
