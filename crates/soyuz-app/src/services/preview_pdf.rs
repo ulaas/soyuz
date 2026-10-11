@@ -76,7 +76,22 @@ pub fn pdfium_dirs(configured: &str) -> Vec<PathBuf> {
         v.push(d);
     }
     v.push(soyuz_core::config::config_dir());
+    v.extend(system_lib_dirs());
     v
+}
+
+/// Linux: the usual system library folders (distribution packages and `make install`
+/// put `libpdfium.so` there). The dynamic loader's own search path (`LD_LIBRARY_PATH`,
+/// `ld.so.cache`) is tried as well when none of the folders has the library.
+fn system_lib_dirs() -> Vec<PathBuf> {
+    if !cfg!(target_os = "linux") {
+        return Vec::new();
+    }
+    let multiarch = format!("/usr/lib/{}-linux-gnu", std::env::consts::ARCH);
+    ["/usr/lib64", multiarch.as_str(), "/usr/lib", "/usr/local/lib64", "/usr/local/lib"]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
 }
 
 /// Platform file name of the pdfium library.
@@ -254,6 +269,11 @@ pub mod pdfium {
                                             lib.display()
                                         );
                                     }
+                                },
+                                // Linux: last, the loader's own search path (`dlopen("libpdfium.so")`).
+                                None if cfg!(target_os = "linux") => match Pdfium::bind_to_system_library() {
+                                    Ok(b) => pdfium = Some(Pdfium::new(b)),
+                                    Err(_) => last_err = super::missing_message(&dirs),
                                 },
                                 None => last_err = super::missing_message(&dirs),
                             }
@@ -472,5 +492,22 @@ mod tests {
         assert!(missing_message(&[PathBuf::from("C:/x")]).contains(":\n\nC:/x\n\nOr set"), "paragraphs kept");
         assert_eq!(find_pdfium(&[PathBuf::from("Z:/definitely/missing")]), None);
         assert_eq!(clean_text("a\n\n\n\nb  \n"), "a\n\nb");
+    }
+
+    #[test]
+    fn pdfium_search_order() {
+        let d = pdfium_dirs("/opt/pdfium");
+        assert_eq!(d[0], PathBuf::from("/opt/pdfium"), "configured folder first");
+        let sys = d.iter().any(|p| p == Path::new("/usr/lib64") || p == Path::new("/usr/lib"));
+        assert_eq!(sys, cfg!(target_os = "linux"), "system folders on Linux only");
+        if cfg!(target_os = "linux") {
+            let cfg = d.iter().position(|p| *p == soyuz_core::config::config_dir()).unwrap();
+            let usr = d.iter().position(|p| p == Path::new("/usr/lib64")).unwrap();
+            assert!(cfg < usr, "user folders before system folders");
+            let t = tempfile::tempdir().unwrap();
+            std::fs::write(t.path().join("libpdfium.so"), b"x").unwrap();
+            let dirs = [PathBuf::from("/definitely/missing"), t.path().to_path_buf()];
+            assert_eq!(find_pdfium(&dirs), Some(t.path().join("libpdfium.so")));
+        }
     }
 }

@@ -29,7 +29,7 @@ use crate::ui::toasts::Toast;
 /// Log lines kept for crash reports.
 pub const RING_LINES: usize = 200;
 /// Default `RUST_LOG`-style filter.
-pub const DEFAULT_FILTER: &str = "info,wgpu=warn,naga=warn";
+pub const DEFAULT_FILTER: &str = "info,wgpu=warn,naga=warn,zbus=warn,tracing=warn";
 
 // ---------------------------------------------------------------------------
 // Ring-buffer logger

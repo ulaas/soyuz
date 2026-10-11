@@ -14,39 +14,53 @@ enum RendererChoice {
 
 #[derive(Debug, PartialEq, Eq)]
 enum Cli {
-    Run { renderer: RendererChoice, startup: soyuz_app::app::Startup },
+    Run {
+        renderer: RendererChoice,
+        startup: soyuz_app::app::Startup,
+        /// Paths after the first: opened as extra tabs once the window is up.
+        extra: Vec<std::path::PathBuf>,
+        /// `--dbus-file-manager`: own `org.freedesktop.FileManager1` regardless of
+        /// `[linux] own_file_manager1` (the opt-in D-Bus activation file passes it).
+        dbus_file_manager: bool,
+    },
     Help,
     Version,
 }
 
 const USAGE: &str = "\
-Usage: soyuz [OPTIONS] [PATH]
+Usage: soyuz [OPTIONS] [PATH]...
        soyuz <cp|mv|rm|trash|ls|open|reveal|jobs> …   (run `soyuz cp --help`)
 
 Arguments:
-  [PATH]                  Folder to open (a file opens its folder with the file selected)
+  [PATH]...               Folders to open, as tabs (a file opens its folder with the file
+                          selected); `file://` URIs are accepted
 
 Options:
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
+  --dbus-file-manager     Linux: serve org.freedesktop.FileManager1 (\"show in folder\" from other apps)
   --mcp                   Run as an MCP server on stdin/stdout (attaches to the running window)
   --mcp-client <NAME>     With --mcp: the client's name in Settings → AI assistant → Connections
   --mcp-headless          With --mcp: never attach to a running window
   -h, --help              Print help
   -V, --version           Print version";
 
-fn set_path(startup: &mut soyuz_app::app::Startup, path: String) -> Result<(), String> {
-    if startup.open.is_some() {
-        return Err(format!("unexpected extra path '{path}'"));
+/// A command-line path: `file://` URIs (desktop files pass `%U`) are decoded.
+fn arg_path(arg: String) -> std::path::PathBuf {
+    if arg.get(..5).is_some_and(|p| p.eq_ignore_ascii_case("file:"))
+        && let Some(p) = soyuz_fs::launch::path_from_file_uri(&arg)
+    {
+        return p;
     }
-    startup.open = Some(std::path::PathBuf::from(path));
-    Ok(())
+    std::path::PathBuf::from(arg)
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut renderer = RendererChoice::Wgpu;
     let mut startup = soyuz_app::app::Startup::default();
+    let mut paths: Vec<std::path::PathBuf> = Vec::new();
+    let mut dbus_file_manager = false;
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         let value = if arg == "--renderer" {
@@ -67,15 +81,21 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             "-V" | "--version" => return Ok(Cli::Version),
             "--new-window" => startup.secondary = true,
             "--safe-mode" => startup.safe_mode = true,
+            "--dbus-file-manager" => dbus_file_manager = true,
             "--" => {
-                let path = it.next().ok_or("`--` needs a path after it")?;
-                set_path(&mut startup, path)?;
+                let rest: Vec<String> = it.by_ref().collect();
+                if rest.is_empty() {
+                    return Err("`--` needs a path after it".into());
+                }
+                paths.extend(rest.into_iter().map(arg_path));
             }
             other if other.starts_with('-') => return Err(format!("unexpected argument '{other}'")),
-            _ => set_path(&mut startup, arg)?,
+            _ => paths.push(arg_path(arg)),
         }
     }
-    Ok(Cli::Run { renderer, startup })
+    let mut paths = paths.into_iter();
+    startup.open = paths.next();
+    Ok(Cli::Run { renderer, startup, extra: paths.collect(), dbus_file_manager })
 }
 
 /// Map the CLI choice onto an eframe renderer; returns the renderer and its display name.
@@ -146,6 +166,38 @@ fn choose_adapter(
     (0..infos.len()).min_by_key(|&i| adapter_rank(infos[i].1, power))
 }
 
+/// `[linux] window_backend`: force winit's X11 or Wayland backend (`auto` lets winit
+/// pick Wayland when `WAYLAND_DISPLAY` is set). Falls back to the other backend when the
+/// forced one has no display.
+#[cfg(target_os = "linux")]
+fn with_window_backend(
+    mut options: eframe::NativeOptions,
+    backend: soyuz_core::config::WindowBackend,
+) -> eframe::NativeOptions {
+    use soyuz_core::config::WindowBackend;
+    use winit::platform::{wayland::EventLoopBuilderExtWayland, x11::EventLoopBuilderExtX11};
+    let has = |var: &str| std::env::var_os(var).is_some_and(|v| !v.is_empty());
+    let wayland = has("WAYLAND_DISPLAY") || has("WAYLAND_SOCKET");
+    let x11 = has("DISPLAY");
+    match backend {
+        WindowBackend::X11 if x11 => {
+            log::info!("window: X11 backend ([linux] window_backend = \"x11\")");
+            options.event_loop_builder = Some(Box::new(|b| {
+                b.with_x11();
+            }));
+        }
+        WindowBackend::Wayland if wayland => {
+            log::info!("window: Wayland backend ([linux] window_backend = \"wayland\")");
+            options.event_loop_builder = Some(Box::new(|b| {
+                b.with_wayland();
+            }));
+        }
+        WindowBackend::Auto => {}
+        other => log::warn!("window: [linux] window_backend = {other:?} has no display; choosing automatically"),
+    }
+    options
+}
+
 fn main() -> ExitCode {
     soyuz_app::devscript::mark_process_start();
     soyuz_app::services::crash::init_logging();
@@ -199,9 +251,12 @@ Run `soyuz <command> --help` for usage."
             println!("soyuz {}", env!("CARGO_PKG_VERSION"));
             return ExitCode::SUCCESS;
         }
-        Cli::Run { renderer, startup } => (renderer, startup),
+        Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),
     };
-    let (renderer, startup) = renderer;
+    let (renderer, startup, extra, dbus_file_manager) = renderer;
+    soyuz_app::services::filemanager1::set_forced(dbus_file_manager);
+    // Further command-line paths open as tabs once the window runs.
+    soyuz_app::services::filemanager1::open_paths_later(extra);
     let (renderer, renderer_name) = resolve_renderer(renderer);
     // Before the job engine exists: claim the crash-journal slot, collect what to recover.
     soyuz_app::services::crash::startup(startup.safe_mode);
@@ -285,6 +340,8 @@ Run `soyuz <command> --help` for usage."
         })),
         ..Default::default()
     };
+    #[cfg(target_os = "linux")]
+    let options = with_window_backend(options, config.linux.window_backend);
     let result = eframe::run_native(
         "Soyuz",
         options,
@@ -295,6 +352,12 @@ Run `soyuz <command> --help` for usage."
             Ok(Box::new(app))
         }),
     );
+    // "Install & restart" after an in-place update: start the new binary.
+    if let Some(exe) = soyuz_app::services::updates::take_restart() {
+        let e = soyuz_app::services::updates::exec_restart(&exe);
+        log::error!("soyuz: restart failed: {e}");
+        eprintln!("soyuz: restart failed: {e}");
+    }
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
@@ -333,7 +396,9 @@ mod tests {
 
     #[test]
     fn cli_parsing() {
-        let run = |renderer| Ok(Cli::Run { renderer, startup: Default::default() });
+        let run = |renderer| {
+            Ok(Cli::Run { renderer, startup: Default::default(), extra: Vec::new(), dbus_file_manager: false })
+        };
         assert_eq!(parse(&[]), run(RendererChoice::Wgpu));
         assert_eq!(parse(&["--renderer", "glow"]), run(RendererChoice::Glow));
         assert_eq!(parse(&["--renderer=WGPU"]), run(RendererChoice::Wgpu));
@@ -342,7 +407,11 @@ mod tests {
         assert_eq!(startup.open, Some(std::path::PathBuf::from("C:\\data")));
         let Ok(Cli::Run { startup, .. }) = parse(&["--", "-dash"]) else { panic!("parse") };
         assert_eq!(startup.open, Some(std::path::PathBuf::from("-dash")));
-        assert!(parse(&["a", "b"]).is_err());
+        let Ok(Cli::Run { startup, extra, .. }) = parse(&["a", "b", "c"]) else { panic!("parse") };
+        assert_eq!(startup.open, Some(std::path::PathBuf::from("a")));
+        assert_eq!(extra, vec![std::path::PathBuf::from("b"), std::path::PathBuf::from("c")]);
+        let Ok(Cli::Run { dbus_file_manager, .. }) = parse(&["--dbus-file-manager"]) else { panic!("parse") };
+        assert!(dbus_file_manager);
         assert_eq!(parse(&["--help"]), Ok(Cli::Help));
         assert_eq!(parse(&["-V"]), Ok(Cli::Version));
         assert!(parse(&["--renderer"]).is_err());
@@ -350,6 +419,20 @@ mod tests {
         assert!(parse(&["--bogus"]).is_err());
         let Ok(Cli::Run { startup, .. }) = parse(&["--safe-mode"]) else { panic!("parse") };
         assert!(startup.safe_mode && !startup.secondary);
+    }
+
+    #[test]
+    fn file_uris_on_the_command_line() {
+        let Ok(Cli::Run { startup, extra, .. }) = parse(&["file:///tmp/a%20b", "FILE:///x"]) else { panic!("parse") };
+        if cfg!(windows) {
+            assert!(startup.open.is_some());
+        } else {
+            assert_eq!(startup.open, Some(std::path::PathBuf::from("/tmp/a b")));
+            assert_eq!(extra, vec![std::path::PathBuf::from("/x")]);
+        }
+        // Not a file URI: kept as a path.
+        let Ok(Cli::Run { startup, .. }) = parse(&["sftp://host/x"]) else { panic!("parse") };
+        assert_eq!(startup.open, Some(std::path::PathBuf::from("sftp://host/x")));
     }
 
     #[test]

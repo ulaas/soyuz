@@ -1,5 +1,10 @@
-//! Linux / macOS clipboard file interop through the platform's command-line tools
-//! (best effort, nothing is linked):
+//! Linux / macOS clipboard file interop.
+//!
+//! * Linux: native first ([`native`]: Wayland `ext-data-control-v1`, else the X11
+//!   `CLIPBOARD` selection); the tools below only when `[linux] clipboard_fallback_tools`
+//!   is on and no native mechanism works.
+//!
+//! The command-line tools (best effort, nothing is linked):
 //!
 //! * Wayland: `wl-copy --type x-special/gnome-copied-files` / `wl-paste --type …`;
 //! * X11: `xclip -selection clipboard -t x-special/gnome-copied-files` (reads also try
@@ -115,8 +120,24 @@ fn wayland() -> bool {
 /// A tool for putting `n` files on the clipboard is available (cheap, no spawn), so the
 /// caller can decide on the text fallback before the write runs in the background.
 #[cfg(not(target_os = "macos"))]
-pub(super) fn can_set(_n: usize) -> bool {
+fn tools_can_set() -> bool {
     in_path(if wayland() { "wl-copy" } else { "xclip" })
+}
+
+/// Whether the external tools may be used.
+#[cfg(not(target_os = "macos"))]
+fn tools_allowed() -> bool {
+    // Linux has a native clipboard: the tools are an opt-in fallback there.
+    !cfg!(target_os = "linux") || super::fallback_tools()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(super) fn can_set(_n: usize) -> bool {
+    #[cfg(target_os = "linux")]
+    if native::backend().is_some() {
+        return true;
+    }
+    tools_allowed() && tools_can_set()
 }
 
 #[cfg(target_os = "macos")]
@@ -126,6 +147,15 @@ pub(super) fn can_set(n: usize) -> bool {
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    match native::set_files(mode, paths) {
+        Ok(()) => return Ok(()),
+        Err(e) if !tools_allowed() => return Err(e),
+        Err(e) => log::info!("clipboard: {e}; trying the fallback tools"),
+    }
+    if !tools_allowed() {
+        return Err(tr!("services-clipboard-unavailable").into());
+    }
     let body = encode_gnome(mode, paths);
     let ok = if wayland() {
         run("wl-copy", &["--type", "x-special/gnome-copied-files"], Some(body.as_bytes())).is_some()
@@ -151,6 +181,18 @@ pub(super) fn clear_if_cut() {
 
 #[cfg(not(target_os = "macos"))]
 fn read_files() -> Option<(ClipMode, Vec<PathBuf>)> {
+    #[cfg(target_os = "linux")]
+    match native::read_files() {
+        Ok(r) => return r,
+        Err(e) if !tools_allowed() => {
+            log::debug!("clipboard: {e}");
+            return None;
+        }
+        Err(e) => log::debug!("clipboard: {e}; trying the fallback tools"),
+    }
+    if !tools_allowed() {
+        return None;
+    }
     let read = |target: &str| -> Option<String> {
         let out = if wayland() {
             run("wl-paste", &["--no-newline", "--type", target], None)?
@@ -168,6 +210,14 @@ fn read_files() -> Option<(ClipMode, Vec<PathBuf>)> {
 
 #[cfg(not(target_os = "macos"))]
 pub(super) fn clear() {
+    #[cfg(target_os = "linux")]
+    match native::clear() {
+        Ok(()) => return,
+        Err(e) => log::debug!("clipboard: {e}"),
+    }
+    if !tools_allowed() {
+        return;
+    }
     if wayland() {
         let _ = run("wl-copy", &["--clear"], None);
     } else {
@@ -204,4 +254,174 @@ pub(super) fn has_files() -> bool {
 /// No native key-state query here: the V key-release event is used instead.
 pub(super) fn paste_keys_down() -> Option<(bool, bool, bool)> {
     None
+}
+
+/// Probe the native clipboard on a helper thread (once).
+#[cfg(target_os = "linux")]
+pub(super) fn probe_in_background() {
+    static STARTED: std::sync::Once = std::sync::Once::new();
+    STARTED.call_once(|| {
+        let _ = std::thread::Builder::new().name("soyuz-clip-probe".into()).spawn(|| {
+            native::backend();
+        });
+    });
+}
+
+/// The built-in Linux clipboard: Wayland `ext-data-control-v1`, else X11.
+#[cfg(target_os = "linux")]
+pub(super) mod native {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use parking_lot::Mutex;
+
+    use super::super::{files_from_selection, selection_formats, wayland, x11};
+    use crate::ops::fileops::clipboard::ClipMode;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum Backend {
+        Wayland,
+        X11,
+    }
+
+    static BACKEND: OnceLock<Option<Backend>> = OnceLock::new();
+
+    /// The usable backend (probed once: one Wayland roundtrip / one X connection).
+    pub fn backend() -> Option<Backend> {
+        *BACKEND.get_or_init(|| {
+            let set = |v: &str| std::env::var_os(v).is_some_and(|x| !x.is_empty());
+            let b = if set("WAYLAND_DISPLAY") && wayland::available() {
+                Some(Backend::Wayland)
+            } else if set("DISPLAY") && x11::available() {
+                Some(Backend::X11)
+            } else {
+                None
+            };
+            log::info!("clipboard: native backend {b:?}");
+            b
+        })
+    }
+
+    /// What this process currently holds on the clipboard (until another app takes it).
+    struct Owned {
+        mode: ClipMode,
+        paths: Vec<PathBuf>,
+        alive: Arc<AtomicBool>,
+    }
+
+    static OWNED: Mutex<Option<Owned>> = Mutex::new(None);
+
+    fn owned() -> Option<(ClipMode, Vec<PathBuf>)> {
+        let g = OWNED.lock();
+        g.as_ref().filter(|o| o.alive.load(Ordering::SeqCst)).map(|o| (o.mode, o.paths.clone()))
+    }
+
+    pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
+        let formats = selection_formats(mode, paths);
+        let alive = match backend() {
+            Some(Backend::Wayland) => wayland::set(formats)?,
+            Some(Backend::X11) => x11::set(formats)?,
+            None => return Err(tr!("services-clipboard-unavailable").into()),
+        };
+        *OWNED.lock() = Some(Owned { mode, paths: paths.to_vec(), alive });
+        Ok(())
+    }
+
+    /// Run `f` with the selection's types and a reader (see the backends' `read`).
+    pub fn read<R>(f: impl FnOnce(&[String], &mut dyn FnMut(&str) -> Option<Vec<u8>>) -> R) -> Result<R, String> {
+        match backend() {
+            Some(Backend::Wayland) => wayland::read(f),
+            Some(Backend::X11) => x11::read(f),
+            None => Err(tr!("services-clipboard-unavailable").into()),
+        }
+    }
+
+    /// `Ok(None)`: the clipboard holds no files.
+    pub fn read_files() -> Result<Option<(ClipMode, Vec<PathBuf>)>, String> {
+        // Our own selection: no round trip through the display server.
+        if let Some(r) = owned() {
+            return Ok(Some(r));
+        }
+        read(|types, rd| files_from_selection(types, rd))
+    }
+
+    pub fn clear() -> Result<(), String> {
+        *OWNED.lock() = None;
+        match backend() {
+            Some(Backend::Wayland) => wayland::clear(),
+            Some(Backend::X11) => x11::clear(),
+            None => Err(tr!("services-clipboard-unavailable").into()),
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        fn wl_paste(args: &[&str]) -> Option<String> {
+            let out = std::process::Command::new("wl-paste").args(args).output().ok()?;
+            out.status.success().then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+        }
+
+        /// Copies files to the real session clipboard, reads them back through our own
+        /// paste path and through `wl-paste`, then restores the previous text.
+        #[test]
+        fn native_round_trip() {
+            if std::env::var_os("SOYUZ_CLIPBOARD_TESTS").is_none() {
+                return;
+            }
+            let Some(b) = backend() else { panic!("no native clipboard backend") };
+            // Save the user's text (restored with wl-copy, which keeps serving it after
+            // this test process exits).
+            let saved = read(|types, rd| {
+                types.iter().any(|t| t.starts_with("text/plain")).then(|| rd("text/plain;charset=utf-8")).flatten()
+            })
+            .ok()
+            .flatten();
+            let dir = tempfile::tempdir().unwrap();
+            let a = dir.path().join("a b.txt");
+            let c = dir.path().join("ç.txt");
+            std::fs::write(&a, b"a").unwrap();
+            std::fs::write(&c, b"c").unwrap();
+            let paths = vec![a.clone(), c.clone()];
+
+            set_files(ClipMode::Cut, &paths).unwrap();
+            assert_eq!(owned(), Some((ClipMode::Cut, paths.clone())));
+            // Through the display server (not the in-process shortcut).
+            let got = read(|types, rd| files_from_selection(types, rd)).unwrap();
+            assert_eq!(got, Some((ClipMode::Cut, paths.clone())));
+            if b == Backend::Wayland && std::process::Command::new("wl-paste").arg("--version").output().is_ok() {
+                let types = wl_paste(&["--list-types"]).unwrap_or_default();
+                for t in ["x-special/gnome-copied-files", "text/uri-list", "application/x-kde-cutselection"] {
+                    assert!(types.lines().any(|l| l == t), "{t} missing from {types:?}");
+                }
+                let list = wl_paste(&["--no-newline", "-t", "text/uri-list"]).unwrap();
+                assert!(list.contains("a%20b.txt") && list.contains("%C3%A7.txt"), "{list}");
+                let gnome = wl_paste(&["--no-newline", "-t", "x-special/gnome-copied-files"]).unwrap();
+                assert!(gnome.starts_with("cut\nfile://"), "{gnome}");
+            }
+            set_files(ClipMode::Copy, &paths[..1]).unwrap();
+            let got = read(|types, rd| files_from_selection(types, rd)).unwrap();
+            assert_eq!(got, Some((ClipMode::Copy, paths[..1].to_vec())));
+            clear().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert_eq!(read_files().unwrap(), None);
+
+            if let Some(text) = saved {
+                let child = std::process::Command::new("wl-copy")
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::null())
+                    .spawn();
+                if let Ok(mut child) = child {
+                    use std::io::Write;
+                    if let Some(mut stdin) = child.stdin.take() {
+                        let _ = stdin.write_all(&text);
+                    }
+                    let _ = child.wait();
+                }
+            }
+        }
+    }
 }

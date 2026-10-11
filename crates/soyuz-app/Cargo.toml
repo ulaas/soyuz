@@ -95,6 +95,20 @@ windows-sys = { workspace = true, features = [
     "Win32_UI_Input_KeyboardAndMouse",
 ] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+# Session-bus service `org.freedesktop.FileManager1` (`services::filemanager1`).
+zbus.workspace = true
+# Native file clipboard: X11 selections (pure-Rust connection) and the Wayland
+# `ext-data-control-v1` protocol (`services::os_clipboard_*`).
+x11rb.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+# `user.xdg.tags` (freedesktop tags shared with Dolphin / Baloo, `services::tags`).
+xattr.workspace = true
+# `[linux] window_backend`: `EventLoopBuilderExt{X11,Wayland}` for eframe's event-loop
+# hook. Same version eframe already uses (no new crate in the lockfile).
+winit = { version = "0.30.13", default-features = false }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 xattr.workspace = true
 
@@ -122,7 +136,16 @@ depends = "$auto, libxkbcommon0, libfontconfig1"
 assets = [
     ["target/release/soyuz", "usr/bin/", "755"],
     ["assets/soyuz.desktop", "usr/share/applications/", "644"],
-    ["assets/icon.png", "usr/share/icons/hicolor/512x512/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/16x16/apps/soyuz.png", "usr/share/icons/hicolor/16x16/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/22x22/apps/soyuz.png", "usr/share/icons/hicolor/22x22/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/24x24/apps/soyuz.png", "usr/share/icons/hicolor/24x24/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/32x32/apps/soyuz.png", "usr/share/icons/hicolor/32x32/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/48x48/apps/soyuz.png", "usr/share/icons/hicolor/48x48/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/64x64/apps/soyuz.png", "usr/share/icons/hicolor/64x64/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/128x128/apps/soyuz.png", "usr/share/icons/hicolor/128x128/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/256x256/apps/soyuz.png", "usr/share/icons/hicolor/256x256/apps/soyuz.png", "644"],
+    ["../../installer/linux/icons/hicolor/512x512/apps/soyuz.png", "usr/share/icons/hicolor/512x512/apps/soyuz.png", "644"],
+    ["../../installer/linux/io.github.ulaas.Soyuz.metainfo.xml", "usr/share/metainfo/io.github.ulaas.Soyuz.metainfo.xml", "644"],
     ["../../README.md", "usr/share/doc/soyuz/README.md", "644"],
 ]
 

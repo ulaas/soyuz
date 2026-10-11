@@ -325,3 +325,25 @@ services-update-available-body = Open Settings → About & updates to read the r
 services-watch-degraded = Change watching is limited
 # $secs = poll interval in whole seconds.
 services-watch-degraded-body = The system's limit of watched folders is reached, so some folders are re-checked every { $secs } s instead.
+
+## Linux (platform)
+
+services-clipboard-unavailable = the clipboard is not available (no Wayland data-control and no X11 display)
+services-fm1-failed = Could not register "show in folder" (org.freedesktop.FileManager1): { $error }
+services-fm1-taken = Another app ({ $owner }) already handles "show in folder" (org.freedesktop.FileManager1). Close it or turn off its file-manager service, then turn this setting off and on again.
+
+# $kind: "system" | "flatpak" | "appimage" | "other".
+services-update-package-managed = { $kind ->
+    [system] This copy of Soyuz was installed by your system's package manager. Update it there (for example with dnf, apt or your software center); Soyuz never overwrites package-managed files.
+    [flatpak] This copy of Soyuz runs as a Flatpak. Update it with “flatpak update” or your software center.
+    [appimage] This copy of Soyuz runs as an AppImage. Download the new AppImage and replace the old file.
+   *[other] This copy of Soyuz cannot update itself. Install the new version the same way you installed this one.
+}
+services-update-install-not-tarball = only the Linux release tarball (.tar.gz) can be installed in place
+services-update-install-no-binary = the archive does not contain bin/soyuz
+services-update-install-bad-archive = the archive is damaged or not a Soyuz release
+services-update-install-not-elf = bin/soyuz in the archive is not a program for this computer's processor; nothing was changed
+services-update-install-changed = the downloaded file changed after it was verified; download it again
+# $path: folder of the running soyuz executable.
+services-update-install-no-permission = cannot write to { $path } ({ $error }). If Soyuz was installed system-wide, update it with sudo, e.g. “sudo tar -C /usr/local --strip-components=1 -xf <file>”.
+services-update-install-failed = installing the update failed: { $error }

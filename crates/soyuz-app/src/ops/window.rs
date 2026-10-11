@@ -89,6 +89,27 @@ pub fn is_elevatable(path: &Path, mode: Option<u32>) -> bool {
     }
 }
 
+/// `$platform` of the `ops-elevate-needs` message.
+fn elevate_platform() -> &'static str {
+    if cfg!(windows) {
+        "windows"
+    } else if cfg!(target_os = "linux") {
+        "linux"
+    } else {
+        "other"
+    }
+}
+
+/// `name` is an executable file in one of the `PATH` directories (no process spawned).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn on_path(name: &str, path: Option<&std::ffi::OsStr>) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    path.is_some_and(|p| {
+        std::env::split_paths(p)
+            .any(|d| std::fs::metadata(d.join(name)).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0))
+    })
+}
+
 /// `RunElevated`: start the selected program elevated (UAC on Windows via an external
 /// PowerShell `Start-Process -Verb RunAs`, `pkexec` on Linux — see `launch::run_elevated`;
 /// no shell APIs in-process). The OS elevation prompt is the confirmation.
@@ -99,8 +120,14 @@ pub fn run_elevated(app: &mut SoyuzApp) {
         return;
     };
     if e.is_dir_like() || !is_elevatable(&e.path, e.mode) {
-        let platform = if cfg!(windows) { "windows" } else { "other" };
-        app.ui.toasts.push(Toast::info(tr!("ops-elevate-needs", platform = platform)));
+        app.ui.toasts.push(Toast::info(tr!("ops-elevate-needs", platform = elevate_platform())));
+        return;
+    }
+    // Linux: elevation goes through polkit's `pkexec`; say so plainly when it is missing
+    // instead of surfacing a bare "No such file or directory".
+    #[cfg(all(unix, not(target_os = "macos")))]
+    if !on_path("pkexec", std::env::var_os("PATH").as_deref()) {
+        app.ui.toasts.push(Toast::error(tr!("ops-elevate-failed", name = &e.name)).body(tr!("ops-elevate-no-pkexec")));
         return;
     }
     if let Err(err) = soyuz_fs::launch::run_elevated(&e.path, &[]) {
@@ -131,5 +158,28 @@ mod tests {
             assert!(!is_elevatable(Path::new("/tmp/x.sh"), Some(0o644)));
             assert!(!is_elevatable(Path::new("/tmp/x"), None));
         }
+    }
+
+    #[test]
+    fn elevate_wording_per_platform() {
+        let p = elevate_platform();
+        assert_eq!(p == "windows", cfg!(windows));
+        assert_eq!(p == "linux", cfg!(target_os = "linux"));
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn path_lookup() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let exe = d.path().join("pkexec");
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let path = std::env::join_paths([d.path()]).unwrap();
+        assert!(!on_path("pkexec", Some(&path)), "not executable");
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(on_path("pkexec", Some(&path)));
+        assert!(!on_path("missing", Some(&path)));
+        assert!(!on_path("pkexec", None));
     }
 }

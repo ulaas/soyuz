@@ -6,6 +6,7 @@ pub mod ai_service;
 pub mod archive;
 pub mod config_watch;
 pub mod crash;
+pub mod filemanager1;
 pub mod folder_colors;
 pub mod git;
 pub mod index;
