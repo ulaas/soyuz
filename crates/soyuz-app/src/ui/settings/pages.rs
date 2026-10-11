@@ -435,6 +435,35 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     switch(ui, &mut d.sidebar.gtk_bookmarks);
                 },
             );
+            // Unmounted disks under Devices (UDisks2).
+            r.row_kw(
+                tr!("settings-views-unmounted-devices"),
+                tr!("settings-views-unmounted-devices-desc"),
+                "unmounted devices disks partitions mount unlock bitlocker luks ntfs udisks",
+                |ui| {
+                    use soyuz_core::config::UnmountedDevices as U;
+                    segmented(
+                        ui,
+                        &mut d.sidebar.unmounted_devices,
+                        &[
+                            (U::All, tr!("settings-views-unmounted-all")),
+                            (U::Removable, tr!("settings-views-unmounted-removable")),
+                            (U::Off, tr!("settings-views-unmounted-off")),
+                        ],
+                    );
+                },
+            );
+            r.block(tr!("settings-views-hidden-devices"), tr!("settings-views-hidden-devices-desc"), |ui| {
+                lines_editor(ui, "hidden_devices", &mut d.sidebar.hidden_devices, 2);
+                ui.add_space(4.0);
+                let any = !d.sidebar.hidden_devices.is_empty();
+                let clear = ui.add_enabled_ui(any, |ui| {
+                    small_button(ui, Some(ph::EYE), tr!("settings-views-hidden-devices-clear"), false)
+                });
+                if clear.inner.clicked() {
+                    d.sidebar.hidden_devices.clear();
+                }
+            });
         }
     });
     any |= group(ui, q, ctx, tr!("settings-views-portal"), |r| {

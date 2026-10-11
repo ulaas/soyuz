@@ -20,7 +20,7 @@ use crate::theme::tokens::size;
 use crate::theme::{icons::ph, palette};
 use crate::ui::views::computer::{volume_glyph, volume_label};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator};
+use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, trunc_galley};
 
 /// A standard place under the home directory.
 #[derive(Clone, Debug)]
@@ -173,6 +173,8 @@ pub struct SidebarState {
     lang_gen: u64,
     /// The Portal section (pinned folders).
     pub portal: crate::ui::portal::PortalState,
+    /// Unmounted devices of the Devices section (Linux).
+    devices: DevicesCache,
 }
 
 impl Default for SidebarState {
@@ -191,6 +193,7 @@ impl SidebarState {
             places_applied: places_probed(),
             lang_gen: crate::i18n::generation(),
             portal: Default::default(),
+            devices: Default::default(),
         }
     }
 }
@@ -220,6 +223,8 @@ pub struct SidebarCtx<'a> {
     pub portal: &'a [PortalPin],
     /// Shortcut of `Action::ToggleTreeSidebar`, shown in the icon bar's tooltips.
     pub tree_key: Option<String>,
+    /// `[sidebar]` (unmounted devices, hidden devices, GTK bookmarks).
+    pub config: &'a soyuz_core::config::Sidebar,
 }
 
 /// Section heading shown to the user.
@@ -642,8 +647,9 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         };
         let r = r.on_hover_text(tip);
         let dev = if desk_devices.is_empty() { None } else { device_at(&desk_devices, &v.mount) };
+        let removable_dev = dev.as_ref().filter(|d| d.drive.is_some() && (d.ejectable || d.can_power_off));
         // Removable media: a small eject button on the right of the row.
-        let eject_hit = dev.as_ref().filter(|d| d.drive.is_some() && (d.ejectable || d.can_power_off)).and_then(|d| {
+        let eject_hit = removable_dev.and_then(|d| {
             let br = Rect::from_center_size(pos2(r.rect.right() - 14.0, r.rect.top() + 14.0), vec2(20.0, 20.0));
             let er = ui.interact(br, r.id.with("eject"), Sense::click());
             if ui.is_rect_visible(br) && (r.hovered() || er.hovered()) {
@@ -670,11 +676,13 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         crate::ui::native::popup::context_menu(&r, |ui| {
             place_menu(ui, cmds, &v.mount, false);
             if let Some(d) = &dev {
-                device_menu(ui, d, &desk_devices);
+                device_menu(ui, d, &desk_devices, &label);
             }
         });
     }
-    unmounted_devices(ui, c);
+    if cfg!(target_os = "linux") {
+        unmounted_devices(ui, s, c);
+    }
     if vols.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
         let p = palette(ui.ctx());
@@ -710,10 +718,37 @@ pub fn set_show_gtk_bookmarks(on: bool) {
 
 /// Result of a device operation, applied on the UI thread.
 enum DeskEvent {
-    Mounted { pane: PaneId, path: PathBuf },
-    Unmounted { name: String },
-    Ejected { name: String },
-    Failed { title: String, body: String },
+    Mounted {
+        pane: PaneId,
+        path: PathBuf,
+    },
+    Unmounted {
+        name: String,
+    },
+    Ejected {
+        name: String,
+    },
+    Locked {
+        name: String,
+    },
+    Failed {
+        title: String,
+        body: String,
+    },
+    /// NTFS left hibernated / dirty by Windows: offer a read-only mount.
+    OfferReadOnly {
+        dev: Box<soyuz_fs::udisks::BlockDevice>,
+        name: String,
+    },
+}
+
+/// What a busy device is doing (the row shows it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Work {
+    Mounting,
+    Unlocking,
+    Unmounting,
+    Locking,
 }
 
 #[derive(Default)]
@@ -721,11 +756,13 @@ struct Desk {
     started: bool,
     /// UDisks2 answered (devices are listed); `false` hides the device extras.
     available: bool,
-    /// User-visible block devices (mounted or not).
+    /// Every block device UDisks2 knows (mounted or not).
     devices: Vec<soyuz_fs::udisks::BlockDevice>,
+    /// Bumped whenever `devices` changes (the sidebar re-classifies then).
+    generation: u64,
     gtk: Vec<soyuz_fs::xdg_dirs::Bookmark>,
     /// UDisks object paths with an operation running.
-    busy: BTreeSet<String>,
+    busy: std::collections::BTreeMap<String, Work>,
     events: Vec<DeskEvent>,
     trigger: Option<crossbeam_channel::Sender<()>>,
     /// Signature of the volume list last seen (a change triggers a device rescan).
@@ -757,7 +794,7 @@ fn desk_start(ctx: &egui::Context) {
             let gtk = soyuz_fs::xdg_dirs::gtk_bookmarks();
             let devices = if udisks {
                 match soyuz_fs::udisks::block_devices() {
-                    Ok(v) => Some(v.into_iter().filter(|b| b.user_visible()).collect::<Vec<_>>()),
+                    Ok(v) => Some(v),
                     Err(e) => {
                         log::debug!("udisks: {e}");
                         None
@@ -771,7 +808,10 @@ fn desk_start(ctx: &egui::Context) {
                 let mut changed = d.gtk != gtk;
                 d.gtk = gtk;
                 if let Some(devices) = devices {
-                    changed |= d.devices != devices || !d.available;
+                    if d.devices != devices || !d.available {
+                        changed = true;
+                        d.generation += 1;
+                    }
                     d.devices = devices;
                     d.available = true;
                 }
@@ -845,30 +885,39 @@ fn desk_pump(ctx: &egui::Context, c: &mut SidebarCtx<'_>) {
                 c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-unmounted", name = name))))
             }
             DeskEvent::Ejected { name } => c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-ejected", name = name)))),
+            DeskEvent::Locked { name } => {
+                c.cmds.push(Cmd::Toast(Toast::info(tr!("app-device-locked-done", name = name))))
+            }
             DeskEvent::Failed { title, body } => c.cmds.push(Cmd::Toast(Toast::error(title).body(body))),
+            DeskEvent::OfferReadOnly { dev, name } => c.cmds.push(Cmd::Device(DeviceCmd::OfferReadOnly { dev, name })),
         }
     }
 }
 
-/// A short, human reason for a failed UDisks2 call.
-fn udisks_reason(e: &std::io::Error) -> String {
-    let m = e.to_string();
-    if m.contains("NotAuthorized") {
-        tr!("app-device-not-authorized").to_string()
-    } else if m.contains("DeviceBusy") || m.contains("target is busy") || m.contains("is busy") {
-        tr!("app-device-busy").to_string()
-    } else if e.kind() == std::io::ErrorKind::Unsupported {
-        tr!("app-device-no-udisks").to_string()
-    } else {
-        m
+/// A short, human reason for a failed UDisks2 call (`fs_type`: the device's filesystem).
+fn udisks_reason(e: &std::io::Error, fs_type: &str) -> String {
+    use soyuz_fs::udisks::Failure;
+    match soyuz_fs::udisks::classify_error(e, fs_type) {
+        Failure::NotAuthorized => tr!("app-device-not-authorized").to_string(),
+        Failure::Dismissed => tr!("app-device-auth-dismissed").to_string(),
+        Failure::Busy => tr!("app-device-busy").to_string(),
+        Failure::WindowsHibernated => tr!("app-device-hibernated").to_string(),
+        Failure::UnsupportedFs => tr!("app-device-unsupported-fs", fs = soyuz_fs::udisks::fs_display_name(fs_type)),
+        Failure::WrongPassphrase => tr!("app-device-wrong-passphrase").to_string(),
+        Failure::NoUdisks => tr!("app-device-no-udisks").to_string(),
+        Failure::Other => e.to_string().trim_start_matches("UDisks2: ").to_string(),
     }
 }
 
 /// Run a device operation on its own thread; `object` is marked busy meanwhile.
-fn desk_op(object: &str, op: impl FnOnce() -> DeskEvent + Send + 'static) {
+fn desk_op(object: &str, work: Work, op: impl FnOnce() -> DeskEvent + Send + 'static) {
     let object = object.to_string();
-    if !desk().lock().busy.insert(object.clone()) {
-        return;
+    {
+        let mut d = desk().lock();
+        if d.busy.contains_key(&object) {
+            return;
+        }
+        d.busy.insert(object.clone(), work);
     }
     let key = object.clone();
     let spawned = std::thread::Builder::new().name("soyuz-udisks-op".into()).spawn(move || {
@@ -885,26 +934,118 @@ fn desk_op(object: &str, op: impl FnOnce() -> DeskEvent + Send + 'static) {
     }
 }
 
-/// Mount `dev` (polkit may ask), then open it in `pane`.
-fn mount_device(dev: &soyuz_fs::udisks::BlockDevice, pane: PaneId) {
+/// Mount `dev` (polkit may ask; the OS picks the driver), then open it in `pane`.
+/// `read_only` mounts with `ro` (NTFS that Windows left hibernated).
+fn mount_device(dev: &soyuz_fs::udisks::BlockDevice, name: String, pane: PaneId, read_only: bool) {
+    let d = dev.clone();
+    desk_op(&dev.object, Work::Mounting, move || mount_now(&d, name, pane, read_only, false));
+}
+
+/// The blocking part of a mount (on a device thread). `fresh`: the device was just
+/// unlocked, so UDisks may need a moment to probe its filesystem.
+fn mount_now(d: &soyuz_fs::udisks::BlockDevice, name: String, pane: PaneId, read_only: bool, fresh: bool) -> DeskEvent {
+    let o = soyuz_fs::udisks::MountOptions {
+        interactive: true,
+        options: if read_only { "ro".into() } else { String::new() },
+    };
+    let mut tries = if fresh { 10 } else { 1 };
+    loop {
+        tries -= 1;
+        match soyuz_fs::udisks::mount(&d.object, &o) {
+            Ok(path) => return DeskEvent::Mounted { pane, path },
+            Err(e) => {
+                let text = e.to_string();
+                // The cleartext device's Filesystem interface appears after the probe.
+                if tries > 0 && (text.contains("Unknown") || text.contains("interface")) {
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    continue;
+                }
+                if !read_only
+                    && soyuz_fs::udisks::classify_error(&e, &d.fs_type) == soyuz_fs::udisks::Failure::WindowsHibernated
+                {
+                    return DeskEvent::OfferReadOnly { dev: Box::new(d.clone()), name };
+                }
+                return DeskEvent::Failed {
+                    title: tr!("app-device-mount-failed", name = name),
+                    body: udisks_reason(&e, &d.fs_type),
+                };
+            }
+        }
+    }
+}
+
+fn unmount_device(dev: &soyuz_fs::udisks::BlockDevice, name: String) {
     let object = dev.object.clone();
-    let name = dev.display_name();
-    desk_op(&dev.object, move || {
-        let o = soyuz_fs::udisks::MountOptions { interactive: true, ..Default::default() };
-        match soyuz_fs::udisks::mount(&object, &o) {
-            Ok(path) => DeskEvent::Mounted { pane, path },
-            Err(e) => DeskEvent::Failed { title: tr!("app-device-mount-failed", name = name), body: udisks_reason(&e) },
+    let fs = dev.fs_type.clone();
+    desk_op(&dev.object, Work::Unmounting, move || match soyuz_fs::udisks::unmount(&object, false, true) {
+        Ok(()) => DeskEvent::Unmounted { name },
+        Err(e) => {
+            DeskEvent::Failed { title: tr!("app-device-unmount-failed", name = name), body: udisks_reason(&e, &fs) }
         }
     });
 }
 
-fn unmount_device(dev: &soyuz_fs::udisks::BlockDevice) {
-    let object = dev.object.clone();
-    let name = dev.display_name();
-    desk_op(&dev.object, move || match soyuz_fs::udisks::unmount(&object, false, true) {
-        Ok(()) => DeskEvent::Unmounted { name },
-        Err(e) => DeskEvent::Failed { title: tr!("app-device-unmount-failed", name = name), body: udisks_reason(&e) },
+/// Unmount the cleartext filesystem (when mounted), then lock its container.
+fn lock_device(cleartext: &soyuz_fs::udisks::BlockDevice, container: String, name: String) {
+    let object = cleartext.object.clone();
+    let mounted = !cleartext.mount_points.is_empty();
+    let fs = cleartext.fs_type.clone();
+    desk_op(&container.clone(), Work::Locking, move || {
+        let failed = |e: std::io::Error| DeskEvent::Failed {
+            title: tr!("app-device-lock-failed", name = name.clone()),
+            body: udisks_reason(&e, &fs),
+        };
+        if mounted && let Err(e) = soyuz_fs::udisks::unmount(&object, false, true) {
+            return failed(e);
+        }
+        match soyuz_fs::udisks::lock(&container, true) {
+            Ok(()) => DeskEvent::Locked { name: name.clone() },
+            Err(e) => failed(e),
+        }
     });
+}
+
+/// Unlock a BitLocker / LUKS container with `secret` (zeroized afterwards), then mount
+/// its filesystem and open it in `pane`. `reply` gets `Ok(())` once unlocked, or the
+/// reason it failed (the unlock dialog shows it and stays open).
+pub fn unlock_device(
+    object: &str,
+    name: String,
+    mut secret: zeroize::Zeroizing<String>,
+    pane: PaneId,
+    reply: std::sync::mpsc::Sender<Result<(), String>>,
+) {
+    let object = object.to_string();
+    {
+        let mut d = desk().lock();
+        if d.busy.contains_key(&object) {
+            return;
+        }
+        d.busy.insert(object.clone(), Work::Unlocking);
+    }
+    let key = object.clone();
+    let target = object.clone();
+    let spawned = std::thread::Builder::new().name("soyuz-udisks-unlock".into()).spawn(move || {
+        let r = soyuz_fs::udisks::unlock(&target, secret.as_str(), true);
+        zeroize::Zeroize::zeroize(&mut *secret);
+        drop(secret);
+        desk().lock().busy.remove(&key);
+        match r {
+            Ok(cleartext) => {
+                let _ = reply.send(Ok(()));
+                let dev = soyuz_fs::udisks::BlockDevice { object: cleartext.clone(), ..Default::default() };
+                desk_op(&cleartext, Work::Mounting, move || mount_now(&dev, name, pane, false, true));
+            }
+            Err(e) => {
+                let _ = reply.send(Err(udisks_reason(&e, "")));
+                desk_rescan();
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        desk().lock().busy.remove(&object);
+        log::warn!("cannot spawn a device thread: {e}");
+    }
 }
 
 /// Unmount every mounted file system of the drive, then eject it (or power it off when
@@ -918,10 +1059,11 @@ fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::Bl
         .collect();
     let (ejectable, power_off) = (dev.ejectable, dev.can_power_off);
     let name = dev.display_name();
-    desk_op(&dev.object, move || {
+    let fs = dev.fs_type.clone();
+    desk_op(&dev.object, Work::Unmounting, move || {
         let failed = |e: std::io::Error| DeskEvent::Failed {
             title: tr!("app-device-eject-failed", name = name.clone()),
-            body: udisks_reason(&e),
+            body: udisks_reason(&e, &fs),
         };
         for o in &mounted {
             if let Err(e) = soyuz_fs::udisks::unmount(o, false, true) {
@@ -942,20 +1084,39 @@ fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::Bl
     });
 }
 
+/// Mount points of the running system (`/`, `/boot`, `/home`, `/var` …): never offered
+/// for unmounting from the sidebar. Mounts below the home folder or under `/mnt`,
+/// `/media`, `/run/media` are the user's.
+fn is_system_mount(m: &Path) -> bool {
+    const EXACT: [&str; 4] = ["/", "/home", "/mnt", "/media"];
+    const TREES: [&str; 13] =
+        ["/boot", "/efi", "/usr", "/var", "/opt", "/srv", "/nix", "/etc", "/root", "/sysroot", "/gnu", "/tmp", "/snap"];
+    EXACT.iter().any(|e| m == Path::new(e)) || TREES.iter().any(|t| m.starts_with(t))
+}
+
 /// The UDisks2 device mounted at `mount`, if it may be unmounted from the sidebar
-/// (removable / ejectable media, or a non-system disk).
+/// (anything but a mount of the running system).
 fn device_at(devices: &[soyuz_fs::udisks::BlockDevice], mount: &Path) -> Option<soyuz_fs::udisks::BlockDevice> {
+    if is_system_mount(mount) {
+        return None;
+    }
     devices
         .iter()
-        .find(|b| b.mount_points.iter().any(|m| m == mount) && (b.removable || b.ejectable || !b.hint_system))
+        .find(|b| b.mount_points.iter().any(|m| m == mount) && b.mount_points.iter().all(|m| !is_system_mount(m)))
         .cloned()
 }
 
-/// Unmount / Eject entries of a mounted device's context menu.
-fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice]) {
+/// Unmount / Lock / Eject entries of a mounted device's context menu.
+fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice], name: &str) {
     menu_separator(ui);
     if menu_item(ui, Some(ph::ARROW_LINE_UP), tr!("app-device-unmount"), None, true).clicked() {
-        unmount_device(dev);
+        unmount_device(dev, name.to_string());
+        ui.close();
+    }
+    if let Some(container) = &dev.crypto_backing
+        && menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-lock"), None, true).clicked()
+    {
+        lock_device(dev, container.clone(), name.to_string());
         ui.close();
     }
     if dev.drive.is_some()
@@ -967,49 +1128,313 @@ fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs
     }
 }
 
-/// Rows for user-visible block devices that are not mounted: click mounts (and opens).
-fn unmounted_devices(ui: &mut Ui, c: &mut SidebarCtx<'_>) {
-    let (devices, busy) = {
-        let d = desk().lock();
-        if !d.available {
-            return;
+/// Sidebar effects that need the app (dialogs, config): `Cmd::Device`.
+#[derive(Clone, Debug)]
+pub enum DeviceCmd {
+    /// Ask for the passphrase / recovery key of a locked container.
+    Unlock { object: String, name: String, kind: String },
+    /// A mount failed because Windows left the NTFS volume hibernated: explain and
+    /// offer a read-only mount.
+    OfferReadOnly { dev: Box<soyuz_fs::udisks::BlockDevice>, name: String },
+    /// Mount (read-only or not) into the focused pane.
+    Mount { dev: Box<soyuz_fs::udisks::BlockDevice>, name: String, read_only: bool },
+    /// "Hide from sidebar": add the key to `[sidebar] hidden_devices`.
+    Hide(String),
+}
+
+/// Apply a [`DeviceCmd`].
+pub fn apply_device(app: &mut crate::app::SoyuzApp, ctx: &egui::Context, cmd: DeviceCmd) {
+    let pane = app.ws.pane().id;
+    match cmd {
+        DeviceCmd::Unlock { object, name, kind } => {
+            app.ui.dialogs.push(crate::ui::dialogs::unlock_volume::UnlockVolumeDialog::new(object, name, kind, pane))
         }
-        (d.devices.clone(), d.busy.clone())
+        DeviceCmd::OfferReadOnly { dev, name } => app.ui.dialogs.push(crate::ui::dialogs::ConfirmDialog::new(
+            &tr!("app-device-hibernated-title", name = name.clone()),
+            tr!("app-device-hibernated-body"),
+            tr!("app-device-mount-ro"),
+            Cmd::Device(DeviceCmd::Mount { dev, name, read_only: true }),
+        )),
+        DeviceCmd::Mount { dev, name, read_only } => mount_device(&dev, name, pane, read_only),
+        DeviceCmd::Hide(key) => {
+            if !app.config.sidebar.hidden_devices.contains(&key) {
+                crate::ui::settings::update_config(app, ctx, |c| c.sidebar.hidden_devices.push(key));
+                app.ui
+                    .toasts
+                    .push(crate::ui::toasts::Toast::info(tr!("app-device-hidden")).body(tr!("app-device-hidden-body")));
+            }
+        }
+    }
+}
+
+/// Name of an unmounted device: its label, else "<size> <filesystem> volume".
+fn candidate_name(c: &soyuz_fs::udisks::Candidate) -> String {
+    let d = &c.dev;
+    for s in [&d.label, &d.hint_name] {
+        if !s.trim().is_empty() {
+            return s.trim().to_string();
+        }
+    }
+    let fs = soyuz_fs::udisks::fs_display_name(&d.fs_type);
+    if d.size > 0 {
+        tr!("app-device-volume-name", size = format_size(d.size, SizeStyle::Decimal), fs = fs)
+    } else {
+        tr!("app-device-volume-name-nosize", fs = fs)
+    }
+}
+
+/// Badge text: the filesystem, or the container type for a locked device.
+fn candidate_badge(c: &soyuz_fs::udisks::Candidate) -> String {
+    soyuz_fs::udisks::fs_display_name(&c.dev.fs_type)
+}
+
+fn candidate_tip(c: &soyuz_fs::udisks::Candidate, name: &str) -> String {
+    use soyuz_fs::udisks::CandidateState as S;
+    let d = &c.dev;
+    let mut fs = soyuz_fs::udisks::fs_display_name(&d.fs_type);
+    if !c.container_type.is_empty() {
+        fs = format!("{fs} · {}", soyuz_fs::udisks::fs_display_name(&c.container_type));
+    }
+    let (vendor, model) = (d.drive_vendor.trim(), d.drive_model.trim());
+    let drive =
+        if vendor.is_empty() || model.starts_with(vendor) { model.to_string() } else { format!("{vendor} {model}") };
+    let kind = if d.is_removable_media() { tr!("app-device-removable") } else { tr!("app-device-internal") };
+    let hint = match c.state {
+        S::Unmounted => tr!("app-device-click-mount"),
+        S::Locked => tr!("app-device-click-unlock"),
+        S::Unsupported => tr!("app-device-unsupported-hint"),
     };
-    let p = palette(ui.ctx());
-    for dev in devices.iter().filter(|b| b.has_filesystem && b.mount_points.is_empty()) {
-        let name = dev.display_name();
-        let working = busy.contains(&dev.object);
-        let label = if working { tr!("app-device-mounting", name = name.clone()) } else { name.clone() };
-        let icon = if dev.removable { ph::USB } else { ph::HARD_DRIVE };
-        let r = NavRow { icon, label: &label, active: false, icon_color: Some(p.text_tertiary), usage: None }.show(ui);
-        let size = if dev.size > 0 { format_size(dev.size, SizeStyle::Decimal) } else { String::new() };
-        let r = r.on_hover_text(tr!(
-            "app-device-unmounted-tip",
-            device = dev.device.display().to_string(),
-            size = size,
-            fs = dev.fs_type.clone()
-        ));
-        if working {
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
-        }
-        if r.clicked() && !working {
-            mount_device(dev, c.pane);
+    tr!(
+        "app-device-candidate-tip",
+        name = name,
+        device = d.device.display().to_string(),
+        fs = fs,
+        size = if d.size > 0 { format_size(d.size, SizeStyle::Decimal) } else { "?".into() },
+        drive = if drive.is_empty() { kind.to_string() } else { format!("{drive} · {kind}") },
+        hint = hint
+    )
+}
+
+/// Unmounted devices for the current config, re-classified only when the device list
+/// or the config changed.
+#[derive(Default)]
+pub struct DevicesCache {
+    key: Option<(u64, soyuz_core::config::UnmountedDevices, Vec<String>)>,
+    list: Vec<soyuz_fs::udisks::Candidate>,
+}
+
+fn candidates(s: &mut SidebarState, cfg: &soyuz_core::config::Sidebar) -> Vec<soyuz_fs::udisks::Candidate> {
+    use soyuz_core::config::UnmountedDevices;
+    let d = desk().lock();
+    if !d.available || cfg.unmounted_devices == UnmountedDevices::Off {
+        return Vec::new();
+    }
+    let key = (d.generation, cfg.unmounted_devices, cfg.hidden_devices.clone());
+    if s.devices.key.as_ref() != Some(&key) {
+        let removable = cfg.unmounted_devices == UnmountedDevices::Removable;
+        s.devices.list = soyuz_fs::udisks::sidebar_candidates(&d.devices, removable, &cfg.hidden_devices);
+        s.devices.key = Some(key);
+    }
+    s.devices.list.clone()
+}
+
+/// Rows for devices that are not mounted (or locked): click mounts (and opens) or asks
+/// for the passphrase. They look unlike mounted volumes: a dimmed outline glyph, a muted
+/// label, a filesystem badge and a "Not mounted" / "Locked" line where mounted volumes
+/// show their usage bar.
+fn unmounted_devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
+    use soyuz_fs::udisks::CandidateState as S;
+    let list = candidates(s, c.config);
+    if list.is_empty() {
+        return;
+    }
+    let busy = desk().lock().busy.clone();
+    for cand in &list {
+        let name = candidate_name(cand);
+        let work = busy.get(&cand.dev.object).copied();
+        let (r, button) = candidate_row(ui, cand, &name, work);
+        let r = r.on_hover_text(candidate_tip(cand, &name));
+        let activate = (r.clicked() || button) && work.is_none();
+        if activate {
+            match cand.state {
+                S::Unmounted => mount_device(&cand.dev, name.clone(), c.pane, false),
+                S::Locked => c.cmds.push(Cmd::Device(DeviceCmd::Unlock {
+                    object: cand.dev.object.clone(),
+                    name: name.clone(),
+                    kind: cand.dev.fs_type.clone(),
+                })),
+                S::Unsupported => {}
+            }
         }
         let pane = c.pane;
-        crate::ui::native::popup::context_menu(&r, |ui| {
-            ui.set_width(220.0);
-            if menu_item(ui, Some(ph::HARD_DRIVE), tr!("app-device-mount"), None, !working).clicked() {
-                mount_device(dev, pane);
+        let cmds = &mut *c.cmds;
+        crate::ui::native::popup::context_menu(&r, |ui| candidate_menu(ui, cand, &name, work.is_none(), pane, cmds));
+    }
+}
+
+fn candidate_menu(
+    ui: &mut Ui,
+    cand: &soyuz_fs::udisks::Candidate,
+    name: &str,
+    idle: bool,
+    pane: PaneId,
+    cmds: &mut Vec<Cmd>,
+) {
+    use soyuz_fs::udisks::CandidateState as S;
+    ui.set_width(220.0);
+    match cand.state {
+        S::Unmounted => {
+            if menu_item(ui, Some(ph::ARROW_LINE_DOWN), tr!("app-device-mount"), None, idle).clicked() {
+                mount_device(&cand.dev, name.to_string(), pane, false);
                 ui.close();
             }
-        });
+            if menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-mount-ro"), None, idle).clicked() {
+                mount_device(&cand.dev, name.to_string(), pane, true);
+                ui.close();
+            }
+            if let Some(container) = &cand.container
+                && menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-lock"), None, idle).clicked()
+            {
+                lock_device(&cand.dev, container.clone(), name.to_string());
+                ui.close();
+            }
+        }
+        S::Locked => {
+            if menu_item(ui, Some(ph::LOCK_SIMPLE_OPEN), tr!("app-device-unlock"), None, idle).clicked() {
+                cmds.push(Cmd::Device(DeviceCmd::Unlock {
+                    object: cand.dev.object.clone(),
+                    name: name.to_string(),
+                    kind: cand.dev.fs_type.clone(),
+                }));
+                ui.close();
+            }
+        }
+        S::Unsupported => {
+            let _ = menu_item(ui, Some(ph::PROHIBIT), tr!("app-device-mount"), None, false);
+        }
     }
+    menu_separator(ui);
+    if menu_item(ui, Some(ph::EYE_SLASH), tr!("app-device-hide"), None, true).clicked() {
+        cmds.push(Cmd::Device(DeviceCmd::Hide(cand.hide_key())));
+        ui.close();
+    }
+    if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("app-device-copy-path"), None, true).clicked() {
+        cmds.push(Cmd::CopyText(cand.dev.device.display().to_string()));
+        ui.close();
+    }
+}
+
+/// One unmounted / locked device row. Returns the row response and whether the hover
+/// button (mount / unlock) was clicked.
+fn candidate_row(
+    ui: &mut Ui,
+    cand: &soyuz_fs::udisks::Candidate,
+    name: &str,
+    work: Option<Work>,
+) -> (egui::Response, bool) {
+    use soyuz_fs::udisks::CandidateState as S;
+    let p = palette(ui.ctx());
+    let base = size::ROW_COZY.max(ui.spacing().interact_size.y + 4.0);
+    let height = base + 8.0;
+    // Unsupported rows still take clicks: the context menu hides / copies them.
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::click());
+    crate::ui::a11y::button(&resp, name);
+    let mut button = false;
+    let show_button = cand.state != S::Unsupported && work.is_none();
+    let br = Rect::from_center_size(pos2(rect.right() - 14.0, rect.top() + base / 2.0), vec2(22.0, 22.0));
+    let bresp = show_button.then(|| ui.interact(br, resp.id.with("mount"), Sense::click()));
+    let hovered = resp.hovered() || bresp.as_ref().is_some_and(|b| b.hovered()) || resp.has_focus();
+    if let Some(b) = &bresp {
+        button = b.clicked();
+    }
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter_at(rect.expand(3.0));
+        let rounding = egui::CornerRadius::same(crate::theme::tokens::radius::ROW);
+        let hover = ui.ctx().animate_bool_with_time(resp.id.with("hover"), hovered, crate::theme::anim(ui.ctx(), 0.10));
+        if hover > 0.0 && cand.state != S::Unsupported {
+            painter.rect_filled(rect, rounding, p.bg_surface2.gamma_multiply(hover));
+        }
+        let text_y = rect.top() + base / 2.0;
+        // Glyph: the drive outline, dimmed; a lock badge on locked containers.
+        let glyph = if cand.dev.is_removable_media() { ph::USB } else { ph::HARD_DRIVE };
+        let dim = if cand.state == S::Unsupported { p.text_tertiary.gamma_multiply(0.6) } else { p.text_tertiary };
+        let icon_pos = pos2(rect.left() + 10.0, text_y);
+        painter.text(icon_pos, Align2::LEFT_CENTER, glyph, crate::theme::icons::font(size::ICON), dim);
+        if cand.state == S::Locked {
+            let c = pos2(icon_pos.x + 14.0, text_y + 5.0);
+            painter.circle_filled(c, 5.5, p.bg_window);
+            painter.text(
+                c,
+                Align2::CENTER_CENTER,
+                egui_phosphor::fill::LOCK_SIMPLE,
+                crate::theme::icons::font_fill(9.5),
+                p.warning,
+            );
+        }
+        // Right side: the filesystem badge, or (hovered) the mount / unlock button.
+        let mut right = rect.right() - 6.0;
+        if let Some(b) = &bresp
+            && hover > 0.5
+        {
+            let g = if cand.state == S::Locked { ph::LOCK_SIMPLE_OPEN } else { ph::ARROW_LINE_DOWN };
+            if b.hovered() {
+                painter.rect_filled(br, egui::CornerRadius::same(crate::theme::tokens::radius::CONTROL), p.bg_surface3);
+            }
+            let color = if b.hovered() { p.accent } else { p.text_secondary };
+            painter.text(br.center(), Align2::CENTER_CENTER, g, crate::theme::icons::font(14.0), color);
+            right = br.left() - 4.0;
+        } else {
+            let badge = candidate_badge(cand);
+            let font = FontId::proportional(9.5);
+            let g = painter.layout_no_wrap(badge, font, p.text_tertiary);
+            let w = g.size().x + 10.0;
+            let r = Rect::from_min_size(pos2(right - w, text_y - 7.5), vec2(w, 15.0));
+            painter.rect_stroke(
+                r,
+                egui::CornerRadius::same(4),
+                Stroke::new(1.0, p.border_strong),
+                egui::StrokeKind::Inside,
+            );
+            painter.galley(pos2(r.left() + 5.0, r.center().y - g.size().y / 2.0), g, p.text_tertiary);
+            right = r.left() - 6.0;
+        }
+        let label_color = if cand.state == S::Unsupported { p.text_tertiary } else { p.text_secondary };
+        let max_w = right - (rect.left() + 34.0);
+        let galley = trunc_galley(&painter, name, FontId::proportional(13.0), label_color, max_w);
+        painter.galley(pos2(rect.left() + 34.0, text_y - galley.size().y / 2.0), galley, label_color);
+        // Second line, where mounted volumes show their usage bar.
+        let size_txt = if cand.dev.size > 0 { format_size(cand.dev.size, SizeStyle::Decimal) } else { String::new() };
+        let status = match (work, cand.state) {
+            (Some(Work::Mounting), _) => tr!("app-device-status-mounting").to_string(),
+            (Some(Work::Unlocking), _) => tr!("app-device-status-unlocking").to_string(),
+            (Some(Work::Locking), _) => tr!("app-device-status-locking").to_string(),
+            (Some(Work::Unmounting), _) => tr!("app-device-status-unmounting").to_string(),
+            (None, S::Unmounted) => tr!("app-device-status-unmounted", size = size_txt),
+            (None, S::Locked) => tr!("app-device-status-locked", size = size_txt),
+            (None, S::Unsupported) => tr!("app-device-status-unsupported", size = size_txt),
+        };
+        let line_y = rect.bottom() - 8.0;
+        let mut x = rect.left() + 34.0;
+        if work.is_some() {
+            crate::ui::widgets::spinner(ui, pos2(x + 4.0, line_y), 3.5, p.accent);
+            x += 12.0;
+        }
+        let status_color = if work.is_some() { p.text_secondary } else { p.text_tertiary };
+        let g = trunc_galley(&painter, &status, FontId::proportional(10.5), status_color, rect.right() - 8.0 - x);
+        painter.galley(pos2(x, line_y - g.size().y / 2.0), g, status_color);
+        if resp.has_focus() {
+            crate::ui::widgets::focus_ring(ui, rect);
+        }
+    }
+    (resp, button)
 }
 
 /// GTK bookmarks not already shown (favorites, config bookmarks).
 fn gtk_bookmarks(ui: &mut Ui, s: &SidebarState, c: &mut SidebarCtx<'_>) {
-    if !cfg!(target_os = "linux") || !SHOW_GTK_BOOKMARKS.load(std::sync::atomic::Ordering::Relaxed) {
+    if !cfg!(target_os = "linux")
+        || !c.config.gtk_bookmarks
+        || !SHOW_GTK_BOOKMARKS.load(std::sync::atomic::Ordering::Relaxed)
+    {
         return;
     }
     let marks = desk().lock().gtk.clone();
@@ -1110,8 +1535,14 @@ mod tests {
             has_filesystem: true,
             ..Default::default()
         };
-        let all = [dev("/run/media/u/STICK", true, true), dev("/", false, true), dev("/mnt/data", false, false)];
+        let all = [
+            dev("/run/media/u/STICK", true, true),
+            dev("/", false, true),
+            dev("/mnt/data", false, false),
+            dev("/run/media/u/Games", false, true),
+        ];
         assert!(device_at(&all, Path::new("/run/media/u/STICK")).is_some());
+        assert!(device_at(&all, Path::new("/run/media/u/Games")).is_some(), "internal disks mounted for the user");
         assert!(device_at(&all, Path::new("/")).is_none(), "system disks are not offered for unmount");
         assert!(device_at(&all, Path::new("/mnt/data")).is_some());
         assert!(device_at(&all, Path::new("/nowhere")).is_none());
@@ -1120,11 +1551,55 @@ mod tests {
     #[test]
     fn udisks_errors_read_well() {
         let e = std::io::Error::other("org.freedesktop.UDisks2.Error.NotAuthorizedCanObtain: Not authorized");
-        assert!(udisks_reason(&e).contains("polkit"));
+        assert!(udisks_reason(&e, "ntfs").contains("polkit"));
         let e = std::io::Error::other("org.freedesktop.UDisks2.Error.DeviceBusy: target is busy");
-        assert!(udisks_reason(&e).contains("in use"));
+        assert!(udisks_reason(&e, "ext4").contains("in use"));
         let e = std::io::Error::new(std::io::ErrorKind::Unsupported, "no bus");
-        assert!(udisks_reason(&e).contains("UDisks2"));
-        assert_eq!(udisks_reason(&std::io::Error::other("odd")), "odd");
+        assert!(udisks_reason(&e, "").contains("UDisks2"));
+        assert_eq!(udisks_reason(&std::io::Error::other("UDisks2: odd"), ""), "odd");
+        let e = std::io::Error::other("Error mounting /dev/sdb1: Windows is hibernated, refused to mount.");
+        assert!(udisks_reason(&e, "ntfs").contains("Fast Startup"));
+        let e = std::io::Error::other("Error unlocking /dev/sda1: Failed to activate device: Operation not permitted");
+        assert!(udisks_reason(&e, "BitLocker").contains("passphrase"));
+        let e = std::io::Error::other("UDisks2: org.freedesktop.UDisks2.Error.NotAuthorizedDismissed: dismissed");
+        assert!(udisks_reason(&e, "ntfs").contains("cancelled"));
+    }
+
+    fn cand(label: &str, fs: &str, size: u64) -> soyuz_fs::udisks::Candidate {
+        soyuz_fs::udisks::Candidate {
+            dev: soyuz_fs::udisks::BlockDevice {
+                label: label.into(),
+                fs_type: fs.into(),
+                size,
+                device: "/dev/sdb1".into(),
+                drive_model: "Samsung SSD 860 EVO 1TB".into(),
+                ..Default::default()
+            },
+            state: soyuz_fs::udisks::CandidateState::Unmounted,
+            container: None,
+            container_type: String::new(),
+        }
+    }
+
+    #[test]
+    fn device_labels() {
+        assert_eq!(candidate_name(&cand("Games", "ntfs", 1_000_202_043_392)), "Games");
+        assert_eq!(candidate_name(&cand("  ", "ntfs", 1_000_202_043_392)), "1 TB NTFS volume");
+        assert_eq!(candidate_name(&cand("", "exfat", 0)), "exFAT volume");
+        assert_eq!(candidate_badge(&cand("", "BitLocker", 1)), "BitLocker");
+        let tip = candidate_tip(&cand("Games", "ntfs", 1_000_202_043_392), "Games");
+        for part in ["Games", "/dev/sdb1", "NTFS", "1 TB", "Samsung SSD 860 EVO 1TB", "internal"] {
+            assert!(tip.contains(part), "{part} missing in {tip}");
+        }
+    }
+
+    #[test]
+    fn system_mounts_are_not_unmountable() {
+        for m in ["/", "/boot", "/boot/efi", "/home", "/var", "/var/lib/x", "/usr", "/mnt"] {
+            assert!(is_system_mount(Path::new(m)), "{m}");
+        }
+        for m in ["/run/media/u/Games", "/mnt/data", "/media/stick", "/home/u/disks/x"] {
+            assert!(!is_system_mount(Path::new(m)), "{m}");
+        }
     }
 }

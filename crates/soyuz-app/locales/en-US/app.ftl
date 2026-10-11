@@ -281,9 +281,6 @@ app-quit-when-finished = Soyuz will close when the operations finish
 ## Linux (data)
 
 app-device-mount = Mount
-app-device-mounting = Mounting { $name }…
-# $device = device node (/dev/sdb1), $size = formatted size, $fs = file system (ext4, vfat …).
-app-device-unmounted-tip = { $device } · { $size } { $fs } · not mounted, click to mount
 app-device-mount-failed = Couldn't mount { $name }
 app-device-unmount = Unmount
 app-device-unmounted = { $name } was unmounted
@@ -294,3 +291,42 @@ app-device-eject-failed = Couldn't eject { $name }
 app-device-not-authorized = Not allowed. Is a polkit authentication agent running?
 app-device-busy = The device is in use. Close the files and programs using it, then try again.
 app-device-no-udisks = UDisks2 is not available on this system.
+
+## Linux (devices)
+app-device-mount-ro = Mount read-only
+app-device-unlock = Unlock…
+app-device-lock = Lock
+app-device-hide = Hide from sidebar
+app-device-copy-path = Copy device path
+# $name: device name.
+app-device-locked-done = { $name } was locked
+app-device-lock-failed = Couldn't lock { $name }
+app-device-auth-dismissed = The authentication prompt was cancelled.
+app-device-hibernated = Windows didn't shut down fully (hibernation or Fast Startup), so the volume can only be mounted read-only.
+# $fs: filesystem name (APFS, ReFS…).
+app-device-unsupported-fs = Linux can't mount { $fs } volumes.
+app-device-wrong-passphrase = Wrong passphrase or recovery key.
+app-device-hibernated-title = { $name } is in use by Windows
+app-device-hibernated-body = Windows was hibernated or shut down with Fast Startup, so its files may still be open there. Writing to the volume now could damage it. You can mount it read-only, or start Windows and shut it down completely (turn off Fast Startup in Control Panel › Power Options › Choose what the power buttons do) to use it normally.
+app-device-hidden = Device hidden from the sidebar
+app-device-hidden-body = Show it again in Settings › Views & layout › Sidebar sections.
+# $size: e.g. "1.0 TB"; $fs: filesystem (NTFS, exFAT…).
+app-device-volume-name = { $size } { $fs } volume
+app-device-volume-name-nosize = { $fs } volume
+app-device-removable = removable
+app-device-internal = internal disk
+app-device-click-mount = Click to mount
+app-device-click-unlock = Click to unlock
+app-device-unsupported-hint = Linux can't mount this filesystem
+# Tooltip of an unmounted device: $name, $device (/dev/sdb1), $fs, $size, $drive (model · internal disk), $hint.
+app-device-candidate-tip = { $name }
+    { $device } · { $fs } · { $size }
+    { $drive }
+    { $hint }
+app-device-status-unmounted = Not mounted · { $size }
+app-device-status-locked = Locked · { $size }
+app-device-status-unsupported = Not supported · { $size }
+app-device-status-mounting = Mounting…
+app-device-status-unlocking = Unlocking…
+app-device-status-locking = Locking…
+app-device-status-unmounting = Unmounting…

@@ -275,9 +275,6 @@ app-quit-when-finished = İşlemler bitince Soyuz kapanacak
 ## Linux (data)
 
 app-device-mount = Bağla
-app-device-mounting = { $name } bağlanıyor…
-# $device = device node (/dev/sdb1), $size = formatted size, $fs = file system (ext4, vfat …).
-app-device-unmounted-tip = { $device } · { $size } { $fs } · bağlı değil, bağlamak için tıklayın
 app-device-mount-failed = { $name } bağlanamadı
 app-device-unmount = Bağlantıyı kes
 app-device-unmounted = { $name } bağlantısı kesildi
@@ -288,3 +285,42 @@ app-device-eject-failed = { $name } çıkarılamadı
 app-device-not-authorized = İzin verilmedi. Bir polkit kimlik doğrulama aracısı çalışıyor mu?
 app-device-busy = Aygıt kullanımda. Onu kullanan dosyaları ve programları kapatıp yeniden deneyin.
 app-device-no-udisks = Bu sistemde UDisks2 kullanılamıyor.
+
+## Linux (devices)
+app-device-mount-ro = Salt okunur bağla
+app-device-unlock = Kilidi aç…
+app-device-lock = Kilitle
+app-device-hide = Kenar çubuğunda gizle
+app-device-copy-path = Aygıt yolunu kopyala
+# $name: device name.
+app-device-locked-done = { $name } kilitlendi
+app-device-lock-failed = { $name } kilitlenemedi
+app-device-auth-dismissed = Kimlik doğrulama istemi iptal edildi.
+app-device-hibernated = Windows tam olarak kapatılmamış (hazırda bekletme veya Hızlı Başlangıç); birim yalnızca salt okunur bağlanabilir.
+# $fs: filesystem name (APFS, ReFS…).
+app-device-unsupported-fs = Linux, { $fs } birimlerini bağlayamaz.
+app-device-wrong-passphrase = Parola veya kurtarma anahtarı yanlış.
+app-device-hibernated-title = { $name } Windows tarafından kullanılıyor
+app-device-hibernated-body = Windows hazırda bekletildi veya Hızlı Başlangıç ile kapatıldı; dosyaları orada hâlâ açık olabilir. Birime şimdi yazmak ona zarar verebilir. Birimi salt okunur bağlayabilir ya da normal kullanmak için Windows'u başlatıp tamamen kapatabilirsiniz (Denetim Masası › Güç Seçenekleri › Güç düğmelerinin yapacaklarını seçin bölümünden Hızlı Başlangıç'ı kapatın).
+app-device-hidden = Aygıt kenar çubuğunda gizlendi
+app-device-hidden-body = Yeniden göstermek için: Ayarlar › Görünümler ve düzen › Kenar çubuğu bölümleri.
+# $size: e.g. "1.0 TB"; $fs: filesystem (NTFS, exFAT…).
+app-device-volume-name = { $size } { $fs } birimi
+app-device-volume-name-nosize = { $fs } birimi
+app-device-removable = çıkarılabilir
+app-device-internal = dahili disk
+app-device-click-mount = Bağlamak için tıklayın
+app-device-click-unlock = Kilidi açmak için tıklayın
+app-device-unsupported-hint = Linux bu dosya sistemini bağlayamaz
+# Tooltip of an unmounted device: $name, $device (/dev/sdb1), $fs, $size, $drive (model · internal disk), $hint.
+app-device-candidate-tip = { $name }
+    { $device } · { $fs } · { $size }
+    { $drive }
+    { $hint }
+app-device-status-unmounted = Bağlı değil · { $size }
+app-device-status-locked = Kilitli · { $size }
+app-device-status-unsupported = Desteklenmiyor · { $size }
+app-device-status-mounting = Bağlanıyor…
+app-device-status-unlocking = Kilit açılıyor…
+app-device-status-locking = Kilitleniyor…
+app-device-status-unmounting = Bağlantı kesiliyor…

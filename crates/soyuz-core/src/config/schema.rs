@@ -431,6 +431,25 @@ pub struct Sidebar {
     /// Linux: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared with Nautilus
     /// and other GTK file managers) under Favorites.
     pub gtk_bookmarks: bool,
+    /// Linux: unmounted disks and partitions listed under Devices (click to mount, or to
+    /// unlock BitLocker / LUKS): `all` | `removable` | `off`.
+    pub unmounted_devices: UnmountedDevices,
+    /// Linux: devices hidden from the Devices section ("Hide from sidebar"): filesystem
+    /// UUIDs or device paths (`/dev/sdb1`).
+    pub hidden_devices: Vec<String>,
+}
+
+/// Which unmounted devices the sidebar's Devices section lists (Linux, UDisks2).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum UnmountedDevices {
+    /// Every mountable or unlockable disk and partition, internal ones included.
+    #[default]
+    All,
+    /// Only removable media (USB, SD cards).
+    Removable,
+    /// None: only mounted volumes are listed.
+    Off,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

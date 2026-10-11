@@ -1142,3 +1142,13 @@ settings-appearance-gpu-backend-desc = Soyuz’un çizimde kullandığı grafik 
 settings-appearance-gpu-windows-only = Yalnızca Windows’ta kullanılabilir
 settings-appearance-gpu-compat = uyumluluk
 settings-bookmarks-icon = Yer imi simgesi
+
+## Linux (devices)
+settings-views-unmounted-devices = Bağlı olmayan aygıtlar
+settings-views-unmounted-devices-desc = Bağlı olmayan diskler ve bölümler Aygıtlar altında listelenir: bağlamak ya da bir BitLocker / LUKS biriminin kilidini açmak için tıklayın. Bağlama işlemi UDisks2 üzerinden yapılır; parolanız sorulabilir.
+settings-views-unmounted-all = Tümü
+settings-views-unmounted-removable = Yalnızca çıkarılabilir
+settings-views-unmounted-off = Kapalı
+settings-views-hidden-devices = Gizlenen aygıtlar
+settings-views-hidden-devices-desc = "Kenar çubuğunda gizle" ile gizlenen aygıtlar; her satırda bir dosya sistemi UUID'si veya aygıt yolu (/dev/sdb1).
+settings-views-hidden-devices-clear = Tümünü yeniden göster

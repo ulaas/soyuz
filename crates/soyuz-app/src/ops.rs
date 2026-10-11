@@ -836,6 +836,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, ctx: &egui::Context) {
         }
         Cmd::Portal(c) => crate::ui::portal::apply(app, ctx, c),
         Cmd::SetSidebarMode(m) => crate::ui::tree::set_mode(app, ctx, m),
+        Cmd::Device(c) => crate::ui::sidebar::apply_device(app, ctx, c),
         Cmd::MoveFavorite { from, to } => {
             let s = &mut app.ui.sidebar;
             if from < s.favorites.len() {

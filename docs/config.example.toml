@@ -126,6 +126,8 @@ mode = "places"                  # places | tree (disk tree fills the sidebar) |
 tree_follow = true               # expand the tree to the active pane's folder
 tree_drag_expand_ms = 700        # drag-hover over a collapsed folder expands it (0 = never)
 gtk_bookmarks = true             # Linux: show GTK bookmarks (~/.config/gtk-3.0/bookmarks, shared with Nautilus) under Favorites
+unmounted_devices = "all"        # Linux: unmounted disks under Devices (click to mount / unlock): all | removable | off
+hidden_devices = []              # Linux: devices hidden via "Hide from sidebar" (filesystem UUIDs or /dev paths)
 
 [[sidebar.portal]]               # folders pinned to the Portal section (drop folders on it); in order
 path = 'C:\Work\Projects'

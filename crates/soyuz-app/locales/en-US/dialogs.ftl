@@ -593,3 +593,16 @@ dialogs-rename-err-rule = rule { $rule }: { $error }
 dialogs-rename-err-no-target = no target
 # $lines: lines in the editor; $count: items being renamed.
 dialogs-rename-err-lines = { $lines } lines for { $count } items: keep exactly one name per line
+
+## Linux (devices)
+# $name: the volume's name.
+dialogs-unlock-title = Unlock { $name }
+dialogs-unlock-intro = This volume is encrypted. Enter its passphrase to unlock and mount it.
+dialogs-unlock-intro-bitlocker = This volume is encrypted with BitLocker. Enter its password or recovery key to unlock and mount it.
+dialogs-unlock-hint = Passphrase
+dialogs-unlock-hint-bitlocker = Password or recovery key
+dialogs-unlock-show = Show passphrase
+dialogs-unlock-hide = Hide passphrase
+dialogs-unlock-working = Unlocking…
+dialogs-unlock-recovery-note = A recovery key is the 48-digit key Windows showed when BitLocker was turned on (eight groups of six digits, dashes optional).
+dialogs-unlock-button = Unlock

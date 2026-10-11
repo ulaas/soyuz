@@ -272,6 +272,8 @@ Editable toolbar: action names plus `"|"` (separator), `"spacer"`, `"breadcrumb"
 | `tree_follow` | boolean | `true` | Expand the tree to the active pane's folder and highlight it. |
 | `tree_drag_expand_ms` | integer | `700` | Hovering a drag over a collapsed tree folder expands it after this delay (milliseconds; 0 = never). |
 | `gtk_bookmarks` | boolean | `true` | Linux: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared with Nautilus and other GTK file managers) under Favorites. |
+| `unmounted_devices` | `"all"` \| `"removable"` \| `"off"` | `"all"` | Linux: unmounted disks and partitions listed under Devices (click to mount, or to unlock BitLocker / LUKS): `all` \| `removable` \| `off`. (`all`: Every mountable or unlockable disk and partition, internal ones included; `removable`: Only removable media (USB, SD cards); `off`: None: only mounted volumes are listed) |
+| `hidden_devices` | array of strings | `[]` | Linux: devices hidden from the Devices section ("Hide from sidebar"): filesystem UUIDs or device paths (`/dev/sdb1`). |
 
 ## `[[sidebar.portal]]`
 
