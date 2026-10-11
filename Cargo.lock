@@ -3665,7 +3665,7 @@ dependencies = [
  "indexmap",
  "itoa",
  "log",
- "md-5 0.11.0",
+ "md-5",
  "nom",
  "rand 0.10.3",
  "rangemap",
@@ -3719,16 +3719,6 @@ name = "maybe-owned"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4facc753ae494aeb6e3c22f839b158aebd4f9270f55cd3c79906c45476c47ab4"
-
-[[package]]
-name = "md-5"
-version = "0.10.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d89e7ee0cfbedfc4da3340218492196241d89eefb6dab27de5df917a6d2e78cf"
-dependencies = [
- "cfg-if",
- "digest 0.10.7",
-]
 
 [[package]]
 name = "md-5"
@@ -5862,7 +5852,7 @@ dependencies = [
  "hmac",
  "instant-xml",
  "jiff",
- "md-5 0.11.0",
+ "md-5",
  "percent-encoding",
  "serde",
  "serde_json",
@@ -6338,7 +6328,7 @@ dependencies = [
  "hmac",
  "log",
  "lz4_flex",
- "md-5 0.11.0",
+ "md-5",
  "md4",
  "num_enum",
  "pbkdf2",
@@ -6586,7 +6576,7 @@ dependencies = [
  "filetime",
  "libc",
  "log",
- "md-5 0.10.6",
+ "md-5",
  "notify",
  "notify-debouncer-full",
  "objc2 0.6.5",
