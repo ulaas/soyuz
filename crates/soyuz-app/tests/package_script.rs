@@ -30,9 +30,10 @@ fn package_script_dry_run() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(out.status.success(), "package.ps1 failed:\n{stdout}\n{}", String::from_utf8_lossy(&out.stderr));
     let version = env!("CARGO_PKG_VERSION");
+    let portable_extension = if cfg!(windows) { "-portable.zip" } else { "-portable.tar.gz" };
     for want in [
         format!("soyuz-{version}-"),
-        "-portable.zip".to_string(),
+        portable_extension.to_string(),
         "LICENSE".into(),
         "THIRD-PARTY-NOTICES.md".into(),
         "README.md".into(),
