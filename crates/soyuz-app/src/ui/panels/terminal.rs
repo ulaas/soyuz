@@ -30,8 +30,8 @@ pub fn dispatch_keys(ctx: &egui::Context, keymap: &Keymap, cmd_is_ctrl: bool) ->
     ctx.input_mut(|i| {
         i.events.retain(|ev| {
             let egui::Event::Key { key, pressed: true, modifiers, .. } = ev else { return true };
-            let Some(name) = crate::keys::key_name(*key) else { return true };
-            let chord = KeyChord::new(crate::keys::mods(*modifiers), name).normalized(cmd_is_ctrl);
+            let Some(name) = crate::ui::keys::key_name(*key) else { return true };
+            let chord = KeyChord::new(crate::ui::keys::mods(*modifiers), name).normalized(cmd_is_ctrl);
             if !terminal_passthrough(chord) {
                 return true;
             }

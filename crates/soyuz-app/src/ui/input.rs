@@ -4,8 +4,8 @@
 
 use egui::{Event, PointerButton};
 
-use crate::keys::event_chord;
 use crate::keys::input::{InputEvent, InputFrame};
+use crate::ui::keys::event_chord;
 
 fn convert(ev: &Event, current: egui::Modifiers, cmd_is_ctrl: bool) -> InputEvent {
     match ev {

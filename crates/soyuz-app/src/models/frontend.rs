@@ -69,4 +69,6 @@ pub enum FrontendCmd {
     RecoveredJobs(Vec<soyuz_jobs::journal::Recovered>),
     /// Approve the MCP client request `id`.
     McpApproval(u64),
+    /// "Save changes?" for an editor document or before quitting.
+    EditorUnsaved(crate::editors::UnsavedPrompt),
 }

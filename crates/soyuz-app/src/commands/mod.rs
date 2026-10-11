@@ -1,6 +1,8 @@
 //! User-defined commands (`[[custom_commands]]`): placeholder expansion, running them
-//! detached or in the integrated terminal, and their context-menu entries. Every command
-//! is also an [`Action::CustomCommand`], so it appears in the palette and can be bound.
+//! detached or in the integrated terminal, and which context-menu entries apply
+//! (`ui::commands` draws them). Every command is also an
+//! [`Action::CustomCommand`](soyuz_core::config::Action::CustomCommand), so it appears in
+//! the palette and can be bound.
 //!
 //! Placeholders (see `soyuz_core::config::CustomCommand`): `%p` focused path, `%n`
 //! selected names, `%s` selected paths, `%d` current folder, `%o` the other pane's
@@ -9,17 +11,12 @@
 
 use std::path::{Path, PathBuf};
 
-use egui::Ui;
 use soyuz_core::Location;
-use soyuz_core::config::{Action, CommandContext, Config, CustomCommand};
+use soyuz_core::config::{CommandContext, Config, CustomCommand};
 
 use crate::app::SoyuzApp;
-use crate::cmd::Cmd;
 use crate::host::Host;
 use crate::models::toasts::Toast;
-use crate::state::pane::PaneId;
-use crate::theme::icons::ph;
-use crate::ui::widgets::{menu_item, menu_separator};
 
 /// What the placeholders expand to.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -337,22 +334,9 @@ fn spawn_shell(line: &str, dir: &Path) -> std::io::Result<()> {
     }
 }
 
-/// Context-menu entries for the commands that apply to `kinds`.
-pub fn context_items(ui: &mut Ui, config: &Config, cmds: &mut Vec<Cmd>, pane: PaneId, kinds: &[CommandContext]) {
-    let list: Vec<&CustomCommand> =
-        config.custom_commands.iter().filter(|c| !c.name.trim().is_empty() && applies(c, kinds)).collect();
-    if list.is_empty() {
-        return;
-    }
-    menu_separator(ui);
-    for c in list {
-        let glyph = if c.terminal { ph::TERMINAL } else { ph::LIGHTNING };
-        let hint = (!c.hotkey.trim().is_empty()).then_some(c.hotkey.as_str());
-        if menu_item(ui, Some(glyph), &c.name, hint, true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, Action::CustomCommand(c.name.clone())));
-            ui.close();
-        }
-    }
+/// The commands whose context-menu entries apply to `kinds` (named ones only).
+pub fn context_entries<'a>(config: &'a Config, kinds: &[CommandContext]) -> Vec<&'a CustomCommand> {
+    config.custom_commands.iter().filter(|c| !c.name.trim().is_empty() && applies(c, kinds)).collect()
 }
 
 /// The context kinds for a selection (`(any file, any folder)`), or the background.

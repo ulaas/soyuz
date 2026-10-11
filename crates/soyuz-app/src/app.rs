@@ -283,7 +283,7 @@ impl SoyuzApp {
             devscript: crate::devscript::DevScript::from_env(),
             secondary: startup.secondary,
             quit: QuitState::default(),
-            editors: Default::default(),
+            editors: crate::editors::Editors::new(crate::ui::gfx::egui_uploader(ctx)),
             ai: crate::ai::AiState::new(wake.clone()),
             wake,
             config_save: Default::default(),
@@ -423,8 +423,8 @@ impl SoyuzApp {
             }
             return;
         }
-        if crate::editors::owns_keyboard(self, ctx) {
-            crate::editors::handle_keys(self, ctx);
+        if crate::ui::editors::owns_keyboard(self, ctx) {
+            crate::ui::editors::handle_keys(self, ctx);
             return;
         }
         let (kctx, text_focused) = self.key_context(ctx);
@@ -439,7 +439,7 @@ impl SoyuzApp {
             let mut synth: Vec<keys::Dispatched> = ctx.input(|i| {
                 i.events
                     .iter()
-                    .filter_map(|ev| keys::event_chord(ev, i.modifiers, cmd_is_ctrl))
+                    .filter_map(|ev| crate::ui::keys::event_chord(ev, i.modifiers, cmd_is_ctrl))
                     .filter(|c| is_v(c))
                     .filter_map(|c| {
                         self.keymap.lookup(kctx, c).map(|a| keys::Dispatched { action: a.clone(), chord: c })
@@ -447,11 +447,11 @@ impl SoyuzApp {
                     .collect()
             });
             let had_egui = !synth.is_empty();
-            crate::services::os_clipboard::paste_key_fallback(ctx, &self.keymap, &mut synth);
+            crate::ui::keys::paste_key_fallback(ctx, &self.keymap, &mut synth);
             if had_egui && synth.is_empty() {
                 ctx.input_mut(|i| {
                     let m = i.modifiers;
-                    i.events.retain(|ev| !keys::event_chord(ev, m, cmd_is_ctrl).is_some_and(|c| is_v(&c)));
+                    i.events.retain(|ev| !crate::ui::keys::event_chord(ev, m, cmd_is_ctrl).is_some_and(|c| is_v(&c)));
                 });
             }
             if !had_egui {
@@ -490,7 +490,7 @@ impl SoyuzApp {
             self.close_cancelled();
             return;
         }
-        if crate::editors::intercept_close(self, host) {
+        if crate::editors::intercept_close(self, host, close_requested) {
             self.close_cancelled();
             return;
         }

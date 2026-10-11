@@ -73,6 +73,7 @@ pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
             FrontendCmd::RecoveredJobs(recovered) => {
                 app.ui.dialogs.push(dialogs::recovery::RecoveryDialog::new(crate::host::egui_ctx(host), recovered))
             }
+            FrontendCmd::EditorUnsaved(p) => app.ui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
             FrontendCmd::McpApproval(id) => {
                 let approvals = app.services.mcp.approvals.clone();
                 let flag = app.services.mcp.modal_open.clone();

@@ -9,6 +9,7 @@ pub mod chat;
 pub mod diff;
 pub mod mcp_area;
 pub mod pages;
+pub mod touch;
 
 use std::path::PathBuf;
 

@@ -52,7 +52,7 @@ impl Recorder {
         ctx.input_mut(|i| {
             let mods = i.modifiers;
             i.events.retain(|ev| {
-                let Some(chord) = crate::keys::event_chord(ev, mods, cmd_is_ctrl) else {
+                let Some(chord) = crate::ui::keys::event_chord(ev, mods, cmd_is_ctrl) else {
                     // Swallow typed text too, so nothing leaks into fields behind.
                     return !matches!(ev, egui::Event::Text(_));
                 };

@@ -111,7 +111,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         crate::ui::search::bar(ui, app);
         crate::ui::preview::show(ui, app);
         panels::show_activity(ui, app);
-        crate::editors::show(ui, app);
+        crate::ui::editors::show(ui, app);
         crate::ui::tools::show_panels(ui, app);
     }
 
@@ -120,7 +120,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         .show(ui, |ui| {
             let area = ui.available_rect_before_wrap();
             if main && crate::editors::maximized(app) {
-                crate::editors::show_central(ui, area, app);
+                crate::ui::editors::show_central(ui, area, app);
             } else {
                 panes(ui, area, app);
             }

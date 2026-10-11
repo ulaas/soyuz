@@ -8,9 +8,9 @@ use egui::{
 };
 use soyuz_core::config::EditorDock;
 
-use super::io::{Answer, Msg, Want};
-use super::{DocKind, External};
 use crate::app::SoyuzApp;
+use crate::editors::io::{Answer, Want};
+use crate::editors::{DocKind, External, UnsavedPrompt};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dialogs::conflict::{Btn, button};
@@ -266,16 +266,16 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             }
             DocKind::Text(t) => {
                 let mut env = super::text::TextEnv { cfg: &cfg, p: &p, focus: &mut focus, id: doc_id };
-                let out = t.show(ui, body, &mut env);
+                let out = super::text::show(t, ui, body, &mut env);
                 save_now = out.save;
                 toggle_wrap = out.toggle_wrap;
                 toggle_ws = out.toggle_whitespace;
             }
             DocKind::Hex(h) => {
-                save_now = h.show(ui, body, &p, cfg.font_size, &mut focus, doc_id).save;
+                save_now = super::hex::show(h, ui, body, &p, cfg.font_size, &mut focus, doc_id).save;
             }
             DocKind::Image(im) => {
-                save_now = im.show(ui, body, &p, cfg.jpeg_quality, &mut focus, doc_id).save;
+                save_now = super::image::show(im, ui, body, &p, cfg.jpeg_quality, &mut focus, doc_id).save;
             }
         }
     } else {
@@ -304,9 +304,9 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             p.text_tertiary,
         );
     }
-    app.editors.focus_ids = focus;
+    super::set_focus_ids(&ctx, focus);
     if save_now {
-        super::save(app, idx);
+        crate::editors::save(app, idx);
     }
     if toggle_wrap {
         crate::models::settings::update_config(app, &ctx, |c| c.editor.wrap = !c.editor.wrap);
@@ -315,7 +315,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         crate::models::settings::update_config(app, &ctx, |c| c.editor.show_whitespace = !c.editor.show_whitespace);
     }
     match external_answer {
-        Some(0) => super::reload(app, idx),
+        Some(0) => crate::editors::reload(app, idx),
         Some(_) => {
             if let Some(d) = app.editors.docs.get_mut(idx) {
                 d.external = None;
@@ -331,16 +331,16 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                     d.request_focus();
                 }
             }
-            TabCmd::Save(i) => super::save(app, i),
-            TabCmd::Close(i) => super::close(app, i, false),
+            TabCmd::Save(i) => crate::editors::save(app, i),
+            TabCmd::Close(i) => crate::editors::close(app, i, false),
             TabCmd::Reopen(i, want) => {
                 if app.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
                     app.ui.toasts.push(crate::models::toasts::Toast::info(tr!("editors-reopen-dirty")));
                 } else {
-                    super::reopen_as(app, i, want);
+                    crate::editors::reopen_as(app, i, want);
                 }
             }
-            TabCmd::Reload(i) => super::reload(app, i),
+            TabCmd::Reload(i) => crate::editors::reload(app, i),
             TabCmd::Reveal(i) => {
                 if let Some(d) = app.editors.docs.get(i) {
                     app.cmds.push(crate::cmd::Cmd::RevealPath(d.path.clone()));
@@ -350,50 +350,21 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     }
 }
 
-/// "Save changes?" for one document or for the whole window.
+/// "Save changes?" for one document or for the whole window
+/// ([`crate::editors::UnsavedPrompt`]); closing it without an answer cancels.
 pub struct UnsavedDialog {
-    title: String,
-    body: String,
-    target: Option<u64>,
-    tx: crossbeam_channel::Sender<Msg>,
+    prompt: UnsavedPrompt,
     answered: bool,
 }
 
 impl UnsavedDialog {
-    pub fn close(name: &str, doc: u64, tx: crossbeam_channel::Sender<Msg>) -> Self {
-        UnsavedDialog {
-            title: tr!("editors-unsaved-title", name = name),
-            body: tr!("editors-unsaved-body").into(),
-            target: Some(doc),
-            tx,
-            answered: false,
-        }
-    }
-
-    pub fn quit(names: &[String], tx: crossbeam_channel::Sender<Msg>) -> Self {
-        let title = if names.len() == 1 {
-            tr!("editors-unsaved-title", name = &names[0])
-        } else {
-            tr!("editors-unsaved-quit-title", count = names.len())
-        };
-        let body = if names.len() > 1 {
-            let mut list = names.iter().take(6).cloned().collect::<Vec<_>>().join(", ");
-            if names.len() > 6 {
-                list.push_str(", …");
-            }
-            tr!("editors-unsaved-quit-body-list", names = list)
-        } else {
-            tr!("editors-unsaved-quit-body").to_string()
-        };
-        UnsavedDialog { title, body, target: None, tx, answered: false }
+    pub fn new(prompt: UnsavedPrompt) -> Self {
+        UnsavedDialog { prompt, answered: false }
     }
 
     fn answer(&mut self, a: Answer) {
         self.answered = true;
-        let _ = self.tx.send(match self.target {
-            Some(doc) => Msg::Close { doc, answer: a },
-            None => Msg::Quit(a),
-        });
+        self.prompt.answer(a);
     }
 }
 
@@ -407,7 +378,7 @@ impl Drop for UnsavedDialog {
 
 impl Dialog for UnsavedDialog {
     fn title(&self) -> &str {
-        &self.title
+        &self.prompt.title
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -420,14 +391,14 @@ impl Dialog for UnsavedDialog {
 
     fn show(&mut self, ui: &mut Ui, _ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(RichText::new(&self.body).color(p.text_secondary));
+        ui.label(RichText::new(&self.prompt.body).color(p.text_secondary));
         ui.add_space(18.0);
         let (mut save, mut discard, mut cancel) = (false, false, false);
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             ui.spacing_mut().item_spacing.x = 6.0;
             save = button(
                 ui,
-                if self.target.is_some() { tr!("common-save") } else { tr!("editors-unsaved-save-all") },
+                if self.prompt.target.is_some() { tr!("common-save") } else { tr!("editors-unsaved-save-all") },
                 Btn::Primary,
             )
             .clicked();
