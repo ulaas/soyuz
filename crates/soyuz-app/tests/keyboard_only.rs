@@ -37,6 +37,7 @@ fn script(data: &Path, lang: &str, palette_query: &str) -> String {
         "welcome:off".to_string(),
         format!("config:general.language=\"{lang}\""),
         "config:keys.preset=\"explorer\"".into(),
+        "config:appearance.native_dialogs=false".into(),
         format!("expect:lang={lang}"),
         format!("cd:{d}"),
         "wait:1500".into(),
