@@ -101,6 +101,26 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
     }
 }
 
+/// Put plain text on the system clipboard directly (Windows: `CF_UNICODETEXT` through
+/// raw user32 calls). Returns `false` where this module has no direct text path (other
+/// OSes) or the write failed; the frontend then relies on its own mechanism (the GUI
+/// toolkit's clipboard, OSC 52 in the terminal UI).
+pub fn set_text(text: &str) -> bool {
+    #[cfg(windows)]
+    match imp::set_text(text) {
+        Ok(()) => true,
+        Err(e) => {
+            log::debug!("os clipboard: cannot set text: {e}");
+            false
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = text;
+        false
+    }
+}
+
 /// Files on the clipboard, with copy-vs-move.
 pub type Files = Option<(ClipMode, Vec<PathBuf>)>;
 

@@ -392,6 +392,18 @@ pub fn set_layout(app: &mut AppCore, layout: PaneLayout) {
 
 pub fn apply(app: &mut AppCore, cmd: WsCmd) {
     use super::windows;
+    // Other windows are GUI viewports: the terminal UI has one screen.
+    if matches!(
+        cmd,
+        WsCmd::GroupToNewWindow(_)
+            | WsCmd::TabToNewWindow(_)
+            | WsCmd::TabToWindow(..)
+            | WsCmd::DropTab { .. }
+            | WsCmd::OpenInNewWindow(_)
+    ) && app.tui_unavailable()
+    {
+        return;
+    }
     let n = app.ws.tabs.len();
     match cmd {
         WsCmd::NewGroup(i) if i < n => {
@@ -561,7 +573,7 @@ fn open_saved(app: &mut AppCore, i: usize, new_window: bool) {
 
 /// Rebuild the keymap from the config and add the workspace hotkeys.
 pub fn rebind(app: &mut AppCore) {
-    let (km, _) = soyuz_core::config::keymap(&app.config);
+    let (km, _) = crate::keys::build_keymap(&app.config);
     app.keymap = km;
     bind_hotkeys(app);
 }

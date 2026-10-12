@@ -146,7 +146,10 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
     }
     crate::services::os_clipboard::set_fallback_tools(app.config.linux.clipboard_fallback_tools);
     #[cfg(target_os = "linux")]
-    service::sync(app.config.linux.own_file_manager1 || forced());
+    // The terminal UI never serves "show in folder" for other apps (they expect a window).
+    service::sync(
+        (app.config.linux.own_file_manager1 || forced()) && app.frontend_kind != crate::core::FrontendKind::Tui,
+    );
     for req in take_requests() {
         handle(app, host, req);
     }

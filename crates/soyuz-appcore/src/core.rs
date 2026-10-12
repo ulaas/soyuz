@@ -5,7 +5,7 @@
 //! can carry out (open its settings window, show a GUI dialog, …) are queued on
 //! [`AppCore::frontend`].
 //!
-//! A frontend (`app::SoyuzApp` for egui, a terminal UI later) owns an `AppCore` and runs
+//! A frontend (`app::SoyuzApp` for egui, `soyuz_tui` for the terminal) owns an `AppCore` and runs
 //! the phases below once per frame, interleaving its own pumps where noted:
 //!
 //! 1. [`AppCore::begin_frame`]: per-frame resets of the services.
@@ -100,6 +100,39 @@ pub struct UiState {
     pub settings_open: bool,
 }
 
+/// Which frontend drives the core. The terminal UI keeps its own session
+/// (`session-tui.toml`), never owns `org.freedesktop.FileManager1`, and actions that
+/// would start another GUI window or an elevated copy of Soyuz say "not available in
+/// the terminal UI" instead (see [`AppCore::tui_unavailable`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrontendKind {
+    /// The egui window (`soyuz`).
+    #[default]
+    Gui,
+    /// The terminal UI (`soyuz --tui`).
+    Tui,
+}
+
+/// The frontend of this process (set by [`AppCore::new`]); for services without an
+/// `AppCore` at hand (`services::crash::restart_in_safe_mode`).
+static PROCESS_FRONTEND: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// The frontend kind of the last [`AppCore`] built in this process.
+pub fn process_frontend() -> FrontendKind {
+    match PROCESS_FRONTEND.load(std::sync::atomic::Ordering::Relaxed) {
+        1 => FrontendKind::Tui,
+        _ => FrontendKind::Gui,
+    }
+}
+
+/// Session file of a frontend: the GUI and the terminal UI keep separate tabs.
+pub fn session_file_name(kind: FrontendKind) -> &'static str {
+    match kind {
+        FrontendKind::Gui => "session.toml",
+        FrontendKind::Tui => "session-tui.toml",
+    }
+}
+
 /// Command-line startup options (see `main.rs`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Startup {
@@ -110,6 +143,8 @@ pub struct Startup {
     /// `--safe-mode`: safe defaults (see `services::crash::safe_config`), no session
     /// restore or save, settings saved to `safe-mode.toml` instead of `config.toml`.
     pub safe_mode: bool,
+    /// The frontend that runs this core.
+    pub frontend: FrontendKind,
 }
 
 /// Window-close state: closing with pending jobs asks first (they would be cancelled).
@@ -169,6 +204,8 @@ pub struct AppCore {
     /// Prompts raised by core logic (job prompts, delete confirmations, approvals, …),
     /// drawn by the frontend (`models::dialogs`).
     pub dialogs: crate::models::dialogs::DialogStack,
+    /// The frontend that drives this core (from [`Startup::frontend`]).
+    pub frontend_kind: FrontendKind,
 }
 
 impl AppCore {
@@ -177,8 +214,15 @@ impl AppCore {
     /// `host::no_wake` / `services::preview_gfx::no_upload` without a frontend).
     pub fn new(config: Config, mut startup: Startup, wake: Wake, uploader: Uploader) -> AppCore {
         startup.secondary |= startup.safe_mode;
+        PROCESS_FRONTEND.store(
+            match startup.frontend {
+                FrontendKind::Gui => 0,
+                FrontendKind::Tui => 1,
+            },
+            std::sync::atomic::Ordering::Relaxed,
+        );
         apply_core_settings(&config);
-        let (keymap, warnings) = config::keymap(&config);
+        let (keymap, warnings) = crate::keys::build_keymap(&config);
         for w in warnings {
             log::warn!("{w}");
         }
@@ -189,7 +233,7 @@ impl AppCore {
             Services::new(wake.clone(), thumbs, Duration::from_millis(config.behaviour.watch_debounce_ms.max(50)));
         services.watcher.set_poll_interval(Duration::from_millis(config.behaviour.watch_poll_interval_ms));
         let dir = config::config_dir();
-        let session_path = dir.join("session.toml");
+        let session_path = dir.join(session_file_name(startup.frontend));
         let views_path = dir.join("views.toml");
         let views =
             if config.behaviour.remember_folder_views { ViewMemory::load(&views_path) } else { ViewMemory::default() };
@@ -287,6 +331,7 @@ impl AppCore {
             dialogs: Default::default(),
             workspaces: crate::models::workspaces::WorkspacesState::load(),
             automation: Default::default(),
+            frontend_kind: startup.frontend,
         };
         crate::models::workspaces::bind_hotkeys(&mut app);
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));
@@ -553,6 +598,17 @@ impl AppCore {
     pub fn on_exit(&mut self) {
         // An "Install & restart" now restarts.
         crate::services::updates::arm_restart();
+    }
+
+    /// For actions the terminal UI cannot carry out (another GUI window, an elevated
+    /// copy of Soyuz, …): in the terminal UI, says so with a toast and returns `true`;
+    /// `false` in the GUI.
+    pub fn tui_unavailable(&mut self) -> bool {
+        if self.frontend_kind != FrontendKind::Tui {
+            return false;
+        }
+        self.ui.toasts.push(crate::models::toasts::Toast::info(tr!("tui-not-available")));
+        true
     }
 
     /// A core prompt ([`Self::dialogs`]) is open. Frontends add their own dialogs.

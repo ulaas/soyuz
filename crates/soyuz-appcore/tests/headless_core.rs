@@ -102,7 +102,7 @@ fn run_core(data: PathBuf) {
     c.updates.weekly_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
-    let startup = Startup { open: Some(data.clone()), secondary: true, safe_mode: false };
+    let startup = Startup { open: Some(data.clone()), secondary: true, safe_mode: false, ..Default::default() };
     let host = NullHost::default();
     let mut app = AppCore::new(c, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
     assert_eq!(app.ws.pane().location, soyuz_core::Location::Dir(data.clone()));

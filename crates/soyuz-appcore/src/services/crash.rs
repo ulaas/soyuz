@@ -41,6 +41,8 @@ static RING: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 /// Forwards to `env_logger` and keeps the last [`RING_LINES`] enabled lines in memory.
 struct RingLogger {
     inner: env_logger::Logger,
+    /// `inner` writes to a log file ([`init_file_logging`]), not to stderr.
+    to_file: bool,
 }
 
 impl log::Log for RingLogger {
@@ -52,14 +54,19 @@ impl log::Log for RingLogger {
         if !self.inner.matches(record) {
             return;
         }
-        push_line(format!(
+        let line = format!(
             "{} {:<5} {}: {}",
             chrono::Local::now().format("%H:%M:%S%.3f"),
             record.level(),
             record.target(),
             record.args()
-        ));
-        self.inner.log(record);
+        );
+        push_line(line);
+        // In the terminal UI stderr is the screen: keep the line in the ring only (unless
+        // the log goes to a file).
+        if self.to_file || !tui_active() {
+            self.inner.log(record);
+        }
     }
 
     fn flush(&self) {
@@ -80,8 +87,82 @@ fn push_line(line: String) {
 pub fn init_logging() {
     let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER)).build();
     let max = inner.filter();
-    if log::set_boxed_logger(Box::new(RingLogger { inner })).is_ok() {
+    if log::set_boxed_logger(Box::new(RingLogger { inner, to_file: false })).is_ok() {
         log::set_max_level(max);
+    }
+}
+
+/// Size at which [`init_file_logging`] starts a new log file (the previous one is kept
+/// as `<name>.1`).
+pub const LOG_FILE_CAP: u64 = 2 * 1024 * 1024;
+
+/// Like [`init_logging`], but the log goes to `path` instead of stderr (the terminal UI,
+/// where stderr is the screen). The file is capped at `cap` bytes: past it, it is renamed
+/// to `<name>.1` (replacing an older one) and a new file starts. Falls back to
+/// [`init_logging`] when the file cannot be opened. Idempotent.
+pub fn init_file_logging(path: &Path, cap: u64) {
+    let file = match RotatingFile::open(path.to_path_buf(), cap) {
+        Ok(f) => f,
+        Err(_) => return init_logging(),
+    };
+    let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER))
+        .target(env_logger::Target::Pipe(Box::new(file)))
+        .write_style(env_logger::WriteStyle::Never)
+        .build();
+    let max = inner.filter();
+    if log::set_boxed_logger(Box::new(RingLogger { inner, to_file: true })).is_ok() {
+        log::set_max_level(max);
+    }
+}
+
+/// An append-only log file that rotates once it would grow past `cap` bytes.
+pub struct RotatingFile {
+    path: PathBuf,
+    file: std::fs::File,
+    len: u64,
+    cap: u64,
+}
+
+impl RotatingFile {
+    pub fn open(path: PathBuf, cap: u64) -> std::io::Result<RotatingFile> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(RotatingFile { path, file, len, cap: cap.max(1) })
+    }
+
+    /// `<name>.1`: the previous log.
+    pub fn previous_path(&self) -> PathBuf {
+        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
+        name.push(".1");
+        self.path.with_file_name(name)
+    }
+
+    fn rotate(&mut self) -> std::io::Result<()> {
+        let old = self.previous_path();
+        let _ = std::fs::remove_file(&old);
+        std::fs::rename(&self.path, &old)?;
+        self.file = std::fs::OpenOptions::new().create(true).append(true).open(&self.path)?;
+        self.len = 0;
+        Ok(())
+    }
+}
+
+impl std::io::Write for RotatingFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.len > 0 && self.len + buf.len() as u64 > self.cap {
+            // Keep logging into the full file when it cannot be rotated.
+            let _ = self.rotate();
+        }
+        let n = self.file.write(buf)?;
+        self.len += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
     }
 }
 
@@ -153,21 +234,123 @@ fn panic_message(info: &std::panic::PanicHookInfo<'_>) -> String {
 
 /// Chain a hook that writes a crash report before the default hook runs. Panics caught
 /// by a job worker (reported as a failed job) also leave a report: they are bugs too.
+///
+/// In the terminal UI ([`set_tui_hooks`]) the hook routes by thread ([`panic_route`]):
+/// a panic on the TUI thread restores the terminal first, so the report path and the
+/// default message print to the normal screen; a panic on any other thread (a worker
+/// that catches it) writes the report but prints nothing (stderr is the alternate
+/// screen) and asks the loop for a full redraw ([`take_needs_full_redraw`]).
 pub fn install_panic_hook() {
     let dir = crashes_dir();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let hooks = tui_hooks();
+        let route = panic_route(hooks.map(|h| h.thread), std::thread::current().id());
+        if route == PanicRoute::TuiThread
+            && let Some(h) = hooks
+        {
+            (h.restore)();
+            clear_tui_hooks();
+        }
         let message = panic_message(info);
         let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
         let thread = std::thread::current().name().unwrap_or("<unnamed>").to_string();
         let bt = std::backtrace::Backtrace::force_capture().to_string();
         let text = report_text(&message, &location, &thread, &bt, &recent_log());
-        match write_report(&dir, &text) {
-            Ok(p) => eprintln!("soyuz: crash report written to {}", p.display()),
-            Err(e) => eprintln!("soyuz: cannot write crash report: {e}"),
+        let written = write_report(&dir, &text);
+        if route.prints() {
+            match written {
+                Ok(p) => eprintln!("soyuz: crash report written to {}", p.display()),
+                Err(e) => eprintln!("soyuz: cannot write crash report: {e}"),
+            }
+            previous(info);
+        } else {
+            match written {
+                Ok(p) => push_line(format!("soyuz: crash report written to {}", p.display())),
+                Err(e) => push_line(format!("soyuz: cannot write crash report: {e}")),
+            }
+            NEEDS_FULL_REDRAW.store(true, Ordering::Release);
         }
-        previous(info);
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Terminal UI panic routing
+// ---------------------------------------------------------------------------
+
+/// What the terminal UI registers with the panic hook.
+#[derive(Clone, Copy, Debug)]
+pub struct TuiHooks {
+    /// Restores the terminal (raw mode, alternate screen, ...); idempotent, panic-safe.
+    pub restore: fn(),
+    /// The thread that owns the terminal (runs the frame loop).
+    pub thread: std::thread::ThreadId,
+}
+
+static TUI_HOOKS: Mutex<Option<TuiHooks>> = Mutex::new(None);
+static TUI_ACTIVE: AtomicBool = AtomicBool::new(false);
+static NEEDS_FULL_REDRAW: AtomicBool = AtomicBool::new(false);
+
+/// Enter terminal-UI panic handling (call after the terminal is set up, on the thread
+/// that owns it). Also keeps log lines off stderr while it is active.
+pub fn set_tui_hooks(restore: fn(), tui_thread: std::thread::ThreadId) {
+    *TUI_HOOKS.lock() = Some(TuiHooks { restore, thread: tui_thread });
+    TUI_ACTIVE.store(true, Ordering::Release);
+}
+
+/// Leave terminal-UI panic handling (after the terminal was restored): back to the GUI
+/// behaviour.
+pub fn clear_tui_hooks() {
+    TUI_ACTIVE.store(false, Ordering::Release);
+    if let Some(mut h) = TUI_HOOKS.try_lock_for(Duration::from_millis(50)) {
+        *h = None;
+    }
+}
+
+/// Terminal-UI panic handling is on.
+pub fn tui_active() -> bool {
+    TUI_ACTIVE.load(Ordering::Acquire)
+}
+
+fn tui_hooks() -> Option<TuiHooks> {
+    if !tui_active() {
+        return None;
+    }
+    // Never block a panicking thread (another may hold the lock).
+    TUI_HOOKS.try_lock_for(Duration::from_millis(50)).and_then(|h| *h)
+}
+
+/// A panic on another thread wrote past the alternate screen's owner (or was logged):
+/// the terminal UI should repaint everything. Reading clears it.
+pub fn take_needs_full_redraw() -> bool {
+    NEEDS_FULL_REDRAW.swap(false, Ordering::AcqRel)
+}
+
+/// How the panic hook treats a panic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanicRoute {
+    /// No terminal UI: report, print, default hook (the GUI behaviour).
+    Normal,
+    /// On the terminal UI thread: restore the terminal, then as [`PanicRoute::Normal`].
+    TuiThread,
+    /// On another thread while the terminal UI runs: report quietly, request a redraw.
+    TuiBackground,
+}
+
+impl PanicRoute {
+    /// Whether the hook prints to stderr (and runs the default hook).
+    pub fn prints(self) -> bool {
+        self != PanicRoute::TuiBackground
+    }
+}
+
+/// Route a panic on `current` given the terminal UI thread (`None` outside the TUI).
+pub fn panic_route(tui_thread: Option<std::thread::ThreadId>, current: std::thread::ThreadId) -> PanicRoute {
+    match tui_thread {
+        None => PanicRoute::Normal,
+        Some(t) if t == current => PanicRoute::TuiThread,
+        Some(_) => PanicRoute::TuiBackground,
+    }
 }
 
 /// A crash report on disk.
@@ -263,10 +446,19 @@ pub fn safe_config_path() -> PathBuf {
     config::config_dir().join("safe-mode.toml")
 }
 
-/// Start another Soyuz in safe mode (plain process spawn, no shell).
+/// Start another Soyuz in safe mode (plain process spawn, no shell), with the same
+/// frontend as this process (`--tui` from the terminal UI).
 pub fn restart_in_safe_mode() -> std::io::Result<()> {
     let exe = std::env::current_exe()?;
-    std::process::Command::new(exe).arg("--safe-mode").spawn().map(drop)
+    std::process::Command::new(exe).args(safe_mode_args(crate::core::process_frontend())).spawn().map(drop)
+}
+
+/// Arguments of the safe-mode restart for `frontend`.
+pub fn safe_mode_args(frontend: crate::core::FrontendKind) -> Vec<&'static str> {
+    match frontend {
+        crate::core::FrontendKind::Gui => vec!["--safe-mode"],
+        crate::core::FrontendKind::Tui => vec!["--tui", "--safe-mode"],
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +638,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn log_file_rotates_at_the_cap() {
+        use std::io::Write as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("soyuz-tui.log");
+        let mut f = RotatingFile::open(path.clone(), 100).unwrap();
+        f.write_all(&[b'a'; 60]).unwrap();
+        f.write_all(&[b'b'; 30]).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 90);
+        f.write_all(&[b'c'; 30]).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), vec![b'c'; 30]);
+        assert_eq!(std::fs::metadata(f.previous_path()).unwrap().len(), 90);
+        assert!(f.previous_path().ends_with("soyuz-tui.log.1"));
+        // Reopening appends.
+        drop(f);
+        let mut f = RotatingFile::open(path.clone(), 100).unwrap();
+        f.write_all(b"d").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 31);
+    }
+
+    #[test]
+    fn safe_mode_restart_keeps_the_frontend() {
+        use crate::core::FrontendKind;
+        assert_eq!(safe_mode_args(FrontendKind::Gui), vec!["--safe-mode"]);
+        assert_eq!(safe_mode_args(FrontendKind::Tui), vec!["--tui", "--safe-mode"]);
+    }
+
+    #[test]
     fn ring_keeps_the_last_lines() {
         for i in 0..(RING_LINES + 25) {
             push_line(format!("ring-test line {i}"));
@@ -484,6 +703,17 @@ mod tests {
         let msg = r.unwrap_err().downcast_ref::<&str>().map(|s| s.to_string()).unwrap();
         let p = write_report(d.path(), &report_text(&msg, "here", "t", "", &recent_log())).unwrap();
         assert!(std::fs::read_to_string(p).unwrap().contains("deliberate test panic"));
+    }
+
+    #[test]
+    fn panic_routing_by_thread() {
+        let me = std::thread::current().id();
+        let other = std::thread::spawn(|| std::thread::current().id()).join().unwrap();
+        assert_eq!(panic_route(None, me), PanicRoute::Normal);
+        assert_eq!(panic_route(Some(me), me), PanicRoute::TuiThread);
+        assert_eq!(panic_route(Some(me), other), PanicRoute::TuiBackground);
+        assert!(PanicRoute::Normal.prints() && PanicRoute::TuiThread.prints());
+        assert!(!PanicRoute::TuiBackground.prints());
     }
 
     #[test]

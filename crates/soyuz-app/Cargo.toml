@@ -19,15 +19,17 @@ name = "soyuz"
 path = "src/main.rs"
 
 [features]
-default = ["zstd", "pdf"]
+default = ["zstd", "pdf", "tui"]
+# The terminal UI (`soyuz --tui [PATH]`, crate `soyuz-tui`).
+tui = ["dep:soyuz-tui"]
 # PDF page rendering through pdfium (`soyuz-appcore`; loaded at runtime from pdfium.dll
 # next to the exe or in the config dir; see docs/USER_GUIDE.md).
-pdf = ["soyuz-appcore/pdf"]
+pdf = ["soyuz-appcore/pdf", "soyuz-tui?/pdf"]
 # Fallback OpenGL renderer (`--renderer glow`).
 glow = ["eframe/glow"]
 # Native zstd (tar.zst writing, zstd zip entries); compiles C. Cross builds without a C
 # cross compiler use `--no-default-features`.
-zstd = ["soyuz-appcore/zstd", "soyuz-archive/zstd"]
+zstd = ["soyuz-appcore/zstd", "soyuz-archive/zstd", "soyuz-tui?/zstd"]
 
 [dependencies]
 # Everything frontend-agnostic (state, models, commands, services, i18n); no egui.
@@ -43,6 +45,7 @@ soyuz-ai.workspace = true
 soyuz-mcp.workspace = true
 soyuz-script.workspace = true
 soyuz-vfs.workspace = true
+soyuz-tui = { workspace = true, optional = true }
 eframe.workspace = true
 egui.workspace = true
 egui_extras.workspace = true

@@ -114,7 +114,7 @@ jobs:
         continue-on-error: ${{ runner.os == 'macOS' }}
         shell: bash
         run: |
-          for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-term soyuz-appcore soyuz-app; do
+          for c in soyuz-core soyuz-fs soyuz-jobs soyuz-archive soyuz-search soyuz-term soyuz-appcore soyuz-tui soyuz-app; do
             echo "::group::cargo test -p $c"
             cargo test -p "$c" --locked
             echo "::endgroup::"
@@ -129,16 +129,19 @@ jobs:
         shell: bash
         run: |
           cargo clippy -p soyuz-appcore --no-default-features --all-targets --locked -- -D warnings
+          cargo clippy -p soyuz-tui --no-default-features --all-targets --locked -- -D warnings
           cargo clippy -p soyuz-app --no-default-features --all-targets --locked -- -D warnings
-      # The application core never depends on a GUI toolkit (also a test:
-      # crates/soyuz-appcore/tests/boundary.rs); the graph is checked for every target.
-      - name: Core has no GUI toolkit
+      # The application core and the terminal UI never depend on a GUI toolkit (also tests:
+      # crates/soyuz-{appcore,tui}/tests/boundary.rs); the graph is checked for every target.
+      - name: Core and terminal UI have no GUI toolkit
         shell: bash
         run: |
-          if cargo tree --locked -p soyuz-appcore -e normal --target all | grep -i -E "egui|eframe|epaint|winit|wgpu"; then
-            echo "::error::soyuz-appcore must not depend on a GUI toolkit"
-            exit 1
-          fi
+          for c in soyuz-appcore soyuz-tui; do
+            if cargo tree --locked -p "$c" -e normal --target all | grep -i -E "egui|eframe|epaint|winit|wgpu"; then
+              echo "::error::$c must not depend on a GUI toolkit"
+              exit 1
+            fi
+          done
       # The dependency graph must not pull in a shell-wrapping crate (deny.toml [bans]): on
       # Windows they wrap the shell, on Linux they spawn xdg-open / gio instead of the
       # native XDG implementation in soyuz-fs.

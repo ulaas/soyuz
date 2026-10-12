@@ -289,6 +289,10 @@ window_backend = "auto"          # auto | wayland | x11 (XWayland: drag and drop
 own_file_manager1 = false        # own org.freedesktop.FileManager1 while running ("Show in folder" opens Soyuz)
 clipboard_fallback_tools = false # run wl-copy / xclip when the built-in clipboard fails
 
+[tui]                            # the terminal UI (soyuz --tui)
+mouse = true                     # click / wheel in the terminal UI (off keeps the terminal's own text selection)
+keyboard_protocol = "auto"       # auto | kitty | legacy (auto: kitty keyboard protocol where supported, never on Windows)
+
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true
 default_profile = "claude"       # used when a task names no profile (empty = first profile)

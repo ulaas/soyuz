@@ -59,6 +59,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[performance]`](#performance)
 - [`[remote]`](#remote)
 - [`[linux]`](#linux)
+- [`[tui]`](#tui)
 - [`[keys]`](#keys)
 - [`[ai]`](#ai)
 - [`[[ai.profiles]]`](#aiprofiles)
@@ -509,6 +510,15 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `window_backend` | `"auto"` \| `"wayland"` \| `"x11"` | `"auto"` | Display server the window uses (`auto` = Wayland when available, else X11). `x11` runs through XWayland under a Wayland compositor, which makes drag and drop with X11 apps work. Applies at the next start. (`wayland`: Native Wayland; `x11`: X11 (XWayland under a Wayland compositor)) |
 | `own_file_manager1` | boolean | `false` | While Soyuz runs, own `org.freedesktop.FileManager1` on the session bus, so "Show in folder" from browsers and other apps opens Soyuz. |
 | `clipboard_fallback_tools` | boolean | `false` | When the built-in clipboard fails, fall back to running `wl-copy` / `xclip`. |
+
+## `[tui]`
+
+`[tui]`: the terminal UI started with `soyuz --tui`.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `mouse` | boolean | `true` | Use the mouse (click to select, wheel to scroll). Off leaves the terminal's own text selection working. |
+| `keyboard_protocol` | `"auto"` \| `"kitty"` \| `"legacy"` | `"auto"` | How keys are read: `auto` uses the kitty keyboard protocol where the terminal supports it (never on Windows), `kitty` always asks for it, `legacy` never does. |
 
 ## `[keys]`
 

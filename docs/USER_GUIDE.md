@@ -300,6 +300,24 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 - **Automations** (Settings → Automations): rules that watch a folder and act on matching items (name globs / regex, kind, size, age) after they stop changing: move, copy, rename with a pattern, tag, trash or run a script. Each rule shows what it would match right now, has *Run now*, a dry-run switch and a run log. Every step is a job with a robot badge in the activity panel, so it can be undone.
 - **Command line**: `soyuz cp|mv|rm|trash|ls|open|reveal|jobs` (or `soyuz-cli`, which a shell waits for). With a Soyuz window open the jobs run there, with progress in the activity panel and conflict prompts in the window; otherwise they run in the terminal. `--queue` returns at once, `--json` prints machine-readable events, `--conflict skip|overwrite|rename|ask`. Exit codes: 0 ok, 1 failed, 2 usage, 3 cancelled, 4 unavailable, 5 not found.
 
+## Terminal UI (preview)
+
+`soyuz --tui [folder]` runs Soyuz inside a terminal. It uses the same settings, key
+bindings, jobs and undo history as the window. On Windows it opens its own console window;
+on Linux and macOS it runs in the terminal you start it from.
+
+This first version shows the focused folder as a list: move with the arrow keys (or your
+key preset), Enter opens, Backspace goes up, Del and other file commands work as in the
+window, and Ctrl+Q quits (asking first while jobs are running). Tabs, dual panes, colours
+and the full dialogs follow in later versions; features that have no terminal view yet
+show a short notice instead.
+
+Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection, and
+choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
+it). In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
+UI keeps its own session (`session-tui.toml`) and log (`soyuz-tui.log`) in the settings
+folder.
+
 ## Accessibility
 
 - **Screen readers**: Soyuz exposes an AccessKit tree (UI Automation on Windows, AT-SPI on

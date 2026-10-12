@@ -38,12 +38,17 @@ enum Cli {
         /// `[linux] own_file_manager1` (the opt-in D-Bus activation file passes it).
         dbus_file_manager: bool,
     },
+    /// `--tui [PATH]`: the terminal UI in this terminal.
+    Tui {
+        startup: soyuz_app::app::Startup,
+    },
     Help,
     Version,
 }
 
 const USAGE: &str = "\
 Usage: soyuz [OPTIONS] [PATH]...
+       soyuz --tui [--safe-mode] [PATH]
        soyuz <cp|mv|rm|trash|ls|open|reveal|jobs> …   (run `soyuz cp --help`)
 
 Arguments:
@@ -51,6 +56,8 @@ Arguments:
                           selected); `file://` URIs are accepted
 
 Options:
+  --tui                   Run the terminal UI (in this terminal; on Windows a release build
+                          opens a console window of its own); opens at most one PATH
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
@@ -71,8 +78,16 @@ fn arg_path(arg: String) -> std::path::PathBuf {
     std::path::PathBuf::from(arg)
 }
 
+/// `--tui` is on the command line (before a `--`): decided before logging starts, so
+/// the terminal UI logs to a file instead of the screen.
+fn tui_requested(args: &[String]) -> bool {
+    args.iter().take_while(|a| a.as_str() != "--").any(|a| a == "--tui")
+}
+
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut renderer = RendererChoice::Wgpu;
+    let mut renderer_given = false;
+    let mut tui = false;
     let mut startup = soyuz_app::app::Startup::default();
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut dbus_file_manager = false;
@@ -84,6 +99,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             arg.strip_prefix("--renderer=").map(str::to_string)
         };
         if let Some(v) = value {
+            renderer_given = true;
             renderer = match v.to_ascii_lowercase().as_str() {
                 "wgpu" => RendererChoice::Wgpu,
                 "glow" | "gl" | "opengl" => RendererChoice::Glow,
@@ -95,6 +111,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             "-h" | "--help" => return Ok(Cli::Help),
             "-V" | "--version" => return Ok(Cli::Version),
             "--new-window" => startup.secondary = true,
+            "--tui" => tui = true,
             "--safe-mode" => startup.safe_mode = true,
             "--dbus-file-manager" => dbus_file_manager = true,
             "--" => {
@@ -107,6 +124,19 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             other if other.starts_with('-') => return Err(format!("unexpected argument '{other}'")),
             _ => paths.push(arg_path(arg)),
         }
+    }
+    if tui {
+        if renderer_given {
+            return Err("--renderer cannot be combined with --tui".into());
+        }
+        if dbus_file_manager {
+            return Err("--dbus-file-manager cannot be combined with --tui".into());
+        }
+        if paths.len() > 1 {
+            return Err("--tui opens one folder (got several paths)".into());
+        }
+        startup.open = paths.into_iter().next();
+        return Ok(Cli::Tui { startup });
     }
     let mut paths = paths.into_iter();
     startup.open = paths.next();
@@ -213,12 +243,53 @@ fn with_window_backend(
     options
 }
 
+/// `soyuz --tui`: the terminal UI. Returns before any window / GPU code runs.
+#[cfg(feature = "tui")]
+fn run_tui(startup: soyuz_app::app::Startup) -> ExitCode {
+    // Windows: the process console, or a new console window for a GUI-subsystem
+    // release build (never the parent shell's console: both would read the keyboard).
+    // Restores the console modes / code pages when dropped.
+    let _console = match soyuz_fs::console::tui_console() {
+        Ok(c) => c,
+        Err(e) => {
+            err!("soyuz: cannot open a console for the terminal UI: {e}");
+            return ExitCode::FAILURE;
+        }
+    };
+    if !soyuz_fs::console::is_terminal_session() {
+        err!(
+            "soyuz: --tui needs an interactive terminal (stdin and stdout must not be redirected; TERM must not be dumb)"
+        );
+        return ExitCode::from(2);
+    }
+    // Before the job engine exists: claim the crash-journal slot, collect what to offer.
+    soyuz_app::services::crash::startup(startup.safe_mode);
+    let config =
+        if startup.safe_mode { soyuz_app::services::crash::safe_config() } else { soyuz_app::app::load_config() };
+    // Installs the legacy-terminal keymap overlay itself when the kitty keyboard protocol
+    // is not used (it knows after querying the terminal), before the core is built.
+    soyuz_tui::run(config, startup)
+}
+
+#[cfg(not(feature = "tui"))]
+fn run_tui(_startup: soyuz_app::app::Startup) -> ExitCode {
+    soyuz_fs::console::attach_parent();
+    err!("soyuz: built without the terminal UI (cargo feature `tui`)");
+    ExitCode::from(2)
+}
+
 fn main() -> ExitCode {
     soyuz_app::devscript::mark_process_start();
-    soyuz_app::services::crash::init_logging();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if tui_requested(&args) {
+        // The screen belongs to the terminal UI: log to a capped file instead of stderr.
+        let log = soyuz_core::config::config_dir().join("soyuz-tui.log");
+        soyuz_app::services::crash::init_file_logging(&log, soyuz_app::services::crash::LOG_FILE_CAP);
+    } else {
+        soyuz_app::services::crash::init_logging();
+    }
     soyuz_app::services::crash::install_panic_hook();
 
-    let args: Vec<String> = std::env::args().skip(1).collect();
     // `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`: the CLI companion; no GUI.
     let cwd = std::env::current_dir().unwrap_or_default();
     match soyuz_script::cli::parse(&args, &cwd) {
@@ -268,6 +339,7 @@ Run `soyuz <command> --help` for usage."
             out!("soyuz {} ({})", env!("CARGO_PKG_VERSION"), soyuz_app::GIT_SHA);
             return ExitCode::SUCCESS;
         }
+        Cli::Tui { startup } => return run_tui(startup),
         Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),
     };
     let (renderer, startup, extra, dbus_file_manager) = renderer;
@@ -436,6 +508,37 @@ mod tests {
         assert!(parse(&["--bogus"]).is_err());
         let Ok(Cli::Run { startup, .. }) = parse(&["--safe-mode"]) else { panic!("parse") };
         assert!(startup.safe_mode && !startup.secondary);
+    }
+
+    #[test]
+    fn tui_parsing() {
+        let tui = |open: Option<&str>| {
+            Ok(Cli::Tui {
+                startup: soyuz_app::app::Startup { open: open.map(std::path::PathBuf::from), ..Default::default() },
+            })
+        };
+        assert_eq!(parse(&["--tui"]), tui(None));
+        assert_eq!(parse(&["--tui", "dir"]), tui(Some("dir")));
+        assert_eq!(parse(&["dir", "--tui"]), tui(Some("dir")));
+        assert_eq!(parse(&["--tui", "--", "-dash"]), tui(Some("-dash")));
+        let Ok(Cli::Tui { startup }) = parse(&["--tui", "--safe-mode"]) else { panic!("parse") };
+        assert!(startup.safe_mode);
+        // After `--` it is a path: the GUI opens a folder named `--tui`.
+        let Ok(Cli::Run { startup, .. }) = parse(&["--", "--tui"]) else { panic!("parse") };
+        assert_eq!(startup.open, Some(std::path::PathBuf::from("--tui")));
+        assert!(parse(&["--tui", "a", "b"]).is_err());
+        assert!(parse(&["--tui", "--renderer", "glow"]).is_err());
+        assert!(parse(&["--tui", "--dbus-file-manager"]).is_err());
+        assert_eq!(parse(&["--tui", "--help"]), Ok(Cli::Help));
+    }
+
+    #[test]
+    fn tui_is_detected_before_logging() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        assert!(tui_requested(&a(&["--tui"])));
+        assert!(tui_requested(&a(&["--safe-mode", "--tui", "x"])));
+        assert!(!tui_requested(&a(&["--", "--tui"])));
+        assert!(!tui_requested(&a(&["x"])));
     }
 
     #[test]

@@ -1,0 +1,40 @@
+[package]
+name = "soyuz-tui"
+description = "Soyuz terminal UI (`soyuz --tui`): a ratatui frontend on the soyuz-appcore core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+
+# Like soyuz-appcore, no GUI toolkit (egui / eframe / winit / wgpu …): `tests/boundary.rs`
+# checks the resolved dependency graph.
+
+[features]
+default = []
+pdf = ["soyuz-appcore/pdf"]
+zstd = ["soyuz-appcore/zstd"]
+
+[dependencies]
+soyuz-appcore.workspace = true
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+log.workspace = true
+
+# SIGTERM / SIGHUP / SIGINT / SIGCONT (`signals.rs`); already in the lockfile (via
+# alacritty_terminal).
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.4.5"
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

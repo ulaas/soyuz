@@ -899,7 +899,9 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::Quit { when_idle } => app.confirm_quit(host, when_idle),
         Cmd::ChooseOpenWith(path) => app.frontend.push(crate::models::frontend::FrontendCmd::OpenWith(path)),
         Cmd::NewWindow(loc) => {
-            if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
+            if app.tui_unavailable() {
+                // The terminal UI has a single screen and starts no GUI windows.
+            } else if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
                 crate::models::windows::open_location(app, loc);
             } else {
                 window::spawn_window(app, &loc);

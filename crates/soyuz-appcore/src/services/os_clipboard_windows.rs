@@ -164,6 +164,19 @@ pub(super) fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String>
     Ok(())
 }
 
+/// Replace the clipboard with plain text (`CF_UNICODETEXT`).
+pub(super) fn set_text(text: &str) -> Result<(), String> {
+    let bytes: Vec<u8> = text.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect();
+    // Allocate before touching the clipboard, so a failure leaves it untouched.
+    let block = Block::new(&bytes)?;
+    let s = Session::open()?;
+    // SAFETY: clipboard is open (held by `s`).
+    if unsafe { EmptyClipboard() } == 0 {
+        return Err(format!("EmptyClipboard failed: {}", std::io::Error::last_os_error()));
+    }
+    block.set(&s, CF_UNICODETEXT)
+}
+
 pub(super) fn has_files() -> bool {
     // SAFETY: plain query, no clipboard session needed.
     unsafe { IsClipboardFormatAvailable(CF_HDROP) != 0 }

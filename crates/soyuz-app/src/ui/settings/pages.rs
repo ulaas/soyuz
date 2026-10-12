@@ -1,5 +1,5 @@
 //! Settings pages for the plain config sections: general, views & layout, behaviour,
-//! file operations, terminal, preview / search / git, and the config file page.
+//! file operations, terminal, terminal UI, preview / search / git, and the config file page.
 
 use std::time::SystemTime;
 
@@ -1203,6 +1203,40 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     });
     any
+}
+
+/// `[tui]`: the terminal UI started with `soyuz --tui`.
+pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
+    use soyuz_core::config::KeyboardProtocol;
+    let d = &mut app.gui.settings.draft;
+    group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-input"), |r| {
+        r.row_kw(
+            tr!("settings-tui-mouse"),
+            tr!("settings-tui-mouse-desc"),
+            "mouse click wheel scroll selection",
+            |ui| {
+                switch(ui, &mut d.tui.mouse);
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-keyboard-protocol"),
+            tr!("settings-tui-keyboard-protocol-desc"),
+            "kitty keyboard protocol legacy keys modifiers",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.keyboard_protocol",
+                    &mut d.tui.keyboard_protocol,
+                    &[
+                        (KeyboardProtocol::Auto, tr!("settings-auto")),
+                        (KeyboardProtocol::Kitty, "Kitty"),
+                        (KeyboardProtocol::Legacy, tr!("settings-tui-legacy")),
+                    ],
+                    160.0,
+                );
+            },
+        );
+    })
 }
 
 /// `[terminal] shell` / `args`: automatic, the detected shells (WSL distributions with
