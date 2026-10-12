@@ -13,7 +13,7 @@ use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
 
 use super::conflict::{Btn, button};
 use super::properties::MetaCmd;
-use super::properties_attrs::{AttrEdit, ModeEdit, plan_jobs};
+use super::properties_attrs::{AttrEdit, AttrEditUi as _, ModeEdit, ModeEditUi as _, plan_jobs};
 use super::properties_widgets::{caption, check, datetime_field, kv_row_with, rule};
 use super::{Dialog, DialogCtx};
 use crate::app::SoyuzApp;

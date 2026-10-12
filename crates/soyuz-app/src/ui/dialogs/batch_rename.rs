@@ -5,218 +5,40 @@
 //! extension / both), presets, and an alternative "text editor" mode with one name per
 //! line. Right: a live before → after table with invalid / duplicate / existing-name
 //! highlighting and a summary (including how many rename cycles need temporary names).
-//! The engine lives in `crate::rename`; the result is one undoable `Rename` job.
+//! The state (items, rules, preview, validation, presets) is the frontend-agnostic
+//! `crate::models::batch_rename::BatchRenameModel`; the engine lives in `crate::rename`;
+//! the result is one undoable `Rename` job.
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-
-use chrono::NaiveDateTime;
 use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, vec2};
-use parking_lot::Mutex;
 
 use super::conflict::{Btn, button};
-use super::properties::MetaCmd;
 use super::properties_widgets::{badge, caption, check, small_icon_button};
 use super::{Dialog, DialogCtx};
 use crate::app::SoyuzApp;
-use crate::cmd::Cmd;
-use crate::rename::presets::{self, Preset};
-use crate::rename::{self, CaseMode, Counter, Item, Position, Row, Rule, RuleEntry, Spec, Status, Target};
-use crate::state::pane::PaneId;
+use crate::host::Host as _;
+use crate::models::batch_rename::{BatchRenameModel, Mode};
+use crate::rename::{CaseMode, Counter, Position, Rule, RuleEntry, Status, Target};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 use crate::ui::widgets::menu_item;
 
 pub fn open(app: &mut SoyuzApp) {
-    let pane = app.core.ws.pane();
-    let (soyuz_core::Location::Dir(_) | soyuz_core::Location::Search(_)) = &pane.location else {
-        app.core.ui.toasts.push(Toast::info(tr!("dialogs-rename-unavailable")));
-        return;
-    };
-    let entries: Vec<&soyuz_core::EntryInfo> = if pane.selection.is_empty() {
-        pane.visible.iter().map(|&i| &pane.entries[i]).collect()
-    } else {
-        pane.selected_entries()
-    };
-    if entries.is_empty() {
-        app.core.ui.toasts.push(Toast::info(tr!("dialogs-rename-nothing")));
-        return;
+    match BatchRenameModel::open(&app.core) {
+        Ok(m) => app.gui.dialogs.push(BatchRenameDialog { m }),
+        Err(e) => {
+            app.core.ui.toasts.push(Toast::info(e));
+        }
     }
-    let items: Vec<Item> = entries.iter().map(|e| Item::new(e.path.clone(), e.is_dir_like(), e.modified)).collect();
-    let known: HashSet<PathBuf> = pane.entries.iter().map(|e| e.path.clone()).collect();
-    let listed_dir = pane.location.as_fs_path().map(Path::to_path_buf);
-    // Windows-family volumes (FAT, exFAT, NTFS, SMB) need the Windows rules and compare
-    // names case-insensitively, also off Windows (search results: any item's folder).
-    let windows_fs = items.iter().any(|it| {
-        it.path
-            .parent()
-            .is_some_and(|d| crate::ops::fileops::rename::volume_needs_windows_names(&app.core.ui.volumes, d))
-    });
-    let windows_rules = windows_fs
-        || crate::ops::fileops::rename::windows_rules_for(
-            app.core.config.general.strict_windows_names,
-            &app.core.ui.volumes,
-            listed_dir.as_deref(),
-        );
-    let mut d = BatchRenameDialog::new(pane.id, items, known, listed_dir, windows_rules);
-    d.case_insensitive = crate::ops::fileops::names::case_insensitive_fs() || windows_fs;
-    app.gui.dialogs.push(d);
-}
-
-/// EXIF capture dates of the items, filled by a worker thread.
-type ExifSlot = Arc<Mutex<Option<Vec<Option<NaiveDateTime>>>>>;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Rules,
-    Editor,
 }
 
 pub struct BatchRenameDialog {
-    title: String,
-    pane: PaneId,
-    items: Vec<Item>,
-    known: HashSet<PathBuf>,
-    /// Lowercased `known`, for O(1) case-insensitive collision checks.
-    known_lower: HashSet<String>,
-    listed_dir: Option<PathBuf>,
-    windows_rules: bool,
-    /// Names compare case-insensitively (Windows / macOS, or a Windows-family volume).
-    case_insensitive: bool,
-    spec: Spec,
-    mode: Mode,
-    editor: String,
-    /// Cache key of the last preview.
-    computed: Option<(Spec, Mode, String, bool)>,
-    rows: Vec<Row>,
-    compile_error: Option<String>,
-    cycles: usize,
-    builtin: Vec<Preset>,
-    user: Vec<Preset>,
-    preset_name: String,
-    exif: Option<ExifSlot>,
-    exif_loaded: bool,
+    m: BatchRenameModel,
 }
 
 impl BatchRenameDialog {
-    pub fn new(
-        pane: PaneId,
-        items: Vec<Item>,
-        known: HashSet<PathBuf>,
-        listed_dir: Option<PathBuf>,
-        windows_rules: bool,
-    ) -> Self {
-        let spec = Spec {
-            rules: vec![RuleEntry::new(Rule::Replace {
-                find: String::new(),
-                with: String::new(),
-                regex: false,
-                case_sensitive: false,
-                first_only: false,
-            })],
-            ..Spec::default()
-        };
-        let editor = items.iter().map(Item::name).collect::<Vec<_>>().join("\n");
-        BatchRenameDialog {
-            title: tr!("dialogs-rename-title", count = items.len()),
-            pane,
-            items,
-            known_lower: known.iter().map(|k| k.to_string_lossy().to_lowercase()).collect(),
-            known,
-            listed_dir,
-            windows_rules,
-            case_insensitive: crate::ops::fileops::names::case_insensitive_fs(),
-            spec,
-            mode: Mode::Rules,
-            editor,
-            computed: None,
-            rows: Vec::new(),
-            compile_error: None,
-            cycles: 0,
-            builtin: presets::builtin(),
-            user: presets::load(&presets::default_path()),
-            preset_name: String::new(),
-            exif: None,
-            exif_loaded: false,
-        }
-    }
-
-    fn exists(&self, p: &Path) -> bool {
-        if self.known.contains(p) {
-            return true;
-        }
-        // Outside the listed folder (search results) ask the file system.
-        if self.listed_dir.as_deref() != p.parent() {
-            return soyuz_fs::exists_nofollow(p);
-        }
-        // Case-insensitive file systems: compare names case-insensitively.
-        self.case_insensitive && self.known_lower.contains(&p.to_string_lossy().to_lowercase())
-    }
-
-    fn ensure_exif(&mut self, ctx: &egui::Context) {
-        if self.exif.is_some() || !self.spec.uses_exif() {
-            return;
-        }
-        let slot = Arc::new(Mutex::new(None));
-        self.exif = Some(slot.clone());
-        let paths: Vec<(PathBuf, bool)> = self.items.iter().map(|i| (i.path.clone(), i.is_dir)).collect();
-        let ctx = ctx.clone();
-        let _ = std::thread::Builder::new().name("soyuz-exif".into()).spawn(move || {
-            let dates: Vec<Option<NaiveDateTime>> = paths
-                .iter()
-                .map(|(p, dir)| if *dir { None } else { rename::exif::read(p).and_then(|x| x.taken) })
-                .collect();
-            *slot.lock() = Some(dates);
-            ctx.request_repaint();
-        });
-    }
-
     fn recompute(&mut self, ctx: &egui::Context) {
-        self.ensure_exif(ctx);
-        if !self.exif_loaded
-            && let Some(slot) = &self.exif
-            && let Some(dates) = slot.lock().take()
-        {
-            for (it, d) in self.items.iter_mut().zip(dates) {
-                it.exif_date = d;
-            }
-            self.exif_loaded = true;
-            self.computed = None;
-        }
-        let key = (self.spec.clone(), self.mode, self.editor.clone(), self.exif_loaded);
-        if self.computed.as_ref() == Some(&key) {
-            return;
-        }
-        self.compile_error = None;
-        let names: Vec<Result<String, String>> = match self.mode {
-            Mode::Rules => match rename::compile(&self.spec) {
-                Ok(c) => c.apply(&self.items),
-                Err(e) => {
-                    self.compile_error = Some(e.clone());
-                    self.items.iter().map(|_| Err(e.clone())).collect()
-                }
-            },
-            Mode::Editor => match rename::parse_editor(&self.editor, self.items.len()) {
-                Ok(lines) => lines.into_iter().map(Ok).collect(),
-                Err(e) => {
-                    self.compile_error = Some(e.clone());
-                    self.items.iter().map(|it| Ok(it.name())).collect()
-                }
-            },
-        };
-        let ci = self.case_insensitive;
-        let rows = rename::validate(&self.items, &names, &|p| self.exists(p), self.windows_rules, ci);
-        self.cycles = rename::count_cycles(&rename::pairs(&self.items, &rows), ci);
-        self.rows = rows;
-        self.computed = Some(key);
-    }
-
-    fn counts(&self) -> (usize, usize) {
-        let ok = self.rows.iter().filter(|r| r.status == Status::Ok).count();
-        let bad = self.rows.iter().filter(|r| r.status.is_problem()).count();
-        (ok, bad)
+        self.m.recompute(&crate::host::EguiHost::new(ctx).wake());
     }
 
     fn toolbar(&mut self, ui: &mut Ui) {
@@ -226,14 +48,10 @@ impl BatchRenameDialog {
                 (Mode::Rules, tr!("dialogs-rename-rules"), ph::LIST_CHECKS),
                 (Mode::Editor, tr!("dialogs-rename-editor"), ph::NOTE_PENCIL),
             ] {
-                let on = self.mode == m;
+                let on = self.m.mode == m;
                 let r = chip(ui, glyph, label, on, &p);
                 if r.clicked() && !on {
-                    if m == Mode::Editor {
-                        // Start from the current preview so rules + manual edits combine.
-                        self.editor = self.rows.iter().map(|r| r.new_name.clone()).collect::<Vec<_>>().join("\n");
-                    }
-                    self.mode = m;
+                    self.m.set_mode(m);
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -241,45 +59,37 @@ impl BatchRenameDialog {
                 crate::ui::native::popup::Menu::menu(&presets_btn).show(|ui| {
                     ui.set_min_width(260.0);
                     crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-builtin"));
-                    for pr in self.builtin.clone() {
+                    for pr in self.m.builtin.clone() {
                         if menu_item(ui, Some(ph::MAGIC_WAND), &pr.name, None, true).clicked() {
-                            self.spec = pr.spec.clone();
-                            self.mode = Mode::Rules;
+                            self.m.use_preset(&pr);
                         }
                     }
-                    if !self.user.is_empty() {
+                    if !self.m.user.is_empty() {
                         crate::ui::widgets::menu_separator(ui);
                         crate::ui::widgets::menu_caption(ui, tr!("dialogs-rename-saved"));
                     }
                     let mut delete = None;
-                    for pr in self.user.clone() {
+                    for pr in self.m.user.clone() {
                         if menu_item(ui, Some(ph::BOOKMARK_SIMPLE), &pr.name, None, true).clicked() {
-                            self.spec = pr.spec.clone();
-                            self.mode = Mode::Rules;
+                            self.m.use_preset(&pr);
                         }
                     }
                     crate::ui::widgets::menu_separator(ui);
                     ui.horizontal(|ui| {
                         ui.add(
-                            TextEdit::singleline(&mut self.preset_name)
+                            TextEdit::singleline(&mut self.m.preset_name)
                                 .hint_text(tr!("dialogs-rename-preset-name"))
                                 .desired_width(150.0)
                                 .margin(Margin::symmetric(8, 4)),
                         );
-                        let ok = !self.preset_name.trim().is_empty();
+                        let ok = !self.m.preset_name.trim().is_empty();
                         if ui.add_enabled(ok, egui::Button::new(tr!("common-save"))).clicked() {
-                            let name = self.preset_name.trim().to_string();
-                            self.user.retain(|p| p.name != name);
-                            self.user.push(Preset { name, spec: self.spec.clone() });
-                            self.preset_name.clear();
-                            if let Err(e) = presets::save(&presets::default_path(), &self.user) {
-                                log::warn!("cannot save rename presets: {e}");
-                            }
+                            self.m.save_preset();
                         }
                     });
-                    if !self.user.is_empty() {
+                    if !self.m.user.is_empty() {
                         crate::ui::widgets::submenu(ui, Some(ph::TRASH), tr!("dialogs-rename-delete-preset"), |ui| {
-                            for (i, pr) in self.user.iter().enumerate() {
+                            for (i, pr) in self.m.user.iter().enumerate() {
                                 if menu_item(ui, Some(ph::X), &pr.name, None, true).clicked() {
                                     delete = Some(i);
                                 }
@@ -287,10 +97,7 @@ impl BatchRenameDialog {
                         });
                     }
                     if let Some(i) = delete {
-                        self.user.remove(i);
-                        if let Err(e) = presets::save(&presets::default_path(), &self.user) {
-                            log::warn!("cannot save rename presets: {e}");
-                        }
+                        self.m.delete_preset(i);
                     }
                 });
             });
@@ -301,12 +108,12 @@ impl BatchRenameDialog {
         let p = palette(ui.ctx());
         caption(ui, tr!("dialogs-rename-edit"));
         let targets: Vec<(Target, &str)> = Target::ALL.iter().map(|t| (*t, t.label())).collect();
-        crate::ui::settings::widgets::segmented(ui, &mut self.spec.target, &targets);
+        crate::ui::settings::widgets::segmented(ui, &mut self.m.spec.target, &targets);
         caption(ui, tr!("dialogs-rename-rules"));
         let mut remove = None;
         let mut swap = None;
-        let n = self.spec.rules.len();
-        for (i, entry) in self.spec.rules.iter_mut().enumerate() {
+        let n = self.m.spec.rules.len();
+        for (i, entry) in self.m.spec.rules.iter_mut().enumerate() {
             egui::Frame::new()
                 .fill(egui::Color32::TRANSPARENT)
                 .stroke(Stroke::new(1.0, p.border_subtle))
@@ -340,10 +147,10 @@ impl BatchRenameDialog {
             ui.add_space(6.0);
         }
         if let Some(i) = remove {
-            self.spec.rules.remove(i);
+            self.m.spec.rules.remove(i);
         }
         if let Some((a, b)) = swap {
-            self.spec.rules.swap(a, b);
+            self.m.spec.rules.swap(a, b);
         }
         let add = button(ui, tr!("dialogs-rename-add-rule"), Btn::Secondary);
         crate::ui::native::popup::Menu::menu(&add).show(|ui| {
@@ -355,12 +162,12 @@ impl BatchRenameDialog {
                     other => other.title().to_string(),
                 };
                 if menu_item(ui, Some(rule_icon(&r)), &label, None, true).clicked() {
-                    self.spec.rules.push(RuleEntry::new(r));
+                    self.m.spec.rules.push(RuleEntry::new(r));
                 }
             }
         });
         caption(ui, &tr!("dialogs-rename-counter", token = "{n}"));
-        counter_editor(ui, &mut self.spec.counter);
+        counter_editor(ui, &mut self.m.spec.counter);
         ui.add_space(6.0);
         ui.label(
             RichText::new(tr!(
@@ -383,7 +190,7 @@ impl BatchRenameDialog {
         ui.add_space(4.0);
         egui::ScrollArea::vertical().id_salt("br_editor").max_height(420.0).show(ui, |ui| {
             ui.add(
-                TextEdit::multiline(&mut self.editor)
+                TextEdit::multiline(&mut self.m.editor)
                     .font(FontId::monospace(12.0))
                     .desired_width(f32::INFINITY)
                     .desired_rows(20)
@@ -391,7 +198,7 @@ impl BatchRenameDialog {
             );
         });
         if ui.button(tr!("dialogs-rename-reset-names")).clicked() {
-            self.editor = self.items.iter().map(Item::name).collect::<Vec<_>>().join("\n");
+            self.m.reset_editor();
         }
     }
 
@@ -427,9 +234,9 @@ impl BatchRenameDialog {
                     .id_salt("br_table")
                     .max_height(470.0)
                     .auto_shrink([false, false])
-                    .show_rows(ui, row_h, self.items.len(), |ui, range| {
+                    .show_rows(ui, row_h, self.m.items.len(), |ui, range| {
                         for i in range {
-                            let (Some(it), Some(row)) = (self.items.get(i), self.rows.get(i)) else { continue };
+                            let (Some(it), Some(row)) = (self.m.items.get(i), self.m.rows.get(i)) else { continue };
                             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
                             if i % 2 == 1 {
                                 ui.painter().rect_filled(r, 0.0, p.bg_surface1.gamma_multiply(0.5));
@@ -689,7 +496,7 @@ fn counter_editor(ui: &mut Ui, c: &mut Counter) {
 
 impl Dialog for BatchRenameDialog {
     fn title(&self) -> &str {
-        &self.title
+        &self.m.title
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -712,7 +519,7 @@ impl Dialog for BatchRenameDialog {
                 ui.set_width(left_w);
                 egui::ScrollArea::vertical().id_salt("br_rules").max_height(520.0).auto_shrink([false, false]).show(
                     ui,
-                    |ui| match self.mode {
+                    |ui| match self.m.mode {
                         Mode::Rules => self.rules_panel(ui),
                         Mode::Editor => self.editor_panel(ui),
                     },
@@ -724,24 +531,24 @@ impl Dialog for BatchRenameDialog {
             });
         });
         ui.add_space(10.0);
-        let (ok, bad) = self.counts();
+        let (ok, bad) = self.m.counts();
         let mut go = false;
         let mut cancel = false;
         ui.horizontal(|ui| {
-            if let Some(e) = &self.compile_error {
+            if let Some(e) = &self.m.compile_error {
                 badge(ui, Some(ph::WARNING_CIRCLE), e, p.danger);
             } else {
                 badge(ui, Some(ph::ARROW_RIGHT), &tr!("dialogs-rename-to-rename", count = ok), p.accent);
                 if bad > 0 {
                     badge(ui, Some(ph::WARNING), &tr!("dialogs-rename-problems", count = bad), p.danger);
                 }
-                if self.cycles > 0 {
-                    badge(ui, Some(ph::ARROWS_CLOCKWISE), &tr!("dialogs-rename-cycles", count = self.cycles), p.info);
+                if self.m.cycles > 0 {
+                    badge(ui, Some(ph::ARROWS_CLOCKWISE), &tr!("dialogs-rename-cycles", count = self.m.cycles), p.info);
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 6.0;
-                let enabled = ok > 0 && bad == 0 && self.compile_error.is_none();
+                let enabled = self.m.can_apply();
                 let label = tr!("dialogs-rename-go", count = ok);
                 let r = ui.add_enabled_ui(enabled, |ui| button(ui, &label, Btn::Primary)).inner;
                 go = r.clicked() && enabled;
@@ -749,10 +556,7 @@ impl Dialog for BatchRenameDialog {
             });
         });
         if go {
-            ctx.cmds.push(Cmd::Meta(MetaCmd::BatchRename {
-                pane: self.pane,
-                pairs: rename::pairs(&self.items, &self.rows),
-            }));
+            ctx.cmds.push(self.m.apply_cmd());
             return false;
         }
         !cancel
