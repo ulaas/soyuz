@@ -16,8 +16,6 @@ pub mod decor;
 pub mod dupes;
 pub mod shelf;
 pub mod split;
-pub mod sync_sched;
-pub mod sync_state;
 pub mod sync_ui;
 pub mod tags_ui;
 pub mod treemap;
@@ -45,6 +43,8 @@ use crate::ui::widgets::icon_button;
 pub use crate::models::tools::{
     ToolCmd, any_window_open, execute, handles, queue, restore_shelf, shelf_count, shelf_open, shelf_paths, wake,
 };
+/// Sync profiles + their scheduler and the two-way sync state (moved to the core).
+pub use crate::models::{compare_profiles as sync_sched, compare_state as sync_state};
 
 /// The open tool windows and the shelf panel's view state.
 #[derive(Default)]
@@ -77,7 +77,7 @@ thread_local! {
 /// queued commands and OS file drops onto the shelf.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     versions::begin_frame(app);
-    sync_sched::tick(app, ctx);
+    sync_sched::tick(&mut app.core, &crate::host::EguiHost::new(ctx));
     debug_open_once();
     let cmds = crate::models::tools::take_queue();
     TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));

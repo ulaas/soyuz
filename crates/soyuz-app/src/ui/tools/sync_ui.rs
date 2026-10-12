@@ -5,40 +5,19 @@
 use std::collections::HashMap;
 use std::time::SystemTime;
 
-use crossbeam_channel::{Receiver, bounded};
+use crossbeam_channel::Receiver;
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, RichText, ScrollArea, Sense, Stroke, Ui, vec2,
 };
 use soyuz_core::DateFormat;
 
-use super::compare::SyncProfile;
-use super::sync_sched::{self, ReportOp, RunReport, RunStatus, Schedule};
+use super::sync_sched::{self, ReportOp, RunReport, RunStatus, Schedule, ScheduleKind, SyncProfile, short_path};
 use super::{button, tool_window};
 use crate::app::SoyuzApp;
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::settings::widgets::{number, segmented};
 use crate::ui::widgets::trunc_galley;
-
-/// Schedule kinds for the segmented control.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Kind {
-    Manual,
-    Interval,
-    Daily,
-    OnChange,
-    OnStart,
-}
-
-fn kind_of(s: &Schedule) -> Kind {
-    match s {
-        Schedule::Manual => Kind::Manual,
-        Schedule::Interval { .. } => Kind::Interval,
-        Schedule::Daily { .. } => Kind::Daily,
-        Schedule::OnChange => Kind::OnChange,
-        Schedule::OnStart => Kind::OnStart,
-    }
-}
 
 pub fn status_color(s: RunStatus, p: &Palette) -> Color32 {
     match s {
@@ -66,14 +45,7 @@ impl SyncProfilesWindow {
     }
 
     fn load_reports(&mut self, name: &str) {
-        let (tx, rx) = bounded(1);
-        let n = name.to_string();
-        let wake = super::wake();
-        let _ = std::thread::Builder::new().name("soyuz-sync-reports".into()).spawn(move || {
-            let _ = tx.send(sync_sched::load_reports(&n, 50));
-            wake();
-        });
-        self.loading = Some((name.to_string(), rx));
+        self.loading = Some((name.to_string(), sync_sched::load_reports_async(name, 50)));
     }
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
@@ -138,7 +110,7 @@ impl SyncProfilesWindow {
             sync_sched::set_profiles(profiles);
         }
         if let Some(name) = cancel {
-            sync_sched::cancel(app, &name);
+            sync_sched::cancel(&app.core, &name);
         }
         if let Some(pr) = open_compare {
             super::queue(super::ToolCmd::CompareProfile(pr.name));
@@ -354,19 +326,6 @@ impl SyncProfilesWindow {
     }
 }
 
-/// `C:\…\parent\name` for long paths (the full path is in the tooltip).
-pub fn short_path(p: &std::path::Path) -> String {
-    let full = p.display().to_string();
-    let comps: Vec<String> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
-    let n = comps.len();
-    if full.chars().count() <= 48 || n <= 3 {
-        return full;
-    }
-    let sep = std::path::MAIN_SEPARATOR;
-    let root = comps[0].trim_end_matches(['\\', '/']);
-    format!("{root}{sep}…{sep}{}{sep}{}", comps[n - 2], comps[n - 1])
-}
-
 fn status_pill(ui: &mut Ui, s: RunStatus, p: &Palette) {
     let c = status_color(s, p);
     let font = FontId::proportional(11.0);
@@ -382,25 +341,10 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
     let before = s.clone();
     ui.horizontal(|ui| {
         ui.label(RichText::new(tr!("tools-sched-label")).font(FontId::proportional(12.0)).color(p.text_tertiary));
-        let mut k = kind_of(s);
-        if segmented(
-            ui,
-            &mut k,
-            &[
-                (Kind::Manual, tr!("tools-sched-manual")),
-                (Kind::Interval, tr!("tools-sched-kind-interval")),
-                (Kind::Daily, tr!("tools-sched-kind-daily")),
-                (Kind::OnChange, tr!("tools-sched-kind-change")),
-                (Kind::OnStart, tr!("tools-sched-kind-start")),
-            ],
-        ) {
-            *s = match k {
-                Kind::Manual => Schedule::Manual,
-                Kind::Interval => Schedule::Interval { minutes: 60 },
-                Kind::Daily => Schedule::Daily { hour: 18, minute: 0 },
-                Kind::OnChange => Schedule::OnChange,
-                Kind::OnStart => Schedule::OnStart,
-            };
+        let mut k = s.kind();
+        let options = ScheduleKind::ALL.map(|k| (k, k.label()));
+        if segmented(ui, &mut k, &options) {
+            *s = k.default_schedule();
         }
     });
     match s {
@@ -409,23 +353,23 @@ fn schedule_editor(ui: &mut Ui, s: &mut Schedule) -> bool {
                 ui.label(
                     RichText::new(tr!("tools-sched-every")).font(FontId::proportional(12.0)).color(p.text_secondary),
                 );
-                number(ui, minutes, 1..=1440, &format!(" {}", tr!("tools-unit-min")));
+                number(ui, minutes, sync_sched::INTERVAL_MINUTES, &format!(" {}", tr!("tools-unit-min")));
             });
         }
         Schedule::Daily { hour, minute } => {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(tr!("tools-sched-at")).font(FontId::proportional(12.0)).color(p.text_secondary));
-                number(ui, hour, 0..=23, &format!(" {}", tr!("tools-unit-hour")));
-                number(ui, minute, 0..=59, &format!(" {}", tr!("tools-unit-min")));
+                number(ui, hour, sync_sched::DAILY_HOURS, &format!(" {}", tr!("tools-unit-hour")));
+                number(ui, minute, sync_sched::DAILY_MINUTES, &format!(" {}", tr!("tools-unit-min")));
             });
-            ui.label(
-                RichText::new(tr!("tools-sched-daily-note")).font(FontId::proportional(11.0)).color(p.text_tertiary),
-            );
+            if let Some(note) = ScheduleKind::Daily.note() {
+                ui.label(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary));
+            }
         }
         Schedule::OnChange => {
-            ui.label(
-                RichText::new(tr!("tools-sched-change-note")).font(FontId::proportional(11.0)).color(p.text_tertiary),
-            );
+            if let Some(note) = ScheduleKind::OnChange.note() {
+                ui.label(RichText::new(note).font(FontId::proportional(11.0)).color(p.text_tertiary));
+            }
         }
         _ => {}
     }
@@ -508,20 +452,5 @@ fn report_detail(ui: &mut Ui, r: &RunReport) {
                 .font(FontId::proportional(11.0))
                 .color(p.text_tertiary),
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn long_paths_are_shortened() {
-        assert_eq!(short_path(std::path::Path::new(r"C:\a\b")), r"C:\a\b");
-        let long = std::path::Path::new(r"C:\Users\someone\AppData\Local\Temp\a-very-long-folder-name\project\L");
-        if cfg!(windows) {
-            assert_eq!(short_path(long), r"C:\…\project\L");
-        }
-        assert_eq!(kind_of(&Schedule::Daily { hour: 1, minute: 2 }), Kind::Daily);
     }
 }

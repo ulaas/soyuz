@@ -1,58 +1,40 @@
-//! Folder compare + sync. `soyuz_search::compare_dirs` runs on a worker; the
-//! result becomes a table of rows (only-left, only-right, newer-left, newer-right,
-//! differ) with a per-row action (copy →, copy ←, delete, skip). Presets fill the
-//! actions (two-way update, mirror left → right, mirror right → left); the plan is
-//! previewed and then submitted as one `JobKind::Sync` job. Profiles (left, right,
-//! method, preset, schedule) are saved in `sync_profiles.toml` next to the config and
-//! owned by the scheduler (`sync_sched`).
-//!
-//! The "Two-way sync" mode plans with the three-way state of `sync_state` instead of
-//! a plain compare, so deletions and edits on both sides are told apart; conflicts get
-//! their own stage (keep left / keep right / keep both / skip, apply to all), and after
-//! the job the new state is recorded.
+//! Folder compare + sync window. The logic (rows, actions, presets, plans, the two-way
+//! state, the scan worker and the compare state machine) lives in
+//! `soyuz_appcore::models::compare` ([`CompareModel`]); this window keeps the egui state
+//! and draws the model: a table of rows (only-left, only-right, newer-left, newer-right,
+//! differ) with a per-row action (copy →, copy ←, delete, skip), presets (two-way update,
+//! mirror left → right, mirror right → left), the plan preview and the two-way conflict
+//! stage (keep left / keep right / keep both / skip, apply to all). The plan is submitted
+//! as one `JobKind::Sync` job. Profiles are saved in `sync_profiles.toml` next to the
+//! config and owned by the scheduler (`sync_sched`).
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::path::PathBuf;
 
-use crossbeam_channel::{Receiver, bounded};
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2,
 };
-use serde::{Deserialize, Serialize};
-use soyuz_core::{OpControl, SizeStyle, format_size, format_time};
-use soyuz_jobs::{JobKind, SyncAction, SyncPlan};
+use soyuz_core::{SizeStyle, format_size, format_time};
+use soyuz_jobs::{SyncAction, SyncPlan};
 
-use super::sync_state::{self, ConflictKind, Resolution};
+pub use crate::models::compare::{
+    Category, CompareModel, Method, PlanStats, Preset, ReviewStep, Row, RowAction, Side, Stage, allowed, two_way_reason,
+};
+use crate::models::compare::{RESOLUTIONS, resolution_allowed, resolution_tip, row_resolution};
+use crate::models::compare_profiles::SyncProfile;
+use crate::models::compare_state::Resolution;
+
 use super::{button, filter_chip, progress_bar, text_field, tool_window};
 use crate::app::SoyuzApp;
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::widgets::{menu_item, menu_separator, trunc_galley};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Category {
-    OnlyLeft,
-    NewerLeft,
-    Differ,
-    NewerRight,
-    OnlyRight,
+/// A category's colour (chips, row bars, folder glyphs).
+pub trait CategoryColor {
+    fn color(self, p: &Palette) -> Color32;
 }
 
-impl Category {
-    pub const ALL: [Category; 5] =
-        [Category::OnlyLeft, Category::NewerLeft, Category::Differ, Category::NewerRight, Category::OnlyRight];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Category::OnlyLeft => tr!("tools-compare-only-left"),
-            Category::NewerLeft => tr!("tools-compare-newer-left"),
-            Category::Differ => tr!("tools-compare-different"),
-            Category::NewerRight => tr!("tools-compare-newer-right"),
-            Category::OnlyRight => tr!("tools-compare-only-right"),
-        }
-    }
-
-    pub fn color(self, p: &Palette) -> Color32 {
+impl CategoryColor for Category {
+    fn color(self, p: &Palette) -> Color32 {
         match self {
             Category::OnlyLeft => p.accent,
             Category::NewerLeft => p.success,
@@ -63,628 +45,29 @@ impl Category {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum RowAction {
-    #[default]
-    Skip,
-    CopyRight,
-    CopyLeft,
-    Delete,
-    /// Two-way conflicts: keep both versions (the right one under a conflict name).
-    KeepBoth,
-}
-
-/// Is `action` meaningful for `cat`?
-pub fn allowed(cat: Category, action: RowAction) -> bool {
-    !matches!(
-        (cat, action),
-        (Category::OnlyLeft, RowAction::CopyLeft)
-            | (Category::OnlyRight, RowAction::CopyRight)
-            | (Category::OnlyLeft | Category::OnlyRight, RowAction::KeepBoth)
-    )
-}
-
-/// Row action for a conflict resolution.
-pub fn resolution_action(row: &Row, res: Resolution) -> RowAction {
-    match res {
-        Resolution::Left if row.left.is_some() => RowAction::CopyRight,
-        Resolution::Right if row.right.is_some() => RowAction::CopyLeft,
-        Resolution::Left | Resolution::Right => RowAction::Delete,
-        Resolution::KeepBoth if row.left.is_some() && row.right.is_some() => RowAction::KeepBoth,
-        Resolution::KeepBoth if row.left.is_some() => RowAction::CopyRight,
-        Resolution::KeepBoth => RowAction::CopyLeft,
-        Resolution::Skip => RowAction::Skip,
-    }
-}
-
-/// The resolution a row's action stands for (conflict rows).
-pub fn row_resolution(row: &Row) -> Resolution {
-    match row.action {
-        RowAction::Skip => Resolution::Skip,
-        RowAction::KeepBoth => Resolution::KeepBoth,
-        RowAction::CopyRight => Resolution::Left,
-        RowAction::CopyLeft => Resolution::Right,
-        // Delete = take the side where the item is missing.
-        RowAction::Delete if row.left.is_none() => Resolution::Left,
-        RowAction::Delete => Resolution::Right,
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum Preset {
-    /// Copy missing and newer items both ways; conflicts are skipped.
-    #[default]
-    Update,
-    /// Make the right side identical to the left (deletes extra items on the right).
-    MirrorRight,
-    /// Make the left side identical to the right.
-    MirrorLeft,
-    /// Three-way sync against the state of the last sync (deletions propagate,
-    /// conflicts are asked).
-    TwoWay,
-    /// Leave actions as set by hand.
-    Custom,
-}
-
-impl Preset {
-    pub const ALL: [Preset; 4] = [Preset::TwoWay, Preset::Update, Preset::MirrorRight, Preset::MirrorLeft];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Preset::Update => tr!("tools-preset-update"),
-            Preset::MirrorRight => tr!("tools-preset-mirror-right"),
-            Preset::MirrorLeft => tr!("tools-preset-mirror-left"),
-            Preset::TwoWay => tr!("tools-preset-two-way"),
-            Preset::Custom => tr!("tools-split-custom"),
-        }
-    }
-
-    /// Default action of a row in this preset.
-    pub fn action(self, cat: Category) -> RowAction {
-        use Category as C;
-        use RowAction as A;
-        match self {
-            Preset::Update => match cat {
-                C::OnlyLeft | C::NewerLeft => A::CopyRight,
-                C::OnlyRight | C::NewerRight => A::CopyLeft,
-                C::Differ => A::Skip,
-            },
-            Preset::MirrorRight => match cat {
-                C::OnlyRight => A::Delete,
-                _ => A::CopyRight,
-            },
-            Preset::MirrorLeft => match cat {
-                C::OnlyLeft => A::Delete,
-                _ => A::CopyLeft,
-            },
-            // Two-way rows get their actions from the decision table.
-            Preset::TwoWay | Preset::Custom => A::Skip,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum Method {
-    /// Size + modification time (fast).
-    #[default]
-    DateSize,
-    /// Size only (ignore timestamps).
-    Size,
-    /// Byte-by-byte contents.
-    Content,
-}
-
-impl Method {
-    pub fn label(self) -> &'static str {
-        match self {
-            Method::DateSize => tr!("tools-method-date-size"),
-            Method::Size => tr!("tools-method-size"),
-            Method::Content => tr!("tools-method-content"),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Side {
-    pub size: u64,
-    pub modified: Option<SystemTime>,
-    pub dir: bool,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Row {
-    pub rel: PathBuf,
-    pub cat: Category,
-    pub left: Option<Side>,
-    pub right: Option<Side>,
-    pub action: RowAction,
-    /// Two-way sync: the path changed on both sides (needs a choice; skipped until made).
-    pub conflict: Option<ConflictKind>,
-}
-
-/// Turn the rows' actions into a sync plan: copies first, then deletions. Actions that
-/// make no sense for a row (copy from the side where it is missing) are ignored. "Keep
-/// both" saves the right version under a conflict name tagged `tag` on both sides.
-pub fn build_plan(left: &Path, right: &Path, rows: &[Row], tag: &str) -> SyncPlan {
-    let mut copies = Vec::new();
-    let mut deletes = Vec::new();
-    let names: std::collections::HashSet<&Path> = rows.iter().map(|r| r.rel.as_path()).collect();
-    let mut alts: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    for r in rows {
-        if !allowed(r.cat, r.action) {
-            continue;
-        }
-        match r.action {
-            RowAction::Skip => {}
-            RowAction::KeepBoth => {
-                let alt = sync_state::conflict_name(&r.rel, tag, |p| names.contains(p) || alts.contains(p));
-                let item = sync_state::Item {
-                    rel: r.rel.clone(),
-                    left: Some(sync_state::FileState::folder()),
-                    right: Some(sync_state::FileState::folder()),
-                    decision: sync_state::Decision::Conflict(ConflictKind::BothChanged),
-                };
-                copies.extend(sync_state::resolve(&item, Resolution::KeepBoth, &alt));
-                alts.insert(alt);
-            }
-            RowAction::CopyRight => copies.push(SyncAction::CopyLR(r.rel.clone())),
-            RowAction::CopyLeft => copies.push(SyncAction::CopyRL(r.rel.clone())),
-            RowAction::Delete => match r.cat {
-                Category::OnlyLeft => deletes.push(SyncAction::DeleteL(r.rel.clone())),
-                Category::OnlyRight => deletes.push(SyncAction::DeleteR(r.rel.clone())),
-                _ => {
-                    deletes.push(SyncAction::DeleteL(r.rel.clone()));
-                    deletes.push(SyncAction::DeleteR(r.rel.clone()));
-                }
-            },
-        }
-    }
-    copies.extend(deletes);
-    SyncPlan { left: left.to_path_buf(), right: right.to_path_buf(), actions: copies }
-}
-
-/// Counts for the plan summary.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct PlanStats {
-    pub to_right: usize,
-    pub to_left: usize,
-    pub delete_left: usize,
-    pub delete_right: usize,
-    pub bytes: u64,
-}
-
-pub fn plan_stats(rows: &[Row]) -> PlanStats {
-    let mut s = PlanStats::default();
-    for r in rows.iter().filter(|r| allowed(r.cat, r.action)) {
-        match r.action {
-            RowAction::CopyRight => {
-                s.to_right += 1;
-                s.bytes += r.left.as_ref().filter(|m| !m.dir).map_or(0, |m| m.size);
-            }
-            RowAction::CopyLeft => {
-                s.to_left += 1;
-                s.bytes += r.right.as_ref().filter(|m| !m.dir).map_or(0, |m| m.size);
-            }
-            RowAction::Delete => {
-                if r.left.is_some() {
-                    s.delete_left += 1;
-                }
-                if r.right.is_some() {
-                    s.delete_right += 1;
-                }
-            }
-            RowAction::KeepBoth => {
-                s.to_right += 1;
-                s.to_left += 1;
-                s.bytes += [&r.left, &r.right]
-                    .iter()
-                    .filter_map(|m| m.as_ref())
-                    .filter(|m| !m.dir)
-                    .map(|m| m.size)
-                    .sum::<u64>();
-            }
-            RowAction::Skip => {}
-        }
-    }
-    s
-}
-
-/// Build rows from a compare result (metadata from `stat`).
-pub fn rows_from(
-    res: &soyuz_search::CompareResult,
-    method: Method,
-    stat: impl Fn(&Path, bool) -> Option<Side>,
-) -> Vec<Row> {
-    let mut rows = Vec::new();
-    let groups: [(&Vec<PathBuf>, Category); 5] = [
-        (&res.only_left, Category::OnlyLeft),
-        (&res.newer_left, Category::NewerLeft),
-        (&res.differ, Category::Differ),
-        (&res.newer_right, Category::NewerRight),
-        (&res.only_right, Category::OnlyRight),
-    ];
-    for (list, cat) in groups {
-        for rel in list {
-            let left = (cat != Category::OnlyRight).then(|| stat(rel, true)).flatten();
-            let right = (cat != Category::OnlyLeft).then(|| stat(rel, false)).flatten();
-            // "Size only": equal sizes count as identical even when the dates differ.
-            if method == Method::Size
-                && matches!(cat, Category::NewerLeft | Category::NewerRight)
-                && let (Some(l), Some(r)) = (&left, &right)
-                && !l.dir
-                && !r.dir
-                && l.size == r.size
-            {
-                continue;
-            }
-            rows.push(Row { rel: rel.clone(), cat, left, right, action: RowAction::Skip, conflict: None });
-        }
-    }
-    rows.sort_by(|a, b| a.rel.cmp(&b.rel));
-    rows
-}
-
-/// Rows of a two-way plan: actions from the decision table, conflicts skipped until the
-/// user chooses.
-pub fn rows_from_two_way(plan: &sync_state::TwoWayPlan) -> Vec<Row> {
-    use sync_state::Decision as D;
-    let side = |s: &Option<sync_state::FileState>| s.map(|f| Side { size: f.size, modified: f.modified(), dir: f.dir });
-    plan.items
-        .iter()
-        .filter(|i| i.decision != D::Nothing)
-        .map(|i| {
-            let cat = match (&i.left, &i.right) {
-                (Some(_), None) => Category::OnlyLeft,
-                (None, Some(_)) => Category::OnlyRight,
-                (Some(l), Some(r)) => match (l.mtime, r.mtime) {
-                    (Some(a), Some(b)) if a - b > sync_state::TOLERANCE_MS => Category::NewerLeft,
-                    (Some(a), Some(b)) if b - a > sync_state::TOLERANCE_MS => Category::NewerRight,
-                    _ => Category::Differ,
-                },
-                (None, None) => Category::Differ,
-            };
-            let (action, conflict) = match i.decision {
-                D::CopyLR => (RowAction::CopyRight, None),
-                D::CopyRL => (RowAction::CopyLeft, None),
-                D::DeleteL | D::DeleteR => (RowAction::Delete, None),
-                D::Conflict(k) => (RowAction::Skip, Some(k)),
-                D::Nothing => (RowAction::Skip, None),
-            };
-            Row { rel: i.rel.clone(), cat, left: side(&i.left), right: side(&i.right), action, conflict }
-        })
-        .collect()
-}
-
-/// Why a two-way row has its action (the table's tag).
-pub fn two_way_reason(row: &Row) -> &'static str {
-    match (row.left.is_some(), row.right.is_some(), row.action) {
-        (true, false, RowAction::Delete) => tr!("tools-reason-deleted-right"),
-        (false, true, RowAction::Delete) => tr!("tools-reason-deleted-left"),
-        (true, false, _) => tr!("tools-reason-new-left"),
-        (false, true, _) => tr!("tools-reason-new-right"),
-        (_, _, RowAction::CopyRight) => tr!("tools-reason-changed-left"),
-        (_, _, RowAction::CopyLeft) => tr!("tools-reason-changed-right"),
-        _ => row.cat.label(),
-    }
-}
-
-/// Extra results of a two-way compare (used after the sync to record the new state).
-#[derive(Clone, Debug, Default)]
-pub struct TwoWayCtx {
-    /// Folders waiting for their contents to be decided (keep their base).
-    pub keep_base: Vec<PathBuf>,
-    /// No state file existed (first two-way run of this pair).
-    pub first_run: bool,
-    /// Conflict-name tag for "keep both" copies, e.g. `right 2026-10-08 1430`.
-    pub tag: String,
-}
-
-/// Result of [`compute`].
-pub struct Computed {
-    pub rows: Vec<Row>,
-    pub same: u64,
-    pub two_way: Option<TwoWayCtx>,
-}
-
-/// Compare two folders for `preset` (blocking; worker thread). Two-way plans against the
-/// saved state; the other presets use `compare_dirs` and fill the preset's actions.
-pub fn compute(l: &Path, r: &Path, method: Method, preset: Preset, ctl: &OpControl) -> Result<Computed, String> {
-    if preset == Preset::TwoWay {
-        let lt = sync_state::scan(l, ctl).map_err(|e| e.to_string())?;
-        let rt = sync_state::scan(r, ctl).map_err(|e| e.to_string())?;
-        let state = sync_state::load_state(&sync_state::state_path(l, r));
-        let plan = sync_state::plan(state.as_ref(), &lt, &rt, method == Method::Size);
-        let tag = format!("right {}", chrono::Local::now().format("%Y-%m-%d %H%M"));
-        let ctx = TwoWayCtx { keep_base: plan.keep_base.clone(), first_run: state.is_none(), tag };
-        let rows = rows_from_two_way(&plan);
-        if rows.is_empty() {
-            // Already in sync: remember this as the base, or later deletions would look
-            // like new files on the other side.
-            let keep: std::collections::HashSet<PathBuf> = plan.keep_base.iter().cloned().collect();
-            let next = sync_state::next_state(state.as_ref(), l, r, &lt, &rt, &keep, std::time::SystemTime::now());
-            if state.as_ref().map(|s| &s.entries) != Some(&next.entries) {
-                sync_state::save_state(&sync_state::state_path(l, r), &next)?;
-            }
-        }
-        return Ok(Computed { rows, same: plan.same, two_way: Some(ctx) });
-    }
-    let res = soyuz_search::compare_dirs(l, r, method == Method::Content, ctl).map_err(|e| e.to_string())?;
-    let stat = |rel: &Path, left: bool| {
-        let p = if left { l.join(rel) } else { r.join(rel) };
-        soyuz_fs::stat(&p, false).ok().map(|e| Side { size: e.size, modified: e.modified, dir: e.is_dir_like() })
-    };
-    let mut rows = rows_from(&res, method, stat);
-    if preset != Preset::Custom {
-        for row in &mut rows {
-            row.action = preset.action(row.cat);
-        }
-    }
-    Ok(Computed { rows, same: res.same, two_way: None })
-}
-
-/// Paths to keep at their old base after a two-way sync: everything not acted on
-/// (skipped rows, unresolved conflicts), folders waiting on their contents and the paths
-/// that failed (`failed` are absolute).
-pub fn keep_after_sync(
-    rows: &[Row],
-    ctx: &TwoWayCtx,
-    left: &Path,
-    right: &Path,
-    failed: &[PathBuf],
-) -> std::collections::HashSet<PathBuf> {
-    let mut keep: std::collections::HashSet<PathBuf> = rows
-        .iter()
-        .filter(|r| r.action == RowAction::Skip || !allowed(r.cat, r.action))
-        .map(|r| r.rel.clone())
-        .collect();
-    keep.extend(ctx.keep_base.iter().cloned());
-    for f in failed {
-        if let Ok(rel) = f.strip_prefix(left).or_else(|_| f.strip_prefix(right)) {
-            keep.insert(rel.to_path_buf());
-        }
-    }
-    keep
-}
-
-// ---------------------------------------------------------------------------------------
-// Profiles.
-
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct SyncProfile {
-    pub name: String,
-    pub left: PathBuf,
-    pub right: PathBuf,
-    #[serde(default)]
-    pub method: Method,
-    #[serde(default)]
-    pub preset: Preset,
-    /// When the scheduler runs this profile on its own.
-    #[serde(default)]
-    pub schedule: super::sync_sched::Schedule,
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct ProfileFile {
-    #[serde(default)]
-    profiles: Vec<SyncProfile>,
-}
-
-fn profiles_path() -> PathBuf {
-    soyuz_core::config::config_dir().join("sync_profiles.toml")
-}
-
-/// Load saved profiles (small file; read when the window opens).
-/// A broken file is backed up and protected from being overwritten (`store_file`).
-pub fn load_profiles() -> Vec<SyncProfile> {
-    crate::services::store_file::load_toml::<ProfileFile>(&profiles_path()).value().profiles
-}
-
-/// Saved in order on the shared store worker (flushed by `App::save`).
-pub(crate) fn save_profiles(profiles: &[SyncProfile]) {
-    match toml::to_string_pretty(&ProfileFile { profiles: profiles.to_vec() }) {
-        Ok(text) => crate::services::store_file::save_async(profiles_path(), text.into_bytes()),
-        Err(e) => log::warn!("cannot save sync profiles: {e}"),
-    }
-}
-
 // ---------------------------------------------------------------------------------------
 // Window.
 
-enum State {
-    Idle,
-    Running {
-        rx: Receiver<Result<Computed, String>>,
-        ctl: Arc<OpControl>,
-        started: Instant,
-    },
-    Ready,
-    Failed(String),
-    /// A sync job is running; compare again when it finishes.
-    Syncing(soyuz_jobs::JobId),
-    /// Two-way: recording the new sync state after the job.
-    Recording(Receiver<Result<(), String>>),
-}
-
-#[derive(PartialEq, Eq)]
-enum Stage {
-    Table,
-    Preview,
-    Conflicts,
-}
-
-/// What a two-way sync job needs once it is done (to record the new state).
-struct PendingRecord {
-    left: PathBuf,
-    right: PathBuf,
-    rows: Vec<Row>,
-    ctx: TwoWayCtx,
-}
-
 pub struct CompareWindow {
     pub open: bool,
-    left: String,
-    right: String,
-    method: Method,
-    preset: Preset,
-    state: State,
-    rows: Vec<Row>,
-    same: u64,
-    show: [bool; 5],
-    search: String,
-    stage: Stage,
-    profiles: Vec<SyncProfile>,
-    profile_name: String,
-    /// Paths the current rows were computed for.
-    compared: Option<(PathBuf, PathBuf)>,
-    hovered: Option<usize>,
-    two_way: Option<TwoWayCtx>,
-    pending_record: Option<PendingRecord>,
+    /// The compare state machine (paths, method, mode, rows, scan, job).
+    m: CompareModel,
 }
 
 impl CompareWindow {
     pub fn new(left: PathBuf, right: Option<PathBuf>, profiles: Vec<SyncProfile>) -> Self {
-        let mut w = CompareWindow {
-            open: true,
-            left: super::tags_ui::show_path(&left),
-            right: right.as_deref().map(super::tags_ui::show_path).unwrap_or_default(),
-            method: Method::DateSize,
-            preset: Preset::Update,
-            state: State::Idle,
-            rows: Vec::new(),
-            same: 0,
-            show: [true; 5],
-            search: String::new(),
-            stage: Stage::Table,
-            profiles,
-            profile_name: String::new(),
-            compared: None,
-            hovered: None,
-            two_way: None,
-            pending_record: None,
-        };
-        if right.is_some() {
-            w.start();
-        }
-        w
+        CompareWindow { open: true, m: CompareModel::new(left, right, profiles, super::wake()) }
     }
 
     /// Open with a saved profile loaded and compared (profiles window, conflict toasts).
     pub fn with_profile(pr: &SyncProfile, profiles: Vec<SyncProfile>) -> Self {
-        let mut w = CompareWindow::new(pr.left.clone(), None, profiles);
-        w.load_profile(pr.clone());
-        w
-    }
-
-    fn load_profile(&mut self, pr: SyncProfile) {
-        self.left = super::tags_ui::show_path(&pr.left);
-        self.right = super::tags_ui::show_path(&pr.right);
-        self.method = pr.method;
-        self.preset = pr.preset;
-        self.profile_name = pr.name;
-        self.start();
-    }
-
-    fn start(&mut self) {
-        if let State::Running { ctl, .. } = &self.state {
-            ctl.cancel();
-        }
-        let (l, r) = (PathBuf::from(self.left.trim()), PathBuf::from(self.right.trim()));
-        if l.as_os_str().is_empty() || r.as_os_str().is_empty() {
-            self.state = State::Failed(tr!("tools-compare-err-choose").into());
-            return;
-        }
-        if l == r {
-            self.state = State::Failed(tr!("tools-compare-err-same").into());
-            return;
-        }
-        let ctl = OpControl::new();
-        let (tx, rx) = bounded(1);
-        let c2 = ctl.clone();
-        let (method, preset) = (self.method, self.preset);
-        let wake = super::wake();
-        let (l2, r2) = (l.clone(), r.clone());
-        let spawned = std::thread::Builder::new().name("soyuz-compare".into()).spawn(move || {
-            let out = compute(&l2, &r2, method, preset, &c2);
-            if !c2.is_cancelled() {
-                let _ = tx.send(out);
-            }
-            wake();
-        });
-        if spawned.is_ok() {
-            self.compared = Some((l, r));
-            self.state = State::Running { rx, ctl, started: Instant::now() };
-            self.stage = Stage::Table;
-        }
-    }
-
-    fn poll(&mut self) {
-        let State::Running { rx, .. } = &self.state else { return };
-        match rx.try_recv() {
-            Ok(Ok(c)) => {
-                self.rows = c.rows;
-                self.same = c.same;
-                self.two_way = c.two_way;
-                self.state = State::Ready;
-            }
-            Ok(Err(e)) => self.state = State::Failed(e),
-            Err(crossbeam_channel::TryRecvError::Disconnected) => self.state = State::Idle,
-            Err(_) => {}
-        }
-    }
-
-    fn apply_preset(&mut self) {
-        if matches!(self.preset, Preset::Custom | Preset::TwoWay) {
-            return;
-        }
-        for r in &mut self.rows {
-            r.action = self.preset.action(r.cat);
-        }
-    }
-
-    fn visible(&self, r: &Row) -> bool {
-        let ci = Category::ALL.iter().position(|c| *c == r.cat).unwrap_or(0);
-        if !self.show[ci] {
-            return false;
-        }
-        let q = self.search.trim().to_lowercase();
-        q.is_empty() || r.rel.to_string_lossy().to_lowercase().contains(&q)
+        CompareWindow { open: true, m: CompareModel::with_profile(pr, profiles, super::wake()) }
     }
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
-        self.poll();
-        if let State::Syncing(job) = self.state {
-            let snap = app.core.fileops.jobs.snapshot(job);
-            if snap.as_ref().is_none_or(|s| s.state.is_terminal()) {
-                let failed = snap.as_ref().and_then(|s| match &s.state {
-                    soyuz_jobs::JobState::Done(sum) => Some(sum.errors.iter().map(|(p, _)| p.clone()).collect()),
-                    _ => None,
-                });
-                match (self.pending_record.take(), failed) {
-                    // Record the new two-way state, then compare again.
-                    (Some(rec), Some(failed)) => self.record(rec, failed),
-                    _ => self.start(),
-                }
-            }
-        }
-        if let State::Recording(rx) = &self.state {
-            match rx.try_recv() {
-                Ok(res) => {
-                    if let Err(e) = res {
-                        app.core
-                            .ui
-                            .toasts
-                            .push(crate::ui::toasts::Toast::warning(tr!("tools-compare-state-save-failed")).body(e));
-                    }
-                    self.start();
-                }
-                Err(crossbeam_channel::TryRecvError::Disconnected) => self.start(),
-                Err(_) => {}
-            }
-        }
-        let sub = match &self.compared {
+        // Scan result, end of the sync job (record the two-way state, compare again).
+        self.m.poll(&mut app.core);
+        let sub = match self.m.compared() {
             Some((l, r)) => {
                 format!("{}  ↔  {}", soyuz_core::entry::display_name(l), soyuz_core::entry::display_name(r))
             }
@@ -696,47 +79,12 @@ impl CompareWindow {
                 submit = self.body(ui, app);
             });
         if let Some(plan) = submit {
-            self.run(app, plan);
+            self.m.submit_plan(&mut app.core, plan);
         }
         if !keep {
-            if let State::Running { ctl, .. } = &self.state {
-                ctl.cancel();
-            }
+            self.m.close();
             self.open = false;
         }
-    }
-
-    /// Rescan both sides and save the two-way state on a worker.
-    fn record(&mut self, rec: PendingRecord, failed: Vec<PathBuf>) {
-        let keep = keep_after_sync(&rec.rows, &rec.ctx, &rec.left, &rec.right, &failed);
-        let (tx, rx) = bounded(1);
-        let wake = super::wake();
-        let spawned = std::thread::Builder::new().name("soyuz-sync-state".into()).spawn(move || {
-            let _ = tx.send(sync_state::record_after_sync(&rec.left, &rec.right, &keep).map(|_| ()));
-            wake();
-        });
-        self.state = if spawned.is_ok() { State::Recording(rx) } else { State::Idle };
-    }
-
-    fn run(&mut self, app: &mut SoyuzApp, plan: SyncPlan) {
-        let label = tr!(
-            "tools-compare-job-label",
-            left = soyuz_core::entry::display_name(&plan.left),
-            right = soyuz_core::entry::display_name(&plan.right)
-        );
-        self.pending_record = self.two_way.clone().map(|ctx| PendingRecord {
-            left: plan.left.clone(),
-            right: plan.right.clone(),
-            rows: self.rows.clone(),
-            ctx,
-        });
-        let mut spec = app.core.fileops.jobs.spec(JobKind::Sync { plan });
-        spec.options.label = Some(label);
-        let job = crate::ui::archive::submit_job(&mut app.core, spec);
-        // The folders change: compare again once the job is done.
-        self.rows.clear();
-        self.state = State::Syncing(job);
-        self.stage = Stage::Table;
     }
 
     fn body(&mut self, ui: &mut Ui, app: &mut SoyuzApp) -> Option<SyncPlan> {
@@ -745,27 +93,21 @@ impl CompareWindow {
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 44.0) / 2.0;
             ui.label(icons::icon(ph::FOLDER_SIMPLE, 14.0).color(Category::OnlyLeft.color(&p)));
-            text_field(ui, &mut self.left, tr!("tools-compare-left-hint"), w - 22.0);
+            text_field(ui, &mut self.m.left, tr!("tools-compare-left-hint"), w - 22.0);
             if crate::ui::widgets::icon_button(ui, ph::ARROWS_LEFT_RIGHT, tr!("tools-compare-swap"), true).clicked() {
-                std::mem::swap(&mut self.left, &mut self.right);
-                if matches!(self.state, State::Ready) {
-                    self.start();
-                }
+                self.m.swap();
             }
-            text_field(ui, &mut self.right, tr!("tools-compare-right-hint"), w - 22.0);
+            text_field(ui, &mut self.m.right, tr!("tools-compare-right-hint"), w - 22.0);
             ui.label(icons::icon(ph::FOLDER_SIMPLE, 14.0).color(Category::OnlyRight.color(&p)));
         });
         ui.add_space(4.0);
         // Method, preset, compare, profiles.
         ui.horizontal(|ui| {
             ui.label(RichText::new(tr!("tools-compare-by")).font(FontId::proportional(12.0)).color(p.text_tertiary));
-            for m in [Method::DateSize, Method::Size, Method::Content] {
-                let mut on = self.method == m;
-                if super::toggle_chip(ui, m.label(), &mut on, p.accent).clicked() && self.method != m {
-                    self.method = m;
-                    if !matches!(self.state, State::Idle) {
-                        self.start();
-                    }
+            for m in Method::ALL {
+                let mut on = self.m.method == m;
+                if super::toggle_chip(ui, m.label(), &mut on, p.accent).clicked() {
+                    self.m.set_method(m);
                 }
             }
             ui.add_space(10.0);
@@ -773,46 +115,34 @@ impl CompareWindow {
                 RichText::new(tr!("tools-compare-sync-mode")).font(FontId::proportional(12.0)).color(p.text_tertiary),
             );
             for pr in Preset::ALL {
-                let mut on = self.preset == pr;
+                let mut on = self.m.preset == pr;
                 let mut chip = super::toggle_chip(ui, pr.label(), &mut on, p.accent);
                 if pr == Preset::TwoWay {
                     chip = chip.on_hover_text(tr!("tools-preset-two-way-tip"));
                 }
-                if chip.clicked() && self.preset != pr {
-                    // Two-way plans differently: compare again when switching in or out.
-                    let replan = self.preset == Preset::TwoWay
-                        || pr == Preset::TwoWay
-                        || (self.preset == Preset::Custom && self.two_way.is_some());
-                    self.preset = pr;
-                    if replan && !matches!(self.state, State::Idle) {
-                        self.start();
-                    } else {
-                        self.apply_preset();
-                    }
+                if chip.clicked() {
+                    // Two-way plans differently: compares again when switching in or out.
+                    self.m.set_preset(pr);
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let running = matches!(self.state, State::Running { .. });
-                if running {
-                    if button(ui, Some(ph::STOP), tr!("common-cancel"), 0, true).clicked()
-                        && let State::Running { ctl, .. } = &self.state
-                    {
-                        ctl.cancel();
-                        self.state = State::Idle;
+                if self.m.is_scanning() {
+                    if button(ui, Some(ph::STOP), tr!("common-cancel"), 0, true).clicked() {
+                        self.m.cancel();
                     }
                 } else if button(ui, Some(ph::ARROW_CLOCKWISE), tr!("tools-compare-start"), 1, true).clicked() {
-                    self.start();
+                    self.m.start();
                 }
                 self.profiles_menu(ui);
             });
         });
         ui.add_space(6.0);
-        match &self.state {
-            State::Idle if self.rows.is_empty() => {
+        match self.m.stage() {
+            Stage::Setup if self.m.rows().is_empty() => {
                 empty_note(ui, ph::GIT_DIFF, tr!("tools-compare-empty"), tr!("tools-compare-empty-body"));
                 return None;
             }
-            State::Running { started, .. } => {
+            Stage::Scanning { started, .. } => {
                 progress_bar(ui, ui.available_width(), None);
                 ui.label(
                     RichText::new(tr!(
@@ -824,7 +154,7 @@ impl CompareWindow {
                 );
                 return None;
             }
-            State::Syncing(job) => {
+            Stage::Submitted(job) => {
                 let snap = app.core.fileops.jobs.snapshot(*job);
                 let frac = snap.as_ref().and_then(|s| {
                     (s.progress.items_total > 0).then(|| s.progress.items_done as f32 / s.progress.items_total as f32)
@@ -838,7 +168,7 @@ impl CompareWindow {
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
                 return None;
             }
-            State::Recording(_) => {
+            Stage::Recording(_) => {
                 progress_bar(ui, ui.available_width(), None);
                 ui.label(
                     RichText::new(tr!("tools-compare-recording"))
@@ -847,58 +177,54 @@ impl CompareWindow {
                 );
                 return None;
             }
-            State::Failed(e) => {
+            Stage::Failed(e) => {
                 let e = e.clone();
                 empty_note(ui, ph::WARNING_CIRCLE, tr!("tools-compare-failed"), &e);
                 return None;
             }
             _ => {}
         }
-        if self.stage == Stage::Preview {
+        if self.m.step == ReviewStep::Plan {
             return self.preview(ui);
         }
-        if self.stage == Stage::Conflicts {
+        if self.m.step == ReviewStep::Conflicts {
             self.conflicts(ui, app);
             return None;
         }
         // Filters.
-        let mut counts = [0usize; 5];
-        for r in &self.rows {
-            counts[Category::ALL.iter().position(|c| *c == r.cat).unwrap_or(0)] += 1;
-        }
+        let counts = self.m.counts();
         ui.horizontal(|ui| {
             for (i, c) in Category::ALL.iter().enumerate() {
-                filter_chip(ui, c.label(), counts[i], c.color(&p), &mut self.show[i]);
+                filter_chip(ui, c.label(), counts[i], c.color(&p), &mut self.m.show[i]);
             }
             ui.label(
-                RichText::new(tr!("tools-compare-identical", count = self.same))
+                RichText::new(tr!("tools-compare-identical", count = self.m.same()))
                     .font(FontId::proportional(12.0))
                     .color(p.text_tertiary),
             );
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                text_field(ui, &mut self.search, tr!("tools-compare-filter-hint"), 180.0);
+                text_field(ui, &mut self.m.search, tr!("tools-compare-filter-hint"), 180.0);
             });
         });
         ui.add_space(4.0);
-        if self.two_way.as_ref().is_some_and(|t| t.first_run) && !self.rows.is_empty() {
+        if self.m.first_run() && !self.m.rows().is_empty() {
             ui.label(
                 RichText::new(tr!("tools-compare-first-run")).font(FontId::proportional(11.5)).color(p.text_tertiary),
             );
         }
-        if self.rows.is_empty() {
+        if self.m.rows().is_empty() {
             empty_note(ui, ph::CHECK_CIRCLE, tr!("tools-compare-in-sync"), tr!("tools-compare-in-sync-body"));
             return None;
         }
-        let vis: Vec<usize> = (0..self.rows.len()).filter(|&i| self.visible(&self.rows[i])).collect();
+        let vis = self.m.visible_rows();
         let footer_h = 40.0;
         let table_h = (ui.available_height() - footer_h).max(80.0);
         let width = ui.available_width();
         self.table(ui, app, &vis, width, table_h);
         // Footer: plan summary + preview.
-        let stats = plan_stats(&self.rows);
-        let total = stats.to_left + stats.to_right + stats.delete_left + stats.delete_right;
-        let conflicts = self.rows.iter().filter(|r| r.conflict.is_some()).count();
-        let open = self.rows.iter().filter(|r| r.conflict.is_some() && r.action == RowAction::Skip).count();
+        let stats = self.m.stats();
+        let total = stats.total();
+        let (conflicts, open) = self.m.conflict_counts();
         let mut go = false;
         let mut resolve = false;
         ui.add_space(6.0);
@@ -918,10 +244,10 @@ impl CompareWindow {
             });
         });
         if go {
-            self.stage = Stage::Preview;
+            self.m.step = ReviewStep::Plan;
         }
         if resolve {
-            self.stage = Stage::Conflicts;
+            self.m.step = ReviewStep::Conflicts;
         }
         None
     }
@@ -930,12 +256,12 @@ impl CompareWindow {
         let resp = button(ui, Some(ph::FLOPPY_DISK), tr!("tools-profiles"), 0, true);
         crate::ui::native::popup::Menu::menu(&resp).width(260.0).show(|ui| {
             ui.set_width(260.0);
-            if self.profiles.is_empty() {
+            if self.m.profiles().is_empty() {
                 menu_item(ui, Some(ph::INFO), tr!("tools-profiles-none"), None, false);
             }
             let mut load = None;
             let mut delete = None;
-            for (i, pr) in self.profiles.iter().enumerate() {
+            for (i, pr) in self.m.profiles().iter().enumerate() {
                 ui.horizontal(|ui| {
                     let r = menu_item(ui, Some(ph::FOLDER_SIMPLE_STAR), &pr.name, None, true).on_hover_text(tr!(
                         "tools-profile-tip",
@@ -953,13 +279,11 @@ impl CompareWindow {
                 });
             }
             if let Some(i) = load {
-                let pr = self.profiles[i].clone();
-                self.load_profile(pr);
+                self.m.load_profile_at(i);
                 ui.close();
             }
             if let Some(i) = delete {
-                self.profiles.remove(i);
-                super::sync_sched::set_profiles(self.profiles.clone());
+                self.m.delete_profile_at(i);
             }
             menu_separator(ui);
             ui.label(
@@ -968,31 +292,9 @@ impl CompareWindow {
                     .color(palette(ui.ctx()).text_tertiary),
             );
             ui.horizontal(|ui| {
-                text_field(ui, &mut self.profile_name, tr!("tools-profiles-name-hint"), 170.0);
-                let ok = !self.profile_name.trim().is_empty()
-                    && !self.left.trim().is_empty()
-                    && !self.right.trim().is_empty();
-                if button(ui, None, tr!("common-save"), 1, ok).clicked() {
-                    let name = self.profile_name.trim().to_string();
-                    let schedule = self.profiles.iter().find(|p| p.name == name).map(|p| p.schedule.clone());
-                    // A hand-edited table saves as its base mode.
-                    let preset = match self.preset {
-                        Preset::Custom if self.two_way.is_some() => Preset::TwoWay,
-                        Preset::Custom => Preset::Update,
-                        other => other,
-                    };
-                    let prof = SyncProfile {
-                        name,
-                        left: PathBuf::from(self.left.trim()),
-                        right: PathBuf::from(self.right.trim()),
-                        method: self.method,
-                        preset,
-                        schedule: schedule.unwrap_or_default(),
-                    };
-                    self.profiles.retain(|p| p.name != prof.name);
-                    self.profiles.push(prof);
-                    self.profiles.sort_by_key(|a| a.name.to_lowercase());
-                    super::sync_sched::set_profiles(self.profiles.clone());
+                text_field(ui, &mut self.m.profile_name, tr!("tools-profiles-name-hint"), 170.0);
+                if button(ui, None, tr!("common-save"), 1, self.m.can_save_profile()).clicked() {
+                    self.m.save_profile();
                     ui.close();
                 }
             });
@@ -1042,15 +344,7 @@ impl CompareWindow {
         );
         let ar = Rect::from_min_size(pos2(hr.left() + meta_w + name_w, hr.top() + 1.0), vec2(act_w, 24.0));
         if let Some(a) = action_buttons(ui, ar, None, None, tr!("tools-compare-all-visible")) {
-            for &i in vis {
-                let r = &mut self.rows[i];
-                if allowed(r.cat, a) {
-                    r.action = a;
-                }
-            }
-            if self.two_way.is_none() {
-                self.preset = Preset::Custom;
-            }
+            self.m.set_actions(vis, a);
         }
         ui.painter().line_segment(
             [pos2(hr.left(), hr.bottom()), pos2(hr.right(), hr.bottom())],
@@ -1059,10 +353,9 @@ impl CompareWindow {
         let cfg = &app.core.config.general;
         let drag_default = app.core.config.behaviour.drag_default;
         // The folders the rows are relative to.
-        let bases = self.compared.clone();
-        let two_way = self.two_way.is_some();
-        let mut changed = false;
-        let mut hovered = None;
+        let bases = self.m.compared().cloned();
+        let two_way = self.m.two_way().is_some();
+        let mut set: Option<(usize, RowAction)> = None;
         ScrollArea::vertical().id_salt("compare.rows").max_height(height - 28.0).auto_shrink([false, false]).show_rows(
             ui,
             row_h,
@@ -1071,7 +364,7 @@ impl CompareWindow {
                 for k in range {
                     let i = vis[k];
                     let (r, resp) = ui.allocate_exact_size(vec2(width, row_h), Sense::drag());
-                    let row = &self.rows[i];
+                    let row = &self.m.rows()[i];
                     // Dragging the left / right column takes that side's copy; the name
                     // column takes the left one when it exists.
                     if let Some((lb, rb)) = &bases {
@@ -1090,7 +383,6 @@ impl CompareWindow {
                     }
                     let painter = ui.painter();
                     if resp.hovered() {
-                        hovered = Some(i);
                         painter.rect_filled(r, CornerRadius::same(6), p.bg_surface2);
                     }
                     let color = row.cat.color(&p);
@@ -1132,7 +424,7 @@ impl CompareWindow {
                         CornerRadius::same(1),
                         color,
                     );
-                    let is_dir = row.left.as_ref().or(row.right.as_ref()).is_some_and(|m| m.dir);
+                    let is_dir = row.is_dir();
                     let glyph = if is_dir { ph::FOLDER_SIMPLE } else { ph::FILE };
                     painter.text(
                         pos2(nx + 18.0, r.center().y),
@@ -1167,24 +459,21 @@ impl CompareWindow {
                     let cat = row.cat;
                     let current = row.action;
                     if let Some(a) = action_buttons(ui, ar, Some(cat), Some(current), "") {
-                        self.rows[i].action = a;
-                        changed = true;
+                        set = Some((i, a));
                     }
                 }
             },
         );
-        self.hovered = hovered;
-        if changed && self.two_way.is_none() {
-            self.preset = Preset::Custom;
+        // A hand edit turns the mode into "custom" (two-way keeps its mode).
+        if let Some((i, a)) = set {
+            self.m.set_action(i, a);
         }
     }
 
     fn preview(&mut self, ui: &mut Ui) -> Option<SyncPlan> {
         let p = palette(ui.ctx());
-        let (Some((l, r)), stats) = (self.compared.clone(), plan_stats(&self.rows)) else { return None };
-        let tag = self.two_way.as_ref().map_or("right", |t| t.tag.as_str()).to_string();
-        let plan = build_plan(&l, &r, &self.rows, &tag);
-        let open = self.rows.iter().filter(|r| r.conflict.is_some() && r.action == RowAction::Skip).count();
+        let (Some(plan), stats) = (self.m.plan(), self.m.stats()) else { return None };
+        let (_, open) = self.m.conflict_counts();
         ui.label(
             RichText::new(tr!("tools-compare-plan-title"))
                 .font(crate::ui::views::flow::semibold(14.0))
@@ -1192,7 +481,7 @@ impl CompareWindow {
         );
         ui.add_space(4.0);
         ui.horizontal(|ui| plan_line(ui, &p, &stats));
-        if stats.delete_left + stats.delete_right > 0 {
+        if stats.deletes() {
             ui.label(
                 RichText::new(tr!("tools-compare-plan-trash-note")).font(FontId::proportional(12.0)).color(p.warning),
             );
@@ -1259,10 +548,10 @@ impl CompareWindow {
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if button(ui, Some(ph::ARROW_LEFT), tr!("tools-back"), 0, true).clicked() {
-                self.stage = Stage::Table;
+                self.m.step = ReviewStep::Table;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let danger = stats.delete_left + stats.delete_right > 0;
+                let danger = stats.deletes();
                 let label = tr!("tools-compare-start-sync", count = plan.actions.len());
                 if button(ui, Some(ph::PLAY), &label, if danger { 2 } else { 1 }, !plan.actions.is_empty()).clicked() {
                     out = Some(plan.clone());
@@ -1278,8 +567,8 @@ impl CompareWindow {
     fn conflicts(&mut self, ui: &mut Ui, app: &SoyuzApp) {
         let p = palette(ui.ctx());
         let cfg = &app.core.config.general;
-        let idx: Vec<usize> = (0..self.rows.len()).filter(|&i| self.rows[i].conflict.is_some()).collect();
-        let open = idx.iter().filter(|&&i| self.rows[i].action == RowAction::Skip).count();
+        let idx = self.m.conflict_rows();
+        let (_, open) = self.m.conflict_counts();
         ui.label(
             RichText::new(tr!("tools-compare-conflicts-title"))
                 .font(crate::ui::views::flow::semibold(14.0))
@@ -1297,7 +586,7 @@ impl CompareWindow {
             ui.label(
                 RichText::new(tr!("tools-compare-apply-all")).font(FontId::proportional(12.0)).color(p.text_tertiary),
             );
-            for r in [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip] {
+            for r in RESOLUTIONS {
                 if button(ui, None, r.label(), 0, true).clicked() {
                     all = Some(Some(r));
                 }
@@ -1318,17 +607,8 @@ impl CompareWindow {
             });
         });
         if let Some(choice) = all {
-            for &i in &idx {
-                let row = &self.rows[i];
-                let res = choice.unwrap_or_else(|| {
-                    match (row.left.as_ref().and_then(|s| s.modified), row.right.as_ref().and_then(|s| s.modified)) {
-                        (Some(a), Some(b)) if b > a => Resolution::Right,
-                        (None, Some(_)) => Resolution::Right,
-                        _ => Resolution::Left,
-                    }
-                });
-                self.rows[i].action = resolution_action(&self.rows[i], res);
-            }
+            // `None` keeps the newer side.
+            self.m.resolve_all(choice);
         }
         ui.add_space(6.0);
         let row_h = 52.0;
@@ -1352,7 +632,7 @@ impl CompareWindow {
             |ui, range| {
                 for k in range {
                     let i = idx[k];
-                    let row = &self.rows[i];
+                    let row = &self.m.rows()[i];
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::hover());
                     if resp.hovered() {
                         ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
@@ -1374,7 +654,7 @@ impl CompareWindow {
                         );
                         (g.size().x + 16.0).max(78.0)
                     };
-                    let choices = [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip];
+                    let choices = RESOLUTIONS;
                     let widths = choices.map(choice_w);
                     let choices_w = widths.iter().sum::<f32>() + 4.0 * (choices.len() as f32 - 1.0) + 6.0;
                     let text_w = (r.width() - choices_w - 24.0).max(120.0);
@@ -1396,11 +676,10 @@ impl CompareWindow {
                     painter.galley(pos2(r.left() + 14.0 + half + 12.0, r.top() + 28.0), rg, p.text_secondary);
                     // Choices.
                     let mut x = r.right() - choices_w;
-                    let both = row.left.is_some() && row.right.is_some();
                     for (res, w) in choices.into_iter().zip(widths) {
                         let cr = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
                         x += w + 4.0;
-                        let ok = res != Resolution::KeepBoth || both;
+                        let ok = resolution_allowed(row, res);
                         let id = ui.id().with(("compare.res", i, res as u8));
                         let resp = ui.interact(cr, id, if ok { Sense::click() } else { Sense::hover() });
                         let on = current == res;
@@ -1431,14 +710,7 @@ impl CompareWindow {
                             FontId::proportional(11.5),
                             fg,
                         );
-                        let tip = match res {
-                            Resolution::Left if row.left.is_none() => tr!("tools-compare-res-delete-right"),
-                            Resolution::Right if row.right.is_none() => tr!("tools-compare-res-delete-left"),
-                            Resolution::Left => tr!("tools-compare-res-left"),
-                            Resolution::Right => tr!("tools-compare-res-right"),
-                            Resolution::KeepBoth => tr!("tools-compare-res-both"),
-                            Resolution::Skip => tr!("tools-compare-res-skip"),
-                        };
+                        let tip = resolution_tip(row, res);
                         if ok && resp.on_hover_text(tip).clicked() {
                             set = Some((i, res));
                         }
@@ -1447,16 +719,16 @@ impl CompareWindow {
             },
         );
         if let Some((i, res)) = set {
-            self.rows[i].action = resolution_action(&self.rows[i], res);
+            self.m.resolve(i, res);
         }
         ui.add_space(8.0);
         ui.horizontal(|ui| {
             if button(ui, Some(ph::ARROW_LEFT), tr!("tools-back"), 0, true).clicked() {
-                self.stage = Stage::Table;
+                self.m.step = ReviewStep::Table;
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if button(ui, Some(ph::ARROW_RIGHT), tr!("tools-compare-review"), 1, true).clicked() {
-                    self.stage = Stage::Preview;
+                    self.m.step = ReviewStep::Plan;
                 }
             });
         });
@@ -1550,185 +822,4 @@ pub fn empty_note(ui: &mut Ui, glyph: &str, title: &str, sub: &str) {
     );
     let g = ui.painter().layout(sub.to_string(), FontId::proportional(12.0), p.text_secondary, r.width() * 0.7);
     ui.painter().galley(pos2(c.x - g.size().x / 2.0, c.y + 22.0), g, p.text_secondary);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn row(rel: &str, cat: Category, action: RowAction) -> Row {
-        let side = Some(Side { size: 10, modified: None, dir: false });
-        Row {
-            rel: rel.into(),
-            cat,
-            left: (cat != Category::OnlyRight).then(|| side.clone()).flatten(),
-            right: (cat != Category::OnlyLeft).then(|| side.clone()).flatten(),
-            action,
-            conflict: None,
-        }
-    }
-
-    #[test]
-    fn row_actions_map_to_sync_plan() {
-        let rows = vec![
-            row("a.txt", Category::OnlyLeft, RowAction::CopyRight),
-            row("b.txt", Category::OnlyRight, RowAction::CopyLeft),
-            row("c.txt", Category::NewerLeft, RowAction::CopyRight),
-            row("d.txt", Category::NewerRight, RowAction::CopyLeft),
-            row("e.txt", Category::OnlyRight, RowAction::Delete),
-            row("f.txt", Category::OnlyLeft, RowAction::Delete),
-            row("g.txt", Category::Differ, RowAction::Delete),
-            row("h.txt", Category::Differ, RowAction::Skip),
-            // Invalid: nothing to copy from the right.
-            row("i.txt", Category::OnlyLeft, RowAction::CopyLeft),
-        ];
-        let plan = build_plan(Path::new("/L"), Path::new("/R"), &rows, "right");
-        assert_eq!(plan.left, PathBuf::from("/L"));
-        assert_eq!(plan.right, PathBuf::from("/R"));
-        use SyncAction::*;
-        assert_eq!(
-            plan.actions,
-            vec![
-                CopyLR("a.txt".into()),
-                CopyRL("b.txt".into()),
-                CopyLR("c.txt".into()),
-                CopyRL("d.txt".into()),
-                DeleteR("e.txt".into()),
-                DeleteL("f.txt".into()),
-                DeleteL("g.txt".into()),
-                DeleteR("g.txt".into()),
-            ],
-            "copies first, then deletions; invalid and skipped rows dropped"
-        );
-        let s = plan_stats(&rows);
-        assert_eq!((s.to_right, s.to_left, s.delete_left, s.delete_right), (2, 2, 2, 2));
-        assert_eq!(s.bytes, 40);
-    }
-
-    #[test]
-    fn presets_fill_actions() {
-        use Category as C;
-        use RowAction as A;
-        assert_eq!(Preset::Update.action(C::OnlyLeft), A::CopyRight);
-        assert_eq!(Preset::Update.action(C::OnlyRight), A::CopyLeft);
-        assert_eq!(Preset::Update.action(C::Differ), A::Skip);
-        assert_eq!(Preset::MirrorRight.action(C::OnlyRight), A::Delete);
-        assert_eq!(Preset::MirrorRight.action(C::NewerRight), A::CopyRight, "mirror overwrites newer targets");
-        assert_eq!(Preset::MirrorLeft.action(C::OnlyLeft), A::Delete);
-        assert_eq!(Preset::MirrorLeft.action(C::Differ), A::CopyLeft);
-        for p in Preset::ALL {
-            for c in Category::ALL {
-                assert!(allowed(c, p.action(c)), "{p:?} gives a valid action for {c:?}");
-            }
-        }
-        // Mirror plan for a typical result.
-        let mut rows = vec![
-            row("new", C::OnlyLeft, A::Skip),
-            row("old", C::OnlyRight, A::Skip),
-            row("chg", C::NewerRight, A::Skip),
-        ];
-        for r in &mut rows {
-            r.action = Preset::MirrorRight.action(r.cat);
-        }
-        let plan = build_plan(Path::new("/a"), Path::new("/b"), &rows, "right");
-        assert_eq!(
-            plan.actions,
-            vec![SyncAction::CopyLR("new".into()), SyncAction::CopyLR("chg".into()), SyncAction::DeleteR("old".into())]
-        );
-    }
-
-    #[test]
-    fn rows_from_compare_result_and_size_method() {
-        let res = soyuz_search::CompareResult {
-            only_left: vec!["x".into()],
-            only_right: vec!["y".into()],
-            newer_left: vec!["same_size".into(), "bigger".into()],
-            newer_right: vec![],
-            differ: vec!["d".into()],
-            same: 3,
-        };
-        let stat = |rel: &Path, left: bool| {
-            let size = if rel == Path::new("bigger") && left { 20 } else { 10 };
-            Some(Side { size, modified: None, dir: false })
-        };
-        let rows = rows_from(&res, Method::DateSize, stat);
-        assert_eq!(rows.len(), 5);
-        assert!(rows.iter().find(|r| r.rel == Path::new("x")).unwrap().right.is_none());
-        let rows = rows_from(&res, Method::Size, stat);
-        assert_eq!(rows.len(), 4, "equal sizes are identical when comparing by size only");
-        assert!(rows.iter().all(|r| r.rel != Path::new("same_size")));
-    }
-
-    #[test]
-    fn profiles_serialize() {
-        let f = ProfileFile {
-            profiles: vec![SyncProfile {
-                name: "Backup".into(),
-                left: "/src".into(),
-                right: "/dst".into(),
-                method: Method::Content,
-                preset: Preset::MirrorRight,
-                schedule: super::super::sync_sched::Schedule::Daily { hour: 7, minute: 30 },
-            }],
-        };
-        let text = toml::to_string_pretty(&f).unwrap();
-        let back: ProfileFile = toml::from_str(&text).unwrap();
-        assert_eq!(back.profiles, f.profiles);
-        assert!(text.contains("mirror_right"));
-        // Profiles saved before schedules existed still load (manual).
-        let old: ProfileFile = toml::from_str("[[profiles]]\nname = \"x\"\nleft = \"/a\"\nright = \"/b\"\n").unwrap();
-        assert_eq!(old.profiles[0].schedule, super::super::sync_sched::Schedule::Manual);
-    }
-
-    #[test]
-    fn two_way_rows_conflicts_and_keep_both_plan() {
-        use sync_state::{Decision as D, FileState, Item, TwoWayPlan};
-        let f = |s| Some(FileState::file(s, Some(1_000_000)));
-        let plan = TwoWayPlan {
-            items: vec![
-                Item { rel: "new.txt".into(), left: f(1), right: None, decision: D::CopyLR },
-                Item { rel: "gone.txt".into(), left: None, right: f(2), decision: D::DeleteR },
-                Item {
-                    rel: "both.txt".into(),
-                    left: f(3),
-                    right: f(4),
-                    decision: D::Conflict(ConflictKind::BothChanged),
-                },
-            ],
-            keep_base: vec!["waiting".into()],
-            same: 0,
-        };
-        let mut rows = rows_from_two_way(&plan);
-        assert_eq!(rows[0].action, RowAction::CopyRight);
-        assert_eq!((rows[1].cat, rows[1].action), (Category::OnlyRight, RowAction::Delete));
-        assert_eq!((rows[2].action, rows[2].conflict), (RowAction::Skip, Some(ConflictKind::BothChanged)));
-        assert_eq!(row_resolution(&rows[2]), Resolution::Skip);
-        assert_eq!(two_way_reason(&rows[0]), "New left");
-        assert_eq!(two_way_reason(&rows[1]), "Deleted left");
-        // Choices map back and forth.
-        for res in [Resolution::Left, Resolution::Right, Resolution::KeepBoth, Resolution::Skip] {
-            rows[2].action = resolution_action(&rows[2], res);
-            assert_eq!(row_resolution(&rows[2]), res);
-        }
-        rows[2].action = resolution_action(&rows[2], Resolution::KeepBoth);
-        let p = build_plan(Path::new("/L"), Path::new("/R"), &rows, "right 2026-10-08 1200");
-        let alt = PathBuf::from("both (conflict right 2026-10-08 1200).txt");
-        assert_eq!(
-            p.actions,
-            vec![
-                SyncAction::CopyLR("new.txt".into()),
-                SyncAction::CopyAs { src_left: false, rel: "both.txt".into(), dst_left: false, to: alt.clone() },
-                SyncAction::CopyAs { src_left: false, rel: "both.txt".into(), dst_left: true, to: alt },
-                SyncAction::CopyLR("both.txt".into()),
-                SyncAction::DeleteR("gone.txt".into()),
-            ]
-        );
-        // Skipped conflicts, waiting folders and failures keep their base.
-        rows[2].action = RowAction::Skip;
-        let ctx = TwoWayCtx { keep_base: vec!["waiting".into()], ..TwoWayCtx::default() };
-        let keep = keep_after_sync(&rows, &ctx, Path::new("/L"), Path::new("/R"), &[PathBuf::from("/L/new.txt")]);
-        let mut keep: Vec<_> = keep.into_iter().collect();
-        keep.sort();
-        assert_eq!(keep, [PathBuf::from("both.txt"), "new.txt".into(), "waiting".into()]);
-    }
 }

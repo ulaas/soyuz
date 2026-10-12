@@ -1,20 +1,28 @@
-//! Scheduled sync profiles.
+//! Sync profiles and their scheduler (frontend-agnostic; moved from the GUI's
+//! `ui/tools/compare.rs` and `ui/tools/sync_sched.rs`).
 //!
-//! Profiles (`sync_profiles.toml`) carry a [`Schedule`]: manual, every N minutes, daily
-//! at a time, when a file changes (recursive watcher on both folders), or once when the
-//! app starts. While Soyuz is open the scheduler (ticked once per frame from
-//! `tools::begin_frame`, UI thread, no I/O) starts due runs: a worker plans the sync
-//! (`compare::compute`), the plan becomes a normal `Sync` job in the activity panel, and
-//! when it ends a [`RunReport`] (what was / would be changed, conflicts, status) is saved
-//! under `sync_reports/<profile>/`. A dry run (or `sync.scheduled_dry_run`) only writes
-//! the report. There is no OS scheduler or service: nothing runs while the app is closed;
-//! a daily run that was missed is caught up at the next start.
+//! Profiles (`sync_profiles.toml` next to the config) carry a [`Schedule`]: manual, every N
+//! minutes, daily at a time, when a file changes (recursive watcher on both folders), or
+//! once when the app starts. While Soyuz is open the scheduler ([`tick`], once per frame
+//! on the UI thread, no I/O) starts due runs: a worker plans the sync
+//! ([`compare::compute`](super::compare::compute)), the plan becomes a normal `Sync` job in
+//! the activity panel, and when it ends a [`RunReport`] (what was / would be changed,
+//! conflicts, status) is saved under `sync_reports/<profile>/`. A dry run (or
+//! `sync.scheduled_dry_run`) only writes the report. There is no OS scheduler or service:
+//! nothing runs while the app is closed; a daily run that was missed is caught up at the
+//! next start.
 //!
 //! Unattended two-way runs never guess: conflicts are skipped (their base is kept) and
 //! listed in the report with a toast pointing at the profiles window.
+//!
+//! Profile editing for every frontend: [`profiles`], [`profile`], [`create_profile`],
+//! [`update_profile`], [`rename_profile`], [`delete_profile`], [`set_schedule`] (validated,
+//! saved on the shared store worker), [`ScheduleKind`] with the editor's ranges, and
+//! [`next_run`] / [`next_of`] / [`next_label`] for the "next run" column.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -26,12 +34,112 @@ use soyuz_core::OpControl;
 use soyuz_core::time::serde_rfc3339;
 use soyuz_jobs::{JobId, JobKind, JobState, SyncAction, SyncPlan};
 
-#[cfg(test)]
-use super::compare::Preset;
-use super::compare::{self, SyncProfile};
-use super::sync_state::{self, ConflictKind};
-use crate::app::SoyuzApp;
-use crate::ui::toasts::Toast;
+use super::compare::{self, Method, Preset};
+use super::compare_state::{self as sync_state, ConflictKind};
+use crate::core::AppCore;
+use crate::host::Host;
+use crate::models::toasts::Toast;
+
+// ---------------------------------------------------------------------------------------
+// Profiles.
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SyncProfile {
+    pub name: String,
+    pub left: PathBuf,
+    pub right: PathBuf,
+    #[serde(default)]
+    pub method: Method,
+    #[serde(default)]
+    pub preset: Preset,
+    /// When the scheduler runs this profile on its own.
+    #[serde(default)]
+    pub schedule: Schedule,
+}
+
+impl SyncProfile {
+    /// A manual profile (method "date + size").
+    pub fn new(name: impl Into<String>, left: PathBuf, right: PathBuf, preset: Preset) -> Self {
+        SyncProfile { name: name.into(), left, right, method: Method::default(), preset, schedule: Schedule::Manual }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct ProfileFile {
+    #[serde(default)]
+    profiles: Vec<SyncProfile>,
+}
+
+/// `sync_profiles.toml` inside `dir` (normally the config dir).
+pub fn profiles_path_in(dir: &Path) -> PathBuf {
+    dir.join("sync_profiles.toml")
+}
+
+/// Where this thread's profiles live (see [`set_store_dir`]).
+pub fn profiles_path() -> PathBuf {
+    profiles_path_in(&store_dir())
+}
+
+/// Load the profiles saved inside `dir` (small file; worker or when a window opens).
+/// A broken file is backed up and protected from being overwritten (`store_file`).
+pub fn load_profiles_in(dir: &Path) -> Vec<SyncProfile> {
+    crate::services::store_file::load_toml::<ProfileFile>(&profiles_path_in(dir)).value().profiles
+}
+
+/// Load this thread's saved profiles.
+pub fn load_profiles() -> Vec<SyncProfile> {
+    load_profiles_in(&store_dir())
+}
+
+/// Save `profiles` inside `dir`, in order on the shared store worker (flushed on exit).
+pub fn save_profiles_in(dir: &Path, profiles: &[SyncProfile]) {
+    match toml::to_string_pretty(&ProfileFile { profiles: profiles.to_vec() }) {
+        Ok(text) => crate::services::store_file::save_async(profiles_path_in(dir), text.into_bytes()),
+        Err(e) => log::warn!("cannot save sync profiles: {e}"),
+    }
+}
+
+/// Why a profile edit was refused (frontends word it).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProfileError {
+    /// The name is empty.
+    EmptyName,
+    /// Another profile has this name.
+    Duplicate(String),
+    /// No profile has this name.
+    NotFound(String),
+    /// A folder is empty.
+    MissingPath,
+    /// Both folders are the same.
+    SamePaths,
+    /// The profile is running (rename / delete after it ends, or cancel it).
+    Running(String),
+}
+
+/// Check a profile before it is stored: trimmed non-empty name not used by another
+/// profile (`except` = the profile being edited), two different folders. Returns the
+/// profile with its name and folders trimmed and its schedule clamped.
+pub fn validate(profiles: &[SyncProfile], p: SyncProfile, except: Option<&str>) -> Result<SyncProfile, ProfileError> {
+    let name = p.name.trim().to_string();
+    if name.is_empty() {
+        return Err(ProfileError::EmptyName);
+    }
+    if profiles.iter().any(|o| o.name == name && Some(o.name.as_str()) != except) {
+        return Err(ProfileError::Duplicate(name));
+    }
+    let trim = |p: &Path| PathBuf::from(p.to_string_lossy().trim());
+    let (left, right) = (trim(&p.left), trim(&p.right));
+    if left.as_os_str().is_empty() || right.as_os_str().is_empty() {
+        return Err(ProfileError::MissingPath);
+    }
+    if left == right {
+        return Err(ProfileError::SamePaths);
+    }
+    Ok(SyncProfile { name, left, right, schedule: p.schedule.clamped(), ..p })
+}
+
+// ---------------------------------------------------------------------------------------
+// Schedules.
 
 /// When a profile runs on its own.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +157,13 @@ pub enum Schedule {
     OnStart,
 }
 
+/// Interval schedules: minutes between runs.
+pub const INTERVAL_MINUTES: RangeInclusive<u32> = 1..=1440;
+/// Daily schedules: hour of the day.
+pub const DAILY_HOURS: RangeInclusive<u8> = 0..=23;
+/// Daily schedules: minute of the hour.
+pub const DAILY_MINUTES: RangeInclusive<u8> = 0..=59;
+
 impl Schedule {
     pub fn label(&self) -> String {
         match self {
@@ -60,6 +175,81 @@ impl Schedule {
             Schedule::Daily { hour, minute } => tr!("tools-sched-daily", time = format!("{hour:02}:{minute:02}")),
             Schedule::OnChange => tr!("tools-sched-on-change").into(),
             Schedule::OnStart => tr!("tools-sched-on-start").into(),
+        }
+    }
+
+    pub fn kind(&self) -> ScheduleKind {
+        match self {
+            Schedule::Manual => ScheduleKind::Manual,
+            Schedule::Interval { .. } => ScheduleKind::Interval,
+            Schedule::Daily { .. } => ScheduleKind::Daily,
+            Schedule::OnChange => ScheduleKind::OnChange,
+            Schedule::OnStart => ScheduleKind::OnStart,
+        }
+    }
+
+    /// The numbers kept inside the editor's ranges.
+    pub fn clamped(self) -> Schedule {
+        match self {
+            Schedule::Interval { minutes } => {
+                Schedule::Interval { minutes: minutes.clamp(*INTERVAL_MINUTES.start(), *INTERVAL_MINUTES.end()) }
+            }
+            Schedule::Daily { hour, minute } => Schedule::Daily {
+                hour: hour.clamp(*DAILY_HOURS.start(), *DAILY_HOURS.end()),
+                minute: minute.clamp(*DAILY_MINUTES.start(), *DAILY_MINUTES.end()),
+            },
+            other => other,
+        }
+    }
+}
+
+/// The kinds of [`Schedule`] (the editor's segmented control).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ScheduleKind {
+    Manual,
+    Interval,
+    Daily,
+    OnChange,
+    OnStart,
+}
+
+impl ScheduleKind {
+    pub const ALL: [ScheduleKind; 5] = [
+        ScheduleKind::Manual,
+        ScheduleKind::Interval,
+        ScheduleKind::Daily,
+        ScheduleKind::OnChange,
+        ScheduleKind::OnStart,
+    ];
+
+    /// Short label of the kind.
+    pub fn label(self) -> &'static str {
+        match self {
+            ScheduleKind::Manual => tr!("tools-sched-manual"),
+            ScheduleKind::Interval => tr!("tools-sched-kind-interval"),
+            ScheduleKind::Daily => tr!("tools-sched-kind-daily"),
+            ScheduleKind::OnChange => tr!("tools-sched-kind-change"),
+            ScheduleKind::OnStart => tr!("tools-sched-kind-start"),
+        }
+    }
+
+    /// The schedule a kind starts with when picked (hourly, daily at 18:00).
+    pub fn default_schedule(self) -> Schedule {
+        match self {
+            ScheduleKind::Manual => Schedule::Manual,
+            ScheduleKind::Interval => Schedule::Interval { minutes: 60 },
+            ScheduleKind::Daily => Schedule::Daily { hour: 18, minute: 0 },
+            ScheduleKind::OnChange => Schedule::OnChange,
+            ScheduleKind::OnStart => Schedule::OnStart,
+        }
+    }
+
+    /// Explanation shown under the editor for this kind.
+    pub fn note(self) -> Option<&'static str> {
+        match self {
+            ScheduleKind::Daily => Some(tr!("tools-sched-daily-note")),
+            ScheduleKind::OnChange => Some(tr!("tools-sched-change-note")),
+            _ => None,
         }
     }
 }
@@ -304,8 +494,9 @@ pub fn reports_dir_in(base: &Path, profile: &str) -> PathBuf {
     base.join("sync_reports").join(format!("{}-{h:08x}", sanitize(profile)))
 }
 
-fn reports_dir(profile: &str) -> PathBuf {
-    reports_dir_in(&soyuz_core::config::config_dir(), profile)
+/// Folder of a profile's reports for this thread's store (see [`set_store_dir`]).
+pub fn reports_dir(profile: &str) -> PathBuf {
+    reports_dir_in(&store_dir(), profile)
 }
 
 /// Save a report and keep only the newest `keep` (worker thread).
@@ -334,7 +525,7 @@ fn report_files(dir: &Path) -> Vec<PathBuf> {
     v
 }
 
-/// Reports of a profile, newest first (worker thread).
+/// Reports in `dir`, newest first (worker thread).
 pub fn load_reports_in(dir: &Path, max: usize) -> Vec<RunReport> {
     report_files(dir)
         .iter()
@@ -344,8 +535,17 @@ pub fn load_reports_in(dir: &Path, max: usize) -> Vec<RunReport> {
         .collect()
 }
 
-pub fn load_reports(profile: &str, max: usize) -> Vec<RunReport> {
-    load_reports_in(&reports_dir(profile), max)
+/// Load the newest `max` reports of a profile on a worker; the receiver gets them once
+/// (the frontend's wake-up redraws).
+pub fn load_reports_async(profile: &str, max: usize) -> Receiver<Vec<RunReport>> {
+    let (tx, rx) = bounded(1);
+    let dir = reports_dir(profile);
+    let wake = super::tools::wake();
+    let _ = std::thread::Builder::new().name("soyuz-sync-reports".into()).spawn(move || {
+        let _ = tx.send(load_reports_in(&dir, max));
+        wake();
+    });
+    rx
 }
 
 // ---------------------------------------------------------------------------------------
@@ -386,6 +586,8 @@ type Loaded = (Vec<SyncProfile>, HashMap<String, RunReport>);
 
 #[derive(Default)]
 pub struct Scheduler {
+    /// Where profiles, reports and two-way states live (`None` = the config dir).
+    dir: Option<PathBuf>,
     started: Option<SystemTime>,
     profiles: Option<Vec<SyncProfile>>,
     loading: Option<Receiver<Loaded>>,
@@ -399,6 +601,12 @@ pub struct Scheduler {
     watch_failed: bool,
 }
 
+impl Scheduler {
+    fn dir(&self) -> PathBuf {
+        self.dir.clone().unwrap_or_else(soyuz_core::config::config_dir)
+    }
+}
+
 thread_local! {
     static SCHED: RefCell<Scheduler> = RefCell::new(Scheduler::default());
 }
@@ -408,41 +616,156 @@ pub fn with<R>(f: impl FnOnce(&mut Scheduler) -> R) -> R {
     SCHED.with_borrow_mut(f)
 }
 
-/// Saved profiles (loads synchronously if the background load hasn't landed yet — a small
-/// file, read once).
+/// Keep this thread's profiles, reports and two-way states inside `dir` instead of the
+/// config dir (tests, sandboxes). Forgets the loaded profiles so they are read from there.
+pub fn set_store_dir(dir: PathBuf) {
+    with(|s| {
+        *s = Scheduler { dir: Some(dir), ..Scheduler::default() };
+    });
+}
+
+/// Where this thread's profiles, reports and two-way states live.
+pub fn store_dir() -> PathBuf {
+    with(|s| s.dir())
+}
+
+/// Saved profiles, sorted by name (loads synchronously if the background load hasn't
+/// landed yet — a small file, read once).
 pub fn profiles() -> Vec<SyncProfile> {
     with(|s| {
         if s.profiles.is_none() {
-            s.profiles = Some(compare::load_profiles());
+            s.profiles = Some(load_profiles_in(&s.dir()));
         }
         s.profiles.clone().unwrap_or_default()
     })
 }
 
+/// One saved profile.
+pub fn profile(name: &str) -> Option<SyncProfile> {
+    profiles().into_iter().find(|p| p.name == name)
+}
+
 /// Replace and save the profiles (compare window, profiles window).
 pub fn set_profiles(mut v: Vec<SyncProfile>) {
     v.sort_by_key(|a| a.name.to_lowercase());
-    compare::save_profiles(&v);
     with(|s| {
+        save_profiles_in(&s.dir(), &v);
         let names: HashSet<&str> = v.iter().map(|p| p.name.as_str()).collect();
         s.last.retain(|k, _| names.contains(k.as_str()));
         s.profiles = Some(v);
     });
 }
 
+/// Is the profile planning, syncing or recording right now?
+pub fn is_running(name: &str) -> bool {
+    with(|s| s.runs.contains_key(name))
+}
+
+/// Add a new profile (validated, see [`validate`]) and save.
+pub fn create_profile(p: SyncProfile) -> Result<(), ProfileError> {
+    let mut all = profiles();
+    let p = validate(&all, p, None)?;
+    all.push(p);
+    set_profiles(all);
+    Ok(())
+}
+
+/// Replace the profile `name` with `p` (folders, method, mode, schedule; a different
+/// `p.name` renames it, see [`rename_profile`]) and save.
+pub fn update_profile(name: &str, p: SyncProfile) -> Result<(), ProfileError> {
+    let mut all = profiles();
+    let Some(i) = all.iter().position(|o| o.name == name) else { return Err(ProfileError::NotFound(name.into())) };
+    let p = validate(&all, p, Some(name))?;
+    let renamed = p.name != name;
+    if renamed && is_running(name) {
+        return Err(ProfileError::Running(name.into()));
+    }
+    let new_name = p.name.clone();
+    all[i] = p;
+    if renamed {
+        move_history(name, &new_name);
+    }
+    set_profiles(all);
+    Ok(())
+}
+
+/// Rename a profile (its last report and saved reports move along) and save.
+pub fn rename_profile(old: &str, new: &str) -> Result<(), ProfileError> {
+    let Some(mut p) = profile(old) else { return Err(ProfileError::NotFound(old.into())) };
+    p.name = new.to_string();
+    update_profile(old, p)
+}
+
+/// Delete a profile and save (its reports stay on disk). Refused while it runs.
+pub fn delete_profile(name: &str) -> Result<(), ProfileError> {
+    if is_running(name) {
+        return Err(ProfileError::Running(name.into()));
+    }
+    let mut all = profiles();
+    let before = all.len();
+    all.retain(|p| p.name != name);
+    if all.len() == before {
+        return Err(ProfileError::NotFound(name.into()));
+    }
+    set_profiles(all);
+    with(|s| {
+        s.change_due.remove(name);
+        s.quiet_until.remove(name);
+        s.queued.retain(|(n, ..)| n != name);
+    });
+    Ok(())
+}
+
+/// Change a profile's schedule (clamped to the editor's ranges) and save.
+pub fn set_schedule(name: &str, schedule: Schedule) -> Result<(), ProfileError> {
+    let Some(mut p) = profile(name) else { return Err(ProfileError::NotFound(name.into())) };
+    p.schedule = schedule;
+    update_profile(name, p)
+}
+
+/// A renamed profile keeps its history: the in-memory last report now, the report folder
+/// on a worker.
+fn move_history(old: &str, new: &str) {
+    let dir = with(|s| {
+        if let Some(mut r) = s.last.remove(old) {
+            r.profile = new.to_string();
+            s.last.insert(new.to_string(), r);
+        }
+        s.change_due.remove(old);
+        s.quiet_until.remove(old);
+        for q in &mut s.queued {
+            if q.0 == old {
+                q.0 = new.to_string();
+            }
+        }
+        s.dir()
+    });
+    let (from, to) = (reports_dir_in(&dir, old), reports_dir_in(&dir, new));
+    let _ = std::thread::Builder::new().name("soyuz-sync-rename".into()).spawn(move || {
+        if from.is_dir() && !to.exists() {
+            if let Some(parent) = to.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::rename(&from, &to) {
+                log::warn!("cannot move sync reports {} → {}: {e}", from.display(), to.display());
+            }
+        }
+    });
+}
+
 /// Start a run of `name` next frame (`dry`: only write the report).
 pub fn run_now(name: &str, dry: bool) {
     with(|s| s.queued.push((name.to_string(), Trigger::Manual, dry)));
-    super::wake()();
+    super::tools::wake()();
 }
 
 /// Cancel the planning or the sync job of a running profile.
-pub fn cancel(app: &SoyuzApp, name: &str) {
+pub fn cancel(core: &AppCore, name: &str) {
     with(|s| {
         if let Some(run) = s.runs.get(name) {
             match &run.phase {
                 Phase::Planning(_, ctl) => ctl.cancel(),
-                Phase::Syncing { job, .. } => app.core.fileops.jobs.engine().cancel(*job),
+                Phase::Syncing { job, .. } => core.fileops.jobs.engine().cancel(*job),
                 Phase::Recording(..) => {}
             }
         }
@@ -473,24 +796,30 @@ pub fn next_of(p: &SyncProfile) -> Option<SystemTime> {
     })
 }
 
-/// Once per frame (UI thread, no blocking I/O).
-pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let cfg = app.core.config.sync.clone();
+/// Once per frame (UI thread, no blocking I/O): loads the profiles, keeps the watchers,
+/// starts due runs, submits planned syncs as jobs and records their reports. Every
+/// frontend that wants scheduled profiles calls it.
+pub fn tick(core: &mut AppCore, host: &dyn Host) {
+    let cfg = core.config.sync.clone();
     let mut toasts: Vec<Toast> = Vec::new();
     let mut submit: Vec<(String, Trigger, Box<Planned>)> = Vec::new();
     let mut wake_in: Option<Duration> = None;
     with(|s| {
         let now_wall = SystemTime::now();
         let started = *s.started.get_or_insert(now_wall);
+        let dir = s.dir();
         // Background load of profiles + their newest reports.
         if s.profiles.is_none() && s.loading.is_none() {
             let (tx, rx) = bounded(1);
-            let wake = super::wake();
+            let wake = super::tools::wake();
+            let d = dir.clone();
             let spawned = std::thread::Builder::new().name("soyuz-sync-load".into()).spawn(move || {
-                let profiles = compare::load_profiles();
+                let profiles = load_profiles_in(&d);
                 let last = profiles
                     .iter()
-                    .filter_map(|p| load_reports(&p.name, 1).into_iter().next().map(|r| (p.name.clone(), r)))
+                    .filter_map(|p| {
+                        load_reports_in(&reports_dir_in(&d, &p.name), 1).into_iter().next().map(|r| (p.name.clone(), r))
+                    })
                     .collect();
                 let _ = tx.send((profiles, last));
                 wake();
@@ -567,9 +896,10 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
             let ctl = OpControl::new();
             let (tx, rx) = bounded(1);
             let c2 = ctl.clone();
-            let wake = super::wake();
+            let wake = super::tools::wake();
+            let d = dir.clone();
             let spawned = std::thread::Builder::new().name("soyuz-sync-plan".into()).spawn(move || {
-                let out = plan_profile(&p, trigger, dry, &c2);
+                let out = plan_profile_in(&d, &p, trigger, dry, &c2);
                 let _ = tx.send(out);
                 wake();
             });
@@ -612,7 +942,7 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
                     Err(_) => {}
                 },
                 Phase::Syncing { job, planned } => {
-                    let snap = app.core.fileops.jobs.snapshot(job);
+                    let snap = core.fileops.jobs.snapshot(job);
                     let state = snap.map(|x| x.state.clone());
                     match state {
                         Some(st) if !st.is_terminal() => {
@@ -651,10 +981,12 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
                                     }
                                     let (tx, rx) = bounded(1);
                                     let (l, r) = (plan.left.clone(), plan.right.clone());
-                                    let wake = super::wake();
+                                    let wake = super::tools::wake();
+                                    let d = dir.clone();
                                     let spawned =
                                         std::thread::Builder::new().name("soyuz-sync-state".into()).spawn(move || {
-                                            let _ = tx.send(sync_state::record_after_sync(&l, &r, &keep).map(|_| ()));
+                                            let res = sync_state::record_after_sync_in(&d, &l, &r, &keep);
+                                            let _ = tx.send(res.map(|_| ()));
                                             wake();
                                         });
                                     if spawned.is_ok() {
@@ -693,21 +1025,21 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
         let quiet_after = debounce;
         s.quiet_until.retain(|_, q| Instant::now() < *q + quiet_after);
     });
-    // Submit jobs (needs the app; outside the scheduler borrow).
+    // Submit jobs (needs the core; outside the scheduler borrow).
     for (name, trigger, planned) in submit {
         let label = tr!("tools-sched-job-label", name = &name);
-        let mut spec = app.core.fileops.jobs.spec(JobKind::Sync { plan: planned.plan.clone() });
+        let mut spec = core.fileops.jobs.spec(JobKind::Sync { plan: planned.plan.clone() });
         spec.options.label = Some(label);
-        let job = crate::ui::archive::submit_job(&mut app.core, spec);
+        let job = crate::models::archive::submit_job(core, spec);
         with(|s| {
             s.runs.insert(name, Run { phase: Phase::Syncing { job, planned }, trigger, dry: false });
         });
     }
     for t in toasts {
-        app.core.ui.toasts.push(t);
+        core.ui.toasts.push(t);
     }
     if let Some(d) = wake_in {
-        ctx.request_repaint_after(d.min(Duration::from_secs(60)));
+        host.redraw_after(d.min(Duration::from_secs(60)));
     }
 }
 
@@ -756,7 +1088,7 @@ fn finish(s: &mut Scheduler, mut rep: RunReport, keep: u32, toasts: &mut Vec<Toa
     if let Some(t) = toast {
         toasts.push(t);
     }
-    let dir = reports_dir(&name);
+    let dir = reports_dir_in(&s.dir(), &name);
     let saved = rep.clone();
     let _ = std::thread::Builder::new().name("soyuz-sync-report".into()).spawn(move || {
         if let Err(e) = save_report_in(&dir, &saved, keep as usize) {
@@ -766,15 +1098,21 @@ fn finish(s: &mut Scheduler, mut rep: RunReport, keep: u32, toasts: &mut Vec<Toa
     s.last.insert(name, rep);
 }
 
-/// Plan one run (worker thread).
-fn plan_profile(p: &SyncProfile, trigger: Trigger, dry: bool, ctl: &OpControl) -> Result<Planned, String> {
+/// Plan one run (worker thread); two-way states live inside `dir`.
+fn plan_profile_in(
+    dir: &Path,
+    p: &SyncProfile,
+    trigger: Trigger,
+    dry: bool,
+    ctl: &OpControl,
+) -> Result<Planned, String> {
     let mut report = blank_report(&p.name, Some(p), trigger, dry);
     for (side, dir) in [("left", &p.left), ("right", &p.right)] {
         if !soyuz_fs::exists_nofollow(dir) {
             return Err(tr!("tools-sched-err-unavailable", side = side, path = dir.display().to_string()));
         }
     }
-    let computed = compare::compute(&p.left, &p.right, p.method, p.preset, ctl)?;
+    let computed = compare::compute_in(dir, &p.left, &p.right, p.method, p.preset, ctl)?;
     // Unattended: conflicts are never guessed (skipped, kept at their base).
     let rows = computed.rows;
     report.conflicts = rows
@@ -811,7 +1149,7 @@ fn sync_watchers(s: &mut Scheduler, profiles: &[SyncProfile], enabled: bool, toa
         return;
     }
     let (tx, rx) = unbounded();
-    let wake = super::wake();
+    let wake = super::tools::wake();
     let mut watcher = match soyuz_fs::Watcher::new(tx, Duration::from_millis(500), wake) {
         Ok(w) => w,
         Err(e) => {
@@ -867,6 +1205,19 @@ pub fn next_label(p: &SyncProfile, enabled: bool) -> String {
             },
         },
     }
+}
+
+/// `C:\…\parent\name` for long paths (the full path goes in a tooltip / detail line).
+pub fn short_path(p: &Path) -> String {
+    let full = p.display().to_string();
+    let comps: Vec<String> = p.components().map(|c| c.as_os_str().to_string_lossy().into_owned()).collect();
+    let n = comps.len();
+    if full.chars().count() <= 48 || n <= 3 {
+        return full;
+    }
+    let sep = std::path::MAIN_SEPARATOR;
+    let root = comps[0].trim_end_matches(['\\', '/']);
+    format!("{root}{sep}…{sep}{}{sep}{}", comps[n - 2], comps[n - 1])
 }
 
 #[cfg(test)]
@@ -927,6 +1278,22 @@ mod tests {
     }
 
     #[test]
+    fn schedule_kinds_defaults_and_clamping() {
+        for k in ScheduleKind::ALL {
+            assert_eq!(k.default_schedule().kind(), k);
+            assert!(!k.label().is_empty());
+        }
+        assert_eq!(ScheduleKind::Interval.default_schedule(), Schedule::Interval { minutes: 60 });
+        assert_eq!(ScheduleKind::Daily.default_schedule(), Schedule::Daily { hour: 18, minute: 0 });
+        assert!(ScheduleKind::Daily.note().is_some() && ScheduleKind::OnChange.note().is_some());
+        assert!(ScheduleKind::Manual.note().is_none());
+        assert_eq!(Schedule::Interval { minutes: 0 }.clamped(), Schedule::Interval { minutes: 1 });
+        assert_eq!(Schedule::Interval { minutes: 99_999 }.clamped(), Schedule::Interval { minutes: 1440 });
+        assert_eq!(Schedule::Daily { hour: 30, minute: 75 }.clamped(), Schedule::Daily { hour: 23, minute: 59 });
+        assert_eq!(Schedule::OnStart.clamped(), Schedule::OnStart);
+    }
+
+    #[test]
     fn schedule_serializes_tagged() {
         #[derive(Serialize, Deserialize, PartialEq, Debug)]
         struct W {
@@ -944,6 +1311,88 @@ mod tests {
         }
         let text = toml::to_string(&W { s: Schedule::Daily { hour: 7, minute: 5 } }).unwrap();
         assert!(text.contains("kind = \"daily\""), "{text}");
+    }
+
+    #[test]
+    fn profiles_serialize() {
+        let f = ProfileFile {
+            profiles: vec![SyncProfile {
+                name: "Backup".into(),
+                left: "/src".into(),
+                right: "/dst".into(),
+                method: Method::Content,
+                preset: Preset::MirrorRight,
+                schedule: Schedule::Daily { hour: 7, minute: 30 },
+            }],
+        };
+        let text = toml::to_string_pretty(&f).unwrap();
+        let back: ProfileFile = toml::from_str(&text).unwrap();
+        assert_eq!(back.profiles, f.profiles);
+        assert!(text.contains("mirror_right"));
+        // Profiles saved before schedules existed still load (manual).
+        let old: ProfileFile = toml::from_str("[[profiles]]\nname = \"x\"\nleft = \"/a\"\nright = \"/b\"\n").unwrap();
+        assert_eq!(old.profiles[0].schedule, Schedule::Manual);
+    }
+
+    #[test]
+    fn validation_rules() {
+        let a = SyncProfile::new("A", "/a".into(), "/b".into(), Preset::Update);
+        let all = vec![a.clone()];
+        let p = |name: &str, l: &str, r: &str| SyncProfile::new(name, l.into(), r.into(), Preset::Update);
+        assert_eq!(validate(&all, p("  ", "/x", "/y"), None), Err(ProfileError::EmptyName));
+        assert_eq!(validate(&all, p("A", "/x", "/y"), None), Err(ProfileError::Duplicate("A".into())));
+        assert!(validate(&all, p("A", "/x", "/y"), Some("A")).is_ok(), "editing itself");
+        assert_eq!(validate(&all, p("B", "", "/y"), None), Err(ProfileError::MissingPath));
+        assert_eq!(validate(&all, p("B", "/y", "/y"), None), Err(ProfileError::SamePaths));
+        let ok =
+            validate(&all, SyncProfile { schedule: Schedule::Interval { minutes: 0 }, ..p(" B ", "/x", "/y") }, None)
+                .unwrap();
+        assert_eq!((ok.name.as_str(), ok.schedule), ("B", Schedule::Interval { minutes: 1 }));
+    }
+
+    #[test]
+    fn profile_crud_round_trip_on_a_temp_config_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        set_store_dir(dir.path().to_path_buf());
+        assert_eq!(store_dir(), dir.path());
+        assert!(profiles().is_empty());
+        let p = |name: &str| SyncProfile::new(name, dir.path().join("L"), dir.path().join("R"), Preset::MirrorRight);
+        create_profile(p("Photos")).unwrap();
+        create_profile(p("archive")).unwrap();
+        assert_eq!(create_profile(p("Photos")), Err(ProfileError::Duplicate("Photos".into())));
+        assert_eq!(profiles().iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["archive", "Photos"], "sorted");
+        // Edit: schedule, method; rename moves the last report along.
+        set_schedule("Photos", Schedule::Daily { hour: 7, minute: 30 }).unwrap();
+        let mut edited = profile("Photos").unwrap();
+        edited.method = Method::Content;
+        update_profile("Photos", edited).unwrap();
+        with(|s| {
+            s.last.insert("Photos".into(), blank_report("Photos", None, Trigger::Manual, true));
+        });
+        rename_profile("Photos", "Pictures").unwrap();
+        assert!(profile("Photos").is_none());
+        assert_eq!(last_report("Pictures").map(|r| r.profile), Some("Pictures".into()));
+        assert_eq!(rename_profile("Pictures", "archive"), Err(ProfileError::Duplicate("archive".into())));
+        assert_eq!(rename_profile("nope", "x"), Err(ProfileError::NotFound("nope".into())));
+        delete_profile("archive").unwrap();
+        assert_eq!(delete_profile("archive"), Err(ProfileError::NotFound("archive".into())));
+        // On disk (after the store worker wrote it).
+        assert!(crate::services::store_file::flush(Duration::from_secs(10)));
+        let back = load_profiles_in(dir.path());
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].name, "Pictures");
+        assert_eq!(back[0].method, Method::Content);
+        assert_eq!(back[0].preset, Preset::MirrorRight);
+        assert_eq!(back[0].schedule, Schedule::Daily { hour: 7, minute: 30 });
+        assert!(profiles_path().starts_with(dir.path()));
+        // A fresh scheduler on this thread reads them back.
+        set_store_dir(dir.path().to_path_buf());
+        assert_eq!(profiles(), back);
+        // The next run of a daily profile is in the next day (or later today).
+        let next = next_of(&back[0]).unwrap();
+        assert!(next > SystemTime::now() && next <= SystemTime::now() + Duration::from_secs(25 * 3600));
+        assert!(!next_label(&back[0], true).is_empty());
+        assert_eq!(next_label(&back[0], false), tr!("tools-next-scheduler-off"));
     }
 
     #[test]
@@ -990,15 +1439,29 @@ mod tests {
             name: "t".into(),
             left: l.clone(),
             right: r.clone(),
-            method: compare::Method::DateSize,
+            method: Method::DateSize,
             preset: Preset::Update,
             schedule: Schedule::Manual,
         };
-        let planned = plan_profile(&p, Trigger::Manual, true, &OpControl::new()).unwrap();
+        let cfg = dir.path().join("cfg");
+        let planned = plan_profile_in(&cfg, &p, Trigger::Manual, true, &OpControl::new()).unwrap();
         assert_eq!(planned.plan.actions, vec![SyncAction::CopyLR("only-left.txt".into())]);
         assert_eq!(planned.report.actions[0].op, ReportOp::CopyToRight);
         assert!(planned.keep.is_none());
         let missing = SyncProfile { left: dir.path().join("nope"), ..p };
-        assert!(plan_profile(&missing, Trigger::Manual, true, &OpControl::new()).unwrap_err().contains("left folder"));
+        assert!(
+            plan_profile_in(&cfg, &missing, Trigger::Manual, true, &OpControl::new())
+                .unwrap_err()
+                .contains("left folder")
+        );
+    }
+
+    #[test]
+    fn long_paths_are_shortened() {
+        assert_eq!(short_path(Path::new(r"C:\a\b")), r"C:\a\b");
+        let long = Path::new(r"C:\Users\someone\AppData\Local\Temp\a-very-long-folder-name\project\L");
+        if cfg!(windows) {
+            assert_eq!(short_path(long), r"C:\…\project\L");
+        }
     }
 }

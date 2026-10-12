@@ -33,3 +33,7 @@ pub mod trash;
 pub mod tree;
 pub mod windows;
 pub mod workspaces;
+// Phase T5: folder compare + sync (moved from the GUI).
+pub mod compare;
+pub mod compare_profiles;
+pub mod compare_state;
