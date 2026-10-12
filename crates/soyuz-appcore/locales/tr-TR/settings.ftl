@@ -38,6 +38,8 @@ settings-section-jobs = Dosya işlemleri
 settings-section-jobs-desc = Kopyalama / taşıma motoru, doğrulama, eşitleme zamanlamaları ve önceki sürümler.
 settings-section-terminal = Terminal
 settings-section-terminal-desc = Tümleşik terminal paneli.
+settings-section-terminal-ui = Terminal arayüzü
+settings-section-terminal-ui-desc = Bir terminalin içinde çalışan metin tabanlı arayüz (soyuz --tui).
 settings-section-preview = Önizleme ve arama
 settings-section-preview-desc = Önizleme sınırları, arama varsayılanları ve Git tümleştirmesi.
 settings-section-editor = Düzenleyici
@@ -399,6 +401,12 @@ settings-terminal-security = Güvenlik
 settings-terminal-osc52 = Panoyu ayarlayan programlar
 settings-terminal-osc52-desc = OSC 52, terminal çıktısının panonuzu değiştirmesine izin verir (ör. yapıştırmanız için bir komutla). Panoyu okumak her zaman engellenir.
 settings-allow = İzin ver
+settings-tui-input = Fare ve klavye
+settings-tui-mouse = Fare
+settings-tui-mouse-desc = Tıklayarak seçin, tekerlekle kaydırın. Terminalin kendi metin seçiminin çalışması için kapatın.
+settings-tui-keyboard-protocol = Klavye protokolü
+settings-tui-keyboard-protocol-desc = Otomatik, terminal destekliyorsa kitty klavye protokolünü kullanır (Windows'ta hiçbir zaman); böylece Ctrl+Shift+harf gibi kısayollar tam olarak iletilir. Kitty her zaman ister, Klasik hiçbir zaman istemez.
+settings-tui-legacy = Klasik
 settings-deny = Reddet
 
 ## Preview & search page

@@ -41,6 +41,8 @@ settings-section-jobs = File operations
 settings-section-jobs-desc = Copy / move engine, verification, sync schedules and previous versions.
 settings-section-terminal = Terminal
 settings-section-terminal-desc = The integrated terminal panel.
+settings-section-terminal-ui = Terminal UI
+settings-section-terminal-ui-desc = The text-mode interface that runs inside a terminal (soyuz --tui).
 settings-section-preview = Preview & search
 settings-section-preview-desc = Preview limits, search defaults and git integration.
 settings-section-editor = Editor
@@ -408,6 +410,12 @@ settings-terminal-security = Security
 settings-terminal-osc52 = Programs setting the clipboard
 settings-terminal-osc52-desc = OSC 52 lets terminal output replace your clipboard, e.g. with a command for you to paste. Reading the clipboard is always blocked.
 settings-allow = Allow
+settings-tui-input = Mouse and keyboard
+settings-tui-mouse = Mouse
+settings-tui-mouse-desc = Click to select and use the wheel to scroll. Turn it off to keep the terminal's own text selection working.
+settings-tui-keyboard-protocol = Keyboard protocol
+settings-tui-keyboard-protocol-desc = Auto uses the kitty keyboard protocol where the terminal supports it (never on Windows), so shortcuts like Ctrl+Shift+letter arrive exactly. Kitty always asks for it; Legacy never does.
+settings-tui-legacy = Legacy
 settings-deny = Deny
 
 ## Preview & search page

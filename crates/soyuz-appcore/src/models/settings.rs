@@ -19,6 +19,8 @@ pub enum Section {
     Behaviour,
     Jobs,
     Terminal,
+    /// `[tui]`: the terminal UI (`soyuz --tui`), not the embedded terminal panel.
+    TerminalUi,
     Preview,
     Editor,
     Keyboard,
@@ -32,7 +34,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub const ALL: [Section; 17] = [
+    pub const ALL: [Section; 18] = [
         Section::General,
         Section::Appearance,
         Section::Fonts,
@@ -40,6 +42,7 @@ impl Section {
         Section::Behaviour,
         Section::Jobs,
         Section::Terminal,
+        Section::TerminalUi,
         Section::Preview,
         Section::Editor,
         Section::Keyboard,
@@ -63,6 +66,7 @@ impl Section {
             Section::Behaviour => "behaviour",
             Section::Jobs => "jobs",
             Section::Terminal => "terminal",
+            Section::TerminalUi => "terminal-ui",
             Section::Preview => "preview",
             Section::Editor => "editor",
             Section::Keyboard => "keyboard",
@@ -129,6 +133,7 @@ impl Section {
                 c.sync = d.sync;
             }
             Section::Terminal => c.terminal = d.terminal,
+            Section::TerminalUi => c.tui = d.tui,
             Section::Preview => {
                 c.preview = d.preview;
                 c.git = d.git;
