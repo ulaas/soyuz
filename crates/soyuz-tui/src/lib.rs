@@ -5,5 +5,7 @@
 //! minimal pane view. Browsing parity follows in T2.
 #![deny(unsafe_code)]
 
+pub mod host;
 pub mod keys;
 pub mod overlay;
+pub mod term;
