@@ -130,6 +130,15 @@ their usual editing keys.
 | Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit Soyuz |
 | Quick Look | <kbd>Space</kbd> *(file list)* | Preview the item in a popup |
 | Open context menu | <kbd>Shift</kbd>+<kbd>F10</kbd> | Show the menu of the focused item, like a right click (terminal UI) |
+| Editor: Save | <kbd>Ctrl</kbd>+<kbd>S</kbd> *(editor)* | Save the document in the editor |
+| Editor: Find | <kbd>Ctrl</kbd>+<kbd>F</kbd> *(editor)* | Find text in the document |
+| Editor: Replace | <kbd>Ctrl</kbd>+<kbd>H</kbd> *(editor)* | Find and replace text in the document |
+| Editor: Go to line | <kbd>Ctrl</kbd>+<kbd>G</kbd> *(editor)* | Jump to a line (text) or an offset (hex) |
+| Editor: Find next | <kbd>F3</kbd> *(editor)* | Select the next match |
+| Editor: Find previous | <kbd>Shift</kbd>+<kbd>F3</kbd> *(editor)* | Select the previous match |
+| Editor: Close document | <kbd>Ctrl</kbd>+<kbd>W</kbd> *(editor)* | Close the document (asks to save changes first) |
+| Editor: Next document | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> *(editor)* | Switch to the next editor tab |
+| Editor: Previous document | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> *(editor)* | Switch to the previous editor tab |
 
 ## Commander (F-keys) preset
 

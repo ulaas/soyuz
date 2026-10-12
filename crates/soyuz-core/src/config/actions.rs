@@ -72,7 +72,7 @@ define_actions! {
         Back, Forward, Up, Home, Root, GoTo, FocusAddressBar, EditPath, Refresh, ToggleSidebar,
         FocusSidebar, FocusList, FocusOtherPane, FocusTerminal, NextTab, PrevTab,
         JumpToFolderDialog, OpenRecent, OpenTimeline, TabHistory,
-        ConnectToServer, FocusActivityPanel,
+        ConnectToServer, FocusActivityPanel, FocusEditor,
     ],
     Tabs: [
         NewTab, CloseTab, ReopenClosedTab, DuplicateTab, PinTab, MoveTabLeft, MoveTabRight,
@@ -112,6 +112,11 @@ define_actions! {
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,
         OpenScripts, ReloadScripts, OpenAutomations, ContextMenu,
+        // The built-in editors (`KeyContext::Editor`, see [`Action::is_editor`]).
+        EditorSave, EditorSaveAs, EditorFind, EditorReplace, EditorGoTo, EditorFindNext,
+        EditorFindPrev, EditorCloseDocument, EditorNextDocument, EditorPrevDocument,
+        EditorToggleWrap, EditorMaximize, EditorToggleDock, EditorNoticeAction, EditorMatchCase,
+        EditorWholeWord, EditorRegex, EditorReplaceAll, EditorResizeImage,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,
@@ -186,6 +191,34 @@ impl Action {
             Action::RunScript(_) => "run_script",
             unit => names().by_action.get(unit).map(|(s, _)| s.as_str()).unwrap_or(""),
         }
+    }
+
+    /// A command of the built-in editors: bound in `KeyContext::Editor` and run while an
+    /// editor document has the keyboard (or from the palette, on the active document).
+    pub fn is_editor(&self) -> bool {
+        use Action as A;
+        matches!(
+            self,
+            A::EditorSave
+                | A::EditorSaveAs
+                | A::EditorFind
+                | A::EditorReplace
+                | A::EditorGoTo
+                | A::EditorFindNext
+                | A::EditorFindPrev
+                | A::EditorCloseDocument
+                | A::EditorNextDocument
+                | A::EditorPrevDocument
+                | A::EditorToggleWrap
+                | A::EditorMaximize
+                | A::EditorToggleDock
+                | A::EditorNoticeAction
+                | A::EditorMatchCase
+                | A::EditorWholeWord
+                | A::EditorRegex
+                | A::EditorReplaceAll
+                | A::EditorResizeImage
+        )
     }
 
     pub fn category(&self) -> ActionCategory {

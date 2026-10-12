@@ -104,6 +104,8 @@ pub struct Env<'a> {
     /// The dark theme is shown (syntax colours).
     pub dark: bool,
     pub wake: &'a Wake,
+    /// The editor commands' chords the hints name.
+    pub keys: &'a super::Keys,
 }
 
 /// Columns per tab stop (`[editor] tab_width`).
@@ -263,7 +265,13 @@ pub fn prepare(t: &mut TextDoc, v: &mut DocView, save_as: Option<&mut SaveAs>, a
                 24,
                 focused,
                 Vec::new(),
-                tr!("tui-editor-replace-keys").into(),
+                tr!(
+                    "tui-editor-replace-keys",
+                    all = env.keys.replace_all.as_str(),
+                    case = env.keys.case.as_str(),
+                    word = env.keys.word.as_str(),
+                    regex = env.keys.regex.as_str()
+                ),
                 false,
             ));
         }
@@ -302,9 +310,14 @@ pub fn prepare(t: &mut TextDoc, v: &mut DocView, save_as: Option<&mut SaveAs>, a
             error,
         ));
     }
+    let key = env.keys.notice.as_str();
     vm.notice = match t.notice() {
-        Some(true) => Some((format!("{}  ({})", tr!("editors-text-lossy"), tr!("tui-editor-notice-edit")), true)),
-        Some(false) => Some((format!("{}  ({})", tr!("editors-text-mixed-eol"), tr!("tui-editor-notice-ok")), false)),
+        Some(true) => {
+            Some((format!("{}  ({})", tr!("editors-text-lossy"), tr!("tui-editor-notice-edit", key = key)), true))
+        }
+        Some(false) => {
+            Some((format!("{}  ({})", tr!("editors-text-mixed-eol"), tr!("tui-editor-notice-ok", key = key)), false))
+        }
         None => None,
     };
     let head_rows = vm.bars.len() as u16 + u16::from(vm.notice.is_some());
@@ -644,6 +657,7 @@ pub(crate) mod tests {
         use soyuz_appcore::editors::text::buffer::Sel;
         use soyuz_appcore::editors::text::encoding::decode;
         let wake: Wake = std::sync::Arc::new(|| {});
+        let keys = super::super::Keys::default();
         for wrap in [false, true] {
             let cfg = Editor { wrap, show_whitespace: true, ..Editor::default() };
             let mut t = TextDoc::new("a.rs", decode("fn main() {\n\tlet 日本 = \"👍\";\u{1b}\n}\n".as_bytes()));
@@ -654,7 +668,7 @@ pub(crate) mod tests {
             let mut v = DocView::default();
             for w in 0..=20u16 {
                 for h in 0..=6u16 {
-                    let env = Env { cfg: &cfg, focused: true, dark: true, wake: &wake };
+                    let env = Env { cfg: &cfg, focused: true, dark: true, wake: &wake, keys: &keys };
                     let area = Rect::new(0, 0, w, h);
                     let mut s = SaveAs::default();
                     let m = prepare(&mut t, &mut v, Some(&mut s), area, &env);

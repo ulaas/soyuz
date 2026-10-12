@@ -175,11 +175,14 @@ pub enum KeyContext {
     Rename,
     /// The sidebar has keyboard focus.
     Sidebar,
+    /// A built-in editor document (text, hex, image) has keyboard focus: its commands
+    /// shadow the global chords there ([`Action::is_editor`]).
+    Editor,
 }
 
 impl KeyContext {
     /// Every context, in display order.
-    pub const ALL: [KeyContext; 7] = [
+    pub const ALL: [KeyContext; 8] = [
         KeyContext::Global,
         KeyContext::FileList,
         KeyContext::Sidebar,
@@ -187,6 +190,7 @@ impl KeyContext {
         KeyContext::Dialog,
         KeyContext::Omnibar,
         KeyContext::Rename,
+        KeyContext::Editor,
     ];
 
     /// Human label ("File list").
@@ -199,6 +203,7 @@ impl KeyContext {
             KeyContext::Omnibar => "Text fields",
             KeyContext::Rename => "Rename",
             KeyContext::Sidebar => "Sidebar",
+            KeyContext::Editor => "Editor",
         }
     }
 }
@@ -227,6 +232,12 @@ impl KeyPreset {
             KeyPreset::Vim => "Vim-ish",
         }
     }
+}
+
+/// The context an action without a preset binding is bound in by `[keys.bindings]`:
+/// `Editor` for the editors' commands, `Global` otherwise.
+pub fn home_context(a: &Action) -> KeyContext {
+    if a.is_editor() { KeyContext::Editor } else { KeyContext::Global }
 }
 
 /// A multi-key sequence (`"g g"`, `"Ctrl+K Ctrl+S"`): chords separated by whitespace.
@@ -403,7 +414,7 @@ impl Keymap {
                 .chain(self.sequences.keys())
                 .find(|(_, a)| *a == action)
                 .map(|(c, _)| *c)
-                .unwrap_or(KeyContext::Global);
+                .unwrap_or_else(|| home_context(&action));
             self.bindings.retain(|(_, a), _| *a != action);
             self.sequences.retain(|(_, a), _| *a != action);
             for c in chords {

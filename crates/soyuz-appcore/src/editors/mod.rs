@@ -13,6 +13,7 @@
 //! This module is the toolkit-free model (documents, I/O, commands, key routing);
 //! `ui::editors` draws the panel and the views and feeds them input.
 
+pub mod commands;
 pub mod hex;
 pub mod image;
 pub mod io;
@@ -127,6 +128,9 @@ pub struct Editors {
     /// The user chose to quit without saving.
     quit_allowed: bool,
     prompting_quit: bool,
+    /// A command only the frontend can carry out (`EditorSaveAs`, `EditorResizeImage`:
+    /// the terminal UI's bars), taken by the frontend ([`commands`]).
+    pub request: Option<Action>,
 }
 
 impl Default for Editors {
@@ -152,6 +156,7 @@ impl Editors {
             quit_after_save: false,
             quit_allowed: false,
             prompting_quit: false,
+            request: None,
         }
     }
 
@@ -176,7 +181,7 @@ impl Editors {
 // ---- actions ------------------------------------------------------------------------
 
 pub fn handles(a: &Action) -> bool {
-    matches!(a, Action::OpenInEditor | Action::ToggleEditorPanel)
+    matches!(a, Action::OpenInEditor | Action::ToggleEditorPanel | Action::FocusEditor)
 }
 
 pub fn execute(app: &mut AppCore, a: Action) {
@@ -211,6 +216,7 @@ pub fn execute(app: &mut AppCore, a: Action) {
                 app.ui.focus = Focus::List;
             }
         }
+        Action::FocusEditor => commands::focus(app),
         _ => {}
     }
 }
@@ -543,18 +549,11 @@ pub fn editor_reserved(c: KeyChord) -> bool {
     false
 }
 
-#[derive(Clone, Copy)]
+/// A key the editor takes for itself.
 enum EdKey {
-    Save,
-    Find,
-    Replace,
-    Goto,
-    Next,
-    Prev,
-    Close,
+    /// A command bound in `KeyContext::Editor` ([`commands::binding`]).
+    Command(Action),
     Escape,
-    NextDoc,
-    PrevDoc,
 }
 
 /// What the frontend does after [`handle_keys`].
@@ -566,8 +565,10 @@ pub struct EditorKeys {
     pub actions: Vec<Action>,
 }
 
-/// Keyboard dispatch while the editor has focus: editor shortcuts first, then global
+/// Keyboard dispatch while the editor has focus: the editor's commands first (bound in
+/// `KeyContext::Editor`, [`commands`]; Esc closes a bar or leaves the editor), then global
 /// app bindings that the editor does not reserve. Marks the chords it takes in `frame`.
+/// Editor commands that change the config come back in [`EditorKeys::actions`].
 pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
     let mut ed: Vec<EdKey> = Vec::new();
     let mut out = EditorKeys::default();
@@ -578,20 +579,10 @@ pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
         }
         let InputEvent::Chord(chord) = &frame.events[i] else { continue };
         let chord = *chord;
-        let ctrl = chord.mods.contains(Mods::CTRL) && !chord.mods.contains(Mods::ALT);
-        let shift = chord.mods.contains(Mods::SHIFT);
-        let k = match chord.key {
-            KeyName::S if ctrl && !shift => Some(EdKey::Save),
-            KeyName::F if ctrl && !shift => Some(EdKey::Find),
-            KeyName::H if ctrl && !shift => Some(EdKey::Replace),
-            KeyName::G if ctrl && !shift => Some(EdKey::Goto),
-            KeyName::W if ctrl && !shift => Some(EdKey::Close),
-            KeyName::F3 if chord.mods.is_empty() => Some(EdKey::Next),
-            KeyName::F3 if chord.mods == Mods::SHIFT => Some(EdKey::Prev),
-            KeyName::Escape if chord.mods.is_empty() => Some(EdKey::Escape),
-            KeyName::PageDown if ctrl && !shift => Some(EdKey::NextDoc),
-            KeyName::PageUp if ctrl && !shift => Some(EdKey::PrevDoc),
-            _ => None,
+        let k = match commands::binding(km, chord) {
+            Some(a) => Some(EdKey::Command(a)),
+            None if chord.key == KeyName::Escape && chord.mods.is_empty() => Some(EdKey::Escape),
+            None => None,
         };
         if let Some(k) = k {
             ed.push(k);
@@ -609,63 +600,16 @@ pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
     let idx = app.editors.active;
     for k in ed {
         match k {
-            EdKey::Save => save(app, idx),
-            EdKey::Close => close(app, idx, false),
-            EdKey::NextDoc | EdKey::PrevDoc => {
-                let n = app.editors.docs.len();
-                if n > 0 {
-                    let step = if matches!(k, EdKey::NextDoc) { 1 } else { n - 1 };
-                    app.editors.active = (app.editors.active + step) % n;
-                    if let Some(d) = app.editors.active_doc_mut() {
-                        d.request_focus();
-                    }
-                }
-            }
-            other => {
-                let Some(d) = app.editors.docs.get_mut(idx) else { continue };
-                let handled = match (&mut d.kind, other) {
-                    (DocKind::Text(t), EdKey::Find) => {
-                        t.open_find(false);
-                        true
-                    }
-                    (DocKind::Text(t), EdKey::Replace) => {
-                        t.open_find(true);
-                        true
-                    }
-                    (DocKind::Text(t), EdKey::Goto) => {
-                        t.open_goto();
-                        true
-                    }
-                    (DocKind::Text(t), EdKey::Next) => {
-                        t.find_step(true);
-                        true
-                    }
-                    (DocKind::Text(t), EdKey::Prev) => {
-                        t.find_step(false);
-                        true
-                    }
-                    (DocKind::Text(t), EdKey::Escape) => t.close_bars(),
-                    (DocKind::Hex(h), EdKey::Find) => {
-                        h.open_find();
-                        true
-                    }
-                    (DocKind::Hex(h), EdKey::Goto) => {
-                        h.open_goto();
-                        true
-                    }
-                    (DocKind::Hex(h), EdKey::Next) => {
-                        h.find_step(true);
-                        true
-                    }
-                    (DocKind::Hex(h), EdKey::Prev) => {
-                        h.find_step(false);
-                        true
-                    }
-                    (DocKind::Hex(h), EdKey::Escape) => h.close_bars(),
-                    (DocKind::Image(i), EdKey::Escape) => i.close_bars(),
+            EdKey::Command(a) if commands::needs_host(&a) => out.actions.push(a),
+            EdKey::Command(a) => commands::run(app, &a),
+            EdKey::Escape => {
+                let handled = match app.editors.docs.get_mut(idx).map(|d| &mut d.kind) {
+                    Some(DocKind::Text(t)) => t.close_bars(),
+                    Some(DocKind::Hex(h)) => h.close_bars(),
+                    Some(DocKind::Image(i)) => i.close_bars(),
                     _ => false,
                 };
-                if !handled && matches!(other, EdKey::Escape) {
+                if !handled {
                     // Esc with nothing to close: back to the file list.
                     app.ui.focus = Focus::List;
                     out.release_focus = true;

@@ -26,7 +26,7 @@ pub use automation::{Automation, AutomationRule, Cli, RuleAction, RuleConflict, 
 pub use fonts::{FontRole, FontRoleKind, Fonts, HintingStrength};
 pub use keys::{
     KeyChord, KeyContext, KeyName, KeyPreset, KeySequence, Keymap, Mods, ParseChordError, SeqMatch, format_sequence,
-    parse_sequence,
+    home_context, parse_sequence,
 };
 pub use mcp::{AiMcp, AiMcpApprovalUi, AiMcpClient, AiMcpServer, AiRisk};
 pub use migrate::{MigrateOutcome, migrate_file};

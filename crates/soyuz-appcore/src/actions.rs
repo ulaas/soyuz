@@ -460,6 +460,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         a if crate::models::tools::handles(&a) => crate::models::tools::execute(app, a, host),
         a if crate::models::archive::handles_edit(app, &a) => crate::models::archive::execute_edit(app, a),
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
+        a if a.is_editor() => crate::editors::commands::execute(app, a, host),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, host),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
@@ -485,6 +486,15 @@ pub fn tui_only(a: &Action) -> bool {
             | Action::PreviewScrollDown
             | Action::PreviewPageUp
             | Action::PreviewPageDown
+            | Action::EditorSaveAs
+            | Action::EditorMaximize
+            | Action::EditorToggleDock
+            | Action::EditorNoticeAction
+            | Action::EditorMatchCase
+            | Action::EditorWholeWord
+            | Action::EditorRegex
+            | Action::EditorReplaceAll
+            | Action::EditorResizeImage
     )
 }
 

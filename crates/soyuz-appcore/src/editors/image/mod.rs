@@ -194,7 +194,7 @@ impl ImageDoc {
         self.ops.push(op);
         self.redo.clear();
         self.crop = None;
-        if matches!(op, ImgOp::RotateCw | ImgOp::RotateCcw | ImgOp::Crop(_)) {
+        if matches!(op, ImgOp::RotateCw | ImgOp::RotateCcw | ImgOp::Crop(_) | ImgOp::Resize { .. }) {
             self.pan = [0.0; 2];
         }
         self.rebuild();

@@ -12,18 +12,21 @@
 //!    keys (characters, Enter, Tab, no Ctrl / Alt except AltGr) arriving in one batch is
 //!    inserted as one paste (one undo step; Enter is a line break, not a command). A
 //!    bracketed paste (`Event::Paste`) is a paste as well.
-//! 2. **Terminal UI chords** first: Ctrl+R replace (the GUI's Ctrl+H is Backspace or
-//!    Ctrl+Backspace in many terminals, so Ctrl+H deletes the word before the caret here,
-//!    like Ctrl+Backspace / Alt+Backspace), Ctrl+Shift+S or Alt+Shift+S save as, Alt+M
-//!    maximize / restore, Alt+Shift+M the other dock side, Alt+Z soft wrap, Alt+E the
-//!    notice's action (edit a lossy file anyway, allow editing a large hex file, OK); in
-//!    the find bar Alt+C / Alt+W / Alt+R toggle case / whole word / regex (Tab: hex /
-//!    text in the hex editor), in the replace bar Enter replaces one and Alt+A all.
-//! 3. **The core's editor keys** (`editors::handle_keys`, as in the GUI): Ctrl+S save,
-//!    Ctrl+F find, Ctrl+G go to, F3 / Shift+F3 next / previous, Ctrl+W close (asks to
-//!    save, `dialogs::unsaved`), Ctrl+PageUp / PageDown switch documents, Esc closes a bar
-//!    or leaves the editor; global bindings the editor does not reserve (Ctrl+Q, the
-//!    palette, F-keys) run as actions.
+//! 2. **Terminal UI keys** first: Ctrl+H (Backspace or Ctrl+Backspace in many terminals)
+//!    and Alt+Backspace delete the word before the caret, like Ctrl+Backspace; Esc closes
+//!    the terminal UI's own bars (save as, resize) and then answers the external-change
+//!    banner with "Keep my version"; Tab switches the hex find bar between bytes and text.
+//! 3. **The editor commands** (`editors::handle_keys`, as in the GUI): every chord bound
+//!    in `KeyContext::Editor` (`[keys.bindings]`; the GUI's defaults plus the terminal
+//!    UI's, `crate::overlay::EDITOR_DEFAULTS`): save (Ctrl+S), save as (Ctrl+Shift+S /
+//!    Alt+Shift+S), find (Ctrl+F), replace (Ctrl+R), go to (Ctrl+G), F3 / Shift+F3 next /
+//!    previous, close (Ctrl+W, asks to save, `dialogs::unsaved`), Ctrl+PageUp / PageDown
+//!    switch documents, Alt+M maximize, Alt+Shift+M the dock side, Alt+Z soft wrap, Alt+E
+//!    the notice's action (reload a changed file, edit a lossy file anyway, allow editing
+//!    a large hex file, OK), Alt+C / Alt+W / Alt+R the find options, Alt+A replace all,
+//!    Alt+S resize an image; Esc closes a bar or leaves the editor. Global bindings the
+//!    editor does not reserve (Ctrl+Q, the palette, F-keys, Alt+J the jobs panel, which
+//!    takes the keyboard) run as actions; `FocusEditor` (Alt+E) comes back.
 //! 4. **The focused bar's field** (a [`LineEdit`]) or **the document**: the core's text /
 //!    hex editing (`TextDoc::input`, `HexDoc::input`: typing, Backspace / Delete, Home /
 //!    End, Ctrl+arrows by word, Ctrl+Home / End, Shift selects, Ctrl+A, Ctrl+Z / Ctrl+Y,
@@ -31,13 +34,17 @@
 //!    ([`vertical`]): the terminal measures wide characters in two cells. Copy / cut
 //!    (Ctrl+C / Ctrl+X, Ctrl+Insert / Shift+Delete) go to the host's clipboard (OSC 52 and
 //!    the local clipboard); Ctrl+V / Shift+Insert paste the editor's last copy when the
-//!    terminal did not paste by itself (a terminal paste arrives as text).
+//!    terminal did not paste by itself (a terminal paste arrives as text). Images take
+//!    the core's image keys (`ImageDoc::key`: R / Shift+R rotate, H / V flip, C crop,
+//!    Ctrl+Z / Ctrl+Y); the crop bar (x, y, width, height) and the resize bar (width,
+//!    height: an empty field keeps the aspect ratio, `50%` scales) are fields, Tab / Up /
+//!    Down move between them, Enter applies.
 //!
 //! Mouse ([`click`], [`wheel`]): a tab selects (middle button closes), `×` closes, the
 //! panel buttons dock / maximize / hide; in the text a press places the caret (Shift
 //! extends, a double press selects the word, a triple the line) and dragging selects; in
 //! the hex view a press picks the byte and the column; a bar row focuses its field; the
-//! wheel scrolls.
+//! banner's buttons reload or keep the edits; the wheel scrolls.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -47,6 +54,7 @@ use crossbeam_channel::Receiver;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::Rect;
 use soyuz_appcore::core::{AppCore, Focus};
+use soyuz_appcore::editors::image::ops::{ImgOp, NormRect, SaveMode};
 use soyuz_appcore::editors::io::Want;
 use soyuz_appcore::editors::text::TextDoc;
 use soyuz_appcore::editors::text::buffer::{Pos, Sel};
@@ -55,14 +63,15 @@ use soyuz_appcore::host::Host as _;
 use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::toasts::Toast;
 use soyuz_appcore::tr;
-use soyuz_core::config::{EditorDock, KeyChord, KeyName, Mods};
+use soyuz_core::config::{Action, KeyChord, KeyName, Mods};
 
 use super::InputState;
 use crate::app::App;
 use crate::layout::HitTarget;
+use crate::view::editor::image::{CROP_FIELDS, RESIZE_FIELDS, crop_fields, parse_crop, parse_resize};
 use crate::view::editor::layout::LineLayout;
 use crate::view::editor::text::line_rows;
-use crate::view::editor::{BAR_ROW, BTN_DOCK, BTN_HIDE, BTN_MAXIMIZE, EditorVm};
+use crate::view::editor::{BANNER_KEEP, BANNER_RELOAD, BAR_ROW, BTN_DOCK, BTN_HIDE, BTN_MAXIMIZE, EditorVm};
 use crate::widgets::{EditOutcome, LineEdit};
 
 /// Typing keys in one batch that make a paste burst.
@@ -80,6 +89,10 @@ pub enum Bar {
     Replace,
     Goto,
     SaveAs,
+    /// The image's crop fields ([`DocView::fields`]).
+    Crop,
+    /// The image's resize fields ([`DocView::fields`]).
+    Resize,
 }
 
 /// The text area's size and settings of the last frame.
@@ -110,6 +123,12 @@ pub struct DocView {
     pub replace_edit: LineEdit,
     pub goto_edit: LineEdit,
     pub geom: Geom,
+    /// The crop / resize bar's fields, the one with the keyboard, their cursors and the
+    /// last error.
+    pub fields: Vec<String>,
+    pub field: usize,
+    pub field_edits: Vec<LineEdit>,
+    pub field_error: Option<String>,
 }
 
 /// The "Save as" bar of a document.
@@ -123,6 +142,8 @@ pub struct SaveAs {
     pub busy: bool,
     rx: Option<Receiver<Result<(), String>>>,
     target: Option<PathBuf>,
+    /// How the copy opens (text or image; `None`: text).
+    want: Option<Want>,
 }
 
 /// What the editor keeps between frames.
@@ -311,7 +332,7 @@ fn keys(app: &mut App, evs: &[Event]) {
             frame.events[i] = InputEvent::Chord(KeyChord::new(Mods::CTRL, KeyName::Backspace));
             continue;
         }
-        if local_chord(app, c) {
+        if local_key(app, c) {
             frame.consumed[i] = true;
         }
     }
@@ -325,11 +346,16 @@ fn keys(app: &mut App, evs: &[Event]) {
         app.input.editor.focused = false;
     }
     let had_actions = !out.actions.is_empty();
+    // Moving the keyboard to another panel leaves the editor (the jobs panel opens from a
+    // frontend request, so the core's focus does not change).
+    let leaves = out.actions.iter().any(|a| {
+        matches!(a, Action::FocusActivityPanel | Action::FocusSidebar | Action::FocusList | Action::FocusTerminal)
+    });
     for a in out.actions {
         soyuz_appcore::actions::execute(&mut app.core, a, &app.host);
     }
     let focus_after = (app.core.ui.focus, app.core.ui.address.editing, app.core.palette.open);
-    if had_actions && (focus_after != focus_before || app.core.ui.filter_focus) {
+    if leaves || had_actions && (focus_after != focus_before || app.core.ui.filter_focus) {
         app.input.editor.focused = false;
     }
     if !has_focus(&app.core, &app.input) {
@@ -355,96 +381,55 @@ fn keys(app: &mut App, evs: &[Event]) {
     }
 }
 
-/// The terminal UI's own editor chords; `true` when `c` was one.
-fn local_chord(app: &mut App, c: KeyChord) -> bool {
-    let alt = Mods::ALT;
-    let alt_shift = Mods::ALT | Mods::SHIFT;
-    if is(&c, alt, KeyName::M) {
-        app.core.editors.maximized = !app.core.editors.maximized;
-        return true;
-    }
-    if is(&c, alt_shift, KeyName::M) {
-        toggle_dock(app);
-        return true;
-    }
-    if is(&c, alt, KeyName::Z) {
-        soyuz_appcore::models::settings::update_config(&mut app.core, &app.host, |c| c.editor.wrap = !c.editor.wrap);
-        return true;
-    }
+/// The terminal UI's own editor keys (not commands): Esc on its own bars and on the
+/// external-change banner, Tab in the hex find bar. `true` when `c` was one.
+fn local_key(app: &mut App, c: KeyChord) -> bool {
     let Some(d) = app.core.editors.active_doc_mut() else { return false };
     let id = d.id;
     let bar = app.input.editor.views.get(&id).map(|v| v.bar).unwrap_or_default();
-    if is(&c, Mods::CTRL | Mods::SHIFT, KeyName::S) || is(&c, alt_shift, KeyName::S) {
-        open_save_as(app);
-        return true;
-    }
-    if bar == Bar::SaveAs && is(&c, Mods::empty(), KeyName::Escape) {
-        app.input.editor.save_as = None;
+    let esc = is(&c, Mods::empty(), KeyName::Escape);
+    if esc && matches!(bar, Bar::SaveAs | Bar::Resize) {
+        if bar == Bar::SaveAs {
+            app.input.editor.save_as = None;
+        }
         view(&mut app.input.editor, id).bar = Bar::Text;
         return true;
     }
-    let Some(d) = app.core.editors.active_doc_mut() else { return false };
-    match &mut d.kind {
-        DocKind::Text(t) => {
-            if is(&c, Mods::CTRL, KeyName::R) {
-                t.open_find(true);
-                return true;
-            }
-            if is(&c, alt, KeyName::E) && t.notice().is_some() {
-                t.dismiss_notice();
-                return true;
-            }
-            if matches!(bar, Bar::Find | Bar::Replace) {
-                let q = &mut t.find.query;
-                let toggled = if is(&c, alt, KeyName::C) {
-                    q.case = !q.case;
-                    true
-                } else if is(&c, alt, KeyName::W) {
-                    q.whole_word = !q.whole_word;
-                    true
-                } else if is(&c, alt, KeyName::R) {
-                    q.regex = !q.regex;
-                    true
-                } else if is(&c, alt, KeyName::A) {
-                    let n = t.replace_all();
-                    app.core.ui.toasts.push_replacing(Toast::info(tr!("tui-editor-replaced", count = n)));
-                    return true;
-                } else {
-                    false
-                };
-                if toggled {
-                    t.find_incremental();
-                    return true;
-                }
-            }
+    // Esc with no bar of the core's open: "Keep my version" on the banner.
+    if esc && d.external.is_some() {
+        let bars_open = match &d.kind {
+            DocKind::Text(t) => t.find.open || t.goto.is_some(),
+            DocKind::Hex(h) => h.find.is_some() || h.goto.is_some(),
+            DocKind::Image(i) => i.crop_mode || i.crop.is_some(),
+            _ => false,
+        };
+        if !bars_open {
+            d.external = None;
+            return true;
         }
-        DocKind::Hex(h) => {
-            if is(&c, alt, KeyName::E) && h.too_large_for_text && h.read_only {
-                h.read_only = false;
-                return true;
-            }
-            if bar == Bar::Find && is(&c, Mods::empty(), KeyName::Tab) {
-                h.toggle_find_mode();
-                return true;
-            }
-        }
-        _ => {}
+    }
+    if let DocKind::Hex(h) = &mut d.kind
+        && bar == Bar::Find
+        && is(&c, Mods::empty(), KeyName::Tab)
+    {
+        h.toggle_find_mode();
+        return true;
     }
     false
 }
 
-/// Alt+Shift+M and the dock button: the other side (saved in `[editor] dock`).
+/// The dock button: the other side (saved in `[editor] dock`).
 fn toggle_dock(app: &mut App) {
-    let next = match app.core.config.editor.dock {
-        EditorDock::Right => EditorDock::Bottom,
-        EditorDock::Bottom => EditorDock::Right,
-    };
-    soyuz_appcore::models::settings::update_config(&mut app.core, &app.host, |c| c.editor.dock = next);
+    soyuz_appcore::editors::commands::execute(&mut app.core, Action::EditorToggleDock, &app.host);
 }
 
 /// One event for the focused bar's field.
 fn bar_event(app: &mut App, id: u64, bar: Bar, ev: &InputEvent) {
     let shift_enter = matches!(ev, InputEvent::Chord(c) if is(c, Mods::SHIFT, KeyName::Enter));
+    if matches!(bar, Bar::Crop | Bar::Resize) {
+        field_event(app, id, bar, ev);
+        return;
+    }
     if bar == Bar::SaveAs {
         let Some(s) = app.input.editor.save_as.as_mut() else { return };
         if s.busy {
@@ -495,7 +480,7 @@ fn bar_event(app: &mut App, id: u64, bar: Bar, ev: &InputEvent) {
                     t.submit_goto();
                 }
             }
-            Bar::Text | Bar::SaveAs => {}
+            Bar::Text | Bar::SaveAs | Bar::Crop | Bar::Resize => {}
         },
         DocKind::Hex(h) => match bar {
             Bar::Find => {
@@ -537,6 +522,14 @@ fn doc_event(app: &mut App, id: u64, ev: &InputEvent) {
     let st = &mut app.input.editor;
     let v = st.views.entry(id).or_default();
     let Some(d) = app.core.editors.docs.iter_mut().find(|d| d.id == id) else { return };
+    if let DocKind::Image(i) = &mut d.kind {
+        // The core's image keys (rotate, flip, crop, undo / redo); the terminal fits the
+        // image, so its zoom keys change nothing here.
+        if let InputEvent::Chord(c) = ev {
+            i.key(Some(c.key), key_mods(*c), 1.0, 1.0);
+        }
+        return;
+    }
     let input = match ev {
         InputEvent::Text(t) => EditInput::Text(t.clone()),
         InputEvent::Chord(c) => {
@@ -607,26 +600,125 @@ pub fn vertical(t: &mut TextDoc, v: &mut DocView, delta: isize, extend: bool) {
     t.scroll_to_caret = true;
 }
 
-/// Ctrl+Shift+S: open the "Save as" bar on the active document's path.
-fn open_save_as(app: &mut App) {
-    let Some(d) = app.core.editors.active_doc() else { return };
-    if !matches!(d.kind, DocKind::Text(_)) {
-        app.core.ui.toasts.push(Toast::info(tr!("tui-editor-save-as-text-only")));
-        return;
+/// Take the core's request for a terminal UI bar (`EditorSaveAs`, `EditorResizeImage`:
+/// `editors::commands`); called every frame by `view::editor::prepare`.
+pub fn take_request(core: &mut AppCore, st: &mut State) {
+    match core.editors.request.take() {
+        Some(Action::EditorSaveAs) => open_save_as(core, st),
+        Some(Action::EditorResizeImage) => open_resize(core, st),
+        _ => {}
     }
+}
+
+/// `EditorSaveAs`: open the "Save as" bar on the active document's path.
+fn open_save_as(core: &mut AppCore, st: &mut State) {
+    let Some(d) = core.editors.active_doc() else { return };
+    let want = match d.kind {
+        DocKind::Text(_) => Want::Text,
+        DocKind::Image(_) => Want::Auto,
+        _ => {
+            core.ui.toasts.push(Toast::info(tr!("tui-editor-save-as-text-only")));
+            return;
+        }
+    };
     let id = d.id;
     let text = d.path.display().to_string();
     let edit = LineEdit::at_end(&text);
-    app.input.editor.save_as = Some(SaveAs { doc: id, text, edit, ..SaveAs::default() });
-    view(&mut app.input.editor, id).bar = Bar::SaveAs;
+    st.save_as = Some(SaveAs { doc: id, text, edit, want: Some(want), ..SaveAs::default() });
+    st.focused = true;
+    view(st, id).bar = Bar::SaveAs;
 }
 
-/// Enter in the "Save as" bar: write the text to the new file on a worker thread (never
-/// over an existing file); [`poll`] then opens the copy in place of the document.
+/// `EditorResizeImage`: open the resize bar with the image's size.
+fn open_resize(core: &mut AppCore, st: &mut State) {
+    let Some(d) = core.editors.active_doc_mut() else { return };
+    let DocKind::Image(i) = &mut d.kind else {
+        core.ui.toasts.push(Toast::info(tr!("tui-editor-resize-image-only")));
+        return;
+    };
+    i.command("cancel");
+    let (w, _) = i.size();
+    let v = view(st, d.id);
+    v.fields = vec![w.to_string(), String::new()];
+    v.field = 0;
+    v.field_edits = v.fields.iter().map(|s| LineEdit::at_end(s)).collect();
+    v.field_error = None;
+    v.bar = Bar::Resize;
+    st.focused = true;
+}
+
+/// One event for the crop / resize bar of image document `id`: digits (and `%` for the
+/// resize) edit the focused field, Tab / Up / Down move between the fields, Enter applies.
+fn field_event(app: &mut App, id: u64, bar: Bar, ev: &InputEvent) {
+    let max_mp = app.core.config.editor.max_image_mp.max(1);
+    let st = &mut app.input.editor;
+    let v = st.views.entry(id).or_default();
+    let n = if bar == Bar::Crop { CROP_FIELDS } else { RESIZE_FIELDS };
+    v.fields.resize(n, String::new());
+    v.field_edits.resize_with(n, LineEdit::new);
+    v.field = v.field.min(n - 1);
+    if let InputEvent::Text(t) = ev
+        && !t.chars().all(|c| c.is_ascii_digit() || (bar == Bar::Resize && c == '%'))
+    {
+        return;
+    }
+    let k = v.field;
+    let out = v.field_edits[k].apply(&mut v.fields[k], ev);
+    match out {
+        EditOutcome::Tab | EditOutcome::Down => v.field = (k + 1) % n,
+        EditOutcome::ShiftTab | EditOutcome::Up => v.field = (k + n - 1) % n,
+        EditOutcome::Consumed => v.field_error = None,
+        _ => {}
+    }
+    if out != EditOutcome::Submit {
+        return;
+    }
+    let Some(DocKind::Image(i)) = app.core.editors.docs.iter_mut().find(|d| d.id == id).map(|d| &mut d.kind) else {
+        return;
+    };
+    let size = i.size();
+    if bar == Bar::Crop {
+        let Some((x, y, w, h)) = parse_crop(&v.fields, size) else {
+            v.field_error = Some(tr!("tui-editor-crop-invalid").into());
+            return;
+        };
+        let (iw, ih) = (size.0 as f32, size.1 as f32);
+        let rect = NormRect { x0: x as f32 / iw, y0: y as f32 / ih, x1: (x + w) as f32 / iw, y1: (y + h) as f32 / ih };
+        if (x, y, w, h) != (0, 0, size.0, size.1) {
+            i.push(ImgOp::Crop(rect));
+        }
+        i.command("cancel");
+        v.fields = crop_fields(i.size());
+        v.bar = Bar::Text;
+        return;
+    }
+    let Some((w, h)) = parse_resize(&v.fields, size) else {
+        v.field_error = Some(tr!("tui-editor-resize-invalid").into());
+        return;
+    };
+    if u64::from(w) * u64::from(h) > u64::from(max_mp) * 1_000_000 {
+        v.field_error = Some(tr!("tui-editor-resize-too-large", limit = max_mp.to_string()));
+        return;
+    }
+    if (w, h) != size {
+        i.push(ImgOp::Resize { w, h });
+    }
+    v.bar = Bar::Text;
+}
+
+/// What a "Save as" writes: the text's bytes, or the edited image (encoded on the worker).
+enum CopyJob {
+    Bytes(Vec<u8>),
+    Image { full: std::sync::Arc<image::DynamicImage>, ops: Vec<ImgOp>, mode: SaveMode, quality: u8 },
+}
+
+/// Enter in the "Save as" bar: write the text (or the edited image, in the format of the
+/// new name's extension) to the new file on a worker thread (never over an existing
+/// file); [`poll`] then opens the copy in place of the document.
 fn start_save_as(app: &mut App) {
+    let quality = app.core.config.editor.jpeg_quality;
     let Some(s) = app.input.editor.save_as.as_mut() else { return };
     let Some(d) = app.core.editors.docs.iter().find(|d| d.id == s.doc) else { return };
-    let DocKind::Text(t) = &d.kind else { return };
     let raw = s.text.trim();
     if raw.is_empty() {
         return;
@@ -644,16 +736,37 @@ fn start_save_as(app: &mut App) {
         editors::save(&mut app.core, idx);
         return;
     }
-    let lines = t.buf.lines().iter().map(String::as_str);
-    let bytes = editors::text::encoding::encode_lines(lines, t.encoding, t.eol);
+    let copy = match &d.kind {
+        DocKind::Text(t) => {
+            let lines = t.buf.lines().iter().map(String::as_str);
+            CopyJob::Bytes(editors::text::encoding::encode_lines(lines, t.encoding, t.eol))
+        }
+        DocKind::Image(i) => {
+            let format = image::ImageFormat::from_path(&target).ok();
+            let mode = soyuz_appcore::editors::image::ops::save_mode(format);
+            if mode == SaveMode::Unsupported {
+                s.error = Some(tr!("tui-editor-save-as-format").into());
+                return;
+            }
+            CopyJob::Image { full: i.full.clone(), ops: i.ops.clone(), mode, quality }
+        }
+        _ => return,
+    };
     let (tx, rx) = crossbeam_channel::bounded(1);
     let wake = app.core.wake.clone();
     let path = target.clone();
     let spawned = std::thread::Builder::new().name("soyuz-tui-save-as".into()).spawn(move || {
+        let bytes = match copy {
+            CopyJob::Bytes(b) => Ok(b),
+            CopyJob::Image { full, ops, mode, quality } => {
+                let img = soyuz_appcore::editors::image::ImageDoc::edited(&full, &ops);
+                soyuz_appcore::editors::image::encode(&img, mode, quality)
+            }
+        };
         let r = if std::fs::symlink_metadata(&path).is_ok() {
             Err(tr!("tui-editor-save-as-exists").to_string())
         } else {
-            soyuz_fs::write_atomic(&path, &bytes).map_err(|e| e.to_string())
+            bytes.and_then(|b| soyuz_fs::write_atomic(&path, &b).map_err(|e| e.to_string()))
         };
         let _ = tx.send(r);
         wake();
@@ -681,13 +794,14 @@ pub fn poll(core: &mut AppCore, st: &mut State) {
         Ok(()) => {
             let doc = s.doc;
             let target = s.target.take();
+            let want = s.want.unwrap_or(Want::Text);
             st.save_as = None;
             if let Some(idx) = core.editors.docs.iter().position(|d| d.id == doc) {
                 editors::close(core, idx, true);
             }
             if let Some(p) = target {
                 let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-                editors::open_path(core, &p, Want::Text);
+                editors::open_path(core, &p, want);
                 core.ui.toasts.push_replacing(Toast::success(tr!("editors-saved", name = name)));
             }
         }
@@ -764,9 +878,31 @@ pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
             if button != MouseButton::Left {
                 return;
             }
+            if top == BAR_ROW && matches!(left, BANNER_RELOAD | BANNER_KEEP) {
+                let action = if left == BANNER_RELOAD { Some(Action::EditorNoticeAction) } else { None };
+                let idx = app.core.editors.active;
+                match action {
+                    Some(a) => soyuz_appcore::editors::commands::run(&mut app.core, &a),
+                    None => {
+                        if let Some(d) = app.core.editors.docs.get_mut(idx) {
+                            d.external = None;
+                        }
+                    }
+                }
+                return;
+            }
             let Some(d) = app.core.editors.active_doc_mut().filter(|d| d.id == doc) else { return };
             app.input.editor.focused = true;
+            app.input.jobs.focused = false;
+            app.input.preview.focused = false;
             let v = app.input.editor.views.entry(doc).or_default();
+            if top == BAR_ROW && matches!(v.bar, Bar::Crop | Bar::Resize) {
+                // A field row of the crop / resize bar (they come first).
+                if left < v.fields.len() {
+                    v.field = left;
+                    return;
+                }
+            }
             if top == BAR_ROW {
                 v.bar = match (&d.kind, left) {
                     (DocKind::Text(t), 0) if t.find.open => Bar::Find,
@@ -797,6 +933,7 @@ pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
                         _ => t.press(at, shift),
                     }
                 }
+                DocKind::Image(_) => {}
                 DocKind::Hex(h) => {
                     let digits = crate::view::editor::hex::offset_digits(h.len);
                     if let Some((col, text)) =

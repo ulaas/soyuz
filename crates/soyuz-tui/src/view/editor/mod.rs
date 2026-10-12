@@ -12,16 +12,22 @@
 //!   buttons on the right of the tab row use the sentinels [`BTN_DOCK`], [`BTN_MAXIMIZE`]
 //!   (`EditorTab`) and [`BTN_HIDE`] (`EditorClose`);
 //! - `EditorCell { doc, top, left }`: one per text row (`top` the line, `left` the display
-//!   column of the row's first cell), per hex row (`top` the file row), and per bar row
-//!   (`top == usize::MAX`, `left` the bar's index).
+//!   column of the row's first cell), per hex row (`top` the file row), the image (`top`
+//!   and `left` 0), per bar row (`top == usize::MAX`, `left` the bar's index), and the
+//!   external-change banner's buttons (`top == usize::MAX`, `left` [`BANNER_RELOAD`] /
+//!   [`BANNER_KEEP`]).
 //!
 //! The panel: a tab row (one tab per document: kind mark, name, `●` while unsaved, `×`
-//! to close), then the document: text ([`text`]) or hex ([`hex`]), each with its bars
-//! (find / replace, go to, save as), an optional notice and a status line. Images say
-//! that the image editor is not in the terminal UI yet (wave 2). Cells are laid out with
-//! [`layout`]: wide characters take two cells, tabs expand, controls show as `¤`.
+//! to close), the external-change banner when the file changed on disk under unsaved
+//! edits (Reload with the notice key, Keep my version with Esc, or a click), then the
+//! document: text ([`text`]), hex ([`hex`]) or image ([`image`]), each with its bars
+//! (find / replace, go to, crop, resize, save as), an optional notice and a status line.
+//! Cells are laid out with [`layout`]: wide characters take two cells, tabs expand,
+//! controls show as `¤`. The bars and notices name the editor commands' current chords
+//! ([`Keys`], from the key map: `KeyContext::Editor`).
 
 pub mod hex;
+pub mod image;
 pub mod layout;
 pub mod text;
 
@@ -32,7 +38,7 @@ use ratatui::style::{Modifier, Style};
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::editors::DocKind;
 use soyuz_appcore::tr;
-use soyuz_core::config::EditorDock;
+use soyuz_core::config::{Action, EditorDock, Keymap};
 
 use crate::icons::IconSet;
 use crate::input::InputState;
@@ -49,6 +55,45 @@ pub const BTN_MAXIMIZE: usize = usize::MAX - 2;
 pub const BTN_HIDE: usize = usize::MAX;
 /// `EditorCell::top` of a bar row.
 pub const BAR_ROW: usize = usize::MAX;
+/// `EditorCell::left` (with `top == BAR_ROW`) of the banner's Reload / OK button.
+pub const BANNER_RELOAD: usize = usize::MAX - 1;
+/// `EditorCell::left` (with `top == BAR_ROW`) of the banner's "Keep my version" button.
+pub const BANNER_KEEP: usize = usize::MAX - 2;
+
+/// The chords of the editor commands the bars, notices and hints name (the first chord
+/// of each; `—` when the command has none).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Keys {
+    pub notice: String,
+    pub replace_all: String,
+    pub case: String,
+    pub word: String,
+    pub regex: String,
+    pub resize: String,
+    pub save: String,
+}
+
+impl Keys {
+    pub fn from_keymap(km: &Keymap) -> Keys {
+        let l = |a: Action| soyuz_appcore::keys::chord_label(km, &a).unwrap_or_else(|| "—".into());
+        Keys {
+            notice: l(Action::EditorNoticeAction),
+            replace_all: l(Action::EditorReplaceAll),
+            case: l(Action::EditorMatchCase),
+            word: l(Action::EditorWholeWord),
+            regex: l(Action::EditorRegex),
+            resize: l(Action::EditorResizeImage),
+            save: l(Action::EditorSave),
+        }
+    }
+}
+
+/// The external-change banner: the message and its buttons (label, `EditorCell::left`).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BannerVm {
+    pub text: String,
+    pub buttons: Vec<(String, usize)>,
+}
 
 /// Where the open editor panel goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,6 +136,7 @@ pub enum BodyVm {
     Message(Vec<String>),
     Text(text::TextVm),
     Hex(hex::HexVm),
+    Image(image::ImageVm),
 }
 
 /// One row of a bar (find, replace, go to, save as) above the document.
@@ -128,6 +174,8 @@ pub struct EditorVm {
     pub body: BodyVm,
     /// The empty state's text and hint.
     pub empty: (String, String),
+    /// The file changed on disk under unsaved edits.
+    pub banner: Option<BannerVm>,
 }
 
 /// Where the editor panel goes, `None` while it is closed (`core.editors.open`,
@@ -161,11 +209,49 @@ pub fn split(area: Rect, edge: bool) -> Parts {
     parts
 }
 
+/// The banner's row (when `banner`) and the document's part of `body`.
+pub fn banner_split(body: Rect, banner: bool) -> (Option<Rect>, Rect) {
+    if !banner || body.height == 0 {
+        return (None, body);
+    }
+    (Some(Rect { height: 1, ..body }), Rect { y: body.y + 1, height: body.height - 1, ..body })
+}
+
+/// The external-change banner of a document (`None`: the file did not change).
+fn banner_vm(ext: Option<soyuz_appcore::editors::External>, keys: &Keys) -> Option<BannerVm> {
+    use soyuz_appcore::editors::External;
+    let button = |label: &str, key: &str| format!("[{label} {key}]");
+    Some(match ext? {
+        External::Changed => BannerVm {
+            text: tr!("editors-external-changed").into(),
+            buttons: vec![
+                (button(tr!("editors-external-reload"), &keys.notice), BANNER_RELOAD),
+                (button(tr!("editors-external-keep"), "Esc"), BANNER_KEEP),
+            ],
+        },
+        External::Deleted => BannerVm {
+            text: tr!("editors-external-deleted").into(),
+            buttons: vec![(button(tr!("common-ok"), &keys.notice), BANNER_RELOAD)],
+        },
+    })
+}
+
 /// Step 1 of a frame (`view::prepare`): focus requests, scrolling, highlighting, the
 /// hex pages, a finished "Save as", and the frame's [`EditorVm`].
 pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     crate::input::editor::poll(core, &mut input.editor);
-    let st = &mut input.editor;
+    crate::input::editor::take_request(core, &mut input.editor);
+    let was_focused = input.editor.focused;
+    prepare_editor(core, &mut input.editor, regions);
+    if input.editor.focused && !was_focused {
+        // The editor took the keyboard (Alt+E, a new document): the panels that had it let
+        // go, so Esc in the editor goes back to the file list.
+        input.jobs.focused = false;
+        input.preview.focused = false;
+    }
+}
+
+fn prepare_editor(core: &mut AppCore, st: &mut crate::input::editor::State, regions: &Regions) {
     let Some(pl) = placement(core) else {
         st.vm = EditorVm::default();
         st.focused = false;
@@ -207,7 +293,9 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     let dark = crate::theme::TuiTheme::cached(core, false).is_dark();
     let wake = core.wake.clone();
     let cfg = core.config.editor.clone();
+    let keys = Keys::from_keymap(&core.keymap);
     let mut doc_id = 0;
+    let mut banner = None;
     let body = match core.editors.docs.get_mut(active) {
         None => BodyVm::Empty,
         Some(d) => {
@@ -249,11 +337,20 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
                         v.goto_edit = crate::widgets::LineEdit::new();
                     }
                 }
-                DocKind::Image(i) => i.focus_request = false,
+                DocKind::Image(i) => {
+                    if std::mem::take(&mut i.focus_request) {
+                        st.focused = true;
+                        if !matches!(v.bar, Bar::Crop | Bar::Resize | Bar::SaveAs) {
+                            v.bar = Bar::Text;
+                        }
+                    }
+                }
                 _ => {}
             }
             let save_as = st.save_as.as_mut().filter(|s| s.doc == d.id);
             let focused = st.focused;
+            banner = banner_vm(d.external, &keys);
+            let (_, body) = banner_split(parts.body, banner.is_some());
             match &mut d.kind {
                 DocKind::Loading => BodyVm::Loading,
                 DocKind::Failed(e) => BodyVm::Message(
@@ -262,14 +359,14 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
                         .map(str::to_string)
                         .collect(),
                 ),
-                DocKind::Image(_) => {
-                    BodyVm::Message(vec![tr!("tui-feature-editor").into(), tr!("tui-not-available").into()])
+                DocKind::Image(i) => {
+                    BodyVm::Image(image::prepare(i, v, save_as, body, focused, &keys, cfg.jpeg_quality))
                 }
                 DocKind::Text(t) => {
-                    let env = text::Env { cfg: &cfg, focused, dark, wake: &wake };
-                    BodyVm::Text(text::prepare(t, v, save_as, parts.body, &env))
+                    let env = text::Env { cfg: &cfg, focused, dark, wake: &wake, keys: &keys };
+                    BodyVm::Text(text::prepare(t, v, save_as, body, &env))
                 }
-                DocKind::Hex(h) => BodyVm::Hex(hex::prepare(h, v, save_as, parts.body, focused)),
+                DocKind::Hex(h) => BodyVm::Hex(hex::prepare(h, v, save_as, body, focused, &keys.notice)),
             }
         }
     };
@@ -283,6 +380,7 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         tabs,
         body,
         empty,
+        banner,
     };
 }
 
@@ -333,7 +431,10 @@ pub fn draw_editor(f: &mut Frame<'_>, area: Rect, m: &EditorVm, theme: &TuiTheme
         }
     }
     draw_tabs(buf, parts.tabs, m, theme, hits);
-    let body = parts.body;
+    let (banner_row, body) = banner_split(parts.body, m.banner.is_some());
+    if let (Some(r), Some(b)) = (banner_row, &m.banner) {
+        draw_banner(buf, r, b, m.doc, theme, hits);
+    }
     if body.is_empty() {
         return;
     }
@@ -355,6 +456,27 @@ pub fn draw_editor(f: &mut Frame<'_>, area: Rect, m: &EditorVm, theme: &TuiTheme
         }
         BodyVm::Text(t) => text::draw(f, body, t, m.doc, theme, hits),
         BodyVm::Hex(h) => hex::draw(f, body, h, m.doc, theme, hits),
+        BodyVm::Image(i) => image::draw(f, body, i, m.doc, theme, hits),
+    }
+}
+
+/// The external-change banner: the message, then its buttons on the right.
+fn draw_banner(buf: &mut Buffer, r: Rect, b: &BannerVm, doc: u64, theme: &TuiTheme, hits: &mut Hits) {
+    fill_row(buf, r, r.x, r.y, theme.style(Role::Warning).add_modifier(Modifier::REVERSED));
+    let bw: u16 = b.buttons.iter().map(|(s, _)| fit::width(s) as u16 + 1).sum();
+    let room = r.width.saturating_sub(bw + 1);
+    let text = fit::truncate_end(&b.text, usize::from(room));
+    let style = theme.style(Role::Warning).add_modifier(Modifier::REVERSED);
+    put(buf, r, r.x + 1, r.y, &text, usize::from(room), style);
+    let mut x = r.right().saturating_sub(bw);
+    for (label, left) in &b.buttons {
+        let w = (fit::width(label) as u16).min(r.right().saturating_sub(x));
+        if w == 0 || x < r.x {
+            break;
+        }
+        put(buf, r, x, r.y, label, usize::from(w), theme.style(Role::Button));
+        hits.push(Rect::new(x, r.y, w, 1), HitTarget::EditorCell { doc, top: BAR_ROW, left: *left });
+        x += w + 1;
     }
 }
 
@@ -568,6 +690,20 @@ mod tests {
     }
 
     #[test]
+    fn banner_row_and_buttons() {
+        let mut m = vm();
+        m.banner = Some(BannerVm {
+            text: "This file changed on disk.".into(),
+            buttons: vec![("[Reload Alt+E]".into(), BANNER_RELOAD), ("[Keep Esc]".into(), BANNER_KEEP)],
+        });
+        let (lines, hits) = screen(&m, 60, 6);
+        assert!(lines[1].contains("This file changed on disk.") && lines[1].contains("[Reload Alt+E]"), "{lines:?}");
+        let reload = lines[1].find("[Reload").unwrap() as u16;
+        assert_eq!(hits.at(reload, 1), Some(HitTarget::EditorCell { doc: 1, top: BAR_ROW, left: BANNER_RELOAD }));
+        assert!(lines.iter().any(|l| l.contains("No files open")), "the body moved down: {lines:?}");
+    }
+
+    #[test]
     fn tiny_sizes_never_panic() {
         let mut m = vm();
         let mut t = text::tests::sample_vm();
@@ -584,9 +720,14 @@ mod tests {
             BodyVm::Message(vec!["a".into(), "日本語".into()]),
             BodyVm::Text(t),
             BodyVm::Hex(hex::tests::sample_vm()),
+            BodyVm::Image(image::tests::sample_vm()),
         ];
-        for body in bodies {
+        for (k, body) in bodies.into_iter().enumerate() {
             m.body = body;
+            m.banner = (k % 2 == 1).then(|| BannerVm {
+                text: "This file changed on disk.".into(),
+                buttons: vec![("[Reload Alt+E]".into(), BANNER_RELOAD), ("[Keep Esc]".into(), BANNER_KEEP)],
+            });
             for edge in [false, true] {
                 m.edge = edge;
                 for w in 0..=20 {
