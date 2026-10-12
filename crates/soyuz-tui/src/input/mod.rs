@@ -134,6 +134,7 @@ pub fn route(app: &mut App, events: &[Event]) {
     }
     filter::arm(app);
     mouse::route(app, events);
+    menu::menu_key(app, events);
     match focus(&app.core, &app.input) {
         TuiFocus::Dialog => dialogs::route(app, events),
         TuiFocus::Menu => menu::route(app, events),

@@ -2,3 +2,6 @@
 ### The terminal UI: menus and the clipboard (Phase T3: context menu, OSC 52).
 ### Keys: <area>-<thing>, kebab-case. Keep keys identical in en-US/tui-menu.ftl.
 
+## T3.9: the context menu
+tui-menu-open-with = Birlikte aç…
+tui-menu-tool-windows = Araç pencereleri

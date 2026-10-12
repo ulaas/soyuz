@@ -4,7 +4,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use egui::text::{CCursor, CCursorRange};
 use egui::text_edit::TextEditState;
@@ -12,17 +12,16 @@ use egui::{
     Align2, CornerRadius, DragAndDrop, FontId, Key, Margin, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
 use soyuz_core::Location;
-use soyuz_core::config::{Action, Keymap, TAG_NAME_MAX_CHARS};
+use soyuz_core::config::TAG_NAME_MAX_CHARS;
 
 use super::{ToolCmd, queue};
 use crate::cmd::Cmd;
-use crate::keys::chord_label;
 use crate::services::tags::{self, TAG_COUNT};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dnd::{self, DragPayload};
-use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, submenu, trunc_galley};
+use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, trunc_galley};
 
 /// Display name of a tag: the user's name for it (`[tags] names`), else the translated
 /// color name (the English `TAG_NAMES` stay the slugs / config values).
@@ -107,7 +106,7 @@ fn rename_editor(ui: &mut Ui, rect: egui::Rect, tag: u8) {
 }
 
 /// A menu row with a colored dot instead of an icon; `checked` draws a check mark.
-fn tag_row(ui: &mut Ui, tag: u8, checked: bool, shortcut: Option<&str>) -> egui::Response {
+pub(crate) fn tag_row(ui: &mut Ui, tag: u8, checked: bool, shortcut: Option<&str>) -> egui::Response {
     let p = palette(ui.ctx());
     let resp = menu_item(ui, None, &tag_name(tag), shortcut, true);
     let c = pos2(resp.rect.left() + 17.0, resp.rect.center().y);
@@ -116,113 +115,6 @@ fn tag_row(ui: &mut Ui, tag: u8, checked: bool, shortcut: Option<&str>) -> egui:
         ui.painter().text(c, Align2::CENTER_CENTER, ph::CHECK, icons::font(9.0), egui::Color32::WHITE);
     }
     resp
-}
-
-/// Extra rows for the items context menu (after the archive rows).
-pub fn items_menu(
-    ui: &mut Ui,
-    km: &Keymap,
-    cmds: &mut Vec<Cmd>,
-    pane: PaneId,
-    location: &Location,
-    sel: &[(PathBuf, bool)],
-) {
-    if sel.is_empty() {
-        return;
-    }
-    let paths: Vec<PathBuf> = sel.iter().map(|(p, _)| p.clone()).collect();
-    menu_separator(ui);
-    if matches!(location, Location::Recent) {
-        recent_items_menu(ui, &paths);
-    }
-    let masks: Vec<u8> = paths.iter().map(|p| tags::tags_of(p)).collect();
-    submenu(ui, Some(ph::TAG), tr!("tools-tags-menu"), |ui| {
-        ui.set_width(200.0);
-        for t in 0..TAG_COUNT as u8 {
-            let all = masks.iter().all(|m| m & (1 << t) != 0);
-            let sc = chord_label(km, &Action::AddTag(t + 1));
-            if tag_row(ui, t, all, sc.as_deref()).clicked() {
-                queue(ToolCmd::ToggleTag { paths: paths.clone(), tag: t });
-                ui.close();
-            }
-        }
-        menu_separator(ui);
-        let any = masks.iter().any(|m| *m != 0);
-        if menu_item(ui, Some(ph::X_CIRCLE), tr!("tools-tags-clear"), None, any).clicked() {
-            queue(ToolCmd::ClearTags(paths.clone()));
-            ui.close();
-        }
-    });
-    if menu_item(ui, Some(ph::TRAY_ARROW_DOWN), tr!("tools-menu-add-to-shelf"), None, true).clicked() {
-        queue(ToolCmd::ShelfAdd(paths.clone()));
-        ui.close();
-    }
-    let dirs: Vec<&PathBuf> = sel.iter().filter(|(_, d)| *d).map(|(p, _)| p).collect();
-    let act = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, a: Action| {
-        let sc = chord_label(km, &a);
-        if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, a));
-            ui.close();
-        }
-    };
-    if dirs.len() == 1 && sel.len() == 1 {
-        act(ui, cmds, ph::CHART_PIE_SLICE, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
-    }
-    if !dirs.is_empty() && dirs.len() == sel.len() {
-        act(ui, cmds, ph::FILES, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
-    }
-    if dirs.len() == 2 && sel.len() == 2 {
-        act(ui, cmds, ph::GIT_DIFF, tr!("tools-menu-compare-folders"), Action::CompareFolders);
-    }
-    if let [(p, false)] = sel {
-        if crate::ui::tools::split::is_part(p) {
-            act(ui, cmds, ph::ARROWS_MERGE, tr!("tools-menu-join-parts"), Action::JoinFiles);
-        } else {
-            act(ui, cmds, ph::ARROWS_SPLIT, tr!("tools-menu-split-file"), Action::SplitFile);
-        }
-    }
-}
-
-/// Extra rows for the background context menu of a folder.
-pub fn background_menu(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId, location: &Location, dual: bool) {
-    let act = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, a: Action| {
-        let sc = chord_label(km, &a);
-        if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, a));
-            ui.close();
-        }
-    };
-    match location {
-        Location::Dir(_) => {
-            act(ui, cmds, ph::CHART_PIE_SLICE, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
-            act(ui, cmds, ph::FILES, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
-            act(
-                ui,
-                cmds,
-                ph::GIT_DIFF,
-                if dual { tr!("tools-menu-compare-other-pane") } else { tr!("tools-menu-compare-folders-dialog") },
-                Action::CompareFolders,
-            );
-            menu_separator(ui);
-        }
-        Location::Recent => {
-            if menu_item(ui, Some(ph::BROOM), tr!("tools-menu-clear-recent"), None, true).clicked() {
-                crate::services::recent::clear();
-                cmds.push(Cmd::PaneAction(pane, Action::Refresh));
-                ui.close();
-            }
-            menu_separator(ui);
-        }
-        _ => {}
-    }
-}
-
-/// Rows for items shown in the Recent location.
-pub fn recent_items_menu(ui: &mut Ui, paths: &[PathBuf]) {
-    if menu_item(ui, Some(ph::CLOCK_COUNTER_CLOCKWISE), tr!("tools-menu-remove-from-recent"), None, true).clicked() {
-        queue(ToolCmd::ForgetRecent(paths.to_vec()));
-        ui.close();
-    }
 }
 
 /// The sidebar Tags section: one row per color with its item count. Dropping files on

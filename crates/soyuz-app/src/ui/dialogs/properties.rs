@@ -15,7 +15,6 @@ use std::time::{Duration, Instant, SystemTime};
 
 use egui::{Align, Align2, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use parking_lot::Mutex;
-use soyuz_core::config::Action;
 use soyuz_core::{Control, EntryInfo, EntryKind, OpControl, SizeStyle, format_size};
 use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
 
@@ -46,38 +45,6 @@ fn tab_label(tab: Tab) -> (&'static str, &'static str) {
         Tab::Checksums => (ph::FINGERPRINT, tr!("dialogs-props-tab-checksums")),
         Tab::Details => (ph::LIST_BULLETS, tr!("dialogs-props-tab-details")),
         Tab::Versions => (ph::CLOCK_COUNTER_CLOCKWISE, tr!("dialogs-props-tab-versions")),
-    }
-}
-
-/// Extra rows for the items context menu (batch rename, attributes, checksums).
-pub fn context_items(
-    ui: &mut Ui,
-    km: &soyuz_core::config::Keymap,
-    cmds: &mut Vec<Cmd>,
-    pane: PaneId,
-    multi: bool,
-    single_file: bool,
-) {
-    use crate::ui::widgets::{menu_item, submenu};
-    let item = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, a: Action| {
-        let sc = crate::keys::chord_label(km, &a);
-        if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, a));
-            ui.close();
-        }
-    };
-    if multi {
-        item(ui, cmds, ph::TEXTBOX, tr!("dialogs-menu-batch-rename"), Action::BatchRename);
-    }
-    item(ui, cmds, ph::SLIDERS_HORIZONTAL, tr!("dialogs-menu-attributes"), Action::SetAttributes);
-    if single_file {
-        submenu(ui, Some(ph::FINGERPRINT), tr!("dialogs-menu-checksum"), |ui| {
-            ui.set_min_width(200.0);
-            for a in super::properties_checksum::ALGOS {
-                item(ui, cmds, ph::HASH, a.label(), Action::Checksum(a));
-            }
-            item(ui, cmds, ph::CHECK_CIRCLE, tr!("dialogs-menu-compare"), Action::CompareChecksum);
-        });
     }
 }
 
