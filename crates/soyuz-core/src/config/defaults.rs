@@ -38,6 +38,7 @@ impl Default for Config {
             performance: Performance::default(),
             remote: RemoteSection::default(),
             linux: LinuxSection::default(),
+            tui: TuiSection::default(),
             keys: Keys::default(),
             ai: super::ai::Ai::default(),
             bookmarks: Vec::new(),

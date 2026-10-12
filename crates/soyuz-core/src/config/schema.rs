@@ -53,6 +53,8 @@ pub struct Config {
     pub remote: RemoteSection,
     /// Linux desktop integration (ignored on other systems).
     pub linux: LinuxSection,
+    /// The terminal UI (`soyuz --tui`).
+    pub tui: TuiSection,
     pub keys: Keys,
     pub ai: super::ai::Ai,
     pub bookmarks: Vec<Bookmark>,
@@ -971,6 +973,34 @@ pub struct LinuxSection {
     pub own_file_manager1: bool,
     /// When the built-in clipboard fails, fall back to running `wl-copy` / `xclip`.
     pub clipboard_fallback_tools: bool,
+}
+
+/// `[tui]`: the terminal UI started with `soyuz --tui`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TuiSection {
+    /// Use the mouse (click to select, wheel to scroll). Off leaves the terminal's own
+    /// text selection working.
+    pub mouse: bool,
+    /// How keys are read: `auto` uses the kitty keyboard protocol where the terminal
+    /// supports it (never on Windows), `kitty` always asks for it, `legacy` never does.
+    pub keyboard_protocol: KeyboardProtocol,
+}
+
+impl Default for TuiSection {
+    fn default() -> Self {
+        TuiSection { mouse: true, keyboard_protocol: KeyboardProtocol::Auto }
+    }
+}
+
+/// `[tui] keyboard_protocol`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum KeyboardProtocol {
+    #[default]
+    Auto,
+    Kitty,
+    Legacy,
 }
 
 /// `[linux] window_backend`.

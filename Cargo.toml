@@ -25,6 +25,12 @@ soyuz-mcp = { path = "crates/soyuz-mcp" }
 soyuz-index = { path = "crates/soyuz-index" }
 soyuz-script = { path = "crates/soyuz-script" }
 soyuz-vfs = { path = "crates/soyuz-vfs" }
+soyuz-appcore = { path = "crates/soyuz-appcore", default-features = false }
+soyuz-tui = { path = "crates/soyuz-tui" }
+
+# --- Terminal UI (soyuz-tui) ---
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29.0", features = ["bracketed-paste", "osc52"] }
 
 # --- GUI (pinned exactly) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }
