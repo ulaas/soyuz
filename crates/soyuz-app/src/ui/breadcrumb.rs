@@ -1,8 +1,6 @@
 //! The omnibar: breadcrumb segments with per-segment sibling dropdowns that turns into
 //! an editable path field (click empty space or Ctrl+L) with directory completion.
 
-use std::path::{Path, PathBuf};
-
 use egui::text::{CCursor, CCursorRange};
 use egui::{
     Align2, Color32, CornerRadius, FontId, Frame, Id, Key, Popup, Rect, RectAlign, Sense, Stroke, StrokeKind, TextEdit,
@@ -13,7 +11,7 @@ use soyuz_core::Location;
 use crate::app::AddressState;
 use crate::cmd::Cmd;
 use crate::services::{AuxState, Services};
-use crate::state::crumbs::{Crumb, CrumbKind, completions, crumbs, split_for_completion};
+use crate::state::crumbs::{self, Crumb, CrumbKind};
 use crate::state::pane::PaneId;
 use crate::theme::tokens::{Rail, mix, radius};
 use crate::theme::{icons, icons::ph, palette};
@@ -85,7 +83,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         return;
     }
     let home = soyuz_fs::home();
-    let mut list = crumbs(c.location, Some(&home));
+    let mut list = crumbs::crumbs(c.location, Some(&home));
     if let (Some(first), Some(label)) = (list.first_mut(), c.root_label.as_ref())
         && first.kind == CrumbKind::Root
     {
@@ -269,10 +267,7 @@ fn seg_hover(p: &crate::theme::Palette) -> Color32 {
 }
 
 fn start_edit(c: &mut OmnibarCtx<'_>) {
-    c.address.editing = true;
-    c.address.text = c.location.display();
-    c.address.request_focus = true;
-    c.address.completion = None;
+    crumbs::start_edit(c.address, c.location);
 }
 
 /// Chevron separator that opens a dropdown of the folders inside `parent`.
@@ -364,24 +359,16 @@ fn sep(
     });
 }
 
-/// Path editor with completion.
+/// Path editor with completion (the editing logic is `state::crumbs`, shared with the
+/// terminal UI).
 fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     let p = palette(ui.ctx());
     // Full field height: the text edit centers its row (see the filter in toolbar.rs).
     let inner = field.shrink2(vec2(12.0, 0.0));
     let id = Id::new("soyuz.omnibar.edit");
     // Completion candidates for the typed parent folder.
-    let (dir, prefix) = split_for_completion(&c.address.text).unwrap_or((PathBuf::new(), String::new()));
-    let names: Vec<String> = if dir.as_os_str().is_empty() {
-        Vec::new()
-    } else {
-        match c.services.aux_entries(&dir) {
-            Some(entries) => {
-                completions(entries.iter().filter(|e| e.is_dir_like()).map(|e| e.name.as_str()), &prefix, 8)
-            }
-            None => Vec::new(),
-        }
-    };
+    let comp = crumbs::completion(c.services, &c.address.text);
+    let names = &comp.names;
     // Keyboard handling before the text edit consumes keys.
     let (up, down, tab, esc) = ui.input_mut(|i| {
         (
@@ -392,30 +379,16 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
         )
     });
     if esc {
-        c.address.editing = false;
+        crumbs::cancel(c.address);
         return;
     }
-    if !names.is_empty() {
-        let n = names.len();
-        if down {
-            c.address.completion = Some(c.address.completion.map_or(0, |s| (s + 1) % n));
-        }
-        if up {
-            c.address.completion = Some(c.address.completion.map_or(n - 1, |s| (s + n - 1) % n));
-        }
+    if down {
+        crumbs::cycle(c.address, names.len(), true);
     }
-    let accept = |text: &mut String, name: &str| {
-        let base = text.rfind(['/', '\\']).map_or(String::new(), |i| text[..=i].to_string());
-        let sep = if text.contains('\\') { '\\' } else { std::path::MAIN_SEPARATOR };
-        *text = format!("{base}{name}{sep}");
-    };
-    let mut moved_cursor = false;
-    if tab && let Some(name) = c.address.completion.and_then(|s| names.get(s)).or(names.first()) {
-        let name = name.clone();
-        accept(&mut c.address.text, &name);
-        c.address.completion = None;
-        moved_cursor = true;
+    if up {
+        crumbs::cycle(c.address, names.len(), false);
     }
+    let moved_cursor = tab && crumbs::tab(c.address, names);
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let te = TextEdit::singleline(&mut c.address.text)
         .id(id)
@@ -444,11 +417,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     }
     let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     if enter {
-        if let Some(name) = c.address.completion.and_then(|s| names.get(s)) {
-            let name = name.clone();
-            accept(&mut c.address.text, &name);
-        }
-        submit(c, &dir, &prefix);
+        crumbs::enter(c.address, c.services, c.pane, c.cmds, &comp);
         return;
     }
     if resp.lost_focus() && !tab {
@@ -478,7 +447,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
                             );
                         }
                         if r.clicked() {
-                            accept(&mut c.address.text, name);
+                            crumbs::accept(&mut c.address.text, name);
                             c.address.request_focus = false;
                             resp.request_focus();
                         }
@@ -486,24 +455,4 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
                 });
             });
     }
-}
-
-/// Navigate to the typed path. A path to a file opens its folder and selects it.
-fn submit(c: &mut OmnibarCtx<'_>, dir: &Path, prefix: &str) {
-    c.address.editing = false;
-    let text = c.address.text.trim().to_string();
-    let Some(loc) = Location::parse(&text) else { return };
-    if let Location::Dir(path) = &loc {
-        // Typed a file name inside a folder we already listed → reveal it.
-        let is_file = c
-            .services
-            .aux_entries(dir)
-            .is_some_and(|entries| entries.iter().any(|e| e.name == prefix && !e.is_dir_like() && !prefix.is_empty()));
-        if is_file {
-            c.cmds.push(Cmd::RevealPath(path.clone()));
-            return;
-        }
-    }
-    c.cmds.push(Cmd::FocusPane(c.pane));
-    c.cmds.push(Cmd::Navigate { pane: c.pane, location: loc, select: None });
 }

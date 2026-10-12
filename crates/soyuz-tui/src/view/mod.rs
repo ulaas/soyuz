@@ -102,6 +102,7 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     tabs::draw_pane_chrome(f, regions, &m.tabs, theme, hits);
     toasts::draw_toasts(f, toasts::area(regions), &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
+    crumbs::draw_completions(f, regions.crumbs, regions.area, &m.crumbs, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     if let Some(d) = &m.dialog {
         dialog::draw_dialog(f, regions.area, d, theme, hits);
@@ -173,7 +174,7 @@ mod tests {
         ViewModel {
             tabs: TabsVm::default(),
             panes: vec![pane(0, true)],
-            crumbs: CrumbsVm { path: "/data".into() },
+            crumbs: CrumbsVm::plain("/data"),
             sidebar: SidebarVm::default(),
             status: StatusVm {
                 visible: true,

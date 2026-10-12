@@ -12,13 +12,6 @@ use crate::app::App;
 
 /// Run every reset.
 pub fn reset_all(app: &mut App) {
-    // T2.7: command palette.
-
-    // T2.5: address field.
-    address(app);
-
-    // T2.6: sidebar focus.
-
     // Later phases: settings.
     settings(app);
 
@@ -27,15 +20,6 @@ pub fn reset_all(app: &mut App) {
 
     // Later phases: terminal panel focus.
     terminal_focus(app);
-}
-
-/// T2.5.
-fn address(app: &mut App) {
-    if app.core.ui.address.editing {
-        app.core.ui.address.editing = false;
-        app.core.ui.address.request_focus = false;
-        app.unavailable(tr!("tui-feature-address"));
-    }
 }
 
 fn settings(app: &mut App) {

@@ -45,7 +45,6 @@ tui-failed = Bu klasör listelenemiyor: { $error }
 ## T2.4: tabs, dual and quad panes
 
 ## T2.5: breadcrumbs and the address field
-tui-feature-address = Adres çubuğu
 
 ## T2.6: sidebar
 
