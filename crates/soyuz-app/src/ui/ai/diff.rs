@@ -2,12 +2,9 @@
 //! deleted nodes colour-coded like the folder-compare tool; click a row to reveal and
 //! preview it) and the rename diff table with the changed characters highlighted.
 
-use std::collections::BTreeMap;
-use std::path::{Component, Path, PathBuf};
-
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Stroke, Ui, pos2, vec2};
-use soyuz_ai::tools::{Plan, PlanItem, PlanOp};
+use soyuz_ai::tools::Plan;
 use soyuz_core::{EntryInfo, EntryKind};
 
 use super::PanelAct;
@@ -15,141 +12,19 @@ use crate::theme::Palette;
 use crate::theme::icons::{self, ph};
 use crate::ui::views::icons as file_icons;
 
-/// What happens to one node.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum Change {
-    Added,
-    Moved,
-    Renamed,
-    Deleted,
-    Changed,
-    /// A folder shown only for structure.
-    Context,
-}
+pub use crate::ai::diff::{Change, Node, char_diff, common_root, trees};
+use crate::ai::diff::{changes, name_of};
 
-impl Change {
-    pub fn color(self, p: &Palette) -> Color32 {
-        match self {
-            Change::Added => p.success,
-            Change::Moved => p.accent,
-            Change::Renamed => p.info,
-            Change::Deleted => p.danger,
-            Change::Changed => p.warning,
-            Change::Context => p.text_secondary,
-        }
+/// Colour of a change (the folder-compare tool's colours).
+pub fn change_color(c: Change, p: &Palette) -> Color32 {
+    match c {
+        Change::Added => p.success,
+        Change::Moved => p.accent,
+        Change::Renamed => p.info,
+        Change::Deleted => p.danger,
+        Change::Changed => p.warning,
+        Change::Context => p.text_secondary,
     }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Change::Added => tr!("ai-diff-added"),
-            Change::Moved => tr!("ai-diff-moved"),
-            Change::Renamed => tr!("ai-diff-renamed"),
-            Change::Deleted => tr!("ai-diff-deleted"),
-            Change::Changed => tr!("ai-diff-changed"),
-            Change::Context => "",
-        }
-    }
-}
-
-type Side = Option<(PathBuf, Change)>;
-
-/// `(before, after)` entries of one plan item.
-fn sides(i: &PlanItem) -> (Side, Side) {
-    match i.op {
-        PlanOp::Move => (i.src.clone().map(|s| (s, Change::Moved)), i.dst.clone().map(|d| (d, Change::Moved))),
-        PlanOp::Rename => (i.src.clone().map(|s| (s, Change::Renamed)), i.dst.clone().map(|d| (d, Change::Renamed))),
-        PlanOp::Copy | PlanOp::SyncCopy => (None, i.dst.clone().map(|d| (d, Change::Added))),
-        PlanOp::Create | PlanOp::Mkdir | PlanOp::Extract | PlanOp::Compress | PlanOp::Restore => {
-            (None, i.dst.clone().map(|d| (d, Change::Added)))
-        }
-        PlanOp::Trash | PlanOp::Delete | PlanOp::SyncDelete | PlanOp::EmptyTrash => {
-            (i.src.clone().map(|s| (s, Change::Deleted)), None)
-        }
-        PlanOp::SetMeta | PlanOp::Tag => {
-            (i.src.clone().map(|s| (s, Change::Changed)), i.src.clone().map(|s| (s, Change::Changed)))
-        }
-        PlanOp::Undo | PlanOp::RunCommand => (None, None),
-    }
-}
-
-fn comps(p: &Path) -> Vec<String> {
-    p.components()
-        .filter(|c| !matches!(c, Component::CurDir))
-        .map(|c| c.as_os_str().to_string_lossy().into_owned())
-        .collect()
-}
-
-/// Longest common ancestor folder of `paths`.
-pub fn common_root(paths: &[&Path]) -> PathBuf {
-    let mut it = paths.iter();
-    let Some(first) = it.next() else { return PathBuf::new() };
-    let mut common: Vec<String> = comps(first.parent().unwrap_or(first));
-    for p in it {
-        let c = comps(p.parent().unwrap_or(p));
-        let n = common.iter().zip(&c).take_while(|(a, b)| a.eq_ignore_ascii_case(b)).count();
-        common.truncate(n);
-    }
-    let mut out = PathBuf::new();
-    for c in common {
-        out.push(if c.ends_with(':') { format!("{c}\\") } else { c });
-    }
-    out
-}
-
-/// A tree node (children by name).
-#[derive(Default, Debug)]
-pub struct Node {
-    pub change: Option<Change>,
-    pub path: PathBuf,
-    pub dir: bool,
-    pub children: BTreeMap<String, Node>,
-}
-
-impl Node {
-    fn insert(&mut self, root: &Path, path: &Path, change: Change, dir: bool) {
-        let rel = path.strip_prefix(root).unwrap_or(path);
-        let parts = comps(rel);
-        let mut node = self;
-        let mut cur = root.to_path_buf();
-        let n = parts.len();
-        for (i, part) in parts.into_iter().enumerate() {
-            cur.push(&part);
-            let child = node.children.entry(part).or_insert_with(|| Node {
-                path: cur.clone(),
-                dir: true,
-                ..Default::default()
-            });
-            if i + 1 == n {
-                child.change = Some(change);
-                child.dir = dir || !child.children.is_empty();
-            }
-            node = child;
-        }
-    }
-
-    fn count(&self) -> usize {
-        self.children.values().map(|c| 1 + c.count()).sum()
-    }
-}
-
-/// The before / after trees of a plan, relative to their common root.
-pub fn trees(plan: &Plan) -> (PathBuf, Node, Node) {
-    let all: Vec<&Path> =
-        plan.items.iter().flat_map(|i| i.src.iter().chain(i.dst.iter())).map(PathBuf::as_path).collect();
-    let root = common_root(&all);
-    let mut before = Node::default();
-    let mut after = Node::default();
-    for i in &plan.items {
-        let dir = i.kind == "dir";
-        let (b, a) = sides(i);
-        if let Some((p, c)) = b {
-            before.insert(&root, &p, c, dir);
-        }
-        if let Some((p, c)) = a {
-            after.insert(&root, &p, c, dir);
-        }
-    }
-    (root, before, after)
 }
 
 const ROW: f32 = 21.0;
@@ -163,7 +38,7 @@ fn rows(ui: &mut Ui, p: &Palette, node: &Node, depth: usize, budget: &mut usize,
         *budget -= 1;
         let (r, resp) = ui.allocate_exact_size(vec2(width, ROW), Sense::click());
         let change = child.change.unwrap_or(Change::Context);
-        let color = change.color(p);
+        let color = change_color(change, p);
         if resp.hovered() {
             ui.painter().rect_filled(r, CornerRadius::same(4), p.bg_surface3);
         }
@@ -277,42 +152,17 @@ pub fn tree_diff(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelAct>
 }
 
 fn legend(ui: &mut Ui, p: &Palette, plan: &Plan) {
-    let mut seen: Vec<Change> = plan
-        .items
-        .iter()
-        .flat_map(|i| {
-            let (a, b) = sides(i);
-            a.into_iter().chain(b).map(|(_, c)| c)
-        })
-        .collect();
-    seen.sort();
-    seen.dedup();
+    let seen = changes(plan);
     if seen.len() < 2 {
         return;
     }
     ui.horizontal(|ui| {
         for c in seen {
             let (r, _) = ui.allocate_exact_size(vec2(8.0, 8.0), Sense::hover());
-            ui.painter().circle_filled(r.center(), 3.5, c.color(p));
+            ui.painter().circle_filled(r.center(), 3.5, change_color(c, p));
             ui.label(egui::RichText::new(c.label()).size(10.5).color(p.text_tertiary));
         }
     });
-}
-
-/// `(prefix, changed, suffix)` split of `old` vs `new` by common prefix / suffix (chars).
-pub fn char_diff<'a>(old: &'a str, new: &'a str) -> ((&'a str, &'a str, &'a str), (&'a str, &'a str, &'a str)) {
-    let oc: Vec<(usize, char)> = old.char_indices().collect();
-    let nc: Vec<(usize, char)> = new.char_indices().collect();
-    let pre = oc.iter().zip(&nc).take_while(|(a, b)| a.1 == b.1).count();
-    let max_suf = oc.len().min(nc.len()) - pre;
-    let suf = oc.iter().rev().zip(nc.iter().rev()).take(max_suf).take_while(|(a, b)| a.1 == b.1).count();
-    let cut = |s: &'a str, v: &[(usize, char)], from: usize, to_from_end: usize| -> (&'a str, &'a str, &'a str) {
-        let start = v.get(from).map_or(s.len(), |x| x.0);
-        let end_idx = v.len() - to_from_end;
-        let end = v.get(end_idx).map_or(s.len(), |x| x.0);
-        (&s[..start], &s[start..end], &s[end..])
-    };
-    (cut(old, &oc, pre, suf), cut(new, &nc, pre, suf))
 }
 
 fn diff_job(parts: (&str, &str, &str), base: Color32, hl: Color32, bg: Color32, strike: bool, max_w: f32) -> LayoutJob {
@@ -336,10 +186,6 @@ fn diff_job(parts: (&str, &str, &str), base: Color32, hl: Color32, bg: Color32, 
     job.wrap.max_rows = 1;
     job.wrap.break_anywhere = true;
     job
-}
-
-fn name_of(p: &Option<PathBuf>) -> String {
-    p.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Before / after rename table with the changed characters highlighted.
@@ -413,62 +259,5 @@ pub fn rename_table(ui: &mut Ui, p: &Palette, plan: &Plan, acts: &mut Vec<PanelA
                 .size(11.0)
                 .color(p.text_tertiary),
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn char_diff_finds_the_changed_middle() {
-        assert_eq!(
-            char_diff("IMG_0001.jpg", "2026-06-14 IMG_0001.jpg"),
-            (("", "", "IMG_0001.jpg"), ("", "2026-06-14 ", "IMG_0001.jpg"))
-        );
-        assert_eq!(
-            char_diff("report draft.pdf", "report final.pdf"),
-            (("report ", "draft", ".pdf"), ("report ", "final", ".pdf"))
-        );
-        assert_eq!(char_diff("same", "same"), (("same", "", ""), ("same", "", "")));
-        assert_eq!(char_diff("añb", "aüb"), (("a", "ñ", "b"), ("a", "ü", "b")));
-        assert_eq!(char_diff("aaa", "aa"), (("aa", "a", ""), ("aa", "", "")));
-    }
-
-    #[test]
-    fn trees_from_a_move_plan() {
-        let root = if cfg!(windows) { PathBuf::from("C:\\w") } else { PathBuf::from("/w") };
-        let item = |op, src: Option<&str>, dst: Option<&str>| PlanItem {
-            op,
-            src: src.map(|s| root.join(s)),
-            dst: dst.map(|d| root.join(d)),
-            kind: "file".into(),
-            bytes: 1,
-            entries: 1,
-            conflict: None,
-        };
-        let plan = Plan {
-            tool: "move".into(),
-            summary: String::new(),
-            risk: soyuz_ai::tools::Risk::Write,
-            items: vec![
-                item(PlanOp::Move, Some("a.jpg"), Some("Images/a.jpg")),
-                item(PlanOp::Mkdir, None, Some("Images")),
-                item(PlanOp::Trash, Some("junk.tmp"), None),
-            ],
-            total_bytes: 0,
-            total_entries: 0,
-            conflicts: 0,
-            executable: true,
-            warnings: Vec::new(),
-            action: soyuz_ai::tools::PlanAction::None,
-        };
-        let (r, before, after) = trees(&plan);
-        assert_eq!(r, root);
-        assert_eq!(before.children.len(), 2);
-        assert_eq!(before.children["junk.tmp"].change, Some(Change::Deleted));
-        assert_eq!(after.children["Images"].change, Some(Change::Added));
-        assert_eq!(after.children["Images"].children["a.jpg"].change, Some(Change::Moved));
-        assert!(after.children["Images"].dir);
     }
 }

@@ -9,7 +9,6 @@ use egui::{
     Align, Align2, CornerRadius, DragAndDrop, FontId, Frame, Id, Key, Layout, Margin, Modifiers, Panel, RichText,
     ScrollArea, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2,
 };
-use soyuz_core::Location;
 
 use super::{PanelAct, Tone, button, chip, tokens};
 use crate::ai::agent::Finish;
@@ -443,44 +442,6 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
     composer(ui, app, p, acts);
 }
 
-/// Candidates for an `@query` mention.
-fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathBuf>)> {
-    let q = q.to_lowercase();
-    let pane = app.core.ws.pane();
-    let mut out: Vec<(String, String, Vec<PathBuf>)> = Vec::new();
-    let sel: Vec<PathBuf> = pane.selected_entries().iter().map(|e| e.path.clone()).collect();
-    if !sel.is_empty() && "selection".contains(&q) {
-        out.push((ph::SELECTION_ALL.into(), tr!("ai-mention-selection", count = sel.len()), sel));
-    }
-    if let Location::Dir(d) = &pane.location
-        && ("folder".contains(&q) || "here".contains(&q))
-    {
-        out.push((
-            ph::FOLDER_OPEN.into(),
-            tr!("ai-mention-folder", name = soyuz_core::entry::display_name(d)),
-            vec![d.clone()],
-        ));
-    }
-    for t in &app.core.ws.tabs {
-        if let Location::Dir(d) = &t.active().location {
-            let name = soyuz_core::entry::display_name(d);
-            if (q.is_empty() || name.to_lowercase().contains(&q) || "tab".contains(&q))
-                && !out.iter().any(|(_, _, v)| v.len() == 1 && &v[0] == d)
-            {
-                out.push((ph::BROWSERS.into(), tr!("ai-mention-tab", name = &name), vec![d.clone()]));
-            }
-        }
-    }
-    if !q.is_empty() {
-        for e in pane.entries.iter().filter(|e| e.name.to_lowercase().contains(&q)).take(8) {
-            let icon = if e.is_dir_like() { ph::FOLDER_SIMPLE } else { ph::FILE };
-            out.push((icon.into(), e.name.clone(), vec![e.path.clone()]));
-        }
-    }
-    out.truncate(10);
-    out
-}
-
 fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     let id = Id::new(COMPOSER_ID);
     // Mentions.
@@ -531,18 +492,18 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         }
     }
     if focused && mention {
-        let cands = mention_candidates(app, &last_tok[1..]);
+        let cands = crate::ai::panel::mention_candidates(&app.core, &last_tok[1..]);
         if !cands.is_empty() {
             let mut chosen = None;
             popup_frame(ui, p, |ui| {
-                for (icon, label, paths) in &cands {
-                    if pick_row(ui, p, icon, label, "") {
-                        chosen = Some(paths.clone());
+                for m in &cands {
+                    if pick_row(ui, p, crate::ui::icons::glyph(m.icon), &m.label, "") {
+                        chosen = Some(m.paths.clone());
                     }
                 }
             });
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab)) {
-                chosen = Some(cands[0].2.clone());
+                chosen = Some(cands[0].paths.clone());
             }
             if let Some(paths) = chosen {
                 let cut = app.core.ai.panel.composer.len() - last_tok.len();

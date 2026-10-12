@@ -120,9 +120,5 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
 
 /// Apply a card action to the MCP approvals.
 pub fn apply(app: &mut SoyuzApp, id: u64, act: CardAction) {
-    let mut a = app.core.services.mcp.approvals.lock();
-    match act {
-        CardAction::Decide(d) => a.decide(id, d),
-        CardAction::ApproveKind => a.approve_kind(id),
-    }
+    crate::ai::panel::apply_mcp(&mut app.core, id, act);
 }

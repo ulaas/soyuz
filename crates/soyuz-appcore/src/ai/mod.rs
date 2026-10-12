@@ -21,6 +21,9 @@
 //! * [`vision`] — "Suggest names" inputs: text excerpts and downscaled pictures.
 //! * [`smart_search`] — natural language → editable structured query pills.
 //! * [`state`] — the UI-side state and the per-frame pump.
+//! * [`panel`] — the panel's toolkit-free logic: [`panel::PanelAct`] and [`panel::apply`],
+//!   card actions, plan edits (names and JSON), `@` mentions, the Esc rule.
+//! * [`diff`] — before / after trees of a plan and the rename character diff.
 //!
 //! Models never touch the disk: every change is a `JobSpec` inside a `soyuz_ai` plan
 //! that the user approves; jobs are labelled `AI #<task> · …` so the activity panel tags
@@ -29,11 +32,13 @@
 pub mod agent;
 pub mod audit;
 pub mod context;
+pub mod diff;
 pub mod exec;
 pub mod fake;
 pub mod host;
 pub mod mcp;
 pub mod model;
+pub mod panel;
 pub mod recipe;
 pub mod safety;
 pub mod smart_search;
@@ -46,6 +51,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 
+pub use panel::{CardAction, Mention, PanelAct};
 pub use state::{AiCmd, AiState, apply_cmd, execute_action, handles, pump};
 
 /// Repaint / wake-up callback.

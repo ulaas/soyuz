@@ -11,8 +11,6 @@ pub mod mcp_area;
 pub mod pages;
 pub mod touch;
 
-use std::path::PathBuf;
-
 use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Frame, Layout, Margin, Panel, Rect, Response, Sense, Stroke,
     StrokeKind, Ui, UiBuilder, pos2, vec2,
@@ -20,10 +18,9 @@ use egui::{
 use soyuz_core::Location;
 use soyuz_core::config::{Action, AiAccess};
 
-use crate::ai::agent::Decision;
 use crate::ai::model::{self, Route};
+pub use crate::ai::panel::{self, PanelAct, tokens};
 use crate::ai::state::{self, AiCmd, PanelTab};
-use crate::ai::{TaskId, recipe::Recipe};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::theme::icons::{self, ph};
@@ -31,41 +28,6 @@ use crate::theme::tokens::radius;
 use crate::theme::{Palette, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{icon_toggle, menu_item, menu_separator};
-
-/// Something the user did in the panel (applied after drawing).
-#[derive(Clone, Debug)]
-pub enum PanelAct {
-    Send,
-    Stop,
-    NewChat,
-    Close,
-    Decide(u64, TaskId, Decision),
-    ApproveKind(u64, TaskId, String),
-    ApproveAllPending(TaskId),
-    Undo(TaskId),
-    SaveRecipe(TaskId, String),
-    RunRecipe(Box<Recipe>),
-    DeleteRecipe(PathBuf),
-    Confirm(bool),
-    SetRoute(Route),
-    SetProfile(Option<String>),
-    FolderAccess(PathBuf, Option<AiAccess>),
-    Reveal(PathBuf),
-    Tab(PanelTab),
-    SmartParse,
-    SmartRun,
-    SmartAskModel,
-    ReloadAudit,
-    ReloadRecipes,
-    Prompt(String),
-    OpenSettings,
-    /// A card of an external MCP client.
-    Mcp(u64, cards::CardAction),
-    /// "Undo everything this client did in this session".
-    McpUndoClient(String),
-    /// Hide finished MCP requests.
-    McpClear,
-}
 
 /// Small rounded chip; `strong` uses the accent.
 pub fn chip(ui: &mut Ui, icon: Option<&str>, label: &str, strong: bool) -> Response {
@@ -155,16 +117,6 @@ pub fn button(ui: &mut Ui, icon: Option<&str>, label: &str, tone: Tone, enabled:
     resp
 }
 
-/// `12.4k` style token counts (locale decimal separator).
-pub fn tokens(n: u64) -> String {
-    use soyuz_core::locale::format_decimal;
-    match n {
-        0..=999 => n.to_string(),
-        1000..=999_999 => format!("{}k", format_decimal(n as f64 / 1000.0, 1)),
-        _ => format!("{}M", format_decimal(n as f64 / 1_000_000.0, 2)),
-    }
-}
-
 fn access_icon(a: AiAccess) -> &'static str {
     match a {
         AiAccess::None => ph::LOCK_SIMPLE,
@@ -231,18 +183,17 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
     });
 }
 
-/// Draw the panel (right dock) when open.
 /// Esc stops a running task while the panel is open (after the core's pumps each frame).
 pub fn escape_stops_task(app: &mut SoyuzApp, ctx: &egui::Context) {
-    if app.core.ai.running.is_some()
-        && app.core.ai.panel.open
-        && !app.dialog_open()
+    if panel::escape_stops_task(&app.core)
+        && !app.gui.dialogs.is_open()
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {
         app.core.ai.stop();
     }
 }
 
+/// Draw the panel (right dock) when open.
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     if !app.core.ai.panel.open {
         return;
@@ -489,115 +440,14 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
     });
 }
 
-/// Apply panel actions (after drawing).
+/// Apply panel actions (after drawing): the core applies them; "settings" opens the GUI
+/// settings window right away (the core would queue `FrontendCmd::OpenSettings`).
 pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
+    let host = crate::host::EguiHost::new(ctx);
     for a in acts {
         match a {
-            PanelAct::Send => {
-                let text = std::mem::take(&mut app.core.ai.panel.composer);
-                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text);
-            }
-            PanelAct::Prompt(text) => {
-                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text)
-            }
-            PanelAct::Stop => app.core.ai.stop(),
-            PanelAct::NewChat => app.core.ai.new_chat(),
-            PanelAct::Close => app.core.ai.panel.open = false,
-            PanelAct::Decide(id, task, d) => app.core.ai.decide(id, task, d),
-            PanelAct::ApproveKind(id, task, tool) => {
-                app.core.ai.approve_kinds.insert(tool.clone());
-                app.core.ai.decide(id, task, Decision::Approve);
-                // Other pending cards of the same kind in this task.
-                let pending: Vec<(u64, bool)> = app
-                    .core
-                    .ai
-                    .chat
-                    .iter()
-                    .filter_map(|c| match c {
-                        state::ChatItem::Plan(p)
-                            if p.task == task
-                                && p.tool == tool
-                                && p.id != id
-                                && p.state == state::CardState::Pending =>
-                        {
-                            Some((p.id, p.tainted))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                for (pid, tainted) in pending {
-                    if !tainted {
-                        app.core.ai.decide(pid, task, Decision::ApproveKind);
-                    }
-                }
-            }
-            PanelAct::ApproveAllPending(task) => {
-                let ids: Vec<u64> = app
-                    .core
-                    .ai
-                    .chat
-                    .iter()
-                    .filter_map(|c| match c {
-                        state::ChatItem::Plan(p)
-                            if p.task == task && p.state == state::CardState::Pending && p.plan.executable =>
-                        {
-                            Some(p.id)
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                for id in ids {
-                    app.core.ai.decide(id, task, Decision::Approve);
-                }
-            }
-            PanelAct::Undo(task) => state::undo_task(&mut app.core, task),
-            PanelAct::SaveRecipe(task, name) => state::save_recipe(&mut app.core, task, name),
-            PanelAct::RunRecipe(r) => state::run_recipe(&mut app.core, &r),
-            PanelAct::DeleteRecipe(p) => state::delete_recipe(&mut app.core, p),
-            PanelAct::Confirm(go) => state::confirm_pending(&mut app.core, &crate::host::EguiHost::new(ctx), go),
-            PanelAct::SetRoute(r) => app.core.ai.panel.route = r,
-            PanelAct::SetProfile(p) => app.core.ai.panel.profile_override = p,
-            PanelAct::FolderAccess(path, access) => {
-                state::set_folder_access(&mut app.core, &crate::host::EguiHost::new(ctx), path, access)
-            }
-            PanelAct::Reveal(path) => app.core.cmds.push(Cmd::RevealPath(path)),
-            PanelAct::Tab(t) => {
-                app.core.ai.panel.tab = t;
-                match t {
-                    PanelTab::Recipes => app.core.ai.recipes.loaded = false,
-                    PanelTab::Audit => app.core.ai.audit.loaded = false,
-                    PanelTab::Chat => {}
-                }
-            }
-            PanelAct::SmartParse => {
-                let today = chrono::Local::now().date_naive();
-                let pills = crate::ai::smart_search::parse_nl(&app.core.ai.smart.input, today);
-                app.core.ai.smart.query_text = crate::ai::smart_search::to_text(&pills);
-                app.core.ai.smart.pills = pills;
-                app.core.ai.smart.error = None;
-            }
-            PanelAct::SmartAskModel => {
-                let text = format!(
-                    "Turn this into one `search` tool call for the current folder and run it, then select the best matches: {}",
-                    app.core.ai.smart.input
-                );
-                let shown = tr!("ai-smart-ask-shown", text = app.core.ai.smart.input.trim());
-                state::start_chat_shown(
-                    &mut app.core,
-                    &crate::host::EguiHost::new(ctx),
-                    shown,
-                    text,
-                    Route::Fast,
-                    Vec::new(),
-                );
-            }
-            PanelAct::SmartRun => state::run_smart_search(&mut app.core),
-            PanelAct::ReloadAudit => app.core.ai.audit.loaded = false,
-            PanelAct::ReloadRecipes => app.core.ai.recipes.loaded = false,
             PanelAct::OpenSettings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Ai)),
-            PanelAct::Mcp(id, act) => mcp_area::apply(app, id, act),
-            PanelAct::McpUndoClient(client) => state::undo_mcp_client(&mut app.core, client),
-            PanelAct::McpClear => app.core.services.mcp.approvals.lock().clear_resolved(),
+            a => panel::apply(&mut app.core, &host, vec![a]),
         }
     }
 }

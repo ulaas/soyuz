@@ -8,7 +8,6 @@
 //! a [`CardAction`] the caller routes to the agent or to the MCP bridge.
 
 use egui::{Align2, CornerRadius, FontId, Frame, Margin, RichText, Sense, Stroke, TextEdit, Ui, pos2, vec2};
-use serde_json::{Value, json};
 use soyuz_ai::tools::{Plan, Risk};
 
 use super::{PanelAct, Tone, button};
@@ -39,33 +38,9 @@ pub fn tool_style(tool: &str, p: &Palette) -> (&'static str, egui::Color32) {
     }
 }
 
-/// What the user did on a card.
-#[derive(Clone, Debug, PartialEq)]
-pub enum CardAction {
-    Decide(Decision),
-    /// "Approve all of this kind" (this chat / this MCP client).
-    ApproveKind,
-}
-
 pub use crate::ai::mcp::irreversible;
-
-fn is_rename(tool: &str) -> bool {
-    matches!(tool, "rename" | "batch_rename")
-}
-
-fn totals(plan: &Plan) -> String {
-    let mut parts = vec![tr!("ai-card-items", count = plan.items.len())];
-    if plan.total_bytes > 0 {
-        parts.push(soyuz_core::format_size(plan.total_bytes, soyuz_core::SizeStyle::Binary));
-    }
-    if plan.total_entries > plan.items.len() as u64 {
-        parts.push(tr!("ai-card-entries", count = plan.total_entries));
-    }
-    if plan.conflicts > 0 {
-        parts.push(tr!("ai-card-conflicts", count = plan.conflicts));
-    }
-    parts.join(" \u{00b7} ")
-}
+pub use crate::ai::panel::CardAction;
+use crate::ai::panel::{edit, is_rename, plan_totals as totals};
 
 fn state_badge(ui: &mut Ui, p: &Palette, state: &CardState, rect: egui::Rect) {
     let (icon, label, color) = match state {
@@ -90,42 +65,6 @@ fn state_badge(ui: &mut Ui, p: &Palette, state: &CardState, rect: egui::Rect) {
         ui.painter().text(pos2(r.left() + 10.0, r.center().y), Align2::CENTER_CENTER, icon, icons::font(11.0), color);
     }
     ui.painter().galley(pos2(r.left() + 19.0, r.center().y - g.size().y / 2.0), g, color);
-}
-
-/// Start editing: rename plans get a name table, others a JSON editor.
-fn begin_edit(card: &mut PlanCard) {
-    let names = if is_rename(&card.tool) {
-        card.plan
-            .items
-            .iter()
-            .map(|i| {
-                i.dst.as_ref().and_then(|d| d.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let json = serde_json::to_string_pretty(&card.args).unwrap_or_default();
-    card.edit = Some(PlanEdit { json, names, error: None });
-    card.expanded = true;
-}
-
-/// The edited arguments, or an error to show.
-fn edited_args(card: &PlanCard, e: &PlanEdit) -> Result<Value, String> {
-    if is_rename(&card.tool) && !e.names.is_empty() {
-        let pairs: Vec<Value> = card
-            .plan
-            .items
-            .iter()
-            .zip(&e.names)
-            .filter_map(|(i, n)| i.src.as_ref().map(|s| json!({"path": s, "new_name": n.trim()})))
-            .collect();
-        if pairs.iter().any(|p| p["new_name"].as_str().is_some_and(str::is_empty)) {
-            return Err(tr!("ai-card-names-empty").into());
-        }
-        return Ok(if card.tool == "rename" && pairs.len() == 1 { pairs[0].clone() } else { json!({"pairs": pairs}) });
-    }
-    serde_json::from_str::<Value>(&e.json).map_err(|err| tr!("ai-card-invalid-json", error = err.to_string()))
 }
 
 /// The "External client" strip of MCP cards: badge, client, transport and countdown.
@@ -262,7 +201,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
                     if let Some(edit) = card.edit.clone() {
-                        let res = edited_args(card, &edit);
+                        let res = edit::args(card, &edit);
                         if button(ui, Some(ph::CHECK), tr!("ai-card-use-edit"), Tone::Primary, res.is_ok()).clicked()
                             && let Ok(args) = res
                         {
@@ -271,7 +210,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                         if button(ui, None, tr!("ai-card-cancel-edit"), Tone::Quiet, true).clicked() {
                             card.edit = None;
                         }
-                        if let Err(e) = edited_args(card, &edit) {
+                        if let Err(e) = edit::args(card, &edit) {
                             ui.label(RichText::new(e).size(11.0).color(p.danger));
                         }
                         return;
@@ -283,7 +222,7 @@ pub fn show(ui: &mut Ui, p: &Palette, card: &mut PlanCard, live: bool, acts: &mu
                         action = Some(CardAction::Decide(Decision::Approve));
                     }
                     if button(ui, Some(ph::PENCIL_SIMPLE), tr!("ai-card-edit"), Tone::Normal, true).clicked() {
-                        begin_edit(card);
+                        edit::begin(card);
                     }
                     if button(ui, Some(ph::X), tr!("ai-card-reject"), Tone::Danger, true).clicked() {
                         action = Some(CardAction::Decide(Decision::Reject(String::new())));
