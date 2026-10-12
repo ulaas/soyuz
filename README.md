@@ -183,8 +183,9 @@ sudo apt-get install pkg-config libasound2-dev libxkbcommon-dev libwayland-dev l
 
 ## Architecture
 
-A Cargo workspace of twelve crates with an acyclic dependency graph. Only `soyuz-term` and
-`soyuz-app` depend on egui; everything else is plain Rust and unit-tested in isolation.
+A Cargo workspace of thirteen crates with an acyclic dependency graph. Only `soyuz-app` and
+`soyuz-term` (its optional `egui` widget) depend on egui; everything else is plain Rust and
+unit-tested in isolation.
 
 | Crate | Role |
 |---|---|
@@ -199,7 +200,8 @@ A Cargo workspace of twelve crates with an acyclic dependency graph. Only `soyuz
 | [`soyuz-ai`](crates/soyuz-ai) | AI providers, credential store, tool catalog with risk classes and dry-run plans, audit log. |
 | [`soyuz-mcp`](crates/soyuz-mcp) | MCP server (stdio, named-pipe attach, localhost HTTP) with a client trust model, and an MCP client. |
 | [`soyuz-script`](crates/soyuz-script) | Sandboxed Rhai scripting for actions, menus, columns, previewers and automation rules. |
-| [`soyuz-app`](crates/soyuz-app) | The `soyuz` binary: egui shell, views, dialogs, palette, settings, services and the design system. |
+| [`soyuz-appcore`](crates/soyuz-appcore) | The frontend-agnostic application core: state, models, commands and actions, services, editors' documents, localization. No GUI toolkit (checked by a test). |
+| [`soyuz-app`](crates/soyuz-app) | The `soyuz` binary: the egui frontend over `soyuz-appcore` — shell, views, dialogs, palette, settings and the design system. |
 
 Widgets never mutate state directly: they push commands, one dispatcher applies them, and
 the same action system backs key bindings, menus, toolbar buttons and the palette.

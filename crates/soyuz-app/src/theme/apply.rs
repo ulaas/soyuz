@@ -104,7 +104,7 @@ pub fn tune(s: &mut egui::Style, density: Density, high_contrast: bool) {
 /// Map `[appearance] theme` to a preference (`"system" | "dark" | "light"`; anything
 /// else follows the system).
 pub fn preference_from_config(theme: &str) -> ThemePreference {
-    crate::host::ThemePref::from_config(theme).into()
+    crate::host::to_egui_theme(crate::host::ThemePref::from_config(theme))
 }
 
 /// The complete style for one palette.

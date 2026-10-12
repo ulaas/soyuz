@@ -539,7 +539,7 @@ fn msg_pane(msg: &UiMsg) -> Option<PaneId> {
 pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
     match msg {
         UiMsg::Listing { pane, generation, chunk, done, err } => {
-            chunk.iter().for_each(|e| crate::theme::font_fallback::note(&e.name));
+            chunk.iter().for_each(|e| crate::host::note_text_shown(&e.name));
             if let Some(p) = app.ws.find_pane_mut(pane)
                 && p.generation == generation
             {

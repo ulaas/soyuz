@@ -49,11 +49,11 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
         };
         if !dropped.is_empty() {
             ctx.input_mut(|i| i.raw.dropped_files.clear());
-            crate::models::portal::pin_dropped(&mut app.core, ctx, dropped);
+            crate::models::portal::pin_dropped(&mut app.core, &crate::host::EguiHost::new(ctx), dropped);
         }
     }
     let focused = ctx.input(|i| i.focused);
-    crate::models::portal::pump(&mut app.core, ctx, focused);
+    crate::models::portal::pump(&mut app.core, &crate::host::EguiHost::new(ctx), focused);
 }
 
 /// Inputs for drawing the section.

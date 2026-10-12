@@ -61,7 +61,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
 
     // Keyboard first (before the text field sees the keys).
     let keys = read_keys(ctx, app);
-    palette::apply_keys(&mut app.core, ctx, keys);
+    palette::apply_keys(&mut app.core, &crate::host::EguiHost::new(ctx), keys);
     if !app.core.palette.open {
         return;
     }
@@ -109,7 +109,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let tr = TSTransform::new(pivot.to_vec2() * (1.0 - s) + vec2(0.0, -8.0 * (1.0 - ease)), s);
     ctx.set_transform_layer(LayerId::new(Order::Foreground, id), tr);
     if let Some((exec, mods)) = clicked {
-        palette::run(&mut app.core, ctx, exec, mods);
+        palette::run(&mut app.core, &crate::host::EguiHost::new(ctx), exec, mods);
     } else if resp.backdrop_response.clicked() {
         palette::close(&mut app.core);
     }

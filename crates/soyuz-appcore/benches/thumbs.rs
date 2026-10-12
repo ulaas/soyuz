@@ -1,5 +1,5 @@
 //! Thumbnail pipeline cost: decode + downscale, mirroring `services::thumbs::decode`
-//! (`cargo bench -p soyuz-app --bench thumbs`). Inputs: a 4000×3000 JPEG and a 2048×2048
+//! (`cargo bench -p soyuz-appcore --bench thumbs`). Inputs: a 4000×3000 JPEG and a 2048×2048
 //! PNG generated into a temp folder.
 
 use std::hint::black_box;

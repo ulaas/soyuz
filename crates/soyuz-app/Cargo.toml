@@ -20,17 +20,18 @@ path = "src/main.rs"
 
 [features]
 default = ["zstd", "pdf"]
-# PDF page rendering through pdfium (loaded at runtime from pdfium.dll next to the exe or
-# in the config dir; see docs/USER_GUIDE.md). Without the library the preview falls back
-# to the pure-Rust text-only view.
-pdf = ["dep:pdfium-render"]
+# PDF page rendering through pdfium (`soyuz-appcore`; loaded at runtime from pdfium.dll
+# next to the exe or in the config dir; see docs/USER_GUIDE.md).
+pdf = ["soyuz-appcore/pdf"]
 # Fallback OpenGL renderer (`--renderer glow`).
 glow = ["eframe/glow"]
 # Native zstd (tar.zst writing, zstd zip entries); compiles C. Cross builds without a C
 # cross compiler use `--no-default-features`.
-zstd = ["soyuz-archive/zstd"]
+zstd = ["soyuz-appcore/zstd", "soyuz-archive/zstd"]
 
 [dependencies]
+# Everything frontend-agnostic (state, models, commands, services, i18n); no egui.
+soyuz-appcore = { path = "../soyuz-appcore", default-features = false }
 soyuz-core.workspace = true
 soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
@@ -51,78 +52,31 @@ crossbeam-channel.workspace = true
 parking_lot.workspace = true
 zeroize.workspace = true
 log.workspace = true
-env_logger.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 toml.workspace = true
 image.workspace = true
-base64.workspace = true
-syntect.workspace = true
-nucleo-matcher.workspace = true
-regex.workspace = true
-memchr.workspace = true
 chrono.workspace = true
 blake3.workspace = true
-pdfium-render = { workspace = true, optional = true }
-lopdf.workspace = true
-quick-xml.workspace = true
 skrifa.workspace = true
-ab_glyph.workspace = true
-gltf.workspace = true
-symphonia.workspace = true
-rodio.workspace = true
-similar.workspace = true
 zip.workspace = true
-flate2.workspace = true
-# Update check: GitHub Releases JSON + asset download, rustls/ring only.
-reqwest.workspace = true
-rustls.workspace = true
-tokio.workspace = true
-sha2.workspace = true
-# Localization.
-fluent-bundle.workspace = true
-fluent-langneg.workspace = true
-intl-memoizer.workspace = true
-unic-langid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 # HWND of the eframe window for the DWM / Snap Layouts integration (`ui::native_chrome`).
 raw-window-handle = "0.6.2"
-# Raw clipboard access (CF_HDROP file lists): user32/kernel32 only, no shell APIs.
-windows-sys = { workspace = true, features = [
-    "Win32_Foundation",
-    "Win32_System_DataExchange",
-    "Win32_System_Memory",
-    "Win32_UI_Input_KeyboardAndMouse",
-] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-# Session-bus service `org.freedesktop.FileManager1` (`services::filemanager1`).
-zbus.workspace = true
-# Native file clipboard: X11 selections (pure-Rust connection) and the Wayland
-# `ext-data-control-v1` protocol (`services::os_clipboard_*`).
-x11rb.workspace = true
-wayland-client.workspace = true
-wayland-protocols.workspace = true
-# `user.xdg.tags` (freedesktop tags shared with Dolphin / Baloo, `services::tags`).
-xattr.workspace = true
 # `[linux] window_backend`: `EventLoopBuilderExt{X11,Wayland}` for eframe's event-loop
 # hook. Same version eframe already uses (no new crate in the lockfile).
 winit = { version = "0.30.13", default-features = false }
 # wl_display / wl_surface / X11 window of the eframe window for external drag and drop
-# (`ops::fileops::linux_dnd`).
+# (`ui::dnd::linux_dnd`).
 raw-window-handle = "0.6.2"
 
-[target.'cfg(target_os = "macos")'.dependencies]
-xattr.workspace = true
-
 [dev-dependencies]
+# `docs_sync` (CONFIG.md generation).
+regex.workspace = true
 tempfile.workspace = true
-criterion.workspace = true
-
-[[bench]]
-name = "thumbs"
-harness = false
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz.exe (Windows hosts with rc.exe only; no-op elsewhere).

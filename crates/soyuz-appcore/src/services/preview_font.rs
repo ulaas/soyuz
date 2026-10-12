@@ -332,7 +332,7 @@ mod tests {
 
     /// A font embedded in the app (Cascadia Mono), so the test needs no system files.
     fn system_font() -> Option<Vec<u8>> {
-        let data = include_bytes!("../../assets/fonts/cascadia-mono/CascadiaMono-Regular.ttf").to_vec();
+        let data = include_bytes!("../../../soyuz-app/assets/fonts/cascadia-mono/CascadiaMono-Regular.ttf").to_vec();
         (format_of(&data) == Some("TrueType")).then_some(data)
     }
 

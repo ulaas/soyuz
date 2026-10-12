@@ -87,7 +87,7 @@ pub struct SidebarCtx<'a> {
 
 pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
     let p = palette(root.ctx());
-    devices::start(root.ctx());
+    devices::start(&crate::host::EguiHost::new(root.ctx()));
     if s.refresh_favorites() {
         root.ctx().request_repaint_after(std::time::Duration::from_millis(50));
     }
@@ -153,7 +153,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                 ui.add_space(8.0);
             });
         });
-    crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.sidebar", crate::tr!("app-a11y-resize-sidebar"));
+    crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.sidebar", tr!("app-a11y-resize-sidebar"));
 }
 
 /// The mini icon bar above the sections: Places (sections) | Disk tree (full height).

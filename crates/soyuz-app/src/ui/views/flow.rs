@@ -954,7 +954,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         let hresp = ui.interact(handle, Id::new(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
         crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
             n.set_role(egui::accesskit::Role::Splitter);
-            n.set_label(crate::tr!("views-col-resize", column = columns::header_label(c.column)));
+            n.set_label(tr!("views-col-resize", column = columns::header_label(c.column)));
         });
         if hresp.hovered() || hresp.dragged() {
             ui.ctx().set_cursor_icon(CursorIcon::ResizeColumn);

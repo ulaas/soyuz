@@ -1,10 +1,10 @@
-//! Manual performance probe for large listings (`cargo test -p soyuz-app --test
+//! Manual performance probe for large listings (`cargo test -p soyuz-appcore --test
 //! perf_probe -- --ignored --nocapture`).
 
 use std::time::Instant;
 
-use soyuz_app::state::pane::Pane;
-use soyuz_app::state::view_memory::ViewState;
+use soyuz_appcore::state::pane::Pane;
+use soyuz_appcore::state::view_memory::ViewState;
 use soyuz_core::{EntryInfo, EntryKind, Location};
 
 #[test]

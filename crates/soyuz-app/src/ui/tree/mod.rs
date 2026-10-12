@@ -109,7 +109,7 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
 /// Draw the rows (virtualized: only the visible ones are laid out) and handle input.
 pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
     let ctx = ui.ctx().clone();
-    crate::models::tree::pump(&ctx, a, io, crate::ui::views::computer::volume_label);
+    crate::models::tree::pump(&crate::host::EguiHost::new(&ctx), a, io, crate::ui::views::computer::volume_label);
     let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
     let h = (size::ROW_COMPACT + 2.0).max(ui.spacing().interact_size.y + 2.0);
     if a.keyboard || filter_focused {

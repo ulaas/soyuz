@@ -11,7 +11,6 @@ use eframe::CreationContext;
 use egui::TextEdit;
 use soyuz_core::config::{Config, KeyContext};
 
-use crate::host::Host;
 use crate::keys;
 use crate::theme;
 use crate::ui::dialogs::Dialogs;
@@ -76,7 +75,7 @@ impl SoyuzApp {
         }
         let mut core = AppCore::new(config, startup, crate::host::egui_wake(ctx), crate::ui::gfx::egui_uploader(ctx));
         core.renderer = renderer;
-        ctx.set_theme(core.ui.theme);
+        ctx.set_theme(crate::host::to_egui_theme(core.ui.theme));
         let gui = GuiState {
             dialogs: Dialogs::default(),
             preview: Default::default(),
@@ -119,7 +118,7 @@ impl SoyuzApp {
             let actions =
                 crate::ui::panels::terminal::dispatch_keys(ctx, &self.core.keymap, self.core.config.keys.cmd_is_ctrl);
             for a in actions {
-                actions::execute(&mut self.core, a, ctx);
+                actions::execute(&mut self.core, a, &crate::host::EguiHost::new(ctx));
             }
             return;
         }
@@ -156,18 +155,18 @@ impl SoyuzApp {
             }
             if !had_egui {
                 for d in synth {
-                    actions::execute(&mut self.core, d.action, ctx);
+                    actions::execute(&mut self.core, d.action, &crate::host::EguiHost::new(ctx));
                 }
             }
         }
         let mut frame = crate::ui::input::frame(ctx, self.core.config.keys.cmd_is_ctrl);
-        self.core.input(ctx, &mut frame, kctx, text_focused);
+        self.core.input(&crate::host::EguiHost::new(ctx), &mut frame, kctx, text_focused);
         crate::ui::input::strip(ctx, &frame, self.core.config.keys.cmd_is_ctrl);
     }
 
     /// Apply queued commands (commands may queue more; bounded to avoid loops). The
     /// core's requests for the frontend are carried out after every command.
-    pub fn apply_cmds(&mut self, host: &dyn Host) {
+    pub fn apply_cmds(&mut self, host: &crate::host::EguiHost) {
         for _ in 0..crate::core::CMD_ROUNDS {
             if self.core.cmds.is_empty() {
                 break;
@@ -202,23 +201,24 @@ impl SoyuzApp {
     /// order, with the GUI's own pumps where they always ran.
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        let host = crate::host::EguiHost::new(&ctx);
         crate::ui::native::begin_frame();
         crate::devscript::begin(self);
         crate::devscript::inject(self, &ctx);
         crate::ui::workspaces::windows::begin_main_frame(self, &ctx);
         self.core.begin_frame();
         crate::theme::fonts::begin_frame(&ctx);
-        self.core.pump_services(&ctx);
+        self.core.pump_services(&host);
         crate::ui::tools::begin_frame(self, &ctx);
         crate::ui::portal::begin_frame(self, &ctx);
-        self.core.pump_jobs(&ctx);
+        self.core.pump_jobs(&host);
         crate::ui::dnd::external_drops(self, &ctx);
-        self.core.pump_background(&ctx);
+        self.core.pump_background(&host);
         crate::ui::ai::escape_stops_task(self, &ctx);
-        self.apply_cmds(&ctx);
+        self.apply_cmds(&host);
         self.handle_input(&ctx);
-        self.apply_cmds(&ctx);
-        crate::theme::library::sync(&ctx, &self.core.config, self.core.ui.theme.into());
+        self.apply_cmds(&host);
+        crate::theme::library::sync(&ctx, &self.core.config, crate::host::to_egui_theme(self.core.ui.theme));
         crate::ui::looks::begin_frame(&ctx);
         crate::ui::titlebar::sync(&ctx, self);
         crate::ui::native_chrome::sync_theme(&ctx);
@@ -232,11 +232,11 @@ impl SoyuzApp {
         crate::ui::titlebar::frame(&ctx, self);
         if overlays {
             crate::ui::dnd::end_frame(self, &ctx);
-            ops::fileops::end_frame(&mut self.core, &ctx);
+            ops::fileops::end_frame(&mut self.core, &host);
         }
         crate::devscript::pump(self, &ctx);
-        self.apply_cmds(&ctx);
-        self.core.update_title(&ctx);
+        self.apply_cmds(&host);
+        self.core.update_title(&host);
         crate::ui::a11y::window_name(&ctx, &self.core.ui.title);
         // The other in-process windows, drawn as immediate viewports.
         crate::ui::workspaces::windows::show(self, &ctx);
@@ -246,10 +246,18 @@ impl SoyuzApp {
     }
 }
 
+impl SoyuzApp {
+    /// The close went through: an "Install & restart" now restarts.
+    fn exit(&mut self) {
+        self.core.on_exit();
+        crate::ui::dnd::linux_dnd::shutdown();
+    }
+}
+
 impl eframe::App for SoyuzApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let close_requested = ctx.input(|i| i.viewport().close_requested());
-        self.core.handle_close_request(ctx, close_requested);
+        self.core.handle_close_request(&crate::host::EguiHost::new(ctx), close_requested);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -262,10 +270,15 @@ impl eframe::App for SoyuzApp {
         crate::devscript::raw_input_hook(self, raw_input);
     }
 
+    #[cfg(not(feature = "glow"))]
     fn on_exit(&mut self) {
-        // The close went through: an "Install & restart" now restarts.
-        self.core.on_exit();
-        crate::ui::dnd::linux_dnd::shutdown();
+        self.exit();
+    }
+
+    // eframe's `glow` feature adds the GL context to the signature.
+    #[cfg(feature = "glow")]
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        self.exit();
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {

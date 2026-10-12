@@ -241,7 +241,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     if let Some(c) = run {
         let ctx = ui.ctx().clone();
-        crate::commands::run(&mut app.core, &c, &ctx);
+        crate::commands::run(&mut app.core, &c, &crate::host::EguiHost::new(&ctx));
     }
     if !searching && n == 0 {
         ui.add_space(20.0);

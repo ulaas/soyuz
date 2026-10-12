@@ -3,7 +3,7 @@
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    if let Some(e) = soyuz_app::rename::exif::parse(data) {
+    if let Some(e) = soyuz_appcore::rename::exif::parse(data) {
         let _ = e.fields();
     }
 });

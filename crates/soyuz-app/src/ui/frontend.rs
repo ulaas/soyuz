@@ -1,13 +1,13 @@
 //! Carries out the core's [`FrontendCmd`] requests in the GUI.
 
 use crate::app::SoyuzApp;
-use crate::host::Host;
+use crate::host::EguiHost;
 use crate::models::frontend::FrontendCmd;
 use crate::models::properties::{LinkKind, MetaDialog};
 use crate::ui::dialogs;
 
 /// Apply and clear every queued request.
-pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
     for c in std::mem::take(&mut app.core.frontend) {
         match c {
             FrontendCmd::OpenSettings(section) => crate::ui::settings::open(app, section),
@@ -30,7 +30,7 @@ pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
             FrontendCmd::Smart(p) => crate::ui::smart::prompt(app, p),
             FrontendCmd::Remote(p) => crate::ui::remote::prompt(app, p),
             FrontendCmd::Archive(p) => crate::ui::archive::prompt(app, p),
-            FrontendCmd::ReleaseFocus => crate::ui::panels::terminal::release_focus(crate::host::egui_ctx(host)),
+            FrontendCmd::ReleaseFocus => crate::ui::panels::terminal::release_focus(host.ctx()),
             FrontendCmd::About => app.gui.dialogs.push(dialogs::AboutDialog::new(app.core.renderer)),
             FrontendCmd::Confirm { title, message, confirm, on_confirm } => {
                 app.gui.dialogs.push(dialogs::ConfirmDialog::new(&title, &message, &confirm, on_confirm))
@@ -65,7 +65,7 @@ pub fn drain(app: &mut SoyuzApp, host: &dyn Host) {
                 app.gui.dialogs.push(dialogs::recovery_crash::CrashDialog::new(reports))
             }
             FrontendCmd::RecoveredJobs(recovered) => {
-                app.gui.dialogs.push(dialogs::recovery::RecoveryDialog::new(crate::host::egui_ctx(host), recovered))
+                app.gui.dialogs.push(dialogs::recovery::RecoveryDialog::new(host.ctx(), recovered))
             }
             FrontendCmd::EditorUnsaved(p) => app.gui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
         }

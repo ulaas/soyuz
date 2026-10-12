@@ -309,7 +309,9 @@ impl PropertiesDialog {
             return;
         }
         let path = self.entries[0].path.clone();
-        let bg = self.fresh.get_or_insert_with(|| Bg::spawn(ctx, move || soyuz_fs::stat(&path, false).ok()));
+        let bg = self.fresh.get_or_insert_with(|| {
+            Bg::spawn(&crate::host::EguiHost::new(ctx), move || soyuz_fs::stat(&path, false).ok())
+        });
         let Some(fresh) = bg.with(|v| v.cloned()) else { return };
         self.fresh_merged = true;
         if let Some(f) = fresh {
@@ -336,7 +338,7 @@ impl PropertiesDialog {
                 && crate::ui::views::icons::classify(e) == crate::ui::views::icons::FileClass::Image;
             if thumb && self.thumb.is_none() {
                 let path = e.path.clone();
-                self.thumb = Some(Bg::spawn(ui.ctx(), move || load_thumb(&path)));
+                self.thumb = Some(Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || load_thumb(&path)));
             }
             if self.thumb_tex.is_none()
                 && let Some(img) = self.thumb.as_ref().and_then(|b| b.with(|v| v.cloned().flatten()))
@@ -478,7 +480,7 @@ impl PropertiesDialog {
         {
             let path = e.path.clone();
             let bg = self.link_target.get_or_insert_with(|| {
-                Bg::spawn(ui.ctx(), move || {
+                Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || {
                     soyuz_fs::read_link(&path).ok().map(|t| soyuz_fs::strip_verbatim(&t).display().to_string())
                 })
             });
@@ -558,7 +560,8 @@ impl PropertiesDialog {
             && let Some(e) = self.single()
         {
             let path = e.path.clone();
-            self.security = Some(Bg::spawn(ui.ctx(), move || super::properties_security::load(&path)));
+            self.security =
+                Some(Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || super::properties_security::load(&path)));
         }
         let owner = self.owner.as_mut();
         match &self.security {
@@ -572,7 +575,8 @@ impl PropertiesDialog {
         if self.details.is_none()
             && let Some(e) = self.single().cloned()
         {
-            self.details = Some(Bg::spawn(ui.ctx(), move || super::properties_details::load(&e)));
+            self.details =
+                Some(Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || super::properties_details::load(&e)));
         }
         let Some(bg) = &self.details else { return };
         bg.with(|d| match d {

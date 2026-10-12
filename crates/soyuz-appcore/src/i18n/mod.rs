@@ -1,6 +1,6 @@
 //! Localization: Project Fluent bundles for every UI string.
 //!
-//! * Translations live in `crates/soyuz-app/locales/<lang>/<area>.ftl` and are embedded
+//! * Translations live in `crates/soyuz-appcore/locales/<lang>/<area>.ftl` and are embedded
 //!   at compile time (`include_str!`, see [`FILES`]). en-US is the source language and
 //!   the fallback for any key a translation lacks.
 //! * [`tr!`](crate::tr) is the API used by the UI:

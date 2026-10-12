@@ -9,6 +9,6 @@ fuzz_target!(|data: &[u8]| {
     let Some((&pick, body)) = data.split_first() else { return };
     let ext = EXTS[pick as usize % EXTS.len()];
     let mut cur = std::io::Cursor::new(body);
-    let _ = soyuz_app::services::preview_media::probe(&mut cur, body.len() as u64, ext);
-    let _ = soyuz_app::services::preview_media::id3_text(body);
+    let _ = soyuz_appcore::services::preview_media::probe(&mut cur, body.len() as u64, ext);
+    let _ = soyuz_appcore::services::preview_media::id3_text(body);
 });

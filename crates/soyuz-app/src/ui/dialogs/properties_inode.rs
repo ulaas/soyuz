@@ -78,7 +78,9 @@ impl InodeEdit {
         }
         if self.load.is_none() {
             let paths = self.paths.clone();
-            self.load = Some(Bg::spawn(ctx, move || paths.iter().map(|p| soyuz_fs::attrs::inode_flags(p)).collect()));
+            self.load = Some(Bg::spawn(&crate::host::EguiHost::new(ctx), move || {
+                paths.iter().map(|p| soyuz_fs::attrs::inode_flags(p)).collect()
+            }));
         }
         if !self.rows.is_empty() || self.unavailable.is_some() {
             return;

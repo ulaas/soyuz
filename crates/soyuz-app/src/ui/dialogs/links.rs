@@ -189,7 +189,7 @@ impl LinkDialog {
         if !fresh {
             if self.edited_at.is_none_or(|t| t.elapsed() >= PROBE_DEBOUNCE) {
                 let (t2, d2) = (tp.clone(), self.dir.clone());
-                self.probe = Some((tp, Bg::spawn(ctx, move || probe_target(&t2, &d2))));
+                self.probe = Some((tp, Bg::spawn(&crate::host::EguiHost::new(ctx), move || probe_target(&t2, &d2))));
             } else {
                 ctx.request_repaint_after(PROBE_DEBOUNCE);
             }
@@ -211,7 +211,7 @@ impl LinkDialog {
         let Some(dir) = self.browse.clone() else { return };
         if self.listing.as_ref().is_none_or(|(d, _)| *d != dir) {
             let d2 = dir.clone();
-            let bg = Bg::spawn(ui.ctx(), move || {
+            let bg = Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || {
                 let dot_hidden = crate::services::lister::dot_hidden();
                 let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
                 soyuz_fs::read_dir(&d2, &opts).map_err(|e| e.to_string()).map(|mut v| {

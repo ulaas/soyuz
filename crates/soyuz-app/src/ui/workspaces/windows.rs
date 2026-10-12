@@ -103,15 +103,15 @@ fn builder(app: &SoyuzApp, w: &SecondaryWindow) -> ViewportBuilder {
 /// Draw every secondary window (end of the main frame) and apply window operations.
 pub fn show(app: &mut SoyuzApp, ctx: &egui::Context) {
     let screen = screen(ctx);
-    model::restore_windows(&mut app.core, ctx, &screen);
-    model::apply_ops(&mut app.core, ctx, &screen);
+    model::restore_windows(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
+    model::apply_ops(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
     let ids: Vec<WindowId> = app.core.workspaces.windows.iter().map(|w| w.id).collect();
     for id in ids {
         let Some(k) = model::index(&app.core, id) else { continue };
         let b = builder(app, &app.core.workspaces.windows[k]);
         ctx.show_viewport_immediate(viewport_id(id), b, |ui, _class| run_window(ui, app, id));
     }
-    model::apply_ops(&mut app.core, ctx, &screen);
+    model::apply_ops(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
 }
 
 fn run_window(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
@@ -143,13 +143,13 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
         model::request_close(&mut app.core, id);
     }
     app.handle_input(&ctx);
-    app.apply_cmds(&ctx);
+    app.apply_cmds(&crate::host::EguiHost::new(&ctx));
     crate::ui::shell::show(ui, app);
     if super::overlays_here(&app.core) {
         crate::ui::palette::show(&ctx, app);
         crate::ui::settings::show(&ctx, app);
-        crate::ops::fileops::end_frame(&mut app.core, &ctx);
+        crate::ops::fileops::end_frame(&mut app.core, &crate::host::EguiHost::new(&ctx));
     }
     crate::ui::titlebar::frame(&ctx, app);
-    app.apply_cmds(&ctx);
+    app.apply_cmds(&crate::host::EguiHost::new(&ctx));
 }

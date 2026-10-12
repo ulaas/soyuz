@@ -1,99 +1,26 @@
-//! The frontend seam: what app logic outside `ui/` may ask of the window system.
-//!
-//! The GUI implements [`Host`] on `egui::Context`; headless tests use [`NullHost`]; the
-//! terminal UI (roadmap Phase T) gets its own. The host only has side effects: facts that
-//! change per frame (a close request, text-field focus) travel with the input instead.
+//! The egui frontend's [`Host`]: [`EguiHost`] wraps the `egui::Context` (a newtype because
+//! `Host` lives in `soyuz-appcore`, so the orphan rule forbids `impl Host for
+//! egui::Context`). Re-exports the core seam so `crate::host::…` paths keep working.
 
-use std::any::Any;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Wake-up callback for background threads: asks the frontend for another frame.
-pub type Wake = Arc<dyn Fn() + Send + Sync>;
+pub use soyuz_appcore::host::*;
 
-/// A wake-up that does nothing (tests, and services started before a frontend exists).
-pub fn no_wake() -> Wake {
-    Arc::new(|| {})
-}
+/// The egui context as the core's [`Host`]. Cheap to make: `egui::Context` is an `Arc`.
+#[derive(Clone)]
+pub struct EguiHost(pub egui::Context);
 
-/// Light / dark / follow-the-system, without a toolkit type.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum ThemePref {
-    #[default]
-    System,
-    Dark,
-    Light,
-}
-
-impl ThemePref {
-    /// `[appearance] theme`: `dark`, `light`, anything else (`system`, a theme name)
-    /// follows the system.
-    pub fn from_config(theme: &str) -> ThemePref {
-        match theme.trim().to_ascii_lowercase().as_str() {
-            "dark" => ThemePref::Dark,
-            "light" => ThemePref::Light,
-            _ => ThemePref::System,
-        }
+impl EguiHost {
+    /// Wrap `ctx` (clones the handle).
+    pub fn new(ctx: &egui::Context) -> Self {
+        EguiHost(ctx.clone())
     }
 
-    /// The name stored in the session.
-    pub fn name(self) -> &'static str {
-        match self {
-            ThemePref::Dark => "dark",
-            ThemePref::Light => "light",
-            ThemePref::System => "system",
-        }
+    /// The wrapped context.
+    pub fn ctx(&self) -> &egui::Context {
+        &self.0
     }
-}
-
-/// Which window a [`WindowCmd`] is for.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
-pub enum WindowId {
-    /// The window the current frame belongs to.
-    #[default]
-    Current,
-    /// The main (root) window of the process.
-    Root,
-    /// A window of this process (`MAIN` is the root window).
-    Window(crate::state::workspace_windows::WindowId),
-}
-
-/// A request to the window system.
-#[derive(Clone, Debug, PartialEq)]
-pub enum WindowCmd {
-    Close,
-    /// Veto the close request of this frame.
-    CancelClose,
-    Focus,
-    Minimized(bool),
-    Maximized(bool),
-    Title(String),
-    /// Move the window's outer top-left corner to this screen point.
-    OuterPosition(crate::geom::Point),
-    /// Resize the window's inner area.
-    InnerSize(crate::geom::Vec2),
-}
-
-/// What app logic may ask of the frontend.
-pub trait Host {
-    /// A wake-up callback background threads can keep.
-    fn wake(&self) -> Wake;
-    /// Draw another frame soon.
-    fn redraw(&self);
-    /// Draw another frame after `after`.
-    fn redraw_after(&self, after: Duration);
-    /// Put plain text on the clipboard.
-    fn copy_text(&self, text: String);
-    /// Apply a theme preference.
-    fn set_theme(&self, pref: ThemePref);
-    /// Send a command to a window.
-    fn window(&self, id: WindowId, cmd: WindowCmd);
-    /// The active configuration changed from `old` to `new`: re-apply what the frontend
-    /// derives from it (styles, fonts, scale, input timings).
-    fn config_changed(&self, old: &soyuz_core::config::Config, new: &soyuz_core::config::Config);
-    /// Transitional escape hatch while modules move out of `ui/` (Phase T0): lets a
-    /// GUI-only callee get the toolkit back. Removed when `soyuz-appcore` is extracted.
-    fn as_any(&self) -> &dyn Any;
 }
 
 /// A [`Wake`] that repaints `ctx` (for GUI code that starts background work).
@@ -102,48 +29,39 @@ pub fn egui_wake(ctx: &egui::Context) -> Wake {
     Arc::new(move || c.request_repaint())
 }
 
-/// The egui context behind `host` (only for GUI callees during the T0 migration).
-pub fn egui_ctx(host: &dyn Host) -> &egui::Context {
-    host.as_any().downcast_ref::<egui::Context>().expect("egui frontend")
-}
-
-impl From<ThemePref> for egui::ThemePreference {
-    fn from(p: ThemePref) -> Self {
-        match p {
-            ThemePref::System => egui::ThemePreference::System,
-            ThemePref::Dark => egui::ThemePreference::Dark,
-            ThemePref::Light => egui::ThemePreference::Light,
-        }
+/// [`ThemePref`] → egui's theme preference.
+pub fn to_egui_theme(p: ThemePref) -> egui::ThemePreference {
+    match p {
+        ThemePref::System => egui::ThemePreference::System,
+        ThemePref::Dark => egui::ThemePreference::Dark,
+        ThemePref::Light => egui::ThemePreference::Light,
     }
 }
 
-impl From<egui::ThemePreference> for ThemePref {
-    fn from(p: egui::ThemePreference) -> Self {
-        match p {
-            egui::ThemePreference::System => ThemePref::System,
-            egui::ThemePreference::Dark => ThemePref::Dark,
-            egui::ThemePreference::Light => ThemePref::Light,
-        }
+/// egui's theme preference → [`ThemePref`].
+pub fn from_egui_theme(p: egui::ThemePreference) -> ThemePref {
+    match p {
+        egui::ThemePreference::System => ThemePref::System,
+        egui::ThemePreference::Dark => ThemePref::Dark,
+        egui::ThemePreference::Light => ThemePref::Light,
     }
 }
 
-/// The egui frontend's host is the context itself (transitional: a newtype once the core
-/// moves to its own crate, where this impl would break the orphan rule).
-impl Host for egui::Context {
+impl Host for EguiHost {
     fn wake(&self) -> Wake {
-        egui_wake(self)
+        egui_wake(&self.0)
     }
     fn redraw(&self) {
-        egui::Context::request_repaint(self);
+        self.0.request_repaint();
     }
     fn redraw_after(&self, after: Duration) {
-        egui::Context::request_repaint_after(self, after);
+        self.0.request_repaint_after(after);
     }
     fn copy_text(&self, text: String) {
-        egui::Context::copy_text(self, text);
+        self.0.copy_text(text);
     }
     fn set_theme(&self, pref: ThemePref) {
-        egui::Context::set_theme(self, egui::ThemePreference::from(pref));
+        self.0.set_theme(to_egui_theme(pref));
     }
     fn window(&self, id: WindowId, cmd: WindowCmd) {
         let cmd = match cmd {
@@ -157,51 +75,23 @@ impl Host for egui::Context {
             WindowCmd::InnerSize(s) => egui::ViewportCommand::InnerSize(crate::ui::geom::vec(s)),
         };
         match id {
-            WindowId::Current => self.send_viewport_cmd(cmd),
-            WindowId::Root => self.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
-            WindowId::Window(w) => self.send_viewport_cmd_to(crate::ui::workspaces::windows::viewport_id(w), cmd),
+            WindowId::Current => self.0.send_viewport_cmd(cmd),
+            WindowId::Root => self.0.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
+            WindowId::Window(w) => self.0.send_viewport_cmd_to(crate::ui::workspaces::windows::viewport_id(w), cmd),
         }
     }
     fn config_changed(&self, old: &soyuz_core::config::Config, c: &soyuz_core::config::Config) {
+        let ctx = &self.0;
         if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
-            for w in crate::theme::install(self, &c.appearance, &c.fonts, &c.theme.colors) {
+            for w in crate::theme::install(ctx, &c.appearance, &c.fonts, &c.theme.colors) {
                 log::warn!("{w}");
             }
             let scale = if c.appearance.ui_scale > 0.25 { c.appearance.ui_scale.clamp(0.5, 3.0) } else { 1.0 };
-            if (self.zoom_factor() - scale).abs() > f32::EPSILON {
-                self.set_zoom_factor(scale);
+            if (ctx.zoom_factor() - scale).abs() > f32::EPSILON {
+                ctx.set_zoom_factor(scale);
             }
         }
-        crate::app::apply_live_settings(self, c);
-    }
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-/// A host with no window: wake-ups and commands go nowhere, copied text is kept.
-#[derive(Default)]
-pub struct NullHost {
-    pub copied: std::sync::Mutex<Vec<String>>,
-    pub windows: std::sync::Mutex<Vec<(WindowId, WindowCmd)>>,
-}
-
-impl Host for NullHost {
-    fn wake(&self) -> Wake {
-        no_wake()
-    }
-    fn redraw(&self) {}
-    fn redraw_after(&self, _after: Duration) {}
-    fn copy_text(&self, text: String) {
-        self.copied.lock().unwrap_or_else(|e| e.into_inner()).push(text);
-    }
-    fn set_theme(&self, _pref: ThemePref) {}
-    fn window(&self, id: WindowId, cmd: WindowCmd) {
-        self.windows.lock().unwrap_or_else(|e| e.into_inner()).push((id, cmd));
-    }
-    fn config_changed(&self, _old: &soyuz_core::config::Config, _new: &soyuz_core::config::Config) {}
-    fn as_any(&self) -> &dyn Any {
-        self
+        crate::app::apply_live_settings(ctx, c);
     }
 }
 
@@ -212,17 +102,7 @@ mod tests {
     #[test]
     fn theme_pref_round_trips_through_egui() {
         for p in [ThemePref::System, ThemePref::Dark, ThemePref::Light] {
-            assert_eq!(ThemePref::from(egui::ThemePreference::from(p)), p);
+            assert_eq!(from_egui_theme(to_egui_theme(p)), p);
         }
-    }
-
-    #[test]
-    fn null_host_records_side_effects() {
-        let h = NullHost::default();
-        h.copy_text("a".into());
-        h.window(WindowId::Root, WindowCmd::Focus);
-        (h.wake())();
-        assert_eq!(*h.copied.lock().unwrap(), vec!["a".to_string()]);
-        assert_eq!(*h.windows.lock().unwrap(), vec![(WindowId::Root, WindowCmd::Focus)]);
     }
 }

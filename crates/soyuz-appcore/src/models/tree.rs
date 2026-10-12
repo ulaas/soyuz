@@ -201,7 +201,7 @@ pub fn pump(host: &dyn Host, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, volume_l
             TreeMsg::Listed { dir, result } => match result {
                 Ok(children) => {
                     for c in &children {
-                        crate::theme::font_fallback::note(&c.name);
+                        crate::host::note_text_shown(&c.name);
                     }
                     s.model.set_children(&dir, children);
                     if s.relist.remove(&dir) {

@@ -309,7 +309,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             });
         });
     app.core.ai.panel.width = resp.response.rect.width();
-    crate::ui::a11y::panel_splitter(&ctx, "soyuz.ai", crate::tr!("app-a11y-resize-assistant"));
+    crate::ui::a11y::panel_splitter(&ctx, "soyuz.ai", tr!("app-a11y-resize-assistant"));
     apply(app, &ctx, acts);
 }
 
@@ -522,9 +522,11 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
         match a {
             PanelAct::Send => {
                 let text = std::mem::take(&mut app.core.ai.panel.composer);
-                state::submit_composer_text(&mut app.core, ctx, text);
+                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text);
             }
-            PanelAct::Prompt(text) => state::submit_composer_text(&mut app.core, ctx, text),
+            PanelAct::Prompt(text) => {
+                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text)
+            }
             PanelAct::Stop => app.core.ai.stop(),
             PanelAct::NewChat => app.core.ai.new_chat(),
             PanelAct::Close => app.core.ai.panel.open = false,
@@ -579,10 +581,12 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
             PanelAct::SaveRecipe(task, name) => state::save_recipe(&mut app.core, task, name),
             PanelAct::RunRecipe(r) => state::run_recipe(&mut app.core, &r),
             PanelAct::DeleteRecipe(p) => state::delete_recipe(&mut app.core, p),
-            PanelAct::Confirm(go) => state::confirm_pending(&mut app.core, ctx, go),
+            PanelAct::Confirm(go) => state::confirm_pending(&mut app.core, &crate::host::EguiHost::new(ctx), go),
             PanelAct::SetRoute(r) => app.core.ai.panel.route = r,
             PanelAct::SetProfile(p) => app.core.ai.panel.profile_override = p,
-            PanelAct::FolderAccess(path, access) => state::set_folder_access(&mut app.core, ctx, path, access),
+            PanelAct::FolderAccess(path, access) => {
+                state::set_folder_access(&mut app.core, &crate::host::EguiHost::new(ctx), path, access)
+            }
             PanelAct::Reveal(path) => app.core.cmds.push(Cmd::RevealPath(path)),
             PanelAct::Tab(t) => {
                 app.core.ai.panel.tab = t;
@@ -605,7 +609,14 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
                     app.core.ai.smart.input
                 );
                 let shown = tr!("ai-smart-ask-shown", text = app.core.ai.smart.input.trim());
-                state::start_chat_shown(&mut app.core, ctx, shown, text, Route::Fast, Vec::new());
+                state::start_chat_shown(
+                    &mut app.core,
+                    &crate::host::EguiHost::new(ctx),
+                    shown,
+                    text,
+                    Route::Fast,
+                    Vec::new(),
+                );
             }
             PanelAct::SmartRun => state::run_smart_search(&mut app.core),
             PanelAct::ReloadAudit => app.core.ai.audit.loaded = false,

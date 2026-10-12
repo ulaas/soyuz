@@ -302,7 +302,7 @@ fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
 fn apply_and_save(ctx: &egui::Context, app: &mut SoyuzApp) {
     if app.gui.settings.draft != app.gui.settings.applied {
         let draft = app.gui.settings.draft.clone();
-        crate::services::config_watch::apply_config(&mut app.core, ctx, draft.clone());
+        crate::services::config_watch::apply_config(&mut app.core, &crate::host::EguiHost::new(ctx), draft.clone());
         app.gui.settings.applied = draft;
         app.core.config_save.schedule();
     }
@@ -391,7 +391,7 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
 }
 
 fn pump_save(ctx: &egui::Context, app: &mut SoyuzApp) {
-    crate::models::settings::pump(&mut app.core, ctx);
+    crate::models::settings::pump(&mut app.core, &crate::host::EguiHost::new(ctx));
 }
 
 pub use crate::models::settings::update_config;

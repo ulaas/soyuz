@@ -1,7 +1,7 @@
 //! Key chords, contexts and the keymap.
 //!
 //! Core has its own [`KeyName`] enum (no egui dependency); the app maps `egui::Key` ↔
-//! `KeyName` in `soyuz-app/src/keys/bindings.rs`.
+//! `KeyName` in `soyuz-appcore/src/keys/bindings.rs`.
 
 use std::collections::BTreeMap;
 use std::fmt;

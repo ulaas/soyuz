@@ -76,7 +76,7 @@ thread_local! {
 /// Start of every frame (before file-op handling): service pumps, queued commands and
 /// OS file drops onto the shelf.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    crate::models::tools::pump(&mut app.core, ctx);
+    crate::models::tools::pump(&mut app.core, &crate::host::EguiHost::new(ctx));
     versions::begin_frame(app);
     sync_sched::tick(app, ctx);
     crate::models::tools::request_os_tags(&app.core);
@@ -85,7 +85,7 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
     // Config edits, tags and version actions run outside the tools borrow (they touch
     // many modules); the rest open tool windows.
-    let cmds = crate::models::tools::apply_model_cmds(&mut app.core, ctx, cmds);
+    let cmds = crate::models::tools::apply_model_cmds(&mut app.core, &crate::host::EguiHost::new(ctx), cmds);
     TOOLS.with_borrow_mut(|t| {
         for c in cmds {
             apply(t, app, c);

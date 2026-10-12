@@ -272,10 +272,12 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "theme" => {
                 app.core.ui.theme = crate::host::ThemePref::from_config(arg);
-                ctx.set_theme(app.core.ui.theme);
+                ctx.set_theme(crate::host::to_egui_theme(app.core.ui.theme));
             }
             "config" => match edited(&app.core.config, arg) {
-                Ok(c) => crate::services::config_watch::apply_config(&mut app.core, ctx, c),
+                Ok(c) => {
+                    crate::services::config_watch::apply_config(&mut app.core, &crate::host::EguiHost::new(ctx), c)
+                }
                 Err(e) => log::warn!("SOYUZ_SCRIPT {step}: {e}"),
             },
             "size" => {
@@ -339,7 +341,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     app.core.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Open { index, new_tab: false }));
                 }
             }
-            "edit" | "editor" => crate::editors::devscript(&mut app.core, ctx, verb, arg),
+            "edit" | "editor" => crate::editors::devscript(&mut app.core, &crate::host::EguiHost::new(ctx), verb, arg),
             "keys" => {
                 // An open native dialog / popup window has the keyboard.
                 let evs = key_events(arg);
@@ -354,7 +356,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 let (key, query) = arg.split_once('=').unwrap_or((arg, ""));
                 crate::ui::widgets::dropdown::request_open(ctx, key.trim(), query);
             }
-            "ai" => crate::ai::state::script(&mut app.core, ctx, arg),
+            "ai" => crate::ai::state::script(&mut app.core, &crate::host::EguiHost::new(ctx), arg),
             "native" => crate::ui::native::devscript(ctx, arg),
             "click" | "press" | "move" | "release" => {
                 // `click:<x>,<y>[,right]` — synthetic egui pointer click (points), spread

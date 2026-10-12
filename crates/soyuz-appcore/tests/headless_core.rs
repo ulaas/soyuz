@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-use soyuz_app::actions;
-use soyuz_app::core::{AppCore, Startup};
-use soyuz_app::host::{Host, NullHost, WindowCmd};
+use soyuz_appcore::actions;
+use soyuz_appcore::core::{AppCore, Startup};
+use soyuz_appcore::host::{Host, NullHost, WindowCmd};
 use soyuz_core::config::{self, Action, Config};
 
 /// Set in the re-run child: the folder to list.
@@ -104,7 +104,7 @@ fn run_core(data: PathBuf) {
     c.search.index.enabled = false;
     let startup = Startup { open: Some(data.clone()), secondary: true, safe_mode: false };
     let host = NullHost::default();
-    let mut app = AppCore::new(c, startup, host.wake(), soyuz_app::services::preview_gfx::no_upload());
+    let mut app = AppCore::new(c, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
     assert_eq!(app.ws.pane().location, soyuz_core::Location::Dir(data.clone()));
 
     // The first listing.

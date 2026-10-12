@@ -246,13 +246,12 @@ fn parse_tiff(d: &[u8]) -> Option<Exif> {
     Some(x)
 }
 
-#[cfg(test)]
-pub(crate) mod tests {
-    use super::*;
-
+/// Sample EXIF data for tests (here and in the GUI crate's tests).
+#[doc(hidden)]
+pub mod fixtures {
     /// Build a little-endian TIFF/EXIF block: IFD0 (Make, Model, ExifIFD pointer) and an
     /// EXIF IFD (DateTimeOriginal, ISO, FNumber).
-    pub(crate) fn sample_tiff() -> Vec<u8> {
+    pub fn sample_tiff() -> Vec<u8> {
         let mut d = Vec::new();
         d.extend_from_slice(b"II");
         d.extend_from_slice(&42u16.to_le_bytes());
@@ -293,7 +292,7 @@ pub(crate) mod tests {
         d
     }
 
-    pub(crate) fn sample_jpeg() -> Vec<u8> {
+    pub fn sample_jpeg() -> Vec<u8> {
         let tiff = sample_tiff();
         let mut j = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x04, 0x00, 0x00]; // tiny APP0
         j.extend_from_slice(&[0xFF, 0xE1]);
@@ -303,6 +302,12 @@ pub(crate) mod tests {
         j.extend_from_slice(&[0xFF, 0xDA, 0x00, 0x02]);
         j
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fixtures::*;
+    use super::*;
 
     #[test]
     fn parses_jpeg_app1() {

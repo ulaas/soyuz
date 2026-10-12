@@ -181,7 +181,7 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                 });
         });
     if let Some(d) = answer {
-        answer_clip(&mut app.core, ctx, d == ClipDecision::Copy, always);
+        answer_clip(&mut app.core, &crate::host::EguiHost::new(ctx), d == ClipDecision::Copy, always);
     }
 }
 
@@ -190,7 +190,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
     request_cjk_fonts();
-    ensure_session(&mut app.core, &ctx);
+    ensure_session(&mut app.core, &crate::host::EguiHost::new(&ctx));
     let owner = current_owner(&app.core);
     let ids = app.core.ui.terminal.visible_ids(owner);
     let Some(active) = app.core.ui.terminal.active_id(owner) else { return };
@@ -426,7 +426,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         close_session(&mut app.core, id);
     }
     if add_session {
-        new_session(&mut app.core, &ctx);
+        new_session(&mut app.core, &crate::host::EguiHost::new(&ctx));
     }
     if external {
         open_external(&mut app.core, active);

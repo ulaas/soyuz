@@ -27,7 +27,7 @@ fn set_focus_ids(ctx: &egui::Context, ids: Vec<Id>) {
 /// The docked panel (call from the shell before the central panel).
 pub fn show(ui: &mut egui::Ui, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
-    crate::editors::pump(&mut app.core, &ctx);
+    crate::editors::pump(&mut app.core, &crate::host::EguiHost::new(&ctx));
     if !app.core.editors.open || app.core.editors.maximized {
         if !app.core.editors.open {
             set_focus_ids(&ctx, Vec::new());
@@ -65,7 +65,7 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
         });
     }
     for a in out.actions {
-        crate::actions::execute(&mut app.core, a, ctx);
+        crate::actions::execute(&mut app.core, a, &crate::host::EguiHost::new(ctx));
     }
 }
 
