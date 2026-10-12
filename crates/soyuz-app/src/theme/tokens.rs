@@ -1,5 +1,9 @@
 //! Design tokens: the "Orbit Dark" / "Orbit Light" palettes plus the spacing,
 //! radius, size and typography scales. Everything visual in the app reads from here.
+//!
+//! The colour palettes themselves live toolkit-free in `soyuz_appcore::theme::tokens`
+//! ([`Tokens`]); [`Palette`] is their egui form ([`Palette::from_tokens`], bit-exact: see
+//! the appcore module docs).
 
 use std::collections::BTreeMap;
 
@@ -9,16 +13,7 @@ const fn hex(rgb: u32) -> Color32 {
     Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
 }
 
-/// `rgba(r, g, b, a)` with `a` in 0..=1, premultiplied for egui.
-const fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color32 {
-    let a8 = (a * 255.0 + 0.5) as u8;
-    Color32::from_rgba_premultiplied(
-        ((r as u16 * a8 as u16) / 255) as u8,
-        ((g as u16 * a8 as u16) / 255) as u8,
-        ((b as u16 * a8 as u16) / 255) as u8,
-        a8,
-    )
-}
+pub use soyuz_appcore::theme::tokens::{TOKEN_NAMES, Tokens, token_index};
 
 /// One complete color palette. Field names mirror the token names (`bg.window` → `bg_window`).
 #[derive(Clone, Debug, PartialEq)]
@@ -58,151 +53,60 @@ pub struct Palette {
     pub radius_scale: f32,
 }
 
-const TAGS: [Color32; 8] = [
-    hex(0xF2555A),
-    hex(0xF5B544),
-    hex(0xF2D14B),
-    hex(0x3DD68C),
-    hex(0x4CC2FF),
-    hex(0x5B8CFF),
-    hex(0xBB86FC),
-    hex(0x8A91A0),
-];
-
 /// "Orbit Dark" (default).
-pub const ORBIT_DARK: Palette = Palette {
-    dark: true,
-    bg_window: hex(0x0F1115),
-    bg_surface1: hex(0x161920),
-    bg_surface2: hex(0x1C2027),
-    bg_surface3: hex(0x232834),
-    bg_sunken: hex(0x0B0D11),
-    border_subtle: hex(0x262B35),
-    border_strong: hex(0x343A47),
-    text_primary: hex(0xE6E8EC),
-    text_secondary: hex(0xA3A9B7),
-    text_tertiary: hex(0x6B7280),
-    accent: hex(0x5B8CFF),
-    accent_hover: hex(0x7BA3FF),
-    accent_subtle: rgba(91, 140, 255, 0.18),
-    success: hex(0x3DD68C),
-    warning: hex(0xF5B544),
-    danger: hex(0xF2555A),
-    info: hex(0x4CC2FF),
-    glyph_folder: hex(0xF2B84B),
-    glyph_image: hex(0x6FCF97),
-    glyph_video: hex(0xBB86FC),
-    glyph_audio: hex(0xFF8FAB),
-    glyph_archive: hex(0xF5B544),
-    glyph_code: hex(0x5B8CFF),
-    glyph_doc: hex(0xA3A9B7),
-    glyph_exe: hex(0x4CC2FF),
-    tags: TAGS,
-    shadow_alpha: 0.35,
-    radius_scale: 1.0,
-};
-
+pub const ORBIT_DARK: Palette = Palette::from_tokens(&soyuz_appcore::theme::tokens::ORBIT_DARK);
 /// "Orbit Light".
-pub const ORBIT_LIGHT: Palette = Palette {
-    dark: false,
-    bg_window: hex(0xF6F7F9),
-    bg_surface1: hex(0xFFFFFF),
-    bg_surface2: hex(0xF0F2F5),
-    bg_surface3: hex(0xFFFFFF),
-    bg_sunken: hex(0xE9EBEF),
-    border_subtle: hex(0xE3E6EB),
-    border_strong: hex(0xCBD0D8),
-    text_primary: hex(0x171A20),
-    text_secondary: hex(0x4B5260),
-    text_tertiary: hex(0x8A91A0),
-    accent: hex(0x2F6BFF),
-    accent_hover: hex(0x1F5BEF),
-    accent_subtle: rgba(47, 107, 255, 0.14),
-    success: hex(0x1E9E5F),
-    warning: hex(0xD08A14),
-    danger: hex(0xD93A40),
-    info: hex(0x1C8ED6),
-    glyph_folder: hex(0xE8A33D),
-    glyph_image: hex(0x3FA86E),
-    glyph_video: hex(0x8A4FD8),
-    glyph_audio: hex(0xE0567A),
-    glyph_archive: hex(0xD08A14),
-    glyph_code: hex(0x2F6BFF),
-    glyph_doc: hex(0x4B5260),
-    glyph_exe: hex(0x1C8ED6),
-    tags: TAGS,
-    shadow_alpha: 0.12,
-    radius_scale: 1.0,
-};
-
+pub const ORBIT_LIGHT: Palette = Palette::from_tokens(&soyuz_appcore::theme::tokens::ORBIT_LIGHT);
 /// "Orbit High Contrast" (dark): near-black surfaces, white text, bright borders and a
 /// strong accent. Meets WCAG AAA for body text; borders are clearly visible.
-pub const ORBIT_HC_DARK: Palette = Palette {
-    dark: true,
-    bg_window: hex(0x000000),
-    bg_surface1: hex(0x0A0A0A),
-    bg_surface2: hex(0x161616),
-    bg_surface3: hex(0x1E1E1E),
-    bg_sunken: hex(0x000000),
-    border_subtle: hex(0x8A8A8A),
-    border_strong: hex(0xFFFFFF),
-    text_primary: hex(0xFFFFFF),
-    text_secondary: hex(0xE0E0E0),
-    text_tertiary: hex(0xBDBDBD),
-    accent: hex(0x4DA3FF),
-    accent_hover: hex(0x80BDFF),
-    accent_subtle: rgba(77, 163, 255, 0.34),
-    success: hex(0x5CFF9D),
-    warning: hex(0xFFD24D),
-    danger: hex(0xFF6B6B),
-    info: hex(0x6BD8FF),
-    glyph_folder: hex(0xFFD24D),
-    glyph_image: hex(0x7DFFAF),
-    glyph_video: hex(0xD7AEFF),
-    glyph_audio: hex(0xFFA8C0),
-    glyph_archive: hex(0xFFD24D),
-    glyph_code: hex(0x80BDFF),
-    glyph_doc: hex(0xE0E0E0),
-    glyph_exe: hex(0x6BD8FF),
-    tags: TAGS,
-    shadow_alpha: 0.6,
-    radius_scale: 1.0,
-};
-
+pub const ORBIT_HC_DARK: Palette = Palette::from_tokens(&soyuz_appcore::theme::tokens::ORBIT_HC_DARK);
 /// "Orbit High Contrast" (light): white surfaces, black text, dark borders.
-pub const ORBIT_HC_LIGHT: Palette = Palette {
-    dark: false,
-    bg_window: hex(0xFFFFFF),
-    bg_surface1: hex(0xFFFFFF),
-    bg_surface2: hex(0xEDEDED),
-    bg_surface3: hex(0xFFFFFF),
-    bg_sunken: hex(0xE0E0E0),
-    border_subtle: hex(0x6B6B6B),
-    border_strong: hex(0x000000),
-    text_primary: hex(0x000000),
-    text_secondary: hex(0x1F1F1F),
-    text_tertiary: hex(0x3D3D3D),
-    accent: hex(0x0040C0),
-    accent_hover: hex(0x00309A),
-    accent_subtle: rgba(0, 64, 192, 0.20),
-    success: hex(0x006B32),
-    warning: hex(0x8A5A00),
-    danger: hex(0xB00020),
-    info: hex(0x005A8C),
-    glyph_folder: hex(0x9A6200),
-    glyph_image: hex(0x006B32),
-    glyph_video: hex(0x5B21B6),
-    glyph_audio: hex(0xA3164A),
-    glyph_archive: hex(0x8A5A00),
-    glyph_code: hex(0x0040C0),
-    glyph_doc: hex(0x1F1F1F),
-    glyph_exe: hex(0x005A8C),
-    tags: TAGS,
-    shadow_alpha: 0.25,
-    radius_scale: 1.0,
-};
+pub const ORBIT_HC_LIGHT: Palette = Palette::from_tokens(&soyuz_appcore::theme::tokens::ORBIT_HC_LIGHT);
+
+/// A token colour as an egui colour (`const` form of [`color32`]).
+const fn c32(c: crate::color::Rgba8) -> Color32 {
+    Color32::from_rgba_unmultiplied_const(c.r, c.g, c.b, c.a)
+}
 
 impl Palette {
+    /// The egui palette of toolkit-free tokens. Bit-exact with the palettes the GUI
+    /// defined itself before the tokens moved to `soyuz-appcore` (pinned by
+    /// `golden_tokens.txt`).
+    pub const fn from_tokens(t: &Tokens) -> Palette {
+        let g = &t.tags;
+        Palette {
+            dark: t.dark,
+            bg_window: c32(t.bg_window),
+            bg_surface1: c32(t.bg_surface1),
+            bg_surface2: c32(t.bg_surface2),
+            bg_surface3: c32(t.bg_surface3),
+            bg_sunken: c32(t.bg_sunken),
+            border_subtle: c32(t.border_subtle),
+            border_strong: c32(t.border_strong),
+            text_primary: c32(t.text_primary),
+            text_secondary: c32(t.text_secondary),
+            text_tertiary: c32(t.text_tertiary),
+            accent: c32(t.accent),
+            accent_hover: c32(t.accent_hover),
+            accent_subtle: c32(t.accent_subtle),
+            success: c32(t.success),
+            warning: c32(t.warning),
+            danger: c32(t.danger),
+            info: c32(t.info),
+            glyph_folder: c32(t.glyph_folder),
+            glyph_image: c32(t.glyph_image),
+            glyph_video: c32(t.glyph_video),
+            glyph_audio: c32(t.glyph_audio),
+            glyph_archive: c32(t.glyph_archive),
+            glyph_code: c32(t.glyph_code),
+            glyph_doc: c32(t.glyph_doc),
+            glyph_exe: c32(t.glyph_exe),
+            tags: [c32(g[0]), c32(g[1]), c32(g[2]), c32(g[3]), c32(g[4]), c32(g[5]), c32(g[6]), c32(g[7])],
+            shadow_alpha: t.shadow_alpha,
+            radius_scale: t.radius_scale,
+        }
+    }
+
     /// Make the window-level fills translucent so a system backdrop (Windows 11 Mica /
     /// Acrylic) shows through. Popups, cards and text keep their opaque colors.
     pub fn translucent(&mut self) {
@@ -210,15 +114,6 @@ impl Palette {
         for c in [&mut self.bg_window, &mut self.bg_surface1, &mut self.bg_sunken] {
             *c = c.gamma_multiply(a);
         }
-    }
-
-    /// Replace the accent and derive `accent.hover` / `accent.subtle` from it (lighter
-    /// on dark palettes, darker on light ones).
-    pub fn set_accent(&mut self, accent: Color32) {
-        let (hover, subtle) = accent_shades(accent, self.dark);
-        self.accent = accent;
-        self.accent_hover = hover;
-        self.accent_subtle = subtle;
     }
 
     /// Text / icon color on an accent fill: white, or near-black for light accents.
@@ -300,43 +195,44 @@ impl Palette {
     }
 
     fn slot_mut(&mut self, token: &str) -> Option<&mut Color32> {
-        let t = token.trim().to_ascii_lowercase().replace('_', ".");
-        Some(match t.as_str() {
-            "bg.window" => &mut self.bg_window,
-            "bg.surface1" => &mut self.bg_surface1,
-            "bg.surface2" => &mut self.bg_surface2,
-            "bg.surface3" => &mut self.bg_surface3,
-            "bg.sunken" => &mut self.bg_sunken,
-            "border.subtle" => &mut self.border_subtle,
-            "border.strong" => &mut self.border_strong,
-            "text.primary" => &mut self.text_primary,
-            "text.secondary" => &mut self.text_secondary,
-            "text.tertiary" => &mut self.text_tertiary,
-            "accent" => &mut self.accent,
-            "accent.hover" => &mut self.accent_hover,
-            "accent.subtle" => &mut self.accent_subtle,
-            "success" => &mut self.success,
-            "warning" => &mut self.warning,
-            "danger" => &mut self.danger,
-            "info" => &mut self.info,
-            "glyph.folder" => &mut self.glyph_folder,
-            "glyph.image" => &mut self.glyph_image,
-            "glyph.video" => &mut self.glyph_video,
-            "glyph.audio" => &mut self.glyph_audio,
-            "glyph.archive" => &mut self.glyph_archive,
-            "glyph.code" => &mut self.glyph_code,
-            "glyph.doc" => &mut self.glyph_doc,
-            "glyph.exe" => &mut self.glyph_exe,
-            "tag.red" => &mut self.tags[0],
-            "tag.orange" => &mut self.tags[1],
-            "tag.yellow" => &mut self.tags[2],
-            "tag.green" => &mut self.tags[3],
-            "tag.cyan" => &mut self.tags[4],
-            "tag.blue" => &mut self.tags[5],
-            "tag.purple" => &mut self.tags[6],
-            "tag.gray" => &mut self.tags[7],
-            _ => return None,
-        })
+        let i = token_index(token)?;
+        let [t0, t1, t2, t3, t4, t5, t6, t7] = &mut self.tags;
+        let slots = [
+            &mut self.bg_window,
+            &mut self.bg_surface1,
+            &mut self.bg_surface2,
+            &mut self.bg_surface3,
+            &mut self.bg_sunken,
+            &mut self.border_subtle,
+            &mut self.border_strong,
+            &mut self.text_primary,
+            &mut self.text_secondary,
+            &mut self.text_tertiary,
+            &mut self.accent,
+            &mut self.accent_hover,
+            &mut self.accent_subtle,
+            &mut self.success,
+            &mut self.warning,
+            &mut self.danger,
+            &mut self.info,
+            &mut self.glyph_folder,
+            &mut self.glyph_image,
+            &mut self.glyph_video,
+            &mut self.glyph_audio,
+            &mut self.glyph_archive,
+            &mut self.glyph_code,
+            &mut self.glyph_doc,
+            &mut self.glyph_exe,
+            t0,
+            t1,
+            t2,
+            t3,
+            t4,
+            t5,
+            t6,
+            t7,
+        ];
+        slots.into_iter().nth(i)
     }
 }
 
@@ -377,57 +273,6 @@ pub fn contrast(a: Color32, b: Color32) -> f32 {
     let (x, y) = (lum(a), lum(b));
     (x.max(y) + 0.05) / (x.min(y) + 0.05)
 }
-
-/// Hover and subtle (selection fill) shades of an accent color.
-pub fn accent_shades(accent: Color32, dark: bool) -> (Color32, Color32) {
-    let [r, g, b, _] = accent.to_array();
-    let hover = if dark {
-        let lift = |c: u8| (f32::from(c) + (255.0 - f32::from(c)) * 0.2).round() as u8;
-        Color32::from_rgb(lift(r), lift(g), lift(b))
-    } else {
-        let sink = |c: u8| (f32::from(c) * 0.86).round() as u8;
-        Color32::from_rgb(sink(r), sink(g), sink(b))
-    };
-    let subtle = Color32::from_rgba_unmultiplied(r, g, b, if dark { 46 } else { 36 });
-    (hover, subtle)
-}
-
-/// Every token name accepted by [`Palette::apply_overrides`] / theme files.
-pub const TOKEN_NAMES: [&str; 33] = [
-    "bg.window",
-    "bg.surface1",
-    "bg.surface2",
-    "bg.surface3",
-    "bg.sunken",
-    "border.subtle",
-    "border.strong",
-    "text.primary",
-    "text.secondary",
-    "text.tertiary",
-    "accent",
-    "accent.hover",
-    "accent.subtle",
-    "success",
-    "warning",
-    "danger",
-    "info",
-    "glyph.folder",
-    "glyph.image",
-    "glyph.video",
-    "glyph.audio",
-    "glyph.archive",
-    "glyph.code",
-    "glyph.doc",
-    "glyph.exe",
-    "tag.red",
-    "tag.orange",
-    "tag.yellow",
-    "tag.green",
-    "tag.cyan",
-    "tag.blue",
-    "tag.purple",
-    "tag.gray",
-];
 
 /// Parse `#RGB`, `#RRGGBB` or `#RRGGBBAA` (leading `#` optional; see [`crate::color::parse_hex`]).
 pub fn parse_hex(s: &str) -> Option<Color32> {
@@ -563,16 +408,22 @@ mod tests {
             assert!(ORBIT_DARK.token(t).is_some(), "{t}");
         }
         assert_eq!(ORBIT_DARK.token("nope"), None);
-        let mut p = ORBIT_LIGHT.clone();
-        p.set_accent(Color32::from_rgb(200, 100, 50));
+        let tinted = |t: &Tokens, c: u32| {
+            let mut t = t.clone();
+            t.set_accent(crate::color::Rgba8::rgb((c >> 16) as u8, (c >> 8) as u8, c as u8));
+            Palette::from_tokens(&t)
+        };
+        let p = tinted(&soyuz_appcore::theme::tokens::ORBIT_LIGHT, 0xC86432);
         assert!(p.accent_hover.r() < 200, "light themes darken on hover");
-        let mut d = ORBIT_DARK.clone();
-        d.set_accent(Color32::from_rgb(200, 100, 50));
+        let mut d = tinted(&soyuz_appcore::theme::tokens::ORBIT_DARK, 0xC86432);
         assert!(d.accent_hover.r() > 200, "dark themes lighten on hover");
         assert!(d.accent_subtle.a() > 0 && d.accent_subtle.a() < 60);
         assert_eq!(ORBIT_DARK.on_accent(), Color32::WHITE);
-        d.set_accent(Color32::from_rgb(0x88, 0xC0, 0xD0));
-        assert_ne!(d.on_accent(), Color32::WHITE, "light accents get dark text");
+        assert_ne!(
+            tinted(&soyuz_appcore::theme::tokens::ORBIT_DARK, 0x88C0D0).on_accent(),
+            Color32::WHITE,
+            "light accents get dark text"
+        );
         d.radius_scale = 1.5;
         assert_eq!(d.radius(radius::ROW), 9);
     }
@@ -599,5 +450,43 @@ mod tests {
     fn accent_subtle_is_translucent() {
         assert!(ORBIT_DARK.accent_subtle.a() > 40 && ORBIT_DARK.accent_subtle.a() < 50);
         assert!(ORBIT_LIGHT.accent_subtle.a() < ORBIT_DARK.accent_subtle.a());
+    }
+
+    /// Every token of the built-in palettes and bundled themes (and three accents on each
+    /// theme) is bit-identical to the premultiplied colours the GUI drew before the tokens
+    /// moved to `soyuz-appcore` (table generated from the old GUI code).
+    #[test]
+    fn palettes_from_tokens_are_bit_exact() {
+        use soyuz_appcore::theme::themes::builtins;
+        const GOLDEN: &str = include_str!("../../../soyuz-appcore/src/theme/golden_tokens.txt");
+        let mut n = 0;
+        for line in GOLDEN.lines().filter(|l| !l.trim().is_empty()) {
+            let name = line.split_whitespace().next().unwrap();
+            let parts: Vec<&str> = name.split(':').collect();
+            let pick = |(d, l): (Tokens, Tokens), v: &str| if v == "dark" { d } else { l };
+            let p = match parts.as_slice() {
+                ["ORBIT_DARK"] => ORBIT_DARK.clone(),
+                ["ORBIT_LIGHT"] => ORBIT_LIGHT.clone(),
+                ["ORBIT_HC_DARK"] => ORBIT_HC_DARK.clone(),
+                ["ORBIT_HC_LIGHT"] => ORBIT_HC_LIGHT.clone(),
+                ["theme", id, v] => {
+                    Palette::from_tokens(&pick(builtins().iter().find(|t| t.id == *id).unwrap().palettes(), v))
+                }
+                ["accent", id, hex, v] => {
+                    let mut t = pick(builtins().iter().find(|t| t.id == *id).unwrap().palettes(), v);
+                    t.set_accent(crate::color::parse_hex(hex).unwrap());
+                    Palette::from_tokens(&t)
+                }
+                _ => panic!("golden line {name}"),
+            };
+            let mut s = String::new();
+            for t in TOKEN_NAMES {
+                let [r, g, b, a] = p.token(t).unwrap().to_array();
+                s.push_str(&format!("{r:02X}{g:02X}{b:02X}{a:02X}"));
+            }
+            assert_eq!(format!("{name} {} {} {} {s}", p.dark, p.shadow_alpha, p.radius_scale), line.trim_end());
+            n += 1;
+        }
+        assert_eq!(n, 44);
     }
 }

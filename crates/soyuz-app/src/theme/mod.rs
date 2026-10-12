@@ -14,7 +14,7 @@ use egui::{Context, Theme};
 use soyuz_core::config::{Appearance, FontRoleKind, Fonts};
 
 pub use apply::{ThemeOptions, preference_from_config};
-pub use tokens::{ORBIT_DARK, ORBIT_HC_DARK, ORBIT_HC_LIGHT, ORBIT_LIGHT, Palette};
+pub use tokens::{ORBIT_DARK, ORBIT_HC_DARK, ORBIT_HC_LIGHT, ORBIT_LIGHT, Palette, Tokens};
 
 /// The active palette for the context's current theme (set by [`install`]).
 pub fn palette(ctx: &Context) -> Palette {
@@ -46,6 +46,7 @@ pub fn install(
     warnings.extend(font_warnings);
     // The same overrides apply to both palettes; report problems only once.
     let _ = light.apply_overrides(overrides);
+    let (mut dark, mut light) = (Palette::from_tokens(&dark), Palette::from_tokens(&light));
     if crate::ui::native_chrome::backdrop_active() {
         // A Windows 11 system backdrop shows through the window-level fills.
         dark.translucent();
@@ -73,37 +74,15 @@ pub fn install(
 }
 
 /// The dark and light palettes for `[appearance]` (color theme, high contrast, accent),
-/// before `[theme.colors]` overrides. Returns warnings for unknown themes / accents.
-pub fn resolve(appearance: &Appearance) -> (Palette, Palette, Vec<String>) {
-    let mut warnings = Vec::new();
-    let (mut dark, mut light) = if appearance.high_contrast {
-        (ORBIT_HC_DARK.clone(), ORBIT_HC_LIGHT.clone())
-    } else {
-        library::ensure_loaded(&appearance.color_theme);
-        match library::find(&appearance.color_theme) {
-            Some(t) => t.palettes(),
-            None => {
-                warnings.push(format!(
-                    "appearance.color_theme: unknown theme \"{}\" (built-ins: {})",
-                    appearance.color_theme,
-                    themes::builtins().iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")
-                ));
-                (ORBIT_DARK.clone(), ORBIT_LIGHT.clone())
-            }
-        }
+/// before `[theme.colors]` overrides, as toolkit-free tokens
+/// ([`soyuz_appcore::theme::resolve_base`] with the live theme library and OS accent).
+/// Returns warnings for unknown themes / accents.
+pub fn resolve(appearance: &Appearance) -> (Tokens, Tokens, Vec<String>) {
+    let find = |id: &str| {
+        library::ensure_loaded(id);
+        library::find(id)
     };
-    let (choice, w) = accent::AccentChoice::parse(&appearance.accent);
-    warnings.extend(w);
-    let color = match choice {
-        accent::AccentChoice::Theme => None,
-        accent::AccentChoice::System => library::os_accent(),
-        accent::AccentChoice::Custom(c) => Some(c),
-    };
-    if let Some(c) = color {
-        dark.set_accent(c);
-        light.set_accent(c);
-    }
-    (dark, light, warnings)
+    soyuz_appcore::theme::resolve_base(appearance, &find, library::os_accent().map(tokens::rgba8))
 }
 
 fn palettes_id() -> egui::Id {

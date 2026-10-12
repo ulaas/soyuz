@@ -390,9 +390,15 @@ impl App {
         let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
         view::prepare(&mut self.core, &regions);
         let model = ViewModel::from_core(&self.core, &regions);
-        let theme = TuiTheme::for_core(&self.core);
+        let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());
         let hits = &mut self.hits;
-        terminal.draw(|f| view::draw(f, &model, &regions, &theme, hits)).map_err(io::Error::other)?;
+        terminal
+            .draw(|f| {
+                let area = f.area();
+                f.buffer_mut().set_style(area, theme.base());
+                view::draw(f, &model, &regions, &theme, hits)
+            })
+            .map_err(io::Error::other)?;
         self.regions = regions;
         self.view = Some(model);
 

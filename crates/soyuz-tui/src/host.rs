@@ -26,6 +26,7 @@ pub struct TuiHost {
     close: AtomicBool,
     close_cancelled: AtomicBool,
     modes_changed: AtomicBool,
+    palette_dirty: AtomicBool,
     theme: Mutex<ThemePref>,
     title: Mutex<Option<String>>,
 }
@@ -47,6 +48,7 @@ impl TuiHost {
             close: AtomicBool::new(false),
             close_cancelled: AtomicBool::new(false),
             modes_changed: AtomicBool::new(false),
+            palette_dirty: AtomicBool::new(false),
             theme: Mutex::new(ThemePref::System),
             title: Mutex::new(None),
         }
@@ -83,6 +85,12 @@ impl TuiHost {
     /// (`TerminalGuard::reapply`); clears it.
     pub fn take_modes_changed(&self) -> bool {
         self.modes_changed.swap(false, Ordering::AcqRel)
+    }
+
+    /// `[appearance]`, `[theme]` or `[tui]` changed since the last call: rebuild the
+    /// colour theme (`TuiTheme::cached`); clears it.
+    pub fn take_palette_dirty(&self) -> bool {
+        self.palette_dirty.swap(false, Ordering::AcqRel)
     }
 
     /// The theme preference last set by the core.
@@ -180,6 +188,9 @@ impl Host for TuiHost {
         if old.tui != new.tui {
             self.modes_changed.store(true, Ordering::Release);
         }
+        if old.appearance != new.appearance || old.theme != new.theme || old.tui != new.tui {
+            self.palette_dirty.store(true, Ordering::Release);
+        }
         self.redraw();
     }
 }
@@ -265,5 +276,23 @@ mod tests {
         h.config_changed(&old, &new);
         assert!(h.take_modes_changed());
         assert!(!h.take_modes_changed());
+    }
+
+    #[test]
+    fn palette_dirty_with_appearance_theme_or_tui() {
+        let h = TuiHost::new();
+        let old = Config::default();
+        let mut new = old.clone();
+        new.behaviour.auto_refresh = !new.behaviour.auto_refresh;
+        h.config_changed(&old, &new);
+        assert!(!h.take_palette_dirty());
+        new.appearance.accent = "#FF0000".into();
+        h.config_changed(&old, &new);
+        assert!(h.take_palette_dirty());
+        assert!(!h.take_palette_dirty());
+        let mut colors = old.clone();
+        colors.theme.colors.insert("accent".into(), "#00FF00".into());
+        h.config_changed(&old, &colors);
+        assert!(h.take_palette_dirty());
     }
 }
