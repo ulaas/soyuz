@@ -15,9 +15,19 @@
 //!   terminal's own colour in 16-colour and mono modes), Markdown (headings, emphasis,
 //!   lists, quotes, code), the hex view, an archive listing with a cursor (Enter opens the
 //!   archive at that entry), a folder summary, a two-file diff (two text files selected),
-//!   or a message; images get a placeholder line until the images step draws them;
+//!   pictures, or a message;
 //! - the info section below a separator: type, size, dates, attributes and what the
 //!   loader found (`models::preview_info::info_rows`).
+//!
+//! Pictures ([`Body::Picture`]) go through `crate::images` (`[tui] images`: kitty, sixel,
+//! iTerm2, half-blocks; a `[W×H]` placeholder in mono colour mode): photos and other
+//! images (an animated one shows its first frame), SVG and 3D models (the loader runs with
+//! `PreviewLoader::terminal`, so the core rasterizes them: `services::preview_raster`), the
+//! first page of a PDF (pdfium; its text when pdfium is missing), a video's poster frame,
+//! an audio file's or e-book's cover and a font's specimen strips. A one-line summary
+//! (dimensions, format) sits under the picture and the details (EXIF too) in the info
+//! section; when the picture cannot be drawn (`images = "off"`, no room, encoding, gone) a
+//! text line says so in its place.
 //!
 //! Click targets: `PreviewScroll` over the pane (wheel scrolls, a click gives it the
 //! keyboard) and `ArchiveRow(i)` per listing row; `crate::input::preview` handles them.
@@ -38,13 +48,15 @@ use soyuz_appcore::models::preview_info::{info_label, info_rows, kind_label};
 use soyuz_appcore::models::preview_load::{PreviewLoader, diff_pair, target_entry};
 use soyuz_appcore::services::preview::{Content, Kind, Loaded};
 use soyuz_appcore::services::preview_diff::{Row as DiffRow, Tag};
-use soyuz_appcore::services::preview_gfx::{Rgba, StyledLine};
+use soyuz_appcore::services::preview_gfx::{Rgba, StyledLine, Tex};
+use soyuz_appcore::services::preview_rich::Rich;
 use soyuz_appcore::services::preview_text::{Block, Span as MdSpan};
 use soyuz_appcore::tr;
 use soyuz_core::config::TuiBorders;
 use soyuz_core::{EntryInfo, SizeStyle, format_size, format_time};
 
 use crate::dialog::safe;
+use crate::images::{self, Drawn, ImageState};
 use crate::input::InputState;
 use crate::layout::{HitTarget, Hits, Regions};
 use crate::theme::{Role, TuiTheme, to_color};
@@ -106,6 +118,22 @@ pub struct ArchiveRowVm {
     pub size: String,
 }
 
+/// One picture of the body (a texture made through the terminal UI's uploader).
+#[derive(Clone, Debug)]
+pub struct Pic {
+    pub tex: Tex,
+    /// A line above the picture (font specimen sizes).
+    pub caption: Option<String>,
+}
+
+impl PartialEq for Pic {
+    fn eq(&self, other: &Pic) -> bool {
+        self.tex.size == other.tex.size && self.caption == other.caption
+    }
+}
+
+impl Eq for Pic {}
+
 /// What the body shows.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum Body {
@@ -121,6 +149,8 @@ pub enum Body {
     Archive { header: String, sub: String, rows: Vec<ArchiveRowVm>, list: SelectList, total: usize },
     /// A message.
     Message { title: String, body: String },
+    /// Pictures stacked top to bottom, `lines` under them (title, summary).
+    Picture { pics: Vec<Pic>, lines: Vec<PLine> },
 }
 
 /// The preview pane as drawn.
@@ -162,6 +192,9 @@ impl PreviewVm {
                 [header.clone(), sub.clone()].into_iter().chain(rows.iter().map(|r| r.name.clone())).collect()
             }
             Body::Message { title, body } => vec![title.clone(), body.clone()],
+            Body::Picture { pics, lines } => {
+                pics.iter().filter_map(|p| p.caption.clone()).chain(lines.iter().map(PLine::text)).collect()
+            }
             Body::Loading => vec![tr!("tui-preview-loading").to_string()],
             Body::Nothing => vec![tr!("views-preview-nothing-selected").to_string()],
         }
@@ -235,8 +268,12 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         return;
     }
     let dark = TuiTheme::cached(core, false).is_dark();
-    let loader =
-        st.loader.get_or_insert_with(|| PreviewLoader::new(core.wake.clone(), core.uploader.clone(), false, 1.0));
+    let loader = st.loader.get_or_insert_with(|| {
+        let mut l = PreviewLoader::new(core.wake.clone(), core.uploader.clone(), false, 1.0);
+        // Only pixels reach the terminal: SVG and 3D models come rasterized.
+        l.terminal = true;
+        l
+    });
     if hex_toggle {
         loader.toggle_hex();
     }
@@ -450,26 +487,14 @@ pub(crate) fn content_body(
             }
         }
         Content::Folder(s) => window(folder_lines(s, folder_size), scroll, h, 0),
-        Content::Media { .. } => {
-            let fact = |k: &str| loaded.facts.iter().find(|(fk, _)| fk == k).map(|(_, v)| safe(v));
-            let mut lines = vec![PLine::plain(fact("Title").unwrap_or_else(|| safe(&entry.name)), Role::Title)];
-            if let Some(a) = fact("Artist") {
-                lines.push(PLine::plain(a, Role::Muted));
-            }
-            let summary: Vec<String> =
-                ["Duration", "Dimensions", "Format", "Container"].iter().filter_map(|k| fact(k)).collect();
-            if !summary.is_empty() {
-                lines.push(PLine::plain(summary.join(" · "), Role::Faint));
-            }
-            window(lines, scroll, h, 0)
+        Content::Media { .. } => window(media_lines(loaded, entry), scroll, h, 0),
+        Content::Image(img) => {
+            let summary = summary(loaded, &["Dimensions", "Format", "Triangles"]);
+            picture(vec![Pic { tex: img.tex.clone(), caption: None }], summary.into_iter().collect())
         }
-        Content::Image(_) | Content::Svg { .. } => {
-            Body::Message { title: kind_label(loaded.kind).into(), body: tr!("tui-preview-image").into() }
-        }
-        Content::Rich(_) => Body::Message {
-            title: kind_label(loaded.kind).into(),
-            body: tr!("tui-preview-rich", kind = kind_label(loaded.kind)),
-        },
+        // Not produced for the terminal (`PreviewLoader::terminal` rasterizes SVG).
+        Content::Svg { .. } => Body::Message { title: kind_label(loaded.kind).into(), body: hex_hint() },
+        Content::Rich(r) => rich_body(r, loaded, entry, scroll, w, h),
         Content::Message { title, body, .. } => {
             let mut body = safe(body);
             if matches!(loaded.kind, Kind::Pdf | Kind::Image) {
@@ -477,6 +502,98 @@ pub(crate) fn content_body(
             }
             Body::Message { title: safe(title), body }
         }
+    }
+}
+
+/// A picture body (the model keeps the textures alive until the next frame).
+fn picture(pics: Vec<Pic>, lines: Vec<PLine>) -> Body {
+    Body::Picture { pics, lines }
+}
+
+/// The loader's fact `k`, made safe for the terminal.
+fn fact(loaded: &Loaded, k: &str) -> Option<String> {
+    loaded.facts.iter().find(|(fk, _)| fk == k).map(|(_, v)| safe(v)).filter(|v| !v.is_empty())
+}
+
+/// `Dimensions · Format …` from the facts `keys` that exist (faint).
+fn summary(loaded: &Loaded, keys: &[&str]) -> Option<PLine> {
+    let parts: Vec<String> = keys.iter().filter_map(|k| fact(loaded, k)).collect();
+    (!parts.is_empty()).then(|| PLine::plain(parts.join(" · "), Role::Faint))
+}
+
+/// Title, artist and a summary line of an audio or video file.
+fn media_lines(loaded: &Loaded, entry: &EntryInfo) -> Vec<PLine> {
+    let mut lines = vec![PLine::plain(fact(loaded, "Title").unwrap_or_else(|| safe(&entry.name)), Role::Title)];
+    if let Some(a) = fact(loaded, "Artist") {
+        lines.push(PLine::plain(a, Role::Muted));
+    }
+    lines.extend(summary(loaded, &["Duration", "Dimensions", "Format", "Container"]));
+    lines
+}
+
+/// The body of a rich preview: what the core rendered as pixels (PDF first page, video
+/// poster, audio / e-book cover, font specimen); text or a message otherwise.
+fn rich_body(r: &Rich, loaded: &Loaded, entry: &EntryInfo, scroll: &mut usize, w: usize, h: usize) -> Body {
+    let rich_msg = || Body::Message {
+        title: kind_label(loaded.kind).into(),
+        body: tr!("tui-preview-rich", kind = kind_label(loaded.kind)),
+    };
+    match r {
+        Rich::Pdf(v) => {
+            let pages = PLine::plain(tr!("tui-preview-pages", count = v.info.pages), Role::Faint);
+            if let Some(first) = &v.first {
+                let mut lines: Vec<PLine> = v.info.title.iter().map(|t| PLine::plain(safe(t), Role::Title)).collect();
+                lines.push(pages);
+                return picture(vec![Pic { tex: first.clone(), caption: None }], lines);
+            }
+            if v.info.text.trim().is_empty() {
+                let why = v.no_render.as_deref().map(safe).unwrap_or_default();
+                return Body::Message { title: kind_label(loaded.kind).into(), body: why };
+            }
+            // No page pictures (pdfium missing): the text of the first pages.
+            let mut all = vec![pages];
+            if let Some(why) = &v.no_render {
+                all.push(PLine::plain(tr!("tui-preview-pdf-text-only", reason = safe(why)), Role::Faint));
+            }
+            all.push(PLine::default());
+            for para in v.info.text.lines() {
+                for l in text::wrap(&safe(para), w.max(1)) {
+                    all.push(PLine::plain(l, Role::Text));
+                }
+            }
+            window(all, scroll, h, 0)
+        }
+        Rich::Video { poster, note } => {
+            let mut lines = media_lines(loaded, entry);
+            match poster {
+                Some(p) => picture(vec![Pic { tex: p.clone(), caption: None }], lines),
+                None => {
+                    if let Some(n) = note {
+                        lines.push(PLine::plain(safe(n), Role::Faint));
+                    }
+                    window(lines, scroll, h, 0)
+                }
+            }
+        }
+        Rich::Audio { cover, .. } => {
+            let lines = media_lines(loaded, entry);
+            match cover {
+                Some(c) => picture(vec![Pic { tex: c.clone(), caption: None }], lines),
+                None => window(lines, scroll, h, 0),
+            }
+        }
+        Rich::Epub { cover: Some(c), .. } => {
+            let mut lines: Vec<PLine> =
+                fact(loaded, "Title").map(|t| PLine::plain(t, Role::Title)).into_iter().collect();
+            lines.extend(fact(loaded, "Author").map(|a| PLine::plain(a, Role::Muted)));
+            picture(vec![Pic { tex: c.clone(), caption: None }], lines)
+        }
+        Rich::Font { strips, .. } if !strips.is_empty() => {
+            let pics = strips.iter().map(|(cap, t)| Pic { tex: t.clone(), caption: Some(safe(cap)) }).collect();
+            let lines = summary(loaded, &["Family", "Style", "Format"]).into_iter().collect();
+            picture(pics, lines)
+        }
+        Rich::Office(_) | Rich::Epub { .. } | Rich::Font { .. } | Rich::Model { .. } => rich_msg(),
     }
 }
 
@@ -888,6 +1005,7 @@ pub(crate) fn draw_body(buf: &mut Buffer, r: Rect, m: &PreviewVm, theme: &TuiThe
                 center(buf, y, l, Role::Muted);
             }
         }
+        Body::Picture { pics, lines } => draw_pictures(buf, r, pics, lines, theme),
         Body::Lines { lines, top, gutter, .. } => {
             let gw = if *gutter > 0 && usize::from(r.width) > *gutter + 2 { *gutter as u16 + 1 } else { 0 };
             for (i, (l, y)) in lines.iter().zip(r.y..r.bottom()).enumerate() {
@@ -940,6 +1058,61 @@ pub(crate) fn draw_body(buf: &mut Buffer, r: Rect, m: &PreviewVm, theme: &TuiThe
                 hits.push(rect, HitTarget::ArchiveRow(index));
             }
         }
+    }
+}
+
+/// What stands in for a picture that is not on the screen (`None`: it is).
+pub fn status_text(d: Drawn) -> Option<&'static str> {
+    match d {
+        Drawn::Image | Drawn::Placeholder => None,
+        Drawn::Pending => Some(tr!("tui-preview-image-pending")),
+        Drawn::Off => Some(tr!("tui-preview-image-off")),
+        Drawn::Missing => Some(tr!("tui-preview-image-missing")),
+        Drawn::NoRoom => Some(tr!("tui-preview-image-no-room")),
+    }
+}
+
+/// Pictures stacked in `r` (equal shares; a caption row above each when it has one and
+/// there is room), `lines` at the bottom (as many as leave the pictures two rows).
+fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme: &TuiTheme) {
+    let n_lines = (lines.len() as u16).min(r.height.saturating_sub(2));
+    let area = Rect { height: r.height - n_lines, ..r };
+    for (l, y) in lines.iter().zip(area.bottom()..r.bottom()) {
+        let w = text::width(&l.text()).min(usize::from(r.width)) as u16;
+        put_line(buf, r.x + (r.width - w) / 2, y, w.max(1), l, theme);
+    }
+    if pics.is_empty() || area.is_empty() {
+        return;
+    }
+    let n = (pics.len() as u16).min(area.height).max(1);
+    let share = area.height / n;
+    for (i, pic) in pics.iter().take(usize::from(n)).enumerate() {
+        let i = i as u16;
+        let h = if i + 1 == n { area.height - share * i } else { share };
+        let mut slot = Rect { y: area.y + share * i, height: h, ..area };
+        if let Some(c) = &pic.caption
+            && slot.height >= 3
+        {
+            let c = text::truncate_end(c, usize::from(slot.width));
+            put(buf, slot.x, slot.y, &c, slot.width, theme.style(Role::Muted));
+            slot.y += 1;
+            slot.height -= 1;
+        }
+        let mut st = ImageState::default();
+        let drawn = images::draw_in(buf, slot, &pic.tex, &mut st);
+        let Some(msg) = status_text(drawn) else { continue };
+        // Graphics images blank their cells while they encode: say so under them.
+        let y = match st.drawn {
+            Some(d) if d.bottom() < slot.bottom() => d.bottom(),
+            Some(_) => continue,
+            None => slot.y + slot.height.saturating_sub(1) / 2,
+        };
+        if slot.is_empty() || y >= slot.bottom() {
+            continue;
+        }
+        let s = text::truncate_end(msg, usize::from(slot.width));
+        let x = slot.x + (slot.width - text::width(&s) as u16) / 2;
+        put(buf, x, y, &s, slot.width, theme.style(Role::Faint));
     }
 }
 
@@ -1053,6 +1226,70 @@ mod tests {
                 for h in 0..=6 {
                     draw(&m, w, h);
                 }
+            }
+        }
+    }
+
+    fn red(up: &soyuz_appcore::services::preview_gfx::Uploader, w: usize, h: usize) -> Tex {
+        let rgba: Vec<u8> = (0..w * h).flat_map(|_| [255, 0, 0, 255]).collect();
+        let px = soyuz_appcore::services::preview_gfx::Pixels { size: [w, h], rgba: &rgba, premultiplied: false };
+        Tex::upload(up, "red".into(), px)
+    }
+
+    #[test]
+    fn pictures_draw_with_lines_and_status() {
+        use soyuz_core::config::{Config, TuiImages};
+        let mut c = Config::default();
+        c.tui.images = TuiImages::Halfblocks;
+        c.tui.color_mode = soyuz_core::config::TuiColorMode::Truecolor;
+        let up = images::install(&c, soyuz_appcore::host::no_wake());
+        images::begin_frame(&c);
+        let pics = vec![
+            Pic { tex: red(&up, 100, 60), caption: Some("12 pt".into()) },
+            Pic { tex: red(&up, 100, 60), caption: None },
+        ];
+        let body = Body::Picture { pics, lines: vec![PLine::plain("100 × 60 px · PNG", Role::Faint)] };
+        let m = PreviewVm { info: Vec::new(), ..vm(body.clone()) };
+        let (lines, _) = draw(&m, 30, 20);
+        let all = lines.join(
+            "
+",
+        );
+        assert!(all.contains("12 pt") && all.contains("100 × 60 px · PNG"), "{all}");
+        assert!(all.contains('█') || all.contains('▀'), "{all}");
+        assert!(m.body_text().iter().any(|l| l == "12 pt"));
+
+        // Off: the text line in place of each picture.
+        c.tui.images = TuiImages::Off;
+        images::begin_frame(&c);
+        let (lines, _) = draw(&m, 40, 20);
+        let all = lines.join(
+            "
+",
+        );
+        assert!(all.contains(tr!("tui-preview-image-off")) && !all.contains('█'), "{all}");
+        // A texture that is not the terminal's: missing.
+        c.tui.images = TuiImages::Halfblocks;
+        images::begin_frame(&c);
+        let foreign = red(&soyuz_appcore::services::preview_gfx::no_upload(), 4, 4);
+        let m2 = vm(Body::Picture { pics: vec![Pic { tex: foreign, caption: None }], lines: Vec::new() });
+        let (lines, _) = draw(&m2, 40, 20);
+        assert!(
+            lines
+                .join(
+                    "
+"
+                )
+                .contains(tr!("tui-preview-image-missing"))
+        );
+        assert_eq!(status_text(Drawn::Image), None);
+        assert_eq!(status_text(Drawn::Placeholder), None);
+        assert!(status_text(Drawn::NoRoom).is_some() && status_text(Drawn::Pending).is_some());
+        // Tiny sizes never panic.
+        for w in 0..=20 {
+            for h in 0..=6 {
+                draw(&m, w, h);
+                draw(&m2, w, h);
             }
         }
     }

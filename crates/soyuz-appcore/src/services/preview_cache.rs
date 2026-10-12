@@ -25,8 +25,9 @@ pub struct CacheKey {
     pub path: PathBuf,
     pub modified: Option<SystemTime>,
     pub size: u64,
-    /// Rendering inputs that change the result (image size limit, theme, text cap).
-    pub variant: (u32, bool, usize),
+    /// Rendering inputs that change the result (image size limit, theme, text cap,
+    /// pixels-only frontend).
+    pub variant: (u32, bool, usize, bool),
 }
 
 struct Entry {
@@ -135,7 +136,7 @@ mod tests {
     }
 
     fn key(i: u32) -> CacheKey {
-        CacheKey { path: format!("/a{i}.zip").into(), modified: None, size: 1, variant: (0, true, 0) }
+        CacheKey { path: format!("/a{i}.zip").into(), modified: None, size: 1, variant: (0, true, 0, false) }
     }
 
     #[test]

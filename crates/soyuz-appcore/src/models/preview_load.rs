@@ -69,6 +69,8 @@ pub struct PreviewLoader {
     cache_key: Option<CacheKey>,
     /// Display scale for page-like renders (the frontend keeps it current).
     pub pixels_per_point: f32,
+    /// The frontend draws only uploaded pixels (the terminal UI; `RichLimits::terminal`).
+    pub terminal: bool,
 }
 
 impl std::fmt::Debug for PreviewLoader {
@@ -99,6 +101,7 @@ impl PreviewLoader {
             big,
             cache_key: None,
             pixels_per_point,
+            terminal: false,
         }
     }
 
@@ -122,7 +125,10 @@ impl PreviewLoader {
             mono: TextFont::monospace(12.0),
             fg,
             pixels_per_point: self.pixels_per_point,
-            rich: crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big),
+            rich: crate::services::preview_rich::RichLimits {
+                terminal: self.terminal,
+                ..crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big)
+            },
         }
     }
 
@@ -149,7 +155,7 @@ impl PreviewLoader {
                     path: e.path.clone(),
                     modified: e.modified,
                     size: e.size,
-                    variant: (limits.max_image_px, limits.dark, limits.max_text_bytes),
+                    variant: (limits.max_image_px, limits.dark, limits.max_text_bytes, limits.rich.terminal),
                 });
                 if let Some(hit) = ck.as_ref().and_then(preview_cache::get) {
                     self.client.cancel();

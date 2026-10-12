@@ -678,7 +678,18 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
         return out;
     }
     let mut out = match kind {
-        Kind::Image => image(&mut opened, &name, job, stale),
+        Kind::Image => {
+            let mut l = image(&mut opened, &name, job, stale);
+            if job.limits.rich.terminal {
+                // The terminal shows facts as text: the picture's EXIF rows under it.
+                let head = opened.head(crate::rename::exif::HEAD_BYTES);
+                if let Some(x) = crate::rename::exif::parse(&head) {
+                    l.facts.extend(x.fields());
+                }
+            }
+            l
+        }
+        Kind::Svg if job.limits.rich.terminal => svg_pixels(&mut opened, &name, job),
         Kind::Svg => {
             let bytes = opened.read_up_to(16 * 1024 * 1024);
             Loaded {
@@ -845,6 +856,29 @@ fn image(opened: &mut Opened, name: &str, job: &LoadJob, stale: &dyn Fn() -> boo
     let rgba = img.to_rgba8();
     let tex = Tex::upload_rgba(&job.upload, format!("preview:{name}:{}", job.id), &rgba);
     Loaded { kind: Kind::Image, content: Content::Image(ImageData { tex, width: w, height: h }), facts, meta: None }
+}
+
+/// An SVG rasterized into a texture (`RichLimits::terminal`: the frontend draws only
+/// pixels).
+fn svg_pixels(opened: &mut Opened, name: &str, job: &LoadJob) -> Loaded {
+    use crate::icon::IconId;
+    let bytes = opened.read_up_to(16 * 1024 * 1024);
+    let longest = if job.limits.rich.big { job.limits.max_image_px.max(64) } else { 768 };
+    let r = std::panic::catch_unwind(AssertUnwindSafe(|| super::preview_raster::svg(&bytes, longest)))
+        .unwrap_or_else(|_| Err("SVG renderer failed".into()));
+    match r {
+        Ok(super::preview_raster::SvgPixels { rgba, size, own }) => {
+            let pixels = super::preview_gfx::Pixels { size, rgba: &rgba, premultiplied: true };
+            let tex = Tex::upload(&job.upload, format!("preview:{name}:{}", job.id), pixels);
+            let (width, height) = (own[0].round().max(1.0) as u32, own[1].round().max(1.0) as u32);
+            let facts = vec![
+                ("Dimensions".to_string(), format!("{width} × {height}")),
+                ("Format".to_string(), "SVG".to_string()),
+            ];
+            Loaded { kind: Kind::Svg, content: Content::Image(ImageData { tex, width, height }), facts, meta: None }
+        }
+        Err(e) => message(Kind::Svg, IconId::WarningCircle, tr!("services-preview-cant-read-image"), e),
+    }
 }
 
 /// A script previewer's result as preview content.
@@ -1188,6 +1222,62 @@ mod tests {
             }
             _ => panic!("expected hex"),
         }
+    }
+
+    /// `RichLimits::terminal`: SVG and 3D models arrive as pictures, photos with EXIF rows.
+    #[test]
+    fn terminal_requests_get_pixels_and_exif() {
+        let dir = tempfile::tempdir().unwrap();
+        let client = test_client();
+        let lim = Limits {
+            rich: super::super::preview_rich::RichLimits { terminal: true, ..Default::default() },
+            ..limits()
+        };
+
+        let svg = dir.path().join("logo.svg");
+        std::fs::write(&svg, r##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10"><rect width="20" height="10" fill="#00ff00"/></svg>"##).unwrap();
+        client.request(Source::File(svg.clone()), false, false, lim.clone());
+        let l = wait(&client);
+        assert_eq!(l.kind, Kind::Svg);
+        match l.content {
+            Content::Image(img) => {
+                assert_eq!((img.width, img.height), (20, 10));
+                assert_eq!(img.tex.size, [768, 384], "rasterized to the pane size");
+            }
+            _ => panic!("expected pixels"),
+        }
+        assert!(l.facts.iter().any(|(k, v)| k == "Dimensions" && v == "20 × 10"), "{:?}", l.facts);
+        // Without the flag (the GUI): the SVG source, drawn by the frontend.
+        client.request(Source::File(svg), false, false, limits());
+        assert!(matches!(wait(&client).content, Content::Svg { .. }));
+
+        let stl = dir.path().join("part.stl");
+        std::fs::write(&stl, "solid t\n facet normal 0 0 1\n outer loop\n vertex 0 0 0\n vertex 1 0 0\n vertex 0 1 0\n endloop\n endfacet\nendsolid t\n").unwrap();
+        client.request(Source::File(stl), false, false, lim.clone());
+        let l = wait(&client);
+        assert_eq!(l.kind, Kind::Model);
+        assert!(matches!(&l.content, Content::Image(img) if img.tex.size == [480, 480]), "a still render");
+        assert!(l.facts.iter().any(|(k, _)| k == "Triangles"));
+
+        // A JPEG with an EXIF block.
+        let mut jpeg = Vec::new();
+        image::RgbImage::from_pixel(8, 8, image::Rgb([9, 9, 9]))
+            .write_to(&mut std::io::Cursor::new(&mut jpeg), image::ImageFormat::Jpeg)
+            .unwrap();
+        let tiff = crate::rename::exif::fixtures::sample_tiff();
+        let mut app1 = vec![0xFF, 0xE1];
+        app1.extend_from_slice(&((tiff.len() + 8) as u16).to_be_bytes());
+        app1.extend_from_slice(b"Exif\0\0");
+        app1.extend_from_slice(&tiff);
+        jpeg.splice(2..2, app1);
+        let photo = dir.path().join("photo.jpg");
+        std::fs::write(&photo, &jpeg).unwrap();
+        client.request(Source::File(photo.clone()), false, false, lim);
+        let l = wait(&client);
+        assert!(matches!(l.content, Content::Image(_)));
+        assert!(l.facts.iter().any(|(_, v)| v.contains("EOS R5")), "{:?}", l.facts);
+        client.request(Source::File(photo), false, false, limits());
+        assert!(!wait(&client).facts.iter().any(|(_, v)| v.contains("EOS R5")), "the GUI's facts are unchanged");
     }
 
     #[test]
