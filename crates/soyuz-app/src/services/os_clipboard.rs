@@ -105,7 +105,7 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
 pub type Files = Option<(ClipMode, Vec<PathBuf>)>;
 
 /// What to do with the clipboard's files once they are known (runs on the UI thread).
-pub type Then = Box<dyn FnOnce(&mut crate::app::SoyuzApp, Files) + Send>;
+pub type Then = Box<dyn FnOnce(&mut crate::core::AppCore, Files) + Send>;
 
 /// Files currently on the system clipboard (put there by any application). Blocking
 /// outside Windows (a round trip to the clipboard owner): never call it on the UI thread
@@ -118,7 +118,7 @@ pub fn get_files() -> Files {
 /// Windows: right away (the clipboard read is a quick local call). Elsewhere the read
 /// waits for the clipboard owner (another process), so it runs on a worker thread and
 /// `then` runs from [`pump`] once it lands, at most a few frames later.
-pub fn with_files(app: &mut crate::app::SoyuzApp, then: Then) {
+pub fn with_files(app: &mut crate::core::AppCore, then: Then) {
     #[cfg(windows)]
     then(app, get_files());
     #[cfg(not(windows))]
@@ -140,7 +140,7 @@ pub fn with_files(app: &mut crate::app::SoyuzApp, then: Then) {
 }
 
 /// Run the continuations of clipboard reads that have landed (call once per frame).
-pub fn pump(app: &mut crate::app::SoyuzApp) {
+pub fn pump(app: &mut crate::core::AppCore) {
     #[cfg(not(windows))]
     {
         let ready = PENDING.lock().take_ready();

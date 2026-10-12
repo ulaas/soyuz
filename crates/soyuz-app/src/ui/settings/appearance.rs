@@ -53,7 +53,7 @@ pub const TOKENS: [Token; 33] = [
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let d = &mut s.draft;
     let ctx = "Appearance theme colors";
     let mut any = false;
@@ -416,18 +416,20 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         Some(super::themes_ui::ThemeAction::OpenFolder) => {
             let dir = crate::theme::library::themes_dir();
             let _ = std::fs::create_dir_all(&dir);
-            app.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
+            app.core
+                .cmds
+                .push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
         }
         None => {}
     }
     if open_packs {
         let dir = crate::ui::views::icon_pack::packs_dir();
         let _ = std::fs::create_dir_all(&dir);
-        app.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
+        app.core.cmds.push(crate::cmd::Cmd::OpenInNewTab { location: soyuz_core::Location::Dir(dir), activate: true });
     }
     if go_fonts {
-        app.settings.section = super::Section::Fonts;
-        app.settings.scroll_top = true;
+        app.gui.settings.section = super::Section::Fonts;
+        app.gui.settings.scroll_top = true;
     }
     any
 }

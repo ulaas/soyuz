@@ -76,16 +76,16 @@ thread_local! {
 /// Start of every frame (before file-op handling): service pumps, queued commands and
 /// OS file drops onto the shelf.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    crate::models::tools::pump(app, ctx);
+    crate::models::tools::pump(&mut app.core, ctx);
     versions::begin_frame(app);
     sync_sched::tick(app, ctx);
-    crate::models::tools::request_os_tags(app);
+    crate::models::tools::request_os_tags(&app.core);
     debug_open_once();
     let cmds = crate::models::tools::take_queue();
     TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
     // Config edits, tags and version actions run outside the tools borrow (they touch
     // many modules); the rest open tool windows.
-    let cmds = crate::models::tools::apply_model_cmds(app, ctx, cmds);
+    let cmds = crate::models::tools::apply_model_cmds(&mut app.core, ctx, cmds);
     TOOLS.with_borrow_mut(|t| {
         for c in cmds {
             apply(t, app, c);
@@ -142,7 +142,7 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             match profiles.iter().find(|p| p.name == name).cloned() {
                 Some(pr) => t.compare = Some(compare::CompareWindow::with_profile(&pr, profiles)),
                 None => {
-                    app.ui.toasts.push(Toast::info(tr!("tools-toast-no-profile", name = name)));
+                    app.core.ui.toasts.push(Toast::info(tr!("tools-toast-no-profile", name = name)));
                 }
             }
         }

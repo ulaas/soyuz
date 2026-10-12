@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 use soyuz_core::Location;
 use soyuz_core::config::Action;
 
-use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::core::AppCore;
 use crate::geom::Point;
 use crate::host::Host;
 use crate::icon::IconId;
@@ -167,7 +167,7 @@ impl PaletteState {
 }
 
 /// Open the palette in `base` mode with optional initial text (e.g. `":"`).
-pub fn open(app: &mut SoyuzApp, base: Mode, text: &str) {
+pub fn open(app: &mut AppCore, base: Mode, text: &str) {
     let p = &mut app.palette;
     if p.open && p.base == base && text.is_empty() {
         close(app);
@@ -185,19 +185,19 @@ pub fn open(app: &mut SoyuzApp, base: Mode, text: &str) {
     p.pointer_at_open = None;
 }
 
-pub fn close(app: &mut SoyuzApp) {
+pub fn close(app: &mut AppCore) {
     app.palette.open = false;
     app.palette.input.clear();
     app.palette.save_now();
 }
 
 /// The palette or the settings window owns the keyboard.
-pub fn owns_keyboard(app: &SoyuzApp) -> bool {
-    app.palette.open || app.settings.is_open()
+pub fn owns_keyboard(app: &AppCore) -> bool {
+    app.palette.open || app.ui.settings_open
 }
 
 /// Per frame, before input: folder frecency, config hot reload, throttled saves.
-pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn begin_frame(app: &mut AppCore, host: &dyn Host) {
     crate::services::config_watch::pump(app, host);
     if let Some(dir) = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim)
         && app.palette.last_dir.as_deref() != Some(dir.as_path())
@@ -216,7 +216,7 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
 // Result building
 // ---------------------------------------------------------------------------
 
-fn chord_for(app: &SoyuzApp, a: &Action) -> Option<String> {
+fn chord_for(app: &AppCore, a: &Action) -> Option<String> {
     app.keymap
         .chords_for(a)
         .first()
@@ -226,7 +226,7 @@ fn chord_for(app: &SoyuzApp, a: &Action) -> Option<String> {
 
 /// Actions offered by the palette: `Action::all()` minus bookmark slots without a
 /// bookmark, plus the custom commands.
-fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
+fn palette_actions(app: &AppCore) -> Vec<Action> {
     let n_bm = app.config.bookmarks.len();
     let mut v: Vec<Action> = Action::all()
         .into_iter()
@@ -247,7 +247,7 @@ fn palette_actions(app: &SoyuzApp) -> Vec<Action> {
     v
 }
 
-fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
+fn action_item(app: &AppCore, a: &Action, section: &'static str) -> Item {
     let e = catalog::entry(a);
     let title = crate::models::workspaces::palette_title(app, a).unwrap_or(e.title);
     let mut it = Item::new(Exec::Action(a.clone()), title, e.icon, section);
@@ -288,7 +288,7 @@ fn action_item(app: &SoyuzApp, a: &Action, section: &'static str) -> Item {
 }
 
 /// Rank actions for `q` (empty = recent first, then by category).
-pub fn rank_commands(app: &SoyuzApp, q: &str) -> Vec<Item> {
+pub fn rank_commands(app: &AppCore, q: &str) -> Vec<Item> {
     let actions = palette_actions(app);
     let recent: Vec<Action> = app.palette.memory.commands.iter().filter_map(|s| s.parse::<Action>().ok()).collect();
     let mut out = Vec::new();
@@ -389,7 +389,7 @@ pub fn score_actions(entries: &[(Action, catalog::Entry)], recent: &[Action], q:
 
 /// Bookmarks, favorites and frecency folders, deduplicated. The kind (`"Bookmark"`,
 /// `"Favorite"`, `"Recent"`, `"Here"`) is an identifier, not shown as is.
-fn folder_sources(app: &SoyuzApp) -> Vec<(PathBuf, String, &'static str, f64)> {
+fn folder_sources(app: &AppCore) -> Vec<(PathBuf, String, &'static str, f64)> {
     let now = now_secs();
     let mut v: Vec<(PathBuf, String, &'static str, f64)> = Vec::new();
     let mut push = |path: PathBuf, label: String, kind: &'static str, fr: f64| {
@@ -425,7 +425,7 @@ fn folder_name(p: &Path) -> String {
 }
 
 /// Folder jump (Ctrl+P) and `@`: fuzzy over names and paths, boosted by frecency.
-pub fn rank_folders(app: &SoyuzApp, q: &str, bookmarks_first: bool) -> Vec<Item> {
+pub fn rank_folders(app: &AppCore, q: &str, bookmarks_first: bool) -> Vec<Item> {
     let sources = folder_sources(app);
     let current = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim);
     let mut f = Fuzzy::new(q);
@@ -503,7 +503,7 @@ fn sep() -> char {
 }
 
 /// `:` mode: "go to" plus completions of the typed parent folder (aux listing, async).
-fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
+fn rank_paths(app: &mut AppCore, q: &str, prefix: Option<char>) -> Vec<Item> {
     let current = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim);
     let typed = expand_tilde(q.trim());
     let absolute = query::looks_like_path(&typed) || Path::new(&typed).is_absolute();
@@ -593,7 +593,7 @@ fn rank_paths(app: &mut SoyuzApp, q: &str, prefix: Option<char>) -> Vec<Item> {
     out
 }
 
-fn rank_search(app: &SoyuzApp, q: &str) -> Vec<Item> {
+fn rank_search(app: &AppCore, q: &str) -> Vec<Item> {
     let dir = app
         .ws
         .pane()
@@ -626,7 +626,7 @@ fn rank_search(app: &SoyuzApp, q: &str) -> Vec<Item> {
     vec![a, b]
 }
 
-fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
+fn rank_shell(app: &AppCore, q: &str) -> Vec<Item> {
     let dir = app
         .ws
         .pane()
@@ -680,7 +680,7 @@ fn rank_shell(app: &SoyuzApp, q: &str) -> Vec<Item> {
     out
 }
 
-fn rank_tabs(app: &SoyuzApp, q: &str) -> Vec<Item> {
+fn rank_tabs(app: &AppCore, q: &str) -> Vec<Item> {
     let mut f = Fuzzy::new(q);
     let mut out = Vec::new();
     for (i, t) in app.ws.tabs.iter().enumerate() {
@@ -717,7 +717,7 @@ fn rank_tabs(app: &SoyuzApp, q: &str) -> Vec<Item> {
     out
 }
 
-fn build(app: &mut SoyuzApp) -> Vec<Item> {
+fn build(app: &mut AppCore) -> Vec<Item> {
     let input = app.palette.input.clone();
     let (mode, q) = query::parse(&input, app.palette.base);
     let mut items = match mode {
@@ -764,7 +764,7 @@ impl RunMods {
 }
 
 /// Run `exec` (Enter, a click, Tab completion, a prefix chip).
-pub fn run(app: &mut SoyuzApp, host: &dyn Host, exec: Exec, mods: RunMods) {
+pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
     match exec {
         Exec::Action(a) => {
             app.palette.memory.used_command(&a.to_string());
@@ -812,7 +812,7 @@ pub fn run(app: &mut SoyuzApp, host: &dyn Host, exec: Exec, mods: RunMods) {
     }
 }
 
-fn go(app: &mut SoyuzApp, loc: Location, new_tab: bool) {
+fn go(app: &mut AppCore, loc: Location, new_tab: bool) {
     if let Location::Dir(p) = &loc
         && p.as_os_str().is_empty()
     {
@@ -824,7 +824,7 @@ fn go(app: &mut SoyuzApp, loc: Location, new_tab: bool) {
         let id = app.ws.pane().id;
         ops::navigate(app, id, loc, NavOpts::user());
     }
-    app.ui.focus = crate::app::Focus::List;
+    app.ui.focus = crate::core::Focus::List;
 }
 
 /// Completion target of the selected item (Tab).
@@ -843,7 +843,7 @@ fn completion_of(item: &Item) -> Option<String> {
 
 /// (Re)build the results when the query or the sources changed; `:` paths rebuild every
 /// frame while their folder is listed. Keeps the selection in range.
-pub fn refresh_results(app: &mut SoyuzApp) {
+pub fn refresh_results(app: &mut AppCore) {
     let key = (app.palette.input.clone(), app.palette.base, app.palette.version, crate::i18n::generation());
     let mode = app.palette.mode();
     if app.palette.results_key.as_ref() != Some(&key) || mode == Mode::Path {
@@ -882,7 +882,7 @@ pub struct KeyInput {
 }
 
 /// Apply one frame's palette keys (selection, Esc, Enter, Tab, mode toggles).
-pub fn apply_keys(app: &mut SoyuzApp, host: &dyn Host, k: KeyInput) {
+pub fn apply_keys(app: &mut AppCore, host: &dyn Host, k: KeyInput) {
     let n = app.palette.results.len();
     let mut exec: Option<(Exec, RunMods)> = None;
     let pal = &mut app.palette;

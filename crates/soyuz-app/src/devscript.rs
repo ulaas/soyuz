@@ -115,8 +115,8 @@ impl DevScript {
 
 /// Start of a frame: inject queued synthetic input.
 pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
-    if !app.devscript.events.is_empty() {
-        let events = std::mem::take(&mut app.devscript.events);
+    if !app.gui.devscript.events.is_empty() {
+        let events = std::mem::take(&mut app.gui.devscript.events);
         ctx.input_mut(|i| i.events.extend(events));
     }
 }
@@ -124,12 +124,12 @@ pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
 /// eframe's raw-input hook: keep the synthetic `hover:` pointer in place (before egui
 /// reads the input, so hover state follows it).
 pub fn raw_input_hook(app: &mut SoyuzApp, raw: &mut egui::RawInput) {
-    if let Some(pos) = app.devscript.pointer {
+    if let Some(pos) = app.gui.devscript.pointer {
         raw.events.retain(|e| !matches!(e, egui::Event::PointerGone | egui::Event::PointerMoved(_)));
         // Moved once: repeating it every frame would count as movement (no tooltips).
-        if app.devscript.pointer_sent != Some(pos) {
+        if app.gui.devscript.pointer_sent != Some(pos) {
             raw.events.push(egui::Event::PointerMoved(pos));
-            app.devscript.pointer_sent = Some(pos);
+            app.gui.devscript.pointer_sent = Some(pos);
         }
     }
 }
@@ -137,7 +137,7 @@ pub fn raw_input_hook(app: &mut SoyuzApp, raw: &mut egui::RawInput) {
 /// Before a frame of the main window: queued synthetic pointer input (egui needs it in
 /// the raw input to compute hover and clicks).
 pub fn raw_input(app: &mut SoyuzApp, raw: &mut egui::RawInput) {
-    raw.events.append(&mut app.devscript.raw);
+    raw.events.append(&mut app.gui.devscript.raw);
 }
 
 /// `keys:` spec → egui events.
@@ -192,19 +192,19 @@ pub fn begin(app: &mut SoyuzApp) {
         1 => startup_mark("first frame presented"),
         _ => {}
     }
-    if app.devscript.frame_log {
-        app.devscript.frame_start = Some(Instant::now());
+    if app.gui.devscript.frame_log {
+        app.gui.devscript.frame_start = Some(Instant::now());
     }
 }
 
 /// Run due steps. Called once per frame.
 pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
-    if app.devscript.frame_log {
-        app.devscript.frames += 1;
-        let ms = app.devscript.frame_start.map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
-        log::info!("frame {} ui {ms:.2} ms", app.devscript.frames);
+    if app.gui.devscript.frame_log {
+        app.gui.devscript.frames += 1;
+        let ms = app.gui.devscript.frame_start.map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
+        log::info!("frame {} ui {ms:.2} ms", app.gui.devscript.frames);
     }
-    if let Some(path) = app.devscript.pending_shot.clone() {
+    if let Some(path) = app.gui.devscript.pending_shot.clone() {
         let image = ctx.input(|i| {
             i.raw.events.iter().find_map(|e| match e {
                 egui::Event::Screenshot { image, .. } => Some(image.clone()),
@@ -214,7 +214,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         match image {
             Some(img) => {
                 save_png(&path, &img);
-                app.devscript.pending_shot = None;
+                app.gui.devscript.pending_shot = None;
             }
             None => {
                 ctx.request_repaint();
@@ -223,55 +223,59 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         }
     }
     loop {
-        if let Some(t) = app.devscript.resume_at {
+        if let Some(t) = app.gui.devscript.resume_at {
             let now = Instant::now();
             if now < t {
                 ctx.request_repaint_after(t - now);
                 return;
             }
-            app.devscript.resume_at = None;
+            app.gui.devscript.resume_at = None;
         }
-        let Some(step) = app.devscript.steps.pop_front() else { return };
-        if app.devscript.until_since.is_none() {
+        let Some(step) = app.gui.devscript.steps.pop_front() else { return };
+        if app.gui.devscript.until_since.is_none() {
             log::info!("SOYUZ_SCRIPT: {step}");
         }
         let (verb, arg) = step.split_once(':').unwrap_or((step.as_str(), ""));
         match verb {
             "wait" => {
                 let ms = arg.trim().parse::<u64>().unwrap_or(500);
-                app.devscript.resume_at = Some(Instant::now() + Duration::from_millis(ms));
+                app.gui.devscript.resume_at = Some(Instant::now() + Duration::from_millis(ms));
             }
             "until" => {
-                let since = *app.devscript.until_since.get_or_insert_with(Instant::now);
+                let since = *app.gui.devscript.until_since.get_or_insert_with(Instant::now);
                 if !std::path::Path::new(arg.trim()).exists() && since.elapsed() < Duration::from_secs(120) {
-                    app.devscript.steps.push_front(step.clone());
-                    app.devscript.resume_at = Some(Instant::now() + Duration::from_millis(100));
+                    app.gui.devscript.steps.push_front(step.clone());
+                    app.gui.devscript.resume_at = Some(Instant::now() + Duration::from_millis(100));
                 } else {
-                    app.devscript.until_since = None;
+                    app.gui.devscript.until_since = None;
                 }
             }
             "shot" => {
-                app.devscript.pending_shot = Some(PathBuf::from(arg.trim()));
+                app.gui.devscript.pending_shot = Some(PathBuf::from(arg.trim()));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
                 ctx.request_repaint();
                 return;
             }
             "cd" => {
-                let pane = app.ws.pane().id;
-                app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(PathBuf::from(arg.trim())), select: None });
+                let pane = app.core.ws.pane().id;
+                app.core.cmds.push(Cmd::Navigate {
+                    pane,
+                    location: Location::Dir(PathBuf::from(arg.trim())),
+                    select: None,
+                });
             }
             "select" => {
-                let pane = app.ws.pane_mut();
+                let pane = app.core.ws.pane_mut();
                 if let Some(pos) = pane.visible_pos(arg.trim()) {
                     pane.move_cursor(pos, false, false);
                 }
             }
             "theme" => {
-                app.ui.theme = crate::host::ThemePref::from_config(arg);
-                ctx.set_theme(app.ui.theme);
+                app.core.ui.theme = crate::host::ThemePref::from_config(arg);
+                ctx.set_theme(app.core.ui.theme);
             }
-            "config" => match edited(&app.config, arg) {
-                Ok(c) => crate::services::config_watch::apply_config(app, ctx, c),
+            "config" => match edited(&app.core.config, arg) {
+                Ok(c) => crate::services::config_watch::apply_config(&mut app.core, ctx, c),
                 Err(e) => log::warn!("SOYUZ_SCRIPT {step}: {e}"),
             },
             "size" => {
@@ -281,7 +285,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(w, h)));
                 }
             }
-            "welcome" => app.ui.welcome = arg.trim() != "off",
+            "welcome" => app.core.ui.welcome = arg.trim() != "off",
             "mark" => log::info!("SOYUZ_SCRIPT: mark {}", arg.trim()),
             "panes" => log_panes(app, arg.trim()),
             "hover" => {
@@ -289,11 +293,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 if let Some((x, y)) = arg.split_once(',')
                     && let (Ok(x), Ok(y)) = (x.trim().parse::<f32>(), y.trim().parse::<f32>())
                 {
-                    app.devscript.pointer = Some(egui::pos2(x, y));
+                    app.gui.devscript.pointer = Some(egui::pos2(x, y));
                 }
             }
             "toast" => {
-                app.ui.toasts.push(script_toast(arg));
+                app.core.ui.toasts.push(script_toast(arg));
             }
             "expect" => match expect(app, arg.trim()) {
                 Ok(()) => log::info!("SOYUZ_SCRIPT: expect ok {}", arg.trim()),
@@ -302,7 +306,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             "scroll" => {
                 // Absolute scroll offset of the focused pane (perf probes).
                 let y = arg.trim().parse::<f32>().unwrap_or(0.0);
-                app.ws.pane_mut().restore_scroll = Some(y);
+                app.core.ws.pane_mut().restore_scroll = Some(y);
             }
             "export_picker" => {
                 crate::ui::settings::open(app, Some(crate::ui::settings::Section::Advanced));
@@ -323,24 +327,24 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
             }
             "appearance" => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Appearance)),
             "quit" => {
-                app.workspaces.quitting = true;
+                app.core.workspaces.quitting = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
-            "ws" => crate::models::workspaces::devscript(app, arg),
+            "ws" => crate::models::workspaces::devscript(&mut app.core, arg),
             "smart" => {
                 // `smart:<name>` opens a smart folder; `smart:` opens the "new" dialog.
                 if arg.trim().is_empty() {
-                    app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(None)));
+                    app.core.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Edit(None)));
                 } else if let Some(index) = crate::ui::smart::folders().iter().position(|f| f.name == arg.trim()) {
-                    app.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Open { index, new_tab: false }));
+                    app.core.cmds.push(Cmd::Smart(crate::ui::smart::SmartCmd::Open { index, new_tab: false }));
                 }
             }
-            "edit" | "editor" => crate::editors::devscript(app, ctx, verb, arg),
+            "edit" | "editor" => crate::editors::devscript(&mut app.core, ctx, verb, arg),
             "keys" => {
                 // An open native dialog / popup window has the keyboard.
                 let evs = key_events(arg);
                 if !crate::ui::native::inject(&evs) {
-                    app.devscript.events.extend(evs);
+                    app.gui.devscript.events.extend(evs);
                 }
                 ctx.request_repaint();
                 return;
@@ -350,7 +354,7 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                 let (key, query) = arg.split_once('=').unwrap_or((arg, ""));
                 crate::ui::widgets::dropdown::request_open(ctx, key.trim(), query);
             }
-            "ai" => crate::ai::state::script(app, ctx, arg),
+            "ai" => crate::ai::state::script(&mut app.core, ctx, arg),
             "native" => crate::ui::native::devscript(ctx, arg),
             "click" | "press" | "move" | "release" => {
                 // `click:<x>,<y>[,right]` — synthetic egui pointer click (points), spread
@@ -366,20 +370,20 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
                         |pressed| egui::Event::PointerButton { pos, button, pressed, modifiers: egui::Modifiers::NONE };
                     match verb {
                         "click" => {
-                            app.devscript.raw.push(egui::Event::PointerMoved(pos));
-                            app.devscript.steps.push_front(format!("release:{arg}"));
-                            app.devscript.steps.push_front(format!("press:{arg}"));
+                            app.gui.devscript.raw.push(egui::Event::PointerMoved(pos));
+                            app.gui.devscript.steps.push_front(format!("release:{arg}"));
+                            app.gui.devscript.steps.push_front(format!("press:{arg}"));
                         }
-                        "press" => app.devscript.raw.push(ev(true)),
-                        "move" => app.devscript.raw.push(egui::Event::PointerMoved(pos)),
-                        _ => app.devscript.raw.push(ev(false)),
+                        "press" => app.gui.devscript.raw.push(ev(true)),
+                        "move" => app.gui.devscript.raw.push(egui::Event::PointerMoved(pos)),
+                        _ => app.gui.devscript.raw.push(ev(false)),
                     }
                 }
                 ctx.request_repaint();
                 return;
             }
             _ => match step.parse::<Action>() {
-                Ok(a) => app.cmds.push(Cmd::Action(a)),
+                Ok(a) => app.core.cmds.push(Cmd::Action(a)),
                 Err(e) => log::warn!("SOYUZ_SCRIPT: {e}"),
             },
         }
@@ -390,8 +394,8 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
 /// `panes:<label>` step: log every pane of the active tab of each window (location, listing state,
 /// entry / visible counts and the visible names) for scripted refresh checks.
 fn log_panes(app: &SoyuzApp, label: &str) {
-    let secondary = app.workspaces.windows.iter().map(|w| w.ws.tab());
-    for (i, p) in std::iter::once(app.ws.tab()).chain(secondary).flat_map(|t| t.panes.iter()).enumerate() {
+    let secondary = app.core.workspaces.windows.iter().map(|w| w.ws.tab());
+    for (i, p) in std::iter::once(app.core.ws.tab()).chain(secondary).flat_map(|t| t.panes.iter()).enumerate() {
         let names: Vec<&str> = p.visible.iter().filter_map(|&j| p.entries.get(j)).map(|e| e.name.as_str()).collect();
         log::info!(
             "SOYUZ_SCRIPT: panes {label} #{i} {} status={:?} refreshing={} entries={} visible={} [{}]",
@@ -432,16 +436,16 @@ fn expect(app: &SoyuzApp, check: &str) -> Result<(), String> {
     let open = |b: bool| if b { "open" } else { "closed" }.to_string();
     let actual = match what.trim() {
         "cwd" => {
-            let loc = app.ws.pane().location.display();
+            let loc = app.core.ws.pane().location.display();
             let name = std::path::Path::new(&loc).file_name().map(|n| n.to_string_lossy().into_owned());
             name.unwrap_or(loc)
         }
         "cursor" => {
-            let pane = app.ws.pane();
+            let pane = app.core.ws.pane();
             pane.cursor_pos().and_then(|p| pane.entry_at(p)).map(|e| e.name.clone()).unwrap_or_default()
         }
-        "settings" => open(app.settings.is_open()),
-        "palette" => open(app.palette.open),
+        "settings" => open(app.gui.settings.is_open()),
+        "palette" => open(app.core.palette.open),
         "dialog" => open(app.dialog_open()),
         // Debug hook only: a one-off metadata probe on the UI thread is fine here.
         "exists" => {
@@ -461,7 +465,7 @@ fn expect(app: &SoyuzApp, check: &str) -> Result<(), String> {
         "lang" => crate::i18n::current().tag().to_string(),
         // `has=<name>`: the focused pane shows an entry with that name.
         "has" => {
-            let pane = app.ws.pane();
+            let pane = app.core.ws.pane();
             if pane.visible_pos(want).is_some() { want.to_string() } else { "absent".into() }
         }
         other => return Err(format!("unknown check {other}")),

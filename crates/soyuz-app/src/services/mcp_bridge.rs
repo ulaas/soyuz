@@ -34,7 +34,7 @@ use soyuz_mcp::pipe::PipeServer;
 use soyuz_mcp::{ApprovalDecision, ApprovalRequest, Backend, Mode, ProgressFn, Server, Transport};
 
 use crate::ai::mcp::{McpApprovals, PendingMcpApproval};
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
@@ -385,7 +385,7 @@ impl McpBridge {
 }
 
 /// Per frame: (re)start servers on config changes, answer UI requests, show approvals.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     if app.secondary {
         // Secondary / safe-mode windows never serve MCP (the first window does).
         app.services.mcp.disabled = true;
@@ -456,7 +456,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     }
 }
 
-fn register(app: &mut SoyuzApp, host: &dyn Host, name: String, transport: Transport) {
+fn register(app: &mut AppCore, host: &dyn Host, name: String, transport: Transport) {
     let known = app.config.ai.mcp_clients.iter().any(|c| soyuz_mcp::trust::sanitize_name(&c.name) == name);
     if !known {
         crate::models::settings::update_config(app, host, |c| {
@@ -470,7 +470,7 @@ fn register(app: &mut SoyuzApp, host: &dyn Host, name: String, transport: Transp
 }
 
 /// Paths of the selection in the focused pane (inside the AI scope).
-fn selection_json(app: &SoyuzApp, scope: &Scope) -> Value {
+fn selection_json(app: &AppCore, scope: &Scope) -> Value {
     let pane = app.ws.pane();
     let entries: Vec<Value> = pane
         .selected_entries()
@@ -492,7 +492,7 @@ fn dir_of(path: &std::path::Path) -> Result<(PathBuf, Option<String>), ToolError
     }
 }
 
-fn answer(app: &mut SoyuzApp, call: UiCall) -> Result<Value, ToolError> {
+fn answer(app: &mut AppCore, call: UiCall) -> Result<Value, ToolError> {
     let scope = Scope::from_config(&app.config.ai.scope);
     match call {
         UiCall::Read(input) => match input {
@@ -633,7 +633,7 @@ pub fn job_spec(base: soyuz_jobs::JobSpec, plan: &Plan, caller: &str) -> soyuz_j
     full
 }
 
-fn execute(app: &mut SoyuzApp, plan: &Plan, caller: &str) -> Result<Value, ToolError> {
+fn execute(app: &mut AppCore, plan: &Plan, caller: &str) -> Result<Value, ToolError> {
     match &plan.action {
         PlanAction::Job(spec) => {
             let full = job_spec(app.fileops.jobs.spec(spec.kind.clone()), plan, caller);

@@ -442,8 +442,8 @@ fn keyboard(ctx: &egui::Context, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, filt
 pub fn properties(app: &mut crate::app::SoyuzApp, dir: &Path) {
     match soyuz_fs::stat(dir, false) {
         Ok(e) => {
-            let pane = app.ws.pane().id;
-            let size_style = app.config.general.size_style;
+            let pane = app.core.ws.pane().id;
+            let size_style = app.core.config.general.size_style;
             let d = crate::ui::dialogs::properties::PropertiesDialog::new(
                 pane,
                 vec![e],
@@ -452,10 +452,13 @@ pub fn properties(app: &mut crate::app::SoyuzApp, dir: &Path) {
                 None,
             )
             .naming(app);
-            app.ui.dialogs.push(d);
+            app.gui.dialogs.push(d);
         }
         Err(e) => {
-            app.ui.toasts.push(crate::models::toasts::Toast::error(tr!("views-tree-read-failed")).body(e.to_string()));
+            app.core
+                .ui
+                .toasts
+                .push(crate::models::toasts::Toast::error(tr!("views-tree-read-failed")).body(e.to_string()));
         }
     }
 }

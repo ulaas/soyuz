@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use parking_lot::Mutex;
 use soyuz_core::{EntryInfo, Location};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::services::mailbox::Wake;
 
@@ -65,7 +65,7 @@ pub fn open_paths_later(paths: Vec<PathBuf>) {
         return;
     }
     let _ = std::thread::Builder::new().name("soyuz-open-args".into()).spawn(move || {
-        let targets: Vec<_> = paths.iter().filter_map(|p| crate::app::startup_target(p)).collect();
+        let targets: Vec<_> = paths.iter().filter_map(|p| crate::core::startup_target(p)).collect();
         if !targets.is_empty() {
             push(Request::Open { targets, focus: false });
         }
@@ -137,7 +137,7 @@ pub fn uris_to_paths(uris: &[String]) -> Vec<PathBuf> {
 
 /// Per-frame pump (UI thread): applies `[linux]` settings that live in background
 /// services (FileManager1 ownership, clipboard fallback tools) and handles the queue.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     {
         let mut w = WAKE.lock();
         if w.is_none() {
@@ -152,7 +152,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     }
 }
 
-fn handle(app: &mut SoyuzApp, host: &dyn Host, req: Request) {
+fn handle(app: &mut AppCore, host: &dyn Host, req: Request) {
     match req {
         Request::Open { targets, focus } => {
             // Command-line extras keep the first path's tab in front.

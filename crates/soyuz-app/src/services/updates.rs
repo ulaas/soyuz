@@ -1101,7 +1101,7 @@ pub fn weekly_due(last: Option<SystemTime>, now: SystemTime) -> bool {
 
 /// Per-frame hook: starts the opt-in weekly check once per session and turns its result
 /// into a notification.
-pub fn pump(app: &mut crate::app::SoyuzApp) {
+pub fn pump(app: &mut crate::core::AppCore) {
     let notice = {
         let mut s = STATE.lock();
         if !s.started_weekly {

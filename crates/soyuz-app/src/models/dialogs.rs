@@ -5,7 +5,7 @@
 //!
 //! Each [`DialogModel`] variant holds the prompt's state and turns the user's choice
 //! into [`Cmd`]s (or a direct answer) through plain methods; no drawing here. Core code
-//! pushes models onto [`DialogStack`] (`SoyuzApp::dialogs`); a frontend draws the
+//! pushes models onto [`DialogStack`] (`AppCore::dialogs`); a frontend draws the
 //! top-most one (the GUI in `ui::dialogs`) and calls [`DialogStack::close_top`] when it
 //! goes away. Closing without an answer is [`DialogModel::dismiss`]: it defers a job
 //! prompt, rejects an MCP request and cancels everything else. Models whose answer is

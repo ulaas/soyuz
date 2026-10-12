@@ -25,23 +25,23 @@ use crate::ui::toasts::Toast;
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
     // Junctions are NTFS-only: a bound key elsewhere opens the symbolic link dialog.
     let kind = if kind == LinkChoice::Junction && !cfg!(windows) { LinkChoice::Symlink } else { kind };
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let Some(dir) = pane.location.as_fs_path().map(Path::to_path_buf) else {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     };
     if !matches!(pane.location, soyuz_core::Location::Dir(_)) {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     }
     let target = if pane.selection.is_empty() { None } else { pane.selected_entries().first().map(|e| e.path.clone()) };
     let names: Vec<String> = pane.entries.iter().map(|e| e.name.clone()).collect();
     let windows_rules = crate::ops::fileops::rename::windows_rules_for(
-        app.config.general.strict_windows_names,
-        &app.ui.volumes,
+        app.core.config.general.strict_windows_names,
+        &app.core.ui.volumes,
         Some(&dir),
     );
-    app.ui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
+    app.gui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
 }
 
 /// `target` relative to `base` (`None` when they share no root, e.g. other drive).

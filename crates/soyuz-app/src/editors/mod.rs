@@ -25,7 +25,7 @@ use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 
 use io::{Answer, LoadResult, Msg, Stamp, Want};
 
-use crate::app::{Focus, SoyuzApp};
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::keys::input::{InputEvent, InputFrame};
 use crate::models::frontend::FrontendCmd;
@@ -179,7 +179,7 @@ pub fn handles(a: &Action) -> bool {
     matches!(a, Action::OpenInEditor | Action::ToggleEditorPanel)
 }
 
-pub fn execute(app: &mut SoyuzApp, a: Action) {
+pub fn execute(app: &mut AppCore, a: Action) {
     match a {
         Action::OpenInEditor => {
             let files: Vec<PathBuf> = app
@@ -216,7 +216,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action) {
 }
 
 /// Open (or switch to) `path` in the editor panel.
-pub fn open_path(app: &mut SoyuzApp, path: &Path, want: Want) {
+pub fn open_path(app: &mut AppCore, path: &Path, want: Want) {
     let wake = app.wake.clone();
     let e = &mut app.editors;
     e.open = true;
@@ -245,14 +245,14 @@ pub fn open_path(app: &mut SoyuzApp, path: &Path, want: Want) {
     start_load(app, id, false);
 }
 
-fn limits(app: &SoyuzApp) -> io::Limits {
+fn limits(app: &AppCore) -> io::Limits {
     io::Limits {
         max_text_bytes: app.config.editor.max_text_mib.max(1) * 1024 * 1024,
         max_image_mp: app.config.editor.max_image_mp.max(1),
     }
 }
 
-fn start_load(app: &mut SoyuzApp, doc: u64, reload: bool) {
+fn start_load(app: &mut AppCore, doc: u64, reload: bool) {
     let limits = limits(app);
     let wake = app.wake.clone();
     let tx = app.editors.tx.clone();
@@ -262,7 +262,7 @@ fn start_load(app: &mut SoyuzApp, doc: u64, reload: bool) {
 }
 
 /// Reopen a document as text or hex (discarding unsaved changes is asked by the UI).
-pub fn reopen_as(app: &mut SoyuzApp, idx: usize, want: Want) {
+pub fn reopen_as(app: &mut AppCore, idx: usize, want: Want) {
     let Some(d) = app.editors.docs.get_mut(idx) else { return };
     d.want = want;
     d.kind = DocKind::Loading;
@@ -272,7 +272,7 @@ pub fn reopen_as(app: &mut SoyuzApp, idx: usize, want: Want) {
 }
 
 /// Save document `idx` (no-op while a save is running or nothing changed).
-pub fn save(app: &mut SoyuzApp, idx: usize) {
+pub fn save(app: &mut AppCore, idx: usize) {
     let backup = app.config.editor.backup_to_trash;
     let quality = app.config.editor.jpeg_quality;
     let wake = app.wake.clone();
@@ -306,7 +306,7 @@ pub fn save(app: &mut SoyuzApp, idx: usize) {
 }
 
 /// Close document `idx`, asking first when it has unsaved changes.
-pub fn close(app: &mut SoyuzApp, idx: usize, force: bool) {
+pub fn close(app: &mut AppCore, idx: usize, force: bool) {
     let Some(d) = app.editors.docs.get(idx) else { return };
     if d.is_dirty() && !force {
         let prompt = UnsavedPrompt::close(&d.name, d.id, app.editors.tx.clone());
@@ -335,7 +335,7 @@ pub fn close(app: &mut SoyuzApp, idx: usize, force: bool) {
 // ---- per-frame ----------------------------------------------------------------------
 
 /// Apply worker results. Called every frame before drawing.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     while let Ok(msg) = app.editors.rx.try_recv() {
         match msg {
             Msg::Loaded { doc, reload, stamp, result } => on_loaded(app, doc, reload, stamp, result),
@@ -379,7 +379,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
     }
 }
 
-fn on_loaded(app: &mut SoyuzApp, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
+fn on_loaded(app: &mut AppCore, doc: u64, reload: bool, stamp: Option<Stamp>, r: LoadResult) {
     let wake = app.wake.clone();
     let upload = app.editors.upload.clone();
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.id == doc) else { return };
@@ -409,7 +409,7 @@ fn on_loaded(app: &mut SoyuzApp, doc: u64, reload: bool, stamp: Option<Stamp>, r
     }
 }
 
-fn on_saved(app: &mut SoyuzApp, doc: u64, result: Result<Option<Stamp>, String>, backup: Option<String>) {
+fn on_saved(app: &mut AppCore, doc: u64, result: Result<Option<Stamp>, String>, backup: Option<String>) {
     let Some(idx) = app.editors.docs.iter().position(|d| d.id == doc) else { return };
     let d = &mut app.editors.docs[idx];
     d.saving = false;
@@ -459,7 +459,7 @@ fn on_saved(app: &mut SoyuzApp, doc: u64, result: Result<Option<Stamp>, String>,
     }
 }
 
-fn on_changed(app: &mut SoyuzApp, path: &Path, stamp: Option<Stamp>) {
+fn on_changed(app: &mut AppCore, path: &Path, stamp: Option<Stamp>) {
     let Some(d) = app.editors.docs.iter_mut().find(|d| d.path == path) else { return };
     if d.saving || d.stamp == stamp || matches!(d.kind, DocKind::Loading) {
         return;
@@ -479,7 +479,7 @@ fn on_changed(app: &mut SoyuzApp, path: &Path, stamp: Option<Stamp>) {
 }
 
 /// Reload document `idx` from disk (drops unsaved changes).
-pub fn reload(app: &mut SoyuzApp, idx: usize) {
+pub fn reload(app: &mut AppCore, idx: usize) {
     if let Some(d) = app.editors.docs.get_mut(idx) {
         d.external = None;
         let id = d.id;
@@ -490,7 +490,7 @@ pub fn reload(app: &mut SoyuzApp, idx: usize) {
 // ---- view ----------------------------------------------------------------------------
 
 /// Whether the editor replaces the file panes this frame.
-pub fn maximized(app: &SoyuzApp) -> bool {
+pub fn maximized(app: &AppCore) -> bool {
     app.editors.open && app.editors.maximized
 }
 
@@ -568,7 +568,7 @@ pub struct EditorKeys {
 
 /// Keyboard dispatch while the editor has focus: editor shortcuts first, then global
 /// app bindings that the editor does not reserve. Marks the chords it takes in `frame`.
-pub fn handle_keys(app: &mut SoyuzApp, frame: &mut InputFrame) -> EditorKeys {
+pub fn handle_keys(app: &mut AppCore, frame: &mut InputFrame) -> EditorKeys {
     let mut ed: Vec<EdKey> = Vec::new();
     let mut out = EditorKeys::default();
     let km = &app.keymap;
@@ -680,7 +680,7 @@ pub fn handle_keys(app: &mut SoyuzApp, frame: &mut InputFrame) -> EditorKeys {
 
 /// Window close with unsaved documents: cancel it and ask. Returns `true` when the
 /// close request was taken over.
-pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host, close_requested: bool) -> bool {
+pub fn intercept_close(app: &mut AppCore, host: &dyn Host, close_requested: bool) -> bool {
     if !close_requested || app.editors.quit_allowed {
         return false;
     }
@@ -700,12 +700,12 @@ pub fn intercept_close(app: &mut SoyuzApp, host: &dyn Host, close_requested: boo
 }
 
 /// Paths of the open documents (session).
-pub fn session_paths(app: &SoyuzApp) -> Vec<PathBuf> {
+pub fn session_paths(app: &AppCore) -> Vec<PathBuf> {
     app.editors.docs.iter().map(|d| d.path.clone()).collect()
 }
 
 /// Reopen the documents of the last session (missing files are skipped).
-pub fn restore(app: &mut SoyuzApp, paths: &[PathBuf]) {
+pub fn restore(app: &mut AppCore, paths: &[PathBuf]) {
     for p in paths.iter().filter(|p| p.is_file()).take(MAX_OPEN_AT_ONCE) {
         open_path(app, p, Want::Auto);
     }
@@ -770,7 +770,7 @@ impl UnsavedPrompt {
 /// `edit:<path>` opens a file; `editor:<command>` drives the active document:
 /// `save`, `close`, `type=<text>`, `goto=<line>`, `find=<text>`, `hex=<offset>=<byte>`,
 /// `image=<rr|rl|fh|fv>`, `maximize`, `dock=<right|bottom>`.
-pub fn devscript(app: &mut SoyuzApp, host: &dyn Host, verb: &str, arg: &str) {
+pub fn devscript(app: &mut AppCore, host: &dyn Host, verb: &str, arg: &str) {
     let arg = arg.trim();
     if verb == "edit" {
         open_path(app, Path::new(arg), Want::Auto);

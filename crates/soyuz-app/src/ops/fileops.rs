@@ -2,7 +2,7 @@
 //! background job on the app's [`JobsService`]. This module owns the glue: the internal
 //! clipboard, drag and drop, inline rename, the prompt queue, completion toasts with
 //! Undo, undo/redo, and the per-frame hooks (`begin_frame` / `end_frame`) called by
-//! `SoyuzApp`. Widgets reach it through [`FileOpCmd`] (wrapped in `Cmd::FileOp`) and
+//! `AppCore`. Widgets reach it through [`FileOpCmd`] (wrapped in `Cmd::FileOp`) and
 //! `actions::execute` forwards file-op actions to [`execute`].
 
 pub mod clipboard;
@@ -25,7 +25,7 @@ use soyuz_jobs::{
     CreateKind, DeleteMode, HistoryId, JobEvent, JobId, JobKind, JobPrompt, JobState, JobSummary, PromptResponse,
 };
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::geom::Point;
 use crate::models::dialogs::{DeleteConfirmModel, LinkChoice, LinkModel, PromptModel, PromptShared, TransferModel};
 use crate::models::panels::{ActivityState, ActivityTab};
@@ -113,14 +113,14 @@ pub struct FileOps {
 }
 
 impl FileOps {
-    pub fn new(ctx: &egui::Context, config: &Config) -> Self {
+    pub fn new(wake: crate::host::Wake, config: &Config) -> Self {
         FileOps {
-            jobs: JobsService::new(crate::host::egui_wake(ctx), config),
+            jobs: JobsService::new(wake.clone(), config),
             clipboard: Clipboard::default(),
             rename: None,
             prompts: PromptQueue::default(),
             dnd: DndFrame::default(),
-            trash: TrashState::new(crate::host::egui_wake(ctx)),
+            trash: TrashState::new(wake),
             activity: ActivityState::default(),
             prompt_dialog: None,
             pending_rename: None,
@@ -173,7 +173,7 @@ pub fn handles(a: &Action) -> bool {
 }
 
 /// Focused pane: id, its folder (when it is a real directory) and the selected paths.
-fn focused(app: &SoyuzApp) -> (PaneId, Option<PathBuf>, Vec<PathBuf>) {
+fn focused(app: &AppCore) -> (PaneId, Option<PathBuf>, Vec<PathBuf>) {
     let pane = app.ws.pane();
     let dir = match &pane.location {
         Location::Dir(d) => Some(d.clone()),
@@ -183,14 +183,14 @@ fn focused(app: &SoyuzApp) -> (PaneId, Option<PathBuf>, Vec<PathBuf>) {
     (pane.id, dir, sel)
 }
 
-fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
+fn other_pane_dir(app: &AppCore) -> Option<PathBuf> {
     app.ws.tab().other().and_then(|p| match &p.location {
         Location::Dir(d) => Some(d.clone()),
         _ => None,
     })
 }
 
-pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
+pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
     use Action as A;
     let (pane_id, dir, sel) = focused(app);
     let in_trash = matches!(app.ws.pane().location, Location::Trash);
@@ -341,7 +341,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
     }
 }
 
-fn start_rename(app: &mut SoyuzApp, pane_id: PaneId) {
+fn start_rename(app: &mut AppCore, pane_id: PaneId) {
     let selects = app.config.behaviour.rename_selects;
     let pane = app.ws.pane_mut();
     if !matches!(pane.location, Location::Dir(_)) {
@@ -355,11 +355,11 @@ fn start_rename(app: &mut SoyuzApp, pane_id: PaneId) {
         pane.move_cursor(pos, false, false);
     }
     app.fileops.rename = Some(InlineRename::new(pane_id, &e, selects));
-    app.ui.focus = crate::app::Focus::List;
+    app.ui.focus = crate::core::Focus::List;
 }
 
 /// Paste the internal clipboard into `dest`.
-pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
+pub fn paste_into(app: &mut AppCore, dest: PathBuf) {
     paste_into_with(app, dest, false);
 }
 
@@ -368,11 +368,11 @@ pub fn paste_into(app: &mut SoyuzApp, dest: PathBuf) {
 /// The system clipboard is read first (files copied in another application win); it
 /// lives in another process on Linux, so the paste may run a few frames later
 /// ([`crate::services::os_clipboard::with_files`]).
-pub fn paste_into_with(app: &mut SoyuzApp, dest: PathBuf, verify: bool) {
+pub fn paste_into_with(app: &mut AppCore, dest: PathBuf, verify: bool) {
     crate::services::os_clipboard::with_files(app, Box::new(move |app, os| paste_files(app, os, dest, verify)));
 }
 
-fn paste_files(app: &mut SoyuzApp, os: crate::services::os_clipboard::Files, dest: PathBuf, verify: bool) {
+fn paste_files(app: &mut AppCore, os: crate::services::os_clipboard::Files, dest: PathBuf, verify: bool) {
     let Some((mode, paths)) = os.or_else(|| app.fileops.clipboard.for_paste()) else {
         app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-paste")).body(tr!("ops-nothing-to-paste-body")));
         return;
@@ -388,13 +388,13 @@ fn paste_files(app: &mut SoyuzApp, os: crate::services::os_clipboard::Files, des
 }
 
 /// Submit a copy / move / link of `paths` into `dest`.
-pub fn transfer(app: &mut SoyuzApp, paths: Vec<PathBuf>, dest: PathBuf, effect: DropEffect) -> Option<JobId> {
+pub fn transfer(app: &mut AppCore, paths: Vec<PathBuf>, dest: PathBuf, effect: DropEffect) -> Option<JobId> {
     transfer_with(app, paths, dest, effect, false)
 }
 
 /// [`transfer`]; `verify` forces hash verification of the copies for this job.
 pub fn transfer_with(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     paths: Vec<PathBuf>,
     dest: PathBuf,
     effect: DropEffect,
@@ -459,7 +459,7 @@ pub fn transfer_with(
     }
 }
 
-fn create_link(app: &mut SoyuzApp, dir: &Path, name: &str, target: PathBuf, kind: LinkChoice) -> JobId {
+fn create_link(app: &mut AppCore, dir: &Path, name: &str, target: PathBuf, kind: LinkChoice) -> JobId {
     let path = dir.join(name);
     let ck = match kind {
         LinkChoice::Symlink => {
@@ -474,7 +474,7 @@ fn create_link(app: &mut SoyuzApp, dir: &Path, name: &str, target: PathBuf, kind
     app.fileops.jobs.submit(spec, meta)
 }
 
-fn delete(app: &mut SoyuzApp, paths: Vec<PathBuf>, mode: DeleteMode) {
+fn delete(app: &mut AppCore, paths: Vec<PathBuf>, mode: DeleteMode) {
     if paths.is_empty() {
         return;
     }
@@ -487,7 +487,7 @@ fn delete(app: &mut SoyuzApp, paths: Vec<PathBuf>, mode: DeleteMode) {
     app.fileops.jobs.submit(spec, JobMeta::new(op, &paths, None));
 }
 
-fn restore(app: &mut SoyuzApp, items: Vec<TrashItem>) {
+fn restore(app: &mut AppCore, items: Vec<TrashItem>) {
     let paths: Vec<PathBuf> = items.iter().map(|i| i.original.clone()).collect();
     let spec = app.fileops.jobs.spec(JobKind::RestoreTrash { items, to: None });
     app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Restore, &paths, None));
@@ -495,7 +495,7 @@ fn restore(app: &mut SoyuzApp, items: Vec<TrashItem>) {
 
 /// Ctrl+Z: only operations from this session (older ones stay available in the activity
 /// panel's history, where the entry is visible before it is undone).
-fn undo(app: &mut SoyuzApp) {
+fn undo(app: &mut AppCore) {
     let entry =
         app.fileops.jobs.history().iter().rev().find(|h| h.this_session && !h.undone && h.undoable).map(|h| h.id);
     let Some(h) = entry else {
@@ -513,7 +513,7 @@ fn undo(app: &mut SoyuzApp) {
     }
 }
 
-fn redo(app: &mut SoyuzApp) {
+fn redo(app: &mut AppCore) {
     let hist = app.fileops.jobs.history();
     let undone = |id: HistoryId| hist.iter().any(|h| h.id == id && h.undone);
     let from_stack = app.fileops.undo_stack.iter().rev().copied().find(|id| undone(*id));
@@ -529,7 +529,7 @@ fn redo(app: &mut SoyuzApp) {
 }
 
 /// Undo / redo / retry one history entry (activity panel history list).
-pub fn history_action(app: &mut SoyuzApp, h: HistoryId, what: HistoryAction) {
+pub fn history_action(app: &mut AppCore, h: HistoryId, what: HistoryAction) {
     let (id, op) = match what {
         HistoryAction::Undo => (app.fileops.jobs.engine().undo(h), OpKind::Undo),
         HistoryAction::Redo => (app.fileops.jobs.engine().redo(h), OpKind::Redo),
@@ -555,7 +555,7 @@ pub enum HistoryAction {
     Retry,
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
+pub fn apply(app: &mut AppCore, cmd: FileOpCmd, _host: &dyn Host) {
     match cmd {
         FileOpCmd::Drop { paths, dest, effect, pos } => match effect {
             Some(e) => {
@@ -617,7 +617,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: FileOpCmd, _host: &dyn Host) {
 /// Start of every frame (after the mailbox): drain engine events, toasts, prompts,
 /// auto-open of the activity panel and deferred inline renames. External drops come
 /// from the frontend ([`drop_external`], right after this in the GUI frame).
-pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn begin_frame(app: &mut AppCore, host: &dyn Host) {
     let events = app.fileops.jobs.poll(host);
     for ev in events {
         match ev {
@@ -649,11 +649,11 @@ pub fn begin_frame(app: &mut SoyuzApp, host: &dyn Host) {
 
 /// End of every frame, after the frontend's drag-and-drop pass (drag-out hand-off, drag
 /// badge, the "ask" drop menu): the drag-and-drop frame state rolls over.
-pub fn end_frame(app: &mut SoyuzApp, _host: &dyn Host) {
+pub fn end_frame(app: &mut AppCore, _host: &dyn Host) {
     app.fileops.dnd.next_frame();
 }
 
-fn on_prompt(app: &mut SoyuzApp, id: JobId) {
+fn on_prompt(app: &mut AppCore, id: JobId) {
     let prompt = app.fileops.jobs.snapshot(id).and_then(|s| s.pending_prompt.clone());
     if let Some(JobPrompt::TrashUnsupported { .. }) = prompt {
         let auto = match app.config.jobs.trash_unsupported {
@@ -670,7 +670,7 @@ fn on_prompt(app: &mut SoyuzApp, id: JobId) {
     app.fileops.prompts.push(id);
 }
 
-fn reconcile_prompts(app: &mut SoyuzApp) {
+fn reconcile_prompts(app: &mut AppCore) {
     let fo = &mut app.fileops;
     // Robust against missed events: queue every waiting job, drop the others.
     let waiting: Vec<JobId> = fo.jobs.snapshots().iter().filter(|s| s.pending_prompt.is_some()).map(|s| s.id).collect();
@@ -724,7 +724,7 @@ fn reconcile_prompts(app: &mut SoyuzApp) {
     }
 }
 
-fn on_finished(app: &mut SoyuzApp, id: JobId, summary: &JobSummary) {
+fn on_finished(app: &mut AppCore, id: JobId, summary: &JobSummary) {
     let Some(snap) = app.fileops.jobs.snapshot(id).cloned() else { return };
     let meta =
         app.fileops.jobs.meta(id).cloned().unwrap_or_else(|| JobMeta::new(OpKind::from_brief(snap.kind), &[], None));
@@ -811,7 +811,7 @@ fn failure_toast(title: &str, s: &JobSummary) -> Toast {
     Toast::warning(title).body(body).action(tr!("ops-details"), Action::JobsShowHistory)
 }
 
-fn auto_open_activity(app: &mut SoyuzApp) {
+fn auto_open_activity(app: &mut AppCore) {
     if !app.config.jobs.auto_open_activity {
         return;
     }
@@ -838,7 +838,7 @@ fn auto_open_activity(app: &mut SoyuzApp) {
 
 /// Files dropped onto the window from other apps (`pointer` = where, when known): copied
 /// into the pane under the pointer, else the focused one.
-pub fn drop_external(app: &mut SoyuzApp, dropped: Vec<PathBuf>, pointer: Option<Point>) {
+pub fn drop_external(app: &mut AppCore, dropped: Vec<PathBuf>, pointer: Option<Point>) {
     if dropped.is_empty() {
         return;
     }
@@ -853,7 +853,7 @@ pub fn drop_external(app: &mut SoyuzApp, dropped: Vec<PathBuf>, pointer: Option<
     }
 }
 
-fn pending_rename(app: &mut SoyuzApp) {
+fn pending_rename(app: &mut AppCore) {
     let Some((pane_id, path, at)) = app.fileops.pending_rename.clone() else { return };
     if at.elapsed() > Duration::from_secs(5) {
         app.fileops.pending_rename = None;
@@ -875,7 +875,7 @@ fn pending_rename(app: &mut SoyuzApp) {
 }
 
 /// Drop an inline rename whose item disappeared or whose pane navigated away.
-fn check_rename(app: &mut SoyuzApp) {
+fn check_rename(app: &mut AppCore) {
     if let Some(r) = &app.fileops.rename
         && let Some(p) = app.ws.find_pane(r.pane)
         && p.entry(&r.key).is_none()

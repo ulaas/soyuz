@@ -57,7 +57,7 @@ pub fn supported() -> bool {
 pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     #[cfg(target_os = "linux")]
     poll_session(app, ctx);
-    if !supported() || !app.config.behaviour.drag_out {
+    if !supported() || !app.core.config.behaviour.drag_out {
         return;
     }
     let Some(payload) = payload(ctx) else { return };
@@ -111,7 +111,7 @@ fn finish(app: &mut SoyuzApp, ctx: &egui::Context, report: &DragReport, payload:
     }
     match action {
         AfterDrop::Resume => egui::DragAndDrop::set_payload(ctx, DragPayload::clone(payload)),
-        action => crate::ops::fileops::dragout::apply_after_drop(app, action, paths),
+        action => crate::ops::fileops::dragout::apply_after_drop(&mut app.core, action, paths),
     }
 }
 

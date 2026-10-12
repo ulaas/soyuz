@@ -15,7 +15,7 @@ use crossbeam_channel::Receiver;
 use serde::{Deserialize, Serialize};
 use soyuz_core::Location;
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -93,7 +93,7 @@ fn store_path() -> PathBuf {
 }
 
 /// Per frame (from `models::search::pump`): load the store once, drive the index service.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     STATE.with_borrow_mut(|s| {
         if !s.started {
             s.started = true;
@@ -169,7 +169,7 @@ pub fn name_taken(index: Option<usize>, name: &str) -> bool {
     folders().iter().enumerate().any(|(i, f)| Some(i) != index && f.name.eq_ignore_ascii_case(name.trim()))
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: SmartCmd) {
+pub fn apply(app: &mut AppCore, cmd: SmartCmd) {
     match cmd {
         SmartCmd::Open { index, new_tab } => open(app, index, new_tab),
         SmartCmd::Edit(index) => {
@@ -234,7 +234,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: SmartCmd) {
 }
 
 /// Register the search behind smart folder `i` and show it.
-fn open(app: &mut SoyuzApp, i: usize, new_tab: bool) {
+fn open(app: &mut AppCore, i: usize, new_tab: bool) {
     let Some(f) = folders().get(i).cloned() else { return };
     let plan = match ix::plan_from_query(&f.query, f.include_hidden) {
         Ok(p) => p,
@@ -262,7 +262,7 @@ fn open(app: &mut SoyuzApp, i: usize, new_tab: bool) {
         let pane = app.ws.pane().id;
         ops::navigate(app, pane, loc, NavOpts::user());
     }
-    app.ui.focus = crate::app::Focus::List;
+    app.ui.focus = crate::core::Focus::List;
 }
 
 /// The smart folder shown at `loc`, if any.

@@ -22,7 +22,7 @@ use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, ra
 const FILTER_W: f32 = 210.0;
 
 fn tip(app: &SoyuzApp, label: &str, action: &Action) -> String {
-    match chord_label(&app.keymap, action) {
+    match chord_label(&app.core.keymap, action) {
         Some(k) => format!("{label}  ({k})"),
         None => label.to_string(),
     }
@@ -36,9 +36,9 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 6, right: 8, top: 4, bottom: 4 }))
         .show(root, |ui| {
             let full = ui.available_rect_before_wrap();
-            let pane_id = app.ws.pane().id;
+            let pane_id = app.core.ws.pane().id;
             let (can_back, can_fwd, can_up) = {
-                let pane = app.ws.pane();
+                let pane = app.core.ws.pane();
                 (pane.history.can_back(), pane.history.can_forward(), pane.location.parent().is_some())
             };
             // Navigation buttons (larger in touch mode).
@@ -53,13 +53,13 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let fwd = nav(ui, &mut x, ph::ARROW_RIGHT, tip(app, tr!("app-toolbar-forward"), &Action::Forward), can_fwd);
             let up = nav(ui, &mut x, ph::ARROW_UP, tip(app, tr!("app-toolbar-up"), &Action::Up), can_up);
             if back.clicked() {
-                app.cmds.push(Cmd::PaneAction(pane_id, Action::Back));
+                app.core.cmds.push(Cmd::PaneAction(pane_id, Action::Back));
             }
             if fwd.clicked() {
-                app.cmds.push(Cmd::PaneAction(pane_id, Action::Forward));
+                app.core.cmds.push(Cmd::PaneAction(pane_id, Action::Forward));
             }
             if up.clicked() {
-                app.cmds.push(Cmd::PaneAction(pane_id, Action::Up));
+                app.core.cmds.push(Cmd::PaneAction(pane_id, Action::Up));
             }
             history_menu(ui, &back, app, true);
             history_menu(ui, &fwd, app, false);
@@ -72,21 +72,21 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 rx -= bsz + 2.0;
                 ui.scope_builder(UiBuilder::new().max_rect(r), |ui| rail_button(ui, glyph, tip, true, on)).inner
             };
-            let settings_on = app.settings.is_open();
+            let settings_on = app.gui.settings.is_open();
             if right_btn(ui, ph::GEAR_SIX, &tip(app, tr!("app-toolbar-settings"), &Action::Settings), settings_on)
                 .clicked()
             {
-                app.cmds.push(Cmd::Action(Action::Settings));
+                app.core.cmds.push(Cmd::Action(Action::Settings));
             }
-            let dual_on = app.ws.tab().dual;
-            let glyph = if app.ws.tab().shown() == 4 { ph::SQUARES_FOUR } else { ph::SQUARE_SPLIT_HORIZONTAL };
+            let dual_on = app.core.ws.tab().dual;
+            let glyph = if app.core.ws.tab().shown() == 4 { ph::SQUARES_FOUR } else { ph::SQUARE_SPLIT_HORIZONTAL };
             let dual_tip = tip(app, tr!("app-toolbar-dual-pane"), &Action::ToggleDualPane);
             let dual = right_btn(ui, glyph, &dual_tip, dual_on);
             if dual.clicked() {
-                app.cmds.push(Cmd::Action(Action::ToggleDualPane));
+                app.core.cmds.push(Cmd::Action(Action::ToggleDualPane));
             }
             dual_menu(ui, &dual, app);
-            let preview_on = app.ui.preview.open;
+            let preview_on = app.core.ui.preview.open;
             if right_btn(
                 ui,
                 ph::SIDEBAR_SIMPLE,
@@ -95,19 +95,19 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             )
             .clicked()
             {
-                app.cmds.push(Cmd::Action(Action::TogglePreviewPane));
+                app.core.cmds.push(Cmd::Action(Action::TogglePreviewPane));
             }
-            let search_on = app.ui.search.open;
+            let search_on = app.core.ui.search.open;
             if right_btn(ui, ph::MAGNIFYING_GLASS, &tip(app, tr!("app-toolbar-search"), &Action::Search), search_on)
                 .clicked()
             {
                 if search_on {
-                    app.ui.search.open = false;
+                    app.core.ui.search.open = false;
                 } else {
-                    app.cmds.push(Cmd::Action(Action::Search));
+                    app.core.cmds.push(Cmd::Action(Action::Search));
                 }
             }
-            let palette_on = app.palette.open;
+            let palette_on = app.core.palette.open;
             if right_btn(
                 ui,
                 ph::COMMAND,
@@ -116,10 +116,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             )
             .clicked()
             {
-                app.cmds.push(Cmd::Action(Action::CommandPalette));
+                app.core.cmds.push(Cmd::Action(Action::CommandPalette));
             }
             let sort = right_btn(ui, ph::SORT_ASCENDING, tr!("app-toolbar-sort"), false);
-            let mode = app.ws.pane().view.mode;
+            let mode = app.core.ws.pane().view.mode;
             let mode_glyph = match mode {
                 ViewMode::Details => ph::LIST,
                 ViewMode::List => ph::LIST_DASHES,
@@ -141,9 +141,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             let omni =
                 Rect::from_min_max(pos2(x, full.center().y - 16.0), pos2(rx.max(x + 120.0), full.center().y + 16.0));
             let root_label = {
-                let pane = app.ws.pane();
+                let pane = app.core.ws.pane();
                 match &pane.location {
                     Location::Dir(path) => app
+                        .core
                         .ui
                         .volumes
                         .iter()
@@ -154,15 +155,15 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 }
             };
             let (location, loading) = {
-                let pane = app.ws.pane();
+                let pane = app.core.ws.pane();
                 (pane.location.clone(), pane.is_loading() || pane.refreshing)
             };
             let mut ctx = OmnibarCtx {
                 pane: pane_id,
                 location: &location,
-                services: &mut app.services,
-                cmds: &mut app.cmds,
-                address: &mut app.ui.address,
+                services: &mut app.core.services,
+                cmds: &mut app.core.cmds,
+                address: &mut app.core.ui.address,
                 root_label,
                 loading,
             };
@@ -175,7 +176,7 @@ fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: 
     if button.secondary_clicked() {
         Popup::open_id(ui.ctx(), id);
     }
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let pane_id = pane.id;
     let entries: Vec<String> = if back {
         pane.history.back_entries().map(|e| crate::state::crumbs::location_title(&e.location)).collect()
@@ -201,7 +202,7 @@ fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: 
             for (i, (title, path)) in entries.iter().zip(&paths).enumerate().take(20) {
                 let r = menu_item(ui, Some(ph::CLOCK_COUNTER_CLOCKWISE), title, None, true).on_hover_text(path);
                 if r.clicked() {
-                    app.cmds.push(Cmd::HistoryJump { pane: pane_id, back, n: i + 1 });
+                    app.core.cmds.push(Cmd::HistoryJump { pane: pane_id, back, n: i + 1 });
                     ui.close();
                 }
             }
@@ -211,13 +212,13 @@ fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: 
 fn view_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
     crate::ui::native::popup::Menu::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
         ui.set_width(250.0);
-        let km = app.keymap.clone();
-        let pane_id = app.ws.pane().id;
+        let km = app.core.keymap.clone();
+        let pane_id = app.core.ws.pane().id;
         menu_caption(ui, tr!("app-toolbar-layout"));
-        view_mode_items(ui, &km, &mut app.cmds, app.ws.pane());
+        view_mode_items(ui, &km, &mut app.core.cmds, app.core.ws.pane());
         menu_separator(ui);
-        let pane_ref = app.ws.pane();
-        let cmds = &mut app.cmds;
+        let pane_ref = app.core.ws.pane();
+        let cmds = &mut app.core.cmds;
         submenu(ui, Some(ph::ROWS), tr!("app-ctx-group-by"), |ui| {
             ui.set_width(200.0);
             group_items(ui, cmds, pane_ref);
@@ -225,44 +226,44 @@ fn view_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
         menu_separator(ui);
         if menu_check(
             ui,
-            app.ui.show_hidden,
+            app.core.ui.show_hidden,
             tr!("app-toolbar-hidden-files"),
             chord_label(&km, &Action::ToggleHidden).as_deref(),
         )
         .clicked()
         {
-            app.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleHidden));
+            app.core.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleHidden));
             ui.close();
         }
-        if menu_check(ui, app.ui.checkbox_mode, tr!("app-ctx-item-checkboxes"), None).clicked() {
-            app.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleCheckboxes));
+        if menu_check(ui, app.core.ui.checkbox_mode, tr!("app-ctx-item-checkboxes"), None).clicked() {
+            app.core.cmds.push(Cmd::PaneAction(pane_id, Action::ToggleCheckboxes));
             ui.close();
         }
         if menu_check(
             ui,
-            app.ui.sidebar_visible,
+            app.core.ui.sidebar_visible,
             tr!("app-toolbar-sidebar"),
             chord_label(&km, &Action::ToggleSidebar).as_deref(),
         )
         .clicked()
         {
-            app.cmds.push(Cmd::Action(Action::ToggleSidebar));
+            app.core.cmds.push(Cmd::Action(Action::ToggleSidebar));
             ui.close();
         }
         menu_separator(ui);
         if menu_item(ui, Some(ph::COLUMNS_PLUS_RIGHT), tr!("app-toolbar-choose-columns"), None, true).clicked() {
-            app.cmds.push(Cmd::PaneAction(pane_id, Action::ChooseColumns));
+            app.core.cmds.push(Cmd::PaneAction(pane_id, Action::ChooseColumns));
             ui.close();
         }
-        let custom = app.views.has_custom(&app.ws.pane().location);
+        let custom = app.core.views.has_custom(&app.core.ws.pane().location);
         if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("app-toolbar-reset-folder-view"), None, custom)
             .clicked()
         {
-            app.cmds.push(Cmd::PaneAction(pane_id, Action::ResetFolderView));
+            app.core.cmds.push(Cmd::PaneAction(pane_id, Action::ResetFolderView));
             ui.close();
         }
         if menu_item(ui, Some(ph::STACK), tr!("app-toolbar-apply-view-to-all"), None, true).clicked() {
-            app.cmds.push(Cmd::PaneAction(pane_id, Action::ApplyViewToAll));
+            app.core.cmds.push(Cmd::PaneAction(pane_id, Action::ApplyViewToAll));
             ui.close();
         }
     });
@@ -272,20 +273,20 @@ fn sort_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
     crate::ui::native::popup::Menu::menu(button).align(RectAlign::BOTTOM_END).show(|ui| {
         ui.set_width(220.0);
         menu_caption(ui, tr!("app-ctx-sort-by"));
-        sort_items(ui, &mut app.cmds, app.ws.pane());
+        sort_items(ui, &mut app.core.cmds, app.core.ws.pane());
         menu_separator(ui);
-        let id = app.ws.pane().id;
-        let pane = app.ws.pane_mut();
+        let id = app.core.ws.pane().id;
+        let pane = app.core.ws.pane_mut();
         if menu_check(ui, pane.view.sort.folders_first, tr!("app-toolbar-folders-first"), None).clicked() {
             pane.view.sort.folders_first = !pane.view.sort.folders_first;
             pane.resort();
-            app.cmds.push(Cmd::ViewChanged(id));
+            app.core.cmds.push(Cmd::ViewChanged(id));
             ui.close();
         }
         if menu_check(ui, pane.view.sort.natural, tr!("app-toolbar-natural-order"), None).clicked() {
             pane.view.sort.natural = !pane.view.sort.natural;
             pane.resort();
-            app.cmds.push(Cmd::ViewChanged(id));
+            app.core.cmds.push(Cmd::ViewChanged(id));
             ui.close();
         }
     });
@@ -303,17 +304,17 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClick)
         .show(|ui| {
             ui.set_width(250.0);
-            let km = app.keymap.clone();
+            let km = app.core.keymap.clone();
             // Single / dual (side by side, stacked) / quad layouts.
             let mut layout_cmds = Vec::new();
             crate::ui::workspaces::layout_menu(ui, app, &mut layout_cmds);
-            app.cmds.extend(layout_cmds);
-            let tab = app.ws.tab_mut();
+            app.core.cmds.extend(layout_cmds);
+            let tab = app.core.ws.tab_mut();
             let dual = tab.dual;
             menu_separator(ui);
             let sync_key = chord_label(&km, &Action::SyncNavigation);
             if menu_check(ui, tab.sync_nav, tr!("app-toolbar-sync-browsing"), sync_key.as_deref()).clicked() {
-                app.cmds.push(Cmd::Action(Action::SyncNavigation));
+                app.core.cmds.push(Cmd::Action(Action::SyncNavigation));
             }
             if menu_item(
                 ui,
@@ -324,10 +325,10 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
             )
             .clicked()
             {
-                app.cmds.push(Cmd::Action(Action::SwapPanes));
+                app.core.cmds.push(Cmd::Action(Action::SwapPanes));
             }
             if menu_item(ui, Some(ph::COPY_SIMPLE), tr!("app-toolbar-mirror-pane"), None, true).clicked() {
-                app.cmds.push(Cmd::Action(Action::MirrorPaneToOther));
+                app.core.cmds.push(Cmd::Action(Action::MirrorPaneToOther));
             }
             if menu_item(
                 ui,
@@ -338,7 +339,7 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
             )
             .clicked()
             {
-                app.cmds.push(Cmd::Action(Action::FocusOtherPane));
+                app.core.cmds.push(Cmd::Action(Action::FocusOtherPane));
             }
         });
 }
@@ -348,7 +349,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     let p = palette(ui.ctx());
     let id = Id::new("soyuz.filter");
     let focused = ui.memory(|m| m.has_focus(id));
-    let pane = app.ws.pane_mut();
+    let pane = app.core.ws.pane_mut();
     let active = pane.filter_active();
     // Borderless field: hover and focus change the fill (high contrast keeps outlines).
     let hovered = ui.rect_contains_pointer(r);
@@ -395,9 +396,9 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             .desired_width(inner.width()),
     );
     crate::ui::a11y::name(&resp, tr!("app-toolbar-filter"));
-    if app.ui.filter_focus {
+    if app.core.ui.filter_focus {
         resp.request_focus();
-        app.ui.filter_focus = false;
+        app.core.ui.filter_focus = false;
     }
     if resp.changed() {
         pane.set_filter(&text);
@@ -405,10 +406,10 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     if esc {
         pane.set_filter("");
         resp.surrender_focus();
-        app.ui.focus = crate::app::Focus::List;
+        app.core.ui.focus = crate::app::Focus::List;
     }
     if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-        app.ui.focus = crate::app::Focus::List;
+        app.core.ui.focus = crate::app::Focus::List;
         // Enter in the filter selects the first match.
         if pane.cursor_pos().is_none() && !pane.visible.is_empty() {
             pane.move_cursor(0, false, false);
@@ -425,7 +426,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             pane.set_filter("");
         }
     } else if !focused {
-        let hint = chord_label(&app.keymap, &Action::Filter).unwrap_or_default();
+        let hint = chord_label(&app.core.keymap, &Action::Filter).unwrap_or_default();
         ui.painter().text(
             pos2(r.right() - 10.0, r.center().y),
             Align2::RIGHT_CENTER,

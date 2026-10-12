@@ -45,10 +45,10 @@ thread_local! {
 
 pub fn begin_frame(app: &SoyuzApp) {
     CFG.with_borrow_mut(|c| {
-        c.enabled = app.config.sync.previous_versions;
-        c.probe_max = app.config.sync.shadow_probe_max;
-        c.date = app.config.general.date_format.clone();
-        c.size = app.config.general.size_style;
+        c.enabled = app.core.config.sync.previous_versions;
+        c.probe_max = app.core.config.sync.shadow_probe_max;
+        c.date = app.core.config.general.date_format.clone();
+        c.size = app.core.config.general.size_style;
     });
 }
 
@@ -554,7 +554,7 @@ impl VersionsWindow {
             },
         );
         if let Some(c) = cmd {
-            apply(app, c);
+            apply(&mut app.core, c);
         }
         if !keep {
             self.open = false;

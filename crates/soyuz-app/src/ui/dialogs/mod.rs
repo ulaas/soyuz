@@ -1,6 +1,6 @@
 //! Modal dialog host. Two kinds of dialogs share it:
 //!
-//! * core prompts ([`DialogModel`], pushed onto `SoyuzApp::dialogs` by core logic: job
+//! * core prompts ([`DialogModel`], pushed onto `AppCore::dialogs` by core logic: job
 //!   prompts, delete confirmations, new link, Copy / Move to, quit, MCP and script
 //!   approvals), drawn here by free functions per model;
 //! * GUI-only dialogs implementing [`Dialog`] (About, columns, properties, …), pushed

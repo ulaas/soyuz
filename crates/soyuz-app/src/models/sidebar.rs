@@ -204,7 +204,7 @@ impl Default for SidebarState {
 impl SidebarState {
     pub fn new() -> Self {
         SidebarState {
-            favorites: crate::app::default_favorites(),
+            favorites: crate::core::default_favorites(),
             favorites_customized: false,
             collapsed: BTreeSet::new(),
             drag: None,
@@ -224,7 +224,7 @@ impl SidebarState {
             if places_probed() {
                 self.places_applied = true;
                 if !self.favorites_customized {
-                    self.favorites = crate::app::default_favorites();
+                    self.favorites = crate::core::default_favorites();
                 }
             } else {
                 waiting = true;
@@ -235,7 +235,7 @@ impl SidebarState {
         if self.lang_gen != gen_now {
             self.lang_gen = gen_now;
             if !self.favorites_customized {
-                self.favorites = crate::app::default_favorites();
+                self.favorites = crate::core::default_favorites();
             }
         }
         waiting

@@ -215,7 +215,7 @@ fn unique_name(ai: &Ai, base: &str) -> String {
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
-    app.settings.ai.poll(ui);
+    app.gui.settings.ai.poll(ui);
     let searching = !q.trim().is_empty();
     let mut any = false;
 
@@ -227,7 +227,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(14.0);
         ui.label(RichText::new(super::widgets::upper(tr!("settings-ai-profiles"))).size(10.5).color(p.text_tertiary));
         ui.add_space(6.0);
-        if let Some((msg, err)) = &app.settings.ai.notice {
+        if let Some((msg, err)) = &app.gui.settings.ai.notice {
             let color = if *err { p.danger } else { p.success };
             ui.label(RichText::new(msg).size(11.5).color(color));
             ui.add_space(4.0);
@@ -237,7 +237,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             for kind in AiProviderKind::ALL {
                 let icon = if kind.is_local() { ph::DESKTOP_TOWER } else { ph::CLOUD };
                 if small_button(ui, Some(icon), crate::i18n::labels::ai_provider(kind), false).clicked() {
-                    let d = &mut app.settings.draft.ai;
+                    let d = &mut app.gui.settings.draft.ai;
                     let name = unique_name(d, kind.label().split(' ').next().unwrap_or("profile"));
                     let key = if kind.is_local() || kind == AiProviderKind::Custom {
                         String::new()
@@ -257,7 +257,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             }
         });
-        let n = app.settings.draft.ai.profiles.len();
+        let n = app.gui.settings.draft.ai.profiles.len();
         let mut remove = None;
         for i in 0..n {
             ui.add_space(10.0);
@@ -266,12 +266,12 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             }
         }
         if let Some(i) = remove {
-            let d = &mut app.settings.draft.ai;
+            let d = &mut app.gui.settings.draft.ai;
             let removed = d.profiles.remove(i);
             if d.default_profile == removed.name {
                 d.default_profile = d.profiles.first().map(|p| p.name.clone()).unwrap_or_default();
             }
-            app.settings.ai.notice = Some((tr!("settings-ai-profile-removed", name = &removed.name), false));
+            app.gui.settings.ai.notice = Some((tr!("settings-ai-profile-removed", name = &removed.name), false));
         }
         if n == 0 {
             ui.add_space(16.0);
@@ -289,7 +289,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 }
 
 fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let d = &mut s.draft.ai;
     let names: Vec<(String, String)> = d.profiles.iter().map(|p| (p.name.clone(), p.name.clone())).collect();
     let kinds: Vec<(String, AiProviderKind)> = d.profiles.iter().map(|p| (p.name.clone(), p.kind)).collect();
@@ -534,7 +534,7 @@ fn task_model(
 /// One profile card; returns `true` when the user deleted it.
 fn profile_card(ui: &mut Ui, app: &mut SoyuzApp, i: usize) -> bool {
     let p = palette(ui.ctx());
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.ai);
     let mut delete = false;
     let is_default = d.default_profile == d.profiles[i].name || (d.default_profile.is_empty() && i == 0);
@@ -959,7 +959,7 @@ fn test_row(ui: &mut Ui, st: &mut AiPageState, prof: &AiProfile, ai: &Ai) {
 }
 
 fn prices(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft.ai;
+    let d = &mut app.gui.settings.draft.ai;
     let mut remove = None;
     let mut add = false;
     let mut reset = false;

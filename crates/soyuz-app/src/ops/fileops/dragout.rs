@@ -42,7 +42,7 @@ use std::path::{Path, PathBuf};
 use soyuz_core::config::DragDefault;
 use soyuz_fs::dragout::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DragData, DragReport, Format, Outcome};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::geom::{Point, Rect, vec2};
 
 /// Whether the active internal drag should become an OS drag this frame.
@@ -134,7 +134,7 @@ pub fn after_drop(report: &DragReport, paths: &[PathBuf], exists: impl Fn(&Path)
 
 /// Act on the follow-up of a finished OS drag (refresh, or trash the sources of an
 /// unoptimized move). `Nothing` and `Resume` are the frontend's business.
-pub fn apply_after_drop(app: &mut SoyuzApp, action: AfterDrop, paths: &[PathBuf]) {
+pub fn apply_after_drop(app: &mut AppCore, action: AfterDrop, paths: &[PathBuf]) {
     match action {
         AfterDrop::Nothing | AfterDrop::Resume => {}
         // The target moved the files itself: relist the panes showing the sources.

@@ -49,7 +49,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     let mut any = false;
     {
-        let d = &mut app.settings.draft;
+        let d = &mut app.gui.settings.draft;
         any |= group(ui, q, "Keyboard shortcuts keys", tr!("settings-keys-preset"), |r| {
             let help = preset_help(d.keys.preset);
             r.row_kw(tr!("settings-keys-key-preset"), help, "explorer commander finder vim", |ui| {
@@ -74,19 +74,20 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     let searching_outside = !q.trim().is_empty();
     // The editor itself is a big block; in global search it lists matching actions only.
-    let cache = key_cache(&mut app.settings);
+    let cache = key_cache(&mut app.gui.settings);
     let km = cache.keymap.clone();
     let warnings = cache.warnings.clone();
     let conflicts = cache.conflicts.clone();
-    let filter = if searching_outside { q.to_string() } else { app.settings.keys_filter.clone() };
+    let filter = if searching_outside { q.to_string() } else { app.gui.settings.keys_filter.clone() };
 
     let mut actions: Vec<Action> = Action::all();
-    let n_bm = app.settings.draft.bookmarks.len();
+    let n_bm = app.gui.settings.draft.bookmarks.len();
     actions.retain(|a| {
         !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm.max(3)) && !crate::actions::unavailable(a)
     });
     actions.extend(
-        app.settings
+        app.gui
+            .settings
             .draft
             .custom_commands
             .iter()
@@ -112,9 +113,9 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     crate::i18n::labels::action_category(e.category),
                 ],
             );
-            let conflict_ok = !app.settings.keys_conflicts_only
+            let conflict_ok = !app.gui.settings.keys_conflicts_only
                 || for_action(&conflicts, a).iter().any(|c| c.kind != ConflictKind::Shadowed);
-            let modified_ok = !app.settings.keys_modified_only || is_overridden(&app.settings.draft, a);
+            let modified_ok = !app.gui.settings.keys_modified_only || is_overridden(&app.gui.settings.draft, a);
             text_ok && conflict_ok && modified_ok
         })
         .collect();
@@ -130,7 +131,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     if !searching_outside {
         ui.horizontal(|ui| {
             ui.add(
-                TextEdit::singleline(&mut app.settings.keys_filter)
+                TextEdit::singleline(&mut app.gui.settings.keys_filter)
                     .hint_text(
                         RichText::new(format!("{}  {}", ph::MAGNIFYING_GLASS, tr!("settings-keys-search-hint")))
                             .color(p.text_tertiary),
@@ -139,11 +140,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     .margin(Margin::symmetric(10, 6)),
             );
             ui.add_space(8.0);
-            ui.checkbox(&mut app.settings.keys_conflicts_only, tr!("settings-keys-conflicts-only"));
+            ui.checkbox(&mut app.gui.settings.keys_conflicts_only, tr!("settings-keys-conflicts-only"));
             ui.add_space(4.0);
-            ui.checkbox(&mut app.settings.keys_modified_only, tr!("settings-keys-changed-only"));
+            ui.checkbox(&mut app.gui.settings.keys_modified_only, tr!("settings-keys-changed-only"));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                let n = app.settings.draft.keys.bindings.len();
+                let n = app.gui.settings.draft.keys.bindings.len();
                 if n > 0
                     && small_button(
                         ui,
@@ -153,7 +154,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     )
                     .clicked()
                 {
-                    app.settings.draft.keys.bindings.clear();
+                    app.gui.settings.draft.keys.bindings.clear();
                 }
             });
         });
@@ -225,7 +226,7 @@ fn action_row(
 ) {
     let p = palette(ui.ctx());
     let mine = for_action(conflicts, a);
-    let overridden = is_overridden(&app.settings.draft, a);
+    let overridden = is_overridden(&app.gui.settings.draft, a);
     let row_rect = ui.available_rect_before_wrap();
     let row_rect = egui::Rect::from_min_size(row_rect.min, vec2(row_rect.width(), 34.0));
     let hovered = ui.rect_contains_pointer(row_rect);
@@ -290,12 +291,12 @@ fn action_row(
         });
     });
     if reset {
-        reset_override(&mut app.settings.draft, a);
+        reset_override(&mut app.gui.settings.draft, a);
     }
     if let Some(i) = remove {
         let mut list = bindings.to_vec();
         list.remove(i);
-        set_override(&mut app.settings.draft, a, list);
+        set_override(&mut app.gui.settings.draft, a, list);
     }
     if add {
         record(app, RecordTarget::Action(a.clone()), tr!("settings-keys-record-title", action = &e.title));

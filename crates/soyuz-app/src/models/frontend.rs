@@ -1,6 +1,6 @@
 //! Requests from app logic to whichever frontend is running (Phase T0): things only a
 //! frontend can do, such as opening its settings window. Core code pushes onto
-//! `SoyuzApp::frontend`; the frontend drains the queue every frame.
+//! `AppCore::frontend`; the frontend drains the queue every frame.
 
 use std::path::PathBuf;
 

@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use soyuz_core::config::ActivityPlacement;
 use soyuz_jobs::{CreateKind, DeleteMode, HistoryEntry, JobId, JobKind, JobSnapshot, JobState};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::ops::fileops::names;
 use crate::services::jobs::{JobMeta, OpKind};
 
@@ -180,7 +180,7 @@ pub struct Indicator {
     pub paused: bool,
 }
 
-pub fn indicator(app: &SoyuzApp) -> Indicator {
+pub fn indicator(app: &AppCore) -> Indicator {
     let mut ind = Indicator::default();
     let (mut done, mut total) = (0u64, 0u64);
     for s in app.fileops.jobs.pending() {

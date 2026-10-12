@@ -17,8 +17,8 @@ use soyuz_jobs::{JobId, JobKind, RemoteOp};
 use soyuz_vfs::registry::HostKeyPrompt;
 use soyuz_vfs::{RemoteUri, Scheme};
 
-use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -69,7 +69,7 @@ fn pump_state() -> &'static Mutex<PumpState> {
 
 /// Per frame: apply `[remote]`, show host-key / sign-in prompts, refresh remote panes
 /// after their jobs (and undo jobs) finish, poll visible remote panes.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     svc::init(&app.config.remote, host.wake());
     while let Some((prompt, tx)) = svc::take_host_prompt() {
         app.frontend.push(FrontendCmd::Remote(RemotePrompt::HostKey(HostKeyAsk::new(prompt, tx))));
@@ -124,7 +124,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Visible remote panes of the active tab: `(pane, folder)`.
-fn remote_panes(app: &SoyuzApp) -> Vec<(PaneId, RemoteUri)> {
+fn remote_panes(app: &AppCore) -> Vec<(PaneId, RemoteUri)> {
     app.ws
         .tab()
         .panes
@@ -136,7 +136,7 @@ fn remote_panes(app: &SoyuzApp) -> Vec<(PaneId, RemoteUri)> {
         .collect()
 }
 
-pub fn apply(app: &mut SoyuzApp, c: RemoteCmd) {
+pub fn apply(app: &mut AppCore, c: RemoteCmd) {
     match c {
         RemoteCmd::ConnectDialog { uri, edit, note } => {
             let form = match (edit.and_then(|id| svc::connections().into_iter().find(|c| c.id == id)), uri) {
@@ -169,7 +169,7 @@ pub fn apply(app: &mut SoyuzApp, c: RemoteCmd) {
 }
 
 fn submit(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     kind: JobKind,
     op: OpKind,
     items: Vec<PathBuf>,
@@ -202,7 +202,7 @@ fn submit(
 // ---- opening entries ----------------------------------------------------------------------
 
 /// Enter / double-click on a remote entry. Returns `true` when handled.
-pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -> bool {
+pub fn open_entry(app: &mut AppCore, pane: PaneId, path: &Path, is_dir: bool) -> bool {
     if !svc::is_remote_path(path) {
         return false;
     }
@@ -228,7 +228,7 @@ pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -
 
 /// What the preview pane shows for a remote entry: the cached local copy once it is
 /// downloaded (a download starts on demand, up to `[remote] preview_max_mb`).
-pub fn preview_target(app: &SoyuzApp, e: &EntryInfo) -> Option<EntryInfo> {
+pub fn preview_target(app: &AppCore, e: &EntryInfo) -> Option<EntryInfo> {
     if e.is_dir_like() || e.size > svc::preview_max_bytes() {
         return None;
     }
@@ -247,23 +247,23 @@ pub fn preview_target(app: &SoyuzApp, e: &EntryInfo) -> Option<EntryInfo> {
 
 // ---- actions ------------------------------------------------------------------------------
 
-fn focused_remote(app: &SoyuzApp) -> Option<RemoteUri> {
+fn focused_remote(app: &AppCore) -> Option<RemoteUri> {
     match &app.ws.pane().location {
         Location::Remote(u) => RemoteUri::parse(u).ok(),
         _ => None,
     }
 }
 
-fn other_pane_location(app: &SoyuzApp) -> Option<Location> {
+fn other_pane_location(app: &AppCore) -> Option<Location> {
     app.ws.tab().other().map(|p| p.location.clone())
 }
 
-fn clipboard_has_remote(app: &SoyuzApp) -> bool {
+fn clipboard_has_remote(app: &AppCore) -> bool {
     app.fileops.clipboard.for_paste().is_some_and(|(_, p)| p.iter().any(|p| svc::is_remote_path(p)))
 }
 
 /// Actions this module handles in the current state (routed by `actions::execute`).
-pub fn handles(app: &SoyuzApp, a: &Action) -> bool {
+pub fn handles(app: &AppCore, a: &Action) -> bool {
     use Action as A;
     if *a == A::ConnectToServer {
         return true;
@@ -282,7 +282,7 @@ pub fn handles(app: &SoyuzApp, a: &Action) -> bool {
     }
 }
 
-pub fn execute(app: &mut SoyuzApp, a: Action, host: &dyn Host) {
+pub fn execute(app: &mut AppCore, a: Action, host: &dyn Host) {
     use Action as A;
     let here = focused_remote(app);
     let pane = app.ws.pane();
@@ -310,7 +310,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, host: &dyn Host) {
         }
         A::Paste | A::PasteAndVerify => {
             let Some(dest) = here_path else { return };
-            let paste = move |app: &mut SoyuzApp, clip: Option<(ClipMode, Vec<PathBuf>)>| {
+            let paste = move |app: &mut AppCore, clip: Option<(ClipMode, Vec<PathBuf>)>| {
                 let Some((mode, paths)) = clip else {
                     app.ui
                         .toasts
@@ -404,7 +404,7 @@ pub fn execute(app: &mut SoyuzApp, a: Action, host: &dyn Host) {
 
 /// Copy / move `paths` into `dest` where at least one side is remote; plain local
 /// transfers go to the regular copy engine.
-pub fn transfer(app: &mut SoyuzApp, paths: Vec<PathBuf>, dest: PathBuf, mv: bool, clear: bool) -> Option<JobId> {
+pub fn transfer(app: &mut AppCore, paths: Vec<PathBuf>, dest: PathBuf, mv: bool, clear: bool) -> Option<JobId> {
     if paths.is_empty() {
         return None;
     }

@@ -100,12 +100,12 @@ pub fn configure_viewport(builder: ViewportBuilder, chrome: Chrome) -> ViewportB
 
 /// Apply a changed `custom_titlebar` setting (live where the platform allows it).
 pub fn sync(ctx: &Context, app: &mut SoyuzApp) {
-    let want = Chrome::for_config(app.config.appearance.custom_titlebar);
-    if want == app.ui.chrome || !Chrome::live_switch() {
+    let want = Chrome::for_config(app.core.config.appearance.custom_titlebar);
+    if want == app.gui.chrome || !Chrome::live_switch() {
         return;
     }
     ctx.send_viewport_cmd(ViewportCommand::Decorations(want == Chrome::Native));
-    app.ui.chrome = want;
+    app.gui.chrome = want;
 }
 
 /// Rects of the title bar parts.
@@ -229,7 +229,7 @@ fn sidebar_column(ctx: &Context) -> Option<f32> {
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let ctx = root.ctx().clone();
     let p = palette(&ctx);
-    let chrome = app.ui.chrome;
+    let chrome = app.gui.chrome;
     let ws = window_state(&ctx);
     let lay = Panel::top("soyuz.titlebar")
         .exact_size(HEIGHT)
@@ -238,7 +238,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window))
         .show(root, |ui| {
             let bar = ui.max_rect();
-            let column = if app.ui.sidebar_visible { sidebar_column(&ctx) } else { None };
+            let column = if app.core.ui.sidebar_visible { sidebar_column(&ctx) } else { None };
             let leading = if chrome == Chrome::MacOverlay && !ws.fullscreen { MAC_TRAFFIC_LIGHTS } else { 0.0 };
             let lay = layout(bar, column, leading, chrome.own_frame());
 
@@ -251,10 +251,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             } else if bg.drag_started_by(PointerButton::Primary) {
                 ctx.send_viewport_cmd(ViewportCommand::StartDrag);
             }
-            crate::ui::native::popup::context_menu(&bg, |ui| window_menu(ui, &app.keymap, ws.maximized));
+            crate::ui::native::popup::context_menu(&bg, |ui| window_menu(ui, &app.core.keymap, ws.maximized));
 
             brand(ui, lay.brand, leading > 0.0, ws.focused, app);
-            if app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1 {
+            if app.core.config.layout.tab_strip == TabStripMode::Always || app.core.ws.tabs.len() > 1 {
                 let tabs = Rect::from_min_max(
                     pos2(lay.tabs.left() + 6.0, bar.top() + 6.0),
                     pos2(lay.tabs.right(), bar.top() + 38.0),
@@ -337,7 +337,7 @@ fn logo_texture(ctx: &Context, px: u32) -> TextureHandle {
 
 fn app_menu(ui: &mut Ui, app: &mut SoyuzApp) {
     ui.set_width(230.0);
-    let km = app.keymap.clone();
+    let km = app.core.keymap.clone();
     let mut cmds = Vec::new();
     let item = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, action: Action| {
         if menu_item(ui, Some(icon), label, chord_label(&km, &action).as_deref(), true).clicked() {
@@ -353,7 +353,7 @@ fn app_menu(ui: &mut Ui, app: &mut SoyuzApp) {
     item(ui, &mut cmds, ph::INFO, tr!("app-titlebar-about"), Action::About);
     menu_separator(ui);
     item(ui, &mut cmds, ph::SIGN_OUT, tr!("app-titlebar-quit"), Action::Quit);
-    app.cmds.extend(cmds);
+    app.core.cmds.extend(cmds);
 }
 
 fn window_menu(ui: &mut Ui, km: &soyuz_core::config::Keymap, maximized: bool) {
@@ -529,7 +529,7 @@ fn paint_glyph(painter: &Painter, glyph: Glyph, center: Pos2, color: Color32, pp
 /// Window border and edge resize zones (call last in the frame). Only for
 /// [`Chrome::Custom`] while the window is neither maximized nor fullscreen.
 pub fn frame(ctx: &Context, app: &SoyuzApp) {
-    if !app.ui.chrome.own_frame() {
+    if !app.gui.chrome.own_frame() {
         return;
     }
     let ws = window_state(ctx);

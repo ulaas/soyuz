@@ -11,8 +11,8 @@ use soyuz_archive::ArchiveFormat;
 use soyuz_core::{Location, split_vpath};
 use soyuz_jobs::{JobKind, JobOptions, JobSpec};
 
-use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::core::AppCore;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
@@ -20,7 +20,7 @@ use crate::services::archive as svc;
 use crate::state::pane::PaneId;
 
 /// Enter / double-click handling for archives. Returns `true` when handled.
-pub fn open_entry(app: &mut SoyuzApp, pane: PaneId, path: &Path, is_dir: bool) -> bool {
+pub fn open_entry(app: &mut AppCore, pane: PaneId, path: &Path, is_dir: bool) -> bool {
     let in_archive = app.ws.find_pane(pane).is_some_and(|p| matches!(p.location, Location::Archive { .. }));
     if in_archive && let Some((archive, inner)) = split_vpath(path) {
         if is_dir {
@@ -100,7 +100,7 @@ pub fn extract_spec(archive: &Path, entries: Option<Vec<usize>>, dest: PathBuf, 
 }
 
 /// Archive files among the focused pane's selection (plain folders only).
-fn selected_archives(app: &SoyuzApp) -> Vec<PathBuf> {
+fn selected_archives(app: &AppCore) -> Vec<PathBuf> {
     let pane = app.ws.pane();
     if !matches!(pane.location, Location::Dir(_) | Location::Search(_)) {
         return Vec::new();
@@ -113,14 +113,14 @@ fn selected_archives(app: &SoyuzApp) -> Vec<PathBuf> {
 }
 
 /// The archive being browsed in the focused pane: `(archive, inner)`.
-fn browsed(app: &SoyuzApp) -> Option<(PathBuf, String)> {
+fn browsed(app: &AppCore) -> Option<(PathBuf, String)> {
     match &app.ws.pane().location {
         Location::Archive { archive, inner } => Some((archive.clone(), inner.clone())),
         _ => None,
     }
 }
 
-pub fn extract_here(app: &mut SoyuzApp) {
+pub fn extract_here(app: &mut AppCore) {
     if let Some((archive, _)) = browsed(app) {
         let dest = archive.parent().map(Path::to_path_buf).unwrap_or_default();
         extract_selected_to(app, dest);
@@ -132,7 +132,7 @@ pub fn extract_here(app: &mut SoyuzApp) {
     }
 }
 
-pub fn extract_to_folder(app: &mut SoyuzApp) {
+pub fn extract_to_folder(app: &mut AppCore) {
     let archives = match browsed(app) {
         Some((a, _)) => vec![a],
         None => selected_archives(app),
@@ -145,7 +145,7 @@ pub fn extract_to_folder(app: &mut SoyuzApp) {
 }
 
 /// "Extract to…" dialog (in an archive: the selected entries, else the selected archives).
-pub fn extract_to_dialog(app: &mut SoyuzApp) {
+pub fn extract_to_dialog(app: &mut AppCore) {
     let other = other_pane_dir(app);
     if let Some((archive, _)) = browsed(app) {
         let dest = other.or_else(|| archive.parent().map(Path::to_path_buf)).unwrap_or_default();
@@ -166,7 +166,7 @@ pub fn extract_to_dialog(app: &mut SoyuzApp) {
     app.frontend.push(FrontendCmd::Archive(ArchivePrompt::Extract(ExtractForm::new(archives, None, dest))));
 }
 
-fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
+fn other_pane_dir(app: &AppCore) -> Option<PathBuf> {
     let tab = app.ws.tab();
     if !tab.dual {
         return None;
@@ -175,7 +175,7 @@ fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
 }
 
 /// Selected entries of the browsed archive as `(inner paths, strip components)`.
-fn selected_inner(app: &SoyuzApp) -> Option<(Vec<(String, bool)>, usize)> {
+fn selected_inner(app: &AppCore) -> Option<(Vec<(String, bool)>, usize)> {
     let (_, inner) = browsed(app)?;
     let pane = app.ws.pane();
     let sel: Vec<(String, bool)> = pane
@@ -187,7 +187,7 @@ fn selected_inner(app: &SoyuzApp) -> Option<(Vec<(String, bool)>, usize)> {
     (!sel.is_empty() && !pane.selection.is_empty()).then_some((sel, strip))
 }
 
-fn extract_selected_to(app: &mut SoyuzApp, dest: PathBuf) {
+fn extract_selected_to(app: &mut AppCore, dest: PathBuf) {
     let Some((archive, _)) = browsed(app) else { return };
     match selected_inner(app) {
         Some((items, strip)) => submit_entries(app, archive, items, strip, dest),
@@ -197,7 +197,7 @@ fn extract_selected_to(app: &mut SoyuzApp, dest: PathBuf) {
 
 /// Resolve inner paths (folders expand to their contents) to entry indices on a worker,
 /// then submit the job.
-fn submit_entries(app: &mut SoyuzApp, archive: PathBuf, items: Vec<(String, bool)>, strip: usize, dest: PathBuf) {
+fn submit_entries(app: &mut AppCore, archive: PathBuf, items: Vec<(String, bool)>, strip: usize, dest: PathBuf) {
     let postman = app.services.mailbox.postman();
     let _ = std::thread::Builder::new().name("soyuz-archive-select".into()).spawn(move || {
         let pw = svc::password_for(&archive);
@@ -237,7 +237,7 @@ pub fn indices_for<'a>(paths: impl Iterator<Item = &'a str>, items: &[(String, b
 }
 
 /// "Compress…" dialog for the selection (or the current folder's items).
-pub fn create_dialog(app: &mut SoyuzApp) {
+pub fn create_dialog(app: &mut AppCore) {
     let pane = app.ws.pane();
     let Location::Dir(dir) = &pane.location else {
         app.ui.toasts.push(Toast::info(tr!("views-archive-compress-needs-folder")));
@@ -260,7 +260,7 @@ pub fn create_dialog(app: &mut SoyuzApp) {
 }
 
 /// Check an archive's integrity on a worker; reports with a toast.
-pub fn test_archive(app: &mut SoyuzApp) {
+pub fn test_archive(app: &mut AppCore) {
     let targets = match browsed(app) {
         Some((a, _)) => vec![a],
         None => selected_archives(app),
@@ -285,7 +285,7 @@ pub fn test_archive(app: &mut SoyuzApp) {
 }
 
 /// Per frame: password prompts and job completion toasts.
-pub fn pump(app: &mut SoyuzApp) {
+pub fn pump(app: &mut AppCore) {
     svc::remember_wake(&app.wake);
     pump_edits(app);
     if let Some((pane, archive, wrong)) = svc::take_password_request() {
@@ -298,7 +298,7 @@ pub fn pump(app: &mut SoyuzApp) {
 
 /// Submit an extract / compress job to the app-wide jobs service (activity panel,
 /// prompts and completion toasts come from there).
-pub fn submit_job(app: &mut SoyuzApp, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::JobId {
+pub fn submit_job(app: &mut AppCore, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::JobId {
     use crate::services::jobs::{JobMeta, OpKind};
     let roots = spec.kind.touched_roots();
     let meta = JobMeta::new(OpKind::Other, &roots, None);
@@ -314,7 +314,7 @@ pub fn submit_job(app: &mut SoyuzApp, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::
 }
 
 /// `Cmd::ExtractEntries` handler.
-pub fn extract_entries(app: &mut SoyuzApp, archive: PathBuf, items: Vec<(String, bool)>, strip: usize, dest: PathBuf) {
+pub fn extract_entries(app: &mut AppCore, archive: PathBuf, items: Vec<(String, bool)>, strip: usize, dest: PathBuf) {
     submit_entries(app, archive, items, strip, dest);
 }
 
@@ -528,12 +528,12 @@ pub fn is_editable_zip_name(archive: &Path) -> bool {
 }
 
 /// The zip browsed in the focused pane, when it can be edited: `(archive, inner dir)`.
-fn editable_zip(app: &SoyuzApp) -> Option<(PathBuf, String)> {
+fn editable_zip(app: &AppCore) -> Option<(PathBuf, String)> {
     browsed(app).filter(|(archive, _)| is_editable_zip_name(archive))
 }
 
 /// Whether `a` edits the browsed zip (Delete / Rename / Paste inside a zip).
-pub fn handles_edit(app: &SoyuzApp, a: &soyuz_core::config::Action) -> bool {
+pub fn handles_edit(app: &AppCore, a: &soyuz_core::config::Action) -> bool {
     use soyuz_core::config::Action as A;
     matches!(a, A::Delete | A::DeletePermanent | A::Rename | A::Paste) && editable_zip(app).is_some()
 }
@@ -555,7 +555,7 @@ pub fn edit_spec(archive: &Path, edits: Vec<soyuz_archive::ZipEdit>, label: Stri
 
 /// Delete / Rename / Paste inside the browsed zip (rewrite job; the original goes to the
 /// trash, so it can be undone).
-pub fn execute_edit(app: &mut SoyuzApp, a: soyuz_core::config::Action) {
+pub fn execute_edit(app: &mut AppCore, a: soyuz_core::config::Action) {
     use soyuz_core::config::Action as A;
     let Some((archive, inner)) = editable_zip(app) else { return };
     let zip_name = soyuz_core::entry::display_name(&archive);
@@ -590,7 +590,7 @@ pub fn execute_edit(app: &mut SoyuzApp, a: soyuz_core::config::Action) {
         },
         A::Paste => {
             // The system clipboard may answer a few frames later (Linux: another process).
-            let then = move |app: &mut crate::app::SoyuzApp, os: crate::services::os_clipboard::Files| {
+            let then = move |app: &mut crate::core::AppCore, os: crate::services::os_clipboard::Files| {
                 let clip = os.or_else(|| app.fileops.clipboard.for_paste());
                 let Some((_, sources)) = clip.filter(|(_, p)| !p.is_empty()) else {
                     app.ui.toasts.push(
@@ -617,7 +617,7 @@ fn track_edit_job(id: soyuz_jobs::JobId, archive: PathBuf) {
 }
 
 /// Per frame: refresh archive panes after their edit job finished.
-fn pump_edits(app: &mut SoyuzApp) {
+fn pump_edits(app: &mut AppCore) {
     let done: Vec<PathBuf> = {
         let Ok(mut jobs) = edit_jobs().lock() else { return };
         if jobs.is_empty() {

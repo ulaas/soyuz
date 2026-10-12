@@ -15,8 +15,8 @@ use crate::ui::views::flow::semibold;
 
 /// Whether the area has anything to show.
 pub fn visible(app: &SoyuzApp) -> bool {
-    !app.services.mcp.approvals.lock().cards.is_empty()
-        || !crate::ai::mcp::clients_with_history(app.fileops.jobs.history()).is_empty()
+    !app.core.services.mcp.approvals.lock().cards.is_empty()
+        || !crate::ai::mcp::clients_with_history(app.core.fileops.jobs.history()).is_empty()
 }
 
 /// Draw the area as a top panel of the chat tab.
@@ -25,15 +25,15 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         return;
     }
     let max_h = (ui.available_height() * 0.62).max(160.0);
-    let flash = app.ai.panel.mcp_flash.map(|t| t.elapsed().as_secs_f32()).filter(|s| *s < 1.6);
+    let flash = app.core.ai.panel.mcp_flash.map(|t| t.elapsed().as_secs_f32()).filter(|s| *s < 1.6);
     if flash.is_some() {
         ui.ctx().request_repaint();
     }
     ui.scope(|ui| {
-        let approvals = app.services.mcp.approvals.clone();
+        let approvals = app.core.services.mcp.approvals.clone();
         let mut a = approvals.lock();
         let waiting = a.pending();
-        let undo = crate::ai::mcp::clients_with_history(app.fileops.jobs.history());
+        let undo = crate::ai::mcp::clients_with_history(app.core.fileops.jobs.history());
         let border = match flash {
             Some(t) => p.warning.gamma_multiply(0.35 + 0.65 * (1.0 - t / 1.6)),
             None if waiting > 0 => p.warning.gamma_multiply(0.45),
@@ -80,7 +80,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(6.0, 4.0);
                         for (client, n) in &undo {
-                            let busy = app.ai.mcp_undo_running(client);
+                            let busy = app.core.ai.mcp_undo_running(client);
                             let label = tr!("ai-mcp-undo-client", client = client);
                             let r = button(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), &label, Tone::Normal, !busy)
                                 .on_hover_text(tr!("ai-mcp-undo-client-tip", count = *n, client = client));
@@ -120,7 +120,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
 
 /// Apply a card action to the MCP approvals.
 pub fn apply(app: &mut SoyuzApp, id: u64, act: CardAction) {
-    let mut a = app.services.mcp.approvals.lock();
+    let mut a = app.core.services.mcp.approvals.lock();
     match act {
         CardAction::Decide(d) => a.decide(id, d),
         CardAction::ApproveKind => a.approve_kind(id),

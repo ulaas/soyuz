@@ -16,8 +16,8 @@ use soyuz_fs::attrs::InodeFlags;
 use soyuz_fs::{AttrSet, TimesSet};
 use soyuz_jobs::JobKind;
 
-use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -164,7 +164,7 @@ fn take_results(bg: &Bg<Vec<Option<FsError>>>, failed: &mut [Option<FsError>]) -
     })
 }
 
-fn submit_meta_jobs(app: &mut SoyuzApp, jobs: &[MetaJob]) -> Vec<soyuz_jobs::JobId> {
+fn submit_meta_jobs(app: &mut AppCore, jobs: &[MetaJob]) -> Vec<soyuz_jobs::JobId> {
     let mut ids = Vec::new();
     for j in jobs {
         if j.paths.is_empty() {
@@ -178,7 +178,7 @@ fn submit_meta_jobs(app: &mut SoyuzApp, jobs: &[MetaJob]) -> Vec<soyuz_jobs::Job
     ids
 }
 
-fn submit_rename(app: &mut SoyuzApp, pane: PaneId, from: &std::path::Path, to: &str) -> soyuz_jobs::JobId {
+fn submit_rename(app: &mut AppCore, pane: PaneId, from: &std::path::Path, to: &str) -> soyuz_jobs::JobId {
     // Same job as `FileOpCmd::Rename` (inline rename), with its id kept for sequencing.
     let to_path = from.with_file_name(to);
     let spec = app.fileops.jobs.spec(JobKind::Rename { pairs: vec![(from.to_path_buf(), to_path)] });
@@ -188,16 +188,16 @@ fn submit_rename(app: &mut SoyuzApp, pane: PaneId, from: &std::path::Path, to: &
     app.fileops.jobs.submit(spec, meta)
 }
 
-fn job_finished(app: &SoyuzApp, id: soyuz_jobs::JobId) -> bool {
+fn job_finished(app: &AppCore, id: soyuz_jobs::JobId) -> bool {
     app.fileops.jobs.snapshot(id).is_none_or(|s| s.state.is_terminal())
 }
 
-fn job_succeeded(app: &SoyuzApp, id: soyuz_jobs::JobId) -> bool {
+fn job_succeeded(app: &AppCore, id: soyuz_jobs::JobId) -> bool {
     app.fileops.jobs.snapshot(id).is_some_and(|s| matches!(s.state, soyuz_jobs::JobState::Done(_)))
 }
 
 /// Per frame: advance the running [`FlagPlan`]s (from the frame loop).
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     let mut runs = std::mem::take(&mut *FLAG_RUNS.lock());
     if runs.is_empty() {
         return;
@@ -279,7 +279,7 @@ pub fn apply_reason(e: &FsError, touched: InodeFlags) -> String {
 
 /// Report a finished [`FlagPlan`] (a toast counting the failures) and let the dialog
 /// re-read the flags.
-fn finish_flags(app: &mut SoyuzApp, run: &FlagRun) {
+fn finish_flags(app: &mut AppCore, run: &FlagRun) {
     let failures: Vec<&FsError> = run.failed.iter().flatten().collect();
     let toast = match failures.first() {
         None => Toast::success(tr!("dialogs-inode-changed")),
@@ -299,7 +299,7 @@ fn finish_flags(app: &mut SoyuzApp, run: &FlagRun) {
 }
 
 /// Actions handled here (routed by `actions::execute` before the file-op module).
-pub fn handles(app: &SoyuzApp, a: &Action) -> bool {
+pub fn handles(app: &AppCore, a: &Action) -> bool {
     use Action as A;
     match a {
         A::Properties
@@ -333,7 +333,7 @@ pub enum MetaDialog {
     Link(LinkKind),
 }
 
-pub fn execute(app: &mut SoyuzApp, action: Action, _host: &dyn Host) {
+pub fn execute(app: &mut AppCore, action: Action, _host: &dyn Host) {
     use Action as A;
     match action {
         A::Properties => open(app, Tab::General, None),
@@ -350,7 +350,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, _host: &dyn Host) {
 }
 
 /// Apply a [`MetaCmd`].
-pub fn apply(app: &mut SoyuzApp, cmd: MetaCmd, host: &dyn Host) {
+pub fn apply(app: &mut AppCore, cmd: MetaCmd, host: &dyn Host) {
     match cmd {
         MetaCmd::SetMeta(jobs) => {
             for j in jobs {
@@ -411,7 +411,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: MetaCmd, host: &dyn Host) {
     }
 }
 
-fn refresh_panes(app: &mut SoyuzApp) {
+fn refresh_panes(app: &mut AppCore) {
     // Watchers report attribute / time changes inconsistently across platforms; mark the
     // panes dirty so the next frame re-reads them.
     for t in &mut app.ws.tabs {
@@ -423,7 +423,7 @@ fn refresh_panes(app: &mut SoyuzApp) {
 
 /// Entries the metadata actions work on: the selection of the focused pane, or the
 /// folder itself when nothing is selected. Archives / trash / computer are refused.
-pub fn targets(app: &SoyuzApp) -> Result<(PaneId, Vec<EntryInfo>), String> {
+pub fn targets(app: &AppCore) -> Result<(PaneId, Vec<EntryInfo>), String> {
     let pane = app.ws.pane();
     match &pane.location {
         Location::Dir(_) | Location::Search(_) | Location::Recent | Location::Tags(_) => {}
@@ -442,7 +442,7 @@ pub fn targets(app: &SoyuzApp) -> Result<(PaneId, Vec<EntryInfo>), String> {
 }
 
 /// "Touch": set modified + accessed to now on the selection (undoable job).
-fn touch(app: &mut SoyuzApp) {
+fn touch(app: &mut AppCore) {
     match targets(app) {
         Ok((_, entries)) => {
             let now = SystemTime::now();
@@ -478,7 +478,7 @@ pub enum Start {
 
 /// Open the Properties dialog on the focused pane's selection (a toast when there is
 /// nothing it can show).
-pub fn open(app: &mut SoyuzApp, tab: Tab, start: Option<Start>) {
+pub fn open(app: &mut AppCore, tab: Tab, start: Option<Start>) {
     match targets(app) {
         Ok((pane, entries)) => app.frontend.push(FrontendCmd::Properties { pane, entries, tab, start }),
         Err(e) => {

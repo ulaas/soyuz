@@ -187,7 +187,7 @@ pub fn take_volumes_stale() -> bool {
 
 /// Per frame (from the frame loop, sidebar shown or not): rescan when the volume list
 /// changed, turn finished device operations into toasts / navigation.
-pub fn pump(app: &mut crate::app::SoyuzApp) {
+pub fn pump(app: &mut crate::core::AppCore) {
     if !cfg!(target_os = "linux") {
         return;
     }
@@ -551,7 +551,7 @@ pub enum DeviceCmd {
 }
 
 /// Apply a [`DeviceCmd`].
-pub fn apply(app: &mut crate::app::SoyuzApp, host: &dyn Host, cmd: DeviceCmd) {
+pub fn apply(app: &mut crate::core::AppCore, host: &dyn Host, cmd: DeviceCmd) {
     let pane = app.ws.pane().id;
     match cmd {
         DeviceCmd::Unlock { object, name, kind } => {

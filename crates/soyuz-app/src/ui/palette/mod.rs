@@ -41,15 +41,19 @@ fn tint_color(p: &Palette, t: Tint) -> Color32 {
 /// Draw the palette (when open) and the pending key-sequence hint.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     sequence_hint(ctx, app);
-    if !app.palette.open {
+    if !app.core.palette.open {
         return;
     }
     let p = crate::theme::palette(ctx);
     let now = ctx.input(|i| i.time);
-    if app.palette.opened_at.is_nan() {
-        app.palette.opened_at = now;
+    if app.core.palette.opened_at.is_nan() {
+        app.core.palette.opened_at = now;
     }
-    let t = if app.ui.reduced_motion { 1.0 } else { ((now - app.palette.opened_at) / 0.16).clamp(0.0, 1.0) as f32 };
+    let t = if app.core.ui.reduced_motion {
+        1.0
+    } else {
+        ((now - app.core.palette.opened_at) / 0.16).clamp(0.0, 1.0) as f32
+    };
     let ease = 1.0 - (1.0 - t).powi(3);
     if t < 1.0 {
         ctx.request_repaint();
@@ -57,11 +61,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
 
     // Keyboard first (before the text field sees the keys).
     let keys = read_keys(ctx, app);
-    palette::apply_keys(app, ctx, keys);
-    if !app.palette.open {
+    palette::apply_keys(&mut app.core, ctx, keys);
+    if !app.core.palette.open {
         return;
     }
-    palette::refresh_results(app);
+    palette::refresh_results(&mut app.core);
 
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(320.0, 660.0);
@@ -105,17 +109,17 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let tr = TSTransform::new(pivot.to_vec2() * (1.0 - s) + vec2(0.0, -8.0 * (1.0 - ease)), s);
     ctx.set_transform_layer(LayerId::new(Order::Foreground, id), tr);
     if let Some((exec, mods)) = clicked {
-        palette::run(app, ctx, exec, mods);
+        palette::run(&mut app.core, ctx, exec, mods);
     } else if resp.backdrop_response.clicked() {
-        palette::close(app);
+        palette::close(&mut app.core);
     }
 }
 
 /// This frame's palette keys, consumed before the text field sees them.
 fn read_keys(ctx: &egui::Context, app: &SoyuzApp) -> KeyInput {
     let mut k = KeyInput::default();
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
-    let km = &app.keymap;
+    let cmd_is_ctrl = app.core.config.keys.cmd_is_ctrl;
+    let km = &app.core.keymap;
     ctx.input_mut(|i| {
         let mods = i.modifiers;
         // Global palette chords toggle / switch modes.
@@ -172,7 +176,7 @@ fn divider(ui: &mut Ui, p: &Palette) {
 
 fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, INPUT_H), Sense::hover());
-    let mode = app.palette.mode();
+    let mode = app.core.palette.mode();
     let painter = ui.painter();
     let mut x = rect.left() + 18.0;
     let glyph = match mode {
@@ -200,7 +204,7 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
     let hint = mode.placeholder();
     let mut child = ui
         .new_child(egui::UiBuilder::new().max_rect(edit_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
-    let te = TextEdit::singleline(&mut app.palette.input)
+    let te = TextEdit::singleline(&mut app.core.palette.input)
         .id(Id::new("soyuz.palette.input"))
         .frame(Frame::NONE)
         .font(FontId::proportional(16.5))
@@ -210,25 +214,25 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
         .margin(Margin::symmetric(0, 4));
     let out = te.show(&mut child);
     crate::ui::a11y::name(&out.response, hint);
-    if app.palette.focus_input {
+    if app.core.palette.focus_input {
         out.response.request_focus();
-        app.palette.focus_input = false;
+        app.core.palette.focus_input = false;
     }
     if !out.response.has_focus() {
         // Keep typing in the palette even after a click elsewhere in it.
         out.response.request_focus();
     }
-    if app.palette.cursor_to_end {
-        app.palette.cursor_to_end = false;
+    if app.core.palette.cursor_to_end {
+        app.core.palette.cursor_to_end = false;
         let mut state = out.state.clone();
-        let end = egui::text::CCursor::new(app.palette.input.chars().count());
+        let end = egui::text::CCursor::new(app.core.palette.input.chars().count());
         state.cursor.set_char_range(Some(egui::text::CCursorRange::one(end)));
         state.store(ui.ctx(), out.response.id);
     }
 }
 
 fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exec, RunMods)> {
-    let items = &app.palette.results;
+    let items = &app.core.palette.results;
     let mut clicked = None;
     if items.is_empty() {
         let (rect, _) = ui.allocate_exact_size(vec2(width, 120.0), Sense::hover());
@@ -260,13 +264,13 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
         total += ROW_H;
     }
     let height = total.min(MAX_LIST_H);
-    let selected = app.palette.selected;
-    let scroll_to = std::mem::take(&mut app.palette.scroll_to_selected);
+    let selected = app.core.palette.selected;
+    let scroll_to = std::mem::take(&mut app.core.palette.scroll_to_selected);
     // Mouse hover selects only after the pointer moved (not when the palette opens under it).
     let pointer = ui.ctx().input(|i| i.pointer.hover_pos());
-    let moved = match (app.palette.pointer_at_open, pointer) {
+    let moved = match (app.core.palette.pointer_at_open, pointer) {
         (None, Some(pp)) => {
-            app.palette.pointer_at_open = Some(geom::point(pp));
+            app.core.palette.pointer_at_open = Some(geom::point(pp));
             false
         }
         (Some(a), Some(b)) => geom::pos(a).distance(b) > 3.0,
@@ -337,7 +341,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
         },
     );
     if let Some(h) = hover_sel {
-        app.palette.selected = h;
+        app.core.palette.selected = h;
     }
     clicked
 }
@@ -393,7 +397,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
     };
     hint(&mut x, "↑↓", tr!("actions-palette-hint-move"));
     hint(&mut x, "Enter", tr!("actions-palette-hint-run"));
-    if matches!(app.palette.mode(), Mode::Path | Mode::Shell | Mode::Folders | Mode::Bookmarks) {
+    if matches!(app.core.palette.mode(), Mode::Path | Mode::Shell | Mode::Folders | Mode::Bookmarks) {
         hint(&mut x, "Tab", tr!("actions-palette-hint-complete"));
     }
     // Prefix legend (clickable), right-aligned.
@@ -407,7 +411,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
             break;
         }
         let resp = ui.interact(r, Id::new(("soyuz.palette.prefix", c)), Sense::click());
-        let active = app.palette.mode() == *m;
+        let active = app.core.palette.mode() == *m;
         crate::ui::a11y::toggle(&resp, &format!("{c} {}", m.legend()), active);
         let fill = if active {
             p.accent_subtle
@@ -431,7 +435,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
 
 /// Bottom-center chip while a key sequence or mark is pending ("G …").
 fn sequence_hint(ctx: &egui::Context, app: &SoyuzApp) {
-    let Some(label) = app.keyseq.pending_label() else { return };
+    let Some(label) = app.core.keyseq.pending_label() else { return };
     let p = crate::theme::palette(ctx);
     let screen = ctx.content_rect();
     let font = FontId::proportional(12.5);

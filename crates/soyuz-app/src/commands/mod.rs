@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use soyuz_core::Location;
 use soyuz_core::config::{CommandContext, Config, CustomCommand};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 
@@ -30,7 +30,7 @@ pub struct PlaceholderCtx {
 
 impl PlaceholderCtx {
     /// From the focused pane of `app`.
-    pub fn from_app(app: &SoyuzApp) -> Self {
+    pub fn from_app(app: &AppCore) -> Self {
         let pane = app.ws.pane();
         let selected: Vec<PathBuf> = pane.selected_entries().iter().map(|e| clean(&e.path)).collect();
         let focused = pane
@@ -268,7 +268,7 @@ pub fn join_args(args: &[String]) -> String {
 }
 
 /// Run the custom command called `name` against the focused pane.
-pub fn run_named(app: &mut SoyuzApp, name: &str, host: &dyn Host) {
+pub fn run_named(app: &mut AppCore, name: &str, host: &dyn Host) {
     let Some(cmd) = app.config.custom_commands.iter().find(|c| c.name == name).cloned() else {
         app.ui.toasts.push(Toast::warning(tr!("actions-command-not-found", name = name)));
         return;
@@ -277,7 +277,7 @@ pub fn run_named(app: &mut SoyuzApp, name: &str, host: &dyn Host) {
 }
 
 /// Run `cmd` (detached, or typed into the terminal panel).
-pub fn run(app: &mut SoyuzApp, cmd: &CustomCommand, host: &dyn Host) {
+pub fn run(app: &mut AppCore, cmd: &CustomCommand, host: &dyn Host) {
     if cmd.command.trim().is_empty() {
         app.ui.toasts.push(Toast::warning(tr!("actions-command-empty", name = &cmd.name)));
         return;

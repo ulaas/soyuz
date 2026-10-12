@@ -28,7 +28,7 @@ use soyuz_script::rules::PreviewItem;
 use soyuz_script::rules::worker::{self, Cmd as WorkerCmd, Event, LogEntry};
 use soyuz_script::{ActionCtx, PlannedJob, ScriptSet, UiOp};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::icon::IconId;
 use crate::models::toasts::Toast;
@@ -178,7 +178,7 @@ pub fn action_title(id: &str) -> String {
 }
 
 /// Per frame.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     let st = &mut app.automation;
     if !st.started {
         st.started = true;
@@ -238,7 +238,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 
 /// Script hotkeys (`hotkey` in `register_action`) unless `[keys.bindings]` names the
 /// action. Re-applied after the key map is rebuilt (config reload).
-fn bind_hotkeys(app: &mut SoyuzApp) {
+fn bind_hotkeys(app: &mut AppCore) {
     let Some(set) = app.automation.set.clone() else { return };
     let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
     for (id, _, a) in set.actions() {
@@ -269,7 +269,7 @@ fn bind_hotkeys(app: &mut SoyuzApp) {
 }
 
 /// Run the script action `id` against the focused pane (off the UI thread).
-pub fn run_action(app: &mut SoyuzApp, id: &str) {
+pub fn run_action(app: &mut AppCore, id: &str) {
     let Some(set) = scripts::current() else {
         app.ui.toasts.push(Toast::warning(tr!("automation-scripts-still-loading")));
         return;
@@ -325,7 +325,7 @@ fn resolve_ui(ops: Vec<UiOp>) -> Vec<UiStep> {
         .collect()
 }
 
-fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
+fn finish_action(app: &mut AppCore, d: ActionDone) {
     let (jobs, ui) = match d.result {
         Ok(r) => r,
         Err(e) => {
@@ -364,7 +364,7 @@ fn finish_action(app: &mut SoyuzApp, d: ActionDone) {
 }
 
 /// Add a color tag (name or 1..8) to `paths` (never removes it).
-pub fn add_tag(app: &mut SoyuzApp, paths: &[PathBuf], tag: &str) {
+pub fn add_tag(app: &mut AppCore, paths: &[PathBuf], tag: &str) {
     let Some(t) = crate::services::tags::from_name(tag) else {
         app.ui.toasts.push(Toast::warning(tr!("automation-unknown-tag", tag = tag)));
         return;
@@ -389,7 +389,7 @@ fn items_of(kind: &JobKind) -> (Vec<PathBuf>, Option<PathBuf>) {
 }
 
 /// Submit a script's planned jobs as normal (undoable) jobs.
-pub fn submit_planned(app: &mut SoyuzApp, title: &str, jobs: Vec<PlannedJob>) {
+pub fn submit_planned(app: &mut AppCore, title: &str, jobs: Vec<PlannedJob>) {
     for j in jobs {
         let mut spec = app.fileops.jobs.spec(j.kind);
         spec.options.label = Some(format!("{} · {title}", j.summary));
@@ -400,7 +400,7 @@ pub fn submit_planned(app: &mut SoyuzApp, title: &str, jobs: Vec<PlannedJob>) {
     }
 }
 
-pub fn apply(app: &mut SoyuzApp, c: AutoCmd, _host: &dyn Host) {
+pub fn apply(app: &mut AppCore, c: AutoCmd, _host: &dyn Host) {
     match c {
         AutoCmd::SubmitPlanned { title, jobs } => submit_planned(app, &title, jobs),
         AutoCmd::RunRule(name) => {
@@ -426,7 +426,7 @@ pub fn apply(app: &mut SoyuzApp, c: AutoCmd, _host: &dyn Host) {
     }
 }
 
-pub fn reload_scripts(app: &mut SoyuzApp) {
+pub fn reload_scripts(app: &mut AppCore) {
     match &app.automation.loader {
         Some(l) => {
             l.reload();
@@ -453,7 +453,7 @@ pub fn template_title(file: &str) -> &'static str {
     }
 }
 
-fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
+fn open_scripts_folder(app: &mut AppCore, template: Option<&'static str>) {
     let dir = soyuz_script::scripts_dir();
     let pane = app.ws.pane().id;
     let postman = app.services.mailbox.postman();
@@ -499,7 +499,7 @@ fn open_scripts_folder(app: &mut SoyuzApp, template: Option<&'static str>) {
 
 // --- rules ---
 
-fn send_rules(app: &mut SoyuzApp) {
+fn send_rules(app: &mut AppCore) {
     let a = app.config.automation.clone();
     if let Some(w) = &app.automation.worker {
         w.send(WorkerCmd::Configure { automation: a.clone(), copy: crate::services::jobs::copy_options(&app.config) });
@@ -507,7 +507,7 @@ fn send_rules(app: &mut SoyuzApp) {
     app.automation.sent = Some(a);
 }
 
-fn pump_rules(app: &mut SoyuzApp, host: &dyn Host) {
+fn pump_rules(app: &mut AppCore, host: &dyn Host) {
     let st = &mut app.automation;
     let want = app.config.automation.enabled && !app.config.automation.rules.is_empty();
     if want && st.lock.is_none() && st.rules_note.is_none() {
@@ -571,14 +571,14 @@ fn pump_rules(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Register a job submitted outside the UI thread (rules, CLI) with the activity panel.
-fn track(app: &mut SoyuzApp, job: JobId, items: &[PathBuf], origin: JobOrigin) {
+fn track(app: &mut AppCore, job: JobId, items: &[PathBuf], origin: JobOrigin) {
     let op = app.fileops.jobs.engine().snapshot(job).map(|s| OpKind::from_brief(s.kind)).unwrap_or(OpKind::Other);
     app.fileops.jobs.track(job, JobMeta::new(op, items, None).origin(origin));
 }
 
 /// The rule preview for the Automations page; refreshed when the rule changes or
 /// every few seconds while shown.
-pub fn rule_preview(app: &mut SoyuzApp, idx: usize, rule: &AutomationRule) -> Option<RulePreview> {
+pub fn rule_preview(app: &mut AppCore, idx: usize, rule: &AutomationRule) -> Option<RulePreview> {
     let st = &mut app.automation;
     let stale = match st.previews.get(&idx) {
         None => true,
@@ -603,7 +603,7 @@ pub fn rule_preview(app: &mut SoyuzApp, idx: usize, rule: &AutomationRule) -> Op
 
 // --- CLI ---
 
-fn pump_cli(app: &mut SoyuzApp, host: &dyn Host) {
+fn pump_cli(app: &mut AppCore, host: &dyn Host) {
     let st = &mut app.automation;
     let want = app.config.cli.server_enabled;
     if !want {
@@ -664,7 +664,7 @@ fn pump_cli(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// `soyuz open <path>`: folders open in a new tab, files launch (decided off-thread).
-fn open_path(app: &mut SoyuzApp, path: PathBuf) {
+fn open_path(app: &mut AppCore, path: PathBuf) {
     let postman = app.services.mailbox.postman();
     let _ = std::thread::Builder::new().name("soyuz-cli-open".into()).spawn(move || {
         if soyuz_fs::stat(&path, true).is_ok_and(|e| e.is_dir_like()) {

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use soyuz_core::config::{self, Config};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 
@@ -184,7 +184,7 @@ impl ConfigSave {
 
 /// Change the active configuration (UI zoom keys, quick toggles, AI folder access, …):
 /// applies live and writes `config.toml` shortly after.
-pub fn update_config(app: &mut SoyuzApp, host: &dyn Host, edit: impl FnOnce(&mut Config)) {
+pub fn update_config(app: &mut AppCore, host: &dyn Host, edit: impl FnOnce(&mut Config)) {
     let mut c = app.config.clone();
     edit(&mut c);
     if c == app.config {
@@ -196,7 +196,7 @@ pub fn update_config(app: &mut SoyuzApp, host: &dyn Host, edit: impl FnOnce(&mut
 }
 
 /// Write `config.toml` once the debounce delay has passed.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     if let Some(due) = app.config_save.due {
         let now = Instant::now();
         if now >= due {
@@ -208,7 +208,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Write `config.toml` now if a save is pending (closing settings, app exit).
-pub fn flush(app: &mut SoyuzApp) {
+pub fn flush(app: &mut AppCore) {
     if app.config_save.due.take().is_none() {
         return;
     }

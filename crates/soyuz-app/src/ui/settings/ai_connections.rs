@@ -145,11 +145,11 @@ impl ConnectionsState {
 /// Draw the Connections part of the AI page.
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut refresh = false;
-    app.settings.connections.poll(&mut refresh);
+    app.gui.settings.connections.poll(&mut refresh);
     if refresh {
-        app.services.mcp.refresh_tokens();
+        app.core.services.mcp.refresh_tokens();
     }
-    let status = app.services.mcp.status.clone();
+    let status = app.core.services.mcp.status.clone();
     let searching = !q.trim().is_empty();
     let mut any = false;
     let p = palette(ui.ctx());
@@ -160,7 +160,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             RichText::new(super::widgets::upper(tr!("settings-mcp-connections"))).size(10.5).color(p.text_tertiary),
         );
         ui.add(egui::Label::new(RichText::new(tr!("settings-mcp-intro")).size(11.5).color(p.text_tertiary)).wrap());
-        if let Some((msg, err)) = &app.settings.connections.notice {
+        if let Some((msg, err)) = &app.gui.settings.connections.notice {
             ui.add_space(4.0);
             ui.label(RichText::new(msg).size(11.5).color(if *err { p.danger } else { p.success }));
         }
@@ -168,7 +168,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
     // --- server ----------------------------------------------------------------------
     {
-        let s = &mut app.settings;
+        let s = &mut app.gui.settings;
         let (d, st) = (&mut s.draft.ai, &mut s.connections);
         any |= group(ui, q, CTX, tr!("settings-mcp-server"), |r| {
             r.row_kw(tr!("settings-mcp-attach"), tr!("settings-mcp-attach-desc"), "pipe stdio attach", |ui| {
@@ -253,9 +253,9 @@ fn clients(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         return false;
     }
     let p = palette(ui.ctx());
-    let http = app.settings.draft.ai.mcp.http_enabled;
-    let port = app.settings.draft.ai.mcp.http_port;
-    let s = &mut app.settings;
+    let http = app.gui.settings.draft.ai.mcp.http_enabled;
+    let port = app.gui.settings.draft.ai.mcp.http_port;
+    let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
     ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-clients"))).size(10.5).color(p.text_tertiary));
@@ -419,7 +419,7 @@ fn install(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         return false;
     }
     let p = palette(ui.ctx());
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
     ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-add-to"))).size(10.5).color(p.text_tertiary));
@@ -534,7 +534,7 @@ fn servers(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         return false;
     }
     let p = palette(ui.ctx());
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let (d, st) = (&mut s.draft.ai, &mut s.connections);
     ui.add_space(14.0);
     ui.label(RichText::new(super::widgets::upper(tr!("settings-mcp-servers"))).size(10.5).color(p.text_tertiary));

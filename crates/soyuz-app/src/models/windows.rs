@@ -19,7 +19,7 @@ use soyuz_core::config::CloseWindowTabs;
 use super::frontend::FrontendCmd;
 use super::toasts::Toast;
 use super::workspaces::{build_workspace, dispose_workspace, tab_session, window_session};
-use crate::app::{AddressState, Focus, SoyuzApp};
+use crate::core::{AddressState, AppCore, Focus};
 use crate::geom::{Point, Vec2, vec2};
 use crate::host::{Host, WindowCmd};
 use crate::state::pane::{Pane, PaneId};
@@ -99,12 +99,12 @@ pub struct Screen {
 }
 
 /// Position of window `id` in `app.workspaces.windows`.
-pub fn index(app: &SoyuzApp, id: WindowId) -> Option<usize> {
+pub fn index(app: &AppCore, id: WindowId) -> Option<usize> {
     app.workspaces.windows.iter().position(|w| w.id == id)
 }
 
 /// Swap window `k`'s workspace and UI state with `app.ws` / `app.ui` (its own inverse).
-pub fn swap(app: &mut SoyuzApp, k: usize) {
+pub fn swap(app: &mut AppCore, k: usize) {
     let w = &mut app.workspaces.windows[k];
     std::mem::swap(&mut app.ws, &mut w.ws);
     std::mem::swap(&mut app.ui.address, &mut w.ui.address);
@@ -115,7 +115,7 @@ pub fn swap(app: &mut SoyuzApp, k: usize) {
 
 /// Run `f` with the window holding `pane` swapped in (mailbox / watcher routing). `None`
 /// when no window has that pane.
-pub fn with_pane_window<R>(app: &mut SoyuzApp, pane: PaneId, f: impl FnOnce(&mut SoyuzApp) -> R) -> Option<R> {
+pub fn with_pane_window<R>(app: &mut AppCore, pane: PaneId, f: impl FnOnce(&mut AppCore) -> R) -> Option<R> {
     if app.ws.find_pane(pane).is_some() {
         return Some(f(app));
     }
@@ -127,7 +127,7 @@ pub fn with_pane_window<R>(app: &mut SoyuzApp, pane: PaneId, f: impl FnOnce(&mut
 }
 
 /// Workspace of a window while no window is swapped in.
-fn ws_mut(app: &mut SoyuzApp, id: WindowId) -> Option<&mut Workspace> {
+fn ws_mut(app: &mut AppCore, id: WindowId) -> Option<&mut Workspace> {
     if id.is_main() {
         return Some(&mut app.ws);
     }
@@ -135,7 +135,7 @@ fn ws_mut(app: &mut SoyuzApp, id: WindowId) -> Option<&mut Workspace> {
 }
 
 /// `(window, title)` for every window (menus).
-pub fn window_list(app: &SoyuzApp) -> Vec<(WindowId, String)> {
+pub fn window_list(app: &AppCore) -> Vec<(WindowId, String)> {
     let title = |ws: &Workspace| {
         let n = ws.tabs.len();
         let t = crate::state::crumbs::location_title(&ws.pane().location);
@@ -163,7 +163,7 @@ pub fn window_list(app: &SoyuzApp) -> Vec<(WindowId, String)> {
 
 /// Create a window for `ws` (applied from [`apply_ops`]).
 fn create_window(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     host: &dyn Host,
     screen: &Screen,
     ws: Workspace,
@@ -195,7 +195,7 @@ fn create_window(
 }
 
 /// Open a new window showing `loc` (Ctrl+N / "New window").
-pub fn open_location(app: &mut SoyuzApp, loc: Location) {
+pub fn open_location(app: &mut AppCore, loc: Location) {
     let mut pane = Pane::new(loc.clone(), app.view_for(&loc));
     crate::ops::start_listing(&mut pane, &mut app.services, false);
     let size = app.workspaces.current_size();
@@ -227,7 +227,7 @@ fn remember_closed(main: &mut Workspace, gone: &Workspace) {
 }
 
 /// The main window takes over window `k` (its workspace, place and size).
-fn promote(app: &mut SoyuzApp, host: &dyn Host, k: usize) {
+fn promote(app: &mut AppCore, host: &dyn Host, k: usize) {
     let mut w = app.workspaces.windows.remove(k);
     std::mem::swap(&mut app.ws, &mut w.ws);
     dispose_workspace(app, &mut w.ws);
@@ -248,7 +248,7 @@ fn promote(app: &mut SoyuzApp, host: &dyn Host, k: usize) {
     host.window(root, WindowCmd::Focus);
 }
 
-fn close_window(app: &mut SoyuzApp, host: &dyn Host, id: WindowId, merge: bool) {
+fn close_window(app: &mut AppCore, host: &dyn Host, id: WindowId, merge: bool) {
     if id.is_main() {
         if app.workspaces.windows.is_empty() {
             app.workspaces.quitting = true;
@@ -279,7 +279,7 @@ fn close_window(app: &mut SoyuzApp, host: &dyn Host, id: WindowId, merge: bool) 
 }
 
 /// Apply queued window operations (between frames: no window is swapped in).
-pub fn apply_ops(app: &mut SoyuzApp, host: &dyn Host, screen: &Screen) {
+pub fn apply_ops(app: &mut AppCore, host: &dyn Host, screen: &Screen) {
     debug_assert!(app.workspaces.current.is_main());
     for op in std::mem::take(&mut app.workspaces.ops) {
         match op {
@@ -335,12 +335,12 @@ pub fn apply_ops(app: &mut SoyuzApp, host: &dyn Host, screen: &Screen) {
     }
 }
 
-fn focus(app: &mut SoyuzApp, host: &dyn Host, id: WindowId) {
+fn focus(app: &mut AppCore, host: &dyn Host, id: WindowId) {
     host.window(crate::host::WindowId::Window(id), WindowCmd::Focus);
     app.workspaces.owner = id;
 }
 
-fn merge_into(app: &mut SoyuzApp, host: &dyn Host, into: WindowId) {
+fn merge_into(app: &mut AppCore, host: &dyn Host, into: WindowId) {
     if app.workspaces.windows.is_empty() {
         app.ui.toasts.push(Toast::info(tr!("workspaces-no-other-windows")));
         return;
@@ -363,7 +363,7 @@ fn merge_into(app: &mut SoyuzApp, host: &dyn Host, into: WindowId) {
 
 /// A tab dragged out of the strip of the current window was released (or moved by a
 /// menu command). `grab`: where the pointer held the tab.
-pub fn drop_tab(app: &mut SoyuzApp, tab: TabId, target: DropTarget, grab: Vec2) {
+pub fn drop_tab(app: &mut AppCore, tab: TabId, target: DropTarget, grab: Vec2) {
     let cur = app.workspaces.current;
     let Some(i) = app.ws.tab_index(tab) else { return };
     let size = app.workspaces.current_size();
@@ -401,7 +401,7 @@ pub fn drop_tab(app: &mut SoyuzApp, tab: TabId, target: DropTarget, grab: Vec2) 
 
 /// The user asked to close window `id`, the current window (title bar, Alt+F4, "Close
 /// window").
-pub fn request_close(app: &mut SoyuzApp, id: WindowId) {
+pub fn request_close(app: &mut AppCore, id: WindowId) {
     let tabs = app.ws.tabs.len(); // `id` is the current window
     let policy = app.config.workspace.close_window_tabs;
     match policy {
@@ -415,7 +415,7 @@ pub fn request_close(app: &mut SoyuzApp, id: WindowId) {
 /// Main window close requests while other windows are open (`close_requested`: the main
 /// window was asked to close this frame). Returns `true` when handled (the close was
 /// cancelled).
-pub fn intercept_main_close(app: &mut SoyuzApp, host: &dyn Host, close_requested: bool) -> bool {
+pub fn intercept_main_close(app: &mut AppCore, host: &dyn Host, close_requested: bool) -> bool {
     if !close_requested || app.workspaces.quitting || app.workspaces.windows.is_empty() {
         return false;
     }
@@ -429,7 +429,7 @@ pub fn intercept_main_close(app: &mut SoyuzApp, host: &dyn Host, close_requested
 // ---------------------------------------------------------------------------
 
 /// The other windows for `session.toml`.
-pub fn session_windows(app: &SoyuzApp) -> Vec<WindowSession> {
+pub fn session_windows(app: &AppCore) -> Vec<WindowSession> {
     if !app.config.workspace.restore_windows {
         return Vec::new();
     }
@@ -447,7 +447,7 @@ pub fn session_windows(app: &SoyuzApp) -> Vec<WindowSession> {
 }
 
 /// Reopen the windows of the restored session (first frame).
-pub fn restore_windows(app: &mut SoyuzApp, host: &dyn Host, screen: &Screen) {
+pub fn restore_windows(app: &mut AppCore, host: &dyn Host, screen: &Screen) {
     if app.workspaces.restore.is_empty() {
         return;
     }
@@ -457,7 +457,7 @@ pub fn restore_windows(app: &mut SoyuzApp, host: &dyn Host, screen: &Screen) {
     app.workspaces.owner = WindowId::MAIN;
 }
 
-fn restore_window(app: &mut SoyuzApp, host: &dyn Host, screen: &Screen, s: &WindowSession) {
+fn restore_window(app: &mut AppCore, host: &dyn Host, screen: &Screen, s: &WindowSession) {
     let Some(ws) = build_workspace(app, s, false) else { return };
     let pos = s.pos.map(|[x, y]| crate::geom::pt(x, y)).filter(|p| on_some_screen(screen, *p));
     let size = s.size.map(|[w, h]| vec2(w, h));

@@ -11,7 +11,6 @@ use soyuz_core::config::{Orientation, TabStripMode};
 
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
-use crate::ops;
 use crate::theme::palette;
 use crate::ui::dialogs::DialogCtx;
 use crate::ui::sidebar::{self, SidebarCtx};
@@ -25,85 +24,71 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
 
-    // Visible panes: start listings lazily and refresh their visible order.
-    {
-        let show_hidden = app.ui.show_hidden;
-        let show_system = app.ui.show_system;
-        let tab = app.ws.tab_mut();
-        let shown = tab.shown();
-        let focused = tab.focused;
-        for (i, pane) in tab.panes.iter_mut().enumerate() {
-            let visible = if shown >= 2 { i < shown } else { i == focused };
-            if visible {
-                ops::ensure_started(pane, &mut app.services);
-            }
-            pane.refresh_visible(show_hidden, show_system);
-        }
-    }
+    app.core.prepare_visible_panes();
 
-    let titlebar = app.ui.chrome.has_titlebar();
-    let main = crate::models::workspaces::main_frame(app);
+    let titlebar = app.gui.chrome.has_titlebar();
+    let main = crate::models::workspaces::main_frame(&app.core);
     if titlebar {
         crate::ui::titlebar::show(ui, app);
     }
-    if app.ui.status_visible {
+    if app.core.ui.status_visible {
         let info = status_info(app);
         let mut zoom = None;
-        statusbar::show(ui, &info, &mut app.cmds, &mut zoom);
+        statusbar::show(ui, &info, &mut app.core.cmds, &mut zoom);
         if let Some(z) = zoom {
-            let id = app.ws.pane().id;
-            app.ws.pane_mut().view.zoom = z.clamp(16, 256);
-            app.cmds.push(Cmd::ViewChanged(id));
+            let id = app.core.ws.pane().id;
+            app.core.ws.pane_mut().view.zoom = z.clamp(16, 256);
+            app.core.cmds.push(Cmd::ViewChanged(id));
         }
     }
     if main {
         panels::show(ui, app);
-        panels::terminal::apply_requests(app);
+        panels::terminal::apply_requests(&mut app.core);
     }
-    if app.ui.sidebar_visible {
-        let current = app.ws.pane().location.clone();
-        let pane = app.ws.pane().id;
-        let saved_searches = app.ui.search.names();
-        let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
+    if app.core.ui.sidebar_visible {
+        let current = app.core.ws.pane().location.clone();
+        let pane = app.core.ws.pane().id;
+        let saved_searches = app.core.ui.search.names();
+        let drives = crate::services::places::drive_volumes(&app.core.ui.volumes, &app.core.ui.cloud);
         let mut sctx = SidebarCtx {
             saved_searches: &saved_searches,
-            saved_config: app.ui.search.config_count(),
-            bookmarks: &app.config.bookmarks,
+            saved_config: app.core.ui.search.config_count(),
+            bookmarks: &app.core.config.bookmarks,
             volumes: &drives,
-            cloud: &app.ui.cloud,
-            sections: &app.config.sidebar.sections,
+            cloud: &app.core.ui.cloud,
+            sections: &app.core.config.sidebar.sections,
             current: &current,
             pane,
-            cmds: &mut app.cmds,
-            width: app.config.appearance.sidebar_width,
+            cmds: &mut app.core.cmds,
+            width: app.core.config.appearance.sidebar_width,
             brand: !titlebar,
-            settings_open: app.settings.is_open(),
-            settings_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::Settings),
-            portal: &app.config.sidebar.portal,
-            tree_key: crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::ToggleTreeSidebar),
-            config: &app.config.sidebar,
+            settings_open: app.gui.settings.is_open(),
+            settings_key: crate::keys::chord_label(&app.core.keymap, &soyuz_core::config::Action::Settings),
+            portal: &app.core.config.sidebar.portal,
+            tree_key: crate::keys::chord_label(&app.core.keymap, &soyuz_core::config::Action::ToggleTreeSidebar),
+            config: &app.core.config.sidebar,
             tree: crate::ui::tree::TreeArgs {
-                state: &mut app.ui.tree,
-                mode: app.config.sidebar.mode,
+                state: &mut app.core.ui.tree,
+                mode: app.core.config.sidebar.mode,
                 vis: crate::ui::tree::model::Visibility {
-                    show_hidden: app.ui.show_hidden,
-                    show_system: app.ui.show_system,
+                    show_hidden: app.core.ui.show_hidden,
+                    show_system: app.core.ui.show_system,
                 },
-                follow: app.config.sidebar.tree_follow,
-                drag_expand: (app.config.sidebar.tree_drag_expand_ms > 0)
-                    .then(|| std::time::Duration::from_millis(u64::from(app.config.sidebar.tree_drag_expand_ms))),
-                drag_default: app.config.behaviour.drag_default,
-                keyboard: app.ui.focus == crate::app::Focus::Sidebar
+                follow: app.core.config.sidebar.tree_follow,
+                drag_expand: (app.core.config.sidebar.tree_drag_expand_ms > 0)
+                    .then(|| std::time::Duration::from_millis(u64::from(app.core.config.sidebar.tree_drag_expand_ms))),
+                drag_default: app.core.config.behaviour.drag_default,
+                keyboard: app.core.ui.focus == crate::app::Focus::Sidebar
                     && !ctx.memory(|m| m.focused()).is_some_and(|id| egui::TextEdit::load_state(&ctx, id).is_some()),
-                debounce: std::time::Duration::from_millis(app.config.behaviour.watch_debounce_ms.max(50)),
+                debounce: std::time::Duration::from_millis(app.core.config.behaviour.watch_debounce_ms.max(50)),
             },
         };
-        sidebar::show(ui, &mut app.ui.sidebar, &mut sctx);
+        sidebar::show(ui, &mut app.core.ui.sidebar, &mut sctx);
     }
     if main {
         crate::ui::ai::show(ui, app);
     }
-    if !titlebar && (app.config.layout.tab_strip == TabStripMode::Always || app.ws.tabs.len() > 1) {
+    if !titlebar && (app.core.config.layout.tab_strip == TabStripMode::Always || app.core.ws.tabs.len() > 1) {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);
@@ -119,7 +104,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
         .show(ui, |ui| {
             let area = ui.available_rect_before_wrap();
-            if main && crate::editors::maximized(app) {
+            if main && crate::editors::maximized(&app.core) {
                 crate::ui::editors::show_central(ui, area, app);
             } else {
                 panes(ui, area, app);
@@ -128,30 +113,31 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         });
 
     // Overlays (in the focused window only).
-    if !crate::models::workspaces::overlays_here(app) {
+    if !crate::models::workspaces::overlays_here(&app.core) {
         return;
     }
     crate::ui::tools::show_windows(&ctx, app);
-    crate::ui::welcome::show(&ctx, app, if app.ui.status_visible { 24.0 } else { 0.0 });
-    let mut dctx = DialogCtx { cmds: &mut app.cmds, ws: &mut app.ws };
-    app.ui.dialogs.show(&ctx, &mut app.dialogs, &mut dctx);
+    crate::ui::welcome::show(&ctx, app, if app.core.ui.status_visible { 24.0 } else { 0.0 });
+    let mut dctx = DialogCtx { cmds: &mut app.core.cmds, ws: &mut app.core.ws };
+    app.gui.dialogs.show(&ctx, &mut app.core.dialogs, &mut dctx);
     crate::ui::quicklook::show(&ctx, app);
     crate::ui::panels::terminal::clipboard_prompt(&ctx, app);
     let screen = ctx.content_rect();
-    let bottom_offset = if app.ui.status_visible { 30.0 } else { 6.0 };
+    let bottom_offset = if app.core.ui.status_visible { 30.0 } else { 6.0 };
     // Toasts stay clear of the assistant panel.
-    let right = screen.right() - if app.ai.panel.open { app.ai.panel.width } else { 0.0 };
+    let right = screen.right() - if app.core.ai.panel.open { app.core.ai.panel.width } else { 0.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
-    for action in crate::ui::toasts::show(&mut app.ui.toasts, &ctx, anchor, app.ui.reduced_motion) {
-        app.cmds.push(Cmd::Action(action));
+    for action in crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion) {
+        app.core.cmds.push(Cmd::Action(action));
     }
 }
 
 fn status_info(app: &SoyuzApp) -> StatusInfo {
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let (selected, selected_bytes) = pane.selection_stats();
     let free = match &pane.location {
         Location::Dir(path) => app
+            .core
             .ui
             .volumes
             .iter()
@@ -176,9 +162,9 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
         free,
         mode: pane.view.mode,
         zoom: pane.view.zoom,
-        theme: app.ui.theme,
-        size_style: app.config.general.size_style,
-        activity: panels::activity::indicator(app),
+        theme: app.core.ui.theme,
+        size_style: app.core.config.general.size_style,
+        activity: panels::activity::indicator(&app.core),
         git_dir: match &pane.location {
             Location::Dir(d) => Some(d.clone()),
             _ => None,
@@ -188,35 +174,35 @@ fn status_info(app: &SoyuzApp) -> StatusInfo {
 
 fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
     let p = palette(ui.ctx());
-    let ti = app.ws.active.min(app.ws.tabs.len() - 1);
+    let ti = app.core.ws.active.min(app.core.ws.tabs.len() - 1);
     let (shown, focused, split, orientation) = {
-        let t = &app.ws.tabs[ti];
+        let t = &app.core.ws.tabs[ti];
         (t.shown(), t.focused, t.split, t.orientation)
     };
-    let list_focus = app.ui.focus == Focus::List;
+    let list_focus = app.core.ui.focus == Focus::List;
     if shown == 4 {
         quad(ui, area, app, ti, focused, list_focus);
         return;
     }
     if shown < 2 {
         // rclone mounts appear under Cloud only, also in the Computer view.
-        let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
-        let tab = &mut app.ws.tabs[ti];
+        let drives = crate::services::places::drive_volumes(&app.core.ui.volumes, &app.core.ui.cloud);
+        let tab = &mut app.core.ws.tabs[ti];
         let idx = focused.min(tab.panes.len() - 1);
         let pane = &mut tab.panes[idx];
         let mut v = ViewCtx {
-            config: &app.config,
-            keymap: &app.keymap,
-            services: &mut app.services,
-            cmds: &mut app.cmds,
+            config: &app.core.config,
+            keymap: &app.core.keymap,
+            services: &mut app.core.services,
+            cmds: &mut app.core.cmds,
             focused: true,
             list_focus,
-            checkbox_mode: app.ui.checkbox_mode,
-            show_hidden: app.ui.show_hidden,
-            show_system: app.ui.show_system,
+            checkbox_mode: app.core.ui.checkbox_mode,
+            show_hidden: app.core.ui.show_hidden,
+            show_system: app.core.ui.show_system,
             volumes: &drives,
             dual: false,
-            fileops: &mut app.fileops,
+            fileops: &mut app.core.fileops,
         };
         pane_view::show(ui, area, pane, &mut v, false);
         return;
@@ -255,29 +241,29 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
         && let Some(pos) = sresp.interact_pointer_pos()
     {
         let f = if vertical { (pos.x - area.left()) / area.width() } else { (pos.y - area.top()) / area.height() };
-        app.ws.tabs[ti].split = f.clamp(0.15, 0.85);
+        app.core.ws.tabs[ti].split = f.clamp(0.15, 0.85);
     }
     if sresp.double_clicked() {
-        app.ws.tabs[ti].split = 0.5;
+        app.core.ws.tabs[ti].split = 0.5;
     }
     // rclone mounts appear under Cloud only, also in the Computer view.
-    let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
+    let drives = crate::services::places::drive_volumes(&app.core.ui.volumes, &app.core.ui.cloud);
     for (i, rect) in [(0usize, a), (1usize, b)] {
-        let tab = &mut app.ws.tabs[ti];
+        let tab = &mut app.core.ws.tabs[ti];
         let pane = &mut tab.panes[i];
         let mut v = ViewCtx {
-            config: &app.config,
-            keymap: &app.keymap,
-            services: &mut app.services,
-            cmds: &mut app.cmds,
+            config: &app.core.config,
+            keymap: &app.core.keymap,
+            services: &mut app.core.services,
+            cmds: &mut app.core.cmds,
             focused: focused == i,
             list_focus,
-            checkbox_mode: app.ui.checkbox_mode,
-            show_hidden: app.ui.show_hidden,
-            show_system: app.ui.show_system,
+            checkbox_mode: app.core.ui.checkbox_mode,
+            show_hidden: app.core.ui.show_hidden,
+            show_system: app.core.ui.show_system,
             volumes: &drives,
             dual: true,
-            fileops: &mut app.fileops,
+            fileops: &mut app.core.fileops,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }
@@ -304,7 +290,7 @@ pub fn quad_cells(area: Rect, fx: f32, fy: f32) -> ([Rect; 4], Rect, Rect) {
 /// Quad layout: four panes, a column splitter (`split`) and a row splitter (`split2`).
 fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, list_focus: bool) {
     let p = palette(ui.ctx());
-    let (fx, fy) = (app.ws.tabs[ti].split, app.ws.tabs[ti].split2);
+    let (fx, fy) = (app.core.ws.tabs[ti].split, app.core.ws.tabs[ti].split2);
     let (cells, vsplit, hsplit) = quad_cells(area, fx, fy);
     for (id, rect, vertical) in [("soyuz.quad.v", vsplit, true), ("soyuz.quad.h", hsplit, false)] {
         let sresp = ui.interact(rect, Id::new(id), Sense::click_and_drag());
@@ -321,7 +307,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
         if sresp.dragged()
             && let Some(pos) = sresp.interact_pointer_pos()
         {
-            let tab = &mut app.ws.tabs[ti];
+            let tab = &mut app.core.ws.tabs[ti];
             if vertical {
                 tab.split = ((pos.x - area.left()) / area.width()).clamp(0.15, 0.85);
             } else {
@@ -329,7 +315,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
             }
         }
         if sresp.double_clicked() {
-            let tab = &mut app.ws.tabs[ti];
+            let tab = &mut app.core.ws.tabs[ti];
             if vertical {
                 tab.split = 0.5;
             } else {
@@ -338,23 +324,23 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
         }
     }
     // rclone mounts appear under Cloud only, also in the Computer view.
-    let drives = crate::services::places::drive_volumes(&app.ui.volumes, &app.ui.cloud);
+    let drives = crate::services::places::drive_volumes(&app.core.ui.volumes, &app.core.ui.cloud);
     for (i, rect) in cells.into_iter().enumerate() {
-        let tab = &mut app.ws.tabs[ti];
+        let tab = &mut app.core.ws.tabs[ti];
         let pane = &mut tab.panes[i];
         let mut v = ViewCtx {
-            config: &app.config,
-            keymap: &app.keymap,
-            services: &mut app.services,
-            cmds: &mut app.cmds,
+            config: &app.core.config,
+            keymap: &app.core.keymap,
+            services: &mut app.core.services,
+            cmds: &mut app.core.cmds,
             focused: focused == i,
             list_focus,
-            checkbox_mode: app.ui.checkbox_mode,
-            show_hidden: app.ui.show_hidden,
-            show_system: app.ui.show_system,
+            checkbox_mode: app.core.ui.checkbox_mode,
+            show_hidden: app.core.ui.show_hidden,
+            show_system: app.core.ui.show_system,
             volumes: &drives,
             dual: true,
-            fileops: &mut app.fileops,
+            fileops: &mut app.core.fileops,
         };
         pane_view::show(ui, rect, pane, &mut v, true);
     }

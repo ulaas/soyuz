@@ -11,8 +11,8 @@ use soyuz_core::Location;
 use soyuz_core::config::{KeyChord, KeyName, Mods, Osc52Policy};
 use soyuz_term::{CursorStyle, TermEvent, TermSettings, Terminal};
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -140,11 +140,11 @@ impl TerminalPanel {
 }
 
 /// The session owner of the focused tab (`None` = shared).
-pub fn current_owner(app: &SoyuzApp) -> Option<u64> {
+pub fn current_owner(app: &AppCore) -> Option<u64> {
     TerminalPanel::owner(app.config.terminal.per_tab, app.ws.tab().id.0)
 }
 
-fn settings_for(app: &SoyuzApp, cwd: &Path) -> TermSettings {
+fn settings_for(app: &AppCore, cwd: &Path) -> TermSettings {
     let c = &app.config.terminal;
     TermSettings {
         shell: (!c.shell.trim().is_empty()).then(|| c.shell.clone()),
@@ -158,7 +158,7 @@ fn settings_for(app: &SoyuzApp, cwd: &Path) -> TermSettings {
 }
 
 /// The focused pane's real folder (terminals start / follow there).
-pub fn pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
+pub fn pane_dir(app: &AppCore) -> Option<PathBuf> {
     match &app.ws.pane().location {
         Location::Dir(p) => Some(p.clone()),
         Location::Archive { archive, .. } => archive.parent().map(Path::to_path_buf),
@@ -167,7 +167,7 @@ pub fn pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
 }
 
 /// Start a shell in `cwd` and make it the active session; returns its id.
-pub fn spawn_session(app: &mut SoyuzApp, host: &dyn Host, cwd: PathBuf) -> u64 {
+pub fn spawn_session(app: &mut AppCore, host: &dyn Host, cwd: PathBuf) -> u64 {
     let owner = current_owner(app);
     let t = &mut app.ui.terminal;
     t.next_id += 1;
@@ -197,14 +197,14 @@ pub fn spawn_session(app: &mut SoyuzApp, host: &dyn Host, cwd: PathBuf) -> u64 {
 }
 
 /// A new session in the focused pane's folder (the "+" button), focused.
-pub fn new_session(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn new_session(app: &mut AppCore, host: &dyn Host) {
     let cwd = pane_dir(app).unwrap_or_else(soyuz_fs::home);
     spawn_session(app, host, cwd);
     app.ui.terminal.focused = true;
 }
 
 /// Ctrl+`: open (spawning lazily) and focus; focus when open but unfocused; else close.
-pub fn toggle(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn toggle(app: &mut AppCore, host: &dyn Host) {
     if app.ui.bottom.terminal_shown() && app.ui.terminal.focused {
         app.ui.bottom.open = false;
         unfocus(app);
@@ -214,21 +214,21 @@ pub fn toggle(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Focus the terminal (FocusTerminal action), opening it when needed.
-pub fn focus(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn focus(app: &mut AppCore, host: &dyn Host) {
     app.ui.bottom.show_terminal();
     ensure_session(app, host);
     app.ui.terminal.focused = true;
 }
 
 /// Give the keyboard back to the file list.
-pub fn unfocus(app: &mut SoyuzApp) {
+pub fn unfocus(app: &mut AppCore) {
     app.ui.terminal.focused = false;
     app.ui.focus = Focus::List;
     app.frontend.push(FrontendCmd::ReleaseFocus);
 }
 
 /// At least one session for the focused tab.
-pub fn ensure_session(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn ensure_session(app: &mut AppCore, host: &dyn Host) {
     if app.ui.terminal.visible_ids(current_owner(app)).is_empty() {
         let cwd = pane_dir(app).unwrap_or_else(soyuz_fs::home);
         spawn_session(app, host, cwd);
@@ -236,7 +236,7 @@ pub fn ensure_session(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// "Open terminal here": a new integrated session in `dir`.
-pub fn open_at(app: &mut SoyuzApp, host: &dyn Host, dir: PathBuf) {
+pub fn open_at(app: &mut AppCore, host: &dyn Host, dir: PathBuf) {
     app.ui.bottom.show_terminal();
     spawn_session(app, host, dir);
     app.ui.terminal.focused = true;
@@ -244,7 +244,7 @@ pub fn open_at(app: &mut SoyuzApp, host: &dyn Host, dir: PathBuf) {
 
 /// Run a shell command line in `dir` with its output in the terminal panel: typed into
 /// the active session when it is idle (after a `cd`), otherwise into a new session.
-pub fn run_command(app: &mut SoyuzApp, host: &dyn Host, dir: PathBuf, line: &str) {
+pub fn run_command(app: &mut AppCore, host: &dyn Host, dir: PathBuf, line: &str) {
     // Typed text goes through the shell's line editor: a newline/escape in a (crafted)
     // file name would run extra commands no matter how it is quoted.
     if soyuz_term::has_control_chars(line) || soyuz_term::has_control_chars(&dir.to_string_lossy()) {
@@ -274,7 +274,7 @@ pub fn run_command(app: &mut SoyuzApp, host: &dyn Host, dir: PathBuf, line: &str
 }
 
 /// Close (and kill) session `id`; the panel closes with the last session of the tab.
-pub fn close_session(app: &mut SoyuzApp, id: u64) {
+pub fn close_session(app: &mut AppCore, id: u64) {
     let t = &mut app.ui.terminal;
     if let Some(i) = t.sessions.iter().position(|s| s.id == id) {
         let s = t.sessions.remove(i);
@@ -287,14 +287,14 @@ pub fn close_session(app: &mut SoyuzApp, id: u64) {
 }
 
 /// Make `id` the active session of the focused tab and focus it.
-pub fn activate(app: &mut SoyuzApp, id: u64) {
+pub fn activate(app: &mut AppCore, id: u64) {
     let owner = current_owner(app);
     app.ui.terminal.set_active(owner, id);
     app.ui.terminal.focused = true;
 }
 
 /// Finish renaming session `id` (an empty name restores the shell's title).
-pub fn rename(app: &mut SoyuzApp, id: u64, text: &str) {
+pub fn rename(app: &mut AppCore, id: u64, text: &str) {
     let t = text.trim().to_string();
     if let Some(s) = app.ui.terminal.session_mut(id) {
         s.custom = (!t.is_empty()).then_some(t);
@@ -303,7 +303,7 @@ pub fn rename(app: &mut SoyuzApp, id: u64, text: &str) {
 }
 
 /// "Open in external terminal" for the active session's folder.
-pub fn open_external(app: &mut SoyuzApp, active: u64) {
+pub fn open_external(app: &mut AppCore, active: u64) {
     let dir = app
         .ui
         .terminal
@@ -315,7 +315,7 @@ pub fn open_external(app: &mut SoyuzApp, active: u64) {
 }
 
 /// Apply panel requests made while drawing (the host lends the panel state out).
-pub fn apply_requests(app: &mut SoyuzApp) {
+pub fn apply_requests(app: &mut AppCore) {
     if std::mem::take(&mut app.ui.terminal.request_close)
         && app.ui.bottom.tab == crate::models::panels::BottomTab::Terminal
     {
@@ -335,7 +335,7 @@ pub fn terminal_passthrough(chord: KeyChord) -> bool {
 
 /// Per frame (even while hidden): drain shell events, follow pane navigation, apply
 /// reverse sync.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     if app.ui.terminal.sessions.is_empty() {
         return;
     }
@@ -446,7 +446,7 @@ pub fn osc52_decision(policy: Osc52Policy, allowed_this_session: bool) -> ClipDe
 
 /// The user answered the pending OSC 52 request: copy (`always` = for the rest of the
 /// session) or drop it.
-pub fn answer_clip(app: &mut SoyuzApp, host: &dyn Host, copy: bool, always: bool) {
+pub fn answer_clip(app: &mut AppCore, host: &dyn Host, copy: bool, always: bool) {
     let Some(text) = app.ui.terminal.clip_request.take() else { return };
     if copy {
         host.copy_text(text);
@@ -485,7 +485,7 @@ pub fn is_web_link(url: &str) -> bool {
 /// Ctrl+click on a path link: folders open in the pane, files with the default app.
 /// Relative paths resolve against the session's working directory (not the app's), and
 /// executables are revealed rather than run: terminal output is untrusted text.
-pub fn open_path_link(app: &mut SoyuzApp, url: &str, base: Option<&Path>) {
+pub fn open_path_link(app: &mut AppCore, url: &str, base: Option<&Path>) {
     let Some(path) = resolve_link(url, base) else {
         app.ui.toasts.push(Toast::info(tr!("panels-terminal-link-not-found")).body(url.to_string()));
         return;
@@ -591,7 +591,7 @@ pub fn looks_executable(path: &Path) -> bool {
 }
 
 /// Whether a modifier-less key event targets the terminal (used to keep type-ahead off).
-pub fn owns_keyboard(app: &SoyuzApp) -> bool {
+pub fn owns_keyboard(app: &AppCore) -> bool {
     app.ui.terminal.focused && app.ui.bottom.terminal_shown()
 }
 

@@ -15,7 +15,7 @@ use soyuz_core::config::Action;
 use soyuz_core::{EntryInfo, Location};
 use soyuz_jobs::JobKind;
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::{Host, Wake};
 use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
@@ -260,7 +260,7 @@ pub fn handles(a: &Action) -> bool {
 }
 
 /// Selection of the focused pane (paths), its folder and the other pane's folder.
-fn context(app: &SoyuzApp) -> (Vec<(PathBuf, bool)>, Option<PathBuf>, Option<PathBuf>) {
+fn context(app: &AppCore) -> (Vec<(PathBuf, bool)>, Option<PathBuf>, Option<PathBuf>) {
     let pane = app.ws.pane();
     let sel: Vec<(PathBuf, bool)> = pane.selected_entries().iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
     let here =
@@ -294,7 +294,7 @@ pub fn is_part(path: &Path) -> bool {
     split_part(path).is_some_and(|(_, n)| n >= 1)
 }
 
-pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
+pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
     use Action as A;
     init(host);
     let (sel, here, other) = context(app);
@@ -373,7 +373,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
 
 /// Per frame (before the frontend applies the window commands): service pumps for git
 /// status, tags and recent files, and the OS tags of the visible folders.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     init(host);
     let wake = wake();
     crate::services::git::init(&app.wake, app.config.git.status_column);
@@ -392,7 +392,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// OS tags for the visible folders (macOS Finder tags, Linux `user.xdg.tags`).
-pub fn request_os_tags(app: &SoyuzApp) {
+pub fn request_os_tags(app: &AppCore) {
     if crate::services::tags::os_tags_enabled() {
         let wake = wake();
         for p in app.ws.tab().panes.iter() {
@@ -404,7 +404,7 @@ pub fn request_os_tags(app: &SoyuzApp) {
 }
 
 /// Apply the commands that need no tool window; returns the others (for the frontend).
-pub fn apply_model_cmds(app: &mut SoyuzApp, host: &dyn Host, cmds: Vec<ToolCmd>) -> Vec<ToolCmd> {
+pub fn apply_model_cmds(app: &mut AppCore, host: &dyn Host, cmds: Vec<ToolCmd>) -> Vec<ToolCmd> {
     let mut rest = Vec::new();
     for c in cmds {
         match c {
@@ -446,7 +446,7 @@ pub fn apply_model_cmds(app: &mut SoyuzApp, host: &dyn Host, cmds: Vec<ToolCmd>)
 
 /// Store a tag's display name in `config.toml` (applied live, saved like a settings
 /// edit, so an open settings window picks it up instead of overwriting it).
-fn rename_tag(app: &mut SoyuzApp, host: &dyn Host, tag: u8, name: &str) {
+fn rename_tag(app: &mut AppCore, host: &dyn Host, tag: u8, name: &str) {
     let i = tag as usize;
     if i >= crate::services::tags::TAG_COUNT {
         return;
@@ -465,11 +465,11 @@ fn rename_tag(app: &mut SoyuzApp, host: &dyn Host, tag: u8, name: &str) {
 }
 
 /// Re-list panes showing a tag listing (membership changed).
-fn refresh_tag_panes(app: &mut SoyuzApp) {
+fn refresh_tag_panes(app: &mut AppCore) {
     refresh_location(app, |l| matches!(l, Location::Tags(_)));
 }
 
-fn refresh_location(app: &mut SoyuzApp, pred: impl Fn(&Location) -> bool) {
+fn refresh_location(app: &mut AppCore, pred: impl Fn(&Location) -> bool) {
     for t in &mut app.ws.tabs {
         for p in &mut t.panes {
             if pred(&p.location) {
@@ -485,7 +485,7 @@ pub fn is_virtual_listing(loc: &Location) -> bool {
 }
 
 /// Apply a [`VersionCmd`] (UI thread; disk work goes to jobs / workers).
-pub fn apply_version(app: &mut SoyuzApp, cmd: VersionCmd) {
+pub fn apply_version(app: &mut AppCore, cmd: VersionCmd) {
     match cmd {
         VersionCmd::Restore { version, original } => {
             let Some(dest) = original.parent().map(Path::to_path_buf) else { return };

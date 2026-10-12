@@ -7,7 +7,7 @@
 use soyuz_core::ViewMode;
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::state::layout::NavDir;
 use crate::{actions, ops};
@@ -101,7 +101,7 @@ impl InputFrame {
 /// The main window's keyboard handling once no modal, panel or editor owns the keyboard:
 /// key bindings, sequences and marks, mouse back / forward, and in the file list Tab
 /// (switch panes), Left / Right (grid, list and Miller views) and type-ahead.
-pub fn handle(app: &mut SoyuzApp, host: &dyn Host, frame: &mut InputFrame, kctx: KeyContext, text_focused: bool) {
+pub fn handle(app: &mut AppCore, host: &dyn Host, frame: &mut InputFrame, kctx: KeyContext, text_focused: bool) {
     super::sequence::dispatch_all(app, host, frame, kctx, text_focused);
     if frame.back {
         actions::execute(app, Action::Back, host);

@@ -31,8 +31,8 @@ use crate::ui::widgets::{NavRow, menu_item, menu_separator};
 /// pin checks and the periodic existence check.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     // OS drops (Explorer) over the section pin instead of copying into a pane.
-    if app.ui.sidebar_visible
-        && let Some(rect) = app.ui.sidebar.portal.rect
+    if app.core.ui.sidebar_visible
+        && let Some(rect) = app.core.ui.sidebar.portal.rect
     {
         let over = ctx.input(|i| i.pointer.latest_pos()).is_some_and(|p| rect.contains(crate::ui::geom::point(p)));
         let dropped: Vec<PathBuf> = if over {
@@ -49,11 +49,11 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
         };
         if !dropped.is_empty() {
             ctx.input_mut(|i| i.raw.dropped_files.clear());
-            crate::models::portal::pin_dropped(app, ctx, dropped);
+            crate::models::portal::pin_dropped(&mut app.core, ctx, dropped);
         }
     }
     let focused = ctx.input(|i| i.focused);
-    crate::models::portal::pump(app, ctx, focused);
+    crate::models::portal::pump(&mut app.core, ctx, focused);
 }
 
 /// Inputs for drawing the section.

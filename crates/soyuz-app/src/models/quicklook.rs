@@ -2,8 +2,8 @@
 //! the focused pane's list. The previewed item is the pane's cursor item; the frontend
 //! (`ui::quicklook`) renders it and maps keys to [`step`] / [`open_item`] / [`close`].
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::core::{AppCore, Focus};
 
 #[derive(Clone, Debug, Default)]
 pub struct QuickLook {
@@ -27,7 +27,7 @@ pub enum Step {
 }
 
 /// Space: open on the cursor item (or close when open).
-pub fn toggle(app: &mut SoyuzApp) {
+pub fn toggle(app: &mut AppCore) {
     if app.ui.quicklook.open {
         app.ui.quicklook.close();
         return;
@@ -46,13 +46,13 @@ pub fn toggle(app: &mut SoyuzApp) {
 }
 
 /// Close Quick Look.
-pub fn close(app: &mut SoyuzApp) {
+pub fn close(app: &mut AppCore) {
     app.ui.quicklook.close();
 }
 
 /// Move the cursor (and so the previewed item) linearly through the list, regardless of
 /// the view layout.
-pub fn step(app: &mut SoyuzApp, d: Step) {
+pub fn step(app: &mut AppCore, d: Step) {
     let pane = app.ws.pane_mut();
     let n = pane.visible.len();
     if n > 0 {
@@ -69,7 +69,7 @@ pub fn step(app: &mut SoyuzApp, d: Step) {
 }
 
 /// Enter: close and open the item.
-pub fn open_item(app: &mut SoyuzApp) {
+pub fn open_item(app: &mut AppCore) {
     app.ui.quicklook.close();
     app.cmds.push(Cmd::Action(soyuz_core::config::Action::Open));
 }

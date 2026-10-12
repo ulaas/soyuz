@@ -442,7 +442,7 @@ pub fn cancel(app: &SoyuzApp, name: &str) {
         if let Some(run) = s.runs.get(name) {
             match &run.phase {
                 Phase::Planning(_, ctl) => ctl.cancel(),
-                Phase::Syncing { job, .. } => app.fileops.jobs.engine().cancel(*job),
+                Phase::Syncing { job, .. } => app.core.fileops.jobs.engine().cancel(*job),
                 Phase::Recording(..) => {}
             }
         }
@@ -475,7 +475,7 @@ pub fn next_of(p: &SyncProfile) -> Option<SystemTime> {
 
 /// Once per frame (UI thread, no blocking I/O).
 pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let cfg = app.config.sync.clone();
+    let cfg = app.core.config.sync.clone();
     let mut toasts: Vec<Toast> = Vec::new();
     let mut submit: Vec<(String, Trigger, Box<Planned>)> = Vec::new();
     let mut wake_in: Option<Duration> = None;
@@ -612,7 +612,7 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
                     Err(_) => {}
                 },
                 Phase::Syncing { job, planned } => {
-                    let snap = app.fileops.jobs.snapshot(job);
+                    let snap = app.core.fileops.jobs.snapshot(job);
                     let state = snap.map(|x| x.state.clone());
                     match state {
                         Some(st) if !st.is_terminal() => {
@@ -696,15 +696,15 @@ pub fn tick(app: &mut SoyuzApp, ctx: &egui::Context) {
     // Submit jobs (needs the app; outside the scheduler borrow).
     for (name, trigger, planned) in submit {
         let label = tr!("tools-sched-job-label", name = &name);
-        let mut spec = app.fileops.jobs.spec(JobKind::Sync { plan: planned.plan.clone() });
+        let mut spec = app.core.fileops.jobs.spec(JobKind::Sync { plan: planned.plan.clone() });
         spec.options.label = Some(label);
-        let job = crate::ui::archive::submit_job(app, spec);
+        let job = crate::ui::archive::submit_job(&mut app.core, spec);
         with(|s| {
             s.runs.insert(name, Run { phase: Phase::Syncing { job, planned }, trigger, dry: false });
         });
     }
     for t in toasts {
-        app.ui.toasts.push(t);
+        app.core.ui.toasts.push(t);
     }
     if let Some(d) = wake_in {
         ctx.request_repaint_after(d.min(Duration::from_secs(60)));

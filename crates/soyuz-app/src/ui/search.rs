@@ -33,7 +33,7 @@ const STATUS_H: f32 = 28.0;
 
 /// Close the bar and drop the keyboard focus of its fields.
 fn close(app: &mut SoyuzApp, ctx: &egui::Context) {
-    model::close(app);
+    model::close(&mut app.core);
     ctx.memory_mut(|m| {
         if let Some(id) = m.focused() {
             m.surrender_focus(id);
@@ -70,13 +70,13 @@ fn pill_width(ui: &Ui, icon: bool, label: &str) -> f32 {
 }
 
 pub fn bar(root: &mut Ui, app: &mut SoyuzApp) {
-    let shown = model::shown_search(app);
-    if !app.ui.search.open && shown.is_none() {
+    let shown = model::shown_search(&app.core);
+    if !app.core.ui.search.open && shown.is_none() {
         return;
     }
     let ctx = root.ctx().clone();
     let p = palette(&ctx);
-    let height = if app.ui.search.open { ROW_H } else { 0.0 } + if shown.is_some() { STATUS_H } else { 0.0 };
+    let height = if app.core.ui.search.open { ROW_H } else { 0.0 } + if shown.is_some() { STATUS_H } else { 0.0 };
     Panel::top("soyuz.search")
         .exact_size(height)
         .show_separator_line(false)
@@ -84,7 +84,7 @@ pub fn bar(root: &mut Ui, app: &mut SoyuzApp) {
         .show(root, |ui| {
             let full = ui.available_rect_before_wrap();
             let mut y = full.top();
-            if app.ui.search.open {
+            if app.core.ui.search.open {
                 let row = Rect::from_min_size(pos2(full.left(), y), vec2(full.width(), ROW_H));
                 controls(ui, row, app);
                 y += ROW_H;
@@ -109,7 +109,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         StrokeKind::Inside,
     );
     let cy = card.center().y;
-    let running = model::shown_search(app).is_some_and(svc::is_running);
+    let running = model::shown_search(&app.core).is_some_and(svc::is_running);
 
     // Right side: close, save, run/stop.
     let mut rx = card.right() - 6.0;
@@ -134,7 +134,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     }
     ui.painter().text(star_r.center(), Align2::CENTER_CENTER, ph::BOOKMARK_SIMPLE, icons::font(14.0), p.text_secondary);
     if sresp.clicked() {
-        model::begin_save(app);
+        model::begin_save(&mut app.core);
     }
     save_popup(ui, &sresp, app);
     let label = if running { tr!("views-search-stop") } else { tr!("views-search-run") };
@@ -147,8 +147,8 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             .clicked();
 
     // Left: scope chip.
-    let scope = soyuz_fs::strip_verbatim(&app.ui.search.form.root);
-    let everywhere = app.ui.search.form.everywhere;
+    let scope = soyuz_fs::strip_verbatim(&app.core.ui.search.form.root);
+    let everywhere = app.core.ui.search.form.everywhere;
     let scope_name =
         if scope.as_os_str().is_empty() { "…".to_string() } else { soyuz_core::entry::display_name(&scope) };
     let scope_label = if everywhere {
@@ -166,12 +166,12 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let scope_icon = if everywhere { ph::DATABASE } else { ph::FOLDER_SIMPLE };
     let sresp =
         pill(ui, scope_r, Id::new("soyuz.search.scope"), Some(scope_icon), &trunc(&scope_label, 22), everywhere, &tip);
-    let here = model::current_dir(app);
+    let here = model::current_dir(&app.core);
     let index_on = crate::services::index::is_enabled();
     let mut rerun = false;
     crate::ui::native::popup::Menu::menu(&sresp).align(RectAlign::BOTTOM_START).show(|ui| {
         ui.set_width(250.0);
-        let form = &mut app.ui.search.form;
+        let form = &mut app.core.ui.search.form;
         let label = match &here {
             Some(d) => tr!("views-search-this-folder-named", folder = soyuz_core::entry::display_name(d)),
             None => tr!("views-search-this-folder").to_string(),
@@ -197,7 +197,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     });
 
     // Pills from the right edge leftwards.
-    let f = app.ui.search.form.clone();
+    let f = app.core.ui.search.form.clone();
     let mut pills: Vec<(&'static str, Option<&'static str>, String, bool, &'static str)> = vec![
         ("gitignore", None, ".gitignore".into(), f.respect_gitignore, tr!("views-search-gitignore-tip")),
         ("hidden", Some(ph::EYE), tr!("views-search-hidden").into(), f.include_hidden, tr!("views-search-hidden-tip")),
@@ -258,7 +258,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     }
     let mut changed = false;
     for (key, resp) in &clicked {
-        let form = &mut app.ui.search.form;
+        let form = &mut app.core.ui.search.form;
         match *key {
             "gitignore" if resp.clicked() => {
                 form.respect_gitignore = !form.respect_gitignore;
@@ -270,7 +270,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             }
             "content" if resp.clicked() => {
                 form.content = !form.content;
-                app.ui.search.focus = true;
+                app.core.ui.search.focus = true;
             }
             "case" if resp.clicked() => {
                 form.case_sensitive = !form.case_sensitive;
@@ -386,16 +386,16 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     ui.painter().text(
         pos2(field.left() + 14.0, cy),
         Align2::CENTER_CENTER,
-        if app.ui.search.form.content { ph::FILE_TEXT } else { ph::MAGNIFYING_GLASS },
+        if app.core.ui.search.form.content { ph::FILE_TEXT } else { ph::MAGNIFYING_GLASS },
         icons::font(13.5),
         if focused { p.accent } else { p.text_tertiary },
     );
-    let content = app.ui.search.form.content;
+    let content = app.core.ui.search.form.content;
     let glob_w = if content { (field.width() * 0.32).clamp(70.0, 140.0) } else { 0.0 };
     let inner = Rect::from_min_max(pos2(field.left() + 28.0, cy - 10.0), pos2(field.right() - 8.0 - glob_w, cy + 10.0));
     let esc = focused && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, Key::Escape));
-    let indexed = crate::services::index::uses_query_language(&app.ui.search.form)
-        && (app.ui.search.form.everywhere || crate::services::index::covers(&app.ui.search.form.root));
+    let indexed = crate::services::index::uses_query_language(&app.core.ui.search.form)
+        && (app.core.ui.search.form.everywhere || crate::services::index::covers(&app.core.ui.search.form.root));
     let hint = if content {
         tr!("views-search-hint-content")
     } else if indexed {
@@ -405,7 +405,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     };
     let mut child = ui.new_child(UiBuilder::new().max_rect(inner));
     let resp = child.add(
-        TextEdit::singleline(&mut app.ui.search.form.text)
+        TextEdit::singleline(&mut app.core.ui.search.form.text)
             .id(fid)
             .hint_text(hint)
             .frame(Frame::NONE)
@@ -413,9 +413,9 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             .vertical_align(egui::Align::Center)
             .desired_width(inner.width()),
     );
-    if app.ui.search.focus {
+    if app.core.ui.search.focus {
         resp.request_focus();
-        app.ui.search.focus = false;
+        app.core.ui.search.focus = false;
     }
     let mut submit = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     if content {
@@ -426,7 +426,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         );
         let mut gchild = ui.new_child(UiBuilder::new().max_rect(gr.shrink2(vec2(4.0, 0.0))));
         let g = gchild.add(
-            TextEdit::singleline(&mut app.ui.search.form.name_glob)
+            TextEdit::singleline(&mut app.core.ui.search.form.name_glob)
                 .hint_text(tr!("views-search-hint-glob"))
                 .frame(Frame::NONE)
                 .font(FontId::proportional(12.0))
@@ -435,10 +435,10 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         );
         submit |= g.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
     }
-    if let Some(err) = app.ui.search.error.clone() {
+    if let Some(err) = app.core.ui.search.error.clone() {
         let eg = trunc_galley(ui.painter(), &err, FontId::proportional(11.0), p.danger, inner.width() * 0.6);
         let pos = pos2(inner.right() - eg.size().x, cy - eg.size().y / 2.0);
-        if app.ui.search.form.text.is_empty() || !focused {
+        if app.core.ui.search.form.text.is_empty() || !focused {
             ui.painter().galley(pos, eg, p.danger);
         }
     }
@@ -446,7 +446,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         close(app, &ctx);
         return;
     }
-    model::submit(app, run_clicked && running, run_clicked || submit, changed || rerun);
+    model::submit(&mut app.core, run_clicked && running, run_clicked || submit, changed || rerun);
 }
 
 fn trunc(s: &str, n: usize) -> String {
@@ -454,7 +454,7 @@ fn trunc(s: &str, n: usize) -> String {
 }
 
 fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
-    if app.ui.search.saving.is_none() {
+    if app.core.ui.search.saving.is_none() {
         return;
     }
     let p = palette(ui.ctx());
@@ -470,7 +470,7 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
             ui.set_width(260.0);
             ui.label(egui::RichText::new(tr!("views-search-save-caption")).size(10.5).color(p.text_tertiary));
             ui.add_space(4.0);
-            if let Some(name) = app.ui.search.saving.as_mut() {
+            if let Some(name) = app.core.ui.search.saving.as_mut() {
                 let r = ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).margin(Margin::symmetric(8, 5)));
                 r.request_focus();
                 if r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
@@ -495,7 +495,7 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
     }
     if let Some(save) = done {
         Popup::close_id(ui.ctx(), id);
-        model::finish_save(app, save);
+        model::finish_save(&mut app.core, save);
     }
 }
 
@@ -595,7 +595,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         .clicked()
             && let Some(i) = crate::models::smart::folders().iter().position(|f| &f.name == name)
         {
-            app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::Edit(Some(i))));
+            app.core.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::Edit(Some(i))));
         }
     } else if spec.as_ref().is_some_and(|s| s.plan.is_some()) {
         let w = pill_width(ui, true, tr!("views-search-smart-folder"));
@@ -612,10 +612,10 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         )
         .clicked()
         {
-            app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::FromSearch));
+            app.core.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::FromSearch));
         }
     }
-    if !app.ui.search.open && smart.is_none() {
+    if !app.core.ui.search.open && smart.is_none() {
         let w = pill_width(ui, true, tr!("views-search-refine"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -630,7 +630,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         )
         .clicked()
         {
-            model::refine(app);
+            model::refine(&mut app.core);
         }
     }
     let dg = trunc_galley(ui.painter(), &detail, FontId::proportional(11.5), p.text_tertiary, (rx - x - 8.0).max(0.0));

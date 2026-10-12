@@ -1,5 +1,5 @@
 //! The single mailbox app-owned background services report into. Producers
-//! send a [`UiMsg`] and wake the UI; `SoyuzApp::ui` drains it at frame start.
+//! send a [`UiMsg`] and wake the UI; `AppCore::pump_services` drains it at frame start.
 
 use std::path::PathBuf;
 

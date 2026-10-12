@@ -24,16 +24,16 @@ use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator};
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Remote`]).
 pub fn prompt(app: &mut SoyuzApp, p: RemotePrompt) {
     match p {
-        RemotePrompt::Connect(form) => app.ui.dialogs.push(ConnectDialog { form: *form, focus: true }),
-        RemotePrompt::HostKey(ask) => app.ui.dialogs.push(HostKeyDialog { ask }),
-        RemotePrompt::ConfirmDelete { message, paths } => app.ui.dialogs.push(ConfirmDialog::new(
+        RemotePrompt::Connect(form) => app.gui.dialogs.push(ConnectDialog { form: *form, focus: true }),
+        RemotePrompt::HostKey(ask) => app.gui.dialogs.push(HostKeyDialog { ask }),
+        RemotePrompt::ConfirmDelete { message, paths } => app.gui.dialogs.push(ConfirmDialog::new(
             tr!("remote-delete-title"),
             &message,
             tr!("common-delete"),
             delete_cmd(paths),
         )),
         RemotePrompt::Name { target, name } => {
-            app.ui.dialogs.push(NameDialog { target, name, error: None, focus: true })
+            app.gui.dialogs.push(NameDialog { target, name, error: None, focus: true })
         }
     }
 }

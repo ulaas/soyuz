@@ -101,10 +101,10 @@ fn request_cjk_fonts() {
 /// Deny.
 pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
     use crate::ui::dialogs::conflict::{Btn, button};
-    let Some(text) = app.ui.terminal.clip_request.clone() else { return };
+    let Some(text) = app.core.ui.terminal.clip_request.clone() else { return };
     let p = palette(ctx);
     let screen = ctx.content_rect();
-    let bottom = if app.ui.status_visible { 36.0 } else { 12.0 };
+    let bottom = if app.core.ui.status_visible { 36.0 } else { 12.0 };
     let width = 460.0_f32.min(screen.width() - 32.0);
     let mut answer: Option<ClipDecision> = None;
     let mut always = false;
@@ -181,7 +181,7 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
                 });
         });
     if let Some(d) = answer {
-        answer_clip(app, ctx, d == ClipDecision::Copy, always);
+        answer_clip(&mut app.core, ctx, d == ClipDecision::Copy, always);
     }
 }
 
@@ -190,10 +190,10 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
     request_cjk_fonts();
-    ensure_session(app, &ctx);
-    let owner = current_owner(app);
-    let ids = app.ui.terminal.visible_ids(owner);
-    let Some(active) = app.ui.terminal.active_id(owner) else { return };
+    ensure_session(&mut app.core, &ctx);
+    let owner = current_owner(&app.core);
+    let ids = app.core.ui.terminal.visible_ids(owner);
+    let Some(active) = app.core.ui.terminal.active_id(owner) else { return };
 
     // ---- session strip ----
     let strip = Rect::from_min_size(rect.min + vec2(8.0, 0.0), vec2(rect.width() - 16.0, STRIP_H));
@@ -204,11 +204,11 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let mut external = false;
     for id in &ids {
         let (label, alive, busy) = {
-            let s = app.ui.terminal.sessions.iter().find(|s| s.id == *id).expect("visible id");
+            let s = app.core.ui.terminal.sessions.iter().find(|s| s.id == *id).expect("visible id");
             (s.label(), s.is_alive(), s.is_busy())
         };
         let is_active = *id == active;
-        let renaming = app.ui.terminal.renaming.as_ref().filter(|(rid, _)| rid == id).map(|(_, t)| t.clone());
+        let renaming = app.core.ui.terminal.renaming.as_ref().filter(|(rid, _)| rid == id).map(|(_, t)| t.clone());
         let font = FontId::proportional(12.0);
         let text_w = ui.painter().layout_no_wrap(label.clone(), font.clone(), p.text_primary).size().x.min(180.0);
         let w = if renaming.is_some() { 160.0 } else { text_w + 52.0 };
@@ -248,9 +248,9 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             edit.request_focus();
             let done = edit.lost_focus() || ui.input(|i| i.key_pressed(Key::Enter));
             if done {
-                rename(app, *id, &text);
+                rename(&mut app.core, *id, &text);
             } else {
-                app.ui.terminal.renaming = Some((*id, text));
+                app.core.ui.terminal.renaming = Some((*id, text));
             }
             continue;
         }
@@ -268,7 +268,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         if close.clicked() || resp.middle_clicked() {
             to_close = Some(*id);
         } else if resp.double_clicked() {
-            app.ui.terminal.renaming = Some((*id, label.clone()));
+            app.core.ui.terminal.renaming = Some((*id, label.clone()));
         } else if resp.clicked() {
             to_activate = Some(*id);
         }
@@ -294,7 +294,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             }
         });
         if rename {
-            app.ui.terminal.renaming = Some((*id, label));
+            app.core.ui.terminal.renaming = Some((*id, label));
         }
     }
     let plus = Rect::from_min_size(pos2(x + 2.0, strip.top() + 4.0), vec2(22.0, 22.0));
@@ -314,7 +314,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     }
     ui.painter().text(ext.center(), Align2::CENTER_CENTER, ph::ARROW_SQUARE_OUT, icons::font(13.0), p.text_secondary);
     external |= eresp.clicked();
-    if let Some(s) = app.ui.terminal.sessions.iter().find(|s| s.id == active)
+    if let Some(s) = app.core.ui.terminal.sessions.iter().find(|s| s.id == active)
         && s.is_busy()
     {
         ui.painter().text(
@@ -329,10 +329,10 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
 
     // ---- terminal ----
     let term_rect = Rect::from_min_max(pos2(rect.left() + 8.0, strip.bottom() + 2.0), rect.max - vec2(8.0, 6.0));
-    let theme_key = (p.dark, app.config.terminal.theme.clone());
+    let theme_key = (p.dark, app.core.config.terminal.theme.clone());
     let theme = THEME.with_borrow_mut(|cache| {
         if cache.as_ref().is_none_or(|(d, s, _)| (*d, s.clone()) != theme_key) {
-            let th = theme_for(&p, &app.config.terminal.theme);
+            let th = theme_for(&p, &app.core.config.terminal.theme);
             *cache = Some((theme_key.0, theme_key.1, th));
         }
         cache.as_ref().map(|(_, _, t)| t.clone()).unwrap_or_default()
@@ -341,16 +341,16 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let inner = term_rect.shrink2(vec2(8.0, 6.0));
     // Clicking anywhere else gives the keyboard back to the file view.
     let (pressed, ptr) = ui.input(|i| (i.pointer.any_pressed(), i.pointer.interact_pos()));
-    if pressed && app.ui.terminal.focused && ptr.is_some_and(|pt| !term_rect.contains(pt) && !strip.contains(pt)) {
-        app.ui.terminal.focused = false;
+    if pressed && app.core.ui.terminal.focused && ptr.is_some_and(|pt| !term_rect.contains(pt) && !strip.contains(pt)) {
+        app.core.ui.terminal.focused = false;
     }
-    let focused = app.ui.terminal.focused;
-    let font_size = app.config.terminal.font_size.clamp(7.0, 32.0);
+    let focused = app.core.ui.terminal.focused;
+    let font_size = app.core.config.terminal.font_size.clamp(7.0, 32.0);
     let mut link = None;
     let mut link_base: Option<PathBuf> = None;
     let mut esc = false;
     let mut wants = false;
-    if let Some(s) = app.ui.terminal.sessions.iter().find(|s| s.id == active) {
+    if let Some(s) = app.core.ui.terminal.sessions.iter().find(|s| s.id == active) {
         match &s.term {
             Some(term) => {
                 if crate::ui::a11y::active(ui.ctx()) {
@@ -409,27 +409,27 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         );
     }
     if wants {
-        app.ui.terminal.focused = true;
+        app.core.ui.terminal.focused = true;
     }
-    if esc && app.config.terminal.escape_returns_focus {
-        unfocus(app);
+    if esc && app.core.config.terminal.escape_returns_focus {
+        unfocus(&mut app.core);
     }
     if let Some(url) = link {
         open_link(app, &ctx, &url, link_base.as_deref());
     }
 
     if let Some(id) = to_activate {
-        app.ui.terminal.set_active(owner, id);
-        app.ui.terminal.focused = true;
+        app.core.ui.terminal.set_active(owner, id);
+        app.core.ui.terminal.focused = true;
     }
     if let Some(id) = to_close {
-        close_session(app, id);
+        close_session(&mut app.core, id);
     }
     if add_session {
-        new_session(app, &ctx);
+        new_session(&mut app.core, &ctx);
     }
     if external {
-        open_external(app, active);
+        open_external(&mut app.core, active);
     }
 }
 
@@ -440,7 +440,7 @@ fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&P
         ctx.open_url(egui::OpenUrl::new_tab(url));
         return;
     }
-    open_path_link(app, url, base);
+    open_path_link(&mut app.core, url, base);
 }
 
 /// Context-menu rows: integrated + external terminal at `dir`.

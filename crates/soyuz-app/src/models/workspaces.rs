@@ -16,7 +16,7 @@ use soyuz_core::config::{Action, KeyContext};
 use super::frontend::FrontendCmd;
 use super::toasts::Toast;
 use super::windows::{SecondaryWindow, WinOp};
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::geom::{Point, Vec2, vec2};
 use crate::ops;
 use crate::state::pane::{Pane, PaneId};
@@ -163,13 +163,13 @@ impl Default for WorkspacesState {
 }
 
 /// Overlays (dialogs, palette, settings, toasts, menus) belong to this frame's window.
-pub fn overlays_here(app: &SoyuzApp) -> bool {
+pub fn overlays_here(app: &AppCore) -> bool {
     app.workspaces.owner == app.workspaces.current
         || !app.workspaces.windows.iter().any(|w| w.id == app.workspaces.owner) && app.workspaces.current.is_main()
 }
 
 /// This frame draws the main window (main-only panels: terminal, assistant, editors…).
-pub fn main_frame(app: &SoyuzApp) -> bool {
+pub fn main_frame(app: &AppCore) -> bool {
     app.workspaces.current.is_main()
 }
 
@@ -239,7 +239,7 @@ pub fn window_session(ws: &Workspace, with_view: bool) -> WindowSession {
 
 /// Build a workspace from a session (`use_views`: apply stored pane views). Listings start
 /// lazily when a pane is first shown. `None` when no tab could be restored.
-pub fn build_workspace(app: &SoyuzApp, s: &WindowSession, use_views: bool) -> Option<Workspace> {
+pub fn build_workspace(app: &AppCore, s: &WindowSession, use_views: bool) -> Option<Workspace> {
     let groups: Vec<TabGroup> = s
         .groups
         .iter()
@@ -299,7 +299,7 @@ pub fn build_workspace(app: &SoyuzApp, s: &WindowSession, use_views: bool) -> Op
 }
 
 /// Stop the background work of every pane of a workspace that goes away.
-pub fn dispose_workspace(app: &mut SoyuzApp, ws: &mut Workspace) {
+pub fn dispose_workspace(app: &mut AppCore, ws: &mut Workspace) {
     for t in &mut ws.tabs {
         for p in &mut t.panes {
             ops::dispose_pane(p, &mut app.services);
@@ -313,7 +313,7 @@ pub fn dispose_workspace(app: &mut SoyuzApp, ws: &mut Workspace) {
 // ---------------------------------------------------------------------------
 
 /// Handle a workspace action. Returns `false` for actions this module doesn't own.
-pub fn action(app: &mut SoyuzApp, a: &Action) -> bool {
+pub fn action(app: &mut AppCore, a: &Action) -> bool {
     let i = app.ws.active;
     match a {
         Action::ToggleQuadPane => {
@@ -363,7 +363,7 @@ pub fn action(app: &mut SoyuzApp, a: &Action) -> bool {
     true
 }
 
-fn default_name(app: &SoyuzApp) -> String {
+fn default_name(app: &AppCore) -> String {
     let base = crate::state::crumbs::location_title(&app.ws.pane().location);
     let mut name = base.clone();
     let mut n = 2;
@@ -375,7 +375,7 @@ fn default_name(app: &SoyuzApp) -> String {
 }
 
 /// Switch the active tab's layout, creating panes as needed.
-pub fn set_layout(app: &mut SoyuzApp, layout: PaneLayout) {
+pub fn set_layout(app: &mut AppCore, layout: PaneLayout) {
     let want = Tab::wanted_panes(layout);
     let loc = app.ws.pane().location.clone();
     let view = app.view_for(&loc);
@@ -390,7 +390,7 @@ pub fn set_layout(app: &mut SoyuzApp, layout: PaneLayout) {
     }
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: WsCmd) {
+pub fn apply(app: &mut AppCore, cmd: WsCmd) {
     use super::windows;
     let n = app.ws.tabs.len();
     match cmd {
@@ -540,7 +540,7 @@ fn next_color(ws: &Workspace) -> u8 {
     ORDER.iter().copied().find(|c| !ws.groups.iter().any(|g| g.color == *c)).unwrap_or(5)
 }
 
-fn open_saved(app: &mut SoyuzApp, i: usize, new_window: bool) {
+fn open_saved(app: &mut AppCore, i: usize, new_window: bool) {
     let Some(saved) = app.workspaces.store.workspaces.get(i).cloned() else { return };
     let Some(mut ws) = build_workspace(app, &saved.layout, true) else {
         app.ui.toasts.push(Toast::warning(tr!("workspaces-nothing-to-open", name = &saved.name)));
@@ -554,20 +554,20 @@ fn open_saved(app: &mut SoyuzApp, i: usize, new_window: bool) {
         std::mem::swap(&mut app.ws, &mut ws);
         app.ws.closed = std::mem::take(&mut ws.closed);
         dispose_workspace(app, &mut ws);
-        app.ui.focus = crate::app::Focus::List;
+        app.ui.focus = crate::core::Focus::List;
     }
     app.ui.toasts.push(Toast::success(tr!("workspaces-opened", name = &saved.name)));
 }
 
 /// Rebuild the keymap from the config and add the workspace hotkeys.
-pub fn rebind(app: &mut SoyuzApp) {
+pub fn rebind(app: &mut AppCore) {
     let (km, _) = soyuz_core::config::keymap(&app.config);
     app.keymap = km;
     bind_hotkeys(app);
 }
 
 /// Add the saved workspaces' hotkeys to the keymap (after it was built from the config).
-pub fn bind_hotkeys(app: &mut SoyuzApp) {
+pub fn bind_hotkeys(app: &mut AppCore) {
     bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
 }
 
@@ -587,7 +587,7 @@ pub fn bind_hotkeys_into(keymap: &mut soyuz_core::config::Keymap, store: &Worksp
 }
 
 /// Palette title for workspace slots (`None` for other actions).
-pub fn palette_title(app: &SoyuzApp, a: &Action) -> Option<String> {
+pub fn palette_title(app: &AppCore, a: &Action) -> Option<String> {
     match a {
         Action::OpenWorkspace(n) => app
             .workspaces
@@ -600,7 +600,7 @@ pub fn palette_title(app: &SoyuzApp, a: &Action) -> Option<String> {
 }
 
 /// Whether the palette should list `a` (workspace slots only when saved).
-pub fn palette_shows(app: &SoyuzApp, a: &Action) -> bool {
+pub fn palette_shows(app: &AppCore, a: &Action) -> bool {
     match a {
         Action::OpenWorkspace(n) => (*n as usize) <= app.workspaces.store.workspaces.len(),
         _ => true,
@@ -608,7 +608,7 @@ pub fn palette_shows(app: &SoyuzApp, a: &Action) -> bool {
 }
 
 /// `SOYUZ_SCRIPT` steps `ws:<verb> [arg]` (see `devscript`).
-pub fn devscript(app: &mut SoyuzApp, arg: &str) {
+pub fn devscript(app: &mut AppCore, arg: &str) {
     use super::windows::window_list;
     use soyuz_core::config::Orientation;
     let mut it = arg.split_whitespace();

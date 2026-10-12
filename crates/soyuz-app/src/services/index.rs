@@ -25,7 +25,7 @@ use soyuz_index::query::{Range, TimeSpec};
 use soyuz_index::{Expr, Index, IndexConfig, IndexStatus, KindClass, Phase, SearchRequest, Term};
 use soyuz_search::{SearchHandle, SearchQuery};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::services::search::{DateRange, KindFilter, NameMode, SearchForm};
 use crate::state::pane::{ListingStatus, PaneId};
@@ -83,7 +83,7 @@ pub fn index_config(c: &SearchIndex, debounce: Duration) -> IndexConfig {
 }
 
 /// Per frame: reconcile the worker with the config, push tags, refresh smart folders.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     let c = &app.config.search.index;
     let debounce = Duration::from_millis(app.config.behaviour.watch_debounce_ms.clamp(100, 5000));
     let desired = c.enabled.then(|| index_config(c, debounce));

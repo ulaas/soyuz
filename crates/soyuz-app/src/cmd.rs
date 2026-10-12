@@ -1,5 +1,5 @@
 //! Deferred UI commands. Widgets never mutate app-wide state directly while drawing;
-//! they push a [`Cmd`] which `SoyuzApp` applies after the frame's UI pass (or at the
+//! they push a [`Cmd`] which `AppCore` applies after the frame's UI pass (or at the
 //! start of the next one). This keeps borrows simple and makes every interaction
 //! funnel through the same code paths as key bindings and the (future) command palette.
 

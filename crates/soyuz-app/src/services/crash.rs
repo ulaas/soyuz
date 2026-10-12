@@ -22,7 +22,7 @@ use soyuz_core::config::{self, Config};
 use soyuz_jobs::journal::{self, JournalSlot, Recovered};
 use soyuz_jobs::{DeleteMode, JobKind, JournalJob};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
@@ -329,7 +329,7 @@ pub fn journal_path() -> Option<PathBuf> {
 }
 
 /// Per frame: show the startup dialogs once, then carry out queued choices.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     {
         let mut pending = PENDING.lock();
         if let Some(p) = pending.as_mut().filter(|p| !p.shown) {
@@ -369,7 +369,7 @@ fn meta_for(job: &JournalJob, op: OpKind) -> JobMeta {
     JobMeta::new(op, &roots, dest)
 }
 
-fn cleanup(app: &mut SoyuzApp, paths: Vec<PathBuf>) {
+fn cleanup(app: &mut AppCore, paths: Vec<PathBuf>) {
     if paths.is_empty() {
         return;
     }
@@ -378,7 +378,7 @@ fn cleanup(app: &mut SoyuzApp, paths: Vec<PathBuf>) {
     app.fileops.jobs.submit(spec, meta);
 }
 
-fn apply(app: &mut SoyuzApp, host: &dyn Host, a: RecoveryAction) {
+fn apply(app: &mut AppCore, host: &dyn Host, a: RecoveryAction) {
     match a {
         RecoveryAction::Resume { jobs, cleanup: c, dismiss } => {
             cleanup(app, c);

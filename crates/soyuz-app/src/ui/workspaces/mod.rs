@@ -23,7 +23,7 @@ pub use crate::models::workspaces::{WsCmd, overlays_here, palette_shows, palette
 
 /// A modal owns the keyboard / overlays (don't move the overlay owner then).
 pub fn modal_open(app: &SoyuzApp) -> bool {
-    app.dialog_open() || app.palette.open || app.settings.is_open()
+    app.dialog_open() || app.core.palette.open || app.gui.settings.is_open()
 }
 
 // ---------------------------------------------------------------------------
@@ -32,8 +32,8 @@ pub fn modal_open(app: &SoyuzApp) -> bool {
 
 /// Group and window entries of a tab's context menu.
 pub fn tab_menu_extra(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, i: usize) {
-    let Some(tab) = app.ws.tabs.get(i) else { return };
-    let ws = &app.ws;
+    let Some(tab) = app.core.ws.tabs.get(i) else { return };
+    let ws = &app.core.ws;
     menu_separator(ui);
     if !tab.pinned {
         if menu_item(ui, Some(ph::RECTANGLE_DASHED), tr!("workspaces-menu-add-new-group"), None, true).clicked() {
@@ -66,8 +66,8 @@ pub fn tab_menu_extra(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, i: usize
         cmds.push(Cmd::Workspace(WsCmd::TabToNewWindow(i)));
         ui.close();
     }
-    let targets = crate::models::windows::window_list(app);
-    let here = app.workspaces.current;
+    let targets = crate::models::windows::window_list(&app.core);
+    let here = app.core.workspaces.current;
     let others: Vec<&(WindowId, String)> = targets.iter().filter(|(id, _)| *id != here).collect();
     if !others.is_empty() {
         submenu(ui, Some(ph::BROWSERS), tr!("workspaces-menu-move-to-window"), |ui| {
@@ -79,7 +79,7 @@ pub fn tab_menu_extra(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, i: usize
             }
         });
     }
-    let km = &app.keymap;
+    let km = &app.core.keymap;
     let sc = crate::keys::chord_label(km, &Action::TabHistory);
     if menu_item(ui, Some(ph::GIT_FORK), tr!("workspaces-history-title"), sc.as_deref(), true).clicked() {
         cmds.push(Cmd::Action(Action::TabHistory));
@@ -113,7 +113,7 @@ fn color_name(c: usize) -> &'static str {
 /// Context menu of a group chip.
 pub fn group_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, g: GroupId) {
     ui.set_width(220.0);
-    let Some(group) = app.ws.group(g) else { return };
+    let Some(group) = app.core.ws.group(g) else { return };
     if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("workspaces-group-rename"), None, true).clicked() {
         cmds.push(Cmd::Workspace(WsCmd::StartRenameGroup(g)));
         ui.close();
@@ -147,7 +147,7 @@ pub fn group_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, g: GroupId) 
         ui.close();
     }
     if menu_item(ui, Some(ph::PLUS), tr!("workspaces-group-new-tab"), None, true).clicked() {
-        if let Some(span) = app.ws.group_span(g) {
+        if let Some(span) = app.core.ws.group_span(g) {
             cmds.push(Cmd::NewTabAfter(span.end - 1));
         }
         ui.close();
@@ -157,7 +157,7 @@ pub fn group_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, g: GroupId) 
         ui.close();
     }
     menu_separator(ui);
-    let can_move = app.ws.group_tab_count(g) < app.ws.tabs.len();
+    let can_move = app.core.ws.group_tab_count(g) < app.core.ws.tabs.len();
     if menu_item(ui, Some(ph::APP_WINDOW), tr!("workspaces-group-to-new-window"), None, can_move).clicked() {
         cmds.push(Cmd::Workspace(WsCmd::GroupToNewWindow(g)));
         ui.close();
@@ -172,24 +172,24 @@ pub fn group_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>, g: GroupId) 
 pub fn workspaces_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>) {
     submenu(ui, Some(ph::STACK), tr!("workspaces-menu"), |ui| {
         ui.set_width(240.0);
-        let km = &app.keymap;
-        for (i, w) in app.workspaces.store.workspaces.iter().enumerate() {
+        let km = &app.core.keymap;
+        for (i, w) in app.core.workspaces.store.workspaces.iter().enumerate() {
             let sc = (i < 9).then(|| crate::keys::chord_label(km, &Action::OpenWorkspace(i as u8 + 1))).flatten();
-            let current = app.workspaces.last.as_deref() == Some(w.name.as_str());
+            let current = app.core.workspaces.last.as_deref() == Some(w.name.as_str());
             let icon = if current { ph::CHECK } else { ph::STACK };
             if menu_item(ui, Some(icon), &w.name, sc.as_deref(), true).clicked() {
                 cmds.push(Cmd::Workspace(WsCmd::Open(i)));
                 ui.close();
             }
         }
-        if !app.workspaces.store.workspaces.is_empty() {
+        if !app.core.workspaces.store.workspaces.is_empty() {
             menu_separator(ui);
         }
         if menu_item(ui, Some(ph::FLOPPY_DISK), tr!("workspaces-menu-save-as"), None, true).clicked() {
             cmds.push(Cmd::Action(Action::SaveWorkspace));
             ui.close();
         }
-        let has_last = app.workspaces.last.is_some();
+        let has_last = app.core.workspaces.last.is_some();
         if menu_item(ui, Some(ph::ARROWS_CLOCKWISE), tr!("workspaces-menu-update"), None, has_last).clicked() {
             cmds.push(Cmd::Action(Action::UpdateWorkspace));
             ui.close();
@@ -226,7 +226,7 @@ pub fn timeline_row(ui: &mut Ui, current: &Location, pane: PaneId, cmds: &mut Ve
 pub fn layout_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>) {
     use crate::ui::widgets::menu_check;
     use soyuz_core::config::Orientation;
-    let cur = app.ws.tab().layout();
+    let cur = app.core.ws.tab().layout();
     for (layout, label) in [
         (PaneLayout::Single, tr!("workspaces-layout-single")),
         (PaneLayout::Dual(Orientation::Vertical), tr!("workspaces-layout-dual")),
@@ -234,7 +234,7 @@ pub fn layout_menu(ui: &mut Ui, app: &SoyuzApp, cmds: &mut Vec<Cmd>) {
         (PaneLayout::Quad, tr!("workspaces-layout-quad")),
     ] {
         let sc = match layout {
-            PaneLayout::Quad => crate::keys::chord_label(&app.keymap, &Action::ToggleQuadPane),
+            PaneLayout::Quad => crate::keys::chord_label(&app.core.keymap, &Action::ToggleQuadPane),
             _ => None,
         };
         if menu_check(ui, cur == layout, label, sc.as_deref()).clicked() {

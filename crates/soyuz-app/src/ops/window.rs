@@ -9,7 +9,7 @@ use std::process::{Command, Stdio};
 
 use soyuz_core::Location;
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::models::toasts::Toast;
 
 /// Folder a new window should open for `loc` (virtual locations fall back to home).
@@ -30,7 +30,7 @@ pub fn new_window_args(dir: &Path, renderer: &str) -> Vec<std::ffi::OsString> {
 
 /// Start a new Soyuz process showing `loc`. The spawn is local (our own executable, no
 /// working directory on a possibly slow share), so it is cheap enough for the UI thread.
-pub fn spawn_window(app: &mut SoyuzApp, loc: &Location) -> bool {
+pub fn spawn_window(app: &mut AppCore, loc: &Location) -> bool {
     let dir = window_dir(loc);
     let exe = match std::env::current_exe() {
         Ok(e) => e,
@@ -58,7 +58,7 @@ pub fn spawn_window(app: &mut SoyuzApp, loc: &Location) -> bool {
 
 /// `TabToNewWindow`: open the active tab's folder in a new window, then close the tab
 /// here (when it is not the only one).
-pub fn tab_to_new_window(app: &mut SoyuzApp) {
+pub fn tab_to_new_window(app: &mut AppCore) {
     if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
         if app.ws.tabs.len() > 1 {
             let i = app.ws.active;
@@ -113,7 +113,7 @@ fn on_path(name: &str, path: Option<&std::ffi::OsStr>) -> bool {
 /// `RunElevated`: start the selected program elevated (UAC on Windows via an external
 /// PowerShell `Start-Process -Verb RunAs`, `pkexec` on Linux — see `launch::run_elevated`;
 /// no shell APIs in-process). The OS elevation prompt is the confirmation.
-pub fn run_elevated(app: &mut SoyuzApp) {
+pub fn run_elevated(app: &mut AppCore) {
     let pane = app.ws.pane();
     let Some(e) = pane.selected_entries().first().map(|e| (*e).clone()) else {
         app.ui.toasts.push(Toast::info(tr!("ops-elevate-select")));

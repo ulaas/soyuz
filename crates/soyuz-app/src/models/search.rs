@@ -12,7 +12,7 @@ use soyuz_core::config::Config;
 use soyuz_core::{Location, SearchId};
 use soyuz_search::SavedSearch;
 
-use crate::app::{Focus, SoyuzApp};
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
@@ -95,7 +95,7 @@ impl SearchState {
 }
 
 /// The focused pane's folder, if it shows one.
-pub fn current_dir(app: &SoyuzApp) -> Option<PathBuf> {
+pub fn current_dir(app: &AppCore) -> Option<PathBuf> {
     match &app.ws.pane().location {
         Location::Dir(p) => Some(p.clone()),
         _ => None,
@@ -103,7 +103,7 @@ pub fn current_dir(app: &SoyuzApp) -> Option<PathBuf> {
 }
 
 /// The search shown in the focused pane, if any.
-pub fn shown_search(app: &SoyuzApp) -> Option<SearchId> {
+pub fn shown_search(app: &AppCore) -> Option<SearchId> {
     match app.ws.pane().location {
         Location::Search(id) => Some(id),
         _ => None,
@@ -111,7 +111,7 @@ pub fn shown_search(app: &SoyuzApp) -> Option<SearchId> {
 }
 
 /// Ctrl+Shift+F / F3 (and SearchContent): open the bar scoped to the current folder.
-pub fn open(app: &mut SoyuzApp, content: bool) {
+pub fn open(app: &mut AppCore, content: bool) {
     let s = &mut app.ui.search;
     s.open = true;
     s.focus = true;
@@ -123,19 +123,19 @@ pub fn open(app: &mut SoyuzApp, content: bool) {
 }
 
 /// Close the bar and give the file list the focus back.
-pub fn close(app: &mut SoyuzApp) {
+pub fn close(app: &mut AppCore) {
     app.ui.search.open = false;
     app.ui.focus = Focus::List;
 }
 
 /// "Refine": open the bar for the search on screen.
-pub fn refine(app: &mut SoyuzApp) {
+pub fn refine(app: &mut AppCore) {
     app.ui.search.open = true;
     app.ui.search.focus = true;
 }
 
 /// Build the query from the form and show the results in the focused pane.
-pub fn run(app: &mut SoyuzApp) {
+pub fn run(app: &mut AppCore) {
     if app.ui.search.form.root.as_os_str().is_empty()
         && let Some(d) = current_dir(app)
     {
@@ -172,7 +172,7 @@ pub fn run(app: &mut SoyuzApp) {
 
 /// Query-language search: the index answers it when it covers the scope, else the
 /// disk walk does (narrowed, every hit checked against the whole query).
-fn run_indexed(app: &mut SoyuzApp, form: &SearchForm, content_max: u64) {
+fn run_indexed(app: &mut AppCore, form: &SearchForm, content_max: u64) {
     let ix = crate::services::index::plan_from_form(form).and_then(|plan| {
         let live = crate::services::index::live_query(&plan, form.respect_gitignore, content_max);
         match live {
@@ -190,7 +190,7 @@ fn run_indexed(app: &mut SoyuzApp, form: &SearchForm, content_max: u64) {
     }
 }
 
-fn register_and_show(app: &mut SoyuzApp, spec: SearchSpec) {
+fn register_and_show(app: &mut AppCore, spec: SearchSpec) {
     let id = svc::register(spec);
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
@@ -198,7 +198,7 @@ fn register_and_show(app: &mut SoyuzApp, spec: SearchSpec) {
 }
 
 /// Show the results of `query` in the focused pane (also used by smart search).
-pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: String) -> SearchId {
+pub fn run_query(app: &mut AppCore, query: soyuz_search::SearchQuery, title: String) -> SearchId {
     let id = svc::register(SearchSpec::new(query, title));
     let pane = app.ws.pane().id;
     ops::navigate(app, pane, Location::Search(id), NavOpts::user());
@@ -209,7 +209,7 @@ pub fn run_query(app: &mut SoyuzApp, query: soyuz_search::SearchQuery, title: St
 /// What the bar asks for after a frame: `stop` (Stop pressed while the search on screen
 /// runs), `run_now` (Run pressed or Enter), `changed` (an option changed: re-runs the
 /// visible search).
-pub fn submit(app: &mut SoyuzApp, stop: bool, run_now: bool, changed: bool) {
+pub fn submit(app: &mut AppCore, stop: bool, run_now: bool, changed: bool) {
     let shown = shown_search(app);
     if stop {
         if let Some(id) = shown {
@@ -226,7 +226,7 @@ pub fn submit(app: &mut SoyuzApp, stop: bool, run_now: bool, changed: bool) {
 /// `ToggleFlatView`: list every file below the current folder in one flat, sortable
 /// listing (a recursive soyuz-search walk without a name filter, streamed like search
 /// results). Toggling again inside the flat listing returns to the folder.
-pub fn toggle_flat_view(app: &mut SoyuzApp) {
+pub fn toggle_flat_view(app: &mut AppCore) {
     let pane = app.ws.pane();
     if let Location::Search(id) = &pane.location {
         if app.ui.search.flat.contains(id) {
@@ -252,7 +252,7 @@ pub fn toggle_flat_view(app: &mut SoyuzApp) {
 }
 
 /// Run sidebar entry `i` (config searches first, then user ones).
-pub fn run_saved(app: &mut SoyuzApp, i: usize) {
+pub fn run_saved(app: &mut AppCore, i: usize) {
     let n_cfg = app.ui.search.config_saved.len();
     if let Some(s) = app.ui.search.config_saved.get(i).cloned() {
         let mut q = s.query;
@@ -268,7 +268,7 @@ pub fn run_saved(app: &mut SoyuzApp, i: usize) {
     }
 }
 
-pub fn remove_saved(app: &mut SoyuzApp, i: usize) {
+pub fn remove_saved(app: &mut AppCore, i: usize) {
     let n_cfg = app.ui.search.config_saved.len();
     if i >= n_cfg && i - n_cfg < app.ui.search.saved.len() {
         let removed = app.ui.search.saved.remove(i - n_cfg);
@@ -281,13 +281,13 @@ pub fn remove_saved(app: &mut SoyuzApp, i: usize) {
 }
 
 /// Start the "save this search" prompt, named after the form.
-pub fn begin_save(app: &mut SoyuzApp) {
+pub fn begin_save(app: &mut AppCore) {
     app.ui.search.saving = Some(app.ui.search.form.title());
 }
 
 /// Close the "save this search" prompt; `save` stores the form under the typed name
 /// (replacing a search of the same name).
-pub fn finish_save(app: &mut SoyuzApp, save: bool) {
+pub fn finish_save(app: &mut AppCore, save: bool) {
     let typed = app.ui.search.saving.take().unwrap_or_default();
     let name = typed.trim();
     if !save || name.is_empty() {
@@ -315,7 +315,7 @@ fn expand_home(p: &Path) -> PathBuf {
 }
 
 /// Per frame: stream search hits / folder sizes into panes, surface errors.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     svc::init(&app.wake, app.config.search.threads);
     crate::models::smart::pump(app, host);
     for n in svc::pump(&mut app.ws) {
@@ -328,7 +328,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// "Calculate folder sizes": selected folders, or every folder in the pane.
-pub fn folder_sizes(app: &mut SoyuzApp) {
+pub fn folder_sizes(app: &mut AppCore) {
     let pane = app.ws.pane();
     if !matches!(pane.location, Location::Dir(_) | Location::Search(_)) {
         return;

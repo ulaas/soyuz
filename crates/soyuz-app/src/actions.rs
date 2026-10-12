@@ -5,8 +5,8 @@
 use soyuz_core::config::{Action, ActionCategory, TypeAhead};
 use soyuz_core::{Column, GroupBy, Location, SortDir, ViewMode};
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -14,10 +14,10 @@ use crate::ops::{self, NavOpts};
 use crate::state::layout::NavDir;
 use crate::state::view_memory::{ZOOM_MAX, ZOOM_MIN};
 
-pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
+pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
     use Action as A;
     if crate::ai::handles(&action) {
-        crate::ai::execute_action(app, action, crate::host::egui_ctx(host));
+        crate::ai::execute_action(app, action, host);
         return;
     }
     // Tab groups, workspaces, quad layout, windows, history graph, timeline.
@@ -57,11 +57,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         }
         A::FocusList => {
             app.ui.focus = Focus::List;
-            crate::host::egui_ctx(host).memory_mut(|m| {
-                if let Some(id) = m.focused() {
-                    m.surrender_focus(id);
-                }
-            });
+            app.frontend.push(FrontendCmd::ReleaseFocus);
         }
         A::FocusOtherPane => {
             let tab = app.ws.tab_mut();
@@ -436,7 +432,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
             }
             ops::launch(app, &path);
         }
-        A::ReloadConfig => crate::services::config_watch::reload_now(app, crate::host::egui_ctx(host)),
+        A::ReloadConfig => crate::services::config_watch::reload_now(app, host),
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
                 crate::models::quicklook::toggle(app);
@@ -452,7 +448,7 @@ pub fn execute(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
         a if crate::models::tools::handles(&a) => crate::models::tools::execute(app, a, host),
         a if crate::models::archive::handles_edit(app, &a) => crate::models::archive::execute_edit(app, a),
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
-        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, crate::host::egui_ctx(host)),
+        a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, host),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {
                 app.cmds.push(Cmd::ComingSoon(other));
@@ -473,7 +469,7 @@ pub fn unavailable(a: &Action) -> bool {
     matches!(a, Action::NewJunction) && !cfg!(windows)
 }
 
-fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {
+fn set_mode(app: &mut AppCore, mode: ViewMode) {
     let id = app.ws.pane().id;
     let default_zoom = app.default_view.zoom;
     let pane = app.ws.pane_mut();
@@ -494,7 +490,7 @@ fn set_mode(app: &mut SoyuzApp, mode: ViewMode) {
 
 /// Sort by `col`; the same column again flips the direction. Size and dates start
 /// descending (largest / newest first), text columns ascending.
-pub fn sort_by(app: &mut SoyuzApp, col: Column) {
+pub fn sort_by(app: &mut AppCore, col: Column) {
     let id = app.ws.pane().id;
     let pane = app.ws.pane_mut();
     if pane.view.sort.column == col {
@@ -519,7 +515,7 @@ pub fn default_dir(col: Column) -> SortDir {
 }
 
 /// Keyboard cursor movement using the pane's current layout.
-pub fn cursor(app: &mut SoyuzApp, dir: NavDir, extend: bool, keep: bool) {
+pub fn cursor(app: &mut AppCore, dir: NavDir, extend: bool, keep: bool) {
     let pane = app.ws.pane_mut();
     let from = pane.cursor_pos();
     let target = match &pane.layout {

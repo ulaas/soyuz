@@ -283,8 +283,8 @@ impl PropertiesDialog {
     pub fn naming(mut self, app: &crate::app::SoyuzApp) -> Self {
         let dir = self.entries.first().and_then(|e| e.path.parent());
         self.windows_rules = crate::ops::fileops::rename::windows_rules_for(
-            app.config.general.strict_windows_names,
-            &app.ui.volumes,
+            app.core.config.general.strict_windows_names,
+            &app.core.ui.volumes,
             dir,
         );
         self

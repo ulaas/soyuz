@@ -50,7 +50,7 @@ fn clear_view(v: &mut View) {
 /// Keyboard while open: consumes Esc / Space / arrows / Enter so the file list doesn't
 /// see them. Returns `true` when Quick Look handled input this frame.
 pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
-    if !app.ui.quicklook.open {
+    if !app.core.ui.quicklook.open {
         return false;
     }
     let (esc, space, up, down, left, right, enter, home, end) = ctx.input_mut(|i| {
@@ -67,7 +67,7 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
         )
     });
     if esc || space {
-        crate::models::quicklook::close(app);
+        crate::models::quicklook::close(&mut app.core);
         return true;
     }
     let dir = if up || left {
@@ -82,10 +82,10 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
         None
     };
     if let Some(d) = dir {
-        crate::models::quicklook::step(app, d);
+        crate::models::quicklook::step(&mut app.core, d);
     }
     if enter {
-        crate::models::quicklook::open_item(app);
+        crate::models::quicklook::open_item(&mut app.core);
     }
     true
 }
@@ -93,38 +93,38 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
 /// The overlay (drawn over everything while open).
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     VIEW.with_borrow_mut(|v| {
-        if app.ui.quicklook.open {
+        if app.core.ui.quicklook.open {
             v.shown = true;
             show_open(ctx, app, v);
         }
-        if !app.ui.quicklook.open && v.shown {
+        if !app.core.ui.quicklook.open && v.shown {
             clear_view(v);
         }
     });
 }
 
 fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
-    if !app.ui.quicklook.open {
+    if !app.core.ui.quicklook.open {
         return;
     }
     let p = palette(ctx);
     let target = {
-        let pane = app.ws.pane();
+        let pane = app.core.ws.pane();
         pane.cursor.as_deref().and_then(|c| pane.entry(c)).cloned()
     };
     let Some(target) = target else {
-        app.ui.quicklook.close();
+        app.core.ui.quicklook.close();
         return;
     };
     let (pos, count) = {
-        let pane = app.ws.pane();
+        let pane = app.core.ws.pane();
         (pane.cursor_pos().map_or(0, |i| i + 1), pane.visible.len())
     };
-    let pane_id = app.ws.pane().id;
+    let pane_id = app.core.ws.pane().id;
     let pair = crate::ui::preview::diff::pair(app);
-    let diff_cap = app.config.preview.max_diff_kib;
+    let diff_cap = app.core.config.preview.max_diff_kib;
     let st = v.state.get_or_insert_with(|| PreviewState::new(ctx, true));
-    let limits = st.limits(&app.config, &p);
+    let limits = st.limits(&app.core.config, &p);
     st.set_target(Some(&target), limits);
     st.poll(ctx);
 
@@ -223,7 +223,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
             [pos2(card.left(), footer.top()), pos2(card.right(), footer.top())],
             Stroke::new(1.0, p.border_subtle),
         );
-        let rows = render::info_rows(&target, st.loaded.as_ref(), st.folder_size(), &app.config);
+        let rows = render::info_rows(&target, st.loaded.as_ref(), st.folder_size(), &app.core.config);
         let mut summary: Vec<String> = Vec::new();
         for k in ["Type", "Size", "Dimensions", "Duration", "Modified"] {
             if let Some((_, v)) = rows.iter().find(|(a, _)| a == k) {
@@ -233,7 +233,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
         if target.is_dir_like()
             && let Some((b, ..)) = st.folder_size()
         {
-            summary.push(format_size(b, app.config.general.size_style));
+            summary.push(format_size(b, app.core.config.general.size_style));
         }
         let sg = trunc_galley(
             painter,
@@ -271,7 +271,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
         }
     });
     if close {
-        app.ui.quicklook.close();
+        app.core.ui.quicklook.close();
     }
     match action {
         Some(PreviewAction::ToggleHex) => {
@@ -281,8 +281,8 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
             }
         }
         Some(PreviewAction::Open(path)) => {
-            app.ui.quicklook.close();
-            app.cmds.push(Cmd::Navigate {
+            app.core.ui.quicklook.close();
+            app.core.cmds.push(Cmd::Navigate {
                 pane: pane_id,
                 location: Location::Archive { archive: path, inner: String::new() },
                 select: None,

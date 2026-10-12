@@ -13,8 +13,8 @@ use soyuz_core::config::{Action, OpenFoldersIn, TypeAhead};
 use soyuz_core::{Location, OpControl};
 use soyuz_fs::WatchKind;
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::services::mailbox::UiMsg;
@@ -131,7 +131,7 @@ pub fn dispose_pane(pane: &mut Pane, services: &mut Services) {
     services.watcher.unwatch(pane.id);
 }
 
-pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
+pub fn navigate(app: &mut AppCore, id: PaneId, loc: Location, opts: NavOpts) {
     let loc = match crate::services::remote::normalize(loc) {
         Ok(l) => l,
         Err(e) => {
@@ -183,7 +183,7 @@ pub fn navigate(app: &mut SoyuzApp, id: PaneId, loc: Location, opts: NavOpts) {
 /// Synchronized browsing: the other visible panes follow the same relative move (into a
 /// child, up, over to a sibling…) where the resulting folder exists (probed off the UI
 /// thread). `[workspace] sync_relative = false` follows single child / parent steps only.
-fn sync_others(app: &mut SoyuzApp, ti: usize, pi: usize, old: &Location, new: &Location) {
+fn sync_others(app: &mut AppCore, ti: usize, pi: usize, old: &Location, new: &Location) {
     use crate::state::workspace_sync::{SyncMove, sync_target};
     let (Location::Dir(o), Location::Dir(n)) = (old, new) else { return };
     let relative = app.config.workspace.sync_relative;
@@ -207,7 +207,7 @@ fn sync_others(app: &mut SoyuzApp, ti: usize, pi: usize, old: &Location, new: &L
     }
 }
 
-pub fn go_up(app: &mut SoyuzApp, id: PaneId) {
+pub fn go_up(app: &mut AppCore, id: PaneId) {
     let Some(pane) = app.ws.find_pane(id) else { return };
     let Some(parent) = pane.location.parent() else { return };
     let select = match &pane.location {
@@ -222,7 +222,7 @@ pub fn go_up(app: &mut SoyuzApp, id: PaneId) {
     navigate(app, id, parent, NavOpts { push_history: true, select, sync: true, ..Default::default() });
 }
 
-pub fn history_jump(app: &mut SoyuzApp, id: PaneId, back: bool, n: usize) {
+pub fn history_jump(app: &mut AppCore, id: PaneId, back: bool, n: usize) {
     let Some(pane) = app.ws.find_pane_mut(id) else { return };
     let here = pane.here();
     let entry = if back { pane.history.back_n(n, here) } else { pane.history.forward_n(n, here) };
@@ -233,7 +233,7 @@ pub fn history_jump(app: &mut SoyuzApp, id: PaneId, back: bool, n: usize) {
 }
 
 /// Activate an entry: enter folders (respecting `open_folders_in`), launch files.
-pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
+pub fn open_entry(app: &mut AppCore, id: PaneId, key: &str) {
     let Some(pane) = app.ws.find_pane(id) else { return };
     let Some(e) = pane.entry(key) else { return };
     let path = e.path.clone();
@@ -260,7 +260,7 @@ pub fn open_entry(app: &mut SoyuzApp, id: PaneId, key: &str) {
 
 /// Launch a file with its default application on a short-lived thread (association
 /// lookup and process spawn never block the UI).
-pub fn launch(app: &mut SoyuzApp, path: &Path) {
+pub fn launch(app: &mut AppCore, path: &Path) {
     crate::services::recent::opened_file(path);
     let postman = app.services.mailbox.postman();
     let path = path.to_path_buf();
@@ -285,7 +285,7 @@ pub fn launch(app: &mut SoyuzApp, path: &Path) {
 /// Run a process launch (`open_with`, reveal, external terminal) on a short-lived
 /// thread: resolving and spawning can block for seconds (cold disk, network paths,
 /// slow association lookups). A failure comes back as an error toast titled `title`.
-fn spawn_launch(app: &mut SoyuzApp, title: String, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
+fn spawn_launch(app: &mut AppCore, title: String, f: impl FnOnce() -> Result<(), String> + Send + 'static) {
     let postman = app.services.mailbox.postman();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Err(e) = f() {
@@ -299,7 +299,7 @@ fn spawn_launch(app: &mut SoyuzApp, title: String, f: impl FnOnce() -> Result<()
 
 /// Open the selection (Enter): one entry is activated; several files are all launched
 /// and several folders open in background tabs.
-pub fn open_selection(app: &mut SoyuzApp) {
+pub fn open_selection(app: &mut AppCore) {
     let id = app.ws.pane().id;
     let pane = app.ws.pane();
     let sel: Vec<(String, bool, std::path::PathBuf)> =
@@ -321,7 +321,7 @@ pub fn open_selection(app: &mut SoyuzApp) {
     }
 }
 
-pub fn open_in_new_tab(app: &mut SoyuzApp, loc: Location, activate: bool) {
+pub fn open_in_new_tab(app: &mut AppCore, loc: Location, activate: bool) {
     let loc = crate::services::remote::normalize(loc.clone()).unwrap_or(loc);
     let mut pane = Pane::new(loc.clone(), app.view_for(&loc));
     start_listing(&mut pane, &mut app.services, false);
@@ -346,7 +346,7 @@ pub fn open_in_new_tab(app: &mut SoyuzApp, loc: Location, activate: bool) {
 }
 
 /// Make sure the active tab shows two panes; returns the other pane's id.
-pub fn ensure_dual(app: &mut SoyuzApp) -> PaneId {
+pub fn ensure_dual(app: &mut AppCore) -> PaneId {
     let loc = app.ws.pane().location.clone();
     let view = app.view_for(&loc);
     let tab = app.ws.tab_mut();
@@ -361,12 +361,12 @@ pub fn ensure_dual(app: &mut SoyuzApp) -> PaneId {
     tab.panes[other].id
 }
 
-pub fn open_in_other_pane(app: &mut SoyuzApp, loc: Location) {
+pub fn open_in_other_pane(app: &mut AppCore, loc: Location) {
     let other = ensure_dual(app);
     navigate(app, other, loc, NavOpts { push_history: true, ..Default::default() });
 }
 
-pub fn focus_pane(app: &mut SoyuzApp, id: PaneId) {
+pub fn focus_pane(app: &mut AppCore, id: PaneId) {
     if let Some((ti, pi)) = app.ws.locate(id) {
         app.ws.active = ti;
         app.ws.tabs[ti].focused = pi;
@@ -399,7 +399,7 @@ pub fn tab_session(t: &Tab) -> TabSession {
     }
 }
 
-pub fn close_tab(app: &mut SoyuzApp, index: usize) {
+pub fn close_tab(app: &mut AppCore, index: usize) {
     if app.ws.tabs.len() <= 1 || index >= app.ws.tabs.len() {
         return;
     }
@@ -417,7 +417,7 @@ pub fn close_tab(app: &mut SoyuzApp, index: usize) {
     }
 }
 
-pub fn reopen_closed_tab(app: &mut SoyuzApp) {
+pub fn reopen_closed_tab(app: &mut AppCore) {
     let Some(closed) = app.ws.closed.pop() else { return };
     let mut panes = Vec::new();
     for ps in &closed.session.panes {
@@ -447,7 +447,7 @@ pub fn reopen_closed_tab(app: &mut SoyuzApp) {
     app.ws.active = idx;
 }
 
-pub fn duplicate_tab(app: &mut SoyuzApp, index: usize) {
+pub fn duplicate_tab(app: &mut AppCore, index: usize) {
     let Some(t) = app.ws.tabs.get(index) else { return };
     let s = tab_session(t);
     let mut panes = Vec::new();
@@ -481,13 +481,13 @@ pub fn duplicate_tab(app: &mut SoyuzApp, index: usize) {
     app.ws.active = app.ws.tab_index(id).unwrap_or(idx);
 }
 
-pub fn new_tab(app: &mut SoyuzApp) {
+pub fn new_tab(app: &mut AppCore) {
     let loc = Location::Dir(soyuz_fs::home());
     open_in_new_tab(app, loc, true);
 }
 
 /// Type-ahead: jump to the first matching name, or feed the live filter.
-pub fn type_ahead(app: &mut SoyuzApp, text: &str) {
+pub fn type_ahead(app: &mut AppCore, text: &str) {
     let now = Instant::now();
     let filter_mode = app.config.behaviour.type_ahead == TypeAhead::Filter;
     let pane = app.ws.pane_mut();
@@ -506,7 +506,7 @@ pub fn type_ahead(app: &mut SoyuzApp, text: &str) {
     }
 }
 
-pub fn drain_mailbox(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn drain_mailbox(app: &mut AppCore, host: &dyn Host) {
     let deadline = Instant::now() + Duration::from_millis(8);
     let mut handled = 0usize;
     while let Some(msg) = app.services.mailbox.try_recv() {
@@ -536,7 +536,7 @@ fn msg_pane(msg: &UiMsg) -> Option<PaneId> {
     }
 }
 
-pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
+pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
     match msg {
         UiMsg::Listing { pane, generation, chunk, done, err } => {
             chunk.iter().for_each(|e| crate::theme::font_fallback::note(&e.name));
@@ -592,7 +592,7 @@ pub fn handle_msg(app: &mut SoyuzApp, msg: UiMsg) {
     }
 }
 
-pub fn drain_watcher(app: &mut SoyuzApp) {
+pub fn drain_watcher(app: &mut AppCore) {
     let poll = Duration::from_millis(app.config.behaviour.watch_poll_interval_ms);
     app.services.watcher.set_poll_interval(poll);
     if app.services.watcher.take_degraded().is_some() {
@@ -619,7 +619,7 @@ pub fn drain_watcher(app: &mut SoyuzApp) {
     }
 }
 
-fn on_watch(app: &mut SoyuzApp, id: PaneId, kind: WatchKind) {
+fn on_watch(app: &mut AppCore, id: PaneId, kind: WatchKind) {
     let Some(pane) = app.ws.find_pane_mut(id) else { return };
     let Location::Dir(dir) = pane.location.clone() else { return };
     crate::services::git::invalidate(&dir);
@@ -673,7 +673,7 @@ fn run_deferred(pane: &mut Pane, services: &mut Services) {
 /// Manual refresh (Ctrl+R, F5 without a second pane, the breadcrumb's ↻, the context
 /// menu): a full relist of the focused pane that also re-arms its directory watch (in
 /// case the OS stopped reporting changes for it).
-pub fn refresh(app: &mut SoyuzApp) {
+pub fn refresh(app: &mut AppCore) {
     refresh_pane(app.ws.pane_mut(), &mut app.services);
     app.services.aux.clear();
     app.services.places.refresh();
@@ -697,7 +697,7 @@ pub(crate) fn refresh_pane(pane: &mut Pane, services: &mut Services) {
 /// Relist every pane (in every window) that shows one of `dirs` or the parent of one of
 /// `paths`: called when a Soyuz job finishes, so its result shows up even when the
 /// watcher is slow, unavailable or turned off (`auto_refresh = false`).
-pub fn refresh_affected(app: &mut SoyuzApp, paths: &[std::path::PathBuf]) {
+pub fn refresh_affected(app: &mut AppCore, paths: &[std::path::PathBuf]) {
     let dirs = affected_dirs(paths);
     if dirs.is_empty() {
         return;
@@ -765,11 +765,11 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     a == b || norm(a) == norm(b)
 }
 
-fn coming_soon(app: &mut SoyuzApp, action: &Action) {
+fn coming_soon(app: &mut AppCore, action: &Action) {
     app.ui.toasts.push(Toast::info(tr!("ops-coming-soon", action = action.title())).body(tr!("ops-coming-soon-body")));
 }
 
-pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
+pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
     match cmd {
         Cmd::Action(a) => crate::actions::execute(app, a, host),
         Cmd::PaneAction(id, a) => {
@@ -809,7 +809,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
             }
         }
         Cmd::ComingSoon(a) => coming_soon(app, &a),
-        Cmd::FileOp(c) => fileops::apply(app, c, crate::host::egui_ctx(host)),
+        Cmd::FileOp(c) => fileops::apply(app, c, host),
         Cmd::RevealInSystem(p) => {
             spawn_launch(app, tr!("ops-reveal-failed").into(), move || {
                 soyuz_fs::launch::reveal_in_system(&p).map_err(|e| e.to_string())
@@ -894,9 +894,9 @@ pub fn apply(app: &mut SoyuzApp, cmd: Cmd, host: &dyn Host) {
         Cmd::OpenTerminalPanel(dir) => crate::models::terminal::open_at(app, host, dir),
         Cmd::Meta(m) => crate::models::properties::apply(app, m, host),
         Cmd::Tree(c) => crate::models::tree::apply(app, c),
-        Cmd::Ai(c) => crate::ai::apply_cmd(app, c, crate::host::egui_ctx(host)),
-        Cmd::Automation(c) => crate::automation::apply(app, c, crate::host::egui_ctx(host)),
-        Cmd::Quit { when_idle } => app.confirm_quit(crate::host::egui_ctx(host), when_idle),
+        Cmd::Ai(c) => crate::ai::apply_cmd(app, c, host),
+        Cmd::Automation(c) => crate::automation::apply(app, c, host),
+        Cmd::Quit { when_idle } => app.confirm_quit(host, when_idle),
         Cmd::ChooseOpenWith(path) => app.frontend.push(crate::models::frontend::FrontendCmd::OpenWith(path)),
         Cmd::NewWindow(loc) => {
             if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {

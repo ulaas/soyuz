@@ -22,7 +22,7 @@ const HEADER_H: f32 = 38.0;
 pub fn docked(ui: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(ui.ctx());
     let screen = ui.ctx().content_rect();
-    match app.config.editor.dock {
+    match app.core.config.editor.dock {
         EditorDock::Right => {
             Panel::right("soyuz.editor")
                 .resizable(true)
@@ -88,10 +88,11 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let buttons_w = 3.0 * 28.0 + 10.0;
     let tabs_right = header.right() - buttons_w;
     let mut cmds: Vec<TabCmd> = Vec::new();
-    let n = app.editors.docs.len();
+    let n = app.core.editors.docs.len();
     let avail = (tabs_right - header.left() - 12.0).max(60.0);
     // Natural widths (name + icon + close), shrunk evenly when they don't fit.
     let natural: Vec<f32> = app
+        .core
         .editors
         .docs
         .iter()
@@ -103,14 +104,14 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let sum: f32 = natural.iter().sum::<f32>() + 4.0 * n as f32;
     let shrink = if sum > avail { avail / sum } else { 1.0 };
     let mut x = header.left() + 8.0;
-    for (i, d) in app.editors.docs.iter().enumerate() {
+    for (i, d) in app.core.editors.docs.iter().enumerate() {
         if x + 40.0 > tabs_right {
             break;
         }
         let w = (natural[i] * shrink).max(60.0).min(tabs_right - x);
         let r = Rect::from_min_size(pos2(x, header.top() + 6.0), vec2(w, 26.0));
         let resp = ui.interact(r, ui.id().with(("editor.tab", d.id)), Sense::click());
-        let active = i == app.editors.active;
+        let active = i == app.core.editors.active;
         crate::ui::a11y::tab(&resp, &d.name, active);
         if active {
             ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
@@ -193,15 +194,15 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         x += w + 4.0;
     }
     // Panel buttons.
-    let dock = app.config.editor.dock;
-    let maximized = app.editors.maximized;
+    let dock = app.core.config.editor.dock;
+    let maximized = app.core.editors.maximized;
     let br =
         |i: f32| Rect::from_center_size(pos2(header.right() - 20.0 - i * 28.0, header.top() + 19.0), vec2(24.0, 24.0));
     let id = ui.id().with("editor.panel");
     if super::widgets::icon_at(ui, br(0.0), id.with("close"), ph::X, tr!("editors-panel-hide"), true, &p) {
-        app.editors.open = false;
-        app.editors.maximized = false;
-        app.ui.focus = crate::app::Focus::List;
+        app.core.editors.open = false;
+        app.core.editors.maximized = false;
+        app.core.ui.focus = crate::app::Focus::List;
     }
     let (mg, mt) = if maximized {
         (ph::CORNERS_IN, tr!("editors-panel-restore"))
@@ -209,7 +210,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         (ph::CORNERS_OUT, tr!("editors-panel-maximize"))
     };
     if super::widgets::icon_at(ui, br(1.0), id.with("max"), mg, mt, true, &p) {
-        app.editors.maximized = !maximized;
+        app.core.editors.maximized = !maximized;
     }
     let (dg, dt) = match dock {
         EditorDock::Right => (ph::SQUARE_HALF_BOTTOM, tr!("editors-panel-dock-bottom")),
@@ -217,7 +218,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     };
     if super::widgets::icon_at(ui, br(2.0), id.with("dock"), dg, dt, !maximized, &p) {
         let next = if dock == EditorDock::Right { EditorDock::Bottom } else { EditorDock::Right };
-        crate::models::settings::update_config(app, &ctx, |c| c.editor.dock = next);
+        crate::models::settings::update_config(&mut app.core, &ctx, |c| c.editor.dock = next);
     }
     ui.painter().hline(rect.x_range(), header.bottom(), Stroke::new(1.0, p.border_subtle));
 
@@ -226,13 +227,13 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         pos2(rect.left() + 1.0, header.bottom() + 1.0),
         pos2(rect.right() - 1.0, rect.bottom() - 1.0),
     );
-    let idx = app.editors.active;
+    let idx = app.core.editors.active;
     let mut save_now = false;
     let mut toggle_wrap = false;
     let mut toggle_ws = false;
     let mut external_answer: Option<usize> = None;
-    let cfg = app.config.editor.clone();
-    if let Some(d) = app.editors.docs.get_mut(idx) {
+    let cfg = app.core.config.editor.clone();
+    if let Some(d) = app.core.editors.docs.get_mut(idx) {
         if let Some(ext) = d.external {
             let r = Rect::from_min_size(pos2(body.left() + 8.0, body.top() + 6.0), vec2(body.width() - 16.0, 30.0));
             let (text, buttons): (&str, Vec<&str>) = match ext {
@@ -294,7 +295,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             FontId::proportional(14.0),
             p.text_secondary,
         );
-        let key = crate::keys::chord_label(&app.keymap, &soyuz_core::config::Action::OpenInEditor)
+        let key = crate::keys::chord_label(&app.core.keymap, &soyuz_core::config::Action::OpenInEditor)
             .unwrap_or_else(|| "F4".into());
         ui.painter().text(
             c + vec2(0.0, 28.0),
@@ -306,18 +307,20 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     }
     super::set_focus_ids(&ctx, focus);
     if save_now {
-        crate::editors::save(app, idx);
+        crate::editors::save(&mut app.core, idx);
     }
     if toggle_wrap {
-        crate::models::settings::update_config(app, &ctx, |c| c.editor.wrap = !c.editor.wrap);
+        crate::models::settings::update_config(&mut app.core, &ctx, |c| c.editor.wrap = !c.editor.wrap);
     }
     if toggle_ws {
-        crate::models::settings::update_config(app, &ctx, |c| c.editor.show_whitespace = !c.editor.show_whitespace);
+        crate::models::settings::update_config(&mut app.core, &ctx, |c| {
+            c.editor.show_whitespace = !c.editor.show_whitespace
+        });
     }
     match external_answer {
-        Some(0) => crate::editors::reload(app, idx),
+        Some(0) => crate::editors::reload(&mut app.core, idx),
         Some(_) => {
-            if let Some(d) = app.editors.docs.get_mut(idx) {
+            if let Some(d) = app.core.editors.docs.get_mut(idx) {
                 d.external = None;
             }
         }
@@ -326,24 +329,24 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     for c in cmds {
         match c {
             TabCmd::Select(i) => {
-                app.editors.active = i;
-                if let Some(d) = app.editors.docs.get_mut(i) {
+                app.core.editors.active = i;
+                if let Some(d) = app.core.editors.docs.get_mut(i) {
                     d.request_focus();
                 }
             }
-            TabCmd::Save(i) => crate::editors::save(app, i),
-            TabCmd::Close(i) => crate::editors::close(app, i, false),
+            TabCmd::Save(i) => crate::editors::save(&mut app.core, i),
+            TabCmd::Close(i) => crate::editors::close(&mut app.core, i, false),
             TabCmd::Reopen(i, want) => {
-                if app.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
-                    app.ui.toasts.push(crate::models::toasts::Toast::info(tr!("editors-reopen-dirty")));
+                if app.core.editors.docs.get(i).is_some_and(|d| d.is_dirty()) {
+                    app.core.ui.toasts.push(crate::models::toasts::Toast::info(tr!("editors-reopen-dirty")));
                 } else {
-                    crate::editors::reopen_as(app, i, want);
+                    crate::editors::reopen_as(&mut app.core, i, want);
                 }
             }
-            TabCmd::Reload(i) => crate::editors::reload(app, i),
+            TabCmd::Reload(i) => crate::editors::reload(&mut app.core, i),
             TabCmd::Reveal(i) => {
-                if let Some(d) = app.editors.docs.get(i) {
-                    app.cmds.push(crate::cmd::Cmd::RevealPath(d.path.clone()));
+                if let Some(d) = app.core.editors.docs.get(i) {
+                    app.core.cmds.push(crate::cmd::Cmd::RevealPath(d.path.clone()));
                 }
             }
         }

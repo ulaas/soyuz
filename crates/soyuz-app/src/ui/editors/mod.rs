@@ -27,9 +27,9 @@ fn set_focus_ids(ctx: &egui::Context, ids: Vec<Id>) {
 /// The docked panel (call from the shell before the central panel).
 pub fn show(ui: &mut egui::Ui, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
-    crate::editors::pump(app, &ctx);
-    if !app.editors.open || app.editors.maximized {
-        if !app.editors.open {
+    crate::editors::pump(&mut app.core, &ctx);
+    if !app.core.editors.open || app.core.editors.maximized {
+        if !app.core.editors.open {
             set_focus_ids(&ctx, Vec::new());
         }
         return;
@@ -44,7 +44,7 @@ pub fn show_central(ui: &mut egui::Ui, rect: egui::Rect, app: &mut SoyuzApp) {
 
 /// A widget of the editor has keyboard focus.
 pub fn owns_keyboard(app: &SoyuzApp, ctx: &egui::Context) -> bool {
-    app.editors.open
+    app.core.editors.open
         && ctx
             .memory(|m| m.focused())
             .is_some_and(|f| ctx.data(|d| d.get_temp::<Vec<Id>>(focus_ids_key())).is_some_and(|ids| ids.contains(&f)))
@@ -53,9 +53,9 @@ pub fn owns_keyboard(app: &SoyuzApp, ctx: &egui::Context) -> bool {
 /// Keyboard dispatch while the editor has focus ([`crate::editors::handle_keys`]): the
 /// keys it takes are removed before the widgets run.
 pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
+    let cmd_is_ctrl = app.core.config.keys.cmd_is_ctrl;
     let mut frame = crate::ui::input::frame(ctx, cmd_is_ctrl);
-    let out = crate::editors::handle_keys(app, &mut frame);
+    let out = crate::editors::handle_keys(&mut app.core, &mut frame);
     crate::ui::input::strip(ctx, &frame, cmd_is_ctrl);
     if out.release_focus {
         ctx.memory_mut(|m| {
@@ -65,7 +65,7 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) {
         });
     }
     for a in out.actions {
-        crate::actions::execute(app, a, ctx);
+        crate::actions::execute(&mut app.core, a, ctx);
     }
 }
 

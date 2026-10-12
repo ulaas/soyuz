@@ -7,6 +7,7 @@ pub mod dialogs;
 pub mod frontend;
 pub mod panels;
 pub mod portal;
+pub mod preview;
 pub mod properties;
 pub mod quicklook;
 pub mod remote;

@@ -15,8 +15,8 @@ use soyuz_core::Location;
 use soyuz_core::config::{Action, DragDefault, SidebarMode};
 use soyuz_fs::VolumeInfo;
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
 use crate::models::toasts::Toast;
@@ -364,7 +364,7 @@ pub fn keyboard(s: &mut TreeState, k: KeyInput, io: &mut TreeIo<'_>) -> bool {
 }
 
 /// Apply a [`TreeCmd`].
-pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
+pub fn apply(app: &mut AppCore, cmd: TreeCmd) {
     match cmd {
         TreeCmd::Focus => app.ui.focus = Focus::Sidebar,
         TreeCmd::NewFolder(dir) => new_folder(app, dir),
@@ -374,7 +374,7 @@ pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
 
 /// Create "New folder" inside `dir` (a job, so it is undoable), open `dir` in the
 /// active pane and start renaming the new folder there.
-fn new_folder(app: &mut SoyuzApp, dir: PathBuf) {
+fn new_folder(app: &mut AppCore, dir: PathBuf) {
     use crate::ops::fileops::names;
     use crate::services::jobs::{AfterJob, JobMeta, OpKind};
     let pane = app.ws.pane().id;
@@ -399,7 +399,7 @@ fn new_folder(app: &mut SoyuzApp, dir: PathBuf) {
 
 /// The sidebar icon bar: `Places` returns to the last places-like mode (`places` or
 /// `both`), `Tree` shows the full-height disk tree. Writes `[sidebar] mode` like Settings.
-pub fn set_mode(app: &mut SoyuzApp, host: &dyn Host, want: SidebarMode) {
+pub fn set_mode(app: &mut AppCore, host: &dyn Host, want: SidebarMode) {
     let cur = app.config.sidebar.mode;
     let next = match want {
         SidebarMode::Tree => SidebarMode::Tree,
@@ -420,7 +420,7 @@ pub fn set_mode(app: &mut SoyuzApp, host: &dyn Host, want: SidebarMode) {
 
 /// `Action::ToggleTreeSidebar`: places ↔ the last tree mode (the full-height disk tree by
 /// default). Writes `[sidebar] mode` like the Settings window would.
-pub fn toggle(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn toggle(app: &mut AppCore, host: &dyn Host) {
     let cur = app.config.sidebar.mode;
     let next = match cur {
         SidebarMode::Places => app.ui.tree.last_tree_mode.unwrap_or(SidebarMode::Tree),

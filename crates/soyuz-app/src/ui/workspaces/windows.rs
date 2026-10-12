@@ -49,8 +49,8 @@ fn prompt_flag() -> &'static Arc<AtomicBool> {
 /// one prompt at a time).
 pub fn close_prompt(app: &mut SoyuzApp, id: WindowId, tabs: usize) {
     if !prompt_flag().swap(true, Ordering::SeqCst) {
-        app.workspaces.owner = id;
-        app.ui.dialogs.push(super::dialogs::CloseWindowDialog::new(id, tabs, prompt_flag().clone()));
+        app.core.workspaces.owner = id;
+        app.gui.dialogs.push(super::dialogs::CloseWindowDialog::new(id, tabs, prompt_flag().clone()));
     }
 }
 
@@ -71,10 +71,10 @@ pub fn begin_main_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
 fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
     let (focused, inner) = ctx.input(|i| (i.viewport().focused, i.viewport().inner_rect));
     if focused == Some(true) && !modal_open(app) {
-        app.workspaces.owner = id;
+        app.core.workspaces.owner = id;
     }
     if let Some(inner) = inner {
-        app.workspaces.set_geom(WindowGeom {
+        app.core.workspaces.set_geom(WindowGeom {
             id,
             inner: geom::area(inner),
             strip: crate::geom::Rect::NOTHING,
@@ -97,31 +97,31 @@ fn builder(app: &SoyuzApp, w: &SecondaryWindow) -> ViewportBuilder {
     if w.start_maximized {
         b = b.with_maximized(true);
     }
-    crate::ui::titlebar::configure_viewport(b, app.ui.chrome)
+    crate::ui::titlebar::configure_viewport(b, app.gui.chrome)
 }
 
 /// Draw every secondary window (end of the main frame) and apply window operations.
 pub fn show(app: &mut SoyuzApp, ctx: &egui::Context) {
     let screen = screen(ctx);
-    model::restore_windows(app, ctx, &screen);
-    model::apply_ops(app, ctx, &screen);
-    let ids: Vec<WindowId> = app.workspaces.windows.iter().map(|w| w.id).collect();
+    model::restore_windows(&mut app.core, ctx, &screen);
+    model::apply_ops(&mut app.core, ctx, &screen);
+    let ids: Vec<WindowId> = app.core.workspaces.windows.iter().map(|w| w.id).collect();
     for id in ids {
-        let Some(k) = model::index(app, id) else { continue };
-        let b = builder(app, &app.workspaces.windows[k]);
+        let Some(k) = model::index(&app.core, id) else { continue };
+        let b = builder(app, &app.core.workspaces.windows[k]);
         ctx.show_viewport_immediate(viewport_id(id), b, |ui, _class| run_window(ui, app, id));
     }
-    model::apply_ops(app, ctx, &screen);
+    model::apply_ops(&mut app.core, ctx, &screen);
 }
 
 fn run_window(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
-    let Some(k) = model::index(app, id) else { return };
-    model::swap(app, k);
-    app.workspaces.current = id;
+    let Some(k) = model::index(&app.core, id) else { return };
+    model::swap(&mut app.core, k);
+    app.core.workspaces.current = id;
     window_frame(ui, app, id);
-    app.workspaces.current = WindowId::MAIN;
+    app.core.workspaces.current = WindowId::MAIN;
     // Window structure only changes in `apply_ops`, so `k` still names this window.
-    model::swap(app, k);
+    model::swap(&mut app.core, k);
 }
 
 fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
@@ -131,8 +131,8 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
         let v = i.viewport();
         (v.outer_rect, v.inner_rect, v.maximized, v.close_requested())
     });
-    if let Some(k) = model::index(app, id) {
-        let w = &mut app.workspaces.windows[k];
+    if let Some(k) = model::index(&app.core, id) {
+        let w = &mut app.core.workspaces.windows[k];
         w.maximized = maximized.unwrap_or(false);
         if !w.maximized {
             w.pos = outer.map(|r| geom::point(r.min)).or(w.pos);
@@ -140,15 +140,15 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
         }
     }
     if close {
-        model::request_close(app, id);
+        model::request_close(&mut app.core, id);
     }
     app.handle_input(&ctx);
     app.apply_cmds(&ctx);
     crate::ui::shell::show(ui, app);
-    if super::overlays_here(app) {
+    if super::overlays_here(&app.core) {
         crate::ui::palette::show(&ctx, app);
         crate::ui::settings::show(&ctx, app);
-        crate::ops::fileops::end_frame(app, &ctx);
+        crate::ops::fileops::end_frame(&mut app.core, &ctx);
     }
     crate::ui::titlebar::frame(&ctx, app);
     app.apply_cmds(&ctx);

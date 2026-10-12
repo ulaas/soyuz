@@ -33,9 +33,9 @@ fn label(ui: &mut Ui, p: &Palette, s: &str) {
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
-    let cli_status = app.automation.cli_status.clone();
-    let note = app.automation.rules_note.clone();
-    let d = &mut app.settings.draft;
+    let cli_status = app.core.automation.cli_status.clone();
+    let note = app.core.automation.rules_note.clone();
+    let d = &mut app.gui.settings.draft;
     any |= group(ui, q, CTX, tr!("automation-rules-group"), |r| {
         r.row(tr!("automation-rules-run"), tr!("automation-rules-run-desc"), |ui| {
             switch(ui, &mut d.automation.enabled);
@@ -76,11 +76,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
             if small_button(ui, Some(ph::PLUS), tr!("automation-rules-new"), false).clicked() {
-                let watch = app.ws.pane().location.as_fs_path().map(|p| p.to_path_buf()).unwrap_or_default();
-                app.settings.draft.automation.rules.push(AutomationRule {
+                let watch = app.core.ws.pane().location.as_fs_path().map(|p| p.to_path_buf()).unwrap_or_default();
+                app.gui.settings.draft.automation.rules.push(AutomationRule {
                     name: tr!(
                         "automation-rules-default-name",
-                        n = (app.settings.draft.automation.rules.len() + 1).to_string()
+                        n = (app.gui.settings.draft.automation.rules.len() + 1).to_string()
                     ),
                     watch,
                     ..Default::default()
@@ -89,7 +89,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.label(RichText::new(tr!("automation-rules-start-from")).size(11.5).color(p.text_tertiary));
             if small_button(ui, Some(ph::FILE_PDF), tr!("automation-rules-preset-pdf"), false).clicked() {
                 let home = soyuz_fs::home();
-                app.settings.draft.automation.rules.push(AutomationRule {
+                app.gui.settings.draft.automation.rules.push(AutomationRule {
                     name: tr!("automation-rules-preset-pdf-name").into(),
                     watch: home.join("Downloads"),
                     glob: "*.pdf".into(),
@@ -101,7 +101,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 });
             }
             if small_button(ui, Some(ph::BROOM), tr!("automation-rules-preset-installers"), false).clicked() {
-                app.settings.draft.automation.rules.push(AutomationRule {
+                app.gui.settings.draft.automation.rules.push(AutomationRule {
                     name: tr!("automation-rules-preset-installers-name").into(),
                     watch: soyuz_fs::home().join("Downloads"),
                     glob: "*.msi;*.exe".into(),
@@ -115,27 +115,28 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
         ui.label(RichText::new(tr!("automation-rules-intro")).size(11.5).color(p.text_tertiary));
     }
-    let n = app.settings.draft.automation.rules.len();
+    let n = app.gui.settings.draft.automation.rules.len();
     let mut remove = None;
     let mut moves = None;
     for i in 0..n {
-        let r = &app.settings.draft.automation.rules[i];
+        let r = &app.gui.settings.draft.automation.rules[i];
         if searching && !matches(q, &[&r.name, &r.glob, &r.watch.to_string_lossy(), "rule automation"]) {
             continue;
         }
         any = true;
         ui.add_space(10.0);
         let rule_now = r.clone();
-        let preview = crate::automation::rule_preview(app, i, &rule_now);
-        let status = app.automation.status.get(&rule_now.name).cloned();
+        let preview = crate::automation::rule_preview(&mut app.core, i, &rule_now);
+        let status = app.core.automation.status.get(&rule_now.name).cloned();
         let log: Vec<soyuz_script::rules::worker::LogEntry> = app
+            .core
             .automation
             .logs
             .get(&rule_now.name)
             .map(|l| l.iter().rev().take(8).cloned().collect())
             .unwrap_or_default();
         let mut cmds: Vec<Cmd> = Vec::new();
-        let r = &mut app.settings.draft.automation.rules[i];
+        let r = &mut app.gui.settings.draft.automation.rules[i];
         card(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(icons::icon(ph::ROBOT, 16.0).color(p.accent));
@@ -264,15 +265,15 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 }
             }
         });
-        app.cmds.extend(cmds);
+        app.core.cmds.extend(cmds);
     }
     if let Some(i) = remove {
-        app.settings.draft.automation.rules.remove(i);
-        app.automation.previews.clear();
+        app.gui.settings.draft.automation.rules.remove(i);
+        app.core.automation.previews.clear();
     }
     if let Some((a, b)) = moves {
-        app.settings.draft.automation.rules.swap(a, b);
-        app.automation.previews.clear();
+        app.gui.settings.draft.automation.rules.swap(a, b);
+        app.core.automation.previews.clear();
     }
     any
 }

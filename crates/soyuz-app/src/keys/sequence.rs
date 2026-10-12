@@ -12,7 +12,7 @@ use soyuz_core::Location;
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, KeyPreset, Keymap, Mods, SeqMatch};
 
 use super::input::{InputEvent, InputFrame};
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
@@ -169,7 +169,7 @@ fn mark_char(chord: KeyChord) -> Option<char> {
 }
 
 /// Whether marks are active for this config.
-pub fn marks_enabled(app: &SoyuzApp) -> bool {
+pub fn marks_enabled(app: &AppCore) -> bool {
     app.config.keys.marks || app.config.keys.preset == KeyPreset::Vim
 }
 
@@ -239,7 +239,7 @@ pub fn feed_frame(
 }
 
 /// One frame of keyboard dispatch for the main window: actions, sequences and marks.
-pub fn dispatch_all(app: &mut SoyuzApp, host: &dyn Host, frame: &mut InputFrame, kctx: KeyContext, text_focused: bool) {
+pub fn dispatch_all(app: &mut AppCore, host: &dyn Host, frame: &mut InputFrame, kctx: KeyContext, text_focused: bool) {
     let now = Instant::now();
     let mut out: Vec<Feed> = Vec::new();
     if let Some(a) = app.keyseq.tick(now) {
@@ -259,7 +259,7 @@ pub fn dispatch_all(app: &mut SoyuzApp, host: &dyn Host, frame: &mut InputFrame,
     }
 }
 
-fn mark(app: &mut SoyuzApp, op: MarkOp, c: char) {
+fn mark(app: &mut AppCore, op: MarkOp, c: char) {
     let key = c.to_string();
     match op {
         MarkOp::Set => {

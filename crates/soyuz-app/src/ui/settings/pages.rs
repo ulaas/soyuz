@@ -18,7 +18,7 @@ use crate::theme::palette;
 const CTX_GENERAL: &str = "General";
 
 pub fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let mut any = false;
     any |= group(ui, q, CTX_GENERAL, tr!("settings-general-startup"), |r| {
         r.row_kw(
@@ -252,7 +252,7 @@ fn modes() -> [dd::Item<ViewMode>; 5] {
 }
 
 pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Views layout";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-views-folders"), |r| {
@@ -715,7 +715,7 @@ fn lines_editor(ui: &mut Ui, id: &str, items: &mut Vec<String>, rows: usize) {
 }
 
 pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Behaviour";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-behaviour-opening"), |r| {
@@ -884,7 +884,7 @@ fn drag_out_supported() -> bool {
 }
 
 pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Jobs file operations copy move archive extract";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-jobs-queue"), |r| {
@@ -1128,7 +1128,7 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 }
 
 pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Terminal shell";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-terminal-shell"), |r| {
@@ -1289,7 +1289,7 @@ fn syntax_theme_choice(ui: &mut Ui, theme: &mut String) {
 }
 
 pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Preview search git";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-preview"), |r| {
@@ -1416,7 +1416,7 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
 pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
-    let path = app.config_watch.path().to_path_buf();
+    let path = app.core.config_watch.path().to_path_buf();
     let mut edit = false;
     let mut reload = false;
     let mut export = false;
@@ -1461,14 +1461,14 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     if edit {
-        app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
+        app.core.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
         super::close(app);
     }
     if reload {
-        app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::ReloadConfig));
+        app.core.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::ReloadConfig));
     }
-    if copy && let Ok(t) = soyuz_core::config::to_pretty_string(&app.config) {
-        app.cmds.push(crate::cmd::Cmd::CopyText(t));
+    if copy && let Ok(t) = soyuz_core::config::to_pretty_string(&app.core.config) {
+        app.core.cmds.push(crate::cmd::Cmd::CopyText(t));
     }
     if export {
         super::start_export(app);
@@ -1477,8 +1477,8 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         super::start_import(app);
     }
     if reset_all {
-        app.settings.draft = soyuz_core::config::Config::default();
-        app.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("settings-advanced-reset-all-done")));
+        app.gui.settings.draft = soyuz_core::config::Config::default();
+        app.core.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("settings-advanced-reset-all-done")));
     }
     any
 }

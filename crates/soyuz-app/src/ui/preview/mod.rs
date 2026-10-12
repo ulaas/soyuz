@@ -25,59 +25,28 @@ use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_toggle, trunc_galley};
 use render::{PreviewAction, PreviewState, info_grid, info_rows};
 
-/// Preview pane state (lives in `UiState`).
+/// What the preview pane renders (lives in `GuiState`; whether it is open, its width and
+/// mode are the core's `models::preview::PreviewModel`).
+#[derive(Default)]
 pub struct PreviewPane {
-    pub open: bool,
-    pub width: f32,
-    /// Info pane mode (`ToggleInfoPane`): only the metadata section, no content viewer.
-    pub info_only: bool,
     state: Option<PreviewState>,
     /// Two-file diff when exactly two text files are selected.
     diff: diff::DiffView,
-}
-
-impl Default for PreviewPane {
-    fn default() -> Self {
-        PreviewPane { open: false, width: 340.0, info_only: false, state: None, diff: Default::default() }
-    }
+    /// The pane is closed and what it showed was let go.
+    cleared: bool,
 }
 
 impl PreviewPane {
-    pub fn new(open: bool) -> Self {
-        PreviewPane { open, ..Default::default() }
-    }
-
-    /// `TogglePreviewPane`: from the info pane it switches to the full preview.
-    pub fn toggle(&mut self) {
-        if self.open && self.info_only {
-            self.info_only = false;
-            return;
+    /// Let go of the loaded content (the pane closed).
+    fn clear(&mut self) {
+        if let Some(s) = &mut self.state {
+            s.clear();
         }
-        self.set_open(!self.open);
+        self.diff.clear();
     }
 
-    /// `ToggleInfoPane`: the same pane showing metadata only.
-    pub fn toggle_info(&mut self) {
-        if self.open && !self.info_only {
-            self.info_only = true;
-            return;
-        }
-        self.info_only = true;
-        self.set_open(!self.open);
-    }
-
-    fn set_open(&mut self, open: bool) {
-        self.open = open;
-        if !open {
-            self.info_only = false;
-            if let Some(s) = &mut self.state {
-                s.clear();
-            }
-            self.diff.clear();
-        }
-    }
-
-    pub fn toggle_hex(&mut self) {
+    /// Flip the hex view of the current entry.
+    fn toggle_hex(&mut self) {
         if let Some(s) = &mut self.state {
             s.force_hex = !s.force_hex;
             s.invalidate();
@@ -88,12 +57,12 @@ impl PreviewPane {
 /// What the preview should show for the focused pane: the cursor entry, else the first
 /// selected entry, else the folder itself.
 pub fn target_entry(app: &SoyuzApp) -> Option<EntryInfo> {
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     if matches!(pane.location, Location::Remote(_)) {
         // Remote files preview from a downloaded copy; folders show nothing.
         let e =
             pane.cursor.as_deref().and_then(|c| pane.entry(c)).or_else(|| pane.selected_entries().first().copied())?;
-        return crate::ui::remote::preview_target(app, e);
+        return crate::ui::remote::preview_target(&app.core, e);
     }
     if let Some(e) = pane.cursor.as_deref().and_then(|c| pane.entry(c)) {
         return Some(e.clone());
@@ -112,27 +81,35 @@ pub fn target_entry(app: &SoyuzApp) -> Option<EntryInfo> {
 }
 
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
-    if !app.ui.preview.open {
+    if std::mem::take(&mut app.core.ui.preview.hex_toggle) {
+        app.gui.preview.toggle_hex();
+    }
+    if !app.core.ui.preview.open {
+        if !app.gui.preview.cleared {
+            app.gui.preview.clear();
+            app.gui.preview.cleared = true;
+        }
         return;
     }
+    app.gui.preview.cleared = false;
     let ctx = root.ctx().clone();
     let p = palette(&ctx);
     let target = target_entry(app);
     let pair = diff::pair(app);
     if pair.is_none() {
-        app.ui.preview.diff.clear();
+        app.gui.preview.diff.clear();
     }
-    let pane_id = app.ws.pane().id;
-    let info_only = app.ui.preview.info_only;
-    let st = app.ui.preview.state.get_or_insert_with(|| PreviewState::new(&ctx, false));
-    let limits = st.limits(&app.config, &p);
+    let pane_id = app.core.ws.pane().id;
+    let info_only = app.core.ui.preview.info_only;
+    let st = app.gui.preview.state.get_or_insert_with(|| PreviewState::new(&ctx, false));
+    let limits = st.limits(&app.core.config, &p);
     st.set_target(target.as_ref(), limits);
     st.poll(&ctx);
     let mut action = None;
     let mut close = false;
     let resp = Panel::right("soyuz.preview")
         .resizable(true)
-        .default_size(app.ui.preview.width)
+        .default_size(app.core.ui.preview.width)
         .size_range(240.0..=760.0)
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
@@ -146,7 +123,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 egui::StrokeKind::Inside,
             );
             ui.allocate_rect(card, Sense::hover());
-            let Some(st) = app.ui.preview.state.as_mut() else { return };
+            let Some(st) = app.gui.preview.state.as_mut() else { return };
 
             // Header: glyph, name, kind; hex toggle and close.
             let header = Rect::from_min_size(card.min, vec2(card.width(), 48.0));
@@ -208,7 +185,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             // section; text-like kinds get most of the height.
             let body = Rect::from_min_max(pos2(card.left() + 1.0, header.bottom() + 1.0), card.max - vec2(1.0, 1.0));
             let rows = match &st.entry {
-                Some(e) => info_rows(e, st.loaded.as_ref(), st.folder_size(), &app.config),
+                Some(e) => info_rows(e, st.loaded.as_ref(), st.folder_size(), &app.core.config),
                 None => Vec::new(),
             };
             let textual = matches!(
@@ -231,7 +208,14 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
                 child.set_clip_rect(content_r);
                 if let Some((a, b)) = &pair {
-                    diff::show(&mut child, content_r, &mut app.ui.preview.diff, a, b, app.config.preview.max_diff_kib);
+                    diff::show(
+                        &mut child,
+                        content_r,
+                        &mut app.gui.preview.diff,
+                        a,
+                        b,
+                        app.core.config.preview.max_diff_kib,
+                    );
                 } else if let Some(a) = render::content(&mut child, content_r, st, false) {
                     action = Some(a);
                 }
@@ -250,15 +234,19 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 });
             }
         });
-    app.ui.preview.width = resp.response.rect.width();
+    app.core.ui.preview.width = resp.response.rect.width();
     crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.preview", crate::tr!("app-a11y-resize-preview"));
     if close {
-        app.ui.preview.toggle();
+        app.core.ui.preview.toggle();
+        if !app.core.ui.preview.open {
+            app.gui.preview.clear();
+            app.gui.preview.cleared = true;
+        }
     }
     match action {
-        Some(PreviewAction::ToggleHex) => app.ui.preview.toggle_hex(),
+        Some(PreviewAction::ToggleHex) => app.gui.preview.toggle_hex(),
         Some(PreviewAction::Open(path)) => {
-            app.cmds.push(Cmd::Navigate {
+            app.core.cmds.push(Cmd::Navigate {
                 pane: pane_id,
                 location: Location::Archive { archive: path, inner: String::new() },
                 select: None,

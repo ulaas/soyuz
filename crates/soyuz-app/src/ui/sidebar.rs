@@ -528,13 +528,13 @@ fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs
 
 /// `FrontendCmd::UnlockDevice`: ask for the passphrase / recovery key of a locked container.
 pub fn unlock_dialog(app: &mut crate::app::SoyuzApp, object: String, name: String, kind: String, pane: PaneId) {
-    app.ui.dialogs.push(crate::ui::dialogs::unlock_volume::UnlockVolumeDialog::new(object, name, kind, pane))
+    app.gui.dialogs.push(crate::ui::dialogs::unlock_volume::UnlockVolumeDialog::new(object, name, kind, pane))
 }
 
 /// `FrontendCmd::OfferReadOnlyMount`: explain the hibernated NTFS volume and offer a
 /// read-only mount.
 pub fn offer_read_only(app: &mut crate::app::SoyuzApp, dev: Box<soyuz_fs::udisks::BlockDevice>, name: String) {
-    app.ui.dialogs.push(crate::ui::dialogs::ConfirmDialog::new(
+    app.gui.dialogs.push(crate::ui::dialogs::ConfirmDialog::new(
         &tr!("app-device-hibernated-title", name = name.clone()),
         tr!("app-device-hibernated-body"),
         tr!("app-device-mount-ro"),

@@ -357,7 +357,7 @@ impl SplitWindow {
                     count = o.parts.len(),
                     checksum = soyuz_core::entry::display_name(&o.checksum)
                 );
-                app.ui.toasts.push(Toast::success(tr!("tools-split-done")).body(msg.clone()));
+                app.core.ui.toasts.push(Toast::success(tr!("tools-split-done")).body(msg.clone()));
                 Ok(msg)
             }
             Ok(Outcome::Join(o)) => {
@@ -369,7 +369,7 @@ impl SplitWindow {
                     }
                     None => (Toast::success(tr!("tools-join-done")), tr!("tools-join-unverified", name = &name)),
                 };
-                app.ui.toasts.push(toast.body(msg.clone()));
+                app.core.ui.toasts.push(toast.body(msg.clone()));
                 if o.verified == Some(false) { Err(msg) } else { Ok(msg) }
             }
             Err(e) => Err(e),

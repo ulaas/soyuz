@@ -28,13 +28,13 @@ use crate::ui::widgets::{menu_item, menu_separator, submenu};
 pub fn prompt(app: &mut SoyuzApp, p: ArchivePrompt) {
     match p {
         ArchivePrompt::Password { pane, archive, wrong } => {
-            app.ui.dialogs.push(PasswordDialog { pane, archive, wrong, text: String::new(), focus: true })
+            app.gui.dialogs.push(PasswordDialog { pane, archive, wrong, text: String::new(), focus: true })
         }
-        ArchivePrompt::Extract(form) => app.ui.dialogs.push(ExtractDialog { form }),
-        ArchivePrompt::Create(form) => app.ui.dialogs.push(CreateDialog { form, focus: true }),
+        ArchivePrompt::Extract(form) => app.gui.dialogs.push(ExtractDialog { form }),
+        ArchivePrompt::Create(form) => app.gui.dialogs.push(CreateDialog { form, focus: true }),
         ArchivePrompt::Rename { archive, from, is_dir } => {
             let text = from.rsplit('/').next().unwrap_or_default().to_string();
-            app.ui.dialogs.push(RenameEntryDialog { archive, from, is_dir, text, focus: true })
+            app.gui.dialogs.push(RenameEntryDialog { archive, from, is_dir, text, focus: true })
         }
     }
 }

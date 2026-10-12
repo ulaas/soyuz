@@ -74,11 +74,11 @@ impl Shelf {
         }
         let ctx = root.ctx().clone();
         let p = palette(&ctx);
-        let dest = match &app.ws.pane().location {
+        let dest = match &app.core.ws.pane().location {
             Location::Dir(d) => Some(d.clone()),
             _ => None,
         };
-        let drag_default = app.config.behaviour.drag_default;
+        let drag_default = app.core.config.behaviour.drag_default;
         let resp = Panel::right("soyuz.shelf")
             .resizable(true)
             .default_size(self.width)
@@ -322,7 +322,7 @@ impl Shelf {
             self.selected.clear();
         }
         if let Some(path) = reveal {
-            app.cmds.push(Cmd::RevealPath(path));
+            app.core.cmds.push(Cmd::RevealPath(path));
         }
         // Footer: copy / move into the focused pane's folder.
         let fr = Rect::from_min_max(
@@ -354,13 +354,17 @@ impl Shelf {
                 && let Some(to) = &dest
             {
                 let paths = d.targets(&self.selected);
-                app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer { paths, dest: to.clone(), effect: DropEffect::Copy }));
+                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Transfer {
+                    paths,
+                    dest: to.clone(),
+                    effect: DropEffect::Copy,
+                }));
             }
             if button(ui, Some(ph::ARROW_BEND_DOWN_RIGHT), tr!("tools-shelf-move-here"), 0, ok).clicked()
                 && let Some(to) = &dest
             {
                 let paths = d.targets(&self.selected);
-                app.cmds.push(Cmd::FileOp(FileOpCmd::Transfer {
+                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Transfer {
                     paths: paths.clone(),
                     dest: to.clone(),
                     effect: DropEffect::Move,

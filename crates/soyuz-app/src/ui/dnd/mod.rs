@@ -364,7 +364,7 @@ pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 /// "Move here / Copy here / Link here" at the drop point (`drag_default = "ask"`).
 fn ask_menu(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let Some(menu) = app.fileops.dnd.ask.clone() else { return };
+    let Some(menu) = app.core.fileops.dnd.ask.clone() else { return };
     let mut close = false;
     let mut chosen = None;
     let resp = egui::Area::new(Id::new("soyuz.dnd.ask"))
@@ -395,10 +395,10 @@ fn ask_menu(app: &mut SoyuzApp, ctx: &egui::Context) {
         close = true;
     }
     if let Some(effect) = chosen {
-        app.fileops.dnd.ask = None;
-        fileops::transfer(app, menu.paths, menu.dest, effect);
+        app.core.fileops.dnd.ask = None;
+        fileops::transfer(&mut app.core, menu.paths, menu.dest, effect);
     } else if close {
-        app.fileops.dnd.ask = None;
+        app.core.fileops.dnd.ask = None;
     }
 }
 
@@ -416,5 +416,5 @@ pub fn external_drops(app: &mut SoyuzApp, ctx: &egui::Context) {
             i.pointer.latest_pos(),
         )
     });
-    fileops::drop_external(app, dropped, pointer.map(geom::point));
+    fileops::drop_external(&mut app.core, dropped, pointer.map(geom::point));
 }

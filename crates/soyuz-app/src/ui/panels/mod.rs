@@ -27,8 +27,8 @@ fn tab_glyph(tab: BottomTab) -> &'static str {
 /// The activity panel for the right / floating placements (the bottom placement is a
 /// tab of the bottom panel).
 pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
-    let placement = app.ui.bottom.activity_placement;
-    if placement == ActivityPlacement::Bottom || !app.ui.bottom.activity_open {
+    let placement = app.core.ui.bottom.activity_placement;
+    if placement == ActivityPlacement::Bottom || !app.core.ui.bottom.activity_open {
         return;
     }
     let p = palette(root.ctx());
@@ -54,7 +54,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 activity::show(ui, body, app);
             });
         if !open {
-            app.ui.bottom.activity_open = false;
+            app.core.ui.bottom.activity_open = false;
         }
         return;
     }
@@ -102,22 +102,22 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
         });
     crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.activity", tr!("app-a11y-resize-activity"));
     if close {
-        app.ui.bottom.activity_open = false;
+        app.core.ui.bottom.activity_open = false;
     }
 }
 
 /// Draw the panel (when open) above the status bar.
 pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
-    if !app.ui.bottom.open {
+    if !app.core.ui.bottom.open {
         return;
     }
-    if !app.ui.bottom.tabs().contains(&app.ui.bottom.tab) {
-        app.ui.bottom.tab = BottomTab::Terminal;
+    if !app.core.ui.bottom.tabs().contains(&app.core.ui.bottom.tab) {
+        app.core.ui.bottom.tab = BottomTab::Terminal;
     }
     let p = palette(root.ctx());
-    let mut panel = Panel::bottom("soyuz.bottom").resizable(true).default_size(app.ui.bottom.height);
-    if std::mem::take(&mut app.ui.bottom.reset_height) {
-        panel = panel.exact_size(app.ui.bottom.height);
+    let mut panel = Panel::bottom("soyuz.bottom").resizable(true).default_size(app.core.ui.bottom.height);
+    if std::mem::take(&mut app.core.ui.bottom.reset_height) {
+        panel = panel.exact_size(app.core.ui.bottom.height);
     }
     let resp = panel
         .size_range(120.0..=720.0)
@@ -133,7 +133,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             );
             // Tab header.
             let mut x = card.left() + 8.0;
-            for &tab in app.ui.bottom.tabs() {
+            for &tab in app.core.ui.bottom.tabs() {
                 let label_w = ui
                     .painter()
                     .layout_no_wrap(tab.label().to_string(), FontId::proportional(12.5), p.text_primary)
@@ -142,7 +142,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 let tab_w = (label_w + 44.0).max(108.0);
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(tab_w, 26.0));
                 let resp = ui.interact(r, ui.id().with(("bottom.tab", tab as u8)), Sense::click());
-                let active = app.ui.bottom.tab == tab;
+                let active = app.core.ui.bottom.tab == tab;
                 crate::ui::a11y::tab(&resp, tab.label(), active);
                 if active {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
@@ -165,7 +165,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                     c,
                 );
                 if resp.clicked() {
-                    app.ui.bottom.tab = tab;
+                    app.core.ui.bottom.tab = tab;
                 }
                 x += tab_w + 4.0;
             }
@@ -177,14 +177,14 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             }
             ui.painter().text(close.center(), Align2::CENTER_CENTER, ph::X, icons::font(13.0), p.text_tertiary);
             if cresp.clicked() {
-                app.ui.bottom.open = false;
+                app.core.ui.bottom.open = false;
             }
             let body = egui::Rect::from_min_max(pos2(card.left(), card.top() + 38.0), card.max);
             ui.allocate_rect(card, Sense::hover());
-            match app.ui.bottom.tab {
+            match app.core.ui.bottom.tab {
                 BottomTab::Terminal => terminal::body(ui, body, app),
                 BottomTab::Activity => activity::show(ui, body, app),
             }
         });
-    app.ui.bottom.height = resp.response.rect.height();
+    app.core.ui.bottom.height = resp.response.rect.height();
 }

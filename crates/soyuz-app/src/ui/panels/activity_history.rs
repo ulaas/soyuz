@@ -45,7 +45,7 @@ fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
 }
 
 pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let entries: Vec<HistoryEntry> = app.fileops.jobs.history().iter().rev().cloned().collect();
+    let entries: Vec<HistoryEntry> = app.core.fileops.jobs.history().iter().rev().cloned().collect();
     if entries.is_empty() {
         let r = ui.available_rect_before_wrap();
         let c = r.center() - vec2(0.0, 12.0);
@@ -178,6 +178,6 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         },
     );
     if let Some((h, a)) = todo {
-        history_action(app, h, a);
+        history_action(&mut app.core, h, a);
     }
 }

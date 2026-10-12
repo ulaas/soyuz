@@ -20,8 +20,8 @@ use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, 
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Smart`]).
 pub fn prompt(app: &mut SoyuzApp, p: SmartPrompt) {
     match p {
-        SmartPrompt::Edit { index, folder } => app.ui.dialogs.push(SmartDialog::new(index, folder)),
-        SmartPrompt::ConfirmDelete { index, name } => app.ui.dialogs.push(ConfirmDelete { index, name }),
+        SmartPrompt::Edit { index, folder } => app.gui.dialogs.push(SmartDialog::new(index, folder)),
+        SmartPrompt::ConfirmDelete { index, name } => app.gui.dialogs.push(ConfirmDelete { index, name }),
     }
 }
 

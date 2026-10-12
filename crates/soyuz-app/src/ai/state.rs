@@ -31,8 +31,8 @@ use super::safety::Permissions;
 use super::smart_search::{self, Pill};
 use super::touch::{self, TouchKind};
 use super::{CancelFlag, TaskId, Wake};
-use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
@@ -561,14 +561,14 @@ pub fn expand_slash(text: &str, has_selection: bool) -> Option<(String, Route)> 
 }
 
 /// An MCP request arrived (`approval_ui = "panel"`): show the approvals area.
-pub fn show_mcp_requests(app: &mut SoyuzApp) {
+pub fn show_mcp_requests(app: &mut AppCore) {
     app.ai.panel.open = true;
     app.ai.panel.tab = PanelTab::Chat;
     app.ai.panel.mcp_flash = Some(Instant::now());
 }
 
 /// "Undo everything this MCP client did in this session" (newest job first).
-pub fn undo_mcp_client(app: &mut SoyuzApp, client: String) {
+pub fn undo_mcp_client(app: &mut AppCore, client: String) {
     if app.ai.mcp_undo_running(&client) {
         return;
     }
@@ -594,14 +594,14 @@ pub fn undo_mcp_client(app: &mut SoyuzApp, client: String) {
     }
 }
 
-fn open_panel(app: &mut SoyuzApp) {
+fn open_panel(app: &mut AppCore) {
     app.ai.panel.open = true;
     app.ai.panel.tab = PanelTab::Chat;
     app.ai.panel.focus_composer = true;
     app.ai.refresh_month();
 }
 
-pub fn execute_action(app: &mut SoyuzApp, action: Action, host: &dyn Host) {
+pub fn execute_action(app: &mut AppCore, action: Action, host: &dyn Host) {
     let has_sel = !app.ws.pane().selection.is_empty();
     let prompt = |p: &str| p.to_string();
     match action {
@@ -684,7 +684,7 @@ impl OrDefaultRoute for Option<(String, Route)> {
     }
 }
 
-pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, host: &dyn Host) {
+pub fn apply_cmd(app: &mut AppCore, cmd: AiCmd, host: &dyn Host) {
     match cmd {
         AiCmd::SetFolderAccess { path, access } => set_folder_access(app, host, path, access),
         AiCmd::Prompt { text, send } => {
@@ -699,7 +699,7 @@ pub fn apply_cmd(app: &mut SoyuzApp, cmd: AiCmd, host: &dyn Host) {
 }
 
 /// Add / change / remove the `[[ai.folders]]` rule of `path` (applies live, saved soon).
-pub fn set_folder_access(app: &mut SoyuzApp, host: &dyn Host, path: PathBuf, access: Option<AiAccess>) {
+pub fn set_folder_access(app: &mut AppCore, host: &dyn Host, path: PathBuf, access: Option<AiAccess>) {
     crate::models::settings::update_config(app, host, |c| {
         let same = |r: &AiFolderRule| super::safety::expand(&r.path) == path;
         c.ai.folders.retain(|r| !same(r));
@@ -723,7 +723,7 @@ fn summary(e: &soyuz_core::EntryInfo) -> EntrySummary {
 }
 
 /// The task context from in-memory pane state (no disk access).
-pub fn gather_context(app: &SoyuzApp) -> ContextInput {
+pub fn gather_context(app: &AppCore) -> ContextInput {
     let pane = app.ws.pane();
     let location = match &pane.location {
         Location::Dir(p) => Some(p.clone()),
@@ -741,7 +741,7 @@ pub fn gather_context(app: &SoyuzApp) -> ContextInput {
 }
 
 /// Submit what the user typed (slash commands expanded).
-pub fn submit_composer_text(app: &mut SoyuzApp, host: &dyn Host, text: String) {
+pub fn submit_composer_text(app: &mut AppCore, host: &dyn Host, text: String) {
     let text = text.trim().to_string();
     if text.is_empty() {
         return;
@@ -762,7 +762,7 @@ pub fn submit_composer_text(app: &mut SoyuzApp, host: &dyn Host, text: String) {
 /// document files, a downscaled picture for images when the model accepts images —
 /// else names and metadata only. The model answers with one `batch_rename`, shown in
 /// the rename diff table for approval.
-pub fn suggest_names(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn suggest_names(app: &mut AppCore, host: &dyn Host) {
     let cfg = &app.config.ai.agent;
     let max = cfg.name_max_files.clamp(1, 500) as usize;
     let pane = app.ws.pane();
@@ -802,7 +802,7 @@ pub fn suggest_names(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Start a chat task (also from inline actions).
-pub fn start_chat(app: &mut SoyuzApp, host: &dyn Host, prompt: String, route: Route, mentions: Vec<PathBuf>) {
+pub fn start_chat(app: &mut AppCore, host: &dyn Host, prompt: String, route: Route, mentions: Vec<PathBuf>) {
     let short: String = prompt.chars().take(140).collect();
     let shown = if prompt.chars().count() > 140 { format!("{short}\u{2026}") } else { short };
     start_chat_shown(app, host, shown, prompt, route, mentions);
@@ -811,7 +811,7 @@ pub fn start_chat(app: &mut SoyuzApp, host: &dyn Host, prompt: String, route: Ro
 /// [`start_chat`] with its own chat bubble text (`shown`, in the UI language) for a
 /// prompt written for the model.
 pub fn start_chat_shown(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     host: &dyn Host,
     shown: String,
     prompt: String,
@@ -826,7 +826,7 @@ pub fn start_chat_shown(
     start_chat_inner(app, host, prompt, route, mentions, Default::default(), false);
 }
 
-fn profile_for(app: &SoyuzApp, route: Route) -> Option<(soyuz_core::config::AiProfile, String)> {
+fn profile_for(app: &AppCore, route: Route) -> Option<(soyuz_core::config::AiProfile, String)> {
     let ai = &app.config.ai;
     if let Some(name) = &app.ai.panel.profile_override
         && let Some(p) = ai.profile(name)
@@ -838,7 +838,7 @@ fn profile_for(app: &SoyuzApp, route: Route) -> Option<(soyuz_core::config::AiPr
 
 /// Start (or ask to confirm the cost of) a chat task.
 pub fn start_chat_inner(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     _host: &dyn Host,
     prompt: String,
     route: Route,
@@ -912,7 +912,7 @@ pub fn start_chat_inner(
 }
 
 fn launch(
-    app: &mut SoyuzApp,
+    app: &mut AppCore,
     spec: TaskSpec,
     factory: Option<agent::ModelFactory>,
     perms: Arc<Permissions>,
@@ -957,7 +957,7 @@ fn launch(
 }
 
 /// Start a recipe in the current folder (same preview / approval, no model).
-pub fn run_recipe(app: &mut SoyuzApp, r: &Recipe) {
+pub fn run_recipe(app: &mut AppCore, r: &Recipe) {
     if app.ai.running.is_some() {
         app.ai.chat.push(ChatItem::Notice { text: tr!("ai-notice-busy").into(), warn: true });
         return;
@@ -990,7 +990,7 @@ pub fn run_recipe(app: &mut SoyuzApp, r: &Recipe) {
 }
 
 /// Confirmed the cost estimate: start the stashed task.
-pub fn confirm_pending(app: &mut SoyuzApp, host: &dyn Host, go: bool) {
+pub fn confirm_pending(app: &mut AppCore, host: &dyn Host, go: bool) {
     app.ai.chat.retain(|c| !matches!(c, ChatItem::Confirm { .. }));
     if let Some(p) = app.ai.pending.take() {
         if go {
@@ -1004,7 +1004,7 @@ pub fn confirm_pending(app: &mut SoyuzApp, host: &dyn Host, go: bool) {
 // ---------------------------------------------------------------------------------------
 // Per-frame pump
 
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     if let Some(rx) = &app.ai.month_rx
         && let Ok(l) = rx.try_recv()
     {
@@ -1109,21 +1109,13 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
             }
         }
     }
-    // Esc stops a running task while the panel is open.
-    if app.ai.running.is_some()
-        && app.ai.panel.open
-        && !app.dialog_open()
-        && crate::host::egui_ctx(host).input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
-    {
-        app.ai.stop();
-    }
     if touch::prune() {
         host.redraw_after(Duration::from_millis(if app.ui.reduced_motion { 500 } else { 50 }));
     }
 }
 
 /// Refresh what the host can read about the app (throttled).
-fn refresh_snapshot(app: &mut SoyuzApp, force: bool) {
+fn refresh_snapshot(app: &mut AppCore, force: bool) {
     if !force && app.ai.last_snapshot.is_some_and(|t| t.elapsed() < Duration::from_millis(300)) {
         return;
     }
@@ -1202,7 +1194,7 @@ fn ok() -> Result<Value, ToolError> {
     Ok(json!({"ok": true}))
 }
 
-fn handle_request(app: &mut SoyuzApp, host: &dyn Host, req: UiRequest) {
+fn handle_request(app: &mut AppCore, host: &dyn Host, req: UiRequest) {
     match req {
         UiRequest::Tool { input, reply } => {
             let r = ui_tool(app, input);
@@ -1221,7 +1213,7 @@ fn handle_request(app: &mut SoyuzApp, host: &dyn Host, req: UiRequest) {
     }
 }
 
-fn ui_tool(app: &mut SoyuzApp, input: ToolInput) -> Result<Value, ToolError> {
+fn ui_tool(app: &mut AppCore, input: ToolInput) -> Result<Value, ToolError> {
     let pane = app.ws.pane().id;
     match input {
         ToolInput::Navigate(a) => {
@@ -1296,7 +1288,7 @@ fn ui_tool(app: &mut SoyuzApp, input: ToolInput) -> Result<Value, ToolError> {
 }
 
 /// Submit an approved plan through `JobsService` (UI thread).
-fn submit(app: &mut SoyuzApp, host: &dyn Host, task: TaskId, plan: &Plan) -> Result<Submitted, String> {
+fn submit(app: &mut AppCore, host: &dyn Host, task: TaskId, plan: &Plan) -> Result<Submitted, String> {
     if !plan.executable {
         return Err("the plan has blocking conflicts".into());
     }
@@ -1329,7 +1321,7 @@ fn submit(app: &mut SoyuzApp, host: &dyn Host, task: TaskId, plan: &Plan) -> Res
 }
 
 /// `(note for the model, note for the chat)`.
-fn app_action(app: &mut SoyuzApp, host: &dyn Host, op: &str, args: &Value) -> Result<(String, String), String> {
+fn app_action(app: &mut AppCore, host: &dyn Host, op: &str, args: &Value) -> Result<(String, String), String> {
     match op {
         "tag" => {
             let a: soyuz_ai::tools::TagArgs = serde_json::from_value(args.clone()).map_err(|e| e.to_string())?;
@@ -1374,7 +1366,7 @@ fn last_assistant(chat: &mut [ChatItem], task: TaskId) -> Option<(&mut String, &
     }
 }
 
-fn on_event(app: &mut SoyuzApp, ev: AgentEvent) {
+fn on_event(app: &mut AppCore, ev: AgentEvent) {
     let Some(task) = app.ai.running.as_ref().map(|r| r.task) else { return };
     let ai = &mut app.ai;
     match ev {
@@ -1550,7 +1542,7 @@ fn on_event(app: &mut SoyuzApp, ev: AgentEvent) {
 }
 
 /// "Undo everything the assistant did" for `task` (newest job first, one at a time).
-pub fn undo_task(app: &mut SoyuzApp, task: TaskId) {
+pub fn undo_task(app: &mut AppCore, task: TaskId) {
     let engine = app.fileops.jobs.engine_arc();
     let link = app.ai.link();
     let (tx, rx) = crossbeam_channel::bounded(1);
@@ -1579,7 +1571,7 @@ pub fn undo_task(app: &mut SoyuzApp, task: TaskId) {
 }
 
 /// Save a finished task's executed steps as a recipe (background write).
-pub fn save_recipe(app: &mut SoyuzApp, task: TaskId, name: String) {
+pub fn save_recipe(app: &mut AppCore, task: TaskId, name: String) {
     let Some(t) = app.ai.chat.iter().find_map(|c| match c {
         ChatItem::TaskEnd(t) if t.task == task => Some(t.clone()),
         _ => None,
@@ -1610,7 +1602,7 @@ pub fn save_recipe(app: &mut SoyuzApp, task: TaskId, name: String) {
 }
 
 /// Delete a recipe file (background).
-pub fn delete_recipe(app: &mut SoyuzApp, path: PathBuf) {
+pub fn delete_recipe(app: &mut AppCore, path: PathBuf) {
     let wake = app.ai.wake();
     let file = path.clone();
     let _ = std::thread::Builder::new().name("soyuz-ai-recipe-del".into()).spawn(move || {
@@ -1621,7 +1613,7 @@ pub fn delete_recipe(app: &mut SoyuzApp, path: PathBuf) {
 }
 
 /// Run the smart-search pills as a normal search in the focused pane.
-pub fn run_smart_search(app: &mut SoyuzApp) {
+pub fn run_smart_search(app: &mut AppCore) {
     let root = match &app.ws.pane().location {
         Location::Dir(p) => p.clone(),
         _ => soyuz_fs::home(),
@@ -1638,14 +1630,14 @@ pub fn run_smart_search(app: &mut SoyuzApp) {
 }
 
 /// Folder access as shown in the panel chip and properties.
-pub fn access_for(app: &SoyuzApp, path: &std::path::Path) -> (AiAccess, bool) {
+pub fn access_for(app: &AppCore, path: &std::path::Path) -> (AiAccess, bool) {
     let perms = Permissions::from_config(&app.config.ai);
     let explicit = app.config.ai.folders.iter().any(|r| super::safety::expand(&r.path) == path);
     (perms.access(path), explicit)
 }
 
 /// Map from task to how many of its jobs are known (activity badge tooltip).
-pub fn ai_jobs(app: &SoyuzApp) -> HashMap<u64, usize> {
+pub fn ai_jobs(app: &AppCore) -> HashMap<u64, usize> {
     let mut m = HashMap::new();
     for s in app.fileops.jobs.snapshots() {
         if let Some(t) = app.fileops.jobs.meta(s.id).and_then(|m| m.ai_task) {
@@ -1673,7 +1665,7 @@ pub fn cached_access(path: &std::path::Path) -> (AiAccess, bool) {
 }
 
 /// `SOYUZ_SCRIPT` hook: `ai:<prompt>`, `ai:!approve`, `ai:!smart <text>`.
-pub fn script(app: &mut SoyuzApp, host: &dyn Host, arg: &str) {
+pub fn script(app: &mut AppCore, host: &dyn Host, arg: &str) {
     let arg = arg.trim();
     if arg == "!approve" {
         if let Some(task) = app.ai.running.as_ref().map(|r| r.task) {

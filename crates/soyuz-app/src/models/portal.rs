@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use soyuz_core::config::PortalPin;
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::geom::Rect;
 use crate::host::Host;
 use crate::models::toasts::Toast;
@@ -117,7 +117,7 @@ fn check_dirs(paths: Vec<PathBuf>) -> Checked {
 }
 
 /// Pin dropped `paths` once a worker checked them (OS drops, `PortalCmd::Pin`).
-pub fn pin_dropped(app: &mut SoyuzApp, host: &dyn Host, paths: Vec<PathBuf>) {
+pub fn pin_dropped(app: &mut AppCore, host: &dyn Host, paths: Vec<PathBuf>) {
     let (tx, rx) = channel();
     let wake = host.wake();
     let spawned = std::thread::Builder::new().name("soyuz-portal-pin".into()).spawn(move || {
@@ -129,7 +129,7 @@ pub fn pin_dropped(app: &mut SoyuzApp, host: &dyn Host, paths: Vec<PathBuf>) {
     }
 }
 
-pub fn apply(app: &mut SoyuzApp, host: &dyn Host, cmd: PortalCmd) {
+pub fn apply(app: &mut AppCore, host: &dyn Host, cmd: PortalCmd) {
     let pins = &app.config.sidebar.portal;
     match cmd {
         PortalCmd::Pin(paths) => pin_dropped(app, host, paths),
@@ -155,7 +155,7 @@ pub fn apply(app: &mut SoyuzApp, host: &dyn Host, cmd: PortalCmd) {
 
 /// Per frame: finished pin checks and the periodic existence check (`focused`: the
 /// window has the focus; later checks only run then).
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host, focused: bool) {
+pub fn pump(app: &mut AppCore, host: &dyn Host, focused: bool) {
     let st = &mut app.ui.sidebar.portal;
     let mut done: Vec<Checked> = Vec::new();
     st.pinning.retain(|rx| match rx.try_recv() {
@@ -201,7 +201,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host, focused: bool) {
     }
 }
 
-fn finish_pin(app: &mut SoyuzApp, host: &dyn Host, c: Checked) {
+fn finish_pin(app: &mut AppCore, host: &dyn Host, c: Checked) {
     if c.dirs.is_empty() {
         if c.dropped > 0 {
             app.ui.toasts.push(Toast::info(tr!("app-portal-folders-only")));

@@ -11,7 +11,7 @@ use crossbeam_channel::{Receiver, unbounded};
 use soyuz_core::config::{self, Config, ConfigError, Loaded};
 use soyuz_fs::{WatchKind, Watcher};
 
-use crate::app::SoyuzApp;
+use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::toasts::Toast;
 use crate::state::view_memory::ViewState;
@@ -113,7 +113,7 @@ pub fn read(path: &Path) -> Reloaded {
 }
 
 /// Per frame: apply a pending external edit.
-pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn pump(app: &mut AppCore, host: &dyn Host) {
     let Some(r) = app.config_watch.poll() else { return };
     if r.text.is_some() && r.text == app.config_watch.last_text {
         return; // our own save (or no real change)
@@ -123,7 +123,7 @@ pub fn pump(app: &mut SoyuzApp, host: &dyn Host) {
 }
 
 /// Apply a parse result: live-apply a good config, or toast the error and keep the old one.
-pub fn handle(app: &mut SoyuzApp, host: &dyn Host, result: Result<Loaded, ConfigError>, explicit: bool) {
+pub fn handle(app: &mut AppCore, host: &dyn Host, result: Result<Loaded, ConfigError>, explicit: bool) {
     match result {
         Ok(loaded) => {
             let changed = loaded.config != app.config;
@@ -159,7 +159,7 @@ pub fn handle(app: &mut SoyuzApp, host: &dyn Host, result: Result<Loaded, Config
 }
 
 /// `ReloadConfig`: re-read the file now.
-pub fn reload_now(app: &mut SoyuzApp, host: &dyn Host) {
+pub fn reload_now(app: &mut AppCore, host: &dyn Host) {
     let r = read(app.config_watch.path());
     app.config_watch.last_text = r.text.clone();
     handle(app, host, r.result, true);
@@ -167,7 +167,7 @@ pub fn reload_now(app: &mut SoyuzApp, host: &dyn Host) {
 
 /// Make `new` the active configuration, applying everything that is not read live each
 /// frame: theme / fonts / scale, key map, default view, visibility toggles.
-pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
+pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
     let old = std::mem::replace(&mut app.config, new);
     let c = &app.config;
     host.config_changed(&old, c);
@@ -188,7 +188,7 @@ pub fn apply_config(app: &mut SoyuzApp, host: &dyn Host, new: Config) {
         let engine = |j: &soyuz_core::config::Jobs| {
             (j.max_parallel, j.per_device_serial, j.reset_apply_all_between_jobs, j.history_limit)
         };
-        if engine(&old.jobs) != engine(&c.jobs) && !app.settings.is_open() {
+        if engine(&old.jobs) != engine(&c.jobs) && !app.ui.settings_open {
             app.ui.toasts.push(Toast::info(tr!("services-config-queue-restart")));
         }
     }

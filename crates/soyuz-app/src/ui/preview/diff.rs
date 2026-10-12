@@ -34,10 +34,10 @@ pub struct DiffView {
 
 /// The two selected files of the focused pane, when the diff preview applies.
 pub fn pair(app: &SoyuzApp) -> Option<(EntryInfo, EntryInfo)> {
-    if !app.config.preview.diff {
+    if !app.core.config.preview.diff {
         return None;
     }
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     if pane.selection.len() != 2 {
         return None;
     }
