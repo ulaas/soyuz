@@ -416,6 +416,25 @@ settings-tui-mouse-desc = Click to select and use the wheel to scroll. Turn it o
 settings-tui-keyboard-protocol = Keyboard protocol
 settings-tui-keyboard-protocol-desc = Auto uses the kitty keyboard protocol where the terminal supports it (never on Windows), so shortcuts like Ctrl+Shift+letter arrive exactly. Kitty always asks for it; Legacy never does.
 settings-tui-legacy = Legacy
+settings-tui-appearance = Appearance
+settings-tui-color-mode = Colors
+settings-tui-color-mode-desc = Auto detects what the terminal supports (COLORTERM, TERM, NO_COLOR). Pick a fixed mode when colors look wrong, e.g. over SSH or in an old console.
+settings-tui-truecolor = True color (24-bit)
+settings-tui-ansi256 = 256 colors
+settings-tui-ansi16 = 16 colors
+settings-tui-mono = No color
+settings-tui-icons = Icons
+settings-tui-icons-desc = Nerd Font icons need a Nerd Font set in the terminal. Unicode symbols work with every font; ASCII uses plain characters only.
+settings-tui-icons-nerd = Nerd Font
+settings-tui-icons-unicode = Unicode
+settings-tui-icons-ascii = ASCII
+settings-tui-borders = Borders
+settings-tui-borders-desc = How panels are outlined. ASCII works in any terminal.
+settings-tui-borders-rounded = Rounded
+settings-tui-borders-plain = Square
+settings-tui-borders-ascii = ASCII
+settings-tui-sidebar-width = Sidebar width
+settings-tui-sidebar-width-desc = Width of the sidebar in terminal columns (12–60).
 settings-deny = Deny
 
 ## Preview & search page
@@ -1177,6 +1196,7 @@ settings-unit-chars = chars
 settings-unit-days = days
 settings-unit-lines = lines
 settings-unit-rows = rows
+settings-unit-columns = columns
 
 ## Accessible names of icon-only buttons
 settings-a11y-remove = Remove
