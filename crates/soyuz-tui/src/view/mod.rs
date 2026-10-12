@@ -99,6 +99,7 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     for (vm, p) in m.panes.iter().zip(&regions.panes) {
         pane::draw_pane(f, p.rect, vm, theme, hits);
     }
+    tabs::draw_pane_chrome(f, regions, &m.tabs, theme, hits);
     toasts::draw_toasts(f, toasts::area(regions), &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
@@ -164,7 +165,7 @@ mod tests {
 
     pub(crate) fn model() -> ViewModel {
         ViewModel {
-            tabs: TabsVm { titles: vec!["data".into()], active: 0 },
+            tabs: TabsVm::default(),
             panes: vec![pane(0, true)],
             crumbs: CrumbsVm { path: "/data".into() },
             sidebar: SidebarVm::default(),
@@ -255,12 +256,13 @@ mod tests {
         m.panes = vec![pane(0, false), pane(1, true)];
         let facts = Facts { shown: 2, focused: 1, ..Facts::default() };
         let (lines, buf, hits) = screen(&m, &facts, 80, 8);
-        assert!(lines[1].starts_with("  sub/"), "{:?}", lines[1]);
-        assert_eq!(buf[(43, 1)].symbol(), "s", "the second pane starts after the gap");
+        // Row 1 holds the pane titles (T2.4), the lists start on row 2.
+        assert!(lines[2].starts_with("  sub/"), "{:?}", lines[2]);
+        assert_eq!(buf[(43, 2)].symbol(), "s", "the second pane starts after the gap");
         // Only the focused pane's cursor is reversed.
-        assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(buf[(41, 2)].modifier.contains(Modifier::REVERSED));
-        assert_eq!(hits.at(45, 2), Some(HitTarget::PaneRow { pane: PaneId(8), vis_version: 3, index: 1 }));
+        assert!(!buf[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(buf[(41, 3)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(hits.at(45, 3), Some(HitTarget::PaneRow { pane: PaneId(8), vis_version: 3, index: 1 }));
     }
 
     /// Every view at every tiny size: nothing may panic (ratatui panics on writes outside
