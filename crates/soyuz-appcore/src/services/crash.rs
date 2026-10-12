@@ -52,14 +52,18 @@ impl log::Log for RingLogger {
         if !self.inner.matches(record) {
             return;
         }
-        push_line(format!(
+        let line = format!(
             "{} {:<5} {}: {}",
             chrono::Local::now().format("%H:%M:%S%.3f"),
             record.level(),
             record.target(),
             record.args()
-        ));
-        self.inner.log(record);
+        );
+        push_line(line);
+        // In the terminal UI stderr is the screen: keep the line in the ring only.
+        if !tui_active() {
+            self.inner.log(record);
+        }
     }
 
     fn flush(&self) {
@@ -153,21 +157,123 @@ fn panic_message(info: &std::panic::PanicHookInfo<'_>) -> String {
 
 /// Chain a hook that writes a crash report before the default hook runs. Panics caught
 /// by a job worker (reported as a failed job) also leave a report: they are bugs too.
+///
+/// In the terminal UI ([`set_tui_hooks`]) the hook routes by thread ([`panic_route`]):
+/// a panic on the TUI thread restores the terminal first, so the report path and the
+/// default message print to the normal screen; a panic on any other thread (a worker
+/// that catches it) writes the report but prints nothing (stderr is the alternate
+/// screen) and asks the loop for a full redraw ([`take_needs_full_redraw`]).
 pub fn install_panic_hook() {
     let dir = crashes_dir();
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
+        let hooks = tui_hooks();
+        let route = panic_route(hooks.map(|h| h.thread), std::thread::current().id());
+        if route == PanicRoute::TuiThread
+            && let Some(h) = hooks
+        {
+            (h.restore)();
+            clear_tui_hooks();
+        }
         let message = panic_message(info);
         let location = info.location().map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column())).unwrap_or_default();
         let thread = std::thread::current().name().unwrap_or("<unnamed>").to_string();
         let bt = std::backtrace::Backtrace::force_capture().to_string();
         let text = report_text(&message, &location, &thread, &bt, &recent_log());
-        match write_report(&dir, &text) {
-            Ok(p) => eprintln!("soyuz: crash report written to {}", p.display()),
-            Err(e) => eprintln!("soyuz: cannot write crash report: {e}"),
+        let written = write_report(&dir, &text);
+        if route.prints() {
+            match written {
+                Ok(p) => eprintln!("soyuz: crash report written to {}", p.display()),
+                Err(e) => eprintln!("soyuz: cannot write crash report: {e}"),
+            }
+            previous(info);
+        } else {
+            match written {
+                Ok(p) => push_line(format!("soyuz: crash report written to {}", p.display())),
+                Err(e) => push_line(format!("soyuz: cannot write crash report: {e}")),
+            }
+            NEEDS_FULL_REDRAW.store(true, Ordering::Release);
         }
-        previous(info);
     }));
+}
+
+// ---------------------------------------------------------------------------
+// Terminal UI panic routing
+// ---------------------------------------------------------------------------
+
+/// What the terminal UI registers with the panic hook.
+#[derive(Clone, Copy, Debug)]
+pub struct TuiHooks {
+    /// Restores the terminal (raw mode, alternate screen, ...); idempotent, panic-safe.
+    pub restore: fn(),
+    /// The thread that owns the terminal (runs the frame loop).
+    pub thread: std::thread::ThreadId,
+}
+
+static TUI_HOOKS: Mutex<Option<TuiHooks>> = Mutex::new(None);
+static TUI_ACTIVE: AtomicBool = AtomicBool::new(false);
+static NEEDS_FULL_REDRAW: AtomicBool = AtomicBool::new(false);
+
+/// Enter terminal-UI panic handling (call after the terminal is set up, on the thread
+/// that owns it). Also keeps log lines off stderr while it is active.
+pub fn set_tui_hooks(restore: fn(), tui_thread: std::thread::ThreadId) {
+    *TUI_HOOKS.lock() = Some(TuiHooks { restore, thread: tui_thread });
+    TUI_ACTIVE.store(true, Ordering::Release);
+}
+
+/// Leave terminal-UI panic handling (after the terminal was restored): back to the GUI
+/// behaviour.
+pub fn clear_tui_hooks() {
+    TUI_ACTIVE.store(false, Ordering::Release);
+    if let Some(mut h) = TUI_HOOKS.try_lock_for(Duration::from_millis(50)) {
+        *h = None;
+    }
+}
+
+/// Terminal-UI panic handling is on.
+pub fn tui_active() -> bool {
+    TUI_ACTIVE.load(Ordering::Acquire)
+}
+
+fn tui_hooks() -> Option<TuiHooks> {
+    if !tui_active() {
+        return None;
+    }
+    // Never block a panicking thread (another may hold the lock).
+    TUI_HOOKS.try_lock_for(Duration::from_millis(50)).and_then(|h| *h)
+}
+
+/// A panic on another thread wrote past the alternate screen's owner (or was logged):
+/// the terminal UI should repaint everything. Reading clears it.
+pub fn take_needs_full_redraw() -> bool {
+    NEEDS_FULL_REDRAW.swap(false, Ordering::AcqRel)
+}
+
+/// How the panic hook treats a panic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PanicRoute {
+    /// No terminal UI: report, print, default hook (the GUI behaviour).
+    Normal,
+    /// On the terminal UI thread: restore the terminal, then as [`PanicRoute::Normal`].
+    TuiThread,
+    /// On another thread while the terminal UI runs: report quietly, request a redraw.
+    TuiBackground,
+}
+
+impl PanicRoute {
+    /// Whether the hook prints to stderr (and runs the default hook).
+    pub fn prints(self) -> bool {
+        self != PanicRoute::TuiBackground
+    }
+}
+
+/// Route a panic on `current` given the terminal UI thread (`None` outside the TUI).
+pub fn panic_route(tui_thread: Option<std::thread::ThreadId>, current: std::thread::ThreadId) -> PanicRoute {
+    match tui_thread {
+        None => PanicRoute::Normal,
+        Some(t) if t == current => PanicRoute::TuiThread,
+        Some(_) => PanicRoute::TuiBackground,
+    }
 }
 
 /// A crash report on disk.
@@ -484,6 +590,17 @@ mod tests {
         let msg = r.unwrap_err().downcast_ref::<&str>().map(|s| s.to_string()).unwrap();
         let p = write_report(d.path(), &report_text(&msg, "here", "t", "", &recent_log())).unwrap();
         assert!(std::fs::read_to_string(p).unwrap().contains("deliberate test panic"));
+    }
+
+    #[test]
+    fn panic_routing_by_thread() {
+        let me = std::thread::current().id();
+        let other = std::thread::spawn(|| std::thread::current().id()).join().unwrap();
+        assert_eq!(panic_route(None, me), PanicRoute::Normal);
+        assert_eq!(panic_route(Some(me), me), PanicRoute::TuiThread);
+        assert_eq!(panic_route(Some(me), other), PanicRoute::TuiBackground);
+        assert!(PanicRoute::Normal.prints() && PanicRoute::TuiThread.prints());
+        assert!(!PanicRoute::TuiBackground.prints());
     }
 
     #[test]
