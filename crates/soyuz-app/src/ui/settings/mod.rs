@@ -17,7 +17,7 @@ mod themes_ui;
 pub mod widgets;
 
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use egui::emath::TSTransform;
 use egui::{
@@ -41,182 +41,30 @@ enum PickPurpose {
 }
 
 /// Delay between the last edit and writing `config.toml`.
-const SAVE_DELAY: Duration = Duration::from_millis(700);
 const NAV_W: f32 = 236.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Section {
-    General,
-    Appearance,
-    Fonts,
-    Views,
-    Behaviour,
-    Jobs,
-    Terminal,
-    Preview,
-    Editor,
-    Keyboard,
-    Commands,
-    Bookmarks,
-    Scripts,
-    Automations,
-    Ai,
-    Advanced,
-    About,
-}
+pub use crate::models::settings::Section;
 
-impl Section {
-    pub const ALL: [Section; 17] = [
-        Section::General,
-        Section::Appearance,
-        Section::Fonts,
-        Section::Views,
-        Section::Behaviour,
-        Section::Jobs,
-        Section::Terminal,
-        Section::Preview,
-        Section::Editor,
-        Section::Keyboard,
-        Section::Commands,
-        Section::Bookmarks,
-        Section::Scripts,
-        Section::Automations,
-        Section::Ai,
-        Section::Advanced,
-        Section::About,
-    ];
-
-    /// Stable, untranslated id (`general`, `appearance`, …): dev scripts and the Fluent
-    /// keys `settings-section-<id>` / `…-desc` use it.
-    pub fn id(self) -> &'static str {
-        match self {
-            Section::General => "general",
-            Section::Appearance => "appearance",
-            Section::Fonts => "fonts",
-            Section::Views => "views",
-            Section::Behaviour => "behaviour",
-            Section::Jobs => "jobs",
-            Section::Terminal => "terminal",
-            Section::Preview => "preview",
-            Section::Editor => "editor",
-            Section::Keyboard => "keyboard",
-            Section::Commands => "commands",
-            Section::Bookmarks => "bookmarks",
-            Section::Scripts => "scripts",
-            Section::Automations => "automations",
-            Section::Ai => "ai",
-            Section::Advanced => "advanced",
-            Section::About => "about",
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        // i18n-dynamic: settings-section-
-        crate::i18n::t_dyn(&format!("settings-section-{}", self.id()))
-    }
-
-    /// English title (dev scripts select sections by it whatever the UI language).
-    pub fn english_title(self) -> &'static str {
-        crate::i18n::t_in(&format!("settings-section-{}", self.id()), soyuz_core::Locale::EnUs)
-    }
-
-    pub fn icon(self) -> &'static str {
-        match self {
-            Section::General => ph::GEAR_SIX,
-            Section::Appearance => ph::PALETTE,
-            Section::Fonts => ph::TEXT_AA,
-            Section::Views => ph::LAYOUT,
-            Section::Behaviour => ph::CURSOR_CLICK,
-            Section::Jobs => ph::COPY,
-            Section::Terminal => ph::TERMINAL_WINDOW,
-            Section::Preview => ph::EYE,
-            Section::Editor => ph::NOTE_PENCIL,
-            Section::Keyboard => ph::KEYBOARD,
-            Section::Commands => ph::LIGHTNING,
-            Section::Bookmarks => ph::BOOKMARK_SIMPLE,
-            Section::Scripts => ph::CODE,
-            Section::Automations => ph::ROBOT,
-            Section::Ai => ph::SPARKLE,
-            Section::Advanced => ph::FILE_CODE,
-            Section::About => ph::PLANET,
-        }
-    }
-
-    pub fn description(self) -> &'static str {
-        // i18n-dynamic: settings-section-
-        crate::i18n::t_dyn(&format!("settings-section-{}-desc", self.id()))
-    }
-
-    /// Reset this section of `c` to defaults.
-    fn reset(self, c: &mut Config) {
-        let d = Config::default();
-        match self {
-            Section::General => c.general = d.general,
-            Section::Appearance => {
-                c.appearance = d.appearance;
-                c.theme = d.theme;
-            }
-            Section::Fonts => c.fonts = d.fonts,
-            Section::Views => {
-                c.columns = d.columns;
-                c.layout = d.layout;
-                // Pinned Portal folders are the user's data, not layout: keep them.
-                let portal = std::mem::take(&mut c.sidebar.portal);
-                c.sidebar = d.sidebar;
-                c.tags = d.tags;
-                c.sidebar.portal = portal;
-                c.toolbar = d.toolbar;
-                c.context_menu = d.context_menu;
-                c.general.default_view = d.general.default_view;
-                c.general.natural_sort = d.general.natural_sort;
-                c.general.case_insensitive_sort = d.general.case_insensitive_sort;
-                c.general.folders_first = d.general.folders_first;
-            }
-            Section::Behaviour => {
-                c.behaviour = d.behaviour;
-                c.general.single_click_open = d.general.single_click_open;
-                c.general.confirm_delete = d.general.confirm_delete;
-                c.general.confirm_permanent_delete = d.general.confirm_permanent_delete;
-                c.general.double_click_speed_ms = d.general.double_click_speed_ms;
-                c.general.open_folders_in = d.general.open_folders_in;
-            }
-            Section::Jobs => {
-                c.jobs = d.jobs;
-                c.sync = d.sync;
-            }
-            Section::Terminal => c.terminal = d.terminal,
-            Section::Preview => {
-                c.preview = d.preview;
-                c.git = d.git;
-                let saved = std::mem::take(&mut c.search.saved);
-                c.search = d.search;
-                c.search.saved = saved;
-            }
-            Section::Editor => c.editor = d.editor,
-            Section::Keyboard => c.keys = d.keys,
-            Section::Commands => c.custom_commands = d.custom_commands,
-            Section::Bookmarks => c.bookmarks = d.bookmarks,
-            Section::Scripts => c.scripting = d.scripting,
-            Section::Automations => {
-                // Keep the rules; reset the switches.
-                let rules = std::mem::take(&mut c.automation.rules);
-                c.automation = d.automation;
-                c.automation.rules = rules;
-                c.cli = d.cli;
-            }
-            Section::Ai => {
-                // Keep the user's provider profiles and MCP connections; reset everything else.
-                let profiles = std::mem::take(&mut c.ai.profiles);
-                let clients = std::mem::take(&mut c.ai.mcp_clients);
-                let servers = std::mem::take(&mut c.ai.mcp_servers);
-                c.ai = d.ai;
-                c.ai.profiles = profiles;
-                c.ai.mcp_clients = clients;
-                c.ai.mcp_servers = servers;
-            }
-            Section::Advanced => *c = d,
-            Section::About => c.updates = d.updates,
-        }
+/// Icon of a settings section.
+pub fn section_icon(sec: Section) -> &'static str {
+    match sec {
+        Section::General => ph::GEAR_SIX,
+        Section::Appearance => ph::PALETTE,
+        Section::Fonts => ph::TEXT_AA,
+        Section::Views => ph::LAYOUT,
+        Section::Behaviour => ph::CURSOR_CLICK,
+        Section::Jobs => ph::COPY,
+        Section::Terminal => ph::TERMINAL_WINDOW,
+        Section::Preview => ph::EYE,
+        Section::Editor => ph::NOTE_PENCIL,
+        Section::Keyboard => ph::KEYBOARD,
+        Section::Commands => ph::LIGHTNING,
+        Section::Bookmarks => ph::BOOKMARK_SIMPLE,
+        Section::Scripts => ph::CODE,
+        Section::Automations => ph::ROBOT,
+        Section::Ai => ph::SPARKLE,
+        Section::Advanced => ph::FILE_CODE,
+        Section::About => ph::PLANET,
     }
 }
 
@@ -238,8 +86,6 @@ pub struct SettingsState {
     query: String,
     opened_at: f64,
     focus_search: bool,
-    save_due: Option<Instant>,
-    saved_flash: Option<Instant>,
     recorder: Option<Recorder>,
     key_cache: Option<KeyCache>,
     // Page-local UI state.
@@ -267,8 +113,6 @@ impl Default for SettingsState {
             query: String::new(),
             opened_at: 0.0,
             focus_search: false,
-            save_due: None,
-            saved_flash: None,
             recorder: None,
             key_cache: None,
             keys_filter: String::new(),
@@ -292,16 +136,17 @@ impl SettingsState {
 
 /// Open the settings (optionally at a section).
 pub fn open(app: &mut SoyuzApp, section: Option<Section>) {
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     if !s.open {
-        s.draft = app.config.clone();
-        s.applied = app.config.clone();
+        s.draft = app.core.config.clone();
+        s.applied = app.core.config.clone();
         s.opened_at = f64::NAN;
         s.query.clear();
         s.focus_search = false;
         s.args_text.clear();
     }
     s.open = true;
+    app.core.ui.settings_open = true;
     if let Some(sec) = section {
         s.section = sec;
         s.scroll_top = true;
@@ -309,38 +154,14 @@ pub fn open(app: &mut SoyuzApp, section: Option<Section>) {
 }
 
 pub fn close(app: &mut SoyuzApp) {
-    app.settings.open = false;
-    app.settings.recorder = None;
+    app.gui.settings.open = false;
+    app.core.ui.settings_open = false;
+    app.gui.settings.recorder = None;
     flush_save(app);
 }
 
-/// Write `config.toml` now if a save is pending.
 fn flush_save(app: &mut SoyuzApp) {
-    if app.settings.save_due.take().is_none() {
-        return;
-    }
-    let path = app.config_watch.path().to_path_buf();
-    // Merge into the user's file so comments and formatting survive (toml_edit).
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    match config::to_string_preserving(&existing, &app.config) {
-        Ok(text) => {
-            if let Some(dir) = path.parent() {
-                let _ = soyuz_fs::create_dir_all(dir);
-            }
-            match soyuz_fs::write_atomic(&path, text.as_bytes()) {
-                Ok(()) => {
-                    app.config_watch.last_text = Some(text);
-                    app.settings.saved_flash = Some(Instant::now());
-                }
-                Err(e) => {
-                    app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
-                }
-            }
-        }
-        Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-save-failed")).body(e.to_string()));
-        }
-    }
+    crate::models::settings::flush(&mut app.core);
 }
 
 fn key_cache(s: &mut SettingsState) -> &KeyCache {
@@ -365,21 +186,25 @@ fn key_cache(s: &mut SettingsState) -> &KeyCache {
 
 /// Draw the window when open; applies and saves edits.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
-    if !app.settings.open {
+    if !app.gui.settings.open {
         pump_save(ctx, app);
         return;
     }
     // External change (hot reload) while open: start over from the new config.
-    if app.config != app.settings.applied {
-        app.settings.draft = app.config.clone();
-        app.settings.applied = app.config.clone();
+    if app.core.config != app.gui.settings.applied {
+        app.gui.settings.draft = app.core.config.clone();
+        app.gui.settings.applied = app.core.config.clone();
     }
     let p = palette(ctx);
     let now = ctx.input(|i| i.time);
-    if app.settings.opened_at.is_nan() {
-        app.settings.opened_at = now;
+    if app.gui.settings.opened_at.is_nan() {
+        app.gui.settings.opened_at = now;
     }
-    let t = if app.ui.reduced_motion { 1.0 } else { ((now - app.settings.opened_at) / 0.18).clamp(0.0, 1.0) as f32 };
+    let t = if app.core.ui.reduced_motion {
+        1.0
+    } else {
+        ((now - app.gui.settings.opened_at) / 0.18).clamp(0.0, 1.0) as f32
+    };
     let ease = 1.0 - (1.0 - t).powi(3);
     if t < 1.0 {
         ctx.request_repaint();
@@ -399,21 +224,21 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
 /// sections). Returns `true` when the window was closed.
 fn window_keys(ctx: &egui::Context, app: &mut SoyuzApp) -> bool {
     // Recorder on top (owns the keyboard while open).
-    if app.settings.recorder.is_some() {
-        let cmd_is_ctrl = app.settings.draft.keys.cmd_is_ctrl;
-        let km = key_cache(&mut app.settings).keymap.clone();
-        let outcome = app.settings.recorder.as_mut().map(|r| r.show(ctx, &km, cmd_is_ctrl));
+    if app.gui.settings.recorder.is_some() {
+        let cmd_is_ctrl = app.gui.settings.draft.keys.cmd_is_ctrl;
+        let km = key_cache(&mut app.gui.settings).keymap.clone();
+        let outcome = app.gui.settings.recorder.as_mut().map(|r| r.show(ctx, &km, cmd_is_ctrl));
         match outcome {
             Some(RecordOutcome::Save(binding)) => {
-                let target = app.settings.recorder.take().map(|r| r.target);
+                let target = app.gui.settings.recorder.take().map(|r| r.target);
                 if let Some(target) = target {
-                    apply_recorded(&mut app.settings, target, binding);
+                    apply_recorded(&mut app.gui.settings, target, binding);
                 }
             }
-            Some(RecordOutcome::Cancel) => app.settings.recorder = None,
+            Some(RecordOutcome::Cancel) => app.gui.settings.recorder = None,
             _ => {}
         }
-    } else if app.settings.picker.is_none() && !crate::ui::widgets::dropdown::any_open(ctx) {
+    } else if app.gui.settings.picker.is_none() && !crate::ui::widgets::dropdown::any_open(ctx) {
         // Window keys: Esc closes, Ctrl+F searches, Ctrl+PgUp/PgDn switch sections.
         let (esc, find, prev, next) = ctx.input_mut(|i| {
             (
@@ -424,20 +249,20 @@ fn window_keys(ctx: &egui::Context, app: &mut SoyuzApp) -> bool {
             )
         });
         if esc {
-            if app.settings.query.is_empty() {
+            if app.gui.settings.query.is_empty() {
                 close(app);
                 return true;
             }
-            app.settings.query.clear();
+            app.gui.settings.query.clear();
         }
         if find {
-            app.settings.focus_search = true;
+            app.gui.settings.focus_search = true;
         }
         if prev || next {
-            let i = Section::ALL.iter().position(|s| *s == app.settings.section).unwrap_or(0);
+            let i = Section::ALL.iter().position(|s| *s == app.gui.settings.section).unwrap_or(0);
             let n = Section::ALL.len();
-            app.settings.section = Section::ALL[if next { (i + 1) % n } else { (i + n - 1) % n }];
-            app.settings.scroll_top = true;
+            app.gui.settings.section = Section::ALL[if next { (i + 1) % n } else { (i + n - 1) % n }];
+            app.gui.settings.scroll_top = true;
         }
     }
     false
@@ -465,7 +290,7 @@ fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
         close_now
     });
     if shown.close || shown.inner == Some(true) {
-        if app.settings.open {
+        if app.gui.settings.open {
             close(app);
         }
         return;
@@ -475,11 +300,11 @@ fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
 
 /// Live apply + debounced save.
 fn apply_and_save(ctx: &egui::Context, app: &mut SoyuzApp) {
-    if app.settings.draft != app.settings.applied {
-        let draft = app.settings.draft.clone();
-        crate::services::config_watch::apply_config(app, ctx, draft.clone());
-        app.settings.applied = draft;
-        app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
+    if app.gui.settings.draft != app.gui.settings.applied {
+        let draft = app.gui.settings.draft.clone();
+        crate::services::config_watch::apply_config(&mut app.core, &crate::host::EguiHost::new(ctx), draft.clone());
+        app.gui.settings.applied = draft;
+        app.core.config_save.schedule();
     }
     pump_save(ctx, app);
 }
@@ -555,7 +380,7 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     let s = 0.98 + 0.02 * ease;
     let c = screen.center();
     ctx.set_transform_layer(LayerId::new(Order::Foreground, id), TSTransform::new(c.to_vec2() * (1.0 - s), s));
-    if (resp.backdrop_response.clicked() && app.settings.recorder.is_none() && app.settings.picker.is_none())
+    if (resp.backdrop_response.clicked() && app.gui.settings.recorder.is_none() && app.gui.settings.picker.is_none())
         || close_now
     {
         close(app);
@@ -565,34 +390,11 @@ fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     apply_and_save(ctx, app);
 }
 
-/// Write `config.toml` once the debounce delay has passed.
 fn pump_save(ctx: &egui::Context, app: &mut SoyuzApp) {
-    if let Some(due) = app.settings.save_due {
-        if Instant::now() >= due {
-            flush_save(app);
-        } else {
-            ctx.request_repaint_after(due - Instant::now());
-        }
-    }
+    crate::models::settings::pump(&mut app.core, &crate::host::EguiHost::new(ctx));
 }
 
-/// Change the active configuration from outside the settings window (UI zoom keys,
-/// quick toggles): applies live and writes `config.toml` shortly after.
-pub fn update_config(app: &mut SoyuzApp, ctx: &egui::Context, edit: impl FnOnce(&mut Config)) {
-    let mut c = app.config.clone();
-    edit(&mut c);
-    if c == app.config {
-        return;
-    }
-    crate::services::config_watch::apply_config(app, ctx, c);
-    app.settings.save_due = Some(Instant::now() + SAVE_DELAY);
-    ctx.request_repaint_after(SAVE_DELAY);
-}
-
-/// Flush a pending save (on exit).
-pub fn save_now(app: &mut SoyuzApp) {
-    flush_save(app);
-}
+pub use crate::models::settings::update_config;
 
 fn apply_recorded(s: &mut SettingsState, target: RecordTarget, binding: String) {
     match target {
@@ -625,7 +427,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         ui.label(RichText::new(tr!("settings-title")).font(crate::theme::fonts::heading(17.0)).color(p.text_primary));
     });
     ui.add_space(12.0);
-    let s = &mut app.settings;
+    let s = &mut app.gui.settings;
     let search_id = Id::new("soyuz.settings.search");
     // Typing anywhere (with nothing focused) starts a search.
     let typing = ui.ctx().memory(|m| m.focused().is_none())
@@ -682,7 +484,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
                 ui.painter().text(
                     pos2(r.left() + 14.0, r.center().y),
                     Align2::LEFT_CENTER,
-                    sec.icon(),
+                    section_icon(sec),
                     glyph_font,
                     if active { p.accent } else { p.text_tertiary },
                 );
@@ -721,9 +523,9 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     // Bottom: save status + config file shortcuts.
     let mut close = false;
     ui.with_layout(Layout::bottom_up(Align::Min), |ui| {
-        let status = if s.save_due.is_some() {
+        let status = if app.core.config_save.due.is_some() {
             (ph::CIRCLE_NOTCH, tr!("settings-status-saving"), p.text_tertiary)
-        } else if s.saved_flash.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
+        } else if app.core.config_save.flashed.is_some_and(|t| t.elapsed() < Duration::from_secs(3)) {
             ui.ctx().request_repaint_after(Duration::from_millis(500));
             (ph::CHECK_CIRCLE, tr!("settings-status-saved"), p.success)
         } else {
@@ -736,7 +538,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
         });
         ui.add_space(6.0);
         if nav_link(ui, p, ph::FILE_CODE, tr!("settings-edit-config")) {
-            app.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
+            app.core.cmds.push(crate::cmd::Cmd::Action(soyuz_core::config::Action::EditConfigFile));
             close = true;
         }
     });
@@ -759,18 +561,18 @@ fn nav_link(ui: &mut Ui, p: &Palette, glyph: &str, label: &str) -> bool {
 }
 
 fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let searching = !app.settings.query.trim().is_empty();
-    let sec = app.settings.section;
+    let searching = !app.gui.settings.query.trim().is_empty();
+    let sec = app.gui.settings.section;
     // Header.
     ui.horizontal(|ui| {
         if searching {
             ui.label(
-                RichText::new(tr!("settings-search-results", query = app.settings.query.trim()))
+                RichText::new(tr!("settings-search-results", query = app.gui.settings.query.trim()))
                     .font(crate::theme::fonts::heading(19.0))
                     .color(p.text_primary),
             );
         } else {
-            crate::ui::widgets::icon_label(ui, icons::icon(sec.icon(), 20.0).color(p.accent));
+            crate::ui::widgets::icon_label(ui, icons::icon(section_icon(sec), 20.0).color(p.accent));
             ui.label(RichText::new(sec.title()).font(crate::theme::fonts::heading(19.0)).color(p.text_primary));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.add_space(30.0);
@@ -779,8 +581,8 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                         .on_hover_text(tr!("settings-reset-section-tooltip"))
                         .clicked()
                 {
-                    sec.reset(&mut app.settings.draft);
-                    app.ui.toasts.push(Toast::info(tr!("settings-reset-section-done", section = sec.title())));
+                    sec.reset(&mut app.gui.settings.draft);
+                    app.core.ui.toasts.push(Toast::info(tr!("settings-reset-section-done", section = sec.title())));
                 }
             });
         }
@@ -789,7 +591,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         ui.label(RichText::new(sec.description()).size(12.0).color(p.text_tertiary));
     }
     ui.add_space(4.0);
-    let scroll_top = std::mem::take(&mut app.settings.scroll_top);
+    let scroll_top = std::mem::take(&mut app.gui.settings.scroll_top);
     let mut area = egui::ScrollArea::vertical()
         .id_salt(("soyuz.settings.scroll", sec as u8, searching))
         .auto_shrink([false, false]);
@@ -798,7 +600,7 @@ fn content_area(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
     }
     area.show(ui, |ui| {
         ui.set_width(ui.available_width() - 6.0);
-        let q = app.settings.query.trim().to_string();
+        let q = app.gui.settings.query.trim().to_string();
         if searching {
             let mut any = false;
             for s in Section::ALL {
@@ -843,7 +645,7 @@ fn page(ui: &mut Ui, app: &mut SoyuzApp, sec: Section, q: &str) -> bool {
 
 /// Start recording a shortcut.
 fn record(app: &mut SoyuzApp, target: RecordTarget, title: String) {
-    app.settings.recorder = Some(Recorder::new(target, title));
+    app.gui.settings.recorder = Some(Recorder::new(target, title));
 }
 
 /// First free `soyuz-config.toml`, `soyuz-config (2).toml`, … in `dir` (an export never
@@ -867,21 +669,21 @@ pub fn start_export(app: &mut SoyuzApp) {
     let dir = transfer_dir();
     let name = export_path(&dir).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let picker = PathPicker::new(tr!("settings-export-title"), PickMode::Save, dir, &name, &["toml"]);
-    app.settings.picker = Some((PickPurpose::Export, picker));
+    app.gui.settings.picker = Some((PickPurpose::Export, picker));
 }
 
 /// Open the in-app picker for importing a configuration file.
 fn start_import(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
     let picker = PathPicker::new(tr!("settings-import-title"), PickMode::Open, transfer_dir(), "", &["toml"]);
-    app.settings.picker = Some((PickPurpose::Import, picker));
+    app.gui.settings.picker = Some((PickPurpose::Import, picker));
 }
 
 /// Open the picker for importing a theme file (copied into the themes folder).
 fn start_theme_import(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
     let picker = PathPicker::new(tr!("settings-theme-import-title"), PickMode::Open, transfer_dir(), "", &["toml"]);
-    app.settings.picker = Some((PickPurpose::ThemeImport, picker));
+    app.gui.settings.picker = Some((PickPurpose::ThemeImport, picker));
 }
 
 /// Open the save picker for exporting the current colors as a theme file.
@@ -889,15 +691,15 @@ fn start_theme_export(app: &mut SoyuzApp) {
     use crate::ui::path_picker::{PathPicker, PickMode};
     let dir = crate::theme::library::themes_dir();
     let _ = std::fs::create_dir_all(&dir);
-    let base = crate::theme::themes::slug(&app.settings.draft.appearance.color_theme);
+    let base = crate::theme::themes::slug(&app.gui.settings.draft.appearance.color_theme);
     let name = format!("{base}-custom.toml");
     let picker = PathPicker::new(tr!("settings-theme-export-title"), PickMode::Save, dir, &name, &["toml"]);
-    app.settings.picker = Some((PickPurpose::ThemeExport, picker));
+    app.gui.settings.picker = Some((PickPurpose::ThemeExport, picker));
 }
 
 /// Write the draft's resolved palettes (theme + accent + overrides) as a theme file.
 fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
-    let d = &app.settings.draft;
+    let d = &app.gui.settings.draft;
     let (mut dark, mut light, _) = crate::theme::resolve(&d.appearance);
     let _ = dark.apply_overrides(&d.theme.colors);
     let _ = light.apply_overrides(&d.theme.colors);
@@ -905,10 +707,10 @@ fn export_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let def = crate::theme::themes::ThemeDef::from_palettes(&stem, &stem, &dark, &light);
     match soyuz_fs::write_atomic(path, def.to_toml().as_bytes()) {
         Ok(()) => {
-            app.ui.toasts.push(Toast::success(tr!("settings-theme-exported")).body(path.display().to_string()));
+            app.core.ui.toasts.push(Toast::success(tr!("settings-theme-exported")).body(path.display().to_string()));
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-theme-export-failed")).body(e.to_string()));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-theme-export-failed")).body(e.to_string()));
         }
     }
 }
@@ -919,23 +721,23 @@ fn import_theme(app: &mut SoyuzApp, path: &std::path::Path) {
     let text = match std::fs::read_to_string(path) {
         Ok(t) => t,
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-theme-import-failed")).body(e.to_string()));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-theme-import-failed")).body(e.to_string()));
             return;
         }
     };
     match crate::theme::library::import(&text, &stem) {
         Ok((t, warnings)) => {
-            app.settings.draft.appearance.color_theme = t.id.clone();
-            app.settings.draft.appearance.high_contrast = false;
+            app.gui.settings.draft.appearance.color_theme = t.id.clone();
+            app.gui.settings.draft.appearance.high_contrast = false;
             let toast = if warnings.is_empty() {
                 Toast::success(tr!("settings-theme-imported", name = &t.name))
             } else {
                 Toast::warning(tr!("settings-theme-imported-warnings", name = &t.name)).body(warnings.join("\n"))
             };
-            app.ui.toasts.push(toast);
+            app.core.ui.toasts.push(toast);
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-theme-invalid")).body(e));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-theme-invalid")).body(e));
         }
     }
 }
@@ -943,16 +745,16 @@ fn import_theme(app: &mut SoyuzApp, path: &std::path::Path) {
 /// Draw the export / import picker; act on its result.
 fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
     use crate::ui::path_picker::PickResult;
-    let Some((purpose, picker)) = app.settings.picker.as_mut() else { return };
+    let Some((purpose, picker)) = app.gui.settings.picker.as_mut() else { return };
     let purpose = *purpose;
     match picker.show(ctx) {
         PickResult::Pending => {}
         PickResult::Cancelled => {
             log::debug!("export / import picker cancelled");
-            app.settings.picker = None
+            app.gui.settings.picker = None
         }
         PickResult::Picked(path) => {
-            app.settings.picker = None;
+            app.gui.settings.picker = None;
             match purpose {
                 PickPurpose::Export => {
                     export(app, path);
@@ -968,20 +770,20 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
 /// Write the active config to `path` (keeps that file's comments when it exists).
 fn export(app: &mut SoyuzApp, path: PathBuf) -> Option<PathBuf> {
     let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let text = match config::to_string_preserving(&existing, &app.config) {
+    let text = match config::to_string_preserving(&existing, &app.core.config) {
         Ok(t) => t,
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
             return None;
         }
     };
     match soyuz_fs::write_atomic(&path, text.as_bytes()) {
         Ok(()) => {
-            app.ui.toasts.push(Toast::success(tr!("settings-exported")).body(path.display().to_string()));
+            app.core.ui.toasts.push(Toast::success(tr!("settings-exported")).body(path.display().to_string()));
             Some(path)
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-export-failed")).body(e.to_string()));
             None
         }
     }
@@ -991,22 +793,22 @@ fn export(app: &mut SoyuzApp, path: PathBuf) -> Option<PathBuf> {
 fn import(app: &mut SoyuzApp, path: &std::path::Path) {
     match config::load(path) {
         Ok(loaded) => {
-            app.settings.draft = loaded.config;
+            app.gui.settings.draft = loaded.config;
             let mut t = Toast::success(tr!("settings-imported"));
             if !loaded.warnings.is_empty() {
                 t = Toast::warning(tr!("settings-imported-warnings")).body(loaded.warnings.join("\n"));
             }
-            app.ui.toasts.push(t);
+            app.core.ui.toasts.push(t);
         }
         Err(e) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-import-failed")).body(e.to_string()));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-import-failed")).body(e.to_string()));
         }
     }
 }
 
 /// A pill showing a chord binding with a hover "×"; returns (clicked, remove clicked).
 fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removable: bool) -> (bool, bool) {
-    let w = crate::palette::widgets::chips_width(ui, binding) + if removable { 18.0 } else { 6.0 };
+    let w = crate::ui::palette::widgets::chips_width(ui, binding) + if removable { 18.0 } else { 6.0 };
     let (rect, resp) = ui.allocate_exact_size(vec2(w, 26.0), Sense::click());
     let hover = resp.hovered();
     let fill = if conflict {
@@ -1026,7 +828,7 @@ fn binding_chip(ui: &mut Ui, p: &Palette, binding: &str, conflict: bool, removab
         );
     }
     let right = if removable { rect.right() - 16.0 } else { rect.right() - 3.0 };
-    crate::palette::widgets::paint_chips(ui, p, binding, right, rect.center().y, false);
+    crate::ui::palette::widgets::paint_chips(ui, p, binding, right, rect.center().y, false);
     let mut removed = false;
     if removable {
         let xr = Rect::from_center_size(pos2(rect.right() - 9.0, rect.center().y), vec2(14.0, 14.0));

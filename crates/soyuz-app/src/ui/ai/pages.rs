@@ -30,21 +30,21 @@ fn card(ui: &mut Ui, p: &Palette, body: impl FnOnce(&mut Ui)) {
 }
 
 pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    if !app.ai.recipes.loaded {
-        app.ai.load_recipes();
+    if !app.core.ai.recipes.loaded {
+        app.core.ai.load_recipes();
     }
     ui.label(RichText::new(tr!("ai-recipes-intro")).size(11.5).color(p.text_tertiary));
     ui.add_space(6.0);
     ScrollArea::vertical().id_salt("soyuz.ai.recipes").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
-        if app.ai.recipes.loading.is_some() && app.ai.recipes.list.is_empty() {
+        if app.core.ai.recipes.loading.is_some() && app.core.ai.recipes.list.is_empty() {
             ui.horizontal(|ui| {
                 ui.spinner();
                 ui.label(RichText::new(tr!("common-loading")).color(p.text_tertiary));
             });
             return;
         }
-        if app.ai.recipes.list.is_empty() {
+        if app.core.ai.recipes.list.is_empty() {
             crate::ui::tools::compare::empty_note(
                 ui,
                 ph::BOOK_OPEN,
@@ -54,7 +54,7 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
             return;
         }
         let dir = crate::ai::recipe::dir();
-        for (path, r) in app.ai.recipes.list.clone() {
+        for (path, r) in app.core.ai.recipes.list.clone() {
             card(ui, p, |ui| match &r {
                 Ok(rec) => {
                     ui.horizontal(|ui| {
@@ -67,9 +67,15 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
                             {
                                 acts.push(PanelAct::DeleteRecipe(path.clone()));
                             }
-                            if button(ui, Some(ph::PLAY), tr!("ai-recipe-run"), Tone::Primary, app.ai.running.is_none())
-                                .on_hover_text(tr!("ai-recipe-run-tip"))
-                                .clicked()
+                            if button(
+                                ui,
+                                Some(ph::PLAY),
+                                tr!("ai-recipe-run"),
+                                Tone::Primary,
+                                app.core.ai.running.is_none(),
+                            )
+                            .on_hover_text(tr!("ai-recipe-run-tip"))
+                            .clicked()
                             {
                                 acts.push(PanelAct::RunRecipe(Box::new(rec.clone())));
                             }
@@ -113,10 +119,10 @@ pub fn recipes(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Pane
 }
 
 pub fn audit(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    if !app.ai.audit.loaded {
-        app.ai.load_audit();
+    if !app.core.ai.audit.loaded {
+        app.core.ai.load_audit();
     }
-    let a = &mut app.ai.audit;
+    let a = &mut app.core.ai.audit;
     let uniq = |f: &dyn Fn(&AuditRecord) -> String| {
         let mut v: Vec<String> = a.events.iter().map(f).filter(|s| !s.is_empty()).collect();
         v.sort();
@@ -337,7 +343,7 @@ fn pill_ui(ui: &mut Ui, p: &Palette, pill: &Pill) -> bool {
 
 /// Natural language → pills → structured query (editable before it runs).
 pub fn smart_card(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    let s = &mut app.ai.smart;
+    let s = &mut app.core.ai.smart;
     Frame::new()
         .fill(p.bg_window)
         .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.45)))

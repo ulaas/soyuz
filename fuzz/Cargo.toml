@@ -28,7 +28,7 @@ soyuz-fs = { path = "../crates/soyuz-fs", features = ["fuzzing"] }
 soyuz-archive = { path = "../crates/soyuz-archive", features = ["fuzzing"] }
 soyuz-term = { path = "../crates/soyuz-term", features = ["fuzzing"] }
 soyuz-mcp = { path = "../crates/soyuz-mcp", features = ["fuzzing"] }
-soyuz-app = { path = "../crates/soyuz-app", default-features = false }
+soyuz-appcore = { path = "../crates/soyuz-appcore", default-features = false }
 
 [profile.release]
 debug = 1

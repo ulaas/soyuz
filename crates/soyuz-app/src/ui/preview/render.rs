@@ -16,8 +16,10 @@ use soyuz_core::{EntryInfo, OpControl, format_size, format_time};
 use super::hex::{self, HexDoc};
 use super::markdown;
 use crate::services::preview::{Content, Kind, Limits, Loaded, Msg, PreviewClient, Source};
+use crate::services::preview_gfx::{StyledLine, TextFont};
 use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
+use crate::ui::gfx::{self, TexExt};
 use crate::ui::views::columns::{attr_letters, mode_string};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{pill_button, spinner, trunc_galley};
@@ -72,12 +74,14 @@ pub struct PreviewState {
     big: bool,
     /// Cache key of the in-flight request (the result is remembered when it lands).
     cache_key: Option<crate::services::preview_cache::CacheKey>,
+    /// Display scale for page-like renders (refreshed every [`Self::poll`]).
+    ppp: f32,
 }
 
 impl PreviewState {
     pub fn new(ctx: &egui::Context, big: bool) -> Self {
         PreviewState {
-            client: PreviewClient::new(ctx),
+            client: PreviewClient::new(crate::host::egui_wake(ctx), gfx::egui_uploader(ctx)),
             key: None,
             entry: None,
             loaded: None,
@@ -89,6 +93,7 @@ impl PreviewState {
             pan: Vec2::ZERO,
             big,
             cache_key: None,
+            ppp: ctx.pixels_per_point(),
         }
     }
 
@@ -99,8 +104,9 @@ impl PreviewState {
             max_image_mp: cfg.preview.max_image_mp.max(1),
             max_text_bytes: (cfg.preview.max_text_kib.max(4) * 1024) as usize,
             dark: p.dark,
-            mono: FontId::monospace(12.0),
-            fg: p.text_primary,
+            mono: TextFont::monospace(12.0),
+            fg: gfx::rgba(p.text_primary),
+            pixels_per_point: self.ppp,
             rich: crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big),
         }
     }
@@ -174,6 +180,7 @@ impl PreviewState {
 
     /// Drain worker results (call once per frame).
     pub fn poll(&mut self, ctx: &egui::Context) {
+        self.ppp = ctx.pixels_per_point();
         while let Some(msg) = self.client.try_recv() {
             match msg {
                 Msg::Loaded { id, loaded } => {
@@ -761,7 +768,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             }
         }
         Content::Message { icon, title, body } => {
-            centered_message(ui, rect, icon, p.text_tertiary, title, body);
+            centered_message(ui, rect, crate::ui::icons::glyph(*icon), p.text_tertiary, title, body);
             if loaded.kind == Kind::Pdf || loaded.kind == Kind::Image {
                 let br = Rect::from_center_size(rect.center() + vec2(0.0, 74.0), vec2(120.0, 26.0));
                 let mut child = ui.new_child(UiBuilder::new().max_rect(br));
@@ -775,7 +782,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
 }
 
 /// Virtualized, highlighted text with a line-number gutter.
-fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<egui::text::LayoutJob>>, widest: usize, truncated: bool) {
+fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usize, truncated: bool) {
     let p = palette(ui.ctx());
     let font = FontId::monospace(12.0);
     let row_h = 18.0;
@@ -812,7 +819,7 @@ fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<egui::text::LayoutJob>>, w
                     font.clone(),
                     p.text_tertiary.gamma_multiply(0.8),
                 );
-                let galley = ui.painter().layout_job(lines[i].clone());
+                let galley = ui.painter().layout_job(gfx::layout_job(&lines[i]));
                 ui.painter().galley(
                     pos2(r.left() + gutter + 12.0, r.center().y - galley.size().y / 2.0),
                     galley,

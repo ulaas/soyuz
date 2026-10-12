@@ -35,7 +35,7 @@ fn tip_text(action: &Action) -> &'static str {
 
 /// Draw the card when it is due. `bottom` is the space taken by the status bar.
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
-    if !app.ui.welcome || app.ui.dialogs.is_open() || app.settings.is_open() {
+    if !app.core.ui.welcome || app.dialog_open() || app.gui.settings.is_open() {
         return;
     }
     let p = palette(ctx);
@@ -77,7 +77,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                     ui.add_space(8.0);
                     for (action, glyph) in TIPS {
                         let what = tip_text(action);
-                        let Some(keys) = chord_label(&app.keymap, action) else { continue };
+                        let Some(keys) = chord_label(&app.core.keymap, action) else { continue };
                         ui.horizontal(|ui| {
                             ui.set_min_height(24.0);
                             ui.label(icons::icon(glyph, 15.0).color(p.text_tertiary));
@@ -100,12 +100,12 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
                 });
         });
     if settings {
-        app.cmds.push(Cmd::Action(Action::Settings));
+        app.core.cmds.push(Cmd::Action(Action::Settings));
         dismiss = true;
     }
     if dismiss {
-        app.ui.welcome = false;
-        app.ui.welcome_seen = true;
-        app.save_state();
+        app.core.ui.welcome = false;
+        app.core.ui.welcome_seen = true;
+        app.core.save_state();
     }
 }

@@ -429,19 +429,20 @@ pub const TOKEN_NAMES: [&str; 33] = [
     "tag.gray",
 ];
 
-/// Parse `#RGB`, `#RRGGBB` or `#RRGGBBAA` (leading `#` optional).
+/// Parse `#RGB`, `#RRGGBB` or `#RRGGBBAA` (leading `#` optional; see [`crate::color::parse_hex`]).
 pub fn parse_hex(s: &str) -> Option<Color32> {
-    let h = s.trim().trim_start_matches('#');
-    let byte = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
-    match h.len() {
-        3 => {
-            let n = |i: usize| u8::from_str_radix(h.get(i..i + 1)?, 16).ok().map(|v| v * 17);
-            Some(Color32::from_rgb(n(0)?, n(1)?, n(2)?))
-        }
-        6 => Some(Color32::from_rgb(byte(0)?, byte(2)?, byte(4)?)),
-        8 => Some(Color32::from_rgba_unmultiplied(byte(0)?, byte(2)?, byte(4)?, byte(6)?)),
-        _ => None,
-    }
+    crate::color::parse_hex(s).map(color32)
+}
+
+/// A core colour as an egui colour (premultiplied).
+pub fn color32(c: crate::color::Rgba8) -> Color32 {
+    Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
+}
+
+/// An egui colour as a core colour (unmultiplied).
+pub fn rgba8(c: Color32) -> crate::color::Rgba8 {
+    let [r, g, b, a] = c.to_srgba_unmultiplied();
+    crate::color::Rgba8::rgba(r, g, b, a)
 }
 
 /// Spacing scale (px).

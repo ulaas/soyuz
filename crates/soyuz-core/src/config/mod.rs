@@ -1,6 +1,6 @@
 //! Configuration: schema, loading/saving, key bindings and actions.
 //!
-//! Hot reload is *not* here (core has no `notify`); see `soyuz-app/src/services/config_watch.rs`.
+//! Hot reload is *not* here (core has no `notify`); see `soyuz-appcore/src/services/config_watch.rs`.
 
 pub mod actions;
 pub mod ai;

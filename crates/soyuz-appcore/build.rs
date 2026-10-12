@@ -1,0 +1,54 @@
+//! Stamps the git commit the binary is built from (`SOYUZ_GIT_SHA` →
+//! `soyuz_appcore::GIT_SHA`, shown in About, `soyuz --version` and crash reports).
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn main() {
+    println!("cargo:rerun-if-changed=build.rs");
+    git_sha();
+}
+
+/// `SOYUZ_GIT_SHA`: the short commit hash, `-dirty` when tracked files have uncommitted
+/// changes, `unknown` outside a git checkout. A `SOYUZ_GIT_SHA` set in the build
+/// environment wins (packaging from a source tarball).
+fn git_sha() {
+    println!("cargo:rerun-if-env-changed=SOYUZ_GIT_SHA");
+    if let Ok(sha) = std::env::var("SOYUZ_GIT_SHA") {
+        println!("cargo:rustc-env=SOYUZ_GIT_SHA={sha}");
+        return;
+    }
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap_or_default());
+    let git = |args: &[&str]| -> Option<String> {
+        let out = Command::new("git").arg("-C").arg(&manifest).args(args).output().ok()?;
+        out.status.success().then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    };
+    let Some(sha) = git(&["rev-parse", "--short=9", "HEAD"]) else {
+        println!("cargo:rustc-env=SOYUZ_GIT_SHA=unknown");
+        return;
+    };
+    let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some_and(|s| !s.is_empty());
+    println!("cargo:rustc-env=SOYUZ_GIT_SHA={sha}{}", if dirty { "-dirty" } else { "" });
+
+    // Re-stamp on a new commit / checkout (HEAD, the branch ref, packed refs), on staging,
+    // and on source edits anywhere in the workspace (the dirty flag).
+    let path = |args: &[&str]| git(args).map(|p| manifest.join(p));
+    if let Some(dir) = path(&["rev-parse", "--git-dir"]) {
+        rerun(&dir.join("HEAD"));
+        rerun(&dir.join("index"));
+        if let Some(r) = git(&["symbolic-ref", "-q", "HEAD"]) {
+            let common = path(&["rev-parse", "--git-common-dir"]).unwrap_or(dir);
+            rerun(&common.join(r));
+            rerun(&common.join("packed-refs"));
+        }
+    }
+    if let Some(crates) = manifest.parent() {
+        rerun(crates);
+    }
+}
+
+fn rerun(p: &Path) {
+    if p.exists() {
+        println!("cargo:rerun-if-changed={}", p.display());
+    }
+}

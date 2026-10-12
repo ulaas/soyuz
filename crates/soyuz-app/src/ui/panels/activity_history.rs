@@ -1,69 +1,19 @@
 //! History tab of the activity panel: finished operations (newest first) with Undo /
 //! Redo / Retry failed.
 
-use std::path::PathBuf;
-
 use egui::{Align2, Color32, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 use soyuz_core::DateFormat;
-use soyuz_jobs::{CreateKind, DeleteMode, HistoryEntry, JobKind};
+use soyuz_jobs::HistoryEntry;
 
 use super::activity::op_style;
 use crate::app::SoyuzApp;
 use crate::ops::fileops::{HistoryAction, history_action, names};
-use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::trunc_galley;
 
-/// Operation kind and past-tense title of a history entry.
-pub fn describe(job: &JobKind) -> (OpKind, String) {
-    let (op, meta) = match job {
-        JobKind::Copy { sources, dest_dir, .. } => {
-            let same = sources.iter().all(|s| s.parent() == Some(dest_dir.as_path()));
-            let op = if same { OpKind::Duplicate } else { OpKind::Copy };
-            (op, JobMeta::new(op, sources, Some(dest_dir.clone())))
-        }
-        JobKind::Move { sources, dest_dir, .. } => {
-            (OpKind::Move, JobMeta::new(OpKind::Move, sources, Some(dest_dir.clone())))
-        }
-        JobKind::Delete { paths, mode } => {
-            let op = match mode {
-                DeleteMode::Trash => OpKind::Trash,
-                DeleteMode::Permanent => OpKind::Delete,
-                DeleteMode::Wipe { .. } => OpKind::Wipe,
-            };
-            (op, JobMeta::new(op, paths, None))
-        }
-        JobKind::Rename { pairs } => {
-            let from: Vec<PathBuf> = pairs.iter().map(|p| p.0.clone()).collect();
-            let dest = (pairs.len() == 1).then(|| PathBuf::from(soyuz_core::entry::display_name(&pairs[0].1)));
-            (OpKind::Rename, JobMeta::new(OpKind::Rename, &from, dest))
-        }
-        JobKind::Create { path, kind } => {
-            let op = match kind {
-                CreateKind::Dir => OpKind::NewFolder,
-                CreateKind::File { .. } => OpKind::NewFile,
-                _ => OpKind::Link,
-            };
-            (op, JobMeta::new(op, std::slice::from_ref(path), None))
-        }
-        JobKind::RestoreTrash { items, .. } => {
-            let paths: Vec<PathBuf> = items.iter().map(|i| i.original.clone()).collect();
-            (OpKind::Restore, JobMeta::new(OpKind::Restore, &paths, None))
-        }
-        JobKind::EmptyTrash => (OpKind::EmptyTrash, JobMeta::new(OpKind::EmptyTrash, &[], None)),
-        other => (OpKind::Other, JobMeta::new(OpKind::Other, &other.touched_roots(), None)),
-    };
-    (op, names::job_title(&meta, false, None, ""))
-}
-
-/// A copy / move / sync that ran with hash verification and had no failures.
-pub fn is_verified(h: &HistoryEntry) -> bool {
-    let verify = h.options.as_ref().is_some_and(|o| o.copy.verify.is_some());
-    let done = soyuz_jobs::JobState::Done(h.summary.clone());
-    super::activity::verify_badge(h.job.brief(), verify, &done).is_some()
-}
+pub use crate::models::panels::{describe, is_verified};
 
 fn small_button(ui: &mut Ui, r: Rect, id: Id, label: &str, enabled: bool, p: &Palette) -> bool {
     let resp = ui.interact(r, id, if enabled { Sense::click() } else { Sense::hover() });
@@ -95,7 +45,7 @@ fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
 }
 
 pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let entries: Vec<HistoryEntry> = app.fileops.jobs.history().iter().rev().cloned().collect();
+    let entries: Vec<HistoryEntry> = app.core.fileops.jobs.history().iter().rev().cloned().collect();
     if entries.is_empty() {
         let r = ui.available_rect_before_wrap();
         let c = r.center() - vec2(0.0, 12.0);
@@ -228,55 +178,6 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         },
     );
     if let Some((h, a)) = todo {
-        history_action(app, h, a);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn describes_history_entries() {
-        let (op, t) = describe(&JobKind::Move { sources: vec!["/a/x".into()], dest_dir: "/b".into(), rename_to: None });
-        assert_eq!(op, OpKind::Move);
-        assert_eq!(t, "Moved \u{201c}x\u{201d} to /b");
-        let (op, _) = describe(&JobKind::Copy { sources: vec!["/a/x".into()], dest_dir: "/a".into(), rename_to: None });
-        assert_eq!(op, OpKind::Duplicate);
-        let (op, t) = describe(&JobKind::Rename { pairs: vec![("/a/x".into(), "/a/y".into())] });
-        assert_eq!(op, OpKind::Rename);
-        assert_eq!(t, "Renamed \u{201c}x\u{201d} to \u{201c}y\u{201d}");
-        let (op, _) = describe(&JobKind::Delete { paths: vec!["/a".into()], mode: DeleteMode::Permanent });
-        assert_eq!(op, OpKind::Delete);
-    }
-
-    #[test]
-    fn verified_badge_rules() {
-        use super::super::activity::verify_badge;
-        use soyuz_jobs::{JobKindBrief as K, JobState, JobSummary};
-        let ok = JobState::Done(JobSummary::default());
-        let bad = JobState::Done(JobSummary { items_failed: 1, ..JobSummary::default() });
-        assert_eq!(verify_badge(K::Copy, true, &ok), Some("Verified"));
-        assert_eq!(verify_badge(K::Sync, true, &JobState::Running), Some("Verifying"));
-        assert_eq!(verify_badge(K::Copy, true, &bad), None, "failures: no badge");
-        assert_eq!(verify_badge(K::Copy, false, &ok), None);
-        assert_eq!(verify_badge(K::Delete, true, &ok), None, "only copying jobs");
-        let mut h = HistoryEntry {
-            id: soyuz_jobs::HistoryId(1),
-            job: JobKind::Copy { sources: vec!["/a".into()], dest_dir: "/b".into(), rename_to: None },
-            summary: JobSummary::default(),
-            when: std::time::SystemTime::now(),
-            records: Vec::new(),
-            undone: false,
-            undoable: true,
-            stamps: Vec::new(),
-            options: None,
-            this_session: true,
-        };
-        assert!(!is_verified(&h), "old entries without options");
-        let mut o = soyuz_jobs::JobOptions::default();
-        o.copy.verify = Some(soyuz_core::HashAlgo::Blake3);
-        h.options = Some(o);
-        assert!(is_verified(&h));
+        history_action(&mut app.core, h, a);
     }
 }

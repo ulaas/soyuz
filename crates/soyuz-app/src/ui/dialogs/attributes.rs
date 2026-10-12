@@ -22,10 +22,10 @@ use crate::theme::{icons::ph, palette};
 use crate::ui::toasts::Toast;
 
 pub fn open(app: &mut SoyuzApp) {
-    match super::properties::targets(app) {
-        Ok((_, entries)) => app.ui.dialogs.push(AttributesDialog::new(entries)),
+    match super::properties::targets(&app.core) {
+        Ok((_, entries)) => app.gui.dialogs.push(AttributesDialog::new(entries)),
         Err(e) => {
-            app.ui.toasts.push(Toast::info(e));
+            app.core.ui.toasts.push(Toast::info(e));
         }
     }
 }

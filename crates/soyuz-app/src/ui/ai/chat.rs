@@ -15,10 +15,10 @@ use super::{PanelAct, Tone, button, chip, tokens};
 use crate::ai::agent::Finish;
 use crate::ai::state::{self, CardState, ChatItem, TaskEnd, ToolStatus, UndoState};
 use crate::app::SoyuzApp;
-use crate::ops::fileops::dnd::DragPayload;
 use crate::theme::Palette;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
+use crate::ui::dnd::DragPayload;
 use crate::ui::views::flow::semibold;
 
 const COMPOSER_ID: &str = "soyuz.ai.composer";
@@ -29,23 +29,23 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
         .frame(Frame::new().inner_margin(Margin { left: 0, right: 0, top: 8, bottom: 0 }))
         .show(ui, |ui| footer(ui, app, p, acts));
     super::mcp_area::show(ui, app, p, acts);
-    let stick = std::mem::take(&mut app.ai.panel.scroll_to_bottom);
+    let stick = std::mem::take(&mut app.core.ai.panel.scroll_to_bottom);
     let scroll = ScrollArea::vertical().id_salt("soyuz.ai.chat").auto_shrink([false, false]).stick_to_bottom(true);
     scroll.show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 8.0;
-        if app.ai.chat.is_empty() {
+        if app.core.ai.chat.is_empty() {
             // External requests above take the space; the ideas come back afterwards.
             if !super::mcp_area::visible(app) {
                 empty(ui, app, p, acts);
             }
             return;
         }
-        let running = app.ai.running.as_ref().map(|r| r.task);
-        let reduced = app.ui.reduced_motion;
-        let n = app.ai.chat.len();
+        let running = app.core.ai.running.as_ref().map(|r| r.task);
+        let reduced = app.core.ui.reduced_motion;
+        let n = app.core.ai.chat.len();
         for i in 0..n {
-            let item = &mut app.ai.chat[i];
+            let item = &mut app.core.ai.chat[i];
             match item {
                 ChatItem::User { text, mentions } => user(ui, p, text, mentions),
                 ChatItem::Assistant { text, reasoning, streaming, .. } => {
@@ -80,7 +80,7 @@ fn empty(ui: &mut Ui, app: &SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
         ui.label(RichText::new(tr!("ai-empty-body")).size(11.5).color(p.text_tertiary));
     });
     ui.add_space(14.0);
-    let has_sel = !app.ws.pane().selection.is_empty();
+    let has_sel = !app.core.ws.pane().selection.is_empty();
     let mut ideas: Vec<(&str, &str, String)> = vec![
         (ph::MAGIC_WAND, tr!("ai-idea-organize"), "/organize".into()),
         (ph::QUESTION, tr!("ai-idea-explain"), "/explain".into()),
@@ -392,13 +392,14 @@ fn task_end(ui: &mut Ui, p: &Palette, t: &mut TaskEnd, acts: &mut Vec<PanelAct>)
 // Footer: pending bar, smart search, mentions, composer.
 
 fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    if app.ai.smart.open {
+    if app.core.ai.smart.open {
         super::pages::smart_card(ui, app, p, acts);
         ui.add_space(6.0);
     }
-    if let Some(r) = &app.ai.running {
+    if let Some(r) = &app.core.ai.running {
         let task = r.task;
         let pending: Vec<bool> = app
+            .core
             .ai
             .chat
             .iter()
@@ -445,7 +446,7 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
 /// Candidates for an `@query` mention.
 fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathBuf>)> {
     let q = q.to_lowercase();
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let mut out: Vec<(String, String, Vec<PathBuf>)> = Vec::new();
     let sel: Vec<PathBuf> = pane.selected_entries().iter().map(|e| e.path.clone()).collect();
     if !sel.is_empty() && "selection".contains(&q) {
@@ -460,7 +461,7 @@ fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathB
             vec![d.clone()],
         ));
     }
-    for t in &app.ws.tabs {
+    for t in &app.core.ws.tabs {
         if let Location::Dir(d) = &t.active().location {
             let name = soyuz_core::entry::display_name(d);
             if (q.is_empty() || name.to_lowercase().contains(&q) || "tab".contains(&q))
@@ -483,11 +484,11 @@ fn mention_candidates(app: &SoyuzApp, q: &str) -> Vec<(String, String, Vec<PathB
 fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     let id = Id::new(COMPOSER_ID);
     // Mentions.
-    if !app.ai.panel.mentions.is_empty() {
+    if !app.core.ai.panel.mentions.is_empty() {
         let mut remove = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-            for (i, m) in app.ai.panel.mentions.iter().enumerate() {
+            for (i, m) in app.core.ai.panel.mentions.iter().enumerate() {
                 let name = soyuz_core::entry::display_name(m);
                 if chip(ui, Some(ph::AT), &format!("{name}  \u{00d7}"), true)
                     .on_hover_text(m.display().to_string())
@@ -498,12 +499,12 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
             }
         });
         if let Some(i) = remove {
-            app.ai.panel.mentions.remove(i);
+            app.core.ai.panel.mentions.remove(i);
         }
         ui.add_space(4.0);
     }
     // Popups above the composer: slash commands / mentions.
-    let text = app.ai.panel.composer.clone();
+    let text = app.core.ai.panel.composer.clone();
     let last_tok = text.rsplit(char::is_whitespace).next().unwrap_or("");
     let slash = text.starts_with('/') && !text.contains(char::is_whitespace);
     let mention = last_tok.starts_with('@');
@@ -519,13 +520,13 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
             popup_frame(ui, p, |ui| {
                 for (c, _, _) in &matches {
                     if pick_row(ui, p, ph::LIGHTNING, c, state::slash_description(c)) {
-                        app.ai.panel.composer = format!("{c} ");
-                        app.ai.panel.focus_composer = true;
+                        app.core.ai.panel.composer = format!("{c} ");
+                        app.core.ai.panel.focus_composer = true;
                     }
                 }
             });
             if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Tab)) {
-                app.ai.panel.composer = format!("{} ", matches[0].0);
+                app.core.ai.panel.composer = format!("{} ", matches[0].0);
             }
         }
     }
@@ -544,14 +545,14 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                 chosen = Some(cands[0].2.clone());
             }
             if let Some(paths) = chosen {
-                let cut = app.ai.panel.composer.len() - last_tok.len();
-                app.ai.panel.composer.truncate(cut);
+                let cut = app.core.ai.panel.composer.len() - last_tok.len();
+                app.core.ai.panel.composer.truncate(cut);
                 for p in paths {
-                    if !app.ai.panel.mentions.contains(&p) {
-                        app.ai.panel.mentions.push(p);
+                    if !app.core.ai.panel.mentions.contains(&p) {
+                        app.core.ai.panel.mentions.push(p);
                     }
                 }
-                app.ai.panel.focus_composer = true;
+                app.core.ai.panel.focus_composer = true;
             }
         }
     }
@@ -560,12 +561,12 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
     if has_focus
         && !popup
         && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
-        && !app.ai.panel.composer.trim().is_empty()
-        && app.ai.running.is_none()
+        && !app.core.ai.panel.composer.trim().is_empty()
+        && app.core.ai.running.is_none()
     {
         acts.push(PanelAct::Send);
     }
-    let running = app.ai.running.is_some();
+    let running = app.core.ai.running.is_some();
     let frame_rect = Frame::new()
         .fill(p.bg_sunken)
         .stroke(Stroke::new(1.0, if has_focus { p.accent.gamma_multiply(0.7) } else { p.border_subtle }))
@@ -575,7 +576,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
             ui.set_width(ui.available_width());
             let hint = if running { tr!("ai-composer-busy") } else { tr!("ai-composer-hint") };
             let resp = ui.add(
-                TextEdit::multiline(&mut app.ai.panel.composer)
+                TextEdit::multiline(&mut app.core.ai.panel.composer)
                     .id(id)
                     .hint_text(RichText::new(hint).color(p.text_tertiary))
                     .desired_rows(2)
@@ -583,7 +584,7 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                     .frame(Frame::NONE)
                     .font(FontId::proportional(13.0)),
             );
-            if std::mem::take(&mut app.ai.panel.focus_composer) {
+            if std::mem::take(&mut app.core.ai.panel.focus_composer) {
                 resp.request_focus();
             }
             ui.horizontal(|ui| {
@@ -600,15 +601,15 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                         Some(ph::PAPER_PLANE_RIGHT),
                         tr!("ai-send"),
                         Tone::Primary,
-                        !app.ai.panel.composer.trim().is_empty(),
+                        !app.core.ai.panel.composer.trim().is_empty(),
                     )
                     .clicked()
                     {
                         acts.push(PanelAct::Send);
                     }
-                    if chip(ui, Some(ph::MAGNIFYING_GLASS), tr!("ai-smart-chip"), app.ai.smart.open).clicked() {
-                        app.ai.smart.open = !app.ai.smart.open;
-                        app.ai.smart.focus = app.ai.smart.open;
+                    if chip(ui, Some(ph::MAGNIFYING_GLASS), tr!("ai-smart-chip"), app.core.ai.smart.open).clicked() {
+                        app.core.ai.smart.open = !app.core.ai.smart.open;
+                        app.core.ai.smart.focus = app.core.ai.smart.open;
                     }
                     tools_chip(ui, app, p, acts);
                 });
@@ -639,11 +640,11 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
                 && let Some(pl) = DragAndDrop::take_payload::<DragPayload>(ui.ctx())
             {
                 for path in pl.paths.iter() {
-                    if !app.ai.panel.mentions.contains(path) {
-                        app.ai.panel.mentions.push(path.clone());
+                    if !app.core.ai.panel.mentions.contains(path) {
+                        app.core.ai.panel.mentions.push(path.clone());
                     }
                 }
-                app.ai.panel.focus_composer = true;
+                app.core.ai.panel.focus_composer = true;
             }
         }
     }
@@ -652,12 +653,12 @@ fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAc
 /// "Tools" chip: the tool picker with Soyuz's catalog and the connected external MCP
 /// servers. Picking a tool asks the assistant to use it.
 fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    let ext = app.ai.external.tools();
-    let status = app.ai.external.status();
+    let ext = app.core.ai.external.tools();
+    let status = app.core.ai.external.status();
     let label = if ext.is_empty() { tr!("ai-tools").to_string() } else { tr!("ai-tools-connected", count = ext.len()) };
     let r = super::chip_menu(ui, Some(ph::PLUGS), &label, !ext.is_empty()).on_hover_text(tr!("ai-tools-tip"));
-    let max_risk = crate::ai::agent::Limits::from_config(&app.config.ai.agent).max_risk;
-    let connecting = app.ai.external_connecting();
+    let max_risk = crate::ai::agent::Limits::from_config(&app.core.config.ai.agent).max_risk;
+    let connecting = app.core.ai.external_connecting();
     let mut insert: Option<String> = None;
     crate::ui::native::popup::Menu::menu(&r).id(Id::new("soyuz.ai.tools")).show(|ui| {
         ui.set_width(330.0);
@@ -733,13 +734,13 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
         }
     });
     if let Some(name) = insert {
-        let c = &mut app.ai.panel.composer;
+        let c = &mut app.core.ai.panel.composer;
         if !c.is_empty() && !c.ends_with(char::is_whitespace) {
             c.push(' ');
         }
         c.push_str(&tr!("ai-use-tool", name = &name));
         c.push(' ');
-        app.ai.panel.focus_composer = true;
+        app.core.ai.panel.focus_composer = true;
     }
 }
 

@@ -224,7 +224,7 @@ pub fn set_mono(on: bool) {
 pub fn color(e: &EntryInfo, p: &Palette) -> Color32 {
     let class = classify(e);
     if class == FileClass::Folder
-        && let Some(c) = crate::services::folder_colors::color_of(&e.path, p)
+        && let Some(c) = crate::ui::looks::folder_color_of(&e.path, p)
     {
         // A color the user picked for this folder wins over the mono style.
         return c;

@@ -207,7 +207,7 @@ impl DupesWindow {
     /// per file, once per finished job).
     fn poll_trash(&mut self, app: &SoyuzApp) {
         let finished: Vec<usize> = (0..self.trashing.len())
-            .filter(|&i| app.fileops.jobs.snapshot(self.trashing[i].0).is_none_or(|s| s.state.is_terminal()))
+            .filter(|&i| app.core.fileops.jobs.snapshot(self.trashing[i].0).is_none_or(|s| s.state.is_terminal()))
             .collect();
         for i in finished.into_iter().rev() {
             let (_, paths) = self.trashing.remove(i);
@@ -445,12 +445,15 @@ impl DupesWindow {
                     if button(ui, Some(ph::TRASH), &tr!("tools-dupes-move-n-to-trash", count = n), 2, n > 0 && !busy)
                         .clicked()
                     {
-                        let spec =
-                            app.fileops.jobs.spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
-                        let id = app.fileops.jobs.submit(spec, JobMeta::new(OpKind::Trash, &paths, None));
+                        let spec = app
+                            .core
+                            .fileops
+                            .jobs
+                            .spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
+                        let id = app.core.fileops.jobs.submit(spec, JobMeta::new(OpKind::Trash, &paths, None));
                         self.trashing.push((id, paths));
                         self.confirm = false;
-                        app.ui.toasts.push(Toast::info(tr!("tools-dupes-toast-moving", count = n)));
+                        app.core.ui.toasts.push(Toast::info(tr!("tools-dupes-toast-moving", count = n)));
                     }
                     if button(ui, None, tr!("common-cancel"), 0, true).clicked() {
                         self.confirm = false;
@@ -473,8 +476,8 @@ impl DupesWindow {
             .map(|g| header_h + if g.collapsed { 0.0 } else { g.files.len() as f32 * row_h } + gap)
             .collect();
         let total: f32 = heights.iter().sum();
-        let cfg = app.config.general.clone();
-        let drag_default = app.config.behaviour.drag_default;
+        let cfg = app.core.config.general.clone();
+        let drag_default = app.core.config.behaviour.drag_default;
         let roots = self.roots.clone();
         let mut reveal = None;
         ScrollArea::vertical().id_salt("dupes.list").max_height(height).auto_shrink([false, false]).show_viewport(
@@ -693,7 +696,7 @@ impl DupesWindow {
             },
         );
         if let Some(p) = reveal {
-            app.cmds.push(Cmd::RevealPath(p));
+            app.core.cmds.push(Cmd::RevealPath(p));
         }
     }
 }
@@ -714,7 +717,7 @@ pub fn short_folder(roots: &[PathBuf], folder: &std::path::Path) -> String {
 }
 
 fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
-    let tab = app.ws.tab();
+    let tab = app.core.ws.tab();
     if !tab.dual || tab.panes.len() < 2 {
         return None;
     }

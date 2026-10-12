@@ -1,19 +1,18 @@
-//! Folder tree sidebar: a lazily loaded tree of the drives and the home
-//! folder. Child folders are listed by [`TreeService`] on worker threads; the UI only
-//! drains results. The tree follows the active pane (`[sidebar] tree_follow`), filters as
+//! Folder tree sidebar (drawing and egui input): a lazily loaded tree of the drives and
+//! the home folder. The state, the background listing, follow-the-pane, filtering and
+//! keyboard logic live in [`crate::models::tree`]; this module draws the rows, filters as
 //! you type, expands on drag-hover and accepts drops (same effect rules and jobs as every
-//! other drop target), refreshes expanded folders from a watcher, and is fully keyboard
-//! driven (arrows, Left/Right collapse/expand, Home/End, PageUp/PageDown, type-ahead).
+//! other drop target), and feeds keyboard input (arrows, Left/Right collapse/expand,
+//! Home/End, PageUp/PageDown, type-ahead) to the model.
 //!
 //! Where it appears is `[sidebar] mode`: `places` (no tree), `tree` (the tree fills the
 //! sidebar) or `both` (the tree is the `tree` section among the places sections).
 
-pub mod model;
+pub use crate::models::tree::model;
+pub use crate::models::tree::{TreeArgs, TreeCmd, TreeIo, TreeState};
 
-use std::collections::HashSet;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::path::Path;
+use std::time::Duration;
 
 use egui::accesskit::Role;
 use egui::text::{LayoutJob, TextFormat, TextWrapping};
@@ -22,19 +21,21 @@ use egui::{
     pos2, vec2,
 };
 use soyuz_core::Location;
-use soyuz_core::config::{Action, DragDefault, SidebarMode};
+use soyuz_core::config::DragDefault;
 use soyuz_fs::VolumeInfo;
 
-use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd::{self, DragPayload};
-use crate::services::tree::{TreeMsg, TreeService};
-use crate::state::pane::PaneId;
+use crate::models::tree::KeyInput;
 use crate::theme::tokens::{alpha, radius, size};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::toasts::Toast;
+use crate::ui::dnd::{self, DragPayload};
 use crate::ui::widgets::{focus_ring, menu_item, menu_separator};
-use model::{Flat, Nav, NavOutcome, Reveal, Root, RootKind, RowKey, TreeModel, Visibility};
+use model::{Nav, RootKind};
+
+/// The filter box's widget id.
+fn filter_id() -> Id {
+    Id::new("soyuz.tree.filter")
+}
 
 /// Indentation per tree level (compressed down to `INDENT_MIN` for deep trees so
 /// labels keep at least `LABEL_MIN` points).
@@ -49,239 +50,11 @@ pub fn indent_for(width: f32, max_depth: usize) -> f32 {
     }
     ((width - 48.0 - LABEL_MIN) / max_depth as f32).clamp(INDENT_MIN, INDENT)
 }
-/// Type-ahead buffer lifetime.
-const TYPE_AHEAD: Duration = Duration::from_millis(900);
-/// Keyboard selection navigates the pane after this pause (arrowing through quickly
-/// does not list every folder on the way).
-const NAV_DELAY: Duration = Duration::from_millis(220);
-/// At most this many expanded folders are remembered in the session.
-pub const SESSION_LIMIT: usize = 256;
-
-/// App-level effects of the tree (applied by [`apply`] through `Cmd::Tree`).
-#[derive(Clone, Debug)]
-pub enum TreeCmd {
-    /// The tree was clicked: keyboard focus moves to the sidebar.
-    Focus,
-    NewFolder(PathBuf),
-    Properties(PathBuf),
-}
-
-#[derive(Default)]
-pub struct TreeState {
-    pub model: TreeModel,
-    service: Option<TreeService>,
-    pub filter: String,
-    /// Keyboard cursor / highlighted row.
-    pub selected: Option<RowKey>,
-    flat: Flat,
-    flat_key: Option<(u64, Visibility, String)>,
-    /// Reveal in progress: root index and target folder.
-    reveal: Option<(usize, PathBuf)>,
-    /// Last pane folder the tree followed.
-    synced: Option<PathBuf>,
-    scroll_to_selected: bool,
-    typed: String,
-    typed_at: Option<Instant>,
-    drag_hover: Option<(PathBuf, Instant)>,
-    pending_nav: Option<(PathBuf, Instant)>,
-    /// Folders changed (watcher) while a listing of them was running.
-    relist: HashSet<PathBuf>,
-    watched: Vec<PathBuf>,
-    watched_version: Option<u64>,
-    /// Mode to return to when the tree is toggled back on.
-    pub last_tree_mode: Option<SidebarMode>,
-    /// Mode the sidebar icon bar's "Places" button returns to (`places` or `both`).
-    pub last_places_mode: Option<SidebarMode>,
-    filter_id: Option<Id>,
-}
-
-/// Per-frame inputs from the configuration and the window state.
-pub struct TreeArgs<'a> {
-    pub state: &'a mut TreeState,
-    pub mode: SidebarMode,
-    pub vis: Visibility,
-    pub follow: bool,
-    pub drag_expand: Option<Duration>,
-    pub drag_default: DragDefault,
-    /// The sidebar has keyboard focus (and no text field does).
-    pub keyboard: bool,
-    pub debounce: Duration,
-}
-
-/// What the tree needs from the rest of the sidebar.
-pub struct TreeIo<'a> {
-    pub volumes: &'a [VolumeInfo],
-    pub current: &'a Location,
-    pub pane: PaneId,
-    pub cmds: &'a mut Vec<Cmd>,
-}
-
-impl TreeState {
-    /// Expanded folders restored from the session.
-    pub fn restore_expanded(&mut self, paths: impl IntoIterator<Item = PathBuf>) {
-        for p in paths {
-            self.model.expand(&p);
-        }
-    }
-
-    /// Expanded folders for the session (bounded).
-    pub fn session_expanded(&self) -> Vec<PathBuf> {
-        self.model.expanded.iter().take(SESSION_LIMIT).cloned().collect()
-    }
-
-    fn service(&mut self, ctx: &egui::Context, debounce: Duration) -> &TreeService {
-        self.service.get_or_insert_with(|| {
-            let c = ctx.clone();
-            TreeService::new(Arc::new(move || c.request_repaint()), debounce)
-        })
-    }
-
-    fn list(&mut self, ctx: &egui::Context, debounce: Duration, dir: &Path) {
-        self.model.mark_loading(dir);
-        self.service(ctx, debounce).list(dir);
-    }
-
-    fn row_index(&self, key: &RowKey) -> Option<usize> {
-        self.flat.rows.iter().position(|r| &r.key == key)
-    }
-}
-
-/// Roots: Home first, then every volume.
-fn roots(volumes: &[VolumeInfo]) -> Vec<Root> {
-    let mut v = vec![Root { path: soyuz_fs::home(), label: tr!("views-tree-home").into(), kind: RootKind::Home }];
-    for (i, vol) in volumes.iter().enumerate() {
-        v.push(Root {
-            path: vol.mount.clone(),
-            label: crate::ui::views::computer::volume_label(vol),
-            kind: RootKind::Volume(i),
-        });
-    }
-    v
-}
-
-/// Background results, roots, follow-the-pane and lazy loading. Cheap when idle.
-fn pump(ctx: &egui::Context, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
-    let debounce = a.debounce;
-    let s = &mut *a.state;
-    s.model.set_roots(roots(io.volumes));
-    let msgs = s.service.as_ref().map(TreeService::drain).unwrap_or_default();
-    for m in msgs {
-        match m {
-            TreeMsg::Listed { dir, result } => match result {
-                Ok(children) => {
-                    for c in &children {
-                        crate::theme::font_fallback::note(&c.name);
-                    }
-                    s.model.set_children(&dir, children);
-                    if s.relist.remove(&dir) {
-                        s.service(ctx, debounce).list(&dir);
-                    }
-                }
-                Err(e) => s.model.set_failed(&dir, e),
-            },
-            TreeMsg::Probed { probes, .. } => {
-                for (p, probe) in probes {
-                    s.model.set_probe(&p, probe);
-                }
-            }
-            TreeMsg::Changed(dir) => relist(s, ctx, debounce, &dir),
-            TreeMsg::Lost(dir) => {
-                if let Some(parent) = dir.parent() {
-                    relist(s, ctx, debounce, parent);
-                }
-            }
-        }
-    }
-    s.model.set_pinned(match io.current {
-        Location::Dir(d) => Some(d.clone()),
-        _ => None,
-    });
-    // Follow the active pane.
-    if a.follow
-        && let Location::Dir(cur) = io.current
-        && s.synced.as_ref() != Some(cur)
-    {
-        s.synced = Some(cur.clone());
-        let ci = model::case_insensitive();
-        let already =
-            s.selected.as_ref().is_some_and(|k| model::rel_components(cur, &k.path, ci).is_some_and(|r| r.is_empty()));
-        if !already {
-            s.reveal = model::best_root(&s.model.roots, cur, ci).map(|ri| (ri, cur.clone()));
-        } else {
-            s.reveal = None;
-        }
-    }
-    if let Some((ri, target)) = s.reveal.clone() {
-        match s.model.reveal(ri, &target, a.vis, model::case_insensitive()) {
-            Reveal::Done(key) | Reveal::Partial(key) => {
-                s.selected = Some(key);
-                // As a section among the places, following must not yank the sidebar
-                // down to the tree on every navigation; with the keyboard it may.
-                s.scroll_to_selected = a.mode == SidebarMode::Tree || a.keyboard;
-                s.reveal = None;
-            }
-            Reveal::Pending(dirs) => {
-                for d in dirs {
-                    if s.model.needs_load(&d) {
-                        s.list(ctx, debounce, &d);
-                    }
-                }
-            }
-            Reveal::Outside => s.reveal = None,
-        }
-    }
-    // Rows (cached until the model, the hidden rule or the filter change).
-    let key = (s.model.version, a.vis, s.filter.clone());
-    if s.flat_key.as_ref() != Some(&key) {
-        s.flat = s.model.flatten(a.vis, &s.filter);
-        s.flat_key = Some(key);
-        for d in std::mem::take(&mut s.flat.to_load) {
-            s.list(ctx, debounce, &d);
-        }
-    }
-    // Watch the open folders.
-    if s.watched_version != Some(s.model.version) {
-        s.watched_version = Some(s.model.version);
-        let mut open = s.model.open_dirs();
-        open.truncate(crate::services::tree::WATCH_LIMIT);
-        if open != s.watched {
-            s.watched = open.clone();
-            s.service(ctx, debounce).watch(open);
-        }
-    }
-    // Debounced keyboard navigation.
-    if let Some((path, at)) = s.pending_nav.clone() {
-        let left = NAV_DELAY.saturating_sub(at.elapsed());
-        if left.is_zero() {
-            s.pending_nav = None;
-            s.synced = Some(path.clone());
-            io_navigate(io.pane, path, io.cmds);
-        } else {
-            ctx.request_repaint_after(left);
-        }
-    }
-}
-
-fn relist(s: &mut TreeState, ctx: &egui::Context, debounce: Duration, dir: &Path) {
-    match s.model.node(dir).map(|n| n.load.clone()) {
-        Some(model::Load::Loaded) => s.service(ctx, debounce).list(dir),
-        Some(model::Load::Loading) => {
-            s.relist.insert(dir.to_path_buf());
-        }
-        Some(model::Load::Failed(_)) => s.model.retry(dir),
-        _ => {}
-    }
-}
-
-fn io_navigate(pane: PaneId, path: PathBuf, cmds: &mut Vec<Cmd>) {
-    cmds.push(Cmd::Navigate { pane, location: Location::Dir(path), select: None });
-}
 
 /// The filter box ("Filter folders"), with a clear button while it has text.
 pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
     let p = palette(ui.ctx());
-    let id = Id::new("soyuz.tree.filter");
-    s.filter_id = Some(id);
+    let id = filter_id();
     ui.add_space(2.0);
     let h = 26.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), Sense::hover());
@@ -336,14 +109,14 @@ pub fn filter_box(ui: &mut Ui, s: &mut TreeState) {
 /// Draw the rows (virtualized: only the visible ones are laid out) and handle input.
 pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
     let ctx = ui.ctx().clone();
-    pump(&ctx, a, io);
-    let filter_focused = a.state.filter_id.is_some_and(|id| ctx.memory(|m| m.has_focus(id)));
+    crate::models::tree::pump(&crate::host::EguiHost::new(&ctx), a, io, crate::ui::views::computer::volume_label);
+    let filter_focused = ctx.memory(|m| m.has_focus(filter_id()));
     let h = (size::ROW_COMPACT + 2.0).max(ui.spacing().interact_size.y + 2.0);
     if a.keyboard || filter_focused {
         keyboard(&ctx, a, io, filter_focused, h);
     }
     let s = &mut *a.state;
-    let n = s.flat.rows.len();
+    let n = s.rows().len();
     let width = ui.available_width();
     let (all, _) = ui.allocate_exact_size(vec2(width, (n as f32 * h).max(h)), Sense::hover());
     let container = Id::new("soyuz.tree");
@@ -361,12 +134,11 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         return;
     }
     let selected_idx = s.selected.as_ref().and_then(|k| s.row_index(k));
-    if s.scroll_to_selected {
-        s.scroll_to_selected = false;
-        if let Some(i) = selected_idx {
-            let r = Rect::from_min_size(pos2(all.left(), all.top() + i as f32 * h), vec2(width, h));
-            ui.scroll_to_rect(r, Some(Align::Center));
-        }
+    if s.take_scroll()
+        && let Some(i) = selected_idx
+    {
+        let r = Rect::from_min_size(pos2(all.left(), all.top() + i as f32 * h), vec2(width, h));
+        ui.scroll_to_rect(r, Some(Align::Center));
     }
     let clip = ui.clip_rect();
     let first = (((clip.top() - all.top()) / h).floor().max(0.0) as usize).min(n);
@@ -376,13 +148,13 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         _ => None,
     };
     let mut hovering_drop = false;
-    let max_depth = s.flat.rows[first..last].iter().map(|r| r.depth).max().unwrap_or(0);
+    let max_depth = s.rows()[first..last].iter().map(|r| r.depth).max().unwrap_or(0);
     let target = indent_for(width, max_depth);
     // Ease the indentation change when deeper rows scroll in or out.
     let indent = ctx.animate_value_with_time(container.with("indent"), target, crate::theme::anim(&ctx, 0.15));
     for i in first..last {
         let rect = Rect::from_min_size(pos2(all.left(), all.top() + i as f32 * h), vec2(width, h));
-        let row = s.flat.rows[i].clone();
+        let row = s.rows()[i].clone();
         let is_current = current.as_deref().is_some_and(|c| c == row.key.path);
         let is_selected = selected_idx == Some(i);
         let cursor = is_selected && (a.keyboard || filter_focused);
@@ -394,10 +166,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
             if on_chevron && row.expandable {
                 s.model.toggle(&row.key.path);
             } else {
-                s.selected = Some(row.key.clone());
-                s.synced = Some(row.key.path.clone());
-                s.pending_nav = None;
-                io_navigate(io.pane, row.key.path.clone(), io.cmds);
+                s.open_row(row.key.clone(), io.pane, io.cmds);
             }
             io.cmds.push(Cmd::Tree(TreeCmd::Focus));
         }
@@ -413,20 +182,11 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         // Drop target; hovering a collapsed folder expands it after a delay.
         if dnd::target(ui, &resp, &row.key.path, io.cmds) {
             hovering_drop = true;
-            if row.expandable && !row.expanded {
-                match &s.drag_hover {
-                    Some((p, at)) if *p == row.key.path => {
-                        if let Some(delay) = a.drag_expand {
-                            if at.elapsed() >= delay {
-                                s.model.expand(&row.key.path);
-                                s.drag_hover = None;
-                            } else {
-                                ctx.request_repaint_after(delay - at.elapsed());
-                            }
-                        }
-                    }
-                    _ => s.drag_hover = Some((row.key.path.clone(), Instant::now())),
-                }
+            if row.expandable
+                && !row.expanded
+                && let Some(wait) = s.drag_hover(&row.key.path, a.drag_expand)
+            {
+                ctx.request_repaint_after(wait);
             }
         }
         let path = row.key.path.clone();
@@ -437,7 +197,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(230.0);
             if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-tree-open"), None, true).clicked() {
-                io_navigate(io.pane, path.clone(), cmds);
+                cmds.push(Cmd::Navigate { pane: io.pane, location: Location::Dir(path.clone()), select: None });
                 ui.close();
             }
             if menu_item(ui, Some(ph::BROWSERS), tr!("views-tree-open-new-tab"), None, true).clicked() {
@@ -486,7 +246,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
         }
     }
     if !hovering_drop && dnd::payload(&ctx).is_none() {
-        s.drag_hover = None;
+        s.drag_left();
     }
 }
 
@@ -554,7 +314,7 @@ fn row_ui(
         chevron(&painter, cc, 3.5, t * std::f32::consts::FRAC_PI_2, color);
     }
     // Icon.
-    let (glyph, fill) = match (&row.depth, root_kind(s, row)) {
+    let (glyph, fill) = match (&row.depth, s.root_kind(row)) {
         (0, Some(RootKind::Home)) => (ph::HOUSE, current),
         (0, Some(RootKind::Volume(i))) => {
             (volumes.get(i).map_or(ph::HARD_DRIVE, crate::ui::views::computer::volume_glyph), current)
@@ -607,10 +367,6 @@ fn row_ui(
     resp.on_hover_text_at_pointer(tip)
 }
 
-fn root_kind(s: &TreeState, row: &model::Row) -> Option<RootKind> {
-    (row.depth == 0).then(|| s.model.roots.get(row.key.root).map(|r| r.kind.clone())).flatten()
-}
-
 /// A chevron pointing right, rotated by `angle` (0 → right, π/2 → down).
 fn chevron(painter: &egui::Painter, c: egui::Pos2, r: f32, angle: f32, color: Color32) {
     let rot = |x: f32, y: f32| {
@@ -634,22 +390,20 @@ fn spinner(painter: &egui::Painter, c: egui::Pos2, r: f32, color: Color32, time:
     painter.add(egui::Shape::line(pts, Stroke::new(1.4, color)));
 }
 
-/// Arrow keys, Home/End, PageUp/PageDown, Enter, Escape and type-ahead.
+/// Arrow keys, Home/End, PageUp/PageDown, Enter, Escape and type-ahead: collected
+/// here, carried out by [`crate::models::tree::keyboard`].
 fn keyboard(ctx: &egui::Context, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, filter_focused: bool, h: f32) {
-    let s = &mut *a.state;
     let page = ((ctx.content_rect().height() * 0.6) / h).max(1.0) as usize;
-    let mut steps: Vec<Nav> = Vec::new();
-    let mut enter = false;
-    let mut escape = false;
+    let mut k = KeyInput { filter_focused, ..KeyInput::default() };
     ctx.input_mut(|i| {
-        let mut take = |k: Key| i.consume_key(Modifiers::NONE, k);
-        for (k, n) in [(Key::ArrowUp, Nav::Up), (Key::ArrowDown, Nav::Down)] {
-            if take(k) {
-                steps.push(n);
+        let mut take = |key: Key| i.consume_key(Modifiers::NONE, key);
+        for (key, n) in [(Key::ArrowUp, Nav::Up), (Key::ArrowDown, Nav::Down)] {
+            if take(key) {
+                k.steps.push(n);
             }
         }
         if !filter_focused {
-            for (k, n) in [
+            for (key, n) in [
                 (Key::ArrowLeft, Nav::Left),
                 (Key::ArrowRight, Nav::Right),
                 (Key::Home, Nav::Home),
@@ -657,27 +411,16 @@ fn keyboard(ctx: &egui::Context, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, filt
                 (Key::PageUp, Nav::PageUp(page)),
                 (Key::PageDown, Nav::PageDown(page)),
             ] {
-                if take(k) {
-                    steps.push(n);
+                if take(key) {
+                    k.steps.push(n);
                 }
             }
         }
-        enter = take(Key::Enter);
-        escape = take(Key::Escape);
+        k.enter = take(Key::Enter);
+        k.escape = take(Key::Escape);
     });
-    let cur = s.selected.as_ref().and_then(|k| s.row_index(k));
-    let mut moved = None;
-    for step in steps {
-        let cur = moved.or(cur);
-        match model::nav(&s.flat.rows, cur, step) {
-            NavOutcome::Select(i) => moved = Some(i),
-            NavOutcome::Expand(i) => s.model.expand(&s.flat.rows[i].key.path),
-            NavOutcome::Collapse(i) => s.model.collapse(&s.flat.rows[i].key.path),
-            NavOutcome::None => {}
-        }
-    }
     if !filter_focused {
-        let typed: String = ctx.input(|i| {
+        k.typed = ctx.input(|i| {
             i.events
                 .iter()
                 .filter_map(|e| match e {
@@ -688,135 +431,36 @@ fn keyboard(ctx: &egui::Context, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, filt
                 })
                 .collect()
         });
-        let typed: String = typed.chars().filter(|c| !c.is_control()).collect();
-        if !typed.trim().is_empty() || (!typed.is_empty() && !s.typed.is_empty()) {
-            if s.typed_at.is_none_or(|t| t.elapsed() > TYPE_AHEAD) {
-                s.typed.clear();
-            }
-            s.typed.push_str(&typed);
-            s.typed_at = Some(Instant::now());
-            if let Some(i) = model::type_ahead(&s.flat.rows, moved.or(cur), &s.typed) {
-                moved = Some(i);
-            }
-        }
     }
-    if let Some(i) = moved {
-        let key = s.flat.rows[i].key.clone();
-        s.pending_nav = Some((key.path.clone(), Instant::now()));
-        s.selected = Some(key);
-        s.scroll_to_selected = true;
-    }
-    if enter && let Some(k) = s.selected.clone() {
-        s.pending_nav = None;
-        s.synced = Some(k.path.clone());
-        io_navigate(io.pane, k.path, io.cmds);
-        if filter_focused {
-            ctx.memory_mut(|m| m.surrender_focus(Id::new("soyuz.tree.filter")));
-            io.cmds.push(Cmd::Tree(TreeCmd::Focus));
-        }
-    }
-    if escape {
-        if !s.filter.is_empty() {
-            s.filter.clear();
-        } else {
-            io.cmds.push(Cmd::Action(Action::FocusList));
-        }
+    if crate::models::tree::keyboard(a.state, k, io) {
+        ctx.memory_mut(|m| m.surrender_focus(filter_id()));
     }
 }
 
-/// Apply a [`TreeCmd`].
-pub fn apply(app: &mut SoyuzApp, cmd: TreeCmd) {
-    match cmd {
-        TreeCmd::Focus => app.ui.focus = Focus::Sidebar,
-        TreeCmd::NewFolder(dir) => new_folder(app, dir),
-        TreeCmd::Properties(dir) => match soyuz_fs::stat(&dir, false) {
-            Ok(e) => {
-                let pane = app.ws.pane().id;
-                let size_style = app.config.general.size_style;
-                let d = crate::ui::dialogs::properties::PropertiesDialog::new(
-                    pane,
-                    vec![e],
-                    size_style,
-                    crate::ui::dialogs::properties::Tab::General,
-                    None,
-                )
-                .naming(app);
-                app.ui.dialogs.push(d);
-            }
-            Err(e) => {
-                app.ui.toasts.push(Toast::error(tr!("views-tree-read-failed")).body(e.to_string()));
-            }
-        },
-    }
-}
-
-/// Create "New folder" inside `dir` (a job, so it is undoable), open `dir` in the
-/// active pane and start renaming the new folder there.
-fn new_folder(app: &mut SoyuzApp, dir: PathBuf) {
-    use crate::ops::fileops::names;
-    use crate::services::jobs::{AfterJob, JobMeta, OpKind};
-    let pane = app.ws.pane().id;
-    let existing: Vec<String> = app
-        .ui
-        .tree
-        .model
-        .node(&dir)
-        .map(|n| n.children.iter().map(|c| soyuz_core::entry::display_name(c)).collect())
-        .unwrap_or_default();
-    let refs: Vec<&str> = existing.iter().map(String::as_str).collect();
-    let name = names::unique_in(&refs, tr!("views-tree-new-folder-name"), names::case_insensitive_fs());
-    let path = dir.join(&name);
-    crate::ops::navigate(app, pane, Location::Dir(dir.clone()), crate::ops::NavOpts::user());
-    let spec =
-        app.fileops.jobs.spec(soyuz_jobs::JobKind::Create { path: path.clone(), kind: soyuz_jobs::CreateKind::Dir });
-    let meta = JobMeta::new(OpKind::NewFolder, std::slice::from_ref(&path), Some(dir))
-        .after(AfterJob::SelectAndRename { pane, path })
-        .quiet();
-    app.fileops.jobs.submit(spec, meta);
-}
-
-/// The sidebar icon bar: `Places` returns to the last places-like mode (`places` or
-/// `both`), `Tree` shows the full-height disk tree. Writes `[sidebar] mode` like Settings.
-pub fn set_mode(app: &mut SoyuzApp, ctx: &egui::Context, want: SidebarMode) {
-    let cur = app.config.sidebar.mode;
-    let next = match want {
-        SidebarMode::Tree => SidebarMode::Tree,
-        _ if cur == SidebarMode::Tree => app.ui.tree.last_places_mode.unwrap_or(want),
-        m => m,
-    };
-    if next == cur {
-        return;
-    }
-    if cur != SidebarMode::Tree {
-        app.ui.tree.last_places_mode = Some(cur);
-    }
-    if cur != SidebarMode::Places {
-        app.ui.tree.last_tree_mode = Some(cur);
-    }
-    crate::ui::settings::update_config(app, ctx, |c| c.sidebar.mode = next);
-}
-
-/// `Action::ToggleTreeSidebar`: places ↔ the last tree mode (the full-height disk tree by
-/// default). Writes
-/// `[sidebar] mode` like the Settings window would.
-pub fn toggle(app: &mut SoyuzApp, ctx: &egui::Context) {
-    let cur = app.config.sidebar.mode;
-    let next = match cur {
-        SidebarMode::Places => app.ui.tree.last_tree_mode.unwrap_or(SidebarMode::Tree),
-        m => {
-            app.ui.tree.last_tree_mode = Some(m);
-            SidebarMode::Places
+/// `TreeCmd::Properties` (through `FrontendCmd::Properties`): the properties dialog of
+/// a tree folder.
+pub fn properties(app: &mut crate::app::SoyuzApp, dir: &Path) {
+    match soyuz_fs::stat(dir, false) {
+        Ok(e) => {
+            let pane = app.core.ws.pane().id;
+            let size_style = app.core.config.general.size_style;
+            let d = crate::ui::dialogs::properties::PropertiesDialog::new(
+                pane,
+                vec![e],
+                size_style,
+                crate::ui::dialogs::properties::Tab::General,
+                None,
+            )
+            .naming(app);
+            app.gui.dialogs.push(d);
         }
-    };
-    if !app.ui.sidebar_visible {
-        app.ui.sidebar_visible = true;
-        if cur != SidebarMode::Places {
-            return; // showing the sidebar already shows the tree
+        Err(e) => {
+            app.core
+                .ui
+                .toasts
+                .push(crate::models::toasts::Toast::error(tr!("views-tree-read-failed")).body(e.to_string()));
         }
     }
-    crate::ui::settings::update_config(app, ctx, |c| c.sidebar.mode = next);
-    let msg = if next == SidebarMode::Places { tr!("views-tree-hidden") } else { tr!("views-tree-shown") };
-    app.ui.toasts.push(Toast::info(msg));
 }
 
 #[cfg(test)]

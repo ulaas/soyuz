@@ -119,7 +119,7 @@ mod tests {
     fn details_for_a_jpeg_with_exif() {
         let dir = tempfile::tempdir().unwrap();
         let p = dir.path().join("x.jpg");
-        std::fs::write(&p, crate::rename::exif::tests::sample_jpeg()).unwrap();
+        std::fs::write(&p, crate::rename::exif::fixtures::sample_jpeg()).unwrap();
         let e = soyuz_fs::stat(&p, false).unwrap();
         let s = load(&e);
         assert_eq!(s[0].0, "File system");

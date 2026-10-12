@@ -1,33 +1,43 @@
 //! `soyuz-term`: embedded terminal (alacritty_terminal backend + egui widget).
 //! No soyuz-* dependency, so it builds and tests in isolation.
 //!
+//! The backend ([`Terminal`], [`TermPalette`], [`TermColor`]) is toolkit-free: it wakes
+//! the host UI through a [`Wake`] callback. The egui widget ([`TerminalView`],
+//! [`TermTheme`], [`egui_wake`]) is behind the cargo feature `egui`.
+//!
 //! Usage:
 //! ```no_run
-//! # fn demo(ctx: egui::Context, ui: &mut egui::Ui) -> Result<(), soyuz_term::TermError> {
-//! use soyuz_term::{Terminal, TerminalView, TermSettings, TermEvent};
-//! let term = Terminal::spawn(TermSettings { cwd: "/tmp".into(), ..Default::default() }, ctx, 1)?;
+//! # fn demo(wake: soyuz_term::Wake) -> Result<(), soyuz_term::TermError> {
+//! use soyuz_term::{Terminal, TermSettings, TermEvent};
+//! // egui: `soyuz_term::egui_wake(ctx.clone())`.
+//! let term = Terminal::spawn(TermSettings { cwd: "/tmp".into(), ..Default::default() }, wake, 1)?;
 //! // every frame:
 //! for ev in term.events().try_iter() {
 //!     if let TermEvent::CwdChanged(dir) = ev { /* sync the file pane */ let _ = dir; }
 //! }
-//! let r = TerminalView::new(&term).focused(true).show(ui);
-//! if let Some(url) = r.link_clicked { let _ = url; /* open it */ }
 //! # Ok(()) }
 //! ```
 #![deny(unsafe_code)]
 
 mod backend;
-#[cfg(any(test, feature = "fuzzing"))]
+pub mod color;
+mod encode;
+#[cfg(any(all(test, feature = "egui"), feature = "fuzzing"))]
 pub mod fuzzing;
+#[cfg(feature = "egui")]
 mod keys;
 pub mod osc7;
 mod pty;
+#[cfg(feature = "egui")]
 mod render;
+#[cfg_attr(not(feature = "egui"), allow(dead_code))]
 mod selection;
+#[cfg(feature = "egui")]
 pub mod theme;
 // The only `unsafe` in the crate: forwarding alacritty's `unsafe fn register`.
 #[allow(unsafe_code)]
 mod tty_tee;
+#[cfg_attr(not(feature = "egui"), allow(dead_code))]
 mod url;
 
 use std::borrow::Cow;
@@ -37,10 +47,23 @@ use std::time::Duration;
 
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::term::TermMode;
+#[cfg(feature = "egui")]
 use egui::{FontId, Ui};
 
+pub use color::{TermColor, TermPalette};
 pub use pty::has_control_chars;
+#[cfg(feature = "egui")]
 pub use theme::TermTheme;
+
+/// Asks the host UI to redraw; called from the PTY thread (coalesced: at most once per
+/// drawn frame for output, plus title / bell / exit / clipboard events).
+pub type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
+
+/// A [`Wake`] that requests an egui repaint.
+#[cfg(feature = "egui")]
+pub fn egui_wake(ctx: egui::Context) -> Wake {
+    std::sync::Arc::new(move || ctx.request_repaint())
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CursorStyle {
@@ -107,6 +130,7 @@ const CD_IDLE: Duration = Duration::from_millis(300);
 pub struct Terminal {
     events_rx: crossbeam_channel::Receiver<TermEvent>,
     backend: backend::Backend,
+    #[cfg(feature = "egui")]
     view: parking_lot::Mutex<render::ViewState>,
 }
 
@@ -121,12 +145,30 @@ impl std::fmt::Debug for Terminal {
 }
 
 impl Terminal {
-    /// Spawn the shell in a PTY (ConPTY on Windows, openpty on unix). `id` must be unique
-    /// per live terminal (it keys the widget's egui `Id`).
-    pub fn spawn(settings: TermSettings, ctx: egui::Context, id: u64) -> Result<Self, TermError> {
+    /// Spawn the shell in a PTY (ConPTY on Windows, openpty on unix). `wake` is called
+    /// (from the PTY thread) when the terminal needs a redraw. `id` must be unique per
+    /// live terminal (it keys the widget's egui `Id`).
+    pub fn spawn(settings: TermSettings, wake: Wake, id: u64) -> Result<Self, TermError> {
         let (tx, rx) = crossbeam_channel::unbounded();
-        let backend = backend::Backend::spawn(&settings, ctx, id, tx)?;
-        Ok(Terminal { events_rx: rx, backend, view: parking_lot::Mutex::new(render::ViewState::default()) })
+        let backend = backend::Backend::spawn(&settings, wake, id, tx)?;
+        Ok(Terminal {
+            events_rx: rx,
+            backend,
+            #[cfg(feature = "egui")]
+            view: parking_lot::Mutex::new(render::ViewState::default()),
+        })
+    }
+
+    /// Colors reported to programs that query them (OSC 4 / 10 / 11 / 12). The egui
+    /// widget sets them from its [`TermTheme`] every frame; other front ends call this.
+    pub fn set_palette(&self, palette: &TermPalette) {
+        self.backend.shared.set_colors(palette.fg, palette.bg, palette.cursor, &palette.ansi);
+    }
+
+    /// Call once the host has drawn the terminal: re-arms output wakeups, which are
+    /// coalesced until the next draw. The egui widget does this itself.
+    pub fn mark_drawn(&self) {
+        self.backend.shared.repaint_pending.store(false, Ordering::Release);
     }
 
     /// Write raw bytes to the PTY.
@@ -148,7 +190,7 @@ impl Terminal {
     /// Bracketed-paste aware.
     pub fn paste(&self, text: &str) {
         let bracketed = self.backend.term.lock().mode().contains(TermMode::BRACKETED_PASTE);
-        self.write_input(keys::paste_bytes(text, bracketed));
+        self.write_input(encode::paste_bytes(text, bracketed));
     }
 
     /// No-op when unchanged.
@@ -171,7 +213,7 @@ impl Terminal {
             if term.mode().contains(TermMode::ALT_SCREEN) {
                 return false;
             }
-            let (left, right) = render::cursor_line_text(&term);
+            let (left, right) = backend::cursor_line_text(&term);
             if !pty::looks_like_prompt(&left, &right) {
                 return false;
             }
@@ -264,6 +306,14 @@ impl Drop for Terminal {
 }
 
 /// The egui widget showing a [`Terminal`].
+///
+/// ```no_run
+/// # fn demo(term: &soyuz_term::Terminal, ui: &mut egui::Ui) {
+/// let r = soyuz_term::TerminalView::new(term).focused(true).show(ui);
+/// if let Some(url) = r.link_clicked { let _ = url; /* open it */ }
+/// # }
+/// ```
+#[cfg(feature = "egui")]
 pub struct TerminalView<'a> {
     term: &'a Terminal,
     focused: bool,
@@ -271,6 +321,7 @@ pub struct TerminalView<'a> {
     font: Option<FontId>,
 }
 
+#[cfg(feature = "egui")]
 #[derive(Debug)]
 pub struct TermResponse {
     pub response: egui::Response,
@@ -280,6 +331,7 @@ pub struct TermResponse {
     pub escape_on_empty_line: bool,
 }
 
+#[cfg(feature = "egui")]
 impl<'a> TerminalView<'a> {
     pub fn new(term: &'a Terminal) -> Self {
         TerminalView { term, focused: false, theme: None, font: None }
@@ -310,17 +362,25 @@ mod tests {
     use super::*;
     use std::time::Instant;
 
+    /// No UI: the backend runs without any toolkit.
+    fn noop_wake() -> Wake {
+        std::sync::Arc::new(|| {})
+    }
+
     #[test]
     fn missing_shell_is_reported() {
         let s = TermSettings { shell: Some("definitely-not-a-shell-xyz".into()), ..Default::default() };
-        let r = Terminal::spawn(s, egui::Context::default(), 1);
+        let r = Terminal::spawn(s, noop_wake(), 1);
         assert!(matches!(r, Err(TermError::ShellNotFound(_))));
     }
 
     #[test]
     fn themes_and_traits() {
-        assert_ne!(TermTheme::dark(), TermTheme::light());
-        assert_eq!(TermTheme::default(), TermTheme::dark());
+        #[cfg(feature = "egui")]
+        {
+            assert_ne!(TermTheme::dark(), TermTheme::light());
+            assert_eq!(TermTheme::default(), TermTheme::dark());
+        }
         fn assert_send<T: Send>() {}
         assert_send::<Terminal>();
         assert_eq!(TermSettings::default().scrollback, 10_000);
@@ -351,7 +411,14 @@ mod tests {
             cwd: std::env::temp_dir(),
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 7).expect("spawn");
+        // Toolkit-free host: count wakeups instead of repainting a UI.
+        let wakes = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = wakes.clone();
+        let wake: Wake = std::sync::Arc::new(move || {
+            counter.fetch_add(1, Ordering::Relaxed);
+        });
+        let term = Terminal::spawn(settings, wake, 7).expect("spawn");
+        term.set_palette(&TermPalette::light());
         assert!(term.child_pid().is_some());
         let found = wait_for(&term, "hi", Duration::from_secs(15));
         assert!(found, "grid did not contain `hi`:\n{}", term.screen_text());
@@ -364,6 +431,8 @@ mod tests {
         }
         assert!(exited, "no Exited event");
         assert!(!term.is_alive());
+        assert!(wakes.load(Ordering::Relaxed) > 0, "the wake callback was never called");
+        term.mark_drawn();
     }
 
     /// The child starts in the requested folder.
@@ -378,7 +447,7 @@ mod tests {
             cwd: dir.clone(),
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 9).expect("spawn");
+        let term = Terminal::spawn(settings, noop_wake(), 9).expect("spawn");
         let want = std::fs::canonicalize(&dir).unwrap();
         let found = wait_for(&term, &want.to_string_lossy(), Duration::from_secs(10));
         let _ = std::fs::remove_dir_all(&dir);
@@ -429,7 +498,7 @@ mod tests {
             cwd: base.clone(),
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 11).expect("spawn");
+        let term = Terminal::spawn(settings, noop_wake(), 11).expect("spawn");
         wait_for_cwd(&term, &dir);
         // OSC 7 is invisible on screen.
         assert!(wait_for(&term, "done", Duration::from_secs(10)), "{}", term.screen_text());
@@ -454,7 +523,7 @@ mod tests {
             cwd: base.clone(),
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 13).expect("spawn");
+        let term = Terminal::spawn(settings, noop_wake(), 13).expect("spawn");
         let start = Instant::now();
         let mut seen_usr = false;
         while start.elapsed() < Duration::from_secs(10) {
@@ -483,7 +552,7 @@ mod tests {
             cwd: PathBuf::from("/"),
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 12).expect("spawn");
+        let term = Terminal::spawn(settings, noop_wake(), 12).expect("spawn");
         let want: Vec<PathBuf> = ["/tmp", "/usr", "/var"].iter().map(PathBuf::from).collect();
         let start = Instant::now();
         let mut seen = Vec::new();
@@ -510,7 +579,7 @@ mod tests {
             shell_integration: false,
             ..Default::default()
         };
-        let term = Terminal::spawn(settings, egui::Context::default(), 8).expect("spawn");
+        let term = Terminal::spawn(settings, noop_wake(), 8).expect("spawn");
         assert!(wait_for(&term, "GOT-REPLY", Duration::from_secs(10)), "{}", term.screen_text());
     }
 
@@ -529,7 +598,7 @@ mod tests {
 
     fn send_cd_roundtrip(shell: Option<&str>, id: u64, dir_tag: &str) {
         let settings = TermSettings { cwd: std::env::temp_dir(), shell: shell.map(Into::into), ..Default::default() };
-        let term = Terminal::spawn(settings, egui::Context::default(), id).expect("spawn shell");
+        let term = Terminal::spawn(settings, noop_wake(), id).expect("spawn shell");
         assert!(term.is_alive());
         // Wait for a prompt, then for the shell to go quiet.
         let start = Instant::now();
@@ -537,7 +606,7 @@ mod tests {
         while start.elapsed() < Duration::from_secs(20) {
             std::thread::sleep(Duration::from_millis(100));
             let t = term.backend.term.lock();
-            let (l, r) = render::cursor_line_text(&t);
+            let (l, r) = backend::cursor_line_text(&t);
             drop(t);
             if pty::looks_like_prompt(&l, &r) && term.idle_for() >= CD_IDLE {
                 at_prompt = true;

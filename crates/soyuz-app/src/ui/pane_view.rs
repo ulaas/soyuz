@@ -38,7 +38,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, with_
         child.multiply_opacity(alpha);
     }
     body(&mut child, shifted, pane, v);
-    crate::ops::fileops::dnd::pane_zone(ui, content, pane, &mut v.fileops.dnd, v.cmds);
+    crate::ui::dnd::pane_zone(ui, content, pane, &mut v.fileops.dnd, v.cmds);
     let stroke = if with_header && v.focused {
         Stroke::new(1.0, p.accent.gamma_multiply(0.55))
     } else {

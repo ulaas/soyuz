@@ -86,7 +86,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     sysfonts::warm_catalog();
     let status = tfonts::status();
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let ctx = "Fonts typeface font family size";
     let mut any = false;
     let roles = roles();

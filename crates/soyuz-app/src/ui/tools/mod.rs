@@ -25,7 +25,6 @@ pub mod versions;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Frame, Id, Key, LayerId, Margin, Modifiers, Order, Rect, Sense, Stroke, Ui,
@@ -36,43 +35,18 @@ use soyuz_core::config::{Action, DragDefault};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::ops::fileops::dnd;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
+use crate::ui::dnd;
 use crate::ui::toasts::Toast;
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::icon_button;
 
-/// Deferred tool commands from shared widgets (context menu, sidebar, status bar).
-#[derive(Clone, Debug)]
-pub enum ToolCmd {
-    ShelfAdd(Vec<PathBuf>),
-    Treemap(PathBuf),
-    Compare(PathBuf, Option<PathBuf>),
-    Duplicates(Vec<PathBuf>),
-    Split(PathBuf),
-    Join(PathBuf),
-    ToggleTag {
-        paths: Vec<PathBuf>,
-        tag: u8,
-    },
-    ClearTags(Vec<PathBuf>),
-    /// Rename color tag `tag` (`[tags] names`); an empty name restores the color name.
-    RenameTag {
-        tag: u8,
-        name: String,
-    },
-    ForgetRecent(Vec<PathBuf>),
-    /// The sync profiles window (schedules, reports).
-    SyncProfiles,
-    /// Open Compare & sync with a saved profile.
-    CompareProfile(String),
-    /// "Restore previous version…" for a path (is_dir, current size / modified).
-    Versions(PathBuf, bool, Option<(u64, Option<std::time::SystemTime>)>),
-    /// A previous-versions action from a panel without app access (Properties tab).
-    VersionAction(versions::VersionCmd),
-}
+pub use crate::models::tools::{
+    ToolCmd, any_window_open, execute, handles, queue, restore_shelf, shelf_count, shelf_open, shelf_paths, wake,
+};
 
+/// The open tool windows and the shelf panel's view state.
 #[derive(Default)]
 pub struct Tools {
     pub treemap: Option<treemap::TreemapWindow>,
@@ -84,215 +58,39 @@ pub struct Tools {
     pub versions: Option<versions::VersionsWindow>,
 }
 
+impl Tools {
+    fn window_open(&self) -> bool {
+        self.treemap.is_some()
+            || self.compare.is_some()
+            || self.dupes.is_some()
+            || self.split.is_some()
+            || self.sync_profiles.is_some()
+            || self.versions.is_some()
+    }
+}
+
 thread_local! {
     static TOOLS: RefCell<Tools> = RefCell::new(Tools::default());
-    static QUEUE: RefCell<Vec<ToolCmd>> = const { RefCell::new(Vec::new()) };
-    static WAKE: RefCell<Option<Arc<dyn Fn() + Send + Sync>>> = const { RefCell::new(None) };
-}
-
-/// Queue a tool command (applied at the start of the next frame).
-pub fn queue(c: ToolCmd) {
-    QUEUE.with_borrow_mut(|q| q.push(c));
-    WAKE.with_borrow(|w| {
-        if let Some(w) = w {
-            w();
-        }
-    });
-}
-
-/// Repaint hook for workers.
-pub fn wake() -> Arc<dyn Fn() + Send + Sync> {
-    WAKE.with_borrow(|w| w.clone()).unwrap_or_else(|| Arc::new(|| {}))
-}
-
-/// Number of items on the shelf (status bar badge).
-pub fn shelf_count() -> usize {
-    TOOLS.with_borrow(|t| t.shelf.items.len())
-}
-
-/// Paths on the shelf (persisted in the session).
-pub fn shelf_paths() -> Vec<PathBuf> {
-    TOOLS.with_borrow(|t| t.shelf.items.iter().map(|i| i.path.clone()).collect())
-}
-
-/// Put the saved shelf contents back (closed; missing items show as missing).
-pub fn restore_shelf(paths: Vec<PathBuf>) {
-    if !paths.is_empty() {
-        TOOLS.with_borrow_mut(|t| t.shelf.add(paths));
-    }
-}
-
-pub fn shelf_open() -> bool {
-    TOOLS.with_borrow(|t| t.shelf.open)
-}
-
-/// Actions implemented here (routed by `actions::execute`).
-pub fn handles(a: &Action) -> bool {
-    use Action as A;
-    matches!(
-        a,
-        A::DiskUsageTreemap
-            | A::FindDuplicates
-            | A::CompareFolders
-            | A::SyncFolders
-            | A::SplitFile
-            | A::JoinFiles
-            | A::AddTag(_)
-            | A::ClearTags
-            | A::OpenRecent
-            | A::ToggleShelf
-            | A::SyncProfiles
-            | A::PreviousVersions
-    )
-}
-
-/// Selection of the focused pane (paths), its folder and the other pane's folder.
-fn context(app: &SoyuzApp) -> (Vec<(PathBuf, bool)>, Option<PathBuf>, Option<PathBuf>) {
-    let pane = app.ws.pane();
-    let sel: Vec<(PathBuf, bool)> = pane.selected_entries().iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
-    let here =
-        pane.location.as_fs_path().map(|p| p.to_path_buf()).filter(|_| matches!(pane.location, Location::Dir(_)));
-    let tab = app.ws.tab();
-    let other = if tab.dual && tab.panes.len() == 2 {
-        match &tab.panes[1 - tab.focused.min(1)].location {
-            Location::Dir(d) => Some(d.clone()),
-            _ => None,
-        }
-    } else {
-        None
-    };
-    (sel, here, other)
-}
-
-pub fn execute(app: &mut SoyuzApp, action: Action, ctx: &egui::Context) {
-    use Action as A;
-    init(ctx);
-    let (sel, here, other) = context(app);
-    let sel_paths: Vec<PathBuf> = sel.iter().map(|(p, _)| p.clone()).collect();
-    match action {
-        A::DiskUsageTreemap => {
-            let target = match sel.as_slice() {
-                [(p, true)] => Some(p.clone()),
-                _ => here.clone(),
-            };
-            match target {
-                Some(t) => queue(ToolCmd::Treemap(t)),
-                None => {
-                    app.ui.toasts.push(Toast::info(tr!("tools-toast-open-folder-treemap")));
-                }
-            }
-        }
-        A::FindDuplicates => {
-            let dirs: Vec<PathBuf> = sel.iter().filter(|(_, d)| *d).map(|(p, _)| p.clone()).collect();
-            let roots = if dirs.is_empty() { here.into_iter().collect() } else { dirs };
-            queue(ToolCmd::Duplicates(roots));
-        }
-        A::CompareFolders | A::SyncFolders => {
-            let dirs: Vec<PathBuf> = sel.iter().filter(|(_, d)| *d).map(|(p, _)| p.clone()).collect();
-            let (l, r) = if dirs.len() == 2 { (Some(dirs[0].clone()), Some(dirs[1].clone())) } else { (here, other) };
-            match l {
-                Some(l) => queue(ToolCmd::Compare(l, r)),
-                None => {
-                    app.ui.toasts.push(Toast::info(tr!("tools-toast-open-folder-compare")));
-                }
-            }
-        }
-        A::SplitFile => match sel.as_slice() {
-            [(p, false)] => queue(ToolCmd::Split(p.clone())),
-            _ => {
-                app.ui.toasts.push(Toast::info(tr!("tools-toast-select-file-split")));
-            }
-        },
-        A::JoinFiles => match sel.iter().find(|(p, d)| !d && split::is_part(p)) {
-            Some((p, _)) => queue(ToolCmd::Join(p.clone())),
-            None => {
-                app.ui.toasts.push(Toast::info(tr!("tools-toast-select-first-part")));
-            }
-        },
-        A::AddTag(n) => {
-            if !sel_paths.is_empty() && (1..=8).contains(&n) {
-                queue(ToolCmd::ToggleTag { paths: sel_paths, tag: n - 1 });
-            }
-        }
-        A::ClearTags => {
-            if !sel_paths.is_empty() {
-                queue(ToolCmd::ClearTags(sel_paths));
-            }
-        }
-        A::OpenRecent => {
-            let id = app.ws.pane().id;
-            crate::ops::navigate(app, id, Location::Recent, crate::ops::NavOpts::user());
-        }
-        A::ToggleShelf => TOOLS.with_borrow_mut(|t| t.shelf.open = !t.shelf.open),
-        A::SyncProfiles => queue(ToolCmd::SyncProfiles),
-        A::PreviousVersions => {
-            let pane = app.ws.pane();
-            match pane.selected_entries().as_slice() {
-                [e] => queue(ToolCmd::Versions(e.path.clone(), e.is_dir_like(), Some((e.size, e.modified)))),
-                _ => match &pane.location {
-                    Location::Dir(d) => queue(ToolCmd::Versions(d.clone(), true, None)),
-                    _ => {
-                        app.ui.toasts.push(Toast::info(tr!("tools-toast-select-versions")));
-                    }
-                },
-            }
-        }
-        _ => {}
-    }
-}
-
-fn init(ctx: &egui::Context) {
-    WAKE.with_borrow_mut(|w| {
-        if w.is_none() {
-            let c = ctx.clone();
-            *w = Some(Arc::new(move || c.request_repaint()));
-        }
-    });
 }
 
 /// Start of every frame (before file-op handling): service pumps, queued commands and
 /// OS file drops onto the shelf.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    init(ctx);
-    let wake = wake();
-    crate::services::git::init(ctx, app.config.git.status_column);
-    let git_pending = crate::services::git::pump(app.config.git.refresh_secs);
-    let tags_arrived = crate::services::tags::pump(&wake);
-    let recent_arrived = crate::services::recent::pump(&wake);
-    if tags_arrived {
-        refresh_tag_panes(app);
-    }
-    if recent_arrived {
-        refresh_location(app, |l| matches!(l, Location::Recent));
-    }
-    if git_pending || crate::services::tags::pending_save() || crate::services::recent::pending_save() {
-        ctx.request_repaint_after(std::time::Duration::from_millis(500));
-    }
+    crate::models::tools::pump(&mut app.core, &crate::host::EguiHost::new(ctx));
     versions::begin_frame(app);
     sync_sched::tick(app, ctx);
-    // OS tags for the visible folders (macOS Finder tags, Linux `user.xdg.tags`).
-    if crate::services::tags::os_tags_enabled() {
-        for p in app.ws.tab().panes.iter() {
-            if let Location::Dir(d) = &p.location {
-                crate::services::tags::request_finder(d, &wake);
-            }
-        }
-    }
+    crate::models::tools::request_os_tags(&app.core);
     debug_open_once();
-    let mut cmds: Vec<ToolCmd> = QUEUE.with_borrow_mut(std::mem::take);
-    // Config edits run outside the tools borrow (applying a config touches many modules).
-    cmds.retain(|c| match c {
-        ToolCmd::RenameTag { tag, name } => {
-            rename_tag(app, ctx, *tag, name);
-            false
-        }
-        _ => true,
-    });
+    let cmds = crate::models::tools::take_queue();
+    TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
+    // Config edits, tags and version actions run outside the tools borrow (they touch
+    // many modules); the rest open tool windows.
+    let cmds = crate::models::tools::apply_model_cmds(&mut app.core, &crate::host::EguiHost::new(ctx), cmds);
     TOOLS.with_borrow_mut(|t| {
-        t.shelf.external_drops(ctx);
         for c in cmds {
             apply(t, app, c);
         }
+        crate::models::tools::set_window_open(t.window_open());
     });
 }
 
@@ -328,12 +126,9 @@ fn debug_open_once() {
     }
 }
 
+/// Open the tool window a [`ToolCmd`] asks for.
 fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
     match c {
-        ToolCmd::ShelfAdd(paths) => {
-            t.shelf.open = true;
-            t.shelf.add(paths);
-        }
         ToolCmd::Treemap(path) => match &mut t.treemap {
             Some(w) if w.root_path() == path.as_path() => w.open = true,
             _ => t.treemap = Some(treemap::TreemapWindow::new(path)),
@@ -347,7 +142,7 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             match profiles.iter().find(|p| p.name == name).cloned() {
                 Some(pr) => t.compare = Some(compare::CompareWindow::with_profile(&pr, profiles)),
                 None => {
-                    app.ui.toasts.push(Toast::info(tr!("tools-toast-no-profile", name = name)));
+                    app.core.ui.toasts.push(Toast::info(tr!("tools-toast-no-profile", name = name)));
                 }
             }
         }
@@ -356,95 +151,28 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
             None => t.sync_profiles = Some(sync_ui::SyncProfilesWindow::new()),
         },
         ToolCmd::Versions(path, is_dir, current) => {
-            if !app.config.sync.previous_versions {
-                app.ui
-                    .toasts
-                    .push(Toast::info(tr!("tools-toast-versions-off")).body(tr!("tools-toast-versions-off-body")));
-            } else {
-                t.versions = Some(versions::VersionsWindow::new(path, is_dir, current));
-            }
+            t.versions = Some(versions::VersionsWindow::new(path, is_dir, current));
         }
-        ToolCmd::VersionAction(cmd) => versions::apply(app, cmd),
         ToolCmd::Duplicates(roots) => t.dupes = Some(dupes::DupesWindow::new(roots)),
         ToolCmd::Split(p) => t.split = Some(split::SplitWindow::split(p)),
         ToolCmd::Join(p) => t.split = Some(split::SplitWindow::join(p)),
-        ToolCmd::ToggleTag { paths, tag } => {
-            let added = crate::services::tags::toggle_many(&paths, tag);
-            let name = tags_ui::tag_name(tag);
-            let n = paths.len();
-            app.ui.toasts.push(Toast::info(if added {
-                tr!("tools-toast-tagged", count = n, tag = name)
-            } else {
-                tr!("tools-toast-untagged", count = n, tag = name)
-            }));
-            refresh_tag_panes(app);
-        }
-        ToolCmd::ClearTags(paths) => {
-            crate::services::tags::clear_many(&paths);
-            refresh_tag_panes(app);
-        }
-        // Handled in `begin_frame` before the tools borrow.
-        ToolCmd::RenameTag { .. } => {}
-        ToolCmd::ForgetRecent(paths) => {
-            crate::services::recent::forget(&paths);
-            refresh_location(app, |l| matches!(l, Location::Recent));
-        }
-    }
-}
-
-/// Store a tag's display name in `config.toml` (applied live, saved like a settings
-/// edit, so an open settings window picks it up instead of overwriting it).
-fn rename_tag(app: &mut SoyuzApp, ctx: &egui::Context, tag: u8, name: &str) {
-    let i = tag as usize;
-    if i >= crate::services::tags::TAG_COUNT {
-        return;
-    }
-    let mut clean = soyuz_core::config::clean_tag_name(name);
-    if clean == crate::services::tags::default_name(tag) {
-        clean.clear();
-    }
-    crate::ui::settings::update_config(app, ctx, |c| {
-        let names = &mut c.tags.names;
-        if names.len() <= i {
-            names.resize(crate::services::tags::TAG_COUNT.max(i + 1), String::new());
-        }
-        names[i] = clean;
-    });
-}
-
-/// Re-list panes showing a tag listing (membership changed).
-fn refresh_tag_panes(app: &mut SoyuzApp) {
-    refresh_location(app, |l| matches!(l, Location::Tags(_)));
-}
-
-fn refresh_location(app: &mut SoyuzApp, pred: impl Fn(&Location) -> bool) {
-    for t in &mut app.ws.tabs {
-        for p in &mut t.panes {
-            if pred(&p.location) {
-                crate::ops::start_listing(p, &mut app.services, true);
-            }
-        }
+        // Applied by `models::tools::apply_model_cmds`.
+        ToolCmd::ShelfAdd(_)
+        | ToolCmd::ToggleTag { .. }
+        | ToolCmd::ClearTags(_)
+        | ToolCmd::RenameTag { .. }
+        | ToolCmd::ForgetRecent(_)
+        | ToolCmd::VersionAction(_) => {}
     }
 }
 
 /// Right-side panels (the shelf). Called before the central panel.
 pub fn show_panels(ui: &mut Ui, app: &mut SoyuzApp) {
     let mut t = TOOLS.with_borrow_mut(std::mem::take);
-    t.shelf.show(ui, app);
+    let mut d = crate::models::tools::take_shelf();
+    t.shelf.show(ui, app, &mut d);
+    crate::models::tools::put_shelf(d);
     TOOLS.with_borrow_mut(|slot| restore(slot, t));
-}
-
-/// Whether any tool window is open. They are modal: the panes underneath get no pointer
-/// input (see [`backdrop`]) and the keymap does not run while one is open.
-pub fn any_window_open() -> bool {
-    TOOLS.with_borrow(|t| {
-        t.treemap.is_some()
-            || t.compare.is_some()
-            || t.dupes.is_some()
-            || t.split.is_some()
-            || t.sync_profiles.is_some()
-            || t.versions.is_some()
-    })
 }
 
 fn window_layer(id: &str) -> LayerId {
@@ -523,8 +251,11 @@ pub fn show_windows(ctx: &egui::Context, app: &mut SoyuzApp) {
             t.versions = None;
         }
     }
-    t.shelf.drag_strip(ctx);
-    TOOLS.with_borrow_mut(|slot| restore(slot, t));
+    crate::models::tools::with_shelf(|d| t.shelf.drag_strip(ctx, d));
+    TOOLS.with_borrow_mut(|slot| {
+        restore(slot, t);
+        crate::models::tools::set_window_open(slot.window_open());
+    });
 }
 
 /// Put the taken state back, keeping anything created meanwhile (defensive: nothing

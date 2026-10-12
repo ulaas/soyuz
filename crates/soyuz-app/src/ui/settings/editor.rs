@@ -8,7 +8,7 @@ use super::widgets::{group, number, segmented, switch};
 use crate::app::SoyuzApp;
 
 pub fn editor(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    let d = &mut app.settings.draft.editor;
+    let d = &mut app.gui.settings.draft.editor;
     let ctx = "Editor edit in soyuz text hex image F4";
     let mut any = false;
     any |= group(ui, q, ctx, tr!("settings-editor-panel"), |r| {

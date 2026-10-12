@@ -17,13 +17,10 @@ use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, RichText, ScrollAr
 use soyuz_core::config::DragDefault;
 use soyuz_core::{DateFormat, SizeStyle, format_size, format_time};
 use soyuz_fs::snapshots::{PathVersion, VersionOptions, VersionsReport};
-use soyuz_jobs::JobKind;
 
 use super::{button, tool_window};
 use crate::app::SoyuzApp;
-use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::toasts::Toast;
 use crate::ui::widgets::trunc_galley;
 
 /// Settings the panel needs (refreshed every frame from the config by [`begin_frame`], so
@@ -48,10 +45,10 @@ thread_local! {
 
 pub fn begin_frame(app: &SoyuzApp) {
     CFG.with_borrow_mut(|c| {
-        c.enabled = app.config.sync.previous_versions;
-        c.probe_max = app.config.sync.shadow_probe_max;
-        c.date = app.config.general.date_format.clone();
-        c.size = app.config.general.size_style;
+        c.enabled = app.core.config.sync.previous_versions;
+        c.probe_max = app.core.config.sync.shadow_probe_max;
+        c.date = app.core.config.general.date_format.clone();
+        c.size = app.core.config.general.size_style;
     });
 }
 
@@ -79,18 +76,7 @@ fn cfg() -> Cfg {
     CFG.with_borrow(|c| c.clone())
 }
 
-/// What the user asked for (applied with app access by `tools::apply`).
-#[derive(Clone, Debug)]
-pub enum VersionCmd {
-    /// Copy the version back over the original (conflict prompt, undoable).
-    Restore { version: PathBuf, original: PathBuf },
-    /// Copy the version into a chosen folder.
-    CopyTo { version: PathBuf, start: PathBuf },
-    /// Open: a folder is browsed in the pane, a file opens from a read-only temp copy.
-    Open { version: PathBuf, is_dir: bool, label: String },
-    /// Start an elevated Soyuz (shadow copies need administrator rights).
-    Elevate,
-}
+pub use crate::models::tools::{VersionCmd, apply_version as apply};
 
 /// Side-by-side facts of the current file and one version (computed on a worker).
 #[derive(Clone, Debug, Default)]
@@ -568,86 +554,12 @@ impl VersionsWindow {
             },
         );
         if let Some(c) = cmd {
-            apply(app, c);
+            apply(&mut app.core, c);
         }
         if !keep {
             self.open = false;
         }
     }
-}
-
-/// Apply a [`VersionCmd`] (UI thread; disk work goes to jobs / workers).
-pub fn apply(app: &mut SoyuzApp, cmd: VersionCmd) {
-    match cmd {
-        VersionCmd::Restore { version, original } => {
-            let Some(dest) = original.parent().map(Path::to_path_buf) else { return };
-            let name = soyuz_core::entry::display_name(&original);
-            let kind =
-                JobKind::Copy { sources: vec![version.clone()], dest_dir: dest.clone(), rename_to: Some(name.clone()) };
-            let mut spec = app.fileops.jobs.spec(kind);
-            // Ask before replacing the current file (the prompt offers keep both / replace).
-            spec.options.conflict = None;
-            spec.options.label = Some(tr!("tools-versions-job-label", name = &name));
-            let meta = JobMeta::new(OpKind::Restore, std::slice::from_ref(&version), Some(dest));
-            app.fileops.jobs.submit(spec, meta);
-        }
-        VersionCmd::CopyTo { version, start } => {
-            app.ui.dialogs.push(crate::ui::dialogs::new_item::TransferDialog::new(vec![version], start, false));
-        }
-        VersionCmd::Elevate => {
-            let postman = app.services.mailbox.postman();
-            let _ = std::thread::Builder::new().name("soyuz-elevate".into()).spawn(move || {
-                let res = std::env::current_exe()
-                    .map_err(|e| e.to_string())
-                    .and_then(|exe| soyuz_fs::launch::run_elevated(&exe, &[]).map_err(|e| e.to_string()));
-                if let Err(e) = res {
-                    postman.send(crate::services::mailbox::UiMsg::Notice(
-                        Toast::error(tr!("tools-versions-elevate-failed")).body(e),
-                    ));
-                }
-            });
-        }
-        VersionCmd::Open { version, is_dir: true, .. } => {
-            let id = app.ws.pane().id;
-            crate::ops::navigate(app, id, soyuz_core::Location::Dir(version), crate::ops::NavOpts::user());
-        }
-        VersionCmd::Open { version, is_dir: false, label } => {
-            let postman = app.services.mailbox.postman();
-            let spawned = std::thread::Builder::new().name("soyuz-version-open".into()).spawn(move || {
-                if let Err(e) = open_temp_copy(&version, &label) {
-                    postman.send(crate::services::mailbox::UiMsg::Notice(
-                        Toast::error(tr!("tools-versions-open-failed")).body(e),
-                    ));
-                }
-            });
-            if let Err(e) = spawned {
-                app.ui.toasts.push(Toast::error(tr!("tools-versions-open-failed")).body(e.to_string()));
-            }
-        }
-    }
-}
-
-/// Copy a snapshot file to a read-only temp file and open it with its default app
-/// (apps often can't open `\\?\GLOBALROOT` paths themselves). Worker thread.
-fn open_temp_copy(version: &Path, label: &str) -> Result<(), String> {
-    let stamp: String = label.chars().filter(|c| c.is_ascii_alphanumeric()).take(24).collect();
-    let dir = std::env::temp_dir().join("soyuz-versions").join(if stamp.is_empty() { "v".into() } else { stamp });
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let name = version.file_name().map(|n| n.to_os_string()).unwrap_or_else(|| "version".into());
-    let dst = dir.join(name);
-    if dst.exists() {
-        let mut perm = std::fs::metadata(&dst).map_err(|e| e.to_string())?.permissions();
-        #[allow(clippy::permissions_set_readonly_false)]
-        perm.set_readonly(false);
-        let _ = std::fs::set_permissions(&dst, perm);
-    }
-    std::fs::copy(version, &dst).map_err(|e| e.to_string())?;
-    if let Ok(m) = std::fs::metadata(&dst) {
-        let mut perm = m.permissions();
-        perm.set_readonly(true);
-        let _ = std::fs::set_permissions(&dst, perm);
-    }
-    soyuz_fs::launch::open_default(&dst).map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

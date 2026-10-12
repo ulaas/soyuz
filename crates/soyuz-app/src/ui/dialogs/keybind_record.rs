@@ -8,9 +8,9 @@ use egui::{Align2, Color32, CornerRadius, FontId, Frame, Id, Margin, Modal, Rich
 use soyuz_core::config::{Action, KeyChord, Keymap, format_sequence};
 
 use crate::keys::conflicts::users_of;
-use crate::palette::widgets::{chips_width_scaled, paint_chips_scaled};
 use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
+use crate::ui::palette::widgets::{chips_width_scaled, paint_chips_scaled};
 use crate::ui::widgets::pill_button;
 
 /// What the recorded binding is for.
@@ -52,7 +52,7 @@ impl Recorder {
         ctx.input_mut(|i| {
             let mods = i.modifiers;
             i.events.retain(|ev| {
-                let Some(chord) = crate::keys::event_chord(ev, mods, cmd_is_ctrl) else {
+                let Some(chord) = crate::ui::keys::event_chord(ev, mods, cmd_is_ctrl) else {
                     // Swallow typed text too, so nothing leaks into fields behind.
                     return !matches!(ev, egui::Event::Text(_));
                 };

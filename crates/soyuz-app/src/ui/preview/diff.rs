@@ -34,10 +34,10 @@ pub struct DiffView {
 
 /// The two selected files of the focused pane, when the diff preview applies.
 pub fn pair(app: &SoyuzApp) -> Option<(EntryInfo, EntryInfo)> {
-    if !app.config.preview.diff {
+    if !app.core.config.preview.diff {
         return None;
     }
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     if pane.selection.len() != 2 {
         return None;
     }
@@ -66,7 +66,7 @@ impl DiffView {
         if self.key.as_ref() != Some(&key) {
             self.key = Some(key);
             self.result = None;
-            self.client.request(a.path.clone(), b.path.clone(), cap, ctx);
+            self.client.request(a.path.clone(), b.path.clone(), cap, &crate::host::egui_wake(ctx));
         }
         while let Some(r) = self.client.try_recv() {
             if r.id == self.client.latest() {

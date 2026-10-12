@@ -6,7 +6,7 @@ use soyuz_core::{Attributes, Column, ColumnSpec, EntryInfo, format_size, format_
 use crate::state::listing::kind_label;
 
 pub const MIN_COL_W: f32 = 48.0;
-pub const MIN_NAME_W: f32 = 160.0;
+pub use crate::state::view_memory::MIN_NAME_W;
 
 /// Horizontal placement of one visible column (content coordinates).
 #[derive(Clone, Copy, Debug, PartialEq)]

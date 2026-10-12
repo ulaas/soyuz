@@ -89,8 +89,8 @@ impl SyncProfilesWindow {
         let mut changed = false;
         let mut open_compare: Option<SyncProfile> = None;
         let mut cancel: Option<String> = None;
-        let enabled = app.config.sync.scheduler;
-        let date = app.config.general.date_format.clone();
+        let enabled = app.core.config.sync.scheduler;
+        let date = app.core.config.general.date_format.clone();
         let keep = tool_window(
             ctx,
             "sync_profiles",

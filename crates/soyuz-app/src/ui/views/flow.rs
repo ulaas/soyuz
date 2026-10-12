@@ -15,6 +15,7 @@ use super::columns::{self, ColGeom};
 use super::icons;
 use super::layout::{FlowLayout, LineKind};
 use crate::cmd::Cmd;
+use crate::services::preview_gfx::Tex;
 use crate::services::thumbs::{self, ThumbKey};
 use crate::state::pane::{Band, ContextTarget, LayoutSig, Pane};
 use crate::state::selection::{BandMode, ClickMods, Selection};
@@ -22,6 +23,7 @@ use crate::theme::fonts::SEMIBOLD;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::context_menu;
+use crate::ui::gfx::TexExt;
 use crate::ui::widgets::{hidden_controls_tip, paint_hidden_badge, trunc_galley, wrapped_galley};
 
 /// Width reserved for the hidden-characters badge after a name.
@@ -118,10 +120,22 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
         f32::from(pane.view.zoom)
     };
     let g = geometry(style, pane, rect.width(), row_h, zoom);
-    let sig = LayoutSig { vis_version: pane.vis_version, width: rect.width(), cell: g.cell, mode: style.code() };
+    let sig = LayoutSig {
+        vis_version: pane.vis_version,
+        width: rect.width(),
+        cell: crate::ui::geom::size(g.cell),
+        mode: style.code(),
+    };
     if pane.layout_sig != Some(sig) || pane.layout.is_none() {
-        pane.layout =
-            Some(FlowLayout::new(pane.visible.len(), &pane.groups, g.content_w, g.cell, g.gap, g.pad, GROUP_H));
+        pane.layout = Some(FlowLayout::new(
+            pane.visible.len(),
+            &pane.groups,
+            g.content_w,
+            crate::ui::geom::size(g.cell),
+            crate::ui::geom::size(g.gap),
+            crate::ui::geom::size(g.pad),
+            GROUP_H,
+        ));
         pane.layout_sig = Some(sig);
     }
     let Some(layout) = pane.layout.take() else { return };
@@ -158,8 +172,8 @@ fn body(
     ui.set_min_size(vec2(g.content_w, g.header_h + layout.total_h));
     let vis = Rect::from_min_size(origin + viewport.min.to_vec2(), viewport.size());
     let list_top = origin.y + g.header_h;
-    let to_layout = |pos: Pos2| pos2(pos.x - origin.x, pos.y - list_top);
-    let to_screen = |r: Rect| r.translate(vec2(origin.x, list_top));
+    let to_layout = |pos: Pos2| crate::geom::pt(pos.x - origin.x, pos.y - list_top);
+    let to_screen = |r: crate::geom::Rect| crate::ui::geom::rect(r).translate(vec2(origin.x, list_top));
     let id = Id::new(("soyuz.flow.bg", pane.id.0));
     let bg = ui.interact(vis, id, Sense::click_and_drag());
     let list_area = Rect::from_min_max(pos2(vis.left(), vis.top() + g.header_h), vis.max);
@@ -205,9 +219,9 @@ fn body(
     for line in &layout.lines()[layout.lines_in(y0, y1)] {
         match line.kind {
             LineKind::Header(gi) => {
-                let r = to_screen(Rect::from_min_size(
-                    pos2(g.pad.x, line.top),
-                    vec2(g.content_w - 2.0 * g.pad.x, line.height),
+                let r = to_screen(crate::geom::Rect::from_min_size(
+                    crate::geom::pt(g.pad.x, line.top),
+                    crate::geom::vec2(g.content_w - 2.0 * g.pad.x, line.height),
                 ));
                 if let Some(span) = pane.groups.get(gi) {
                     let collapsed = pane.collapsed_groups.contains(&span.label);
@@ -272,7 +286,7 @@ fn body(
                         Style::List => paint_list_cell(&painter, &p, r, e, &st, false),
                         Style::Column => paint_list_cell(&painter, &p, r, e, &st, true),
                     }
-                    crate::ai::touch::paint(&painter, &p, r, &e.path, v.config.appearance.reduced_motion);
+                    crate::ui::ai::touch::paint(&painter, &p, r, &e.path, v.config.appearance.reduced_motion);
                 }
             }
         }
@@ -281,7 +295,7 @@ fn body(
     // Inline rename editor (registered after the background so it gets the clicks).
     if let Some(r) = rename_at {
         let font = FontId::proportional(if matches!(style, Style::Grid | Style::Gallery) { 12.5 } else { 13.0 });
-        crate::ops::fileops::rename::editor(ui, r, font, pane, v);
+        crate::ui::views::rename::editor(ui, r, font, pane, v);
     }
 
     // ---- interaction ----
@@ -310,8 +324,13 @@ fn body(
             if let Some(key) = key {
                 let on_checkbox = v.checkbox_mode
                     && pos.is_some_and(|pp| {
-                        checkbox_rect(style, to_screen(layout.item_rect(i).unwrap_or(Rect::NOTHING)), &g.cols, origin.x)
-                            .contains(pp)
+                        checkbox_rect(
+                            style,
+                            to_screen(layout.item_rect(i).unwrap_or(crate::geom::Rect::NOTHING)),
+                            &g.cols,
+                            origin.x,
+                        )
+                        .contains(pp)
                     });
                 let single_open = v.config.general.single_click_open
                     && !mods.any()
@@ -385,7 +404,7 @@ fn body(
                         pane.selection.select_only(key.clone());
                     }
                     pane.cursor = Some(key);
-                    crate::ops::fileops::dnd::begin(ui.ctx(), pane, v.config.behaviour.drag_default);
+                    crate::ui::dnd::begin(ui.ctx(), pane, v.config.behaviour.drag_default);
                 }
                 v.cmds.push(Cmd::FocusPane(pane.id));
             } else {
@@ -418,7 +437,7 @@ fn body(
                 ui.ctx().request_repaint();
             }
         }
-        let band_rect = Rect::from_two_pos(band.start, band.current);
+        let band_rect = crate::geom::Rect::from_two_pos(band.start, band.current);
         let hits: Vec<_> =
             layout.items_in_rect(band_rect).into_iter().filter_map(|i| pane.key_at(i).cloned()).collect();
         let under = layout.hit(band.current).and_then(|i| pane.key_at(i).cloned());
@@ -441,13 +460,13 @@ fn body(
     }
 
     // Drag and drop onto folder items.
-    if crate::ops::fileops::dnd::payload(ui.ctx()).is_some() {
+    if crate::ui::dnd::payload(ui.ctx()).is_some() {
         let hit = ui
             .input(|i| i.pointer.latest_pos())
             .filter(|p| list_area.contains(*p))
             .and_then(|p| layout.hit(to_layout(p)))
             .and_then(|i| layout.item_rect(i).map(|r| (i, to_screen(r))));
-        crate::ops::fileops::dnd::item_target(ui, pane, hit, &mut v.fileops.dnd, v.cmds);
+        crate::ui::dnd::item_target(ui, pane, hit, &mut v.fileops.dnd, v.cmds);
     }
 
     // Ctrl + wheel zooms the icon views.
@@ -651,9 +670,9 @@ fn paint_details_row(
 #[derive(Default)]
 struct CellVisual {
     /// Picture / video frame.
-    tex: Option<egui::TextureHandle>,
+    tex: Option<Tex>,
     /// Folder mosaic of the first pictures inside.
-    mosaic: Option<egui::TextureHandle>,
+    mosaic: Option<Tex>,
     /// Video duration.
     label: Option<String>,
 }
@@ -736,15 +755,7 @@ fn paint_grid_cell(
 }
 
 /// A folder mosaic set into the body of the folder glyph drawn in `icon_box`.
-fn paint_folder_mosaic(
-    ui: &Ui,
-    painter: &Painter,
-    p: &Palette,
-    icon_box: Rect,
-    tex: &egui::TextureHandle,
-    folder: Color32,
-    a: f32,
-) {
+fn paint_folder_mosaic(ui: &Ui, painter: &Painter, p: &Palette, icon_box: Rect, tex: &Tex, folder: Color32, a: f32) {
     let z = icon_box.width();
     let body = Rect::from_center_size(icon_box.center() + vec2(0.0, z * 0.075), vec2(z * 0.66, z * 0.46));
     // Center-crop the square mosaic to the body's aspect.
@@ -943,7 +954,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         let hresp = ui.interact(handle, Id::new(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
         crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
             n.set_role(egui::accesskit::Role::Splitter);
-            n.set_label(crate::tr!("views-col-resize", column = columns::header_label(c.column)));
+            n.set_label(tr!("views-col-resize", column = columns::header_label(c.column)));
         });
         if hresp.hovered() || hresp.dragged() {
             ui.ctx().set_cursor_icon(CursorIcon::ResizeColumn);

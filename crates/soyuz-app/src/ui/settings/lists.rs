@@ -78,7 +78,8 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         ui.add_space(10.0);
         ui.horizontal_wrapped(|ui| {
             if small_button(ui, Some(ph::PLUS), tr!("settings-commands-new"), false).clicked() {
-                app.settings
+                app.gui
+                    .settings
                     .draft
                     .custom_commands
                     .push(CustomCommand { name: tr!("settings-commands-new").into(), ..Default::default() });
@@ -86,7 +87,7 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.label(RichText::new(tr!("settings-commands-or-template")).size(11.5).color(p.text_tertiary));
             for (name, cmd, args, term) in templates() {
                 if small_button(ui, Some(if term { ph::TERMINAL } else { ph::LIGHTNING }), name, false).clicked() {
-                    app.settings.draft.custom_commands.push(CustomCommand {
+                    app.gui.settings.draft.custom_commands.push(CustomCommand {
                         name: name.into(),
                         command: cmd.into(),
                         args: crate::commands::split_args(args),
@@ -97,23 +98,23 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             }
         });
     }
-    let n = app.settings.draft.custom_commands.len();
-    if app.settings.args_text.len() != n {
-        app.settings.args_text =
-            app.settings.draft.custom_commands.iter().map(|c| crate::commands::join_args(&c.args)).collect();
+    let n = app.gui.settings.draft.custom_commands.len();
+    if app.gui.settings.args_text.len() != n {
+        app.gui.settings.args_text =
+            app.gui.settings.draft.custom_commands.iter().map(|c| crate::commands::join_args(&c.args)).collect();
     }
     let mut remove = None;
     let mut run = None;
     let mut rec = None;
     let mut moves = None;
     for i in 0..n {
-        let c = &app.settings.draft.custom_commands[i];
+        let c = &app.gui.settings.draft.custom_commands[i];
         if searching && !matches(q, &[&c.name, &c.command, "custom command", tr!("settings-section-commands")]) {
             continue;
         }
         any = true;
         ui.add_space(10.0);
-        let s = &mut app.settings;
+        let s = &mut app.gui.settings;
         card(ui, |ui| {
             let c = &mut s.draft.custom_commands[i];
             ui.horizontal(|ui| {
@@ -227,20 +228,20 @@ pub fn commands(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     }
     if let Some(i) = remove {
-        app.settings.draft.custom_commands.remove(i);
-        app.settings.args_text.clear();
+        app.gui.settings.draft.custom_commands.remove(i);
+        app.gui.settings.args_text.clear();
     }
     if let Some((a, b)) = moves {
-        app.settings.draft.custom_commands.swap(a, b);
-        app.settings.args_text.clear();
+        app.gui.settings.draft.custom_commands.swap(a, b);
+        app.gui.settings.args_text.clear();
     }
     if let Some(i) = rec {
-        let name = app.settings.draft.custom_commands[i].name.clone();
+        let name = app.gui.settings.draft.custom_commands[i].name.clone();
         record(app, RecordTarget::Command(i), tr!("settings-commands-record-title", name = name));
     }
     if let Some(c) = run {
         let ctx = ui.ctx().clone();
-        crate::commands::run(app, &c, &ctx);
+        crate::commands::run(&mut app.core, &c, &crate::host::EguiHost::new(&ctx));
     }
     if !searching && n == 0 {
         ui.add_space(20.0);
@@ -270,7 +271,7 @@ const BOOKMARK_ICONS: [(&str, &str); 12] = [
 pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let p = palette(ui.ctx());
     let searching = !q.trim().is_empty();
-    let current = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim);
+    let current = app.core.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim);
     let mut any = false;
     if !searching {
         any = true;
@@ -283,7 +284,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| cur.display().to_string());
-                app.settings.draft.bookmarks.push(Bookmark {
+                app.gui.settings.draft.bookmarks.push(Bookmark {
                     name,
                     path: cur.clone(),
                     hotkey: String::new(),
@@ -291,7 +292,8 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 });
             }
             if small_button(ui, Some(ph::PLUS), tr!("settings-bookmarks-add-empty"), false).clicked() {
-                app.settings
+                app.gui
+                    .settings
                     .draft
                     .bookmarks
                     .push(Bookmark { name: tr!("settings-bookmarks-default-name").into(), ..Default::default() });
@@ -299,7 +301,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.label(RichText::new(tr!("settings-bookmarks-help")).size(11.5).color(p.text_tertiary));
         });
     }
-    let n = app.settings.draft.bookmarks.len();
+    let n = app.gui.settings.draft.bookmarks.len();
     let mut remove = None;
     let mut moves = None;
     let mut rec = None;
@@ -307,7 +309,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         let mut drawn = false;
         let list: Vec<usize> = (0..n)
             .filter(|i| {
-                let b = &app.settings.draft.bookmarks[*i];
+                let b = &app.gui.settings.draft.bookmarks[*i];
                 !searching
                     || matches(q, &[&b.name, &b.path.to_string_lossy(), "bookmark", tr!("settings-section-bookmarks")])
             })
@@ -317,7 +319,7 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             group(ui, "", "", "", |r| {
                 for &i in &list {
                     r.block("", "", |ui| {
-                        let b = &mut app.settings.draft.bookmarks[i];
+                        let b = &mut app.gui.settings.draft.bookmarks[i];
                         ui.horizontal(|ui| {
                             let items: Vec<super::widgets::dd::Item<String>> = BOOKMARK_ICONS
                                 .iter()
@@ -389,13 +391,13 @@ pub fn bookmarks(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     };
     any |= rows_drawn;
     if let Some(i) = remove {
-        app.settings.draft.bookmarks.remove(i);
+        app.gui.settings.draft.bookmarks.remove(i);
     }
     if let Some((a, b)) = moves {
-        app.settings.draft.bookmarks.swap(a, b);
+        app.gui.settings.draft.bookmarks.swap(a, b);
     }
     if let Some(i) = rec {
-        let name = app.settings.draft.bookmarks[i].name.clone();
+        let name = app.gui.settings.draft.bookmarks[i].name.clone();
         record(app, RecordTarget::Bookmark(i), tr!("settings-bookmarks-record-title", name = name));
     }
     if !searching && n == 0 {

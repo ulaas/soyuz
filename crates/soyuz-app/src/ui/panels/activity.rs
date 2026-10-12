@@ -5,7 +5,6 @@
 //! operations with Undo / Redo / Retry failed. Also provides the compact status-bar
 //! indicator (ring + job count).
 
-use std::collections::HashSet;
 use std::f32::consts::TAU;
 use std::time::Duration;
 
@@ -15,7 +14,7 @@ use egui::{
 };
 use soyuz_core::config::Action;
 use soyuz_core::{SizeStyle, format_eta, format_size, format_speed};
-use soyuz_jobs::{JobId, JobSnapshot, JobState, LogLevel, Priority};
+use soyuz_jobs::{JobSnapshot, JobState, LogLevel, Priority};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
@@ -27,18 +26,7 @@ use crate::theme::{Palette, icons as ticons, icons::ph, palette};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{icon_button, menu_check, menu_item, menu_separator, submenu, trunc_galley};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum ActivityTab {
-    #[default]
-    Jobs,
-    History,
-}
-
-#[derive(Default)]
-pub struct ActivityState {
-    pub tab: ActivityTab,
-    pub expanded: HashSet<JobId>,
-}
+pub use crate::models::panels::{ActivityState, ActivityTab, Indicator, fraction, indicator, verify_badge};
 
 /// Glyph and color for an operation.
 pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
@@ -58,58 +46,6 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
         OpKind::Retry => (ph::ARROW_CLOCKWISE, p.accent),
         OpKind::Other => (ph::GEAR_SIX, p.text_secondary),
     }
-}
-
-/// Overall fraction done, `None` while unknown.
-/// Badge for jobs whose copies are hash-verified (copy / move / sync): "Verifying"
-/// while running, "Verified" when done without failures.
-pub fn verify_badge(kind: soyuz_jobs::JobKindBrief, verify: bool, state: &JobState) -> Option<&'static str> {
-    use soyuz_jobs::JobKindBrief as K;
-    if !verify || !matches!(kind, K::Copy | K::Move | K::Sync) {
-        return None;
-    }
-    match state {
-        JobState::Done(sum) if sum.items_failed == 0 => Some(tr!("panels-verified")),
-        JobState::Done(_) | JobState::Failed(_) | JobState::Cancelled => None,
-        _ => Some(tr!("panels-verifying")),
-    }
-}
-
-pub fn fraction(s: &JobSnapshot) -> Option<f32> {
-    if matches!(s.state, JobState::Done(_)) {
-        return Some(1.0);
-    }
-    let pr = &s.progress;
-    if pr.bytes_total > 0 {
-        Some((pr.bytes_done as f64 / pr.bytes_total as f64).clamp(0.0, 1.0) as f32)
-    } else if pr.items_total > 0 && pr.totals_known {
-        Some((pr.items_done as f64 / pr.items_total as f64).clamp(0.0, 1.0) as f32)
-    } else {
-        None
-    }
-}
-
-/// Data for the status-bar indicator.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Indicator {
-    pub pending: usize,
-    pub progress: Option<f32>,
-    pub waiting: bool,
-    pub paused: bool,
-}
-
-pub fn indicator(app: &SoyuzApp) -> Indicator {
-    let mut ind = Indicator::default();
-    let (mut done, mut total) = (0u64, 0u64);
-    for s in app.fileops.jobs.pending() {
-        ind.pending += 1;
-        ind.waiting |= s.pending_prompt.is_some();
-        ind.paused |= s.state == JobState::Paused;
-        done += s.progress.bytes_done;
-        total += s.progress.bytes_total;
-    }
-    ind.progress = (total > 0).then(|| (done as f64 / total as f64) as f32);
-    ind
 }
 
 /// Ring progress arc (or a spinning partial ring when unknown).
@@ -216,7 +152,7 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
     let mut child = ui.new_child(UiBuilder::new().max_rect(body.shrink2(vec2(10.0, 4.0))));
     let ui = &mut child;
     // ---- toolbar ----
-    let pending = app.fileops.jobs.pending().count();
+    let pending = app.core.fileops.jobs.pending().count();
     let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
     let mut x = bar.left();
     for (tab, label) in [
@@ -233,7 +169,7 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
         let g = ui.painter().layout_no_wrap(label, FontId::proportional(12.0), p.text_primary);
         let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(g.size().x + 20.0, 24.0));
         let resp = ui.interact(r, Id::new(("soyuz.activity.tab", tab as u8)), Sense::click());
-        let active = app.fileops.activity.tab == tab;
+        let active = app.core.fileops.activity.tab == tab;
         crate::ui::a11y::tab(&resp, g.text(), active);
         if active {
             ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.accent_subtle);
@@ -244,11 +180,11 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
         let g = ui.painter().layout_no_wrap(g.text().to_string(), FontId::proportional(12.0), c);
         ui.painter().galley(r.center() - g.size() / 2.0, g, c);
         if resp.clicked() {
-            app.fileops.activity.tab = tab;
+            app.core.fileops.activity.tab = tab;
         }
         x = r.right() + 4.0;
     }
-    if app.fileops.activity.tab == ActivityTab::Jobs {
+    if app.core.fileops.activity.tab == ActivityTab::Jobs {
         let mut rx = bar.right();
         let mut btn = |ui: &mut Ui, glyph: &str, tip: &str, enabled: bool| {
             let r = Rect::from_min_size(pos2(rx - 28.0, bar.top() + 1.0), vec2(28.0, 28.0));
@@ -260,22 +196,22 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
                 enabled,
             )
         };
-        let any_done = app.fileops.jobs.snapshots().iter().any(|s| s.state.is_terminal());
+        let any_done = app.core.fileops.jobs.snapshots().iter().any(|s| s.state.is_terminal());
         if btn(ui, ph::BROOM, tr!("panels-clear-finished"), any_done).clicked() {
-            app.fileops.jobs.engine().clear_finished();
+            app.core.fileops.jobs.engine().clear_finished();
         }
         if btn(ui, ph::X_CIRCLE, tr!("panels-cancel-all"), pending > 0).clicked() {
-            app.fileops.jobs.engine().cancel_all();
+            app.core.fileops.jobs.engine().cancel_all();
         }
         if btn(ui, ph::PLAY, tr!("panels-resume-all"), pending > 0).clicked() {
-            app.fileops.jobs.engine().resume_all();
+            app.core.fileops.jobs.engine().resume_all();
         }
         if btn(ui, ph::PAUSE, tr!("panels-pause-all"), pending > 0).clicked() {
-            app.fileops.jobs.engine().pause_all();
+            app.core.fileops.jobs.engine().pause_all();
         }
     }
     ui.add_space(4.0);
-    match app.fileops.activity.tab {
+    match app.core.fileops.activity.tab {
         ActivityTab::Jobs => jobs_list(ui, app, &p),
         ActivityTab::History => super::activity_history::show(ui, app, &p),
     }
@@ -291,7 +227,7 @@ fn empty(ui: &mut Ui, p: &Palette, glyph: &str, title: &str, sub: &str) {
 }
 
 fn jobs_list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let mut snaps: Vec<JobSnapshot> = app.fileops.jobs.snapshots().to_vec();
+    let mut snaps: Vec<JobSnapshot> = app.core.fileops.jobs.snapshots().to_vec();
     if snaps.is_empty() {
         empty(ui, p, ph::PULSE, tr!("panels-jobs-empty"), tr!("panels-jobs-empty-hint"));
         return;
@@ -343,12 +279,17 @@ fn state_line(s: &JobSnapshot, meta: Option<&JobMeta>) -> (String, Option<Color3
 
 #[allow(clippy::too_many_lines)]
 fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
-    let meta =
-        app.fileops.jobs.meta(s.id).cloned().unwrap_or_else(|| JobMeta::new(OpKind::from_brief(s.kind), &[], None));
+    let meta = app
+        .core
+        .fileops
+        .jobs
+        .meta(s.id)
+        .cloned()
+        .unwrap_or_else(|| JobMeta::new(OpKind::from_brief(s.kind), &[], None));
     let active = !s.state.is_terminal();
     let total_items = s.progress.totals_known.then_some(s.progress.items_total);
     let title = names::job_title(&meta, !matches!(s.state, JobState::Done(_)), total_items, &s.label);
-    let expanded = app.fileops.activity.expanded.contains(&s.id);
+    let expanded = app.core.fileops.activity.expanded.contains(&s.id);
     let summary = match &s.state {
         JobState::Done(sum) => Some(sum.clone()),
         _ => None,
@@ -419,7 +360,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.text(b, Align2::CENTER_CENTER, ph::PLUGS_CONNECTED, ticons::font(8.5), Color32::WHITE);
     } else if let Some(origin) = meta.origin {
         // Started by an automation rule, a script or the CLI.
-        let glyph = crate::automation::origin_glyph(origin);
+        let glyph = crate::ui::icons::glyph(crate::automation::origin_icon(origin));
         let b = pos2(ic.x + 14.0, ic.y + 14.0);
         painter.circle_filled(b, 8.5, p.bg_window);
         painter.circle_filled(b, 7.0, p.info);
@@ -591,9 +532,9 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     );
     if exp.clicked() {
         if expanded {
-            app.fileops.activity.expanded.remove(&engine_id);
+            app.core.fileops.activity.expanded.remove(&engine_id);
         } else {
-            app.fileops.activity.expanded.insert(engine_id);
+            app.core.fileops.activity.expanded.insert(engine_id);
         }
     }
     if active {
@@ -630,7 +571,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
                 action = Some(7);
             }
         });
-        let eng = app.fileops.jobs.engine();
+        let eng = app.core.fileops.jobs.engine();
         match action {
             Some(1) => eng.set_priority(engine_id, Priority::High),
             Some(2) => eng.set_priority(engine_id, Priority::Normal),
@@ -642,16 +583,16 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             _ => {}
         }
         if btn(ui, ph::X, tr!("common-cancel")).clicked() {
-            app.fileops.jobs.engine().cancel(engine_id);
+            app.core.fileops.jobs.engine().cancel(engine_id);
         }
         if s.state == JobState::Paused {
             if btn(ui, ph::PLAY, tr!("panels-resume")).clicked() {
-                app.fileops.jobs.engine().resume(engine_id);
+                app.core.fileops.jobs.engine().resume(engine_id);
             }
         } else if s.state != JobState::WaitingForUser && btn(ui, ph::PAUSE, tr!("panels-pause")).clicked() {
-            app.fileops.jobs.engine().pause(engine_id);
+            app.core.fileops.jobs.engine().pause(engine_id);
         }
-        if waiting && app.fileops.prompts.is_deferred(engine_id) {
+        if waiting && app.core.fileops.prompts.is_deferred(engine_id) {
             let label = tr!("panels-resolve");
             let lw =
                 ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::BLACK).size().x;
@@ -671,12 +612,12 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             );
             ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), Color32::BLACK);
             if resp.clicked() {
-                app.cmds.push(Cmd::FileOp(FileOpCmd::Resolve(engine_id)));
+                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Resolve(engine_id)));
             }
         }
     } else {
         if btn(ui, ph::X, tr!("panels-remove-from-list")).clicked() {
-            app.fileops.jobs.engine().remove(engine_id);
+            app.core.fileops.jobs.engine().remove(engine_id);
         }
         if failed {
             let label = tr!("panels-retry-failed");
@@ -698,12 +639,12 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             );
             ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), p.text_primary);
             if resp.clicked() {
-                let h = summary
-                    .as_ref()
-                    .and_then(|sum| app.fileops.jobs.history().iter().rev().find(|h| &h.summary == sum).map(|h| h.id));
+                let h = summary.as_ref().and_then(|sum| {
+                    app.core.fileops.jobs.history().iter().rev().find(|h| &h.summary == sum).map(|h| h.id)
+                });
                 match h {
-                    Some(h) => crate::ops::fileops::history_action(app, h, HistoryAction::Retry),
-                    None => app.cmds.push(Cmd::Action(Action::JobsShowHistory)),
+                    Some(h) => crate::ops::fileops::history_action(&mut app.core, h, HistoryAction::Retry),
+                    None => app.core.cmds.push(Cmd::Action(Action::JobsShowHistory)),
                 }
             }
         }
@@ -728,7 +669,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         if let JobState::Failed(e) = &s.state {
             lines.push((p.danger, format!("\u{2715} {e}")));
         }
-        for l in app.fileops.jobs.log(s.id).iter().rev().take(300) {
+        for l in app.core.fileops.jobs.log(s.id).iter().rev().take(300) {
             let c = match l.level {
                 LogLevel::Info => p.text_secondary,
                 LogLevel::Warn => p.warning,

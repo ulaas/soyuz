@@ -15,7 +15,7 @@ const CTX: &str = "Scripts rhai betikler";
 
 pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let mut any = false;
-    let d = &mut app.settings.draft.scripting;
+    let d = &mut app.gui.settings.draft.scripting;
     any |= group(ui, q, CTX, tr!("automation-scripts-group"), |r| {
         r.row(tr!("automation-scripts-run"), tr!("automation-scripts-run-desc"), |ui| {
             switch(ui, &mut d.enabled);
@@ -72,15 +72,15 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 if small_button(ui, Some(ph::FOLDER_OPEN), tr!("automation-scripts-show-folder"), false).clicked() {
-                    app.cmds.push(Cmd::Automation(AutoCmd::OpenScriptsFolder));
+                    app.core.cmds.push(Cmd::Automation(AutoCmd::OpenScriptsFolder));
                 }
                 if small_button(ui, Some(ph::ARROWS_CLOCKWISE), tr!("automation-scripts-reload"), false).clicked() {
-                    app.cmds.push(Cmd::Automation(AutoCmd::ReloadScripts));
+                    app.core.cmds.push(Cmd::Automation(AutoCmd::ReloadScripts));
                 }
                 ui.label(RichText::new(tr!("automation-scripts-new-from")).size(11.5).color(p.text_tertiary));
                 for (file, _) in TEMPLATES {
                     if small_button(ui, Some(ph::FILE_PLUS), template_title(file), false).clicked() {
-                        app.cmds.push(Cmd::Automation(AutoCmd::NewScript(file)));
+                        app.core.cmds.push(Cmd::Automation(AutoCmd::NewScript(file)));
                     }
                 }
             });
@@ -88,7 +88,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             ui.label(RichText::new(tr!("automation-scripts-folder-note")).size(11.5).color(p.text_tertiary));
         });
     }
-    let Some(set) = app.automation.set.clone() else {
+    let Some(set) = app.core.automation.set.clone() else {
         if show_folder {
             ui.add_space(10.0);
             ui.label(RichText::new(tr!("automation-scripts-loading")).color(p.text_tertiary));
@@ -157,7 +157,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     });
             }
             let rt: Vec<&String> =
-                sc.actions.iter().filter_map(|a| app.automation.runtime_errors.get(&a.title)).collect();
+                sc.actions.iter().filter_map(|a| app.core.automation.runtime_errors.get(&a.title)).collect();
             for e in rt {
                 ui.add(
                     egui::Label::new(
@@ -226,7 +226,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         });
     }
     if let Some((file, on)) = toggle {
-        let d = &mut app.settings.draft.scripting.disabled;
+        let d = &mut app.gui.settings.draft.scripting.disabled;
         d.retain(|f| !f.eq_ignore_ascii_case(&file));
         if !on {
             d.push(file);

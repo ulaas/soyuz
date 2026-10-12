@@ -1,0 +1,109 @@
+[package]
+name = "soyuz-appcore"
+description = "Soyuz application core: frontend-agnostic state, models, commands and services (no GUI toolkit)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+authors.workspace = true
+readme = "../../README.md"
+build = "build.rs"
+
+# The GUI toolkit stays out of this crate: no egui / eframe / egui_extras / egui-phosphor /
+# epaint / winit / wgpu, directly or through a dependency's feature (`soyuz-term` without
+# `egui`). `tests/boundary.rs` checks the resolved dependency graph.
+
+[features]
+default = ["zstd", "pdf"]
+# PDF page rendering through pdfium (loaded at runtime from pdfium.dll next to the exe or
+# in the config dir; see docs/USER_GUIDE.md). Without the library the preview falls back
+# to the pure-Rust text-only view.
+pdf = ["dep:pdfium-render"]
+# Native zstd (tar.zst writing, zstd zip entries); compiles C. Cross builds without a C
+# cross compiler use `--no-default-features`.
+zstd = ["soyuz-archive/zstd"]
+
+[dependencies]
+soyuz-core.workspace = true
+soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
+soyuz-archive.workspace = true
+soyuz-search.workspace = true
+soyuz-index.workspace = true
+soyuz-term.workspace = true
+soyuz-ai.workspace = true
+soyuz-mcp.workspace = true
+soyuz-script.workspace = true
+soyuz-vfs.workspace = true
+crossbeam-channel.workspace = true
+parking_lot.workspace = true
+zeroize.workspace = true
+log.workspace = true
+env_logger.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+image.workspace = true
+base64.workspace = true
+syntect.workspace = true
+nucleo-matcher.workspace = true
+regex.workspace = true
+memchr.workspace = true
+chrono.workspace = true
+blake3.workspace = true
+pdfium-render = { workspace = true, optional = true }
+lopdf.workspace = true
+quick-xml.workspace = true
+skrifa.workspace = true
+ab_glyph.workspace = true
+gltf.workspace = true
+symphonia.workspace = true
+rodio.workspace = true
+similar.workspace = true
+zip.workspace = true
+flate2.workspace = true
+# Update check: GitHub Releases JSON + asset download, rustls/ring only.
+reqwest.workspace = true
+rustls.workspace = true
+tokio.workspace = true
+sha2.workspace = true
+# Localization.
+fluent-bundle.workspace = true
+fluent-langneg.workspace = true
+intl-memoizer.workspace = true
+unic-langid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Raw clipboard access (CF_HDROP file lists): user32/kernel32 only, no shell APIs.
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Session-bus service `org.freedesktop.FileManager1` (`services::filemanager1`).
+zbus.workspace = true
+# Native file clipboard: X11 selections (pure-Rust connection) and the Wayland
+# `ext-data-control-v1` protocol (`services::os_clipboard_*`).
+x11rb.workspace = true
+wayland-client.workspace = true
+wayland-protocols.workspace = true
+# `user.xdg.tags` (freedesktop tags shared with Dolphin / Baloo, `services::tags`).
+xattr.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+xattr.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "thumbs"
+harness = false
+
+[lints]
+workspace = true

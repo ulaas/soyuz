@@ -1,6 +1,9 @@
-//! Terminal color themes (derived from the app's Orbit palette).
+//! Terminal color themes for the egui widget (derived from the app's Orbit palette).
+//! The toolkit-free colors live in [`crate::color`]; this converts them to `Color32`.
 
 use egui::Color32;
+
+use crate::color::{TermColor, TermPalette, xterm_fixed};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TermTheme {
@@ -14,65 +17,48 @@ pub struct TermTheme {
     pub bright_bold: bool,
 }
 
-const fn hex(rgb: u32) -> Color32 {
-    Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
+/// Neutral color → egui (unmultiplied alpha in, premultiplied `Color32` out).
+pub fn to_color32(c: TermColor) -> Color32 {
+    Color32::from_rgba_unmultiplied(c.r, c.g, c.b, c.a)
+}
+
+/// egui → neutral color (unmultiplied alpha).
+pub fn from_color32(c: Color32) -> TermColor {
+    TermColor::from_array(c.to_srgba_unmultiplied())
+}
+
+impl From<&TermPalette> for TermTheme {
+    fn from(p: &TermPalette) -> Self {
+        TermTheme {
+            fg: to_color32(p.fg),
+            bg: to_color32(p.bg),
+            cursor: to_color32(p.cursor),
+            selection: to_color32(p.selection),
+            ansi: p.ansi.map(to_color32),
+            bright_bold: true,
+        }
+    }
+}
+
+impl From<&TermTheme> for TermPalette {
+    fn from(t: &TermTheme) -> Self {
+        TermPalette {
+            fg: from_color32(t.fg),
+            bg: from_color32(t.bg),
+            cursor: from_color32(t.cursor),
+            selection: from_color32(t.selection),
+            ansi: t.ansi.map(from_color32),
+        }
+    }
 }
 
 impl TermTheme {
     pub fn dark() -> Self {
-        TermTheme {
-            fg: hex(0xE6E8EC),
-            bg: hex(0x0B0D11),
-            cursor: hex(0x5B8CFF),
-            selection: Color32::from_rgba_unmultiplied(91, 140, 255, 77),
-            ansi: [
-                hex(0x1C2027),
-                hex(0xF2555A),
-                hex(0x3DD68C),
-                hex(0xF5B544),
-                hex(0x5B8CFF),
-                hex(0xBB86FC),
-                hex(0x4CC2FF),
-                hex(0xA3A9B7),
-                hex(0x6B7280),
-                hex(0xFF7A7F),
-                hex(0x6BE3A8),
-                hex(0xF8CB72),
-                hex(0x7BA3FF),
-                hex(0xCFA6FD),
-                hex(0x7DD3FF),
-                hex(0xE6E8EC),
-            ],
-            bright_bold: true,
-        }
+        TermTheme::from(&TermPalette::dark())
     }
 
     pub fn light() -> Self {
-        TermTheme {
-            fg: hex(0x171A20),
-            bg: hex(0xE9EBEF),
-            cursor: hex(0x2F6BFF),
-            selection: Color32::from_rgba_unmultiplied(47, 107, 255, 56),
-            ansi: [
-                hex(0x171A20),
-                hex(0xD93A40),
-                hex(0x1E9E5F),
-                hex(0xD08A14),
-                hex(0x2F6BFF),
-                hex(0x8A4FD8),
-                hex(0x1C8ED6),
-                hex(0x4B5260),
-                hex(0x8A91A0),
-                hex(0xE5585D),
-                hex(0x27B66F),
-                hex(0xE39C22),
-                hex(0x1F5BEF),
-                hex(0x9D66E6),
-                hex(0x2AA0EA),
-                hex(0x171A20),
-            ],
-            bright_bold: true,
-        }
+        TermTheme::from(&TermPalette::light())
     }
 }
 
@@ -87,13 +73,10 @@ impl TermTheme {
     pub(crate) fn palette256(&self) -> [Color32; 256] {
         let mut p = [Color32::BLACK; 256];
         p[..16].copy_from_slice(&self.ansi);
-        const STEPS: [u8; 6] = [0, 95, 135, 175, 215, 255];
-        for i in 0..216 {
-            p[16 + i] = Color32::from_rgb(STEPS[i / 36], STEPS[(i / 6) % 6], STEPS[i % 6]);
-        }
-        for i in 0..24u8 {
-            let v = 8 + 10 * i;
-            p[232 + usize::from(i)] = Color32::from_rgb(v, v, v);
+        for i in 16..=255u8 {
+            if let Some(c) = xterm_fixed(i) {
+                p[usize::from(i)] = to_color32(c);
+            }
         }
         p
     }
@@ -126,5 +109,27 @@ mod tests {
         assert_eq!(p[232], Color32::from_rgb(8, 8, 8));
         assert_eq!(p[255], Color32::from_rgb(238, 238, 238));
         assert_eq!(lerp_rgb(Color32::BLACK, Color32::WHITE, 0.5), Color32::from_rgb(128, 128, 128));
+    }
+
+    /// The neutral palettes convert to exactly the `Color32` values the themes always had.
+    #[test]
+    fn builtin_themes_are_bit_identical() {
+        let d = TermTheme::dark();
+        assert_eq!(d.fg, Color32::from_rgb(0xE6, 0xE8, 0xEC));
+        assert_eq!(d.bg, Color32::from_rgb(0x0B, 0x0D, 0x11));
+        assert_eq!(d.cursor, Color32::from_rgb(0x5B, 0x8C, 0xFF));
+        assert_eq!(d.selection, Color32::from_rgba_unmultiplied(91, 140, 255, 77));
+        assert_eq!(d.ansi[0], Color32::from_rgb(0x1C, 0x20, 0x27));
+        assert_eq!(d.ansi[15], Color32::from_rgb(0xE6, 0xE8, 0xEC));
+        assert!(d.bright_bold);
+        let l = TermTheme::light();
+        assert_eq!(l.fg, Color32::from_rgb(0x17, 0x1A, 0x20));
+        assert_eq!(l.bg, Color32::from_rgb(0xE9, 0xEB, 0xEF));
+        assert_eq!(l.selection, Color32::from_rgba_unmultiplied(47, 107, 255, 56));
+        assert_eq!(l.ansi[13], Color32::from_rgb(0x9D, 0x66, 0xE6));
+        // Opaque colors round-trip exactly; the 256-color tables agree.
+        assert_eq!(TermPalette::from(&d).ansi, TermPalette::dark().ansi);
+        let neutral = TermPalette::dark().palette256().map(to_color32);
+        assert_eq!(d.palette256(), neutral);
     }
 }

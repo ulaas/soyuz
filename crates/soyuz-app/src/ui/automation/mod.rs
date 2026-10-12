@@ -2,6 +2,7 @@
 //! changes, and the Scripts / Automations settings pages.
 
 pub mod approval;
+pub mod menu;
 pub mod rules_page;
 pub mod scripts_page;
 

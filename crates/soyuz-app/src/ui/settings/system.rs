@@ -45,13 +45,13 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         );
     });
     if open_about {
-        app.cmds.push(Cmd::Action(soyuz_core::config::Action::About));
+        app.core.cmds.push(Cmd::Action(soyuz_core::config::Action::About));
     }
 
     let phase = updates::phase();
     let busy = matches!(phase, Phase::Checking | Phase::Downloading { .. });
     let mut check = false;
-    let d = &mut app.settings.draft;
+    let d = &mut app.gui.settings.draft;
     let repo_before = d.updates.repo.clone();
     any |= group(ui, q, CTX_ABOUT, tr!("settings-updates"), |r| {
         r.row_kw(tr!("settings-updates-repo"), tr!("settings-updates-repo-desc"), "github check url repo", |ui| {
@@ -96,7 +96,7 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         updates::reset();
     }
     if check {
-        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, ui.ctx().clone());
+        updates::check(d.updates.repo.clone(), d.updates.include_prereleases, crate::host::egui_wake(ui.ctx()));
     }
     if !matches!(phase, Phase::Idle) {
         let mut reveal: Option<PathBuf> = None;
@@ -106,9 +106,9 @@ pub fn about(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         if let Some(file) = reveal
             && let Some(dir) = file.parent()
         {
-            let pane = app.ws.pane_mut().id;
+            let pane = app.core.ws.pane_mut().id;
             let select = file.file_name().map(|n| n.to_string_lossy().into_owned());
-            app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(dir.to_path_buf()), select });
+            app.core.cmds.push(Cmd::Navigate { pane, location: Location::Dir(dir.to_path_buf()), select });
             super::close(app);
         }
     }
@@ -143,9 +143,9 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                     {
                         // Resolving the Downloads folder reads the registry: do it on the worker.
                         let rel = rel.clone();
-                        let ctx = ui.ctx().clone();
+                        let wake = crate::host::egui_wake(ui.ctx());
                         std::thread::spawn(move || {
-                            updates::download(rel, integration::downloads_dir(), ctx);
+                            updates::download(rel, integration::downloads_dir(), wake);
                         });
                     }
                     ui.label(RichText::new(format!("{} · {}", a.name, mib(a.size))).size(11.5).color(p.text_tertiary));
@@ -156,7 +156,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             });
             ui.horizontal(|ui| {
                 if small_button(ui, Some(ph::CLIPBOARD_TEXT), tr!("settings-updates-copy-link"), false).clicked() {
-                    app.cmds.push(Cmd::CopyText(rel.url.clone()));
+                    app.core.cmds.push(Cmd::CopyText(rel.url.clone()));
                 }
             });
         }
@@ -204,7 +204,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             if cfg!(target_os = "linux") && linux_install(ui, path, sha256) {
                 // Installed: close every window (with the pending-jobs check); `main`
                 // then restarts into the new binary.
-                app.workspaces.quitting = true;
+                app.core.workspaces.quitting = true;
                 ui.ctx().send_viewport_cmd_to(egui::ViewportId::ROOT, egui::ViewportCommand::Close);
             }
             let is_installer =
@@ -230,10 +230,11 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
                         confirming = false;
                         match updates::run_installer(path) {
                             Ok(()) => {
-                                app.ui.toasts.push(Toast::info(tr!("settings-updates-started")));
+                                app.core.ui.toasts.push(Toast::info(tr!("settings-updates-started")));
                             }
                             Err(e) => {
-                                app.ui
+                                app.core
+                                    .ui
                                     .toasts
                                     .push(Toast::error(tr!("settings-updates-start-failed")).body(e.to_string()));
                             }
@@ -274,7 +275,7 @@ fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
                 .clicked()
             {
                 ui.ctx().data_mut(|d| d.insert_temp(started_id, true));
-                updates::install_async(path.to_path_buf(), sha256.to_string(), ui.ctx().clone());
+                updates::install_async(path.to_path_buf(), sha256.to_string(), crate::host::egui_wake(ui.ctx()));
             }
         });
         if installing {
@@ -454,10 +455,10 @@ pub fn file_manager(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     }
     match outcome {
         Some(Ok(msg)) => {
-            app.ui.toasts.push(Toast::success(msg));
+            app.core.ui.toasts.push(Toast::success(msg));
         }
         Some(Err(e)) => {
-            app.ui.toasts.push(Toast::error(tr!("settings-fm-failed")).body(e));
+            app.core.ui.toasts.push(Toast::error(tr!("settings-fm-failed")).body(e));
         }
         None => {}
     }

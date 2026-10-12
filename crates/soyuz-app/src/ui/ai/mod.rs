@@ -9,6 +9,7 @@ pub mod chat;
 pub mod diff;
 pub mod mcp_area;
 pub mod pages;
+pub mod touch;
 
 use std::path::PathBuf;
 
@@ -258,8 +259,19 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
 }
 
 /// Draw the panel (right dock) when open.
+/// Esc stops a running task while the panel is open (after the core's pumps each frame).
+pub fn escape_stops_task(app: &mut SoyuzApp, ctx: &egui::Context) {
+    if app.core.ai.running.is_some()
+        && app.core.ai.panel.open
+        && !app.dialog_open()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+    {
+        app.core.ai.stop();
+    }
+}
+
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
-    if !app.ai.panel.open {
+    if !app.core.ai.panel.open {
         return;
     }
     let ctx = root.ctx().clone();
@@ -267,7 +279,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let mut acts: Vec<PanelAct> = Vec::new();
     let resp = Panel::right("soyuz.ai")
         .resizable(true)
-        .default_size(app.ai.panel.width)
+        .default_size(app.core.ai.panel.width)
         .size_range(320.0..=760.0)
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
@@ -289,21 +301,21 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                 ui.add_space(8.0);
                 tabs(ui, app, &p, &mut acts);
                 ui.add_space(6.0);
-                match app.ai.panel.tab {
+                match app.core.ai.panel.tab {
                     PanelTab::Chat => chat::show(ui, app, &p, &mut acts),
                     PanelTab::Recipes => pages::recipes(ui, app, &p, &mut acts),
                     PanelTab::Audit => pages::audit(ui, app, &p, &mut acts),
                 }
             });
         });
-    app.ai.panel.width = resp.response.rect.width();
-    crate::ui::a11y::panel_splitter(&ctx, "soyuz.ai", crate::tr!("app-a11y-resize-assistant"));
+    app.core.ai.panel.width = resp.response.rect.width();
+    crate::ui::a11y::panel_splitter(&ctx, "soyuz.ai", tr!("app-a11y-resize-assistant"));
     apply(app, &ctx, acts);
 }
 
 fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-    let running = app.ai.running.as_ref();
+    let running = app.core.ai.running.as_ref();
     ui.painter().circle_filled(pos2(r.left() + 13.0, r.center().y), 13.0, p.accent.gamma_multiply(0.14));
     ui.painter().text(
         pos2(r.left() + 13.0, r.center().y),
@@ -322,7 +334,7 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
     let sub = match running {
         Some(r) if r.recipe => tr!("ai-status-recipe").to_string(),
         Some(r) => {
-            let waiting = app.ai.chat.iter().any(
+            let waiting = app.core.ai.chat.iter().any(
                 |c| matches!(c, state::ChatItem::Plan(x) if x.task == r.task && x.state == state::CardState::Pending),
             );
             if waiting {
@@ -331,7 +343,7 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
                 tr!("ai-status-working", secs = r.started.elapsed().as_secs())
             }
         }
-        None => match app.services.mcp.approvals.lock().pending() {
+        None => match app.core.services.mcp.approvals.lock().pending() {
             0 => tr!("ai-status-idle").into(),
             n => tr!("ai-status-external", count = n),
         },
@@ -348,7 +360,7 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
         let br = Rect::from_min_size(pos2(*x, r.center().y - 15.0), vec2(30.0, 30.0));
         ui.scope_builder(UiBuilder::new().max_rect(br), |ui| icon_toggle(ui, glyph, tip, true, on)).inner.clicked()
     };
-    let close = match crate::keys::chord_label(&app.keymap, &Action::ToggleAiPanel) {
+    let close = match crate::keys::chord_label(&app.core.keymap, &Action::ToggleAiPanel) {
         Some(k) => tr!("ai-close-key", key = k),
         None => tr!("ai-close").to_string(),
     };
@@ -358,7 +370,7 @@ fn header(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
     if btn(ui, &mut x, ph::GEAR_SIX, tr!("ai-settings"), false) {
         acts.push(PanelAct::OpenSettings);
     }
-    if app.ai.running.is_none() && btn(ui, &mut x, ph::NOTE_PENCIL, tr!("ai-new-chat"), false) {
+    if app.core.ai.running.is_none() && btn(ui, &mut x, ph::NOTE_PENCIL, tr!("ai-new-chat"), false) {
         acts.push(PanelAct::NewChat);
     }
 }
@@ -367,10 +379,10 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
         // Profile / model.
-        let route = app.ai.panel.route;
-        let label = match &app.ai.panel.profile_override {
-            Some(name) => app.config.ai.profile(name).map(|p| (p.name.clone(), p.model.clone())),
-            None => model::route_label(&app.config.ai, route),
+        let route = app.core.ai.panel.route;
+        let label = match &app.core.ai.panel.profile_override {
+            Some(name) => app.core.config.ai.profile(name).map(|p| (p.name.clone(), p.model.clone())),
+            None => model::route_label(&app.core.config.ai, route),
         };
         let text = match &label {
             Some((prof, m)) if m.is_empty() => prof.clone(),
@@ -381,15 +393,15 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
         crate::ui::native::popup::Menu::menu(&r).show(|ui| {
             ui.set_width(240.0);
             crate::ui::widgets::menu_caption(ui, tr!("ai-model-caption"));
-            let none = app.ai.panel.profile_override.is_none();
+            let none = app.core.ai.panel.profile_override.is_none();
             if menu_item(ui, Some(if none { ph::CHECK } else { ph::FLOW_ARROW }), tr!("ai-model-auto"), None, true)
                 .clicked()
             {
                 acts.push(PanelAct::SetProfile(None));
                 ui.close();
             }
-            for prof in &app.config.ai.profiles {
-                let on = app.ai.panel.profile_override.as_deref() == Some(prof.name.as_str());
+            for prof in &app.core.config.ai.profiles {
+                let on = app.core.ai.panel.profile_override.as_deref() == Some(prof.name.as_str());
                 let icon = if on {
                     ph::CHECK
                 } else if prof.kind.is_local() {
@@ -408,7 +420,7 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
                 ui.close();
             }
         });
-        if app.ai.panel.profile_override.is_none() {
+        if app.core.ai.panel.profile_override.is_none() {
             let (icon, l) = match route {
                 Route::Fast => (ph::LIGHTNING, tr!("ai-route-fast")),
                 Route::Strong => (ph::BRAIN, tr!("ai-route-strong")),
@@ -418,8 +430,8 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             }
         }
         // Folder access of the current folder.
-        if let Location::Dir(dir) = &app.ws.pane().location {
-            let (access, explicit) = state::access_for(app, dir);
+        if let Location::Dir(dir) = &app.core.ws.pane().location {
+            let (access, explicit) = state::access_for(&app.core, dir);
             let r = chip_menu(ui, Some(access_icon(access)), access_short(access), access == AiAccess::Contents)
                 .on_hover_text(if explicit {
                     tr!("ai-access-tip", name = soyuz_core::entry::display_name(dir))
@@ -430,14 +442,14 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             crate::ui::native::popup::Menu::menu(&r).show(|ui| access_menu(ui, &dir, access, explicit, acts));
         }
         // Meter.
-        let (usage, cost) = match &app.ai.running {
+        let (usage, cost) = match &app.core.ai.running {
             Some(r) => (r.usage, r.cost),
-            None => (app.ai.session_usage, (app.ai.session_cost > 0.0).then_some(app.ai.session_cost)),
+            None => (app.core.ai.session_usage, (app.core.ai.session_cost > 0.0).then_some(app.core.ai.session_cost)),
         };
         let month = label.as_ref().and_then(|(prof, _)| {
-            let l = app.ai.month.as_ref()?;
+            let l = app.core.ai.month.as_ref()?;
             let s = l.spend(&soyuz_ai::pricing::current_month(), prof);
-            let cap = app.config.ai.profile(prof).map_or(0.0, |p| p.monthly_budget_usd);
+            let cap = app.core.config.ai.profile(prof).map_or(0.0, |p| p.monthly_budget_usd);
             Some((s.cost_usd, cap))
         });
         let meter = match cost {
@@ -449,7 +461,7 @@ fn chips(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>)
             None => tr!("ai-meter-tokens", tokens = tokens(usage.total())),
         };
         let warn = month.is_some_and(|(spent, cap)| {
-            cap > 0.0 && spent / cap * 100.0 >= f64::from(app.config.ai.budget_warn_percent)
+            cap > 0.0 && spent / cap * 100.0 >= f64::from(app.core.config.ai.budget_warn_percent)
         });
         let r = chip(ui, Some(ph::COINS), &meter, false);
         let tip = match month {
@@ -477,7 +489,7 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
             (PanelTab::Recipes, ph::BOOK_OPEN, tr!("ai-tab-recipes")),
             (PanelTab::Audit, ph::SCROLL, tr!("ai-tab-audit")),
         ] {
-            let on = app.ai.panel.tab == tab;
+            let on = app.core.ai.panel.tab == tab;
             let g = ui.painter().layout_no_wrap(label.into(), semibold(12.0), Color32::PLACEHOLDER);
             let (r, resp) = ui.allocate_exact_size(vec2(g.size().x + 34.0, 28.0), Sense::click());
             if on {
@@ -493,7 +505,7 @@ fn tabs(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) 
                 acts.push(PanelAct::Tab(tab));
             }
         }
-        if let Some(r) = &app.ai.running {
+        if let Some(r) = &app.core.ai.running {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let _ = r;
                 if button(ui, Some(ph::STOP_CIRCLE), tr!("ai-stop-esc"), Tone::Danger, true).clicked() {
@@ -509,19 +521,22 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
     for a in acts {
         match a {
             PanelAct::Send => {
-                let text = std::mem::take(&mut app.ai.panel.composer);
-                state::submit_composer_text(app, ctx, text);
+                let text = std::mem::take(&mut app.core.ai.panel.composer);
+                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text);
             }
-            PanelAct::Prompt(text) => state::submit_composer_text(app, ctx, text),
-            PanelAct::Stop => app.ai.stop(),
-            PanelAct::NewChat => app.ai.new_chat(),
-            PanelAct::Close => app.ai.panel.open = false,
-            PanelAct::Decide(id, task, d) => app.ai.decide(id, task, d),
+            PanelAct::Prompt(text) => {
+                state::submit_composer_text(&mut app.core, &crate::host::EguiHost::new(ctx), text)
+            }
+            PanelAct::Stop => app.core.ai.stop(),
+            PanelAct::NewChat => app.core.ai.new_chat(),
+            PanelAct::Close => app.core.ai.panel.open = false,
+            PanelAct::Decide(id, task, d) => app.core.ai.decide(id, task, d),
             PanelAct::ApproveKind(id, task, tool) => {
-                app.ai.approve_kinds.insert(tool.clone());
-                app.ai.decide(id, task, Decision::Approve);
+                app.core.ai.approve_kinds.insert(tool.clone());
+                app.core.ai.decide(id, task, Decision::Approve);
                 // Other pending cards of the same kind in this task.
                 let pending: Vec<(u64, bool)> = app
+                    .core
                     .ai
                     .chat
                     .iter()
@@ -539,12 +554,13 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
                     .collect();
                 for (pid, tainted) in pending {
                     if !tainted {
-                        app.ai.decide(pid, task, Decision::ApproveKind);
+                        app.core.ai.decide(pid, task, Decision::ApproveKind);
                     }
                 }
             }
             PanelAct::ApproveAllPending(task) => {
                 let ids: Vec<u64> = app
+                    .core
                     .ai
                     .chat
                     .iter()
@@ -558,48 +574,57 @@ pub fn apply(app: &mut SoyuzApp, ctx: &egui::Context, acts: Vec<PanelAct>) {
                     })
                     .collect();
                 for id in ids {
-                    app.ai.decide(id, task, Decision::Approve);
+                    app.core.ai.decide(id, task, Decision::Approve);
                 }
             }
-            PanelAct::Undo(task) => state::undo_task(app, task),
-            PanelAct::SaveRecipe(task, name) => state::save_recipe(app, task, name),
-            PanelAct::RunRecipe(r) => state::run_recipe(app, &r),
-            PanelAct::DeleteRecipe(p) => state::delete_recipe(app, p),
-            PanelAct::Confirm(go) => state::confirm_pending(app, ctx, go),
-            PanelAct::SetRoute(r) => app.ai.panel.route = r,
-            PanelAct::SetProfile(p) => app.ai.panel.profile_override = p,
-            PanelAct::FolderAccess(path, access) => state::set_folder_access(app, ctx, path, access),
-            PanelAct::Reveal(path) => app.cmds.push(Cmd::RevealPath(path)),
+            PanelAct::Undo(task) => state::undo_task(&mut app.core, task),
+            PanelAct::SaveRecipe(task, name) => state::save_recipe(&mut app.core, task, name),
+            PanelAct::RunRecipe(r) => state::run_recipe(&mut app.core, &r),
+            PanelAct::DeleteRecipe(p) => state::delete_recipe(&mut app.core, p),
+            PanelAct::Confirm(go) => state::confirm_pending(&mut app.core, &crate::host::EguiHost::new(ctx), go),
+            PanelAct::SetRoute(r) => app.core.ai.panel.route = r,
+            PanelAct::SetProfile(p) => app.core.ai.panel.profile_override = p,
+            PanelAct::FolderAccess(path, access) => {
+                state::set_folder_access(&mut app.core, &crate::host::EguiHost::new(ctx), path, access)
+            }
+            PanelAct::Reveal(path) => app.core.cmds.push(Cmd::RevealPath(path)),
             PanelAct::Tab(t) => {
-                app.ai.panel.tab = t;
+                app.core.ai.panel.tab = t;
                 match t {
-                    PanelTab::Recipes => app.ai.recipes.loaded = false,
-                    PanelTab::Audit => app.ai.audit.loaded = false,
+                    PanelTab::Recipes => app.core.ai.recipes.loaded = false,
+                    PanelTab::Audit => app.core.ai.audit.loaded = false,
                     PanelTab::Chat => {}
                 }
             }
             PanelAct::SmartParse => {
                 let today = chrono::Local::now().date_naive();
-                let pills = crate::ai::smart_search::parse_nl(&app.ai.smart.input, today);
-                app.ai.smart.query_text = crate::ai::smart_search::to_text(&pills);
-                app.ai.smart.pills = pills;
-                app.ai.smart.error = None;
+                let pills = crate::ai::smart_search::parse_nl(&app.core.ai.smart.input, today);
+                app.core.ai.smart.query_text = crate::ai::smart_search::to_text(&pills);
+                app.core.ai.smart.pills = pills;
+                app.core.ai.smart.error = None;
             }
             PanelAct::SmartAskModel => {
                 let text = format!(
                     "Turn this into one `search` tool call for the current folder and run it, then select the best matches: {}",
-                    app.ai.smart.input
+                    app.core.ai.smart.input
                 );
-                let shown = tr!("ai-smart-ask-shown", text = app.ai.smart.input.trim());
-                state::start_chat_shown(app, ctx, shown, text, Route::Fast, Vec::new());
+                let shown = tr!("ai-smart-ask-shown", text = app.core.ai.smart.input.trim());
+                state::start_chat_shown(
+                    &mut app.core,
+                    &crate::host::EguiHost::new(ctx),
+                    shown,
+                    text,
+                    Route::Fast,
+                    Vec::new(),
+                );
             }
-            PanelAct::SmartRun => state::run_smart_search(app),
-            PanelAct::ReloadAudit => app.ai.audit.loaded = false,
-            PanelAct::ReloadRecipes => app.ai.recipes.loaded = false,
+            PanelAct::SmartRun => state::run_smart_search(&mut app.core),
+            PanelAct::ReloadAudit => app.core.ai.audit.loaded = false,
+            PanelAct::ReloadRecipes => app.core.ai.recipes.loaded = false,
             PanelAct::OpenSettings => crate::ui::settings::open(app, Some(crate::ui::settings::Section::Ai)),
             PanelAct::Mcp(id, act) => mcp_area::apply(app, id, act),
-            PanelAct::McpUndoClient(client) => state::undo_mcp_client(app, client),
-            PanelAct::McpClear => app.services.mcp.approvals.lock().clear_resolved(),
+            PanelAct::McpUndoClient(client) => state::undo_mcp_client(&mut app.core, client),
+            PanelAct::McpClear => app.core.services.mcp.approvals.lock().clear_resolved(),
         }
     }
 }

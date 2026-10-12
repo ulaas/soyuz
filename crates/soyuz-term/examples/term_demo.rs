@@ -24,7 +24,7 @@ impl Demo {
             cwd: std::env::current_dir().unwrap_or_else(|_| ".".into()),
             ..Default::default()
         };
-        let (term, error) = match Terminal::spawn(settings, cc.egui_ctx.clone(), 1) {
+        let (term, error) = match Terminal::spawn(settings, soyuz_term::egui_wake(cc.egui_ctx.clone()), 1) {
             Ok(t) => (Some(t), None),
             Err(e) => (None, Some(e.to_string())),
         };

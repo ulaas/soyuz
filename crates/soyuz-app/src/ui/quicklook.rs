@@ -1,65 +1,56 @@
 //! Quick Look: Space opens a large centered overlay previewing the cursor
 //! item with the same renderers as the preview pane. Arrow keys move through the list
 //! (the overlay follows), Esc / Space close, images zoom with the wheel / pinch and pan
-//! by dragging (double-click toggles fit ↔ 100%).
+//! by dragging (double-click toggles fit ↔ 100%). Open state and list movement are in
+//! [`crate::models::quicklook`]; this module keeps the renderer state and the keys.
+
+use std::cell::RefCell;
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Order, Rect, Sense, Stroke, UiBuilder, pos2, vec2,
 };
 use soyuz_core::{Location, format_size};
 
-use crate::app::{Focus, SoyuzApp};
+use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
+use crate::models::quicklook::Step;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
 use crate::ui::preview::render::{self, PreviewAction, PreviewState};
 use crate::ui::views::flow::semibold;
 use crate::ui::views::icons as file_icons;
-use crate::ui::views::layout::NavDir;
 use crate::ui::widgets::{icon_toggle, kbd, trunc_galley};
 
+pub use crate::models::quicklook::{QuickLook, toggle};
+
+/// Renderer state of the overlay (GUI-only).
 #[derive(Default)]
-pub struct QuickLook {
-    pub open: bool,
+struct View {
     state: Option<PreviewState>,
     /// Two-file diff when exactly two text files are selected.
     diff: crate::ui::preview::diff::DiffView,
+    /// Something was shown since the overlay last closed.
+    shown: bool,
 }
 
-impl QuickLook {
-    pub fn close(&mut self) {
-        self.open = false;
-        if let Some(s) = &mut self.state {
-            s.clear();
-        }
-        self.diff.clear();
-    }
+thread_local! {
+    static VIEW: RefCell<View> = RefCell::new(View::default());
 }
 
-/// Space: open on the cursor item (or close when open).
-pub fn toggle(app: &mut SoyuzApp) {
-    if app.ui.quicklook.open {
-        app.ui.quicklook.close();
-        return;
+/// Drop what the overlay rendered (it closed).
+fn clear_view(v: &mut View) {
+    if let Some(s) = &mut v.state {
+        s.clear();
     }
-    let pane = app.ws.pane_mut();
-    if pane.cursor.is_none() && !pane.visible.is_empty() {
-        let first = pane.selected_entries().first().map(|e| e.name.clone());
-        match first.and_then(|n| pane.visible_pos(&n)) {
-            Some(pos) => pane.move_cursor(pos, false, true),
-            None => pane.move_cursor(0, false, false),
-        }
-    }
-    if pane.cursor.is_some() {
-        app.ui.quicklook.open = true;
-    }
+    v.diff.clear();
+    v.shown = false;
 }
 
 /// Keyboard while open: consumes Esc / Space / arrows / Enter so the file list doesn't
 /// see them. Returns `true` when Quick Look handled input this frame.
 pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
-    if !app.ui.quicklook.open {
+    if !app.core.ui.quicklook.open {
         return false;
     }
     let (esc, space, up, down, left, right, enter, home, end) = ctx.input_mut(|i| {
@@ -76,65 +67,64 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
         )
     });
     if esc || space {
-        app.ui.quicklook.close();
+        crate::models::quicklook::close(&mut app.core);
         return true;
     }
     let dir = if up || left {
-        Some(NavDir::Up)
+        Some(Step::Prev)
     } else if down || right {
-        Some(NavDir::Down)
+        Some(Step::Next)
     } else if home {
-        Some(NavDir::Home)
+        Some(Step::First)
     } else if end {
-        Some(NavDir::End)
+        Some(Step::Last)
     } else {
         None
     };
     if let Some(d) = dir {
-        // Linear movement through the list regardless of the view layout.
-        let pane = app.ws.pane_mut();
-        let n = pane.visible.len();
-        if n > 0 {
-            let i = pane.cursor_pos().unwrap_or(0);
-            let t = match d {
-                NavDir::Up => i.saturating_sub(1),
-                NavDir::Down => (i + 1).min(n - 1),
-                NavDir::Home => 0,
-                _ => n - 1,
-            };
-            pane.move_cursor(t, false, false);
-        }
-        app.ui.focus = Focus::List;
+        crate::models::quicklook::step(&mut app.core, d);
     }
     if enter {
-        app.ui.quicklook.close();
-        app.cmds.push(Cmd::Action(soyuz_core::config::Action::Open));
+        crate::models::quicklook::open_item(&mut app.core);
     }
     true
 }
 
+/// The overlay (drawn over everything while open).
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
-    if !app.ui.quicklook.open {
+    VIEW.with_borrow_mut(|v| {
+        if app.core.ui.quicklook.open {
+            v.shown = true;
+            show_open(ctx, app, v);
+        }
+        if !app.core.ui.quicklook.open && v.shown {
+            clear_view(v);
+        }
+    });
+}
+
+fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
+    if !app.core.ui.quicklook.open {
         return;
     }
     let p = palette(ctx);
     let target = {
-        let pane = app.ws.pane();
+        let pane = app.core.ws.pane();
         pane.cursor.as_deref().and_then(|c| pane.entry(c)).cloned()
     };
     let Some(target) = target else {
-        app.ui.quicklook.close();
+        app.core.ui.quicklook.close();
         return;
     };
     let (pos, count) = {
-        let pane = app.ws.pane();
+        let pane = app.core.ws.pane();
         (pane.cursor_pos().map_or(0, |i| i + 1), pane.visible.len())
     };
-    let pane_id = app.ws.pane().id;
+    let pane_id = app.core.ws.pane().id;
     let pair = crate::ui::preview::diff::pair(app);
-    let diff_cap = app.config.preview.max_diff_kib;
-    let st = app.ui.quicklook.state.get_or_insert_with(|| PreviewState::new(ctx, true));
-    let limits = st.limits(&app.config, &p);
+    let diff_cap = app.core.config.preview.max_diff_kib;
+    let st = v.state.get_or_insert_with(|| PreviewState::new(ctx, true));
+    let limits = st.limits(&app.core.config, &p);
     st.set_target(Some(&target), limits);
     st.poll(ctx);
 
@@ -233,7 +223,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
             [pos2(card.left(), footer.top()), pos2(card.right(), footer.top())],
             Stroke::new(1.0, p.border_subtle),
         );
-        let rows = render::info_rows(&target, st.loaded.as_ref(), st.folder_size(), &app.config);
+        let rows = render::info_rows(&target, st.loaded.as_ref(), st.folder_size(), &app.core.config);
         let mut summary: Vec<String> = Vec::new();
         for k in ["Type", "Size", "Dimensions", "Duration", "Modified"] {
             if let Some((_, v)) = rows.iter().find(|(a, _)| a == k) {
@@ -243,7 +233,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         if target.is_dir_like()
             && let Some((b, ..)) = st.folder_size()
         {
-            summary.push(format_size(b, app.config.general.size_style));
+            summary.push(format_size(b, app.core.config.general.size_style));
         }
         let sg = trunc_galley(
             painter,
@@ -275,24 +265,24 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         let mut child = ui.new_child(UiBuilder::new().max_rect(body));
         child.set_clip_rect(body);
         if let Some((a, b)) = &pair {
-            crate::ui::preview::diff::show(&mut child, body, &mut app.ui.quicklook.diff, a, b, diff_cap);
+            crate::ui::preview::diff::show(&mut child, body, &mut v.diff, a, b, diff_cap);
         } else if let Some(a) = render::content(&mut child, body, st, true) {
             action = Some(a);
         }
     });
     if close {
-        app.ui.quicklook.close();
+        app.core.ui.quicklook.close();
     }
     match action {
         Some(PreviewAction::ToggleHex) => {
-            if let Some(s) = &mut app.ui.quicklook.state {
+            if let Some(s) = &mut v.state {
                 s.force_hex = !s.force_hex;
                 s.invalidate();
             }
         }
         Some(PreviewAction::Open(path)) => {
-            app.ui.quicklook.close();
-            app.cmds.push(Cmd::Navigate {
+            app.core.ui.quicklook.close();
+            app.core.cmds.push(Cmd::Navigate {
                 pane: pane_id,
                 location: Location::Archive { archive: path, inner: String::new() },
                 select: None,

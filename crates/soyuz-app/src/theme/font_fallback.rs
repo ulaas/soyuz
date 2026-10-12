@@ -303,6 +303,8 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 /// Remember the context, the configured fonts and the mode; `startup` starts loading
 /// every script now. Called by `theme::install` (startup and every config change).
 pub fn configure(ctx: &Context, mode: FallbackFonts, fonts: &Fonts) {
+    // The core reports file names about to be shown through this hook (`auto` mode).
+    crate::host::set_text_shown_hook(note);
     MODE.store(
         match mode {
             FallbackFonts::Auto => 0,

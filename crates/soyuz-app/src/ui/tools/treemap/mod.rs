@@ -299,7 +299,7 @@ impl TreemapWindow {
 
     fn body(&mut self, ui: &mut Ui, app: &mut SoyuzApp) {
         let p = palette(ui.ctx());
-        let style = app.config.general.size_style;
+        let style = app.core.config.general.size_style;
         // Toolbar: up, breadcrumb, totals, rescan / cancel.
         ui.horizontal(|ui| {
             let up = self.tree.nodes[self.current].parent;
@@ -428,7 +428,7 @@ impl TreemapWindow {
             );
             if button(&mut bu, Some(ph::TRASH), tr!("tools-move-to-trash"), 2, true).clicked() {
                 let path = n.path.clone();
-                app.cmds.push(Cmd::FileOp(FileOpCmd::Delete { paths: vec![path], mode: DeleteMode::Trash }));
+                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Delete { paths: vec![path], mode: DeleteMode::Trash }));
                 if self.tree.is_under(self.current, id) {
                     self.current = self.tree.nodes[id].parent.unwrap_or(0);
                 }
@@ -458,7 +458,7 @@ impl TreemapWindow {
             bgs: &mut bgs,
             borders: &mut borders,
             labels: &mut labels,
-            style: app.config.general.size_style,
+            style: app.core.config.general.size_style,
         };
         self.layout_level(ui, &p, inner, self.current, 0, &mut out);
         let painter = ui.painter_at(rect);
@@ -470,7 +470,7 @@ impl TreemapWindow {
         // Screen readers: the map is a list of its tiles (name and size).
         if crate::ui::a11y::active(ui.ctx()) {
             crate::ui::a11y::container(ui.ctx(), resp.id, egui::accesskit::Role::ListBox, tr!("tools-treemap-title"));
-            let style = app.config.general.size_style;
+            let style = app.core.config.general.size_style;
             let total = hits.len();
             for (pos, (r, id)) in hits.iter().enumerate() {
                 let n = &self.tree.nodes[*id];
@@ -483,7 +483,7 @@ impl TreemapWindow {
         // tile whose contents are not drawn shows the strongest mark inside it.
         if crate::ai::touch::any() {
             let shown: std::collections::HashSet<usize> = hits.iter().map(|(_, id)| *id).collect();
-            let reduced = app.ui.reduced_motion;
+            let reduced = app.core.ui.reduced_motion;
             for (r, id) in &hits {
                 let n = &self.tree.nodes[*id];
                 let opened = n.children.iter().any(|c| shown.contains(c));
@@ -493,7 +493,7 @@ impl TreemapWindow {
                     crate::ai::touch::get(&n.path)
                 };
                 if let Some(t) = t {
-                    crate::ai::touch::paint_touch(&painter, &p, *r, t, reduced);
+                    crate::ui::ai::touch::paint_touch(&painter, &p, *r, t, reduced);
                 }
             }
         }
@@ -540,7 +540,7 @@ impl TreemapWindow {
             let parent_bytes = self.tree.nodes[id].parent.map(|pp| self.tree.nodes[pp].bytes).unwrap_or(0);
             let cur_bytes = self.tree.nodes[self.current].bytes;
             let tree = &self.tree;
-            let style = app.config.general.size_style;
+            let style = app.core.config.general.size_style;
             resp.clone().on_hover_ui_at_pointer(|ui| tooltip(ui, tree, id, parent_bytes, cur_bytes, style));
         }
         if resp.clicked()
@@ -562,7 +562,7 @@ impl TreemapWindow {
             && !self.tree.nodes[id].other
         {
             let path = self.tree.nodes[id].path.clone();
-            crate::ops::launch(app, &path);
+            crate::ops::launch(&mut app.core, &path);
         }
         if resp.secondary_clicked() {
             self.menu_target = self.hover;
@@ -794,24 +794,24 @@ impl TreemapWindow {
                 ui.close();
             }
             if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("tools-open-in-pane"), None, true).clicked() {
-                let pane = app.ws.pane().id;
-                app.cmds.push(Cmd::Navigate { pane, location: Location::Dir(n.path.clone()), select: None });
+                let pane = app.core.ws.pane().id;
+                app.core.cmds.push(Cmd::Navigate { pane, location: Location::Dir(n.path.clone()), select: None });
                 ui.close();
             }
         } else if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("tools-open"), None, true).clicked() {
-            crate::ops::launch(app, &n.path);
+            crate::ops::launch(&mut app.core, &n.path);
             ui.close();
         }
         if menu_item(ui, Some(ph::ARROW_SQUARE_RIGHT), tr!("tools-shelf-reveal"), None, true).clicked() {
-            app.cmds.push(Cmd::RevealPath(n.path.clone()));
+            app.core.cmds.push(Cmd::RevealPath(n.path.clone()));
             ui.close();
         }
         if menu_item(ui, Some(ph::ARROW_SQUARE_UP_RIGHT), tr!("tools-reveal-in-system"), None, true).clicked() {
-            app.cmds.push(Cmd::RevealInSystem(n.path.clone()));
+            app.core.cmds.push(Cmd::RevealInSystem(n.path.clone()));
             ui.close();
         }
         if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("tools-copy-path"), None, true).clicked() {
-            app.cmds.push(Cmd::CopyText(super::tags_ui::show_path(&n.path)));
+            app.core.cmds.push(Cmd::CopyText(super::tags_ui::show_path(&n.path)));
             ui.close();
         }
         if menu_item(ui, Some(ph::TRAY_ARROW_DOWN), tr!("tools-menu-add-to-shelf"), None, true).clicked() {

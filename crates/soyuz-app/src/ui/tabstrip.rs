@@ -122,13 +122,13 @@ fn chip_label(name: &str, collapsed: bool, count: usize) -> String {
 pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let p = palette(ui.ctx());
     let ctx = ui.ctx().clone();
-    let n = app.ws.tabs.len();
-    let window = app.workspaces.current;
+    let n = app.core.ws.tabs.len();
+    let window = app.core.workspaces.current;
     let plus_w = 32.0;
     let drag_id = Id::new("soyuz.tabdrag");
     let mut drag: Option<Drag> = ctx
         .data(|d| d.get_temp(drag_id))
-        .filter(|d: &Drag| d.window == window && d.from < n && app.ws.tabs[d.from].id == d.tab);
+        .filter(|d: &Drag| d.window == window && d.from < n && app.core.ws.tabs[d.from].id == d.tab);
     let pointer = ui.input(|i| i.pointer.latest_pos());
     if let (Some(d), Some(pp)) = (drag.as_mut(), pointer) {
         d.last = pp;
@@ -139,22 +139,23 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let bg = ui.interact(full, Id::new("soyuz.tabstrip.bg"), Sense::click());
         crate::ui::a11y::container(&ctx, bg.id, egui::accesskit::Role::TabList, tr!("app-tabs-list"));
         if bg.double_clicked() {
-            app.cmds.push(Cmd::Action(Action::NewTab));
+            app.core.cmds.push(Cmd::Action(Action::NewTab));
         }
     }
 
     // ---- widths ----
     let chip_font = FontId::proportional(11.5);
-    let groups_of: Vec<Option<GroupId>> = app.ws.tabs.iter().map(|t| t.group).collect();
-    let collapsed = |g: GroupId| app.ws.group(g).is_some_and(|x| x.collapsed);
+    let groups_of: Vec<Option<GroupId>> = app.core.ws.tabs.iter().map(|t| t.group).collect();
+    let collapsed = |g: GroupId| app.core.ws.group(g).is_some_and(|x| x.collapsed);
     let hidden: Vec<bool> = groups_of.iter().map(|g| g.is_some_and(collapsed)).collect();
-    let renaming = app.workspaces.renaming.clone().filter(|(g, _, _)| app.ws.group(*g).is_some());
+    let renaming = app.core.workspaces.renaming.clone().filter(|(g, _, _)| app.core.ws.group(*g).is_some());
     let chip_widths: Vec<(GroupId, f32)> = app
+        .core
         .ws
         .groups
         .iter()
         .map(|g| {
-            let label = chip_label(&g.name, g.collapsed, app.ws.group_tab_count(g.id));
+            let label = chip_label(&g.name, g.collapsed, app.core.ws.group_tab_count(g.id));
             let w = if renaming.as_ref().is_some_and(|(r, _, _)| *r == g.id) {
                 130.0
             } else if label.is_empty() {
@@ -166,16 +167,16 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         })
         .collect();
     let chip_w = |g: GroupId| chip_widths.iter().find(|(x, _)| *x == g).map_or(CHIP_H, |(_, w)| *w);
-    let chips_total: f32 = app.ws.groups.iter().map(|g| chip_w(g.id) + 4.0).sum();
-    let pinned = app.ws.tabs.iter().filter(|t| t.pinned).count();
+    let chips_total: f32 = app.core.ws.groups.iter().map(|g| chip_w(g.id) + 4.0).sum();
+    let pinned = app.core.ws.tabs.iter().filter(|t| t.pinned).count();
     let avail = full.width() - plus_w - 4.0 - chips_total;
-    let shown_unpinned = (0..n).filter(|&i| !app.ws.tabs[i].pinned && !hidden[i]).count().max(1) as f32;
+    let shown_unpinned = (0..n).filter(|&i| !app.core.ws.tabs[i].pinned && !hidden[i]).count().max(1) as f32;
     let w = ((avail - pinned as f32 * (PINNED_W + 2.0)) / shown_unpinned - 2.0).clamp(MIN_W, MAX_W);
     let widths: Vec<f32> = (0..n)
         .map(|i| {
             if hidden[i] {
                 0.0
-            } else if app.ws.tabs[i].pinned {
+            } else if app.core.ws.tabs[i].pinned {
                 PINNED_W
             } else {
                 w
@@ -195,13 +196,19 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let inner = ctx.input(|i| i.viewport().inner_rect);
     if let Some(inner) = inner {
         let off = inner.min.to_vec2();
-        let tabs = (0..n).filter(|&i| !hidden[i]).map(|i| (i, rects[i].translate(off))).collect();
-        app.workspaces.set_geom(WindowGeom { id: window, inner, strip: full.translate(off), tabs });
+        let tabs =
+            (0..n).filter(|&i| !hidden[i]).map(|i| (i, crate::ui::geom::area(rects[i].translate(off)))).collect();
+        app.core.workspaces.set_geom(WindowGeom {
+            id: window,
+            inner: crate::ui::geom::area(inner),
+            strip: crate::ui::geom::area(full.translate(off)),
+            tabs,
+        });
     }
 
-    let distance = app.config.workspace.tear_off_distance.clamp(8.0, 400.0);
+    let distance = app.core.config.workspace.tear_off_distance.clamp(8.0, 400.0);
     let can_give = n > 1 || !window.is_main();
-    let tear_ok = app.config.workspace.tear_off && n > 1;
+    let tear_ok = app.core.config.workspace.tear_off && n > 1;
     // Out of the strip: a tear-off / move-to-window candidate.
     let far = drag.is_some_and(|d| {
         let pp = d.last;
@@ -209,9 +216,13 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         outside || pp.y > full.bottom() + distance || pp.y < full.top() - distance
     });
     let away_target = match (drag, far, inner) {
-        (Some(d), true, Some(inner)) if can_give => {
-            Some(resolve_drop(window, inner.min + d.last.to_vec2(), &app.workspaces.geoms, distance, tear_ok))
-        }
+        (Some(d), true, Some(inner)) if can_give => Some(resolve_drop(
+            window,
+            crate::ui::geom::point(inner.min + d.last.to_vec2()),
+            &app.core.workspaces.geoms,
+            distance,
+            tear_ok,
+        )),
         _ => None,
     };
 
@@ -225,7 +236,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     // ---- group chips ----
     let mut hovered_chip: Option<(GroupId, Rect)> = None;
     for &(g, left) in &live.chips {
-        let Some(group) = app.ws.group(g).cloned() else { continue };
+        let Some(group) = app.core.ws.group(g).cloned() else { continue };
         let cw = chip_w(g);
         let spring = Id::new(("soyuz.chip.x", g.0));
         let x = crate::ui::motion::spring_to(&ctx, spring, left);
@@ -244,16 +255,19 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                     StrokeKind::Outside,
                 );
             }
-            let label = chip_label(&group.name, group.collapsed, app.ws.group_tab_count(g));
+            let label = chip_label(&group.name, group.collapsed, app.core.ws.group_tab_count(g));
             let text_color = if group.collapsed { p.text_primary } else { Color32::from_gray(18) };
             let g2 = trunc_galley(&painter, &label, chip_font.clone(), text_color, cw - 14.0);
             painter.galley(pos2(r.left() + 7.0, r.center().y - g2.size().y / 2.0), g2, text_color);
         }
         // Group underline joining the chip with its tabs.
-        if let Some(span) = app.ws.group_span(g).filter(|_| !group.collapsed) {
+        if let Some(span) = app.core.ws.group_span(g).filter(|_| !group.collapsed) {
             let last = (span.start..span.end).rfind(|&i| !hidden[i]).unwrap_or(span.start);
-            let tx =
-                crate::ui::motion::spring_to(&ctx, Id::new(("soyuz.tab.x", app.ws.tabs[last].id.0)), live.lefts[last]);
+            let tx = crate::ui::motion::spring_to(
+                &ctx,
+                Id::new(("soyuz.tab.x", app.core.ws.tabs[last].id.0)),
+                live.lefts[last],
+            );
             let right = tx + widths[last];
             let y = full.bottom() - 3.5;
             painter.line_segment(
@@ -285,15 +299,15 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                 tr!("app-tabs-collapse-group")
             });
             if resp.double_clicked() {
-                app.cmds.push(Cmd::Workspace(WsCmd::StartRenameGroup(g)));
+                app.core.cmds.push(Cmd::Workspace(WsCmd::StartRenameGroup(g)));
             } else if resp.clicked() {
-                app.cmds.push(Cmd::Workspace(WsCmd::ToggleGroup(g)));
+                app.core.cmds.push(Cmd::Workspace(WsCmd::ToggleGroup(g)));
             }
             let mut cmds = Vec::new();
             crate::ui::native::popup::context_menu(&resp, |ui| {
                 crate::ui::workspaces::group_menu(ui, app, &mut cmds, g)
             });
-            app.cmds.extend(cmds);
+            app.core.cmds.extend(cmds);
         }
     }
 
@@ -306,9 +320,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             continue;
         }
         let r = rects[i];
-        let tab = &app.ws.tabs[i];
+        let tab = &app.core.ws.tabs[i];
         let tab_id = tab.id;
-        let active = i == app.ws.active;
+        let active = i == app.core.ws.active;
         let resp = ui.interact(r, Id::new(("soyuz.tab", tab.id.0)), Sense::click_and_drag());
         let dragging = drag.is_some_and(|d| d.from == i);
         let spring_id = Id::new(("soyuz.tab.x", tab.id.0));
@@ -327,10 +341,10 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let tab_painter = if ghosted { faded(painter.clone()) } else { painter.clone() };
         paint_tab(ui, &tab_painter, app, i, r, active, dragging, hover_t);
         drawn[i] = Some((r, if active || dragging { 1.0 } else { hover_t }));
-        let pane = app.ws.tabs[i].active();
+        let pane = app.core.ws.tabs[i].active();
         let title = location_title(&pane.location);
         crate::ui::a11y::tab(&resp, &title, active);
-        let show_close = (active || hovered) && !app.ws.tabs[i].pinned;
+        let show_close = (active || hovered) && !app.core.ws.tabs[i].pinned;
         if show_close && n > 1 && !ghosted {
             let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 20.0));
             let cresp = ui.interact(cr, Id::new(("soyuz.tab.close", tab_id.0)), Sense::click());
@@ -346,38 +360,38 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
                 if cresp.hovered() { p.text_primary } else { p.text_tertiary },
             );
             if cresp.clicked() {
-                app.cmds.push(Cmd::CloseTab(i));
+                app.core.cmds.push(Cmd::CloseTab(i));
             }
         }
-        let resp = resp.on_hover_text(app.ws.tabs[i].active().location.display());
-        if let soyuz_core::Location::Dir(d) = &app.ws.tabs[i].active().location {
+        let resp = resp.on_hover_text(app.core.ws.tabs[i].active().location.display());
+        if let soyuz_core::Location::Dir(d) = &app.core.ws.tabs[i].active().location {
             let d = d.clone();
             if active {
-                crate::ops::fileops::dnd::target(ui, &resp, &d, &mut app.cmds);
+                crate::ui::dnd::target(ui, &resp, &d, &mut app.core.cmds);
             } else {
-                crate::ops::fileops::dnd::target_with(ui, &resp, &d, Cmd::SelectTab(i), &mut app.cmds);
+                crate::ui::dnd::target_with(ui, &resp, &d, Cmd::SelectTab(i), &mut app.core.cmds);
             }
         }
         if resp.clicked() {
-            app.cmds.push(Cmd::SelectTab(i));
+            app.core.cmds.push(Cmd::SelectTab(i));
         }
         if resp.middle_clicked() {
-            app.cmds.push(Cmd::CloseTab(i));
+            app.core.cmds.push(Cmd::CloseTab(i));
         }
         if resp.drag_started() {
             let pp = pointer.unwrap_or(rects[i].min);
             let d = Drag { window, tab: tab_id, from: i, grab: pp - rects[i].min, last: pp };
             ctx.data_mut(|dm| dm.insert_temp(drag_id, d));
-            app.cmds.push(Cmd::SelectTab(i));
+            app.core.cmds.push(Cmd::SelectTab(i));
         }
-        let km = app.keymap.clone();
-        let pinned_now = app.ws.tabs[i].pinned;
+        let km = app.core.keymap.clone();
+        let pinned_now = app.core.ws.tabs[i].pinned;
         let mut cmds = Vec::new();
         crate::ui::native::popup::context_menu(&resp, |ui| {
             tab_menu(ui, &mut cmds, &km, i, pinned_now, n);
             crate::ui::workspaces::tab_menu_extra(ui, app, &mut cmds, i);
         });
-        app.cmds.extend(cmds);
+        app.core.cmds.extend(cmds);
     }
 
     // ---- italic separators between neighbouring tabs (not next to the active / hovered
@@ -425,12 +439,12 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         icons::font(15.0),
         if presp.hovered() { p.text_primary } else { p.text_secondary },
     );
-    let tip = match chord_label(&app.keymap, &Action::NewTab) {
+    let tip = match chord_label(&app.core.keymap, &Action::NewTab) {
         Some(k) => tr!("app-tabs-new-tip", key = k),
         None => tr!("app-tabs-new").into(),
     };
     if presp.on_hover_text(tip).clicked() {
-        app.cmds.push(Cmd::Action(Action::NewTab));
+        app.core.cmds.push(Cmd::Action(Action::NewTab));
     }
 }
 
@@ -458,7 +472,7 @@ fn paint_tab(
     hover_t: f32,
 ) {
     let p = palette(ui.ctx());
-    let tab = &app.ws.tabs[i];
+    let tab = &app.core.ws.tabs[i];
     let (well, _, _) = p.tab_well();
     if active || dragging {
         if dragging {
@@ -476,7 +490,7 @@ fn paint_tab(
         painter.rect_filled(r, CornerRadius::same(radius::CARD), p.tab_hover().gamma_multiply(hover_t));
     }
     // Group color: a bar along the bottom edge.
-    if let Some(g) = tab.group.and_then(|g| app.ws.group(g)) {
+    if let Some(g) = tab.group.and_then(|g| app.core.ws.group(g)) {
         let c = p.tags[(g.color as usize).min(7)];
         let bar = Rect::from_min_max(pos2(r.left() + 6.0, r.bottom() - 4.5), pos2(r.right() - 6.0, r.bottom() - 2.5));
         painter.rect_filled(bar, CornerRadius::same(1), c);
@@ -491,7 +505,7 @@ fn paint_tab(
         _ => ph::FOLDER,
     };
     let folder_color = match &pane.location {
-        soyuz_core::Location::Dir(d) => crate::services::folder_colors::color_of(d, &p),
+        soyuz_core::Location::Dir(d) => crate::ui::looks::folder_color_of(d, &p),
         _ => None,
     };
     let gcolor = match folder_color {
@@ -571,7 +585,7 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
     let shadow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(90) };
     painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));
     painter.rect_filled(r, CornerRadius::same(radius::CARD), p.bg_surface1);
-    let title = app.ws.tabs.get(d.from).map(|t| location_title(&t.active().location)).unwrap_or_default();
+    let title = app.core.ws.tabs.get(d.from).map(|t| location_title(&t.active().location)).unwrap_or_default();
     painter.text(
         pos2(r.left() + 18.0, r.center().y),
         Align2::CENTER_CENTER,
@@ -610,7 +624,11 @@ fn finish_drag(
 ) {
     if far {
         if let Some(t) = away.filter(|t| !matches!(t, DropTarget::Reorder | DropTarget::Nothing)) {
-            app.cmds.push(Cmd::Workspace(WsCmd::DropTab { tab: d.tab, target: t, grab: d.grab }));
+            app.core.cmds.push(Cmd::Workspace(WsCmd::DropTab {
+                tab: d.tab,
+                target: t,
+                grab: crate::ui::geom::size(d.grab),
+            }));
         }
         return;
     }
@@ -627,13 +645,13 @@ fn finish_drag(
         }
     };
     if to != d.from || group != own {
-        app.cmds.push(Cmd::Workspace(WsCmd::MoveTab { from: d.from, to, group }));
+        app.core.cmds.push(Cmd::Workspace(WsCmd::MoveTab { from: d.from, to, group }));
     }
 }
 
 /// Inline rename field over a group chip.
 fn group_rename(ui: &mut Ui, app: &mut SoyuzApp, g: GroupId, r: Rect) {
-    let Some((_, text, focus)) = app.workspaces.renaming.as_mut() else { return };
+    let Some((_, text, focus)) = app.core.workspaces.renaming.as_mut() else { return };
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r));
     let resp = child.add(
         egui::TextEdit::singleline(text)
@@ -648,10 +666,10 @@ fn group_rename(ui: &mut Ui, app: &mut SoyuzApp, g: GroupId, r: Rect) {
     }
     let (enter, esc) = ui.input(|i| (i.key_pressed(egui::Key::Enter), i.key_pressed(egui::Key::Escape)));
     if esc {
-        app.workspaces.renaming = None;
+        app.core.workspaces.renaming = None;
     } else if resp.lost_focus() || enter {
         let name = text.clone();
-        app.cmds.push(Cmd::Workspace(WsCmd::RenameGroup(g, name)));
+        app.core.cmds.push(Cmd::Workspace(WsCmd::RenameGroup(g, name)));
     }
 }
 

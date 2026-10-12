@@ -36,22 +36,7 @@ pub fn checksum_path(base: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
-/// `name.ext.003` → (`name.ext`, 3).
-pub fn split_part(path: &Path) -> Option<(PathBuf, usize)> {
-    let ext = path.extension()?.to_str()?;
-    if ext.len() < 3 || !ext.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    let n: usize = ext.parse().ok()?;
-    let base = path.with_extension("");
-    base.file_name()?;
-    Some((base, n))
-}
-
-/// Looks like a split part (`.001`, `.002`, …).
-pub fn is_part(path: &Path) -> bool {
-    split_part(path).is_some_and(|(_, n)| n >= 1)
-}
+pub use crate::models::tools::{is_part, split_part};
 
 /// All consecutive parts starting at `.001` for the part `any`. Blocking (stats).
 pub fn find_parts(any: &Path) -> Result<(PathBuf, Vec<PathBuf>), String> {
@@ -372,7 +357,7 @@ impl SplitWindow {
                     count = o.parts.len(),
                     checksum = soyuz_core::entry::display_name(&o.checksum)
                 );
-                app.ui.toasts.push(Toast::success(tr!("tools-split-done")).body(msg.clone()));
+                app.core.ui.toasts.push(Toast::success(tr!("tools-split-done")).body(msg.clone()));
                 Ok(msg)
             }
             Ok(Outcome::Join(o)) => {
@@ -384,7 +369,7 @@ impl SplitWindow {
                     }
                     None => (Toast::success(tr!("tools-join-done")), tr!("tools-join-unverified", name = &name)),
                 };
-                app.ui.toasts.push(toast.body(msg.clone()));
+                app.core.ui.toasts.push(toast.body(msg.clone()));
                 if o.verified == Some(false) { Err(msg) } else { Ok(msg) }
             }
             Err(e) => Err(e),

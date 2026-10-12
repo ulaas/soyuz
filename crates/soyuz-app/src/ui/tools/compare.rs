@@ -656,7 +656,7 @@ impl CompareWindow {
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
         self.poll();
         if let State::Syncing(job) = self.state {
-            let snap = app.fileops.jobs.snapshot(job);
+            let snap = app.core.fileops.jobs.snapshot(job);
             if snap.as_ref().is_none_or(|s| s.state.is_terminal()) {
                 let failed = snap.as_ref().and_then(|s| match &s.state {
                     soyuz_jobs::JobState::Done(sum) => Some(sum.errors.iter().map(|(p, _)| p.clone()).collect()),
@@ -673,7 +673,8 @@ impl CompareWindow {
             match rx.try_recv() {
                 Ok(res) => {
                     if let Err(e) = res {
-                        app.ui
+                        app.core
+                            .ui
                             .toasts
                             .push(crate::ui::toasts::Toast::warning(tr!("tools-compare-state-save-failed")).body(e));
                     }
@@ -729,9 +730,9 @@ impl CompareWindow {
             rows: self.rows.clone(),
             ctx,
         });
-        let mut spec = app.fileops.jobs.spec(JobKind::Sync { plan });
+        let mut spec = app.core.fileops.jobs.spec(JobKind::Sync { plan });
         spec.options.label = Some(label);
-        let job = crate::ui::archive::submit_job(app, spec);
+        let job = crate::ui::archive::submit_job(&mut app.core, spec);
         // The folders change: compare again once the job is done.
         self.rows.clear();
         self.state = State::Syncing(job);
@@ -824,7 +825,7 @@ impl CompareWindow {
                 return None;
             }
             State::Syncing(job) => {
-                let snap = app.fileops.jobs.snapshot(*job);
+                let snap = app.core.fileops.jobs.snapshot(*job);
                 let frac = snap.as_ref().and_then(|s| {
                     (s.progress.items_total > 0).then(|| s.progress.items_done as f32 / s.progress.items_total as f32)
                 });
@@ -1055,8 +1056,8 @@ impl CompareWindow {
             [pos2(hr.left(), hr.bottom()), pos2(hr.right(), hr.bottom())],
             Stroke::new(1.0, p.border_subtle),
         );
-        let cfg = &app.config.general;
-        let drag_default = app.config.behaviour.drag_default;
+        let cfg = &app.core.config.general;
+        let drag_default = app.core.config.behaviour.drag_default;
         // The folders the rows are relative to.
         let bases = self.compared.clone();
         let two_way = self.two_way.is_some();
@@ -1276,7 +1277,7 @@ impl CompareWindow {
     /// Conflict stage (two-way): per item keep left / right / both / skip, plus apply to all.
     fn conflicts(&mut self, ui: &mut Ui, app: &SoyuzApp) {
         let p = palette(ui.ctx());
-        let cfg = &app.config.general;
+        let cfg = &app.core.config.general;
         let idx: Vec<usize> = (0..self.rows.len()).filter(|&i| self.rows[i].conflict.is_some()).collect();
         let open = idx.iter().filter(|&&i| self.rows[i].action == RowAction::Skip).count();
         ui.label(

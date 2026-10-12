@@ -47,10 +47,7 @@ pub enum CardAction {
     ApproveKind,
 }
 
-/// Tools whose effect cannot be undone: never approved in bulk for an MCP client.
-pub fn irreversible(tool: &str) -> bool {
-    matches!(tool, "delete_permanent" | "empty_trash" | "run_custom_command" | "sync_apply")
-}
+pub use crate::ai::mcp::irreversible;
 
 fn is_rename(tool: &str) -> bool {
     matches!(tool, "rename" | "batch_rename")

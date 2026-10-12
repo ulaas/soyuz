@@ -30,9 +30,9 @@ use crate::ui::toasts::Toast;
 use crate::ui::widgets::menu_item;
 
 pub fn open(app: &mut SoyuzApp) {
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let (soyuz_core::Location::Dir(_) | soyuz_core::Location::Search(_)) = &pane.location else {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-rename-unavailable")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-rename-unavailable")));
         return;
     };
     let entries: Vec<&soyuz_core::EntryInfo> = if pane.selection.is_empty() {
@@ -41,7 +41,7 @@ pub fn open(app: &mut SoyuzApp) {
         pane.selected_entries()
     };
     if entries.is_empty() {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-rename-nothing")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-rename-nothing")));
         return;
     }
     let items: Vec<Item> = entries.iter().map(|e| Item::new(e.path.clone(), e.is_dir_like(), e.modified)).collect();
@@ -50,17 +50,19 @@ pub fn open(app: &mut SoyuzApp) {
     // Windows-family volumes (FAT, exFAT, NTFS, SMB) need the Windows rules and compare
     // names case-insensitively, also off Windows (search results: any item's folder).
     let windows_fs = items.iter().any(|it| {
-        it.path.parent().is_some_and(|d| crate::ops::fileops::rename::volume_needs_windows_names(&app.ui.volumes, d))
+        it.path
+            .parent()
+            .is_some_and(|d| crate::ops::fileops::rename::volume_needs_windows_names(&app.core.ui.volumes, d))
     });
     let windows_rules = windows_fs
         || crate::ops::fileops::rename::windows_rules_for(
-            app.config.general.strict_windows_names,
-            &app.ui.volumes,
+            app.core.config.general.strict_windows_names,
+            &app.core.ui.volumes,
             listed_dir.as_deref(),
         );
     let mut d = BatchRenameDialog::new(pane.id, items, known, listed_dir, windows_rules);
     d.case_insensitive = crate::ops::fileops::names::case_insensitive_fs() || windows_fs;
-    app.ui.dialogs.push(d);
+    app.gui.dialogs.push(d);
 }
 
 /// EXIF capture dates of the items, filled by a worker thread.

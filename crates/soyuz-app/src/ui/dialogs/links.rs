@@ -25,23 +25,23 @@ use crate::ui::toasts::Toast;
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
     // Junctions are NTFS-only: a bound key elsewhere opens the symbolic link dialog.
     let kind = if kind == LinkChoice::Junction && !cfg!(windows) { LinkChoice::Symlink } else { kind };
-    let pane = app.ws.pane();
+    let pane = app.core.ws.pane();
     let Some(dir) = pane.location.as_fs_path().map(Path::to_path_buf) else {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     };
     if !matches!(pane.location, soyuz_core::Location::Dir(_)) {
-        app.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
+        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
         return;
     }
     let target = if pane.selection.is_empty() { None } else { pane.selected_entries().first().map(|e| e.path.clone()) };
     let names: Vec<String> = pane.entries.iter().map(|e| e.name.clone()).collect();
     let windows_rules = crate::ops::fileops::rename::windows_rules_for(
-        app.config.general.strict_windows_names,
-        &app.ui.volumes,
+        app.core.config.general.strict_windows_names,
+        &app.core.ui.volumes,
         Some(&dir),
     );
-    app.ui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
+    app.gui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
 }
 
 /// `target` relative to `base` (`None` when they share no root, e.g. other drive).
@@ -189,7 +189,7 @@ impl LinkDialog {
         if !fresh {
             if self.edited_at.is_none_or(|t| t.elapsed() >= PROBE_DEBOUNCE) {
                 let (t2, d2) = (tp.clone(), self.dir.clone());
-                self.probe = Some((tp, Bg::spawn(ctx, move || probe_target(&t2, &d2))));
+                self.probe = Some((tp, Bg::spawn(&crate::host::EguiHost::new(ctx), move || probe_target(&t2, &d2))));
             } else {
                 ctx.request_repaint_after(PROBE_DEBOUNCE);
             }
@@ -211,7 +211,7 @@ impl LinkDialog {
         let Some(dir) = self.browse.clone() else { return };
         if self.listing.as_ref().is_none_or(|(d, _)| *d != dir) {
             let d2 = dir.clone();
-            let bg = Bg::spawn(ui.ctx(), move || {
+            let bg = Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || {
                 let dot_hidden = crate::services::lister::dot_hidden();
                 let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
                 soyuz_fs::read_dir(&d2, &opts).map_err(|e| e.to_string()).map(|mut v| {
