@@ -1,4 +1,5 @@
-//! Two-way sync with real conflict handling.
+//! Two-way sync with real conflict handling (frontend-agnostic; moved from the GUI's
+//! `ui/tools/sync_state.rs`).
 //!
 //! A plain compare can't tell "deleted on the left" from "new on the right", or "edited
 //! on both sides" from "edited on one". So a two-way profile remembers what both trees
@@ -511,10 +512,20 @@ pub fn scan(root: &Path, ctl: &OpControl) -> FsResult<Tree> {
 
 /// Rescan both sides after a sync job and save the new state (worker thread).
 pub fn record_after_sync(left: &Path, right: &Path, keep: &HashSet<PathBuf>) -> Result<SyncState, String> {
+    record_after_sync_in(&soyuz_core::config::config_dir(), left, right, keep)
+}
+
+/// [`record_after_sync`] with the state kept inside `dir` (normally the config dir).
+pub fn record_after_sync_in(
+    dir: &Path,
+    left: &Path,
+    right: &Path,
+    keep: &HashSet<PathBuf>,
+) -> Result<SyncState, String> {
     let ctl = OpControl::new();
     let l = scan(left, &ctl).map_err(|e| e.to_string())?;
     let r = scan(right, &ctl).map_err(|e| e.to_string())?;
-    let path = state_path(left, right);
+    let path = state_path_in(dir, left, right);
     let old = load_state(&path);
     let st = next_state(old.as_ref(), left, right, &l, &r, keep, SystemTime::now());
     save_state(&path, &st)?;
