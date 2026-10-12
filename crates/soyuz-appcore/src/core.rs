@@ -460,6 +460,8 @@ impl AppCore {
         // The debounced `config.toml` save (every frontend; the GUI's settings window
         // calls it too, which is harmless: `flush` takes the due time).
         crate::models::settings::pump(self, host);
+        // Scheduled folder-sync profiles run whichever frontend is open.
+        crate::models::compare_profiles::tick(self, host);
     }
 
     /// Phase 5: the jobs engine (prompts, finished jobs, pending renames).
