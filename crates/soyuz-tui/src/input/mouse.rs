@@ -8,9 +8,9 @@
 //!
 //! | Target | Left | Middle | Right |
 //! |---|---|---|---|
-//! | `PaneRow` | focus the pane, then [`row_press`] (below) | `behaviour.middle_click` (folders) | select the row; no context menu yet |
+//! | `PaneRow` | focus the pane, then [`row_press`] (below) | `behaviour.middle_click` (folders) | select the row, open its context menu |
 //! | `PaneHeader` | focus, collapse / expand the group (as in the GUI) | | |
-//! | `PaneBackground` | focus, clear the selection (unless Ctrl / Shift) | focus | focus, clear unless Ctrl |
+//! | `PaneBackground` | focus, clear the selection (unless Ctrl / Shift) | focus | focus, clear unless Ctrl, open the background menu |
 //! | `PaneColumn` | sort by the column; the sorted one flips direction (GUI header click) | | |
 //! | `MillerRow` | folder: open it; file: open its folder with it selected (GUI) | | |
 //! | `Splitter` | drag sets `split` (or `split2`, the quad rows) | | |
@@ -51,7 +51,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 use soyuz_appcore::cmd::Cmd;
-use soyuz_appcore::state::pane::{Pane, PaneId};
+use soyuz_appcore::state::pane::{ContextTarget, Pane, PaneId};
 use soyuz_appcore::state::selection::{ClickMods, EntryKey};
 use soyuz_core::Location;
 use soyuz_core::config::{Action, Config, MiddleClick};
@@ -185,6 +185,9 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
                 },
                 None => {}
             }
+            if button == MouseButton::Right {
+                super::menu::open_for(app, pane, ContextTarget::Items, (m.column, m.row));
+            }
         }
         (HitTarget::PaneHeader { pane, vis_version, group }, MouseButton::Left) => {
             let Some(p) = app.core.ws.find_pane_mut(pane) else { return };
@@ -205,6 +208,10 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
                 p.selection.clear();
             }
             app.core.cmds.push(Cmd::FocusPane(pane));
+            if button == MouseButton::Right {
+                let target = if p.selection.is_empty() { ContextTarget::Background } else { ContextTarget::Items };
+                super::menu::open_for(app, pane, target, (m.column, m.row));
+            }
         }
         (HitTarget::PaneColumn { pane, column }, MouseButton::Left) => {
             app.core.cmds.push(Cmd::PaneAction(pane, Action::SortBy(column)));
@@ -337,8 +344,7 @@ pub fn row_press(p: &mut Pane, index: usize, ctx: RowCtx) -> Option<RowEffect> {
             }
         }
         MouseButton::Right => {
-            // The GUI selects the row and opens its context menu; the terminal UI has no
-            // context menu yet, so only the selection happens.
+            // The GUI selects the row and opens its context menu (the caller opens it).
             if !p.selection.contains(&key) {
                 p.selection.select_only(key.clone());
             }

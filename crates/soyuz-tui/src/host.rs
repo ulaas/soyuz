@@ -31,6 +31,12 @@ pub struct TuiHost {
     title: Mutex<Option<String>>,
     /// `[tui] osc52` (`crate::clipboard::to_byte`).
     osc52: AtomicU8,
+    /// Where the terminal UI runs (SSH, tmux, screen) for OSC 52.
+    clip_env: Mutex<crate::clipboard::Env>,
+    /// Whether copies also set the local clipboard (tests turn it off).
+    local_clipboard: AtomicBool,
+    /// The last text copied (tests read it).
+    last_copy: Mutex<Option<String>>,
 }
 
 impl Default for TuiHost {
@@ -56,12 +62,31 @@ impl TuiHost {
             theme: Mutex::new(ThemePref::System),
             title: Mutex::new(None),
             osc52: AtomicU8::new(0),
+            clip_env: Mutex::new(crate::clipboard::Env::detect()),
+            local_clipboard: AtomicBool::new(true),
+            last_copy: Mutex::new(None),
         }
     }
 
     /// Follow `[tui] osc52` (set at start and on every `[tui]` change).
     pub fn set_osc52(&self, p: TuiOsc52) {
         self.osc52.store(crate::clipboard::to_byte(p), Ordering::Release);
+    }
+
+    /// Whether copies also set the local clipboard (on by default; tests turn it off so
+    /// they never touch the system clipboard).
+    pub fn set_local_clipboard(&self, on: bool) {
+        self.local_clipboard.store(on, Ordering::Release);
+    }
+
+    /// Override the detected environment (SSH, tmux, screen) of OSC 52.
+    pub fn set_clipboard_env(&self, env: crate::clipboard::Env) {
+        *self.clip_env.lock() = env;
+    }
+
+    /// The last text copied (`copy_text`), if any.
+    pub fn last_copy(&self) -> Option<String> {
+        self.last_copy.lock().clone()
     }
 
     /// The redraw signal: one `()` per burst of wake-ups (select on it with the input
@@ -152,15 +177,14 @@ impl Host for TuiHost {
     }
 
     fn copy_text(&self, text: String) {
-        // Terminals that support OSC 52 (Windows Terminal, kitty, WezTerm, iTerm2, foot,
-        // tmux with set-clipboard …) put the text on the clipboard of the machine the
-        // terminal runs on, which also works over SSH (`[tui] osc52`).
-        if crate::clipboard::send_osc52(crate::clipboard::from_byte(self.osc52.load(Ordering::Acquire))) {
-            self.queue(&osc52_bytes(&text));
+        // The local clipboard and / or OSC 52 (`[tui] osc52`, `crate::clipboard`).
+        let policy = crate::clipboard::from_byte(self.osc52.load(Ordering::Acquire));
+        let env = *self.clip_env.lock();
+        let local = self.local_clipboard.load(Ordering::Acquire);
+        if let Some(bytes) = crate::clipboard::copy(&text, policy, &env, local) {
+            self.queue(&bytes);
         }
-        // The classic console host ignores OSC 52: set the local clipboard directly too.
-        #[cfg(windows)]
-        soyuz_appcore::services::os_clipboard::set_text(&text);
+        *self.last_copy.lock() = Some(text);
         self.redraw();
     }
 
@@ -272,6 +296,8 @@ mod tests {
     #[test]
     fn osc52_follows_the_setting() {
         let h = TuiHost::new();
+        h.set_local_clipboard(false);
+        h.set_clipboard_env(crate::clipboard::Env::default());
         h.set_osc52(TuiOsc52::Never);
         h.copy_text("x".into());
         assert!(h.take_output().is_empty());

@@ -2,6 +2,7 @@
 //! and other UI parts, without drawing. `ui/` draws them for the GUI.
 
 pub mod archive;
+pub mod context_menu;
 pub mod devices;
 pub mod dialogs;
 pub mod frontend;

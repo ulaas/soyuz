@@ -6,13 +6,12 @@ use std::path::PathBuf;
 
 use egui::{Align2, CornerRadius, FontId, Key, Margin, RichText, Sense, Stroke, StrokeKind, TextEdit, Ui, pos2, vec2};
 use soyuz_archive::ArchiveFormat;
-use soyuz_core::Location;
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::models::archive::{
-    ArchivePrompt, CreateForm, ExtractForm, format_label, is_editable_zip_name, level_label, rename_cmd, unlock,
-    valid_entry_name, writable_formats,
+    ArchivePrompt, CreateForm, ExtractForm, format_label, level_label, rename_cmd, unlock, valid_entry_name,
+    writable_formats,
 };
 pub use crate::models::archive::{
     archive_stem, child_location, create_dialog, execute_edit, extract_entries, extract_here, extract_to_dialog,
@@ -22,7 +21,6 @@ use crate::state::pane::PaneId;
 use crate::theme::icons::ph;
 use crate::theme::palette;
 use crate::ui::dialogs::{Dialog, DialogCtx, footer};
-use crate::ui::widgets::{menu_item, menu_separator, submenu};
 
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Archive`]).
 pub fn prompt(app: &mut SoyuzApp, p: ArchivePrompt) {
@@ -36,75 +34,6 @@ pub fn prompt(app: &mut SoyuzApp, p: ArchivePrompt) {
             let text = from.rsplit('/').next().unwrap_or_default().to_string();
             app.gui.dialogs.push(RenameEntryDialog { archive, from, is_dir, text, focus: true })
         }
-    }
-}
-
-/// Items-menu rows for archives (extract / compress / browse).
-pub fn context_items(
-    ui: &mut Ui,
-    cmds: &mut Vec<Cmd>,
-    pane: PaneId,
-    location: &Location,
-    any_archive: bool,
-    has_selection: bool,
-) {
-    let act = |ui: &mut Ui, cmds: &mut Vec<Cmd>, icon: &str, label: &str, a: soyuz_core::config::Action| {
-        if menu_item(ui, Some(icon), label, None, true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, a));
-            ui.close();
-        }
-    };
-    use soyuz_core::config::Action as A;
-    match location {
-        Location::Archive { .. } => {
-            menu_separator(ui);
-            act(
-                ui,
-                cmds,
-                ph::TRAY_ARROW_DOWN,
-                if has_selection { tr!("views-archive-extract-selected") } else { tr!("views-archive-extract-all") },
-                A::ExtractTo,
-            );
-            act(ui, cmds, ph::ARROW_LINE_DOWN, tr!("views-archive-extract-here"), A::ExtractHere);
-            edit_context_items(ui, cmds, pane, location, has_selection);
-        }
-        _ => {
-            if any_archive {
-                menu_separator(ui);
-                submenu(ui, Some(ph::FILE_ZIP), tr!("views-archive-extract"), |ui| {
-                    ui.set_width(220.0);
-                    act(ui, cmds, ph::ARROW_LINE_DOWN, tr!("views-archive-extract-here"), A::ExtractHere);
-                    act(ui, cmds, ph::FOLDER_SIMPLE, tr!("views-archive-extract-to-folder"), A::ExtractToFolder);
-                    act(ui, cmds, ph::TRAY_ARROW_DOWN, tr!("views-archive-extract-to"), A::ExtractTo);
-                    menu_separator(ui);
-                    act(ui, cmds, ph::CHECK_CIRCLE, tr!("views-archive-test"), A::TestArchive);
-                });
-            }
-            if has_selection && matches!(location, Location::Dir(_)) {
-                act(ui, cmds, ph::PACKAGE, tr!("views-archive-compress-menu"), A::CreateArchive);
-            }
-        }
-    }
-}
-
-/// Context-menu rows for a browsed zip.
-fn edit_context_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: PaneId, location: &Location, has_selection: bool) {
-    let Location::Archive { archive, .. } = location else { return };
-    if !is_editable_zip_name(archive) {
-        return;
-    }
-    use soyuz_core::config::Action as A;
-    let mut act = |ui: &mut Ui, icon: &str, label: &str, a: A| {
-        if menu_item(ui, Some(icon), label, None, true).clicked() {
-            cmds.push(Cmd::PaneAction(pane, a));
-            ui.close();
-        }
-    };
-    menu_separator(ui);
-    act(ui, ph::FILE_PLUS, tr!("views-archive-add-here"), A::Paste);
-    if has_selection {
-        act(ui, ph::PENCIL_SIMPLE, tr!("views-archive-rename-menu"), A::Rename);
-        act(ui, ph::TRASH, tr!("views-archive-delete-menu"), A::DeletePermanent);
     }
 }
 

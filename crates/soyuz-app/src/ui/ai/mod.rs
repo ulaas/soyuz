@@ -18,7 +18,7 @@ use egui::{
     StrokeKind, Ui, UiBuilder, pos2, vec2,
 };
 use soyuz_core::Location;
-use soyuz_core::config::{Action, AiAccess, Keymap};
+use soyuz_core::config::{Action, AiAccess};
 
 use crate::ai::agent::Decision;
 use crate::ai::model::{self, Route};
@@ -26,7 +26,6 @@ use crate::ai::state::{self, AiCmd, PanelTab};
 use crate::ai::{TaskId, recipe::Recipe};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::state::pane::PaneId;
 use crate::theme::icons::{self, ph};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, palette};
@@ -205,32 +204,6 @@ pub fn access_menu(ui: &mut Ui, path: &std::path::Path, current: AiAccess, expli
         acts.push(PanelAct::FolderAccess(path.to_path_buf(), None));
         ui.close();
     }
-}
-
-/// Inline AI entries for the item / background context menus.
-pub fn context_items(ui: &mut Ui, km: &Keymap, cmds: &mut Vec<Cmd>, pane: PaneId, items: bool, single_dir: bool) {
-    use crate::keys::chord_label;
-    crate::ui::widgets::submenu(ui, Some(ph::SPARKLE), tr!("ai-menu-assistant"), |ui| {
-        ui.set_width(230.0);
-        let mut item = |ui: &mut Ui, icon: &str, label: &str, a: Action| {
-            let sc = chord_label(km, &a);
-            if menu_item(ui, Some(icon), label, sc.as_deref(), true).clicked() {
-                cmds.push(Cmd::PaneAction(pane, a));
-                ui.close();
-            }
-        };
-        if items {
-            item(ui, ph::TEXT_T, tr!("ai-menu-suggest-names"), Action::AiSuggestNames);
-            item(ui, ph::NOTEPAD, tr!("ai-menu-summarize"), Action::AiSummarize);
-            item(ui, ph::FLOW_ARROW, tr!("ai-menu-find-related"), Action::AiFindRelated);
-        }
-        if !items || single_dir {
-            item(ui, ph::QUESTION, tr!("ai-menu-explain-folder"), Action::AiExplainFolder);
-        }
-        item(ui, ph::MAGIC_WAND, tr!("ai-menu-organize"), Action::AiOrganize);
-        menu_separator(ui);
-        item(ui, ph::MAGNIFYING_GLASS, tr!("ai-menu-smart-search"), Action::AiSmartSearch);
-    });
 }
 
 /// "AI access" row in the properties dialog (folders).

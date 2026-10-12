@@ -7,7 +7,6 @@ pub mod ai;
 pub mod archive;
 pub mod automation;
 pub mod breadcrumb;
-pub mod commands;
 pub mod context_menu;
 pub mod dialogs;
 pub mod dnd;

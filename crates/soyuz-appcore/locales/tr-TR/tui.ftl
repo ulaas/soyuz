@@ -25,7 +25,6 @@ tui-feature-terminal = Terminal paneli
 tui-feature-editor = Düzenleyici
 tui-feature-jobs = İşler paneli
 tui-feature-preview = Önizleme
-tui-feature-menu = Bağlam menüsü
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 
