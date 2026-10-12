@@ -178,7 +178,7 @@ impl AppCore {
     pub fn new(config: Config, mut startup: Startup, wake: Wake, uploader: Uploader) -> AppCore {
         startup.secondary |= startup.safe_mode;
         apply_core_settings(&config);
-        let (keymap, warnings) = config::keymap(&config);
+        let (keymap, warnings) = crate::keys::build_keymap(&config);
         for w in warnings {
             log::warn!("{w}");
         }

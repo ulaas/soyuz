@@ -561,7 +561,7 @@ fn open_saved(app: &mut AppCore, i: usize, new_window: bool) {
 
 /// Rebuild the keymap from the config and add the workspace hotkeys.
 pub fn rebind(app: &mut AppCore) {
-    let (km, _) = soyuz_core::config::keymap(&app.config);
+    let (km, _) = crate::keys::build_keymap(&app.config);
     app.keymap = km;
     bind_hotkeys(app);
 }
