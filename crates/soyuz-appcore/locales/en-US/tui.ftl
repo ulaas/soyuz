@@ -1,0 +1,50 @@
+### Soyuz UI strings (en-US source): tui
+### Keys: <area>-<thing>, kebab-case. Keep keys identical in tr-TR/tui.ftl.
+
+tui-not-available = Not available in the terminal UI yet
+tui-feature-settings = Settings
+tui-feature-workspaces = Workspaces
+tui-feature-history = Tab history
+tui-feature-windows = Windows
+tui-feature-properties = Properties
+tui-feature-devices = Devices
+tui-feature-smart = Smart folders
+tui-feature-remote = Remote locations
+tui-feature-archive = Archives
+tui-feature-about = About
+tui-feature-confirm = Confirmation dialog
+tui-feature-select-pattern = Select by pattern
+tui-feature-columns = Columns
+tui-feature-open-with = Open with
+tui-feature-batch-rename = Batch rename
+tui-feature-attributes = Attributes
+tui-feature-links = New link
+tui-feature-palette = Command palette
+tui-feature-address = Address bar
+tui-feature-quicklook = Quick Look
+tui-feature-terminal = Terminal panel
+tui-feature-sidebar = Sidebar
+tui-feature-editor = Editor
+tui-recovered-jobs = { $count ->
+    [one] 1 interrupted operation — open the GUI to recover it
+   *[other] { $count } interrupted operations — open the GUI to recover them
+}
+tui-crashed = Soyuz crashed last time — report saved at { $path }
+tui-hint = Ctrl+Q quit · Enter open · Backspace up
+tui-items = { $count ->
+    [one] 1 item
+   *[other] { $count } items
+}
+tui-selected = { $count } selected
+tui-loading = Loading…
+tui-empty = This folder is empty
+tui-no-matches = No items match the filter
+tui-virtual = This location is not available in the terminal UI yet
+tui-failed = Cannot list this folder: { $error }
+tui-hint-close = Esc close
+tui-hint-delete = Enter/Y confirm · N/Esc cancel
+tui-hint-quit = K keep open · W quit when finished · Q cancel jobs and quit
+tui-hint-prompt = Enter default answer · Esc decide later
+tui-hint-reject = Esc reject
+tui-hint-cancel = Esc cancel
+tui-dialog-unsupported = This dialog is not available in the terminal UI yet.

@@ -503,6 +503,10 @@ pub fn apply_version(app: &mut AppCore, cmd: VersionCmd) {
             app.dialogs.push(crate::models::dialogs::TransferModel::new(vec![version], start, false));
         }
         VersionCmd::Elevate => {
+            // An elevated copy of Soyuz would be the GUI: not from the terminal UI.
+            if app.tui_unavailable() {
+                return;
+            }
             let postman = app.services.mailbox.postman();
             let _ = std::thread::Builder::new().name("soyuz-elevate".into()).spawn(move || {
                 let res = std::env::current_exe()

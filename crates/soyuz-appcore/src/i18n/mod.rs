@@ -57,6 +57,7 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("editors"),
     ftl!("services"),
     ftl!("remote"),
+    ftl!("tui"),
 ];
 
 /// Translate a key: `tr!("key")` → `&'static str`; `tr!("key", name = value, …)` →

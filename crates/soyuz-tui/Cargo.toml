@@ -21,11 +21,17 @@ zstd = ["soyuz-appcore/zstd"]
 soyuz-appcore.workspace = true
 soyuz-core.workspace = true
 soyuz-fs.workspace = true
+soyuz-jobs.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
+
+# SIGTERM / SIGHUP / SIGINT / SIGCONT (`signals.rs`); already in the lockfile (via
+# alacritty_terminal).
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.4.5"
 
 [dev-dependencies]
 tempfile.workspace = true

@@ -59,6 +59,9 @@ pub fn spawn_window(app: &mut AppCore, loc: &Location) -> bool {
 /// `TabToNewWindow`: open the active tab's folder in a new window, then close the tab
 /// here (when it is not the only one).
 pub fn tab_to_new_window(app: &mut AppCore) {
+    if app.tui_unavailable() {
+        return;
+    }
     if app.config.workspace.new_window == soyuz_core::config::NewWindowMode::InProcess {
         if app.ws.tabs.len() > 1 {
             let i = app.ws.active;
@@ -114,6 +117,11 @@ fn on_path(name: &str, path: Option<&std::ffi::OsStr>) -> bool {
 /// PowerShell `Start-Process -Verb RunAs`, `pkexec` on Linux — see `launch::run_elevated`;
 /// no shell APIs in-process). The OS elevation prompt is the confirmation.
 pub fn run_elevated(app: &mut AppCore) {
+    // The elevation prompt (UAC / polkit's text agent) would fight the terminal UI for
+    // the screen and the keyboard.
+    if app.tui_unavailable() {
+        return;
+    }
     let pane = app.ws.pane();
     let Some(e) = pane.selected_entries().first().map(|e| (*e).clone()) else {
         app.ui.toasts.push(Toast::info(tr!("ops-elevate-select")));

@@ -96,8 +96,8 @@ struct Call {
     args: BTreeSet<String>,
 }
 
-/// All `.rs` sources that use the bundle: this crate and the egui frontend (`soyuz-app`),
-/// whose `tr!` calls draw from the same `.ftl` files.
+/// All `.rs` sources that use the bundle: this crate and the frontends (`soyuz-app`,
+/// `soyuz-tui`), whose `tr!` calls draw from the same `.ftl` files.
 fn sources() -> Vec<(String, String)> {
     fn walk(dir: &Path, out: &mut Vec<(String, String)>) {
         for e in std::fs::read_dir(dir).unwrap().flatten() {
@@ -116,6 +116,9 @@ fn sources() -> Vec<(String, String)> {
     let gui = here.join("../soyuz-app/src");
     assert!(gui.is_dir(), "the soyuz-app sources are missing at {}", gui.display());
     walk(&gui, &mut out);
+    let tui = here.join("../soyuz-tui/src");
+    assert!(tui.is_dir(), "the soyuz-tui sources are missing at {}", tui.display());
+    walk(&tui, &mut out);
     out
 }
 

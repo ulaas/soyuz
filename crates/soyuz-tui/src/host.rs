@@ -24,6 +24,7 @@ pub struct TuiHost {
     deadline: Mutex<Option<Instant>>,
     output: Mutex<Vec<u8>>,
     close: AtomicBool,
+    close_cancelled: AtomicBool,
     modes_changed: AtomicBool,
     theme: Mutex<ThemePref>,
     title: Mutex<Option<String>>,
@@ -44,6 +45,7 @@ impl TuiHost {
             deadline: Mutex::new(None),
             output: Mutex::new(Vec::new()),
             close: AtomicBool::new(false),
+            close_cancelled: AtomicBool::new(false),
             modes_changed: AtomicBool::new(false),
             theme: Mutex::new(ThemePref::System),
             title: Mutex::new(None),
@@ -69,6 +71,12 @@ impl TuiHost {
     /// A close was requested (and not cancelled) since the last call; clears it.
     pub fn take_close(&self) -> bool {
         self.close.swap(false, Ordering::AcqRel)
+    }
+
+    /// A `CancelClose` arrived since the last call (the core kept the app open to ask
+    /// first); clears it.
+    pub fn take_close_cancelled(&self) -> bool {
+        self.close_cancelled.swap(false, Ordering::AcqRel)
     }
 
     /// `[tui]` changed since the last call: re-apply terminal modes
@@ -155,7 +163,10 @@ impl Host for TuiHost {
                 self.close.store(true, Ordering::Release);
                 self.redraw();
             }
-            WindowCmd::CancelClose => self.close.store(false, Ordering::Release),
+            WindowCmd::CancelClose => {
+                self.close.store(false, Ordering::Release);
+                self.close_cancelled.store(true, Ordering::Release);
+            }
             WindowCmd::Focus
             | WindowCmd::Minimized(_)
             | WindowCmd::Maximized(_)
@@ -209,6 +220,8 @@ mod tests {
         h.window(WindowId::Current, WindowCmd::Close);
         h.window(WindowId::Current, WindowCmd::CancelClose);
         assert!(!h.take_close());
+        assert!(h.take_close_cancelled());
+        assert!(!h.take_close_cancelled());
         h.window(WindowId::Root, WindowCmd::Close);
         assert!(h.take_close());
         assert!(!h.take_close());

@@ -392,6 +392,18 @@ pub fn set_layout(app: &mut AppCore, layout: PaneLayout) {
 
 pub fn apply(app: &mut AppCore, cmd: WsCmd) {
     use super::windows;
+    // Other windows are GUI viewports: the terminal UI has one screen.
+    if matches!(
+        cmd,
+        WsCmd::GroupToNewWindow(_)
+            | WsCmd::TabToNewWindow(_)
+            | WsCmd::TabToWindow(..)
+            | WsCmd::DropTab { .. }
+            | WsCmd::OpenInNewWindow(_)
+    ) && app.tui_unavailable()
+    {
+        return;
+    }
     let n = app.ws.tabs.len();
     match cmd {
         WsCmd::NewGroup(i) if i < n => {

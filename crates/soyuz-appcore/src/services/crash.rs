@@ -41,6 +41,8 @@ static RING: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 /// Forwards to `env_logger` and keeps the last [`RING_LINES`] enabled lines in memory.
 struct RingLogger {
     inner: env_logger::Logger,
+    /// `inner` writes to a log file ([`init_file_logging`]), not to stderr.
+    to_file: bool,
 }
 
 impl log::Log for RingLogger {
@@ -60,8 +62,9 @@ impl log::Log for RingLogger {
             record.args()
         );
         push_line(line);
-        // In the terminal UI stderr is the screen: keep the line in the ring only.
-        if !tui_active() {
+        // In the terminal UI stderr is the screen: keep the line in the ring only (unless
+        // the log goes to a file).
+        if self.to_file || !tui_active() {
             self.inner.log(record);
         }
     }
@@ -84,8 +87,82 @@ fn push_line(line: String) {
 pub fn init_logging() {
     let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER)).build();
     let max = inner.filter();
-    if log::set_boxed_logger(Box::new(RingLogger { inner })).is_ok() {
+    if log::set_boxed_logger(Box::new(RingLogger { inner, to_file: false })).is_ok() {
         log::set_max_level(max);
+    }
+}
+
+/// Size at which [`init_file_logging`] starts a new log file (the previous one is kept
+/// as `<name>.1`).
+pub const LOG_FILE_CAP: u64 = 2 * 1024 * 1024;
+
+/// Like [`init_logging`], but the log goes to `path` instead of stderr (the terminal UI,
+/// where stderr is the screen). The file is capped at `cap` bytes: past it, it is renamed
+/// to `<name>.1` (replacing an older one) and a new file starts. Falls back to
+/// [`init_logging`] when the file cannot be opened. Idempotent.
+pub fn init_file_logging(path: &Path, cap: u64) {
+    let file = match RotatingFile::open(path.to_path_buf(), cap) {
+        Ok(f) => f,
+        Err(_) => return init_logging(),
+    };
+    let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER))
+        .target(env_logger::Target::Pipe(Box::new(file)))
+        .write_style(env_logger::WriteStyle::Never)
+        .build();
+    let max = inner.filter();
+    if log::set_boxed_logger(Box::new(RingLogger { inner, to_file: true })).is_ok() {
+        log::set_max_level(max);
+    }
+}
+
+/// An append-only log file that rotates once it would grow past `cap` bytes.
+pub struct RotatingFile {
+    path: PathBuf,
+    file: std::fs::File,
+    len: u64,
+    cap: u64,
+}
+
+impl RotatingFile {
+    pub fn open(path: PathBuf, cap: u64) -> std::io::Result<RotatingFile> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::OpenOptions::new().create(true).append(true).open(&path)?;
+        let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+        Ok(RotatingFile { path, file, len, cap: cap.max(1) })
+    }
+
+    /// `<name>.1`: the previous log.
+    pub fn previous_path(&self) -> PathBuf {
+        let mut name = self.path.file_name().unwrap_or_default().to_os_string();
+        name.push(".1");
+        self.path.with_file_name(name)
+    }
+
+    fn rotate(&mut self) -> std::io::Result<()> {
+        let old = self.previous_path();
+        let _ = std::fs::remove_file(&old);
+        std::fs::rename(&self.path, &old)?;
+        self.file = std::fs::OpenOptions::new().create(true).append(true).open(&self.path)?;
+        self.len = 0;
+        Ok(())
+    }
+}
+
+impl std::io::Write for RotatingFile {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.len > 0 && self.len + buf.len() as u64 > self.cap {
+            // Keep logging into the full file when it cannot be rotated.
+            let _ = self.rotate();
+        }
+        let n = self.file.write(buf)?;
+        self.len += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.file.flush()
     }
 }
 
@@ -369,10 +446,19 @@ pub fn safe_config_path() -> PathBuf {
     config::config_dir().join("safe-mode.toml")
 }
 
-/// Start another Soyuz in safe mode (plain process spawn, no shell).
+/// Start another Soyuz in safe mode (plain process spawn, no shell), with the same
+/// frontend as this process (`--tui` from the terminal UI).
 pub fn restart_in_safe_mode() -> std::io::Result<()> {
     let exe = std::env::current_exe()?;
-    std::process::Command::new(exe).arg("--safe-mode").spawn().map(drop)
+    std::process::Command::new(exe).args(safe_mode_args(crate::core::process_frontend())).spawn().map(drop)
+}
+
+/// Arguments of the safe-mode restart for `frontend`.
+pub fn safe_mode_args(frontend: crate::core::FrontendKind) -> Vec<&'static str> {
+    match frontend {
+        crate::core::FrontendKind::Gui => vec!["--safe-mode"],
+        crate::core::FrontendKind::Tui => vec!["--tui", "--safe-mode"],
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -550,6 +636,33 @@ fn apply(app: &mut AppCore, host: &dyn Host, a: RecoveryAction) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_file_rotates_at_the_cap() {
+        use std::io::Write as _;
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("soyuz-tui.log");
+        let mut f = RotatingFile::open(path.clone(), 100).unwrap();
+        f.write_all(&[b'a'; 60]).unwrap();
+        f.write_all(&[b'b'; 30]).unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 90);
+        f.write_all(&[b'c'; 30]).unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), vec![b'c'; 30]);
+        assert_eq!(std::fs::metadata(f.previous_path()).unwrap().len(), 90);
+        assert!(f.previous_path().ends_with("soyuz-tui.log.1"));
+        // Reopening appends.
+        drop(f);
+        let mut f = RotatingFile::open(path.clone(), 100).unwrap();
+        f.write_all(b"d").unwrap();
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), 31);
+    }
+
+    #[test]
+    fn safe_mode_restart_keeps_the_frontend() {
+        use crate::core::FrontendKind;
+        assert_eq!(safe_mode_args(FrontendKind::Gui), vec!["--safe-mode"]);
+        assert_eq!(safe_mode_args(FrontendKind::Tui), vec!["--tui", "--safe-mode"]);
+    }
 
     #[test]
     fn ring_keeps_the_last_lines() {

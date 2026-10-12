@@ -182,6 +182,26 @@ impl TerminalGuard {
         Ok(())
     }
 
+    /// After the process was stopped and continued (`SIGCONT`): the shell may have reset
+    /// the terminal meanwhile, so enter raw mode, the alternate screen, bracketed paste
+    /// and the `[tui]` modes again (the caller repaints everything).
+    pub fn resume(&mut self, cfg: &TuiSection) -> io::Result<()> {
+        let mut out = io::stdout();
+        // crossterm skips `enable_raw_mode` while it believes raw mode is on: leave it
+        // first (restoring the original mode), then enter it again.
+        let _ = crossterm::terminal::disable_raw_mode();
+        unmark(RAW);
+        crossterm::terminal::enable_raw_mode()?;
+        mark(RAW);
+        execute!(out, EnterAlternateScreen)?;
+        mark(ALT);
+        execute!(out, EnableBracketedPaste)?;
+        mark(PASTE);
+        // Mouse capture is sent again; the keyboard flags are popped and pushed again.
+        unmark(MOUSE);
+        self.apply_modes(cfg)
+    }
+
     /// Whether the kitty keyboard flags are pushed right now (the key adapter may care).
     pub fn keyboard_enhanced(&self) -> bool {
         enabled(KEYBOARD)

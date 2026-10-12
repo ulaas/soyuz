@@ -6787,6 +6787,7 @@ dependencies = [
  "soyuz-script",
  "soyuz-search",
  "soyuz-term",
+ "soyuz-tui",
  "soyuz-vfs",
  "tempfile",
  "toml",
@@ -7069,9 +7070,11 @@ dependencies = [
  "log",
  "parking_lot",
  "ratatui",
+ "signal-hook 0.4.5",
  "soyuz-appcore",
  "soyuz-core",
  "soyuz-fs",
+ "soyuz-jobs",
  "tempfile",
 ]
 
