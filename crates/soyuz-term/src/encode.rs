@@ -2,7 +2,7 @@
 
 /// Bytes for a paste: newlines become CR; bracketed mode wraps the text and strips ESC so
 /// the paste cannot terminate the bracket early.
-pub(crate) fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
+pub fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
     let normalized = text.replace("\r\n", "\r").replace('\n', "\r");
     if bracketed {
         let mut out = b"\x1b[200~".to_vec();
@@ -15,8 +15,7 @@ pub(crate) fn paste_bytes(text: &str, bracketed: bool) -> Vec<u8> {
 }
 
 /// Focus in/out report (`FOCUS_IN_OUT` mode).
-#[cfg_attr(not(feature = "egui"), allow(dead_code))]
-pub(crate) fn focus_report(focused: bool) -> &'static [u8] {
+pub fn focus_report(focused: bool) -> &'static [u8] {
     if focused { b"\x1b[I" } else { b"\x1b[O" }
 }
 

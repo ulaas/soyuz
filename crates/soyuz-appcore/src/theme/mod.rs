@@ -107,6 +107,39 @@ pub fn resolve(
     (dark, light, warnings)
 }
 
+/// The embedded terminal's colours for `[terminal] theme`: `"dark"` / `"light"` are the
+/// built-in schemes; anything else (`"auto"`) derives them from the resolved palette
+/// `resolved` (the current dark or light [`Tokens`]): text on the sunken background
+/// (dark) or the first surface (light), the accent as cursor and blue, the status
+/// colours as red / green / yellow / cyan, the video glyph as magenta, the accent hover
+/// as bright blue, and the accent at 30 % (dark) / 24 % (light) as the selection. Both
+/// frontends use it (the GUI converts it to egui colours unchanged).
+pub fn terminal_palette(resolved: &Tokens, setting: &str) -> soyuz_term::TermPalette {
+    use soyuz_term::{TermColor, TermPalette};
+    match setting.trim().to_ascii_lowercase().as_str() {
+        "dark" => return TermPalette::dark(),
+        "light" => return TermPalette::light(),
+        _ => {}
+    }
+    let c = |c: Rgba8| TermColor::rgba(c.r, c.g, c.b, c.a);
+    let t = resolved;
+    let mut p = if t.dark { TermPalette::dark() } else { TermPalette::light() };
+    p.fg = c(t.text_primary);
+    p.bg = c(if t.dark { t.bg_sunken } else { t.bg_surface1 });
+    p.cursor = c(t.accent);
+    // The GUI has always taken the accent's premultiplied channels here.
+    let [r, g, b, _] = tokens::premultiplied(t.accent);
+    p.selection = TermColor::rgba(r, g, b, if t.dark { 77 } else { 60 });
+    p.ansi[1] = c(t.danger);
+    p.ansi[2] = c(t.success);
+    p.ansi[3] = c(t.warning);
+    p.ansi[4] = c(t.accent);
+    p.ansi[5] = c(t.glyph_video);
+    p.ansi[6] = c(t.info);
+    p.ansi[12] = c(t.accent_hover);
+    p
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -150,6 +183,36 @@ mod tests {
             n += 1;
         }
         assert_eq!(n, 4 + 5 * 2 * 4);
+    }
+
+    #[test]
+    fn terminal_palette_follows_the_tokens() {
+        use soyuz_term::{TermColor, TermPalette};
+        let tc = |c: Rgba8| TermColor::rgba(c.r, c.g, c.b, c.a);
+        assert_eq!(terminal_palette(&ORBIT_LIGHT, " Dark "), TermPalette::dark());
+        assert_eq!(terminal_palette(&ORBIT_DARK, "light"), TermPalette::light());
+        let d = terminal_palette(&ORBIT_DARK, "auto");
+        assert_eq!(
+            (d.fg, d.bg, d.cursor),
+            (tc(ORBIT_DARK.text_primary), tc(ORBIT_DARK.bg_sunken), tc(ORBIT_DARK.accent))
+        );
+        let a = ORBIT_DARK.accent;
+        assert_eq!(d.selection, TermColor::rgba(a.r, a.g, a.b, 77));
+        assert_eq!(d.ansi[1], tc(ORBIT_DARK.danger));
+        assert_eq!(d.ansi[5], tc(ORBIT_DARK.glyph_video));
+        assert_eq!(d.ansi[12], tc(ORBIT_DARK.accent_hover));
+        // Untouched ANSI slots keep the built-in scheme.
+        assert_eq!(d.ansi[0], TermPalette::dark().ansi[0]);
+        assert_eq!(d.ansi[15], TermPalette::dark().ansi[15]);
+        let l = terminal_palette(&ORBIT_LIGHT, "");
+        assert_eq!(l.bg, tc(ORBIT_LIGHT.bg_surface1));
+        assert_eq!(l.selection.a, 60);
+        assert_eq!(l.ansi[9], TermPalette::light().ansi[9]);
+        // A translucent accent: the selection takes its premultiplied channels.
+        let mut t = ORBIT_DARK.clone();
+        t.accent = Rgba8::rgba(200, 100, 50, 128);
+        let [r, g, b, _] = tokens::premultiplied(t.accent);
+        assert_eq!(terminal_palette(&t, "auto").selection, TermColor::rgba(r, g, b, 77));
     }
 
     #[test]

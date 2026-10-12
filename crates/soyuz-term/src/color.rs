@@ -1,9 +1,16 @@
 //! Toolkit-free terminal colors: [`TermColor`] (8-bit sRGBA, unmultiplied alpha) and
 //! [`TermPalette`], the built-in dark / light schemes. The egui widget converts them to
 //! `egui::Color32` (`TermTheme`); a text UI can map them to its own color type.
+//! Also the cell colour resolution ([`CellStyle`]) shared by the egui widget and
+//! [`crate::grid`].
 
-/// An 8-bit sRGB color with *unmultiplied* alpha (255 = opaque).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+use alacritty_terminal::term::cell::{Cell, Flags};
+use alacritty_terminal::term::color::Colors;
+use alacritty_terminal::vte::ansi::{Color, NamedColor, Rgb};
+
+/// An 8-bit sRGB color with *unmultiplied* alpha (255 = opaque). The default is
+/// transparent black.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct TermColor {
     pub r: u8,
     pub g: u8,
@@ -164,9 +171,170 @@ pub fn xterm256(ansi: &[TermColor; 16]) -> [TermColor; 256] {
     p
 }
 
+/// The resolved paint style of one terminal cell: final foreground / background (bold
+/// brightening, dim, inverse and hidden applied) and the text decorations.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct CellStyle {
+    pub fg: TermColor,
+    pub bg: TermColor,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    pub strike: bool,
+}
+
+/// Opaque blend `a + (b - a) * t` of the RGB channels (alpha ignored, result opaque).
+pub fn lerp_rgb(a: TermColor, b: TermColor, t: f32) -> TermColor {
+    let l = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
+    TermColor::rgb(l(a.r, b.r), l(a.g, b.g), l(a.b, b.b))
+}
+
+/// SGR 2 (dim): `c` blended toward the background.
+pub fn dim(bg: TermColor, c: TermColor) -> TermColor {
+    lerp_rgb(bg, c, 0.66)
+}
+
+fn from_rgb(c: Rgb) -> TermColor {
+    TermColor::rgb(c.r, c.g, c.b)
+}
+
+/// Turns alacritty cell colours into [`TermColor`]s, shared by the egui widget and
+/// [`crate::grid`]. Channels are used as given: the egui widget feeds premultiplied
+/// `Color32` bytes so it keeps drawing exactly what it always drew; blends (dim) work on
+/// the raw RGB channels and are opaque.
+pub(crate) struct Resolver<'a> {
+    pal: &'a TermPalette,
+    p256: [TermColor; 256],
+    colors: &'a Colors,
+    bright_bold: bool,
+}
+
+impl<'a> Resolver<'a> {
+    /// `colors` are the program's OSC 4 / 10 / 11 / 12 overrides; `bright_bold` draws bold
+    /// text in ANSI 0-7 with the bright variant.
+    pub(crate) fn new(pal: &'a TermPalette, colors: &'a Colors, bright_bold: bool) -> Self {
+        Resolver { pal, p256: pal.palette256(), colors, bright_bold }
+    }
+
+    /// The background of cells without an explicit colour.
+    pub(crate) fn default_bg(&self) -> TermColor {
+        self.colors[NamedColor::Background].map_or(self.pal.bg, from_rgb)
+    }
+
+    /// The cursor colour (OSC 12 override, else the palette's).
+    pub(crate) fn cursor(&self) -> TermColor {
+        self.colors[NamedColor::Cursor].map_or(self.pal.cursor, from_rgb)
+    }
+
+    pub(crate) fn color(&self, c: Color) -> TermColor {
+        match c {
+            Color::Spec(rgb) => from_rgb(rgb),
+            Color::Indexed(i) => self.colors[usize::from(i)].map_or(self.p256[usize::from(i)], from_rgb),
+            Color::Named(n) => {
+                if let Some(rgb) = self.colors[n] {
+                    return from_rgb(rgb);
+                }
+                let idx = n as usize;
+                if idx < 16 {
+                    return self.pal.ansi[idx];
+                }
+                match n {
+                    NamedColor::Foreground | NamedColor::BrightForeground => self.pal.fg,
+                    NamedColor::Background => self.pal.bg,
+                    NamedColor::Cursor => self.pal.cursor,
+                    NamedColor::DimForeground => dim(self.pal.bg, self.pal.fg),
+                    d => {
+                        let base = (d as usize).saturating_sub(NamedColor::DimBlack as usize).min(7);
+                        dim(self.pal.bg, self.pal.ansi[base])
+                    }
+                }
+            }
+        }
+    }
+
+    pub(crate) fn style(&self, cell: &Cell) -> CellStyle {
+        resolve(cell, self)
+    }
+}
+
+/// The paint style of `cell`: bold brightens ANSI 0-7 (when enabled), dim blends the
+/// foreground toward the background, inverse swaps them, hidden paints the foreground in
+/// the background colour.
+pub(crate) fn resolve(cell: &Cell, r: &Resolver<'_>) -> CellStyle {
+    let f = cell.flags;
+    let bold = f.contains(Flags::BOLD);
+    let mut fg_spec = cell.fg;
+    if bold && r.bright_bold {
+        fg_spec = match fg_spec {
+            Color::Named(n) if (n as usize) < 8 => Color::Named(n.to_bright()),
+            Color::Indexed(i) if i < 8 => Color::Indexed(i + 8),
+            other => other,
+        };
+    }
+    let mut fg = r.color(fg_spec);
+    let mut bg = r.color(cell.bg);
+    if f.contains(Flags::DIM) {
+        fg = lerp_rgb(bg, fg, 0.66);
+    }
+    if f.contains(Flags::INVERSE) {
+        std::mem::swap(&mut fg, &mut bg);
+    }
+    if f.contains(Flags::HIDDEN) {
+        fg = bg;
+    }
+    CellStyle {
+        fg,
+        bg,
+        bold,
+        italic: f.contains(Flags::ITALIC),
+        underline: f.intersects(Flags::ALL_UNDERLINES),
+        strike: f.contains(Flags::STRIKEOUT),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resolver_without_a_toolkit() {
+        let pal = TermPalette::dark();
+        let colors = Colors::default();
+        let r = Resolver::new(&pal, &colors, true);
+        let cell = |fg, bg, flags| Cell { fg, bg, flags, ..Cell::default() };
+        let plain =
+            r.style(&cell(Color::Named(NamedColor::Foreground), Color::Named(NamedColor::Background), Flags::empty()));
+        assert_eq!((plain.fg, plain.bg), (pal.fg, pal.bg));
+        // Bold red is bright red; without bright_bold it stays red.
+        let bold = cell(Color::Named(NamedColor::Red), Color::Named(NamedColor::Background), Flags::BOLD);
+        assert_eq!(r.style(&bold).fg, pal.ansi[9]);
+        assert!(r.style(&bold).bold);
+        assert_eq!(Resolver::new(&pal, &colors, false).style(&bold).fg, pal.ansi[1]);
+        assert_eq!(r.style(&cell(Color::Indexed(2), Color::Indexed(0), Flags::BOLD)).fg, pal.ansi[10]);
+        // Inverse swaps; hidden paints fg = bg; dim blends toward the background.
+        let inv = r.style(&cell(Color::Indexed(1), Color::Indexed(4), Flags::INVERSE));
+        assert_eq!((inv.fg, inv.bg), (pal.ansi[4], pal.ansi[1]));
+        let hid = r.style(&cell(Color::Indexed(1), Color::Indexed(4), Flags::HIDDEN));
+        assert_eq!(hid.fg, pal.ansi[4]);
+        let dimmed = r.style(&cell(Color::Indexed(15), Color::Indexed(0), Flags::DIM)).fg;
+        assert_eq!(dimmed, lerp_rgb(pal.ansi[0], pal.ansi[15], 0.66));
+        assert_eq!(r.color(Color::Named(NamedColor::DimRed)), dim(pal.bg, pal.ansi[1]));
+        assert_eq!(r.color(Color::Indexed(196)), TermColor::rgb(255, 0, 0));
+        assert_eq!(r.color(Color::Spec(Rgb { r: 1, g: 2, b: 3 })), TermColor::rgb(1, 2, 3));
+        let deco =
+            r.style(&cell(Color::Indexed(7), Color::Indexed(0), Flags::ITALIC | Flags::UNDERCURL | Flags::STRIKEOUT));
+        assert!(deco.italic && deco.underline && deco.strike && !deco.bold);
+        // Program overrides (OSC 4 / 11 / 12) win.
+        let mut colors = Colors::default();
+        colors[1] = Some(Rgb { r: 9, g: 8, b: 7 });
+        colors[NamedColor::Background] = Some(Rgb { r: 1, g: 1, b: 1 });
+        colors[NamedColor::Cursor] = Some(Rgb { r: 2, g: 2, b: 2 });
+        let r = Resolver::new(&pal, &colors, true);
+        assert_eq!(r.color(Color::Indexed(1)), TermColor::rgb(9, 8, 7));
+        assert_eq!(r.default_bg(), TermColor::rgb(1, 1, 1));
+        assert_eq!(r.cursor(), TermColor::rgb(2, 2, 2));
+        assert_eq!(lerp_rgb(TermColor::BLACK, TermColor::rgb(255, 255, 255), 0.5), TermColor::rgb(128, 128, 128));
+    }
 
     #[test]
     fn palette_layout_without_a_toolkit() {

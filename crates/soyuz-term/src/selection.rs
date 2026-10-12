@@ -7,8 +7,10 @@ use alacritty_terminal::selection::{SelectionRange, SelectionType};
 /// Max seconds between clicks of a multi-click.
 const MULTI_CLICK_SECS: f64 = 0.4;
 
-#[derive(Debug, Default)]
-pub(crate) struct ClickTracker {
+/// Counts multi-clicks: presses on the same cell within 0.4 s cycle 1 → 2 → 3 → 1
+/// (characters, words, lines).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ClickTracker {
     last_time: f64,
     last_cell: Option<(i32, usize)>,
     count: u8,
@@ -16,7 +18,7 @@ pub(crate) struct ClickTracker {
 
 impl ClickTracker {
     /// Register a press at `time` (seconds) on `cell`; returns 1, 2 or 3.
-    pub(crate) fn register(&mut self, time: f64, cell: (i32, usize)) -> u8 {
+    pub fn register(&mut self, time: f64, cell: (i32, usize)) -> u8 {
         let continues = self.last_cell == Some(cell) && time - self.last_time <= MULTI_CLICK_SECS;
         self.count = if continues { self.count % 3 + 1 } else { 1 };
         self.last_time = time;

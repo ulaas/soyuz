@@ -24,20 +24,20 @@ pub mod color;
 mod encode;
 #[cfg(any(all(test, feature = "egui"), feature = "fuzzing"))]
 pub mod fuzzing;
+pub mod grid;
+pub mod input;
 #[cfg(feature = "egui")]
 mod keys;
 pub mod osc7;
 mod pty;
 #[cfg(feature = "egui")]
 mod render;
-#[cfg_attr(not(feature = "egui"), allow(dead_code))]
 mod selection;
 #[cfg(feature = "egui")]
 pub mod theme;
 // The only `unsafe` in the crate: forwarding alacritty's `unsafe fn register`.
 #[allow(unsafe_code)]
 mod tty_tee;
-#[cfg_attr(not(feature = "egui"), allow(dead_code))]
 mod url;
 
 use std::borrow::Cow;
@@ -46,11 +46,16 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use alacritty_terminal::grid::Scroll;
-use alacritty_terminal::term::TermMode;
+use alacritty_terminal::index::{Column, Direction, Point};
+use alacritty_terminal::selection::Selection;
+use alacritty_terminal::term::{TermMode, viewport_to_point};
 #[cfg(feature = "egui")]
 use egui::{FontId, Ui};
 
-pub use color::{TermColor, TermPalette};
+pub use color::{CellStyle, TermColor, TermPalette};
+pub use grid::{CursorShape, GridCell, GridCursor, GridSnapshot, GridStyle, TermLink};
+pub use input::{Modes, MouseButton, TermKey, TermMods};
+pub use selection::ClickTracker;
 
 /// Shell resolution for frontends that run a shell themselves (the terminal UI's
 /// suspend-to-shell): the shell family, the platform default shell and a `PATH` lookup.
@@ -136,6 +141,8 @@ const CD_IDLE: Duration = Duration::from_millis(300);
 pub struct Terminal {
     events_rx: crossbeam_channel::Receiver<TermEvent>,
     backend: backend::Backend,
+    /// The focus state last reported to the program ([`Terminal::set_focused`]).
+    reported_focus: parking_lot::Mutex<Option<bool>>,
     #[cfg(feature = "egui")]
     view: parking_lot::Mutex<render::ViewState>,
 }
@@ -160,6 +167,7 @@ impl Terminal {
         Ok(Terminal {
             events_rx: rx,
             backend,
+            reported_focus: parking_lot::Mutex::new(None),
             #[cfg(feature = "egui")]
             view: parking_lot::Mutex::new(render::ViewState::default()),
         })
@@ -303,6 +311,145 @@ impl Terminal {
         }
         out
     }
+
+    // ---- toolkit-free view and input (the terminal UI draws and drives the grid) ----
+
+    /// The visible grid with colours resolved against `palette` (and the program's OSC
+    /// colour overrides), the cursor, the selection and the scroll position.
+    pub fn snapshot(&self, palette: &TermPalette, style: GridStyle) -> GridSnapshot {
+        grid::RawSnapshot::take(&self.backend.term.lock()).to_grid(palette, style)
+    }
+
+    /// The link at viewport `(row, col)`: an OSC 8 hyperlink, else a plain-text URL
+    /// (joined across soft-wrapped rows).
+    pub fn link_at(&self, row: usize, col: usize) -> Option<TermLink> {
+        grid::link_at(&grid::RawSnapshot::take(&self.backend.term.lock()), row, col)
+    }
+
+    /// The input modes the program has switched on (cursor keys, mouse, paste, focus).
+    pub fn modes(&self) -> Modes {
+        Modes::from_term_mode(*self.backend.term.lock().mode())
+    }
+
+    /// User input (encoded keys, typed text): scrolls the viewport back to the bottom,
+    /// then writes.
+    pub fn input(&self, bytes: Vec<u8>) {
+        self.write_input(bytes);
+    }
+
+    /// Scroll the viewport one page up into the scrollback (or down).
+    pub fn scroll_page(&self, up: bool) {
+        self.backend.term.lock().scroll_display(if up { Scroll::PageUp } else { Scroll::PageDown });
+        self.backend.shared.force_repaint();
+    }
+
+    /// Scroll the viewport back to the bottom.
+    pub fn scroll_to_bottom(&self) {
+        self.backend.term.lock().scroll_display(Scroll::Bottom);
+        self.backend.shared.force_repaint();
+    }
+
+    /// Whether the terminal has the keyboard. Sends a focus in / out report when the
+    /// program asked for them and the state changed (the first call only records it).
+    pub fn set_focused(&self, focused: bool) {
+        let mut t = self.backend.term.lock();
+        t.is_focused = focused;
+        let wants = t.mode().contains(TermMode::FOCUS_IN_OUT);
+        drop(t);
+        let mut reported = self.reported_focus.lock();
+        if wants && *reported != Some(focused) {
+            if reported.is_some() {
+                self.backend.shared.write(Cow::Borrowed(encode::focus_report(focused)));
+            }
+            *reported = Some(focused);
+        }
+    }
+
+    /// The shell sits at an (apparently empty) prompt, outside the alternate screen: Esc
+    /// there may give the keyboard back to the file list.
+    pub fn at_prompt(&self) -> bool {
+        let term = self.backend.term.lock();
+        if term.mode().contains(TermMode::ALT_SCREEN) {
+            return false;
+        }
+        let (left, right) = backend::cursor_line_text(&term);
+        pty::looks_like_prompt(&left, &right)
+    }
+
+    /// Start a selection at viewport `(row, col)`: `clicks` 1 = characters, 2 = words,
+    /// 3 = lines; `side_right` = the pointer is in the right half of the cell.
+    pub fn select_begin(&self, row: usize, col: usize, side_right: bool, clicks: u8) {
+        let mut t = self.backend.term.lock();
+        let point = viewport_point(&t, row, col);
+        t.selection = Some(Selection::new(selection::selection_type(clicks), point, side(side_right)));
+        drop(t);
+        self.backend.shared.force_repaint();
+    }
+
+    /// Extend the selection to viewport `(row, col)` (a drag, or Shift+click). No-op
+    /// without a selection.
+    pub fn select_extend(&self, row: usize, col: usize, side_right: bool) {
+        let mut t = self.backend.term.lock();
+        let point = viewport_point(&t, row, col);
+        if let Some(sel) = t.selection.as_mut() {
+            sel.update(point, side(side_right));
+        }
+        drop(t);
+        self.backend.shared.force_repaint();
+    }
+
+    /// End a drag: an empty selection (a plain click) is dropped.
+    pub fn select_finish(&self) {
+        let mut t = self.backend.term.lock();
+        if t.selection.as_ref().is_some_and(|s| s.is_empty()) {
+            t.selection = None;
+        }
+    }
+
+    /// Drop the selection.
+    pub fn select_clear(&self) {
+        self.clear_selection();
+        self.backend.shared.force_repaint();
+    }
+
+    /// Send a mouse event at viewport `(col, row)` to the program when it enabled mouse
+    /// reporting. Returns `false` when no mouse mode is on (the front end handles the
+    /// event itself: selection, scrolling). Motion is only reported in the motion mode,
+    /// or while a button is held in the drag mode.
+    #[allow(clippy::too_many_arguments)]
+    pub fn report_mouse(
+        &self,
+        button: MouseButton,
+        pressed: bool,
+        motion: bool,
+        col: usize,
+        row: usize,
+        mods: TermMods,
+    ) -> bool {
+        let modes = self.modes();
+        if !modes.mouse_any() {
+            return false;
+        }
+        if motion && !(modes.mouse_motion || (modes.mouse_drag && button != MouseButton::None)) {
+            return true;
+        }
+        if let Some(bytes) = input::encode_mouse(button, pressed, motion, col, row, mods, &modes) {
+            self.write_input(bytes);
+        }
+        true
+    }
+}
+
+/// Viewport cell → grid point (accounts for the scrollback offset; clamped).
+fn viewport_point(t: &alacritty_terminal::Term<backend::Listener>, row: usize, col: usize) -> Point {
+    use alacritty_terminal::grid::Dimensions;
+    let row = row.min(t.screen_lines().saturating_sub(1));
+    let col = col.min(t.columns().saturating_sub(1));
+    viewport_to_point(t.grid().display_offset(), Point::new(row, Column(col)))
+}
+
+fn side(right: bool) -> Direction {
+    if right { Direction::Right } else { Direction::Left }
 }
 
 impl Drop for Terminal {
@@ -362,6 +509,9 @@ impl<'a> TerminalView<'a> {
         render::show(ui, self)
     }
 }
+
+#[cfg(test)]
+mod grid_pty_tests;
 
 #[cfg(test)]
 mod tests {
