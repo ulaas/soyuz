@@ -11,6 +11,7 @@ pub mod preview;
 pub mod properties;
 pub mod quicklook;
 pub mod remote;
+pub mod requests;
 pub mod search;
 pub mod settings;
 pub mod sidebar;

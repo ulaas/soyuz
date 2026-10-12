@@ -49,6 +49,8 @@ mod headless {
     mod recovery;
     /// T3: inline rename.
     mod rename;
+    /// T3: confirm, select by pattern, columns, open with.
+    mod requests;
     // ---- Phase T4 ----
     /// T4: the editors (and quitting with unsaved changes).
     mod editor;

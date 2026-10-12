@@ -5,47 +5,23 @@ use egui::{Align, CornerRadius, FontId, Layout, Margin, RichText, ScrollArea, Ui
 
 use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
-use crate::services::crash::{CrashReport, RecoveryAction, request, safe_mode};
+use crate::models::requests::crash_reports::{self as model, CrashReportsModel};
+use crate::services::crash::{CrashReport, safe_mode};
 use crate::theme::{icons::ph, palette};
 
-/// Shown text is capped (reports with huge log lines stay readable).
-const VIEW_CAP: usize = 64 * 1024;
-
 pub struct CrashDialog {
-    title: String,
-    reports: Vec<CrashReport>,
-    /// Index of the report being viewed and its text.
-    viewing: Option<(usize, String)>,
+    m: CrashReportsModel,
 }
 
 impl CrashDialog {
     pub fn new(reports: Vec<CrashReport>) -> Self {
-        let title = tr!("dialogs-crash-title", count = reports.len());
-        CrashDialog { title, reports, viewing: None }
-    }
-
-    fn view(&mut self, i: usize) {
-        if self.viewing.as_ref().is_some_and(|(v, _)| *v == i) {
-            self.viewing = None;
-            return;
-        }
-        let mut text = std::fs::read_to_string(&self.reports[i].path).unwrap_or_else(|e| format!("({e})"));
-        if text.len() > VIEW_CAP {
-            let mut cut = VIEW_CAP;
-            while !text.is_char_boundary(cut) {
-                cut -= 1;
-            }
-            text.truncate(cut);
-            text.push('\n');
-            text.push_str(tr!("dialogs-crash-truncated"));
-        }
-        self.viewing = Some((i, text));
+        CrashDialog { m: CrashReportsModel::new(reports) }
     }
 }
 
 impl Dialog for CrashDialog {
     fn title(&self) -> &str {
-        &self.title
+        &self.m.title
     }
 
     fn icon(&self) -> Option<&'static str> {
@@ -61,19 +37,14 @@ impl Dialog for CrashDialog {
         ui.label(RichText::new(tr!("dialogs-crash-body")).color(p.text_secondary));
         ui.add_space(10.0);
         let mut view = None;
-        for (i, r) in self.reports.iter().enumerate().take(8) {
+        for (i, r) in self.m.listed().iter().enumerate() {
             ui.horizontal(|ui| {
-                let when = r
-                    .when
-                    .map(|t| {
-                        soyuz_core::format_time(t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Short))
-                    })
-                    .unwrap_or_default();
+                let when = model::when(r);
                 ui.label(RichText::new(when).font(FontId::proportional(12.0)).color(p.text_tertiary));
-                let summary = if r.summary.is_empty() { r.name.clone() } else { r.summary.clone() };
+                let summary = model::summary(r);
                 ui.label(RichText::new(summary).font(FontId::proportional(12.5)).color(p.text_primary));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let open = self.viewing.as_ref().is_some_and(|(v, _)| *v == i);
+                    let open = self.m.is_viewing(i);
                     if ui
                         .link(
                             RichText::new(if open { tr!("dialogs-hide") } else { tr!("dialogs-crash-view") })
@@ -87,9 +58,9 @@ impl Dialog for CrashDialog {
             });
         }
         if let Some(i) = view {
-            self.view(i);
+            self.m.toggle_view(i);
         }
-        if let Some((_, text)) = &self.viewing {
+        if let Some((_, text)) = &self.m.viewing {
             ui.add_space(6.0);
             egui::Frame::new()
                 .fill(p.bg_sunken)
@@ -119,21 +90,19 @@ impl Dialog for CrashDialog {
             });
         });
         if delete {
-            request(RecoveryAction::DeleteReports(self.reports.clone()));
+            self.m.delete();
             return false;
         }
         if folder {
-            request(RecoveryAction::KeepReports(self.reports.clone()));
-            request(RecoveryAction::OpenCrashFolder);
+            self.m.open_folder();
             return false;
         }
         if safe {
-            request(RecoveryAction::KeepReports(self.reports.clone()));
-            request(RecoveryAction::RestartSafeMode);
+            self.m.restart_safe_mode();
             return false;
         }
         if close {
-            request(RecoveryAction::KeepReports(self.reports.clone()));
+            self.m.keep();
             return false;
         }
         true

@@ -28,11 +28,6 @@ tui-feature-preview = Önizleme
 tui-feature-menu = Bağlam menüsü
 
 ## T1: the frame loop (crash reports, interrupted jobs)
-tui-recovered-jobs = { $count ->
-    [one] Yarıda kalan 1 işlem var — kurtarmak için grafik arayüzü açın
-   *[other] Yarıda kalan { $count } işlem var — kurtarmak için grafik arayüzü açın
-}
-tui-crashed = Soyuz geçen sefer çöktü — rapor şuraya kaydedildi: { $path }
 
 ## T2.1: [tui] settings
 

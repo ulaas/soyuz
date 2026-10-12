@@ -53,6 +53,8 @@ signal-hook = "0.4.5"
 
 [dev-dependencies]
 tempfile.workspace = true
+# Plants a crash journal in the headless recovery tests (`tests/headless/recovery.rs`).
+serde_json.workspace = true
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz-tui.exe (Windows hosts with rc.exe only; no-op elsewhere).
