@@ -7,7 +7,10 @@
 //! - below [`SIDEBAR_MIN_COLS`] columns the sidebar is hidden;
 //! - below [`STACK_BELOW_COLS`] columns dual panes stack (one above the other) and quad
 //!   becomes a single column;
-//! - when there is not even one row per pane, only the focused pane is drawn.
+//! - when there is not even one row per pane, only the focused pane is drawn;
+//! - with more than one pane on screen, all at least [`TITLE_MIN_ROWS`] high, each pane
+//!   gives its top row to a title line (its location, the focused one highlighted), drawn by
+//!   `view::tabs::draw_pane_chrome` together with the splitters.
 //!
 //! The parts each view step adds report whether they are shown through [`Facts`], built
 //! by `Facts::from_core` from one function per part (`view::tabs::shown`,
@@ -28,6 +31,9 @@ pub const SIDEBAR_MIN_COLS: u16 = 40;
 pub const STACK_BELOW_COLS: u16 = 60;
 /// Cells between panes (and between the sidebar and the panes): borders / splitters.
 pub const GAP: u16 = 1;
+/// A pane of a multi-pane layout needs this many rows for its title line (one title row
+/// plus at least two list rows).
+pub const TITLE_MIN_ROWS: u16 = 3;
 
 /// What the core's state says about the layout (no sizes in here).
 #[derive(Clone, Debug, PartialEq)]
@@ -102,8 +108,10 @@ pub struct Regions {
     /// The location line (breadcrumbs / address field).
     pub crumbs: Rect,
     pub sidebar: Rect,
-    /// The panes drawn this frame, in tab order.
+    /// The panes drawn this frame, in tab order (their lists: title rows excluded).
     pub panes: Vec<PaneRect>,
+    /// The title line of each pane that has one (multi-pane layouts, see the module docs).
+    pub titles: Vec<PaneRect>,
     /// The gaps between panes (`true`: a vertical line between columns).
     pub splitters: Vec<(Rect, bool)>,
     pub toasts: Rect,
@@ -169,7 +177,14 @@ impl Regions {
         } else {
             r.sidebar = at(body.x, body.y);
         }
-        let (panes, splitters, stacked) = split_panes(body, facts);
+        let (mut panes, splitters, stacked) = split_panes(body, facts);
+        if panes.len() > 1 && panes.iter().all(|p| p.rect.height >= TITLE_MIN_ROWS) {
+            for p in &mut panes {
+                r.titles.push(PaneRect { index: p.index, rect: Rect { height: 1, ..p.rect } });
+                p.rect.y += 1;
+                p.rect.height -= 1;
+            }
+        }
         r.panes = panes;
         r.splitters = splitters;
         r.stacked = stacked;
@@ -299,18 +314,35 @@ mod tests {
         let r = regions(81, 10, &f);
         let (a, b) = (r.pane(0).unwrap(), r.pane(1).unwrap());
         assert_eq!((a.x, a.width, b.x, b.width), (0, 20, 21, 60));
-        assert_eq!(a.height, b.height);
+        assert_eq!((a.y, a.height, b.y, b.height), (2, 7, 2, 7));
+        assert_eq!(
+            r.titles.iter().map(|t| t.rect).collect::<Vec<_>>(),
+            [Rect::new(0, 1, 20, 1), Rect::new(21, 1, 60, 1)]
+        );
         assert_eq!(r.splitters, vec![(Rect::new(20, 1, 1, 8), true)]);
         f.orientation = Orientation::Horizontal;
         let r = regions(81, 22, &f);
         let (a, b) = (r.pane(0).unwrap(), r.pane(1).unwrap());
-        assert!(r.stacked && a.width == 81 && a.y + a.height + GAP == b.y && b.bottom() == 21);
+        assert!(r.stacked && a.width == 81 && a.y + a.height + GAP + 1 == b.y && b.bottom() == 21);
+        // Each pane's title row sits right above its list.
+        assert_eq!(
+            r.titles,
+            vec![
+                PaneRect { index: 0, rect: Rect::new(0, 1, 81, 1) },
+                PaneRect { index: 1, rect: Rect::new(0, b.y - 1, 81, 1) },
+            ]
+        );
         // Narrow terminals stack a side-by-side split.
         f.orientation = Orientation::Vertical;
         assert!(regions(59, 22, &f).stacked);
-        // Not even a row each: the focused pane alone.
+        // Not even a row each: the focused pane alone, without a title.
         f.focused = 1;
-        assert_eq!(regions(59, 4, &f).panes, vec![PaneRect { index: 1, rect: Rect::new(0, 1, 59, 2) }]);
+        let r = regions(59, 4, &f);
+        assert_eq!(r.panes, vec![PaneRect { index: 1, rect: Rect::new(0, 1, 59, 2) }]);
+        assert!(r.titles.is_empty());
+        // Too short for a title row: the panes keep every row.
+        let r = regions(81, 4, &Facts { focused: 0, ..f.clone() });
+        assert!(r.titles.is_empty() && r.panes.iter().all(|p| p.rect.height == 2), "{r:?}");
     }
 
     #[test]
@@ -318,6 +350,8 @@ mod tests {
         let f = Facts { shown: 4, focused: 2, ..Facts::default() };
         let r = regions(100, 30, &f);
         assert_eq!(r.panes.len(), 4);
+        assert_eq!(r.titles.len(), 4);
+        assert_eq!(r.titles[2].rect.bottom(), r.pane(2).unwrap().y);
         assert_eq!(r.pane(3).map(|p| (p.right(), p.bottom())), Some((100, 29)));
         assert!(!r.stacked && r.splitters.len() == 2);
         let r = regions(50, 30, &f);
@@ -337,12 +371,27 @@ mod tests {
                     for h in 0..=40 {
                         let r = regions(w, h, &f);
                         assert!(!r.panes.is_empty());
-                        for p in &r.panes {
-                            assert!(r.area.union(p.rect) == r.area, "{w}x{h} {p:?}");
+                        assert!(r.titles.is_empty() || r.titles.len() == r.panes.len(), "{w}x{h}");
+                        let rects: Vec<Rect> = r
+                            .panes
+                            .iter()
+                            .chain(&r.titles)
+                            .map(|p| p.rect)
+                            .chain(r.splitters.iter().map(|s| s.0))
+                            .filter(|r| !r.is_empty())
+                            .collect();
+                        for p in &rects {
+                            assert!(r.area.union(*p) == r.area, "{w}x{h} {p:?}");
+                            assert!(!p.intersects(r.tabs) && !p.intersects(r.crumbs) && !p.intersects(r.status));
                         }
-                        for (i, a) in r.panes.iter().enumerate() {
-                            for b in &r.panes[i + 1..] {
-                                assert!(!a.rect.intersects(b.rect), "{w}x{h} {a:?} {b:?}");
+                        // Panes and titles never overlap (splitters may cross each other).
+                        let boxes: Vec<Rect> = r.panes.iter().chain(&r.titles).map(|p| p.rect).collect();
+                        for (i, a) in boxes.iter().enumerate() {
+                            for b in &boxes[i + 1..] {
+                                assert!(!a.intersects(*b), "{w}x{h} {a:?} {b:?}");
+                            }
+                            for (s, _) in &r.splitters {
+                                assert!(!a.intersects(*s), "{w}x{h} {a:?} {s:?}");
                             }
                         }
                     }
