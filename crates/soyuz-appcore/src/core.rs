@@ -451,6 +451,12 @@ impl AppCore {
         crate::palette::begin_frame(self, host);
         crate::models::terminal::pump(self, host);
         crate::models::search::pump(self, host);
+        // Decorations every frontend shows: tags, git status, recent files, folder colours.
+        crate::models::tools::pump(self, host);
+        crate::models::tools::request_os_tags(self);
+        if crate::services::folder_colors::pump(&host.wake()) {
+            host.redraw_after(std::time::Duration::from_millis(450));
+        }
     }
 
     /// Phase 5: the jobs engine (prompts, finished jobs, pending renames).

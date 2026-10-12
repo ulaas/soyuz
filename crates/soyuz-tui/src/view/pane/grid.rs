@@ -286,8 +286,9 @@ fn draw_cell(buf: &mut Buffer, m: &PaneVm, gv: &GridVm, row: &Row, r: Rect, them
     let mk = mark(m, row.selected);
     let mk = if row.selected || m.checkboxes { mk.trim_end() } else { "" };
     let mw = if mk.is_empty() { 0 } else { text::width(mk) as u16 + 1 };
-    let label = fitted(&row.name, row.kind, usize::from(name.width.saturating_sub(mw)));
-    let tw = (mw + text::width(&label) as u16).min(name.width);
+    let dots = if name.width >= mw + row.dots_w() + 6 { row.dots_w() } else { 0 };
+    let label = fitted(&row.name, row.kind, usize::from(name.width.saturating_sub(mw + dots)));
+    let tw = (mw + text::width(&label) as u16 + dots).min(name.width);
     let mut x = name.x + (name.width - tw) / 2;
     if !mk.is_empty() {
         let ms = if row.selected { theme.style(Role::Selected) } else { theme.style(Role::Muted) };
@@ -295,6 +296,10 @@ fn draw_cell(buf: &mut Buffer, m: &PaneVm, gv: &GridVm, row: &Row, r: Rect, them
         x = (x + mw).min(name.right());
     }
     put(buf, x, name.y, &label, name.right() - x, name_style);
+    if dots > 0 {
+        let after = (x + text::width(&label) as u16).min(name.right());
+        row.draw_dots(buf, after, name.y, name.right() - after, m.icons, theme);
+    }
     buf.set_style(name, style);
 }
 

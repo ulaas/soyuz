@@ -73,13 +73,11 @@ thread_local! {
     static TOOLS: RefCell<Tools> = RefCell::new(Tools::default());
 }
 
-/// Start of every frame (before file-op handling): service pumps, queued commands and
-/// OS file drops onto the shelf.
+/// Start of every frame (before file-op handling, after the core's service pumps):
+/// queued commands and OS file drops onto the shelf.
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
-    crate::models::tools::pump(&mut app.core, &crate::host::EguiHost::new(ctx));
     versions::begin_frame(app);
     sync_sched::tick(app, ctx);
-    crate::models::tools::request_os_tags(&app.core);
     debug_open_once();
     let cmds = crate::models::tools::take_queue();
     TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));

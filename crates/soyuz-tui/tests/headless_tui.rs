@@ -28,6 +28,8 @@ mod headless {
     mod status;
     /// T2.4: tabs, dual and quad panes.
     mod tabs;
+    /// Colour tags and git status in the list (the core's decoration pumps).
+    mod tags;
     /// T2.2: theme, colours, icons.
     mod theme;
     // ---- Phase T3 ----

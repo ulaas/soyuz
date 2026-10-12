@@ -39,13 +39,6 @@ pub fn spring_delay() -> Option<f64> {
     SPRING_ON.load(Ordering::Relaxed).then(|| f64::from(SPRING_MS.load(Ordering::Relaxed)) / 1000.0)
 }
 
-/// Once per frame (before the shell draws).
-pub fn begin_frame(ctx: &egui::Context) {
-    if folder_colors::pump(&crate::host::egui_wake(ctx)) {
-        ctx.request_repaint_after(std::time::Duration::from_millis(450));
-    }
-}
-
 /// Translated name of tag color `i` (`TAG_NAMES` order).
 fn color_name(i: usize) -> &'static str {
     match i {

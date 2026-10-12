@@ -219,7 +219,6 @@ impl SoyuzApp {
         self.handle_input(&ctx);
         self.apply_cmds(&host);
         crate::theme::library::sync(&ctx, &self.core.config, crate::host::to_egui_theme(self.core.ui.theme));
-        crate::ui::looks::begin_frame(&ctx);
         crate::ui::titlebar::sync(&ctx, self);
         crate::ui::native_chrome::sync_theme(&ctx);
         shell::show(ui, self);

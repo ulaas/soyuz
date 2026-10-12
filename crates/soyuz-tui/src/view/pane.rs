@@ -59,6 +59,8 @@ use soyuz_appcore::file_class::{FileClass, classify};
 use soyuz_appcore::geom::vec2;
 use soyuz_appcore::icon::IconId;
 use soyuz_appcore::services::folder_colors::{self, FolderColor};
+use soyuz_appcore::services::git::{self, GitCode};
+use soyuz_appcore::services::tags::{self, TagMask};
 use soyuz_appcore::state::layout::{FlowLayout, Line, LineKind};
 use soyuz_appcore::state::pane::{LayoutSig, ListingStatus, Pane, PaneId};
 use soyuz_appcore::tr;
@@ -242,6 +244,10 @@ pub struct Row {
     pub hidden: bool,
     /// The folder's tag colour (`[tags]` index).
     pub tag_color: Option<u8>,
+    /// Colour tags of the item (dots after the name, like the GUI).
+    pub tags: TagMask,
+    /// Git status (tints the name, like the GUI).
+    pub git: Option<GitCode>,
     pub cursor: bool,
     pub selected: bool,
     /// The inline rename field on this row (`view::rename`, Phase T3).
@@ -260,6 +266,8 @@ impl Default for Row {
             cells: Vec::new(),
             hidden: false,
             tag_color: None,
+            tags: 0,
+            git: None,
             cursor: false,
             selected: false,
             edit: None,
@@ -278,14 +286,47 @@ impl Row {
         fitted(&self.name, self.kind, w)
     }
 
-    /// The style of the name (and icon).
+    /// The style of the name (and icon): the git status colour, else the folder colour,
+    /// else the file class colour.
     fn name_style(&self, theme: &TuiTheme) -> Style {
-        let role = match (self.tag_color, self.kind) {
-            (Some(t), RowKind::Dir) => Role::Tag(t),
+        let role = match (self.git, self.tag_color, self.kind) {
+            (Some(code), ..) => git_role(code),
+            (None, Some(t), RowKind::Dir) => Role::Tag(t),
             _ => Role::of_class(self.class),
         };
         let s = theme.style(Role::Text).patch(theme.style(role));
         if self.hidden { s.patch(theme.style(Role::Muted)) } else { s }
+    }
+
+    /// Cells the tag dots take after the name (a space and one cell per dot).
+    fn dots_w(&self) -> u16 {
+        let n = self.tags.count_ones().min(MAX_DOTS as u32) as u16;
+        if n == 0 { 0 } else { n + 1 }
+    }
+
+    /// Draw the tag dots at `(x, y)` (at most `w` cells; nothing when they do not fit).
+    fn draw_dots(&self, buf: &mut Buffer, x: u16, y: u16, w: u16, set: IconSet, theme: &TuiTheme) {
+        if self.dots_w() == 0 || self.dots_w() > w {
+            return;
+        }
+        let dot = if set == IconSet::Ascii { "o" } else { "●" };
+        for (i, t) in tags::mask_tags(self.tags).take(MAX_DOTS).enumerate() {
+            put(buf, x + 1 + i as u16, y, dot, 1, theme.style(Role::Tag(t)));
+        }
+    }
+}
+
+/// Tag dots shown after a name (as many as the GUI shows).
+const MAX_DOTS: usize = 4;
+
+/// The colour of a git status (the GUI's `git_color`).
+fn git_role(code: GitCode) -> Role {
+    match code {
+        GitCode::Modified => Role::Warning,
+        GitCode::Added | GitCode::Untracked => Role::Success,
+        GitCode::Deleted | GitCode::Conflicted => Role::Danger,
+        GitCode::Renamed | GitCode::TypeChange => Role::Info,
+        GitCode::Ignored => Role::Muted,
     }
 }
 
@@ -518,6 +559,8 @@ impl RowCx<'_> {
             cells: self.columns.iter().map(|c| columns::cell_text(c.column, e, self.config)).collect(),
             hidden: e.is_hidden(),
             tag_color,
+            tags: tags::tags_of(&e.path),
+            git: git::status_of(&e.path, e.is_dir_like()),
             cursor: self.cursor == Some(i),
             selected: self.pane.selection.contains(key),
             edit: None,
@@ -633,8 +676,14 @@ fn draw_name(buf: &mut Buffer, m: &PaneVm, row: &Row, x: u16, y: u16, w: u16, th
         put(buf, x, y, icons::glyph(icon, m.icons), end - x, name_style);
         x = (x + icon_w(m.icons)).min(end);
     }
-    let label = row.fitted_label(usize::from(end - x));
+    // The dots keep their room unless the name would get shorter than a few cells.
+    let dots = if end - x >= row.dots_w() + 6 { row.dots_w() } else { 0 };
+    let label = row.fitted_label(usize::from(end - x - dots));
     put(buf, x, y, &label, end - x, name_style);
+    if dots > 0 {
+        let after = (x + text::width(&label) as u16).min(end);
+        row.draw_dots(buf, after, y, end - after, m.icons, theme);
+    }
 }
 
 /// The style a row ends with: selection, then cursor.
