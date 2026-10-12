@@ -336,9 +336,9 @@ pub struct BuildCx<'a> {
     pub footer: Option<String>,
 }
 
-/// The icon set of the terminal UI. T2.2 wires the `[tui]` icon setting; until then ASCII.
-fn icon_set(_core: &AppCore) -> IconSet {
-    IconSet::default()
+/// The icon set of the terminal UI (`[tui] icons`).
+fn icon_set(core: &AppCore) -> IconSet {
+    IconSet::from_config(&core.config.tui)
 }
 
 impl PaneVm {

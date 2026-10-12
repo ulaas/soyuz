@@ -306,15 +306,28 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 bindings, jobs and undo history as the window. On Windows it opens its own console window;
 on Linux and macOS it runs in the terminal you start it from.
 
-This first version shows the focused folder as a list: move with the arrow keys (or your
-key preset), Enter opens, Backspace goes up, Del and other file commands work as in the
-window, and Ctrl+Q quits (asking first while jobs are running). Tabs, dual panes, colours
-and the full dialogs follow in later versions; features that have no terminal view yet
+It browses like the window: tabs, dual and quad panes, the details / list / grid / Miller
+views, breadcrumbs and the address bar (Ctrl+L), the sidebar with places and the folder
+tree, the command palette (Ctrl+K), the filter (Ctrl+F), the status line and toasts, all in
+the colours of your theme. Move with the arrow keys (or your key preset), Enter opens,
+Backspace goes up, Del and other file commands work as in the window, and Ctrl+Q quits
+(asking first while jobs are running). F12 moves the keyboard to the sidebar (a terminal
+UI default; bind *Focus sidebar* to change it). With the mouse on, clicks select, a double
+click opens, a column header sorts (again: the other way round), and the sidebar, tabs,
+crumbs, toasts and Miller columns are clickable. Features that have no terminal view yet
 show a short notice instead.
 
-Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection, and
+Terminals without the kitty keyboard protocol cannot send some chords (Ctrl+Shift+letter
+arrives as Ctrl+letter); there Soyuz adds free alternatives: Alt+Shift+letter for
+Ctrl+Shift+letter, Ctrl+PageDown / PageUp for Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+F1…F5 for
+the view modes (Ctrl+Shift+1…5), Alt+I, Alt+`, Alt+/, Alt+, and Alt+Backspace for their
+Ctrl versions.
+
+Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection,
 choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
-it). In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
+it), the colour depth, the icons (Unicode, Nerd Font or ASCII), the box lines (rounded,
+plain, ASCII or none; ASCII icons with ASCII or no lines give a pure ASCII screen) and the
+sidebar width. In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
 UI keeps its own session (`session-tui.toml`) and log (`soyuz-tui.log`) in the settings
 folder.
 

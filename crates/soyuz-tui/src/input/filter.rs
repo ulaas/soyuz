@@ -95,17 +95,30 @@ fn enter_first_match(core: &mut AppCore) {
     }
 }
 
-/// After the model is built: the open field's visible text and cursor column for a line
-/// `width` cells wide (`view::status::field_width`).
-pub fn decorate(st: &mut State, core: &AppCore, status: &mut StatusVm, width: u16) {
+/// The open field's text as drawn, with the cursor column, for a status line `width`
+/// cells wide (`view::status::field_width`). Scrolls `edit` to keep the cursor in view.
+fn field_view(edit: &mut LineEdit, core: &AppCore, width: u16) -> (String, u16) {
+    let safe = crate::dialog::safe(&core.ws.pane().filter);
+    // `safe` only changes control characters, which the editor never inserts (and `view`
+    // clamps the cursor should one come from elsewhere).
+    edit.view(&safe, field_width(width))
+}
+
+/// Before the model is built (`view::prepare`): scroll the open field to its cursor.
+pub fn prepare(st: &mut State, core: &AppCore, width: u16) {
+    if st.editing {
+        field_view(&mut st.edit, core, width);
+    }
+}
+
+/// While the model is built (`ViewModel::from_core`, after [`prepare`]): the open field's
+/// visible text and cursor column and the filter's key hint.
+pub fn decorate(st: &State, core: &AppCore, status: &mut StatusVm, width: u16) {
     if !st.editing {
         return;
     }
-    let pane = core.ws.pane();
-    let safe = crate::dialog::safe(&pane.filter);
-    // `safe` only changes control characters, which the editor never inserts (and `view`
-    // clamps the cursor should one come from elsewhere).
-    let (text, cursor) = st.edit.view(&safe, field_width(width));
+    // `prepare` scrolled the field already: this view does not move it again.
+    let (text, cursor) = field_view(&mut st.edit.clone(), core, width);
     let label = soyuz_appcore::tr!("app-toolbar-filter").to_string();
     status.filter = Some(FilterVm { label, text, cursor: Some(cursor) });
     status.hint = soyuz_appcore::tr!("tui-hint-filter").to_string();

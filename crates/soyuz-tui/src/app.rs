@@ -1,7 +1,8 @@
 //! The terminal UI's frame loop.
 //!
 //! [`run`] is the production entry (`soyuz --tui`): it queries the keyboard protocol,
-//! installs the legacy keymap overlay, enters TUI mode ([`TerminalGuard`]), registers the
+//! installs the key map overlay (`crate::overlay`: the TUI defaults, plus the legacy
+//! alternatives without the kitty protocol), enters TUI mode ([`TerminalGuard`]), registers the
 //! panic hooks, starts the input reader and the signal watcher, and drives [`App`] with
 //! [`run_loop`] until the user quits. Tests drive the same loop with ratatui's
 //! `TestBackend`, a scripted [`EventSource`] and a [`TermIo`] that touches no terminal.
@@ -211,7 +212,12 @@ pub struct App {
 impl App {
     /// Build the core for the terminal UI (`startup.frontend` is forced to the TUI: own
     /// session file, no FileManager1, no other windows).
+    ///
+    /// Installs the TUI's own default keys (`crate::overlay::tui_defaults`) before the core
+    /// builds its key map, unless [`run`] installed the legacy overlay (which includes them)
+    /// first: the hook is process-wide and set once.
     pub fn new(config: Config, mut startup: Startup) -> App {
+        soyuz_appcore::keys::set_keymap_overlay(crate::overlay::tui_defaults);
         startup.frontend = FrontendKind::Tui;
         let host = TuiHost::new();
         let mut core = AppCore::new(config, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
@@ -388,9 +394,8 @@ impl App {
         self.core.prepare_visible_panes();
         let area = Rect::new(0, 0, size.width, size.height);
         let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
-        view::prepare(&mut self.core, &regions);
-        let mut model = ViewModel::from_core(&self.core, &regions);
-        crate::input::filter::decorate(&mut self.input.filter, &self.core, &mut model.status, area.width);
+        view::prepare(&mut self.core, &mut self.input, &regions);
+        let model = ViewModel::from_core(&self.core, &self.input, &regions);
         let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());
         let hits = &mut self.hits;
         terminal
@@ -508,18 +513,21 @@ fn restore_for_panic() {
 ///
 /// The caller has prepared the console (`soyuz_fs::console::tui_console` on Windows),
 /// checked `soyuz_fs::console::is_terminal_session`, set up logging to a file and
-/// claimed the crash journal (`services::crash::startup`). Installs the legacy keymap
-/// overlay (`crate::overlay`) when the kitty keyboard protocol is not used (never on
-/// Windows), before the core builds its key map. After the loop the terminal is restored
-/// and an "Install & restart" update restarts the process (`services::updates`).
+/// claimed the crash journal (`services::crash::startup`). Installs the key map overlay
+/// (`crate::overlay`) before the core builds its key map: the TUI's default keys, plus the
+/// legacy alternatives when the kitty keyboard protocol is not used (never on Windows).
+/// After the loop the terminal is restored and an "Install & restart" update restarts the
+/// process (`services::updates`).
 pub fn run(config: Config, startup: Startup) -> ExitCode {
     soyuz_fs::register_ui_thread();
     // Before any thread reads terminal input: the query reads the terminal's answer.
     let keyboard_supported = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
     let kitty = crate::term::keyboard_flags(config.tui.keyboard_protocol, keyboard_supported, cfg!(windows)).is_some();
-    if !kitty && !cfg!(windows) {
-        soyuz_appcore::keys::set_keymap_overlay(crate::overlay::apply);
-    }
+    soyuz_appcore::keys::set_keymap_overlay(if !kitty && !cfg!(windows) {
+        crate::overlay::legacy
+    } else {
+        crate::overlay::tui_defaults
+    });
     let guard = match TerminalGuard::enter(&config.tui, keyboard_supported) {
         Ok(g) => g,
         Err(e) => {

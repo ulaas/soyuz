@@ -214,9 +214,10 @@ pub fn draw(buf: &mut Buffer, g: &PaneGeom, m: &PaneVm, mv: &MillerVm, theme: &T
         return;
     }
     let border = theme.style(Role::Border);
+    let line = crate::borders::lines(theme.borders()).vertical;
     for x in [g.parent.right(), g.list.right()] {
         for y in g.list.top()..g.list.bottom() {
-            put(buf, x, y, "│", 1, border);
+            put(buf, x, y, line, 1, border);
         }
     }
     draw_col(buf, g.parent, m, &mv.parent, true, theme, hits);

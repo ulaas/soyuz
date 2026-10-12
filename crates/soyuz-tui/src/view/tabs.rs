@@ -23,7 +23,8 @@
 //! # Pane chrome
 //!
 //! [`draw_pane_chrome`] draws what `Regions` leaves between and above the panes of a dual
-//! or quad layout: the splitters (`│` / `─`, `┼` where they cross, `Role::Border`,
+//! or quad layout: the splitters (`│` / `─`, `┼` where they cross, in the line characters
+//! of `[tui] borders`: `|` `-` `+` in ASCII, blanks with no lines; `Role::Border`,
 //! [`HitTarget::Splitter`]) and one title line per pane with its location, the focused
 //! pane's in `Role::BorderFocused` (bold), the others in `Role::Border`.
 
@@ -314,9 +315,10 @@ pub fn draw_pane_chrome(f: &mut Frame<'_>, regions: &Regions, m: &TabsVm, theme:
     let buf = f.buffer_mut();
     let area = buf.area;
     let border = theme.style(Role::Border);
+    let lines = crate::borders::lines(theme.borders());
     for (r, vertical) in &regions.splitters {
         let r = r.intersection(area);
-        let line = if *vertical { "│" } else { "─" };
+        let line = if *vertical { lines.vertical } else { lines.horizontal };
         for p in r.positions() {
             buf[p].set_symbol(line).set_style(border);
         }
@@ -327,7 +329,7 @@ pub fn draw_pane_chrome(f: &mut Frame<'_>, regions: &Regions, m: &TabsVm, theme:
         for (h, _) in regions.splitters.iter().filter(|s| !s.1) {
             let c = Position { x: v.x, y: h.y };
             if v.contains(c) && h.contains(c) && area.contains(c) {
-                buf[c].set_symbol("┼");
+                buf[c].set_symbol(lines.cross);
             }
         }
     }
@@ -340,7 +342,7 @@ pub fn draw_pane_chrome(f: &mut Frame<'_>, regions: &Regions, m: &TabsVm, theme:
         let focused = pane.is_some_and(|p| p.focused);
         let style = theme.style(if focused { Role::BorderFocused } else { Role::Border });
         for p in r.positions() {
-            buf[p].set_symbol("─").set_style(style);
+            buf[p].set_symbol(lines.horizontal).set_style(style);
         }
         if let Some(p) = pane {
             let w = usize::from(r.width);

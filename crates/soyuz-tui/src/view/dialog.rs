@@ -1,13 +1,14 @@
-//! The dialog fallback (`crate::dialog`): a bordered box in the middle with the body and
+//! The dialog fallback (`crate::dialog`): a box (`[tui] borders`) in the middle with the body and
 //! the key hints. Text is wrapped by display width ([`super::text::wrap`]), so the box is
 //! exactly as tall as its content (T3 brings the real dialog views).
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Clear, Paragraph};
 
 use super::text;
+use crate::borders;
 use crate::dialog::DialogView;
 use crate::layout::Hits;
 use crate::theme::{Role, TuiTheme};
@@ -32,6 +33,6 @@ pub fn draw_dialog(f: &mut Frame<'_>, area: Rect, d: &DialogView, theme: &TuiThe
     let r = Rect { x: area.x + (area.width - width) / 2, y: area.y + (area.height - height) / 2, width, height };
     f.render_widget(Clear, r);
     let title = text::truncate_end(&d.title, inner_w.saturating_sub(2));
-    let block = Block::new().borders(Borders::ALL).border_style(theme.style(Role::Border)).title(format!(" {title} "));
+    let block = borders::overlay_block(theme.borders(), theme.style(Role::Border)).title(format!(" {title} "));
     f.render_widget(Paragraph::new(lines).block(block), r);
 }

@@ -1,10 +1,10 @@
 //! Core states the terminal UI has no view for yet: reset them right after the frame's
-//! input (so the keyboard keeps working) and say so with a toast.
+//! input (so the keyboard keeps working) and say so with a toast. Requests the core sends
+//! to the frontend are declined the same way in `App::drain_frontend`.
 //!
-//! One function per feature. The step that builds a feature's view deletes its function
-//! and its call in [`reset_all`] (keep the comment line above the call: the orchestrator
-//! tidies up; this keeps parallel deletions from touching the same lines), and the
-//! feature's `tui-feature-*` key in both `tui.ftl` files when nothing else uses it.
+//! One function per feature, each called from [`reset_all`]. The phase that builds a
+//! feature's view deletes its function and call, and the feature's `tui-feature-*` key in
+//! both `tui.ftl` files when nothing else uses it.
 
 use soyuz_appcore::tr;
 
@@ -12,13 +12,8 @@ use crate::app::App;
 
 /// Run every reset.
 pub fn reset_all(app: &mut App) {
-    // Later phases: settings.
     settings(app);
-
-    // Later phases: Quick Look.
     quicklook(app);
-
-    // Later phases: terminal panel focus.
     terminal_focus(app);
 }
 

@@ -1,14 +1,14 @@
 //! Headless tests of step T2.6: the sidebar. Each test runs in its own sandbox:
 //! `crate::common::relaunch(module_path!(), "<test name>", |data| ...)`.
 //!
-//! `FocusSidebar` has no default shortcut; the tests bind it to F12 (F6 moves files in the list).
+//! `FocusSidebar` is F12, the terminal UI's own default (`soyuz_tui::overlay::tui_defaults`).
 
 use std::path::{Path, PathBuf};
 
 use crossterm::event::KeyCode;
 use soyuz_appcore::core::Focus;
 use soyuz_appcore::state::session::FavoriteEntry;
-use soyuz_core::config::{Action, Config, KeyContext, SidebarMode, SidebarSection};
+use soyuz_core::config::{Config, KeyContext, SidebarMode, SidebarSection};
 use soyuz_tui::app::App;
 use soyuz_tui::layout::HitTarget;
 use soyuz_tui::view::sidebar::LineKind;
@@ -18,7 +18,6 @@ use crate::common::{self, Run, Step, at, ctrl, key};
 fn config() -> Config {
     let mut c = common::test_config();
     c.layout.sidebar = true;
-    c.keys.bindings.insert(Action::FocusSidebar.to_string(), vec!["F12".into()]);
     c
 }
 
@@ -108,6 +107,67 @@ fn places(data: PathBuf) {
     assert!(rows.len() >= 3, "{rows:?}");
     assert!(rows.iter().all(|(r, _)| r.x == 0 && r.width == app.regions().sidebar.width));
     assert!(app.regions().panes[0].rect.x > app.regions().sidebar.width);
+    common::ok();
+}
+
+/// Sidebar row `label` is drawn at row `y` and is the click target there.
+fn sidebar_row_at(app: &App, y: u16, label: &str) -> bool {
+    let Some(v) = app.view() else { return false };
+    let r = app.regions().sidebar;
+    let Some(line) = v.sidebar.lines.get(usize::from(y.saturating_sub(r.y))) else { return false };
+    line.label == label && app.hits().at(r.x + 2, y) == Some(HitTarget::SidebarRow(line.index))
+}
+
+fn click(column: u16, row: u16) -> crossterm::event::Event {
+    use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+    Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Left),
+        column,
+        row,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+/// Clicks (T2.9 through `input::sidebar::click`): a place opens in the pane, a header
+/// collapses its section.
+#[test]
+fn sidebar_clicks_open_places_and_toggle_headers() {
+    let run = common::relaunch(module_path!(), "sidebar_clicks_open_places_and_toggle_headers", |data| {
+        std::fs::create_dir_all(data.join("first")).unwrap();
+        std::fs::create_dir_all(data.join("target")).unwrap();
+        std::fs::write(data.join("target").join("inside.txt"), b"i").unwrap();
+    });
+    if let Run::Child(data) = run {
+        clicks(data);
+    }
+}
+
+fn clicks(data: PathBuf) {
+    let mut c = config();
+    c.sidebar.sections = vec![SidebarSection::Favorites, SidebarSection::Trash];
+    let mut app = common::new_app(c, &data);
+    app.core.ui.sidebar.favorites = vec![
+        FavoriteEntry { name: "First".into(), path: data.join("first") },
+        FavoriteEntry { name: "Target".into(), path: data.join("target") },
+    ];
+    app.core.ui.sidebar.favorites_customized = true;
+    let target = data.join("target");
+    let d = data.clone();
+    // Row 0 is the location line; the sidebar starts below it.
+    let steps = vec![
+        Step::new("Target in the sidebar", move |a| at(a, &d) && sidebar_row_at(a, 3, "Target"), click(2, 3)),
+        Step::new(
+            "the pane in the target folder",
+            move |a| at(a, &target) && common::labels(a) == ["inside.txt"] && sidebar_row_at(a, 1, "Favorites"),
+            click(2, 1),
+        ),
+        Step::new(
+            "the section collapsed",
+            |a| !sidebar_has(a, "Target") && !a.core.ui.sidebar.is_open(SidebarSection::Favorites),
+            ctrl('q'),
+        ),
+    ];
+    common::run_script(&mut app, steps, 100, 24);
     common::ok();
 }
 

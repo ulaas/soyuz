@@ -9,10 +9,9 @@
 //! the bottom border. The list scrolls so the selected row stays visible.
 //!
 //! What the view keeps between frames (the list's scroll and the input cursor, which the
-//! `LineEdit` in `crate::input::palette` owns) is kept per thread in [`KEPT`]: the model is
-//! built from `&AppCore` only, and the frame loop runs on one thread.
-
-use std::cell::Cell;
+//! `LineEdit` in `crate::input::palette` owns) is a [`Kept`] in the TUI's input state
+//! (`crate::input::palette::State::view`): [`prepare`] scrolls it, the input route sets
+//! the cursor, [`PaletteVm::from_core`] reads both.
 
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
@@ -26,6 +25,7 @@ use soyuz_appcore::tr;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::text;
+use crate::borders;
 use crate::dialog::safe;
 use crate::icons::{self, IconSet};
 use crate::layout::{HitTarget, Hits, Regions};
@@ -39,20 +39,12 @@ pub const MAX_WIDTH: u16 = 84;
 
 /// State of the drawn palette that is not in the core.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-struct Kept {
-    /// The input cursor (byte offset in `palette.input`), published by the input route.
-    cursor: Option<usize>,
+pub struct Kept {
+    /// The input cursor (byte offset in `palette.input`), set by the input route (`None`:
+    /// at the end).
+    pub cursor: Option<usize>,
     /// First list line shown.
-    top: usize,
-}
-
-thread_local! {
-    static KEPT: Cell<Kept> = const { Cell::new(Kept { cursor: None, top: 0 }) };
-}
-
-/// The input route's cursor in `palette.input` (`None`: at the end).
-pub(crate) fn set_input_cursor(cursor: Option<usize>) {
-    KEPT.with(|k| k.set(Kept { cursor, ..k.get() }));
+    pub top: usize,
 }
 
 /// One result row.
@@ -106,14 +98,14 @@ pub struct PaletteVm {
 }
 
 impl PaletteVm {
-    pub fn from_core(core: &AppCore) -> PaletteVm {
+    /// The model of the open palette; `kept`: what the view keeps between frames.
+    pub fn from_core(core: &AppCore, kept: &Kept) -> PaletteVm {
         let p = &core.palette;
         if !p.open {
             return PaletteVm::default();
         }
-        let set = IconSet::default();
+        let set = IconSet::from_config(&core.config.tui);
         let mode = p.mode();
-        let kept = KEPT.with(Cell::get);
         let raw_cursor = match kept.cursor {
             Some(c) if !p.cursor_to_end && c <= p.input.len() && p.input.is_char_boundary(c) => c,
             _ => p.input.len(),
@@ -266,24 +258,23 @@ fn geometry(area: Rect, n_lines: usize) -> Geom {
 
 /// Before the model is built: refresh the results (the palette may have been opened by
 /// this frame's command) and scroll the list so the selection stays visible.
-pub fn prepare(core: &mut AppCore, regions: &Regions) {
+pub fn prepare(core: &mut AppCore, kept: &mut Kept, regions: &Regions) {
     if !core.palette.open {
-        KEPT.with(|k| k.set(Kept::default()));
+        *kept = Kept::default();
         return;
     }
     palette::refresh_results(core);
     core.palette.scroll_to_selected = false;
     let (n, sel, first) = line_of(&core.palette.results, core.palette.selected);
     let h = usize::from(geometry(regions.area, n).list.height).max(1);
-    let mut top = KEPT.with(Cell::get).top;
+    let mut top = kept.top;
     let want = if first { sel.saturating_sub(1) } else { sel };
     if want < top {
         top = want;
     } else if sel >= top + h {
         top = sel + 1 - h;
     }
-    top = top.min(n.saturating_sub(h));
-    KEPT.with(|k| k.set(Kept { top, ..k.get() }));
+    kept.top = top.min(n.saturating_sub(h));
 }
 
 /// `runs` fitted into `max` cells (cut at the end with an ellipsis), with the width used.
@@ -367,7 +358,7 @@ pub fn draw_palette(f: &mut Frame<'_>, area: Rect, m: &PaletteVm, theme: &TuiThe
     f.render_widget(Clear, g.outer);
     if g.bordered {
         let border = theme.style(Role::BorderFocused);
-        let mut block = Block::new().borders(Borders::ALL).border_style(border);
+        let mut block = borders::overlay_block(theme.borders(), border);
         let inner_w = usize::from(g.outer.width.saturating_sub(2));
         let hints = format!(" {} ", m.hints);
         let legend: Vec<Span<'_>> = m
@@ -395,7 +386,8 @@ pub fn draw_palette(f: &mut Frame<'_>, area: Rect, m: &PaletteVm, theme: &TuiThe
         // The separator under the input, joined to the border.
         if g.outer.height > 3 {
             let y = g.input.y + 1;
-            let sep = format!("├{}┤", "─".repeat(inner_w));
+            let l = borders::lines(theme.borders());
+            let sep = format!("{}{}{}", l.tee_left, l.horizontal.repeat(inner_w), l.tee_right);
             f.render_widget(
                 Paragraph::new(sep).style(border),
                 Rect { x: g.outer.x, y, width: g.outer.width, height: 1 },
@@ -537,7 +529,7 @@ mod tests {
         let (lines, buf, hits, cursor) = draw(&m, 80, 20);
         let all = lines.join("\n");
         // 80 columns: a 76-column box at x = 2, 13 % down (row 2).
-        assert!(lines[2].starts_with("  ┌"), "{all}");
+        assert!(lines[2].starts_with("  ╭"), "{all}");
         assert!(lines[3].contains(" * hid") && lines[3].trim_end().ends_with("Esc │"), "{all}");
         assert!(lines[4].starts_with("  ├─"), "{all}");
         assert!(lines[5].contains(" VIEW"), "{all}");

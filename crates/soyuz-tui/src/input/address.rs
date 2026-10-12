@@ -17,8 +17,6 @@
 //! a name completes inside the folder at once (the GUI selects the whole text instead,
 //! which a terminal field without selection cannot).
 
-use std::cell::Cell;
-
 use crossterm::event::Event;
 use soyuz_appcore::state::crumbs;
 use soyuz_core::Location;
@@ -32,17 +30,10 @@ use crate::widgets::line_edit::{EditOutcome, LineEdit};
 pub struct State {
     /// Cursor and scroll of the field.
     pub edit: LineEdit,
-}
-
-thread_local! {
     /// The field's cursor (byte offset in `ui.address.text`) after the last input, for
-    /// the view (`crate::view::crumbs`), which only sees the core. `None`: not editing.
-    static CURSOR: Cell<Option<usize>> = const { Cell::new(None) };
-}
-
-/// The address field's cursor as of the last input (`None` when it was not edited yet).
-pub fn cursor() -> Option<usize> {
-    CURSOR.get()
+    /// the view (`crate::view::crumbs`). `None`: not edited yet (the view puts the cursor
+    /// at the end).
+    pub cursor: Option<usize>,
 }
 
 /// The field was just opened (`request_focus`): cursor at the end, a separator after a
@@ -63,7 +54,7 @@ pub fn route(app: &mut App, events: &[Event]) {
     let (kctx, text) = key_context(TuiFocus::Address);
     let mut frame = core_input(app, events, kctx, text);
     if !app.core.ui.address.editing {
-        CURSOR.set(None);
+        app.input.address.cursor = None;
         return;
     }
     // A binding re-opened the field (Ctrl+L again).
@@ -86,13 +77,13 @@ pub fn route(app: &mut App, events: &[Event]) {
             EditOutcome::Submit => {
                 let pane = app.core.ws.pane().id;
                 crumbs::enter(&mut app.core.ui.address, &mut app.core.services, pane, &mut app.core.cmds, &comp);
-                CURSOR.set(None);
+                app.input.address.cursor = None;
                 return;
             }
             EditOutcome::Cancel => {
                 crumbs::cancel(a);
                 a.text = app.core.ws.pane().location.display();
-                CURSOR.set(None);
+                app.input.address.cursor = None;
                 return;
             }
             EditOutcome::Tab => {
@@ -105,5 +96,5 @@ pub fn route(app: &mut App, events: &[Event]) {
             EditOutcome::PageUp | EditOutcome::PageDown => {}
         }
     }
-    CURSOR.set(Some(app.input.address.edit.cursor()));
+    app.input.address.cursor = Some(app.input.address.edit.cursor());
 }

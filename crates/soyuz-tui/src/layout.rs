@@ -128,8 +128,8 @@ impl Regions {
         self.panes.iter().find(|p| p.index == index).map(|p| p.rect)
     }
 
-    /// Split `area` for `facts`. `_tui` carries the `[tui]` settings T2.1 adds (none
-    /// change the layout yet).
+    /// Split `area` for `facts`. `_tui`: the `[tui]` settings (none changes the split;
+    /// `[tui] sidebar_width` arrives through `facts`).
     pub fn compute(area: Rect, _tui: &TuiSection, facts: &Facts) -> Regions {
         let at = |x: u16, y: u16| Rect::new(x, y, 0, 0);
         let mut r = Regions {

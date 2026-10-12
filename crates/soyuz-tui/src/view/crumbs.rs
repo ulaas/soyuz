@@ -51,7 +51,9 @@ impl CrumbsVm {
         CrumbsVm { segments: vec![label.to_string()], edit: None }
     }
 
-    pub fn from_core(core: &AppCore) -> CrumbsVm {
+    /// The model of the focused pane's location; `address`: the TUI's address field state
+    /// (its cursor).
+    pub fn from_core(core: &AppCore, address: &crate::input::address::State) -> CrumbsVm {
         let loc = &core.ws.pane().location;
         let home = soyuz_fs::home();
         let mut segments: Vec<String> =
@@ -62,7 +64,7 @@ impl CrumbsVm {
         let a = &core.ui.address;
         let edit = a.editing.then(|| {
             let comp = crumbs::completion_cached(&core.services, &a.text);
-            let raw_cursor = crate::input::address::cursor().filter(|&c| a.text.is_char_boundary(c));
+            let raw_cursor = address.cursor.filter(|&c| a.text.is_char_boundary(c));
             // `safe` may change the text (control characters); the cursor then goes to
             // the end.
             let text = safe(&a.text);
@@ -92,14 +94,14 @@ fn segment_label(label: &str, kind: CrumbKind) -> String {
 }
 
 /// Between two segments.
-fn separator() -> String {
-    format!(" {} ", glyph(IconId::CaretRight, IconSet::default()))
+fn separator(set: IconSet) -> String {
+    format!(" {} ", glyph(IconId::CaretRight, set))
 }
 
 /// The segments that fit into `width` cells: `(first shown, cut)`. Leading segments give
 /// way first (`cut`: an ellipsis and a separator go first); the last one always stays.
-fn fit(segments: &[String], width: usize) -> (usize, bool) {
-    let sep = text::width(&separator());
+fn fit(segments: &[String], width: usize, set: IconSet) -> (usize, bool) {
+    let sep = text::width(&separator(set));
     let total: usize = segments.iter().map(|s| text::width(s)).sum::<usize>() + sep * segments.len().saturating_sub(1);
     if total <= width {
         return (0, false);
@@ -129,8 +131,8 @@ pub fn draw_crumbs(f: &mut Frame<'_>, rect: Rect, m: &CrumbsVm, theme: &TuiTheme
         return;
     }
     let width = usize::from(rect.width);
-    let (first, cut) = fit(&m.segments, width);
-    let sep = separator();
+    let (first, cut) = fit(&m.segments, width, theme.icons());
+    let sep = separator(theme.icons());
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut x = rect.x;
     let right = rect.right();
@@ -225,7 +227,7 @@ pub fn draw_completions(f: &mut Frame<'_>, rect: Rect, area: Rect, m: &CrumbsVm,
         let row = Rect::new(popup.x, popup.y + i as u16, popup.width, 1);
         let inner = usize::from(row.width);
         let hint_w = if i == tab_row && inner > text::width(hint) + 4 { text::width(hint) + 1 } else { 0 };
-        let label = text::fit(&format!(" {}{}", name, glyph(IconId::Folder, IconSet::default())), inner - hint_w);
+        let label = text::fit(&format!(" {}{}", name, glyph(IconId::Folder, theme.icons())), inner - hint_w);
         let role = if e.selected == Some(i) { Role::PaletteSelected } else { Role::Input };
         let mut spans = vec![Span::styled(label, theme.style(role))];
         if hint_w > 0 {
@@ -341,10 +343,11 @@ mod tests {
     #[test]
     fn fit_keeps_the_tail() {
         let s = segs(&["aaaa", "bbbb", "cccc"]);
-        assert_eq!(fit(&s, 100), (0, false));
-        assert_eq!(fit(&s, 18), (0, false));
-        assert_eq!(fit(&s, 17), (1, true));
-        assert_eq!(fit(&s, 5), (2, true));
-        assert_eq!(fit(&[], 0), (0, false));
+        let a = IconSet::Ascii;
+        assert_eq!(fit(&s, 100, a), (0, false));
+        assert_eq!(fit(&s, 18, a), (0, false));
+        assert_eq!(fit(&s, 17, a), (1, true));
+        assert_eq!(fit(&s, 5, a), (2, true));
+        assert_eq!(fit(&[], 0, a), (0, false));
     }
 }

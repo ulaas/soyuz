@@ -29,7 +29,7 @@ use soyuz_appcore::host::ThemePref;
 use soyuz_appcore::models::toasts::ToastKind;
 use soyuz_appcore::theme::tokens::blend_over;
 use soyuz_appcore::theme::{AccentChoice, Tokens};
-use soyuz_core::config::TuiSection;
+use soyuz_core::config::{TuiBorders, TuiColorMode, TuiSection};
 
 use crate::icons::IconSet;
 
@@ -140,16 +140,15 @@ pub enum ColorSetting {
 }
 
 impl ColorSetting {
-    /// The configured colour setting.
-    ///
-    /// Adapter for `[tui] color_mode` (T2.1, `soyuz_core::config::TuiColorMode`). Until
-    /// that key exists this is always [`ColorSetting::Auto`]; once merged, replace the
-    /// body with
-    /// `match tui.color_mode { TuiColorMode::Auto => Auto, Truecolor => Truecolor,
-    /// Ansi256 => Ansi256, Ansi16 => Ansi16, Mono => Mono }`.
+    /// The configured colour setting (`[tui] color_mode`).
     pub fn from_config(tui: &TuiSection) -> ColorSetting {
-        let _ = tui;
-        ColorSetting::Auto
+        match tui.color_mode {
+            TuiColorMode::Auto => ColorSetting::Auto,
+            TuiColorMode::Truecolor => ColorSetting::Truecolor,
+            TuiColorMode::Ansi256 => ColorSetting::Ansi256,
+            TuiColorMode::Ansi16 => ColorSetting::Ansi16,
+            TuiColorMode::Mono => ColorSetting::Mono,
+        }
     }
 }
 
@@ -234,6 +233,8 @@ pub struct TuiTheme {
     mode: ColorMode,
     dark: bool,
     icons: IconSet,
+    /// The box lines (`[tui] borders`).
+    borders: TuiBorders,
     /// `None` for the 16-colour and mono modes (fixed tables).
     colors: Option<Box<Colors>>,
 }
@@ -247,7 +248,13 @@ impl Default for TuiTheme {
 impl TuiTheme {
     /// Monochrome: the look of Phase T1 (bold and reversed only, terminal colours).
     pub fn plain() -> TuiTheme {
-        TuiTheme { mode: ColorMode::Mono, dark: true, icons: IconSet::default(), colors: None }
+        TuiTheme {
+            mode: ColorMode::Mono,
+            dark: true,
+            icons: IconSet::default(),
+            borders: TuiBorders::default(),
+            colors: None,
+        }
     }
 
     /// The theme of the palette `t` in `mode`, with the icon set `icons`.
@@ -256,7 +263,7 @@ impl TuiTheme {
             ColorMode::Truecolor | ColorMode::Ansi256 => Some(Box::new(Colors::of(t, mode))),
             ColorMode::Ansi16 | ColorMode::Mono => None,
         };
-        TuiTheme { mode, dark: t.dark, icons, colors }
+        TuiTheme { mode, dark: t.dark, icons, borders: TuiBorders::default(), colors }
     }
 
     /// The theme for the core's current settings, the colour depth from `[tui]` or the
@@ -271,7 +278,7 @@ impl TuiTheme {
     pub fn for_core_in(core: &AppCore, tui: &TuiSection, mode: ColorMode) -> TuiTheme {
         let icons = IconSet::from_config(tui);
         if mode == ColorMode::Mono {
-            return TuiTheme { icons, ..TuiTheme::plain() };
+            return TuiTheme { icons, ..TuiTheme::plain() }.with_borders(tui.borders);
         }
         let os = OsLook::read(core);
         let a = &core.config.appearance;
@@ -285,7 +292,17 @@ impl TuiTheme {
             ThemePref::Light => false,
             ThemePref::System => os.light != Some(true),
         };
-        TuiTheme::from_tokens(if is_dark { &dark } else { &light }, mode, icons)
+        TuiTheme::from_tokens(if is_dark { &dark } else { &light }, mode, icons).with_borders(tui.borders)
+    }
+
+    /// This theme with the box lines `borders`.
+    pub fn with_borders(self, borders: TuiBorders) -> TuiTheme {
+        TuiTheme { borders, ..self }
+    }
+
+    /// This theme with the icon set `icons`.
+    pub fn with_icons(self, icons: IconSet) -> TuiTheme {
+        TuiTheme { icons, ..self }
     }
 
     /// The theme for this frame, rebuilt only when needed: `dirty` (the host saw an
@@ -329,6 +346,19 @@ impl TuiTheme {
     /// The icon set (`[tui] icons`).
     pub fn icons(&self) -> IconSet {
         self.icons
+    }
+
+    /// The box lines (`[tui] borders`).
+    pub fn borders(&self) -> TuiBorders {
+        self.borders
+    }
+
+    /// Only ASCII is drawn: `[tui] icons = "ascii"` with `borders = "ascii"` or `"none"`.
+    /// `view::draw` then also replaces the typographic punctuation of labels and
+    /// translations (`…`, `·`, arrows, quotes) with ASCII look-alikes
+    /// ([`crate::borders::asciify`]); other characters (names in other scripts) stay.
+    pub fn ascii_only(&self) -> bool {
+        self.icons == IconSet::Ascii && matches!(self.borders, TuiBorders::Ascii | TuiBorders::None)
     }
 
     /// The whole screen's base style: `bg.window` behind `text.primary` with colours, the
@@ -632,6 +662,23 @@ mod tests {
         assert_eq!(Role::of_class(FileClass::Pdf), Role::Pdf);
         assert_eq!(Role::of_class(FileClass::Text), Role::File);
         assert_eq!(Role::of_toast(ToastKind::Error), Role::Danger);
+    }
+
+    #[test]
+    fn settings_from_the_config() {
+        let tui = |color_mode| TuiSection { color_mode, ..TuiSection::default() };
+        assert_eq!(ColorSetting::from_config(&TuiSection::default()), ColorSetting::Auto);
+        assert_eq!(ColorSetting::from_config(&tui(TuiColorMode::Truecolor)), ColorSetting::Truecolor);
+        assert_eq!(ColorSetting::from_config(&tui(TuiColorMode::Ansi256)), ColorSetting::Ansi256);
+        assert_eq!(ColorSetting::from_config(&tui(TuiColorMode::Ansi16)), ColorSetting::Ansi16);
+        assert_eq!(ColorSetting::from_config(&tui(TuiColorMode::Mono)), ColorSetting::Mono);
+        // Pure ASCII only with ASCII icons and ASCII (or no) lines.
+        let t = TuiTheme::plain();
+        assert_eq!((t.icons(), t.borders()), (IconSet::Ascii, TuiBorders::Rounded));
+        assert!(!t.ascii_only());
+        assert!(t.clone().with_borders(TuiBorders::Ascii).ascii_only());
+        assert!(t.clone().with_borders(TuiBorders::None).ascii_only());
+        assert!(!t.with_borders(TuiBorders::Ascii).with_icons(IconSet::Unicode).ascii_only());
     }
 
     #[test]

@@ -24,6 +24,8 @@ use crate::widgets::LineEdit;
 pub struct State {
     /// Cursor and scroll of the input field (the text is `palette.input`).
     edit: LineEdit,
+    /// What the drawn palette keeps between frames (list scroll, the cursor it shows).
+    pub view: crate::view::palette::Kept,
 }
 
 /// The palette key of `ev` with key map `km`, if it is one.
@@ -94,10 +96,10 @@ pub fn route(app: &mut App, events: &[Event]) {
     }
     if app.core.palette.open {
         palette::refresh_results(&mut app.core);
-        crate::view::palette::set_input_cursor(Some(app.input.palette.edit.cursor()));
+        app.input.palette.view.cursor = Some(app.input.palette.edit.cursor());
     } else {
         app.input.palette.edit = LineEdit::new();
-        crate::view::palette::set_input_cursor(None);
+        app.input.palette.view.cursor = None;
     }
 }
 

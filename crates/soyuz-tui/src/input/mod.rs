@@ -43,7 +43,9 @@ pub enum TuiFocus {
     List,
 }
 
-/// Input state the terminal UI keeps between frames (one part per focus).
+/// Input state the terminal UI keeps between frames (one part per focus). The views read
+/// it too (`view::prepare`, `ViewModel::from_core`): the field cursors, the sidebar cursor
+/// and the scroll positions the core does not keep.
 #[derive(Debug, Default)]
 pub struct InputState {
     pub address: address::State,

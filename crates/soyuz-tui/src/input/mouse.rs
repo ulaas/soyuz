@@ -11,11 +11,13 @@
 //! | `PaneRow` | focus the pane, then [`row_press`] (below) | `behaviour.middle_click` (folders) | select the row; no context menu yet |
 //! | `PaneHeader` | focus, collapse / expand the group (as in the GUI) | | |
 //! | `PaneBackground` | focus, clear the selection (unless Ctrl / Shift) | focus | focus, clear unless Ctrl |
+//! | `PaneColumn` | sort by the column; the sorted one flips direction (GUI header click) | | |
+//! | `MillerRow` | folder: open it; file: open its folder with it selected (GUI) | | |
 //! | `Splitter` | drag sets `split` (or `split2`, the quad rows) | | |
 //! | `Tab` / `TabClose` / `NewTab` | activate / close / new tab | close the tab | |
 //! | `Crumb` | navigate there; the last crumb edits the address | open in a new tab | |
 //! | `Address` | edit the address | | |
-//! | `SidebarRow` | focus the sidebar (activation: T2.6) | | |
+//! | `SidebarRow` | cursor there; a header toggles, a place / tree folder opens | | |
 //! | `Filter` | arm the filter field | | |
 //! | `PaletteRow` | select and run (Ctrl: new tab, Shift: complete only) | | |
 //! | `Toast` | dismiss | | |
@@ -27,6 +29,7 @@
 //!
 //! A press outside the open palette closes it (and does nothing else). While a core prompt
 //! is open the mouse is ignored (`DialogButton` is wired with the dialog views of T3).
+//! `PaletteInput` and `Status` take presses without doing anything.
 //! A press outside the address / filter field leaves that field.
 //!
 //! crossterm reports no double-clicks: two left presses on the same target within
@@ -42,7 +45,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::{Event, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::layout::{Position, Rect};
 use soyuz_appcore::cmd::Cmd;
-use soyuz_appcore::state::pane::Pane;
+use soyuz_appcore::state::pane::{Pane, PaneId};
 use soyuz_appcore::state::selection::{ClickMods, EntryKey};
 use soyuz_core::Location;
 use soyuz_core::config::{Action, Config, MiddleClick};
@@ -186,6 +189,14 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             }
             app.core.cmds.push(Cmd::FocusPane(pane));
         }
+        (HitTarget::PaneColumn { pane, column }, MouseButton::Left) => {
+            app.core.cmds.push(Cmd::PaneAction(pane, Action::SortBy(column)));
+        }
+        (HitTarget::MillerRow { pane, parent, index }, MouseButton::Left) => {
+            if let Some((path, is_dir)) = crate::view::pane::miller::entry(pane, parent, index) {
+                app.core.cmds.extend(miller_click(pane, path, is_dir));
+            }
+        }
         (HitTarget::Splitter { vertical }, MouseButton::Left) => app.input.mouse.drag = Some(vertical),
         (HitTarget::Tab(i), MouseButton::Left) => app.core.cmds.push(Cmd::SelectTab(i)),
         (HitTarget::Tab(i) | HitTarget::TabClose(i), MouseButton::Middle)
@@ -193,15 +204,47 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
         (HitTarget::NewTab, MouseButton::Left) => app.core.cmds.push(Cmd::Action(Action::NewTab)),
         (HitTarget::Crumb(i), MouseButton::Left | MouseButton::Middle) => crumb(app, i, button),
         (HitTarget::Address, MouseButton::Left) => edit_address(app),
-        (HitTarget::SidebarRow(i), MouseButton::Left) => sidebar_row(app, i, double),
+        (HitTarget::SidebarRow(i), MouseButton::Left) => super::sidebar::click(app, i),
         (HitTarget::Filter, MouseButton::Left) => {
             app.core.ui.filter_focus = true;
             super::filter::arm(app);
         }
         (HitTarget::PaletteRow(i), MouseButton::Left) => palette_row(app, i, m.modifiers),
         (HitTarget::Toast(i), MouseButton::Left) => dismiss_toast(app, i),
-        _ => {}
+        // Other buttons on targets that only take the left one.
+        (
+            HitTarget::PaneHeader { .. }
+            | HitTarget::PaneColumn { .. }
+            | HitTarget::MillerRow { .. }
+            | HitTarget::Splitter { .. }
+            | HitTarget::Tab(_)
+            | HitTarget::TabClose(_)
+            | HitTarget::NewTab
+            | HitTarget::Crumb(_)
+            | HitTarget::Address
+            | HitTarget::SidebarRow(_)
+            | HitTarget::Filter
+            | HitTarget::PaletteRow(_)
+            | HitTarget::Toast(_),
+            _,
+        ) => {}
+        // Nothing to do (the palette's field keeps the keyboard; prompts ignore the mouse).
+        (HitTarget::PaletteInput | HitTarget::Status | HitTarget::DialogButton(_), _) => {}
     }
+}
+
+/// A press on a Miller side column's entry `path` (`is_dir`: a folder), as in the GUI
+/// (`ui/views/miller.rs`): a folder opens in pane `pane`, a file opens its folder with
+/// the file selected.
+pub fn miller_click(pane: PaneId, path: std::path::PathBuf, is_dir: bool) -> Vec<Cmd> {
+    let nav = if is_dir {
+        Cmd::Navigate { pane, location: Location::Dir(path), select: None }
+    } else {
+        let Some(dir) = path.parent().map(std::path::Path::to_path_buf) else { return Vec::new() };
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+        Cmd::Navigate { pane, location: Location::Dir(dir), select: name }
+    };
+    vec![Cmd::FocusPane(pane), nav]
 }
 
 /// A press anywhere but the address / filter field leaves it.
@@ -312,7 +355,8 @@ pub fn split_share(regions: &Regions, shown: usize, vertical: bool, x: u16, y: u
     if regions.panes.len() < 2 || (shown == 4 && regions.stacked) {
         return None;
     }
-    let body = regions.panes.iter().map(|p| p.rect).reduce(|a, b| a.union(b))?;
+    // The panes with their title lines: the area the layout split.
+    let body = regions.panes.iter().chain(&regions.titles).map(|p| p.rect).reduce(|a, b| a.union(b))?;
     let (start, len, at) = if vertical { (body.x, body.width, x) } else { (body.y, body.height, y) };
     let usable = len.saturating_sub(GAP);
     if usable < 2 {
@@ -355,12 +399,6 @@ fn edit_address(app: &mut App) {
     if !app.core.ui.address.editing {
         app.core.cmds.push(Cmd::Action(Action::FocusAddressBar));
     }
-}
-
-/// Sidebar row `index`: focus the sidebar. Activating the row (Enter on it) is the
-/// sidebar input's job (T2.6); wire its activation helper here when it lands.
-fn sidebar_row(app: &mut App, _index: usize, _double: bool) {
-    app.core.ui.focus = soyuz_appcore::core::Focus::Sidebar;
 }
 
 fn palette_row(app: &mut App, i: usize, m: KeyModifiers) {
@@ -527,12 +565,30 @@ mod tests {
         assert_eq!((p.scroll_y, p.cursor_pos()), (3.0, Some(1)));
         scroll(&mut p, 100);
         crate::view::pane::prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 21.0, "clamped to the end");
+        // 31 items in 9 list rows (the details header takes one).
+        assert_eq!(p.scroll_y, 22.0, "clamped to the end");
         scroll(&mut p, -100);
         assert_eq!(p.scroll_y, 0.0);
         p.scroll_y = f32::NAN;
         scroll(&mut p, -WHEEL_ROWS);
         assert_eq!(p.scroll_y, 0.0);
+    }
+
+    #[test]
+    fn miller_clicks_like_the_gui() {
+        let id = PaneId(4);
+        let dir = std::path::PathBuf::from("/data/sub");
+        let go = |cmds: &[Cmd]| match cmds {
+            [Cmd::FocusPane(f), Cmd::Navigate { pane, location: Location::Dir(d), select }]
+                if *f == id && *pane == id =>
+            {
+                Some((d.clone(), select.clone()))
+            }
+            _ => None,
+        };
+        assert_eq!(go(&miller_click(id, dir.clone(), true)), Some((dir.clone(), None)));
+        // A file: its folder, with the file selected.
+        assert_eq!(go(&miller_click(id, dir.join("a.txt"), false)), Some((dir, Some("a.txt".to_string()))));
     }
 
     #[test]

@@ -48,7 +48,9 @@ impl TuiHost {
             close: AtomicBool::new(false),
             close_cancelled: AtomicBool::new(false),
             modes_changed: AtomicBool::new(false),
-            palette_dirty: AtomicBool::new(false),
+            // Set at first: a new app builds its theme from its own settings, never from
+            // the per-thread cache of an earlier one (`TuiTheme::cached`).
+            palette_dirty: AtomicBool::new(true),
             theme: Mutex::new(ThemePref::System),
             title: Mutex::new(None),
         }
@@ -281,6 +283,7 @@ mod tests {
     #[test]
     fn palette_dirty_with_appearance_theme_or_tui() {
         let h = TuiHost::new();
+        assert!(h.take_palette_dirty(), "the first frame builds the theme");
         let old = Config::default();
         let mut new = old.clone();
         new.behaviour.auto_refresh = !new.behaviour.auto_refresh;

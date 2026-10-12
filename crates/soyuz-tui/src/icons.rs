@@ -13,9 +13,11 @@
 
 use soyuz_appcore::file_class::FileClass;
 use soyuz_appcore::icon::IconId;
-use soyuz_core::config::TuiSection;
+use soyuz_core::config::{TuiIcons, TuiSection};
 
-/// Which glyphs the terminal can show.
+/// Which glyphs the terminal can show. The default (ASCII) is what the plain theme of the
+/// view tests draws with; the app reads `[tui] icons` ([`IconSet::from_config`], Unicode
+/// by default).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum IconSet {
     /// Plain ASCII: works everywhere.
@@ -28,15 +30,13 @@ pub enum IconSet {
 }
 
 impl IconSet {
-    /// The configured icon set.
-    ///
-    /// Adapter for `[tui] icons` (T2.1, `soyuz_core::config::TuiIcons`). Until that key
-    /// exists this is the default ([`IconSet::Ascii`]); once merged, replace the body
-    /// with `match tui.icons { TuiIcons::Nerd => Nerd, TuiIcons::Unicode => Unicode,
-    /// TuiIcons::Ascii => Ascii }`.
+    /// The configured icon set (`[tui] icons`).
     pub fn from_config(tui: &TuiSection) -> IconSet {
-        let _ = tui;
-        IconSet::default()
+        match tui.icons {
+            TuiIcons::Nerd => IconSet::Nerd,
+            TuiIcons::Unicode => IconSet::Unicode,
+            TuiIcons::Ascii => IconSet::Ascii,
+        }
     }
 }
 
@@ -282,6 +282,9 @@ mod tests {
         assert_eq!(class_glyph(FileClass::Folder, IconSet::Nerd), "\u{f07b}");
         assert_eq!(class_glyph(FileClass::Pdf, IconSet::Nerd), "\u{f1c1}");
         assert_eq!(class_glyph(FileClass::Other, IconSet::Unicode), "□");
-        assert_eq!(IconSet::from_config(&TuiSection::default()), IconSet::Ascii);
+        assert_eq!(IconSet::from_config(&TuiSection::default()), IconSet::Unicode);
+        for (icons, set) in [(TuiIcons::Nerd, IconSet::Nerd), (TuiIcons::Ascii, IconSet::Ascii)] {
+            assert_eq!(IconSet::from_config(&TuiSection { icons, ..TuiSection::default() }), set);
+        }
     }
 }

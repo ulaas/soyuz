@@ -10,9 +10,10 @@
 //! | Esc | back to the list (`Action::FocusList`) | the same (the tree's Esc) |
 //! | typing | the next place starting with the letter | type-ahead |
 //!
-//! The cursor itself (new compared with the GUI) is `crate::view::sidebar::SidebarNav`,
-//! shared with the view. Enter on a place moves the keyboard to the list (the GUI's
-//! `FocusPane`); on a tree row it stays in the sidebar, like the GUI's tree.
+//! The cursor itself (new compared with the GUI) is a `crate::view::sidebar::SidebarNav`
+//! kept in [`State`], which the view reads too. Enter on a place moves the keyboard to the
+//! list (the GUI's `FocusPane`); on a tree row it stays in the sidebar, like the GUI's
+//! tree.
 
 use crossterm::event::Event;
 use soyuz_appcore::cmd::Cmd;
@@ -26,12 +27,14 @@ use soyuz_core::config::{Action, KeyName, Mods, SidebarMode};
 
 use super::{TuiFocus, core_input, key_context};
 use crate::app::App;
-use crate::view::sidebar::{Entry, Target, cursor_index, entries, nav, set_nav, sync_focus};
+use crate::view::sidebar::{Entry, SidebarNav, Target, cursor_index, entries, sync_focus};
 
-/// What the sidebar keeps between frames. The cursor lives in
-/// `crate::view::sidebar::SidebarNav` (the view model needs it too).
+/// What the sidebar keeps between frames.
 #[derive(Debug, Default)]
-pub struct State {}
+pub struct State {
+    /// The keyboard cursor and scroll position (the view model reads it too).
+    pub nav: SidebarNav,
+}
 
 pub fn route(app: &mut App, events: &[Event]) {
     let (kctx, text) = key_context(TuiFocus::Sidebar);
@@ -43,46 +46,47 @@ pub fn route(app: &mut App, events: &[Event]) {
         }
         match &frame.events[i] {
             InputEvent::Chord(c) if !c.mods.intersects(Mods::CTRL | Mods::ALT | Mods::CMD) => key(app, c.key),
-            InputEvent::Text(t) if !frame.command_held => typed(&mut app.core, t),
+            InputEvent::Text(t) if !frame.command_held => typed(&mut app.core, &mut app.input.sidebar.nav, t),
             _ => {}
         }
     }
 }
 
 /// The entry the cursor is on, with the list.
-fn current(core: &AppCore) -> (Vec<Entry>, Option<usize>) {
+fn current(core: &AppCore, n: &mut SidebarNav) -> (Vec<Entry>, Option<usize>) {
     let list = entries(core);
-    sync_focus(core, &list);
-    let cur = cursor_index(core, &list, &nav());
+    sync_focus(core, n, &list);
+    let cur = cursor_index(core, &list, n);
     (list, cur)
 }
 
 fn key(app: &mut App, k: KeyName) {
-    let core = &mut app.core;
-    let (list, cur) = current(core);
+    let (core, n) = (&mut app.core, &mut app.input.sidebar.nav);
+    let (list, cur) = current(core, n);
     let on = cur.and_then(|c| list.get(c));
     let tree_only = core.config.sidebar.mode == SidebarMode::Tree;
-    let page = usize::from(nav().rows.max(2) - 1);
+    let page = usize::from(n.rows.max(2) - 1);
     match (k, on) {
-        (KeyName::Escape, Some(Entry::Tree(_))) => tree_key(core, KeyInput { escape: true, ..KeyInput::default() }),
+        (KeyName::Escape, Some(Entry::Tree(_))) => tree_key(core, n, KeyInput { escape: true, ..KeyInput::default() }),
         (KeyName::Escape, _) => core.cmds.push(Cmd::Action(Action::FocusList)),
         (KeyName::ArrowUp | KeyName::ArrowDown, _) => {
             let down = k == KeyName::ArrowDown;
             if let Some(Entry::Tree(j)) = on {
                 let edge = if down { j + 1 >= core.ui.tree.rows().len() } else { *j == 0 };
                 if !edge {
-                    tree_step(core, if down { Nav::Down } else { Nav::Up });
+                    tree_step(core, n, if down { Nav::Down } else { Nav::Up });
                     return;
                 }
             }
             match cur {
-                Some(c) => step(core, &list, c, down),
-                None => first(core, &list),
+                Some(c) => step(core, n, &list, c, down),
+                None => first(core, n, &list),
             }
         }
         (KeyName::Home | KeyName::End | KeyName::PageUp | KeyName::PageDown, Some(Entry::Tree(_))) if tree_only => {
             tree_step(
                 core,
+                n,
                 match k {
                     KeyName::Home => Nav::Home,
                     KeyName::End => Nav::End,
@@ -91,10 +95,10 @@ fn key(app: &mut App, k: KeyName) {
                 },
             );
         }
-        (KeyName::Home, _) => first(core, &list),
+        (KeyName::Home, _) => first(core, n, &list),
         (KeyName::End, _) => {
             if let Some(t) = list.iter().rposition(Entry::selectable) {
-                select(core, &list, t);
+                select(core, n, &list, t);
             }
         }
         (KeyName::PageUp | KeyName::PageDown, _) => {
@@ -102,12 +106,12 @@ fn key(app: &mut App, k: KeyName) {
             let t = if k == KeyName::PageUp { c.saturating_sub(page) } else { (c + page).min(list.len() - 1) };
             let near = (t..list.len()).chain((0..t).rev()).find(|&i| list[i].selectable());
             if let Some(t) = near {
-                select(core, &list, t);
+                select(core, n, &list, t);
             }
         }
-        (KeyName::ArrowLeft, Some(Entry::Tree(_))) => tree_step(core, Nav::Left),
-        (KeyName::ArrowRight, Some(Entry::Tree(_))) => tree_step(core, Nav::Right),
-        (KeyName::Enter, Some(Entry::Tree(_))) => tree_key(core, KeyInput { enter: true, ..KeyInput::default() }),
+        (KeyName::ArrowLeft, Some(Entry::Tree(_))) => tree_step(core, n, Nav::Left),
+        (KeyName::ArrowRight, Some(Entry::Tree(_))) => tree_step(core, n, Nav::Right),
+        (KeyName::Enter, Some(Entry::Tree(_))) => tree_key(core, n, KeyInput { enter: true, ..KeyInput::default() }),
         (KeyName::ArrowLeft | KeyName::ArrowRight | KeyName::Enter, Some(Entry::Header { section, open, .. })) => {
             let want = match k {
                 KeyName::ArrowLeft => false,
@@ -118,7 +122,7 @@ fn key(app: &mut App, k: KeyName) {
         }
         (KeyName::ArrowLeft, Some(Entry::Place { .. })) => {
             if let Some(h) = cur.and_then(|c| list[..c].iter().rposition(|e| matches!(e, Entry::Header { .. }))) {
-                select(core, &list, h);
+                select(core, n, &list, h);
             }
         }
         (KeyName::Enter, Some(Entry::Place { target, .. })) => activate(core, target.clone()),
@@ -127,26 +131,25 @@ fn key(app: &mut App, k: KeyName) {
 }
 
 /// Move the cursor to the next selectable entry above / below `c`.
-fn step(core: &mut AppCore, list: &[Entry], c: usize, down: bool) {
+fn step(core: &mut AppCore, n: &mut SidebarNav, list: &[Entry], c: usize, down: bool) {
     let next = if down {
         (c + 1..list.len()).find(|&i| list[i].selectable())
     } else {
         (0..c).rev().find(|&i| list[i].selectable())
     };
     if let Some(t) = next {
-        select(core, list, t);
+        select(core, n, list, t);
     }
 }
 
-fn first(core: &mut AppCore, list: &[Entry]) {
+fn first(core: &mut AppCore, n: &mut SidebarNav, list: &[Entry]) {
     if let Some(t) = list.iter().position(Entry::selectable) {
-        select(core, list, t);
+        select(core, n, list, t);
     }
 }
 
 /// Put the cursor on entry `t`. Entering the tree selects its row without opening it.
-fn select(core: &mut AppCore, list: &[Entry], t: usize) {
-    let mut n = nav();
+fn select(core: &mut AppCore, n: &mut SidebarNav, list: &[Entry], t: usize) {
     match list.get(t) {
         Some(Entry::Tree(j)) => {
             let Some(key) = core.ui.tree.rows().get(*j).map(|r| r.key.clone()) else { return };
@@ -157,9 +160,8 @@ fn select(core: &mut AppCore, list: &[Entry], t: usize) {
             n.on_tree = false;
             n.line = t;
         }
-        None => return,
+        None => {}
     }
-    set_nav(n);
 }
 
 /// Do what a place row stands for (the GUI's click).
@@ -179,12 +181,12 @@ pub fn activate(core: &mut AppCore, target: Target) {
 /// keyboard moves to the sidebar with the cursor there; a header toggles, a place opens,
 /// a tree row opens its folder (like the GUI's click).
 pub fn click(app: &mut App, index: usize) {
-    let core = &mut app.core;
+    let (core, n) = (&mut app.core, &mut app.input.sidebar.nav);
     let list = entries(core);
     let Some(e) = list.get(index) else { return };
     core.ui.focus = Focus::Sidebar;
-    sync_focus(core, &list);
-    select(core, &list, index);
+    sync_focus(core, n, &list);
+    select(core, n, &list, index);
     match e {
         Entry::Header { section, open, .. } => section.set_open(core, !*open),
         Entry::Place { target, .. } => activate(core, target.clone()),
@@ -198,28 +200,26 @@ pub fn click(app: &mut App, index: usize) {
     }
 }
 
-fn tree_step(core: &mut AppCore, step: Nav) {
-    tree_key(core, KeyInput { steps: vec![step], ..KeyInput::default() });
+fn tree_step(core: &mut AppCore, n: &mut SidebarNav, step: Nav) {
+    tree_key(core, n, KeyInput { steps: vec![step], ..KeyInput::default() });
 }
 
 /// One key for the folder tree (`models::tree::keyboard`).
-fn tree_key(core: &mut AppCore, k: KeyInput) {
+fn tree_key(core: &mut AppCore, n: &mut SidebarNav, k: KeyInput) {
     let current = core.ws.pane().location.clone();
     let pane = core.ws.pane().id;
     let vols = drive_volumes(&core.ui.volumes, &core.ui.cloud);
     let mut io = TreeIo { volumes: &vols, current: &current, pane, cmds: &mut core.cmds };
     soyuz_appcore::models::tree::keyboard(&mut core.ui.tree, k, &mut io);
-    let mut n = nav();
     n.on_tree = true;
-    set_nav(n);
 }
 
 /// Typed text: type-ahead in the tree; on places, the next place whose name starts
 /// with it (wrapping).
-fn typed(core: &mut AppCore, t: &str) {
-    let (list, cur) = current(core);
+fn typed(core: &mut AppCore, n: &mut SidebarNav, t: &str) {
+    let (list, cur) = current(core, n);
     if let Some(Entry::Tree(_)) = cur.and_then(|c| list.get(c)) {
-        tree_key(core, KeyInput { typed: t.to_string(), ..KeyInput::default() });
+        tree_key(core, n, KeyInput { typed: t.to_string(), ..KeyInput::default() });
         return;
     }
     let needle = soyuz_core::fold_for_match(t.trim());
@@ -232,6 +232,6 @@ fn typed(core: &mut AppCore, t: &str) {
         _ => false,
     });
     if let Some(i) = hit {
-        select(core, &list, i);
+        select(core, n, &list, i);
     }
 }

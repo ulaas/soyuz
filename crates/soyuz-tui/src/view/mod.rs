@@ -1,10 +1,15 @@
 //! What the terminal UI draws, in three steps per frame (see `App::frame`):
 //!
-//! 1. [`prepare`] (`&mut AppCore`, after `prepare_visible_panes`): per drawn pane the
-//!    cell layout, scroll position and page size; data fetched lazily (Miller columns).
-//! 2. [`ViewModel::from_core`] (`&AppCore`): plain data, no ratatui types, easy to test.
-//! 3. [`draw`]: renders the model into the [`Regions`] with the [`TuiTheme`], recording
-//!    click targets in [`Hits`].
+//! 1. [`prepare`] (`&mut AppCore`, `&mut InputState`, after `prepare_visible_panes`): per
+//!    drawn pane the cell layout, scroll position and page size; data fetched lazily
+//!    (Miller columns); the scroll positions the TUI keeps itself (sidebar, palette, the
+//!    filter field) in its [`InputState`].
+//! 2. [`ViewModel::from_core`] (`&AppCore`, `&InputState`): plain data, no ratatui types,
+//!    easy to test.
+//! 3. [`draw`]: renders the model into the [`Regions`] with the [`TuiTheme`] (colours,
+//!    icon set, box lines), recording click targets in [`Hits`]. A pure ASCII theme
+//!    ([`TuiTheme::ascii_only`]) gets its typographic punctuation replaced last
+//!    ([`crate::borders::asciify`]).
 //!
 //! One sub-model and one draw function per part, each in its own file, so the Phase T2
 //! steps do not touch each other's code:
@@ -44,6 +49,7 @@ pub use self::status::StatusVm;
 pub use self::tabs::TabsVm;
 pub use self::toasts::{MAX_TOASTS, ToastLine, ToastsVm};
 pub use crate::dialog::DialogView;
+use crate::input::InputState;
 use crate::layout::{Hits, Regions};
 use crate::theme::TuiTheme;
 
@@ -63,16 +69,19 @@ pub struct ViewModel {
 }
 
 impl ViewModel {
-    /// Build the frame's data from the core, after [`prepare`] ran for `regions`.
-    pub fn from_core(core: &AppCore, regions: &Regions) -> ViewModel {
+    /// Build the frame's data from the core and the TUI's input state, after [`prepare`]
+    /// ran for `regions`.
+    pub fn from_core(core: &AppCore, input: &InputState, regions: &Regions) -> ViewModel {
+        let mut status = StatusVm::from_core(core);
+        crate::input::filter::decorate(&input.filter, core, &mut status, regions.area.width);
         ViewModel {
             tabs: TabsVm::from_core(core),
             panes: regions.panes.iter().filter_map(|p| PaneVm::from_core(core, p.index)).collect(),
-            crumbs: CrumbsVm::from_core(core),
-            sidebar: SidebarVm::from_core(core),
-            status: StatusVm::from_core(core),
+            crumbs: CrumbsVm::from_core(core, &input.address),
+            sidebar: SidebarVm::from_core(core, &input.sidebar.nav),
+            status,
             toasts: ToastsVm::from_core(core),
-            palette: PaletteVm::from_core(core),
+            palette: PaletteVm::from_core(core, &input.palette.view),
             dialog: core.dialogs.top().map(crate::dialog::fallback),
         }
     }
@@ -83,11 +92,13 @@ impl ViewModel {
     }
 }
 
-/// Step 1: what the views need from `&mut AppCore` before the model is built.
-pub fn prepare(core: &mut AppCore, regions: &Regions) {
+/// Step 1: what the views need from `&mut AppCore` (and the TUI's own view state in
+/// `input`) before the model is built.
+pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     pane::prepare(core, regions);
-    sidebar::prepare(core, regions);
-    palette::prepare(core, regions);
+    sidebar::prepare(core, &mut input.sidebar.nav, regions);
+    palette::prepare(core, &mut input.palette.view, regions);
+    crate::input::filter::prepare(&mut input.filter, core, regions.area.width);
 }
 
 /// Draw a frame. Clears `hits` first.
@@ -106,6 +117,9 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     if let Some(d) = &m.dialog {
         dialog::draw_dialog(f, regions.area, d, theme, hits);
+    }
+    if theme.ascii_only() {
+        crate::borders::asciify(f.buffer_mut());
     }
 }
 

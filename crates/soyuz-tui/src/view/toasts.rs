@@ -14,7 +14,7 @@ use soyuz_appcore::keys::chord_label;
 use soyuz_appcore::models::toasts::ToastKind;
 
 use super::text;
-use crate::borders::{self, TuiBorders};
+use crate::borders;
 use crate::dialog::safe;
 use crate::icons::{self, IconSet};
 use crate::layout::{HitTarget, Hits, Regions};
@@ -41,13 +41,11 @@ pub struct ToastLine {
     pub sticky: bool,
 }
 
-/// The toasts in view.
+/// The toasts in view (drawn with the theme's icon set and box lines).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ToastsVm {
     /// Newest last.
     pub lines: Vec<ToastLine>,
-    pub borders: TuiBorders,
-    pub icons: IconSet,
 }
 
 /// Toasts that are not closing.
@@ -72,8 +70,7 @@ impl ToastsVm {
                 sticky: l.toast.duration.is_none(),
             })
             .collect();
-        // Integration: the icon set of `[tui]` (T2.2) replaces the default here.
-        ToastsVm { lines, borders: borders::from_core(core), icons: IconSet::default() }
+        ToastsVm { lines }
     }
 }
 
@@ -125,7 +122,7 @@ pub fn draw_toasts(f: &mut Frame<'_>, area: Rect, m: &ToastsVm, theme: &TuiTheme
     let mut y = area.y;
     for (i, t) in m.lines.iter().enumerate().rev() {
         let role = Role::of_toast(t.kind);
-        let mark = toast_mark(t.kind, m.icons);
+        let mark = toast_mark(t.kind, theme.icons());
         let title = format!("{mark} {}", t.title);
         let mut rows: Vec<(String, Role)> = vec![(title, Role::Title)];
         if let Some(b) = &t.body {
@@ -160,7 +157,7 @@ pub fn draw_toasts(f: &mut Frame<'_>, area: Rect, m: &ToastsVm, theme: &TuiTheme
                 }
             })
             .collect();
-        let mut block = borders::overlay_block(m.borders, theme.style(Role::Border));
+        let mut block = borders::overlay_block(theme.borders(), theme.style(Role::Border));
         if t.sticky {
             block = block.title_top(Line::from(Span::styled("x", theme.style(Role::Muted))).right_aligned());
         }
@@ -178,15 +175,17 @@ mod tests {
     use ratatui::style::Modifier;
 
     use super::*;
+    use crate::borders::TuiBorders;
 
     fn toast(id: u64, kind: ToastKind, title: &str) -> ToastLine {
         ToastLine { id, kind, title: title.into(), body: None, action: None, sticky: false }
     }
 
-    fn draw(m: &ToastsVm, w: u16, h: u16) -> (Vec<String>, ratatui::buffer::Buffer, Hits) {
+    fn draw_with(m: &ToastsVm, b: TuiBorders, w: u16, h: u16) -> (Vec<String>, ratatui::buffer::Buffer, Hits) {
         let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
         let mut hits = Hits::default();
-        t.draw(|f| draw_toasts(f, Rect::new(0, 1, w, h - 1), m, &TuiTheme::plain(), &mut hits)).unwrap();
+        let theme = TuiTheme::plain().with_borders(b).with_icons(IconSet::Ascii);
+        t.draw(|f| draw_toasts(f, Rect::new(0, 1, w, h - 1), m, &theme, &mut hits)).unwrap();
         let buf = t.backend().buffer().clone();
         let lines = (0..h).map(|y| (0..w).map(|x| buf[(x, y)].symbol().to_string()).collect()).collect();
         (lines, buf, hits)
@@ -197,12 +196,8 @@ mod tests {
         let mut undo = toast(2, ToastKind::Success, "Moved 3 items");
         undo.body = Some("to the trash".into());
         undo.action = Some("Undo (Ctrl+Z)".into());
-        let m = ToastsVm {
-            lines: vec![toast(1, ToastKind::Info, "Copied"), undo],
-            borders: TuiBorders::Ascii,
-            icons: IconSet::Ascii,
-        };
-        let (lines, buf, hits) = draw(&m, 40, 12);
+        let m = ToastsVm { lines: vec![toast(1, ToastKind::Info, "Copied"), undo] };
+        let (lines, buf, hits) = draw_with(&m, TuiBorders::Ascii, 40, 12);
         assert_eq!(lines[0].trim(), "", "row 0 is outside the area");
         assert_eq!(lines[1], "                +----------------------+");
         assert_eq!(lines[2], "                | [ok] Moved 3 items   |");
@@ -221,20 +216,15 @@ mod tests {
     fn sticky_mark_borders_and_overflow() {
         let mut s = toast(1, ToastKind::Error, "Failed");
         s.sticky = true;
-        let m = ToastsVm {
-            lines: vec![toast(0, ToastKind::Info, "old"), s],
-            borders: TuiBorders::Rounded,
-            ..Default::default()
-        };
+        let m = ToastsVm { lines: vec![toast(0, ToastKind::Info, "old"), s] };
         // Room for one box only: the newest.
-        let (lines, _, hits) = draw(&m, 30, 5);
+        let (lines, _, hits) = draw_with(&m, TuiBorders::Rounded, 30, 5);
         assert_eq!(lines[1], "      ╭─────────────────────x╮", "{lines:?}");
         assert_eq!(lines[2], "      │ [x] Failed           │");
         assert_eq!(lines[3], "      ╰──────────────────────╯");
         assert!(hits.iter().all(|(_, t)| *t == HitTarget::Toast(1)));
         // No lines: a blank frame.
-        let m = ToastsVm { borders: TuiBorders::None, ..m };
-        let (lines, _, _) = draw(&m, 30, 5);
+        let (lines, _, _) = draw_with(&m, TuiBorders::None, 30, 5);
         assert_eq!(lines[2].trim_end(), "        [x] Failed");
     }
 
@@ -243,10 +233,10 @@ mod tests {
         let mut long = toast(1, ToastKind::Warning, &"日本語 warning ".repeat(8));
         long.body = Some("👨\u{200d}👩\u{200d}👧 body".into());
         long.action = Some("Retry (F5)".into());
-        let m = ToastsVm { lines: vec![long.clone(), long.clone(), long], ..Default::default() };
+        let m = ToastsVm { lines: vec![long.clone(), long.clone(), long] };
         for w in 0..=30 {
             for h in 1..=8 {
-                let _ = draw(&m, w, h);
+                let _ = draw_with(&m, TuiBorders::Rounded, w, h);
             }
         }
     }

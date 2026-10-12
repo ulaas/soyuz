@@ -22,11 +22,10 @@
 //! New compared with the GUI (which moves widget focus with Tab): while the sidebar has
 //! the keyboard (`Focus::Sidebar`) one cursor walks the whole list, headers included. On
 //! a tree row it is the tree's own selection (`TreeState::selected`); elsewhere it is an
-//! entry index. The view model is built from `&AppCore` only, so the cursor and the
-//! scroll offset live in a thread-local [`SidebarNav`] (the terminal UI runs on one
-//! thread) shared by this module and `crate::input::sidebar`.
+//! entry index. The cursor and the scroll offset are a [`SidebarNav`] in the TUI's input
+//! state (`crate::input::sidebar::State::nav`), which the keys and clicks move and
+//! [`prepare`] / [`SidebarVm::from_core`] read.
 
-use std::cell::Cell;
 use std::time::Duration;
 
 use ratatui::Frame;
@@ -49,15 +48,6 @@ use crate::dialog::safe;
 use crate::icons::{IconSet, glyph};
 use crate::layout::{HitTarget, Hits, Regions};
 use crate::theme::{Role, TuiTheme};
-
-/// Sidebar width in columns until `[tui] sidebar_width` is read ([`config_width`]).
-pub const DEFAULT_WIDTH: u16 = 28;
-
-/// The configured sidebar width in columns. The one place that reads it: switch the body
-/// to `core.config.tui.sidebar_width_clamped()` once `[tui] sidebar_width` exists.
-fn config_width(_core: &AppCore) -> u16 {
-    DEFAULT_WIDTH
-}
 
 /// Collapsed-set key of the saved searches (the GUI's, persisted in the session).
 const SEARCHES_KEY: &str = "Searches";
@@ -154,26 +144,6 @@ pub struct SidebarNav {
     pub rows: u16,
     /// Cursor entry the view last scrolled to.
     pub shown_cursor: Option<usize>,
-}
-
-thread_local! {
-    static NAV: Cell<SidebarNav> = const { Cell::new(SidebarNav {
-        focused: false,
-        on_tree: false,
-        line: 0,
-        top: 0,
-        rows: 0,
-        shown_cursor: None,
-    }) };
-}
-
-/// The sidebar's cursor state.
-pub fn nav() -> SidebarNav {
-    NAV.with(Cell::get)
-}
-
-pub fn set_nav(n: SidebarNav) {
-    NAV.with(|c| c.set(n));
 }
 
 /// Whether the folder tree is drawn (and pumped).
@@ -380,8 +350,7 @@ pub fn cursor_index(core: &AppCore, entries: &[Entry], n: &SidebarNav) -> Option
 /// Keep [`SidebarNav::focused`] in step with the core's focus; entering the sidebar puts
 /// the cursor on the current location's place, else on the tree's selection, else on the
 /// first place.
-pub fn sync_focus(core: &AppCore, entries: &[Entry]) {
-    let mut n = nav();
+pub fn sync_focus(core: &AppCore, n: &mut SidebarNav, entries: &[Entry]) {
     let focused = core.ui.focus == Focus::Sidebar;
     if focused && !n.focused {
         let active = entries.iter().position(|e| matches!(e, Entry::Place { active: true, .. }));
@@ -403,7 +372,6 @@ pub fn sync_focus(core: &AppCore, entries: &[Entry]) {
         n.shown_cursor = None;
     }
     n.focused = focused;
-    set_nav(n);
 }
 
 /// The sidebar's rows.
@@ -441,13 +409,12 @@ pub enum LineKind {
 }
 
 impl SidebarVm {
-    pub fn from_core(core: &AppCore) -> SidebarVm {
-        let n = nav();
+    pub fn from_core(core: &AppCore, n: &SidebarNav) -> SidebarVm {
         if !shown(core) || n.rows == 0 {
             return SidebarVm::default();
         }
         let entries = entries(core);
-        let cursor = cursor_index(core, &entries, &n);
+        let cursor = cursor_index(core, &entries, n);
         let current = match &core.ws.pane().location {
             Location::Dir(d) => Some(d.as_path()),
             _ => None,
@@ -499,9 +466,9 @@ pub fn shown(core: &AppCore) -> bool {
     core.ui.sidebar_visible
 }
 
-/// Wanted sidebar width in columns (`layout::Facts::sidebar_width`).
+/// Wanted sidebar width in columns (`layout::Facts::sidebar_width`): `[tui] sidebar_width`.
 pub fn width(core: &AppCore) -> u16 {
-    config_width(core)
+    core.config.tui.sidebar_width_clamped()
 }
 
 /// The tree's host: wake-ups go to the frame loop through the core's [`Wake`]
@@ -555,9 +522,8 @@ fn pump_tree(core: &mut AppCore) {
 
 /// Before the model is built: favorites follow the places probe, the tree is pumped, the
 /// focus and scroll position are settled.
-pub fn prepare(core: &mut AppCore, regions: &Regions) {
+pub fn prepare(core: &mut AppCore, n: &mut SidebarNav, regions: &Regions) {
     let rect = regions.sidebar;
-    let mut n = nav();
     if rect.is_empty() {
         // Hidden (or too narrow): the keyboard goes back to the list.
         if core.ui.focus == Focus::Sidebar {
@@ -565,7 +531,6 @@ pub fn prepare(core: &mut AppCore, regions: &Regions) {
         }
         n.focused = false;
         n.rows = 0;
-        set_nav(n);
         return;
     }
     // While the places probe runs this asks for frames; the idle tick brings them.
@@ -574,12 +539,11 @@ pub fn prepare(core: &mut AppCore, regions: &Regions) {
         pump_tree(core);
     }
     let entries = entries(core);
-    sync_focus(core, &entries);
-    let mut n = nav();
+    sync_focus(core, n, &entries);
     let h = usize::from(rect.height);
     n.rows = rect.height;
     let follow = core.ui.tree.take_scroll();
-    let cursor = cursor_index(core, &entries, &n);
+    let cursor = cursor_index(core, &entries, n);
     let target = if cursor.is_some() && cursor != n.shown_cursor {
         cursor
     } else if follow {
@@ -596,19 +560,17 @@ pub fn prepare(core: &mut AppCore, regions: &Regions) {
         }
     }
     n.top = n.top.min(entries.len().saturating_sub(h));
-    set_nav(n);
 }
 
 /// The chevron of an open / closed header or folder.
-fn chevron(open: bool) -> &'static str {
-    // T2.2 chooses the icon set from the config; the default set until then.
-    glyph(if open { IconId::CaretDown } else { IconId::CaretRight }, IconSet::default())
+fn chevron(open: bool, set: IconSet) -> &'static str {
+    glyph(if open { IconId::CaretDown } else { IconId::CaretRight }, set)
 }
 
 /// The text of `line` in `w` cells.
-fn line_text(line: &SidebarLine, w: usize) -> String {
+fn line_text(line: &SidebarLine, w: usize, set: IconSet) -> String {
     let s = match line.kind {
-        LineKind::Header { open } => format!("{} {}", chevron(open), line.label),
+        LineKind::Header { open } => format!("{} {}", chevron(open, set), line.label),
         LineKind::Place | LineKind::Message => format!("  {}", line.label),
         LineKind::Folder { expandable, expanded, loading, failed } => {
             // Two cells per level, but never more than half the width.
@@ -616,7 +578,7 @@ fn line_text(line: &SidebarLine, w: usize) -> String {
             let mark = if loading && expanded {
                 "…"
             } else if expandable {
-                chevron(expanded)
+                chevron(expanded, set)
             } else {
                 " "
             };
@@ -644,7 +606,7 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         if line.cursor && m.focused {
             style = style.patch(theme.style(Role::Cursor));
         }
-        f.render_widget(Paragraph::new(line_text(line, w)), r);
+        f.render_widget(Paragraph::new(line_text(line, w, theme.icons())), r);
         f.buffer_mut().set_style(r, style);
         if line.kind != LineKind::Message {
             hits.push(r, HitTarget::SidebarRow(line.index));
