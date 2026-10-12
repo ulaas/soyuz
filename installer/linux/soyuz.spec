@@ -58,6 +58,8 @@ locations, all keyboard-first.
 
 %install
 install -Dm755 bin/soyuz %{buildroot}%{_bindir}/soyuz
+# The terminal UI (`soyuz-tui [PATH]`).
+install -Dm755 bin/soyuz-tui %{buildroot}%{_bindir}/soyuz-tui
 install -Dm644 share/applications/soyuz.desktop %{buildroot}%{_datadir}/applications/soyuz.desktop
 install -Dm644 share/metainfo/%{appid}.metainfo.xml %{buildroot}%{_metainfodir}/%{appid}.metainfo.xml
 for icon in share/icons/hicolor/*/apps/soyuz.*; do
@@ -72,6 +74,7 @@ if command -v appstreamcli >/dev/null; then
     appstreamcli validate --no-net %{buildroot}%{_metainfodir}/%{appid}.metainfo.xml
 fi
 %{buildroot}%{_bindir}/soyuz --version
+%{buildroot}%{_bindir}/soyuz-tui --version
 
 %files
 %license share/licenses/soyuz/LICENSE
@@ -80,6 +83,7 @@ fi
 %doc share/doc/soyuz/USER_GUIDE.md
 %doc share/doc/soyuz/config.example.toml
 %{_bindir}/soyuz
+%{_bindir}/soyuz-tui
 %{_datadir}/applications/soyuz.desktop
 %{_datadir}/icons/hicolor/*/apps/soyuz.*
 %{_metainfodir}/%{appid}.metainfo.xml

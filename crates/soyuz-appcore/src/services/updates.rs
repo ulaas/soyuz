@@ -12,9 +12,10 @@
 //!   with `SHA256SUMS-linux.txt` / `<file>.sha256`. There is no Authenticode, so the
 //!   signature is reported as [`Signature::Unknown`]. A copy installed from that tarball
 //!   (e.g. under `~/.local`) can replace itself: [`install_tarball`] re-verifies the
-//!   download, extracts `bin/soyuz` next to the running executable and renames it over it
-//!   atomically; [`request_restart`] + [`take_restart`] / [`exec_restart`] start the new
-//!   build. Package-manager, Flatpak and AppImage copies are never overwritten
+//!   download, extracts `bin/soyuz` and `bin/soyuz-tui` (when the archive has it) next to
+//!   the running executable and renames them over the installed ones atomically (the
+//!   running one, `soyuz` or `soyuz-tui`, last); [`request_restart`] + [`take_restart`] /
+//!   [`exec_restart`] start the new build. Package-manager, Flatpak and AppImage copies are never overwritten
 //!   ([`install_kind`], [`self_update_note`]).
 //!
 //! Network work runs on short-lived worker threads with their own tiny tokio runtime; the
@@ -772,8 +773,12 @@ pub fn self_update_note() -> Option<String> {
     }
 }
 
-/// Largest `bin/soyuz` accepted from a tarball.
+/// Largest `bin/soyuz` / `bin/soyuz-tui` accepted from a tarball.
 const MAX_BINARY: u64 = 512 << 20;
+
+/// The executables of a release tarball (`bin/<name>`): the GUI binary and the terminal
+/// UI (`soyuz-tui`, shipped since 0.3; older archives do not have it).
+pub const ARCHIVE_BINARIES: [&str; 2] = ["soyuz", "soyuz-tui"];
 
 /// ELF `e_machine` of this build's architecture (`None` = not checked).
 fn elf_machine() -> Option<u16> {
@@ -804,16 +809,25 @@ fn tar_octal(field: &[u8]) -> Option<u64> {
     if s.is_empty() { Some(0) } else { u64::from_str_radix(s, 8).ok() }
 }
 
-/// Copy the `bin/soyuz` entry of a release tarball (`<top>/bin/soyuz`, or `bin/soyuz`)
-/// from the uncompressed tar stream `r` into `out`. Only that regular file is read; the
-/// output path is ours, so entry names can never escape anywhere.
-fn extract_binary(mut r: impl std::io::Read, out: &mut impl std::io::Write) -> Result<u64, String> {
+/// Copy the `bin/<names[i]>` entries of a release tarball (`<top>/bin/<name>`, or
+/// `bin/<name>`) from the uncompressed tar stream `r` into `outs[i]`. Only those regular
+/// files are read; the output files are ours, so entry names can never escape anywhere.
+/// Returns the size of each entry, `None` for one the archive does not have. Reads up to
+/// the end-of-archive marker (or the end of the stream); an entry that appears twice is
+/// refused.
+fn extract_binaries(
+    mut r: impl std::io::Read,
+    names: &[&str],
+    outs: &mut [&mut dyn std::io::Write],
+) -> Result<Vec<Option<u64>>, String> {
     use std::io::Read as _;
+    debug_assert_eq!(names.len(), outs.len());
+    let mut found: Vec<Option<u64>> = vec![None; names.len()];
     let mut header = [0u8; 512];
     let mut long_name: Option<String> = None;
     loop {
         if r.read_exact(&mut header).is_err() || header.iter().all(|b| *b == 0) {
-            return Err(tr!("services-update-install-no-binary").into());
+            return Ok(found);
         }
         let field = |a: usize, b: usize| String::from_utf8_lossy(&header[a..b]).trim_end_matches('\0').to_string();
         let size = tar_octal(&header[124..136]).ok_or(tr!("services-update-install-bad-archive"))?;
@@ -851,17 +865,20 @@ fn extract_binary(mut r: impl std::io::Read, out: &mut impl std::io::Write) -> R
             b'0' | 0 => {
                 let rel = name.trim_start_matches("./");
                 let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
-                let wanted = matches!(parts.as_slice(), ["bin", "soyuz"] | [_, "bin", "soyuz"]);
-                if wanted {
-                    if size > MAX_BINARY {
+                let file = match parts.as_slice() {
+                    ["bin", f] | [_, "bin", f] => Some(*f),
+                    _ => None,
+                };
+                if let Some(i) = file.and_then(|f| names.iter().position(|n| *n == f)) {
+                    if size > MAX_BINARY || found[i].is_some() {
                         return Err(tr!("services-update-install-bad-archive").into());
                     }
-                    let mut data = body.take(size);
-                    let n = std::io::copy(&mut data, out).map_err(|e| e.to_string())?;
+                    let mut data = (&mut body).take(size);
+                    let n = std::io::copy(&mut data, &mut outs[i]).map_err(|e| e.to_string())?;
                     if n != size {
                         return Err(tr!("services-update-install-bad-archive").into());
                     }
-                    return Ok(n);
+                    found[i] = Some(n);
                 }
             }
             _ => {}
@@ -870,12 +887,30 @@ fn extract_binary(mut r: impl std::io::Read, out: &mut impl std::io::Write) -> R
     }
 }
 
-/// Replace the running executable `exe` with `bin/soyuz` from the downloaded release
+/// Where each of [`ARCHIVE_BINARIES`] goes for the running executable `exe` (already
+/// canonical): the running one replaces `exe` itself (whatever it is called), the
+/// others go next to it under their own names. Also returns the index of the running
+/// one: `soyuz-tui` when `exe` is called that, `soyuz` otherwise.
+fn install_targets(exe: &Path) -> (Vec<PathBuf>, usize) {
+    let stem = exe.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let running = ARCHIVE_BINARIES.iter().position(|n| *n == stem).unwrap_or(0);
+    let dir = exe.parent().unwrap_or(Path::new(""));
+    let targets =
+        ARCHIVE_BINARIES.iter().enumerate().map(|(i, n)| if i == running { exe.to_path_buf() } else { dir.join(n) });
+    (targets.collect(), running)
+}
+
+/// Replace the running executable `exe` with its new build from the downloaded release
 /// tarball `archive` (blocking: call it off the UI thread). The archive is hashed again
-/// first (it sat in the Downloads folder) and must match `sha256`. The new binary is
-/// written to a temporary file next to `exe`, checked to be an ELF executable for this
-/// CPU, made executable, synced and renamed over `exe` (atomic; the running process
-/// keeps its old inode). Returns the path to restart into.
+/// first (it sat in the Downloads folder) and must match `sha256`.
+///
+/// Every binary of [`ARCHIVE_BINARIES`] in the archive is installed: the running one
+/// (`bin/soyuz`, or `bin/soyuz-tui` when `exe` is `soyuz-tui`) over `exe`, the other one
+/// next to it ([`install_targets`]). The running one must be in the archive; the other
+/// is optional (archives before 0.3 have no `soyuz-tui`). Each is written to a temporary
+/// file next to `exe`, checked to be an ELF executable for this CPU, made executable,
+/// synced and renamed over its target (atomic; a running process keeps its old inode),
+/// `exe` last. Returns the path to restart into (`exe`).
 pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: InstallKind) -> Result<PathBuf, String> {
     if kind != InstallKind::Tarball {
         return Err(tr!("services-update-package-managed", kind = kind.key()));
@@ -890,16 +925,32 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
     let archive_file = std::fs::File::open(archive).map_err(|e| fail(&e))?;
     let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let dir = exe.parent().ok_or_else(|| fail(&"no parent folder"))?;
-    let (mut out, tmp) = create_temp_in(dir).map_err(|e| {
-        tr!("services-update-install-no-permission", path = dir.display().to_string(), error = e.to_string())
-    })?;
+    let (targets, running) = install_targets(&exe);
+    let mut temps: Vec<(std::fs::File, PathBuf)> = Vec::new();
+    for _ in ARCHIVE_BINARIES {
+        match create_temp_in(dir) {
+            Ok(t) => temps.push(t),
+            Err(e) => {
+                remove_temps(temps);
+                return Err(tr!(
+                    "services-update-install-no-permission",
+                    path = dir.display().to_string(),
+                    error = e.to_string()
+                ));
+            }
+        }
+    }
     let result = (|| -> Result<(), String> {
         use std::io::{Read as _, Seek as _};
-        // 1. Extract bin/soyuz into the temp file next to the executable (same
+        // 1. Extract the binaries into the temp files next to the executable (same
         //    filesystem → atomic rename), hashing the archive on the way through.
         let hashing = HashingReader { inner: archive_file, hasher: Sha256::new() };
         let mut gz = flate2::read::GzDecoder::new(std::io::BufReader::new(hashing));
-        let extracted = extract_binary(&mut gz, &mut out);
+        let extracted = {
+            let mut outs: Vec<&mut dyn std::io::Write> =
+                temps.iter_mut().map(|(f, _)| f as &mut dyn std::io::Write).collect();
+            extract_binaries(&mut gz, &ARCHIVE_BINARIES, &mut outs)
+        };
         // 2. Hash the rest of the archive (everything below the decoder was hashed as
         //    it was read, buffered bytes included) and compare before anything else.
         let mut hashing = gz.into_inner().into_inner();
@@ -907,28 +958,44 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
         if !hex(&hashing.hasher.finalize()).eq_ignore_ascii_case(sha256) {
             return Err(tr!("services-update-install-changed").into());
         }
-        extracted?;
-        out.sync_all().map_err(|e| fail(&e))?;
-        let mut head = [0u8; 64];
-        out.rewind().map_err(|e| fail(&e))?;
-        let n = out.read(&mut head).map_err(|e| fail(&e))?;
-        if !is_elf_for(&head[..n], elf_machine()) {
-            return Err(tr!("services-update-install-not-elf").into());
+        let found = extracted?;
+        if found[running].is_none() {
+            return Err(tr!("services-update-install-no-binary", name = ARCHIVE_BINARIES[running]));
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            out.set_permissions(std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
+        for (out, _) in temps.iter_mut().zip(&found).filter(|(_, f)| f.is_some()).map(|(t, _)| t) {
+            out.sync_all().map_err(|e| fail(&e))?;
+            let mut head = [0u8; 64];
+            out.rewind().map_err(|e| fail(&e))?;
+            let n = out.read(&mut head).map_err(|e| fail(&e))?;
+            if !is_elf_for(&head[..n], elf_machine()) {
+                return Err(tr!("services-update-install-not-elf").into());
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                out.set_permissions(std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
+            }
         }
-        // 3. Only a verified binary replaces the executable.
-        std::fs::rename(&tmp, &exe).map_err(|e| fail(&e))
+        // 3. Only verified binaries replace the installed ones; the running one last.
+        let order = (0..temps.len()).filter(|i| *i != running).chain(Some(running));
+        for i in order.filter(|i| found[*i].is_some()) {
+            std::fs::rename(&temps[i].1, &targets[i]).map_err(|e| fail(&e))?;
+        }
+        Ok(())
     })();
-    drop(out);
-    if let Err(e) = result {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e);
+    // Temp files not renamed (not in the archive, or after a failure) are removed.
+    remove_temps(temps);
+    result.map(|()| exe)
+}
+
+/// Close and delete the temp files of [`install_tarball_to`] that are still there.
+fn remove_temps(temps: Vec<(std::fs::File, PathBuf)>) {
+    for (f, p) in temps {
+        drop(f);
+        if std::fs::symlink_metadata(&p).is_ok() {
+            let _ = std::fs::remove_file(&p);
+        }
     }
-    Ok(exe)
 }
 
 /// A reader that hashes everything read through it.
@@ -1389,6 +1456,14 @@ mod tests {
         enc.finish().unwrap()
     }
 
+    /// [`extract_binaries`] of `soyuz` and `soyuz-tui` into memory.
+    #[allow(clippy::type_complexity)]
+    fn extract(r: &[u8]) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), String> {
+        let (mut gui, mut tui) = (Vec::new(), Vec::new());
+        let found = extract_binaries(r, &ARCHIVE_BINARIES, &mut [&mut gui, &mut tui])?;
+        Ok((found[0].map(|_| gui), found[1].map(|_| tui)))
+    }
+
     #[test]
     fn tar_extraction() {
         let bin = elf();
@@ -1400,13 +1475,22 @@ mod tests {
             ("soyuz-0.2.0-linux-x86_64/share/doc/soyuz/README.md", b"readme", b'0'),
             ("soyuz-0.2.0-linux-x86_64/bin/soyuz", &bin, b'0'),
         ]);
-        let mut out = Vec::new();
-        assert_eq!(extract_binary(&t[..], &mut out).unwrap(), bin.len() as u64);
-        assert_eq!(out, bin);
-        // Nested deeper, a symlink, or missing: not taken.
-        let t = tar(&[("a/b/bin/soyuz", b"x", b'0'), ("top/bin/soyuz", b"", b'2')]);
-        assert!(extract_binary(&t[..], &mut Vec::new()).is_err());
-        assert!(extract_binary(&b"short"[..], &mut Vec::new()).is_err());
+        assert_eq!(extract(&t[..]).unwrap(), (Some(bin.clone()), None));
+        // Both binaries, in any order.
+        let t = tar(&[("top/bin/soyuz-tui", b"tui", b'0'), ("top/bin/soyuz", b"gui", b'0')]);
+        assert_eq!(extract(&t[..]).unwrap(), (Some(b"gui".to_vec()), Some(b"tui".to_vec())));
+        // Nested deeper, a symlink, another name, or missing: not taken.
+        let t = tar(&[
+            ("a/b/bin/soyuz", b"x", b'0'),
+            ("top/bin/soyuz", b"", b'2'),
+            ("top/bin/soyuz-tuix", b"x", b'0'),
+            ("top/soyuz-tui", b"x", b'0'),
+        ]);
+        assert_eq!(extract(&t[..]).unwrap(), (None, None));
+        assert_eq!(extract(&b"short"[..]).unwrap(), (None, None));
+        // The same binary twice: refused.
+        let t = tar(&[("top/bin/soyuz", b"a", b'0'), ("bin/soyuz", b"b", b'0')]);
+        assert!(extract(&t[..]).is_err());
         assert!(is_elf_for(&bin, elf_machine()));
         assert!(!is_elf_for(b"#!/bin/sh\n echo hi ........", None));
         let mut other = bin.clone();
@@ -1448,6 +1532,76 @@ mod tests {
         assert!(install_tarball_to(&bad, &sha, &exe, InstallKind::Tarball).is_err());
         assert_eq!(std::fs::read(&exe).unwrap(), elf());
         assert_eq!(std::fs::read_dir(exe.parent().unwrap()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn install_targets_follow_the_running_binary() {
+        let (t, running) = install_targets(Path::new("/opt/soyuz/bin/soyuz"));
+        assert_eq!(running, 0);
+        assert_eq!(t, vec![PathBuf::from("/opt/soyuz/bin/soyuz"), PathBuf::from("/opt/soyuz/bin/soyuz-tui")]);
+        let (t, running) = install_targets(Path::new("/opt/soyuz/bin/soyuz-tui"));
+        assert_eq!(running, 1);
+        assert_eq!(t, vec![PathBuf::from("/opt/soyuz/bin/soyuz"), PathBuf::from("/opt/soyuz/bin/soyuz-tui")]);
+        // A renamed GUI binary is replaced in place.
+        let (t, running) = install_targets(Path::new("/x/soyuz-nightly"));
+        assert_eq!(running, 0);
+        assert_eq!(t, vec![PathBuf::from("/x/soyuz-nightly"), PathBuf::from("/x/soyuz-tui")]);
+    }
+
+    #[test]
+    fn tarball_install_swaps_both_binaries() {
+        let tui_elf = || {
+            let mut e = elf();
+            e.extend_from_slice(b" (tui)");
+            e
+        };
+        let d = tempfile::tempdir().unwrap();
+        let bin = d.path().join("bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let (gui, tui) = (bin.join("soyuz"), bin.join("soyuz-tui"));
+        std::fs::write(&gui, b"old gui").unwrap();
+        std::fs::write(&tui, b"old tui").unwrap();
+        let archive = d.path().join("soyuz-0.3.0-linux-x86_64.tar.gz");
+        std::fs::write(
+            &archive,
+            gz(&tar(&[
+                ("soyuz-0.3.0-linux-x86_64/bin/soyuz", &elf(), b'0'),
+                ("soyuz-0.3.0-linux-x86_64/bin/soyuz-tui", &tui_elf(), b'0'),
+            ])),
+        )
+        .unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&archive).unwrap()));
+
+        // Running the terminal UI: it is replaced (and restarted), the GUI next to it too.
+        let new = install_tarball_to(&archive, &sha, &tui, InstallKind::Tarball).unwrap();
+        assert_eq!(new, std::fs::canonicalize(&tui).unwrap());
+        assert_eq!(std::fs::read(&gui).unwrap(), elf());
+        assert_eq!(std::fs::read(&tui).unwrap(), tui_elf());
+        assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 2, "no temp file left");
+
+        // An archive without soyuz-tui (before 0.3) still updates the GUI and leaves the
+        // terminal UI alone; the terminal UI cannot update from it.
+        std::fs::write(&gui, b"old gui").unwrap();
+        let old = d.path().join("soyuz-0.2.0-linux-x86_64.tar.gz");
+        std::fs::write(&old, gz(&tar(&[("soyuz-0.2.0-linux-x86_64/bin/soyuz", &elf(), b'0')]))).unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&old).unwrap()));
+        assert!(install_tarball_to(&old, &sha, &tui, InstallKind::Tarball).is_err());
+        assert_eq!(std::fs::read(&gui).unwrap(), b"old gui");
+        install_tarball_to(&old, &sha, &gui, InstallKind::Tarball).unwrap();
+        assert_eq!(std::fs::read(&gui).unwrap(), elf());
+        assert_eq!(std::fs::read(&tui).unwrap(), tui_elf());
+        assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 2, "no temp file left");
+
+        // One bad binary: nothing is replaced.
+        std::fs::write(&gui, b"old gui").unwrap();
+        let bad = d.path().join("bad.tar.gz");
+        std::fs::write(&bad, gz(&tar(&[("x/bin/soyuz", &elf(), b'0'), ("x/bin/soyuz-tui", b"#!/bin/sh\n", b'0')])))
+            .unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&bad).unwrap()));
+        assert!(install_tarball_to(&bad, &sha, &gui, InstallKind::Tarball).is_err());
+        assert_eq!(std::fs::read(&gui).unwrap(), b"old gui");
+        assert_eq!(std::fs::read(&tui).unwrap(), tui_elf());
+        assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 2, "no temp file left");
     }
 
     #[test]

@@ -1,6 +1,6 @@
 [package]
 name = "soyuz-tui"
-description = "Soyuz terminal UI (`soyuz --tui`): a ratatui frontend on the soyuz-appcore core"
+description = "Soyuz terminal UI (`soyuz-tui`, `soyuz --tui`): a ratatui frontend on the soyuz-appcore core"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -8,12 +8,22 @@ publish.workspace = true
 license.workspace = true
 authors.workspace = true
 readme = "../../README.md"
+build = "build.rs"
 
 # Like soyuz-appcore, no GUI toolkit (egui / eframe / winit / wgpu …): `tests/boundary.rs`
 # checks the resolved dependency graph.
 
+# `soyuz-tui [PATH]`: the terminal UI as a console program of its own (on Windows a
+# console-subsystem exe, so it runs in the terminal it is started from). Ships next to
+# `soyuz` in every package.
+[[bin]]
+name = "soyuz-tui"
+path = "src/main.rs"
+
 [features]
-default = []
+# Same defaults as `soyuz-app` for the standalone binary; `soyuz-app` turns these on
+# itself (the workspace dependency has `default-features = false`).
+default = ["zstd", "pdf"]
 pdf = ["soyuz-appcore/pdf"]
 zstd = ["soyuz-appcore/zstd"]
 
@@ -39,6 +49,10 @@ signal-hook = "0.4.5"
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[build-dependencies]
+# Embeds the icon + version info into soyuz-tui.exe (Windows hosts with rc.exe only; no-op elsewhere).
+winresource = { version = "0.1.31", default-features = false }
 
 [lints]
 workspace = true

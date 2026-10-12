@@ -7078,6 +7078,7 @@ dependencies = [
  "tempfile",
  "unicode-segmentation",
  "unicode-width",
+ "winresource",
 ]
 
 [[package]]

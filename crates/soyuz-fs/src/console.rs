@@ -9,7 +9,9 @@
 //!   and the shell would both read the same keyboard input. Instead a release build
 //!   without a console opens a new console window (`AllocConsole`); a debug build
 //!   (console subsystem) or a process started inside a terminal already has one and
-//!   uses it as is.
+//!   uses it as is. That includes `soyuz-tui.exe`, a console-subsystem binary: Windows
+//!   gives it the console of the terminal that started it (which waits for it), or a
+//!   new one when it is started from Explorer, so it always runs in place.
 //!
 //! On unix every terminal concern (raw mode, signals) belongs to the TUI itself, so the
 //! session type is a no-op there.
@@ -67,8 +69,10 @@ impl Drop for ConsoleSession {
 /// Prepare the console for the terminal UI.
 ///
 /// Windows:
-/// - The process already has a console: use it as is (the standard handles are not
-///   touched; check [`is_terminal_session`] to refuse redirected stdio).
+/// - The process already has a console (`GetConsoleWindow` is non-null: always the
+///   case for the console-subsystem `soyuz-tui.exe` and debug builds): use it as is (the
+///   standard handles are not touched; check [`is_terminal_session`] to refuse
+///   redirected stdio).
 /// - No console (GUI-subsystem release build, started from Explorer or from a shell):
 ///   `AllocConsole` opens a new console window titled "Soyuz", and standard input /
 ///   output are pointed at it (`CONIN$` / `CONOUT$`) unless they already are console

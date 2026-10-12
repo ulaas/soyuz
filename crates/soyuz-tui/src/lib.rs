@@ -1,4 +1,4 @@
-//! The Soyuz terminal UI (`soyuz --tui`, roadmap Phase T): a ratatui frontend that drives
+//! The Soyuz terminal UI (`soyuz-tui`, `soyuz --tui`; roadmap Phase T): a ratatui frontend that drives
 //! the same `soyuz_appcore::core::AppCore` as the egui GUI.
 //!
 //! Phase T1 built the shell: the terminal host, the key adapter, the frame loop and a
@@ -8,7 +8,9 @@
 //! (focus and key routing), `widgets` (the line editor) and `unsupported` (features
 //! without a view yet).
 //!
-//! Entry point: [`run`] (`soyuz --tui [PATH]`, wired in `soyuz-app`'s `main.rs`).
+//! Entry points: [`launch()`] (console, configuration, then [`run`]) and
+//! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary
+//! (`src/main.rs`) and `soyuz --tui [PATH]` (`soyuz-app`'s `main.rs`).
 #![deny(unsafe_code)]
 
 pub mod app;
@@ -19,6 +21,7 @@ pub mod host;
 pub mod icons;
 pub mod input;
 pub mod keys;
+pub mod launch;
 pub mod layout;
 pub mod overlay;
 pub mod signals;
@@ -29,3 +32,4 @@ pub mod view;
 pub mod widgets;
 
 pub use app::run;
+pub use launch::launch;

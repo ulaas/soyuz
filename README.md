@@ -78,6 +78,7 @@ with 100 000 entries scroll smoothly, and a dead network share cannot hang the w
 - Disk-usage treemap, folder compare and two-way sync with scheduled profiles, previous versions, duplicate finder, split / join, checksums
 - Git status column, renameable color tags, folder colors, drop shelf, recent places
 - Automation: sandboxed Rhai scripts, watcher-driven rules, and a `soyuz cp|mv|rm …` CLI that queues jobs in the running window
+- Terminal UI (preview): `soyuz-tui [folder]` browses with the same settings, keys, jobs and undo inside the terminal you run it in (also `soyuz --tui`)
 
 **Optional AI assistant (off by default)**
 - Works with Anthropic, OpenAI, Gemini or local OpenAI-compatible models (Ollama, LM Studio, llama.cpp, vLLM); bring your own key
@@ -124,6 +125,9 @@ has a `.sha256`, and `SHA256SUMS-<os>.txt` lists them all.
 | `soyuz-<version>-windows-x64-portable.zip` | Same, plus an empty `portable` file next to the exe: settings stay in `portable-data\` beside it. |
 | `soyuz-<version>-linux-x64.tar.gz` | Unpack anywhere and run `soyuz`. |
 | `soyuz-<version>-macos-arm64.tar.gz` | Apple silicon. Unpack and run `soyuz`; unsigned (right-click → Open the first time). |
+
+Every package also contains `soyuz-tui` (`soyuz-tui.exe` on Windows), the terminal UI as a
+console program: run `soyuz-tui [folder]` in a terminal.
 
 **Platforms.** Soyuz is fully supported on **Windows 10 and 11**, **macOS** (Apple silicon)
 and **Linux** (x64, Wayland and X11), with native integration on each. Release builds are not

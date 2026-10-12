@@ -184,7 +184,7 @@ jobs:
   # Release binaries for every desktop OS (pushes to main and manual runs), downloadable
   # from the run's Artifacts: Windows x64 (.zip), Linux x64 (.tar.gz), macOS arm64
   # (.tar.gz, unsigned: Gatekeeper needs `xattr -d com.apple.quarantine soyuz` or
-  # right-click > Open).
+  # right-click > Open). Each holds `soyuz` and `soyuz-tui` (the terminal UI).
   package:
     name: Package (${{ matrix.name }})
     if: github.event_name != 'pull_request'
@@ -221,6 +221,10 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: ./scripts/package.sh
+      # Both executables are in every package; the terminal UI binary must start.
+      - name: soyuz-tui --version
+        shell: bash
+        run: target/release/soyuz-tui --version
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: soyuz-${{ matrix.name }}

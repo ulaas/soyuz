@@ -11,12 +11,13 @@
   * Optional features (off by default; enable in the feature tree or with ADDLOCAL):
       ContextMenu  "Open in Soyuz" on folders and drives (non-default verb; Explorer stays
                    the default — the "default file manager" switch lives in the app).
-      AddToPath    put the install folder on PATH (`soyuz C:\some\folder`).
+      AddToPath    put the install folder on PATH (`soyuz C:\some\folder`, and the
+                   terminal UI `soyuz-tui C:\some\folder`, which runs in the terminal).
     e.g.  msiexec /i soyuz.msi ADDLOCAL=Main,ContextMenu,AddToPath /qn
 
   Preprocessor variables (passed by build-msi.ps1):
     Version   numeric x.y.z
-    BinDir    folder with soyuz.exe
+    BinDir    folder with soyuz.exe and soyuz-tui.exe
     RootDir   repository root (README, licenses, docs, icon)
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
@@ -52,6 +53,10 @@
     <ComponentGroup Id="MainFiles" Directory="INSTALLFOLDER">
       <Component Id="SoyuzExe" Guid="*">
         <File Id="SoyuzExeFile" Source="$(var.BinDir)\soyuz.exe" KeyPath="yes" />
+      </Component>
+      <!-- The terminal UI as a console program (`soyuz-tui [PATH]`), next to soyuz.exe. -->
+      <Component Id="SoyuzTuiExe" Guid="*">
+        <File Id="SoyuzTuiExeFile" Source="$(var.BinDir)\soyuz-tui.exe" KeyPath="yes" />
       </Component>
       <Component Id="Readme" Guid="*">
         <File Source="$(var.RootDir)\README.md" KeyPath="yes" />
@@ -131,7 +136,7 @@
       <Feature Id="ContextMenu" Title="“Open in Soyuz” on folders" Description="Adds an “Open in Soyuz” entry to the right-click menu of folders and drives. File Explorer stays the default; make Soyuz the default file manager in Settings → Advanced." Level="1000">
         <ComponentGroupRef Id="ContextMenuKeys" />
       </Feature>
-      <Feature Id="AddToPath" Title="Add to PATH" Description="Lets you start Soyuz from a terminal: soyuz C:\some\folder" Level="1000">
+      <Feature Id="AddToPath" Title="Add to PATH" Description="Lets you start Soyuz from a terminal: soyuz C:\some\folder (or the terminal UI: soyuz-tui C:\some\folder)" Level="1000">
         <ComponentGroupRef Id="PathEntry" />
       </Feature>
     </Feature>

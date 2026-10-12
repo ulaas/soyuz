@@ -3,10 +3,12 @@
     Build a release of Soyuz and package it for distribution.
 
 .DESCRIPTION
-    Runs `cargo build --release -p soyuz-app`, then creates
+    Runs `cargo build --release -p soyuz-app -p soyuz-tui`, then creates
     dist/soyuz-<version>-<os>-<arch>.zip (Windows) or .tar.gz (Linux / macOS, keeps the
-    executable bit) containing the executable, README, both licenses,
-    the example config and the user guide. Pass -Portable to include an empty `portable`
+    executable bit) containing both executables (`soyuz`, the app, and `soyuz-tui`, the
+    terminal UI as a console program), README, both licenses, the example config and the
+    user guide. -Features names soyuz-app features (`glow`, …; qualified as
+    `soyuz-app/<feature>`, which also sets the matching soyuz-tui features). Pass -Portable to include an empty `portable`
     marker so the unzipped folder keeps its settings next to the exe (portable-data/).
 
     -Msi also builds the Windows installer (installer/windows/build-msi.ps1, needs WiX v5).
@@ -48,6 +50,8 @@ try {
     }
     $exe = if ($isWin) { "soyuz.exe" } else { "soyuz" }
     $bin = Join-Path "target/release" $exe
+    $tuiExe = if ($isWin) { "soyuz-tui.exe" } else { "soyuz-tui" }
+    $tuiBin = Join-Path "target/release" $tuiExe
     $suffix = if ($Portable) { "-portable" } else { "" }
     $name = "soyuz-$version-$os-$arch$suffix"
     $ext = if ($isWin) { "zip" } else { "tar.gz" }
@@ -57,6 +61,7 @@ try {
     # What goes into the zip: (source, path inside the zip).
     $files = @(
         @($bin, $exe),
+        @($tuiBin, $tuiExe),
         @("README.md", "README.md"),
         @("LICENSE", "LICENSE"),
         @("THIRD-PARTY-NOTICES.md", "THIRD-PARTY-NOTICES.md"),
@@ -64,8 +69,11 @@ try {
         @("docs/config.example.toml", "docs/config.example.toml")
     )
 
-    $cargoArgs = @("build", "--release", "-p", "soyuz-app", "--locked")
-    if ($Features) { $cargoArgs += @("--features", $Features) }
+    $cargoArgs = @("build", "--release", "-p", "soyuz-app", "-p", "soyuz-tui", "--locked")
+    if ($Features) {
+        $qualified = ($Features -split '[,\s]+' | Where-Object { $_ } | ForEach-Object { if ($_ -match '/') { $_ } else { "soyuz-app/$_" } }) -join ","
+        $cargoArgs += @("--features", $qualified)
+    }
     if ($NoDefaultFeatures) { $cargoArgs += "--no-default-features" }
 
     if ($DryRun) {
@@ -88,7 +96,9 @@ try {
         & cargo @cargoArgs
         if ($LASTEXITCODE -ne 0) { throw "cargo build failed ($LASTEXITCODE)" }
     }
-    if (-not (Test-Path $bin)) { throw "missing $bin" }
+    foreach ($b in @($bin, $tuiBin)) {
+        if (-not (Test-Path $b)) { throw "missing $b" }
+    }
 
     $stage = Join-Path $OutDir $name
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
@@ -104,7 +114,7 @@ try {
     if ($isWin) {
         Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip
     } else {
-        & chmod +x (Join-Path $stage $exe)
+        & chmod +x (Join-Path $stage $exe) (Join-Path $stage $tuiExe)
         & tar -czf $zip -C $OutDir $name
         if ($LASTEXITCODE -ne 0) { throw "tar failed ($LASTEXITCODE)" }
     }
@@ -135,10 +145,11 @@ try {
         Set-Content -Encoding ascii $sums
 
     $size = (Get-Item $bin).Length / 1MB
+    $tuiSize = (Get-Item $tuiBin).Length / 1MB
     foreach ($a in $artifacts) {
         Write-Host ("{0}: {1:N1} MiB" -f $a, ((Get-Item $a).Length / 1MB))
     }
-    Write-Host ("executable {0:N1} MiB; checksums in {1}" -f $size, $sums)
+    Write-Host ("executables: {0} {1:N1} MiB, {2} {3:N1} MiB; checksums in {4}" -f $exe, $size, $tuiExe, $tuiSize, $sums)
 }
 finally {
     Pop-Location

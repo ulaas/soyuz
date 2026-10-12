@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Build the Soyuz MSI (WiX Toolset v5) from an already-built soyuz.exe.
+    Build the Soyuz MSI (WiX Toolset v5) from an already-built soyuz.exe and soyuz-tui.exe.
 
 .DESCRIPTION
     Produces dist/soyuz-<version>-windows-<arch>.msi from installer/windows/soyuz.wxs.
@@ -42,7 +42,7 @@ try {
         $cmd = Get-Command wix -ErrorAction SilentlyContinue
         $Wix = if ($cmd) { $cmd.Source } else { "wix" }
     }
-    $exe = Join-Path $BinDir "soyuz.exe"
+    $exes = @((Join-Path $BinDir "soyuz.exe"), (Join-Path $BinDir "soyuz-tui.exe"))
     $wxs = "installer/windows/soyuz.wxs"
     New-Item -ItemType Directory -Force $OutDir | Out-Null
     $msi = Join-Path $OutDir "soyuz-$version-windows-$Arch.msi"
@@ -62,12 +62,15 @@ try {
     }
 
     Write-Host "MSI $msiVersion -> $msi"
+    Write-Host "files: $($exes -join ', ') + docs from $wxs"
     Write-Host "$Wix $($wixArgs -join ' ')"
     if ($DryRun) {
         Write-Host "dry run: nothing built"
         return
     }
-    if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app first)" }
+    foreach ($exe in $exes) {
+        if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app -p soyuz-tui first)" }
+    }
 
     if ($UI) {
         New-Item -ItemType Directory -Force $obj | Out-Null

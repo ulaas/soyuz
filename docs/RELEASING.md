@@ -2,7 +2,7 @@
 
 ## Windows Authenticode signing
 
-`scripts/sign-windows.ps1` signs one file (`soyuz.exe` or an `.msi`) with signtool from the
+`scripts/sign-windows.ps1` signs one file (`soyuz.exe`, `soyuz-tui.exe` or an `.msi`) with signtool from the
 newest installed Windows 10/11 SDK. It uses SHA-256 file digests and an RFC 3161 timestamp,
 then verifies the result with `signtool verify /pa` and `Get-AuthenticodeSignature`.
 
@@ -43,10 +43,11 @@ When the secrets are missing, `release.yml` publishes unsigned artifacts with a 
    - **HSM:** replace the `signtool sign` line with the provider's tool (Azure: `signtool
      /dlib Azure.CodeSigning.Dlib.dll /dmdf metadata.json`; others ship similar dlibs). Keep
      the verify step.
-4. **Order matters.** Sign `soyuz.exe` *before* it is packed into the MSI / zip, then sign
-   the MSI. `release.yml` already does it in that order.
+4. **Order matters.** Sign both executables, `soyuz.exe` and `soyuz-tui.exe`, *before* they
+   are packed into the MSI / zip, then sign the MSI. `release.yml` already does it in that
+   order.
 5. **Check the result:**
-   - `Get-AuthenticodeSignature soyuz.exe` must report `Valid`.
+   - `Get-AuthenticodeSignature soyuz.exe, soyuz-tui.exe` must report `Valid` for both.
    - The app's update checker uses the same `WinVerifyTrust` call
      (`soyuz_fs::integration::authenticode`). To see its verdict:
 
@@ -94,6 +95,16 @@ The whole path was exercised locally with a throwaway self-signed certificate. T
 
 ## Binaries per OS
 
+Every package ships two executables, built together by
+`cargo build --release -p soyuz-app -p soyuz-tui`: `soyuz` (the app; on Windows a
+GUI-subsystem exe) and `soyuz-tui` (the terminal UI, crate `soyuz-tui`; console subsystem on
+Windows, so it runs in the terminal that starts it; same icon and version resource). The zips
+and tarballs hold both side by side, the MSI installs both into the install folder (covered
+by its PATH option), the MSIX gives each an execution alias (`soyuz-tui.exe` is declared as
+a console app, `desktop4:Subsystem="console"`), the rpm and the Flatpak put both in `bin/`,
+and the signed macOS app carries `soyuz-tui` as a helper tool in `Contents/MacOS/`. The
+Linux in-place updater (`services/updates.rs`) replaces both from the tarball.
+
 - **Every push to `main`** (and manual runs of *CI*): the `package` job builds
   `soyuz-<v>-windows-x64.zip`, `soyuz-<v>-linux-x64.tar.gz` and
   `soyuz-<v>-macos-arm64.tar.gz` (plus `.sha256` files) with `scripts/package.ps1`; download
@@ -121,7 +132,7 @@ Hand edits to entries are overwritten on the next run; re-apply them afterwards.
 ### Artifacts
 
 `scripts/package.sh` (the Linux counterpart of `package.ps1`; `--help` lists its options)
-builds `cargo build --release -p soyuz-app --locked` and writes to `dist/`:
+builds `cargo build --release -p soyuz-app -p soyuz-tui --locked` and writes to `dist/`:
 
 - `soyuz-<v>-linux-<arch>.tar.gz`: a relocatable PREFIX tree, `<arch>` from `uname -m`
   (`x86_64`, `aarch64`):
@@ -129,6 +140,7 @@ builds `cargo build --release -p soyuz-app --locked` and writes to `dist/`:
   ```
   soyuz-<v>-linux-x86_64/
     bin/soyuz
+    bin/soyuz-tui
     share/applications/soyuz.desktop
     share/icons/hicolor/{16,22,24,32,48,64,128,256,512}x…/apps/soyuz.png
     share/metainfo/io.github.ulaas.Soyuz.metainfo.xml
@@ -161,8 +173,9 @@ and `appstream`, validates the desktop entry and the metainfo, runs
 `scripts/package.sh --rpm` and checks the tarball layout. The RPM is built on Ubuntu, so
 its release tag has no `.fcNN` suffix and it links against the runner's glibc: it installs
 on distributions with that glibc or newer. A Debian package is possible with
-`cargo deb -p soyuz-app` (`[package.metadata.deb]` in `crates/soyuz-app/Cargo.toml`) but is
-not built by CI.
+`cargo deb -p soyuz-app` (`[package.metadata.deb]` in `crates/soyuz-app/Cargo.toml`; run
+`cargo build --release -p soyuz-tui` first, its binary is one of the assets) but is not built
+by CI.
 
 ### Desktop integration
 
@@ -261,7 +274,7 @@ FLATPAK_CARGO_GENERATOR=~/src/flatpak-builder-tools/cargo/flatpak-cargo-generato
 
 The crates are unpacked to `cargo/vendor` with a source-replacement config, and the manifest
 points `CARGO_HOME` at `/run/build/soyuz/cargo` and runs
-`cargo --offline build --release --locked -p soyuz-app`. The vendored `accesskit_unix`
+`cargo --offline build --release --locked -p soyuz-app -p soyuz-tui`. The vendored `accesskit_unix`
 (`third_party/`) comes with the checkout. `rust-toolchain.toml` is not used (no rustup in
 the SDK); the extension's cargo must be at least the workspace `rust-version`.
 

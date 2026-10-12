@@ -302,9 +302,19 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 
 ## Terminal UI (preview)
 
-`soyuz --tui [folder]` runs Soyuz inside a terminal. It uses the same settings, key
-bindings, jobs and undo history as the window. On Windows it opens its own console window;
-on Linux and macOS it runs in the terminal you start it from.
+`soyuz-tui [folder]` runs Soyuz inside the terminal you start it from (Windows Terminal,
+PowerShell, cmd, or any terminal on Linux and macOS). It uses the same settings, key
+bindings, jobs and undo history as the window. `soyuz-tui` ships next to `soyuz` in every
+package (`soyuz-tui.exe` on Windows; with the MSI's PATH option or the MSIX it works from
+any terminal; in the Flatpak: `flatpak run --command=soyuz-tui io.github.ulaas.Soyuz`).
+
+- `soyuz-tui [--safe-mode] [folder]`: a file opens its folder with the file selected;
+  `--safe-mode` starts with default settings. `soyuz-tui --help` and `--version` print and
+  exit.
+- `soyuz --tui [folder]` starts the same terminal UI from the app binary. On Linux and
+  macOS it runs in the current terminal too; on Windows `soyuz.exe` is a windowed program,
+  so it opens a console window of its own instead (use `soyuz-tui` to stay in your
+  terminal).
 
 It browses like the window: tabs, dual and quad panes, the details / list / grid / Miller
 views, breadcrumbs and the address bar (Ctrl+L), the sidebar with places and the folder

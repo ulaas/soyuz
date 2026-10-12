@@ -26,7 +26,7 @@ soyuz-index = { path = "crates/soyuz-index" }
 soyuz-script = { path = "crates/soyuz-script" }
 soyuz-vfs = { path = "crates/soyuz-vfs" }
 soyuz-appcore = { path = "crates/soyuz-appcore", default-features = false }
-soyuz-tui = { path = "crates/soyuz-tui" }
+soyuz-tui = { path = "crates/soyuz-tui", default-features = false }
 
 # --- Terminal UI (soyuz-tui) ---
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }

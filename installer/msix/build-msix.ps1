@@ -3,7 +3,8 @@
     Build an (unsigned) MSIX package of Soyuz with makeappx.exe from the Windows SDK.
 
 .DESCRIPTION
-    Stages soyuz.exe, README, licenses and logo PNGs (scaled from
+    Stages soyuz.exe, soyuz-tui.exe (the terminal UI, with its own console app
+    execution alias), README, licenses and logo PNGs (scaled from
     crates/soyuz-app/assets/icon.png) with AppxManifest.xml, then runs
         makeappx pack /d <stage> /p dist/soyuz-<version>-windows-x64.msix /o
     Sign the result with a certificate whose Subject equals -Publisher:
@@ -35,13 +36,15 @@ try {
     Write-Host "MSIX $pkgVersion ($Publisher) -> $msix using $MakeAppx"
     if ($DryRun) { Write-Host "dry run: nothing built"; return }
     if (-not $MakeAppx -or -not (Test-Path $MakeAppx)) { throw "makeappx.exe not found (install the Windows 10/11 SDK)" }
-    $exe = Join-Path $BinDir "soyuz.exe"
-    if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app first)" }
+    $exes = @((Join-Path $BinDir "soyuz.exe"), (Join-Path $BinDir "soyuz-tui.exe"))
+    foreach ($exe in $exes) {
+        if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app -p soyuz-tui first)" }
+    }
 
     $stage = Join-Path $OutDir "msix-stage"
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force (Join-Path $stage "Assets") | Out-Null
-    Copy-Item $exe, README.md, LICENSE, THIRD-PARTY-NOTICES.md $stage
+    Copy-Item $exes[0], $exes[1], README.md, LICENSE, THIRD-PARTY-NOTICES.md $stage
     (Get-Content installer/msix/AppxManifest.xml -Raw) -replace '@VERSION@', $pkgVersion -replace '@PUBLISHER@', [Security.SecurityElement]::Escape($Publisher) |
         Set-Content -Encoding utf8 (Join-Path $stage "AppxManifest.xml")
 

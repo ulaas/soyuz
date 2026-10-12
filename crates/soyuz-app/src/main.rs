@@ -49,6 +49,7 @@ enum Cli {
 const USAGE: &str = "\
 Usage: soyuz [OPTIONS] [PATH]...
        soyuz --tui [--safe-mode] [PATH]
+       soyuz-tui [--safe-mode] [PATH]      (the terminal UI as its own console program)
        soyuz <cp|mv|rm|trash|ls|open|reveal|jobs> …   (run `soyuz cp --help`)
 
 Arguments:
@@ -57,7 +58,8 @@ Arguments:
 
 Options:
   --tui                   Run the terminal UI (in this terminal; on Windows a release build
-                          opens a console window of its own); opens at most one PATH
+                          opens a console window of its own: run `soyuz-tui` to stay in
+                          the terminal); opens at most one PATH
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
@@ -243,32 +245,24 @@ fn with_window_backend(
     options
 }
 
-/// `soyuz --tui`: the terminal UI. Returns before any window / GPU code runs.
+/// `soyuz --tui`: the terminal UI. Returns before any window / GPU code runs. The
+/// session is the one `soyuz-tui` runs (`soyuz_tui::launch`); here a GUI-subsystem
+/// release build on Windows opens a console window of its own.
 #[cfg(feature = "tui")]
 fn run_tui(startup: soyuz_app::app::Startup) -> ExitCode {
-    // Windows: the process console, or a new console window for a GUI-subsystem
-    // release build (never the parent shell's console: both would read the keyboard).
-    // Restores the console modes / code pages when dropped.
-    let _console = match soyuz_fs::console::tui_console() {
-        Ok(c) => c,
-        Err(e) => {
-            err!("soyuz: cannot open a console for the terminal UI: {e}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if !soyuz_fs::console::is_terminal_session() {
-        err!(
-            "soyuz: --tui needs an interactive terminal (stdin and stdout must not be redirected; TERM must not be dumb)"
-        );
-        return ExitCode::from(2);
-    }
-    // Before the job engine exists: claim the crash-journal slot, collect what to offer.
-    soyuz_app::services::crash::startup(startup.safe_mode);
-    let config =
-        if startup.safe_mode { soyuz_app::services::crash::safe_config() } else { soyuz_app::app::load_config() };
-    // Installs the legacy-terminal keymap overlay itself when the kitty keyboard protocol
-    // is not used (it knows after querying the terminal), before the core is built.
-    soyuz_tui::run(config, startup)
+    soyuz_tui::launch(startup)
+}
+
+/// Logging for `--tui`: a capped log file and the crash-report panic hook.
+#[cfg(feature = "tui")]
+fn init_tui_logging() {
+    soyuz_tui::launch::init_logging();
+}
+
+#[cfg(not(feature = "tui"))]
+fn init_tui_logging() {
+    soyuz_app::services::crash::init_logging();
+    soyuz_app::services::crash::install_panic_hook();
 }
 
 #[cfg(not(feature = "tui"))]
@@ -282,13 +276,13 @@ fn main() -> ExitCode {
     soyuz_app::devscript::mark_process_start();
     let args: Vec<String> = std::env::args().skip(1).collect();
     if tui_requested(&args) {
-        // The screen belongs to the terminal UI: log to a capped file instead of stderr.
-        let log = soyuz_core::config::config_dir().join("soyuz-tui.log");
-        soyuz_app::services::crash::init_file_logging(&log, soyuz_app::services::crash::LOG_FILE_CAP);
+        // The screen belongs to the terminal UI: log to a capped file instead of stderr
+        // (`soyuz-tui.log`, shared with the `soyuz-tui` binary).
+        init_tui_logging();
     } else {
         soyuz_app::services::crash::init_logging();
+        soyuz_app::services::crash::install_panic_hook();
     }
-    soyuz_app::services::crash::install_panic_hook();
 
     // `soyuz cp|mv|rm|trash|ls|open|reveal|jobs …`: the CLI companion; no GUI.
     let cwd = std::env::current_dir().unwrap_or_default();

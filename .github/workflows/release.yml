@@ -6,6 +6,8 @@
 #                         (optional WINDOWS_TIMESTAMP_URL, default DigiCert's RFC 3161 TSA)
 #   macOS notarization:   MACOS_CERT_P12_BASE64, MACOS_CERT_PASSWORD, MACOS_SIGN_IDENTITY,
 #                         APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD
+# Every package carries two executables: soyuz (the app) and soyuz-tui (the terminal UI as a
+# console program). Both are built in one cargo run and both are signed.
 # Windows artifacts: soyuz-<v>-windows-x64.zip, ...-portable.zip, ...-windows-x64.msi (WiX v5),
 # one .sha256 per file and SHA256SUMS-windows.txt (what the in-app update check verifies).
 # Without the Windows secrets the Windows artifacts are published unsigned, with a warning. The
@@ -66,18 +68,20 @@ jobs:
         shell: pwsh
         run: dotnet tool install --global wix --version 5.0.2
 
-      - name: Build soyuz.exe
+      - name: Build soyuz.exe and soyuz-tui.exe
         shell: pwsh
-        run: cargo build --release -p soyuz-app --locked
+        run: cargo build --release -p soyuz-app -p soyuz-tui --locked
 
-      - name: Authenticode-sign soyuz.exe (skeleton, needs a code-signing certificate)
+      - name: Authenticode-sign soyuz.exe and soyuz-tui.exe (skeleton, needs a code-signing certificate)
         if: needs.signing-config.outputs.windows == 'true'
         shell: pwsh
         env:
           CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
           CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
           TIMESTAMP_URL: ${{ secrets.WINDOWS_TIMESTAMP_URL }}
-        run: ./scripts/sign-windows.ps1 target/release/soyuz.exe
+        run: |
+          ./scripts/sign-windows.ps1 target/release/soyuz.exe
+          ./scripts/sign-windows.ps1 target/release/soyuz-tui.exe
 
       - name: Package (zip, portable zip, MSI)
         shell: pwsh
@@ -97,7 +101,7 @@ jobs:
       - name: Warn about unsigned build
         if: needs.signing-config.outputs.windows != 'true'
         shell: pwsh
-        run: Write-Host "::warning::WINDOWS_CERT_PFX_BASE64 / WINDOWS_CERT_PASSWORD not set - publishing an UNSIGNED soyuz.exe and MSI"
+        run: Write-Host "::warning::WINDOWS_CERT_PFX_BASE64 / WINDOWS_CERT_PASSWORD not set - publishing an UNSIGNED soyuz.exe, soyuz-tui.exe and MSI"
 
       - name: Checksums
         # Recomputed after signing (signing changes the MSI). The in-app update check
@@ -152,7 +156,7 @@ jobs:
         run: |
           set -euo pipefail
           tar -tzf dist/soyuz-*-linux-x86_64.tar.gz | sed 's|^[^/]*/||' | sort > "$RUNNER_TEMP/layout.txt"
-          for f in bin/soyuz share/applications/soyuz.desktop share/icons/hicolor/256x256/apps/soyuz.png \
+          for f in bin/soyuz bin/soyuz-tui share/applications/soyuz.desktop share/icons/hicolor/256x256/apps/soyuz.png \
                    share/metainfo/io.github.ulaas.Soyuz.metainfo.xml share/licenses/soyuz/LICENSE; do
             grep -qxF "$f" "$RUNNER_TEMP/layout.txt" || { echo "::error::tarball is missing $f"; exit 1; }
           done
@@ -209,12 +213,16 @@ jobs:
       - name: Build .app bundle (skeleton)
         run: |
           set -euo pipefail
-          cargo build --release --locked -p soyuz-app --target aarch64-apple-darwin
-          cargo build --release --locked -p soyuz-app --target x86_64-apple-darwin
+          cargo build --release --locked -p soyuz-app -p soyuz-tui --target aarch64-apple-darwin
+          cargo build --release --locked -p soyuz-app -p soyuz-tui --target x86_64-apple-darwin
           cargo bundle --release -p soyuz-app --target aarch64-apple-darwin
           APP="target/aarch64-apple-darwin/release/bundle/osx/Soyuz.app"
           lipo -create -output "$APP/Contents/MacOS/soyuz" \
             target/aarch64-apple-darwin/release/soyuz target/x86_64-apple-darwin/release/soyuz
+          # The terminal UI: a command-line tool next to the app binary (signed with the
+          # bundle below); run it as Soyuz.app/Contents/MacOS/soyuz-tui.
+          lipo -create -output "$APP/Contents/MacOS/soyuz-tui" \
+            target/aarch64-apple-darwin/release/soyuz-tui target/x86_64-apple-darwin/release/soyuz-tui
           echo "APP=$APP" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate into a temporary keychain
@@ -239,6 +247,8 @@ jobs:
           SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
           set -euo pipefail
+          # Nested helper tool first (inside out), then the bundle.
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/soyuz-tui"
           codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
           codesign --verify --strict --verbose=2 "$APP"
 

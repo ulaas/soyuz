@@ -339,7 +339,7 @@ services-update-package-managed = { $kind ->
    *[other] This copy of Soyuz cannot update itself. Install the new version the same way you installed this one.
 }
 services-update-install-not-tarball = only the Linux release tarball (.tar.gz) can be installed in place
-services-update-install-no-binary = the archive does not contain bin/soyuz
+services-update-install-no-binary = the archive does not contain bin/{ $name }
 services-update-install-bad-archive = the archive is damaged or not a Soyuz release
 services-update-install-not-elf = bin/soyuz in the archive is not a program for this computer's processor; nothing was changed
 services-update-install-changed = the downloaded file changed after it was verified; download it again

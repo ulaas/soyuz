@@ -310,7 +310,7 @@ services-update-package-managed = { $kind ->
    *[other] Soyuz'un bu kopyası kendini güncelleyemez. Yeni sürümü bunu kurduğunuz yolla kurun.
 }
 services-update-install-not-tarball = yerinde yalnızca Linux sürüm arşivi (.tar.gz) kurulabilir
-services-update-install-no-binary = arşivde bin/soyuz yok
+services-update-install-no-binary = arşivde bin/{ $name } yok
 services-update-install-bad-archive = arşiv bozuk ya da bir Soyuz sürümü değil
 services-update-install-not-elf = arşivdeki bin/soyuz bu bilgisayarın işlemcisi için bir program değil; hiçbir şey değiştirilmedi
 services-update-install-changed = indirilen dosya doğrulandıktan sonra değişti; yeniden indirin

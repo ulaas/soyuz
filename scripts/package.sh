@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Build a Linux release of Soyuz and package it as a relocatable PREFIX tree.
 #
-# Runs `cargo build --release -p soyuz-app --locked`, then creates
+# Runs `cargo build --release -p soyuz-app -p soyuz-tui --locked`, then creates
 # dist/soyuz-<version>-linux-<arch>.tar.gz with one top-level folder laid out like a prefix:
 #
 #   soyuz-<version>-linux-<arch>/
-#     bin/soyuz
+#     bin/soyuz                      the app
+#     bin/soyuz-tui                  the terminal UI (`soyuz-tui [PATH]`)
 #     share/applications/soyuz.desktop
 #     share/icons/hicolor/<size>x<size>/apps/soyuz.png
 #     share/metainfo/io.github.ulaas.Soyuz.metainfo.xml
@@ -21,8 +22,8 @@
 # Linux counterpart of scripts/package.ps1 (same version source, out dir and checksums).
 #
 # Options:
-#   --skip-build             package the existing target/release/soyuz
-#   --features <list>        cargo features (e.g. glow)
+#   --skip-build             package the existing target/release/soyuz and soyuz-tui
+#   --features <list>        soyuz-app cargo features (e.g. glow; passed as soyuz-app/<f>)
 #   --no-default-features
 #   --out-dir <dir>          default: dist
 #   --rpm                    also build an .rpm from the tarball (installer/linux/soyuz.spec,
@@ -62,11 +63,13 @@ name="soyuz-$version-linux-$arch"
 tarball="$out_dir/$name.tar.gz"
 sums="$out_dir/SHA256SUMS-linux.txt"
 bin="target/release/soyuz"
+tui_bin="target/release/soyuz-tui"
 metainfo="io.github.ulaas.Soyuz.metainfo.xml"
 
 # What goes into the tree: "source|path inside the tree|mode".
 files=(
     "$bin|bin/soyuz|755"
+    "$tui_bin|bin/soyuz-tui|755"
     "crates/soyuz-app/assets/soyuz.desktop|share/applications/soyuz.desktop|644"
     "installer/linux/$metainfo|share/metainfo/$metainfo|644"
     "LICENSE|share/licenses/soyuz/LICENSE|644"
@@ -79,8 +82,15 @@ for icon in installer/linux/icons/hicolor/*/apps/soyuz.png installer/linux/icons
     [[ -f "$icon" ]] && files+=("$icon|share/icons/${icon#installer/linux/icons/}|644")
 done
 
-cargo_args=(build --release -p soyuz-app --locked)
-[[ -n "$features" ]] && cargo_args+=(--features "$features")
+cargo_args=(build --release -p soyuz-app -p soyuz-tui --locked)
+if [[ -n "$features" ]]; then
+    # Unqualified names are soyuz-app's (they set the matching soyuz-tui features too).
+    qualified=()
+    for f in ${features//,/ }; do
+        if [[ "$f" == */* ]]; then qualified+=("$f"); else qualified+=("soyuz-app/$f"); fi
+    done
+    cargo_args+=(--features "$(IFS=,; echo "${qualified[*]}")")
+fi
 [[ $no_default -eq 1 ]] && cargo_args+=(--no-default-features)
 
 if [[ $dry_run -eq 1 ]]; then
@@ -101,7 +111,9 @@ if [[ $skip_build -eq 0 ]]; then
     echo "cargo ${cargo_args[*]}"
     cargo "${cargo_args[@]}"
 fi
-[[ -x "$bin" ]] || { echo "package.sh: missing $bin" >&2; exit 1; }
+for b in "$bin" "$tui_bin"; do
+    [[ -x "$b" ]] || { echo "package.sh: missing $b" >&2; exit 1; }
+done
 
 mkdir -p "$out_dir"
 stage="$(mktemp -d "${TMPDIR:-/tmp}/soyuz-package.XXXXXX")"

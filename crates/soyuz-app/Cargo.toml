@@ -96,6 +96,8 @@ priority = "optional"
 depends = "$auto, libxkbcommon0, libfontconfig1"
 assets = [
     ["target/release/soyuz", "usr/bin/", "755"],
+    # The terminal UI binary (crate soyuz-tui): build it first, `cargo build --release -p soyuz-tui`.
+    ["target/release/soyuz-tui", "usr/bin/", "755"],
     ["assets/soyuz.desktop", "usr/share/applications/", "644"],
     ["../../installer/linux/icons/hicolor/16x16/apps/soyuz.png", "usr/share/icons/hicolor/16x16/apps/soyuz.png", "644"],
     ["../../installer/linux/icons/hicolor/22x22/apps/soyuz.png", "usr/share/icons/hicolor/22x22/apps/soyuz.png", "644"],
