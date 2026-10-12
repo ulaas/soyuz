@@ -430,6 +430,7 @@ const SHIFT: Mods = Mods::SHIFT;
 const ALT: Mods = Mods::ALT;
 const CTRL_SHIFT: Mods = Mods::CTRL.union(Mods::SHIFT);
 const CTRL_ALT: Mods = Mods::CTRL.union(Mods::ALT);
+const ALT_SHIFT: Mods = Mods::ALT.union(Mods::SHIFT);
 
 const DIGITS: [KeyName; 9] = [
     KeyName::Num1,
@@ -501,6 +502,13 @@ fn common(km: &mut Keymap) {
     b(G, A::ViewMiller, CTRL_SHIFT, KeyName::Num4);
     b(G, A::ViewGallery, CTRL_SHIFT, KeyName::Num5);
     b(G, A::ShowKeybindings, CTRL, KeyName::Slash);
+    // The context menu key of Windows / GTK; the terminal UI opens its menu with it.
+    b(G, A::ContextMenu, SHIFT, KeyName::F10);
+    // Scroll the preview pane without leaving the file list (terminal UI).
+    b(G, A::PreviewScrollUp, ALT_SHIFT, KeyName::ArrowUp);
+    b(G, A::PreviewScrollDown, ALT_SHIFT, KeyName::ArrowDown);
+    b(G, A::PreviewPageUp, ALT, KeyName::PageUp);
+    b(G, A::PreviewPageDown, ALT, KeyName::PageDown);
 
     // File list
     b(L, A::Copy, CTRL, KeyName::C);
@@ -712,6 +720,41 @@ mod tests {
         let t: TuiSection = toml::from_str("mouse = false").unwrap();
         assert_eq!(t.color_mode, TuiColorMode::Auto);
         assert_eq!(t.sidebar_width, 28);
+    }
+
+    #[test]
+    fn tui_t3_t4_keys_defaults_round_trip_and_clamps() {
+        let t = TuiSection::default();
+        assert_eq!(t.osc52, TuiOsc52::Auto);
+        assert_eq!(t.images, TuiImages::Auto);
+        assert_eq!((t.jobs_rows, t.jobs_rows_clamped()), (8, 8));
+        assert_eq!(t.cell_pixels_clamped(), (10, 20));
+        assert!((t.preview_ratio_clamped() - 0.38).abs() < 1e-6);
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Wrap {
+            tui: TuiSection,
+        }
+        for osc52 in TuiOsc52::ALL {
+            for images in TuiImages::ALL {
+                let w = Wrap { tui: TuiSection { osc52, images, cell_pixels: [8, 16], ..t.clone() } };
+                let s = toml::to_string(&w).unwrap();
+                assert_eq!(toml::from_str::<Wrap>(&s).unwrap(), w, "{s}");
+            }
+        }
+        let t: TuiSection = toml::from_str(
+            "osc52 = \"never\"\nimages = \"halfblocks\"\njobs_rows = 99\ncell_pixels = [0, 500]\npreview_ratio = 0.9",
+        )
+        .unwrap();
+        assert_eq!((t.osc52, t.images), (TuiOsc52::Never, TuiImages::Halfblocks));
+        assert_eq!(t.jobs_rows_clamped(), 30);
+        assert_eq!(t.cell_pixels_clamped(), (1, 200));
+        assert!((t.preview_ratio_clamped() - 0.6).abs() < 1e-6);
+        let low = TuiSection { jobs_rows: 0, preview_ratio: 0.0, ..TuiSection::default() };
+        assert_eq!(low.jobs_rows_clamped(), 3);
+        assert!((low.preview_ratio_clamped() - 0.2).abs() < 1e-6);
+        let nan = TuiSection { preview_ratio: f32::NAN, ..TuiSection::default() };
+        assert!((nan.preview_ratio_clamped() - 0.38).abs() < 1e-6);
+        assert!(toml::from_str::<TuiSection>("images = \"svga\"").is_err());
     }
 
     #[test]

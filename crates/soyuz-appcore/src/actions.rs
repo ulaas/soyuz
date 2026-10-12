@@ -8,7 +8,7 @@ use soyuz_core::{Column, GroupBy, Location, SortDir, ViewMode};
 use crate::cmd::Cmd;
 use crate::core::{AppCore, Focus};
 use crate::host::Host;
-use crate::models::frontend::FrontendCmd;
+use crate::models::frontend::{FrontendCmd, ScrollStep, ViewRequest};
 use crate::models::toasts::Toast;
 use crate::ops::{self, NavOpts};
 use crate::state::layout::NavDir;
@@ -434,6 +434,17 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             ops::launch(app, &path);
         }
         A::ReloadConfig => crate::services::config_watch::reload_now(app, host),
+        A::ContextMenu => app.frontend.push(FrontendCmd::View(ViewRequest::ContextMenu)),
+        A::FocusActivityPanel => app.frontend.push(FrontendCmd::View(ViewRequest::FocusActivity)),
+        A::PreviewScrollUp | A::PreviewScrollDown | A::PreviewPageUp | A::PreviewPageDown => {
+            let step = match action {
+                A::PreviewScrollUp => ScrollStep::LineUp,
+                A::PreviewScrollDown => ScrollStep::LineDown,
+                A::PreviewPageUp => ScrollStep::PageUp,
+                _ => ScrollStep::PageDown,
+            };
+            app.frontend.push(FrontendCmd::View(ViewRequest::PreviewScroll(step)));
+        }
         A::QuickLook | A::QuickLookNext | A::QuickLookPrev => {
             if !app.ws.pane().type_ahead.is_active(std::time::Instant::now()) {
                 crate::models::quicklook::toggle(app);
@@ -460,6 +471,21 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             }
         }
     }
+}
+
+/// Actions only the terminal UI implements so far ([`FrontendCmd::View`]): the GUI's
+/// palette leaves them out (their keys stay editable in the keyboard settings, which
+/// configure both frontends).
+pub fn tui_only(a: &Action) -> bool {
+    matches!(
+        a,
+        Action::ContextMenu
+            | Action::FocusActivityPanel
+            | Action::PreviewScrollUp
+            | Action::PreviewScrollDown
+            | Action::PreviewPageUp
+            | Action::PreviewPageDown
+    )
 }
 
 /// Actions without an implementation yet: hidden from the command palette and the

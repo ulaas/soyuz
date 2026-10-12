@@ -15,7 +15,8 @@
 //! 2. one frame ([`App::frame`]) with the input that arrived since the last one, running
 //!    the core phases in the GUI's order (`SoyuzApp::frame`): begin_frame,
 //!    pump_services, pump_jobs, pump_background, apply_cmds, input
-//!    ([`crate::input::route`]), apply_cmds, the resets of [`crate::unsupported`], draw
+//!    ([`crate::input::route`], after closing stale dialogs), apply_cmds,
+//!    `editors::pump`, the resets of [`crate::unsupported`], draw
 //!    (prepare_visible_panes, [`Regions::compute`], [`view::prepare`],
 //!    [`ViewModel::from_core`], [`view::draw`]), `ops::fileops::end_frame`, apply_cmds,
 //!    update_title, end_frame; then the host's escape sequences (title, OSC 52) are
@@ -38,8 +39,6 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 use soyuz_appcore::core::{AppCore, CMD_ROUNDS, FrontendKind, Startup};
 use soyuz_appcore::host::Host as _;
-use soyuz_appcore::models::frontend::FrontendCmd;
-use soyuz_appcore::models::properties::MetaDialog;
 use soyuz_appcore::models::toasts::Toast;
 use soyuz_appcore::services::crash;
 use soyuz_appcore::{ops, tr};
@@ -225,6 +224,7 @@ impl App {
         soyuz_appcore::keys::set_keymap_overlay(crate::overlay::tui_defaults);
         startup.frontend = FrontendKind::Tui;
         let host = TuiHost::new();
+        host.set_osc52(config.tui.osc52);
         let mut core = AppCore::new(config, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
         core.renderer = "tui";
         App {
@@ -254,6 +254,11 @@ impl App {
     /// Click targets of the last frame drawn.
     pub fn hits(&self) -> &Hits {
         &self.hits
+    }
+
+    /// Open a terminal UI dialog on top of every open dialog (`crate::input::dialogs`).
+    pub fn push_dialog(&mut self, d: crate::input::dialogs::TuiDialog) {
+        self.input.dialogs.tui.push(d);
     }
 
     /// Who owns the keyboard now (`crate::input::focus`).
@@ -286,66 +291,14 @@ impl App {
         self.core.ui.toasts.push(Toast::info(tr!("tui-not-available")).body(feature));
     }
 
-    /// Carry out (or decline) the core's requests for the frontend.
+    /// Carry out (or decline) the core's requests for the frontend (`crate::frontend`).
     pub fn drain_frontend(&mut self) {
-        for c in std::mem::take(&mut self.core.frontend) {
-            let feature = match c {
-                FrontendCmd::ReleaseFocus | FrontendCmd::CloseSettings => continue,
-                FrontendCmd::CrashReports(reports) => {
-                    if let Some(newest) = reports.first() {
-                        let path = soyuz_fs::strip_verbatim(&newest.path).display().to_string();
-                        let path = crate::dialog::safe(&path);
-                        self.core.ui.toasts.push(Toast::warning(tr!("tui-crashed", path = path)).sticky());
-                    }
-                    // Offered once, like the GUI's "Keep" (the reports stay on disk).
-                    crash::request(crash::RecoveryAction::KeepReports(reports));
-                    continue;
-                }
-                FrontendCmd::RecoveredJobs(recovered) => {
-                    // Left in the journal for the GUI to resume or roll back.
-                    let count: usize = recovered.iter().map(|r| r.jobs.len()).sum();
-                    self.core.ui.toasts.push(Toast::warning(tr!("tui-recovered-jobs", count = count)).sticky());
-                    continue;
-                }
-                FrontendCmd::EditorUnsaved(p) => {
-                    // There is no editor view to change a document in: quitting saves
-                    // what is open (then quits), closing one document keeps it open.
-                    use soyuz_appcore::editors::io::Answer;
-                    p.answer(if p.target.is_none() { Answer::Save } else { Answer::Cancel });
-                    tr!("tui-feature-editor")
-                }
-                FrontendCmd::OpenSettings(_) => tr!("tui-feature-settings"),
-                FrontendCmd::SaveWorkspace(_) | FrontendCmd::ManageWorkspaces => tr!("tui-feature-workspaces"),
-                FrontendCmd::TabHistory { .. } => tr!("tui-feature-history"),
-                FrontendCmd::CloseWindowPrompt { .. } => tr!("tui-feature-windows"),
-                FrontendCmd::FolderProperties(_) | FrontendCmd::Properties { .. } => tr!("tui-feature-properties"),
-                FrontendCmd::UnlockDevice { .. } | FrontendCmd::OfferReadOnlyMount { .. } => {
-                    tr!("tui-feature-devices")
-                }
-                FrontendCmd::Smart(_) => tr!("tui-feature-smart"),
-                FrontendCmd::Remote(_) => tr!("tui-feature-remote"),
-                FrontendCmd::Archive(_) => tr!("tui-feature-archive"),
-                FrontendCmd::About => tr!("tui-feature-about"),
-                FrontendCmd::Confirm { .. } => tr!("tui-feature-confirm"),
-                FrontendCmd::SelectByPattern(_) => tr!("tui-feature-select-pattern"),
-                FrontendCmd::ChooseColumns(_) => tr!("tui-feature-columns"),
-                FrontendCmd::OpenWith(_) => tr!("tui-feature-open-with"),
-                FrontendCmd::MetaDialog(MetaDialog::BatchRename) => tr!("tui-feature-batch-rename"),
-                FrontendCmd::MetaDialog(MetaDialog::Attributes) => tr!("tui-feature-attributes"),
-                FrontendCmd::MetaDialog(MetaDialog::Link(_)) => tr!("tui-feature-links"),
-            };
-            self.unavailable(feature);
-        }
+        crate::frontend::drain(self);
     }
 
     fn input(&mut self, events: &[Event]) {
-        // Prompts that went away by themselves close first.
-        while let Some(top) = self.core.dialogs.top_mut() {
-            if !crate::dialog::stale(top) {
-                break;
-            }
-            self.core.dialogs.close_top();
-        }
+        // Dialogs that went away by themselves close first.
+        crate::input::dialogs::remove_stale(self);
         crate::input::route(self, events);
     }
 
@@ -393,6 +346,9 @@ impl App {
         self.apply_cmds();
         self.input(events);
         self.apply_cmds();
+        // The editors' worker results (loads, saves, answers to "Save changes?"), every
+        // frame like the GUI's editor panel: a quit that saves first goes on from here.
+        soyuz_appcore::editors::pump(&mut self.core, &self.host);
         crate::unsupported::reset_all(self);
         self.tick_toasts(dt);
 

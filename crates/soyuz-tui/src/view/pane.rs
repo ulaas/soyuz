@@ -42,6 +42,7 @@
 //! the focused pane's last line.
 
 pub mod columns;
+pub mod grid;
 pub mod miller;
 
 use std::time::Instant;
@@ -214,6 +215,8 @@ pub struct Row {
     pub tag_color: Option<u8>,
     pub cursor: bool,
     pub selected: bool,
+    /// The inline rename field on this row (`view::rename`, Phase T3).
+    pub edit: Option<super::rename::EditVm>,
 }
 
 impl Default for Row {
@@ -230,6 +233,7 @@ impl Default for Row {
             tag_color: None,
             cursor: false,
             selected: false,
+            edit: None,
         }
     }
 }
@@ -466,6 +470,7 @@ impl RowCx<'_> {
             tag_color,
             cursor: self.cursor == Some(i),
             selected: self.pane.selection.contains(key),
+            edit: None,
         })
     }
 }
@@ -633,6 +638,9 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
                 }
                 buf.set_style(r, row_style(m, row, theme));
                 hits.push(r, HitTarget::PaneRow { pane: m.id, vis_version: m.vis_version, index: row.index });
+                if let Some(e) = &row.edit {
+                    super::rename::draw_edit(buf, r, prefix_w(m), e, theme, hits);
+                }
                 col += 1;
                 if col >= cols {
                     col = 0;

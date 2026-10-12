@@ -2,7 +2,8 @@
 //!
 //! Phase T1 draws every model the same way (title, body text, key hints) so input can
 //! never get stuck behind a prompt the terminal UI has no view for yet; T3 builds the
-//! real views. What each model accepts:
+//! real views in `crate::view::dialogs` / `crate::input::dialogs`, whose stubs call
+//! [`fallback`], [`on_key`] and [`stale`]. What each model accepts:
 //!
 //! | Model | Keys |
 //! |---|---|
@@ -15,27 +16,12 @@
 //! open never cancels the running jobs.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::models::dialogs::{DialogModel, QuitChoice};
 use soyuz_appcore::tr;
 use soyuz_jobs::JobPrompt;
 
-/// Text of a dialog as the fallback draws it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct DialogView {
-    pub title: String,
-    pub body: Vec<String>,
-    pub hints: String,
-}
-
-/// What a key press did to the top-most dialog.
-#[derive(Debug)]
-pub enum Outcome {
-    /// Not a key this dialog uses; it stays open.
-    Keep,
-    /// Close the dialog (`DialogStack::close_top`), after queuing the command, if any.
-    Close(Option<Cmd>),
-}
+pub use crate::input::dialogs::Outcome;
+use crate::view::dialogs::DialogVm;
 
 /// Text safe to put on the terminal: control characters made visible (names are
 /// untrusted and must not smuggle escape sequences).
@@ -43,8 +29,8 @@ pub fn safe(s: &str) -> String {
     soyuz_core::naming::reveal_controls(s).chars().map(|c| if c.is_control() { '\u{fffd}' } else { c }).collect()
 }
 
-/// The fallback content for `m`.
-pub fn fallback(m: &DialogModel) -> DialogView {
+/// The fallback content for `m` (title, body, key hints).
+pub fn fallback(m: &DialogModel) -> DialogVm {
     let title = safe(m.title());
     let (body, hints): (Vec<String>, &str) = match m {
         DialogModel::Prompt(p) => {
@@ -72,7 +58,7 @@ pub fn fallback(m: &DialogModel) -> DialogView {
             (vec![tr!("tui-dialog-unsupported").to_string()], tr!("tui-hint-cancel"))
         }
     };
-    DialogView { title, body, hints: hints.to_string() }
+    DialogVm { title, body, hints: hints.to_string(), alert: m.alert(), ..DialogVm::default() }
 }
 
 /// One line about what a job prompt asks.
@@ -170,6 +156,7 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
+    use soyuz_appcore::cmd::Cmd;
     use soyuz_appcore::models::dialogs::{DeleteConfirmModel, QuitModel};
     use soyuz_jobs::DeleteMode;
 

@@ -46,6 +46,48 @@ pub enum HitTarget {
     Status,
     /// Button `index` of the open dialog.
     DialogButton(usize),
+    /// Field `index` of the open dialog's form.
+    DialogField(usize),
+    /// Row `index` of a list in the open dialog (open with, recovery, crash reports, …).
+    DialogRow(usize),
+    /// Item `index` of the open menu at submenu `depth` (0: the menu itself).
+    MenuItem { depth: u8, index: usize },
+    /// Tab `index` of the bottom panel's tab strip (jobs, history, …).
+    BottomTab(usize),
+    /// Row `index` of the jobs panel's list.
+    JobRow(usize),
+    /// A button on row `row` of the jobs panel.
+    JobButton { row: usize, button: JobButton },
+    /// The preview pane's content (wheel / click to focus it).
+    PreviewScroll,
+    /// Row `index` of the preview's archive listing.
+    ArchiveRow(usize),
+    /// Tab `index` of the editor's document tabs.
+    EditorTab(usize),
+    /// The close mark of editor tab `index`.
+    EditorClose(usize),
+    /// The editor's text area of document `doc`: the rect's top-left cell shows line `top`,
+    /// display column `left` (the click's line and column follow from its position).
+    EditorCell { doc: u64, top: usize, left: usize },
+    /// The Quick Look overlay (a press outside it closes it).
+    QuickLook,
+    /// The inline rename field.
+    RenameField,
+}
+
+/// A button on a jobs panel row ([`HitTarget::JobButton`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobButton {
+    Pause,
+    Resume,
+    Cancel,
+    /// Answer the job's waiting prompt.
+    Resolve,
+    Undo,
+    /// Remove a finished job from the list.
+    Dismiss,
+    /// Open the job's details.
+    Details,
 }
 
 /// The targets of one frame, in drawing order.

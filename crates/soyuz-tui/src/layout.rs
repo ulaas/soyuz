@@ -14,12 +14,30 @@
 //!
 //! The parts each view step adds report whether they are shown through [`Facts`], built
 //! by `Facts::from_core` from one function per part (`view::tabs::shown`,
-//! `view::sidebar::shown` / `width`, `view::status::shown`, `view::toasts::lines`), so
-//! a step changes its own file, not this one.
+//! `view::sidebar::shown` / `width`, `view::status::shown`, `view::toasts::lines`,
+//! `view::jobs::rows`, `view::preview::shown`, `view::editor::placement`), so a step
+//! changes its own file, not this one.
+//!
+//! Phase T3 / T4 panels, placed in this order:
+//! - the bottom panel (jobs, [`Regions::bottom`]): the full width above the status line,
+//!   `Facts::bottom_rows` high but always leaving [`BODY_MIN_ROWS`] for the files; it
+//!   collapses when fewer than [`BOTTOM_MIN_ROWS`] would remain for it;
+//! - the editor ([`Regions::editor`]), right of the panes (`[editor] dock = "right"`) or
+//!   below them (`"bottom"`), taking [`EDITOR_SHARE`] of the area beside the sidebar. When
+//!   the dock side is too small it uses the other side; when neither fits, or the editor
+//!   is maximized, it takes the whole area and the focused pane is kept with an empty rect
+//!   (drawn nowhere);
+//! - the preview pane ([`Regions::preview`]), right of the panes (`[tui] preview_ratio`
+//!   of their width) when at least [`SIDE_MIN_COLS`] wide, else below them when at least
+//!   [`BELOW_MIN_ROWS`] high, else hidden;
+//! - then the panes split the rest as before.
+//!
+//! These panels sit right next to the panes with no gap: each view draws its own edge
+//! (a border or a separator line) inside its rect.
 
 use ratatui::layout::Rect;
 use soyuz_appcore::core::AppCore;
-use soyuz_core::config::{Orientation, TuiSection};
+use soyuz_core::config::{EditorDock, Orientation, TuiSection};
 
 pub use crate::hits::{HitTarget, Hits};
 
@@ -34,6 +52,16 @@ pub const GAP: u16 = 1;
 /// A pane of a multi-pane layout needs this many rows for its title line (one title row
 /// plus at least two list rows).
 pub const TITLE_MIN_ROWS: u16 = 3;
+/// Rows the files keep when the bottom panel is shown.
+pub const BODY_MIN_ROWS: u16 = 3;
+/// The bottom panel is hidden when fewer rows remain for it.
+pub const BOTTOM_MIN_ROWS: u16 = 3;
+/// A side panel (preview, editor) goes beside the panes only when the area is this wide.
+pub const SIDE_MIN_COLS: u16 = 60;
+/// A panel goes below the panes only when the area is this high.
+pub const BELOW_MIN_ROWS: u16 = 10;
+/// Share of the area the editor takes when docked.
+pub const EDITOR_SHARE: f32 = 0.5;
 
 /// What the core's state says about the layout (no sizes in here).
 #[derive(Clone, Debug, PartialEq)]
@@ -55,6 +83,19 @@ pub struct Facts {
     pub status: bool,
     /// Toast lines wanted.
     pub toasts: u16,
+    /// Rows of the bottom panel (jobs); 0: hidden.
+    pub bottom_rows: u16,
+    /// The preview pane is open.
+    pub preview: bool,
+    /// Share of the panes' width (or height) the preview takes (`[tui] preview_ratio`,
+    /// clamped).
+    pub preview_ratio: f32,
+    /// The editor panel is open.
+    pub editor: bool,
+    /// Where it docks (`[editor] dock`).
+    pub editor_dock: EditorDock,
+    /// It fills the panes' area.
+    pub editor_maximized: bool,
 }
 
 impl Default for Facts {
@@ -70,6 +111,12 @@ impl Default for Facts {
             sidebar_width: 24,
             status: true,
             toasts: 0,
+            bottom_rows: 0,
+            preview: false,
+            preview_ratio: TuiSection::PREVIEW_RATIO_DEFAULT,
+            editor: false,
+            editor_dock: EditorDock::Right,
+            editor_maximized: false,
         }
     }
 }
@@ -77,6 +124,7 @@ impl Default for Facts {
 impl Facts {
     pub fn from_core(core: &AppCore) -> Facts {
         let tab = core.ws.tab();
+        let editor = crate::view::editor::placement(core);
         Facts {
             shown: tab.shown(),
             focused: tab.focused,
@@ -88,6 +136,12 @@ impl Facts {
             sidebar_width: crate::view::sidebar::width(core),
             status: crate::view::status::shown(core),
             toasts: crate::view::toasts::lines(core),
+            bottom_rows: crate::view::jobs::rows(core),
+            preview: crate::view::preview::shown(core),
+            preview_ratio: core.config.tui.preview_ratio_clamped(),
+            editor: editor.is_some(),
+            editor_dock: editor.map_or(EditorDock::Right, |p| p.dock),
+            editor_maximized: editor.is_some_and(|p| p.maximized),
         }
     }
 }
@@ -116,6 +170,12 @@ pub struct Regions {
     pub splitters: Vec<(Rect, bool)>,
     pub toasts: Rect,
     pub status: Rect,
+    /// The bottom panel (jobs).
+    pub bottom: Rect,
+    /// The preview pane.
+    pub preview: Rect,
+    /// The editor panel.
+    pub editor: Rect,
     /// Too small for anything but the list.
     pub list_only: bool,
     /// Dual / quad panes are stacked into one column.
@@ -139,6 +199,9 @@ impl Regions {
             sidebar: at(area.x, area.y),
             toasts: at(area.x, area.bottom()),
             status: at(area.x, area.bottom()),
+            bottom: at(area.x, area.bottom()),
+            preview: at(area.x, area.bottom()),
+            editor: at(area.x, area.bottom()),
             ..Regions::default()
         };
         if area.height < LIST_ONLY_BELOW_ROWS {
@@ -168,6 +231,14 @@ impl Regions {
         } else {
             r.toasts = at(area.x, bottom);
         }
+        r.bottom = at(area.x, bottom);
+        if facts.bottom_rows > 0 {
+            let rows = facts.bottom_rows.min(bottom.saturating_sub(top).saturating_sub(BODY_MIN_ROWS));
+            if rows >= BOTTOM_MIN_ROWS {
+                bottom -= rows;
+                r.bottom = Rect::new(area.x, bottom, area.width, rows);
+            }
+        }
         let mut body = Rect::new(area.x, top, area.width, bottom - top);
         if facts.sidebar && area.width >= SIDEBAR_MIN_COLS {
             let w = facts.sidebar_width.clamp(1, area.width / 3);
@@ -176,6 +247,38 @@ impl Regions {
             body.width -= w + GAP;
         } else {
             r.sidebar = at(body.x, body.y);
+        }
+        r.editor = at(body.x, body.y);
+        r.preview = at(body.x, body.y);
+        if facts.editor {
+            match place_editor(body, facts) {
+                Some((editor, rest)) => {
+                    r.editor = editor;
+                    body = rest;
+                }
+                None => {
+                    // Maximized (or no room beside it): the editor takes the area.
+                    r.editor = body;
+                    r.panes = vec![PaneRect { index: facts.focused, rect: at(body.x, body.y) }];
+                    return r;
+                }
+            }
+        }
+        if facts.preview {
+            let ratio = if facts.preview_ratio.is_finite() {
+                facts.preview_ratio.clamp(TuiSection::PREVIEW_RATIO_MIN, TuiSection::PREVIEW_RATIO_MAX)
+            } else {
+                TuiSection::PREVIEW_RATIO_DEFAULT
+            };
+            if body.width >= SIDE_MIN_COLS {
+                let w = ((f32::from(body.width) * ratio).round() as u16).clamp(1, body.width - 1);
+                body.width -= w;
+                r.preview = Rect { x: body.right(), width: w, ..body };
+            } else if body.height >= BELOW_MIN_ROWS {
+                let h = ((f32::from(body.height) * ratio).round() as u16).clamp(1, body.height - 1);
+                body.height -= h;
+                r.preview = Rect { y: body.bottom(), height: h, ..body };
+            }
         }
         let (mut panes, splitters, stacked) = split_panes(body, facts);
         if panes.len() > 1 && panes.iter().all(|p| p.rect.height >= TITLE_MIN_ROWS) {
@@ -189,6 +292,30 @@ impl Regions {
         r.splitters = splitters;
         r.stacked = stacked;
         r
+    }
+}
+
+/// The editor's rect and what stays for the panes, or `None` when the editor takes the
+/// whole `body` (maximized, or too small to share it).
+fn place_editor(body: Rect, f: &Facts) -> Option<(Rect, Rect)> {
+    if f.editor_maximized {
+        return None;
+    }
+    let right = |b: Rect| {
+        (b.width >= SIDE_MIN_COLS).then(|| {
+            let w = (f32::from(b.width) * EDITOR_SHARE).round() as u16;
+            (Rect { x: b.right() - w, width: w, ..b }, Rect { width: b.width - w, ..b })
+        })
+    };
+    let below = |b: Rect| {
+        (b.height >= BELOW_MIN_ROWS).then(|| {
+            let h = (f32::from(b.height) * EDITOR_SHARE).round() as u16;
+            (Rect { y: b.bottom() - h, height: h, ..b }, Rect { height: b.height - h, ..b })
+        })
+    };
+    match f.editor_dock {
+        EditorDock::Right => right(body).or_else(|| below(body)),
+        EditorDock::Bottom => below(body).or_else(|| right(body)),
     }
 }
 
@@ -363,35 +490,97 @@ mod tests {
     }
 
     #[test]
+    fn bottom_preview_and_editor() {
+        // Bottom panel: full width above the status line; collapses when short.
+        let f = Facts { bottom_rows: 8, ..Facts::default() };
+        let r = regions(80, 24, &f);
+        assert_eq!(r.bottom, Rect::new(0, 15, 80, 8));
+        assert_eq!(r.pane(0), Some(Rect::new(0, 1, 80, 14)));
+        let r = regions(80, 10, &f);
+        assert_eq!(r.bottom.height, 5, "keeps three rows for the files");
+        assert_eq!(r.pane(0).map(|p| p.height), Some(BODY_MIN_ROWS));
+        assert!(regions(80, 7, &f).bottom.is_empty(), "too short: collapsed");
+        // Preview: right of the panes, below when narrow, hidden when tiny.
+        let f = Facts { preview: true, preview_ratio: 0.25, ..Facts::default() };
+        let r = regions(80, 24, &f);
+        assert_eq!(r.preview, Rect::new(60, 1, 20, 22));
+        assert_eq!(r.pane(0), Some(Rect::new(0, 1, 60, 22)));
+        let r = regions(50, 24, &f);
+        assert_eq!(r.preview, Rect::new(0, 17, 50, 6));
+        assert_eq!(r.pane(0), Some(Rect::new(0, 1, 50, 16)));
+        assert!(regions(50, 8, &f).preview.is_empty());
+        // Out-of-range ratios are clamped.
+        let r = regions(100, 24, &Facts { preview_ratio: 5.0, ..f.clone() });
+        assert_eq!(r.preview.width, 60);
+        // Editor: docked right or bottom, the other side when it does not fit, the whole
+        // area when maximized.
+        let f = Facts { editor: true, ..Facts::default() };
+        let r = regions(100, 30, &f);
+        assert_eq!(r.editor, Rect::new(50, 1, 50, 28));
+        assert_eq!(r.pane(0), Some(Rect::new(0, 1, 50, 28)));
+        let r = regions(50, 30, &f);
+        assert_eq!(r.editor, Rect::new(0, 15, 50, 14), "too narrow: below");
+        let fb = Facts { editor_dock: EditorDock::Bottom, ..f.clone() };
+        assert_eq!(regions(100, 30, &fb).editor, Rect::new(0, 15, 100, 14));
+        let r = regions(100, 30, &Facts { editor_maximized: true, ..f.clone() });
+        assert_eq!(r.editor, Rect::new(0, 1, 100, 28));
+        assert!(r.panes.len() == 1 && r.panes[0].rect.is_empty());
+        let r = regions(40, 8, &f);
+        assert_eq!(r.editor, Rect::new(0, 1, 40, 6), "no room to share: the whole area");
+        // Everything at once.
+        let all = Facts { editor: true, preview: true, bottom_rows: 6, sidebar: true, shown: 2, ..Facts::default() };
+        let r = regions(160, 40, &all);
+        assert!(!r.editor.is_empty() && !r.preview.is_empty() && !r.bottom.is_empty() && r.panes.len() == 2);
+    }
+
+    #[test]
     fn every_size_is_consistent() {
-        for shown in [1, 2, 4] {
-            for orientation in [Orientation::Vertical, Orientation::Horizontal] {
-                let f = Facts { shown, orientation, sidebar: true, tab_strip: true, toasts: 3, ..Facts::default() };
-                for w in 0..=130 {
-                    for h in 0..=40 {
-                        let r = regions(w, h, &f);
-                        assert!(!r.panes.is_empty());
-                        assert!(r.titles.is_empty() || r.titles.len() == r.panes.len(), "{w}x{h}");
-                        let rects: Vec<Rect> = r
-                            .panes
-                            .iter()
-                            .chain(&r.titles)
-                            .map(|p| p.rect)
-                            .chain(r.splitters.iter().map(|s| s.0))
-                            .filter(|r| !r.is_empty())
-                            .collect();
-                        for p in &rects {
-                            assert!(r.area.union(*p) == r.area, "{w}x{h} {p:?}");
-                            assert!(!p.intersects(r.tabs) && !p.intersects(r.crumbs) && !p.intersects(r.status));
-                        }
-                        // Panes and titles never overlap (splitters may cross each other).
-                        let boxes: Vec<Rect> = r.panes.iter().chain(&r.titles).map(|p| p.rect).collect();
-                        for (i, a) in boxes.iter().enumerate() {
-                            for b in &boxes[i + 1..] {
-                                assert!(!a.intersects(*b), "{w}x{h} {a:?} {b:?}");
+        let panels = [
+            Facts::default(),
+            Facts { bottom_rows: 8, preview: true, ..Facts::default() },
+            Facts { editor: true, preview: true, bottom_rows: 30, ..Facts::default() },
+            Facts { editor: true, editor_dock: EditorDock::Bottom, preview: true, ..Facts::default() },
+            Facts { editor: true, editor_maximized: true, bottom_rows: 3, ..Facts::default() },
+        ];
+        for p in &panels {
+            for shown in [1, 2, 4] {
+                for orientation in [Orientation::Vertical, Orientation::Horizontal] {
+                    let f = Facts { shown, orientation, sidebar: true, tab_strip: true, toasts: 3, ..p.clone() };
+                    for w in 0..=130 {
+                        for h in 0..=40 {
+                            let r = regions(w, h, &f);
+                            assert!(!r.panes.is_empty());
+                            assert!(r.titles.is_empty() || r.titles.len() == r.panes.len(), "{w}x{h}");
+                            let rects: Vec<Rect> = r
+                                .panes
+                                .iter()
+                                .chain(&r.titles)
+                                .map(|p| p.rect)
+                                .chain(r.splitters.iter().map(|s| s.0))
+                                .chain([r.bottom, r.preview, r.editor])
+                                .filter(|r| !r.is_empty())
+                                .collect();
+                            for p in &rects {
+                                assert!(r.area.union(*p) == r.area, "{w}x{h} {p:?}");
+                                assert!(!p.intersects(r.tabs) && !p.intersects(r.crumbs) && !p.intersects(r.status));
                             }
-                            for (s, _) in &r.splitters {
-                                assert!(!a.intersects(*s), "{w}x{h} {a:?} {s:?}");
+                            // Panes, titles and panels never overlap (splitters may cross each
+                            // other).
+                            let boxes: Vec<Rect> = r
+                                .panes
+                                .iter()
+                                .chain(&r.titles)
+                                .map(|p| p.rect)
+                                .chain([r.bottom, r.preview, r.editor, r.sidebar])
+                                .filter(|r| !r.is_empty())
+                                .collect();
+                            for (i, a) in boxes.iter().enumerate() {
+                                for b in &boxes[i + 1..] {
+                                    assert!(!a.intersects(*b), "{w}x{h} {a:?} {b:?}");
+                                }
+                                for (s, _) in &r.splitters {
+                                    assert!(!a.intersects(*s), "{w}x{h} {a:?} {s:?}");
+                                }
                             }
                         }
                     }

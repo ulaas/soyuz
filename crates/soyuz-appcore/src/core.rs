@@ -206,6 +206,11 @@ pub struct AppCore {
     pub dialogs: crate::models::dialogs::DialogStack,
     /// The frontend that drives this core (from [`Startup::frontend`]).
     pub frontend_kind: FrontendKind,
+    /// The frontend's image uploader (the one passed to [`AppCore::new`]), for core code
+    /// that decodes images outside the services that got it at construction (previews,
+    /// editors): the GUI's turns pixels into egui textures, the terminal UI's keeps none
+    /// (`services::preview_gfx::no_upload`) until it draws images itself.
+    pub uploader: Uploader,
 }
 
 impl AppCore {
@@ -323,7 +328,7 @@ impl AppCore {
             keyseq: Default::default(),
             secondary: startup.secondary,
             quit: QuitState::default(),
-            editors: crate::editors::Editors::new(uploader),
+            editors: crate::editors::Editors::new(uploader.clone()),
             ai: crate::ai::AiState::new(wake.clone()),
             wake,
             config_save: Default::default(),
@@ -332,6 +337,7 @@ impl AppCore {
             workspaces: crate::models::workspaces::WorkspacesState::load(),
             automation: Default::default(),
             frontend_kind: startup.frontend,
+            uploader,
         };
         crate::models::workspaces::bind_hotkeys(&mut app);
         let restored = session.as_ref().is_some_and(|s| app.restore_tabs(s));

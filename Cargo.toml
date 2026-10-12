@@ -31,6 +31,8 @@ soyuz-tui = { path = "crates/soyuz-tui", default-features = false }
 # --- Terminal UI (soyuz-tui) ---
 ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.29.0", features = ["bracketed-paste", "osc52"] }
+# Images in the terminal (kitty / sixel / iTerm2 / half-blocks; `[tui] images`).
+ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 
 # --- GUI (pinned exactly) ---
 eframe = { version = "=0.36.2", default-features = false, features = ["accesskit", "default_fonts", "wgpu", "x11", "wayland", "persistence"] }

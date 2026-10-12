@@ -8,6 +8,12 @@
 //! (focus and key routing), `widgets` (the line editor) and `unsupported` (features
 //! without a view yet).
 //!
+//! The Phase T3 / T4 skeleton adds `widgets::{form, menu, select_list}`, the dialog
+//! framework (`input::dialogs`, `view::dialogs`: both dialog stacks, one file per kind),
+//! the panels (`view::{jobs, preview, editor, quicklook, menu, rename}` with their
+//! `input::*` modules), `frontend` (the core's `FrontendCmd` requests), `clipboard`
+//! (`[tui] osc52`) and `images` (`[tui] images`).
+//!
 //! Entry points: [`launch()`] (console, configuration, then [`run`]) and
 //! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary
 //! (`src/main.rs`) and `soyuz --tui [PATH]` (`soyuz-app`'s `main.rs`).
@@ -15,10 +21,13 @@
 
 pub mod app;
 pub mod borders;
+pub mod clipboard;
 pub mod dialog;
+pub mod frontend;
 pub mod hits;
 pub mod host;
 pub mod icons;
+pub mod images;
 pub mod input;
 pub mod keys;
 pub mod launch;

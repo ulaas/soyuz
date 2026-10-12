@@ -34,6 +34,8 @@ soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+# Images (`[tui] images`, Phase T4: `view/preview.rs`, `images.rs`).
+ratatui-image.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true

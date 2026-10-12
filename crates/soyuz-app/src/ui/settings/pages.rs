@@ -1207,7 +1207,7 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
 /// `[tui]`: the terminal UI started with `soyuz --tui`.
 pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    use soyuz_core::config::{KeyboardProtocol, TuiBorders, TuiColorMode, TuiIcons, TuiSection};
+    use soyuz_core::config::{KeyboardProtocol, TuiBorders, TuiColorMode, TuiIcons, TuiImages, TuiOsc52, TuiSection};
     let d = &mut app.gui.settings.draft;
     group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-input"), |r| {
         r.row_kw(
@@ -1304,6 +1304,83 @@ pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     &mut d.tui.sidebar_width,
                     TuiSection::SIDEBAR_WIDTH_MIN..=TuiSection::SIDEBAR_WIDTH_MAX,
                     &format!(" {}", tr!("settings-unit-columns")),
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-jobs-rows"),
+            tr!("settings-tui-jobs-rows-desc"),
+            "jobs activity bottom panel height rows operations progress",
+            |ui| {
+                number(
+                    ui,
+                    &mut d.tui.jobs_rows,
+                    TuiSection::JOBS_ROWS_MIN..=TuiSection::JOBS_ROWS_MAX,
+                    &format!(" {}", tr!("settings-unit-rows")),
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-preview-ratio"),
+            tr!("settings-tui-preview-ratio-desc"),
+            "preview pane width ratio share size split",
+            |ui| {
+                number(ui, &mut d.tui.preview_ratio, TuiSection::PREVIEW_RATIO_MIN..=TuiSection::PREVIEW_RATIO_MAX, "");
+            },
+        );
+    }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-images-group"), |r| {
+        r.row_kw(
+            tr!("settings-tui-images"),
+            tr!("settings-tui-images-desc"),
+            "images pictures thumbnails graphics kitty sixel iterm2 half blocks protocol",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.images",
+                    &mut d.tui.images,
+                    &[
+                        (TuiImages::Auto, tr!("settings-auto")),
+                        (TuiImages::Kitty, "Kitty"),
+                        (TuiImages::Sixel, "Sixel"),
+                        (TuiImages::Iterm2, "iTerm2"),
+                        (TuiImages::Halfblocks, tr!("settings-tui-images-halfblocks")),
+                        (TuiImages::Off, tr!("settings-off")),
+                    ],
+                    180.0,
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-cell-pixels"),
+            tr!("settings-tui-cell-pixels-desc"),
+            "cell size pixels font width height sixel",
+            |ui| {
+                let name = super::widgets::row_label(ui);
+                let range = TuiSection::CELL_PIXELS_MIN..=TuiSection::CELL_PIXELS_MAX;
+                let [w, h] = &mut d.tui.cell_pixels;
+                let rw = ui.add(egui::DragValue::new(w).range(range.clone()).suffix(" px"));
+                super::widgets::named(&rw, &name);
+                ui.label("×");
+                let rh = ui.add(egui::DragValue::new(h).range(range).suffix(" px"));
+                super::widgets::named(&rh, &name);
+            },
+        );
+    }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-clipboard"), |r| {
+        r.row_kw(
+            tr!("settings-tui-osc52"),
+            tr!("settings-tui-osc52-desc"),
+            "osc 52 osc52 clipboard copy ssh remote",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.osc52",
+                    &mut d.tui.osc52,
+                    &[
+                        (TuiOsc52::Auto, tr!("settings-auto")),
+                        (TuiOsc52::Always, tr!("settings-always")),
+                        (TuiOsc52::Never, tr!("settings-never")),
+                    ],
+                    160.0,
                 );
             },
         );

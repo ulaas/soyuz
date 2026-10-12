@@ -27,9 +27,15 @@
 //! opens; otherwise `Selection::click` (Ctrl toggles, Shift extends from the anchor) and
 //! the cursor moves there. A double-click opens (`Cmd::Open`, i.e. `ops::open_entry`).
 //!
-//! A press outside the open palette closes it (and does nothing else). While a core prompt
-//! is open the mouse is ignored (`DialogButton` is wired with the dialog views of T3).
-//! `PaletteInput` and `Status` take presses without doing anything.
+//! A press outside the open palette closes it (and does nothing else). While a dialog is
+//! open every mouse event goes to it (`crate::input::dialogs::mouse`, which hands it to
+//! the dialog kind's `on_mouse`), while a popup menu is open to `crate::input::menu`,
+//! while Quick Look is open to `crate::input::quicklook`. The Phase T3 / T4 panels get
+//! presses and the wheel on their own targets: `BottomTab` / `JobRow` / `JobButton` →
+//! `crate::input::jobs`, `PreviewScroll` / `ArchiveRow` → `crate::input::preview`,
+//! `EditorTab` / `EditorClose` / `EditorCell` → `crate::input::editor`, `RenameField`
+//! → `crate::input::rename`. `PaletteInput` and `Status` take presses without doing
+//! anything.
 //! A press outside the address / filter field leaves that field.
 //!
 //! crossterm reports no double-clicks: two left presses on the same target within
@@ -108,8 +114,19 @@ pub fn route(app: &mut App, events: &[Event]) {
 }
 
 fn handle(app: &mut App, m: &MouseEvent, now: Instant) {
-    if app.core.dialogs.is_open() {
+    if super::dialogs::is_open(&app.core, &app.input.dialogs) {
         app.input.mouse.drag = None;
+        super::dialogs::mouse(app, m);
+        return;
+    }
+    if super::menu::is_open(&app.input.menu) {
+        app.input.mouse.drag = None;
+        super::menu::mouse(app, m);
+        return;
+    }
+    if super::quicklook::open(&app.core, &app.input) {
+        app.input.mouse.drag = None;
+        super::quicklook::mouse(app, m);
         return;
     }
     match m.kind {
@@ -228,8 +245,26 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::Toast(_),
             _,
         ) => {}
-        // Nothing to do (the palette's field keeps the keyboard; prompts ignore the mouse).
-        (HitTarget::PaletteInput | HitTarget::Status | HitTarget::DialogButton(_), _) => {}
+        (t @ (HitTarget::BottomTab(_) | HitTarget::JobRow(_) | HitTarget::JobButton { .. }), _) => {
+            super::jobs::click(app, t, m)
+        }
+        (t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_)), _) => super::preview::click(app, t, m),
+        (t @ (HitTarget::EditorTab(_) | HitTarget::EditorClose(_) | HitTarget::EditorCell { .. }), _) => {
+            super::editor::click(app, t, m)
+        }
+        (HitTarget::RenameField, _) => super::rename::click(app, m),
+        // Nothing to do (the palette's field keeps the keyboard; dialogs, menus and Quick
+        // Look took the mouse before).
+        (
+            HitTarget::PaletteInput
+            | HitTarget::Status
+            | HitTarget::DialogButton(_)
+            | HitTarget::DialogField(_)
+            | HitTarget::DialogRow(_)
+            | HitTarget::MenuItem { .. }
+            | HitTarget::QuickLook,
+            _,
+        ) => {}
     }
 }
 
@@ -341,6 +376,15 @@ fn wheel(app: &mut App, m: &MouseEvent, rows: i32) {
             _,
             HitTarget::PaneRow { pane, .. } | HitTarget::PaneHeader { pane, .. } | HitTarget::PaneBackground { pane },
         )) => pane,
+        Some((_, t @ (HitTarget::BottomTab(_) | HitTarget::JobRow(_) | HitTarget::JobButton { .. }))) => {
+            return super::jobs::wheel(app, t, rows);
+        }
+        Some((_, t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_)))) => {
+            return super::preview::wheel(app, t, rows);
+        }
+        Some((_, t @ (HitTarget::EditorTab(_) | HitTarget::EditorClose(_) | HitTarget::EditorCell { .. }))) => {
+            return super::editor::wheel(app, t, rows);
+        }
         _ => return,
     };
     if let Some(p) = app.core.ws.find_pane_mut(pane) {

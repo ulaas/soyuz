@@ -72,6 +72,10 @@ their usual editing keys.
 | Toggle activity panel | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> | Show or hide running jobs |
 | Toggle AI assistant | <kbd>Ctrl</kbd>+<kbd>I</kbd> | Show or hide the AI assistant panel |
 | Toggle disk tree | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | Switch the sidebar between places and the disk tree |
+| Scroll preview up | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> | Scroll the preview pane up one line (terminal UI) |
+| Scroll preview down | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd> | Scroll the preview pane down one line (terminal UI) |
+| Preview page up | <kbd>Alt</kbd>+<kbd>PageUp</kbd> | Scroll the preview pane up one page (terminal UI) |
+| Preview page down | <kbd>Alt</kbd>+<kbd>PageDown</kbd> | Scroll the preview pane down one page (terminal UI) |
 
 ### Selection
 
@@ -125,6 +129,7 @@ their usual editing keys.
 | Keyboard shortcuts | <kbd>Ctrl</kbd>+<kbd>/</kbd> | Browse and edit keyboard shortcuts |
 | Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit Soyuz |
 | Quick Look | <kbd>Space</kbd> *(file list)* | Preview the item in a popup |
+| Open context menu | <kbd>Shift</kbd>+<kbd>F10</kbd> | Show the menu of the focused item, like a right click (terminal UI) |
 
 ## Commander (F-keys) preset
 

@@ -3,8 +3,9 @@
 //!
 //! - [`tui_defaults`], always: defaults only the terminal UI has. `FocusSidebar` (no
 //!   default chord in any preset; the GUI reaches the sidebar with the mouse and Tab) gets
-//!   F12, which no preset binds. Like the alternatives below, a default is only added
-//!   while its chord is free, so a user binding of F12 wins.
+//!   F12, which no preset binds; `FocusActivityPanel` (the jobs panel) gets Alt+J. Like
+//!   the alternatives below, a default is only added while its chord is free, so a user
+//!   binding of F12 wins.
 //! - [`apply`], on legacy terminals (no kitty keyboard protocol): the alternatives below.
 //!   [`legacy`] runs both.
 //! - [`windows_terminal`] / [`windows_terminal_legacy`], inside Windows Terminal (see
@@ -102,7 +103,11 @@ pub const ALTERNATIVES: &[(&str, &str)] = &[
 ];
 
 /// `(action, chord, context)` defaults of the terminal UI only ([`tui_defaults`]).
-pub const TUI_DEFAULTS: &[(Action, &str, KeyContext)] = &[(Action::FocusSidebar, "F12", KeyContext::Global)];
+pub const TUI_DEFAULTS: &[(Action, &str, KeyContext)] = &[
+    (Action::FocusSidebar, "F12", KeyContext::Global),
+    // The jobs panel (Phase T3); Ctrl+J is Enter on legacy terminals.
+    (Action::FocusActivityPanel, "Alt+J", KeyContext::Global),
+];
 
 /// Chords Windows Terminal's default key bindings always consume, as Soyuz spells them
 /// (WT `defaults.json` and `userDefaults.json`, 2026). `ctrl+plus` / `alt+shift+plus` are
@@ -439,11 +444,14 @@ mod tests {
             let mut c = Config::default();
             c.keys.preset = p;
             let (km, _) = keymap(&c);
-            assert!(is_free(&km, f12), "{p:?} binds F12: pick another TUI default");
-            assert!(km.chords_for(&Action::FocusSidebar).is_empty(), "{p:?}");
+            for (action, chord, _) in TUI_DEFAULTS {
+                assert!(is_free(&km, ch(chord)), "{p:?} binds {chord}: pick another TUI default");
+                assert!(km.chords_for(action).is_empty(), "{p:?}: {action:?}");
+            }
             let mut over = km.clone();
             legacy(&mut over);
             assert_eq!(over.lookup(KeyContext::FileList, f12), Some(&Action::FocusSidebar), "{p:?}");
+            assert_eq!(over.lookup(KeyContext::FileList, ch("Alt+J")), Some(&Action::FocusActivityPanel), "{p:?}");
             assert_eq!(analyze(&over), analyze(&km), "{p:?}");
         }
         // A user binding wins: F12 taken, or the action bound elsewhere.

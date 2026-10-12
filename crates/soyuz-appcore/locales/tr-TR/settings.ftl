@@ -426,6 +426,19 @@ settings-tui-borders-plain = Köşeli
 settings-tui-borders-ascii = ASCII
 settings-tui-sidebar-width = Kenar çubuğu genişliği
 settings-tui-sidebar-width-desc = Kenar çubuğunun terminal sütunu cinsinden genişliği (12–60).
+settings-tui-jobs-rows = İşler paneli yüksekliği
+settings-tui-jobs-rows-desc = Süren ve biten işlemlerin gösterildiği alt panelin terminal satırı cinsinden yüksekliği (3–30). Terminal çok kısaysa gizlenir.
+settings-tui-preview-ratio = Önizleme genişliği
+settings-tui-preview-ratio-desc = Önizleme bölmesinin genişlikten aldığı pay (0,2–0,6); dar bir terminalde dosyaların altına yerleştiğinde yükseklikten aldığı pay.
+settings-tui-images-group = Resimler
+settings-tui-images = Resimler
+settings-tui-images-desc = Önizlemelerin ve küçük resimlerin resimleri nasıl gösterdiği. Otomatik terminale sorar; Kitty, Sixel ve iTerm2 bir grafik protokolünü zorlar; Yarım bloklar her yerde çalışan, düşük çözünürlüklü renkli metin hücreleri çizer; Kapalı resim göstermez.
+settings-tui-images-halfblocks = Yarım bloklar
+settings-tui-cell-pixels = Hücre boyutu
+settings-tui-cell-pixels-desc = Bir terminal hücresinin piksel cinsinden boyutu (genişlik × yükseklik); terminal bildirmediğinde sixel resimlerini ölçeklemek için kullanılır.
+settings-tui-clipboard = Pano
+settings-tui-osc52 = Terminal üzerinden kopyala (OSC 52)
+settings-tui-osc52-desc = Kopyalanan metin terminale gönderilir; terminal onu üzerinde çalıştığı bilgisayarın panosuna koyar, bu SSH üzerinden de çalışır. Otomatik ve Her zaman, yerel panoya yazmanın yanında bunu da gönderir; Hiçbir zaman kopyaları yalnızca yerel panoda tutar.
 settings-deny = Reddet
 
 ## Preview & search page

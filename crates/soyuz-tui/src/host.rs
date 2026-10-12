@@ -8,14 +8,14 @@
 //!   after the frame is drawn, so they never land in the middle of a frame;
 //! * [`TuiHost::take_close`], [`TuiHost::take_modes_changed`] and [`TuiHost::theme`].
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 use crossterm::Command as _;
 use parking_lot::Mutex;
 use soyuz_appcore::host::{Host, ThemePref, Wake, WindowCmd, WindowId};
-use soyuz_core::config::Config;
+use soyuz_core::config::{Config, TuiOsc52};
 
 /// The terminal UI's host. Shared by reference with the core; `Send + Sync`.
 pub struct TuiHost {
@@ -29,6 +29,8 @@ pub struct TuiHost {
     palette_dirty: AtomicBool,
     theme: Mutex<ThemePref>,
     title: Mutex<Option<String>>,
+    /// `[tui] osc52` (`crate::clipboard::to_byte`).
+    osc52: AtomicU8,
 }
 
 impl Default for TuiHost {
@@ -53,7 +55,13 @@ impl TuiHost {
             palette_dirty: AtomicBool::new(true),
             theme: Mutex::new(ThemePref::System),
             title: Mutex::new(None),
+            osc52: AtomicU8::new(0),
         }
+    }
+
+    /// Follow `[tui] osc52` (set at start and on every `[tui]` change).
+    pub fn set_osc52(&self, p: TuiOsc52) {
+        self.osc52.store(crate::clipboard::to_byte(p), Ordering::Release);
     }
 
     /// The redraw signal: one `()` per burst of wake-ups (select on it with the input
@@ -146,8 +154,10 @@ impl Host for TuiHost {
     fn copy_text(&self, text: String) {
         // Terminals that support OSC 52 (Windows Terminal, kitty, WezTerm, iTerm2, foot,
         // tmux with set-clipboard …) put the text on the clipboard of the machine the
-        // terminal runs on, which also works over SSH.
-        self.queue(&osc52_bytes(&text));
+        // terminal runs on, which also works over SSH (`[tui] osc52`).
+        if crate::clipboard::send_osc52(crate::clipboard::from_byte(self.osc52.load(Ordering::Acquire))) {
+            self.queue(&osc52_bytes(&text));
+        }
         // The classic console host ignores OSC 52: set the local clipboard directly too.
         #[cfg(windows)]
         soyuz_appcore::services::os_clipboard::set_text(&text);
@@ -187,6 +197,7 @@ impl Host for TuiHost {
 
     fn config_changed(&self, old: &Config, new: &Config) {
         soyuz_appcore::core::apply_core_settings(new);
+        self.set_osc52(new.tui.osc52);
         if old.tui != new.tui {
             self.modes_changed.store(true, Ordering::Release);
         }
@@ -256,6 +267,20 @@ mod tests {
     #[test]
     fn copy_queues_osc52() {
         assert_eq!(String::from_utf8(osc52_bytes("hi")).unwrap(), "\x1b]52;c;aGk=\x1b\\");
+    }
+
+    #[test]
+    fn osc52_follows_the_setting() {
+        let h = TuiHost::new();
+        h.set_osc52(TuiOsc52::Never);
+        h.copy_text("x".into());
+        assert!(h.take_output().is_empty());
+        let old = Config::default();
+        let mut new = old.clone();
+        new.tui.osc52 = TuiOsc52::Always;
+        h.config_changed(&old, &new);
+        h.copy_text("hi".into());
+        assert_eq!(String::from_utf8(h.take_output()).unwrap(), "\x1b]52;c;aGk=\x1b\\");
     }
 
     #[test]

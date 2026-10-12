@@ -2,8 +2,8 @@
 //! ratatui's `TestBackend`, driven by scripted events, each test in its own portable
 //! sandbox (`common::relaunch`).
 //!
-//! One test binary for every headless test; each Phase T2 step adds its `#[test]`s to its
-//! own file under `tests/headless/`.
+//! One test binary for every headless test; each step adds its `#[test]`s to its own file
+//! under `tests/headless/` (Phase T3 / T4 files are pre-created, one per part).
 
 mod common;
 
@@ -30,4 +30,34 @@ mod headless {
     mod tabs;
     /// T2.2: theme, colours, icons.
     mod theme;
+    // ---- Phase T3 ----
+    /// T3: batch rename.
+    mod batch;
+    /// T3: the clipboard (OSC 52, files).
+    mod clipboard;
+    /// T3: the dialog stacks (core prompts and terminal UI dialogs).
+    mod dialogs;
+    /// T3: the jobs panel.
+    mod jobs;
+    /// T3: the context menu.
+    mod menu;
+    /// T3: copy, move, trash, new items, links through the jobs engine.
+    mod ops;
+    /// T3: properties and attributes.
+    mod props;
+    /// T3: interrupted jobs and crash reports.
+    mod recovery;
+    /// T3: inline rename.
+    mod rename;
+    // ---- Phase T4 ----
+    /// T4: the editors (and quitting with unsaved changes).
+    mod editor;
+    /// T4: grid and gallery views.
+    mod grid;
+    /// T4: images (`[tui] images`).
+    mod images;
+    /// T4: the preview pane.
+    mod preview;
+    /// T4: Quick Look.
+    mod quicklook;
 }

@@ -523,6 +523,11 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `icons` | `"nerd"` \| `"unicode"` \| `"ascii"` | `"unicode"` | Icons in front of file names. (`nerd`: Nerd Font glyphs (needs a Nerd Font in the terminal); `unicode`: Plain Unicode symbols that every font has; `ascii`: ASCII characters only) |
 | `borders` | `"rounded"` \| `"plain"` \| `"ascii"` \| `"none"` | `"rounded"` | How panels are outlined. (`rounded`: Box-drawing lines with rounded corners; `plain`: Box-drawing lines with square corners; `ascii`: ASCII `+`, `-` and `\|`; `none`: No borders) |
 | `sidebar_width` | integer | `28` | Width of the sidebar in terminal columns. Values outside 12–60 are clamped when read. |
+| `osc52` | `"auto"` \| `"always"` \| `"never"` | `"auto"` | Copying text with OSC 52 (the terminal puts it on the clipboard of the machine it runs on, which also works over SSH): `auto` sends it next to setting the local clipboard, `always` too, `never` keeps copies on the local clipboard only. (`auto`: OSC 52 next to the local clipboard; `always`: Always send OSC 52; `never`: Never send OSC 52 (local clipboard only)) |
+| `jobs_rows` | integer | `8` | Height of the bottom panel (jobs / activity) in terminal rows. Values outside 3–30 are clamped when read; the panel hides when the terminal is too short. |
+| `images` | `"auto"` \| `"kitty"` \| `"sixel"` \| `"iterm2"` \| `"halfblocks"` \| `"off"` | `"auto"` | How images (previews, thumbnails) are drawn: `auto` asks the terminal, `kitty` / `sixel` / `iterm2` force a graphics protocol, `halfblocks` uses coloured text cells, `off` shows none. (`auto`: Ask the terminal which graphics protocol it speaks (half-blocks otherwise); `kitty`: The kitty graphics protocol; `sixel`: Sixel (Windows Terminal 1.22+, foot, WezTerm, mlterm, …); `iterm2`: iTerm2 inline images (iTerm2, WezTerm); `halfblocks`: Coloured half-block characters (works everywhere, low resolution); `off`: No images) |
+| `cell_pixels` | string | `[10, 20]` | Size of one terminal cell in pixels, `[width, height]`, for sixel images when the terminal does not report it. Values outside 1–200 are clamped when read. |
+| `preview_ratio` | float | `0.38` | Share of the width (or of the height, when stacked) the preview pane takes. Values outside 0.2–0.6 are clamped when read. |
 
 ## `[keys]`
 

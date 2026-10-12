@@ -58,6 +58,16 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("services"),
     ftl!("remote"),
     ftl!("tui"),
+    // Terminal UI areas of Phase T3 / T4 (one per part, so the parts never edit the same
+    // file).
+    ftl!("tui-dialogs"),
+    ftl!("tui-requests"),
+    ftl!("tui-ops"),
+    ftl!("tui-jobs"),
+    ftl!("tui-menu"),
+    ftl!("tui-preview"),
+    ftl!("tui-quicklook"),
+    ftl!("tui-editor"),
 ];
 
 /// Translate a key: `tr!("key")` → `&'static str`; `tr!("key", name = value, …)` →

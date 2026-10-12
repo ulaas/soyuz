@@ -68,6 +68,8 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
                 app.gui.dialogs.push(dialogs::recovery::RecoveryDialog::new(host.ctx(), recovered))
             }
             FrontendCmd::EditorUnsaved(p) => app.gui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
+            // Terminal-UI-only actions (`actions::tui_only`): nothing to do in the GUI.
+            FrontendCmd::View(_) => {}
         }
     }
 }

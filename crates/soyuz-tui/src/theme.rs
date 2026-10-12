@@ -91,8 +91,20 @@ pub enum Role {
     TabInactive,
     /// An input field (address, filter, palette).
     Input,
-    /// The palette's selected row.
+    /// The palette's selected row (also a menu's).
     PaletteSelected,
+    /// A dialog button without focus.
+    Button,
+    /// The focused dialog button (Enter presses it).
+    ButtonFocused,
+    /// A disabled menu entry / control.
+    Disabled,
+    /// The filled part of a progress bar.
+    Progress,
+    /// The empty part of a progress bar.
+    ProgressTrack,
+    /// A search match / highlighted span (previews, the editor's find).
+    Highlight,
 }
 
 impl Role {
@@ -489,6 +501,11 @@ impl Colors {
             Role::TabActive => fg(self.text).bg(self.surface3).add_modifier(bold),
             Role::TabInactive => fg(self.text2),
             Role::Input => fg(self.text).bg(self.sunken),
+            Role::Button => fg(self.text).bg(self.surface3),
+            Role::ButtonFocused => fg(self.on_accent).bg(self.accent).add_modifier(bold),
+            Role::Disabled | Role::ProgressTrack => fg(self.text3),
+            Role::Progress => fg(self.accent),
+            Role::Highlight => fg(self.warning).add_modifier(bold | Modifier::UNDERLINED),
         }
     }
 }
@@ -553,6 +570,11 @@ fn ansi16(role: Role) -> Style {
         Role::Image | Role::Video => fg(Color::Magenta),
         Role::Archive | Role::Pdf => fg(Color::Red),
         Role::Code | Role::Slides => fg(Color::Yellow),
+        Role::Button => Style::new(),
+        Role::ButtonFocused => Style::new().add_modifier(Modifier::REVERSED | bold),
+        Role::Disabled | Role::ProgressTrack => fg(Color::DarkGray),
+        Role::Progress => fg(Color::Blue),
+        Role::Highlight => fg(Color::Yellow).add_modifier(bold | Modifier::UNDERLINED),
         Role::Tag(i) => fg(match i % 8 {
             0 => Color::Red,
             1 => Color::Yellow,
@@ -573,8 +595,11 @@ fn plain(role: Role) -> Style {
         Role::Title | Role::KeyHint | Role::Selected | Role::Warning | Role::Danger | Role::GroupHeader => {
             s.add_modifier(Modifier::BOLD)
         }
-        Role::Cursor | Role::StatusBar | Role::TabActive | Role::PaletteSelected => s.add_modifier(Modifier::REVERSED),
+        Role::Cursor | Role::StatusBar | Role::TabActive | Role::PaletteSelected | Role::ButtonFocused => {
+            s.add_modifier(Modifier::REVERSED)
+        }
         Role::CursorInactive => s.add_modifier(Modifier::UNDERLINED),
+        Role::Highlight => s.add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
         Role::Text
         | Role::Muted
         | Role::Faint
@@ -598,7 +623,11 @@ fn plain(role: Role) -> Style {
         | Role::File
         | Role::Tag(_)
         | Role::TabInactive
-        | Role::Input => s,
+        | Role::Input
+        | Role::Button
+        | Role::Disabled
+        | Role::Progress
+        | Role::ProgressTrack => s,
     }
 }
 
@@ -608,7 +637,7 @@ mod tests {
 
     use super::*;
 
-    const ALL_ROLES: [Role; 35] = [
+    const ALL_ROLES: [Role; 41] = [
         Role::Text,
         Role::Muted,
         Role::Faint,
@@ -644,6 +673,12 @@ mod tests {
         Role::TabActive,
         Role::TabInactive,
         Role::Input,
+        Role::Button,
+        Role::ButtonFocused,
+        Role::Disabled,
+        Role::Progress,
+        Role::ProgressTrack,
+        Role::Highlight,
     ];
 
     fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {

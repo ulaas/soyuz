@@ -72,7 +72,7 @@ define_actions! {
         Back, Forward, Up, Home, Root, GoTo, FocusAddressBar, EditPath, Refresh, ToggleSidebar,
         FocusSidebar, FocusList, FocusOtherPane, FocusTerminal, NextTab, PrevTab,
         JumpToFolderDialog, OpenRecent, OpenTimeline, TabHistory,
-        ConnectToServer,
+        ConnectToServer, FocusActivityPanel,
     ],
     Tabs: [
         NewTab, CloseTab, ReopenClosedTab, DuplicateTab, PinTab, MoveTabLeft, MoveTabRight,
@@ -86,7 +86,8 @@ define_actions! {
         ToggleHidden, ToggleFlatView, ToggleSortDir, ChooseColumns, ResetFolderView,
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
         ToggleAiPanel, ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
-        ToggleShelf, ToggleEditorPanel,
+        ToggleShelf, ToggleEditorPanel, PreviewScrollUp, PreviewScrollDown, PreviewPageUp,
+        PreviewPageDown,
     ],
     Selection: [
         SelectAll, SelectNone, InvertSelection, SelectByPattern, SelectSameExtension,
@@ -110,7 +111,7 @@ define_actions! {
         QuickLookNext, QuickLookPrev, ToggleHexPreview,
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,
-        OpenScripts, ReloadScripts, OpenAutomations,
+        OpenScripts, ReloadScripts, OpenAutomations, ContextMenu,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,

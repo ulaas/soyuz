@@ -22,16 +22,32 @@
 //! | `sidebar.rs` | [`SidebarVm`] | `draw_sidebar` | T2.6 |
 //! | `palette.rs` | [`PaletteVm`] | `draw_palette` | T2.7 |
 //! | `status.rs` / `toasts.rs` | [`StatusVm`] / [`ToastsVm`] | `draw_status` / `draw_toasts` | T2.8 |
-//! | `dialog.rs` | [`DialogView`] (`crate::dialog`) | `draw_dialog` | T3 |
+//! | `dialogs/*` | [`DialogVm`] (one file per dialog kind) | `draw_dialog` | T3 |
+//! | `menu.rs` | [`MenuVm`] | `draw_menu` | T3 |
+//! | `rename.rs` | `EditVm` (on `Row::edit`) | `draw_edit` (from `draw_pane`) | T3 |
+//! | `jobs.rs` | [`JobsVm`] | `draw_jobs` | T3 |
+//! | `preview.rs` | [`PreviewVm`] | `draw_preview` | T4 |
+//! | `quicklook.rs` | [`QuickLookVm`] | `draw_quicklook` | T4 |
+//! | `editor/` | [`EditorVm`] | `draw_editor` | T4 |
+//! | `pane/grid.rs` | grid / gallery (in `PaneVm`) | | T4 |
 //! | `text.rs` | width-aware truncation / wrapping | | shared |
+//!
+//! Drawing order (later on top): tabs, crumbs, sidebar, panes, pane chrome, preview,
+//! editor, jobs, toasts, status, address completions, Quick Look, palette, menu, dialog.
 //!
 //! All names pass through [`crate::dialog::safe`], so a file name can never write escape
 //! sequences to the terminal.
 
 pub mod crumbs;
-pub mod dialog;
+pub mod dialogs;
+pub mod editor;
+pub mod jobs;
+pub mod menu;
 pub mod palette;
 pub mod pane;
+pub mod preview;
+pub mod quicklook;
+pub mod rename;
 pub mod sidebar;
 pub mod status;
 pub mod tabs;
@@ -42,13 +58,18 @@ use ratatui::Frame;
 use soyuz_appcore::core::AppCore;
 
 pub use self::crumbs::CrumbsVm;
+pub use self::dialogs::DialogVm;
+pub use self::editor::EditorVm;
+pub use self::jobs::JobsVm;
+pub use self::menu::MenuVm;
 pub use self::palette::PaletteVm;
 pub use self::pane::{PaneLine, PaneMode, PaneVm, Row, RowKind};
+pub use self::preview::PreviewVm;
+pub use self::quicklook::QuickLookVm;
 pub use self::sidebar::SidebarVm;
 pub use self::status::StatusVm;
 pub use self::tabs::TabsVm;
 pub use self::toasts::{MAX_TOASTS, ToastLine, ToastsVm};
-pub use crate::dialog::DialogView;
 use crate::input::InputState;
 use crate::layout::{Hits, Regions};
 use crate::theme::TuiTheme;
@@ -64,8 +85,18 @@ pub struct ViewModel {
     pub status: StatusVm,
     pub toasts: ToastsVm,
     pub palette: PaletteVm,
-    /// The top-most core prompt.
-    pub dialog: Option<DialogView>,
+    /// The bottom panel (T3).
+    pub jobs: JobsVm,
+    /// The preview pane (T4).
+    pub preview: PreviewVm,
+    /// The editor panel (T4).
+    pub editor: EditorVm,
+    /// Quick Look (T4).
+    pub quicklook: QuickLookVm,
+    /// The open popup menu (T3).
+    pub menu: MenuVm,
+    /// The top-most dialog of either stack.
+    pub dialog: Option<DialogVm>,
 }
 
 impl ViewModel {
@@ -74,15 +105,22 @@ impl ViewModel {
     pub fn from_core(core: &AppCore, input: &InputState, regions: &Regions) -> ViewModel {
         let mut status = StatusVm::from_core(core);
         crate::input::filter::decorate(&input.filter, core, &mut status, regions.area.width);
+        let mut panes: Vec<PaneVm> = regions.panes.iter().filter_map(|p| PaneVm::from_core(core, p.index)).collect();
+        rename::decorate(core, input, &mut panes);
         ViewModel {
             tabs: TabsVm::from_core(core),
-            panes: regions.panes.iter().filter_map(|p| PaneVm::from_core(core, p.index)).collect(),
+            panes,
             crumbs: CrumbsVm::from_core(core, &input.address),
             sidebar: SidebarVm::from_core(core, &input.sidebar.nav),
             status,
             toasts: ToastsVm::from_core(core),
             palette: PaletteVm::from_core(core, &input.palette.view),
-            dialog: core.dialogs.top().map(crate::dialog::fallback),
+            jobs: JobsVm::from_core(core, input),
+            preview: PreviewVm::from_core(core, input),
+            editor: EditorVm::from_core(core, input),
+            quicklook: QuickLookVm::from_core(core, input),
+            menu: MenuVm::from_input(input),
+            dialog: dialogs::from_core(core, input),
         }
     }
 
@@ -99,6 +137,11 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     sidebar::prepare(core, &mut input.sidebar.nav, regions);
     palette::prepare(core, &mut input.palette.view, regions);
     crate::input::filter::prepare(&mut input.filter, core, regions.area.width);
+    jobs::prepare(core, input, regions);
+    preview::prepare(core, input, regions);
+    editor::prepare(core, input, regions);
+    quicklook::prepare(core, input, regions);
+    crate::input::dialogs::prepare(core, &mut input.dialogs);
 }
 
 /// Draw a frame. Clears `hits` first.
@@ -111,12 +154,17 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
         pane::draw_pane(f, p.rect, vm, theme, hits);
     }
     tabs::draw_pane_chrome(f, regions, &m.tabs, theme, hits);
+    preview::draw_preview(f, regions.preview, &m.preview, theme, hits);
+    editor::draw_editor(f, regions.editor, &m.editor, theme, hits);
+    jobs::draw_jobs(f, regions.bottom, &m.jobs, theme, hits);
     toasts::draw_toasts(f, toasts::area(regions), &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
     crumbs::draw_completions(f, regions.crumbs, regions.area, &m.crumbs, theme, hits);
+    quicklook::draw_quicklook(f, regions.area, &m.quicklook, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
+    menu::draw_menu(f, regions.area, &m.menu, theme, hits);
     if let Some(d) = &m.dialog {
-        dialog::draw_dialog(f, regions.area, d, theme, hits);
+        dialogs::draw_dialog(f, regions.area, d, theme, hits);
     }
     if theme.ascii_only() {
         crate::borders::asciify(f.buffer_mut());
@@ -198,6 +246,11 @@ mod tests {
             },
             toasts: ToastsVm::default(),
             palette: PaletteVm::default(),
+            jobs: JobsVm::default(),
+            preview: PreviewVm::default(),
+            editor: EditorVm::default(),
+            quicklook: QuickLookVm::default(),
+            menu: MenuVm::default(),
             dialog: None,
         }
     }
@@ -263,10 +316,11 @@ mod tests {
     #[test]
     fn dialog_fallback_box() {
         let mut m = model();
-        m.dialog = Some(DialogView {
+        m.dialog = Some(DialogVm {
             title: "Move “a.txt” to the trash?".into(),
             body: vec!["You can restore it from the trash.".into()],
             hints: "Enter/Y confirm · N/Esc cancel".into(),
+            ..DialogVm::default()
         });
         let (lines, _, _) = screen(&m, &Facts::default(), 60, 12);
         let all = lines.join("\n");
@@ -307,11 +361,32 @@ mod tests {
         m.toasts.lines = vec![warning; 3];
         m.panes[0].lines.insert(0, PaneLine::Header { group: 0, label: "Today".into(), count: 3 });
         let mut with_dialog = m.clone();
-        with_dialog.dialog = Some(DialogView {
+        let mut form = crate::widgets::Form::new(
+            vec![crate::widgets::Field::text("Name", "日本語.txt"), crate::widgets::Field::check("All", true)],
+            vec![crate::widgets::Button::new("OK"), crate::widgets::Button::new("Cancel")],
+        );
+        form.error = Some("error ".repeat(10));
+        with_dialog.dialog = Some(DialogVm {
             title: "A long title with 日本語 and 👨\u{200d}👩\u{200d}👧".into(),
             body: vec!["body ".repeat(20), String::new()],
             hints: "Enter confirm".into(),
+            list: vec![crate::widgets::ListRow::new("row"); 4],
+            ..DialogVm::from_form("t", &form)
         });
+        let mut with_menu = m.clone();
+        let cmd = crate::input::menu::MenuCmd::Action;
+        with_menu.menu.menu = Some(crate::widgets::Menu::new(
+            vec![
+                crate::widgets::MenuItem::run("Open 日本語", cmd(soyuz_core::config::Action::Open)).chord("Enter"),
+                crate::widgets::MenuItem::Separator,
+                crate::widgets::MenuItem::submenu(
+                    "More",
+                    vec![crate::widgets::MenuItem::run("Copy", cmd(soyuz_core::config::Action::Copy))],
+                ),
+            ],
+            (3, 2),
+        ));
+        let panels = Facts { bottom_rows: 3, preview: true, editor: true, ..Facts::default() };
         let mut quad = m.clone();
         quad.panes = (0..4).map(|i| pane(i, i == 2)).collect();
         let mut dual = m.clone();
@@ -322,6 +397,8 @@ mod tests {
             (&dual, Facts { shown: 2, ..Facts::default() }),
             (&dual, Facts { shown: 2, orientation: Orientation::Horizontal, ..Facts::default() }),
             (&quad, Facts { shown: 4, focused: 2, ..Facts::default() }),
+            (&with_menu, panels.clone()),
+            (&with_dialog, Facts { editor_maximized: true, ..panels }),
         ];
         for (vm, facts) in cases {
             for w in 0..=20 {

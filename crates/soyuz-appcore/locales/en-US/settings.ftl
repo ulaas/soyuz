@@ -435,6 +435,19 @@ settings-tui-borders-plain = Square
 settings-tui-borders-ascii = ASCII
 settings-tui-sidebar-width = Sidebar width
 settings-tui-sidebar-width-desc = Width of the sidebar in terminal columns (12–60).
+settings-tui-jobs-rows = Jobs panel height
+settings-tui-jobs-rows-desc = Height of the bottom panel with running and finished operations, in terminal rows (3–30). It hides when the terminal is too short.
+settings-tui-preview-ratio = Preview width
+settings-tui-preview-ratio-desc = Share of the width the preview pane takes (0.2–0.6); of the height when it sits below the files on a narrow terminal.
+settings-tui-images-group = Images
+settings-tui-images = Images
+settings-tui-images-desc = How previews and thumbnails show pictures. Auto asks the terminal; Kitty, Sixel and iTerm2 force a graphics protocol; Half blocks draws coloured text cells that work everywhere at a low resolution; Off shows no pictures.
+settings-tui-images-halfblocks = Half blocks
+settings-tui-cell-pixels = Cell size
+settings-tui-cell-pixels-desc = Size of one terminal cell in pixels (width × height), used to scale sixel images when the terminal does not report it.
+settings-tui-clipboard = Clipboard
+settings-tui-osc52 = Copy through the terminal (OSC 52)
+settings-tui-osc52-desc = Copied text is sent to the terminal, which puts it on the clipboard of the computer it runs on; this also works over SSH. Auto and Always send it next to setting the local clipboard; Never keeps copies on the local clipboard only.
 settings-deny = Deny
 
 ## Preview & search page

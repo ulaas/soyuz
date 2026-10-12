@@ -142,7 +142,7 @@ impl Step {
 }
 
 /// An event source that sends each step's event once its condition holds (30 s timeout
-/// per step).
+/// per step; after the last step the app must quit within 60 s).
 pub struct Script {
     pub steps: VecDeque<Step>,
     pub since: Instant,
@@ -158,6 +158,8 @@ impl EventSource for Script {
     fn next(&mut self, app: &App, redraw: &Receiver<()>, timeout: Duration) -> Vec<TuiEvent> {
         let wait = timeout.min(Duration::from_millis(10));
         let Some(step) = self.steps.front() else {
+            // The last step was sent (usually a quit): the loop must end by itself.
+            assert!(self.since.elapsed() < Duration::from_secs(60), "the app did not quit after the last step");
             let _ = redraw.recv_timeout(wait);
             return Vec::new();
         };
@@ -190,6 +192,43 @@ pub fn key(code: KeyCode) -> Event {
 
 pub fn ctrl(c: char) -> Event {
     Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::CONTROL))
+}
+
+/// A key with modifiers.
+pub fn key_mods(code: KeyCode, mods: KeyModifiers) -> Event {
+    Event::Key(KeyEvent::new(code, mods))
+}
+
+pub fn alt(c: char) -> Event {
+    Event::Key(KeyEvent::new(KeyCode::Char(c), KeyModifiers::ALT))
+}
+
+pub fn shift(code: KeyCode) -> Event {
+    Event::Key(KeyEvent::new(code, KeyModifiers::SHIFT))
+}
+
+/// Steps that type `text`, one character per frame (no condition).
+pub fn type_text(steps: &mut Vec<Step>, text: &str) {
+    for c in text.chars() {
+        steps.push(Step::new("typing", |_| true, key(KeyCode::Char(c))));
+    }
+}
+
+/// The title of the dialog drawn in the last frame (either stack), if one is open.
+pub fn dialog_title(app: &App) -> Option<String> {
+    app.view()?.dialog.as_ref().map(|d| d.title.clone())
+}
+
+/// No job is running or waiting (finished ones may still be listed).
+pub fn wait_jobs_idle(app: &App) -> bool {
+    app.core.fileops.jobs.pending().next().is_none()
+}
+
+/// The texts of the toasts drawn in the last frame (titles and bodies).
+pub fn toasts(app: &App) -> Vec<String> {
+    app.view()
+        .map(|v| v.toasts.lines.iter().flat_map(|t| std::iter::once(t.title.clone()).chain(t.body.clone())).collect())
+        .unwrap_or_default()
 }
 
 /// Labels of the focused pane's rows in the last frame.

@@ -23,6 +23,9 @@ tui-feature-links = New link
 tui-feature-quicklook = Quick Look
 tui-feature-terminal = Terminal panel
 tui-feature-editor = Editor
+tui-feature-jobs = Jobs panel
+tui-feature-preview = Preview
+tui-feature-menu = Context menu
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 tui-recovered-jobs = { $count ->

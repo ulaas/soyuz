@@ -995,6 +995,23 @@ pub struct TuiSection {
     /// Width of the sidebar in terminal columns. Values outside 12–60 are clamped when
     /// read.
     pub sidebar_width: u16,
+    /// Copying text with OSC 52 (the terminal puts it on the clipboard of the machine it
+    /// runs on, which also works over SSH): `auto` sends it next to setting the local
+    /// clipboard, `always` too, `never` keeps copies on the local clipboard only.
+    pub osc52: TuiOsc52,
+    /// Height of the bottom panel (jobs / activity) in terminal rows. Values outside 3–30
+    /// are clamped when read; the panel hides when the terminal is too short.
+    pub jobs_rows: u16,
+    /// How images (previews, thumbnails) are drawn: `auto` asks the terminal, `kitty` /
+    /// `sixel` / `iterm2` force a graphics protocol, `halfblocks` uses coloured text
+    /// cells, `off` shows none.
+    pub images: TuiImages,
+    /// Size of one terminal cell in pixels, `[width, height]`, for sixel images when the
+    /// terminal does not report it. Values outside 1–200 are clamped when read.
+    pub cell_pixels: [u16; 2],
+    /// Share of the width (or of the height, when stacked) the preview pane takes. Values
+    /// outside 0.2–0.6 are clamped when read.
+    pub preview_ratio: f32,
 }
 
 impl Default for TuiSection {
@@ -1006,6 +1023,11 @@ impl Default for TuiSection {
             icons: TuiIcons::Unicode,
             borders: TuiBorders::Rounded,
             sidebar_width: Self::SIDEBAR_WIDTH_DEFAULT,
+            osc52: TuiOsc52::Auto,
+            jobs_rows: Self::JOBS_ROWS_DEFAULT,
+            images: TuiImages::Auto,
+            cell_pixels: Self::CELL_PIXELS_DEFAULT,
+            preview_ratio: Self::PREVIEW_RATIO_DEFAULT,
         }
     }
 }
@@ -1022,6 +1044,89 @@ impl TuiSection {
     pub fn sidebar_width_clamped(&self) -> u16 {
         self.sidebar_width.clamp(Self::SIDEBAR_WIDTH_MIN, Self::SIDEBAR_WIDTH_MAX)
     }
+
+    /// Lowest bottom panel `jobs_rows_clamped` returns.
+    pub const JOBS_ROWS_MIN: u16 = 3;
+    /// Highest bottom panel `jobs_rows_clamped` returns.
+    pub const JOBS_ROWS_MAX: u16 = 30;
+    /// Default `jobs_rows`.
+    pub const JOBS_ROWS_DEFAULT: u16 = 8;
+    /// Smallest cell side `cell_pixels_clamped` returns.
+    pub const CELL_PIXELS_MIN: u16 = 1;
+    /// Largest cell side `cell_pixels_clamped` returns.
+    pub const CELL_PIXELS_MAX: u16 = 200;
+    /// Default `cell_pixels`.
+    pub const CELL_PIXELS_DEFAULT: [u16; 2] = [10, 20];
+    /// Smallest `preview_ratio_clamped`.
+    pub const PREVIEW_RATIO_MIN: f32 = 0.2;
+    /// Largest `preview_ratio_clamped`.
+    pub const PREVIEW_RATIO_MAX: f32 = 0.6;
+    /// Default `preview_ratio`.
+    pub const PREVIEW_RATIO_DEFAULT: f32 = 0.38;
+
+    /// `jobs_rows` clamped to `JOBS_ROWS_MIN..=JOBS_ROWS_MAX`.
+    pub fn jobs_rows_clamped(&self) -> u16 {
+        self.jobs_rows.clamp(Self::JOBS_ROWS_MIN, Self::JOBS_ROWS_MAX)
+    }
+
+    /// `cell_pixels` with each side clamped to `CELL_PIXELS_MIN..=CELL_PIXELS_MAX`.
+    pub fn cell_pixels_clamped(&self) -> (u16, u16) {
+        let c = |v: u16| v.clamp(Self::CELL_PIXELS_MIN, Self::CELL_PIXELS_MAX);
+        (c(self.cell_pixels[0]), c(self.cell_pixels[1]))
+    }
+
+    /// `preview_ratio` clamped to `PREVIEW_RATIO_MIN..=PREVIEW_RATIO_MAX` (the default
+    /// when it is not a number).
+    pub fn preview_ratio_clamped(&self) -> f32 {
+        if self.preview_ratio.is_finite() {
+            self.preview_ratio.clamp(Self::PREVIEW_RATIO_MIN, Self::PREVIEW_RATIO_MAX)
+        } else {
+            Self::PREVIEW_RATIO_DEFAULT
+        }
+    }
+}
+
+/// `[tui] osc52`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiOsc52 {
+    /// OSC 52 next to the local clipboard.
+    #[default]
+    Auto,
+    /// Always send OSC 52.
+    Always,
+    /// Never send OSC 52 (local clipboard only).
+    Never,
+}
+
+impl TuiOsc52 {
+    /// Every value, in settings order.
+    pub const ALL: [TuiOsc52; 3] = [TuiOsc52::Auto, TuiOsc52::Always, TuiOsc52::Never];
+}
+
+/// `[tui] images`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiImages {
+    /// Ask the terminal which graphics protocol it speaks (half-blocks otherwise).
+    #[default]
+    Auto,
+    /// The kitty graphics protocol.
+    Kitty,
+    /// Sixel (Windows Terminal 1.22+, foot, WezTerm, mlterm, …).
+    Sixel,
+    /// iTerm2 inline images (iTerm2, WezTerm).
+    Iterm2,
+    /// Coloured half-block characters (works everywhere, low resolution).
+    Halfblocks,
+    /// No images.
+    Off,
+}
+
+impl TuiImages {
+    /// Every value, in settings order.
+    pub const ALL: [TuiImages; 6] =
+        [TuiImages::Auto, TuiImages::Kitty, TuiImages::Sixel, TuiImages::Iterm2, TuiImages::Halfblocks, TuiImages::Off];
 }
 
 /// `[tui] color_mode`. Serialized as the names; on input the integers `256` / `16` and

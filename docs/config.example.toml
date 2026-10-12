@@ -296,6 +296,11 @@ color_mode = "auto"              # auto | truecolor | ansi256 | ansi16 | mono (2
 icons = "unicode"                # nerd | unicode | ascii (nerd needs a Nerd Font in the terminal)
 borders = "rounded"              # rounded | plain | ascii | none
 sidebar_width = 28               # sidebar width in columns (clamped to 12-60)
+osc52 = "auto"                   # auto | always | never (copy text through the terminal with OSC 52, works over SSH)
+jobs_rows = 8                    # bottom (jobs) panel height in rows (clamped to 3-30)
+images = "auto"                  # auto | kitty | sixel | iterm2 | halfblocks | off
+cell_pixels = [10, 20]           # cell size in pixels [width, height] for sixel when the terminal does not report it
+preview_ratio = 0.38             # share of the width the preview pane takes (clamped to 0.2-0.6)
 
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true

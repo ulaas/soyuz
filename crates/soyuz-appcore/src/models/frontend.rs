@@ -65,4 +65,27 @@ pub enum FrontendCmd {
     RecoveredJobs(Vec<soyuz_jobs::journal::Recovered>),
     /// "Save changes?" for an editor document or before quitting.
     EditorUnsaved(crate::editors::UnsavedPrompt),
+    /// Actions only the terminal UI has a view for so far (see
+    /// [`crate::actions::tui_only`]); the GUI ignores them.
+    View(ViewRequest),
+}
+
+/// [`FrontendCmd::View`]: what a terminal-UI-only action asks for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewRequest {
+    /// `ContextMenu` (Shift+F10): the menu of the focused item.
+    ContextMenu,
+    /// `PreviewScroll*` / `PreviewPage*`: scroll the preview pane.
+    PreviewScroll(ScrollStep),
+    /// `FocusActivityPanel`: move the keyboard to the jobs panel (opening it).
+    FocusActivity,
+}
+
+/// How far [`ViewRequest::PreviewScroll`] scrolls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollStep {
+    LineUp,
+    LineDown,
+    PageUp,
+    PageDown,
 }
