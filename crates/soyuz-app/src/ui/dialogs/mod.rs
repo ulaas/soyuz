@@ -32,9 +32,9 @@ pub mod recovery;
 pub mod recovery_crash;
 pub mod unlock_volume;
 
+use crate::models::requests::{columns, pattern};
 use egui::{Align, Color32, CornerRadius, FontId, Frame, Id, Key, Layout, Margin, RichText, Stroke, TextEdit, Ui};
 use soyuz_core::config::{ActionCategory, Keymap};
-use soyuz_core::{Column, NamePatternSpec, PatternKind};
 
 use crate::cmd::Cmd;
 use crate::models::dialogs::{DialogModel, DialogStack, next_seq};
@@ -293,26 +293,18 @@ pub fn close_footer(ui: &mut Ui, label: &str) -> bool {
 
 /// Generic confirmation: on confirm the stored [`Cmd`] is queued.
 pub struct ConfirmDialog {
-    title: String,
-    message: String,
-    confirm: String,
-    on_confirm: Option<Cmd>,
+    m: crate::models::requests::confirm::ConfirmModel,
 }
 
 impl ConfirmDialog {
     pub fn new(title: &str, message: &str, confirm: &str, on_confirm: Cmd) -> Self {
-        ConfirmDialog {
-            title: title.into(),
-            message: message.into(),
-            confirm: confirm.into(),
-            on_confirm: Some(on_confirm),
-        }
+        ConfirmDialog { m: crate::models::requests::confirm::ConfirmModel::new(title, message, confirm, on_confirm) }
     }
 }
 
 impl Dialog for ConfirmDialog {
     fn title(&self) -> &str {
-        &self.title
+        &self.m.title
     }
 
     fn alert(&self) -> bool {
@@ -325,11 +317,11 @@ impl Dialog for ConfirmDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        ui.label(RichText::new(&self.message).color(p.text_secondary));
+        ui.label(RichText::new(&self.m.message).color(p.text_secondary));
         let enter = ui.input(|i| i.key_pressed(Key::Enter));
-        let (ok, cancel) = footer(ui, &self.confirm, tr!("common-cancel"));
+        let (ok, cancel) = footer(ui, &self.m.confirm, tr!("common-cancel"));
         if ok || enter {
-            if let Some(c) = self.on_confirm.take() {
+            if let Some(c) = self.m.confirm() {
                 ctx.cmds.push(c);
             }
             return false;
@@ -348,7 +340,7 @@ pub struct PatternDialog {
 
 impl PatternDialog {
     pub fn new(pane: PaneId) -> Self {
-        PatternDialog { pane, text: "*.".into(), add: false, focus: true }
+        PatternDialog { pane, text: pattern::DEFAULT_PATTERN.into(), add: false, focus: true }
     }
 }
 
@@ -376,24 +368,8 @@ impl Dialog for PatternDialog {
         let enter = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
         let (ok, cancel) = footer(ui, tr!("dialogs-pattern-select"), tr!("common-cancel"));
         if ok || enter {
-            let kind = if self.text.contains(['*', '?']) { PatternKind::Glob } else { PatternKind::Substring };
-            if let Ok(pat) = NamePatternSpec::new(kind, self.text.trim()).compile()
-                && let Some(pane) = ctx.ws.find_pane_mut(self.pane)
-            {
-                if !self.add {
-                    pane.selection.clear();
-                }
-                let keys: Vec<_> = pane
-                    .visible
-                    .iter()
-                    .filter(|&&i| pat.is_match(&pane.entries[i].name))
-                    .map(|&i| pane.keys[i].clone())
-                    .collect();
-                let n = keys.len();
-                for k in keys {
-                    pane.selection.insert(k);
-                }
-                ctx.cmds.push(Cmd::Toast(crate::ui::toasts::Toast::info(tr!("dialogs-pattern-selected", count = n))));
+            if let Some(toast) = pattern::apply(ctx.ws, self.pane, &self.text, self.add) {
+                ctx.cmds.push(toast);
             }
             return false;
         }
@@ -427,25 +403,13 @@ impl Dialog for ColumnsDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let Some(pane) = ctx.ws.find_pane_mut(self.pane) else { return false };
-        let visible: Vec<Column> = pane.view.visible_columns().iter().map(|c| c.column).collect();
         let mut changed = false;
-        for col in Column::ALL {
-            if matches!(
-                col,
-                Column::Dimensions | Column::Duration | Column::Checksum | Column::ItemCount | Column::LinkTarget
-            ) {
-                continue;
-            }
-            if col.script_slot().is_some() && crate::automation::scripts::column_label(col).is_none() {
-                continue;
-            }
-            let mut on = visible.contains(&col);
-            let label = crate::ui::views::columns::header_label(col);
-            let r = ui.add_enabled(col != Column::Name, egui::Checkbox::new(&mut on, label));
+        for col in columns::choosable() {
+            let mut on = columns::is_visible(pane, col);
+            let label = columns::label(col);
+            let r = ui.add_enabled(columns::can_toggle(col), egui::Checkbox::new(&mut on, label));
             if r.changed() {
-                pane.view.set_column_visible(col, on);
-                pane.layout_sig = None;
-                changed = true;
+                changed |= columns::set_visible(pane, col, on);
             }
         }
         if changed {

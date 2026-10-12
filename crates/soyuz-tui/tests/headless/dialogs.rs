@@ -40,7 +40,7 @@ fn run_tui(data: PathBuf) {
     let mut app = common::new_app(common::test_config(), &data);
     // A terminal UI dialog first, then a core prompt: the prompt is on top.
     let form = Form::new(vec![Field::text("Pattern", "*.txt")], vec![Button::new("OK")]);
-    app.push_dialog(TuiDialog::Pattern(pattern::State { title: PATTERN.into(), form }));
+    app.push_dialog(TuiDialog::Pattern(pattern::State { title: PATTERN.into(), form, ..Default::default() }));
     app.core.dialogs.push(QuitModel::new(1, Arc::new(AtomicBool::new(true))));
     let steps = vec![
         Step::new(

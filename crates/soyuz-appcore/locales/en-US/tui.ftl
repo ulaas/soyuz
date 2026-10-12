@@ -28,11 +28,6 @@ tui-feature-preview = Preview
 tui-feature-menu = Context menu
 
 ## T1: the frame loop (crash reports, interrupted jobs)
-tui-recovered-jobs = { $count ->
-    [one] 1 interrupted operation — open the GUI to recover it
-   *[other] { $count } interrupted operations — open the GUI to recover them
-}
-tui-crashed = Soyuz crashed last time — report saved at { $path }
 
 ## T2.1: [tui] settings
 

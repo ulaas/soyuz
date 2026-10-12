@@ -7191,6 +7191,7 @@ dependencies = [
  "parking_lot",
  "ratatui",
  "ratatui-image",
+ "serde_json",
  "signal-hook 0.4.5",
  "soyuz-appcore",
  "soyuz-core",
