@@ -48,7 +48,6 @@ tui-failed = Bu klasör listelenemiyor: { $error }
 tui-feature-address = Adres çubuğu
 
 ## T2.6: sidebar
-tui-feature-sidebar = Kenar çubuğu
 
 ## T2.7: command palette
 

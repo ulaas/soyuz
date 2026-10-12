@@ -6,7 +6,6 @@
 //! tidies up; this keeps parallel deletions from touching the same lines), and the
 //! feature's `tui-feature-*` key in both `tui.ftl` files when nothing else uses it.
 
-use soyuz_appcore::core::Focus;
 use soyuz_appcore::tr;
 
 use crate::app::App;
@@ -19,7 +18,6 @@ pub fn reset_all(app: &mut App) {
     address(app);
 
     // T2.6: sidebar focus.
-    sidebar_focus(app);
 
     // Later phases: settings.
     settings(app);
@@ -37,14 +35,6 @@ fn address(app: &mut App) {
         app.core.ui.address.editing = false;
         app.core.ui.address.request_focus = false;
         app.unavailable(tr!("tui-feature-address"));
-    }
-}
-
-/// T2.6.
-fn sidebar_focus(app: &mut App) {
-    if app.core.ui.focus == Focus::Sidebar {
-        app.core.ui.focus = Focus::List;
-        app.unavailable(tr!("tui-feature-sidebar"));
     }
 }
 

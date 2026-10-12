@@ -48,7 +48,6 @@ tui-failed = Cannot list this folder: { $error }
 tui-feature-address = Address bar
 
 ## T2.6: sidebar
-tui-feature-sidebar = Sidebar
 
 ## T2.7: command palette
 
