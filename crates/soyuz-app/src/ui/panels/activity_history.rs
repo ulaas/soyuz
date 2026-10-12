@@ -2,12 +2,11 @@
 //! Redo / Retry failed.
 
 use egui::{Align2, Color32, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
-use soyuz_core::DateFormat;
 use soyuz_jobs::HistoryEntry;
 
 use super::activity::op_style;
 use crate::app::SoyuzApp;
-use crate::ops::fileops::{HistoryAction, history_action, names};
+use crate::models::jobs_rows::{self, HistoryRow, RowButton};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph};
 use crate::ui::views::flow::semibold;
@@ -46,6 +45,7 @@ fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
 
 pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
     let entries: Vec<HistoryEntry> = app.core.fileops.jobs.history().iter().rev().cloned().collect();
+    let now = std::time::SystemTime::now();
     if entries.is_empty() {
         let r = ui.available_rect_before_wrap();
         let c = r.center() - vec2(0.0, 12.0);
@@ -73,20 +73,20 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
         ui.allocate_rect(r, Sense::hover());
         return;
     }
-    let mut todo: Option<(soyuz_jobs::HistoryId, HistoryAction)> = None;
-    let rel = DateFormat::Named(soyuz_core::DateFormatName::Relative);
+    let mut todo: Option<(soyuz_jobs::HistoryId, RowButton)> = None;
     ScrollArea::vertical().id_salt("soyuz.activity.history").auto_shrink([false, false]).show_rows(
         ui,
         50.0,
         entries.len(),
         |ui, range| {
-            for h in &entries[range] {
+            for e in &entries[range] {
+                let h = &HistoryRow::new(e, now);
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 50.0), Sense::hover());
                 let row = r.shrink2(vec2(0.0, 2.0));
                 if resp.hovered() {
                     ui.painter().rect_filled(row, CornerRadius::same(radius::CARD), p.bg_surface2);
                 }
-                let (op, title) = describe(&h.job);
+                let (op, title) = (h.op, &h.title);
                 let (glyph, color) = op_style(op, p);
                 let dim = if h.undone { 0.5 } else { 1.0 };
                 let ic = pos2(row.left() + 22.0, row.center().y);
@@ -94,7 +94,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 ui.painter().text(ic, Align2::CENTER_CENTER, glyph, ticons::font(14.0), color.gamma_multiply(dim));
                 let tx = row.left() + 46.0;
                 let tw = row.width() - 46.0 - 240.0;
-                let verified = !h.undone && is_verified(h);
+                let verified = h.verified;
                 let tag_w = if verified {
                     ui.painter()
                         .layout_no_wrap(tr!("panels-verified").to_string(), FontId::proportional(10.5), p.success)
@@ -106,7 +106,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 };
                 let tg = trunc_galley(
                     ui.painter(),
-                    &title,
+                    title,
                     semibold(12.5),
                     p.text_primary.gamma_multiply(dim),
                     (tw - tag_w).max(40.0),
@@ -130,17 +130,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     )
                     .on_hover_text(tr!("panels-history-verified-tip"));
                 }
-                let mut sub = format!(
-                    "{} \u{b7} {}",
-                    soyuz_core::time::format_time_at(h.when, &rel, std::time::SystemTime::now()),
-                    names::summary_line(&h.summary)
-                );
-                if !h.undoable && !h.undone {
-                    sub.push_str(" \u{b7} ");
-                    sub.push_str(tr!("panels-history-not-undoable"));
-                }
-                let sc = if h.summary.items_failed > 0 { p.warning } else { p.text_tertiary };
-                let sg = trunc_galley(ui.painter(), &sub, FontId::proportional(11.5), sc, tw);
+                let sc = if h.failed { p.warning } else { p.text_tertiary };
+                let sg = trunc_galley(ui.painter(), &h.sub, FontId::proportional(11.5), sc, tw);
                 ui.painter().galley(pos2(tx, row.top() + 27.0), sg, sc);
                 // Buttons.
                 let mut bx = row.right() - 8.0;
@@ -154,30 +145,31 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     let label = tr!("common-redo");
                     let rr = place(button_width(ui, label, 64.0));
                     if small_button(ui, rr, Id::new(("soyuz.hist.redo", h.id.0)), label, true, p) {
-                        todo = Some((h.id, HistoryAction::Redo));
+                        todo = Some((h.id, RowButton::Redo));
                     }
                 } else {
                     let label = tr!("common-undo");
                     let rr = place(button_width(ui, label, 64.0));
-                    if small_button(ui, rr, Id::new(("soyuz.hist.undo", h.id.0)), label, h.undoable, p) {
-                        todo = Some((h.id, HistoryAction::Undo));
+                    if small_button(ui, rr, Id::new(("soyuz.hist.undo", h.id.0)), label, h.enabled(RowButton::Undo), p)
+                    {
+                        todo = Some((h.id, RowButton::Undo));
                     }
                     if !h.undoable {
                         ui.interact(rr, Id::new(("soyuz.hist.undo.tip", h.id.0)), Sense::hover())
                             .on_hover_text(tr!("panels-history-not-undoable-tip"));
                     }
                 }
-                if h.summary.items_failed > 0 {
+                if h.enabled(RowButton::RetryFailed) {
                     let label = tr!("panels-retry-failed");
                     let rr = place(button_width(ui, label, 92.0));
                     if small_button(ui, rr, Id::new(("soyuz.hist.retry", h.id.0)), label, true, p) {
-                        todo = Some((h.id, HistoryAction::Retry));
+                        todo = Some((h.id, RowButton::RetryFailed));
                     }
                 }
             }
         },
     );
-    if let Some((h, a)) = todo {
-        history_action(&mut app.core, h, a);
+    if let Some((h, b)) = todo {
+        jobs_rows::apply_history(&mut app.core, h, b);
     }
 }

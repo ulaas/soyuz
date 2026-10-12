@@ -88,6 +88,12 @@ pub enum JobButton {
     Dismiss,
     /// Open the job's details.
     Details,
+    /// Run the failed items again.
+    Retry,
+    /// Redo an undone history entry.
+    Redo,
+    /// Close the panel (the `row` is not used).
+    Close,
 }
 
 /// The targets of one frame, in drawing order.
