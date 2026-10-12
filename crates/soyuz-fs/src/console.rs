@@ -134,7 +134,8 @@ pub fn restore() {
 ///   after it is left, where ending the process is the expected behaviour. The handler
 ///   does not restore the console for these either: another handler further down the
 ///   chain could swallow the event and the process would keep running with its
-///   settings undone.
+///   settings undone. Exception: while [`set_ctrl_c_handled`] is on (a child program
+///   owns the terminal) the handler returns `TRUE` and the process keeps running.
 ///
 /// Calling it again replaces `f`. Unix: stores `f` and does nothing else (the TUI
 /// handles `SIGHUP` / `SIGTERM` itself).
@@ -149,6 +150,39 @@ pub fn set_close_handler(f: fn()) -> io::Result<()> {
     #[cfg(not(windows))]
     {
         Ok(())
+    }
+}
+
+/// Whether Ctrl+C / Ctrl+Break leave this process running: on while a child program owns
+/// the terminal (the terminal UI's suspend to a shell or an editor). The console sends
+/// Ctrl+C to every process attached to it, so without this the default handler would
+/// end Soyuz together with the command the user meant to interrupt.
+///
+/// Windows: the handler of [`set_close_handler`] (installed if needed) returns `TRUE`
+/// for `CTRL_C_EVENT` / `CTRL_BREAK_EVENT` while this is on. Deliberately not
+/// `SetConsoleCtrlHandler(NULL, TRUE)`: child processes inherit that "ignore Ctrl+C"
+/// attribute, so the shell and its commands could no longer be interrupted.
+///
+/// Unix: no-op (the TUI's signal thread drops `SIGINT` instead).
+pub fn set_ctrl_c_handled(on: bool) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        crate::sys::windows::console::set_ctrl_c_handled(on)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = on;
+        Ok(())
+    }
+}
+
+/// Switch the console code pages back to UTF-8 while a [`tui_console`] session is active
+/// (a child program run in the console can change them, e.g. `chcp`). No-op without a
+/// session (nothing to restore to) and on unix.
+pub fn reapply_utf8() {
+    #[cfg(windows)]
+    if SAVED.is_armed() {
+        crate::sys::windows::console::set_utf8();
     }
 }
 
@@ -235,6 +269,12 @@ impl SavedSlot {
         true
     }
 
+    /// A state is saved (a [`tui_console`] session is active).
+    #[cfg_attr(not(windows), allow(dead_code))]
+    pub(crate) fn is_armed(&self) -> bool {
+        self.armed.load(Ordering::Acquire)
+    }
+
     /// Take the saved state; `None` when nothing is saved or it was already taken.
     pub(crate) fn take(&self) -> Option<ConsoleState> {
         if !self.armed.swap(false, Ordering::AcqRel) {
@@ -280,6 +320,25 @@ mod tests {
         // After a restore the next session saves again.
         assert!(slot.store(state(None)));
         assert_eq!(slot.take(), Some(state(None)));
+    }
+
+    #[test]
+    fn armed_follows_store_and_take() {
+        let slot = SavedSlot::new();
+        assert!(!slot.is_armed());
+        slot.store(state(None));
+        assert!(slot.is_armed());
+        slot.take();
+        assert!(!slot.is_armed());
+    }
+
+    #[test]
+    fn ctrl_c_toggle_and_utf8_without_session() {
+        // No console session in the test binary: reapply_utf8 must not touch the runner's
+        // console; the Ctrl+C switch only flips a flag (and installs the handler once).
+        reapply_utf8();
+        set_ctrl_c_handled(true).unwrap();
+        set_ctrl_c_handled(false).unwrap();
     }
 
     #[test]

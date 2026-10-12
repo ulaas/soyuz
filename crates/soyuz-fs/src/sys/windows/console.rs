@@ -9,10 +9,10 @@ use windows_sys::Win32::Foundation::{
 };
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
 use windows_sys::Win32::System::Console::{
-    ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, CONSOLE_MODE, CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT,
-    CTRL_SHUTDOWN_EVENT, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleWindow, GetStdHandle, STD_HANDLE,
-    STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCP, SetConsoleCtrlHandler, SetConsoleMode, SetConsoleOutputCP,
-    SetConsoleTitleW, SetStdHandle,
+    ATTACH_PARENT_PROCESS, AllocConsole, AttachConsole, CONSOLE_MODE, CTRL_BREAK_EVENT, CTRL_C_EVENT, CTRL_CLOSE_EVENT,
+    CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, GetConsoleCP, GetConsoleMode, GetConsoleOutputCP, GetConsoleWindow,
+    GetStdHandle, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, SetConsoleCP, SetConsoleCtrlHandler, SetConsoleMode,
+    SetConsoleOutputCP, SetConsoleTitleW, SetStdHandle,
 };
 
 use crate::console::ConsoleState;
@@ -167,6 +167,16 @@ pub(crate) fn apply(state: &ConsoleState) {
 }
 
 static CTRL_HANDLER_INSTALLED: AtomicBool = AtomicBool::new(false);
+/// Ctrl+C / Ctrl+Break are handled (swallowed) by [`ctrl_handler`] while set.
+static CTRL_C_HANDLED: AtomicBool = AtomicBool::new(false);
+
+/// See `crate::console::set_ctrl_c_handled`. Uses the one registered [`ctrl_handler`],
+/// never `SetConsoleCtrlHandler(NULL, TRUE)`: that "ignore Ctrl+C" attribute would be
+/// inherited by the child processes, so the shell would ignore Ctrl+C too.
+pub(crate) fn set_ctrl_c_handled(on: bool) -> io::Result<()> {
+    CTRL_C_HANDLED.store(on, Ordering::Release);
+    if on { install_ctrl_handler() } else { Ok(()) }
+}
 
 /// Register [`ctrl_handler`] once; the callback itself is looked up on each event.
 pub(crate) fn install_ctrl_handler() -> io::Result<()> {
@@ -183,9 +193,11 @@ pub(crate) fn install_ctrl_handler() -> io::Result<()> {
 
 /// Runs on a system-created thread. See `crate::console::set_close_handler` for the
 /// semantics: close / logoff / shutdown run the callback and restore the console, then
-/// return TRUE (Windows terminates the process); Ctrl+C / Ctrl+Break fall through.
+/// return TRUE (Windows terminates the process); Ctrl+C / Ctrl+Break return TRUE (handled:
+/// the process keeps running) while [`set_ctrl_c_handled`] is on, else fall through.
 unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> windows_sys::core::BOOL {
     match ctrl_type {
+        CTRL_C_EVENT | CTRL_BREAK_EVENT if CTRL_C_HANDLED.load(Ordering::Acquire) => TRUE,
         CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT | CTRL_SHUTDOWN_EVENT => {
             // Never unwind across the FFI boundary.
             let _ = std::panic::catch_unwind(|| {
