@@ -24,7 +24,6 @@ tui-feature-quicklook = Quick Look
 tui-feature-terminal = Terminal panel
 tui-feature-editor = Editor
 tui-feature-jobs = Jobs panel
-tui-feature-preview = Preview
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 

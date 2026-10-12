@@ -12,7 +12,7 @@ pub mod rich;
 use egui::{
     Align2, CornerRadius, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
 };
-use soyuz_core::{EntryInfo, EntryKind, Location};
+use soyuz_core::{EntryInfo, Location};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
@@ -48,8 +48,7 @@ impl PreviewPane {
     /// Flip the hex view of the current entry.
     fn toggle_hex(&mut self) {
         if let Some(s) = &mut self.state {
-            s.force_hex = !s.force_hex;
-            s.invalidate();
+            s.toggle_hex();
         }
     }
 }
@@ -57,27 +56,7 @@ impl PreviewPane {
 /// What the preview should show for the focused pane: the cursor entry, else the first
 /// selected entry, else the folder itself.
 pub fn target_entry(app: &SoyuzApp) -> Option<EntryInfo> {
-    let pane = app.core.ws.pane();
-    if matches!(pane.location, Location::Remote(_)) {
-        // Remote files preview from a downloaded copy; folders show nothing.
-        let e =
-            pane.cursor.as_deref().and_then(|c| pane.entry(c)).or_else(|| pane.selected_entries().first().copied())?;
-        return crate::ui::remote::preview_target(&app.core, e);
-    }
-    if let Some(e) = pane.cursor.as_deref().and_then(|c| pane.entry(c)) {
-        return Some(e.clone());
-    }
-    if let Some(e) = pane.selected_entries().first() {
-        return Some((*e).clone());
-    }
-    match &pane.location {
-        Location::Dir(p) => Some(EntryInfo::minimal(p.clone(), EntryKind::Dir)),
-        Location::Archive { archive, inner } if !inner.is_empty() => {
-            Some(EntryInfo::minimal(soyuz_core::join_vpath(archive, inner), EntryKind::Dir))
-        }
-        Location::Archive { archive, .. } => Some(EntryInfo::minimal(archive.clone(), EntryKind::File)),
-        _ => None,
-    }
+    soyuz_appcore::models::preview_load::target_entry(&app.core)
 }
 
 pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
@@ -257,24 +236,4 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
 }
 
 /// Translated label of a preview category (`Kind::label` stays English for logs).
-pub fn kind_label(k: crate::services::preview::Kind) -> &'static str {
-    use crate::services::preview::Kind;
-    match k {
-        Kind::Folder => tr!("views-preview-kind-folder"),
-        Kind::Image => tr!("views-preview-kind-image"),
-        Kind::Svg => tr!("views-preview-kind-svg"),
-        Kind::Text => tr!("views-preview-kind-text"),
-        Kind::Markdown => "Markdown",
-        Kind::Archive => tr!("views-preview-kind-archive"),
-        Kind::Audio => tr!("views-preview-kind-audio"),
-        Kind::Video => tr!("views-preview-kind-video"),
-        Kind::Pdf => tr!("views-preview-kind-pdf"),
-        Kind::Binary => tr!("views-preview-kind-binary"),
-        Kind::Document => tr!("views-preview-kind-document"),
-        Kind::Spreadsheet => tr!("views-preview-kind-spreadsheet"),
-        Kind::Presentation => tr!("views-preview-kind-presentation"),
-        Kind::Ebook => tr!("views-preview-kind-ebook"),
-        Kind::Font => tr!("views-preview-kind-font"),
-        Kind::Model => tr!("views-preview-kind-model"),
-    }
-}
+pub use soyuz_appcore::models::preview_info::kind_label;
