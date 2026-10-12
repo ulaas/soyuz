@@ -101,27 +101,70 @@ impl EventSource for ChannelSource {
     }
 }
 
-/// Read terminal events on a thread (`crossterm::event::read`) into `tx`. Start it only
-/// after `crossterm::terminal::supports_keyboard_enhancement` was queried: the query
+/// How long the input reader waits for input before it looks at its gate again.
+pub const READ_POLL: Duration = Duration::from_millis(50);
+
+/// Read terminal events on a thread (`crossterm::event::poll` + `read`) into `tx`. Start it
+/// only after `crossterm::terminal::supports_keyboard_enhancement` was queried: the query
 /// reads the terminal's answer from the same input stream.
-pub fn spawn_reader(tx: Sender<TuiEvent>) -> io::Result<()> {
-    std::thread::Builder::new().name("soyuz-tui-input".into()).spawn(move || {
-        loop {
-            match crossterm::event::read() {
-                Ok(ev) => {
-                    if tx.send(TuiEvent::Term(ev)).is_err() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    log::error!("tui: reading terminal input failed: {e}");
-                    let _ = tx.send(TuiEvent::Terminate);
-                    break;
+///
+/// The thread parks on `gate` while a child program owns the terminal
+/// ([`crate::suspend::InputGate`]): it never sits in a blocking `read`, so it cannot take
+/// the child's keystrokes. Once let go, it drops the input that piled up meanwhile (it was
+/// meant for the child), except resizes.
+pub fn spawn_reader(tx: Sender<TuiEvent>, gate: Arc<InputGate>) -> io::Result<()> {
+    gate.attach_reader();
+    let g = Arc::clone(&gate);
+    let spawned = std::thread::Builder::new().name("soyuz-tui-input".into()).spawn(move || {
+        read_events(&tx, &g);
+        g.detach_reader();
+    });
+    if let Err(e) = spawned {
+        gate.detach_reader();
+        return Err(e);
+    }
+    Ok(())
+}
+
+/// The input reader's loop; returns when the loop is gone or reading failed.
+fn read_events(tx: &Sender<TuiEvent>, gate: &InputGate) {
+    let failed = |e: io::Error| {
+        log::error!("tui: reading terminal input failed: {e}");
+        let _ = tx.send(TuiEvent::Terminate);
+    };
+    loop {
+        if gate.park() {
+            // Stale: typed while the child had the terminal.
+            loop {
+                match crossterm::event::poll(Duration::ZERO) {
+                    Ok(true) => match crossterm::event::read() {
+                        Ok(ev @ Event::Resize(..)) => {
+                            if tx.send(TuiEvent::Term(ev)).is_err() {
+                                return;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(e) => return failed(e),
+                    },
+                    Ok(false) => break,
+                    Err(e) => return failed(e),
                 }
             }
         }
-    })?;
-    Ok(())
+        match crossterm::event::poll(READ_POLL) {
+            Ok(true) => {}
+            Ok(false) => continue,
+            Err(e) => return failed(e),
+        }
+        match crossterm::event::read() {
+            Ok(ev) => {
+                if tx.send(TuiEvent::Term(ev)).is_err() {
+                    return;
+                }
+            }
+            Err(e) => return failed(e),
+        }
+    }
 }
 
 /// The terminal besides ratatui's drawing: raw escape sequences and mode changes.
@@ -572,7 +615,8 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
 
     let (tx, rx) = crossbeam_channel::unbounded();
     crate::signals::install(tx.clone());
-    if let Err(e) = spawn_reader(tx) {
+    let gate = Arc::new(InputGate::default());
+    if let Err(e) = spawn_reader(tx, Arc::clone(&gate)) {
         drop(guard);
         crash::clear_tui_hooks();
         let _ = writeln!(io::stderr(), "soyuz: cannot read terminal input: {e}");
@@ -588,6 +632,7 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
         }
     };
     let mut app = App::new(config, startup);
+    app.input_gate = gate;
     let mut io_ = StdoutIo { guard };
     let mut source = ChannelSource { rx };
     let result = run_loop(&mut app, &mut terminal, &mut source, &mut io_);
