@@ -71,7 +71,7 @@ fn run_tui(data: PathBuf) {
     assert!(app.hits().iter().any(|(_, t)| matches!(t, soyuz_tui::layout::HitTarget::PaneRow { .. })));
     let pane = app.core.ws.pane();
     assert_eq!(pane.layout.as_ref().map(|l| (l.n, l.cols)), Some((3, 1)));
-    assert_eq!(pane.viewport_h, 22.0);
+    assert_eq!(pane.viewport_h, 21.0, "22 rows less the column header");
     app.finish();
     assert!(config::config_dir().join("session-tui.toml").is_file(), "session-tui.toml written");
     common::ok();

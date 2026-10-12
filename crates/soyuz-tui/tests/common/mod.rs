@@ -110,6 +110,8 @@ pub fn test_config() -> Config {
     c.updates.weekly_check = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
+    // Fixed screen coordinates in the tests assume no sidebar; the sidebar tests turn it on.
+    c.layout.sidebar = false;
     c
 }
 
