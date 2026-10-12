@@ -95,6 +95,64 @@ impl Section {
         crate::i18n::t_dyn(&format!("settings-section-{}-desc", self.id()))
     }
 
+    /// The config paths this page edits: whole tables (`"general"`, `"tui"`, `"bookmarks"`,
+    /// sub-tables included) or single keys a page borrows from another page's table
+    /// (`"general.default_view"` on Views). Every table of `Config` belongs to exactly one
+    /// page; Advanced holds the tables no other page shows. Mirrors [`Section::reset`]
+    /// (checked by tests): resetting these paths, minus [`Section::kept`], is that reset.
+    pub fn tables(self) -> &'static [&'static str] {
+        match self {
+            Section::General => &["general"],
+            Section::Appearance => &["appearance", "theme"],
+            Section::Fonts => &["fonts"],
+            Section::Views => &[
+                "columns",
+                "layout",
+                "sidebar",
+                "tags",
+                "toolbar",
+                "context_menu",
+                "general.default_view",
+                "general.natural_sort",
+                "general.case_insensitive_sort",
+                "general.folders_first",
+            ],
+            Section::Behaviour => &[
+                "behaviour",
+                "general.single_click_open",
+                "general.confirm_delete",
+                "general.confirm_permanent_delete",
+                "general.double_click_speed_ms",
+                "general.open_folders_in",
+            ],
+            Section::Jobs => &["jobs", "sync"],
+            Section::Terminal => &["terminal"],
+            Section::TerminalUi => &["tui"],
+            Section::Preview => &["preview", "git", "search"],
+            Section::Editor => &["editor"],
+            Section::Keyboard => &["keys"],
+            Section::Commands => &["custom_commands"],
+            Section::Bookmarks => &["bookmarks"],
+            Section::Scripts => &["scripting"],
+            Section::Automations => &["automation", "cli"],
+            Section::Ai => &["ai"],
+            Section::Advanced => &["workspace", "archive", "performance", "remote", "linux"],
+            Section::About => &["updates"],
+        }
+    }
+
+    /// User data inside [`Section::tables`] that a section reset keeps (pinned Portal
+    /// folders, saved searches, automation rules, AI profiles and MCP connections).
+    pub fn kept(self) -> &'static [&'static str] {
+        match self {
+            Section::Views => &["sidebar.portal"],
+            Section::Preview => &["search.saved"],
+            Section::Automations => &["automation.rules"],
+            Section::Ai => &["ai.profiles", "ai.mcp_clients", "ai.mcp_servers"],
+            _ => &[],
+        }
+    }
+
     /// Reset this section of `c` to defaults.
     pub fn reset(self, c: &mut Config) {
         let d = Config::default();
@@ -167,6 +225,16 @@ impl Section {
             Section::About => c.updates = d.updates,
         }
     }
+}
+
+/// Whether every word of `query` (case-insensitive) occurs in `texts`; an empty query
+/// matches everything. The settings search of both frontends.
+pub fn matches(query: &str, texts: &[&str]) -> bool {
+    if query.trim().is_empty() {
+        return true;
+    }
+    let hay = texts.join(" ").to_lowercase();
+    query.split_whitespace().all(|w| hay.contains(&w.to_lowercase()))
 }
 
 /// How long a change waits before `config.toml` is written.
