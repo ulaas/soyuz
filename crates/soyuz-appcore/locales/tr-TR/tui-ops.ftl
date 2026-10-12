@@ -7,12 +7,17 @@
 tui-ops-keep = Koru
 tui-ops-off = Kapalı
 tui-ops-on = Açık
-tui-ops-bad-counter = Başlangıç ve Basamak tam sayı olmalı (Basamak en fazla 12)
+tui-ops-bad-counter = Başlangıç, Adım ve Basamak tam sayı olmalı (Basamak en fazla 12)
 tui-ops-status-invalid = geçersiz ad
 tui-ops-status-duplicate = yinelenen
 tui-ops-status-exists = zaten var
 tui-ops-status-error = kural hatası
-tui-ops-batch-hints = Tab sonraki alan · ←/→ seç · Boşluk aç/kapat · PgUp/PgDn önizlemeyi kaydır · Enter yeniden adlandır · Esc iptal
+tui-ops-batch-hints = Tab sonraki alan · ←/→ seç (Kural: sayfa) · Boşluk aç/kapat · PgUp/PgDn liste · Enter yeniden adlandır · Esc iptal
+tui-ops-bad-number = Kaldırılacak sayı, başlangıç ve konum tam sayı olmalı
+tui-ops-rename-mode = Kip
+tui-ops-rename-rule = Kural
+tui-ops-rename-index = Konum
+tui-ops-load = Yükle
 
 ## Attributes
 tui-ops-mode = İzinler (sekizli)
@@ -27,3 +32,6 @@ tui-ops-name = Ad
 tui-ops-counting = (sayılıyor…)
 tui-ops-hashing = hesaplanıyor…
 tui-ops-props-hints = ↑/↓ kaydır · Alt+A öznitelikler · Enter / Esc kapat
+tui-ops-checksums = Sağlama toplamları…
+tui-ops-algorithm = Algoritma
+tui-ops-sums-hints = ←/→ algoritma · Alt+O hesapla · Alt+L tümü · Alt+Y kopyala · doğrulamak için Karşılaştır alanına yapıştırın · Esc kapat

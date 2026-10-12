@@ -13,27 +13,43 @@
 //! | Enter | answer the job's deferred prompt | undo / redo |
 //! | R | retry the failed items | retry the failed items |
 //! | U | | undo (redo when undone) |
+//! | L | show / hide the job's details (errors and log) | |
+//! | M | the job's "More" menu: priority, move up / down, start now, cancel | |
+//! | Shift+P / Shift+S / Shift+C | pause all / resume (start) all / cancel all | |
+//! | X | clear the finished jobs | |
 //! | Esc | give the keyboard back to the file list | |
 //!
 //! Other keys go to the core's global bindings (Ctrl+Q, the palette, …). A mouse press
 //! outside the panel gives the keyboard back too.
 //!
 //! Mouse ([`click`], [`wheel`]): `BottomTab` switches tabs, `JobRow` moves the cursor,
-//! `JobButton` presses the button (`Close` closes the panel); each press focuses the
-//! panel. The wheel scrolls the list without moving the cursor.
+//! `JobButton` presses the button (`Close` closes the panel; the toolbar's act on every
+//! job; `Details` shows / hides the log; `More` opens the menu); a right click on a job
+//! opens its menu; each press focuses the panel. The wheel scrolls the list without
+//! moving the cursor. While jobs run and the panel is open, [`tick`] asks for a redraw
+//! every [`REDRAW_EVERY`] (progress, speed and ETA move).
+
+use std::collections::HashMap;
+use std::time::Duration;
 
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::core::AppCore;
+use soyuz_appcore::host::Host;
 use soyuz_appcore::keys::input::InputEvent;
-use soyuz_appcore::models::jobs_rows::{self, HistoryRow, JobRow, RowButton};
+use soyuz_appcore::models::jobs_rows::{self, HistoryRow, JobMenuEntry, JobRow, RowButton, Tone, ToolbarButton};
 use soyuz_appcore::models::panels::ActivityTab;
 use soyuz_core::config::{KeyName, Mods};
+use soyuz_jobs::JobId;
 
 use super::InputState;
+use super::menu::MenuCmd;
 use crate::app::App;
 use crate::hits::JobButton;
 use crate::layout::HitTarget;
-use crate::widgets::SelectList;
+use crate::widgets::{Menu, MenuItem, SelectList};
+
+/// How often the panel is redrawn while jobs run.
+pub const REDRAW_EVERY: Duration = Duration::from_millis(250);
 
 /// What the jobs panel keeps between frames.
 #[derive(Debug, Default)]
@@ -48,6 +64,8 @@ pub struct State {
     pub height: usize,
     /// Bring the cursor into view on the next frame.
     pub follow: bool,
+    /// The details of the expanded jobs (read by `view::jobs::prepare`).
+    pub details: HashMap<JobId, Vec<(Tone, String)>>,
 }
 
 /// Whether the panel has the keyboard (it must be shown).
@@ -64,6 +82,14 @@ pub fn focus(app: &mut App) {
     app.input.jobs.follow = true;
 }
 
+/// Every frame (`App::frame`): while the panel is open and a job is working, a
+/// redraw in [`REDRAW_EVERY`].
+pub fn tick(core: &AppCore, host: &dyn Host) {
+    if crate::view::jobs::shown(core) && core.fileops.jobs.snapshots().iter().any(|s| s.state.is_active()) {
+        host.redraw_after(REDRAW_EVERY);
+    }
+}
+
 /// What a key does in the panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum KeyCmd {
@@ -76,6 +102,12 @@ pub enum KeyCmd {
     Enter,
     Retry,
     UndoRedo,
+    /// Show / hide the details.
+    Log,
+    /// The "More" menu.
+    Menu,
+    /// A toolbar button.
+    All(ToolbarButton),
 }
 
 /// The panel's command for chord `ev` (`None`: not one of its keys).
@@ -95,6 +127,12 @@ pub fn key_cmd(ev: &InputEvent) -> Option<KeyCmd> {
         (KeyName::Enter, false) => KeyCmd::Enter,
         (KeyName::R, false) => KeyCmd::Retry,
         (KeyName::U, false) => KeyCmd::UndoRedo,
+        (KeyName::L, false) => KeyCmd::Log,
+        (KeyName::M, false) => KeyCmd::Menu,
+        (KeyName::P, true) => KeyCmd::All(ToolbarButton::PauseAll),
+        (KeyName::S, true) => KeyCmd::All(ToolbarButton::ResumeAll),
+        (KeyName::C, true) => KeyCmd::All(ToolbarButton::CancelAll),
+        (KeyName::X, false) => KeyCmd::All(ToolbarButton::ClearFinished),
         _ => return None,
     })
 }
@@ -125,6 +163,57 @@ pub fn press(app: &mut App, index: usize, b: RowButton) {
     }
 }
 
+/// Press toolbar button `b` (jobs tab, when it applies).
+pub fn press_all(app: &mut App, b: ToolbarButton) {
+    if crate::view::jobs::history_tab(&app.core) {
+        return;
+    }
+    if jobs_rows::toolbar(&app.core).iter().any(|&(x, on)| x == b && on) {
+        jobs_rows::apply_toolbar(&mut app.core, b);
+    }
+}
+
+/// Show or hide the details of job row `index`.
+pub fn toggle_log(app: &mut App, index: usize) {
+    if let Some(Target::Job(r)) = target(&app.core, index) {
+        jobs_rows::toggle_expanded(&mut app.core, r.id);
+    }
+}
+
+/// Open the "More" menu of job row `index` at `anchor` (nothing for a finished job or a
+/// history entry).
+pub fn open_menu(app: &mut App, index: usize, anchor: (u16, u16)) {
+    let Some(Target::Job(r)) = target(&app.core, index) else { return };
+    let id = r.id;
+    let mut items: Vec<MenuItem<MenuCmd>> = Vec::new();
+    for e in jobs_rows::job_menu(&r) {
+        match e {
+            JobMenuEntry::Priority(prios) => {
+                let sub = prios
+                    .into_iter()
+                    .map(|(cmd, label, on)| MenuItem::run(label, MenuCmd::Job(id, cmd)).checked(on))
+                    .collect();
+                items.push(MenuItem::submenu(soyuz_appcore::tr!("panels-priority"), sub));
+            }
+            JobMenuEntry::Item { cmd, label, enabled, .. } => {
+                items.push(MenuItem::run(label, MenuCmd::Job(id, cmd)).enabled(enabled));
+            }
+            JobMenuEntry::Separator => items.push(MenuItem::Separator),
+        }
+    }
+    if !items.is_empty() {
+        super::menu::open(app, Menu::new(items, anchor));
+    }
+}
+
+/// Where the keyboard-opened menu of row `index` goes: below its first line.
+fn row_anchor(app: &App, index: usize) -> (u16, u16) {
+    app.hits
+        .iter()
+        .find(|(_, t)| *t == HitTarget::JobRow(index))
+        .map_or((1, 1), |(r, _)| (r.x.saturating_add(4.min(r.width)), r.y.saturating_add(1)))
+}
+
 /// Switch to the jobs (`false`) or history tab.
 fn set_tab(app: &mut App, history: bool) {
     app.core.fileops.activity.tab = if history { ActivityTab::History } else { ActivityTab::Jobs };
@@ -145,6 +234,20 @@ pub fn run(app: &mut App, cmd: KeyCmd) {
         KeyCmd::Tab(_) => {
             let history = crate::view::jobs::history_tab(&app.core);
             set_tab(app, !history);
+            return;
+        }
+        KeyCmd::Log => {
+            toggle_log(app, i);
+            app.input.jobs.follow = true;
+            return;
+        }
+        KeyCmd::Menu => {
+            let anchor = row_anchor(app, i);
+            open_menu(app, i, anchor);
+            return;
+        }
+        KeyCmd::All(b) => {
+            press_all(app, b);
             return;
         }
         KeyCmd::PauseResume => first(&[RowButton::Pause, RowButton::Resume]),
@@ -177,7 +280,8 @@ pub fn route(app: &mut App, events: &[Event]) {
     let mut frame = crate::keys::frame(events, app.core.config.keys.cmd_is_ctrl, cfg!(windows));
     let mut i = 0;
     while i < frame.events.len() {
-        if !app.input.jobs.focused {
+        // A key may have opened the job menu: it takes the rest.
+        if !app.input.jobs.focused || super::menu::is_open(&app.input.menu) {
             break;
         }
         let len = crate::view::jobs::len(&app.core);
@@ -208,10 +312,21 @@ pub fn route(app: &mut App, events: &[Event]) {
 
 /// A mouse press on one of the panel's targets.
 pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
-    if !matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
+    let MouseEventKind::Down(button) = m.kind else { return };
+    let len = crate::view::jobs::len(&app.core);
+    if button == MouseButton::Right {
+        if let HitTarget::JobRow(row) | HitTarget::JobButton { row, .. } = target
+            && !matches!(target, HitTarget::JobButton { button: b, .. } if crate::view::jobs::toolbar_button(b).is_some() || b == JobButton::Close)
+        {
+            app.input.jobs.focused = true;
+            app.input.jobs.list.select(row, len);
+            open_menu(app, row, (m.column, m.row));
+        }
         return;
     }
-    let len = crate::view::jobs::len(&app.core);
+    if button != MouseButton::Left {
+        return;
+    }
     match target {
         HitTarget::BottomTab(i) => {
             app.input.jobs.focused = true;
@@ -226,6 +341,22 @@ pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
             if crate::view::jobs::shown(&app.core) {
                 app.core.ui.bottom.toggle(soyuz_appcore::models::panels::BottomTab::Activity);
             }
+        }
+        HitTarget::JobButton { button, .. } if crate::view::jobs::toolbar_button(button).is_some() => {
+            app.input.jobs.focused = true;
+            if let Some(b) = crate::view::jobs::toolbar_button(button) {
+                press_all(app, b);
+            }
+        }
+        HitTarget::JobButton { row, button: JobButton::Details } => {
+            app.input.jobs.focused = true;
+            app.input.jobs.list.select(row, len);
+            toggle_log(app, row);
+        }
+        HitTarget::JobButton { row, button: JobButton::More } => {
+            app.input.jobs.focused = true;
+            app.input.jobs.list.select(row, len);
+            open_menu(app, row, (m.column, m.row));
         }
         HitTarget::JobButton { row, button } => {
             app.input.jobs.focused = true;
@@ -262,10 +393,16 @@ mod tests {
         assert_eq!(key_cmd(&chord("C")), Some(KeyCmd::CancelRemove));
         assert_eq!(key_cmd(&chord("R")), Some(KeyCmd::Retry));
         assert_eq!(key_cmd(&chord("U")), Some(KeyCmd::UndoRedo));
+        assert_eq!(key_cmd(&chord("L")), Some(KeyCmd::Log));
+        assert_eq!(key_cmd(&chord("M")), Some(KeyCmd::Menu));
+        assert_eq!(key_cmd(&chord("Shift+P")), Some(KeyCmd::All(ToolbarButton::PauseAll)));
+        assert_eq!(key_cmd(&chord("Shift+S")), Some(KeyCmd::All(ToolbarButton::ResumeAll)));
+        assert_eq!(key_cmd(&chord("Shift+C")), Some(KeyCmd::All(ToolbarButton::CancelAll)));
+        assert_eq!(key_cmd(&chord("X")), Some(KeyCmd::All(ToolbarButton::ClearFinished)));
         assert_eq!(key_cmd(&chord("Shift+Tab")), Some(KeyCmd::Tab(false)));
         assert_eq!(key_cmd(&chord("Right")), Some(KeyCmd::Tab(true)));
         assert_eq!(key_cmd(&chord("Ctrl+C")), None, "Copy stays global");
-        assert_eq!(key_cmd(&chord("Shift+P")), None);
+        assert_eq!(key_cmd(&chord("Shift+U")), None);
         assert_eq!(key_cmd(&InputEvent::Text("p".into())), None);
     }
 }

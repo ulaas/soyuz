@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crossterm::event::{KeyCode, KeyModifiers};
 use soyuz_tui::app::App;
 
-use crate::common::{self, Run, Step, at, ctrl, dialog_title, key, key_mods, labels, wait_jobs_idle};
+use crate::common::{self, Run, Step, at, ctrl, dialog_title, key, key_mods, labels, shift, wait_jobs_idle};
 
 /// The preview rows of the dialog drawn in the last frame.
 fn preview(app: &App) -> Vec<String> {
@@ -41,16 +41,18 @@ fn numbering(data: PathBuf) {
         move |a| at(a, &d) && labels(a) == ["a.txt", "b.txt"],
         key_mods(KeyCode::Char('R'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
     )];
-    // Nothing selected: every item. Tab to "Numbering" (the 7th field), then End.
+    // Nothing selected: every item. Find has the focus; Shift+Tab to "Rule", four pages on
+    // to Numbering, Tab to its position, then End.
     steps.push(Step::new(
         "the batch rename dialog",
         |a| dialog_title(a).is_some_and(|t| t.contains('2')) && preview(a).len() == 2,
-        key(KeyCode::Tab),
+        shift(KeyCode::BackTab),
     ));
-    for _ in 0..5 {
-        steps.push(Step::new("tabbing", |_| true, key(KeyCode::Tab)));
+    for _ in 0..4 {
+        steps.push(Step::new("to the Numbering page", |_| true, key(KeyCode::Right)));
     }
     steps.extend([
+        Step::new("on the Numbering page", |_| true, key(KeyCode::Tab)),
         Step::new("on Numbering", |_| true, key(KeyCode::Right)),
         Step::new("numbering at the start", |a| preview(a).iter().any(|r| r.contains("01 a.txt")), key(KeyCode::Right)),
         Step::new(
@@ -86,16 +88,13 @@ fn batch_rename_highlights_conflicts() {
 fn conflicts(data: PathBuf) {
     let mut app = common::new_app(common::test_config(), &data);
     let d = data.clone();
-    let mut steps = vec![
-        Step::new(
-            "the listing",
-            move |a| at(a, &d) && labels(a).len() == 2,
-            key_mods(KeyCode::Char('R'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
-        ),
-        Step::new("the dialog", |a| preview(a).len() == 2, key(KeyCode::Tab)),
-    ];
-    // Find "1" → "2": x1.txt would become x2.txt, which x2.txt keeps.
-    common::type_text(&mut steps, "1");
+    let mut steps = vec![Step::new(
+        "the listing",
+        move |a| at(a, &d) && labels(a).len() == 2,
+        key_mods(KeyCode::Char('R'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+    )];
+    // Find (focused) "1" → "2": x1.txt would become x2.txt, which x2.txt keeps.
+    steps.push(Step::new("the dialog", |a| preview(a).len() == 2, key(KeyCode::Char('1'))));
     steps.push(Step::new("Find typed", |_| true, key(KeyCode::Tab)));
     common::type_text(&mut steps, "2");
     steps.extend([
@@ -110,6 +109,66 @@ fn conflicts(data: PathBuf) {
         ),
         Step::new("Enter did nothing", |a| dialog_title(a).is_some(), key(KeyCode::Esc)),
         Step::new("closed", |a| dialog_title(a).is_none(), ctrl('q')),
+    ]);
+    common::run_script(&mut app, steps, 100, 30);
+    common::ok();
+}
+
+#[test]
+fn batch_rename_one_name_per_line() {
+    let run = common::relaunch(module_path!(), "batch_rename_one_name_per_line", |data| {
+        std::fs::write(data.join("a.txt"), b"a").unwrap();
+        std::fs::write(data.join("b.txt"), b"b").unwrap();
+    });
+    match run {
+        Run::Child(data) => one_per_line(data),
+        Run::Parent(p) => {
+            assert!(p.data.join("a.txt").is_file(), "a.txt kept its name");
+            assert!(p.data.join("z.md").is_file() && !p.data.join("b.txt").exists(), "b.txt became z.md");
+        }
+    }
+}
+
+fn one_per_line(data: PathBuf) {
+    let mut app = common::new_app(common::test_config(), &data);
+    let d = data.clone();
+    let z = data.join("z.md");
+    let mut steps = vec![
+        Step::new(
+            "the listing",
+            move |a| at(a, &d) && labels(a) == ["a.txt", "b.txt"],
+            key_mods(KeyCode::Char('R'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+        ),
+        // Find → Rule → Edit → Mode.
+        Step::new("the dialog", |a| preview(a).len() == 2, shift(KeyCode::BackTab)),
+        Step::new("on Rule", |_| true, shift(KeyCode::BackTab)),
+        Step::new("on Edit", |_| true, shift(KeyCode::BackTab)),
+        Step::new("on Mode", |_| true, key(KeyCode::Right)),
+        Step::new(
+            "one name per line: the Name field",
+            |a| {
+                a.view()
+                    .and_then(|v| v.dialog.as_ref())
+                    .is_some_and(|d| d.fields.len() == 2 && d.fields[1].label == soyuz_appcore::tr!("tui-ops-name"))
+            },
+            key(KeyCode::Tab),
+        ),
+        // Down: the second line (b.txt).
+        Step::new("on Name", |_| true, key(KeyCode::Down)),
+    ];
+    for _ in 0..3 {
+        steps.push(Step::new("clearing the extension", |_| true, key(KeyCode::Backspace)));
+    }
+    steps.push(Step::new("b.", |_| true, key(KeyCode::Backspace)));
+    steps.push(Step::new("b", |_| true, key(KeyCode::Backspace)));
+    common::type_text(&mut steps, "z.md");
+    steps.extend([
+        Step::new(
+            "the preview",
+            |a| preview(a) == ["a.txt \u{2192} a.txt", "b.txt \u{2192} z.md"],
+            key(KeyCode::Enter),
+        ),
+        Step::new("renamed", move |a| z.is_file() && dialog_title(a).is_none() && wait_jobs_idle(a), ctrl('q')),
     ]);
     common::run_script(&mut app, steps, 100, 30);
     common::ok();

@@ -11,13 +11,13 @@
 //! | `PaneRow` | focus the pane, then [`row_press`] (below) | `behaviour.middle_click` (folders) | select the row, open its context menu |
 //! | `PaneHeader` | focus, collapse / expand the group (as in the GUI) | | |
 //! | `PaneBackground` | focus, clear the selection (unless Ctrl / Shift) | focus | focus, clear unless Ctrl, open the background menu |
-//! | `PaneColumn` | sort by the column; the sorted one flips direction (GUI header click) | | |
+//! | `PaneColumn` | sort by the column; the sorted one flips direction (GUI header click) | | the column chooser |
 //! | `MillerRow` | folder: open it; file: open its folder with it selected (GUI) | | |
 //! | `Splitter` | drag sets `split` (or `split2`, the quad rows) | | |
-//! | `Tab` / `TabClose` / `NewTab` | activate / close / new tab | close the tab | |
+//! | `Tab` / `TabClose` / `NewTab` | activate / close / new tab | close the tab | the tab menu |
 //! | `Crumb` | navigate there; the last crumb edits the address | open in a new tab | |
 //! | `Address` | edit the address | | |
-//! | `SidebarRow` | cursor there; a header toggles, a place / tree folder opens | | |
+//! | `SidebarRow` | cursor there; a header toggles, a place / tree folder opens | | a place's menu |
 //! | `Filter` | arm the filter field | | |
 //! | `PaletteRow` | select and run (Ctrl: new tab, Shift: complete only) | | |
 //! | `Toast` | dismiss | | |
@@ -235,13 +235,19 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
         }
         (HitTarget::PaletteRow(i), MouseButton::Left) => palette_row(app, i, m.modifiers),
         (HitTarget::Toast(i), MouseButton::Left) => dismiss_toast(app, i),
+        // The menus of a tab, the details header and a sidebar place (`input::menu`).
+        (HitTarget::Tab(i), MouseButton::Right) => super::menu::open_tab(app, i, (m.column, m.row)),
+        (HitTarget::PaneColumn { pane, .. }, MouseButton::Right) => {
+            app.core.cmds.push(Cmd::FocusPane(pane));
+            super::menu::open_header(app, pane, (m.column, m.row));
+        }
+        (HitTarget::SidebarRow(i), MouseButton::Right) => super::menu::open_sidebar(app, i, (m.column, m.row)),
         // Other buttons on targets that only take the left one.
         (
             HitTarget::PaneHeader { .. }
             | HitTarget::PaneColumn { .. }
             | HitTarget::MillerRow { .. }
             | HitTarget::Splitter { .. }
-            | HitTarget::Tab(_)
             | HitTarget::TabClose(_)
             | HitTarget::NewTab
             | HitTarget::Crumb(_)

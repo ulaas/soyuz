@@ -5,8 +5,8 @@
 //! toolbar behave identically.
 
 use egui::Ui;
+use soyuz_core::ViewMode;
 use soyuz_core::config::Keymap;
-use soyuz_core::{Column, ViewMode};
 
 use crate::cmd::Cmd;
 use crate::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, SubmenuKind};
@@ -24,7 +24,8 @@ pub fn set_hidden(names: &[String]) -> Vec<String> {
 /// The Phosphor glyph of a catalogue icon (`None`: no icon).
 fn glyph(icon: MenuIcon) -> Option<&'static str> {
     Some(match icon {
-        MenuIcon::None | MenuIcon::Tag { .. } => return None,
+        MenuIcon::None | MenuIcon::Tag { .. } | MenuIcon::Dot(_) => return None,
+        MenuIcon::Blank => "",
         MenuIcon::Id(id) => crate::ui::icons::glyph(id),
         MenuIcon::ChartPieSlice => ph::CHART_PIE_SLICE,
         MenuIcon::Check => ph::CHECK,
@@ -38,14 +39,20 @@ fn glyph(icon: MenuIcon) -> Option<&'static str> {
         MenuIcon::Prohibit => ph::PROHIBIT,
         MenuIcon::SlidersHorizontal => ph::SLIDERS_HORIZONTAL,
         MenuIcon::TrayArrowDown => ph::TRAY_ARROW_DOWN,
+        MenuIcon::Plus => ph::PLUS,
+        MenuIcon::PushPinSlash => ph::PUSH_PIN_SLASH,
+        MenuIcon::X => ph::X,
+        MenuIcon::ArrowLineRight => ph::ARROW_LINE_RIGHT,
     })
 }
 
-/// Draw catalogue `entries`; an activated entry runs and closes the menu.
-fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
+/// Draw catalogue `entries`; an activated entry runs and closes the menu (unless it
+/// keeps it open).
+pub fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
     for e in entries {
         match e {
             Entry::Separator => menu_separator(ui),
+            Entry::Caption(c) => menu_caption(ui, &c),
             Entry::Item(it) => {
                 let chord = it.chord.as_deref();
                 let resp = match (it.style, it.icon) {
@@ -53,13 +60,16 @@ fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
                     (ItemStyle::Plain, MenuIcon::Tag { tag, checked }) => {
                         crate::ui::tools::tags_ui::tag_row(ui, tag, checked, chord)
                     }
+                    (ItemStyle::Plain, MenuIcon::Dot(color)) => crate::ui::workspaces::dot_item(ui, color, &it.label),
                     (ItemStyle::Plain, icon) => menu_item(ui, glyph(icon), &it.label, chord, it.enabled),
                 };
                 if resp.clicked() {
                     if let Some(r) = it.run {
                         catalogue::run(r, cmds);
                     }
-                    ui.close();
+                    if !it.keep_open {
+                        ui.close();
+                    }
                 }
             }
             Entry::Submenu(s) => {
@@ -69,6 +79,7 @@ fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
                         SubmenuKind::GroupBy | SubmenuKind::Tags => ui.set_width(200.0),
                         SubmenuKind::Ai => ui.set_width(230.0),
                         SubmenuKind::Checksum => ui.set_min_width(200.0),
+                        SubmenuKind::TabGroups | SubmenuKind::Windows => {}
                     }
                     draw_entries(ui, s.items, cmds);
                 });
@@ -141,35 +152,7 @@ pub fn group_items(ui: &mut Ui, cmds: &mut Vec<Cmd>, pane: &Pane) {
 /// Column chooser (details header right-click).
 pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     ui.set_width(220.0);
-    menu_caption(ui, tr!("app-ctx-columns"));
-    let visible: Vec<Column> = pane.view.visible_columns().iter().map(|c| c.column).collect();
-    for col in Column::ALL {
-        if matches!(
-            col,
-            Column::Dimensions | Column::Duration | Column::Checksum | Column::ItemCount | Column::LinkTarget
-        ) {
-            continue; // no data source yet
-        }
-        if col.script_slot().is_some() && crate::automation::scripts::column_label(col).is_none() {
-            continue; // no script provides this column
-        }
-        let on = visible.contains(&col);
-        let enabled = col != Column::Name;
-        let label = crate::ui::views::columns::header_label(col);
-        let r = crate::ui::widgets::menu_item(ui, Some(if on { ph::CHECK } else { "" }), &label, None, enabled);
-        if r.clicked() {
-            pane.view.set_column_visible(col, !on);
-            pane.layout_sig = None;
-            v.cmds.push(Cmd::ViewChanged(pane.id));
-        }
-    }
-    menu_separator(ui);
-    if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("app-ctx-reset-columns"), None, true).clicked() {
-        pane.view.columns = crate::state::view_memory::ViewState::from_config(v.config).columns;
-        pane.layout_sig = None;
-        v.cmds.push(Cmd::ViewChanged(pane.id));
-        ui.close();
-    }
+    draw_entries(ui, catalogue::column_menu(pane), v.cmds);
 }
 
 /// "Open with" candidates, cached per extension. The lookup (registry / desktop-file

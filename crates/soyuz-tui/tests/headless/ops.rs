@@ -252,3 +252,75 @@ fn run_link(data: PathBuf) {
     common::run_script(&mut app, steps, 80, 24);
     common::ok();
 }
+
+#[test]
+fn tui_link_dialog_picks_a_target() {
+    let run = common::relaunch(module_path!(), "tui_link_dialog_picks_a_target", |data| {
+        write(&data.join("a.txt"), "data");
+    });
+    match run {
+        Run::Child(data) => run_link_dialog(data),
+        Run::Parent(p) => {
+            let got = names(&p.data);
+            assert_eq!(got.len(), 2, "{got:?}");
+            for n in got {
+                assert_eq!(std::fs::read_to_string(p.data.join(n)).unwrap(), "data", "a hard link to a.txt");
+            }
+        }
+    }
+}
+
+fn run_link_dialog(data: PathBuf) {
+    use soyuz_appcore::models::frontend::FrontendCmd;
+    use soyuz_appcore::models::properties::{LinkKind, MetaDialog};
+    let mut app = common::new_app(common::test_config(), &data);
+    // `NewHardlink` with nothing selected: no target yet.
+    app.core.frontend.push(FrontendCmd::MetaDialog(MetaDialog::Link(LinkKind::Hardlink)));
+    let d = data.clone();
+    let dialog = |a: &App| a.view().and_then(|v| v.dialog.clone());
+    let target = |a: &App| {
+        a.view()
+            .and_then(|v| v.dialog.as_ref())
+            .and_then(|d| d.fields.get(1))
+            .and_then(|f| match &f.kind {
+                FieldVmKind::Text { text, .. } => Some(text.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    };
+    let steps = vec![
+        // The picker lists the folder: "..", then a.txt; Create waits for a target.
+        Step::new(
+            "the link dialog with the picker",
+            move |a| {
+                dialog(a).is_some_and(|d| {
+                    d.title == tr!("dialogs-link-title")
+                        && d.list.iter().any(|r| r.text == "a.txt")
+                        && d.buttons.get(1).is_some_and(|b| !b.enabled)
+                })
+            },
+            key(KeyCode::Down),
+        ),
+        Step::new("the picker armed on ..", |_| true, key(KeyCode::Down)),
+        Step::new(
+            "the cursor on a.txt",
+            move |a| dialog(a).is_some_and(|d| d.list.get(d.list_state.cursor).is_some_and(|r| r.text == "a.txt")),
+            key(KeyCode::Tab),
+        ),
+        // Tab took it: the target and the name follow, the probe says "File".
+        Step::new(
+            "a.txt is the target",
+            move |a| {
+                target(a).ends_with("a.txt")
+                    && dialog(a).is_some_and(|d| {
+                        d.body.iter().any(|l| l.ends_with(tr!("dialogs-link-file")))
+                            && d.buttons.get(1).is_some_and(|b| b.enabled)
+                    })
+            },
+            key(KeyCode::Enter),
+        ),
+        Step::new("the link", move |a| common::wait_jobs_idle(a) && no_dialog(a) && names(&d).len() == 2, ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 100, 30);
+    common::ok();
+}

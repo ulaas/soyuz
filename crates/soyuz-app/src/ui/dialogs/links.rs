@@ -2,130 +2,39 @@
 //! picker: a small folder browser under the target field (no native file dialog, which
 //! would need shell APIs), live validation of the target (exists, file vs folder, same
 //! volume for hard links) and an optional relative target for symbolic links. The link
-//! is created by a `Create` job (undoable).
+//! is created by a `Create` job (undoable). The form, the probe, the listing and the
+//! validation are the core's (`models::link_dialog`, shared with the terminal UI).
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use egui::{Align, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, Stroke, TextEdit, Ui, vec2};
 use soyuz_core::EntryInfo;
-use soyuz_fs::{LinkKind, ListOptions};
-use soyuz_jobs::CreateKind;
 
 use super::conflict::{Btn, button};
 use super::new_item::LinkChoice;
-use super::properties::{Bg, MetaCmd};
+use super::properties::Bg;
 use super::properties_widgets::{badge, caption, check, small_icon_button};
 use super::{Dialog, DialogCtx};
 use crate::app::SoyuzApp;
-use crate::cmd::Cmd;
+use crate::models::link_dialog::{LinkForm, PROBE_DEBOUNCE, Probe, TargetState, list_folder, probe_target};
 use crate::theme::tokens::radius;
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::toasts::Toast;
 
 pub fn open(app: &mut SoyuzApp, kind: LinkChoice) {
-    // Junctions are NTFS-only: a bound key elsewhere opens the symbolic link dialog.
-    let kind = if kind == LinkChoice::Junction && !cfg!(windows) { LinkChoice::Symlink } else { kind };
-    let pane = app.core.ws.pane();
-    let Some(dir) = pane.location.as_fs_path().map(Path::to_path_buf) else {
-        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
-        return;
-    };
-    if !matches!(pane.location, soyuz_core::Location::Dir(_)) {
-        app.core.ui.toasts.push(Toast::info(tr!("dialogs-link-need-folder")));
-        return;
-    }
-    let target = if pane.selection.is_empty() { None } else { pane.selected_entries().first().map(|e| e.path.clone()) };
-    let names: Vec<String> = pane.entries.iter().map(|e| e.name.clone()).collect();
-    let windows_rules = crate::ops::fileops::rename::windows_rules_for(
-        app.core.config.general.strict_windows_names,
-        &app.core.ui.volumes,
-        Some(&dir),
-    );
-    app.gui.dialogs.push(LinkDialog::new(dir, target, kind, names).windows_rules(windows_rules));
-}
-
-/// `target` relative to `base` (`None` when they share no root, e.g. other drive).
-pub fn relative_to(target: &Path, base: &Path) -> Option<PathBuf> {
-    let t: Vec<Component<'_>> = target.components().collect();
-    let b: Vec<Component<'_>> = base.components().collect();
-    let eq = |x: &Component<'_>, y: &Component<'_>| {
-        if cfg!(windows) {
-            x.as_os_str().to_string_lossy().eq_ignore_ascii_case(&y.as_os_str().to_string_lossy())
-        } else {
-            x == y
+    match LinkForm::open(&app.core, kind) {
+        Ok(form) => app.gui.dialogs.push(LinkDialog::from_form(form)),
+        Err(e) => {
+            app.core.ui.toasts.push(Toast::info(e));
         }
-    };
-    if t.is_empty() || b.is_empty() || !eq(&t[0], &b[0]) {
-        return None;
     }
-    let common = t.iter().zip(&b).take_while(|(x, y)| eq(x, y)).count();
-    let mut out = PathBuf::new();
-    for _ in common..b.len() {
-        out.push("..");
-    }
-    for c in &t[common..] {
-        out.push(c.as_os_str());
-    }
-    if out.as_os_str().is_empty() {
-        out.push(".");
-    }
-    Some(out)
 }
 
 /// Background listing of the picker folder.
 type Listing = Bg<Result<Vec<EntryInfo>, String>>;
 
-/// What the typed target currently refers to.
-#[derive(Clone, Debug, PartialEq)]
-enum TargetState {
-    Empty,
-    /// The background probe of the typed target has not finished yet.
-    Checking,
-    Missing,
-    File,
-    Dir,
-}
-
-/// Result of probing a target off the UI thread (`metadata` on a dead UNC share can
-/// block for tens of seconds, so it must never run per frame on the UI thread).
-#[derive(Clone, Debug)]
-struct Probe {
-    state: TargetState,
-    /// Target and link folder are on the same volume (for hard links).
-    same_volume: bool,
-    /// Folder the picker should switch to after a typed edit (target or its parent).
-    browse: Option<PathBuf>,
-}
-
-fn probe_target(target: &Path, dir: &Path) -> Probe {
-    let state = match std::fs::metadata(target) {
-        Ok(m) if m.is_dir() => TargetState::Dir,
-        Ok(_) => TargetState::File,
-        Err(_) => TargetState::Missing,
-    };
-    let same_volume = match state {
-        TargetState::File => soyuz_fs::device_of(target).ok() == soyuz_fs::device_of(dir).ok(),
-        _ => true,
-    };
-    let browse = if state == TargetState::Dir {
-        Some(target.to_path_buf())
-    } else {
-        target.parent().filter(|pp| pp.is_dir()).map(Path::to_path_buf)
-    };
-    Probe { state, same_volume, browse }
-}
-
-/// Typing pause before the target is probed.
-const PROBE_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(250);
-
 pub struct LinkDialog {
-    dir: PathBuf,
-    target: String,
-    name: String,
-    kind: LinkChoice,
-    existing: Vec<String>,
-    name_touched: bool,
-    relative: bool,
+    form: LinkForm,
     focus: bool,
     /// Folder shown in the picker and its listing.
     browse: Option<PathBuf>,
@@ -137,58 +46,44 @@ pub struct LinkDialog {
     edited_at: Option<std::time::Instant>,
     /// Apply the probe's `browse` suggestion once it arrives (typed edits only).
     follow_browse: bool,
-    /// Validate the name with the Windows rules (see `rename::windows_rules_for`).
-    windows_rules: bool,
 }
 
 impl LinkDialog {
     pub fn new(dir: PathBuf, target: Option<PathBuf>, kind: LinkChoice, existing: Vec<String>) -> Self {
-        let target_s = target.as_ref().map(|t| soyuz_fs::strip_verbatim(t).display().to_string()).unwrap_or_default();
-        let refs: Vec<&str> = existing.iter().map(String::as_str).collect();
-        let name = target.as_ref().map(|t| crate::ops::fileops::names::link_name(t, &refs)).unwrap_or_default();
+        LinkDialog::from_form(LinkForm::new(dir, target, kind, existing))
+    }
+
+    fn from_form(form: LinkForm) -> Self {
+        let picker_open = form.target.trim().is_empty();
         LinkDialog {
-            browse: Some(
-                target.as_ref().and_then(|t| t.parent().map(Path::to_path_buf)).unwrap_or_else(|| dir.clone()),
-            ),
-            dir,
-            target: target_s,
-            name,
-            kind,
-            existing,
-            name_touched: false,
-            relative: false,
+            browse: Some(form.start_folder()),
+            form,
             focus: true,
             listing: None,
-            picker_open: target.is_none(),
+            picker_open,
             probe: None,
             edited_at: None,
             follow_browse: false,
-            windows_rules: cfg!(windows),
         }
     }
 
     /// Validate names with the Windows rules (Windows-family volume or strict names).
     pub fn windows_rules(mut self, on: bool) -> Self {
-        self.windows_rules = on;
+        self.form.windows_rules = on;
         self
-    }
-
-    fn target_path(&self) -> PathBuf {
-        let t = PathBuf::from(soyuz_fs::expand_env(self.target.trim()));
-        if t.is_relative() { self.dir.join(t) } else { t }
     }
 
     /// Current probe result for the typed target, starting a background probe once
     /// the text has settled (debounced) and differs from the last probed path.
     fn poll_probe(&mut self, ctx: &egui::Context) -> Option<Probe> {
-        if self.target.trim().is_empty() {
-            return Some(Probe { state: TargetState::Empty, same_volume: true, browse: None });
+        if self.form.target.trim().is_empty() {
+            return Some(Probe::empty());
         }
-        let tp = self.target_path();
+        let tp = self.form.target_path();
         let fresh = self.probe.as_ref().is_some_and(|(p, _)| *p == tp);
         if !fresh {
             if self.edited_at.is_none_or(|t| t.elapsed() >= PROBE_DEBOUNCE) {
-                let (t2, d2) = (tp.clone(), self.dir.clone());
+                let (t2, d2) = (tp.clone(), self.form.dir.clone());
                 self.probe = Some((tp, Bg::spawn(&crate::host::EguiHost::new(ctx), move || probe_target(&t2, &d2))));
             } else {
                 ctx.request_repaint_after(PROBE_DEBOUNCE);
@@ -199,11 +94,7 @@ impl LinkDialog {
     }
 
     fn set_target(&mut self, p: &Path) {
-        self.target = soyuz_fs::strip_verbatim(p).display().to_string();
-        if !self.name_touched {
-            let refs: Vec<&str> = self.existing.iter().map(String::as_str).collect();
-            self.name = crate::ops::fileops::names::link_name(p, &refs);
-        }
+        self.form.set_target(p);
     }
 
     fn picker(&mut self, ui: &mut Ui) {
@@ -211,18 +102,7 @@ impl LinkDialog {
         let Some(dir) = self.browse.clone() else { return };
         if self.listing.as_ref().is_none_or(|(d, _)| *d != dir) {
             let d2 = dir.clone();
-            let bg = Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || {
-                let dot_hidden = crate::services::lister::dot_hidden();
-                let opts = ListOptions { include_hidden: false, dot_hidden, ..ListOptions::default() };
-                soyuz_fs::read_dir(&d2, &opts).map_err(|e| e.to_string()).map(|mut v| {
-                    v.sort_by(|a, b| {
-                        b.is_dir_like()
-                            .cmp(&a.is_dir_like())
-                            .then_with(|| soyuz_core::natural_cmp(&a.name, &b.name, true))
-                    });
-                    v
-                })
-            });
+            let bg = Bg::spawn(&crate::host::EguiHost::new(ui.ctx()), move || list_folder(&d2));
             self.listing = Some((dir.clone(), bg));
         }
         egui::Frame::new()
@@ -291,7 +171,7 @@ impl LinkDialog {
                                     for e in &entries[range] {
                                         let (r, resp) =
                                             ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-                                        let selected = self.target_path() == e.path;
+                                        let selected = self.form.target_path() == e.path;
                                         if selected {
                                             ui.painter().rect_filled(
                                                 r,
@@ -371,13 +251,13 @@ impl Dialog for LinkDialog {
                 if k == LinkChoice::Junction && !cfg!(windows) {
                     continue;
                 }
-                let on = self.kind == k;
+                let on = self.form.kind == k;
                 if ui.selectable_label(on, format!("{glyph}  {label}")).clicked() {
-                    self.kind = k;
+                    self.form.kind = k;
                 }
             }
         });
-        let hint = match self.kind {
+        let hint = match self.form.kind {
             LinkChoice::Symlink if cfg!(windows) => tr!("dialogs-link-symlink-hint"),
             LinkChoice::Symlink => tr!("dialogs-link-symlink-hint-unix"),
             LinkChoice::Hardlink => tr!("dialogs-link-hardlink-hint"),
@@ -387,7 +267,7 @@ impl Dialog for LinkDialog {
         caption(ui, tr!("dialogs-link-target"));
         ui.horizontal(|ui| {
             let r = ui.add(
-                TextEdit::singleline(&mut self.target)
+                TextEdit::singleline(&mut self.form.target)
                     .hint_text(tr!("dialogs-link-target-hint"))
                     .desired_width(ui.available_width() - 30.0)
                     .margin(Margin::symmetric(10, 6)),
@@ -397,11 +277,7 @@ impl Dialog for LinkDialog {
                 self.focus = false;
             }
             if r.changed() {
-                let tp = self.target_path();
-                if !self.name_touched {
-                    let refs: Vec<&str> = self.existing.iter().map(String::as_str).collect();
-                    self.name = crate::ops::fileops::names::link_name(&tp, &refs);
-                }
+                self.form.target_typed();
                 self.edited_at = Some(std::time::Instant::now());
                 self.follow_browse = true;
             }
@@ -445,49 +321,31 @@ impl Dialog for LinkDialog {
             }
         });
         // Always laid out (disabled for other kinds) so the dialog doesn't jump.
-        ui.add_enabled_ui(self.kind == LinkChoice::Symlink, |ui| {
-            check(ui, &mut self.relative, tr!("dialogs-link-relative"));
+        ui.add_enabled_ui(self.form.kind == LinkChoice::Symlink, |ui| {
+            check(ui, &mut self.form.relative, tr!("dialogs-link-relative"));
         });
         caption(ui, tr!("dialogs-link-name"));
         let n = ui.add(
-            TextEdit::singleline(&mut self.name)
+            TextEdit::singleline(&mut self.form.name)
                 .hint_text(tr!("dialogs-link-name-hint"))
                 .desired_width(f32::INFINITY)
                 .margin(Margin::symmetric(10, 6)),
         );
         if n.changed() {
-            self.name_touched = true;
+            self.form.name_edited();
         }
         ui.label(
             RichText::new(tr!(
                 "dialogs-link-created-in",
-                dir = soyuz_fs::strip_verbatim(&self.dir).display().to_string()
+                dir = soyuz_fs::strip_verbatim(&self.form.dir).display().to_string()
             ))
             .font(FontId::proportional(11.0))
             .color(p.text_tertiary),
         );
 
-        let name = self.name.trim().to_string();
-        let target = self.target_path();
-        let err: Option<String> = if self.target.trim().is_empty() {
-            Some(tr!("dialogs-link-choose-target").into())
-        } else if let Err(e) = soyuz_core::validate_name_with(&name, self.windows_rules) {
-            Some(tr!("dialogs-props-invalid-name", error = e.to_string()))
-        } else if self.existing.iter().any(|e| e.eq_ignore_ascii_case(&name)) {
-            Some(tr!("dialogs-link-exists", name = &name))
-        } else {
-            match (self.kind, &state) {
-                (_, TargetState::Checking) => Some(tr!("dialogs-link-checking").into()),
-                (LinkChoice::Hardlink, TargetState::Dir) => Some(tr!("dialogs-link-hard-files-only").into()),
-                (LinkChoice::Hardlink, TargetState::Missing) => Some(tr!("dialogs-link-hard-needs-file").into()),
-                (LinkChoice::Hardlink, _) if !same_volume => Some(tr!("dialogs-link-hard-same-volume").into()),
-                (LinkChoice::Junction, TargetState::File) => Some(tr!("dialogs-link-junction-folders-only").into()),
-                (LinkChoice::Junction, TargetState::Missing) => Some(tr!("dialogs-link-junction-needs-folder").into()),
-                _ => None,
-            }
-        };
+        let err = self.form.error(&state, same_volume);
         if let Some(e) = &err
-            && !self.target.trim().is_empty()
+            && !self.form.target.trim().is_empty()
             && state != TargetState::Checking
         {
             ui.add_space(4.0);
@@ -506,46 +364,10 @@ impl Dialog for LinkDialog {
         if text_focus && ui.input(|i| i.key_pressed(Key::Enter)) {
             ok = true;
         }
-        if ok && err.is_none() {
-            let path = self.dir.join(&name);
-            let kind = match self.kind {
-                LinkChoice::Symlink => {
-                    let lk = if state == TargetState::Dir { LinkKind::Dir } else { LinkKind::File };
-                    let stored = if self.relative {
-                        relative_to(&target, &self.dir).unwrap_or(target.clone())
-                    } else {
-                        target.clone()
-                    };
-                    CreateKind::Symlink { target: stored, kind: lk }
-                }
-                LinkChoice::Hardlink => CreateKind::Hardlink { src: target.clone() },
-                LinkChoice::Junction => CreateKind::Junction { target: target.clone() },
-            };
-            ctx.cmds.push(Cmd::Meta(MetaCmd::Create { dir: self.dir.clone(), path, kind }));
+        if ok && let Some(c) = self.form.create(&state, same_volume) {
+            ctx.cmds.push(c);
             return false;
         }
         !cancel
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn relative_paths() {
-        let (t, b) = if cfg!(windows) {
-            (PathBuf::from(r"C:\data\photos\a.jpg"), PathBuf::from(r"C:\data\links"))
-        } else {
-            (PathBuf::from("/data/photos/a.jpg"), PathBuf::from("/data/links"))
-        };
-        assert_eq!(relative_to(&t, &b).unwrap(), Path::new("..").join("photos").join("a.jpg"));
-        assert_eq!(relative_to(&b, &b).unwrap(), PathBuf::from("."));
-        let child = b.join("x");
-        assert_eq!(relative_to(&child, &b).unwrap(), PathBuf::from("x"));
-        if cfg!(windows) {
-            assert!(relative_to(Path::new(r"D:\x"), Path::new(r"C:\y")).is_none(), "different drives");
-            assert!(relative_to(Path::new(r"c:\data\x"), Path::new(r"C:\data")).is_some(), "drive letter case");
-        }
     }
 }

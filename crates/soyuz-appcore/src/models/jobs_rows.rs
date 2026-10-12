@@ -11,7 +11,7 @@ use std::time::SystemTime;
 
 use soyuz_core::config::Action;
 use soyuz_core::{DateFormat, SizeStyle, format_eta, format_size, format_speed};
-use soyuz_jobs::{HistoryEntry, HistoryId, JobId, JobSnapshot, JobState, JobSummary};
+use soyuz_jobs::{HistoryEntry, HistoryId, JobId, JobSnapshot, JobState, JobSummary, LogLevel, Priority};
 
 use crate::cmd::Cmd;
 use crate::core::AppCore;
@@ -153,6 +153,8 @@ pub struct JobRow {
     pub failed: bool,
     /// Not started yet (priority / reorder / start now apply).
     pub queued: bool,
+    /// The job's priority (the "More" menu ticks it).
+    pub priority: Priority,
     /// The summary of a finished job.
     pub summary: Option<JobSummary>,
     /// The buttons that apply, in reading order.
@@ -235,6 +237,7 @@ impl JobRow {
             waiting,
             failed,
             queued,
+            priority: s.priority,
             summary,
             buttons,
         }
@@ -413,6 +416,185 @@ pub fn apply_history(core: &mut AppCore, id: HistoryId, b: RowButton) {
         _ => return,
     };
     history_action(core, id, what);
+}
+
+// ---- the jobs tab's toolbar, a job's "More" menu, the details ----------------------
+
+/// A button of the jobs tab's toolbar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolbarButton {
+    PauseAll,
+    ResumeAll,
+    CancelAll,
+    /// Remove every finished job from the list.
+    ClearFinished,
+}
+
+impl ToolbarButton {
+    /// Its label (the GUI's tooltip).
+    pub fn label(self) -> &'static str {
+        match self {
+            ToolbarButton::PauseAll => tr!("panels-pause-all"),
+            ToolbarButton::ResumeAll => tr!("panels-resume-all"),
+            ToolbarButton::CancelAll => tr!("panels-cancel-all"),
+            ToolbarButton::ClearFinished => tr!("panels-clear-finished"),
+        }
+    }
+
+    pub fn icon(self) -> IconId {
+        match self {
+            ToolbarButton::PauseAll => IconId::Pause,
+            ToolbarButton::ResumeAll => IconId::Play,
+            ToolbarButton::CancelAll => IconId::XCircle,
+            ToolbarButton::ClearFinished => IconId::Broom,
+        }
+    }
+}
+
+/// The toolbar's buttons, left to right, with whether each applies (something pending,
+/// something finished).
+pub fn toolbar(core: &AppCore) -> Vec<(ToolbarButton, bool)> {
+    let pending = core.fileops.jobs.pending().count() > 0;
+    let any_done = core.fileops.jobs.snapshots().iter().any(|s| s.state.is_terminal());
+    vec![
+        (ToolbarButton::PauseAll, pending),
+        (ToolbarButton::ResumeAll, pending),
+        (ToolbarButton::CancelAll, pending),
+        (ToolbarButton::ClearFinished, any_done),
+    ]
+}
+
+/// Carry out toolbar button `b`.
+pub fn apply_toolbar(core: &mut AppCore, b: ToolbarButton) {
+    let eng = core.fileops.jobs.engine();
+    match b {
+        ToolbarButton::PauseAll => eng.pause_all(),
+        ToolbarButton::ResumeAll => eng.resume_all(),
+        ToolbarButton::CancelAll => eng.cancel_all(),
+        ToolbarButton::ClearFinished => eng.clear_finished(),
+    }
+}
+
+/// What a row of a job's "More" menu does.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JobMenuCmd {
+    Priority(Priority),
+    MoveUp,
+    MoveDown,
+    /// Start a queued job now, ahead of the queue.
+    StartNow,
+    Cancel,
+}
+
+/// A row of a job's "More" menu.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JobMenuEntry {
+    /// The "Priority" submenu: `(command, label, checked)` per priority.
+    Priority(Vec<(JobMenuCmd, &'static str, bool)>),
+    Item {
+        cmd: JobMenuCmd,
+        icon: IconId,
+        label: &'static str,
+        enabled: bool,
+    },
+    Separator,
+}
+
+/// The "More" menu of an active job (priority, reorder and start now apply while it is
+/// queued); empty for a finished one.
+pub fn job_menu(row: &JobRow) -> Vec<JobMenuEntry> {
+    if !row.active {
+        return Vec::new();
+    }
+    let prio = [
+        (Priority::High, tr!("panels-priority-high")),
+        (Priority::Normal, tr!("panels-priority-normal")),
+        (Priority::Low, tr!("panels-priority-low")),
+    ]
+    .into_iter()
+    .map(|(p, label)| (JobMenuCmd::Priority(p), label, row.priority == p))
+    .collect();
+    let q = row.queued;
+    vec![
+        JobMenuEntry::Priority(prio),
+        JobMenuEntry::Item { cmd: JobMenuCmd::MoveUp, icon: IconId::ArrowUp, label: tr!("panels-move-up"), enabled: q },
+        JobMenuEntry::Item {
+            cmd: JobMenuCmd::MoveDown,
+            icon: IconId::CaretDown,
+            label: tr!("panels-move-down"),
+            enabled: q,
+        },
+        JobMenuEntry::Item {
+            cmd: JobMenuCmd::StartNow,
+            icon: IconId::Lightning,
+            label: tr!("panels-start-now"),
+            enabled: q,
+        },
+        JobMenuEntry::Separator,
+        JobMenuEntry::Item {
+            cmd: JobMenuCmd::Cancel,
+            icon: IconId::XCircle,
+            label: tr!("common-cancel"),
+            enabled: true,
+        },
+    ]
+}
+
+/// Carry out "More" menu command `c` on job `id`.
+pub fn apply_menu(core: &mut AppCore, id: JobId, c: JobMenuCmd) {
+    let eng = core.fileops.jobs.engine();
+    match c {
+        JobMenuCmd::Priority(p) => eng.set_priority(id, p),
+        JobMenuCmd::MoveUp => eng.move_in_queue(id, -1),
+        JobMenuCmd::MoveDown => eng.move_in_queue(id, 1),
+        JobMenuCmd::StartNow => eng.start_now(id),
+        JobMenuCmd::Cancel => eng.cancel(id),
+    }
+}
+
+/// Whether job `id`'s details (errors and log) are shown.
+pub fn is_expanded(core: &AppCore, id: JobId) -> bool {
+    core.fileops.activity.expanded.contains(&id)
+}
+
+/// Show or hide job `id`'s details.
+pub fn toggle_expanded(core: &mut AppCore, id: JobId) {
+    let e = &mut core.fileops.activity.expanded;
+    if !e.remove(&id) {
+        e.insert(id);
+    }
+}
+
+/// The details of job `id`, newest log line first: the failed items and notes of its
+/// summary, the failure, then up to 300 log lines (`panels-log-empty` when there is
+/// nothing). Reads the job's log (cached by the jobs service).
+pub fn detail_lines(core: &mut AppCore, id: JobId) -> Vec<(Tone, String)> {
+    let mut lines: Vec<(Tone, String)> = Vec::new();
+    let state = core.fileops.jobs.snapshot(id).map(|s| s.state.clone());
+    if let Some(JobState::Done(sum)) = &state {
+        for (path, e) in sum.errors.iter().take(200) {
+            lines.push((Tone::Danger, format!("\u{2715} {}  \u{2014}  {e}", soyuz_fs::strip_verbatim(path).display())));
+        }
+        for n in &sum.notes {
+            lines.push((Tone::Faint, format!("\u{2139} {n}")));
+        }
+    }
+    if let Some(JobState::Failed(e)) = &state {
+        lines.push((Tone::Danger, format!("\u{2715} {e}")));
+    }
+    for l in core.fileops.jobs.log(id).iter().rev().take(300) {
+        let tone = match l.level {
+            LogLevel::Info => Tone::Muted,
+            LogLevel::Warn => Tone::Warning,
+            LogLevel::Error => Tone::Danger,
+        };
+        let path = l.path.as_ref().map(|p| format!("  {}", soyuz_fs::strip_verbatim(p).display())).unwrap_or_default();
+        lines.push((tone, format!("{:>6.1}s  {}{path}", l.at.as_secs_f32(), l.msg)));
+    }
+    if lines.is_empty() {
+        lines.push((Tone::Faint, tr!("panels-log-empty").into()));
+    }
+    lines
 }
 
 #[cfg(test)]

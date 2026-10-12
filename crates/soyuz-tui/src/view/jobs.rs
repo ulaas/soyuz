@@ -6,21 +6,27 @@
 //! `FocusActivityPanel` (Alt+J, which also gives it the keyboard). It takes
 //! `[tui] jobs_rows` rows above the status line ([`rows`], `Regions::bottom`).
 //!
-//! Layout: a header row with the tabs (Jobs / History, the GUI's labels), the key hints
-//! while focused and a close mark; then two lines per job / history entry, drawn from the
-//! core's rows (`soyuz_appcore::models::jobs_rows`, which the GUI's cards use too):
+//! Layout: a header row with the tabs (Jobs / History, the GUI's labels), on the jobs tab
+//! the toolbar (pause / resume / cancel all, clear finished), the key hints while focused
+//! and a close mark; then two lines per job / history entry, drawn from the core's rows
+//! (`soyuz_appcore::models::jobs_rows`, which the GUI's cards use too), plus up to
+//! [`LOG_LINES`] lines of a job's details (errors and log, newest first) while it is
+//! expanded:
 //!
 //! ```text
-//!  Jobs · 1 ─ History ──────────────────────────────────────── x
-//! > [c] Copying "big.bin" to /dst  big.bin          [Pause] [Cancel]
+//!  Jobs · 1 ─ History ───── [Pause all] [Resume all] [Cancel all] [Clear finished] ─ x
+//! > [c] Copying "big.bin" to /dst  big.bin       [Log] [More] [Pause] [Cancel]
 //!       [#######-------]  45%  45 MiB of 100 MiB     3 MiB/s · 18 s left
+//!         0.4s  Copying big.bin
 //! ```
 //!
-//! [`prepare`] keeps the list's cursor inside the rows and records how many fit;
-//! [`JobsVm::from_core`] builds only the rows in view. Click targets: `BottomTab`,
-//! `JobRow` (both lines) and `JobButton` (`crate::input::jobs` handles them and the keys
-//! while `TuiFocus::Jobs`).
+//! [`prepare`] keeps the list's cursor inside the rows and in view, records how many
+//! fit and reads the expanded jobs' details; [`JobsVm::from_core`] builds only the rows
+//! in view. Click targets: `BottomTab`, `JobRow` (all its lines) and `JobButton` (row
+//! and toolbar buttons; `crate::input::jobs` handles them and the keys while
+//! `TuiFocus::Jobs`).
 
+use std::collections::HashMap;
 use std::time::SystemTime;
 
 use ratatui::Frame;
@@ -29,9 +35,10 @@ use ratatui::layout::Rect;
 use ratatui::style::Style;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::icon::IconId;
-use soyuz_appcore::models::jobs_rows::{self, DoneMark, HistoryRow, JobRow, RowButton, Tone};
+use soyuz_appcore::models::jobs_rows::{self, DoneMark, HistoryRow, JobRow, RowButton, Tone, ToolbarButton};
 use soyuz_appcore::models::panels::ActivityTab;
 use soyuz_appcore::tr;
+use soyuz_jobs::JobId;
 
 use crate::dialog::safe;
 use crate::hits::JobButton;
@@ -43,6 +50,8 @@ use crate::view::text;
 
 /// Lines per job / history entry.
 pub const ITEM_LINES: u16 = 2;
+/// Detail lines of an expanded job at most.
+pub const LOG_LINES: usize = 4;
 /// Cells of the progress bar at most.
 const BAR_MAX: usize = 24;
 /// The bar is left out below this panel width.
@@ -59,6 +68,8 @@ pub struct JobsVm {
     pub tabs: Vec<String>,
     /// The active tab (0: jobs, 1: history).
     pub tab: usize,
+    /// The toolbar of the jobs tab.
+    pub toolbar: Vec<ButtonVm>,
     /// The rows in view, starting with row `first`.
     pub items: Vec<JobItem>,
     pub first: usize,
@@ -72,7 +83,7 @@ pub struct JobsVm {
     pub hints: String,
 }
 
-/// A job or history entry as drawn (two lines).
+/// A job or history entry as drawn (two lines, plus the details of an expanded job).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JobItem {
     pub icon: IconId,
@@ -93,6 +104,15 @@ pub struct JobItem {
     /// Right of the second line (speed, ETA).
     pub right: String,
     pub buttons: Vec<ButtonVm>,
+    /// The details shown under an expanded job (newest first, at most [`LOG_LINES`]).
+    pub log: Vec<(String, Tone)>,
+}
+
+impl JobItem {
+    /// Lines the item takes.
+    pub fn height(&self) -> u16 {
+        ITEM_LINES + self.log.len() as u16
+    }
 }
 
 /// A progress bar.
@@ -103,7 +123,7 @@ pub struct Bar {
     pub tone: Tone,
 }
 
-/// A button on a row.
+/// A button on a row or the toolbar.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ButtonVm {
     pub kind: JobButton,
@@ -137,12 +157,19 @@ pub fn items_fit(area: Rect) -> usize {
     usize::from(area.height.saturating_sub(1) / ITEM_LINES)
 }
 
+/// Lines job `id` takes (its details while expanded).
+fn job_height(details: &HashMap<JobId, Vec<(Tone, String)>>, id: JobId) -> usize {
+    usize::from(ITEM_LINES) + details.get(&id).map_or(0, |d| d.len().min(LOG_LINES))
+}
+
 /// Step 1 of a frame (`view::prepare`): the keyboard leaves a closed panel; the cursor
-/// stays inside the list (back to the top when the tab changed) and in view.
+/// stays inside the list (back to the top when the tab changed) and in view; the details
+/// of the expanded jobs are read.
 pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     let st = &mut input.jobs;
     if !shown(core) {
         st.focused = false;
+        st.details.clear();
         return;
     }
     let history = history_tab(core);
@@ -156,6 +183,27 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     if st.follow {
         st.follow = false;
         st.list.show_cursor(st.height);
+    }
+    st.details.clear();
+    if history {
+        return;
+    }
+    let snaps = jobs_rows::sorted_snapshots(core);
+    for s in &snaps {
+        if jobs_rows::is_expanded(core, s.id) {
+            let lines = jobs_rows::detail_lines(core, s.id);
+            st.details.insert(s.id, lines);
+        }
+    }
+    // Expanded jobs take more lines: scroll until the cursor's job fits.
+    let lines = usize::from(regions.bottom.height.saturating_sub(1));
+    let cursor = st.list.cursor.min(snaps.len().saturating_sub(1));
+    while st.list.top < cursor {
+        let used: usize = snaps[st.list.top..=cursor].iter().map(|s| job_height(&st.details, s.id)).sum();
+        if used <= lines {
+            break;
+        }
+        st.list.top += 1;
     }
 }
 
@@ -199,8 +247,45 @@ pub fn row_button(b: JobButton) -> Option<RowButton> {
         JobButton::Retry => RowButton::RetryFailed,
         JobButton::Undo => RowButton::Undo,
         JobButton::Redo => RowButton::Redo,
-        JobButton::Details | JobButton::Close => return None,
+        JobButton::Details
+        | JobButton::Close
+        | JobButton::PauseAll
+        | JobButton::ResumeAll
+        | JobButton::CancelAll
+        | JobButton::ClearFinished
+        | JobButton::More => return None,
     })
+}
+
+/// The hit button of a toolbar button.
+pub fn toolbar_hit(b: ToolbarButton) -> JobButton {
+    match b {
+        ToolbarButton::PauseAll => JobButton::PauseAll,
+        ToolbarButton::ResumeAll => JobButton::ResumeAll,
+        ToolbarButton::CancelAll => JobButton::CancelAll,
+        ToolbarButton::ClearFinished => JobButton::ClearFinished,
+    }
+}
+
+/// The toolbar button of a hit button (`None`: not one).
+pub fn toolbar_button(b: JobButton) -> Option<ToolbarButton> {
+    Some(match b {
+        JobButton::PauseAll => ToolbarButton::PauseAll,
+        JobButton::ResumeAll => ToolbarButton::ResumeAll,
+        JobButton::CancelAll => ToolbarButton::CancelAll,
+        JobButton::ClearFinished => ToolbarButton::ClearFinished,
+        _ => return None,
+    })
+}
+
+/// The short label of a toolbar button.
+fn toolbar_label(b: ToolbarButton) -> &'static str {
+    match b {
+        ToolbarButton::PauseAll => tr!("tui-jobs-pause-all"),
+        ToolbarButton::ResumeAll => tr!("tui-jobs-resume-all"),
+        ToolbarButton::CancelAll => tr!("tui-jobs-cancel-all"),
+        ToolbarButton::ClearFinished => tr!("tui-jobs-clear"),
+    }
 }
 
 /// The short label of a button.
@@ -218,7 +303,7 @@ fn label(b: RowButton) -> String {
     .to_string()
 }
 
-fn job_item(r: &JobRow) -> JobItem {
+fn job_item(r: &JobRow, details: Option<&Vec<(Tone, String)>>) -> JobItem {
     let icon = match r.done_mark {
         Some(DoneMark::Check) => IconId::SealCheck,
         Some(DoneMark::Warning) => IconId::WarningCircle,
@@ -228,6 +313,12 @@ fn job_item(r: &JobRow) -> JobItem {
     let icon_tone = if r.done_mark.is_some() { r.status } else { jobs_rows::op_tone(r.op) };
     let tag = r.badge.map(|b| (b.to_string(), if r.summary.is_some() { Tone::Success } else { Tone::Accent }));
     let permille = r.fraction.map(|f| (f.clamp(0.0, 1.0) * 1000.0).round() as u16);
+    let log_label = if details.is_some() { tr!("tui-jobs-hide-log") } else { tr!("tui-jobs-log") };
+    let mut buttons = vec![ButtonVm { kind: JobButton::Details, label: log_label.to_string(), enabled: true }];
+    if r.active {
+        buttons.push(ButtonVm { kind: JobButton::More, label: tr!("tui-jobs-more").to_string(), enabled: true });
+    }
+    buttons.extend(r.buttons.iter().map(|&b| ButtonVm { kind: hit_button(b), label: label(b), enabled: true }));
     JobItem {
         icon,
         icon_tone,
@@ -240,7 +331,8 @@ fn job_item(r: &JobRow) -> JobItem {
         stats: r.stats.clone(),
         stats_tone: Tone::Faint,
         right: r.speed.clone(),
-        buttons: r.buttons.iter().map(|&b| ButtonVm { kind: hit_button(b), label: label(b), enabled: true }).collect(),
+        buttons,
+        log: details.map(|d| d.iter().take(LOG_LINES).map(|(t, l)| (safe(l), *t)).collect()).unwrap_or_default(),
     }
 }
 
@@ -269,6 +361,7 @@ fn history_item(r: &HistoryRow) -> JobItem {
             .iter()
             .map(|&(b, enabled)| ButtonVm { kind: hit_button(b), label: label(b), enabled })
             .collect(),
+        log: Vec::new(),
     }
 }
 
@@ -288,7 +381,7 @@ impl JobsVm {
             range.clone().map(|i| history_item(&HistoryRow::new(&all[all.len() - 1 - i], now))).collect()
         } else {
             let snaps = jobs_rows::sorted_snapshots(core);
-            snaps[range.clone()].iter().map(|s| job_item(&JobRow::new(core, s))).collect()
+            snaps[range.clone()].iter().map(|s| job_item(&JobRow::new(core, s), st.details.get(&s.id))).collect()
         };
         let empty = (n == 0).then(|| {
             if history {
@@ -297,11 +390,20 @@ impl JobsVm {
                 (tr!("panels-jobs-empty").to_string(), tr!("panels-jobs-empty-hint").to_string())
             }
         });
+        let toolbar = if history {
+            Vec::new()
+        } else {
+            jobs_rows::toolbar(core)
+                .into_iter()
+                .map(|(b, enabled)| ButtonVm { kind: toolbar_hit(b), label: toolbar_label(b).to_string(), enabled })
+                .collect()
+        };
         JobsVm {
             visible,
             focused: st.focused,
             tabs: vec![jobs_rows::jobs_tab_label(core), tr!("panels-tab-history").to_string()],
             tab: usize::from(history),
+            toolbar,
             items,
             first: range.start,
             len: n,
@@ -339,7 +441,7 @@ pub fn draw_jobs(f: &mut Frame<'_>, area: Rect, m: &JobsVm, theme: &TuiTheme, hi
     buf.set_style(area, base);
     let ascii = theme.icons() == IconSet::Ascii || theme.ascii_only();
     let set = theme.icons();
-    // ---- header: tabs, hints, close ----
+    // ---- header: tabs, toolbar, hints, close ----
     let y = area.y;
     let end = area.right();
     let line = crate::borders::lines(theme.borders()).horizontal;
@@ -358,10 +460,28 @@ pub fn draw_jobs(f: &mut Frame<'_>, area: Rect, m: &JobsVm, theme: &TuiTheme, hi
         hits.push(Rect::new(start, y, x - start, 1), HitTarget::BottomTab(i));
         x = (x + 1).min(tabs_end);
     }
+    // The toolbar, right-aligned before the close mark, when it fits whole.
+    let bar: Vec<String> = m.toolbar.iter().map(|b| format!("[{}]", b.label)).collect();
+    let bar_w = bar.iter().map(|s| text::width(s) as u16 + 1).sum::<u16>();
+    let mut right = tabs_end;
+    if !bar.is_empty() && x + bar_w < tabs_end {
+        let mut bx = tabs_end - bar_w;
+        right = bx.saturating_sub(1);
+        for (s, b) in bar.iter().zip(&m.toolbar) {
+            let w = text::width(s) as u16;
+            let role = if b.enabled { Role::Button } else { Role::Disabled };
+            put(buf, bx, y, tabs_end, s, theme.style(role));
+            if b.enabled {
+                hits.push(Rect::new(bx, y, w, 1), HitTarget::JobButton { row: 0, button: b.kind });
+            }
+            put(buf, bx + w, y, tabs_end, " ", base);
+            bx += w + 1;
+        }
+    }
     if m.focused && !m.hints.is_empty() {
         let w = text::width(&m.hints) as u16 + 2;
-        if x + w < tabs_end {
-            put(buf, tabs_end - w, y, tabs_end, &format!(" {} ", m.hints), theme.style(Role::KeyHint));
+        if x + w < right {
+            put(buf, right - w, y, right, &format!(" {} ", m.hints), theme.style(Role::KeyHint));
         }
     }
     if close_w <= area.width {
@@ -387,14 +507,15 @@ pub fn draw_jobs(f: &mut Frame<'_>, area: Rect, m: &JobsVm, theme: &TuiTheme, hi
         }
         return;
     }
+    let mut top = body.y;
     for (k, item) in m.items.iter().enumerate() {
         let index = m.first + k;
-        let top = body.y + (k as u16) * ITEM_LINES;
         if top >= body.bottom() {
             break;
         }
-        let h = ITEM_LINES.min(body.bottom() - top);
+        let h = item.height().min(body.bottom() - top);
         let rect = Rect::new(body.x, top, body.width, h);
+        top += item.height();
         let cursor = m.focused && index == m.cursor;
         if cursor {
             buf.set_style(rect, theme.style(Role::Selected));
@@ -421,7 +542,7 @@ fn draw_item(
     };
     let (x0, end) = (rect.x, rect.right());
     let y = rect.y;
-    // Buttons, right-aligned on the first line.
+    // Buttons, right-aligned on the first line (the first ones go when there is no room).
     let mut bx = end;
     let mut placed = Vec::new();
     for b in item.buttons.iter().rev() {
@@ -487,6 +608,14 @@ fn draw_item(
     }
     let stats_end = if right_x < end { right_x.saturating_sub(1) } else { end };
     put(buf, x, y, stats_end.max(x), &item.stats, style(role(item.stats_tone)));
+    // The details of an expanded job.
+    for (k, (l, tone)) in item.log.iter().enumerate() {
+        let ly = y + 1 + k as u16;
+        if ly >= rect.bottom() {
+            break;
+        }
+        put(buf, (x0 + 6).min(end), ly, end, l, style(role(*tone)));
+    }
 }
 
 #[cfg(test)]
@@ -513,6 +642,7 @@ mod tests {
                 ButtonVm { kind: JobButton::Pause, label: "Pause".into(), enabled: true },
                 ButtonVm { kind: JobButton::Cancel, label: "Cancel".into(), enabled: true },
             ],
+            log: Vec::new(),
         }
     }
 
@@ -522,6 +652,7 @@ mod tests {
             focused: true,
             tabs: vec!["Jobs · 1".into(), "History".into()],
             tab: 0,
+            toolbar: Vec::new(),
             items: vec![item("Copying big.bin", Some(450)), item("Second", None)],
             first: 0,
             len: 2,
@@ -569,6 +700,27 @@ mod tests {
         let (lines, _) = draw(&m, 40, 5);
         assert!(!lines[0].contains("P pause"), "hints only while focused");
         assert!(lines.iter().any(|l| l.contains("No operations")), "{lines:?}");
+    }
+
+    #[test]
+    fn toolbar_and_details() {
+        let mut m = vm();
+        m.toolbar = vec![
+            ButtonVm { kind: JobButton::PauseAll, label: "Pause all".into(), enabled: true },
+            ButtonVm { kind: JobButton::ClearFinished, label: "Clear".into(), enabled: false },
+        ];
+        m.focused = false;
+        m.items[0].log = vec![("0.4s  Copying big.bin".into(), Tone::Muted), ("x failed".into(), Tone::Danger)];
+        let (lines, hits) = draw(&m, 80, 8);
+        assert!(lines[0].contains("[Pause all] [Clear]"), "{:?}", lines[0]);
+        let col = |s: &str, pat: &str| s[..s.find(pat).unwrap()].chars().count() as u16;
+        let at = col(&lines[0], "[Pause all]");
+        assert_eq!(hits.at(at + 1, 0), Some(HitTarget::JobButton { row: 0, button: JobButton::PauseAll }));
+        let clear = col(&lines[0], "[Clear]");
+        assert_ne!(hits.at(clear + 1, 0), Some(HitTarget::JobButton { row: 0, button: JobButton::ClearFinished }));
+        assert!(lines[3].contains("0.4s  Copying big.bin") && lines[4].contains("x failed"), "{lines:?}");
+        assert_eq!(hits.at(10, 4), Some(HitTarget::JobRow(0)), "the details belong to the row");
+        assert!(lines[5].contains("Second"), "the next row follows: {lines:?}");
     }
 
     #[test]

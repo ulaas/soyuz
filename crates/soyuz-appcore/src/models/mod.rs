@@ -4,12 +4,14 @@
 pub mod archive;
 pub mod attrs_edit;
 pub mod batch_rename;
+pub mod checksums;
 pub mod context_menu;
 pub mod devices;
 pub mod dialogs;
 pub mod folder_stats;
 pub mod frontend;
 pub mod jobs_rows;
+pub mod link_dialog;
 pub mod panels;
 pub mod portal;
 pub mod preview;

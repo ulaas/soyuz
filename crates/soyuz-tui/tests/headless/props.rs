@@ -138,3 +138,58 @@ fn attributes(data: PathBuf) {
     common::run_script(&mut app, steps, 100, 30);
     common::ok();
 }
+
+#[test]
+fn properties_checksums_compute_compare_and_copy() {
+    let run = common::relaunch(module_path!(), "properties_checksums_compute_compare_and_copy", |data| {
+        std::fs::write(data.join("abc.txt"), b"abc").unwrap();
+    });
+    if let Run::Child(data) = run {
+        checksums(data);
+    }
+}
+
+fn checksums(data: PathBuf) {
+    use crossterm::event::Event;
+    const MD5: &str = "900150983cd24fb0d6963f7d28e17f72";
+    const SHA256: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    let mut app = common::new_app(common::test_config(), &data);
+    // Copies never reach the system clipboard.
+    app.host.set_local_clipboard(false);
+    let d = data.clone();
+    let body = |a: &App| a.view().and_then(|v| v.dialog.as_ref()).map(|d| d.body.join("\n")).unwrap_or_default();
+    let steps = vec![
+        Step::new("the listing", move |a| at(a, &d) && labels(a) == ["abc.txt"], key(KeyCode::Down)),
+        Step::new(
+            "the cursor on abc.txt",
+            |a| cursor(a).as_deref() == Some("abc.txt"),
+            key_mods(KeyCode::Enter, KeyModifiers::ALT),
+        ),
+        Step::new("the properties", |a| row(a, "Size ").is_some() && row(a, "MD5").is_none(), alt('k')),
+        // The checksum section: the algorithms not computed yet, MD5 picked.
+        Step::new(
+            "the checksum section",
+            |a| {
+                row(a, "MD5").is_some_and(|r| r.contains(soyuz_appcore::tr!("dialogs-hash-not-computed")))
+                    && a.view().and_then(|v| v.dialog.as_ref()).is_some_and(|d| d.fields.len() == 2)
+            },
+            alt('o'),
+        ),
+        Step::new("MD5 computed", |a| row(a, "MD5").is_some_and(|r| r.contains(MD5)), key(KeyCode::Tab)),
+        // A pasted `sha256sum` line starts SHA-256 (and BLAKE3) and matches.
+        Step::new("on Compare", |_| true, Event::Paste(format!("{}  abc.txt", SHA256.to_uppercase()))),
+        Step::new(
+            "the match",
+            move |a| {
+                row(a, "SHA-256").is_some_and(|r| r.contains(SHA256))
+                    && body(a).contains("SHA-256")
+                    && !body(a).contains("BLAKE3")
+            },
+            alt('y'),
+        ),
+        Step::new("MD5 copied", |a| a.host.last_copy().as_deref() == Some(MD5), key(KeyCode::Esc)),
+        Step::new("closed", |a| dialog_title(a).is_none(), ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 100, 30);
+    common::ok();
+}

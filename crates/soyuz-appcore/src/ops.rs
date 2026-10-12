@@ -894,6 +894,7 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::OpenTerminalPanel(dir) => crate::models::terminal::open_at(app, host, dir),
         Cmd::Meta(m) => crate::models::properties::apply(app, m, host),
         Cmd::Tree(c) => crate::models::tree::apply(app, c),
+        Cmd::Column(c) => crate::models::context_menu::apply_column(app, c),
         Cmd::Ai(c) => crate::ai::apply_cmd(app, c, host),
         Cmd::Automation(c) => crate::automation::apply(app, c, host),
         Cmd::Quit { when_idle } => app.confirm_quit(host, when_idle),

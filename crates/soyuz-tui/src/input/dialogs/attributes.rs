@@ -326,7 +326,7 @@ pub fn on_input(core: &mut AppCore, s: &mut State, i: &DialogInput) -> Outcome {
 
 /// A mouse event.
 pub fn on_mouse(core: &mut AppCore, s: &mut State, e: &DialogMouse) -> Outcome {
-    match super::batch_rename::form_mouse(&mut s.form, None, e) {
+    match super::form_mouse(&mut s.form, None, e) {
         FormOutcome::Changed(_) => s.update(),
         FormOutcome::Pressed(APPLY) => return s.apply(&core.wake),
         FormOutcome::Pressed(_) => return Outcome::Close(None),
