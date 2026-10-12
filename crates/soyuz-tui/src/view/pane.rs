@@ -1,5 +1,5 @@
-//! A pane's views (step T2.3): details (columns), list (row-major cells; grid and gallery
-//! map to it until T4) and Miller (parent | current | child).
+//! A pane's views (step T2.3): details (columns), list (row-major cells), grid and gallery
+//! (icon / thumbnail cells, T4.5, see [`grid`]) and Miller (parent | current | child).
 //!
 //! Every row shows the selection mark (`* `, or `[x] ` / `[ ] ` in checkbox mode), the
 //! file's icon (not in the ASCII icon set, where the kind markers say it: directories end
@@ -19,12 +19,15 @@
 //! - list: cells of a fixed width (at least [`LIST_CELL_MIN`] columns, stretched to fill
 //!   the pane) with one blank column between them, laid out row-major; Left / Right move
 //!   between cells;
+//! - grid / gallery: cells of several rows (image area and name line) sized from the
+//!   pane's icon size, see [`grid`];
 //! - Miller: the current folder as one column in the middle, the parent folder on the
 //!   left and the folder under the cursor on the right (both from the core's aux
 //!   listings, see [`miller`]); narrower than [`MILLER_MIN_W`] only the middle column.
 //!
 //! Group headers are one row high. Scroll state is the pane's own:
-//! - `pane.scroll_y` is the first layout line shown, **in rows** (the GUI keeps pixels;
+//! - `pane.scroll_y` is the first layout line shown (a line of cells or a group header;
+//!   one row each except in the grid; the GUI keeps pixels;
 //!   each frontend process owns its panes, and the TUI saves its own session file);
 //! - `pane.restore_scroll` (history, session, workspaces) is applied once and clamped to
 //!   the listing; while the listing still loads and cannot reach it yet it stays pending.
@@ -56,7 +59,7 @@ use soyuz_appcore::file_class::{FileClass, classify};
 use soyuz_appcore::geom::vec2;
 use soyuz_appcore::icon::IconId;
 use soyuz_appcore::services::folder_colors::{self, FolderColor};
-use soyuz_appcore::state::layout::{FlowLayout, LineKind};
+use soyuz_appcore::state::layout::{FlowLayout, Line, LineKind};
 use soyuz_appcore::state::pane::{LayoutSig, ListingStatus, Pane, PaneId};
 use soyuz_appcore::tr;
 use soyuz_core::config::Config;
@@ -80,23 +83,32 @@ pub const LAYOUT_MILLER: u8 = 0x82;
 pub const LIST_CELL_MIN: u16 = 20;
 /// Narrowest pane that shows Miller's parent and child columns.
 pub const MILLER_MIN_W: u16 = 40;
+/// `LayoutSig::mode` of the grid view.
+pub const LAYOUT_GRID: u8 = 0x83;
+/// `LayoutSig::mode` of the gallery view.
+pub const LAYOUT_GALLERY: u8 = 0x84;
 
 /// How a pane is drawn (the core's [`ViewMode`] mapped to what the terminal has).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PaneMode {
     #[default]
     Details,
-    /// List, and grid / gallery until T4.
     List,
     /// Miller columns (folders only; other locations use details).
     Miller,
+    /// Icon / thumbnail cells ([`grid`]).
+    Grid,
+    /// The grid with the gallery's big previews ([`grid`]).
+    Gallery,
 }
 
 impl PaneMode {
     pub fn of(pane: &Pane) -> PaneMode {
         match pane.view.mode {
             ViewMode::Details => PaneMode::Details,
-            ViewMode::List | ViewMode::Grid | ViewMode::Gallery => PaneMode::List,
+            ViewMode::List => PaneMode::List,
+            ViewMode::Grid => PaneMode::Grid,
+            ViewMode::Gallery => PaneMode::Gallery,
             ViewMode::Miller if matches!(pane.location, Location::Dir(_)) => PaneMode::Miller,
             ViewMode::Miller => PaneMode::Details,
         }
@@ -107,7 +119,14 @@ impl PaneMode {
             PaneMode::Details => LAYOUT_MODE,
             PaneMode::List => LAYOUT_LIST,
             PaneMode::Miller => LAYOUT_MILLER,
+            PaneMode::Grid => LAYOUT_GRID,
+            PaneMode::Gallery => LAYOUT_GALLERY,
         }
+    }
+
+    /// Grid or gallery.
+    pub fn is_grid(self) -> bool {
+        matches!(self, PaneMode::Grid | PaneMode::Gallery)
     }
 }
 
@@ -123,6 +142,8 @@ pub struct PaneGeom {
     pub child: Rect,
     /// Width of one item cell.
     pub cell_w: u16,
+    /// Height of one item cell (more than one row in the grid).
+    pub cell_h: u16,
     /// Blank columns between cells.
     pub gap: u16,
 }
@@ -134,11 +155,19 @@ impl PaneGeom {
     }
 }
 
-/// Split the pane rect `area` for `mode` (see the module docs).
+/// Split the pane rect `area` for `mode` (see the module docs; the grid with the default
+/// [`grid::GridSpec`]).
 pub fn geometry(mode: PaneMode, area: Rect) -> PaneGeom {
+    geometry_for(mode, area, grid::GridSpec::default())
+}
+
+/// [`geometry`] with the grid's cells from `spec`.
+pub fn geometry_for(mode: PaneMode, area: Rect, spec: grid::GridSpec) -> PaneGeom {
     let none = Rect::new(area.x, area.y, 0, 0);
-    let mut g = PaneGeom { list: area, header: none, parent: none, child: none, cell_w: area.width.max(1), gap: 0 };
+    let mut g =
+        PaneGeom { list: area, header: none, parent: none, child: none, cell_w: area.width.max(1), cell_h: 1, gap: 0 };
     match mode {
+        PaneMode::Grid | PaneMode::Gallery => return grid::geometry(spec, area),
         PaneMode::Details => {
             if area.height >= 2 {
                 g.header = Rect { height: 1, ..area };
@@ -306,6 +335,8 @@ pub struct PaneVm {
     pub icons: IconSet,
     /// The pending key sequence or the type-ahead text (focused pane only).
     pub footer: Option<String>,
+    /// Grid and gallery: the cell shape and the thumbnails in view.
+    pub grid: Option<grid::GridVm>,
 }
 
 impl Default for PaneVm {
@@ -325,6 +356,7 @@ impl Default for PaneVm {
             checkboxes: false,
             icons: IconSet::default(),
             footer: None,
+            grid: None,
         }
     }
 }
@@ -366,7 +398,9 @@ impl PaneVm {
             icons: icon_set(core),
             footer: if focused { footer(core, pane) } else { None },
         };
-        Some(PaneVm::build(pane, index, cx))
+        let mut vm = PaneVm::build(pane, index, cx);
+        grid::request_thumbs(core, pane, &mut vm);
+        Some(vm)
     }
 
     /// The model of `pane` (tab pane `index`, after [`prepare_pane`]).
@@ -380,7 +414,8 @@ impl PaneVm {
         let mut lines = Vec::new();
         if let Some(layout) = pane.layout.as_ref().filter(|l| l.n == total) {
             let all = layout.lines();
-            let shown = &all[top.min(all.len())..(top + rows).min(all.len())];
+            let start = top.min(all.len());
+            let shown = &all[start..fit_end(all, start, rows)];
             let cx = RowCx { config, pane, cursor: pane.cursor_pos(), columns: &columns };
             for line in shown {
                 match line.kind {
@@ -404,6 +439,9 @@ impl PaneVm {
             _ => None,
         };
         let miller = (mode == PaneMode::Miller).then(|| miller::vm(pane, rows));
+        let grid = mode
+            .is_grid()
+            .then(|| grid::GridVm { spec: grid::GridSpec::of(pane, grid::cell_px(config)), ..Default::default() });
         PaneVm {
             index,
             id: pane.id,
@@ -419,8 +457,20 @@ impl PaneVm {
             checkboxes,
             icons,
             footer,
+            grid,
         }
     }
+}
+
+/// End of the lines from `start` that fit in `rows` rows (at least one when `rows > 0`).
+fn fit_end(lines: &[Line], start: usize, rows: usize) -> usize {
+    let Some(first) = lines.get(start) else { return start };
+    if rows == 0 {
+        return start;
+    }
+    let limit = first.top + rows as f32;
+    let fit = lines[start..].partition_point(|l| l.top + l.height <= limit + 0.001);
+    start + fit.max(1)
 }
 
 /// The pending key sequence, else the live type-ahead text.
@@ -477,21 +527,29 @@ impl RowCx<'_> {
 
 /// Lay out and scroll every drawn pane; load Miller's side columns (see the module docs).
 pub fn prepare(core: &mut AppCore, regions: &Regions) {
+    let px = grid::cell_px(&core.config);
     let tab = core.ws.tab_mut();
     for p in &regions.panes {
         if let Some(pane) = tab.panes.get_mut(p.index) {
-            prepare_pane(pane, p.rect.width, p.rect.height);
+            prepare_pane_px(pane, p.rect.width, p.rect.height, px);
         }
     }
     miller::prepare(core, regions);
 }
 
-/// The pane is `width` × `rows` cells: layout, scroll, page size.
+/// The pane is `width` × `rows` cells: layout, scroll, page size (grid cells for the
+/// default `[tui] cell_pixels`).
 pub fn prepare_pane(pane: &mut Pane, width: u16, rows: u16) {
+    let px = soyuz_core::config::TuiSection::CELL_PIXELS_DEFAULT;
+    prepare_pane_px(pane, width, rows, (px[0], px[1]));
+}
+
+/// [`prepare_pane`] with `[tui] cell_pixels` = `cell_px`.
+pub fn prepare_pane_px(pane: &mut Pane, width: u16, rows: u16, cell_px: (u16, u16)) {
     let mode = PaneMode::of(pane);
-    let g = geometry(mode, Rect::new(0, 0, width, rows));
+    let g = geometry_for(mode, Rect::new(0, 0, width, rows), grid::GridSpec::of(pane, cell_px));
     let w = f32::from(g.list.width.max(1));
-    let cell = vec2(f32::from(g.cell_w), 1.0);
+    let cell = vec2(f32::from(g.cell_w), f32::from(g.cell_h.max(1)));
     let gap = vec2(f32::from(g.gap), 0.0);
     let sig = LayoutSig { vis_version: pane.vis_version, width: w, cell, mode: mode.layout_mode() };
     if pane.layout_sig != Some(sig) || pane.layout.is_none() {
@@ -500,7 +558,9 @@ pub fn prepare_pane(pane: &mut Pane, width: u16, rows: u16) {
     }
     let Some(layout) = pane.layout.as_ref() else { return };
     let rows = usize::from(g.list.height);
-    let max_top = layout.lines().len().saturating_sub(rows);
+    let lines = layout.lines();
+    // The first line from which the rest fits.
+    let max_top = lines.partition_point(|l| layout.total_h - l.top > rows as f32 + 0.001);
     let mut top = if pane.scroll_y.is_finite() { pane.scroll_y.max(0.0) as usize } else { 0 };
     let mut restored = false;
     if let Some(y) = pane.restore_scroll {
@@ -515,12 +575,15 @@ pub fn prepare_pane(pane: &mut Pane, width: u16, rows: u16) {
     top = top.min(max_top);
     let follow = std::mem::take(&mut pane.scroll_to_cursor);
     if (follow || restored)
-        && let Some(line) = pane.cursor_pos().and_then(|c| layout.item_rect(c)).map(|r| r.min.y.max(0.0) as usize)
+        && let Some(y) = pane.cursor_pos().and_then(|c| layout.item_rect(c)).map(|r| r.min.y)
     {
+        let line = lines.partition_point(|l| l.top < y - 0.001).min(lines.len().saturating_sub(1));
         if line < top {
             top = line;
-        } else if line >= top + rows.max(1) {
-            top = line + 1 - rows.max(1);
+        } else if fit_end(lines, top, rows) <= line {
+            // The highest top that still shows the cursor's line completely.
+            let bottom = lines[line].top + lines[line].height;
+            top += lines[top..line].partition_point(|l| bottom - l.top > rows.max(1) as f32 + 0.001);
         }
     }
     pane.scroll_y = top as f32;
@@ -593,7 +656,7 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
     if rect.is_empty() {
         return;
     }
-    let g = geometry(m.mode, rect);
+    let g = geometry_for(m.mode, rect, m.grid.as_ref().map(|gv| gv.spec).unwrap_or_default());
     let buf = f.buffer_mut();
     buf.set_style(rect, theme.style(Role::Text));
     let fit = columns::fit(&m.columns, g.list.width, prefix_w(m));
@@ -607,9 +670,13 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
         let x = g.list.x + (g.list.width - text::width(&msg) as u16) / 2;
         put(buf, x, g.list.y, &msg, g.list.width, theme.style(Role::Muted));
     }
+    let grid_vm = m.grid.as_ref().filter(|_| m.mode.is_grid());
+    if let Some(gv) = grid_vm {
+        grid::draw_lines(buf, &g, m, gv, theme, hits);
+    }
     let cols = if m.mode == PaneMode::List { g.cols() } else { 1 };
     let (mut line, mut col) = (0u16, 0u16);
-    for l in &m.lines {
+    for l in m.lines.iter().filter(|_| grid_vm.is_none()) {
         if line >= g.list.height {
             break;
         }
