@@ -20,7 +20,6 @@ tui-feature-open-with = Birlikte aç
 tui-feature-batch-rename = Toplu yeniden adlandırma
 tui-feature-attributes = Öznitelikler
 tui-feature-links = Yeni bağlantı
-tui-feature-quicklook = Hızlı Bakış
 tui-feature-terminal = Terminal paneli
 tui-feature-editor = Düzenleyici
 tui-feature-jobs = İşler paneli

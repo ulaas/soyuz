@@ -378,7 +378,13 @@ fn diff_body(st: &mut crate::input::preview::State, kind: &mut String, w: usize,
     Body::Lines { lines, top: st.scroll, total, gutter: 0 }
 }
 
-fn content_body(loader: &mut PreviewLoader, scroll: &mut usize, archive: &mut SelectList, w: usize, h: usize) -> Body {
+pub(crate) fn content_body(
+    loader: &mut PreviewLoader,
+    scroll: &mut usize,
+    archive: &mut SelectList,
+    w: usize,
+    h: usize,
+) -> Body {
     if loader.entry.is_none() {
         return Body::Nothing;
     }
@@ -858,7 +864,7 @@ pub fn draw_preview(f: &mut Frame<'_>, area: Rect, m: &PreviewVm, theme: &TuiThe
     }
 }
 
-fn draw_body(buf: &mut Buffer, r: Rect, m: &PreviewVm, theme: &TuiTheme, hits: &mut Hits) {
+pub(crate) fn draw_body(buf: &mut Buffer, r: Rect, m: &PreviewVm, theme: &TuiTheme, hits: &mut Hits) {
     if r.is_empty() {
         return;
     }

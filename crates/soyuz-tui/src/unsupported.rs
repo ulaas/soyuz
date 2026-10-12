@@ -13,7 +13,6 @@ use crate::app::App;
 /// Run every reset.
 pub fn reset_all(app: &mut App) {
     settings(app);
-    quicklook(app);
     terminal_focus(app);
 }
 
@@ -21,13 +20,6 @@ fn settings(app: &mut App) {
     if app.core.ui.settings_open {
         app.core.ui.settings_open = false;
         app.unavailable(tr!("tui-feature-settings"));
-    }
-}
-
-fn quicklook(app: &mut App) {
-    if app.core.ui.quicklook.open {
-        soyuz_appcore::models::quicklook::close(&mut app.core);
-        app.unavailable(tr!("tui-feature-quicklook"));
     }
 }
 
