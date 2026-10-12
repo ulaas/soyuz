@@ -2,7 +2,8 @@
 //!
 //! [`run`] is the production entry (`soyuz --tui`): it queries the keyboard protocol,
 //! installs the key map overlay (`crate::overlay`: the TUI defaults, plus the legacy
-//! alternatives without the kitty protocol), enters TUI mode ([`TerminalGuard`]), registers the
+//! alternatives without the kitty protocol and the Windows Terminal stand-ins inside Windows
+//! Terminal), enters TUI mode ([`TerminalGuard`]), registers the
 //! panic hooks, starts the input reader and the signal watcher, and drives [`App`] with
 //! [`run_loop`] until the user quits. Tests drive the same loop with ratatui's
 //! `TestBackend`, a scripted [`EventSource`] and a [`TermIo`] that touches no terminal.
@@ -207,6 +208,10 @@ pub struct App {
     deadline: Option<Instant>,
     last_frame: Instant,
     last_save: Instant,
+    /// What a terminal paste (`Event::Paste`) into the file list does: the core's Paste
+    /// (`crate::input::list::paste`). Tests replace it, so they never read the system
+    /// clipboard.
+    pub list_paste: fn(&mut App),
 }
 
 impl App {
@@ -214,7 +219,7 @@ impl App {
     /// session file, no FileManager1, no other windows).
     ///
     /// Installs the TUI's own default keys (`crate::overlay::tui_defaults`) before the core
-    /// builds its key map, unless [`run`] installed the legacy overlay (which includes them)
+    /// builds its key map, unless [`run`] installed another overlay (they all include them)
     /// first: the hook is process-wide and set once.
     pub fn new(config: Config, mut startup: Startup) -> App {
         soyuz_appcore::keys::set_keymap_overlay(crate::overlay::tui_defaults);
@@ -232,6 +237,7 @@ impl App {
             deadline: None,
             last_frame: Instant::now(),
             last_save: Instant::now(),
+            list_paste: crate::input::list::paste,
         }
     }
 
@@ -514,8 +520,9 @@ fn restore_for_panic() {
 /// The caller has prepared the console (`soyuz_fs::console::tui_console` on Windows),
 /// checked `soyuz_fs::console::is_terminal_session`, set up logging to a file and
 /// claimed the crash journal (`services::crash::startup`). Installs the key map overlay
-/// (`crate::overlay`) before the core builds its key map: the TUI's default keys, plus the
-/// legacy alternatives when the kitty keyboard protocol is not used (never on Windows).
+/// (`crate::overlay::Overlay::pick`) before the core builds its key map: the TUI's default
+/// keys, plus the legacy alternatives when the kitty keyboard protocol is not used (never on
+/// Windows), plus the Windows Terminal stand-ins when `WT_SESSION` is set.
 /// After the loop the terminal is restored and an "Install & restart" update restarts the
 /// process (`services::updates`).
 pub fn run(config: Config, startup: Startup) -> ExitCode {
@@ -523,11 +530,10 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
     // Before any thread reads terminal input: the query reads the terminal's answer.
     let keyboard_supported = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
     let kitty = crate::term::keyboard_flags(config.tui.keyboard_protocol, keyboard_supported, cfg!(windows)).is_some();
-    soyuz_appcore::keys::set_keymap_overlay(if !kitty && !cfg!(windows) {
-        crate::overlay::legacy
-    } else {
-        crate::overlay::tui_defaults
-    });
+    let in_wt = crate::overlay::in_windows_terminal(|k| std::env::var_os(k));
+    let overlay = crate::overlay::Overlay::pick(kitty, cfg!(windows), in_wt);
+    log::info!("tui: key map overlay {overlay:?}");
+    soyuz_appcore::keys::set_keymap_overlay(overlay.function());
     let guard = match TerminalGuard::enter(&config.tui, keyboard_supported) {
         Ok(g) => g,
         Err(e) => {

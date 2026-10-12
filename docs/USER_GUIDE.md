@@ -333,6 +333,33 @@ Ctrl+Shift+letter, Ctrl+PageDown / PageUp for Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+F1
 the view modes (Ctrl+Shift+1…5), Alt+I, Alt+`, Alt+/, Alt+, and Alt+Backspace for their
 Ctrl versions.
 
+A paste from the terminal (its paste key, or a right / middle click) into the file list
+runs Soyuz's Paste instead of typing the text: files copied in Soyuz or another file
+manager land in the current folder. In the address bar, the filter, the palette and
+dialogs it pastes text as usual.
+
+**Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
+Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
+Alt+Enter full screen, Ctrl+V paste, Ctrl+= / - / 0 font size, …). Inside it (Soyuz checks
+`WT_SESSION`, also in WSL) the terminal UI adds stand-ins without changing your bindings
+or the window: Ctrl+K (or Alt+Shift+P) for the command palette, Alt+Shift+T to reopen a
+closed tab, F3 or Alt+Shift+F to search, Ctrl+PageDown / PageUp for the next / previous
+tab, Ctrl+F1…F5 for the view modes, Alt+, for settings, Alt+Shift+N for a new folder,
+Alt+Shift+V to paste as link and Alt+Shift+Enter for Properties. On Windows, Windows
+Terminal's Ctrl+V types the clipboard's text into the app, so Paste also gets Alt+V; in
+WSL, Ctrl+V arrives as a paste and pastes files. Shortcut hints (palette, toasts) show the
+chord that works. UI zoom is left to the terminal's own font size. To give a chord back to
+Soyuz instead, unbind it in Windows Terminal's `settings.json`:
+
+```json
+"actions": [
+    { "command": "unbound", "keys": "ctrl+shift+p" },
+    { "command": "unbound", "keys": "ctrl+v" }
+]
+```
+
+(Newer versions also accept `{ "id": null, "keys": "ctrl+shift+p" }` in `keybindings`.)
+
 Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection,
 choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
 it), the colour depth, the icons (Unicode, Nerd Font or ASCII), the box lines (rounded,

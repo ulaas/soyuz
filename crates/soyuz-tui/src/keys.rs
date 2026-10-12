@@ -21,7 +21,8 @@
 //!   (`Ctrl+Alt+=`) cannot be told apart from AltGr and types instead.
 //! - Named keys (arrows, Home / End, PageUp / PageDown, Enter, Esc, Backspace, Delete,
 //!   Insert, Tab, F1–F24) are chords; `BackTab` is `Shift+Tab`.
-//! - `Event::Paste` (bracketed paste) is text; mouse, focus and resize events are
+//! - `Event::Paste` (bracketed paste) is text (the file list runs Paste for it before
+//!   conversion, `crate::input::list`); mouse, focus and resize events are
 //!   [`InputEvent::Other`]. crossterm has no mouse back / forward buttons, so
 //!   [`InputFrame::back`] / [`InputFrame::forward`] stay false.
 //! - Super (and kitty's Meta / Hyper as Super / Alt) map to `CMD` / `ALT`, then

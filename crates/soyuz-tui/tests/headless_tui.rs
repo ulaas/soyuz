@@ -20,6 +20,8 @@ mod headless {
     mod palette;
     /// T2.3: pane views.
     mod panes;
+    /// A terminal paste in the file list runs Paste.
+    mod paste;
     /// T2.6: sidebar.
     mod sidebar;
     /// T2.8: status line, filter, toasts, borders.

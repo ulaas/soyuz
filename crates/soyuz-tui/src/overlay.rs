@@ -7,6 +7,8 @@
 //!   while its chord is free, so a user binding of F12 wins.
 //! - [`apply`], on legacy terminals (no kitty keyboard protocol): the alternatives below.
 //!   [`legacy`] runs both.
+//! - [`windows_terminal`] / [`windows_terminal_legacy`], inside Windows Terminal (see
+//!   "Windows Terminal" below).
 //!
 //! A legacy terminal sends Ctrl+letter as one control byte, so Ctrl+Shift+letter looks
 //! exactly like Ctrl+letter, Ctrl+I like Tab, Ctrl+Tab like Tab, and Ctrl with most
@@ -30,6 +32,34 @@
 //! Forward; Alt+Left / Right do the same, and Alt+[ starts a CSI sequence), Ctrl+Plus /
 //! Minus / Equals (GUI zoom). The palette's own chords are sendable (Ctrl+K, Ctrl+P) or
 //! covered (Ctrl+Shift+P).
+//!
+//! ## Windows Terminal
+//!
+//! Windows Terminal (detected by `WT_SESSION`, [`in_windows_terminal`]) runs its own key
+//! bindings before the application sees a key: its defaults ([`WT_BLOCKED`], from WT's
+//! `defaults.json` plus the `userDefaults.json` a new `settings.json` starts from) never
+//! reach Soyuz. [`windows_terminal`] keeps the user's bindings and the GUI untouched, and
+//! for every binding that uses such a chord:
+//! 1. when the action has no other usable chord in that context, adds the first free
+//!    stand-in from [`ALTERNATIVES`] and [`WT_ALTERNATIVES`] that WT does not take;
+//! 2. moves the blocked chords to the end of the binding's list (nothing is removed), so
+//!    the first chord — the one `chord_label` shows in the palette, menus and toast hints —
+//!    is one that works (Command palette: Ctrl+K instead of Ctrl+Shift+P).
+//!
+//! WT's paste chords ([`WT_PASTE`]) are special: WT pastes the clipboard's text (or the
+//! paths of files copied in Explorer) as a bracketed paste, and a paste into the file
+//! list runs Soyuz's Paste (`crate::input::list`). That only works where crossterm
+//! reports bracketed pastes (`Event::Paste`): unix terminals, so WSL inside WT. The
+//! Windows console reader gets a paste as typed keys, so there the paste chords count as
+//! blocked and Paste gets Alt+V.
+//!
+//! Chords WT only takes in some states fall through otherwise and are left alone
+//! ([`WT_CONDITIONAL`]): copy (Ctrl+C, Ctrl+Shift+C, Ctrl+Insert, Enter) only with a
+//! selection in the terminal, pane focus / resize (Alt+arrows, Ctrl+Alt+Left,
+//! Alt+Shift+arrows) only with split panes. Not covered: UI zoom (Ctrl+= / - / 0 /
+//! Plus: the terminal's own font size is the zoom there), Ctrl+Alt+digit,
+//! Ctrl+Shift+6…9, Ctrl+Shift+, / Space, Alt+Shift+D / - / Plus, Alt+F4, Alt+Space, F11
+//! and the Ctrl+Shift scroll keys (no preset binds them; a user binding keeps its chord).
 
 use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Keymap, Mods};
 
@@ -73,6 +103,210 @@ pub const ALTERNATIVES: &[(&str, &str)] = &[
 
 /// `(action, chord, context)` defaults of the terminal UI only ([`tui_defaults`]).
 pub const TUI_DEFAULTS: &[(Action, &str, KeyContext)] = &[(Action::FocusSidebar, "F12", KeyContext::Global)];
+
+/// Chords Windows Terminal's default key bindings always consume, as Soyuz spells them
+/// (WT `defaults.json` and `userDefaults.json`, 2026). `ctrl+plus` / `alt+shift+plus` are
+/// the `=` / `+` key: Ctrl+=, Alt+Shift+= (reported as Alt+Plus), and the keypad's Plus.
+pub const WT_BLOCKED: &[&str] = &[
+    // Window, settings, palette, find.
+    "Alt+F4",
+    "Alt+Enter",
+    "F11",
+    "Alt+Space",
+    "Ctrl+,",
+    "Ctrl+Shift+,",
+    "Ctrl+Alt+,",
+    "Ctrl+Shift+P",
+    "Ctrl+Shift+F",
+    "Ctrl+Shift+.",
+    // Tabs and windows.
+    "Ctrl+Shift+Space",
+    "Ctrl+Shift+T",
+    "Ctrl+Shift+N",
+    "Ctrl+Shift+D",
+    "Ctrl+Shift+W",
+    "Ctrl+Tab",
+    "Ctrl+Shift+Tab",
+    "Ctrl+Shift+1",
+    "Ctrl+Shift+2",
+    "Ctrl+Shift+3",
+    "Ctrl+Shift+4",
+    "Ctrl+Shift+5",
+    "Ctrl+Shift+6",
+    "Ctrl+Shift+7",
+    "Ctrl+Shift+8",
+    "Ctrl+Shift+9",
+    "Ctrl+Alt+1",
+    "Ctrl+Alt+2",
+    "Ctrl+Alt+3",
+    "Ctrl+Alt+4",
+    "Ctrl+Alt+5",
+    "Ctrl+Alt+6",
+    "Ctrl+Alt+7",
+    "Ctrl+Alt+8",
+    "Ctrl+Alt+9",
+    // Split panes.
+    "Alt+Shift+D",
+    "Alt+Shift+-",
+    "Alt+Plus",
+    "Alt+Shift+=",
+    // Selection, marks, buffer.
+    "Ctrl+Shift+A",
+    "Ctrl+Shift+M",
+    "Ctrl+Shift+K",
+    "Ctrl+Shift+Up",
+    "Ctrl+Shift+Down",
+    "Ctrl+Shift+PageUp",
+    "Ctrl+Shift+PageDown",
+    "Ctrl+Shift+Home",
+    "Ctrl+Shift+End",
+    // Font size.
+    "Ctrl+=",
+    "Ctrl+Plus",
+    "Ctrl+-",
+    "Ctrl+0",
+];
+
+/// Windows Terminal's paste chords (Ctrl+V comes from `userDefaults.json`, so a
+/// `settings.json` from before it may lack it): consumed, then sent as a paste.
+pub const WT_PASTE: &[&str] = &["Ctrl+V", "Ctrl+Shift+V", "Shift+Ins"];
+
+/// Chords Windows Terminal only takes in some states (they reach Soyuz otherwise): copy
+/// with a selection, moving focus between / resizing split panes.
+pub const WT_CONDITIONAL: &[&str] = &[
+    "Ctrl+C",
+    "Ctrl+Shift+C",
+    "Ctrl+Ins",
+    "Enter",
+    "Alt+Left",
+    "Alt+Right",
+    "Alt+Up",
+    "Alt+Down",
+    "Ctrl+Alt+Left",
+    "Alt+Shift+Left",
+    "Alt+Shift+Right",
+    "Alt+Shift+Up",
+    "Alt+Shift+Down",
+];
+
+/// Stand-ins only Windows Terminal needs, tried after [`ALTERNATIVES`]:
+/// `(chord WT takes, the stand-in)`. Alt+Shift+D is WT's split pane, so Ctrl+Shift+D
+/// gets Ctrl+Alt+D.
+pub const WT_ALTERNATIVES: &[(&str, &str)] = &[
+    // Explorer's Properties; Alt+Enter is WT's full screen.
+    ("Alt+Enter", "Alt+Shift+Enter"),
+    // Paste, where WT's paste arrives as typed keys (Windows console).
+    ("Ctrl+V", "Alt+V"),
+    ("Shift+Ins", "Alt+V"),
+    ("Ctrl+Shift+A", "Alt+Shift+A"),
+    ("Ctrl+Shift+D", "Ctrl+Alt+D"),
+    ("Ctrl+Shift+K", "Alt+Shift+K"),
+    ("Ctrl+Shift+M", "Alt+Shift+M"),
+    ("Ctrl+Shift+W", "Alt+Shift+W"),
+];
+
+/// Which overlay the terminal UI installs ([`Overlay::pick`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overlay {
+    /// [`tui_defaults`]: kitty keyboard protocol or the Windows console.
+    Defaults,
+    /// [`legacy`]: a legacy unix terminal.
+    Legacy,
+    /// [`windows_terminal`].
+    WindowsTerminal,
+    /// [`windows_terminal_legacy`]: WSL in Windows Terminal without the kitty protocol.
+    WindowsTerminalLegacy,
+}
+
+impl Overlay {
+    /// `kitty`: the kitty keyboard protocol is on; `is_windows`: `cfg!(windows)` (the
+    /// console reports every key, no legacy aliasing); `in_wt`: [`in_windows_terminal`].
+    pub fn pick(kitty: bool, is_windows: bool, in_wt: bool) -> Overlay {
+        match (!kitty && !is_windows, in_wt) {
+            (false, false) => Overlay::Defaults,
+            (true, false) => Overlay::Legacy,
+            (false, true) => Overlay::WindowsTerminal,
+            (true, true) => Overlay::WindowsTerminalLegacy,
+        }
+    }
+
+    /// The function for `soyuz_appcore::keys::set_keymap_overlay`.
+    pub fn function(self) -> fn(&mut Keymap) {
+        match self {
+            Overlay::Defaults => tui_defaults,
+            Overlay::Legacy => legacy,
+            Overlay::WindowsTerminal => windows_terminal,
+            Overlay::WindowsTerminalLegacy => windows_terminal_legacy,
+        }
+    }
+}
+
+/// Running inside Windows Terminal: `WT_SESSION` is set and not empty (`env` reads an
+/// environment variable; WT also forwards it into WSL through `WSLENV`).
+pub fn in_windows_terminal(env: impl Fn(&str) -> Option<std::ffi::OsString>) -> bool {
+    env("WT_SESSION").is_some_and(|v| !v.is_empty())
+}
+
+/// Windows Terminal takes `c` before Soyuz sees it. `paste_events`: WT's paste reaches
+/// Soyuz as a bracketed paste, which runs Paste in the file list, so the paste chords
+/// still work for [`Action::Paste`].
+pub fn wt_blocks(c: KeyChord, action: &Action, paste_events: bool) -> bool {
+    let is = |list: &[&str]| list.iter().any(|s| chord(s) == c);
+    is(WT_BLOCKED) || (is(WT_PASTE) && !(paste_events && *action == Action::Paste))
+}
+
+/// The overlay inside Windows Terminal: [`tui_defaults`], then [`wt_stand_ins`].
+pub fn windows_terminal(km: &mut Keymap) {
+    tui_defaults(km);
+    wt_stand_ins(km, wt_paste_events());
+}
+
+/// The overlay inside Windows Terminal without the kitty keyboard protocol (WSL):
+/// [`legacy`], then [`wt_stand_ins`].
+pub fn windows_terminal_legacy(km: &mut Keymap) {
+    legacy(km);
+    wt_stand_ins(km, wt_paste_events());
+}
+
+/// crossterm reports bracketed pastes on unix only; the Windows console reader gets a
+/// paste as key presses.
+fn wt_paste_events() -> bool {
+    !cfg!(windows)
+}
+
+/// The Windows Terminal stand-ins and order (see the module docs). `paste_events`: see
+/// [`wt_blocks`].
+pub fn wt_stand_ins(km: &mut Keymap, paste_events: bool) {
+    let blocked = |c: KeyChord, a: &Action| wt_blocks(c, a, paste_events);
+    // 1. Stand-ins for bindings left without a usable chord (a sequence such as Vim's
+    //    `p p` does not count: the shortcut hints show single chords).
+    let stranded: Vec<(KeyContext, Action, Vec<KeyChord>)> = km
+        .bindings
+        .iter()
+        .filter(|(_, v)| !v.is_empty())
+        .filter(|((_, a), v)| v.iter().all(|c| blocked(*c, a)))
+        .map(|((ctx, a), v)| (*ctx, a.clone(), v.clone()))
+        .collect();
+    for (ctx, action, chords) in stranded {
+        let stand_in = chords.iter().find_map(|c| {
+            ALTERNATIVES
+                .iter()
+                .chain(WT_ALTERNATIVES)
+                .filter(|(from, _)| chord(from) == *c)
+                .map(|(_, to)| chord(to))
+                .find(|to| !blocked(*to, &action) && is_free(km, *to))
+        });
+        if let Some(to) = stand_in {
+            km.bind(ctx, action, to);
+        }
+    }
+    // 2. Usable chords first (stable; nothing is removed).
+    for ((_, action), v) in km.bindings.iter_mut() {
+        let (mut ok, taken): (Vec<KeyChord>, Vec<KeyChord>) = v.iter().partition(|c| !blocked(**c, action));
+        ok.extend(taken);
+        *v = ok;
+    }
+}
 
 fn chord(s: &str) -> KeyChord {
     s.parse().unwrap_or(KeyChord::new(Mods::empty(), KeyName::F24))
@@ -221,6 +455,204 @@ mod tests {
         km.bind(KeyContext::Global, Action::FocusSidebar, "Alt+S".parse().unwrap());
         tui_defaults(&mut km);
         assert_eq!(km.chords_for(&Action::FocusSidebar), vec!["Alt+S".parse::<KeyChord>().unwrap()]);
+    }
+
+    fn ch(s: &str) -> KeyChord {
+        s.parse().unwrap()
+    }
+
+    fn wt_lists() -> impl Iterator<Item = &'static str> {
+        WT_BLOCKED.iter().chain(WT_PASTE).chain(WT_CONDITIONAL).copied()
+    }
+
+    #[test]
+    fn wt_tables_parse_and_stand_ins_are_sendable() {
+        for s in wt_lists() {
+            assert!(s.parse::<KeyChord>().is_ok(), "{s}");
+        }
+        for (from, to) in WT_ALTERNATIVES {
+            let (f, t) = (ch(from), ch(to));
+            assert!(WT_BLOCKED.iter().chain(WT_PASTE).any(|b| ch(b) == f), "{from} is not taken by WT");
+            assert!(!wt_lists().any(|b| ch(b) == t), "WT takes the stand-in {to}");
+        }
+        // Every legacy alternative WT can need is one WT lets through.
+        for (from, to) in ALTERNATIVES {
+            if WT_BLOCKED.iter().any(|b| ch(b) == ch(from)) {
+                assert!(!wt_lists().any(|b| ch(b) == ch(to)), "WT takes the stand-in {to}");
+            }
+        }
+    }
+
+    #[test]
+    fn picks_the_overlay() {
+        // (kitty, windows, in WT)
+        assert_eq!(Overlay::pick(true, false, false), Overlay::Defaults);
+        assert_eq!(Overlay::pick(false, true, false), Overlay::Defaults);
+        assert_eq!(Overlay::pick(false, false, false), Overlay::Legacy);
+        assert_eq!(Overlay::pick(false, true, true), Overlay::WindowsTerminal);
+        assert_eq!(Overlay::pick(true, false, true), Overlay::WindowsTerminal);
+        assert_eq!(Overlay::pick(false, false, true), Overlay::WindowsTerminalLegacy);
+        // The functions do what their names say.
+        let km = defaults::preset(KeyPreset::Explorer);
+        let run = |o: Overlay| {
+            let mut k = km.clone();
+            o.function()(&mut k);
+            k
+        };
+        let mut want = km.clone();
+        legacy(&mut want);
+        assert_eq!(run(Overlay::Legacy), want);
+        wt_stand_ins(&mut want, !cfg!(windows));
+        assert_eq!(run(Overlay::WindowsTerminalLegacy), want);
+        let mut want = km.clone();
+        tui_defaults(&mut want);
+        assert_eq!(run(Overlay::Defaults), want);
+        wt_stand_ins(&mut want, !cfg!(windows));
+        assert_eq!(run(Overlay::WindowsTerminal), want);
+        assert_ne!(run(Overlay::WindowsTerminal), run(Overlay::Defaults));
+    }
+
+    #[test]
+    fn detects_windows_terminal() {
+        use std::ffi::OsString;
+        assert!(in_windows_terminal(|k| (k == "WT_SESSION").then(|| OsString::from("5b7f-…"))));
+        assert!(!in_windows_terminal(|k| (k == "WT_SESSION").then(OsString::new)));
+        assert!(!in_windows_terminal(|_| None));
+        assert!(!in_windows_terminal(|k| (k == "TERM_PROGRAM").then(|| OsString::from("WezTerm"))));
+    }
+
+    /// Every preset × both WT variants (paste events or not) × with and without the legacy
+    /// alternatives first.
+    fn wt_overlays() -> Vec<(KeyPreset, bool, bool, Keymap, Keymap)> {
+        let mut out = Vec::new();
+        for p in KeyPreset::ALL {
+            let mut c = Config::default();
+            c.keys.preset = p;
+            let (km, _) = keymap(&c);
+            for paste_events in [false, true] {
+                for legacy_first in [false, true] {
+                    let mut over = km.clone();
+                    if legacy_first {
+                        legacy(&mut over);
+                    } else {
+                        tui_defaults(&mut over);
+                    }
+                    wt_stand_ins(&mut over, paste_events);
+                    out.push((p, paste_events, legacy_first, km.clone(), over));
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn windows_terminal_adds_no_conflicts_and_removes_nothing() {
+        for (p, paste, leg, km, over) in wt_overlays() {
+            assert_eq!(analyze(&over), analyze(&km), "{p:?} paste {paste} legacy {leg}");
+            for ((ctx, a), v) in &km.bindings {
+                let o = &over.bindings[&(*ctx, a.clone())];
+                assert!(v.iter().all(|c| o.contains(c)), "{p:?}: {a:?} lost a chord");
+            }
+            assert_eq!(over.sequences, km.sequences);
+            // Idempotent.
+            let mut twice = over.clone();
+            wt_stand_ins(&mut twice, paste);
+            assert_eq!(twice, over, "{p:?}");
+        }
+    }
+
+    #[test]
+    fn windows_terminal_leaves_every_binding_a_usable_first_chord() {
+        // Not covered on purpose (see the module docs): UI zoom.
+        let skipped = [Action::UiZoomIn, Action::UiZoomOut, Action::UiZoomReset];
+        for (p, paste, leg, _, over) in wt_overlays() {
+            for ((ctx, a), v) in &over.bindings {
+                if skipped.contains(a) {
+                    continue;
+                }
+                assert!(!wt_blocks(v[0], a, paste), "{p:?} paste {paste} legacy {leg}: {ctx:?} {a:?} {v:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn windows_terminal_stand_ins_in_the_explorer_preset() {
+        let mut km = defaults::preset(KeyPreset::Explorer);
+        wt_stand_ins(&mut km, false);
+        let first = |a: &Action| soyuz_appcore::keys::chord_label(&km, a);
+        assert_eq!(first(&Action::CommandPalette).as_deref(), Some("Ctrl+K"));
+        assert_eq!(first(&Action::Search).as_deref(), Some("F3"));
+        assert_eq!(first(&Action::NextTab).as_deref(), Some("Ctrl+PageDown"));
+        assert_eq!(first(&Action::PrevTab).as_deref(), Some("Ctrl+PageUp"));
+        assert_eq!(first(&Action::ReopenClosedTab).as_deref(), Some("Alt+Shift+T"));
+        assert_eq!(first(&Action::Settings).as_deref(), Some("Alt+,"));
+        assert_eq!(first(&Action::ViewDetails).as_deref(), Some("Ctrl+F1"));
+        assert_eq!(first(&Action::NewFolder).as_deref(), Some("Alt+Shift+N"));
+        assert_eq!(first(&Action::PasteAsLink).as_deref(), Some("Alt+Shift+V"));
+        assert_eq!(first(&Action::Properties).as_deref(), Some("Alt+Shift+Enter"));
+        // The Windows console: WT's paste arrives as typed keys, so Paste gets Alt+V.
+        assert_eq!(first(&Action::Paste).as_deref(), Some("Alt+V"));
+        // The user's chords stay, after the usable ones.
+        assert_eq!(km.chords_for(&Action::CommandPalette), [ch("Ctrl+K"), ch("Ctrl+Shift+P")]);
+        assert_eq!(km.chords_for(&Action::Paste), [ch("Alt+V"), ch("Ctrl+V")]);
+        // Conditional chords are not touched: Copy keeps Ctrl+C, Back keeps Alt+Left.
+        assert_eq!(first(&Action::Copy).as_deref(), Some("Ctrl+C"));
+        assert_eq!(first(&Action::Back).as_deref(), Some("Alt+Left"));
+        // Paste events (unix, WSL): Ctrl+V pastes through the bracketed paste.
+        let mut km = defaults::preset(KeyPreset::Explorer);
+        wt_stand_ins(&mut km, true);
+        assert_eq!(km.chords_for(&Action::Paste), [ch("Ctrl+V")]);
+        // Finder: Search has only Ctrl+Shift+F.
+        let mut f = defaults::preset(KeyPreset::Finder);
+        wt_stand_ins(&mut f, true);
+        assert_eq!(soyuz_appcore::keys::chord_label(&f, &Action::Search).as_deref(), Some("Alt+Shift+F"));
+        assert_eq!(soyuz_appcore::keys::chord_label(&f, &Action::ToggleHidden).as_deref(), Some("Ctrl+H"));
+    }
+
+    #[test]
+    fn windows_terminal_respects_user_bindings() {
+        // The user's own stand-in counts; the WT stand-in is not added.
+        let mut km = defaults::preset(KeyPreset::Explorer);
+        km.bindings.retain(|(_, a), _| *a != Action::CommandPalette);
+        km.bind(KeyContext::Global, Action::CommandPalette, ch("Ctrl+Shift+P"));
+        km.bind(KeyContext::Global, Action::CommandPalette, ch("F1"));
+        wt_stand_ins(&mut km, false);
+        assert_eq!(km.chords_for(&Action::CommandPalette), [ch("F1"), ch("Ctrl+Shift+P")]);
+        // A taken stand-in is skipped.
+        let mut km = defaults::preset(KeyPreset::Explorer);
+        km.bind(KeyContext::FileList, Action::Refresh, ch("Alt+Shift+Enter"));
+        wt_stand_ins(&mut km, false);
+        assert_eq!(km.chords_for(&Action::Properties), [ch("Alt+Enter")]);
+        assert_eq!(km.lookup(KeyContext::FileList, ch("Alt+Shift+Enter")), Some(&Action::Refresh));
+    }
+
+    #[test]
+    fn tui_hints_name_no_chord_windows_terminal_takes() {
+        use soyuz_appcore::tr;
+        let hints = [
+            tr!("tui-hint"),
+            tr!("tui-hint-filter"),
+            tr!("tui-hint-close"),
+            tr!("tui-hint-delete"),
+            tr!("tui-hint-quit"),
+            tr!("tui-hint-prompt"),
+            tr!("tui-hint-reject"),
+            tr!("tui-hint-cancel"),
+        ];
+        // The palette footer: "↑↓ move · Enter run · Tab complete".
+        let palette = ["Up", "Down", "Enter", "Tab"];
+        let words = hints.iter().flat_map(|h| h.split([' ', '·', '/']).map(str::to_string).collect::<Vec<_>>());
+        let mut checked = 0;
+        for w in words.chain(palette.iter().map(|s| s.to_string())) {
+            let Ok(c) = w.parse::<KeyChord>() else { continue };
+            if !c.mods.is_empty() || w.len() > 1 {
+                checked += 1;
+            }
+            for paste in [false, true] {
+                assert!(!wt_blocks(c, &Action::Refresh, paste), "a hint names {w}");
+            }
+        }
+        assert!(checked >= 4, "the hints were parsed ({checked})");
     }
 
     #[test]
