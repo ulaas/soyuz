@@ -10,6 +10,7 @@ pub mod defaults;
 pub mod fonts;
 pub mod keys;
 pub mod mcp;
+pub mod meta;
 pub mod migrate;
 pub mod preserve;
 pub mod schema;

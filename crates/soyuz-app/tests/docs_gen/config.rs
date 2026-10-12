@@ -1,198 +1,13 @@
 //! `docs/CONFIG.md` from the config schema: key names and types come from the Rust structs
-//! in `crates/soyuz-core/src` (parsed as text, doc comments included), defaults from
-//! `Config::default()` serialized to TOML, and the inline comments of
+//! in `crates/soyuz-core/src` (parsed as text by `soyuz_core::config::meta`, doc comments
+//! included), defaults from `Config::default()` serialized to TOML, and the inline comments of
 //! `docs/config.example.toml` fill in descriptions for keys without a doc comment.
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use soyuz_core::config::meta::{FieldMeta, Kind, Schema, kind_of, last_segment, schema, type_label};
 use soyuz_core::config::{Config, to_pretty_string};
-
-#[derive(Debug, Clone)]
-struct Field {
-    name: String,
-    ty: String,
-    doc: String,
-}
-
-#[derive(Debug, Default)]
-struct Struct {
-    doc: String,
-    fields: Vec<Field>,
-}
-
-#[derive(Debug, Default)]
-struct Enum {
-    /// Serialized variant names (unit variants only); `None` when the enum is not a plain
-    /// string enum (untagged, data-carrying, custom serde).
-    values: Option<Vec<(String, String)>>,
-}
-
-#[derive(Default)]
-struct Schema {
-    structs: HashMap<String, Struct>,
-    enums: HashMap<String, Enum>,
-}
-
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let mut entries: Vec<_> = std::fs::read_dir(dir).unwrap().flatten().map(|e| e.path()).collect();
-    entries.sort();
-    for p in entries {
-        if p.is_dir() {
-            rust_files(&p, out);
-        } else if p.extension().is_some_and(|e| e == "rs") {
-            out.push(p);
-        }
-    }
-}
-
-/// Plain-text doc comment: joined lines, intra-doc links reduced to their text.
-fn clean_doc(lines: &[String]) -> String {
-    let joined = lines.iter().map(|l| l.trim()).collect::<Vec<_>>().join(" ");
-    let mut s = joined.split_whitespace().collect::<Vec<_>>().join(" ");
-    // [`x`](Self::y) / [x](super::y) → `x` / x
-    let link = regex::Regex::new(r"\[([^\]]+)\]\((?:Self|self|super|crate)[^)]*\)").unwrap();
-    s = link.replace_all(&s, "$1").into_owned();
-    let bare = regex::Regex::new(r"\[(`[^`\]]+`)\]").unwrap();
-    s = bare.replace_all(&s, "$1").into_owned();
-    s
-}
-
-fn rename(variant: &str, rule: &str) -> String {
-    let mut snake = String::new();
-    for (i, c) in variant.chars().enumerate() {
-        if c.is_uppercase() {
-            if i > 0 {
-                snake.push('_');
-            }
-            snake.extend(c.to_lowercase());
-        } else {
-            snake.push(c);
-        }
-    }
-    match rule {
-        "snake_case" => snake,
-        "kebab-case" => snake.replace('_', "-"),
-        "lowercase" => variant.to_lowercase(),
-        "SCREAMING_SNAKE_CASE" => snake.to_uppercase(),
-        _ => variant.to_string(),
-    }
-}
-
-fn attr_value(line: &str, key: &str) -> Option<String> {
-    let i = line.find(&format!("{key} = \""))? + key.len() + 4;
-    let rest = &line[i..];
-    Some(rest[..rest.find('"')?].to_string())
-}
-
-fn parse_schema(src: &Path) -> Schema {
-    let mut files = Vec::new();
-    rust_files(src, &mut files);
-    let mut schema = Schema::default();
-    for f in files {
-        let text = std::fs::read_to_string(&f).unwrap();
-        let lines: Vec<&str> = text.lines().collect();
-        let mut docs: Vec<String> = Vec::new();
-        let mut attrs: Vec<String> = Vec::new();
-        let mut i = 0;
-        while i < lines.len() {
-            let t = lines[i].trim();
-            if let Some(d) = t.strip_prefix("///") {
-                docs.push(d.to_string());
-            } else if t.starts_with("#[") {
-                attrs.push(t.to_string());
-            } else if let Some(rest) = t.strip_prefix("pub struct ").filter(|r| r.ends_with('{')) {
-                let name = rest.trim_end_matches('{').trim().split('<').next().unwrap().to_string();
-                let mut st = Struct { doc: clean_doc(&docs), fields: Vec::new() };
-                docs.clear();
-                attrs.clear();
-                i += 1;
-                let mut fdocs: Vec<String> = Vec::new();
-                let mut fattrs: Vec<String> = Vec::new();
-                while i < lines.len() && lines[i].trim() != "}" {
-                    let l = lines[i].trim();
-                    if let Some(d) = l.strip_prefix("///") {
-                        fdocs.push(d.to_string());
-                    } else if l.starts_with("#[") {
-                        fattrs.push(l.to_string());
-                    } else if let Some(rest) = l.strip_prefix("pub ") {
-                        if let Some((n, ty)) = rest.split_once(": ") {
-                            let mut name = n.trim().to_string();
-                            let skip =
-                                fattrs.iter().any(|a| a.contains("serde(skip)") || a.contains("skip_deserializing"));
-                            if let Some(r) = fattrs.iter().find_map(|a| attr_value(a, "rename")) {
-                                name = r;
-                            }
-                            if !skip {
-                                st.fields.push(Field {
-                                    name,
-                                    ty: ty.trim_end_matches(',').trim().to_string(),
-                                    doc: clean_doc(&fdocs),
-                                });
-                            }
-                        }
-                        fdocs.clear();
-                        fattrs.clear();
-                    } else if !l.starts_with("//") {
-                        fdocs.clear();
-                        fattrs.clear();
-                    }
-                    i += 1;
-                }
-                schema.structs.entry(name).or_insert(st);
-            } else if let Some(rest) = t.strip_prefix("pub enum ").filter(|r| r.ends_with('{')) {
-                let name = rest.trim_end_matches('{').trim().to_string();
-                let derives_de = attrs.iter().any(|a| a.contains("Deserialize"));
-                let untagged = attrs.iter().any(|a| a.contains("untagged"));
-                let rule = attrs.iter().find_map(|a| attr_value(a, "rename_all")).unwrap_or_default();
-                docs.clear();
-                attrs.clear();
-                let mut values = Vec::new();
-                let mut plain = derives_de && !untagged;
-                let mut vdocs: Vec<String> = Vec::new();
-                let mut vrename: Option<String> = None;
-                i += 1;
-                let mut depth = 0i32;
-                while i < lines.len() {
-                    let l = lines[i].trim();
-                    if depth == 0 && l == "}" {
-                        break;
-                    }
-                    if depth > 0 {
-                        depth += l.matches('{').count() as i32 - l.matches('}').count() as i32;
-                    } else if let Some(d) = l.strip_prefix("///") {
-                        vdocs.push(d.to_string());
-                    } else if l.starts_with("#[") {
-                        if let Some(r) = attr_value(l, "rename") {
-                            vrename = Some(r);
-                        }
-                    } else if !l.is_empty() && !l.starts_with("//") {
-                        let ident: String = l.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
-                        let after = l[ident.len()..].trim_start();
-                        if after.starts_with('(') || after.starts_with('{') {
-                            plain = false;
-                        }
-                        if after.starts_with('{') {
-                            depth = 1 - l.matches('}').count() as i32;
-                        }
-                        if !ident.is_empty() {
-                            let v = vrename.take().unwrap_or_else(|| rename(&ident, &rule));
-                            values.push((v, clean_doc(&vdocs)));
-                        }
-                        vdocs.clear();
-                    }
-                    i += 1;
-                }
-                schema.enums.entry(name).or_insert(Enum { values: plain.then_some(values) });
-            } else if !t.is_empty() && !t.starts_with("//") {
-                docs.clear();
-                attrs.clear();
-            }
-            i += 1;
-        }
-    }
-    schema
-}
 
 /// `docs/config.example.toml` inline comments, by dotted key (`general.start_location`)
 /// and by table (`fonts.ui`).
@@ -226,105 +41,6 @@ fn example_comments(text: &str) -> HashMap<String, String> {
         }
     }
     out
-}
-
-fn last_segment(ty: &str) -> &str {
-    let base = ty.split('<').next().unwrap();
-    base.rsplit("::").next().unwrap()
-}
-
-fn generic_args(ty: &str) -> Vec<String> {
-    let Some(start) = ty.find('<') else { return Vec::new() };
-    let inner = &ty[start + 1..ty.len() - 1];
-    let mut out = Vec::new();
-    let mut depth = 0;
-    let mut cur = String::new();
-    for c in inner.chars() {
-        match c {
-            '<' | '(' => {
-                depth += 1;
-                cur.push(c);
-            }
-            '>' | ')' => {
-                depth -= 1;
-                cur.push(c);
-            }
-            ',' if depth == 0 => {
-                out.push(cur.trim().to_string());
-                cur.clear();
-            }
-            _ => cur.push(c),
-        }
-    }
-    if !cur.trim().is_empty() {
-        out.push(cur.trim().to_string());
-    }
-    out
-}
-
-enum Kind<'a> {
-    Table(&'a str),
-    ArrayOfTables(&'a str),
-    MapOfTables(&'a str),
-    Value,
-}
-
-fn kind_of<'a>(schema: &Schema, ty: &'a str) -> Kind<'a> {
-    let name = last_segment(ty);
-    match name {
-        "Vec" => {
-            let args = generic_args(ty);
-            if let Some(inner) = args.first()
-                && schema.structs.contains_key(last_segment(inner))
-            {
-                let start = ty.find(inner.as_str()).unwrap();
-                return Kind::ArrayOfTables(&ty[start..start + inner.len()]);
-            }
-            Kind::Value
-        }
-        "BTreeMap" | "HashMap" => {
-            let args = generic_args(ty);
-            if let Some(v) = args.get(1)
-                && schema.structs.contains_key(last_segment(v))
-            {
-                let start = ty.rfind(v.as_str()).unwrap();
-                return Kind::MapOfTables(&ty[start..start + v.len()]);
-            }
-            Kind::Value
-        }
-        n if schema.structs.contains_key(n) => Kind::Table(ty),
-        _ => Kind::Value,
-    }
-}
-
-fn type_label(schema: &Schema, ty: &str) -> String {
-    let name = last_segment(ty);
-    let args = generic_args(ty);
-    match name {
-        "bool" => "boolean".into(),
-        "u8" | "u16" | "u32" | "u64" | "usize" | "i32" | "i64" => "integer".into(),
-        "f32" | "f64" => "float".into(),
-        "String" | "PathBuf" | "str" => "string".into(),
-        "Option" => format!("{} (optional)", type_label(schema, &args[0])),
-        "Vec" => format!("array of {}", plural(&type_label(schema, &args[0]))),
-        "BTreeMap" | "HashMap" => format!("table: name → {}", type_label(schema, &args[1])),
-        "Table" => "table".into(),
-        "KeyChord" => "string (key chord)".into(),
-        other => match schema.enums.get(other).and_then(|e| e.values.as_ref()) {
-            Some(vals) => vals.iter().map(|(v, _)| format!("`\"{v}\"`")).collect::<Vec<_>>().join(" | "),
-            None => "string".into(),
-        },
-    }
-}
-
-fn plural(s: &str) -> String {
-    match s {
-        "string" => "strings".into(),
-        "integer" => "integers".into(),
-        "float" => "floats".into(),
-        "boolean" => "booleans".into(),
-        other => other.to_string(),
-    }
 }
 
 fn md_cell(s: &str) -> String {
@@ -374,7 +90,7 @@ fn only_values(text: &str, vals: &[(String, String)]) -> bool {
         })
 }
 
-fn describe(ctx: &Ctx<'_>, path: &str, f: &Field) -> String {
+fn describe(ctx: &Ctx<'_>, path: &str, f: &FieldMeta) -> String {
     let mut d = f.doc.clone();
     let example = ctx.comments.get(path).cloned().unwrap_or_default();
     let name = last_segment(&f.ty);
@@ -489,10 +205,10 @@ fn anchor(header: &str) -> String {
 }
 
 pub fn markdown(root: &Path) -> String {
-    let schema = parse_schema(&root.join("crates/soyuz-core/src"));
+    let schema = schema();
     let example = std::fs::read_to_string(root.join("docs/config.example.toml")).unwrap_or_default();
     let defaults: toml::Table = toml::from_str(&to_pretty_string(&Config::default()).unwrap()).unwrap();
-    let mut ctx = Ctx { schema: &schema, comments: example_comments(&example), sections: Vec::new() };
+    let mut ctx = Ctx { schema, comments: example_comments(&example), sections: Vec::new() };
     walk(&mut ctx, "", "Top level".into(), "Config", Some(&defaults), String::new());
 
     let mut s = String::new();

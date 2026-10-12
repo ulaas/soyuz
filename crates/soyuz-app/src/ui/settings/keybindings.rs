@@ -2,7 +2,7 @@
 //! record / remove / reset shortcuts, conflicts highlighted).
 
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
-use soyuz_core::config::{Action, ActionCategory, Config, KeyPreset, Keymap, format_sequence};
+use soyuz_core::config::{Action, ActionCategory, KeyPreset};
 
 use super::widgets::{choice, dd, group, matches, small_button, switch, upper};
 use super::{binding_chip, key_cache, record};
@@ -13,28 +13,8 @@ use crate::theme::icons::ph;
 use crate::theme::{icons, palette};
 use crate::ui::dialogs::keybind_record::RecordTarget;
 
-/// Effective bindings of `a` as strings (chords first, then sequences).
-pub fn current_bindings(km: &Keymap, a: &Action) -> Vec<String> {
-    let mut v: Vec<String> = km.chords_for(a).iter().map(|c| c.to_string()).collect();
-    v.extend(km.sequences_for(a).iter().map(|s| format_sequence(s)));
-    v.dedup();
-    v
-}
-
-/// Replace the `[keys.bindings]` entry of `a` (removing differently spelled keys).
-pub fn set_override(c: &mut Config, a: &Action, list: Vec<String>) {
-    c.keys.bindings.retain(|k, _| k.parse::<Action>().ok().as_ref() != Some(a));
-    c.keys.bindings.insert(a.to_string(), list);
-}
-
-/// Drop the override of `a` (back to the preset).
-pub fn reset_override(c: &mut Config, a: &Action) {
-    c.keys.bindings.retain(|k, _| k.parse::<Action>().ok().as_ref() != Some(a));
-}
-
-pub fn is_overridden(c: &Config, a: &Action) -> bool {
-    c.keys.bindings.keys().any(|k| k.parse::<Action>().ok().as_ref() == Some(a))
-}
+// The override helpers live in the core (the terminal UI's keyboard page uses them too).
+pub use crate::models::settings_keys::{current_bindings, is_overridden, reset_override, set_override};
 
 fn preset_help(k: KeyPreset) -> &'static str {
     match k {
@@ -300,32 +280,5 @@ fn action_row(
     }
     if add {
         record(app, RecordTarget::Action(a.clone()), tr!("settings-keys-record-title", action = &e.title));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use soyuz_core::config::keymap;
-
-    #[test]
-    fn override_helpers() {
-        let mut c = Config::default();
-        let (km, _) = keymap(&c);
-        let before = current_bindings(&km, &Action::CommandPalette);
-        assert!(before.contains(&"Ctrl+Shift+P".to_string()), "{before:?}");
-        c.keys.bindings.insert("Command-Palette".into(), vec!["F1".into()]);
-        assert!(is_overridden(&c, &Action::CommandPalette));
-        set_override(&mut c, &Action::CommandPalette, vec!["F1".into(), "Ctrl+K Ctrl+P".into()]);
-        assert_eq!(c.keys.bindings.len(), 1, "differently spelled key replaced");
-        let (km, w) = keymap(&c);
-        assert!(w.is_empty(), "{w:?}");
-        assert_eq!(current_bindings(&km, &Action::CommandPalette), vec!["F1", "Ctrl+K Ctrl+P"]);
-        reset_override(&mut c, &Action::CommandPalette);
-        assert!(!is_overridden(&c, &Action::CommandPalette));
-        // Removing every chord keeps an empty override (= unbound).
-        set_override(&mut c, &Action::Refresh, vec![]);
-        let (km, _) = keymap(&c);
-        assert!(current_bindings(&km, &Action::Refresh).is_empty());
     }
 }
