@@ -224,11 +224,9 @@ fn list_view_cells_match_navigation() {
 }
 
 #[test]
-fn grid_and_gallery_draw_as_list() {
-    for mode in [ViewMode::Grid, ViewMode::Gallery] {
-        let p = pane_in(1, mode);
-        assert_eq!(PaneMode::of(&p), PaneMode::List);
-    }
+fn grid_and_gallery_modes() {
+    assert_eq!(PaneMode::of(&pane_in(1, ViewMode::Grid)), PaneMode::Grid);
+    assert_eq!(PaneMode::of(&pane_in(1, ViewMode::Gallery)), PaneMode::Gallery);
     // Miller outside a folder: details.
     let mut p = pane_in(1, ViewMode::Miller);
     assert_eq!(PaneMode::of(&p), PaneMode::Miller);
@@ -364,4 +362,35 @@ fn tiny_rects() {
 /// Cells `a..b` of a drawn line (every character here is one cell wide).
 fn span(s: &str, a: usize, b: usize) -> String {
     s.chars().skip(a).take(b - a).collect()
+}
+
+#[test]
+fn grid_layout_scrolls_by_lines_of_cells() {
+    let mut p = pane_in(30, ViewMode::Grid);
+    p.view.zoom = 96;
+    // 40 wide: 3 cells of 12 (+ 1 gap); 13 rows: two lines of 6-row cells.
+    prepare_pane_px(&mut p, 40, 13, (10, 20));
+    let layout = p.layout.as_ref().unwrap();
+    assert_eq!((layout.cols, layout.cell.y, layout.lines().len()), (3, 6.0, 10));
+    assert_eq!(layout.nav(Some(1), NavDir::Down, p.viewport_h), Some(4));
+    assert_eq!(layout.nav(Some(4), NavDir::Right, p.viewport_h), Some(5));
+    assert_eq!(p.page_rows, 2);
+    // The cursor on the last item: its line is the last one shown.
+    p.move_cursor(29, false, false);
+    prepare_pane_px(&mut p, 40, 13, (10, 20));
+    assert_eq!(p.scroll_y, 8.0);
+    let m = build(&p, &Config::default());
+    assert_eq!(m.mode, PaneMode::Grid);
+    assert_eq!(m.rows().map(|r| r.index).collect::<Vec<_>>(), (24..30).collect::<Vec<_>>());
+    // Wheel past the end clamps; back to the top line.
+    p.scroll_y = 50.0;
+    prepare_pane_px(&mut p, 40, 13, (10, 20));
+    assert_eq!(p.scroll_y, 8.0);
+    p.move_cursor(0, false, false);
+    prepare_pane_px(&mut p, 40, 13, (10, 20));
+    assert_eq!(p.scroll_y, 0.0);
+    // Smaller icons: compact one-row cells.
+    p.view.zoom = 16;
+    prepare_pane_px(&mut p, 40, 13, (10, 20));
+    assert_eq!(p.layout.as_ref().unwrap().cell.y, 1.0);
 }

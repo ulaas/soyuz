@@ -118,8 +118,9 @@ pub fn handle(app: &mut AppCore, host: &dyn Host, frame: &mut InputFrame, kctx: 
     }
     // Left/Right: horizontal movement in the icon/list views, Miller in/out.
     for (key, dir) in [(KeyName::ArrowLeft, NavDir::Left), (KeyName::ArrowRight, NavDir::Right)] {
-        let plain = frame.consume_plain(key);
+        // Shifted first: `consume_plain` also takes Shift (it only skips Ctrl / Cmd).
         let shift = frame.consume_shifted(key);
+        let plain = frame.consume_plain(key);
         if !plain && !shift {
             continue;
         }
