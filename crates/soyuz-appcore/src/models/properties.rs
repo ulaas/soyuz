@@ -95,9 +95,13 @@ pub struct Bg<T> {
 
 impl<T: Send + 'static> Bg<T> {
     pub fn spawn(host: &dyn Host, f: impl FnOnce() -> T + Send + 'static) -> Self {
+        Self::spawn_wake(host.wake(), f)
+    }
+
+    /// [`Bg::spawn`] with a wake-up instead of the host (`AppCore::wake`).
+    pub fn spawn_wake(wake: crate::host::Wake, f: impl FnOnce() -> T + Send + 'static) -> Self {
         let slot = Arc::new(Mutex::new(None));
         let s2 = slot.clone();
-        let wake = host.wake();
         let _ = std::thread::Builder::new().name("soyuz-props".into()).spawn(move || {
             let v = f();
             *s2.lock() = Some(v);

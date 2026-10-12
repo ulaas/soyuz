@@ -12,10 +12,10 @@ use egui::{
     Align2, Color32, CornerRadius, FontId, Id, Mesh, Pos2, Rect, Response, ScrollArea, Sense, Shape, Stroke,
     StrokeKind, Ui, UiBuilder, pos2, vec2,
 };
-use soyuz_jobs::{JobSnapshot, JobState, LogLevel, Priority};
+use soyuz_jobs::{JobSnapshot, JobState};
 
 use crate::app::SoyuzApp;
-use crate::models::jobs_rows::{self, JobRow, RowButton, Tone};
+use crate::models::jobs_rows::{self, JobMenuCmd, JobMenuEntry, JobRow, RowButton, Tone, ToolbarButton};
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
@@ -164,7 +164,6 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
     let mut child = ui.new_child(UiBuilder::new().max_rect(body.shrink2(vec2(10.0, 4.0))));
     let ui = &mut child;
     // ---- toolbar ----
-    let pending = app.core.fileops.jobs.pending().count();
     let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
     let mut x = bar.left();
     for (tab, label) in [
@@ -201,18 +200,17 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
                 enabled,
             )
         };
-        let any_done = app.core.fileops.jobs.snapshots().iter().any(|s| s.state.is_terminal());
-        if btn(ui, ph::BROOM, tr!("panels-clear-finished"), any_done).clicked() {
-            app.core.fileops.jobs.engine().clear_finished();
-        }
-        if btn(ui, ph::X_CIRCLE, tr!("panels-cancel-all"), pending > 0).clicked() {
-            app.core.fileops.jobs.engine().cancel_all();
-        }
-        if btn(ui, ph::PLAY, tr!("panels-resume-all"), pending > 0).clicked() {
-            app.core.fileops.jobs.engine().resume_all();
-        }
-        if btn(ui, ph::PAUSE, tr!("panels-pause-all"), pending > 0).clicked() {
-            app.core.fileops.jobs.engine().pause_all();
+        // Right to left: the toolbar's last button first.
+        for (b, enabled) in jobs_rows::toolbar(&app.core).into_iter().rev() {
+            let glyph = match b {
+                ToolbarButton::PauseAll => ph::PAUSE,
+                ToolbarButton::ResumeAll => ph::PLAY,
+                ToolbarButton::CancelAll => ph::X_CIRCLE,
+                ToolbarButton::ClearFinished => ph::BROOM,
+            };
+            if btn(ui, glyph, b.label(), enabled).clicked() {
+                jobs_rows::apply_toolbar(&mut app.core, b);
+            }
         }
     }
     ui.add_space(4.0);
@@ -259,7 +257,6 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let active = row.active;
     let title = row.title.clone();
     let expanded = app.core.fileops.activity.expanded.contains(&s.id);
-    let summary = row.summary.clone();
     let w = ui.available_width();
     let base_h = 86.0;
     let extra = if expanded { 168.0 } else { 0.0 };
@@ -454,48 +451,40 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     }
     if active {
         let more = btn(ui, ph::DOTS_THREE, tr!("panels-more"));
-        let queued = row.queued;
-        let prio = s.priority;
-        let mut action: Option<u8> = None;
+        let entries = jobs_rows::job_menu(&row);
+        let mut action: Option<JobMenuCmd> = None;
         crate::ui::native::popup::Menu::menu(&more).show(|ui| {
             ui.set_min_width(200.0);
-            submenu(ui, Some(ph::FLAG), tr!("panels-priority"), |ui| {
-                ui.set_min_width(150.0);
-                for (pr, label, code) in [
-                    (Priority::High, tr!("panels-priority-high"), 1u8),
-                    (Priority::Normal, tr!("panels-priority-normal"), 2),
-                    (Priority::Low, tr!("panels-priority-low"), 3),
-                ] {
-                    if menu_check(ui, prio == pr, label, None).clicked() {
-                        action = Some(code);
-                        ui.close();
+            for e in &entries {
+                match e {
+                    JobMenuEntry::Priority(prios) => {
+                        submenu(ui, Some(ph::FLAG), tr!("panels-priority"), |ui| {
+                            ui.set_min_width(150.0);
+                            for (cmd, label, on) in prios {
+                                if menu_check(ui, *on, label, None).clicked() {
+                                    action = Some(*cmd);
+                                    ui.close();
+                                }
+                            }
+                        });
                     }
+                    JobMenuEntry::Item { cmd, label, enabled, .. } => {
+                        let glyph = match cmd {
+                            JobMenuCmd::MoveUp => ph::ARROW_UP,
+                            JobMenuCmd::MoveDown => ph::ARROW_DOWN,
+                            JobMenuCmd::StartNow => ph::LIGHTNING,
+                            JobMenuCmd::Cancel | JobMenuCmd::Priority(_) => ph::X,
+                        };
+                        if menu_item(ui, Some(glyph), label, None, *enabled).clicked() {
+                            action = Some(*cmd);
+                        }
+                    }
+                    JobMenuEntry::Separator => menu_separator(ui),
                 }
-            });
-            if menu_item(ui, Some(ph::ARROW_UP), tr!("panels-move-up"), None, queued).clicked() {
-                action = Some(4);
-            }
-            if menu_item(ui, Some(ph::ARROW_DOWN), tr!("panels-move-down"), None, queued).clicked() {
-                action = Some(5);
-            }
-            if menu_item(ui, Some(ph::LIGHTNING), tr!("panels-start-now"), None, queued).clicked() {
-                action = Some(6);
-            }
-            menu_separator(ui);
-            if menu_item(ui, Some(ph::X), tr!("common-cancel"), None, true).clicked() {
-                action = Some(7);
             }
         });
-        let eng = app.core.fileops.jobs.engine();
-        match action {
-            Some(1) => eng.set_priority(engine_id, Priority::High),
-            Some(2) => eng.set_priority(engine_id, Priority::Normal),
-            Some(3) => eng.set_priority(engine_id, Priority::Low),
-            Some(4) => eng.move_in_queue(engine_id, -1),
-            Some(5) => eng.move_in_queue(engine_id, 1),
-            Some(6) => eng.start_now(engine_id),
-            Some(7) => eng.cancel(engine_id),
-            _ => {}
+        if let Some(c) = action {
+            jobs_rows::apply_menu(&mut app.core, engine_id, c);
         }
         if btn(ui, ph::X, tr!("common-cancel")).clicked() {
             jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Cancel);
@@ -566,31 +555,8 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             pos2(card.right() - 12.0, card.bottom() - 10.0),
         );
         ui.painter().rect_filled(dr, CornerRadius::same(6), p.bg_sunken);
-        let mut lines: Vec<(Color32, String)> = Vec::new();
-        if let Some(sum) = &summary {
-            for (path, e) in sum.errors.iter().take(200) {
-                lines.push((p.danger, format!("\u{2715} {}  \u{2014}  {e}", soyuz_fs::strip_verbatim(path).display())));
-            }
-            for n in &sum.notes {
-                lines.push((p.text_tertiary, format!("\u{2139} {n}")));
-            }
-        }
-        if let JobState::Failed(e) = &s.state {
-            lines.push((p.danger, format!("\u{2715} {e}")));
-        }
-        for l in app.core.fileops.jobs.log(s.id).iter().rev().take(300) {
-            let c = match l.level {
-                LogLevel::Info => p.text_secondary,
-                LogLevel::Warn => p.warning,
-                LogLevel::Error => p.danger,
-            };
-            let path =
-                l.path.as_ref().map(|p| format!("  {}", soyuz_fs::strip_verbatim(p).display())).unwrap_or_default();
-            lines.push((c, format!("{:>6.1}s  {}{path}", l.at.as_secs_f32(), l.msg)));
-        }
-        if lines.is_empty() {
-            lines.push((p.text_tertiary, tr!("panels-log-empty").into()));
-        }
+        let lines: Vec<(Color32, String)> =
+            jobs_rows::detail_lines(&mut app.core, s.id).into_iter().map(|(t, l)| (tone_color(t, p), l)).collect();
         let mut child = ui.new_child(UiBuilder::new().max_rect(dr.shrink(8.0)));
         ScrollArea::vertical().id_salt(("soyuz.activity.log", s.id.0)).auto_shrink([false, false]).show(
             &mut child,

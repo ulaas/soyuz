@@ -100,6 +100,8 @@ pub enum Cmd {
     Meta(crate::models::properties::MetaCmd),
     /// Folder tree effects (focus, new folder, properties): `models::tree`.
     Tree(crate::models::tree::TreeCmd),
+    /// Show / hide a details column, or reset them (header menu): `models::context_menu`.
+    Column(crate::models::context_menu::ColumnCmd),
     /// Close confirmed while jobs are pending: now, or once they have finished.
     Quit {
         when_idle: bool,

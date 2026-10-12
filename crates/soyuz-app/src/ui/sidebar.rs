@@ -300,35 +300,7 @@ fn is_current(c: &SidebarCtx<'_>, path: &Path) -> bool {
 
 fn place_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, path: &Path, removable: bool) {
     ui.set_width(220.0);
-    if menu_item(ui, Some(ph::BROWSERS), tr!("app-ctx-open-in-new-tab"), None, true).clicked() {
-        cmds.push(Cmd::OpenInNewTab { location: Location::Dir(path.to_path_buf()), activate: true });
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("app-ctx-open-in-other-pane"), None, true).clicked() {
-        cmds.push(Cmd::OpenInOtherPane(Location::Dir(path.to_path_buf())));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::ARROW_SQUARE_UP_RIGHT), tr!("app-ctx-reveal-in-system"), None, true).clicked() {
-        cmds.push(Cmd::RevealInSystem(path.to_path_buf()));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("app-ctx-copy-path"), None, true).clicked() {
-        cmds.push(Cmd::CopyText(soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned()));
-        ui.close();
-    }
-    if removable {
-        menu_separator(ui);
-        if menu_item(ui, Some(ph::STAR), tr!("app-sidebar-remove-favorite"), None, true).clicked() {
-            cmds.push(Cmd::RemoveFavorite(path.to_path_buf()));
-            ui.close();
-        }
-    } else {
-        menu_separator(ui);
-        if menu_item(ui, Some(ph::STAR), tr!("app-ctx-add-to-favorites"), None, true).clicked() {
-            cmds.push(Cmd::AddFavorite(path.to_path_buf()));
-            ui.close();
-        }
-    }
+    crate::ui::context_menu::draw_entries(ui, crate::models::context_menu::place_menu(path, removable), cmds);
 }
 
 fn row_clicks(resp: &egui::Response, c: &mut SidebarCtx<'_>, path: &Path) {

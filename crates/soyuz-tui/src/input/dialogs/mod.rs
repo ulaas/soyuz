@@ -275,6 +275,34 @@ pub fn form_input(form: &mut Form, i: &DialogInput) -> Outcome {
     Outcome::Keep
 }
 
+/// A form's mouse (the terminal UI dialogs): a click on a field focuses (a checkbox toggles)
+/// it, on a button presses it; a click on a list row moves `list`'s cursor; the wheel
+/// scrolls `list`.
+pub fn form_mouse(form: &mut Form, list: Option<(&mut SelectList, usize)>, m: &DialogMouse) -> FormOutcome {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    match m.event.kind {
+        MouseEventKind::Down(MouseButton::Left) => match m.target {
+            Some(HitTarget::DialogField(i)) => form.click_field(i),
+            Some(HitTarget::DialogButton(i)) => form.click_button(i),
+            Some(HitTarget::DialogRow(i)) => {
+                if let Some((l, len)) = list {
+                    l.select(i, len);
+                }
+                FormOutcome::Consumed
+            }
+            _ => FormOutcome::Ignored,
+        },
+        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+            if let Some((l, len)) = list {
+                let rows = if m.event.kind == MouseEventKind::ScrollUp { -3 } else { 3 };
+                l.wheel(rows, len, usize::from(crate::view::dialogs::MAX_LIST_ROWS));
+            }
+            FormOutcome::Consumed
+        }
+        _ => FormOutcome::Ignored,
+    }
+}
+
 /// Any dialog is open.
 pub fn is_open(core: &AppCore, st: &State) -> bool {
     core.dialogs.is_open() || st.tui.is_open()

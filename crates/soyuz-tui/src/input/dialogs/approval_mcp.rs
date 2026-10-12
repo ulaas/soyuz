@@ -114,6 +114,35 @@ pub fn on_mouse(m: &mut DialogModel, ui: &mut ModelUi, e: &DialogMouse) -> Outco
     on_form(a, out).unwrap_or(Outcome::Keep)
 }
 
+/// Every frame (`App::frame`): while an approval counts down (any open one: it may be under
+/// another dialog), a redraw when its shown second changes.
+pub fn tick(core: &soyuz_appcore::core::AppCore, host: &dyn soyuz_appcore::host::Host) {
+    let now = std::time::Instant::now();
+    let next = core
+        .dialogs
+        .iter()
+        .filter_map(|m| match m {
+            DialogModel::McpApproval(a) => {
+                let g = a.approvals.lock();
+                g.card(a.id).filter(|c| c.is_pending()).and_then(|c| c.card.expires)
+            }
+            _ => None,
+        })
+        .map(|exp| next_second(exp, now))
+        .min();
+    if let Some(d) = next {
+        host.redraw_after(d);
+    }
+}
+
+/// How long until the countdown to `expires` shows the next second (at least 20 ms).
+pub fn next_second(expires: std::time::Instant, now: std::time::Instant) -> std::time::Duration {
+    let left = expires.saturating_duration_since(now);
+    let frac = std::time::Duration::from_nanos(u64::from(left.subsec_nanos()));
+    let wait = if frac.is_zero() { std::time::Duration::from_secs(1) } else { frac };
+    wait.max(std::time::Duration::from_millis(20))
+}
+
 /// The request went away by itself (answered, withdrawn, timed out).
 pub fn stale(m: &mut DialogModel) -> bool {
     crate::dialog::stale(m)
@@ -204,6 +233,15 @@ pub(crate) mod tests {
         assert_eq!(rx.try_recv().ok(), Some(soyuz_mcp::ApprovalDecision::Approved));
         let DialogModel::McpApproval(a) = &m else { panic!() };
         assert!(a.approvals.lock().approve_kinds.contains(&("test-client".into(), "move".into())));
+    }
+
+    #[test]
+    fn countdown_redraws_on_the_next_second() {
+        let now = std::time::Instant::now();
+        assert_eq!(next_second(now + Duration::from_millis(2500), now), Duration::from_millis(500));
+        assert_eq!(next_second(now + Duration::from_secs(3), now), Duration::from_secs(1));
+        assert_eq!(next_second(now, now + Duration::from_secs(1)), Duration::from_secs(1), "expired");
+        assert_eq!(next_second(now + Duration::from_millis(1005), now), Duration::from_millis(20));
     }
 
     #[test]

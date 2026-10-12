@@ -2,7 +2,8 @@
 //!
 //! The summary (to rename, problems, cycles), the live old → new preview (unchanged rows
 //! muted, conflicts in the danger / warning colours with a short reason on the right),
-//! the rule fields and the buttons.
+//! the mode, the rule page's fields and the buttons; on the Presets page the list shows
+//! the presets, in the "one name per line" mode a hint.
 
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::rename::Status;
@@ -10,7 +11,9 @@ use soyuz_appcore::tr;
 
 use super::DialogVm;
 use crate::dialog::safe;
-use crate::input::dialogs::batch_rename::{State, status_label};
+use soyuz_appcore::models::batch_rename::Mode;
+
+use crate::input::dialogs::batch_rename::{Page, State, status_label};
 use crate::theme::Role;
 use crate::widgets::ListRow;
 
@@ -32,6 +35,13 @@ pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
         summary.push(tr!("dialogs-rename-cycles", count = m.cycles));
     }
     d.body = vec![summary.join(" · ")];
+    if m.mode == Mode::Editor {
+        d.body.push(tr!("dialogs-rename-editor-hint").to_string());
+    } else if s.page == Page::Presets {
+        d.list = s.presets().into_iter().map(|(label, _, _)| ListRow::new(safe(&label))).collect();
+        d.list_state = s.list.clone();
+        return d;
+    }
     d.list = m
         .items
         .iter()

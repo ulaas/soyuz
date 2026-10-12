@@ -1,7 +1,10 @@
 //! The popup menu (`TuiFocus::Menu`): the context menu of the file list — `ContextMenu`
 //! (Shift+F10), the Menu key (when the terminal reports it, e.g. kitty's keyboard
 //! protocol), a right click on a row (selected first, as in the GUI) or on the empty
-//! area of a pane.
+//! area of a pane — and the menus of a sidebar place (right click, or Shift+F10 / the Menu
+//! key while the sidebar has the keyboard: [`open_sidebar`]), a tab (right click,
+//! [`open_tab`]) and the details header (right click, [`open_header`]: the column
+//! chooser, which stays open while columns are ticked).
 //!
 //! The entries come from the core's catalogue (`soyuz_appcore::models::context_menu`),
 //! the same one the GUI's right-click menu draws: the items menu for a selection, the
@@ -19,6 +22,7 @@ use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, Run};
 use soyuz_appcore::state::pane::{ContextTarget, PaneId};
 use soyuz_appcore::tr;
+use soyuz_core::Location;
 use soyuz_core::config::Action;
 
 use crate::app::App;
@@ -32,14 +36,43 @@ pub enum MenuCmd {
     Action(Action),
     /// Catalogue entry `i` ([`State::runs`]).
     Catalog(usize),
+    /// A command of a job's "More" menu (`input::jobs::open_menu`).
+    Job(soyuz_jobs::JobId, soyuz_appcore::models::jobs_rows::JobMenuCmd),
+}
+
+/// What the open menu's catalogue rows run.
+#[derive(Debug, Default)]
+pub struct Runs {
+    /// By row payload (`None`: only close).
+    pub runs: Vec<Option<Run>>,
+    /// The rows that keep the menu open (column ticks), by payload.
+    pub keep: Vec<bool>,
+}
+
+impl Runs {
+    fn push(&mut self, r: Option<Run>, keep: bool) -> usize {
+        self.runs.push(r);
+        self.keep.push(keep);
+        self.runs.len() - 1
+    }
+
+    pub fn len(&self) -> usize {
+        self.runs.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.runs.is_empty()
+    }
 }
 
 /// The open menu, if any.
 #[derive(Debug, Default)]
 pub struct State {
     pub menu: Option<Menu<MenuCmd>>,
-    /// What the open menu's catalogue rows run (`None`: only close).
-    pub runs: Vec<Option<Run>>,
+    /// What the open menu's catalogue rows run.
+    pub runs: Runs,
+    /// The open menu is pane `.0`'s column chooser, opened at `.1` (rebuilt after a tick).
+    pub header: Option<(PaneId, (u16, u16))>,
 }
 
 /// Whether a menu is open.
@@ -49,8 +82,21 @@ pub fn is_open(st: &State) -> bool {
 
 /// `ContextMenu` (Shift+F10, the Menu key): the menu of the focused pane, at its cursor
 /// row. With a selection it is the items menu; with only a cursor, the cursor's item is
-/// selected first (like a right click); otherwise the background menu.
+/// selected first (like a right click); otherwise the background menu. While the sidebar
+/// has the keyboard: the menu of the place under its cursor.
 pub fn open_context(app: &mut App) {
+    if app.focus() == crate::input::TuiFocus::Sidebar {
+        let list = crate::view::sidebar::entries(&app.core);
+        if let Some(i) = crate::view::sidebar::cursor_index(&app.core, &list, &app.input.sidebar.nav) {
+            let anchor = app
+                .hits
+                .iter()
+                .find(|(_, t)| *t == HitTarget::SidebarRow(i))
+                .map_or((1, 1), |(r, _)| (r.x.saturating_add(2.min(r.width)), r.y.saturating_add(1)));
+            open_sidebar(app, i, anchor);
+        }
+        return;
+    }
     let pane = app.core.ws.pane();
     let id = pane.id;
     let cursor_row = pane.cursor.as_ref().and_then(|c| pane.visible_keys().iter().position(|k| k == c));
@@ -103,18 +149,51 @@ pub fn open_for(app: &mut App, pane: PaneId, target: ContextTarget, anchor: (u16
         checkbox_mode: app.core.ui.checkbox_mode,
     };
     let entries = catalogue::pane_menu(&cx, p);
-    let mut runs = Vec::new();
+    open_entries(app, entries, anchor);
+}
+
+/// The menu of sidebar entry `i` (a place on disk: favourites, bookmarks, drives, cloud
+/// folders; other rows have none, like in the GUI) at `anchor`.
+pub fn open_sidebar(app: &mut App, i: usize, anchor: (u16, u16)) {
+    use crate::view::sidebar::{Entry as Row, Target};
+    let list = crate::view::sidebar::entries(&app.core);
+    let Some(Row::Place { target: Target::Go(Location::Dir(path)), .. }) = list.get(i) else { return };
+    let removable = app.core.ui.sidebar.favorites.iter().any(|f| &f.path == path);
+    let entries = catalogue::place_menu(path, removable);
+    open_entries(app, entries, anchor);
+}
+
+/// The menu of tab `i` at `anchor`.
+pub fn open_tab(app: &mut App, i: usize, anchor: (u16, u16)) {
+    let entries = catalogue::tab_menu(&app.core, i);
+    open_entries(app, entries, anchor);
+}
+
+/// The column chooser of `pane`'s details header at `anchor`.
+pub fn open_header(app: &mut App, pane: PaneId, anchor: (u16, u16)) {
+    let Some(p) = app.core.ws.find_pane(pane) else { return };
+    let entries = catalogue::column_menu(p);
+    open_entries(app, entries, anchor);
+    if app.input.menu.menu.is_some() {
+        app.input.menu.header = Some((pane, anchor));
+    }
+}
+
+/// Open catalogue `entries` at `anchor` (nothing when they are all empty).
+fn open_entries(app: &mut App, entries: Vec<Entry>, anchor: (u16, u16)) {
+    let mut runs = Runs::default();
     let items = rows(entries, &mut runs);
     if items.is_empty() {
         return;
     }
     app.input.menu.runs = runs;
+    app.input.menu.header = None;
     open(app, Menu::new(items, anchor));
 }
 
 /// Catalogue entries as menu rows; their runs go to `runs`. Separators never lead, trail
-/// or repeat; empty submenus are left out.
-pub fn rows(entries: Vec<Entry>, runs: &mut Vec<Option<Run>>) -> Vec<MenuItem<MenuCmd>> {
+/// or repeat; empty submenus are left out; a caption is a disabled row.
+pub fn rows(entries: Vec<Entry>, runs: &mut Runs) -> Vec<MenuItem<MenuCmd>> {
     let mut out: Vec<MenuItem<MenuCmd>> = Vec::new();
     for e in entries {
         match e {
@@ -123,14 +202,16 @@ pub fn rows(entries: Vec<Entry>, runs: &mut Vec<Option<Run>>) -> Vec<MenuItem<Me
                     out.push(MenuItem::Separator);
                 }
             }
+            Entry::Caption(c) => out.push(run_row(runs, c, None, false).enabled(false)),
             Entry::Item(it) => {
-                let mut row = run_row(runs, it.label, it.run).enabled(it.enabled);
+                let mut row = run_row(runs, it.label, it.run, it.keep_open).enabled(it.enabled);
                 if let Some(c) = it.chord {
                     row = row.chord(c);
                 }
                 match (it.style, it.icon) {
                     (ItemStyle::Check(on), _) | (_, MenuIcon::Tag { checked: on, .. }) => row = row.checked(on),
                     (_, MenuIcon::Check) => row = row.checked(true),
+                    (_, MenuIcon::Blank) => row = row.checked(false),
                     _ => {}
                 }
                 out.push(row);
@@ -142,7 +223,7 @@ pub fn rows(entries: Vec<Entry>, runs: &mut Vec<Option<Run>>) -> Vec<MenuItem<Me
                 }
             }
             Entry::OpenWith(path) => {
-                out.push(run_row(runs, tr!("tui-menu-open-with"), Some(Run::Cmd(Cmd::ChooseOpenWith(path)))));
+                out.push(run_row(runs, tr!("tui-menu-open-with"), Some(Run::Cmd(Cmd::ChooseOpenWith(path))), false));
             }
             Entry::FolderColor(dirs) => {
                 let items = rows(catalogue::folder_color_entries(&dirs), runs);
@@ -157,9 +238,9 @@ pub fn rows(entries: Vec<Entry>, runs: &mut Vec<Option<Run>>) -> Vec<MenuItem<Me
 }
 
 /// A row running `r` (stored in `runs`).
-fn run_row(runs: &mut Vec<Option<Run>>, label: impl Into<String>, r: Option<Run>) -> MenuItem<MenuCmd> {
-    runs.push(r);
-    MenuItem::run(label, MenuCmd::Catalog(runs.len() - 1))
+fn run_row(runs: &mut Runs, label: impl Into<String>, r: Option<Run>, keep: bool) -> MenuItem<MenuCmd> {
+    let i = runs.push(r, keep);
+    MenuItem::run(label, MenuCmd::Catalog(i))
 }
 
 /// Open `menu` (replacing an open one).
@@ -169,28 +250,45 @@ pub fn open(app: &mut App, menu: Menu<MenuCmd>) {
 
 fn close(app: &mut App) {
     app.input.menu.menu = None;
-    app.input.menu.runs.clear();
+    app.input.menu.runs = Runs::default();
+    app.input.menu.header = None;
 }
 
 fn run(app: &mut App, c: MenuCmd) {
+    let header = app.input.menu.header;
+    let cursor = app.input.menu.menu.as_ref().and_then(|m| m.cursor);
     let runs = std::mem::take(&mut app.input.menu.runs);
     close(app);
     match c {
         MenuCmd::Action(a) => app.core.cmds.push(Cmd::Action(a)),
-        MenuCmd::Catalog(i) => match runs.into_iter().nth(i).flatten() {
-            Some(Run::Tool(t)) => {
-                // Tags, the shelf and Recent are model commands; the tool windows have no
-                // terminal view.
-                soyuz_appcore::models::tools::queue(t);
-                let queued = soyuz_appcore::models::tools::take_queue();
-                let rest = soyuz_appcore::models::tools::apply_model_cmds(&mut app.core, &app.host, queued);
-                if !rest.is_empty() {
-                    app.unavailable(tr!("tui-menu-tool-windows"));
+        MenuCmd::Job(id, c) => soyuz_appcore::models::jobs_rows::apply_menu(&mut app.core, id, c),
+        MenuCmd::Catalog(i) => {
+            let keep = runs.keep.get(i).copied().unwrap_or(false);
+            match runs.runs.into_iter().nth(i).flatten() {
+                // A column tick applies now and the chooser opens again where it was.
+                Some(Run::Cmd(Cmd::Column(c))) if keep => {
+                    catalogue::apply_column(&mut app.core, c);
+                    if let Some((pane, anchor)) = header {
+                        open_header(app, pane, anchor);
+                        if let Some(m) = app.input.menu.menu.as_mut() {
+                            m.cursor = cursor;
+                        }
+                    }
                 }
+                Some(Run::Tool(t)) => {
+                    // Tags, the shelf and Recent are model commands; the tool windows have no
+                    // terminal view.
+                    soyuz_appcore::models::tools::queue(t);
+                    let queued = soyuz_appcore::models::tools::take_queue();
+                    let rest = soyuz_appcore::models::tools::apply_model_cmds(&mut app.core, &app.host, queued);
+                    if !rest.is_empty() {
+                        app.unavailable(tr!("tui-menu-tool-windows"));
+                    }
+                }
+                Some(r) => catalogue::run(r, &mut app.core.cmds),
+                None => {}
             }
-            Some(r) => catalogue::run(r, &mut app.core.cmds),
-            None => {}
-        },
+        }
     }
 }
 
@@ -250,12 +348,13 @@ mod tests {
             enabled: true,
             style: ItemStyle::Plain,
             run,
+            keep_open: false,
         })
     }
 
     #[test]
     fn rows_tidy_separators_and_index_runs() {
-        let mut runs = Vec::new();
+        let mut runs = Runs::default();
         let r = rows(
             vec![
                 Entry::Separator,
@@ -286,6 +385,6 @@ mod tests {
         let EntryKind::Submenu(inner) = &sub.kind else { panic!() };
         assert!(matches!(&inner[0], MenuItem::Entry(e) if e.kind == EntryKind::Run(MenuCmd::Catalog(1))));
         assert_eq!(runs.len(), 3);
-        assert!(matches!(runs[2], Some(Run::Cmd(Cmd::ChooseOpenWith(_)))));
+        assert!(matches!(runs.runs[2], Some(Run::Cmd(Cmd::ChooseOpenWith(_)))));
     }
 }

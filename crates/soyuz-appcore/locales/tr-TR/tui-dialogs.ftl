@@ -14,3 +14,4 @@ tui-dialogs-hint-approval = ↑/↓ kaydır · Enter onayla · Esc reddet
 tui-dialogs-hint-script = ↑/↓ kaydır · Enter çalıştır · Esc vazgeç
 tui-dialogs-link-kind = Tür
 tui-dialogs-mcp-conflict = çakışma
+tui-dialogs-hint-links = ↑/↓ hedef seç · Tab / Enter kullan · Tab sonraki alan · Enter oluştur · Esc iptal

@@ -1,12 +1,15 @@
 //! The view of the properties dialog (`FrontendCmd::Properties` / `FolderProperties`) — Phase T3.
 //!
 //! Label / value rows in a scrolling list ([`rows`]), live while the background walk
-//! counts a folder or the checksum is computed, then the buttons and key hints.
+//! counts a folder or the checksums are computed (a row per algorithm while the checksum
+//! section shows, the match ticked; the compare verdict above), then the fields, the
+//! buttons and key hints.
 
 use std::time::SystemTime;
 
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::attrs_edit::{editable_attrs, info_attrs, mode_string};
+use soyuz_appcore::models::checksums::{ALGOS, HashState, Verdict, verdict};
 use soyuz_appcore::tr;
 use soyuz_core::{EntryInfo, format_size, format_time};
 
@@ -96,13 +99,24 @@ fn pairs(core: &AppCore, s: &State) -> Vec<(String, String, Option<Role>)> {
         let who = [e.owner.as_deref(), e.group.as_deref()].into_iter().flatten().collect::<Vec<_>>().join(":");
         row(tr!("dialogs-mode-owner"), safe(&who));
     }
-    if let Some((algo, bg)) = &s.hash {
-        let (v, role) = match bg.with(|r| r.cloned()) {
-            None => (tr!("tui-ops-hashing").to_string(), Some(Role::Muted)),
-            Some(Ok(h)) => (h, None),
-            Some(Err(e)) => (safe(&e), Some(Role::Danger)),
+    if let Some(sums) = s.sums.as_ref().filter(|_| s.show_sums) {
+        let matched = match verdict(s.compare_text(), &sums.computed()) {
+            Verdict::Match(a) => Some(a),
+            _ => None,
         };
-        out.push((algo.label().to_string(), v, role));
+        for algo in ALGOS {
+            let (v, role) = match sums.state(algo) {
+                HashState::Idle => (tr!("dialogs-hash-not-computed").to_string(), Some(Role::Faint)),
+                st @ HashState::Running { .. } => {
+                    let pct = tr!("dialogs-hash-percent", percent = format!("{:.0}", st.fraction() * 100.0));
+                    (format!("{} {pct}", tr!("tui-ops-hashing")), Some(Role::Muted))
+                }
+                HashState::Done(h) if matched == Some(algo) => (format!("{h} \u{2713}"), Some(Role::Success)),
+                HashState::Done(h) => (h, None),
+                HashState::Failed(e) => (safe(&e), Some(Role::Danger)),
+            };
+            out.push((algo.label().to_string(), v, role));
+        }
     }
     out
 }
@@ -125,6 +139,12 @@ pub fn vm(core: &AppCore, s: &State) -> DialogVm {
     d.width = WIDTH;
     d.list = rows(core, s);
     d.list_state = s.list.clone();
-    d.hints = tr!("tui-ops-props-hints").to_string();
+    d.hints = if s.show_sums { tr!("tui-ops-sums-hints") } else { tr!("tui-ops-props-hints") }.to_string();
+    if s.show_sums
+        && let Some(sums) = &s.sums
+        && let Some(msg) = verdict(s.compare_text(), &sums.computed()).message()
+    {
+        d.body = vec![format!("{}: {msg}", tr!("dialogs-hash-compare"))];
+    }
     d
 }

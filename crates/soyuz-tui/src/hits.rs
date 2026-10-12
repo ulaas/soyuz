@@ -94,6 +94,13 @@ pub enum JobButton {
     Redo,
     /// Close the panel (the `row` is not used).
     Close,
+    /// The jobs tab's toolbar (the `row` is not used).
+    PauseAll,
+    ResumeAll,
+    CancelAll,
+    ClearFinished,
+    /// Open the job's "More" menu (priority, reorder, start now).
+    More,
 }
 
 /// The targets of one frame, in drawing order.

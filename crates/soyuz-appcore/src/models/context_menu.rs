@@ -46,6 +46,14 @@ pub enum MenuIcon {
     Prohibit,
     SlidersHorizontal,
     TrayArrowDown,
+    Plus,
+    PushPinSlash,
+    X,
+    ArrowLineRight,
+    /// No glyph, but the icon column stays (unticked rows of a ticked list).
+    Blank,
+    /// A dot of tag colour `0..8` (tab groups).
+    Dot(u8),
     /// Colour tag `tag` (0-based), with a check mark when every selected item has it.
     Tag {
         tag: u8,
@@ -86,6 +94,8 @@ pub struct Item {
     pub style: ItemStyle,
     /// `None`: activating it only closes the menu.
     pub run: Option<Run>,
+    /// Activating it keeps the menu open (column toggles).
+    pub keep_open: bool,
 }
 
 /// Which submenu (frontends size them).
@@ -98,6 +108,10 @@ pub enum SubmenuKind {
     Tags,
     Ai,
     Checksum,
+    /// "Add to group" (tab menu).
+    TabGroups,
+    /// "Move to window" (tab menu).
+    Windows,
 }
 
 /// A submenu row.
@@ -115,6 +129,8 @@ pub enum Entry {
     Item(Item),
     Submenu(Submenu),
     Separator,
+    /// A heading row (not clickable).
+    Caption(String),
     /// "Open with" for this file: the frontend lists the apps it found.
     OpenWith(PathBuf),
     /// "Folder color" for these folders (swatches, emblems).
@@ -167,7 +183,7 @@ pub fn hide_warnings(names: &[String]) -> Vec<String> {
 }
 
 fn item(icon: MenuIcon, label: impl Into<String>, chord: Option<String>, enabled: bool, run: Option<Run>) -> Entry {
-    Entry::Item(Item { icon, label: label.into(), chord, enabled, style: ItemStyle::Plain, run })
+    Entry::Item(Item { icon, label: label.into(), chord, enabled, style: ItemStyle::Plain, run, keep_open: false })
 }
 
 fn check(on: bool, label: impl Into<String>, chord: Option<String>, run: Option<Run>) -> Entry {
@@ -178,6 +194,7 @@ fn check(on: bool, label: impl Into<String>, chord: Option<String>, run: Option<
         enabled: true,
         style: ItemStyle::Check(on),
         run,
+        keep_open: false,
     })
 }
 
@@ -700,6 +717,199 @@ pub fn folder_color_entries(dirs: &[PathBuf]) -> Vec<Entry> {
     out
 }
 
+// ---- sidebar places, tabs, the details header ----------------------------------------
+
+/// The menu of a sidebar place at `path` (favourites, bookmarks, drives, cloud folders):
+/// open in a new tab / the other pane, reveal, copy the path, and add to (or, for a
+/// favourite, `removable`, remove from) the favourites.
+pub fn place_menu(path: &std::path::Path, removable: bool) -> Vec<Entry> {
+    use IconId as I;
+    let loc = || Location::Dir(path.to_path_buf());
+    let mut out = vec![
+        cmd_item(I::Browsers, tr!("app-ctx-open-in-new-tab"), Cmd::OpenInNewTab { location: loc(), activate: true }),
+        cmd_item(I::SquareSplitHorizontal, tr!("app-ctx-open-in-other-pane"), Cmd::OpenInOtherPane(loc())),
+        cmd_item(I::ArrowSquareUpRight, tr!("app-ctx-reveal-in-system"), Cmd::RevealInSystem(path.to_path_buf())),
+        cmd_item(
+            I::ClipboardText,
+            tr!("app-ctx-copy-path"),
+            Cmd::CopyText(soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned()),
+        ),
+        Entry::Separator,
+    ];
+    out.push(if removable {
+        cmd_item(I::Star, tr!("app-sidebar-remove-favorite"), Cmd::RemoveFavorite(path.to_path_buf()))
+    } else {
+        cmd_item(I::Star, tr!("app-ctx-add-to-favorites"), Cmd::AddFavorite(path.to_path_buf()))
+    });
+    out
+}
+
+/// The menu of tab `i`: new / duplicate / pin, close (others, to the right), reopen
+/// closed; tab groups, move to a window, the tab's history.
+pub fn tab_menu(core: &crate::core::AppCore, i: usize) -> Vec<Entry> {
+    use crate::models::workspaces::WsCmd;
+    use IconId as I;
+    let Some(tab) = core.ws.tabs.get(i) else { return Vec::new() };
+    let km = &core.keymap;
+    let n = core.ws.tabs.len();
+    let pinned = tab.pinned;
+    let sc = |a: &Action| chord_label(km, a);
+    let run = |c: Cmd| Some(Run::Cmd(c));
+    let mut out = vec![
+        item(MenuIcon::Plus, tr!("app-tabs-new"), sc(&Action::NewTab), true, run(Cmd::NewTabAfter(i))),
+        item(
+            I::CopySimple.into(),
+            tr!("app-tabs-duplicate"),
+            sc(&Action::DuplicateTab),
+            true,
+            run(Cmd::DuplicateTab(i)),
+        ),
+    ];
+    let (pin_icon, pin_label) =
+        if pinned { (MenuIcon::PushPinSlash, tr!("app-tabs-unpin")) } else { (I::PushPin.into(), tr!("app-tabs-pin")) };
+    out.push(item(pin_icon, pin_label, sc(&Action::PinTab), true, run(Cmd::PinTab(i, !pinned))));
+    out.push(Entry::Separator);
+    out.push(item(MenuIcon::X, tr!("app-tabs-close"), sc(&Action::CloseTab), n > 1, run(Cmd::CloseTab(i))));
+    out.push(item(I::XCircle.into(), tr!("app-tabs-close-others"), None, n > 1, run(Cmd::CloseOtherTabs(i))));
+    out.push(item(
+        MenuIcon::ArrowLineRight,
+        tr!("app-tabs-close-right"),
+        None,
+        i + 1 < n,
+        run(Cmd::CloseTabsToRight(i)),
+    ));
+    out.push(Entry::Separator);
+    out.push(item(
+        I::ArrowCounterClockwise.into(),
+        tr!("app-tabs-reopen-closed"),
+        sc(&Action::ReopenClosedTab),
+        true,
+        run(Cmd::Action(Action::ReopenClosedTab)),
+    ));
+    // Groups, windows, history (the GUI's `workspaces::tab_menu_extra`).
+    out.push(Entry::Separator);
+    if !pinned {
+        out.push(cmd_item(
+            I::RectangleDashed,
+            tr!("workspaces-menu-add-new-group"),
+            Cmd::Workspace(WsCmd::NewGroup(i)),
+        ));
+        let others: Vec<Entry> = core
+            .ws
+            .groups
+            .iter()
+            .filter(|g| Some(g.id) != tab.group)
+            .map(|g| {
+                let label =
+                    if g.name.is_empty() { tr!("workspaces-unnamed-group").to_string() } else { g.name.clone() };
+                cmd_item(MenuIcon::Dot(g.color), label, Cmd::Workspace(WsCmd::AddToGroup(i, g.id)))
+            })
+            .collect();
+        if !others.is_empty() {
+            out.push(Entry::Submenu(Submenu {
+                kind: SubmenuKind::TabGroups,
+                icon: I::Stack.into(),
+                label: tr!("workspaces-menu-add-to-group").into(),
+                items: others,
+            }));
+        }
+        if tab.group.is_some() {
+            out.push(cmd_item(
+                I::Rectangle,
+                tr!("workspaces-menu-remove-from-group"),
+                Cmd::Workspace(WsCmd::RemoveFromGroup(i)),
+            ));
+        }
+    }
+    out.push(Entry::Separator);
+    let can_move = n > 1;
+    out.push(item(
+        I::AppWindow.into(),
+        tr!("workspaces-menu-move-new-window"),
+        None,
+        can_move,
+        run(Cmd::Workspace(WsCmd::TabToNewWindow(i))),
+    ));
+    let here = core.workspaces.current;
+    let others: Vec<Entry> = crate::models::windows::window_list(core)
+        .into_iter()
+        .filter(|(id, _)| *id != here)
+        .map(|(id, title)| {
+            item(I::AppWindow.into(), title, None, can_move, run(Cmd::Workspace(WsCmd::TabToWindow(i, id))))
+        })
+        .collect();
+    if !others.is_empty() {
+        out.push(Entry::Submenu(Submenu {
+            kind: SubmenuKind::Windows,
+            icon: I::Browsers.into(),
+            label: tr!("workspaces-menu-move-to-window").into(),
+            items: others,
+        }));
+    }
+    out.push(item(
+        I::GitFork.into(),
+        tr!("workspaces-history-title"),
+        sc(&Action::TabHistory),
+        true,
+        run(Cmd::Action(Action::TabHistory)),
+    ));
+    out
+}
+
+/// Show / hide a details column of a pane, or reset the columns (the header menu).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ColumnCmd {
+    Show { pane: PaneId, column: Column, visible: bool },
+    Reset(PaneId),
+}
+
+/// The column chooser of `pane`'s details header: "Columns", a tick per column (Name
+/// stays; activating a row keeps the menu open), "Reset columns".
+pub fn column_menu(pane: &Pane) -> Vec<Entry> {
+    use crate::models::requests::columns;
+    let mut out = vec![Entry::Caption(tr!("app-ctx-columns").into())];
+    for col in columns::choosable() {
+        let on = columns::is_visible(pane, col);
+        out.push(Entry::Item(Item {
+            icon: if on { MenuIcon::Check } else { MenuIcon::Blank },
+            label: columns::label(col),
+            chord: None,
+            enabled: columns::can_toggle(col),
+            style: ItemStyle::Plain,
+            run: Some(Run::Cmd(Cmd::Column(ColumnCmd::Show { pane: pane.id, column: col, visible: !on }))),
+            keep_open: true,
+        }));
+    }
+    out.push(Entry::Separator);
+    out.push(cmd_item(
+        IconId::ArrowCounterClockwise,
+        tr!("app-ctx-reset-columns"),
+        Cmd::Column(ColumnCmd::Reset(pane.id)),
+    ));
+    out
+}
+
+/// Carry out a [`ColumnCmd`] (`Cmd::Column`); the view is remembered (`Cmd::ViewChanged`).
+pub fn apply_column(app: &mut crate::core::AppCore, c: ColumnCmd) {
+    let id = match c {
+        ColumnCmd::Show { pane, column, visible } => {
+            let Some(p) = app.ws.find_pane_mut(pane) else { return };
+            if !crate::models::requests::columns::set_visible(p, column, visible) {
+                return;
+            }
+            pane
+        }
+        ColumnCmd::Reset(pane) => {
+            let columns = crate::state::view_memory::ViewState::from_config(&app.config).columns;
+            let Some(p) = app.ws.find_pane_mut(pane) else { return };
+            p.view.columns = columns;
+            p.layout_sig = None;
+            pane
+        }
+    };
+    app.cmds.push(Cmd::ViewChanged(id));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -712,6 +922,7 @@ mod tests {
                 Entry::Item(i) => i.label.clone(),
                 Entry::Submenu(s) => format!("{} >", s.label),
                 Entry::Separator => "-".into(),
+                Entry::Caption(c) => format!("# {c}"),
                 Entry::OpenWith(_) => "open with".into(),
                 Entry::FolderColor(_) => "folder color".into(),
             })
@@ -769,6 +980,34 @@ mod tests {
         assert_eq!(on.len(), 2);
         assert!(on.iter().all(|i| i.run.is_none()));
         assert_eq!(group_entries(&pane).len(), GROUPS.len());
+    }
+
+    #[test]
+    fn place_and_column_menus() {
+        let p = std::env::temp_dir();
+        let fav = labels(&place_menu(&p, true));
+        assert_eq!(fav.last().map(String::as_str), Some(tr!("app-sidebar-remove-favorite")));
+        assert_eq!(fav[0], tr!("app-ctx-open-in-new-tab"));
+        let other = labels(&place_menu(&p, false));
+        assert_eq!(other.last().map(String::as_str), Some(tr!("app-ctx-add-to-favorites")));
+        let config = Config::default();
+        let pane = Pane::new(Location::Dir(p), ViewState::from_config(&config));
+        let cols = column_menu(&pane);
+        assert!(matches!(&cols[0], Entry::Caption(c) if c == tr!("app-ctx-columns")));
+        let name = crate::models::requests::columns::label(Column::Name);
+        let row = cols
+            .iter()
+            .find_map(|e| match e {
+                Entry::Item(i) if i.label == name => Some(i),
+                _ => None,
+            })
+            .expect("Name");
+        assert!(!row.enabled && row.keep_open && row.icon == MenuIcon::Check, "Name stays");
+        let ticks = cols.iter().filter(|e| matches!(e, Entry::Item(i) if i.keep_open)).count();
+        assert_eq!(ticks, crate::models::requests::columns::choosable().len());
+        assert!(
+            matches!(cols.last(), Some(Entry::Item(i)) if !i.keep_open && matches!(i.run, Some(Run::Cmd(Cmd::Column(ColumnCmd::Reset(_))))))
+        );
     }
 
     #[test]

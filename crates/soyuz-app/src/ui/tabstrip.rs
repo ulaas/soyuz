@@ -23,7 +23,7 @@ use crate::state::workspace::{GroupId, TabId};
 use crate::state::workspace_windows::{DropTarget, WindowGeom, WindowId, resolve_drop};
 use crate::theme::tokens::{radius, size};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::widgets::{menu_item, menu_separator, trunc_galley};
+use crate::ui::widgets::trunc_galley;
 use crate::ui::workspaces::WsCmd;
 
 const PINNED_W: f32 = 40.0;
@@ -384,12 +384,11 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             ctx.data_mut(|dm| dm.insert_temp(drag_id, d));
             app.core.cmds.push(Cmd::SelectTab(i));
         }
-        let km = app.core.keymap.clone();
-        let pinned_now = app.core.ws.tabs[i].pinned;
         let mut cmds = Vec::new();
         crate::ui::native::popup::context_menu(&resp, |ui| {
-            tab_menu(ui, &mut cmds, &km, i, pinned_now, n);
-            crate::ui::workspaces::tab_menu_extra(ui, app, &mut cmds, i);
+            ui.set_width(230.0);
+            let entries = crate::models::context_menu::tab_menu(&app.core, i);
+            crate::ui::context_menu::draw_entries(ui, entries, &mut cmds);
         });
         app.core.cmds.extend(cmds);
     }
@@ -693,53 +692,6 @@ pub fn live_order(n: usize, from: usize, to: usize) -> Vec<usize> {
 pub fn slot_lefts(order: &[usize], widths: &[f32], start: f32) -> Vec<f32> {
     let groups = vec![None; widths.len()];
     strip_slots(order, widths, &groups, &|_| 0.0, None, start).lefts
-}
-
-fn tab_menu(ui: &mut Ui, cmds: &mut Vec<Cmd>, km: &soyuz_core::config::Keymap, i: usize, pinned: bool, n: usize) {
-    ui.set_width(230.0);
-    let sc = |a: &Action| chord_label(km, a);
-    if menu_item(ui, Some(ph::PLUS), tr!("app-tabs-new"), sc(&Action::NewTab).as_deref(), true).clicked() {
-        cmds.push(Cmd::NewTabAfter(i));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::COPY_SIMPLE), tr!("app-tabs-duplicate"), sc(&Action::DuplicateTab).as_deref(), true)
-        .clicked()
-    {
-        cmds.push(Cmd::DuplicateTab(i));
-        ui.close();
-    }
-    let (pin_icon, pin_label) =
-        if pinned { (ph::PUSH_PIN_SLASH, tr!("app-tabs-unpin")) } else { (ph::PUSH_PIN, tr!("app-tabs-pin")) };
-    if menu_item(ui, Some(pin_icon), pin_label, sc(&Action::PinTab).as_deref(), true).clicked() {
-        cmds.push(Cmd::PinTab(i, !pinned));
-        ui.close();
-    }
-    menu_separator(ui);
-    if menu_item(ui, Some(ph::X), tr!("app-tabs-close"), sc(&Action::CloseTab).as_deref(), n > 1).clicked() {
-        cmds.push(Cmd::CloseTab(i));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::X_CIRCLE), tr!("app-tabs-close-others"), None, n > 1).clicked() {
-        cmds.push(Cmd::CloseOtherTabs(i));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::ARROW_LINE_RIGHT), tr!("app-tabs-close-right"), None, i + 1 < n).clicked() {
-        cmds.push(Cmd::CloseTabsToRight(i));
-        ui.close();
-    }
-    menu_separator(ui);
-    if menu_item(
-        ui,
-        Some(ph::ARROW_COUNTER_CLOCKWISE),
-        tr!("app-tabs-reopen-closed"),
-        sc(&Action::ReopenClosedTab).as_deref(),
-        true,
-    )
-    .clicked()
-    {
-        cmds.push(Cmd::Action(Action::ReopenClosedTab));
-        ui.close();
-    }
 }
 
 #[cfg(test)]

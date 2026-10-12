@@ -230,3 +230,151 @@ fn right_click_menus(data: PathBuf) {
     assert!(app.host.last_copy().is_none(), "nothing ran");
     common::ok();
 }
+
+/// The rect of the first click target that `want` accepts.
+fn target_at(a: &App, want: impl Fn(&HitTarget) -> bool) -> Option<(u16, u16)> {
+    a.hits().iter().find(|(_, t)| want(t)).map(|(r, _)| (r.x + r.width.min(2) / 2, r.y))
+}
+
+#[test]
+fn tui_sidebar_place_menus() {
+    let run = common::relaunch(module_path!(), "tui_sidebar_place_menus", |data| {
+        std::fs::create_dir_all(data.join("first")).unwrap();
+        std::fs::create_dir_all(data.join("target")).unwrap();
+    });
+    if let Run::Child(data) = run {
+        sidebar_menus(data);
+    }
+}
+
+fn sidebar_menus(data: PathBuf) {
+    use soyuz_appcore::state::session::FavoriteEntry;
+    use soyuz_core::config::{KeyContext, SidebarSection};
+    let mut c = config(TuiOsc52::Never);
+    c.layout.sidebar = true;
+    c.sidebar.sections = vec![SidebarSection::Favorites, SidebarSection::Trash];
+    let mut app = app(c, &data);
+    // Only folders of the sandbox, never the user's own.
+    app.core.ui.sidebar.favorites = vec![
+        FavoriteEntry { name: "First".into(), path: data.join("first") },
+        FavoriteEntry { name: "Target".into(), path: data.join("target") },
+    ];
+    app.core.ui.sidebar.favorites_customized = true;
+    let remove = tr!("app-sidebar-remove-favorite");
+    let copy_path = tr!("app-ctx-copy-path");
+    let target = data.join("target");
+    let first = data.join("first");
+    let mut phase = 0;
+    drive(&mut app, |a| match phase {
+        0 if at(a, &data) && a.view().is_some_and(|v| v.sidebar.lines.iter().any(|l| l.label == "First")) => {
+            phase = 1;
+            Some(key(KeyCode::F(12)))
+        }
+        // Shift+F10 in the sidebar: the menu of the place under the cursor.
+        1 if a.key_context() == KeyContext::Sidebar => {
+            phase = 2;
+            Some(key_mods(KeyCode::F(10), KeyModifiers::SHIFT))
+        }
+        2 => {
+            if !menu_open(a) {
+                return None;
+            }
+            assert!(menu_labels(a).iter().any(|l| l == tr!("app-ctx-open-in-new-tab")), "{:?}", menu_labels(a));
+            let e = pick(a, remove)?;
+            if e == key(KeyCode::Enter) {
+                phase = 3;
+            }
+            Some(e)
+        }
+        // A right click on Target: its menu; Copy path.
+        3 if !menu_open(a) && !a.core.ui.sidebar.favorites.iter().any(|f| f.path == first) => {
+            let at = a.view().and_then(|v| v.sidebar.lines.iter().find(|l| l.label == "Target").map(|l| l.index))?;
+            let (x, y) = target_at(a, |t| *t == HitTarget::SidebarRow(at))?;
+            phase = 4;
+            Some(right_click(x, y))
+        }
+        4 => {
+            let e = pick(a, copy_path)?;
+            if e == key(KeyCode::Enter) {
+                phase = 5;
+            }
+            Some(e)
+        }
+        5 if !menu_open(a) && a.host.last_copy().is_some_and(|c| same_file(&c, &target)) => {
+            phase = 6;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    common::ok();
+}
+
+#[test]
+fn tui_tab_and_header_menus() {
+    if let Run::Child(data) = common::relaunch(module_path!(), "tui_tab_and_header_menus", two_files) {
+        tab_and_header(data);
+    }
+}
+
+fn tab_and_header(data: PathBuf) {
+    use soyuz_core::Column;
+    let mut app = app(config(TuiOsc52::Never), &data);
+    let duplicate = tr!("app-tabs-duplicate");
+    let created = soyuz_appcore::models::requests::columns::label(Column::Created);
+    let shows_created = |a: &App| a.core.ws.pane().view.visible_columns().iter().any(|c| c.column == Column::Created);
+    let mut phase = 0;
+    let mut had_created = false;
+    drive(&mut app, |a| match phase {
+        0 if at(a, &data) && labels(a) == ["a.txt", "b.txt"] => {
+            phase = 1;
+            Some(ctrl('t'))
+        }
+        1 if a.core.ws.tabs.len() == 2 => {
+            let (x, y) = target_at(a, |t| *t == HitTarget::Tab(0))?;
+            phase = 2;
+            Some(right_click(x, y))
+        }
+        2 => {
+            let e = pick(a, duplicate)?;
+            if e == key(KeyCode::Enter) {
+                phase = 3;
+            }
+            Some(e)
+        }
+        // The details header: the column chooser, which stays open while ticking.
+        3 if !menu_open(a) && a.core.ws.tabs.len() == 3 => {
+            let (x, y) = target_at(a, |t| matches!(t, HitTarget::PaneColumn { .. }))?;
+            had_created = shows_created(a);
+            phase = 4;
+            Some(right_click(x, y))
+        }
+        4 => {
+            if !menu_open(a) {
+                return None;
+            }
+            assert_eq!(
+                menu_labels(a).first().map(String::as_str),
+                Some(tr!("app-ctx-columns")),
+                "{:?}",
+                menu_labels(a)
+            );
+            let e = pick(a, &created)?;
+            if e == key(KeyCode::Enter) {
+                phase = 5;
+            }
+            Some(e)
+        }
+        5 if shows_created(a) != had_created => {
+            assert!(menu_open(a), "the chooser stays open");
+            assert_eq!(menu_cursor(a).as_deref(), Some(created.as_str()), "on the same row");
+            phase = 6;
+            Some(key(KeyCode::Esc))
+        }
+        6 if !menu_open(a) => {
+            phase = 7;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    common::ok();
+}

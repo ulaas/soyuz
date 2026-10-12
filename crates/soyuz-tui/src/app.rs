@@ -359,6 +359,8 @@ impl App {
         let area = Rect::new(0, 0, size.width, size.height);
         let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
         view::prepare(&mut self.core, &mut self.input, &regions);
+        crate::input::jobs::tick(&self.core, &self.host);
+        crate::input::dialogs::approval_mcp::tick(&self.core, &self.host);
         let model = ViewModel::from_core(&self.core, &self.input, &regions);
         let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());
         let hits = &mut self.hits;

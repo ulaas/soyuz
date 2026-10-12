@@ -219,3 +219,91 @@ fn mouse(data: PathBuf) {
     common::run_script(&mut app, steps, 80, 24);
     common::ok();
 }
+
+fn right_click(x: u16, y: u16) -> Event {
+    Event::Mouse(MouseEvent {
+        kind: MouseEventKind::Down(MouseButton::Right),
+        column: x,
+        row: y,
+        modifiers: KeyModifiers::NONE,
+    })
+}
+
+/// A job menu is open (its "Start now" row).
+fn job_menu_open(a: &App) -> bool {
+    a.view().and_then(|v| v.menu.menu.as_ref()).is_some_and(|m| {
+        m.items.iter().any(|i| matches!(i, soyuz_tui::widgets::MenuItem::Entry(e) if e.label == soyuz_appcore::tr!("panels-start-now")))
+    }) && a.focus() == TuiFocus::Menu
+}
+
+#[test]
+fn toolbar_menu_and_log() {
+    match common::relaunch(module_path!(), "toolbar_menu_and_log", |data| {
+        std::fs::create_dir_all(data.join("src")).unwrap();
+        std::fs::create_dir_all(data.join("dst")).unwrap();
+        std::fs::write(data.join("src").join("big.bin"), vec![3u8; 8 << 20]).unwrap();
+    }) {
+        Run::Child(data) => toolbar(data),
+        Run::Parent(r) => assert!(!r.data.join("dst").join("big.bin").exists(), "cancelled"),
+    }
+}
+
+fn toolbar(data: PathBuf) {
+    use crate::common::key_mods;
+    let mut app = common::new_app(common::test_config(), &data.join("src"));
+    let src = vec![data.join("src").join("big.bin")];
+    let dst = data.join("dst");
+    let kind = JobKind::Copy { sources: src.clone(), dest_dir: dst.clone(), rename_to: None };
+    submit(&mut app, kind, OpKind::Copy, &src, &dst, Some(512 << 10));
+    let log_shown = |a: &App| a.view().is_some_and(|v| v.jobs.items.first().is_some_and(|i| !i.log.is_empty()));
+    // 80 × 24: the panel's header is row 15; "[Clear]" is the toolbar's last button, right
+    // before the close mark; the first job is on rows 16 and 17.
+    let steps = vec![
+        Step::new(
+            "the toolbar on the jobs tab",
+            |a| {
+                a.view().is_some_and(|v| v.jobs.toolbar.len() == 4)
+                    && button_at(a, JobButton::PauseAll).is_some()
+                    && state(a) == Some(JobState::Running)
+            },
+            alt('j'),
+        ),
+        Step::new(
+            "the panel has the keyboard",
+            |a| a.focus() == TuiFocus::Jobs,
+            key_mods(KeyCode::Char('P'), KeyModifiers::SHIFT),
+        ),
+        Step::new(
+            "all paused",
+            |a| state(a) == Some(JobState::Paused),
+            key_mods(KeyCode::Char('S'), KeyModifiers::SHIFT),
+        ),
+        Step::new("all running again", |a| state(a) == Some(JobState::Running), key(KeyCode::Char('l'))),
+        Step::new(
+            "the details under the row",
+            move |a| log_shown(a) && rows(a).first().is_some_and(|(_, b)| b.contains(&JobButton::Details)),
+            key(KeyCode::Char('l')),
+        ),
+        Step::new("the details hidden", move |a| !log_shown(a), key(KeyCode::Char('m'))),
+        Step::new("the job menu from M", job_menu_open, key(KeyCode::Esc)),
+        Step::new(
+            "the menu closed",
+            |a| !job_menu_open(a) && a.hits().at(5, 16) == Some(HitTarget::JobRow(0)),
+            right_click(5, 16),
+        ),
+        Step::new("the job menu from a right click", job_menu_open, key(KeyCode::Esc)),
+        Step::new("closed again", |a| a.focus() == TuiFocus::Jobs, key_mods(KeyCode::Char('C'), KeyModifiers::SHIFT)),
+        Step::new(
+            "all cancelled; Clear applies",
+            |a| {
+                state(a) == Some(JobState::Cancelled)
+                    && a.view().is_some_and(|v| v.jobs.toolbar.last().is_some_and(|b| b.enabled))
+                    && a.hits().at(71, 15) == Some(HitTarget::JobButton { row: 0, button: JobButton::ClearFinished })
+            },
+            click(71, 15),
+        ),
+        Step::new("cleared", |a| a.core.fileops.jobs.snapshots().is_empty(), ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 80, 24);
+    common::ok();
+}
