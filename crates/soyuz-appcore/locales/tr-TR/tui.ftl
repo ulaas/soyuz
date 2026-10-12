@@ -51,7 +51,6 @@ tui-feature-address = Adres çubuğu
 tui-feature-sidebar = Kenar çubuğu
 
 ## T2.7: command palette
-tui-feature-palette = Komut paleti
 
 ## T2.8: status line, filter, toasts and borders
 tui-hint = Ctrl+Q çık · Enter aç · Backspace yukarı
