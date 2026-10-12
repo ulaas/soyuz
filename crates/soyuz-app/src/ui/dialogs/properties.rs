@@ -11,16 +11,16 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::SystemTime;
 
 use egui::{Align, Align2, CornerRadius, FontId, Key, Layout, Margin, RichText, Sense, TextEdit, Ui, vec2};
 use parking_lot::Mutex;
 use soyuz_core::config::Action;
-use soyuz_core::{Control, EntryInfo, EntryKind, OpControl, SizeStyle, format_size};
-use soyuz_fs::{TimesSet, WalkItem, WalkOptions};
+use soyuz_core::{EntryInfo, EntryKind, OpControl, SizeStyle, format_size};
+use soyuz_fs::TimesSet;
 
 use super::conflict::{Btn, button};
-use super::properties_attrs::{AttrEdit, ModeEdit, info_attrs, plan_jobs};
+use super::properties_attrs::{AttrEdit, AttrEditUi as _, ModeEdit, ModeEditUi as _, info_attrs, plan_jobs};
 use super::properties_checksum::Checksums;
 use super::properties_security::OwnerEdit;
 use super::properties_widgets::{
@@ -81,70 +81,12 @@ pub fn context_items(
     }
 }
 
-/// Folder statistics accumulated by the background walk.
-#[derive(Clone, Debug, Default)]
-pub struct Stats {
-    pub files: u64,
-    pub dirs: u64,
-    pub bytes: u64,
-    pub alloc: u64,
-    pub alloc_known: bool,
-    pub errors: u64,
-    pub done: bool,
-}
+/// Folder statistics accumulated by the background walk (the core's `models::folder_stats`).
+pub use crate::models::folder_stats::Stats;
 
 fn spawn_stats(ctx: &egui::Context, entries: &[EntryInfo], ctl: Arc<OpControl>) -> Arc<Mutex<Stats>> {
-    let stats = Arc::new(Mutex::new(Stats::default()));
-    let s2 = stats.clone();
-    let roots: Vec<(PathBuf, bool)> = entries.iter().map(|e| (e.path.clone(), e.kind == EntryKind::Dir)).collect();
-    let single_dir = roots.len() == 1 && roots[0].1;
-    let ctx = ctx.clone();
-    let _ = std::thread::Builder::new().name("soyuz-props-size".into()).spawn(move || {
-        let mut last = Instant::now();
-        let mut local = Stats::default();
-        for (root, _) in &roots {
-            let r = soyuz_fs::walk(root, &WalkOptions::default(), &ctl, &mut |item| {
-                match item {
-                    WalkItem::Entry { entry, depth } => {
-                        if !(single_dir && depth == 0) {
-                            match entry.kind {
-                                EntryKind::Dir => local.dirs += 1,
-                                _ => {
-                                    local.files += 1;
-                                    local.bytes += entry.size;
-                                    match entry.alloc_size {
-                                        Some(a) => {
-                                            local.alloc += a;
-                                            local.alloc_known = true;
-                                        }
-                                        None => local.alloc += entry.size.div_ceil(4096) * 4096,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    WalkItem::Error { .. } => local.errors += 1,
-                    WalkItem::DirDone { .. } => {}
-                }
-                if last.elapsed() > Duration::from_millis(120) {
-                    last = Instant::now();
-                    *s2.lock() = local.clone();
-                    ctx.request_repaint();
-                }
-                if ctl.is_cancelled() { Control::Stop } else { Control::Continue }
-            });
-            if r.is_err() {
-                local.errors += 1;
-            }
-            if ctl.is_cancelled() {
-                return;
-            }
-        }
-        local.done = true;
-        *s2.lock() = local;
-        ctx.request_repaint();
-    });
-    stats
+    use crate::host::Host as _;
+    crate::models::folder_stats::spawn(crate::host::EguiHost::new(ctx).wake(), entries, ctl)
 }
 
 struct TimeEdit {

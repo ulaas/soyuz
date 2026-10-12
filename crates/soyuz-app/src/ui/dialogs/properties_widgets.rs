@@ -155,25 +155,8 @@ pub fn small_icon_button(ui: &mut Ui, glyph: &str, tip: &str) -> Response {
     if tip.is_empty() { resp } else { resp.on_hover_text(tip) }
 }
 
-/// Tri-state value for multi-selection editing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tri {
-    Off,
-    On,
-    Mixed,
-}
-
-impl Tri {
-    pub fn from_counts(on: usize, total: usize) -> Tri {
-        if on == 0 {
-            Tri::Off
-        } else if on == total {
-            Tri::On
-        } else {
-            Tri::Mixed
-        }
-    }
-}
+/// Tri-state value for multi-selection editing (the core's).
+pub use crate::models::attrs_edit::Tri;
 
 /// Checkbox with a third "mixed" state (dash). A click turns mixed/off on, on off.
 pub fn tri_check(ui: &mut Ui, state: &mut Tri, label: &str, enabled: bool) -> Response {

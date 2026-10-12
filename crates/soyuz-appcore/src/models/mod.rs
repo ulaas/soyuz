@@ -2,8 +2,11 @@
 //! and other UI parts, without drawing. `ui/` draws them for the GUI.
 
 pub mod archive;
+pub mod attrs_edit;
+pub mod batch_rename;
 pub mod devices;
 pub mod dialogs;
+pub mod folder_stats;
 pub mod frontend;
 pub mod panels;
 pub mod portal;

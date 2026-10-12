@@ -142,6 +142,8 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     editor::prepare(core, input, regions);
     quicklook::prepare(core, input, regions);
     crate::input::dialogs::prepare(core, &mut input.dialogs);
+    crate::input::dialogs::batch_rename::tick(core, &mut input.dialogs);
+    crate::input::dialogs::attributes::tick(core, &mut input.dialogs);
 }
 
 /// Draw a frame. Clears `hits` first.
