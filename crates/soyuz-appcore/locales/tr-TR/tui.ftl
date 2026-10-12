@@ -55,11 +55,7 @@ tui-feature-palette = Komut paleti
 
 ## T2.8: status line, filter, toasts and borders
 tui-hint = Ctrl+Q çık · Enter aç · Backspace yukarı
-tui-items = { $count ->
-    [one] 1 öğe
-   *[other] { $count } öğe
-}
-tui-selected = { $count } seçili
+tui-hint-filter = Enter ilk eşleşme · Esc temizle
 
 ## T2.9: mouse
 

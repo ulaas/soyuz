@@ -55,11 +55,7 @@ tui-feature-palette = Command palette
 
 ## T2.8: status line, filter, toasts and borders
 tui-hint = Ctrl+Q quit · Enter open · Backspace up
-tui-items = { $count ->
-    [one] 1 item
-   *[other] { $count } items
-}
-tui-selected = { $count } selected
+tui-hint-filter = Enter first match · Esc clear
 
 ## T2.9: mouse
 
