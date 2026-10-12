@@ -73,6 +73,125 @@ pub enum HitTarget {
     QuickLook,
     /// The inline rename field.
     RenameField,
+    // ---- Phase T5 + T6 ----
+    /// A full-screen overlay (the compare screen, the settings editor) under everything it
+    /// draws: pushed first, so a click never falls through to the panes below.
+    Overlay,
+    /// Row `row` of a dialog's multi-line text area (`DialogVm::text`; the column follows
+    /// from the click's position in the row).
+    DialogText(u16),
+    /// The search bar's query field (`input::search`).
+    SearchField,
+    /// Option pill `index` of the search bar.
+    SearchPill(u8),
+    /// A button of the search bar.
+    SearchButton(SearchButton),
+    /// Button `index` of the search status row (cancel, relevance, smart folder, refine).
+    SearchStatusButton(u8),
+    /// The tab of terminal session `id` in the terminal pane's strip (`input::terminal`).
+    TermTab(u64),
+    /// The close mark of terminal session `id`.
+    TermTabClose(u64),
+    /// "New session" in the strip.
+    TermNew,
+    /// "Open in an external terminal" in the strip.
+    TermExternal,
+    /// The terminal grid; the rect's top-left cell is grid cell (`row`, `col`).
+    TermCell { row: u16, col: u16 },
+    /// Answer `index` of the OSC 52 clipboard bar (allow once, session, deny).
+    TermClip(u8),
+    /// Tab `index` of the AI panel (chat, recipes, audit, …; `input::ai`).
+    AiTab(u8),
+    /// The AI composer.
+    AiComposer,
+    /// A button of the AI panel's header / composer.
+    AiButton(AiButton),
+    /// Plan card `id` of task `task`.
+    AiCard { id: u64, task: u64 },
+    /// A button on plan card `id` of task `task`.
+    AiCardButton { id: u64, task: u64, button: CardButton },
+    /// Row `index` of the AI panel's list pages (recipes, audit) or a card's item list.
+    AiRow(usize),
+    /// Row `index` of the composer's mention / slash popup.
+    AiMention(usize),
+    /// "Undo everything" of MCP client row `index`.
+    AiMcpUndo(usize),
+    /// The chat transcript (wheel scrolls it).
+    AiChat,
+    /// Field `index` of the compare screen's setup (left, right, method, preset; `input::compare`).
+    CompareField(u8),
+    /// Result row `index` of the compare screen.
+    CompareRow(usize),
+    /// Button `index` of the compare screen.
+    CompareButton(u8),
+    /// Category chip `index` of the compare screen's filter.
+    CompareChip(u8),
+    /// Saved sync profile `index` on the compare screen.
+    CompareProfile(usize),
+    /// Section `index` of the settings editor's navigation (`input::settings`).
+    SettingsNav(usize),
+    /// Row `index` of the settings editor's list.
+    SettingsRow(usize),
+    /// The settings editor's search field.
+    SettingsSearch,
+    /// The settings editor's close mark.
+    SettingsClose,
+    /// Action row `index` of the key bindings page.
+    SettingsKeyRow(usize),
+    /// Chord chip `chip` of key bindings row `row`.
+    SettingsKeyChip { row: usize, chip: usize },
+    /// "Add a chord" of key bindings row `index`.
+    SettingsKeyAdd(usize),
+}
+
+/// A button of the search bar ([`HitTarget::SearchButton`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SearchButton {
+    /// Run (or re-run) the search.
+    Run,
+    /// Save the search.
+    Save,
+    /// Close the bar.
+    Close,
+}
+
+/// A button of the AI panel's header / composer ([`HitTarget::AiButton`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AiButton {
+    /// Send the composer's text.
+    Send,
+    /// Stop the running task.
+    Stop,
+    /// Start a new chat.
+    NewChat,
+    /// Close the panel.
+    Close,
+    /// Pick the profile / route.
+    Profile,
+    /// The assistant's settings.
+    Settings,
+    /// Approve every pending card.
+    ApproveAll,
+}
+
+/// A button on an AI plan card ([`HitTarget::AiCardButton`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardButton {
+    Approve,
+    Reject,
+    /// Approve every pending card of the same tool.
+    ApproveKind,
+    /// Edit the plan's names / arguments.
+    Edit,
+    /// Show or hide every item.
+    Expand,
+    Undo,
+    /// Save the task as a recipe.
+    SaveRecipe,
+    /// A cost / confirmation question: go on.
+    Go,
+    /// A cost / confirmation question: stop.
+    Cancel,
 }
 
 /// A button on a jobs panel row ([`HitTarget::JobButton`]).

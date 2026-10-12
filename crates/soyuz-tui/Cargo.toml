@@ -32,6 +32,9 @@ soyuz-appcore.workspace = true
 soyuz-core.workspace = true
 soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
+# The embedded terminal pane and suspend-to-shell (Phase T5): the toolkit-free API only
+# (no `egui` feature; it is unified on under `cargo test --workspace`, never relied on).
+soyuz-term.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 # Images (`[tui] images`, Phase T4: `view/preview.rs`, `images.rs`).

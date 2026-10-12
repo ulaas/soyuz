@@ -18,21 +18,21 @@
 //! | `View(ContextMenu)` | `input::menu::open_context` |
 //! | `View(FocusActivity)` | `input::jobs::focus` |
 //! | `View(PreviewScroll)` | `input::quicklook::scroll` while Quick Look is open, else `input::preview::scroll` |
-//! | `ReleaseFocus`, `CloseSettings` | nothing to do |
+//! | `OpenSettings` / `CloseSettings` | `input::settings::{open, close}` |
+//! | `Smart` / `Remote` / `Archive` | `input::dialogs::{smart, remote, archive}::open` |
+//! | `Suspend` | `App::request_suspend` (run between frames by `crate::suspend`) |
+//! | `ReleaseFocus` | nothing to do |
 //! | the rest | a "not available in the terminal UI yet" toast ([`unavailable`]) |
 //!
-//! "The rest" is settings, workspaces (save / manage), tab history, the close-window
-//! prompt, devices (unlock, read-only mount), smart folders, remote locations, the
-//! archive forms (extract, create, password, rename inside an archive) and About;
-//! `crate::unsupported` does the same for the core states the terminal UI has no view
-//! for (the settings flag, the terminal panel's focus).
+//! "The rest" is workspaces (save / manage), tab history, the close-window prompt,
+//! devices (unlock, read-only mount) and About.
 
 use soyuz_appcore::models::frontend::{FrontendCmd, ViewRequest};
 use soyuz_appcore::models::properties::MetaDialog;
 use soyuz_appcore::tr;
 
 use crate::app::App;
-use crate::input::{dialogs, jobs, menu, preview, quicklook};
+use crate::input::{dialogs, jobs, menu, preview, quicklook, settings};
 
 /// Apply and clear every queued request.
 pub fn drain(app: &mut App) {
@@ -44,7 +44,13 @@ pub fn drain(app: &mut App) {
 /// One request.
 pub fn handle(app: &mut App, c: FrontendCmd) {
     match c {
-        FrontendCmd::ReleaseFocus | FrontendCmd::CloseSettings => {}
+        FrontendCmd::ReleaseFocus => {}
+        FrontendCmd::OpenSettings(section) => settings::open(app, section),
+        FrontendCmd::CloseSettings => settings::close(app),
+        FrontendCmd::Smart(p) => dialogs::smart::open(app, p),
+        FrontendCmd::Remote(p) => dialogs::remote::open(app, p),
+        FrontendCmd::Archive(p) => dialogs::archive::open(app, p),
+        FrontendCmd::Suspend(req) => app.request_suspend(req),
         FrontendCmd::Confirm { title, message, confirm, on_confirm } => {
             dialogs::confirm::open(app, title, message, confirm, on_confirm)
         }
@@ -77,14 +83,10 @@ pub fn handle(app: &mut App, c: FrontendCmd) {
 /// Requests the terminal UI has no view for yet: say the feature is not available.
 fn unavailable(app: &mut App, c: FrontendCmd) {
     let feature = match c {
-        FrontendCmd::OpenSettings(_) => tr!("tui-feature-settings"),
         FrontendCmd::SaveWorkspace(_) | FrontendCmd::ManageWorkspaces => tr!("tui-feature-workspaces"),
         FrontendCmd::TabHistory { .. } => tr!("tui-feature-history"),
         FrontendCmd::CloseWindowPrompt { .. } => tr!("tui-feature-windows"),
         FrontendCmd::UnlockDevice { .. } | FrontendCmd::OfferReadOnlyMount { .. } => tr!("tui-feature-devices"),
-        FrontendCmd::Smart(_) => tr!("tui-feature-smart"),
-        FrontendCmd::Remote(_) => tr!("tui-feature-remote"),
-        FrontendCmd::Archive(_) => tr!("tui-feature-archive"),
         FrontendCmd::About => tr!("tui-feature-about"),
         // Handled in `handle`.
         _ => return,

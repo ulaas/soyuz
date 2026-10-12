@@ -3,16 +3,11 @@
 
 ## Shared: the "not available" toast and the features it names
 tui-not-available = Terminal arayüzünde henüz yok
-tui-feature-settings = Ayarlar
 tui-feature-workspaces = Çalışma alanları
 tui-feature-history = Sekme geçmişi
 tui-feature-windows = Pencereler
 tui-feature-devices = Aygıtlar
-tui-feature-smart = Akıllı klasörler
-tui-feature-remote = Uzak konumlar
-tui-feature-archive = Arşivler
 tui-feature-about = Hakkında
-tui-feature-terminal = Terminal paneli
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 

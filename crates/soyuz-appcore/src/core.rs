@@ -457,6 +457,9 @@ impl AppCore {
         if crate::services::folder_colors::pump(&host.wake()) {
             host.redraw_after(std::time::Duration::from_millis(450));
         }
+        // The debounced `config.toml` save (every frontend; the GUI's settings window
+        // calls it too, which is harmless: `flush` takes the due time).
+        crate::models::settings::pump(self, host);
     }
 
     /// Phase 5: the jobs engine (prompts, finished jobs, pending renames).

@@ -68,6 +68,16 @@ pub const FILES: &[(&str, &str, &str)] = &[
     ftl!("tui-preview"),
     ftl!("tui-quicklook"),
     ftl!("tui-editor"),
+    // Phase T5 / T6 (one per part, likewise).
+    ftl!("tui-terminal"),
+    ftl!("tui-suspend"),
+    ftl!("tui-search"),
+    ftl!("tui-locations"),
+    ftl!("tui-compare"),
+    ftl!("tui-compare-profiles"),
+    ftl!("tui-ai"),
+    ftl!("tui-settings"),
+    ftl!("tui-settings-tables"),
 ];
 
 /// Translate a key: `tr!("key")` → `&'static str`; `tr!("key", name = value, …)` →

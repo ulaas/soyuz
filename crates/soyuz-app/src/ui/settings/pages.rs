@@ -1207,7 +1207,9 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
 /// `[tui]`: the terminal UI started with `soyuz --tui`.
 pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    use soyuz_core::config::{KeyboardProtocol, TuiBorders, TuiColorMode, TuiIcons, TuiImages, TuiOsc52, TuiSection};
+    use soyuz_core::config::{
+        KeyboardProtocol, TuiBorders, TuiColorMode, TuiIcons, TuiImages, TuiOsc52, TuiSection, TuiShellMode,
+    };
     let d = &mut app.gui.settings.draft;
     group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-input"), |r| {
         r.row_kw(
@@ -1328,6 +1330,27 @@ pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 number(ui, &mut d.tui.preview_ratio, TuiSection::PREVIEW_RATIO_MIN..=TuiSection::PREVIEW_RATIO_MAX, "");
             },
         );
+        r.row_kw(
+            tr!("settings-tui-terminal-rows"),
+            tr!("settings-tui-terminal-rows-desc"),
+            "terminal shell console pane height rows bottom panel",
+            |ui| {
+                number(
+                    ui,
+                    &mut d.tui.terminal_rows,
+                    TuiSection::TERMINAL_ROWS_MIN..=TuiSection::TERMINAL_ROWS_MAX,
+                    &format!(" {}", tr!("settings-unit-rows")),
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-ai-ratio"),
+            tr!("settings-tui-ai-ratio-desc"),
+            "ai assistant panel width ratio share size split",
+            |ui| {
+                number(ui, &mut d.tui.ai_ratio, TuiSection::AI_RATIO_MIN..=TuiSection::AI_RATIO_MAX, "");
+            },
+        );
     }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-images-group"), |r| {
         r.row_kw(
             tr!("settings-tui-images"),
@@ -1363,6 +1386,32 @@ pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ui.label("×");
                 let rh = ui.add(egui::DragValue::new(h).range(range).suffix(" px"));
                 super::widgets::named(&rh, &name);
+            },
+        );
+    }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-programs"), |r| {
+        r.row_kw(
+            tr!("settings-tui-shell-mode"),
+            tr!("settings-tui-shell-mode-desc"),
+            "terminal shell suspend pane embedded console exit",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.shell_mode",
+                    &mut d.tui.shell_mode,
+                    &[
+                        (TuiShellMode::Pane, tr!("settings-tui-shell-mode-pane")),
+                        (TuiShellMode::Suspend, tr!("settings-tui-shell-mode-suspend")),
+                    ],
+                    180.0,
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-editor"),
+            tr!("settings-tui-editor-desc"),
+            "editor visual vim nvim nano code config file edit",
+            |ui| {
+                text(ui, &mut d.tui.editor, "$VISUAL / $EDITOR", 200.0);
             },
         );
     }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-clipboard"), |r| {
@@ -1663,4 +1712,19 @@ pub fn advanced(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         app.core.ui.toasts.push(crate::ui::toasts::Toast::info(tr!("settings-advanced-reset-all-done")));
     }
     any
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every `[tui]` key has a row on the Terminal UI page (no dead settings: a new key
+    /// without a GUI row fails here).
+    #[test]
+    fn tui_page_covers_every_key() {
+        let table = toml::Table::try_from(soyuz_core::config::TuiSection::default()).unwrap();
+        let src = include_str!("pages.rs");
+        for key in table.keys() {
+            assert!(src.contains(&format!("d.tui.{key}")), "[tui] {key} has no row on the Terminal UI page");
+        }
+        assert!(table.len() >= 15);
+    }
 }

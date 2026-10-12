@@ -7,11 +7,16 @@
 //! | `Dialog` | a dialog of either stack is open (`dialogs::is_open`) | `Dialog`, yes |
 //! | `Menu` | a popup menu is open (`menu::is_open`) | `Dialog`, yes |
 //! | `Palette` | `palette.open` | (the palette reads its own keys, like the GUI) |
+//! | `Settings` | the settings editor is open (`settings::has_focus`) | `Dialog`, yes |
+//! | `Tool` | the compare screen is open (`compare::has_focus`) | `Dialog`, yes |
 //! | `QuickLook` | Quick Look is open (`quicklook::open`) | `FileList`, no |
 //! | `Editor` | the editor has the keyboard (`editor::has_focus`) | `Global`, yes |
 //! | `Rename` | an inline rename is active (`rename::active`) | `Rename`, yes |
 //! | `Address` | `ui.address.editing` | `Omnibar`, yes |
 //! | `Filter` | the TUI-local `filter.editing`, armed by `ui.filter_focus` | `Omnibar`, yes |
+//! | `Search` | the search bar's field (`search::has_focus`, armed by `ui.search.focus`) | `Omnibar`, yes |
+//! | `Terminal` | the terminal pane (`terminal::has_focus`) | `Terminal`, yes |
+//! | `Ai` | the AI panel (`ai::has_focus`) | `Global`, yes |
 //! | `Jobs` | the jobs panel has the keyboard (`jobs::has_focus`) | `Global`, no |
 //! | `Preview` | the preview pane has the keyboard (`preview::has_focus`) | `Global`, no |
 //! | `Sidebar` | `ui.focus == Focus::Sidebar` | `Sidebar`, no |
@@ -21,10 +26,18 @@
 //! [`InputState`] when it keeps something between frames); each step fills its own:
 //! `palette.rs` (T2.7), `address.rs` (T2.5), `filter.rs` (T2.8), `sidebar.rs` (T2.6),
 //! `mouse.rs` (T2.9); Phase T3 `dialogs/*`, `menu.rs`, `rename.rs`, `jobs.rs`; Phase T4
-//! `preview.rs`, `quicklook.rs`, `editor.rs`. Text fields use `crate::widgets::LineEdit`;
-//! see its module docs for the key order.
+//! `preview.rs`, `quicklook.rs`, `editor.rs`; Phase T5 / T6 `terminal.rs`, `search.rs`,
+//! `ai.rs`, `compare.rs`, `settings.rs` (each with `has_focus`, `route`, `on_mouse` and
+//! `captures_mouse`). Text fields use `crate::widgets::LineEdit`; see its module docs for
+//! the key order.
+//!
+//! The full-screen overlays come before Quick Look because each one takes the keys that
+//! would open the next; `Search` comes before `Terminal` so a passthrough chord from the
+//! terminal lands in the bar.
 
 pub mod address;
+pub mod ai;
+pub mod compare;
 pub mod dialogs;
 pub mod editor;
 pub mod filter;
@@ -36,7 +49,10 @@ pub mod palette;
 pub mod preview;
 pub mod quicklook;
 pub mod rename;
+pub mod search;
+pub mod settings;
 pub mod sidebar;
+pub mod terminal;
 
 use crossterm::event::Event;
 use soyuz_appcore::core::{AppCore, Focus};
@@ -51,11 +67,21 @@ pub enum TuiFocus {
     Dialog,
     Menu,
     Palette,
+    /// The settings editor (Phase T6).
+    Settings,
+    /// The compare screen (Phase T5).
+    Tool,
     QuickLook,
     Editor,
     Rename,
     Address,
     Filter,
+    /// The search bar's field (Phase T5).
+    Search,
+    /// The embedded terminal pane (Phase T5).
+    Terminal,
+    /// The AI assistant panel (Phase T5).
+    Ai,
     Jobs,
     Preview,
     Sidebar,
@@ -79,6 +105,11 @@ pub struct InputState {
     pub rename: rename::State,
     pub jobs: jobs::State,
     pub preview: preview::State,
+    pub search: search::State,
+    pub terminal: terminal::State,
+    pub ai: ai::State,
+    pub compare: compare::State,
+    pub settings: settings::State,
 }
 
 /// The focus for the core's state and the TUI's own input state.
@@ -89,6 +120,10 @@ pub fn focus(core: &AppCore, st: &InputState) -> TuiFocus {
         TuiFocus::Menu
     } else if core.palette.open {
         TuiFocus::Palette
+    } else if settings::has_focus(core, st) {
+        TuiFocus::Settings
+    } else if compare::has_focus(core, st) {
+        TuiFocus::Tool
     } else if quicklook::open(core, st) {
         TuiFocus::QuickLook
     } else if editor::has_focus(core, st) {
@@ -99,6 +134,12 @@ pub fn focus(core: &AppCore, st: &InputState) -> TuiFocus {
         TuiFocus::Address
     } else if st.filter.editing {
         TuiFocus::Filter
+    } else if search::has_focus(core, st) {
+        TuiFocus::Search
+    } else if terminal::has_focus(core, st) {
+        TuiFocus::Terminal
+    } else if ai::has_focus(core, st) {
+        TuiFocus::Ai
     } else if jobs::has_focus(core, st) {
         TuiFocus::Jobs
     } else if preview::has_focus(core, st) {
@@ -114,12 +155,17 @@ pub fn focus(core: &AppCore, st: &InputState) -> TuiFocus {
 pub fn key_context(f: TuiFocus) -> (KeyContext, bool) {
     match f {
         TuiFocus::Dialog | TuiFocus::Menu => (KeyContext::Dialog, true),
+        // Global chords never fire under a full-screen overlay; it reads its own keys first.
+        TuiFocus::Settings | TuiFocus::Tool => (KeyContext::Dialog, true),
         // The palette's keys never reach the core's dispatcher (`palette::route`).
         TuiFocus::Palette => (KeyContext::Global, true),
         TuiFocus::QuickLook => (KeyContext::FileList, false),
         TuiFocus::Editor => (KeyContext::Global, true),
         TuiFocus::Rename => (KeyContext::Rename, true),
-        TuiFocus::Address | TuiFocus::Filter => (KeyContext::Omnibar, true),
+        TuiFocus::Address | TuiFocus::Filter | TuiFocus::Search => (KeyContext::Omnibar, true),
+        TuiFocus::Terminal => (KeyContext::Terminal, true),
+        // The composer has the cursor (the card list routes with `(Global, false)` itself).
+        TuiFocus::Ai => (KeyContext::Global, true),
         TuiFocus::Jobs | TuiFocus::Preview => (KeyContext::Global, false),
         TuiFocus::Sidebar => (KeyContext::Sidebar, false),
         TuiFocus::List => (KeyContext::FileList, false),
@@ -132,17 +178,23 @@ pub fn route(app: &mut App, events: &[Event]) {
         app.hits.clear();
     }
     filter::arm(app);
+    search::arm(app);
     mouse::route(app, events);
     menu::menu_key(app, events);
     match focus(&app.core, &app.input) {
         TuiFocus::Dialog => dialogs::route(app, events),
         TuiFocus::Menu => menu::route(app, events),
         TuiFocus::Palette => palette::route(app, events),
+        TuiFocus::Settings => settings::route(app, events),
+        TuiFocus::Tool => compare::route(app, events),
         TuiFocus::QuickLook => quicklook::route(app, events),
         TuiFocus::Editor => editor::route(app, events),
         TuiFocus::Rename => rename::route(app, events),
         TuiFocus::Address => address::route(app, events),
         TuiFocus::Filter => filter::route(app, events),
+        TuiFocus::Search => search::route(app, events),
+        TuiFocus::Terminal => terminal::route(app, events),
+        TuiFocus::Ai => ai::route(app, events),
         TuiFocus::Jobs => jobs::route(app, events),
         TuiFocus::Preview => preview::route(app, events),
         TuiFocus::Sidebar => sidebar::route(app, events),
@@ -172,5 +224,10 @@ mod tests {
         assert_eq!(key_context(TuiFocus::Menu), (KeyContext::Dialog, true));
         assert_eq!(key_context(TuiFocus::Rename), (KeyContext::Rename, true));
         assert_eq!(key_context(TuiFocus::Jobs), (KeyContext::Global, false));
+        assert_eq!(key_context(TuiFocus::Settings), (KeyContext::Dialog, true));
+        assert_eq!(key_context(TuiFocus::Tool), (KeyContext::Dialog, true));
+        assert_eq!(key_context(TuiFocus::Search), (KeyContext::Omnibar, true));
+        assert_eq!(key_context(TuiFocus::Terminal), (KeyContext::Terminal, true));
+        assert_eq!(key_context(TuiFocus::Ai), (KeyContext::Global, true));
     }
 }

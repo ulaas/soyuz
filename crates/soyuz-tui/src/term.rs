@@ -93,6 +93,12 @@ fn restore_steps(enabled: u8) -> Vec<Step> {
     out
 }
 
+/// The steps of [`TerminalGuard::suspend`]: the restore of `enabled` without the title
+/// (pure).
+fn suspend_steps(enabled: u8) -> Vec<Step> {
+    restore_steps(enabled & !TITLE)
+}
+
 fn run(step: Step) -> io::Result<()> {
     let mut out = io::stdout();
     match step {
@@ -202,6 +208,23 @@ impl TerminalGuard {
         self.apply_modes(cfg)
     }
 
+    /// Leave TUI mode while a child program owns the terminal (`crate::suspend`): every
+    /// mode is undone in the restore order except the pushed window title, which stays
+    /// for [`TerminalGuard::resume`] / the final restore. The guard stays alive. Every
+    /// step runs; the first error is returned.
+    pub fn suspend(&mut self) -> io::Result<()> {
+        let enabled = ENABLED.fetch_and(TITLE, Ordering::AcqRel);
+        let mut first = Ok(());
+        for step in suspend_steps(enabled) {
+            if let Err(e) = run(step)
+                && first.is_ok()
+            {
+                first = Err(e);
+            }
+        }
+        first
+    }
+
     /// Whether the kitty keyboard flags are pushed right now (the key adapter may care).
     pub fn keyboard_enhanced(&self) -> bool {
         enabled(KEYBOARD)
@@ -258,6 +281,17 @@ mod tests {
             ]
         );
         assert_eq!(restore_steps(RAW), vec![Step::DisableRaw, Step::ShowCursor]);
+    }
+
+    #[test]
+    fn suspend_keeps_the_title() {
+        let all = RAW | ALT | PASTE | MOUSE | KEYBOARD | TITLE;
+        let steps = suspend_steps(all);
+        assert!(!steps.contains(&Step::PopTitle));
+        assert_eq!(steps.len(), restore_steps(all).len() - 1);
+        assert_eq!(steps.last(), Some(&Step::ShowCursor));
+        assert!(suspend_steps(TITLE).is_empty());
+        assert!(suspend_steps(0).is_empty());
     }
 
     #[test]

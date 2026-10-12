@@ -7202,6 +7202,7 @@ dependencies = [
  "soyuz-jobs",
  "soyuz-mcp",
  "soyuz-script",
+ "soyuz-term",
  "tempfile",
  "unicode-segmentation",
  "unicode-width",

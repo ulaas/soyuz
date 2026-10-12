@@ -771,6 +771,35 @@ mod tests {
     }
 
     #[test]
+    fn tui_t5_t6_keys_defaults_round_trip_and_clamps() {
+        let t = TuiSection::default();
+        assert_eq!(t.shell_mode, TuiShellMode::Pane);
+        assert_eq!((t.terminal_rows, t.terminal_rows_clamped()), (12, 12));
+        assert!((t.ai_ratio_clamped() - 0.4).abs() < 1e-6);
+        assert_eq!(t.editor, "");
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Wrap {
+            tui: TuiSection,
+        }
+        for shell_mode in TuiShellMode::ALL {
+            let w = Wrap { tui: TuiSection { shell_mode, editor: "code --wait".into(), ..t.clone() } };
+            let s = toml::to_string(&w).unwrap();
+            assert_eq!(toml::from_str::<Wrap>(&s).unwrap(), w, "{s}");
+        }
+        let t: TuiSection =
+            toml::from_str("shell_mode = \"suspend\"\nterminal_rows = 99\nai_ratio = 0.9\neditor = \"nvim\"").unwrap();
+        assert_eq!((t.shell_mode, t.editor.as_str()), (TuiShellMode::Suspend, "nvim"));
+        assert_eq!(t.terminal_rows_clamped(), 40);
+        assert!((t.ai_ratio_clamped() - 0.6).abs() < 1e-6);
+        let low = TuiSection { terminal_rows: 0, ai_ratio: 0.0, ..TuiSection::default() };
+        assert_eq!(low.terminal_rows_clamped(), 3);
+        assert!((low.ai_ratio_clamped() - 0.25).abs() < 1e-6);
+        let nan = TuiSection { ai_ratio: f32::NAN, ..TuiSection::default() };
+        assert!((nan.ai_ratio_clamped() - 0.4).abs() < 1e-6);
+        assert!(toml::from_str::<TuiSection>("shell_mode = \"tab\"").is_err());
+    }
+
+    #[test]
     fn tui_sidebar_width_is_clamped_when_read() {
         let w = |n: u16| TuiSection { sidebar_width: n, ..TuiSection::default() }.sidebar_width_clamped();
         assert_eq!(w(0), 12);

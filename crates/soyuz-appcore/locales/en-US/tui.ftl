@@ -3,16 +3,11 @@
 
 ## Shared: the "not available" toast and the features it names
 tui-not-available = Not available in the terminal UI yet
-tui-feature-settings = Settings
 tui-feature-workspaces = Workspaces
 tui-feature-history = Tab history
 tui-feature-windows = Windows
 tui-feature-devices = Devices
-tui-feature-smart = Smart folders
-tui-feature-remote = Remote locations
-tui-feature-archive = Archives
 tui-feature-about = About
-tui-feature-terminal = Terminal panel
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 

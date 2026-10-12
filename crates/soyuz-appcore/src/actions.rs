@@ -431,7 +431,13 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
                 app.ui.toasts.push(Toast::error(tr!("actions-config-create-failed")).body(e.to_string()));
                 return;
             }
-            ops::launch(app, &path);
+            if app.frontend_kind == crate::core::FrontendKind::Tui {
+                // The terminal UI runs a console editor in the terminal (works over SSH).
+                use crate::models::frontend::{EditPurpose, SuspendRequest};
+                app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Editor { path, purpose: EditPurpose::Config }));
+            } else {
+                ops::launch(app, &path);
+            }
         }
         A::ReloadConfig => crate::services::config_watch::reload_now(app, host),
         A::ContextMenu => app.frontend.push(FrontendCmd::View(ViewRequest::ContextMenu)),

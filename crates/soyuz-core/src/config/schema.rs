@@ -1012,6 +1012,20 @@ pub struct TuiSection {
     /// Share of the width (or of the height, when stacked) the preview pane takes. Values
     /// outside 0.2–0.6 are clamped when read.
     pub preview_ratio: f32,
+    /// What the terminal actions (toggle / focus the terminal, open a terminal here, run
+    /// in terminal) do: `pane` shows the embedded terminal in the bottom panel, `suspend`
+    /// leaves the terminal UI and runs your shell in the real terminal until you `exit`.
+    pub shell_mode: TuiShellMode,
+    /// Height of the embedded terminal pane in terminal rows. Values outside 3–40 are
+    /// clamped when read; the pane hides when the terminal is too short.
+    pub terminal_rows: u16,
+    /// Share of the width the AI assistant panel takes beside the files. Values outside
+    /// 0.25–0.6 are clamped when read; below 100 columns the panel takes the whole area.
+    pub ai_ratio: f32,
+    /// Program that "Edit config file" (and other text edits) runs in the terminal, with
+    /// its arguments, e.g. `nvim` or `code --wait`. Empty: `$VISUAL`, then `$EDITOR`, then
+    /// the first of nvim, vim, nano, micro, hx, vi (and edit on Windows) found on `PATH`.
+    pub editor: String,
 }
 
 impl Default for TuiSection {
@@ -1028,6 +1042,10 @@ impl Default for TuiSection {
             images: TuiImages::Auto,
             cell_pixels: Self::CELL_PIXELS_DEFAULT,
             preview_ratio: Self::PREVIEW_RATIO_DEFAULT,
+            shell_mode: TuiShellMode::Pane,
+            terminal_rows: Self::TERMINAL_ROWS_DEFAULT,
+            ai_ratio: Self::AI_RATIO_DEFAULT,
+            editor: String::new(),
         }
     }
 }
@@ -1084,6 +1102,50 @@ impl TuiSection {
             Self::PREVIEW_RATIO_DEFAULT
         }
     }
+
+    /// Lowest terminal pane `terminal_rows_clamped` returns.
+    pub const TERMINAL_ROWS_MIN: u16 = 3;
+    /// Highest terminal pane `terminal_rows_clamped` returns.
+    pub const TERMINAL_ROWS_MAX: u16 = 40;
+    /// Default `terminal_rows`.
+    pub const TERMINAL_ROWS_DEFAULT: u16 = 12;
+    /// Smallest `ai_ratio_clamped`.
+    pub const AI_RATIO_MIN: f32 = 0.25;
+    /// Largest `ai_ratio_clamped`.
+    pub const AI_RATIO_MAX: f32 = 0.6;
+    /// Default `ai_ratio`.
+    pub const AI_RATIO_DEFAULT: f32 = 0.4;
+
+    /// `terminal_rows` clamped to `TERMINAL_ROWS_MIN..=TERMINAL_ROWS_MAX`.
+    pub fn terminal_rows_clamped(&self) -> u16 {
+        self.terminal_rows.clamp(Self::TERMINAL_ROWS_MIN, Self::TERMINAL_ROWS_MAX)
+    }
+
+    /// `ai_ratio` clamped to `AI_RATIO_MIN..=AI_RATIO_MAX` (the default when it is not a
+    /// number).
+    pub fn ai_ratio_clamped(&self) -> f32 {
+        if self.ai_ratio.is_finite() {
+            self.ai_ratio.clamp(Self::AI_RATIO_MIN, Self::AI_RATIO_MAX)
+        } else {
+            Self::AI_RATIO_DEFAULT
+        }
+    }
+}
+
+/// `[tui] shell_mode`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiShellMode {
+    /// The embedded terminal pane in the bottom panel.
+    #[default]
+    Pane,
+    /// Leave the terminal UI and run the shell in the real terminal; `exit` returns.
+    Suspend,
+}
+
+impl TuiShellMode {
+    /// Every value, in settings order.
+    pub const ALL: [TuiShellMode; 2] = [TuiShellMode::Pane, TuiShellMode::Suspend];
 }
 
 /// `[tui] osc52`.

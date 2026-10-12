@@ -290,9 +290,66 @@ pub fn status_line(st: &soyuz_index::IndexStatus) -> String {
     }
 }
 
+/// Query cheat sheet for the smart-folder editor: `(example, what it does)`; the
+/// examples are query syntax (shown untranslated, monospace).
+pub fn query_help() -> [(&'static str, &'static str); 8] {
+    [
+        ("report \"exact phrase\"", tr!("views-smart-help-words")),
+        ("*.pdf  ext:pdf,docx", tr!("views-smart-help-pattern")),
+        ("kind:image  kind:folder", tr!("views-smart-help-kind")),
+        ("size:>5MB  size:1k..2M", tr!("views-smart-help-size")),
+        ("modified:<7d  created:2026-01", tr!("views-smart-help-age")),
+        ("tag:red  path:docs  in:\"~/Projects\"", tr!("views-smart-help-tag")),
+        ("content:todo", tr!("views-smart-help-content")),
+        ("-draft  a OR b  (a b)", tr!("views-smart-help-logic")),
+    ]
+}
+
+/// How a valid, non-empty `query` will be answered: live by the index, not covered by
+/// the indexed roots, or a plain search because the index is off. `None` for an empty or
+/// unparsable query (the editor shows [`validate`]'s error instead).
+pub fn coverage_text(query: &str, include_hidden: bool) -> Option<&'static str> {
+    if query.trim().is_empty() || soyuz_index::parse(query).is_err() {
+        return None;
+    }
+    let live = ix::plan_from_query(query, include_hidden).ok().as_ref().is_some_and(ix::can_serve);
+    Some(if live {
+        tr!("views-smart-live")
+    } else if ix::is_enabled() {
+        tr!("views-smart-not-covered")
+    } else {
+        tr!("views-smart-index-off")
+    })
+}
+
+/// Why folder `f` (the one at `editing`, or a new one) cannot be saved: no name, no
+/// query, a query that does not parse, or a name another smart folder has. `None`: OK.
+pub fn validate(f: &SmartFolder, editing: Option<usize>) -> Option<String> {
+    if f.name.trim().is_empty() {
+        return Some(tr!("views-smart-need-name").to_string());
+    }
+    if f.query.trim().is_empty() {
+        return Some(tr!("views-smart-type-query").to_string());
+    }
+    if let Err(e) = soyuz_index::parse(&f.query) {
+        return Some(e.msg);
+    }
+    name_taken(editing, &f.name).then(|| tr!("views-smart-name-taken").to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validate_and_help() {
+        assert_eq!(validate(&f("", "a"), None).as_deref(), Some(tr!("views-smart-need-name")));
+        assert_eq!(validate(&f("x", " "), None).as_deref(), Some(tr!("views-smart-type-query")));
+        assert!(validate(&f("x", "(a b"), None).is_some());
+        assert!(coverage_text("", false).is_none());
+        assert!(coverage_text("kind:image", false).is_some());
+        assert!(query_help().iter().all(|(e, w)| !e.is_empty() && !w.is_empty()));
+    }
 
     fn f(name: &str, query: &str) -> SmartFolder {
         SmartFolder { name: name.into(), query: query.into(), include_hidden: false }

@@ -34,6 +34,19 @@
 //!
 //! These panels sit right next to the panes with no gap: each view draws its own edge
 //! (a border or a separator line) inside its rect.
+//!
+//! Phase T5 / T6:
+//! - the search bar ([`Regions::search`], `Facts::search_rows` from `view::search::rows`)
+//!   right under the location line, one row more below [`SEARCH_WRAP_BELOW_COLS`] columns
+//!   (the option pills wrap), only while at least two list rows stay;
+//! - the bottom panel shows the embedded terminal (`view::terminal::rows`) or the jobs
+//!   (`view::jobs::rows`), whichever tab is shown;
+//! - the AI assistant panel ([`Regions::ai`]), right of the body at `[tui] ai_ratio`
+//!   when the body is at least [`AI_SIDE_MIN_COLS`] wide, else the whole body (the focused
+//!   pane is kept with an empty rect, as under a maximized editor); placed before the
+//!   editor and the preview;
+//! - the compare screen and the settings editor are full-screen overlays over
+//!   [`Regions::area`] (no region of their own).
 
 use ratatui::layout::Rect;
 use soyuz_appcore::core::AppCore;
@@ -62,6 +75,11 @@ pub const SIDE_MIN_COLS: u16 = 60;
 pub const BELOW_MIN_ROWS: u16 = 10;
 /// Share of the area the editor takes when docked.
 pub const EDITOR_SHARE: f32 = 0.5;
+/// Below this many columns the search bar takes one more row (its pills wrap).
+pub const SEARCH_WRAP_BELOW_COLS: u16 = 80;
+/// The AI panel goes beside the files only when the body is this wide (else it takes the
+/// whole body).
+pub const AI_SIDE_MIN_COLS: u16 = 100;
 
 /// What the core's state says about the layout (no sizes in here).
 #[derive(Clone, Debug, PartialEq)]
@@ -96,6 +114,13 @@ pub struct Facts {
     pub editor_dock: EditorDock,
     /// It fills the panes' area.
     pub editor_maximized: bool,
+    /// Rows of the search bar and its status row at full width (`view::search::rows`); 0:
+    /// hidden.
+    pub search_rows: u16,
+    /// The AI assistant panel is open (`view::ai::shown`).
+    pub ai: bool,
+    /// Share of the body's width the AI panel takes (`[tui] ai_ratio`, clamped).
+    pub ai_ratio: f32,
 }
 
 impl Default for Facts {
@@ -117,6 +142,9 @@ impl Default for Facts {
             editor: false,
             editor_dock: EditorDock::Right,
             editor_maximized: false,
+            search_rows: 0,
+            ai: false,
+            ai_ratio: TuiSection::AI_RATIO_DEFAULT,
         }
     }
 }
@@ -136,12 +164,20 @@ impl Facts {
             sidebar_width: crate::view::sidebar::width(core),
             status: crate::view::status::shown(core),
             toasts: crate::view::toasts::lines(core),
-            bottom_rows: crate::view::jobs::rows(core),
+            // The bottom panel is shared by its tabs: the terminal or the jobs.
+            bottom_rows: if crate::view::terminal::shown(core) {
+                crate::view::terminal::rows(core)
+            } else {
+                crate::view::jobs::rows(core)
+            },
             preview: crate::view::preview::shown(core),
             preview_ratio: core.config.tui.preview_ratio_clamped(),
             editor: editor.is_some(),
             editor_dock: editor.map_or(EditorDock::Right, |p| p.dock),
             editor_maximized: editor.is_some_and(|p| p.maximized),
+            search_rows: crate::view::search::rows(core),
+            ai: crate::view::ai::shown(core),
+            ai_ratio: core.config.tui.ai_ratio_clamped(),
         }
     }
 }
@@ -176,6 +212,10 @@ pub struct Regions {
     pub preview: Rect,
     /// The editor panel.
     pub editor: Rect,
+    /// The search bar (and its status row), under the location line.
+    pub search: Rect,
+    /// The AI assistant panel.
+    pub ai: Rect,
     /// Too small for anything but the list.
     pub list_only: bool,
     /// Dual / quad panes are stacked into one column.
@@ -202,6 +242,8 @@ impl Regions {
             bottom: at(area.x, area.bottom()),
             preview: at(area.x, area.bottom()),
             editor: at(area.x, area.bottom()),
+            search: at(area.x, area.y),
+            ai: at(area.x, area.bottom()),
             ..Regions::default()
         };
         if area.height < LIST_ONLY_BELOW_ROWS {
@@ -223,6 +265,16 @@ impl Regions {
             r.tabs = r.crumbs;
             r.crumbs = row(top);
             top += 1;
+        }
+        r.search = at(area.x, top);
+        if facts.search_rows > 0 {
+            let want = facts.search_rows + u16::from(area.width < SEARCH_WRAP_BELOW_COLS);
+            // Two list rows stay (like the tab strip); fewer rows when that is all there is.
+            let rows = want.min(bottom.saturating_sub(top).saturating_sub(2));
+            if rows > 0 {
+                r.search = Rect::new(area.x, top, area.width, rows);
+                top += rows;
+            }
         }
         let toasts = facts.toasts.min(bottom.saturating_sub(top).saturating_sub(1));
         if toasts > 0 {
@@ -250,6 +302,24 @@ impl Regions {
         }
         r.editor = at(body.x, body.y);
         r.preview = at(body.x, body.y);
+        r.ai = at(body.x, body.y);
+        if facts.ai {
+            if body.width >= AI_SIDE_MIN_COLS {
+                let ratio = if facts.ai_ratio.is_finite() {
+                    facts.ai_ratio.clamp(TuiSection::AI_RATIO_MIN, TuiSection::AI_RATIO_MAX)
+                } else {
+                    TuiSection::AI_RATIO_DEFAULT
+                };
+                let w = ((f32::from(body.width) * ratio).round() as u16).clamp(1, body.width - 1);
+                body.width -= w;
+                r.ai = Rect { x: body.right(), width: w, ..body };
+            } else {
+                // Too narrow to share: the panel takes the body.
+                r.ai = body;
+                r.panes = vec![PaneRect { index: facts.focused, rect: at(body.x, body.y) }];
+                return r;
+            }
+        }
         if facts.editor {
             match place_editor(body, facts) {
                 Some((editor, rest)) => {
@@ -531,6 +601,44 @@ mod tests {
         let all = Facts { editor: true, preview: true, bottom_rows: 6, sidebar: true, shown: 2, ..Facts::default() };
         let r = regions(160, 40, &all);
         assert!(!r.editor.is_empty() && !r.preview.is_empty() && !r.bottom.is_empty() && r.panes.len() == 2);
+        let r = regions(200, 40, &Facts { ai: true, search_rows: 1, ..all });
+        assert!(!r.ai.is_empty() && !r.search.is_empty() && !r.editor.is_empty() && r.panes.len() == 2, "{r:?}");
+    }
+
+    #[test]
+    fn search_bar_and_ai_panel() {
+        // The search bar sits under the location line; one row more on narrow screens.
+        let f = Facts { search_rows: 1, ..Facts::default() };
+        let r = regions(80, 24, &f);
+        assert_eq!(r.search, Rect::new(0, 1, 80, 1));
+        assert_eq!(r.pane(0), Some(Rect::new(0, 2, 80, 21)));
+        assert_eq!(regions(79, 24, &f).search, Rect::new(0, 1, 79, 2));
+        let r = regions(80, 24, &Facts { tab_strip: true, ..f.clone() });
+        assert_eq!((r.tabs.y, r.crumbs.y, r.search.y), (0, 1, 2));
+        // Two list rows stay; hidden when there is no room.
+        assert_eq!(regions(79, 5, &f).search.height, 1);
+        assert!(regions(80, 4, &f).search.is_empty());
+        assert!(regions(80, 24, &Facts::default()).search.is_empty());
+        // The AI panel: right of the body at `ai_ratio`, clamped; the whole body when
+        // narrow, the focused pane kept with an empty rect.
+        let f = Facts { ai: true, ai_ratio: 0.25, shown: 2, focused: 1, ..Facts::default() };
+        let r = regions(120, 30, &f);
+        assert_eq!(r.ai, Rect::new(90, 1, 30, 28));
+        assert_eq!(r.panes.len(), 2);
+        assert!(r.panes.iter().all(|p| p.rect.right() <= 90));
+        let r = regions(120, 30, &Facts { ai_ratio: 9.0, ..f.clone() });
+        assert_eq!(r.ai.width, 72);
+        let r = regions(120, 30, &Facts { ai_ratio: f32::NAN, ..f.clone() });
+        assert_eq!(r.ai.width, 48);
+        let r = regions(99, 30, &f);
+        assert_eq!(r.ai, Rect::new(0, 1, 99, 28));
+        assert!(r.panes.len() == 1 && r.panes[0].index == 1 && r.panes[0].rect.is_empty());
+        // With the sidebar, the body is what is left of it.
+        let r = regions(140, 30, &Facts { sidebar: true, ..f.clone() });
+        assert!(r.ai.x > r.sidebar.right() && r.ai.right() == 140);
+        // Beside the editor and the preview: the AI panel is taken first.
+        let r = regions(200, 30, &Facts { editor: true, preview: true, ..f });
+        assert!(r.ai.right() == 200 && r.editor.right() <= r.ai.x && r.preview.right() <= r.ai.x, "{r:?}");
     }
 
     #[test]
@@ -541,6 +649,8 @@ mod tests {
             Facts { editor: true, preview: true, bottom_rows: 30, ..Facts::default() },
             Facts { editor: true, editor_dock: EditorDock::Bottom, preview: true, ..Facts::default() },
             Facts { editor: true, editor_maximized: true, bottom_rows: 3, ..Facts::default() },
+            Facts { search_rows: 2, ai: true, bottom_rows: 12, ..Facts::default() },
+            Facts { search_rows: 1, ai: true, ai_ratio: 0.6, editor: true, preview: true, ..Facts::default() },
         ];
         for p in &panels {
             for shown in [1, 2, 4] {
@@ -557,7 +667,7 @@ mod tests {
                                 .chain(&r.titles)
                                 .map(|p| p.rect)
                                 .chain(r.splitters.iter().map(|s| s.0))
-                                .chain([r.bottom, r.preview, r.editor])
+                                .chain([r.bottom, r.preview, r.editor, r.search, r.ai])
                                 .filter(|r| !r.is_empty())
                                 .collect();
                             for p in &rects {
@@ -571,7 +681,7 @@ mod tests {
                                 .iter()
                                 .chain(&r.titles)
                                 .map(|p| p.rect)
-                                .chain([r.bottom, r.preview, r.editor, r.sidebar])
+                                .chain([r.bottom, r.preview, r.editor, r.sidebar, r.search, r.ai])
                                 .filter(|r| !r.is_empty())
                                 .collect();
                             for (i, a) in boxes.iter().enumerate() {

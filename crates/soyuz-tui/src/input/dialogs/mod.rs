@@ -6,7 +6,10 @@
 //! - the terminal UI's own dialogs ([`TuiDialogs`], a [`TuiDialog`] each), opened for the
 //!   core's `FrontendCmd` requests (`crate::frontend`): confirm, select by pattern,
 //!   columns, open with, links, batch rename, attributes, properties, recovery, crash
-//!   reports, unsaved changes.
+//!   reports, unsaved changes; Phase T5 / T6 the location dialogs (smart folders,
+//!   remotes, archives), compare conflicts and sync profiles, AI plan edits and recipe
+//!   names, key recording, list / table / secret edits of the settings editor and the
+//!   search bar's size filter and save prompt.
 //!
 //! Both are stamped by `soyuz_appcore::models::dialogs::next_seq`, so [`top`] picks the
 //! most recently opened dialog of either kind; it owns the keyboard (`TuiFocus::Dialog`)
@@ -29,19 +32,34 @@
 
 pub mod approval_mcp;
 pub mod approval_script;
+pub mod archive;
 pub mod attributes;
 pub mod batch_rename;
 pub mod columns;
+pub mod compare_conflict;
+pub mod compare_profile;
 pub mod confirm;
 pub mod crash_reports;
 pub mod delete;
+pub mod keybind;
 pub mod link;
+pub mod list_edit;
 pub mod open_with;
 pub mod pattern;
+pub mod plan_json;
+pub mod plan_names;
 pub mod prompt;
 pub mod properties;
 pub mod quit;
+pub mod recipe_name;
 pub mod recovery;
+pub mod remote;
+pub mod save_search;
+pub mod search_size;
+pub mod secret_set;
+pub mod smart;
+pub mod table_edit;
+pub mod table_row;
 pub mod transfer;
 pub mod unsaved;
 
@@ -109,6 +127,22 @@ pub enum TuiDialog {
     Recovery(recovery::State),
     CrashReports(crash_reports::State),
     Unsaved(unsaved::State),
+    // ---- Phase T5 + T6 ----
+    Smart(smart::State),
+    Remote(remote::State),
+    Archive(archive::State),
+    CompareConflict(compare_conflict::State),
+    PlanNames(plan_names::State),
+    RecipeName(recipe_name::State),
+    Keybind(keybind::State),
+    ListEdit(list_edit::State),
+    TableEdit(table_edit::State),
+    TableRow(table_row::State),
+    SecretSet(secret_set::State),
+    CompareProfile(compare_profile::State),
+    PlanJson(plan_json::State),
+    SearchSize(search_size::State),
+    SaveSearch(save_search::State),
 }
 
 impl TuiDialog {
@@ -125,6 +159,21 @@ impl TuiDialog {
             TuiDialog::Recovery(s) => recovery::on_input(core, s, i),
             TuiDialog::CrashReports(s) => crash_reports::on_input(core, s, i),
             TuiDialog::Unsaved(s) => unsaved::on_input(core, s, i),
+            TuiDialog::Smart(s) => smart::on_input(core, s, i),
+            TuiDialog::Remote(s) => remote::on_input(core, s, i),
+            TuiDialog::Archive(s) => archive::on_input(core, s, i),
+            TuiDialog::CompareConflict(s) => compare_conflict::on_input(core, s, i),
+            TuiDialog::PlanNames(s) => plan_names::on_input(core, s, i),
+            TuiDialog::RecipeName(s) => recipe_name::on_input(core, s, i),
+            TuiDialog::Keybind(s) => keybind::on_input(core, s, i),
+            TuiDialog::ListEdit(s) => list_edit::on_input(core, s, i),
+            TuiDialog::TableEdit(s) => table_edit::on_input(core, s, i),
+            TuiDialog::TableRow(s) => table_row::on_input(core, s, i),
+            TuiDialog::SecretSet(s) => secret_set::on_input(core, s, i),
+            TuiDialog::CompareProfile(s) => compare_profile::on_input(core, s, i),
+            TuiDialog::PlanJson(s) => plan_json::on_input(core, s, i),
+            TuiDialog::SearchSize(s) => search_size::on_input(core, s, i),
+            TuiDialog::SaveSearch(s) => save_search::on_input(core, s, i),
         }
     }
 
@@ -141,6 +190,21 @@ impl TuiDialog {
             TuiDialog::Recovery(s) => recovery::on_mouse(core, s, m),
             TuiDialog::CrashReports(s) => crash_reports::on_mouse(core, s, m),
             TuiDialog::Unsaved(s) => unsaved::on_mouse(core, s, m),
+            TuiDialog::Smart(s) => smart::on_mouse(core, s, m),
+            TuiDialog::Remote(s) => remote::on_mouse(core, s, m),
+            TuiDialog::Archive(s) => archive::on_mouse(core, s, m),
+            TuiDialog::CompareConflict(s) => compare_conflict::on_mouse(core, s, m),
+            TuiDialog::PlanNames(s) => plan_names::on_mouse(core, s, m),
+            TuiDialog::RecipeName(s) => recipe_name::on_mouse(core, s, m),
+            TuiDialog::Keybind(s) => keybind::on_mouse(core, s, m),
+            TuiDialog::ListEdit(s) => list_edit::on_mouse(core, s, m),
+            TuiDialog::TableEdit(s) => table_edit::on_mouse(core, s, m),
+            TuiDialog::TableRow(s) => table_row::on_mouse(core, s, m),
+            TuiDialog::SecretSet(s) => secret_set::on_mouse(core, s, m),
+            TuiDialog::CompareProfile(s) => compare_profile::on_mouse(core, s, m),
+            TuiDialog::PlanJson(s) => plan_json::on_mouse(core, s, m),
+            TuiDialog::SearchSize(s) => search_size::on_mouse(core, s, m),
+            TuiDialog::SaveSearch(s) => save_search::on_mouse(core, s, m),
         }
     }
 
@@ -157,6 +221,21 @@ impl TuiDialog {
             TuiDialog::Recovery(s) => recovery::stale(core, s),
             TuiDialog::CrashReports(s) => crash_reports::stale(core, s),
             TuiDialog::Unsaved(s) => unsaved::stale(core, s),
+            TuiDialog::Smart(s) => smart::stale(core, s),
+            TuiDialog::Remote(s) => remote::stale(core, s),
+            TuiDialog::Archive(s) => archive::stale(core, s),
+            TuiDialog::CompareConflict(s) => compare_conflict::stale(core, s),
+            TuiDialog::PlanNames(s) => plan_names::stale(core, s),
+            TuiDialog::RecipeName(s) => recipe_name::stale(core, s),
+            TuiDialog::Keybind(s) => keybind::stale(core, s),
+            TuiDialog::ListEdit(s) => list_edit::stale(core, s),
+            TuiDialog::TableEdit(s) => table_edit::stale(core, s),
+            TuiDialog::TableRow(s) => table_row::stale(core, s),
+            TuiDialog::SecretSet(s) => secret_set::stale(core, s),
+            TuiDialog::CompareProfile(s) => compare_profile::stale(core, s),
+            TuiDialog::PlanJson(s) => plan_json::stale(core, s),
+            TuiDialog::SearchSize(s) => search_size::stale(core, s),
+            TuiDialog::SaveSearch(s) => save_search::stale(core, s),
         }
     }
 }

@@ -30,14 +30,23 @@
 //! | `quicklook.rs` | [`QuickLookVm`] | `draw_quicklook` | T4 |
 //! | `editor/` | [`EditorVm`] | `draw_editor` | T4 |
 //! | `pane/grid.rs` | grid / gallery (in `PaneVm`) | | T4 |
+//! | `terminal.rs` | [`TerminalVm`] | `draw_terminal` | T5 |
+//! | `search.rs` | [`SearchVm`] | `draw_search` | T5 |
+//! | `ai.rs` | [`AiVm`] | `draw_ai` | T5 |
+//! | `compare.rs` | [`CompareVm`] | `draw_compare` | T5 |
+//! | `settings.rs` | [`SettingsVm`] | `draw_settings` | T6 |
 //! | `text.rs` | width-aware truncation / wrapping | | shared |
 //!
 //! Drawing order (later on top): tabs, crumbs, sidebar, panes, pane chrome, preview,
-//! editor, jobs, toasts, status, address completions, Quick Look, palette, menu, dialog.
+//! editor, AI panel, the bottom panel (jobs or terminal), search bar, toasts, status,
+//! address completions, Quick Look, compare screen, settings editor, palette, menu,
+//! dialog.
 //!
 //! All names pass through [`crate::dialog::safe`], so a file name can never write escape
 //! sequences to the terminal.
 
+pub mod ai;
+pub mod compare;
 pub mod crumbs;
 pub mod dialogs;
 pub mod editor;
@@ -48,15 +57,20 @@ pub mod pane;
 pub mod preview;
 pub mod quicklook;
 pub mod rename;
+pub mod search;
+pub mod settings;
 pub mod sidebar;
 pub mod status;
 pub mod tabs;
+pub mod terminal;
 pub mod text;
 pub mod toasts;
 
 use ratatui::Frame;
 use soyuz_appcore::core::AppCore;
 
+pub use self::ai::AiVm;
+pub use self::compare::CompareVm;
 pub use self::crumbs::CrumbsVm;
 pub use self::dialogs::DialogVm;
 pub use self::editor::EditorVm;
@@ -66,9 +80,12 @@ pub use self::palette::PaletteVm;
 pub use self::pane::{PaneLine, PaneMode, PaneVm, Row, RowKind};
 pub use self::preview::PreviewVm;
 pub use self::quicklook::QuickLookVm;
+pub use self::search::SearchVm;
+pub use self::settings::SettingsVm;
 pub use self::sidebar::SidebarVm;
 pub use self::status::StatusVm;
 pub use self::tabs::TabsVm;
+pub use self::terminal::TerminalVm;
 pub use self::toasts::{MAX_TOASTS, ToastLine, ToastsVm};
 use crate::input::InputState;
 use crate::layout::{Hits, Regions};
@@ -97,6 +114,16 @@ pub struct ViewModel {
     pub menu: MenuVm,
     /// The top-most dialog of either stack.
     pub dialog: Option<DialogVm>,
+    /// The search bar and its status row (T5).
+    pub search: SearchVm,
+    /// The embedded terminal pane (T5).
+    pub terminal: TerminalVm,
+    /// The AI assistant panel (T5).
+    pub ai: AiVm,
+    /// The compare screen (T5).
+    pub compare: CompareVm,
+    /// The settings editor (T6).
+    pub settings: SettingsVm,
 }
 
 impl ViewModel {
@@ -121,6 +148,11 @@ impl ViewModel {
             quicklook: QuickLookVm::from_core(core, input),
             menu: MenuVm::from_input(input),
             dialog: dialogs::from_core(core, input),
+            search: SearchVm::from_core(core, input, regions),
+            terminal: TerminalVm::from_core(core, input, regions),
+            ai: AiVm::from_core(core, input, regions),
+            compare: CompareVm::from_core(core, input, regions),
+            settings: SettingsVm::from_core(core, input, regions),
         }
     }
 
@@ -141,6 +173,11 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     preview::prepare(core, input, regions);
     editor::prepare(core, input, regions);
     quicklook::prepare(core, input, regions);
+    search::prepare(core, input, regions);
+    terminal::prepare(core, input, regions);
+    ai::prepare(core, input, regions);
+    compare::prepare(core, input, regions);
+    settings::prepare(core, input, regions);
     crate::input::dialogs::prepare(core, &mut input.dialogs);
     crate::input::dialogs::batch_rename::tick(core, &mut input.dialogs);
     crate::input::dialogs::attributes::tick(core, &mut input.dialogs);
@@ -159,11 +196,17 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     tabs::draw_pane_chrome(f, regions, &m.tabs, theme, hits);
     preview::draw_preview(f, regions.preview, &m.preview, theme, hits);
     editor::draw_editor(f, regions.editor, &m.editor, theme, hits);
+    ai::draw_ai(f, regions.ai, &m.ai, theme, hits);
+    // The bottom panel: whichever of the two is shown draws (the other's model is hidden).
     jobs::draw_jobs(f, regions.bottom, &m.jobs, theme, hits);
+    terminal::draw_terminal(f, regions.bottom, &m.terminal, theme, hits);
+    search::draw_search(f, regions.search, &m.search, theme, hits);
     toasts::draw_toasts(f, toasts::area(regions), &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
     crumbs::draw_completions(f, regions.crumbs, regions.area, &m.crumbs, theme, hits);
     quicklook::draw_quicklook(f, regions.area, &m.quicklook, theme, hits);
+    compare::draw_compare(f, regions.area, &m.compare, theme, hits);
+    settings::draw_settings(f, regions.area, &m.settings, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     menu::draw_menu(f, regions.area, &m.menu, theme, hits);
     if let Some(d) = &m.dialog {
@@ -255,6 +298,11 @@ mod tests {
             quicklook: QuickLookVm::default(),
             menu: MenuVm::default(),
             dialog: None,
+            search: SearchVm::default(),
+            terminal: TerminalVm::default(),
+            ai: AiVm::default(),
+            compare: CompareVm::default(),
+            settings: SettingsVm::default(),
         }
     }
 
@@ -401,7 +449,10 @@ mod tests {
             (&dual, Facts { shown: 2, orientation: Orientation::Horizontal, ..Facts::default() }),
             (&quad, Facts { shown: 4, focused: 2, ..Facts::default() }),
             (&with_menu, panels.clone()),
-            (&with_dialog, Facts { editor_maximized: true, ..panels }),
+            (&with_dialog, Facts { editor_maximized: true, ..panels.clone() }),
+            // Phase T5 / T6: the search bar, the AI panel (beside or over the body).
+            (&dual, Facts { shown: 2, search_rows: 2, ai: true, ..Facts::default() }),
+            (&with_menu, Facts { search_rows: 1, ai: true, ai_ratio: 0.6, ..panels }),
         ];
         for (vm, facts) in cases {
             for w in 0..=20 {

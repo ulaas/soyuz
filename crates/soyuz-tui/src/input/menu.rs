@@ -275,16 +275,9 @@ fn run(app: &mut App, c: MenuCmd) {
                         }
                     }
                 }
-                Some(Run::Tool(t)) => {
-                    // Tags, the shelf and Recent are model commands; the tool windows have no
-                    // terminal view.
-                    soyuz_appcore::models::tools::queue(t);
-                    let queued = soyuz_appcore::models::tools::take_queue();
-                    let rest = soyuz_appcore::models::tools::apply_model_cmds(&mut app.core, &app.host, queued);
-                    if !rest.is_empty() {
-                        app.unavailable(tr!("tui-menu-tool-windows"));
-                    }
-                }
+                // Tags, the shelf, Recent, Compare & sync, …: `crate::tools::drain` applies them
+                // later this frame.
+                Some(Run::Tool(t)) => soyuz_appcore::models::tools::queue(t),
                 Some(r) => catalogue::run(r, &mut app.core.cmds),
                 None => {}
             }

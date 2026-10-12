@@ -14,7 +14,7 @@ use soyuz_term::{CursorStyle, TermEvent, TermSettings, Terminal};
 use crate::cmd::Cmd;
 use crate::core::{AppCore, Focus};
 use crate::host::Host;
-use crate::models::frontend::FrontendCmd;
+use crate::models::frontend::{FrontendCmd, SuspendRequest};
 use crate::models::toasts::Toast;
 
 /// How long a refused `cd` keeps being retried.
@@ -205,6 +205,11 @@ pub fn new_session(app: &mut AppCore, host: &dyn Host) {
 
 /// Ctrl+`: open (spawning lazily) and focus; focus when open but unfocused; else close.
 pub fn toggle(app: &mut AppCore, host: &dyn Host) {
+    if suspend_mode(app) {
+        let dir = pane_dir(app).unwrap_or_else(soyuz_fs::home);
+        app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
+        return;
+    }
     if app.ui.bottom.terminal_shown() && app.ui.terminal.focused {
         app.ui.bottom.open = false;
         unfocus(app);
@@ -215,6 +220,11 @@ pub fn toggle(app: &mut AppCore, host: &dyn Host) {
 
 /// Focus the terminal (FocusTerminal action), opening it when needed.
 pub fn focus(app: &mut AppCore, host: &dyn Host) {
+    if suspend_mode(app) {
+        let dir = pane_dir(app).unwrap_or_else(soyuz_fs::home);
+        app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
+        return;
+    }
     app.ui.bottom.show_terminal();
     ensure_session(app, host);
     app.ui.terminal.focused = true;
@@ -235,8 +245,20 @@ pub fn ensure_session(app: &mut AppCore, host: &dyn Host) {
     }
 }
 
+/// The terminal UI with `[tui] shell_mode = "suspend"`: the terminal actions leave the
+/// screen for a shell in the real terminal ([`FrontendCmd::Suspend`]) instead of
+/// showing the embedded terminal.
+pub fn suspend_mode(app: &AppCore) -> bool {
+    app.frontend_kind == crate::core::FrontendKind::Tui
+        && app.config.tui.shell_mode == soyuz_core::config::TuiShellMode::Suspend
+}
+
 /// "Open terminal here": a new integrated session in `dir`.
 pub fn open_at(app: &mut AppCore, host: &dyn Host, dir: PathBuf) {
+    if suspend_mode(app) {
+        app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
+        return;
+    }
     app.ui.bottom.show_terminal();
     spawn_session(app, host, dir);
     app.ui.terminal.focused = true;
@@ -251,6 +273,10 @@ pub fn run_command(app: &mut AppCore, host: &dyn Host, dir: PathBuf, line: &str)
         app.ui.toasts.push(
             Toast::error(tr!("panels-terminal-command-not-run")).body(tr!("panels-terminal-command-not-run-body")),
         );
+        return;
+    }
+    if suspend_mode(app) {
+        app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Command { dir, line: line.to_string() }));
         return;
     }
     app.ui.bottom.show_terminal();

@@ -38,6 +38,13 @@
 //! anything.
 //! A press outside the address / filter field leaves that field.
 //!
+//! Phase T5 / T6 parts get every mouse event (presses, drags, releases, the wheel) over
+//! their own targets through their `on_mouse` (`input::{search, terminal, ai, compare,
+//! settings}`), and every event anywhere while their `captures_mouse` says so; an
+//! `Overlay` target (under the compare screen / settings editor) swallows the rest, so a
+//! click never reaches the panes below. Not while the palette is open (a press outside it
+//! closes it first).
+//!
 //! crossterm reports no double-clicks: two left presses on the same target within
 //! `general.double_click_speed_ms` (clamped like the GUI's `apply_live_settings`) are one.
 //!
@@ -129,6 +136,10 @@ fn handle(app: &mut App, m: &MouseEvent, now: Instant) {
         super::quicklook::mouse(app, m);
         return;
     }
+    if !app.core.palette.open && phase_t56(app, m) {
+        app.input.mouse.drag = None;
+        return;
+    }
     match m.kind {
         MouseEventKind::Down(b) => press(app, m, b, now),
         MouseEventKind::Drag(MouseButton::Left) => {
@@ -140,6 +151,63 @@ fn handle(app: &mut App, m: &MouseEvent, now: Instant) {
         MouseEventKind::ScrollDown => wheel(app, m, WHEEL_ROWS),
         MouseEventKind::ScrollUp => wheel(app, m, -WHEEL_ROWS),
         _ => {}
+    }
+}
+
+/// The Phase T5 / T6 parts' mouse (see the module docs); returns whether one took `m`.
+fn phase_t56(app: &mut App, m: &MouseEvent) -> bool {
+    let target = hit(&app.hits, m.column, m.row).map(|(_, t)| t);
+    let any = target.unwrap_or(HitTarget::Overlay);
+    if super::settings::captures_mouse(&app.core, &app.input) {
+        return super::settings::on_mouse(app, any, m);
+    }
+    if super::compare::captures_mouse(&app.core, &app.input) {
+        return super::compare::on_mouse(app, any, m);
+    }
+    if super::terminal::captures_mouse(&app.core, &app.input) {
+        return super::terminal::on_mouse(app, any, m);
+    }
+    if super::ai::captures_mouse(&app.core, &app.input) {
+        return super::ai::on_mouse(app, any, m);
+    }
+    if super::search::captures_mouse(&app.core, &app.input) {
+        return super::search::on_mouse(app, any, m);
+    }
+    let Some(t) = target else { return false };
+    match t {
+        HitTarget::Overlay => true,
+        HitTarget::SearchField
+        | HitTarget::SearchPill(_)
+        | HitTarget::SearchButton(_)
+        | HitTarget::SearchStatusButton(_) => super::search::on_mouse(app, t, m),
+        HitTarget::TermTab(_)
+        | HitTarget::TermTabClose(_)
+        | HitTarget::TermNew
+        | HitTarget::TermExternal
+        | HitTarget::TermCell { .. }
+        | HitTarget::TermClip(_) => super::terminal::on_mouse(app, t, m),
+        HitTarget::AiTab(_)
+        | HitTarget::AiComposer
+        | HitTarget::AiButton(_)
+        | HitTarget::AiCard { .. }
+        | HitTarget::AiCardButton { .. }
+        | HitTarget::AiRow(_)
+        | HitTarget::AiMention(_)
+        | HitTarget::AiMcpUndo(_)
+        | HitTarget::AiChat => super::ai::on_mouse(app, t, m),
+        HitTarget::CompareField(_)
+        | HitTarget::CompareRow(_)
+        | HitTarget::CompareButton(_)
+        | HitTarget::CompareChip(_)
+        | HitTarget::CompareProfile(_) => super::compare::on_mouse(app, t, m),
+        HitTarget::SettingsNav(_)
+        | HitTarget::SettingsRow(_)
+        | HitTarget::SettingsSearch
+        | HitTarget::SettingsClose
+        | HitTarget::SettingsKeyRow(_)
+        | HitTarget::SettingsKeyChip { .. }
+        | HitTarget::SettingsKeyAdd(_) => super::settings::on_mouse(app, t, m),
+        _ => false,
     }
 }
 
@@ -275,7 +343,44 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::DialogField(_)
             | HitTarget::DialogRow(_)
             | HitTarget::MenuItem { .. }
-            | HitTarget::QuickLook,
+            | HitTarget::QuickLook
+            | HitTarget::DialogText(_),
+            _,
+        ) => {}
+        // Phase T5 / T6 targets went to their owners before (`phase_t56`).
+        (
+            HitTarget::Overlay
+            | HitTarget::SearchField
+            | HitTarget::SearchPill(_)
+            | HitTarget::SearchButton(_)
+            | HitTarget::SearchStatusButton(_)
+            | HitTarget::TermTab(_)
+            | HitTarget::TermTabClose(_)
+            | HitTarget::TermNew
+            | HitTarget::TermExternal
+            | HitTarget::TermCell { .. }
+            | HitTarget::TermClip(_)
+            | HitTarget::AiTab(_)
+            | HitTarget::AiComposer
+            | HitTarget::AiButton(_)
+            | HitTarget::AiCard { .. }
+            | HitTarget::AiCardButton { .. }
+            | HitTarget::AiRow(_)
+            | HitTarget::AiMention(_)
+            | HitTarget::AiMcpUndo(_)
+            | HitTarget::AiChat
+            | HitTarget::CompareField(_)
+            | HitTarget::CompareRow(_)
+            | HitTarget::CompareButton(_)
+            | HitTarget::CompareChip(_)
+            | HitTarget::CompareProfile(_)
+            | HitTarget::SettingsNav(_)
+            | HitTarget::SettingsRow(_)
+            | HitTarget::SettingsSearch
+            | HitTarget::SettingsClose
+            | HitTarget::SettingsKeyRow(_)
+            | HitTarget::SettingsKeyChip { .. }
+            | HitTarget::SettingsKeyAdd(_),
             _,
         ) => {}
     }

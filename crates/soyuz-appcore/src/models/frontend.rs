@@ -68,6 +68,31 @@ pub enum FrontendCmd {
     /// Actions only the terminal UI has a view for so far (see
     /// [`crate::actions::tui_only`]); the GUI ignores them.
     View(ViewRequest),
+    /// Terminal UI only: leave the screen to run a shell, a command or a text editor in
+    /// the real terminal, then come back (`[tui] shell_mode = "suspend"`, "Edit config
+    /// file"). The GUI ignores it.
+    Suspend(SuspendRequest),
+}
+
+/// [`FrontendCmd::Suspend`]: what runs while the terminal UI steps aside.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SuspendRequest {
+    /// An interactive shell in `dir`; `exit` returns.
+    Shell { dir: PathBuf },
+    /// One shell command line in `dir`, then "press Enter to return".
+    Command { dir: PathBuf, line: String },
+    /// The text editor (`[tui] editor`, `$VISUAL`, `$EDITOR`, …) on `path`.
+    Editor { path: PathBuf, purpose: EditPurpose },
+}
+
+/// Why [`SuspendRequest::Editor`] edits a file: what happens after the editor exits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditPurpose {
+    /// `config.toml`: reloaded afterwards.
+    Config,
+    /// A scratch file of a frontend feature (e.g. the AI panel's JSON arguments), handed
+    /// back to its owner by this token.
+    Scratch(u64),
 }
 
 /// [`FrontendCmd::View`]: what a terminal-UI-only action asks for.

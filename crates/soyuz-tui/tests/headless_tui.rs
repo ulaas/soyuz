@@ -64,6 +64,35 @@ mod headless {
     mod preview;
     /// T4: Quick Look.
     mod quicklook;
+    // ---- Phase T5 + T6 ----
+    /// T5: the AI assistant panel.
+    mod ai;
+    /// T5: the multi-line AI composer and JSON argument edits.
+    mod ai_composer;
+    /// T5: archive dialogs.
+    mod archive;
+    /// T5: the folder compare screen.
+    mod compare;
+    /// T5: editing and scheduling sync profiles.
+    mod compare_profiles;
+    /// T6: the key bindings page.
+    mod keys_editor;
+    /// T5: MCP approval cards in the AI panel.
+    mod mcp_panel;
+    /// T5: remote locations.
+    mod remote;
+    /// T5: the search bar.
+    mod search;
+    /// T6: the settings editor.
+    mod settings;
+    /// T6: arrays / maps of tables and secrets in the settings editor.
+    mod settings_tables;
+    /// T5: smart folders.
+    mod smart;
+    /// T5 / T6: suspend to a shell or a text editor.
+    mod suspend;
+    /// T5: the embedded terminal pane.
+    mod terminal;
     // ---- Integration ----
     /// T3 + T4 end to end: copy / paste with a conflict, the jobs history, rename,
     /// preview, Quick Look, the editor.

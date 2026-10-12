@@ -10,8 +10,10 @@ use crate::{TermError, TermSettings};
 /// Prefix of the window title emitted by the injected prompt hook; the rest is the cwd.
 pub(crate) const CWD_TITLE_MARKER: &str = "soyuz-cwd:";
 
+/// The family of a shell program: how it quotes, how it runs one command line and which
+/// integration script it gets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ShellKind {
+pub enum ShellKind {
     PowerShell,
     Cmd,
     Bash,
@@ -24,7 +26,7 @@ pub(crate) enum ShellKind {
 impl ShellKind {
     /// Kind from a program path; `/` and `\` both separate (pure, so Windows paths are
     /// recognised on unix too).
-    pub(crate) fn detect(program: &str) -> ShellKind {
+    pub fn detect(program: &str) -> ShellKind {
         let file = program.trim_matches('"').rsplit(['/', '\\']).next().unwrap_or_default();
         let stem = Path::new(file).file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         match stem.as_str() {
@@ -171,7 +173,7 @@ fn base64(data: &[u8]) -> String {
 }
 
 /// Default shell: Windows `pwsh` → `powershell` → `%COMSPEC%` → `cmd.exe`; unix `$SHELL` → `/bin/sh`.
-pub(crate) fn default_shell() -> Option<String> {
+pub fn default_shell() -> Option<String> {
     if cfg!(windows) {
         if let Some(p) = which("pwsh.exe").or_else(|| which("powershell.exe")) {
             return Some(p);
@@ -195,7 +197,7 @@ pub(crate) fn default_shell() -> Option<String> {
 }
 
 /// `which`-style lookup. Names containing a path separator are checked directly.
-pub(crate) fn which(name: &str) -> Option<String> {
+pub fn which(name: &str) -> Option<String> {
     let name = name.trim_matches('"');
     let path = Path::new(name);
     let exts: Vec<String> = if cfg!(windows) && path.extension().is_none() {

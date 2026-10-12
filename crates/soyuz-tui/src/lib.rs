@@ -5,8 +5,7 @@
 //! minimal pane view. Phase T2 brings browsing parity on the skeleton of T2.0:
 //! `layout` (screen regions, small-terminal rules), `hits` (click targets), `theme`
 //! (colour roles), `icons`, `view/*` (one model + draw function per part), `input/*`
-//! (focus and key routing), `widgets` (the line editor) and `unsupported` (features
-//! without a view yet).
+//! (focus and key routing) and `widgets` (the line editor).
 //!
 //! Phases T3 / T4 add `widgets::{form, menu, select_list}`, the dialog framework
 //! (`input::dialogs`, `view::dialogs`: both dialog stacks, one file per kind; shared
@@ -14,6 +13,12 @@
 //! rename}` with their `input::*` modules), grid and gallery views, `frontend` (the
 //! core's `FrontendCmd` requests), `clipboard` (`[tui] osc52`) and `images`
 //! (`[tui] images`).
+//!
+//! Phases T5 / T6 add the embedded terminal, the search bar, the AI panel, the compare
+//! screen and the settings editor (`view::{terminal, search, ai, compare, settings}` with
+//! their `input::*` modules), the location dialogs (smart folders, remotes, archives),
+//! `suspend` (leave the screen for a shell or an editor) and `tools` (the core's tool
+//! queue).
 //!
 //! Entry points: [`launch()`] (console, configuration, then [`run`]) and
 //! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary
@@ -35,9 +40,10 @@ pub mod launch;
 pub mod layout;
 pub mod overlay;
 pub mod signals;
+pub mod suspend;
 pub mod term;
 pub mod theme;
-pub mod unsupported;
+pub mod tools;
 pub mod view;
 pub mod widgets;
 

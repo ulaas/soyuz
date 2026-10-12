@@ -16,12 +16,14 @@
 //!    the core phases in the GUI's order (`SoyuzApp::frame`): begin_frame,
 //!    pump_services, pump_jobs, pump_background, apply_cmds, input
 //!    ([`crate::input::route`], after closing stale dialogs), apply_cmds,
-//!    `editors::pump`, the resets of [`crate::unsupported`], draw
+//!    [`crate::tools::drain`] (also right after pump_background), `editors::pump`, draw
 //!    (prepare_visible_panes, [`Regions::compute`], [`view::prepare`],
 //!    [`ViewModel::from_core`], [`view::draw`]), `ops::fileops::end_frame`, apply_cmds,
 //!    update_title, end_frame; then the host's escape sequences (title, OSC 52) are
 //!    written;
-//! 3. wait for input, a wake-up of the core, the earliest `redraw_after` deadline or the
+//! 3. a suspend the frame asked for ([`App::request_suspend`]) runs now, between two
+//!    frames ([`crate::suspend::run`]);
+//! 4. wait for input, a wake-up of the core, the earliest `redraw_after` deadline or the
 //!    250 ms idle tick (toasts expire, spinners move).
 //!
 //! In raw mode Ctrl+C and Ctrl+Z are ordinary keys: Copy and Undo with the default key
@@ -30,6 +32,7 @@
 
 use std::io::{self, Write as _};
 use std::process::ExitCode;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
@@ -39,6 +42,7 @@ use ratatui::backend::Backend;
 use ratatui::layout::Rect;
 use soyuz_appcore::core::{AppCore, CMD_ROUNDS, FrontendKind, Startup};
 use soyuz_appcore::host::Host as _;
+use soyuz_appcore::models::frontend::SuspendRequest;
 use soyuz_appcore::models::toasts::Toast;
 use soyuz_appcore::services::crash;
 use soyuz_appcore::{ops, tr};
@@ -47,6 +51,7 @@ use soyuz_core::config::{Config, KeyContext, TuiSection};
 use crate::host::TuiHost;
 use crate::input::{InputState, TuiFocus};
 use crate::layout::{Facts, Hits, Regions};
+use crate::suspend::{ChildRunner, FinishedEdit, InputGate};
 use crate::term::TerminalGuard;
 use crate::theme::TuiTheme;
 use crate::view::{self, ViewModel};
@@ -127,6 +132,9 @@ pub trait TermIo {
     fn reapply(&mut self, cfg: &TuiSection) -> io::Result<()>;
     /// Continued after a stop: re-enter raw mode, the alternate screen and the modes.
     fn resume(&mut self, cfg: &TuiSection) -> io::Result<()>;
+    /// Leave TUI mode for a child program (`crate::suspend`); [`TermIo::resume`] comes
+    /// back.
+    fn suspend(&mut self) -> io::Result<()>;
 }
 
 /// The real terminal (stdout), owning the [`TerminalGuard`].
@@ -148,6 +156,10 @@ impl TermIo for StdoutIo {
     fn resume(&mut self, cfg: &TuiSection) -> io::Result<()> {
         self.guard.resume(cfg)
     }
+
+    fn suspend(&mut self) -> io::Result<()> {
+        self.guard.suspend()
+    }
 }
 
 /// No terminal (tests): records what would be written.
@@ -156,6 +168,7 @@ pub struct NullIo {
     pub written: Vec<u8>,
     pub reapplied: usize,
     pub resumed: usize,
+    pub suspended: usize,
 }
 
 impl TermIo for NullIo {
@@ -171,6 +184,11 @@ impl TermIo for NullIo {
 
     fn resume(&mut self, _cfg: &TuiSection) -> io::Result<()> {
         self.resumed += 1;
+        Ok(())
+    }
+
+    fn suspend(&mut self) -> io::Result<()> {
+        self.suspended += 1;
         Ok(())
     }
 }
@@ -211,6 +229,17 @@ pub struct App {
     /// (`crate::input::list::paste`). Tests replace it, so they never read the system
     /// clipboard.
     pub list_paste: fn(&mut App),
+    /// A suspend asked for this frame (`FrontendCmd::Suspend`), run by [`run_loop`]
+    /// between two frames.
+    pub(crate) pending_suspend: Option<SuspendRequest>,
+    /// Runs the child of a suspend (`crate::suspend::default_runner`). Tests replace it,
+    /// so they never start a real shell or editor.
+    pub child_runner: ChildRunner,
+    /// Parks the input reader while a child owns the terminal.
+    pub(crate) input_gate: Arc<InputGate>,
+    /// Editor runs for `EditPurpose::Scratch` that finished, until their owner takes them
+    /// ([`App::take_finished_edit`]).
+    pub(crate) finished_edits: Vec<FinishedEdit>,
 }
 
 impl App {
@@ -240,7 +269,33 @@ impl App {
             last_frame: Instant::now(),
             last_save: Instant::now(),
             list_paste: crate::input::list::paste,
+            pending_suspend: None,
+            child_runner: crate::suspend::default_runner,
+            input_gate: Arc::new(InputGate::default()),
+            finished_edits: Vec::new(),
         }
+    }
+
+    /// Leave the screen for a shell / command / editor after this frame (the first
+    /// request of a frame wins).
+    pub fn request_suspend(&mut self, req: SuspendRequest) {
+        self.pending_suspend.get_or_insert(req);
+    }
+
+    /// A suspend is waiting for the end of the frame.
+    pub fn suspend_pending(&self) -> bool {
+        self.pending_suspend.is_some()
+    }
+
+    /// The gate that parks the input reader thread during a suspend (shared with it).
+    pub fn input_gate(&self) -> Arc<InputGate> {
+        Arc::clone(&self.input_gate)
+    }
+
+    /// The finished editor run of scratch edit `token`, if it is done (once).
+    pub fn take_finished_edit(&mut self, token: u64) -> Option<FinishedEdit> {
+        let i = self.finished_edits.iter().position(|e| e.token == token)?;
+        Some(self.finished_edits.remove(i))
     }
 
     /// The model of the last frame drawn.
@@ -345,13 +400,15 @@ impl App {
         self.core.pump_services(&self.host);
         self.core.pump_jobs(&self.host);
         self.core.pump_background(&self.host);
+        crate::tools::drain(self);
         self.apply_cmds();
         self.input(events);
         self.apply_cmds();
+        // Tool commands the input queued (menus, actions) apply in the same frame.
+        crate::tools::drain(self);
         // The editors' worker results (loads, saves, answers to "Save changes?"), every
         // frame like the GUI's editor panel: a quit that saves first goes on from here.
         soyuz_appcore::editors::pump(&mut self.core, &self.host);
-        crate::unsupported::reset_all(self);
         self.tick_toasts(dt);
 
         let size = terminal.size().map_err(io::Error::other)?;
@@ -441,6 +498,9 @@ where
         }
         app.frame(terminal, &events, io)?;
         events.clear();
+        if let Some(req) = app.pending_suspend.take() {
+            crate::suspend::run(app, terminal, io, req)?;
+        }
         let started = Instant::now();
         let timeout = app.timeout(started);
         let mut got = source.next(app, app.host.redraw_rx(), timeout);

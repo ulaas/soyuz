@@ -70,6 +70,8 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
             FrontendCmd::EditorUnsaved(p) => app.gui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
             // Terminal-UI-only actions (`actions::tui_only`): nothing to do in the GUI.
             FrontendCmd::View(_) => {}
+            // Leaving the screen for a shell / editor is a terminal UI request.
+            FrontendCmd::Suspend(_) => {}
         }
     }
 }

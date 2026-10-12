@@ -51,6 +51,12 @@ use alacritty_terminal::term::TermMode;
 use egui::{FontId, Ui};
 
 pub use color::{TermColor, TermPalette};
+
+/// Shell resolution for frontends that run a shell themselves (the terminal UI's
+/// suspend-to-shell): the shell family, the platform default shell and a `PATH` lookup.
+pub mod shell {
+    pub use crate::pty::{ShellKind, default_shell, which};
+}
 pub use pty::has_control_chars;
 #[cfg(feature = "egui")]
 pub use theme::TermTheme;
