@@ -36,6 +36,8 @@ ratatui.workspace = true
 crossterm.workspace = true
 # Images (`[tui] images`, Phase T4: `view/preview.rs`, `images.rs`).
 ratatui-image.workspace = true
+# Pixels for `images` (scaling, half-blocks); the version soyuz-appcore uses.
+image.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true

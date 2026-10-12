@@ -7187,6 +7187,7 @@ version = "0.2.0"
 dependencies = [
  "crossbeam-channel",
  "crossterm",
+ "image",
  "log",
  "parking_lot",
  "ratatui",

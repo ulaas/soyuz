@@ -225,7 +225,9 @@ impl App {
         startup.frontend = FrontendKind::Tui;
         let host = TuiHost::new();
         host.set_osc52(config.tui.osc52);
-        let mut core = AppCore::new(config, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
+        // The terminal UI's texture store (`crate::images`).
+        let uploader = crate::images::install(&config, host.wake());
+        let mut core = AppCore::new(config, startup, host.wake(), uploader);
         core.renderer = "tui";
         App {
             core,
@@ -360,11 +362,14 @@ impl App {
         let model = ViewModel::from_core(&self.core, &self.input, &regions);
         let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());
         let hits = &mut self.hits;
+        crate::images::begin_frame(&self.core.config);
         terminal
             .draw(|f| {
                 let area = f.area();
                 f.buffer_mut().set_style(area, theme.base());
-                view::draw(f, &model, &regions, &theme, hits)
+                view::draw(f, &model, &regions, &theme, hits);
+                // After everything (overlays too): repair images drawn over.
+                crate::images::end_frame(f);
             })
             .map_err(io::Error::other)?;
         self.regions = regions;
@@ -499,6 +504,9 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
         }
     };
     crash::set_tui_hooks(restore_for_panic, std::thread::current().id());
+    // The graphics protocol query (`[tui] images = "auto"`, unix only), before the input
+    // reader: the answer arrives on the input stream.
+    crate::images::startup(&config.tui);
 
     let (tx, rx) = crossbeam_channel::unbounded();
     crate::signals::install(tx.clone());
