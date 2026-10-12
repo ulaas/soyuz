@@ -192,7 +192,7 @@ pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
             app.ui.toasts.push(Toast::info(tr!("services-config-queue-restart")));
         }
     }
-    let (km, warnings) = config::keymap(c);
+    let (km, warnings) = crate::keys::build_keymap(c);
     for w in warnings {
         log::warn!("{w}");
     }

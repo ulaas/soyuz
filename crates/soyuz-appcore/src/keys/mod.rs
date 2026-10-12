@@ -8,7 +8,30 @@ pub mod conflicts;
 pub mod input;
 pub mod sequence;
 
-use soyuz_core::config::{Action, KeyChord, KeyName, Keymap, Mods};
+use std::sync::OnceLock;
+
+use soyuz_core::config::{Action, Config, KeyChord, KeyName, Keymap, Mods};
+
+/// Hook a frontend installs to adjust every key map the core builds (the terminal UI adds
+/// alternatives for chords a legacy terminal cannot send). Process-wide; the first
+/// install wins.
+static KEYMAP_OVERLAY: OnceLock<fn(&mut Keymap)> = OnceLock::new();
+
+/// Install the [`build_keymap`] overlay (later calls are ignored).
+pub fn set_keymap_overlay(overlay: fn(&mut Keymap)) {
+    let _ = KEYMAP_OVERLAY.set(overlay);
+}
+
+/// The key map for `config` (`soyuz_core::config::keymap`) plus the frontend's overlay,
+/// if one is installed. Every place the core (re)builds its key map goes through here;
+/// workspace and script hotkeys are bound on top afterwards.
+pub fn build_keymap(config: &Config) -> (Keymap, Vec<String>) {
+    let (mut km, warnings) = soyuz_core::config::keymap(config);
+    if let Some(overlay) = KEYMAP_OVERLAY.get() {
+        overlay(&mut km);
+    }
+    (km, warnings)
+}
 
 /// Text-editing chords a focused text field must keep.
 pub fn is_text_editing(chord: KeyChord) -> bool {

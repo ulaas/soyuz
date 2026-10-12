@@ -4,3 +4,6 @@
 //! Phase T1 builds the shell: the terminal host, the key adapter, the frame loop and a
 //! minimal pane view. Browsing parity follows in T2.
 #![deny(unsafe_code)]
+
+pub mod keys;
+pub mod overlay;
