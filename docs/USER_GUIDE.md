@@ -316,16 +316,15 @@ any terminal; in the Flatpak: `flatpak run --command=soyuz-tui io.github.ulaas.S
   so it opens a console window of its own instead (use `soyuz-tui` to stay in your
   terminal).
 
-It browses like the window: tabs, dual and quad panes, the details / list / grid / Miller
-views, breadcrumbs and the address bar (Ctrl+L), the sidebar with places and the folder
+It browses like the window: tabs, dual and quad panes, the details / list / grid / gallery
+/ Miller views, breadcrumbs and the address bar (Ctrl+L), the sidebar with places and the folder
 tree, the command palette (Ctrl+K), the filter (Ctrl+F), the status line and toasts, all in
 the colours of your theme. Move with the arrow keys (or your key preset), Enter opens,
 Backspace goes up, Del and other file commands work as in the window, and Ctrl+Q quits
 (asking first while jobs are running). F12 moves the keyboard to the sidebar (a terminal
 UI default; bind *Focus sidebar* to change it). With the mouse on, clicks select, a double
 click opens, a column header sorts (again: the other way round), and the sidebar, tabs,
-crumbs, toasts and Miller columns are clickable. Features that have no terminal view yet
-show a short notice instead.
+crumbs, toasts and Miller columns are clickable.
 
 Terminals without the kitty keyboard protocol cannot send some chords (Ctrl+Shift+letter
 arrives as Ctrl+letter); there Soyuz adds free alternatives: Alt+Shift+letter for
@@ -337,6 +336,93 @@ A paste from the terminal (its paste key, or a right / middle click) into the fi
 runs Soyuz's Paste instead of typing the text: files copied in Soyuz or another file
 manager land in the current folder. In the address bar, the filter, the palette and
 dialogs it pastes text as usual.
+
+**File operations and dialogs.** Copy, cut and paste (Ctrl+C / Ctrl+X / Ctrl+V), F5 / F6 to
+the other pane, Del (to the trash) and Shift+Del (permanently), new folders and files all
+run as jobs with undo, exactly as in the window, and the window's dialogs have terminal
+versions: the conflict dialog (*Replace*, *Keep both*, *Skip*, *More…*, *Rename…*, with
+*Do this for all remaining conflicts*), error prompts, the delete confirmation, *Copy to…*
+/ *Move to…* (Tab completes the folder name), *New symbolic link…* / *New hard link…*
+(with a target picker), *Set attributes…*, *Select by pattern*, the column chooser and
+*Open with*. In a dialog Tab and the arrow keys move between fields and buttons, Enter
+presses the focused (or default) button, the underlined letter presses a button and Esc
+cancels; with the mouse on, everything is clickable.
+
+- **Rename**: F2 renames inline in the list (the name without its extension is selected
+  first; F2 again selects the extension, then the whole name). Enter renames, Tab /
+  Shift+Tab renames and moves on to the next / previous item, Esc cancels; an invalid
+  name shows why on the row. Ctrl+Shift+R (Alt+Shift+R where the terminal cannot send it)
+  opens batch rename with all its rules and a live preview of the new names.
+- **Properties** (Alt+Enter): name, type, location, size (folders are counted in the
+  background), times, attributes and permissions. Alt+A opens the attributes dialog;
+  *Checksums…* computes MD5, SHA-1, SHA-256, BLAKE3 and CRC32 in the background (← / → choose,
+  Alt+O computes, Alt+L computes all, Alt+Y copies) and *Compare to* checks a pasted
+  checksum.
+
+**Jobs panel.** It opens at the bottom by itself while a job runs, without taking the
+keyboard; Alt+J opens it and moves the keyboard there (Esc gives it back). On the *Jobs*
+tab: P or Space pauses / resumes, C or Del cancels (removes a finished job), Enter
+answers a job's postponed question, L shows the job's errors and log, M opens its menu
+(priority, move up / down, start now), Shift+P / Shift+S / Shift+C pause / resume /
+cancel all, X clears finished jobs. Tab (or ← / →) switches to *History*, where U
+undoes (or redoes) and R retries failed items. The panel's height is
+`[tui] jobs_rows`.
+
+**Context menus.** Shift+F10 (or the Menu key, where the terminal reports it) opens the
+file list's context menu, the same entries as the window's right-click menu; with the
+mouse on, a right click opens it on a file, the empty area, a sidebar place, a tab or the
+details header (the column chooser).
+
+**Clipboard.** Copying text (*Copy path*, *Copy name*, checksums, the editor's Ctrl+C)
+sets the local clipboard where Soyuz can (on Windows), and can also go through the
+terminal with OSC 52, which puts it on the clipboard of the computer the terminal runs
+on, even over SSH. `[tui] osc52` (*Settings → Terminal UI → Clipboard*): `auto` sends
+OSC 52 over SSH or when the local clipboard cannot be set, `always` always, `never` never.
+Inside tmux and GNU screen the sequence is wrapped in their pass-through (tmux 3.3 and
+newer need `set -g allow-passthrough on`). Copied files stay on Soyuz's and the system's file clipboard
+as in the window.
+
+**Preview pane and Quick Look.** Alt+P shows the preview pane next to the list (its
+width is `[tui] preview_ratio`): text and code with syntax colours, images, archives (a
+listing; Enter opens the archive at that entry), hex for binary files (*Toggle hex
+preview* in the palette) and the two-file diff. Alt+Shift+Up / Down scroll it a line and
+Alt+PageUp / PageDown a page without leaving the list; a click into it gives it the
+keyboard (arrows, PageUp / PageDown, Home / End; Esc or Tab goes back). Space (F3 in the
+Commander preset) opens Quick Look over the list: ← / → (or ↑ / ↓) step through the folder, Home / End jump to the
+first / last item, PageUp / PageDown and Shift+Up / Down scroll, Enter opens the item,
+Esc or Space closes it; the preview scroll keys scroll Quick Look while it is open.
+
+**Images and grid views.** `[tui] images` decides how pictures are drawn: `auto` asks the
+terminal which graphics protocol it speaks (kitty, sixel or iTerm2) and otherwise uses
+coloured half-block characters; `kitty`, `sixel` and `iterm2` force a protocol,
+`halfblocks` always uses characters and `off` shows none. On Windows `auto` always uses
+half-blocks (the console cannot be asked); Windows Terminal 1.22 or newer draws real
+images with `images = "sixel"`. Inside tmux and screen `auto` uses half-blocks too.
+`[tui] cell_pixels` is the size of a terminal cell in pixels for sixel images when the
+terminal does not report it. The grid and gallery views (Ctrl+Shift+2 / Ctrl+Shift+5;
+Ctrl+F2 / Ctrl+F5 where the terminal cannot send them) show icons or thumbnails in cells;
+the mouse wheel scrolls one line of cells per notch there.
+
+**Editors.** F4 opens the file in the built-in editor panel, as in the window: text (with
+syntax colours), hex (any size; Tab switches between the hex and text columns) or image
+(R / Shift+R rotate, H / V flip, C crop, Alt+S resize). Ctrl+S saves, Ctrl+Shift+S
+(Alt+Shift+S) saves as, Ctrl+F finds, Ctrl+R replaces (Ctrl+H is Backspace in many
+terminals, so there it deletes the word before the caret), Ctrl+G goes to a line or
+offset, F3 / Shift+F3 find the next / previous match, Ctrl+W closes the document (asking
+first when it has changes), Ctrl+PageUp / PageDown switch documents, Alt+Z toggles soft
+wrap, Alt+M maximizes the panel and Alt+Shift+M moves it to the other side. Esc closes a
+bar or leaves the editor, and Alt+E goes back into it. The editor shortcuts live in the
+*Editor* key context, so you can rebind them in `[keys.bindings]` like any other.
+Quitting with unsaved documents asks first.
+
+**Crash recovery.** If Soyuz stops unexpectedly, the terminal is restored first. On the
+next start the terminal UI offers to resume, roll back or discard the jobs that were
+interrupted (leftover partial files can go to the trash), and shows the crash reports
+(view, delete, open the folder), like the window does.
+
+Settings, workspaces, tab history, devices (unlock, read-only mount), smart folders,
+remote locations, archive extract / create, About and the integrated terminal panel have
+no terminal view yet: they show a short notice instead (use the window for them).
 
 **Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
 Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
@@ -363,8 +449,9 @@ Soyuz instead, unbind it in Windows Terminal's `settings.json`:
 Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection,
 choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
 it), the colour depth, the icons (Unicode, Nerd Font or ASCII), the box lines (rounded,
-plain, ASCII or none; ASCII icons with ASCII or no lines give a pure ASCII screen) and the
-sidebar width. In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
+plain, ASCII or none; ASCII icons with ASCII or no lines give a pure ASCII screen), the
+sidebar width, the jobs panel height, the preview width, images and the cell size, and
+the OSC 52 clipboard. In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
 UI keeps its own session (`session-tui.toml`) and log (`soyuz-tui.log`) in the settings
 folder.
 

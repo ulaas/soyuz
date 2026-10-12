@@ -15,10 +15,10 @@
 //! One file per dialog kind, here (state, keys, mouse) and in `crate::view::dialogs`
 //! (the [`crate::view::dialogs::DialogVm`] it shows). Core prompts keep their state in the
 //! model; what the terminal UI adds (focus, text cursors, list scroll) is a [`ModelUi`]
-//! created by the kind's `ui` function when the model reaches the top. Every kind's
-//! functions start as stubs that do what Phase T1 / T2 did: the text fallback of
-//! `crate::dialog` for core prompts, a "not available" toast (or the T1 automatic answer)
-//! for requests. Each kind file has the same shape:
+//! created by the kind's `ui` function when the model reaches the top. Every core prompt
+//! and every request the GUI answers with a dialog has its real view here (shared
+//! helpers: `crate::dialog`); the requests that still get a "not available" toast are
+//! listed in `crate::frontend`. Each kind file has the same shape:
 //!
 //! | Core prompts | Terminal UI dialogs |
 //! |---|---|
@@ -65,8 +65,7 @@ pub enum Outcome {
     Close(Option<Cmd>),
 }
 
-/// One key press or paste for a dialog: the raw key (letters, Esc / Enter for the
-/// fallbacks) and the same input as core events (chord, then typed text) for the
+/// One key press or paste for a dialog: the raw key and the same input as core events (chord, then typed text) for the
 /// widgets (`Form`, `LineEdit`, `SelectList`).
 #[derive(Clone, Debug)]
 pub struct DialogInput {
@@ -213,8 +212,6 @@ pub struct State {
     pub tui: TuiDialogs,
     /// The terminal UI's part of the open core prompt (reset when another one is on top).
     pub model: Option<ModelUi>,
-    /// Quit requests answered while documents had unsaved changes (`unsaved::open`).
-    pub unsaved_quits: u8,
 }
 
 /// Which stack the top-most dialog is on.
@@ -253,26 +250,6 @@ pub fn prepare(core: &mut AppCore, st: &mut State) {
             transfer::prepare(&mut core.services, t, ui);
         }
     }
-}
-
-/// The Phase T1 fallback for a core prompt (`crate::dialog::on_key`): letters, Enter and
-/// Esc as listed there; pastes do nothing.
-pub fn fallback_input(m: &mut DialogModel, i: &DialogInput) -> Outcome {
-    match &i.key {
-        Some(k) => crate::dialog::on_key(m, k),
-        None => Outcome::Keep,
-    }
-}
-
-/// A form's keys: Esc closes the dialog (without a command), the rest edits the form.
-/// The stub of every terminal UI dialog; the real ones act on `FormOutcome::Pressed`.
-pub fn form_input(form: &mut Form, i: &DialogInput) -> Outcome {
-    for ev in &i.events {
-        if form.apply(ev) == FormOutcome::Cancel {
-            return Outcome::Close(None);
-        }
-    }
-    Outcome::Keep
 }
 
 /// A form's mouse (the terminal UI dialogs): a click on a field focuses (a checkbox toggles)

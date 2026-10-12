@@ -447,7 +447,7 @@ settings-tui-cell-pixels = Cell size
 settings-tui-cell-pixels-desc = Size of one terminal cell in pixels (width × height), used to scale sixel images when the terminal does not report it.
 settings-tui-clipboard = Clipboard
 settings-tui-osc52 = Copy through the terminal (OSC 52)
-settings-tui-osc52-desc = Copied text is sent to the terminal, which puts it on the clipboard of the computer it runs on; this also works over SSH. Auto and Always send it next to setting the local clipboard; Never keeps copies on the local clipboard only.
+settings-tui-osc52-desc = Copied text is sent to the terminal, which puts it on the clipboard of the computer it runs on; this also works over SSH. Auto sends it over SSH or when the local clipboard cannot take the text; Always sends it with every copy; Never keeps copies on the local clipboard only.
 settings-deny = Deny
 
 ## Preview & search page

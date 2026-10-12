@@ -738,12 +738,13 @@ mod tests {
         let hints = [
             tr!("tui-hint"),
             tr!("tui-hint-filter"),
-            tr!("tui-hint-close"),
-            tr!("tui-hint-delete"),
-            tr!("tui-hint-quit"),
-            tr!("tui-hint-prompt"),
-            tr!("tui-hint-reject"),
-            tr!("tui-hint-cancel"),
+            tr!("tui-dialogs-hint-prompt"),
+            tr!("tui-dialogs-hint-confirm"),
+            tr!("tui-dialogs-hint-quit"),
+            tr!("tui-dialogs-hint-transfer"),
+            tr!("tui-dialogs-hint-approval"),
+            tr!("tui-jobs-hints"),
+            tr!("tui-ops-props-hints"),
         ];
         // The palette footer: "↑↓ move · Enter run · Tab complete".
         let palette = ["Up", "Down", "Enter", "Tab"];

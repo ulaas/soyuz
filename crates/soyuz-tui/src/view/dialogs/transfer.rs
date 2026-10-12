@@ -12,7 +12,7 @@ use crate::widgets::ListRow;
 
 /// What the dialog shows.
 pub fn vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::Transfer(t) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::Transfer(t) = m else { return crate::dialog::titled(m) };
     DialogVm {
         body: vec![safe(&t.message())],
         list: ui.names.iter().map(|n| ListRow::new(format!("{}{}", safe(n), std::path::MAIN_SEPARATOR))).collect(),

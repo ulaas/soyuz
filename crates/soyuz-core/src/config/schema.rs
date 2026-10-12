@@ -1090,7 +1090,7 @@ impl TuiSection {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TuiOsc52 {
-    /// OSC 52 next to the local clipboard.
+    /// OSC 52 over SSH, or when the local clipboard could not take the text.
     #[default]
     Auto,
     /// Always send OSC 52.

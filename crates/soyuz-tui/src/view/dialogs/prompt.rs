@@ -24,7 +24,7 @@ pub const CONFLICT_WIDTH: u16 = 76;
 
 /// What the dialog shows.
 pub fn vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::Prompt(p) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::Prompt(p) = m else { return crate::dialog::titled(m) };
     let renaming = p.rename.is_some();
     let more = ui.page == MORE && !renaming;
     let mut d = DialogVm::from_form(m.title(), &ui.form);

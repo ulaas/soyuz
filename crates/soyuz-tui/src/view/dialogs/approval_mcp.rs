@@ -24,7 +24,7 @@ pub const WIDTH: u16 = 80;
 
 /// What the dialog shows.
 pub fn vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::McpApproval(a) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::McpApproval(a) = m else { return crate::dialog::titled(m) };
     let mut d = DialogVm {
         hints: tr!("tui-dialogs-hint-approval").to_string(),
         width: WIDTH,

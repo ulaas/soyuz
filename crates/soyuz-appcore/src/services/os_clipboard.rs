@@ -69,11 +69,25 @@ fn fallback_tools() -> bool {
     FALLBACK_TOOLS.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Whether this process uses the system clipboard ([`set_system_clipboard`]).
+static SYSTEM: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Turn the system clipboard on or off for this process. Off, nothing here reads or
+/// writes it and copy / paste use the internal clipboard only: for sandboxed runs such
+/// as the headless terminal UI tests, which must not touch the user's clipboard.
+pub fn set_system_clipboard(on: bool) {
+    SYSTEM.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+fn system() -> bool {
+    SYSTEM.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Put `paths` on the system clipboard as files (plus their paths as text where the
 /// format allows both). Returns `false` when no native mechanism is available, so the
 /// caller can fall back to plain text.
 pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
-    if paths.is_empty() {
+    if !system() || paths.is_empty() {
         return false;
     }
     let paths: Vec<PathBuf> = paths.iter().map(|p| soyuz_fs::strip_verbatim(p)).collect();
@@ -106,6 +120,9 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
 /// OSes) or the write failed; the frontend then relies on its own mechanism (the GUI
 /// toolkit's clipboard, OSC 52 in the terminal UI).
 pub fn set_text(text: &str) -> bool {
+    if !system() {
+        return false;
+    }
     #[cfg(windows)]
     match imp::set_text(text) {
         Ok(()) => true,
@@ -131,6 +148,9 @@ pub type Then = Box<dyn FnOnce(&mut crate::core::AppCore, Files) + Send>;
 /// outside Windows (a round trip to the clipboard owner): never call it on the UI thread
 /// there, use [`with_files`].
 pub fn get_files() -> Files {
+    if !system() {
+        return None;
+    }
     imp::get_files().filter(|(_, p)| !p.is_empty())
 }
 
@@ -212,12 +232,18 @@ static PENDING: parking_lot::Mutex<Pending<Then>> = parking_lot::Mutex::new(Pend
 /// Cheap check used to enable "Paste" in menus (Windows only; elsewhere `false`, the
 /// internal clipboard decides).
 pub fn has_files() -> bool {
+    if !system() {
+        return false;
+    }
     imp::has_files()
 }
 
 /// After a cut from the system clipboard was pasted (moved), empty the clipboard like
 /// Explorer does, but only if it still holds a cut.
 pub fn clear_cut() {
+    if !system() {
+        return;
+    }
     #[cfg(windows)]
     if let Some((ClipMode::Cut, _)) = imp::get_files() {
         imp::clear();

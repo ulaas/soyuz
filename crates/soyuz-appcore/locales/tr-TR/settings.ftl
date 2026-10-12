@@ -438,7 +438,7 @@ settings-tui-cell-pixels = Hücre boyutu
 settings-tui-cell-pixels-desc = Bir terminal hücresinin piksel cinsinden boyutu (genişlik × yükseklik); terminal bildirmediğinde sixel resimlerini ölçeklemek için kullanılır.
 settings-tui-clipboard = Pano
 settings-tui-osc52 = Terminal üzerinden kopyala (OSC 52)
-settings-tui-osc52-desc = Kopyalanan metin terminale gönderilir; terminal onu üzerinde çalıştığı bilgisayarın panosuna koyar, bu SSH üzerinden de çalışır. Otomatik ve Her zaman, yerel panoya yazmanın yanında bunu da gönderir; Hiçbir zaman kopyaları yalnızca yerel panoda tutar.
+settings-tui-osc52-desc = Kopyalanan metin terminale gönderilir; terminal onu üzerinde çalıştığı bilgisayarın panosuna koyar, bu SSH üzerinden de çalışır. Otomatik, bunu SSH üzerinden ya da yerel pano metni alamadığında gönderir; Her zaman her kopyalamada gönderir; Hiçbir zaman kopyaları yalnızca yerel panoda tutar.
 settings-deny = Reddet
 
 ## Preview & search page

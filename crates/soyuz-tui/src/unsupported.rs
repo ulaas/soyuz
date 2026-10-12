@@ -1,6 +1,7 @@
-//! Core states the terminal UI has no view for yet: reset them right after the frame's
-//! input (so the keyboard keeps working) and say so with a toast. Requests the core sends
-//! to the frontend are declined the same way in `App::drain_frontend`.
+//! Core states the terminal UI has no view for yet (the settings window and the terminal
+//! panel's keyboard focus): reset them right after the frame's input (so the keyboard
+//! keeps working) and say so with a toast. Requests the core sends to the frontend are
+//! declined the same way in `crate::frontend`.
 //!
 //! One function per feature, each called from [`reset_all`]. The phase that builds a
 //! feature's view deletes its function and call, and the feature's `tui-feature-*` key in

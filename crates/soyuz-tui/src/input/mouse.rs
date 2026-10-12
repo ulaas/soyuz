@@ -41,8 +41,8 @@
 //! crossterm reports no double-clicks: two left presses on the same target within
 //! `general.double_click_speed_ms` (clamped like the GUI's `apply_live_settings`) are one.
 //!
-//! The wheel scrolls the pane under the pointer by [`WHEEL_ROWS`] rows through
-//! `pane.scroll_y` without moving the cursor (`scroll_to_cursor` stays as it is; the pane
+//! The wheel scrolls the pane under the pointer by [`WHEEL_ROWS`] rows (one line of cells
+//! in the grid and gallery views) through `pane.scroll_y` without moving the cursor (`scroll_to_cursor` stays as it is; the pane
 //! view clamps the offset). The sidebar and the palette keep no scroll offset of their own
 //! (the palette scrolls to its selection), so the wheel does nothing over them.
 
@@ -400,8 +400,14 @@ fn wheel(app: &mut App, m: &MouseEvent, rows: i32) {
         _ => return,
     };
     if let Some(p) = app.core.ws.find_pane_mut(pane) {
-        scroll(p, rows);
+        scroll(p, wheel_rows(p, rows));
     }
+}
+
+/// What a wheel step of `rows` scrolls `p` by: a grid / gallery line is a whole row of
+/// cells (several lines tall), so one notch moves one of them there.
+pub fn wheel_rows(p: &Pane, rows: i32) -> i32 {
+    if crate::view::pane::PaneMode::of(p).is_grid() { rows.signum() } else { rows }
 }
 
 /// The split a splitter drag to `(x, y)` sets: `(second, share)` where `second` is the quad
@@ -609,6 +615,16 @@ mod tests {
         assert_eq!(double_click_interval(&c), Duration::from_millis(u64::from(DOUBLE_CLICK_MS_MIN)));
         c.general.double_click_speed_ms = 100_000;
         assert_eq!(double_click_interval(&c), Duration::from_millis(u64::from(DOUBLE_CLICK_MS_MAX)));
+    }
+
+    #[test]
+    fn wheel_moves_one_grid_line_per_notch() {
+        let mut p = pane();
+        assert_eq!(wheel_rows(&p, WHEEL_ROWS), WHEEL_ROWS);
+        for mode in [soyuz_core::ViewMode::Grid, soyuz_core::ViewMode::Gallery] {
+            p.view.mode = mode;
+            assert_eq!((wheel_rows(&p, WHEEL_ROWS), wheel_rows(&p, -WHEEL_ROWS)), (1, -1), "{mode:?}");
+        }
     }
 
     #[test]

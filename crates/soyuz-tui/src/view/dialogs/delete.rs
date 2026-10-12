@@ -14,7 +14,7 @@ pub const SHOWN: usize = 5;
 
 /// What the dialog shows.
 pub fn vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::DeleteConfirm(d) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::DeleteConfirm(d) = m else { return crate::dialog::titled(m) };
     let (msg, _, _) = d.texts();
     let mut body = vec![safe(&msg)];
     let names = d.names();

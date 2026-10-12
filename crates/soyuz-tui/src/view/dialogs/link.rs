@@ -18,7 +18,7 @@ use crate::widgets::ListRow;
 
 /// What the core prompt shows.
 pub fn model_vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::NewLink(l) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::NewLink(l) = m else { return crate::dialog::titled(m) };
     let dir = safe(&soyuz_fs::strip_verbatim(&l.dir).display().to_string());
     DialogVm {
         body: vec![l.kind.hint().to_string(), tr!("dialogs-link-in", dir = dir)],

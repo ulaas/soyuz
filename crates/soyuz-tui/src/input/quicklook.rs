@@ -13,6 +13,8 @@
 //! | PageUp / PageDown | scroll the text a page (an archive listing: its rows) |
 //! | Shift+Up / Shift+Down | scroll a line |
 //!
+//! The `PreviewScroll*` / `PreviewPage*` actions (Alt+Shift+Up / Down, Alt+PageUp /
+//! PageDown) scroll Quick Look instead of the preview pane while it is open ([`scroll`]).
 //! Every other key goes to the core's bindings in the file-list context (Ctrl+Q,
 //! type-ahead, the palette, …). Mouse: a press outside the card closes it, the `‹` / `›`
 //! marks in its title step, `×` closes, the wheel scrolls.
@@ -20,6 +22,7 @@
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::keys::input::InputEvent;
+use soyuz_appcore::models::frontend::ScrollStep;
 use soyuz_appcore::models::preview_load::PreviewLoader;
 use soyuz_appcore::models::quicklook::{self as ql, Step};
 use soyuz_core::config::{KeyName, Mods};
@@ -64,6 +67,21 @@ impl State {
             _ => self.scroll = self.scroll.saturating_add_signed(rows as isize),
         }
     }
+}
+
+/// Scroll Quick Look (the `PreviewScroll*` / `PreviewPage*` actions while it is open).
+pub fn scroll(app: &mut App, step: ScrollStep) {
+    if !app.core.ui.quicklook.open {
+        return;
+    }
+    let st = &mut app.input.quicklook;
+    let page = st.page.saturating_sub(1).max(1) as i32;
+    st.scroll_by(match step {
+        ScrollStep::LineUp => -1,
+        ScrollStep::LineDown => 1,
+        ScrollStep::PageUp => -page,
+        ScrollStep::PageDown => page,
+    });
 }
 
 /// Whether the overlay is open.

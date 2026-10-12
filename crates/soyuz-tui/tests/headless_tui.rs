@@ -62,4 +62,8 @@ mod headless {
     mod preview;
     /// T4: Quick Look.
     mod quicklook;
+    // ---- Integration ----
+    /// T3 + T4 end to end: copy / paste with a conflict, the jobs history, rename,
+    /// preview, Quick Look, the editor.
+    mod e2e;
 }

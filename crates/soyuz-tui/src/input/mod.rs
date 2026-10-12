@@ -21,9 +21,8 @@
 //! [`InputState`] when it keeps something between frames); each step fills its own:
 //! `palette.rs` (T2.7), `address.rs` (T2.5), `filter.rs` (T2.8), `sidebar.rs` (T2.6),
 //! `mouse.rs` (T2.9); Phase T3 `dialogs/*`, `menu.rs`, `rename.rs`, `jobs.rs`; Phase T4
-//! `preview.rs`, `quicklook.rs`, `editor.rs`. The T3 / T4 conditions start as stubs
-//! that are never true (the keys stay where they were in T2). Text fields use
-//! `crate::widgets::LineEdit`; see its module docs for the key order.
+//! `preview.rs`, `quicklook.rs`, `editor.rs`. Text fields use `crate::widgets::LineEdit`;
+//! see its module docs for the key order.
 
 pub mod address;
 pub mod dialogs;

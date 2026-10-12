@@ -15,7 +15,7 @@ use crate::widgets::ListRow;
 
 /// What the dialog shows.
 pub fn vm(m: &DialogModel, ui: &ModelUi) -> DialogVm {
-    let DialogModel::ScriptApproval(s) = m else { return crate::dialog::fallback(m) };
+    let DialogModel::ScriptApproval(s) = m else { return crate::dialog::titled(m) };
     let list = s
         .jobs
         .iter()
