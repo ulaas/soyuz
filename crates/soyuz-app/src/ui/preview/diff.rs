@@ -3,84 +3,31 @@
 //! rows, changed words emphasized. The diff itself runs on a worker
 //! ([`crate::services::preview_diff`]).
 
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::SystemTime;
 
 use egui::text::{LayoutJob, TextFormat};
 use egui::{Align2, Color32, FontId, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::EntryInfo;
 
 use crate::app::SoyuzApp;
-use crate::services::preview::{Kind, kind_by_name};
-use crate::services::preview_diff::{DiffClient, DiffModel, Line, Row, SideRow, Tag};
+use crate::services::preview_diff::{Line, Row, SideRow, Tag};
 use crate::theme::icons::ph;
 use crate::theme::{Palette, palette};
 use crate::ui::widgets::{segmented, spinner, trunc_galley};
 
-type Key = (PathBuf, Option<SystemTime>, u64, PathBuf, Option<SystemTime>, u64);
-
-/// One consumer's diff state.
-#[derive(Default)]
-pub struct DiffView {
-    client: DiffClient,
-    key: Option<Key>,
-    result: Option<Result<Arc<DiffModel>, String>>,
-    /// `None` = automatic (side by side when wide).
-    side: Option<bool>,
-    /// Compare the other way round (newer → older).
-    swapped: bool,
-}
+/// One consumer's diff state (the core's).
+pub use soyuz_appcore::models::preview_load::DiffState as DiffView;
 
 /// The two selected files of the focused pane, when the diff preview applies.
 pub fn pair(app: &SoyuzApp) -> Option<(EntryInfo, EntryInfo)> {
-    if !app.core.config.preview.diff {
-        return None;
-    }
-    let pane = app.core.ws.pane();
-    if pane.selection.len() != 2 {
-        return None;
-    }
-    let sel = pane.selected_entries();
-    let [a, b] = sel.as_slice() else { return None };
-    // Older file on the left (the "before"), when the times tell.
-    let (a, b) = match (a.modified, b.modified) {
-        (Some(ta), Some(tb)) if tb < ta => (b, a),
-        _ => (a, b),
-    };
-    let texty = |e: &EntryInfo| {
-        !e.is_dir_like() && matches!(kind_by_name(&e.name), None | Some(Kind::Text | Kind::Markdown | Kind::Svg))
-    };
-    (texty(a) && texty(b)).then(|| ((*a).clone(), (*b).clone()))
-}
-
-impl DiffView {
-    pub fn clear(&mut self) {
-        self.client.cancel();
-        self.key = None;
-        self.result = None;
-    }
-
-    fn sync(&mut self, a: &EntryInfo, b: &EntryInfo, cap: u64, ctx: &egui::Context) {
-        let key = (a.path.clone(), a.modified, a.size, b.path.clone(), b.modified, b.size);
-        if self.key.as_ref() != Some(&key) {
-            self.key = Some(key);
-            self.result = None;
-            self.client.request(a.path.clone(), b.path.clone(), cap, &crate::host::egui_wake(ctx));
-        }
-        while let Some(r) = self.client.try_recv() {
-            if r.id == self.client.latest() {
-                self.result = Some(r.result);
-            }
-        }
-    }
+    soyuz_appcore::models::preview_load::diff_pair(&app.core)
 }
 
 /// Draw the diff of `a` → `b` into `rect`.
 pub fn show(ui: &mut Ui, rect: Rect, view: &mut DiffView, a: &EntryInfo, b: &EntryInfo, cap_kib: u64) {
     let p = palette(ui.ctx());
     let (a, b) = if view.swapped { (b, a) } else { (a, b) };
-    view.sync(a, b, cap_kib.max(4) * 1024, ui.ctx());
+    view.sync(a, b, cap_kib.max(4) * 1024, &crate::host::egui_wake(ui.ctx()));
     ui.painter().rect_filled(rect, 0.0, p.bg_sunken);
     // Header: names, stats, mode toggle.
     let bar = Rect::from_min_size(rect.min, vec2(rect.width(), 40.0));

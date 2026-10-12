@@ -3,391 +3,81 @@
 //! paging, folder-size streaming, and painters for every content kind plus the info
 //! section.
 
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, Vec2, pos2, vec2,
 };
+use soyuz_appcore::models::preview_load::PreviewLoader;
 use soyuz_core::config::Config;
-use soyuz_core::{EntryInfo, OpControl, format_size, format_time};
+use soyuz_core::{EntryInfo, format_size, format_time};
 
-use super::hex::{self, HexDoc};
+use super::hex;
 use super::markdown;
-use crate::services::preview::{Content, Kind, Limits, Loaded, Msg, PreviewClient, Source};
-use crate::services::preview_gfx::{StyledLine, TextFont};
+use crate::services::preview::{Content, Kind, Limits};
+use crate::services::preview_gfx::StyledLine;
 use crate::theme::icons::{self, ph};
 use crate::theme::{Palette, palette};
 use crate::ui::gfx::{self, TexExt};
-use crate::ui::views::columns::{attr_letters, mode_string};
 use crate::ui::views::flow::semibold;
 use crate::ui::widgets::{pill_button, spinner, trunc_galley};
 
-/// Something the user asked for from inside a preview.
-#[derive(Clone, Debug, PartialEq)]
-pub enum PreviewAction {
-    ToggleHex,
-    /// Open this path (archive / folder) in the pane.
-    Open(PathBuf),
-}
+pub use soyuz_appcore::models::preview_info::{group_digits, info_label, info_rows};
+pub use soyuz_appcore::models::preview_load::PreviewAction;
 
-#[derive(Clone, Debug, PartialEq)]
-struct TargetKey {
-    path: PathBuf,
-    modified: Option<SystemTime>,
-    size: u64,
-    force_hex: bool,
-}
-
-/// Recursive folder size being computed for a folder preview.
-struct SizeJob {
-    path: PathBuf,
-    rx: crossbeam_channel::Receiver<soyuz_search::SizeEvent>,
-    ctl: Arc<OpControl>,
-    bytes: u64,
-    files: u64,
-    dirs: u64,
-    done: bool,
-    changed_at: Instant,
-}
-
-impl Drop for SizeJob {
-    fn drop(&mut self) {
-        self.ctl.cancel();
-    }
-}
-
-/// One preview consumer's state.
+/// One preview consumer's state: the core's [`PreviewLoader`] plus Quick Look's image
+/// zoom and pan.
 pub struct PreviewState {
-    client: PreviewClient,
-    key: Option<TargetKey>,
-    pub entry: Option<EntryInfo>,
-    pub loaded: Option<Loaded>,
-    loading_since: Option<Instant>,
-    hex: Option<HexDoc>,
-    sizes: Option<SizeJob>,
-    pub force_hex: bool,
+    loader: PreviewLoader,
     /// Quick Look image zoom (1 = fit) and pan offset.
     pub zoom: f32,
     pub pan: Vec2,
-    big: bool,
-    /// Cache key of the in-flight request (the result is remembered when it lands).
-    cache_key: Option<crate::services::preview_cache::CacheKey>,
-    /// Display scale for page-like renders (refreshed every [`Self::poll`]).
-    ppp: f32,
+}
+
+impl std::ops::Deref for PreviewState {
+    type Target = PreviewLoader;
+    fn deref(&self) -> &PreviewLoader {
+        &self.loader
+    }
+}
+
+impl std::ops::DerefMut for PreviewState {
+    fn deref_mut(&mut self) -> &mut PreviewLoader {
+        &mut self.loader
+    }
 }
 
 impl PreviewState {
     pub fn new(ctx: &egui::Context, big: bool) -> Self {
         PreviewState {
-            client: PreviewClient::new(crate::host::egui_wake(ctx), gfx::egui_uploader(ctx)),
-            key: None,
-            entry: None,
-            loaded: None,
-            loading_since: None,
-            hex: None,
-            sizes: None,
-            force_hex: false,
+            loader: PreviewLoader::new(
+                crate::host::egui_wake(ctx),
+                gfx::egui_uploader(ctx),
+                big,
+                ctx.pixels_per_point(),
+            ),
             zoom: 1.0,
             pan: Vec2::ZERO,
-            big,
-            cache_key: None,
-            ppp: ctx.pixels_per_point(),
         }
     }
 
     /// Request limits from the config and palette.
     pub fn limits(&self, cfg: &Config, p: &Palette) -> Limits {
-        Limits {
-            max_image_px: if self.big { 4096 } else { 1600 },
-            max_image_mp: cfg.preview.max_image_mp.max(1),
-            max_text_bytes: (cfg.preview.max_text_kib.max(4) * 1024) as usize,
-            dark: p.dark,
-            mono: TextFont::monospace(12.0),
-            fg: gfx::rgba(p.text_primary),
-            pixels_per_point: self.ppp,
-            rich: crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big),
-        }
+        self.loader.limits(cfg, p.dark, gfx::rgba(p.text_primary))
     }
 
     /// Show `entry` (or nothing). Issues a new request only when the target changed.
     pub fn set_target(&mut self, entry: Option<&EntryInfo>, limits: Limits) {
-        let key = entry.map(|e| TargetKey {
-            path: e.path.clone(),
-            modified: e.modified,
-            size: e.size,
-            force_hex: self.force_hex,
-        });
-        if key == self.key {
-            return;
-        }
-        let same_path = matches!((&key, &self.key), (Some(a), Some(b)) if a.path == b.path);
-        self.key = key;
-        self.entry = entry.cloned();
-        self.hex = None;
-        self.sizes = None;
-        if !same_path {
+        if self.loader.set_target(entry, limits) {
             self.zoom = 1.0;
             self.pan = Vec2::ZERO;
         }
-        match entry {
-            Some(e) => {
-                let ck = (!self.force_hex && !e.is_dir_like()).then(|| crate::services::preview_cache::CacheKey {
-                    path: e.path.clone(),
-                    modified: e.modified,
-                    size: e.size,
-                    variant: (limits.max_image_px, limits.dark, limits.max_text_bytes),
-                });
-                if let Some(hit) = ck.as_ref().and_then(crate::services::preview_cache::get) {
-                    self.client.cancel();
-                    self.cache_key = None;
-                    self.loaded = Some(hit);
-                    self.loading_since = None;
-                    return;
-                }
-                self.cache_key = ck;
-                let source = Source::from_path(&e.path);
-                self.client.request(source, e.is_dir_like(), self.force_hex, limits);
-                self.loading_since = Some(Instant::now());
-            }
-            None => {
-                self.client.cancel();
-                self.loaded = None;
-                self.loading_since = None;
-            }
-        }
-    }
-
-    /// Forget the current target so the next `set_target` reloads.
-    pub fn invalidate(&mut self) {
-        self.key = None;
-    }
-
-    pub fn clear(&mut self) {
-        self.client.cancel();
-        self.key = None;
-        self.entry = None;
-        self.loaded = None;
-        self.hex = None;
-        self.sizes = None;
-        self.loading_since = None;
-    }
-
-    pub fn is_loading(&self) -> bool {
-        self.loading_since.is_some()
     }
 
     /// Drain worker results (call once per frame).
     pub fn poll(&mut self, ctx: &egui::Context) {
-        self.ppp = ctx.pixels_per_point();
-        while let Some(msg) = self.client.try_recv() {
-            match msg {
-                Msg::Loaded { id, loaded } => {
-                    if id != self.client.latest() {
-                        continue;
-                    }
-                    self.loading_since = None;
-                    if let Content::Hex(init) = &loaded.content {
-                        self.hex = Some(HexDoc::new(init));
-                    }
-                    if let (Content::Folder(_), Some(e)) = (&loaded.content, &self.entry)
-                        && !Source::from_path(&e.path).is_entry()
-                    {
-                        let c = ctx.clone();
-                        let (rx, ctl) =
-                            soyuz_search::folder_sizes(vec![e.path.clone()], Arc::new(move || c.request_repaint()));
-                        self.sizes = Some(SizeJob {
-                            path: e.path.clone(),
-                            rx,
-                            ctl,
-                            bytes: 0,
-                            files: 0,
-                            dirs: 0,
-                            done: false,
-                            changed_at: Instant::now(),
-                        });
-                    }
-                    if let Some(k) = self.cache_key.take() {
-                        crate::services::preview_cache::put(k, &loaded);
-                    }
-                    self.loaded = Some(*loaded);
-                }
-                Msg::Page { doc, page, bytes } => {
-                    if let Some(h) = &mut self.hex {
-                        h.on_page(doc, page, bytes);
-                    }
-                }
-            }
-        }
-        if let Some(s) = &mut self.sizes {
-            for ev in s.rx.try_iter() {
-                match ev {
-                    soyuz_search::SizeEvent::Partial { path, bytes, files, dirs } if path == s.path => {
-                        (s.bytes, s.files, s.dirs) = (bytes, files, dirs);
-                        s.changed_at = Instant::now();
-                    }
-                    soyuz_search::SizeEvent::Done { path, bytes, files, dirs, .. } if path == s.path => {
-                        (s.bytes, s.files, s.dirs, s.done) = (bytes, files, dirs, true);
-                        s.changed_at = Instant::now();
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    /// `(bytes, files, dirs, done)` of the recursive folder size, when computing.
-    pub fn folder_size(&self) -> Option<(u64, u64, u64, bool)> {
-        self.sizes.as_ref().map(|s| (s.bytes, s.files, s.dirs, s.done))
-    }
-}
-
-// ---- info ---------------------------------------------------------------------------
-
-/// Info rows for the selection: type, size, dates, attributes, owner + loader facts.
-pub fn info_rows(
-    entry: &EntryInfo,
-    loaded: Option<&Loaded>,
-    folder_size: Option<(u64, u64, u64, bool)>,
-    cfg: &Config,
-) -> Vec<(String, String)> {
-    let style = cfg.general.size_style;
-    let fmt_t = |t: SystemTime| format_time(t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Long));
-    let meta = loaded.and_then(|l| l.meta.as_ref());
-    let mut rows = vec![("Type".to_string(), crate::state::listing::kind_label(entry))];
-    if entry.is_dir_like() {
-        if let Some((bytes, files, dirs, done)) = folder_size {
-            let v = format!("{}{}", format_size(bytes, style), if done { "" } else { "…" });
-            rows.push(("Size".into(), v));
-            rows.push(("Contains".into(), tr!("views-info-contains", files = files, dirs = dirs)));
-        }
-    } else {
-        let size = if entry.size == 0 { meta.map_or(0, |m| m.size) } else { entry.size };
-        rows.push(("Size".into(), tr!("views-info-size-bytes", size = format_size(size, style), bytes = size)));
-        if let Some(a) = entry.alloc_size.filter(|&a| a != entry.size && Source::from_path(&entry.path).is_entry()) {
-            rows.push(("Compressed".into(), format_size(a, style)));
-        }
-    }
-    let parent = match Source::from_path(&entry.path) {
-        Source::Entry { archive, inner } => {
-            let dir = inner.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-            format!("{}!/{dir}", soyuz_fs::strip_verbatim(&archive).display())
-        }
-        Source::File(p) => p.parent().map(|d| soyuz_fs::strip_verbatim(d).display().to_string()).unwrap_or_default(),
-    };
-    rows.push(("Where".into(), parent));
-    let pick = |a: Option<SystemTime>, b: Option<SystemTime>| a.or(b);
-    if let Some(t) = pick(entry.modified, meta.and_then(|m| m.modified)) {
-        rows.push(("Modified".into(), fmt_t(t)));
-    }
-    if let Some(t) = pick(entry.created, meta.and_then(|m| m.created)) {
-        rows.push(("Created".into(), fmt_t(t)));
-    }
-    if let Some(t) = pick(entry.accessed, meta.and_then(|m| m.accessed)) {
-        rows.push(("Accessed".into(), fmt_t(t)));
-    }
-    let attrs = if entry.attrs.is_empty() { meta.map(|m| m.attrs).unwrap_or_default() } else { entry.attrs };
-    if !attrs.is_empty() {
-        rows.push(("Attributes".into(), attr_letters(attrs)));
-    }
-    if let Some(m) = entry.mode.or(meta.and_then(|m| m.mode)) {
-        rows.push(("Mode".into(), format!("{} ({:o})", mode_string(m), m & 0o7777)));
-    }
-    if let Some(o) = entry.owner.as_deref().or(meta.and_then(|m| m.owner.as_deref())) {
-        rows.push(("Owner".into(), o.to_string()));
-    }
-    if let Some(l) = loaded {
-        for (k, v) in &l.facts {
-            if !rows.iter().any(|(rk, _)| rk == k) {
-                rows.push((k.clone(), v.clone()));
-            }
-        }
-    }
-    rows
-}
-
-/// `1234567` → `1,234,567` (`1.234.567` in Turkish).
-pub fn group_digits(n: u64) -> String {
-    soyuz_core::locale::group_int(n)
-}
-
-/// Translated label of an info row key. [`info_rows`] and the preview loaders key rows
-/// by their English name (rows are deduplicated and looked up by it); unknown keys are
-/// shown as they are.
-pub fn info_label(key: &str) -> &str {
-    match key {
-        "Type" => tr!("views-info-type"),
-        "Size" => tr!("views-info-size"),
-        "Contains" => tr!("views-info-contains-label"),
-        "Compressed" => tr!("views-info-compressed"),
-        "Where" => tr!("views-info-where"),
-        "Modified" => tr!("views-info-modified"),
-        "Created" => tr!("views-info-created"),
-        "Accessed" => tr!("views-info-accessed"),
-        "Attributes" => tr!("views-info-attributes"),
-        "Mode" => tr!("views-info-mode"),
-        "Owner" => tr!("views-info-owner"),
-        "Title" => tr!("views-info-title"),
-        "Artist" => tr!("views-info-artist"),
-        "Album" => tr!("views-info-album"),
-        "Album artist" => tr!("views-info-album-artist"),
-        "Year" => tr!("views-info-year"),
-        "Genre" => tr!("views-info-genre"),
-        "Track" => tr!("views-info-track"),
-        "Composer" => tr!("views-info-composer"),
-        "Container" => tr!("views-info-container"),
-        "Format" => tr!("views-info-format"),
-        "Sample rate" => tr!("views-info-sample-rate"),
-        "Channels" => tr!("views-info-channels"),
-        "Bit depth" => tr!("views-info-bit-depth"),
-        "Duration" => tr!("views-info-duration"),
-        "Dimensions" => tr!("views-info-dimensions"),
-        "Frame rate" => tr!("views-info-frame-rate"),
-        "Bitrate" => tr!("views-info-bitrate"),
-        "Tracks" => tr!("views-info-tracks"),
-        "Color" => tr!("views-info-color"),
-        "Compression" => tr!("views-info-compression"),
-        "Encoding" => tr!("views-info-encoding"),
-        "Encrypted" => tr!("views-info-encrypted"),
-        "Entries" => tr!("views-info-entries"),
-        "Language" => tr!("views-info-language"),
-        "Lines" => tr!("views-info-lines"),
-        "Note" => tr!("views-info-note"),
-        "PDF version" => tr!("views-info-pdf-version"),
-        "Previewer" => tr!("views-info-previewer"),
-        "Pages" => tr!("views-info-pages"),
-        "Author" => tr!("views-info-author"),
-        "Producer" => tr!("views-info-producer"),
-        "Publisher" => tr!("views-info-publisher"),
-        "Published" => tr!("views-info-published"),
-        "Version" => tr!("views-info-version"),
-        "EPUB version" => tr!("views-info-epub-version"),
-        "Page size" => tr!("views-info-page-size"),
-        "Paragraphs" => tr!("views-info-paragraphs"),
-        "Codec" => tr!("views-info-codec"),
-        "Copyright" => tr!("views-info-copyright"),
-        "Designer" => tr!("views-info-designer"),
-        "Weight" => tr!("views-info-weight"),
-        "Spacing" => tr!("views-info-spacing"),
-        "Variable axes" => tr!("views-info-variable-axes"),
-        "Bounds" => tr!("views-info-bounds"),
-        "Faces" => tr!("views-info-faces"),
-        "Meshes" => tr!("views-info-meshes"),
-        "Drawn" => tr!("views-info-drawn"),
-        "Shown" => tr!("views-info-shown"),
-        "Renderer" => tr!("views-info-renderer"),
-        "Waveform" => tr!("views-info-waveform"),
-        "Words" => tr!("views-info-words"),
-        "Sheets" => tr!("views-info-sheets"),
-        "Slides" => tr!("views-info-slides"),
-        "Chapters" => tr!("views-info-chapters"),
-        "Family" => tr!("views-info-family"),
-        "Style" => tr!("views-info-style"),
-        "Glyphs" => tr!("views-info-glyphs"),
-        "Triangles" => tr!("views-info-triangles"),
-        "Vertices" => tr!("views-info-vertices"),
-        other => other,
+        self.loader.pixels_per_point = ctx.pixels_per_point();
+        self.loader.poll();
     }
 }
 
@@ -562,8 +252,8 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             );
         }
         Content::Hex(_) => {
-            if let Some(doc) = &mut st.hex {
-                hex::show(ui, rect, doc, &st.client, &p, if interactive { 13.0 } else { 11.5 });
+            if let Some((doc, client)) = st.hex_doc() {
+                hex::show(ui, rect, doc, client, &p, if interactive { 13.0 } else { 11.5 });
             }
         }
         Content::Archive(l) => {
@@ -833,61 +523,4 @@ fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usiz
         [pos2(rect.left() + gutter + 2.0, rect.top()), pos2(rect.left() + gutter + 2.0, rect.bottom())],
         Stroke::new(1.0, p.border_subtle),
     );
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use soyuz_core::{Attributes, EntryKind};
-
-    #[test]
-    fn digit_grouping() {
-        assert_eq!(group_digits(0), "0");
-        assert_eq!(group_digits(999), "999");
-        assert_eq!(group_digits(1000), "1,000");
-        assert_eq!(group_digits(1234567), "1,234,567");
-    }
-
-    #[test]
-    fn multi_plural_messages_format_on_one_line() {
-        use crate::i18n::{FluentArgs, t_args_in};
-        use soyuz_core::Locale;
-        let mut a = FluentArgs::new();
-        a.set("dirs", 2);
-        a.set("files", 1);
-        assert_eq!(t_args_in("views-preview-folder-counts", &a, Locale::EnUs), "2 folders · 1 file");
-        assert_eq!(t_args_in("views-preview-folder-counts", &a, Locale::TrTr), "2 klasör · 1 dosya");
-        let mut a = FluentArgs::new();
-        a.set("files", 1234);
-        a.set("folders", 1);
-        assert_eq!(t_args_in("views-index-idle", &a, Locale::EnUs), "Indexed · 1,234 files, 1 folder");
-        assert_eq!(t_args_in("views-index-idle", &a, Locale::TrTr), "Dizine eklendi · 1.234 dosya, 1 klasör");
-    }
-
-    #[test]
-    fn info_rows_for_file_and_folder() {
-        let cfg = Config::default();
-        let mut e = EntryInfo::minimal(PathBuf::from("/data/report.pdf"), EntryKind::File);
-        e.size = 2048;
-        e.attrs = Attributes::READONLY;
-        e.mode = Some(0o100644);
-        e.modified = Some(SystemTime::UNIX_EPOCH);
-        let rows = info_rows(&e, None, None, &cfg);
-        let get = |k: &str| rows.iter().find(|(a, _)| a == k).map(|(_, v)| v.clone());
-        assert!(get("Size").unwrap().contains("2,048 bytes"));
-        assert!(get("Mode").unwrap().contains("644"));
-        assert!(get("Attributes").is_some());
-        assert!(get("Modified").is_some());
-        assert_eq!(get("Type").unwrap(), crate::state::listing::kind_label(&e));
-
-        let d = EntryInfo::minimal(PathBuf::from("/data/sub"), EntryKind::Dir);
-        let rows = info_rows(&d, None, Some((4096, 3, 1, false)), &cfg);
-        let size = rows.iter().find(|(a, _)| a == "Size").unwrap();
-        assert!(size.1.ends_with('…'), "still computing");
-        assert!(rows.iter().any(|(a, v)| a == "Contains" && v == "3 files, 1 folder"));
-
-        let a = EntryInfo::minimal(PathBuf::from("/x/a.zip!/dir/f.txt"), EntryKind::File);
-        let rows = info_rows(&a, None, None, &cfg);
-        assert!(rows.iter().any(|(k, v)| k == "Where" && v.ends_with("a.zip!/dir")));
-    }
 }
