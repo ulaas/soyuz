@@ -297,7 +297,19 @@ pub fn show<R>(ctx: &Context, vp: ViewportId, place: &Placement, content: impl F
         if class != ViewportClass::EmbeddedWindow {
             let evs = with_reg(|r| r.slots.get_mut(&vp).map(|s| std::mem::take(&mut s.events)).unwrap_or_default());
             if !evs.is_empty() {
-                ui.ctx().input_mut(|i| i.events.extend(evs));
+                let ppp = ui.ctx().pixels_per_point();
+                let options = ui.ctx().options(|o| o.input_options);
+                ui.ctx().input_mut(|i| {
+                    // `native:hover`: a scripted pointer must reach the pointer state,
+                    // which egui built from the window's input before this frame.
+                    let moves: Vec<_> =
+                        evs.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).cloned().collect();
+                    if !moves.is_empty() {
+                        let raw = egui::RawInput { events: moves, time: Some(i.time), ..Default::default() };
+                        *i = std::mem::take(i).begin_pass(raw, false, ppp, options);
+                    }
+                    i.events.extend(evs);
+                });
             }
         }
         content.take().map(|f| f(ui))
@@ -418,7 +430,8 @@ pub fn is_shown(vp: ViewportId) -> bool {
 // ---------------------------------------------------------------------------
 
 /// `native:list` / `native:size <w>,<h>` / `native:move <x>,<y>` (a dialog, physical
-/// pixels) / `native:moveby <dx>,<dy>`.
+/// pixels) / `native:moveby <dx>,<dy>` / `native:hover <x>,<y>[,<n>]` (egui's pointer in
+/// the `n`-th open popup, oldest first, in its points; no OS input).
 pub fn devscript(ctx: &Context, arg: &str) {
     let (verb, rest) = arg.trim().split_once(' ').unwrap_or((arg.trim(), ""));
     // Oldest first (bottom of the z-order first).
@@ -454,6 +467,18 @@ pub fn devscript(ctx: &Context, arg: &str) {
                 let (nx, ny) = if verb == "move" { (x, y) } else { (r[0] + x, r[1] + y) };
                 owned::set_window_rect(*h, [nx, ny, r[2] - r[0], r[3] - r[1]], false);
             }
+        }
+        "hover" => {
+            let v: Vec<f32> = rest.split(',').filter_map(|v| v.trim().parse::<f32>().ok()).collect();
+            let (Some(&x), Some(&y)) = (v.first(), v.get(1)) else { return };
+            let n = v.get(2).map_or(0, |n| *n as usize);
+            let Some((vp, ..)) = slots.iter().filter(|s| s.1 == Kind::Popup).nth(n) else { return };
+            with_reg(|r| {
+                if let Some(s) = r.slots.get_mut(vp) {
+                    s.events.push(egui::Event::PointerMoved(egui::pos2(x, y)));
+                }
+            });
+            ctx.request_repaint_of(*vp);
         }
         _ => log::warn!("SOYUZ_SCRIPT: unknown native verb {verb}"),
     }

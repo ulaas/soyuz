@@ -26,6 +26,12 @@ use super::{Kind, Placement};
 
 /// Seconds without focus on the popup (or its owner) before it closes.
 const FOCUS_GRACE: f64 = 0.3;
+/// Seconds the pointer rests on a submenu row before its native submenu opens, and on
+/// another entry before an open one closes: passing over a row must not create and
+/// destroy a window (a visible flash), and a diagonal move towards the submenu may
+/// cross a neighbouring entry.
+const SUBMENU_OPEN_DELAY: f64 = 0.2;
+const SUBMENU_CLOSE_DELAY: f64 = 0.3;
 
 #[derive(Clone, Copy)]
 enum Anchor {
@@ -60,6 +66,11 @@ struct State {
     stack: Vec<Id>,
     /// A submenu row was clicked in this native popup this frame (no click-close).
     sub_clicked: Vec<Id>,
+    /// Per parent menu: the submenu row under the pointer, since when, and the frame it
+    /// was last seen there.
+    hover: HashMap<Id, (Id, f64, u64)>,
+    /// Per open native submenu: since when the pointer is on another entry of its parent.
+    away: HashMap<Id, f64>,
 }
 
 thread_local! {
@@ -77,6 +88,8 @@ pub fn end_frame() {
         s.pops.retain(|_, p| p.touched == now);
         let live: Vec<Id> = s.pops.keys().copied().collect();
         s.subs.retain(|_, row| live.contains(&SubMenu::id_from_widget_id(*row).with("native")));
+        s.away.retain(|key, _| live.contains(key));
+        s.hover.retain(|_, h| h.2 == now);
         s.stack.clear();
         s.sub_clicked.clear();
     });
@@ -568,27 +581,51 @@ pub fn submenu<R>(ui: &mut Ui, row: &Response, content: impl FnOnce(&mut Ui) -> 
                 .chain(RectAlign::MENU_ALIGNS.iter().copied())
                 .any(|a| content.contains_rect(a.align_rect(&anchor, size, gap)))
         });
-        let egui_open = MenuState::from_ui(ui, |st, _| st.open_item == Some(egui_id));
-        if fits || !egui_open || ctx.read_response(egui_id).is_none() {
+        if fits {
             return SubMenu::new().show(ui, row, content).map(|r| r.inner);
         }
-        // Take over from egui's (measured, invisible-to-the-user) submenu.
-        MenuState::from_ui(ui, |st, _| st.open_item = None);
-        let size = egui::AreaState::load(&ctx, egui_id).and_then(|a| a.size);
-        open_sub(&ctx, ui, parent, row, key, anchor, gap, size, false);
+        // Measured and too big for the window: a native submenu, never egui's (it would
+        // be drawn clipped while the native one waits for its delay).
+        MenuState::from_ui(ui, |st, _| {
+            if st.open_item == Some(egui_id) {
+                st.open_item = None;
+            }
+        });
     }
+    let now = ctx.input(|i| i.time);
     let hover = ctx.pointer_hover_pos();
     let row_zone = row.rect.expand2(ui.style().spacing.item_spacing / 2.0);
     let on_row = hover.is_some_and(|p| row_zone.contains(p));
+    let rested = with(|s| {
+        if on_row {
+            let frame = super::frame();
+            let h = s.hover.entry(parent).or_insert((row.id, now, frame));
+            if h.0 != row.id {
+                *h = (row.id, now, frame);
+            }
+            h.2 = frame;
+            now - h.1
+        } else {
+            if s.hover.get(&parent).is_some_and(|h| h.0 == row.id) {
+                s.hover.remove(&parent);
+            }
+            0.0
+        }
+    });
     let keyboard_open = row.has_focus() && ui.input(|i| i.key_pressed(Key::ArrowRight));
     let clicked = row.clicked();
     if clicked {
         with(|s| s.sub_clicked.extend(s.stack.last().copied()));
     }
     let is_open = with(|s| s.subs.get(&parent) == Some(&row.id));
-    if !is_open && ui.is_enabled() && (on_row || clicked || keyboard_open) {
+    let hover_open = on_row && rested >= SUBMENU_OPEN_DELAY;
+    if !is_open && ui.is_enabled() && on_row && !hover_open {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(SUBMENU_OPEN_DELAY - rested));
+    }
+    if !is_open && ui.is_enabled() && (hover_open || clicked || keyboard_open) {
         let by_keyboard = keyboard_open || (clicked && !row.clicked_by(egui::PointerButton::Primary));
-        open_sub(&ctx, ui, parent, row, key, anchor, gap, None, by_keyboard);
+        let size = if parent_native { None } else { egui::AreaState::load(&ctx, egui_id).and_then(|a| a.size) };
+        open_sub(&ctx, ui, parent, row, key, anchor, gap, size, by_keyboard);
     }
     if !with(|s| s.subs.get(&parent) == Some(&row.id)) {
         return None;
@@ -600,8 +637,14 @@ pub fn submenu<R>(ui: &mut Ui, row: &Response, content: impl FnOnce(&mut Ui) -> 
         ctx.read_response(parent).map(|r| r.rect - frame.total_margin())
     };
     if hover.is_some_and(|p| parent_rect.is_some_and(|r| r.contains(p))) && !on_row {
-        close_sub(&ctx, parent, key);
-        return None;
+        let since = with(|s| *s.away.entry(key).or_insert(now));
+        if now - since >= SUBMENU_CLOSE_DELAY {
+            close_sub(&ctx, parent, key);
+            return None;
+        }
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(SUBMENU_CLOSE_DELAY - (now - since)));
+    } else {
+        with(|s| s.away.remove(&key));
     }
     // Follow the row (the parent may scroll or re-layout).
     let owner_vp = ctx.viewport_id();
@@ -689,9 +732,11 @@ fn open_sub(
 }
 
 fn close_sub(_ctx: &Context, parent: Id, key: Id) {
+    log::debug!("native submenu {key:?} closes");
     with(|s| {
         s.subs.remove(&parent);
         s.pops.remove(&key);
+        s.away.remove(&key);
     });
 }
 

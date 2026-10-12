@@ -44,7 +44,7 @@
 //! * `click:<x>,<y>[,right]` — synthetic egui click at a point of the main window;
 //!   `press:<x>,<y>` / `move:<x>,<y>` / `release:<x>,<y>` — its parts, chained for a
 //!   synthetic drag (`press:300,140;move:320,150;move:900,400;release:900,400`);
-//! * `native:list` / `native:move <x>,<y>` / `native:moveby <dx>,<dy>` — native dialog / popup
+//! * `native:list` / `native:move <x>,<y>` / `native:moveby <dx>,<dy>` / `native:hover <x>,<y>[,<n>]` — native dialog / popup
 //!   windows (`ui::native`): log their handles and rects, move the dialog (physical pixels);
 //!   `keys:` goes to the newest native window while one is open;
 //! * anything else is an action name (`view_grid`, `toggle_dual_pane`, `settings`, …).
