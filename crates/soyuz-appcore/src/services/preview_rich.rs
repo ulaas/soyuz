@@ -48,6 +48,10 @@ pub struct RichLimits {
     pub turntable: bool,
     /// Quick Look (large renders) vs the preview pane.
     pub big: bool,
+    /// The frontend draws only uploaded pixels and shows facts as text (the terminal UI):
+    /// SVGs and 3D models arrive rasterized as `Content::Image` (`preview_raster`) and
+    /// pictures carry their EXIF rows. The GUI leaves it off.
+    pub terminal: bool,
 }
 
 impl RichLimits {
@@ -69,6 +73,7 @@ impl RichLimits {
             max_audio: c.max_audio_mib.saturating_mul(1 << 20),
             turntable: c.model_turntable,
             big,
+            terminal: false,
         }
     }
 
@@ -228,7 +233,7 @@ pub fn load(
         RichKind::Office(k) => office(k, reader, len, lim),
         RichKind::Epub => epub(reader, len, lim, up, id, ppp),
         RichKind::Font => font(reader, len, lim, up, id, ppp),
-        RichKind::Model => model(reader, len, &ext, path, lim),
+        RichKind::Model => model(reader, len, &ext, path, lim, up, id, ppp),
         RichKind::Audio => audio(reader, len, &ext, path, lim, up, id, stale),
         RichKind::Video => video(reader, len, &ext, path, lim, up, id, ppp, stale),
         RichKind::Pdf => pdf(reader, len, path, lim, up, id, ppp, stale),
@@ -396,7 +401,17 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id
     loaded(Kind::Font, Rich::Font { meta: Arc::new(meta), strips: Arc::new(strips) }, facts)
 }
 
-fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, lim: &RichLimits) -> Loaded {
+#[allow(clippy::too_many_arguments)]
+fn model(
+    reader: &mut dyn ReadSeek,
+    len: u64,
+    ext: &str,
+    path: Option<&Path>,
+    lim: &RichLimits,
+    up: &Uploader,
+    id: u64,
+    ppp: f32,
+) -> Loaded {
     if len > lim.max_model {
         return too_large(Kind::Model, IconId::Cube, len, lim.max_model, "max_model_mib");
     }
@@ -419,6 +434,15 @@ fn model(reader: &mut dyn ReadSeek, len: u64, ext: &str, path: Option<&Path>, li
             }
             let [x, y, z] = m.extent;
             fact(&mut facts, "Bounds", format!("{} × {} × {}", fmt_len(x), fmt_len(y), fmt_len(z)));
+            if lim.terminal {
+                // A still from the default view (the GUI draws a live mesh instead).
+                let px = (if lim.big { 900.0 } else { 480.0 } * ppp).min(2048.0) as u32;
+                let img = super::preview_raster::model_still(&m, px);
+                let tex = Tex::upload_rgba(up, format!("preview:model:{id}"), &img);
+                let (width, height) = img.dimensions();
+                let content = Content::Image(super::preview::ImageData { tex, width, height });
+                return Loaded { kind: Kind::Model, content, facts, meta: None };
+            }
             loaded(Kind::Model, Rich::Model { model: Arc::new(m), turntable: lim.turntable }, facts)
         }
         Err(e) => card(Kind::Model, IconId::WarningCircle, tr!("services-preview-cant-read-model"), e),

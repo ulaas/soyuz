@@ -6943,6 +6943,7 @@ dependencies = [
  "quick-xml 0.42.0",
  "regex",
  "reqwest",
+ "resvg",
  "rodio",
  "rustls",
  "serde",

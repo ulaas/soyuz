@@ -27,6 +27,7 @@ pub mod preview_media;
 pub mod preview_model;
 pub mod preview_office;
 pub mod preview_pdf;
+pub mod preview_raster;
 pub mod preview_rich;
 pub mod preview_text;
 pub mod preview_video;
