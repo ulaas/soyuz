@@ -12,8 +12,10 @@
 //!    during that call;
 //! 2. one frame ([`App::frame`]) with the input that arrived since the last one, running
 //!    the core phases in the GUI's order (`SoyuzApp::frame`): begin_frame,
-//!    pump_services, pump_jobs, pump_background, apply_cmds, input, apply_cmds, draw
-//!    (prepare_visible_panes first), `ops::fileops::end_frame`, apply_cmds,
+//!    pump_services, pump_jobs, pump_background, apply_cmds, input
+//!    ([`crate::input::route`]), apply_cmds, the resets of [`crate::unsupported`], draw
+//!    (prepare_visible_panes, [`Regions::compute`], [`view::prepare`],
+//!    [`ViewModel::from_core`], [`view::draw`]), `ops::fileops::end_frame`, apply_cmds,
 //!    update_title, end_frame; then the host's escape sequences (title, OSC 52) are
 //!    written;
 //! 3. wait for input, a wake-up of the core, the earliest `redraw_after` deadline or the
@@ -31,7 +33,8 @@ use crossbeam_channel::{Receiver, Sender};
 use crossterm::event::Event;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
-use soyuz_appcore::core::{AppCore, CMD_ROUNDS, Focus, FrontendKind, Startup};
+use ratatui::layout::Rect;
+use soyuz_appcore::core::{AppCore, CMD_ROUNDS, FrontendKind, Startup};
 use soyuz_appcore::host::Host as _;
 use soyuz_appcore::models::frontend::FrontendCmd;
 use soyuz_appcore::models::properties::MetaDialog;
@@ -41,7 +44,10 @@ use soyuz_appcore::{ops, tr};
 use soyuz_core::config::{Config, KeyContext, TuiSection};
 
 use crate::host::TuiHost;
+use crate::input::{InputState, TuiFocus};
+use crate::layout::{Facts, Hits, Regions};
 use crate::term::TerminalGuard;
+use crate::theme::TuiTheme;
 use crate::view::{self, ViewModel};
 
 /// Something for the frame loop.
@@ -189,8 +195,12 @@ pub enum LoopEnd {
 pub struct App {
     pub core: AppCore,
     pub host: TuiHost,
-    /// First list row shown (scroll position of the focused pane).
-    top: usize,
+    /// Input state kept between frames (`crate::input`).
+    pub(crate) input: InputState,
+    /// Click targets of the last frame drawn.
+    pub(crate) hits: Hits,
+    /// The screen split of the last frame drawn.
+    regions: Regions,
     /// The model of the last frame drawn.
     view: Option<ViewModel>,
     deadline: Option<Instant>,
@@ -206,7 +216,17 @@ impl App {
         let host = TuiHost::new();
         let mut core = AppCore::new(config, startup, host.wake(), soyuz_appcore::services::preview_gfx::no_upload());
         core.renderer = "tui";
-        App { core, host, top: 0, view: None, deadline: None, last_frame: Instant::now(), last_save: Instant::now() }
+        App {
+            core,
+            host,
+            input: InputState::default(),
+            hits: Hits::default(),
+            regions: Regions::default(),
+            view: None,
+            deadline: None,
+            last_frame: Instant::now(),
+            last_save: Instant::now(),
+        }
     }
 
     /// The model of the last frame drawn.
@@ -214,9 +234,24 @@ impl App {
         self.view.as_ref()
     }
 
+    /// The screen split of the last frame drawn.
+    pub fn regions(&self) -> &Regions {
+        &self.regions
+    }
+
+    /// Click targets of the last frame drawn.
+    pub fn hits(&self) -> &Hits {
+        &self.hits
+    }
+
+    /// Who owns the keyboard now (`crate::input::focus`).
+    pub fn focus(&self) -> TuiFocus {
+        crate::input::focus(&self.core, &self.input)
+    }
+
     /// Key context of the frame's input (the core's prompts own the keyboard when open).
     pub fn key_context(&self) -> KeyContext {
-        if self.core.dialogs.is_open() { KeyContext::Dialog } else { KeyContext::FileList }
+        crate::input::key_context(self.focus()).0
     }
 
     /// Apply queued commands (bounded rounds, like the core's); the frontend requests are
@@ -234,7 +269,8 @@ impl App {
         self.drain_frontend();
     }
 
-    fn unavailable(&mut self, feature: &str) {
+    /// Say that `feature` has no terminal view yet.
+    pub(crate) fn unavailable(&mut self, feature: &str) {
         self.core.ui.toasts.push(Toast::info(tr!("tui-not-available")).body(feature));
     }
 
@@ -290,51 +326,6 @@ impl App {
         }
     }
 
-    /// Core states the terminal UI has no view for yet: reset them (so the keyboard
-    /// keeps working) and say so.
-    fn reset_unsupported(&mut self) {
-        if self.core.palette.open {
-            soyuz_appcore::palette::close(&mut self.core);
-            self.unavailable(tr!("tui-feature-palette"));
-        }
-        if self.core.ui.address.editing {
-            self.core.ui.address.editing = false;
-            self.core.ui.address.request_focus = false;
-            self.unavailable(tr!("tui-feature-address"));
-        }
-        if self.core.ui.settings_open {
-            self.core.ui.settings_open = false;
-            self.unavailable(tr!("tui-feature-settings"));
-        }
-        if self.core.ui.quicklook.open {
-            soyuz_appcore::models::quicklook::close(&mut self.core);
-            self.unavailable(tr!("tui-feature-quicklook"));
-        }
-        if soyuz_appcore::models::terminal::owns_keyboard(&self.core) {
-            self.core.ui.terminal.focused = false;
-            self.unavailable(tr!("tui-feature-terminal"));
-        }
-        if self.core.ui.focus == Focus::Sidebar {
-            self.core.ui.focus = Focus::List;
-            self.unavailable(tr!("tui-feature-sidebar"));
-        }
-    }
-
-    /// Keys while a core prompt is open go to the dialog fallback only (like the GUI,
-    /// where the modal owns the keyboard).
-    fn dialog_input(&mut self, events: &[Event]) {
-        for ev in events {
-            let Event::Key(k) = ev else { continue };
-            let Some(top) = self.core.dialogs.top_mut() else { break };
-            if let crate::dialog::Outcome::Close(cmd) = crate::dialog::on_key(top, k) {
-                if let Some(c) = cmd {
-                    self.core.cmds.push(c);
-                }
-                self.core.dialogs.close_top();
-            }
-        }
-    }
-
     fn input(&mut self, events: &[Event]) {
         // Prompts that went away by themselves close first.
         while let Some(top) = self.core.dialogs.top_mut() {
@@ -343,13 +334,7 @@ impl App {
             }
             self.core.dialogs.close_top();
         }
-        let kctx = self.key_context();
-        if kctx == KeyContext::Dialog {
-            self.dialog_input(events);
-            return;
-        }
-        let mut frame = crate::keys::frame(events, self.core.config.keys.cmd_is_ctrl, cfg!(windows));
-        self.core.input(&self.host, &mut frame, kctx, false);
+        crate::input::route(self, events);
     }
 
     /// Count down the toasts' timers; drop expired and dismissed ones.
@@ -396,23 +381,19 @@ impl App {
         self.apply_cmds();
         self.input(events);
         self.apply_cmds();
-        self.reset_unsupported();
+        crate::unsupported::reset_all(self);
         self.tick_toasts(dt);
 
         let size = terminal.size().map_err(io::Error::other)?;
-        let toasts = self.core.ui.toasts.live.iter().filter(|l| l.closing.is_none()).count();
-        let rows = view::list_rows(size.height, toasts);
-        {
-            let pane = self.core.ws.pane_mut();
-            pane.page_rows = rows;
-            pane.viewport_h = rows as f32;
-            // Cursor keys move linearly through the list (no GUI grid layout here).
-            pane.layout = None;
-        }
         self.core.prepare_visible_panes();
-        let model = ViewModel::from_core(&self.core, rows, self.top);
-        self.top = model.top;
-        terminal.draw(|f| view::draw(f, &model)).map_err(io::Error::other)?;
+        let area = Rect::new(0, 0, size.width, size.height);
+        let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
+        view::prepare(&mut self.core, &regions);
+        let model = ViewModel::from_core(&self.core, &regions);
+        let theme = TuiTheme::for_core(&self.core);
+        let hits = &mut self.hits;
+        terminal.draw(|f| view::draw(f, &model, &regions, &theme, hits)).map_err(io::Error::other)?;
+        self.regions = regions;
         self.view = Some(model);
 
         ops::fileops::end_frame(&mut self.core, &self.host);

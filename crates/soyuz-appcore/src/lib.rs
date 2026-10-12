@@ -24,6 +24,7 @@ pub mod color;
 pub mod commands;
 pub mod core;
 pub mod editors;
+pub mod file_class;
 pub mod geom;
 pub mod host;
 pub mod icon;

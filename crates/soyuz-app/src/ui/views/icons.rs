@@ -1,77 +1,12 @@
 //! File-type glyphs and colors (`glyph.*` design tokens).
 
 use egui::Color32;
-use soyuz_core::{EntryInfo, EntryKind, LinkTarget};
+use soyuz_core::{EntryInfo, EntryKind};
 
 use crate::theme::Palette;
 use crate::theme::icons::ph;
 
-/// Broad file category used for glyph + color.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum FileClass {
-    Folder,
-    Image,
-    Video,
-    Audio,
-    Archive,
-    Code,
-    Pdf,
-    Doc,
-    Sheet,
-    Slides,
-    Text,
-    Exe,
-    Font,
-    Link,
-    Other,
-}
-
-pub fn classify(e: &EntryInfo) -> FileClass {
-    if e.is_dir_like() {
-        return FileClass::Folder;
-    }
-    if let EntryKind::Symlink { target: LinkTarget::Missing } = e.kind {
-        return FileClass::Link;
-    }
-    let Some(ext) = e.extension() else { return FileClass::Other };
-    classify_ext(&ext.to_ascii_lowercase())
-}
-
-pub fn classify_ext(ext: &str) -> FileClass {
-    match ext {
-        "png" | "jpg" | "jpeg" | "jfif" | "gif" | "webp" | "bmp" | "svg" | "ico" | "tif" | "tiff" | "heic" | "heif"
-        | "avif" | "jxl" | "qoi" | "tga" | "exr" | "hdr" | "raw" | "dng" | "cr2" | "cr3" | "nef" | "arw" | "orf"
-        | "raf" | "rw2" | "psd" | "xcf" | "ai" | "eps" | "kra" | "sketch" | "fig" => FileClass::Image,
-        "mp4" | "m4v" | "mkv" | "mov" | "avi" | "webm" | "wmv" | "flv" | "mpg" | "mpeg" | "3gp" | "mts" | "m2ts"
-        | "ogv" | "vob" => FileClass::Video,
-        "mp3" | "flac" | "wav" | "ogg" | "oga" | "opus" | "m4a" | "aac" | "wma" | "aiff" | "aif" | "mid" | "midi"
-        | "ape" | "alac" | "mka" | "amr" | "au" => FileClass::Audio,
-        "zip" | "zipx" | "7z" | "rar" | "tar" | "gz" | "tgz" | "xz" | "txz" | "bz2" | "tbz2" | "zst" | "iso"
-        | "img" | "cab" | "lz" | "lzma" | "lz4" | "br" | "jar" | "war" | "apk" | "dmg" | "vhd" | "vhdx" | "wim" => {
-            FileClass::Archive
-        }
-        "rs" | "py" | "pyw" | "js" | "mjs" | "cjs" | "ts" | "cts" | "tsx" | "jsx" | "c" | "h" | "cpp" | "cc"
-        | "cxx" | "hpp" | "hh" | "cs" | "go" | "java" | "kt" | "kts" | "scala" | "swift" | "m" | "mm" | "rb"
-        | "php" | "lua" | "pl" | "pm" | "r" | "jl" | "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "json"
-        | "jsonc" | "json5" | "toml" | "yaml" | "yml" | "xml" | "html" | "htm" | "css" | "scss" | "sass" | "less"
-        | "sql" | "vue" | "svelte" | "astro" | "dart" | "zig" | "nim" | "hs" | "ml" | "fs" | "fsx" | "clj" | "erl"
-        | "ex" | "exs" | "elm" | "groovy" | "gradle" | "cmake" | "mk" | "proto" | "graphql" | "gql" | "tf" | "wasm"
-        | "wat" | "asm" | "s" | "ipynb" | "lock" | "env" | "editorconfig" | "gitignore" | "dockerfile" => {
-            FileClass::Code
-        }
-        "pdf" => FileClass::Pdf,
-        "doc" | "docx" | "odt" | "rtf" | "pages" | "tex" | "epub" | "mobi" | "azw3" | "djvu" | "xps" => FileClass::Doc,
-        "xls" | "xlsx" | "xlsm" | "ods" | "csv" | "tsv" | "numbers" | "parquet" => FileClass::Sheet,
-        "ppt" | "pptx" | "odp" | "key" => FileClass::Slides,
-        "txt" | "md" | "markdown" | "rst" | "adoc" | "org" | "log" | "ini" | "cfg" | "conf" | "nfo" | "srt" | "vtt"
-        | "ass" | "diff" | "patch" | "eml" | "msg" | "ics" | "vcf" => FileClass::Text,
-        "exe" | "msi" | "msix" | "appx" | "bat" | "cmd" | "com" | "scr" | "app" | "appimage" | "deb" | "rpm"
-        | "dll" | "sys" | "so" | "dylib" | "efi" => FileClass::Exe,
-        "ttf" | "otf" | "ttc" | "woff" | "woff2" | "eot" | "fon" => FileClass::Font,
-        "lnk" | "url" | "webloc" | "desktop" => FileClass::Link,
-        _ => FileClass::Other,
-    }
-}
+pub use soyuz_appcore::file_class::{FileClass, classify, classify_ext};
 
 /// An extension-specific glyph (curated Phosphor mapping), when there is one.
 pub fn ext_glyph(ext: &str) -> Option<&'static str> {

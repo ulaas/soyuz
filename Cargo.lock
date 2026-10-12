@@ -7076,6 +7076,8 @@ dependencies = [
  "soyuz-fs",
  "soyuz-jobs",
  "tempfile",
+ "unicode-segmentation",
+ "unicode-width",
 ]
 
 [[package]]
