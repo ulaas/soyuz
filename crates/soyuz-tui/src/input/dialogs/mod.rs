@@ -89,6 +89,11 @@ pub struct ModelUi {
     pub seq: u64,
     pub form: Form,
     pub list: SelectList,
+    /// The kind's page (job prompts: `1` while the conflict's "More…" options show).
+    pub page: usize,
+    /// Folder completions of a destination field ("Copy to" / "Move to"), refreshed
+    /// every frame by [`prepare`].
+    pub names: Vec<String>,
 }
 
 /// A terminal UI dialog (opened for a `FrontendCmd`), its state in its kind's file.
@@ -237,12 +242,16 @@ pub fn order(model: Option<u64>, tui: Option<u64>) -> Option<Top> {
 }
 
 /// Step 1 of a frame (`view::prepare`): the [`ModelUi`] of a core prompt that just
-/// reached the top exists before its first draw.
-pub fn prepare(core: &AppCore, st: &mut State) {
+/// reached the top exists before its first draw; a destination field's completions are
+/// requested and refreshed (`transfer::prepare`).
+pub fn prepare(core: &mut AppCore, st: &mut State) {
     if top(core, st) == Some(Top::Model)
         && let (Some(seq), Some(m)) = (core.dialogs.top_seq(), core.dialogs.top())
     {
-        model_ui(&mut st.model, seq, m);
+        let ui = model_ui(&mut st.model, seq, m);
+        if let DialogModel::Transfer(t) = m {
+            transfer::prepare(&mut core.services, t, ui);
+        }
     }
 }
 

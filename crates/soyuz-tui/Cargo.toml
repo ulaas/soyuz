@@ -53,7 +53,11 @@ signal-hook = "0.4.5"
 
 [dev-dependencies]
 tempfile.workspace = true
-# Plants a crash journal in the headless recovery tests (`tests/headless/recovery.rs`).
+# MCP approval requests and script plans in the dialog tests (`input/dialogs/approval_*.rs`).
+soyuz-ai.workspace = true
+soyuz-mcp.workspace = true
+soyuz-script.workspace = true
+# serde_json plants a crash journal in the headless recovery tests (`tests/headless/recovery.rs`).
 serde_json.workspace = true
 
 [build-dependencies]
