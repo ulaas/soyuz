@@ -12,6 +12,7 @@
 #![deny(unsafe_code)]
 
 pub mod app;
+pub mod borders;
 pub mod dialog;
 pub mod hits;
 pub mod host;

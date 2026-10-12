@@ -389,7 +389,8 @@ impl App {
         let area = Rect::new(0, 0, size.width, size.height);
         let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
         view::prepare(&mut self.core, &regions);
-        let model = ViewModel::from_core(&self.core, &regions);
+        let mut model = ViewModel::from_core(&self.core, &regions);
+        crate::input::filter::decorate(&mut self.input.filter, &self.core, &mut model.status, area.width);
         let theme = TuiTheme::for_core(&self.core);
         let hits = &mut self.hits;
         terminal.draw(|f| view::draw(f, &model, &regions, &theme, hits)).map_err(io::Error::other)?;

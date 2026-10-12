@@ -99,7 +99,7 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     for (vm, p) in m.panes.iter().zip(&regions.panes) {
         pane::draw_pane(f, p.rect, vm, theme, hits);
     }
-    toasts::draw_toasts(f, regions.toasts, &m.toasts, theme, hits);
+    toasts::draw_toasts(f, toasts::area(regions), &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     if let Some(d) = &m.dialog {
@@ -168,7 +168,12 @@ mod tests {
             panes: vec![pane(0, true)],
             crumbs: CrumbsVm { path: "/data".into() },
             sidebar: SidebarVm::default(),
-            status: StatusVm { counts: "3 items · 1 selected".into(), hint: "Ctrl+Q quit".into() },
+            status: StatusVm {
+                visible: true,
+                counts: "3 items · 1 selected".into(),
+                hint: "Ctrl+Q quit".into(),
+                ..StatusVm::default()
+            },
             toasts: ToastsVm::default(),
             palette: PaletteVm::default(),
             dialog: None,
@@ -208,16 +213,25 @@ mod tests {
         m.panes[0].lines.clear();
         m.panes[0].total = 0;
         m.panes[0].message = Some("This folder is empty".into());
-        m.toasts.lines = vec![
-            ToastLine { kind: ToastKind::Info, text: "Copied".into() },
-            ToastLine { kind: ToastKind::Error, text: "Failed — why".into() },
-        ];
-        let facts = Facts { toasts: 2, ..Facts::default() };
-        let (lines, buf, _) = screen(&m, &facts, 40, 8);
+        let toast = |id: u64, kind: ToastKind, title: &str, body: Option<&str>| ToastLine {
+            id,
+            kind,
+            title: title.into(),
+            body: body.map(Into::into),
+            action: None,
+            sticky: false,
+        };
+        m.toasts.lines =
+            vec![toast(1, ToastKind::Info, "Copied", None), toast(2, ToastKind::Error, "Failed", Some("why"))];
+        let (lines, buf, hits) = screen(&m, &Facts::default(), 80, 12);
         assert!(lines[1].contains("This folder is empty"), "{lines:?}");
-        assert_eq!(lines[5], "[i] Copied");
-        assert_eq!(lines[6], "[x] Failed — why");
-        assert!(buf[(0, 6)].modifier.contains(Modifier::BOLD));
+        // Toasts float over the list in the top-right corner, newest first.
+        assert!(lines[2].ends_with("│ [x] Failed           │"), "{lines:?}");
+        assert!(lines[3].contains("│ why "), "{lines:?}");
+        assert!(lines[6].contains("[i] Copied"), "{lines:?}");
+        assert!(buf[(62, 2)].modifier.contains(Modifier::BOLD));
+        assert_eq!(hits.at(60, 2), Some(HitTarget::Toast(1)));
+        assert_eq!(hits.at(60, 6), Some(HitTarget::Toast(0)));
     }
 
     #[test]
@@ -254,7 +268,15 @@ mod tests {
     #[test]
     fn draw_every_view_at_tiny_sizes() {
         let mut m = model();
-        m.toasts.lines = vec![ToastLine { kind: ToastKind::Warning, text: "日本語 warning".into() }; 3];
+        let warning = ToastLine {
+            id: 1,
+            kind: ToastKind::Warning,
+            title: "日本語 warning".into(),
+            body: Some("body".into()),
+            action: Some("Undo (Ctrl+Z)".into()),
+            sticky: true,
+        };
+        m.toasts.lines = vec![warning; 3];
         m.panes[0].lines.insert(0, PaneLine::Header { group: 0, label: "Today".into(), count: 3 });
         let mut with_dialog = m.clone();
         with_dialog.dialog = Some(DialogView {
