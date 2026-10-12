@@ -162,8 +162,12 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         (pane.cursor_pos().map_or(0, |i| i + 1), pane.visible.len())
     };
     let dark = TuiTheme::cached(core, false).is_dark();
-    let loader =
-        st.loader.get_or_insert_with(|| PreviewLoader::new(core.wake.clone(), core.uploader.clone(), true, 1.0));
+    let loader = st.loader.get_or_insert_with(|| {
+        let mut l = PreviewLoader::new(core.wake.clone(), core.uploader.clone(), true, 1.0);
+        // Only pixels reach the terminal: SVG and 3D models come rasterized.
+        l.terminal = true;
+        l
+    });
     let limits = loader.limits(&core.config, dark, PLAIN_FG);
     if loader.set_target(Some(&target), limits) {
         st.scroll = 0;
