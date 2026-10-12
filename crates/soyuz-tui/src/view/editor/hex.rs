@@ -82,8 +82,16 @@ pub fn hit_byte(digits: u16, dx: u16) -> Option<(u64, bool)> {
     Some((i, false))
 }
 
-/// The geometry, scrolling, page requests and model of one frame.
-pub fn prepare(h: &mut HexDoc, v: &mut DocView, save_as: Option<&mut SaveAs>, area: Rect, focused: bool) -> HexVm {
+/// The geometry, scrolling, page requests and model of one frame (`notice_key`: the
+/// chord of the notice's action).
+pub fn prepare(
+    h: &mut HexDoc,
+    v: &mut DocView,
+    save_as: Option<&mut SaveAs>,
+    area: Rect,
+    focused: bool,
+    notice_key: &str,
+) -> HexVm {
     h.pump();
     let mut vm =
         HexVm { digits: offset_digits(h.len), read_only: h.read_only, text_col: h.text_col, ..HexVm::default() };
@@ -91,7 +99,7 @@ pub fn prepare(h: &mut HexDoc, v: &mut DocView, save_as: Option<&mut SaveAs>, ar
     if v.bar == Bar::Find && h.find.is_none() || v.bar == Bar::Goto && h.goto.is_none() {
         v.bar = Bar::Text;
     }
-    if v.bar == Bar::SaveAs && save_as.is_none() || v.bar == Bar::Replace {
+    if v.bar == Bar::SaveAs && save_as.is_none() || matches!(v.bar, Bar::Replace | Bar::Crop | Bar::Resize) {
         v.bar = Bar::Text;
     }
     if let Some(f) = &h.find {
@@ -121,7 +129,7 @@ pub fn prepare(h: &mut HexDoc, v: &mut DocView, save_as: Option<&mut SaveAs>, ar
     vm.notice = if let Some(e) = &h.error {
         Some(tr!("editors-hex-read-failed", error = crate::dialog::safe(e)))
     } else if h.too_large_for_text && h.read_only {
-        Some(format!("{}  ({})", tr!("editors-hex-too-large"), tr!("tui-editor-notice-allow")))
+        Some(format!("{}  ({})", tr!("editors-hex-too-large"), tr!("tui-editor-notice-allow", key = notice_key)))
     } else {
         None
     };

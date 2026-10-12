@@ -5,7 +5,13 @@
 //!   default chord in any preset; the GUI reaches the sidebar with the mouse and Tab) gets
 //!   F12, which no preset binds; `FocusActivityPanel` (the jobs panel) gets Alt+J. Like
 //!   the alternatives below, a default is only added while its chord is free, so a user
-//!   binding of F12 wins.
+//!   binding of F12 wins. `FocusEditor` gets Alt+E. The editors' own commands
+//!   ([`EDITOR_DEFAULTS`], `KeyContext::Editor`) get the terminal's chords: Replace is
+//!   Ctrl+R (Ctrl+H is Backspace or Ctrl+Backspace in many terminals, so the editor
+//!   deletes the word before the caret with it), plus save as, wrap, maximize, the dock
+//!   side, the notice's action and the find bar's toggles. Editor chords shadow the global
+//!   ones only while a document has the keyboard, so they never count as taken for the
+//!   alternatives below ([`is_free`]).
 //! - [`apply`], on legacy terminals (no kitty keyboard protocol): the alternatives below.
 //!   [`legacy`] runs both.
 //! - [`windows_terminal`] / [`windows_terminal_legacy`], inside Windows Terminal (see
@@ -107,7 +113,30 @@ pub const TUI_DEFAULTS: &[(Action, &str, KeyContext)] = &[
     (Action::FocusSidebar, "F12", KeyContext::Global),
     // The jobs panel (Phase T3); Ctrl+J is Enter on legacy terminals.
     (Action::FocusActivityPanel, "Alt+J", KeyContext::Global),
+    // Back into the editor after Esc (Phase T4).
+    (Action::FocusEditor, "Alt+E", KeyContext::Global),
 ];
+
+/// `(editor command, chords)` the terminal UI binds in `KeyContext::Editor`
+/// ([`editor_defaults`]). Ctrl+Shift+S arrives as Ctrl+S in legacy terminals: save as
+/// has Alt+Shift+S too.
+pub const EDITOR_DEFAULTS: &[(Action, &[&str])] = &[
+    (Action::EditorReplace, &["Ctrl+R"]),
+    (Action::EditorSaveAs, &["Ctrl+Shift+S", "Alt+Shift+S"]),
+    (Action::EditorToggleWrap, &["Alt+Z"]),
+    (Action::EditorMaximize, &["Alt+M"]),
+    (Action::EditorToggleDock, &["Alt+Shift+M"]),
+    (Action::EditorNoticeAction, &["Alt+E"]),
+    (Action::EditorMatchCase, &["Alt+C"]),
+    (Action::EditorWholeWord, &["Alt+W"]),
+    (Action::EditorRegex, &["Alt+R"]),
+    (Action::EditorReplaceAll, &["Alt+A"]),
+    (Action::EditorResizeImage, &["Alt+S"]),
+];
+
+/// The chord the terminal UI never sees as itself in the editor (Ctrl+H deletes the word
+/// before the caret, `input::editor`): taken off the editor's bindings.
+pub const EDITOR_UNSENDABLE: &str = "Ctrl+H";
 
 /// Chords Windows Terminal's default key bindings always consume, as Soyuz spells them
 /// (WT `defaults.json` and `userDefaults.json`, 2026). `ctrl+plus` / `alt+shift+plus` are
@@ -317,10 +346,36 @@ fn chord(s: &str) -> KeyChord {
     s.parse().unwrap_or(KeyChord::new(Mods::empty(), KeyName::F24))
 }
 
-/// `chord` is not bound in any context and starts no sequence.
+/// `chord` is not bound in any context (but the editor's, which shadows the others only
+/// while a document has the keyboard) and starts no sequence.
 fn is_free(km: &Keymap, chord: KeyChord) -> bool {
-    !km.bindings.values().any(|v| v.contains(&chord))
+    !km.bindings.iter().any(|((ctx, _), v)| *ctx != KeyContext::Editor && v.contains(&chord))
         && !km.sequences.values().any(|seqs| seqs.iter().any(|s| s.first() == Some(&chord)))
+}
+
+/// The editor commands of [`EDITOR_DEFAULTS`]: Ctrl+H ([`EDITOR_UNSENDABLE`]) leaves the
+/// editor's bindings, then a command without a chord gets its defaults that are free in
+/// `KeyContext::Editor` (a user binding of the command, or of the chord, wins).
+pub fn editor_defaults(km: &mut Keymap) {
+    let gone = chord(EDITOR_UNSENDABLE);
+    for ((ctx, _), v) in km.bindings.iter_mut() {
+        if *ctx == KeyContext::Editor {
+            v.retain(|c| *c != gone);
+        }
+    }
+    km.bindings.retain(|_, v| !v.is_empty());
+    for (action, chords) in EDITOR_DEFAULTS {
+        let bound = !km.chords_for(action).is_empty() || km.sequences.keys().any(|(_, a)| a == action);
+        if bound {
+            continue;
+        }
+        for c in chords.iter().map(|s| chord(s)) {
+            let taken = km.bindings.iter().any(|((ctx, _), v)| *ctx == KeyContext::Editor && v.contains(&c));
+            if !taken {
+                km.bind(KeyContext::Editor, action.clone(), c);
+            }
+        }
+    }
 }
 
 /// Add the [`TUI_DEFAULTS`] whose chord is free and whose action has no chord or sequence
@@ -334,6 +389,7 @@ pub fn tui_defaults(km: &mut Keymap) {
             km.bind(*ctx, action.clone(), c);
         }
     }
+    editor_defaults(km);
 }
 
 /// The overlay of a legacy terminal: [`tui_defaults`], then [`apply`].
@@ -469,6 +525,46 @@ mod tests {
         s.parse().unwrap()
     }
 
+    #[test]
+    fn editor_defaults_use_terminal_chords() {
+        for p in KeyPreset::ALL {
+            let mut c = Config::default();
+            c.keys.preset = p;
+            let (km, _) = keymap(&c);
+            let mut over = km.clone();
+            legacy(&mut over);
+            let ed = |s: &str| soyuz_appcore::editors::commands::binding(&over, ch(s));
+            assert_eq!(ed("Ctrl+R"), Some(Action::EditorReplace), "{p:?}");
+            assert_eq!(ed("Ctrl+H"), None, "{p:?}: Ctrl+H deletes a word");
+            assert_eq!(ed("Ctrl+F"), Some(Action::EditorFind), "{p:?}");
+            assert_eq!(ed("Alt+Shift+S"), Some(Action::EditorSaveAs), "{p:?}");
+            assert_eq!(ed("Alt+E"), Some(Action::EditorNoticeAction), "{p:?}");
+            assert_eq!(over.lookup(KeyContext::FileList, ch("Alt+E")), Some(&Action::FocusEditor), "{p:?}");
+            // Outside the editor, Ctrl+R stays Refresh.
+            if p != KeyPreset::Finder {
+                assert_eq!(over.lookup(KeyContext::FileList, ch("Ctrl+R")), Some(&Action::Refresh), "{p:?}");
+            }
+            // Legacy alternatives are not blocked by editor chords (Ctrl+PageDown).
+            if p == KeyPreset::Explorer {
+                assert_eq!(over.lookup(KeyContext::Global, ch("Ctrl+PageDown")), Some(&Action::NextTab));
+            }
+            assert_eq!(analyze(&over), analyze(&km), "{p:?}");
+        }
+        // A user binding of Replace stays; its Ctrl+H goes.
+        let mut c = Config::default();
+        c.keys.bindings.insert("editor_replace".into(), vec!["Ctrl+H".into(), "Alt+H".into()]);
+        let (mut km, _) = keymap(&c);
+        tui_defaults(&mut km);
+        assert_eq!(km.chords_for(&Action::EditorReplace), [ch("Alt+H")]);
+        // A user binding of an editor chord wins.
+        let mut c = Config::default();
+        c.keys.bindings.insert("editor_toggle_wrap".into(), vec!["Alt+M".into()]);
+        let (mut km, _) = keymap(&c);
+        tui_defaults(&mut km);
+        assert_eq!(soyuz_appcore::editors::commands::binding(&km, ch("Alt+M")), Some(Action::EditorToggleWrap));
+        assert!(km.chords_for(&Action::EditorMaximize).is_empty());
+    }
+
     fn wt_lists() -> impl Iterator<Item = &'static str> {
         WT_BLOCKED.iter().chain(WT_PASTE).chain(WT_CONDITIONAL).copied()
     }
@@ -559,7 +655,9 @@ mod tests {
             assert_eq!(analyze(&over), analyze(&km), "{p:?} paste {paste} legacy {leg}");
             for ((ctx, a), v) in &km.bindings {
                 let o = &over.bindings[&(*ctx, a.clone())];
-                assert!(v.iter().all(|c| o.contains(c)), "{p:?}: {a:?} lost a chord");
+                // Only the editor's Ctrl+H goes (`editor_defaults`).
+                let kept = |c: &KeyChord| o.contains(c) || (*ctx == KeyContext::Editor && *c == ch(EDITOR_UNSENDABLE));
+                assert!(v.iter().all(kept), "{p:?}: {a:?} lost a chord");
             }
             assert_eq!(over.sequences, km.sequences);
             // Idempotent.

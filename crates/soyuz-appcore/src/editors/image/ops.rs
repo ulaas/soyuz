@@ -1,5 +1,5 @@
-//! Image edit operations (pure): rotate, flip and crop, replayed on the display copy
-//! and on the full-resolution image at save time, plus the save-format policy.
+//! Image edit operations (pure): rotate, flip, crop and resize, replayed on the display
+//! copy and on the full-resolution image at save time, plus the save-format policy.
 
 use image::DynamicImage;
 
@@ -43,6 +43,11 @@ pub enum ImgOp {
     FlipH,
     FlipV,
     Crop(NormRect),
+    /// Scale to exactly `w × h` pixels (the terminal UI's resize bar).
+    Resize {
+        w: u32,
+        h: u32,
+    },
 }
 
 impl ImgOp {
@@ -56,6 +61,7 @@ impl ImgOp {
                 let (x, y, w, h) = r.to_pixels(img.width(), img.height());
                 img.crop_imm(x, y, w, h)
             }
+            ImgOp::Resize { w, h } => img.resize_exact((*w).max(1), (*h).max(1), image::imageops::FilterType::Lanczos3),
         }
     }
 }
@@ -79,6 +85,7 @@ pub fn size_after(mut w: u32, mut h: u32, ops: &[ImgOp]) -> (u32, u32) {
                 let (_, _, cw, ch) = r.to_pixels(w, h);
                 (w, h) = (cw, ch);
             }
+            ImgOp::Resize { w: rw, h: rh } => (w, h) = ((*rw).max(1), (*rh).max(1)),
         }
     }
     (w, h)
@@ -143,6 +150,16 @@ mod tests {
         assert_eq!(size_after(3, 2, &ops), (1, 3));
         let out = replay(&img, &ops);
         assert_eq!((out.width(), out.height()), (1, 3));
+    }
+
+    #[test]
+    fn resize_scales_to_the_exact_size() {
+        let img = sample();
+        let r = ImgOp::Resize { w: 6, h: 1 }.apply(&img);
+        assert_eq!((r.width(), r.height()), (6, 1));
+        let ops = [ImgOp::RotateCw, ImgOp::Resize { w: 10, h: 0 }];
+        assert_eq!(size_after(3, 2, &ops), (10, 1), "never zero");
+        assert_eq!(replay(&img, &ops).width(), 10);
     }
 
     #[test]

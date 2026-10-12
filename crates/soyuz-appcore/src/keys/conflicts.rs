@@ -79,7 +79,12 @@ pub fn analyze(km: &Keymap) -> Vec<Conflict> {
                     continue;
                 }
                 // Text fields and dialogs never see most global chords anyway.
-                if matches!(other_ctx, KeyContext::Omnibar | KeyContext::Dialog | KeyContext::Rename) {
+                // The editors' commands shadow global chords on purpose (Ctrl+F finds in the
+                // document, not in the folder).
+                if matches!(
+                    other_ctx,
+                    KeyContext::Omnibar | KeyContext::Dialog | KeyContext::Rename | KeyContext::Editor
+                ) {
                     continue;
                 }
                 out.push(Conflict {

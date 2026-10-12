@@ -447,7 +447,7 @@ const DIGITS: [KeyName; 9] = [
 /// Bindings shared by both presets.
 fn common(km: &mut Keymap) {
     use Action as A;
-    use KeyContext::{FileList as L, Global as G};
+    use KeyContext::{Editor as E, FileList as L, Global as G};
     let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
 
     // Global
@@ -538,6 +538,19 @@ fn common(km: &mut Keymap) {
     b(L, A::OpenInNewTab, CTRL, KeyName::Enter);
     // "Edit in Soyuz" (Total Commander's F4 = edit).
     b(L, A::OpenInEditor, NONE, KeyName::F4);
+
+    // The built-in editors while a document has the keyboard (they shadow the global
+    // chords there). The terminal UI adds its own (`soyuz-tui` overlay: Ctrl+R replace,
+    // save as, wrap, maximize, …).
+    b(E, A::EditorSave, CTRL, KeyName::S);
+    b(E, A::EditorFind, CTRL, KeyName::F);
+    b(E, A::EditorReplace, CTRL, KeyName::H);
+    b(E, A::EditorGoTo, CTRL, KeyName::G);
+    b(E, A::EditorFindNext, NONE, KeyName::F3);
+    b(E, A::EditorFindPrev, SHIFT, KeyName::F3);
+    b(E, A::EditorCloseDocument, CTRL, KeyName::W);
+    b(E, A::EditorNextDocument, CTRL, KeyName::PageDown);
+    b(E, A::EditorPrevDocument, CTRL, KeyName::PageUp);
 }
 
 /// Build the key map for a preset (before `[keys.bindings]` overrides).

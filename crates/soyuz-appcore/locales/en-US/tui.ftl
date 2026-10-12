@@ -22,7 +22,6 @@ tui-feature-attributes = Attributes
 tui-feature-links = New link
 tui-feature-quicklook = Quick Look
 tui-feature-terminal = Terminal panel
-tui-feature-editor = Editor
 tui-feature-jobs = Jobs panel
 
 ## T1: the frame loop (crash reports, interrupted jobs)

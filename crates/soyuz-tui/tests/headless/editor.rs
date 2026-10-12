@@ -9,6 +9,7 @@ use ratatui::backend::TestBackend;
 use soyuz_appcore::editors::DocKind;
 use soyuz_appcore::editors::text::buffer::Pos;
 use soyuz_tui::app::{App, NullIo};
+use soyuz_tui::input::TuiFocus;
 use soyuz_tui::view::editor::BodyVm;
 
 use crate::common::{self, Run, Step, ctrl, key, key_mods, type_text};
@@ -420,5 +421,163 @@ fn tui_edit_mouse() {
     frame(&mut app, &[press(hide.x, hide.y)]);
     assert!(!app.core.editors.open, "hidden");
     assert_eq!(app.core.editors.docs.len(), 1, "the document stays open");
+    common::ok();
+}
+
+/// `[keys.bindings] editor_replace` moves Replace: Alt+H opens the replace bar, Ctrl+R (the
+/// terminal UI's default) no longer does.
+#[test]
+fn tui_edit_rebind_replace() {
+    let run = common::relaunch(module_path!(), "tui_edit_rebind_replace", |data| {
+        std::fs::write(data.join("find.txt"), b"one two\n").unwrap();
+    });
+    let Run::Child(data) = run else { return };
+    let mut c = common::test_config();
+    c.keys.bindings.insert("editor_replace".into(), vec!["Alt+H".into()]);
+    let mut app = common::new_app(c, &data);
+    let replace_open = |a: &App| match a.core.editors.active_doc().map(|d| &d.kind) {
+        Some(DocKind::Text(t)) => t.find.open && t.find.replace,
+        _ => false,
+    };
+    let steps = [
+        open("find.txt"),
+        vec![
+            Step::new("the text editor has the keyboard", text_ready, ctrl('r')),
+            Step::new("Ctrl+R is not Replace any more", move |a| !replace_open(a) && text_ready(a), common::alt('h')),
+            Step::new("Alt+H opens the replace bar", replace_open, key(KeyCode::Esc)),
+            Step::new("closed", move |a| !replace_open(a), ctrl('q')),
+        ],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    common::run_script(&mut app, steps, 100, 24);
+    common::ok();
+}
+
+/// A small PNG in the image editor: R rotates, the resize command (Alt+S) scales it by
+/// numbers, C crops by numbers, Ctrl+S writes it; the file on disk has the new pixel
+/// size.
+#[test]
+fn tui_edit_image_rotate_resize_save() {
+    let run = common::relaunch(module_path!(), "tui_edit_image_rotate_resize_save", |data| {
+        let img = image::RgbaImage::from_fn(3, 2, |x, y| image::Rgba([x as u8 * 80, y as u8 * 120, 50, 255]));
+        img.save(data.join("pic.png")).unwrap();
+    });
+    let size = |a: &App| match a.core.editors.active_doc().map(|d| &d.kind) {
+        Some(DocKind::Image(i)) => Some(i.size()),
+        _ => None,
+    };
+    match run {
+        Run::Child(data) => {
+            let mut app = common::new_app(common::test_config(), &data);
+            let ready =
+                |a: &App| a.view().is_some_and(|v| v.editor.focused && matches!(v.editor.body, BodyVm::Image(_)));
+            let bars = |n: usize| move |a: &App| matches!(a.view().map(|v| &v.editor.body), Some(BodyVm::Image(i)) if i.bars.len() == n);
+            let mut steps = open("pic.png");
+            steps.push(Step::new("the image editor has the keyboard", ready, key(KeyCode::Char('r'))));
+            steps.push(Step::new("rotated", move |a| size(a) == Some((2, 3)), common::alt('s')));
+            // The width field holds "2": make it 4 (the empty height keeps the aspect).
+            steps.push(Step::new("the resize bar", bars(2), key(KeyCode::Backspace)));
+            type_text(&mut steps, "4");
+            steps.push(Step::new("typed", |_| true, key(KeyCode::Enter)));
+            steps.push(Step::new("resized", move |a| size(a) == Some((4, 6)), key(KeyCode::Char('c'))));
+            // The crop bar: x, y, width (focused, "4"), height.
+            steps.push(Step::new("the crop bar", bars(4), key(KeyCode::Backspace)));
+            type_text(&mut steps, "3");
+            steps.push(Step::new("typed", |_| true, key(KeyCode::Down)));
+            steps.push(Step::new("the height", |_| true, key(KeyCode::Backspace)));
+            type_text(&mut steps, "5");
+            steps.push(Step::new("typed", |_| true, key(KeyCode::Enter)));
+            steps.push(Step::new("cropped", move |a| size(a) == Some((3, 5)) && bars(0)(a), ctrl('s')));
+            steps.push(Step::new("saved", clean, ctrl('q')));
+            common::run_script(&mut app, steps, 100, 24);
+            assert_eq!(image::image_dimensions(data.join("pic.png")).unwrap(), (3, 5));
+            common::ok();
+        }
+        Run::Parent(p) => {
+            assert_eq!(image::image_dimensions(p.data.join("pic.png")).unwrap(), (3, 5), "rotated, resized, cropped");
+        }
+    }
+}
+
+/// The file changes on disk under unsaved edits: the banner shows, the notice key
+/// (Alt+E) reloads the file from disk.
+#[test]
+fn tui_edit_external_change_reload() {
+    let run = common::relaunch(module_path!(), "tui_edit_external_change_reload", |data| {
+        std::fs::write(data.join("note.txt"), b"old\n").unwrap();
+    });
+    let Run::Child(data) = run else { return };
+    let mut app = common::new_app(common::test_config(), &data);
+    let mut term = Terminal::new(TestBackend::new(100, 24)).unwrap();
+    let mut io = NullIo::default();
+    let mut frame = |app: &mut App, events: &[Event]| app.frame(&mut term, events, &mut io).unwrap();
+    let banner = |a: &App| a.view().is_some_and(|v| v.editor.banner.is_some());
+    let wait = |app: &mut App, frame: &mut dyn FnMut(&mut App, &[Event]), what: &str, f: &dyn Fn(&App) -> bool| {
+        let start = Instant::now();
+        while !f(app) {
+            assert!(start.elapsed() < Duration::from_secs(30), "timed out waiting for {what}");
+            frame(app, &[]);
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    wait(&mut app, &mut frame, "the listing", &|a: &App| common::labels(a) == ["note.txt"]);
+    frame(&mut app, &[key(KeyCode::Down)]);
+    wait(&mut app, &mut frame, "the file under the cursor", &on("note.txt"));
+    frame(&mut app, &[key(KeyCode::F(4))]);
+    wait(&mut app, &mut frame, "the text editor", &text_ready);
+    frame(&mut app, &[key(KeyCode::Char('x'))]);
+    assert_eq!(text(&app), "xold\n");
+    // Change the file until the watcher (registered on a worker) reports it.
+    let start = Instant::now();
+    let mut n = 0;
+    while !banner(&app) {
+        assert!(start.elapsed() < Duration::from_secs(30), "no banner");
+        if start.elapsed() >= Duration::from_millis(700 * n) {
+            n += 1;
+            std::fs::write(data.join("note.txt"), format!("new{}\n", "!".repeat(n as usize))).unwrap();
+        }
+        frame(&mut app, &[]);
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let text_of = |a: &App| a.view().and_then(|v| v.editor.banner.as_ref()).map(|b| b.text.clone()).unwrap_or_default();
+    assert!(text_of(&app).contains("changed on disk"), "{}", text_of(&app));
+    frame(&mut app, &[common::alt('e')]);
+    let disk = std::fs::read_to_string(data.join("note.txt")).unwrap();
+    wait(&mut app, &mut frame, "the reload", &|a: &App| {
+        text(a) == disk && !a.core.editors.active_doc().unwrap().is_dirty()
+    });
+    assert!(!banner(&app));
+    common::ok();
+}
+
+/// Alt+J moves the keyboard from the editor to the jobs panel; Alt+E (`FocusEditor`)
+/// brings it back, also after Esc left the editor.
+#[test]
+fn tui_edit_focus_keys() {
+    let run = common::relaunch(module_path!(), "tui_edit_focus_keys", |data| {
+        std::fs::write(data.join("note.txt"), b"abc\n").unwrap();
+    });
+    let Run::Child(data) = run else { return };
+    let mut app = common::new_app(common::test_config(), &data);
+    let steps = [
+        open("note.txt"),
+        vec![
+            Step::new("the text editor has the keyboard", text_ready, common::alt('j')),
+            Step::new("the jobs panel has it", |a| a.focus() == TuiFocus::Jobs, common::alt('e')),
+            Step::new("back in the editor", |a| a.focus() == TuiFocus::Editor && text_ready(a), key(KeyCode::Esc)),
+            Step::new("Esc left the editor", |a| a.focus() == TuiFocus::List, common::alt('e')),
+            Step::new("back again", |a| a.focus() == TuiFocus::Editor, key(KeyCode::Char('z'))),
+            Step::new("typing goes to the document", |a| text(a) == "zabc\n", ctrl('w')),
+            Step::new("asked to save", |a| common::dialog_title(a).is_some(), key(KeyCode::Right)),
+            Step::new("on Don't save", |_| true, key(KeyCode::Enter)),
+            Step::new("closed", |a| a.core.editors.docs.is_empty(), ctrl('q')),
+        ],
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    common::run_script(&mut app, steps, 100, 24);
     common::ok();
 }
