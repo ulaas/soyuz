@@ -12,13 +12,10 @@ use egui::{
     Align2, Color32, CornerRadius, FontId, Id, Mesh, Pos2, Rect, Response, ScrollArea, Sense, Shape, Stroke,
     StrokeKind, Ui, UiBuilder, pos2, vec2,
 };
-use soyuz_core::config::Action;
-use soyuz_core::{SizeStyle, format_eta, format_size, format_speed};
 use soyuz_jobs::{JobSnapshot, JobState, LogLevel, Priority};
 
 use crate::app::SoyuzApp;
-use crate::cmd::Cmd;
-use crate::ops::fileops::{FileOpCmd, HistoryAction, names};
+use crate::models::jobs_rows::{self, JobRow, RowButton, Tone};
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
@@ -45,6 +42,21 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
         OpKind::Redo => (ph::ARROW_U_UP_RIGHT, p.text_secondary),
         OpKind::Retry => (ph::ARROW_CLOCKWISE, p.accent),
         OpKind::Other => (ph::GEAR_SIX, p.text_secondary),
+    }
+}
+
+/// The palette colour of a row tone (`models::jobs_rows`).
+pub fn tone_color(t: Tone, p: &Palette) -> Color32 {
+    match t {
+        Tone::Text => p.text_primary,
+        Tone::Muted => p.text_secondary,
+        Tone::Faint => p.text_tertiary,
+        Tone::Accent => p.accent,
+        Tone::Info => p.info,
+        Tone::Success => p.success,
+        Tone::Warning => p.warning,
+        Tone::Danger => p.danger,
+        Tone::Folder => p.glyph_folder,
     }
 }
 
@@ -156,14 +168,7 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
     let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
     let mut x = bar.left();
     for (tab, label) in [
-        (
-            ActivityTab::Jobs,
-            if pending > 0 {
-                tr!("panels-tab-jobs-pending", count = pending)
-            } else {
-                tr!("panels-tab-jobs").to_string()
-            },
-        ),
+        (ActivityTab::Jobs, jobs_rows::jobs_tab_label(&app.core)),
         (ActivityTab::History, tr!("panels-tab-history").to_string()),
     ] {
         let g = ui.painter().layout_no_wrap(label, FontId::proportional(12.0), p.text_primary);
@@ -227,54 +232,18 @@ fn empty(ui: &mut Ui, p: &Palette, glyph: &str, title: &str, sub: &str) {
 }
 
 fn jobs_list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let mut snaps: Vec<JobSnapshot> = app.core.fileops.jobs.snapshots().to_vec();
+    // Active first (by queue position), finished last (newest first).
+    let snaps: Vec<JobSnapshot> = jobs_rows::sorted_snapshots(&app.core);
     if snaps.is_empty() {
         empty(ui, p, ph::PULSE, tr!("panels-jobs-empty"), tr!("panels-jobs-empty-hint"));
         return;
     }
-    // Active first (by queue position), finished last (newest first).
-    snaps.sort_by_key(|s| {
-        (
-            s.state.is_terminal(),
-            if s.state.is_terminal() {
-                u64::MAX - s.id.0
-            } else {
-                s.queue_pos.map_or(0, |q| q as u64 + 1) * 1_000_000 + s.id.0
-            },
-        )
-    });
     ScrollArea::vertical().id_salt("soyuz.activity.jobs").auto_shrink([false, false]).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
         for s in &snaps {
             job_card(ui, app, s, p);
         }
     });
-}
-
-fn state_line(s: &JobSnapshot, meta: Option<&JobMeta>) -> (String, Option<Color32>) {
-    let _ = meta;
-    match &s.state {
-        JobState::Queued => (
-            match s.queue_pos {
-                Some(q) => tr!("panels-state-queued-at", position = (q + 1).to_string()),
-                None => tr!("panels-state-queued").into(),
-            },
-            None,
-        ),
-        JobState::Planning => (tr!("panels-state-planning").into(), None),
-        JobState::Running => (
-            s.progress
-                .current
-                .as_ref()
-                .map(|c| soyuz_core::entry::display_name(c))
-                .unwrap_or_else(|| tr!("panels-state-working").into()),
-            None,
-        ),
-        JobState::Paused => (tr!("panels-state-paused").into(), None),
-        JobState::WaitingForUser => (tr!("panels-state-waiting").into(), Some(Color32::YELLOW)),
-        JobState::Finishing => (tr!("panels-state-finishing").into(), None),
-        JobState::Done(_) | JobState::Failed(_) | JobState::Cancelled => (names::outcome(&s.state), None),
-    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -286,22 +255,18 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         .meta(s.id)
         .cloned()
         .unwrap_or_else(|| JobMeta::new(OpKind::from_brief(s.kind), &[], None));
-    let active = !s.state.is_terminal();
-    let total_items = s.progress.totals_known.then_some(s.progress.items_total);
-    let title = names::job_title(&meta, !matches!(s.state, JobState::Done(_)), total_items, &s.label);
+    let row = JobRow::new(&app.core, s);
+    let active = row.active;
+    let title = row.title.clone();
     let expanded = app.core.fileops.activity.expanded.contains(&s.id);
-    let summary = match &s.state {
-        JobState::Done(sum) => Some(sum.clone()),
-        _ => None,
-    };
-    let failed = summary.as_ref().is_some_and(|x| x.items_failed > 0);
+    let summary = row.summary.clone();
     let w = ui.available_width();
     let base_h = 86.0;
     let extra = if expanded { 168.0 } else { 0.0 };
     let (card, _) = ui.allocate_exact_size(vec2(w, base_h + extra), Sense::hover());
     let painter = ui.painter_at(card);
     painter.rect_filled(card, CornerRadius::same(radius::CARD), p.bg_window);
-    let waiting = s.pending_prompt.is_some();
+    let waiting = row.waiting;
     painter.rect_stroke(
         card,
         CornerRadius::same(radius::CARD),
@@ -311,26 +276,17 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
 
     // Status color.
     let (glyph, op_color) = op_style(meta.op, p);
-    let status = match &s.state {
-        JobState::Failed(_) => p.danger,
-        JobState::Cancelled => p.text_tertiary,
-        JobState::Done(_) if failed => p.warning,
-        JobState::Done(_) => p.success,
-        JobState::Paused => p.text_tertiary,
-        JobState::WaitingForUser => p.warning,
-        _ => p.accent,
-    };
-    let frac = fraction(s);
+    let status = tone_color(row.status, p);
+    let frac = row.fraction;
 
     // Icon with ring.
     let ic = pos2(card.left() + 30.0, card.top() + 30.0);
     painter.circle_filled(ic, 17.0, op_color.gamma_multiply(0.12));
-    let done_glyph = match &s.state {
-        JobState::Done(_) if !failed => Some(ph::CHECK),
-        JobState::Failed(_) => Some(ph::WARNING),
-        JobState::Cancelled => Some(ph::PROHIBIT),
-        _ => None,
-    };
+    let done_glyph = row.done_mark.map(|m| match m {
+        jobs_rows::DoneMark::Check => ph::CHECK,
+        jobs_rows::DoneMark::Warning => ph::WARNING,
+        jobs_rows::DoneMark::Prohibit => ph::PROHIBIT,
+    });
     painter.text(
         ic,
         Align2::CENTER_CENTER,
@@ -375,7 +331,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     let spark_w = if card.width() > 640.0 { 150.0 } else { 0.0 };
     let buttons_w = 128.0;
     let text_w = card.right() - tx - spark_w - buttons_w - 16.0;
-    let badge = verify_badge(s.kind, s.verify.is_some(), &s.state);
+    let badge = row.badge;
     let badge_w = badge
         .map_or(0.0, |b| painter.layout_no_wrap(b.to_string(), FontId::proportional(10.5), p.accent).size().x + 20.0);
     // MCP jobs: a "MCP · <client>" tag after the title.
@@ -393,13 +349,8 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.rect_filled(r, CornerRadius::same(8), p.warning.gamma_multiply(0.14));
         painter.galley(pos2(r.left() + 7.0, r.center().y - g.size().y / 2.0), g, p.warning);
     }
-    let (line, _) = state_line(s, Some(&meta));
-    let line_color = match &s.state {
-        JobState::WaitingForUser => p.warning,
-        JobState::Failed(_) => p.danger,
-        JobState::Done(_) if failed => p.warning,
-        _ => p.text_secondary,
-    };
+    let line = row.line.clone();
+    let line_color = tone_color(row.line_tone, p);
     let lg = trunc_galley(&painter, &line, FontId::proportional(11.5), line_color, text_w - badge_w);
     let lgw = lg.size().x;
     painter.galley(pos2(tx, card.top() + 31.0), lg, line_color);
@@ -427,15 +378,11 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
                 painter.rect_filled(fill, CornerRadius::same(3), status);
             }
         }
-        None if active
-            && s.state != JobState::Paused
-            && s.state != JobState::Queued
-            && crate::theme::reduced_motion(ui.ctx()) =>
-        {
+        None if row.indeterminate && crate::theme::reduced_motion(ui.ctx()) => {
             // Reduced motion: a static, dimmed bar instead of the sliding segment.
             painter.rect_filled(bar, CornerRadius::same(3), status.gamma_multiply(0.35));
         }
-        None if active && s.state != JobState::Paused && s.state != JobState::Queued => {
+        None if row.indeterminate => {
             // Indeterminate: a sliding segment.
             let t = ui.input(|i| i.time) as f32;
             let seg = bar.width() * 0.25;
@@ -461,45 +408,13 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     );
 
     // Stats row.
-    let pr = &s.progress;
-    let mut left = Vec::new();
-    if pr.bytes_total > 0 {
-        left.push(tr!(
-            "panels-progress-of",
-            done = format_size(pr.bytes_done, SizeStyle::Binary),
-            total = format_size(pr.bytes_total, SizeStyle::Binary)
-        ));
-    } else if let Some(sum) = &summary
-        && sum.bytes > 0
-    {
-        left.push(format_size(sum.bytes, SizeStyle::Binary));
-    }
-    if pr.items_total > 0 {
-        left.push(tr!("panels-items-of", done = pr.items_done, total = pr.items_total));
-    }
     let sy = card.top() + 70.0;
     let num_font = crate::theme::fonts::numbers(ui.ctx(), 11.5);
-    let right = if matches!(s.state, JobState::Running) {
-        match s.eta {
-            Some(eta) => {
-                tr!("panels-speed-eta", speed = format_speed(s.speed_bps), eta = format_eta(eta.as_secs_f64()))
-            }
-            None => format_speed(s.speed_bps),
-        }
-    } else if let Some(sum) = &summary {
-        let secs = sum.elapsed.as_secs_f64();
-        if sum.bytes > 0 && secs > 0.5 {
-            tr!("panels-speed-avg", speed = format_speed(sum.bytes as f64 / secs))
-        } else {
-            String::new()
-        }
-    } else {
-        String::new()
-    };
+    let right = row.speed.clone();
     // Speed / ETA on the right; the byte / item counts on the left are cut with "…"
     // before they reach it (wider fonts or narrow panels used to overlap the two).
     let right_w = painter.text(pos2(bar.right(), sy), Align2::RIGHT_CENTER, right, num_font.clone(), p.text_secondary);
-    let mut job = egui::text::LayoutJob::simple_singleline(left.join(" \u{b7} "), num_font, p.text_tertiary);
+    let mut job = egui::text::LayoutJob::simple_singleline(row.stats.clone(), num_font, p.text_tertiary);
     job.wrap = egui::text::TextWrapping::truncate_at_width((right_w.left() - 10.0 - tx).max(0.0));
     let left_g = painter.layout_job(job);
     painter.galley(pos2(tx, sy - left_g.size().y / 2.0), left_g, p.text_tertiary);
@@ -539,7 +454,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
     }
     if active {
         let more = btn(ui, ph::DOTS_THREE, tr!("panels-more"));
-        let queued = matches!(s.state, JobState::Queued) || (s.state == JobState::Paused && s.started.is_none());
+        let queued = row.queued;
         let prio = s.priority;
         let mut action: Option<u8> = None;
         crate::ui::native::popup::Menu::menu(&more).show(|ui| {
@@ -583,16 +498,16 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             _ => {}
         }
         if btn(ui, ph::X, tr!("common-cancel")).clicked() {
-            app.core.fileops.jobs.engine().cancel(engine_id);
+            jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Cancel);
         }
-        if s.state == JobState::Paused {
+        if row.has(RowButton::Resume) {
             if btn(ui, ph::PLAY, tr!("panels-resume")).clicked() {
-                app.core.fileops.jobs.engine().resume(engine_id);
+                jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Resume);
             }
-        } else if s.state != JobState::WaitingForUser && btn(ui, ph::PAUSE, tr!("panels-pause")).clicked() {
-            app.core.fileops.jobs.engine().pause(engine_id);
+        } else if row.has(RowButton::Pause) && btn(ui, ph::PAUSE, tr!("panels-pause")).clicked() {
+            jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Pause);
         }
-        if waiting && app.core.fileops.prompts.is_deferred(engine_id) {
+        if row.has(RowButton::Resolve) {
             let label = tr!("panels-resolve");
             let lw =
                 ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), Color32::BLACK).size().x;
@@ -612,14 +527,14 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             );
             ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), Color32::BLACK);
             if resp.clicked() {
-                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Resolve(engine_id)));
+                jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Resolve);
             }
         }
     } else {
         if btn(ui, ph::X, tr!("panels-remove-from-list")).clicked() {
-            app.core.fileops.jobs.engine().remove(engine_id);
+            jobs_rows::apply_job(&mut app.core, engine_id, RowButton::Remove);
         }
-        if failed {
+        if row.has(RowButton::RetryFailed) {
             let label = tr!("panels-retry-failed");
             let lw =
                 ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), p.text_primary).size().x;
@@ -639,13 +554,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             );
             ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(12.0), p.text_primary);
             if resp.clicked() {
-                let h = summary.as_ref().and_then(|sum| {
-                    app.core.fileops.jobs.history().iter().rev().find(|h| &h.summary == sum).map(|h| h.id)
-                });
-                match h {
-                    Some(h) => crate::ops::fileops::history_action(&mut app.core, h, HistoryAction::Retry),
-                    None => app.core.cmds.push(Cmd::Action(Action::JobsShowHistory)),
-                }
+                jobs_rows::apply_job(&mut app.core, engine_id, RowButton::RetryFailed);
             }
         }
     }
