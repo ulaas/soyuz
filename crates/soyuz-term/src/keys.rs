@@ -1,5 +1,6 @@
-//! egui `Key` + `Modifiers` + `TermMode` → bytes (xterm CSI/SS3 tables, Ctrl+letter,
-//! Alt = ESC prefix), mouse reports (X10 / UTF-8 / SGR) and paste framing.
+//! egui `Key` + `Modifiers` + `TermMode` → bytes: maps egui's keys onto the toolkit-free
+//! [`crate::input`] encoder (xterm CSI/SS3 tables, Ctrl+letter, Alt = ESC prefix, mouse
+//! reports, paste framing), so the GUI and the terminal UI send the same bytes.
 //!
 //! Printable text is *not* encoded here: it arrives as `egui::Event::Text` and is sent
 //! verbatim (with an ESC prefix when Alt is held). `encode_key` only handles keys that
@@ -8,182 +9,93 @@
 use alacritty_terminal::term::TermMode;
 use egui::{Key, Modifiers};
 
-/// xterm modifier parameter: 1 + shift + 2·alt + 4·ctrl.
-fn mod_param(m: Modifiers) -> u8 {
-    1 + u8::from(m.shift) + 2 * u8::from(m.alt) + 4 * u8::from(m.ctrl)
-}
+use crate::input::{self, Modes, TermKey, TermMods};
 
-fn letter(key: Key) -> Option<u8> {
+/// The toolkit-free key for an egui key (`None`: not a terminal key).
+pub(crate) fn term_key(key: Key) -> Option<TermKey> {
     use Key::*;
-    let k = [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z];
-    k.iter().position(|&x| x == key).map(|i| b'a' + i as u8)
-}
-
-fn digit(key: Key) -> Option<u8> {
-    use Key::*;
-    let k = [Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9];
-    k.iter().position(|&x| x == key).map(|i| b'0' + i as u8)
-}
-
-/// Control byte for Ctrl + a non-letter key (xterm conventions).
-fn ctrl_symbol(key: Key) -> Option<u8> {
+    let letters = [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z];
+    if let Some(i) = letters.iter().position(|&x| x == key) {
+        return Some(TermKey::Char(char::from(b'a' + i as u8)));
+    }
+    let digits = [Num0, Num1, Num2, Num3, Num4, Num5, Num6, Num7, Num8, Num9];
+    if let Some(i) = digits.iter().position(|&x| x == key) {
+        return Some(TermKey::Char(char::from(b'0' + i as u8)));
+    }
+    let functions = [
+        F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, F13, F14, F15, F16, F17, F18, F19, F20, F21, F22, F23, F24,
+        F25, F26, F27, F28, F29, F30, F31, F32, F33, F34, F35,
+    ];
+    if let Some(i) = functions.iter().position(|&x| x == key) {
+        return Some(TermKey::F(i as u8 + 1));
+    }
     Some(match key {
-        Key::Space | Key::Num2 => 0x00,
-        Key::OpenBracket | Key::Num3 => 0x1b,
-        Key::Backslash | Key::Num4 => 0x1c,
-        Key::CloseBracket | Key::Num5 => 0x1d,
-        Key::Num6 => 0x1e,
-        Key::Slash | Key::Minus | Key::Num7 => 0x1f,
-        Key::Num8 => 0x7f,
+        ArrowUp => TermKey::Up,
+        ArrowDown => TermKey::Down,
+        ArrowLeft => TermKey::Left,
+        ArrowRight => TermKey::Right,
+        Home => TermKey::Home,
+        End => TermKey::End,
+        Insert => TermKey::Insert,
+        Delete => TermKey::Delete,
+        PageUp => TermKey::PageUp,
+        PageDown => TermKey::PageDown,
+        Enter => TermKey::Enter,
+        Tab => TermKey::Tab,
+        Backspace => TermKey::Backspace,
+        Escape => TermKey::Escape,
+        Space => TermKey::Space,
+        OpenBracket => TermKey::Char('['),
+        CloseBracket => TermKey::Char(']'),
+        Backslash => TermKey::Char('\\'),
+        Slash => TermKey::Char('/'),
+        Minus => TermKey::Char('-'),
+        Backtick => TermKey::Char('`'),
+        Comma => TermKey::Char(','),
+        Period => TermKey::Char('.'),
+        Semicolon => TermKey::Char(';'),
+        Colon => TermKey::Char(':'),
+        Quote => TermKey::Char('\''),
+        Equals => TermKey::Char('='),
+        Plus => TermKey::Char('+'),
+        Pipe => TermKey::Char('|'),
+        Questionmark => TermKey::Char('?'),
+        Exclamationmark => TermKey::Char('!'),
+        OpenCurlyBracket => TermKey::Char('{'),
+        CloseCurlyBracket => TermKey::Char('}'),
         _ => return None,
     })
 }
 
-fn with_alt(alt: bool, bytes: &[u8]) -> Vec<u8> {
-    let mut v = Vec::with_capacity(bytes.len() + 1);
-    if alt {
-        v.push(0x1b);
-    }
-    v.extend_from_slice(bytes);
-    v
+/// The terminal modifiers of egui modifiers (Command / Super is not one).
+pub(crate) fn term_mods(m: Modifiers) -> TermMods {
+    TermMods { shift: m.shift, alt: m.alt, ctrl: m.ctrl }
 }
 
 /// Whether Alt acts as Meta (ESC prefix). On macOS Option composes characters instead.
-pub(crate) const ALT_IS_META: bool = !cfg!(target_os = "macos");
+pub(crate) const ALT_IS_META: bool = input::ALT_IS_META;
 
 /// Encode a key press. `None` = not handled here (text events / app shortcuts).
 pub(crate) fn encode_key(key: Key, m: Modifiers, mode: TermMode) -> Option<Vec<u8>> {
     if m.mac_cmd {
         return None; // Cmd shortcuts belong to the app.
     }
-    let mp = mod_param(m);
-    let modded = mp > 1;
-    let alt = m.alt && ALT_IS_META;
-
-    // Cursor keys / Home / End: CSI or SS3 (application cursor mode) final byte.
-    let cursor_final = match key {
-        Key::ArrowUp => Some(b'A'),
-        Key::ArrowDown => Some(b'B'),
-        Key::ArrowRight => Some(b'C'),
-        Key::ArrowLeft => Some(b'D'),
-        Key::Home => Some(b'H'),
-        Key::End => Some(b'F'),
-        _ => None,
-    };
-    if let Some(f) = cursor_final {
-        let f = f as char;
-        return Some(if modded {
-            format!("\x1b[1;{mp}{f}").into_bytes()
-        } else if mode.contains(TermMode::APP_CURSOR) {
-            format!("\x1bO{f}").into_bytes()
-        } else {
-            format!("\x1b[{f}").into_bytes()
-        });
-    }
-
-    // `CSI n ~` keys.
-    let tilde = match key {
-        Key::Insert => Some(2),
-        Key::Delete => Some(3),
-        Key::PageUp => Some(5),
-        Key::PageDown => Some(6),
-        Key::F5 => Some(15),
-        Key::F6 => Some(17),
-        Key::F7 => Some(18),
-        Key::F8 => Some(19),
-        Key::F9 => Some(20),
-        Key::F10 => Some(21),
-        Key::F11 => Some(23),
-        Key::F12 => Some(24),
-        Key::F13 => Some(25),
-        Key::F14 => Some(26),
-        Key::F15 => Some(28),
-        Key::F16 => Some(29),
-        Key::F17 => Some(31),
-        Key::F18 => Some(32),
-        Key::F19 => Some(33),
-        Key::F20 => Some(34),
-        _ => None,
-    };
-    if let Some(n) = tilde {
-        return Some(if modded { format!("\x1b[{n};{mp}~") } else { format!("\x1b[{n}~") }.into_bytes());
-    }
-
-    // F1-F4: SS3 P..S.
-    let pf = match key {
-        Key::F1 => Some('P'),
-        Key::F2 => Some('Q'),
-        Key::F3 => Some('R'),
-        Key::F4 => Some('S'),
-        _ => None,
-    };
-    if let Some(f) = pf {
-        return Some(if modded { format!("\x1b[1;{mp}{f}") } else { format!("\x1bO{f}") }.into_bytes());
-    }
-
-    match key {
-        Key::Enter => {
-            let nl: &[u8] = if mode.contains(TermMode::LINE_FEED_NEW_LINE) { b"\r\n" } else { b"\r" };
-            Some(with_alt(alt, nl))
-        }
-        Key::Tab => {
-            if m.ctrl {
-                None // Ctrl+Tab is a tab-switch shortcut in the app.
-            } else if m.shift {
-                Some(b"\x1b[Z".to_vec())
-            } else {
-                Some(with_alt(alt, b"\t"))
-            }
-        }
-        Key::Backspace => Some(with_alt(alt, if m.ctrl { b"\x08" } else { b"\x7f" })),
-        Key::Escape => Some(with_alt(alt, b"\x1b")),
-        _ => {
-            if let Some(l) = letter(key) {
-                if m.ctrl {
-                    // On Windows Ctrl+Alt is AltGr: leave it to the text event.
-                    if m.alt && cfg!(windows) {
-                        return None;
-                    }
-                    return Some(with_alt(alt, &[l - b'a' + 1]));
-                }
-                if alt {
-                    let c = if m.shift { l.to_ascii_uppercase() } else { l };
-                    return Some(vec![0x1b, c]);
-                }
-                return None;
-            }
-            if m.ctrl {
-                if m.alt && cfg!(windows) {
-                    return None;
-                }
-                return ctrl_symbol(key).map(|b| with_alt(alt, &[b]));
-            }
-            if alt && !m.shift {
-                if let Some(d) = digit(key) {
-                    return Some(vec![0x1b, d]);
-                }
-                if key == Key::Space {
-                    return Some(b"\x1b ".to_vec());
-                }
-            }
-            None
-        }
-    }
+    input::encode_key(term_key(key)?, term_mods(m), &Modes::from_term_mode(mode))
 }
 
 /// True when `encode_key` produced bytes for a key that *also* yields a text event
 /// (Alt+letter/digit/space), so the following `Event::Text` must be dropped.
 pub(crate) fn produces_text_too(key: Key, m: Modifiers) -> bool {
-    m.alt && ALT_IS_META && !m.ctrl && (letter(key).is_some() || digit(key).is_some() || key == Key::Space)
+    term_key(key).is_some_and(|k| input::produces_text_too(k, term_mods(m)))
 }
 
 /// Mouse button codes for reports.
-pub(crate) const MOUSE_LEFT: u8 = 0;
-pub(crate) const MOUSE_MIDDLE: u8 = 1;
-pub(crate) const MOUSE_RIGHT: u8 = 2;
-pub(crate) const MOUSE_NONE: u8 = 3;
-pub(crate) const MOUSE_WHEEL_UP: u8 = 64;
-pub(crate) const MOUSE_WHEEL_DOWN: u8 = 65;
+pub(crate) const MOUSE_LEFT: u8 = input::MouseButton::Left.code();
+pub(crate) const MOUSE_MIDDLE: u8 = input::MouseButton::Middle.code();
+pub(crate) const MOUSE_RIGHT: u8 = input::MouseButton::Right.code();
+pub(crate) const MOUSE_NONE: u8 = input::MouseButton::None.code();
+pub(crate) const MOUSE_WHEEL_UP: u8 = input::MouseButton::WheelUp.code();
+pub(crate) const MOUSE_WHEEL_DOWN: u8 = input::MouseButton::WheelDown.code();
 
 /// Encode a mouse report. `col`/`line` are 0-based viewport cells.
 pub(crate) fn encode_mouse(
@@ -195,45 +107,7 @@ pub(crate) fn encode_mouse(
     m: Modifiers,
     mode: TermMode,
 ) -> Option<Vec<u8>> {
-    let mut cb = button;
-    if m.shift {
-        cb += 4;
-    }
-    if m.alt {
-        cb += 8;
-    }
-    if m.ctrl {
-        cb += 16;
-    }
-    if motion {
-        cb += 32;
-    }
-    let (x, y) = (col + 1, line + 1);
-    if mode.contains(TermMode::SGR_MOUSE) {
-        let f = if pressed { 'M' } else { 'm' };
-        return Some(format!("\x1b[<{cb};{x};{y}{f}").into_bytes());
-    }
-    if !pressed && button < 64 {
-        // X10/normal: release is button 3 (keeps modifier/motion bits).
-        cb = (cb & !0b11) | 3;
-    }
-    let mut out = vec![0x1b, b'[', b'M', 32 + cb];
-    for v in [x, y] {
-        let v = v + 32;
-        if mode.contains(TermMode::UTF8_MOUSE) {
-            if v > 2047 {
-                return None;
-            }
-            let mut buf = [0; 4];
-            out.extend_from_slice(char::from_u32(v as u32)?.encode_utf8(&mut buf).as_bytes());
-        } else {
-            if v > 255 {
-                return None;
-            }
-            out.push(v as u8);
-        }
-    }
-    Some(out)
+    input::encode_mouse_code(button, pressed, motion, col, line, term_mods(m), &Modes::from_term_mode(mode))
 }
 
 // Toolkit-free encoders, shared with non-egui front ends.

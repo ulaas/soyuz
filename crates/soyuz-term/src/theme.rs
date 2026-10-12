@@ -3,7 +3,9 @@
 
 use egui::Color32;
 
-use crate::color::{TermColor, TermPalette, xterm_fixed};
+#[cfg(test)]
+use crate::color::xterm_fixed;
+use crate::color::{TermColor, TermPalette};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct TermTheme {
@@ -68,9 +70,10 @@ impl Default for TermTheme {
     }
 }
 
+#[cfg(test)]
 impl TermTheme {
     /// The xterm 256-color palette: ANSI 0-15 from the theme, 6×6×6 cube, 24-step gray ramp.
-    pub(crate) fn palette256(&self) -> [Color32; 256] {
+    fn palette256(&self) -> [Color32; 256] {
         let mut p = [Color32::BLACK; 256];
         p[..16].copy_from_slice(&self.ansi);
         for i in 16..=255u8 {
@@ -80,15 +83,11 @@ impl TermTheme {
         }
         p
     }
-
-    /// Dimmed variant of `c` (SGR 2): blended toward the background.
-    pub(crate) fn dim(&self, c: Color32) -> Color32 {
-        lerp_rgb(self.bg, c, 0.66)
-    }
 }
 
 /// Opaque RGB blend `a + (b - a) * t`.
-pub(crate) fn lerp_rgb(a: Color32, b: Color32, t: f32) -> Color32 {
+#[cfg(test)]
+fn lerp_rgb(a: Color32, b: Color32, t: f32) -> Color32 {
     let l = |x: u8, y: u8| (f32::from(x) + (f32::from(y) - f32::from(x)) * t).round().clamp(0.0, 255.0) as u8;
     Color32::from_rgb(l(a.r(), b.r()), l(a.g(), b.g()), l(a.b(), b.b()))
 }

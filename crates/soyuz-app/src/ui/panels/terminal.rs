@@ -15,7 +15,8 @@ use soyuz_term::{TermTheme, TerminalView};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::theme::icons::{self, ph};
-use crate::theme::{Palette, palette};
+use crate::theme::tokens::rgba8;
+use crate::theme::{Palette, Tokens, palette};
 use crate::ui::widgets::{menu_item, menu_separator};
 
 pub use crate::models::terminal::*;
@@ -47,27 +48,47 @@ pub fn dispatch_keys(ctx: &egui::Context, keymap: &Keymap, cmd_is_ctrl: bool) ->
     out
 }
 
-/// Theme from the palette (`[terminal] theme = auto`), or the built-in dark / light.
+/// Theme from the palette (`[terminal] theme = auto`), or the built-in dark / light: the
+/// shared rule of [`soyuz_appcore::theme::terminal_palette`], in egui colours.
 pub fn theme_for(p: &Palette, setting: &str) -> TermTheme {
-    match setting.trim().to_ascii_lowercase().as_str() {
-        "dark" => return TermTheme::dark(),
-        "light" => return TermTheme::light(),
-        _ => {}
+    TermTheme::from(&soyuz_appcore::theme::terminal_palette(&tokens_of(p), setting))
+}
+
+/// The toolkit-free tokens of an egui palette (exact: every `Color32` the GUI holds,
+/// translucent ones included, converts back to the same bytes).
+fn tokens_of(p: &Palette) -> Tokens {
+    let t = rgba8;
+    Tokens {
+        dark: p.dark,
+        bg_window: t(p.bg_window),
+        bg_surface1: t(p.bg_surface1),
+        bg_surface2: t(p.bg_surface2),
+        bg_surface3: t(p.bg_surface3),
+        bg_sunken: t(p.bg_sunken),
+        border_subtle: t(p.border_subtle),
+        border_strong: t(p.border_strong),
+        text_primary: t(p.text_primary),
+        text_secondary: t(p.text_secondary),
+        text_tertiary: t(p.text_tertiary),
+        accent: t(p.accent),
+        accent_hover: t(p.accent_hover),
+        accent_subtle: t(p.accent_subtle),
+        success: t(p.success),
+        warning: t(p.warning),
+        danger: t(p.danger),
+        info: t(p.info),
+        glyph_folder: t(p.glyph_folder),
+        glyph_image: t(p.glyph_image),
+        glyph_video: t(p.glyph_video),
+        glyph_audio: t(p.glyph_audio),
+        glyph_archive: t(p.glyph_archive),
+        glyph_code: t(p.glyph_code),
+        glyph_doc: t(p.glyph_doc),
+        glyph_exe: t(p.glyph_exe),
+        tags: p.tags.map(t),
+        shadow_alpha: p.shadow_alpha,
+        radius_scale: p.radius_scale,
     }
-    let mut t = if p.dark { TermTheme::dark() } else { TermTheme::light() };
-    t.fg = p.text_primary;
-    t.bg = if p.dark { p.bg_sunken } else { p.bg_surface1 };
-    t.cursor = p.accent;
-    let [r, g, b, _] = p.accent.to_array();
-    t.selection = Color32::from_rgba_unmultiplied(r, g, b, if p.dark { 77 } else { 60 });
-    t.ansi[1] = p.danger;
-    t.ansi[2] = p.success;
-    t.ansi[3] = p.warning;
-    t.ansi[4] = p.accent;
-    t.ansi[5] = p.glyph_video;
-    t.ansi[6] = p.info;
-    t.ansi[12] = p.accent_hover;
-    t
 }
 
 /// The frontend carries out `FrontendCmd::ReleaseFocus`: no widget keeps the keyboard.
@@ -467,5 +488,63 @@ mod tests {
         let l = theme_for(&crate::theme::ORBIT_LIGHT, "auto");
         assert_eq!(l.fg, crate::theme::ORBIT_LIGHT.text_primary);
         assert_eq!(theme_for(&crate::theme::ORBIT_LIGHT, "dark"), TermTheme::dark());
+    }
+
+    /// `theme_for` as the GUI wrote it before the rule moved to
+    /// `soyuz_appcore::theme::terminal_palette`.
+    fn legacy_theme_for(p: &Palette, setting: &str) -> TermTheme {
+        match setting.trim().to_ascii_lowercase().as_str() {
+            "dark" => return TermTheme::dark(),
+            "light" => return TermTheme::light(),
+            _ => {}
+        }
+        let mut t = if p.dark { TermTheme::dark() } else { TermTheme::light() };
+        t.fg = p.text_primary;
+        t.bg = if p.dark { p.bg_sunken } else { p.bg_surface1 };
+        t.cursor = p.accent;
+        let [r, g, b, _] = p.accent.to_array();
+        t.selection = Color32::from_rgba_unmultiplied(r, g, b, if p.dark { 77 } else { 60 });
+        t.ansi[1] = p.danger;
+        t.ansi[2] = p.success;
+        t.ansi[3] = p.warning;
+        t.ansi[4] = p.accent;
+        t.ansi[5] = p.glyph_video;
+        t.ansi[6] = p.info;
+        t.ansi[12] = p.accent_hover;
+        t
+    }
+
+    /// Bit-identical to the old GUI rule on every built-in palette and bundled theme,
+    /// opaque and translucent (Mica backdrop), with custom and translucent accents and
+    /// translucent overrides.
+    #[test]
+    fn theme_for_matches_the_legacy_rule() {
+        use crate::theme::{ORBIT_DARK, ORBIT_HC_DARK, ORBIT_HC_LIGHT, ORBIT_LIGHT};
+        let mut palettes = vec![ORBIT_DARK, ORBIT_LIGHT, ORBIT_HC_DARK, ORBIT_HC_LIGHT];
+        for t in soyuz_appcore::theme::themes::builtins() {
+            let (d, l) = t.palettes();
+            palettes.push(Palette::from_tokens(&d));
+            palettes.push(Palette::from_tokens(&l));
+        }
+        for base in palettes.clone() {
+            let mut tinted = base.clone();
+            tinted.accent = Color32::from_rgb(0xC8, 0x64, 0x32);
+            tinted.accent_hover = Color32::from_rgba_unmultiplied(0x10, 0x80, 0xF0, 200);
+            palettes.push(tinted.clone());
+            tinted.accent = Color32::from_rgba_unmultiplied(0x5B, 0x8C, 0xFF, 77);
+            tinted.danger = Color32::from_rgba_unmultiplied(0xF2, 0x55, 0x5A, 3);
+            palettes.push(tinted);
+        }
+        for p in palettes.clone() {
+            let mut t = p.clone();
+            t.translucent();
+            palettes.push(t);
+        }
+        assert!(palettes.len() > 40);
+        for p in &palettes {
+            for setting in ["auto", "", "dark", "LIGHT", "unknown"] {
+                assert_eq!(theme_for(p, setting), legacy_theme_for(p, setting), "{setting} {p:?}");
+            }
+        }
     }
 }

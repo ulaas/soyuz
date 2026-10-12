@@ -13,22 +13,25 @@ use std::time::{Duration, Instant};
 
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Direction, Line, Point};
-use alacritty_terminal::selection::{Selection, SelectionRange};
+use alacritty_terminal::selection::Selection;
 use alacritty_terminal::term::cell::{Cell, Flags};
 use alacritty_terminal::term::color::Colors;
-use alacritty_terminal::term::{Term, TermMode, point_to_viewport, viewport_to_point};
-use alacritty_terminal::vte::ansi::{Color, CursorShape, NamedColor, Rgb};
+use alacritty_terminal::term::{TermMode, viewport_to_point};
+#[cfg(test)]
+use alacritty_terminal::vte::ansi::Color;
+use alacritty_terminal::vte::ansi::{CursorShape, NamedColor, Rgb};
 use egui::text::{ByteIndex, LayoutJob, LayoutSection};
 use egui::{
     Color32, CursorIcon, Event, EventFilter, FontId, Galley, Id, Key, Modifiers, PointerButton, Pos2, Rect, Sense,
     Stroke, StrokeKind, TextFormat, Ui, Vec2, pos2, vec2,
 };
 
-use crate::backend::{Listener, cursor_line_text, is_spacer};
+use crate::backend::{cursor_line_text, is_spacer};
+use crate::color::{Resolver, TermColor, TermPalette};
+use crate::grid::{RawSnapshot as Snapshot, link_at};
 use crate::keys::{self, ALT_IS_META};
 use crate::selection::{ClickTracker, row_span, selection_type};
-use crate::theme::lerp_rgb;
-use crate::{TermResponse, TermTheme, TerminalView, url};
+use crate::{TermResponse, TermTheme, TerminalView};
 
 const PAD: f32 = 4.0;
 const SCROLLBAR_W: f32 = 10.0;
@@ -94,55 +97,6 @@ struct TextPiece {
     standalone: bool,
 }
 
-/// Copy of the visible terminal state (taken under the term lock).
-struct Snapshot {
-    cols: usize,
-    rows: usize,
-    cells: Vec<Cell>,
-    cursor: Option<(usize, usize)>,
-    cursor_shape: CursorShape,
-    selection: Option<SelectionRange>,
-    display_offset: usize,
-    history: usize,
-    colors: Colors,
-}
-
-impl Snapshot {
-    fn take(term: &Term<Listener>) -> Snapshot {
-        let cols = term.columns();
-        let rows = term.screen_lines();
-        let content = term.renderable_content();
-        let off = content.display_offset;
-        let mut cells = vec![Cell::default(); cols * rows];
-        for ind in content.display_iter {
-            if let Some(vp) = point_to_viewport(off, ind.point)
-                && vp.line < rows
-                && vp.column.0 < cols
-            {
-                cells[vp.line * cols + vp.column.0] = ind.cell.clone();
-            }
-        }
-        let cursor = point_to_viewport(off, content.cursor.point)
-            .filter(|p| p.line < rows && p.column.0 < cols)
-            .map(|p| (p.line, p.column.0));
-        Snapshot {
-            cols,
-            rows,
-            cells,
-            cursor,
-            cursor_shape: content.cursor.shape,
-            selection: content.selection,
-            display_offset: off,
-            history: term.grid().history_size(),
-            colors: *content.colors,
-        }
-    }
-
-    fn row(&self, r: usize) -> &[Cell] {
-        &self.cells[r * self.cols..(r + 1) * self.cols]
-    }
-}
-
 /// Resolved paint style of one cell.
 #[derive(Clone, Copy, PartialEq)]
 struct Style {
@@ -154,74 +108,56 @@ struct Style {
     strike: bool,
 }
 
+/// The egui side of the shared colour resolution ([`Resolver`]): the theme's
+/// premultiplied `Color32` bytes go in unchanged and come back out as `Color32`, so the
+/// widget paints exactly what it always painted (pinned by `palette_tests`).
 struct Palette<'a> {
-    theme: &'a TermTheme,
-    p256: [Color32; 256],
-    colors: &'a Colors,
+    resolver: Resolver<'a>,
     default_bg: Color32,
+}
+
+/// `Color32` bytes (premultiplied) carried as a [`TermColor`] without conversion.
+fn raw(c: Color32) -> TermColor {
+    TermColor::from_array(c.to_array())
+}
+
+/// The inverse of [`raw`].
+fn c32(c: TermColor) -> Color32 {
+    let [r, g, b, a] = c.to_array();
+    Color32::from_rgba_premultiplied(r, g, b, a)
+}
+
+/// The theme's colours as given ([`raw`]), for the [`Resolver`].
+fn raw_palette(theme: &TermTheme) -> TermPalette {
+    TermPalette {
+        fg: raw(theme.fg),
+        bg: raw(theme.bg),
+        cursor: raw(theme.cursor),
+        selection: raw(theme.selection),
+        ansi: theme.ansi.map(raw),
+    }
 }
 
 fn rgb32(c: Rgb) -> Color32 {
     Color32::from_rgb(c.r, c.g, c.b)
 }
 
-impl Palette<'_> {
+impl<'a> Palette<'a> {
+    /// `raw` from [`raw_palette`]; `colors` are the program's OSC overrides.
+    fn new(raw: &'a TermPalette, colors: &'a Colors, bright_bold: bool) -> Self {
+        let resolver = Resolver::new(raw, colors, bright_bold);
+        let default_bg = c32(resolver.default_bg());
+        Palette { resolver, default_bg }
+    }
+
+    #[cfg(test)]
     fn color(&self, c: Color) -> Color32 {
-        match c {
-            Color::Spec(rgb) => rgb32(rgb),
-            Color::Indexed(i) => self.colors[usize::from(i)].map_or(self.p256[usize::from(i)], rgb32),
-            Color::Named(n) => {
-                if let Some(rgb) = self.colors[n] {
-                    return rgb32(rgb);
-                }
-                let idx = n as usize;
-                if idx < 16 {
-                    return self.theme.ansi[idx];
-                }
-                match n {
-                    NamedColor::Foreground | NamedColor::BrightForeground => self.theme.fg,
-                    NamedColor::Background => self.theme.bg,
-                    NamedColor::Cursor => self.theme.cursor,
-                    NamedColor::DimForeground => self.theme.dim(self.theme.fg),
-                    dim => {
-                        let base = (dim as usize).saturating_sub(NamedColor::DimBlack as usize).min(7);
-                        self.theme.dim(self.theme.ansi[base])
-                    }
-                }
-            }
-        }
+        c32(self.resolver.color(c))
     }
 
     fn style(&self, cell: &Cell) -> Style {
-        let f = cell.flags;
-        let bold = f.contains(Flags::BOLD);
-        let mut fg_spec = cell.fg;
-        if bold && self.theme.bright_bold {
-            fg_spec = match fg_spec {
-                Color::Named(n) if (n as usize) < 8 => Color::Named(n.to_bright()),
-                Color::Indexed(i) if i < 8 => Color::Indexed(i + 8),
-                other => other,
-            };
-        }
-        let mut fg = self.color(fg_spec);
-        let mut bg = self.color(cell.bg);
-        if f.contains(Flags::DIM) {
-            fg = lerp_rgb(bg, fg, 0.66);
-        }
-        if f.contains(Flags::INVERSE) {
-            std::mem::swap(&mut fg, &mut bg);
-        }
-        if f.contains(Flags::HIDDEN) {
-            fg = bg;
-        }
-        Style {
-            fg,
-            bg,
-            bold,
-            italic: f.contains(Flags::ITALIC),
-            underline: f.intersects(Flags::ALL_UNDERLINES),
-            strike: f.contains(Flags::STRIKEOUT),
-        }
+        let s = self.resolver.style(cell);
+        Style { fg: c32(s.fg), bg: c32(s.bg), bold: s.bold, italic: s.italic, underline: s.underline, strike: s.strike }
     }
 }
 
@@ -234,20 +170,6 @@ impl Fnv {
     fn u64(&mut self, v: u64) {
         self.0 = (self.0 ^ v).wrapping_mul(0x0000_0100_0000_01b3);
     }
-}
-
-/// Text of a viewport row with a char-index → column map (spacers skipped).
-fn row_text(cells: &[Cell]) -> (String, Vec<usize>) {
-    let mut s = String::with_capacity(cells.len());
-    let mut map = Vec::with_capacity(cells.len());
-    for (col, cell) in cells.iter().enumerate() {
-        if is_spacer(cell) {
-            continue;
-        }
-        s.push(if cell.c == '\0' { ' ' } else { cell.c });
-        map.push(col);
-    }
-    (s, map)
 }
 
 struct Geometry {
@@ -271,56 +193,6 @@ impl Geometry {
         let side = if x >= self.cols as f32 || x - col as f32 > 0.5 { Direction::Right } else { Direction::Left };
         (row, col, side)
     }
-}
-
-/// A link under the pointer: the URL and the viewport spans `(row, col_start, col_end_inclusive)`.
-struct Link {
-    url: String,
-    spans: Vec<(usize, usize, usize)>,
-}
-
-fn link_at(snap: &Snapshot, row: usize, col: usize) -> Option<Link> {
-    let cells = snap.row(row);
-    // OSC 8 hyperlinks first.
-    if let Some(h) = cells[col].hyperlink() {
-        let same = |c: &Cell| c.hyperlink().is_some_and(|x| x.id() == h.id());
-        let mut a = col;
-        while a > 0 && same(&cells[a - 1]) {
-            a -= 1;
-        }
-        let mut b = col;
-        while b + 1 < cells.len() && same(&cells[b + 1]) {
-            b += 1;
-        }
-        return Some(Link { url: h.uri().to_owned(), spans: vec![(row, a, b)] });
-    }
-    // Plain-text URLs, joining soft-wrapped rows.
-    let wraps = |r: usize| snap.row(r).last().is_some_and(|c| c.flags.contains(Flags::WRAPLINE));
-    let mut first = row;
-    while first > 0 && wraps(first - 1) {
-        first -= 1;
-    }
-    let mut last = row;
-    while last + 1 < snap.rows && wraps(last) {
-        last += 1;
-    }
-    let mut text = String::new();
-    let mut map: Vec<(usize, usize)> = Vec::new();
-    for r in first..=last {
-        let (s, m) = row_text(snap.row(r));
-        text.push_str(&s);
-        map.extend(m.into_iter().map(|c| (r, c)));
-    }
-    let target = map.iter().position(|&(r, c)| r == row && c == col)?;
-    let m = url::find_urls(&text).into_iter().find(|m| m.start <= target && target < m.end)?;
-    let mut spans: Vec<(usize, usize, usize)> = Vec::new();
-    for &(r, c) in &map[m.start..m.end] {
-        match spans.last_mut() {
-            Some(s) if s.0 == r => s.2 = c,
-            _ => spans.push((r, c, c)),
-        }
-    }
-    Some(Link { url: m.url, spans })
 }
 
 pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
@@ -721,12 +593,8 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
 
     // ---- paint -------------------------------------------------------------------------
     let snap = Snapshot::take(&backend.term.lock());
-    let pal = Palette {
-        theme,
-        p256: theme.palette256(),
-        colors: &snap.colors,
-        default_bg: snap.colors[NamedColor::Background].map_or(theme.bg, rgb32),
-    };
+    let raw_pal = raw_palette(theme);
+    let pal = Palette::new(&raw_pal, &snap.colors, theme.bright_bold);
     let geo = Geometry {
         grid: Rect::from_min_size(grid_origin, vec2(snap.cols as f32 * cell_w, snap.rows as f32 * cell_h)),
         cell: vec2(cell_w, cell_h),
@@ -1155,3 +1023,7 @@ mod tests {
         assert_eq!(t.screen_lines(), ((400.0 - 2.0 * PAD) / c.y).floor() as usize);
     }
 }
+
+#[cfg(test)]
+#[path = "render_palette_tests.rs"]
+mod palette_tests;
