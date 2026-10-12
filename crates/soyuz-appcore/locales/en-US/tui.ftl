@@ -45,7 +45,6 @@ tui-failed = Cannot list this folder: { $error }
 ## T2.4: tabs, dual and quad panes
 
 ## T2.5: breadcrumbs and the address field
-tui-feature-address = Address bar
 
 ## T2.6: sidebar
 tui-feature-sidebar = Sidebar

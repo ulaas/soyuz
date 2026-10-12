@@ -101,6 +101,7 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     }
     toasts::draw_toasts(f, regions.toasts, &m.toasts, theme, hits);
     status::draw_status(f, regions.status, &m.status, theme, hits);
+    crumbs::draw_completions(f, regions.crumbs, regions.area, &m.crumbs, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     if let Some(d) = &m.dialog {
         dialog::draw_dialog(f, regions.area, d, theme, hits);
@@ -166,7 +167,7 @@ mod tests {
         ViewModel {
             tabs: TabsVm { titles: vec!["data".into()], active: 0 },
             panes: vec![pane(0, true)],
-            crumbs: CrumbsVm { path: "/data".into() },
+            crumbs: CrumbsVm::plain("/data"),
             sidebar: SidebarVm::default(),
             status: StatusVm { counts: "3 items · 1 selected".into(), hint: "Ctrl+Q quit".into() },
             toasts: ToastsVm::default(),

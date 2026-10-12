@@ -17,7 +17,6 @@ pub fn reset_all(app: &mut App) {
     palette(app);
 
     // T2.5: address field.
-    address(app);
 
     // T2.6: sidebar focus.
     sidebar_focus(app);
@@ -37,15 +36,6 @@ fn palette(app: &mut App) {
     if app.core.palette.open {
         soyuz_appcore::palette::close(&mut app.core);
         app.unavailable(tr!("tui-feature-palette"));
-    }
-}
-
-/// T2.5.
-fn address(app: &mut App) {
-    if app.core.ui.address.editing {
-        app.core.ui.address.editing = false;
-        app.core.ui.address.request_focus = false;
-        app.unavailable(tr!("tui-feature-address"));
     }
 }
 

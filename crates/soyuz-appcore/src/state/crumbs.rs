@@ -1,9 +1,17 @@
-//! Breadcrumb segmentation and path-completion helpers (pure; the widget lives in
-//! `ui/breadcrumb.rs`).
+//! Breadcrumb segmentation, path completion and the address field's editing logic,
+//! shared by both frontends (the GUI's widget lives in `soyuz-app`'s `ui/breadcrumb.rs`,
+//! the terminal UI's in `soyuz-tui`'s `view/crumbs.rs` and `input/address.rs`).
 
+use std::cell::RefCell;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 
-use soyuz_core::Location;
+use soyuz_core::{EntryInfo, Location};
+
+use crate::cmd::Cmd;
+use crate::core::AddressState;
+use crate::services::{AuxState, Services};
+use crate::state::pane::PaneId;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CrumbKind {
@@ -197,6 +205,171 @@ pub fn completions<'a>(candidates: impl Iterator<Item = &'a str>, prefix: &str, 
     v
 }
 
+// ---------------------------------------------------------------------------------------
+// The address field's editing logic, shared by the GUI (`ui/breadcrumb.rs`) and the
+// terminal UI (`soyuz-tui`, `input/address.rs`): both frontends call these, so typing,
+// completing and submitting a path behave the same in both.
+// ---------------------------------------------------------------------------------------
+
+/// Folder completions offered at most.
+pub const COMPLETION_LIMIT: usize = 8;
+
+/// The completion state of the typed text: the folder being listed, the partial name and
+/// the matching subfolder names (empty while the folder is still loading).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Completion {
+    /// The typed parent folder (empty when the text has no separator).
+    pub dir: PathBuf,
+    /// The partial name after the last separator.
+    pub prefix: String,
+    pub names: Vec<String>,
+}
+
+/// The last computed completion, keyed on the typed text and the identity of the aux
+/// listing it came from: a frame with the same text and listing reuses it instead of
+/// lowercasing every entry again.
+struct Memo {
+    text: String,
+    entries: Option<Arc<Vec<EntryInfo>>>,
+    names: Vec<String>,
+}
+
+thread_local! {
+    static MEMO: RefCell<Option<Memo>> = const { RefCell::new(None) };
+}
+
+/// Folder names of `entries` completing `prefix`, memoized on (`text`, `entries`).
+fn memo_names(text: &str, prefix: &str, entries: Option<Arc<Vec<EntryInfo>>>) -> Vec<String> {
+    MEMO.with_borrow_mut(|memo| {
+        if let Some(m) = memo.as_ref()
+            && m.text == text
+            && match (&m.entries, &entries) {
+                (Some(a), Some(b)) => Arc::ptr_eq(a, b),
+                (None, None) => true,
+                _ => false,
+            }
+        {
+            return m.names.clone();
+        }
+        let names = entries.as_ref().map_or_else(Vec::new, |e| {
+            completions(e.iter().filter(|e| e.is_dir_like()).map(|e| e.name.as_str()), prefix, COMPLETION_LIMIT)
+        });
+        *memo = Some(Memo { text: text.to_string(), entries, names: names.clone() });
+        names
+    })
+}
+
+/// The completion of `text`, requesting the typed folder's listing (or its refresh) from
+/// the aux cache. Call it once per frame while the field is edited.
+pub fn completion(services: &mut Services, text: &str) -> Completion {
+    let Some((dir, prefix)) = split_for_completion(text) else { return Completion::default() };
+    if dir.as_os_str().is_empty() {
+        return Completion::default();
+    }
+    let entries = services.aux_entries(&dir);
+    let names = memo_names(text, &prefix, entries);
+    Completion { dir, prefix, names }
+}
+
+/// [`completion`] from what the aux cache already holds, without requesting anything
+/// (for views that only read the core).
+pub fn completion_cached(services: &Services, text: &str) -> Completion {
+    let Some((dir, prefix)) = split_for_completion(text) else { return Completion::default() };
+    if dir.as_os_str().is_empty() {
+        return Completion::default();
+    }
+    let entries = match services.aux_state(&dir) {
+        Some(AuxState::Ready { entries, .. }) => Some(entries.clone()),
+        _ => None,
+    };
+    let names = memo_names(text, &prefix, entries);
+    Completion { dir, prefix, names }
+}
+
+/// Open the address field on `location` (a click on the current crumb or the empty
+/// field).
+pub fn start_edit(address: &mut AddressState, location: &Location) {
+    address.editing = true;
+    address.text = location.display();
+    address.request_focus = true;
+    address.completion = None;
+}
+
+/// Leave the field without navigating (Esc).
+pub fn cancel(address: &mut AddressState) {
+    address.editing = false;
+    address.completion = None;
+}
+
+/// Move the highlighted completion down (`down`) or up among `n` names, wrapping.
+pub fn cycle(address: &mut AddressState, n: usize, down: bool) {
+    if n == 0 {
+        return;
+    }
+    address.completion = Some(match (address.completion, down) {
+        (None, true) => 0,
+        (None, false) => n - 1,
+        (Some(s), true) => (s + 1) % n,
+        (Some(s), false) => (s + n - 1) % n,
+    });
+}
+
+/// Replace the partial name after the last separator of `text` with `name` and a
+/// separator (the text's own kind of separator when it has backslashes).
+pub fn accept(text: &mut String, name: &str) {
+    let base = text.rfind(['/', '\\']).map_or(String::new(), |i| text[..=i].to_string());
+    let sep = if text.contains('\\') { '\\' } else { std::path::MAIN_SEPARATOR };
+    *text = format!("{base}{name}{sep}");
+}
+
+/// Tab: accept the highlighted completion, or the first one. Returns whether the text
+/// changed (the caller puts the cursor at the end).
+pub fn tab(address: &mut AddressState, names: &[String]) -> bool {
+    let Some(name) = address.completion.and_then(|s| names.get(s)).or(names.first()) else { return false };
+    let name = name.clone();
+    accept(&mut address.text, &name);
+    address.completion = None;
+    true
+}
+
+/// Enter: accept the highlighted completion (if any), then [`submit`]. `c` is the
+/// completion of the text as it was before.
+pub fn enter(address: &mut AddressState, services: &mut Services, pane: PaneId, cmds: &mut Vec<Cmd>, c: &Completion) {
+    if let Some(name) = address.completion.and_then(|s| c.names.get(s)) {
+        let name = name.clone();
+        accept(&mut address.text, &name);
+    }
+    submit(address, services, pane, cmds, &c.dir, &c.prefix);
+}
+
+/// Navigate pane `pane` to the typed location (paths with `~`, archives, remote URIs,
+/// `trash:` …: [`Location::parse`]). A path to a file in the listed folder `dir`
+/// (typed name `prefix`) opens its folder and selects it.
+pub fn submit(
+    address: &mut AddressState,
+    services: &mut Services,
+    pane: PaneId,
+    cmds: &mut Vec<Cmd>,
+    dir: &Path,
+    prefix: &str,
+) {
+    address.editing = false;
+    let text = address.text.trim().to_string();
+    let Some(loc) = Location::parse(&text) else { return };
+    if let Location::Dir(path) = &loc {
+        // Typed a file name inside a folder we already listed → reveal it.
+        let is_file = services
+            .aux_entries(dir)
+            .is_some_and(|entries| entries.iter().any(|e| e.name == prefix && !e.is_dir_like() && !prefix.is_empty()));
+        if is_file {
+            cmds.push(Cmd::RevealPath(path.clone()));
+            return;
+        }
+    }
+    cmds.push(Cmd::FocusPane(pane));
+    cmds.push(Cmd::Navigate { pane, location: loc, select: None });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -275,5 +448,126 @@ mod tests {
         assert_eq!(completions(names.iter().copied(), "l", 10), ["lib", "Lib64", "lo", "local"]);
         assert_eq!(completions(names.iter().copied(), "lo", 10), ["local"], "exact match is not offered");
         assert_eq!(completions(names.iter().copied(), "l", 2).len(), 2);
+    }
+
+    fn services() -> Services {
+        Services::new(
+            crate::host::no_wake(),
+            crate::services::thumbs::Thumbs::new(crate::host::no_wake(), crate::services::preview_gfx::no_upload(), 1),
+            std::time::Duration::from_millis(50),
+        )
+    }
+
+    /// `dir` listed into the aux cache (as the lister would).
+    fn listed(s: &mut Services, dir: &Path) -> Arc<Vec<EntryInfo>> {
+        let entries: Vec<EntryInfo> =
+            std::fs::read_dir(dir).unwrap().map(|e| soyuz_fs::list::stat(&e.unwrap().path(), false).unwrap()).collect();
+        let entries = Arc::new(entries);
+        s.aux.insert(dir.to_path_buf(), AuxState::Ready { entries: entries.clone(), at: std::time::Instant::now() });
+        entries
+    }
+
+    fn typed(dir: &Path, rest: &str) -> String {
+        format!("{}{}{rest}", dir.display(), std::path::MAIN_SEPARATOR)
+    }
+
+    #[test]
+    fn completion_lists_subfolders_and_is_memoized() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        for n in ["sub", "Src", "other"] {
+            std::fs::create_dir(d.join(n)).unwrap();
+        }
+        std::fs::write(d.join("sunny.txt"), b"x").unwrap();
+        let mut s = services();
+        // Not listed yet: nothing, and the listing was requested.
+        let text = typed(d, "s");
+        let c = completion(&mut s, &text);
+        assert!(c.names.is_empty());
+        assert_eq!(c.prefix, "s");
+        assert!(matches!(s.aux_state(&c.dir), Some(AuxState::Loading(_))));
+        let entries = listed(&mut s, &c.dir);
+        let c = completion(&mut s, &text);
+        assert_eq!(c.names, ["Src", "sub"], "folders only, case-insensitive, natural order");
+        assert_eq!(completion_cached(&s, &text), c);
+        // Same text and listing: the memo answers (even if the entries were to change in
+        // place, which they never do: a reload is a new list).
+        MEMO.with_borrow(|m| assert!(Arc::ptr_eq(m.as_ref().unwrap().entries.as_ref().unwrap(), &entries)));
+        // A new listing of the same folder is a new key.
+        listed(&mut s, &c.dir);
+        assert_eq!(completion_cached(&s, &text).names, ["Src", "sub"]);
+        assert_eq!(completion(&mut s, &typed(d, "su")).names, ["sub"]);
+        assert_eq!(completion(&mut s, "no separator"), Completion::default());
+    }
+
+    #[test]
+    fn editing_keys() {
+        let mut a = AddressState::default();
+        let loc = Location::Dir(std::env::temp_dir());
+        start_edit(&mut a, &loc);
+        assert!(a.editing && a.request_focus);
+        assert_eq!(a.text, loc.display());
+        // Up / Down wrap; nothing to move through: no highlight.
+        cycle(&mut a, 0, true);
+        assert_eq!(a.completion, None);
+        cycle(&mut a, 3, false);
+        assert_eq!(a.completion, Some(2));
+        cycle(&mut a, 3, true);
+        assert_eq!(a.completion, Some(0));
+        cycle(&mut a, 3, true);
+        assert_eq!(a.completion, Some(1));
+        // Tab takes the highlighted name, else the first.
+        let names = vec!["alpha".to_string(), "beta".to_string()];
+        a.text = "/x/a".into();
+        assert!(tab(&mut a, &names));
+        assert_eq!(a.text, format!("/x/beta{}", std::path::MAIN_SEPARATOR));
+        assert_eq!(a.completion, None);
+        a.text = r"C:\x\".into();
+        assert!(tab(&mut a, &names));
+        assert_eq!(a.text, r"C:\x\alpha\", "backslash paths keep backslashes");
+        assert!(!tab(&mut a, &[]));
+        cancel(&mut a);
+        assert!(!a.editing);
+    }
+
+    #[test]
+    fn enter_navigates_or_reveals() {
+        let tmp = tempfile::tempdir().unwrap();
+        let d = tmp.path();
+        std::fs::create_dir(d.join("sub")).unwrap();
+        std::fs::write(d.join("f.txt"), b"x").unwrap();
+        let mut s = services();
+        let pane = PaneId(3);
+        let mut a = AddressState { editing: true, text: typed(d, "s"), ..Default::default() };
+        listed(&mut s, &split_for_completion(&a.text).unwrap().0);
+        let c = completion(&mut s, &a.text);
+        assert_eq!(c.names, ["sub"]);
+        // Enter with a highlighted completion accepts it first.
+        a.completion = Some(0);
+        let mut cmds = Vec::new();
+        enter(&mut a, &mut s, pane, &mut cmds, &c);
+        assert!(!a.editing);
+        match cmds.as_slice() {
+            [Cmd::FocusPane(p), Cmd::Navigate { pane: p2, location: Location::Dir(to), select: None }] => {
+                assert_eq!((*p, *p2), (pane, pane));
+                assert_eq!(to, &d.join("sub"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // A typed file name reveals the file.
+        let mut a = AddressState { editing: true, text: typed(d, "f.txt"), ..Default::default() };
+        let c = completion(&mut s, &a.text);
+        let mut cmds = Vec::new();
+        enter(&mut a, &mut s, pane, &mut cmds, &c);
+        assert!(matches!(cmds.as_slice(), [Cmd::RevealPath(p)] if p == &d.join("f.txt")), "{cmds:?}");
+        // Virtual places parse too; empty text only closes the field.
+        let mut a = AddressState { editing: true, text: "trash:".into(), ..Default::default() };
+        let mut cmds = Vec::new();
+        enter(&mut a, &mut s, pane, &mut cmds, &Completion::default());
+        assert!(matches!(cmds.as_slice(), [_, Cmd::Navigate { location: Location::Trash, .. }]), "{cmds:?}");
+        let mut a = AddressState { editing: true, text: "  ".into(), ..Default::default() };
+        let mut cmds = Vec::new();
+        enter(&mut a, &mut s, pane, &mut cmds, &Completion::default());
+        assert!(cmds.is_empty() && !a.editing);
     }
 }
