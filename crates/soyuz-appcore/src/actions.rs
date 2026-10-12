@@ -117,7 +117,8 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         }
         A::SwapPanes => {
             let tab = app.ws.tab_mut();
-            if tab.dual && tab.panes.len() == 2 {
+            // The two shown panes (a tab that was quad keeps its other two alive).
+            if tab.shown() == 2 {
                 tab.panes.swap(0, 1);
             }
         }

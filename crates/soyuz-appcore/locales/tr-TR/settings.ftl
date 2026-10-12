@@ -407,6 +407,25 @@ settings-tui-mouse-desc = Tıklayarak seçin, tekerlekle kaydırın. Terminalin 
 settings-tui-keyboard-protocol = Klavye protokolü
 settings-tui-keyboard-protocol-desc = Otomatik, terminal destekliyorsa kitty klavye protokolünü kullanır (Windows'ta hiçbir zaman); böylece Ctrl+Shift+harf gibi kısayollar tam olarak iletilir. Kitty her zaman ister, Klasik hiçbir zaman istemez.
 settings-tui-legacy = Klasik
+settings-tui-appearance = Görünüm
+settings-tui-color-mode = Renkler
+settings-tui-color-mode-desc = Otomatik, terminalin neyi desteklediğini algılar (COLORTERM, TERM, NO_COLOR). Renkler yanlış görünürse, örneğin SSH üzerinden ya da eski bir konsolda, sabit bir mod seçin.
+settings-tui-truecolor = Gerçek renk (24 bit)
+settings-tui-ansi256 = 256 renk
+settings-tui-ansi16 = 16 renk
+settings-tui-mono = Renksiz
+settings-tui-icons = Simgeler
+settings-tui-icons-desc = Nerd Font simgeleri için terminalde bir Nerd Font seçili olmalıdır. Unicode simgeler her yazı tipiyle çalışır; ASCII yalnızca düz karakterler kullanır.
+settings-tui-icons-nerd = Nerd Font
+settings-tui-icons-unicode = Unicode
+settings-tui-icons-ascii = ASCII
+settings-tui-borders = Kenarlıklar
+settings-tui-borders-desc = Panellerin nasıl çerçeveleneceği. ASCII her terminalde çalışır.
+settings-tui-borders-rounded = Yuvarlak
+settings-tui-borders-plain = Köşeli
+settings-tui-borders-ascii = ASCII
+settings-tui-sidebar-width = Kenar çubuğu genişliği
+settings-tui-sidebar-width-desc = Kenar çubuğunun terminal sütunu cinsinden genişliği (12–60).
 settings-deny = Reddet
 
 ## Preview & search page
@@ -1124,6 +1143,7 @@ settings-unit-chars = karakter
 settings-unit-days = gün
 settings-unit-lines = satır
 settings-unit-rows = satır
+settings-unit-columns = sütun
 
 ## Accessible names of icon-only buttons
 settings-a11y-remove = Kaldır

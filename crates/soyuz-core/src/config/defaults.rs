@@ -668,6 +668,64 @@ mod tests {
     }
 
     #[test]
+    fn tui_defaults_and_round_trip() {
+        let t = TuiSection::default();
+        assert_eq!(t.color_mode, TuiColorMode::Auto);
+        assert_eq!(t.icons, TuiIcons::Unicode);
+        assert_eq!(t.borders, TuiBorders::Rounded);
+        assert_eq!(t.sidebar_width, 28);
+        assert_eq!(t.sidebar_width_clamped(), 28);
+
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Wrap {
+            tui: TuiSection,
+        }
+        for color_mode in TuiColorMode::ALL {
+            for icons in [TuiIcons::Nerd, TuiIcons::Unicode, TuiIcons::Ascii] {
+                for borders in [TuiBorders::Rounded, TuiBorders::Plain, TuiBorders::Ascii, TuiBorders::None] {
+                    let w = Wrap { tui: TuiSection { color_mode, icons, borders, sidebar_width: 40, ..t.clone() } };
+                    let s = toml::to_string(&w).unwrap();
+                    assert_eq!(toml::from_str::<Wrap>(&s).unwrap(), w, "{s}");
+                }
+            }
+        }
+        let s = toml::to_string(&Wrap { tui: TuiSection { color_mode: TuiColorMode::Ansi256, ..t.clone() } }).unwrap();
+        assert!(s.contains("color_mode = \"ansi256\""), "{s}");
+        let s = toml::to_string(&Wrap { tui: TuiSection { borders: TuiBorders::None, ..t } }).unwrap();
+        assert!(s.contains("borders = \"none\""), "{s}");
+    }
+
+    #[test]
+    fn tui_color_mode_accepts_counts() {
+        let mode = |v: &str| toml::from_str::<TuiSection>(&format!("color_mode = {v}")).map(|t| t.color_mode);
+        assert_eq!(mode("256").unwrap(), TuiColorMode::Ansi256);
+        assert_eq!(mode("16").unwrap(), TuiColorMode::Ansi16);
+        assert_eq!(mode("\"256\"").unwrap(), TuiColorMode::Ansi256);
+        assert_eq!(mode("\"16\"").unwrap(), TuiColorMode::Ansi16);
+        assert_eq!(mode("\"truecolor\"").unwrap(), TuiColorMode::Truecolor);
+        assert_eq!(mode("\"mono\"").unwrap(), TuiColorMode::Mono);
+        assert_eq!(mode("\"auto\"").unwrap(), TuiColorMode::Auto);
+        assert_eq!(mode("\"ansi16\"").unwrap(), TuiColorMode::Ansi16);
+        assert!(mode("8").is_err());
+        assert!(mode("\"rainbow\"").is_err());
+        // Missing keys fall back to the defaults.
+        let t: TuiSection = toml::from_str("mouse = false").unwrap();
+        assert_eq!(t.color_mode, TuiColorMode::Auto);
+        assert_eq!(t.sidebar_width, 28);
+    }
+
+    #[test]
+    fn tui_sidebar_width_is_clamped_when_read() {
+        let w = |n: u16| TuiSection { sidebar_width: n, ..TuiSection::default() }.sidebar_width_clamped();
+        assert_eq!(w(0), 12);
+        assert_eq!(w(11), 12);
+        assert_eq!(w(12), 12);
+        assert_eq!(w(45), 45);
+        assert_eq!(w(60), 60);
+        assert_eq!(w(500), 60);
+    }
+
+    #[test]
     fn explorer_basics() {
         let km = preset(KeyPreset::Explorer);
         let ch = |s: &str| s.parse::<KeyChord>().unwrap();

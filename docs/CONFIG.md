@@ -519,6 +519,10 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `mouse` | boolean | `true` | Use the mouse (click to select, wheel to scroll). Off leaves the terminal's own text selection working. |
 | `keyboard_protocol` | `"auto"` \| `"kitty"` \| `"legacy"` | `"auto"` | How keys are read: `auto` uses the kitty keyboard protocol where the terminal supports it (never on Windows), `kitty` always asks for it, `legacy` never does. |
+| `color_mode` | `"auto"` \| `"truecolor"` \| `"ansi256"` \| `"ansi16"` \| `"mono"` | `"auto"` | Colors the terminal UI draws with. The numbers `256` and `16` are accepted as `ansi256` / `ansi16`. (`auto`: Detect from the environment (`COLORTERM`, `TERM`, `NO_COLOR`); `truecolor`: 24-bit color; `ansi256`: The 256-color palette; `ansi16`: The 16 basic ANSI colors; `mono`: No color (bold / reverse only)) |
+| `icons` | `"nerd"` \| `"unicode"` \| `"ascii"` | `"unicode"` | Icons in front of file names. (`nerd`: Nerd Font glyphs (needs a Nerd Font in the terminal); `unicode`: Plain Unicode symbols that every font has; `ascii`: ASCII characters only) |
+| `borders` | `"rounded"` \| `"plain"` \| `"ascii"` \| `"none"` | `"rounded"` | How panels are outlined. (`rounded`: Box-drawing lines with rounded corners; `plain`: Box-drawing lines with square corners; `ascii`: ASCII `+`, `-` and `\|`; `none`: No borders) |
+| `sidebar_width` | integer | `28` | Width of the sidebar in terminal columns. Values outside 12–60 are clamped when read. |
 
 ## `[keys]`
 

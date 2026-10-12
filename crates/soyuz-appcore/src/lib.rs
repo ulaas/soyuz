@@ -24,6 +24,7 @@ pub mod color;
 pub mod commands;
 pub mod core;
 pub mod editors;
+pub mod file_class;
 pub mod geom;
 pub mod host;
 pub mod icon;
@@ -34,6 +35,7 @@ pub mod palette;
 pub mod rename;
 pub mod services;
 pub mod state;
+pub mod theme;
 
 /// The git commit this binary is built from (short hash, `-dirty` with uncommitted
 /// changes, `unknown` outside a checkout); stamped by `build.rs`.

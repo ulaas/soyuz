@@ -985,12 +985,124 @@ pub struct TuiSection {
     /// How keys are read: `auto` uses the kitty keyboard protocol where the terminal
     /// supports it (never on Windows), `kitty` always asks for it, `legacy` never does.
     pub keyboard_protocol: KeyboardProtocol,
+    /// Colors the terminal UI draws with. The numbers `256` and `16` are accepted as
+    /// `ansi256` / `ansi16`.
+    pub color_mode: TuiColorMode,
+    /// Icons in front of file names.
+    pub icons: TuiIcons,
+    /// How panels are outlined.
+    pub borders: TuiBorders,
+    /// Width of the sidebar in terminal columns. Values outside 12–60 are clamped when
+    /// read.
+    pub sidebar_width: u16,
 }
 
 impl Default for TuiSection {
     fn default() -> Self {
-        TuiSection { mouse: true, keyboard_protocol: KeyboardProtocol::Auto }
+        TuiSection {
+            mouse: true,
+            keyboard_protocol: KeyboardProtocol::Auto,
+            color_mode: TuiColorMode::Auto,
+            icons: TuiIcons::Unicode,
+            borders: TuiBorders::Rounded,
+            sidebar_width: Self::SIDEBAR_WIDTH_DEFAULT,
+        }
     }
+}
+
+impl TuiSection {
+    /// Narrowest sidebar `sidebar_width_clamped` returns.
+    pub const SIDEBAR_WIDTH_MIN: u16 = 12;
+    /// Widest sidebar `sidebar_width_clamped` returns.
+    pub const SIDEBAR_WIDTH_MAX: u16 = 60;
+    /// Default `sidebar_width`.
+    pub const SIDEBAR_WIDTH_DEFAULT: u16 = 28;
+
+    /// `sidebar_width` clamped to `SIDEBAR_WIDTH_MIN..=SIDEBAR_WIDTH_MAX`.
+    pub fn sidebar_width_clamped(&self) -> u16 {
+        self.sidebar_width.clamp(Self::SIDEBAR_WIDTH_MIN, Self::SIDEBAR_WIDTH_MAX)
+    }
+}
+
+/// `[tui] color_mode`. Serialized as the names; on input the integers `256` / `16` and
+/// the strings `"256"` / `"16"` are accepted as well.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase", try_from = "TuiColorModeRepr")]
+pub enum TuiColorMode {
+    /// Detect from the environment (`COLORTERM`, `TERM`, `NO_COLOR`).
+    #[default]
+    Auto,
+    /// 24-bit color.
+    Truecolor,
+    /// The 256-color palette.
+    Ansi256,
+    /// The 16 basic ANSI colors.
+    Ansi16,
+    /// No color (bold / reverse only).
+    Mono,
+}
+
+impl TuiColorMode {
+    /// Every mode, in settings order.
+    pub const ALL: [TuiColorMode; 5] =
+        [TuiColorMode::Auto, TuiColorMode::Truecolor, TuiColorMode::Ansi256, TuiColorMode::Ansi16, TuiColorMode::Mono];
+}
+
+/// What `[tui] color_mode` may be written as: a name or a color count.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TuiColorModeRepr {
+    Int(i64),
+    Str(String),
+}
+
+impl TryFrom<TuiColorModeRepr> for TuiColorMode {
+    type Error = String;
+
+    fn try_from(r: TuiColorModeRepr) -> Result<Self, Self::Error> {
+        const EXPECTED: &str = "expected auto | truecolor | ansi256 | ansi16 | mono (or 256 / 16)";
+        match r {
+            TuiColorModeRepr::Int(256) => Ok(TuiColorMode::Ansi256),
+            TuiColorModeRepr::Int(16) => Ok(TuiColorMode::Ansi16),
+            TuiColorModeRepr::Int(n) => Err(format!("invalid color_mode {n}, {EXPECTED}")),
+            TuiColorModeRepr::Str(s) => match s.trim().to_ascii_lowercase().as_str() {
+                "auto" => Ok(TuiColorMode::Auto),
+                "truecolor" => Ok(TuiColorMode::Truecolor),
+                "ansi256" | "256" => Ok(TuiColorMode::Ansi256),
+                "ansi16" | "16" => Ok(TuiColorMode::Ansi16),
+                "mono" => Ok(TuiColorMode::Mono),
+                _ => Err(format!("invalid color_mode {s:?}, {EXPECTED}")),
+            },
+        }
+    }
+}
+
+/// `[tui] icons`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiIcons {
+    /// Nerd Font glyphs (needs a Nerd Font in the terminal).
+    Nerd,
+    /// Plain Unicode symbols that every font has.
+    #[default]
+    Unicode,
+    /// ASCII characters only.
+    Ascii,
+}
+
+/// `[tui] borders`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum TuiBorders {
+    /// Box-drawing lines with rounded corners.
+    #[default]
+    Rounded,
+    /// Box-drawing lines with square corners.
+    Plain,
+    /// ASCII `+`, `-` and `|`.
+    Ascii,
+    /// No borders.
+    None,
 }
 
 /// `[tui] keyboard_protocol`.

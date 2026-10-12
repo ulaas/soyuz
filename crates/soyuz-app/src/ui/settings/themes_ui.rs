@@ -92,7 +92,7 @@ fn display_name(t: &ThemeDef) -> &str {
 fn card(ui: &mut Ui, p: &Palette, t: &ThemeDef, selected: bool) -> egui::Response {
     let (rect, resp) = ui.allocate_exact_size(CARD, Sense::click());
     crate::ui::a11y::button(&resp, &tr!("settings-theme-a11y", name = display_name(t)));
-    let (dark, light) = t.palettes();
+    let (dark, light) = themes::palettes(t);
     let painter = ui.painter_at(rect.expand(3.0));
     let r = CornerRadius::same(8);
     let swatch = Rect::from_min_size(rect.min, vec2(rect.width(), 62.0));
@@ -252,7 +252,7 @@ pub fn theme_dropdown(ui: &mut Ui, d: &mut Config) {
     let items: Vec<dd::Item<String>> = all
         .iter()
         .map(|t| {
-            let (dark, light) = t.palettes();
+            let (dark, light) = themes::palettes(t);
             dd::Item::new(t.id.clone(), display_name(t))
                 .swatch(dark.bg_window)
                 .swatch(light.bg_window)

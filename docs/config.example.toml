@@ -292,6 +292,10 @@ clipboard_fallback_tools = false # run wl-copy / xclip when the built-in clipboa
 [tui]                            # the terminal UI (soyuz --tui)
 mouse = true                     # click / wheel in the terminal UI (off keeps the terminal's own text selection)
 keyboard_protocol = "auto"       # auto | kitty | legacy (auto: kitty keyboard protocol where supported, never on Windows)
+color_mode = "auto"              # auto | truecolor | ansi256 | ansi16 | mono (256 and 16 work too; auto reads COLORTERM / TERM / NO_COLOR)
+icons = "unicode"                # nerd | unicode | ascii (nerd needs a Nerd Font in the terminal)
+borders = "rounded"              # rounded | plain | ascii | none
+sidebar_width = 28               # sidebar width in columns (clamped to 12-60)
 
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true

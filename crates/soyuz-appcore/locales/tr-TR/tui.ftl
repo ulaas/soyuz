@@ -1,6 +1,7 @@
 ### Soyuz arayüz metinleri (tr-TR): tui
 ### Anahtarlar en-US/tui.ftl ile birebir aynı olmalı.
 
+## Shared: the "not available" toast and the features of later phases
 tui-not-available = Terminal arayüzünde henüz yok
 tui-feature-settings = Ayarlar
 tui-feature-workspaces = Çalışma alanları
@@ -19,28 +20,43 @@ tui-feature-open-with = Birlikte aç
 tui-feature-batch-rename = Toplu yeniden adlandırma
 tui-feature-attributes = Öznitelikler
 tui-feature-links = Yeni bağlantı
-tui-feature-palette = Komut paleti
-tui-feature-address = Adres çubuğu
 tui-feature-quicklook = Hızlı Bakış
 tui-feature-terminal = Terminal paneli
-tui-feature-sidebar = Kenar çubuğu
 tui-feature-editor = Düzenleyici
+
+## T1: the frame loop (crash reports, interrupted jobs)
 tui-recovered-jobs = { $count ->
     [one] Yarıda kalan 1 işlem var — kurtarmak için grafik arayüzü açın
    *[other] Yarıda kalan { $count } işlem var — kurtarmak için grafik arayüzü açın
 }
 tui-crashed = Soyuz geçen sefer çöktü — rapor şuraya kaydedildi: { $path }
-tui-hint = Ctrl+Q çık · Enter aç · Backspace yukarı
-tui-items = { $count ->
-    [one] 1 öğe
-   *[other] { $count } öğe
-}
-tui-selected = { $count } seçili
+
+## T2.1: [tui] settings
+
+## T2.2: theme, colours and icons
+
+## T2.3: pane views
 tui-loading = Yükleniyor…
 tui-empty = Bu klasör boş
 tui-no-matches = Filtreyle eşleşen öğe yok
 tui-virtual = Bu konum terminal arayüzünde henüz yok
 tui-failed = Bu klasör listelenemiyor: { $error }
+
+## T2.4: tabs, dual and quad panes
+
+## T2.5: breadcrumbs and the address field
+
+## T2.6: sidebar
+
+## T2.7: command palette
+
+## T2.8: status line, filter, toasts and borders
+tui-hint = Ctrl+Q çık · Enter aç · Backspace yukarı
+tui-hint-filter = Enter ilk eşleşme · Esc temizle
+
+## T2.9: mouse
+
+## T3: dialogs (the fallback until then)
 tui-hint-close = Esc kapat
 tui-hint-delete = Enter/Y onayla · N/Esc vazgeç
 tui-hint-quit = K açık tut · W bitince çık · Q işleri iptal edip çık

@@ -1,6 +1,7 @@
 ### Soyuz UI strings (en-US source): tui
 ### Keys: <area>-<thing>, kebab-case. Keep keys identical in tr-TR/tui.ftl.
 
+## Shared: the "not available" toast and the features of later phases
 tui-not-available = Not available in the terminal UI yet
 tui-feature-settings = Settings
 tui-feature-workspaces = Workspaces
@@ -19,28 +20,43 @@ tui-feature-open-with = Open with
 tui-feature-batch-rename = Batch rename
 tui-feature-attributes = Attributes
 tui-feature-links = New link
-tui-feature-palette = Command palette
-tui-feature-address = Address bar
 tui-feature-quicklook = Quick Look
 tui-feature-terminal = Terminal panel
-tui-feature-sidebar = Sidebar
 tui-feature-editor = Editor
+
+## T1: the frame loop (crash reports, interrupted jobs)
 tui-recovered-jobs = { $count ->
     [one] 1 interrupted operation — open the GUI to recover it
    *[other] { $count } interrupted operations — open the GUI to recover them
 }
 tui-crashed = Soyuz crashed last time — report saved at { $path }
-tui-hint = Ctrl+Q quit · Enter open · Backspace up
-tui-items = { $count ->
-    [one] 1 item
-   *[other] { $count } items
-}
-tui-selected = { $count } selected
+
+## T2.1: [tui] settings
+
+## T2.2: theme, colours and icons
+
+## T2.3: pane views
 tui-loading = Loading…
 tui-empty = This folder is empty
 tui-no-matches = No items match the filter
 tui-virtual = This location is not available in the terminal UI yet
 tui-failed = Cannot list this folder: { $error }
+
+## T2.4: tabs, dual and quad panes
+
+## T2.5: breadcrumbs and the address field
+
+## T2.6: sidebar
+
+## T2.7: command palette
+
+## T2.8: status line, filter, toasts and borders
+tui-hint = Ctrl+Q quit · Enter open · Backspace up
+tui-hint-filter = Enter first match · Esc clear
+
+## T2.9: mouse
+
+## T3: dialogs (the fallback until then)
 tui-hint-close = Esc close
 tui-hint-delete = Enter/Y confirm · N/Esc cancel
 tui-hint-quit = K keep open · W quit when finished · Q cancel jobs and quit

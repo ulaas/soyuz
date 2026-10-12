@@ -1207,7 +1207,7 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 
 /// `[tui]`: the terminal UI started with `soyuz --tui`.
 pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
-    use soyuz_core::config::KeyboardProtocol;
+    use soyuz_core::config::{KeyboardProtocol, TuiBorders, TuiColorMode, TuiIcons, TuiSection};
     let d = &mut app.gui.settings.draft;
     group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-input"), |r| {
         r.row_kw(
@@ -1233,6 +1233,77 @@ pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         (KeyboardProtocol::Legacy, tr!("settings-tui-legacy")),
                     ],
                     160.0,
+                );
+            },
+        );
+    }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-appearance"), |r| {
+        r.row_kw(
+            tr!("settings-tui-color-mode"),
+            tr!("settings-tui-color-mode-desc"),
+            "color colour mode truecolor 24-bit 256 16 ansi mono monochrome palette",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.color_mode",
+                    &mut d.tui.color_mode,
+                    &[
+                        (TuiColorMode::Auto, tr!("settings-auto")),
+                        (TuiColorMode::Truecolor, tr!("settings-tui-truecolor")),
+                        (TuiColorMode::Ansi256, tr!("settings-tui-ansi256")),
+                        (TuiColorMode::Ansi16, tr!("settings-tui-ansi16")),
+                        (TuiColorMode::Mono, tr!("settings-tui-mono")),
+                    ],
+                    180.0,
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-icons"),
+            tr!("settings-tui-icons-desc"),
+            "icons glyphs nerd font unicode ascii symbols",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.icons",
+                    &mut d.tui.icons,
+                    &[
+                        (TuiIcons::Nerd, tr!("settings-tui-icons-nerd")),
+                        (TuiIcons::Unicode, tr!("settings-tui-icons-unicode")),
+                        (TuiIcons::Ascii, tr!("settings-tui-icons-ascii")),
+                    ],
+                    180.0,
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-borders"),
+            tr!("settings-tui-borders-desc"),
+            "borders frame lines box drawing rounded plain square ascii none",
+            |ui| {
+                dropdown(
+                    ui,
+                    "tui.borders",
+                    &mut d.tui.borders,
+                    &[
+                        (TuiBorders::Rounded, tr!("settings-tui-borders-rounded")),
+                        (TuiBorders::Plain, tr!("settings-tui-borders-plain")),
+                        (TuiBorders::Ascii, tr!("settings-tui-borders-ascii")),
+                        (TuiBorders::None, tr!("settings-none")),
+                    ],
+                    180.0,
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-tui-sidebar-width"),
+            tr!("settings-tui-sidebar-width-desc"),
+            "sidebar width columns panel size",
+            |ui| {
+                number(
+                    ui,
+                    &mut d.tui.sidebar_width,
+                    TuiSection::SIDEBAR_WIDTH_MIN..=TuiSection::SIDEBAR_WIDTH_MAX,
+                    &format!(" {}", tr!("settings-unit-columns")),
                 );
             },
         );

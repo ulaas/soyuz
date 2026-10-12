@@ -27,6 +27,10 @@ crossterm.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
+# Display widths and grapheme clusters for truncation and the line editor (`view/text.rs`,
+# `widgets/line_edit.rs`); the versions ratatui already resolves.
+unicode-width = "0.2.2"
+unicode-segmentation = "1.13.3"
 
 # SIGTERM / SIGHUP / SIGINT / SIGCONT (`signals.rs`); already in the lockfile (via
 # alacritty_terminal).
