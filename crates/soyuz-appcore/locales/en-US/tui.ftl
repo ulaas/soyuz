@@ -51,7 +51,6 @@ tui-feature-address = Address bar
 tui-feature-sidebar = Sidebar
 
 ## T2.7: command palette
-tui-feature-palette = Command palette
 
 ## T2.8: status line, filter, toasts and borders
 tui-hint = Ctrl+Q quit · Enter open · Backspace up

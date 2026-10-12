@@ -14,7 +14,6 @@ use crate::app::App;
 /// Run every reset.
 pub fn reset_all(app: &mut App) {
     // T2.7: command palette.
-    palette(app);
 
     // T2.5: address field.
     address(app);
@@ -30,14 +29,6 @@ pub fn reset_all(app: &mut App) {
 
     // Later phases: terminal panel focus.
     terminal_focus(app);
-}
-
-/// T2.7.
-fn palette(app: &mut App) {
-    if app.core.palette.open {
-        soyuz_appcore::palette::close(&mut app.core);
-        app.unavailable(tr!("tui-feature-palette"));
-    }
 }
 
 /// T2.5.
