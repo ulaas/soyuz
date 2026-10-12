@@ -1,15 +1,29 @@
-//! A pane's list (step T2.3 brings the other view modes, columns and Miller).
+//! A pane's views (step T2.3): details (columns), list (row-major cells; grid and gallery
+//! map to it until T4) and Miller (parent | current | child).
 //!
-//! Plain look of Phase T1: the cursor row is reversed, selected rows carry a `*`,
-//! directories a trailing `/` and symlinks to files a trailing `@`. Names are fitted
-//! with [`super::text::truncate_name`] (the extension stays).
+//! Every row shows the selection mark (`* `, or `[x] ` / `[ ] ` in checkbox mode), the
+//! file's icon (not in the ASCII icon set, where the kind markers say it: directories end
+//! in `/`, symlinks to files in `@`), and the name fitted with
+//! [`super::text::truncate_name`] (the extension stays), coloured by its file class (or
+//! the folder's tag colour). The cursor row uses [`Role::Cursor`] in the focused pane and
+//! [`Role::CursorInactive`] elsewhere.
 //!
 //! # Layout and scrolling
 //!
-//! [`prepare`] gives every drawn pane a [`FlowLayout`] in cell units: one item per row
-//! (`cell = (width, 1)`, no gaps, group headers one row high), rebuilt only when its
-//! [`LayoutSig`] changes (like the GUI's `views/flow.rs`), so keyboard navigation
-//! (`actions::cursor`) works on what is drawn. Scroll state is the pane's own:
+//! [`geometry`] splits a pane rect for its [`PaneMode`]; [`prepare`] and [`draw_pane`]
+//! both use it, so keyboard navigation (`actions::cursor` on the pane's [`FlowLayout`])
+//! always works on what is drawn. The layout is in cell units, rebuilt only when its
+//! [`LayoutSig`] changes (like the GUI's `views/flow.rs`):
+//! - details: one item per row (`cell = (width, 1)`), below a header line with the
+//!   column labels;
+//! - list: cells of a fixed width (at least [`LIST_CELL_MIN`] columns, stretched to fill
+//!   the pane) with one blank column between them, laid out row-major; Left / Right move
+//!   between cells;
+//! - Miller: the current folder as one column in the middle, the parent folder on the
+//!   left and the folder under the cursor on the right (both from the core's aux
+//!   listings, see [`miller`]); narrower than [`MILLER_MIN_W`] only the middle column.
+//!
+//! Group headers are one row high. Scroll state is the pane's own:
 //! - `pane.scroll_y` is the first layout line shown, **in rows** (the GUI keeps pixels;
 //!   each frontend process owns its panes, and the TUI saves its own session file);
 //! - `pane.restore_scroll` (history, session, workspaces) is applied once and clamped to
@@ -20,33 +34,164 @@
 //! - the view follows the cursor only when `pane.scroll_to_cursor` is set (then cleared),
 //!   so wheel scrolling (T2.9) is not undone on the next frame;
 //! - `pane.viewport_h` is the list height in rows and `pane.page_rows` the rows per page.
+//!
+//! Only the lines in view are turned into rows: building the model and drawing cost the
+//! same for 10 or 100 000 entries.
+//!
+//! The pending key sequence (`g …`) and the type-ahead buffer show as a small overlay on
+//! the focused pane's last line.
+
+pub mod columns;
+pub mod miller;
+
+use std::time::Instant;
 
 use ratatui::Frame;
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
-use ratatui::widgets::Paragraph;
+use ratatui::buffer::Buffer;
+use ratatui::layout::Rect;
+use ratatui::style::Style;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::file_class::{FileClass, classify};
 use soyuz_appcore::geom::vec2;
+use soyuz_appcore::icon::IconId;
+use soyuz_appcore::services::folder_colors::{self, FolderColor};
 use soyuz_appcore::state::layout::{FlowLayout, LineKind};
 use soyuz_appcore::state::pane::{LayoutSig, ListingStatus, Pane, PaneId};
 use soyuz_appcore::tr;
-use soyuz_core::EntryKind;
+use soyuz_core::config::Config;
+use soyuz_core::{Column, EntryInfo, EntryKind, Location, SortDir, ViewMode};
 
+use self::columns::ColumnVm;
+use self::miller::MillerVm;
 use super::text;
 use crate::dialog::safe;
+use crate::icons::{self, IconSet};
 use crate::layout::{HitTarget, Hits, Regions};
 use crate::theme::{Role, TuiTheme};
 
-/// `LayoutSig::mode` of the terminal list (distinct from the GUI's view styles).
+/// `LayoutSig::mode` of the details view (distinct from the GUI's view styles).
 pub const LAYOUT_MODE: u8 = 0x80;
+/// `LayoutSig::mode` of the list view.
+pub const LAYOUT_LIST: u8 = 0x81;
+/// `LayoutSig::mode` of Miller's middle column.
+pub const LAYOUT_MILLER: u8 = 0x82;
+/// Narrowest cell of the list view.
+pub const LIST_CELL_MIN: u16 = 20;
+/// Narrowest pane that shows Miller's parent and child columns.
+pub const MILLER_MIN_W: u16 = 40;
+
+/// How a pane is drawn (the core's [`ViewMode`] mapped to what the terminal has).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PaneMode {
+    #[default]
+    Details,
+    /// List, and grid / gallery until T4.
+    List,
+    /// Miller columns (folders only; other locations use details).
+    Miller,
+}
+
+impl PaneMode {
+    pub fn of(pane: &Pane) -> PaneMode {
+        match pane.view.mode {
+            ViewMode::Details => PaneMode::Details,
+            ViewMode::List | ViewMode::Grid | ViewMode::Gallery => PaneMode::List,
+            ViewMode::Miller if matches!(pane.location, Location::Dir(_)) => PaneMode::Miller,
+            ViewMode::Miller => PaneMode::Details,
+        }
+    }
+
+    fn layout_mode(self) -> u8 {
+        match self {
+            PaneMode::Details => LAYOUT_MODE,
+            PaneMode::List => LAYOUT_LIST,
+            PaneMode::Miller => LAYOUT_MILLER,
+        }
+    }
+}
+
+/// Where the parts of a pane go. Parts not shown have an empty rect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaneGeom {
+    /// The item list (Miller: the middle column).
+    pub list: Rect,
+    /// The column header line (details).
+    pub header: Rect,
+    /// Miller's parent and child columns.
+    pub parent: Rect,
+    pub child: Rect,
+    /// Width of one item cell.
+    pub cell_w: u16,
+    /// Blank columns between cells.
+    pub gap: u16,
+}
+
+impl PaneGeom {
+    /// Item cells per line.
+    pub fn cols(&self) -> u16 {
+        ((self.list.width + self.gap) / (self.cell_w + self.gap).max(1)).max(1)
+    }
+}
+
+/// Split the pane rect `area` for `mode` (see the module docs).
+pub fn geometry(mode: PaneMode, area: Rect) -> PaneGeom {
+    let none = Rect::new(area.x, area.y, 0, 0);
+    let mut g = PaneGeom { list: area, header: none, parent: none, child: none, cell_w: area.width.max(1), gap: 0 };
+    match mode {
+        PaneMode::Details => {
+            if area.height >= 2 {
+                g.header = Rect { height: 1, ..area };
+                g.list = Rect { y: area.y + 1, height: area.height - 1, ..area };
+            }
+        }
+        PaneMode::List => {
+            let w = area.width.max(1);
+            let cols = ((w + 1) / (LIST_CELL_MIN + 1)).max(1);
+            g.cell_w = ((w + 1) / cols).saturating_sub(1).max(1);
+            g.gap = 1;
+        }
+        PaneMode::Miller => {
+            if area.width >= MILLER_MIN_W {
+                let side = (area.width - 2) / 4;
+                let mid = area.width - 2 - 2 * side;
+                g.parent = Rect { width: side, ..area };
+                g.list = Rect { x: area.x + side + 1, width: mid, ..area };
+                g.child = Rect { x: area.x + side + 1 + mid + 1, width: side, ..area };
+                g.cell_w = mid;
+            }
+        }
+    }
+    g
+}
 
 /// What kind of item a row shows.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RowKind {
     Dir,
     /// A symlink to a file (links to folders count as [`RowKind::Dir`]).
     Link,
+    #[default]
     File,
+}
+
+impl RowKind {
+    fn of(e: &EntryInfo) -> RowKind {
+        if e.is_dir_like() {
+            RowKind::Dir
+        } else if matches!(e.kind, EntryKind::Symlink { .. }) {
+            RowKind::Link
+        } else {
+            RowKind::File
+        }
+    }
+
+    fn suffix(self) -> &'static str {
+        match self {
+            RowKind::Dir => "/",
+            RowKind::Link => "@",
+            RowKind::File => "",
+        }
+    }
 }
 
 /// One item row of the list.
@@ -58,43 +203,73 @@ pub struct Row {
     pub name: String,
     pub kind: RowKind,
     pub class: FileClass,
+    pub icon: IconId,
     /// Formatted size (empty for folders).
     pub size: String,
+    /// Details view: the text of each of [`PaneVm::columns`] (empty for the name).
+    pub cells: Vec<String>,
+    /// A hidden file (drawn muted).
+    pub hidden: bool,
+    /// The folder's tag colour (`[tags]` index).
+    pub tag_color: Option<u8>,
     pub cursor: bool,
     pub selected: bool,
+}
+
+impl Default for Row {
+    fn default() -> Self {
+        Row {
+            index: 0,
+            name: String::new(),
+            kind: RowKind::File,
+            class: FileClass::Other,
+            icon: IconId::File,
+            size: String::new(),
+            cells: Vec::new(),
+            hidden: false,
+            tag_color: None,
+            cursor: false,
+            selected: false,
+        }
+    }
 }
 
 impl Row {
     /// The name with its kind marker (`docs/`, `link@`).
     pub fn label(&self) -> String {
-        format!("{}{}", self.name, self.suffix())
-    }
-
-    fn suffix(&self) -> &'static str {
-        match self.kind {
-            RowKind::Dir => "/",
-            RowKind::Link => "@",
-            RowKind::File => "",
-        }
+        format!("{}{}", self.name, self.kind.suffix())
     }
 
     /// The label fitted into `w` cells.
     pub fn fitted_label(&self, w: usize) -> String {
-        let suffix = self.suffix();
-        let name = text::truncate_name(&self.name, w.saturating_sub(suffix.len()), self.kind != RowKind::Dir);
-        format!("{name}{suffix}")
+        fitted(&self.name, self.kind, w)
     }
+
+    /// The style of the name (and icon).
+    fn name_style(&self, theme: &TuiTheme) -> Style {
+        let role = match (self.tag_color, self.kind) {
+            (Some(t), RowKind::Dir) => Role::Tag(t),
+            _ => Role::of_class(self.class),
+        };
+        let s = theme.style(Role::Text).patch(theme.style(role));
+        if self.hidden { s.patch(theme.style(Role::Muted)) } else { s }
+    }
+}
+
+/// `name` with the marker of `kind`, fitted into `w` cells.
+fn fitted(name: &str, kind: RowKind, w: usize) -> String {
+    let suffix = kind.suffix();
+    let name = text::truncate_name(name, w.saturating_sub(suffix.len()), kind != RowKind::Dir);
+    format!("{name}{suffix}")
 }
 
 /// One line of the list.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PaneLine {
     /// Group header `group` (grouped listings).
-    Header {
-        group: usize,
-        label: String,
-        count: usize,
-    },
+    Header { group: usize, label: String, count: usize },
+    /// An item. In the list view consecutive items fill a line's cells left to right
+    /// (a header or a full line starts the next line).
     Item(Row),
 }
 
@@ -108,6 +283,7 @@ pub struct PaneVm {
     pub vis_version: u64,
     /// The tab's focused pane.
     pub focused: bool,
+    pub mode: PaneMode,
     /// The lines in view (from `top`).
     pub lines: Vec<PaneLine>,
     /// First layout line shown (`pane.scroll_y`).
@@ -116,6 +292,53 @@ pub struct PaneVm {
     pub total: usize,
     /// Shown instead of rows: loading, empty, failed, not available.
     pub message: Option<String>,
+    /// Details view: the visible columns in order.
+    pub columns: Vec<ColumnVm>,
+    /// Miller's parent and child columns.
+    pub miller: Option<MillerVm>,
+    /// `ui.checkbox_mode`: rows carry `[x]` / `[ ]`.
+    pub checkboxes: bool,
+    /// The icon glyphs to draw.
+    pub icons: IconSet,
+    /// The pending key sequence or the type-ahead text (focused pane only).
+    pub footer: Option<String>,
+}
+
+impl Default for PaneVm {
+    fn default() -> Self {
+        PaneVm {
+            index: 0,
+            id: PaneId(0),
+            vis_version: 0,
+            focused: false,
+            mode: PaneMode::Details,
+            lines: Vec::new(),
+            top: 0,
+            total: 0,
+            message: None,
+            columns: Vec::new(),
+            miller: None,
+            checkboxes: false,
+            icons: IconSet::default(),
+            footer: None,
+        }
+    }
+}
+
+/// What a pane's model is built with besides the pane (see [`PaneVm::build`]).
+pub struct BuildCx<'a> {
+    pub config: &'a Config,
+    /// The tab's focused pane.
+    pub focused: bool,
+    /// `ui.checkbox_mode`.
+    pub checkboxes: bool,
+    pub icons: IconSet,
+    pub footer: Option<String>,
+}
+
+/// The icon set of the terminal UI. T2.2 wires the `[tui]` icon setting; until then ASCII.
+fn icon_set(_core: &AppCore) -> IconSet {
+    IconSet::default()
 }
 
 impl PaneVm {
@@ -131,45 +354,38 @@ impl PaneVm {
     pub fn from_core(core: &AppCore, index: usize) -> Option<PaneVm> {
         let tab = core.ws.tab();
         let pane = tab.panes.get(index)?;
+        let focused = index == tab.focused;
+        let cx = BuildCx {
+            config: &core.config,
+            focused,
+            checkboxes: core.ui.checkbox_mode,
+            icons: icon_set(core),
+            footer: if focused { footer(core, pane) } else { None },
+        };
+        Some(PaneVm::build(pane, index, cx))
+    }
+
+    /// The model of `pane` (tab pane `index`, after [`prepare_pane`]).
+    pub fn build(pane: &Pane, index: usize, cx: BuildCx<'_>) -> PaneVm {
+        let BuildCx { config, focused, checkboxes, icons, footer } = cx;
+        let mode = PaneMode::of(pane);
         let total = pane.visible.len();
-        let cursor = pane.cursor_pos();
-        let show_ext = core.config.general.show_extensions;
-        let size_style = core.config.general.size_style;
         let top = pane.scroll_y.max(0.0) as usize;
         let rows = pane.viewport_h.max(0.0) as usize;
+        let columns = if mode == PaneMode::Details { columns::columns(pane) } else { Vec::new() };
         let mut lines = Vec::new();
         if let Some(layout) = pane.layout.as_ref().filter(|l| l.n == total) {
-            for line in layout.lines().iter().skip(top).take(rows) {
+            let all = layout.lines();
+            let shown = &all[top.min(all.len())..(top + rows).min(all.len())];
+            let cx = RowCx { config, pane, cursor: pane.cursor_pos(), columns: &columns };
+            for line in shown {
                 match line.kind {
                     LineKind::Header(g) => {
                         let Some(span) = pane.groups.get(g) else { continue };
                         lines.push(PaneLine::Header { group: g, label: safe(&span.label), count: span.count });
                     }
                     LineKind::Items { start, len } => {
-                        for i in start..start + len {
-                            let (Some(e), Some(key)) = (pane.entry_at(i), pane.key_at(i)) else { continue };
-                            let kind = if e.is_dir_like() {
-                                RowKind::Dir
-                            } else if matches!(e.kind, EntryKind::Symlink { .. }) {
-                                RowKind::Link
-                            } else {
-                                RowKind::File
-                            };
-                            let name = if show_ext || kind == RowKind::Dir { e.name.as_str() } else { e.stem() };
-                            lines.push(PaneLine::Item(Row {
-                                index: i,
-                                name: safe(name),
-                                kind,
-                                class: classify(e),
-                                size: if kind == RowKind::Dir {
-                                    String::new()
-                                } else {
-                                    soyuz_core::size::format_size(e.size, size_style)
-                                },
-                                cursor: cursor == Some(i),
-                                selected: pane.selection.contains(key),
-                            }));
-                        }
+                        lines.extend((start..start + len).filter_map(|i| cx.row(i)).map(PaneLine::Item));
                     }
                 }
             }
@@ -183,20 +399,78 @@ impl PaneVm {
             _ if total == 0 => Some(tr!("tui-empty").to_string()),
             _ => None,
         };
-        Some(PaneVm {
+        let miller = (mode == PaneMode::Miller).then(|| miller::vm(pane, rows));
+        PaneVm {
             index,
             id: pane.id,
             vis_version: pane.vis_version,
-            focused: index == tab.focused,
+            focused,
+            mode,
             lines,
             top,
             total,
             message,
+            columns,
+            miller,
+            checkboxes,
+            icons,
+            footer,
+        }
+    }
+}
+
+/// The pending key sequence, else the live type-ahead text.
+fn footer(core: &AppCore, pane: &Pane) -> Option<String> {
+    if let Some(l) = core.keyseq.pending_label() {
+        return Some(safe(&l));
+    }
+    pane.type_ahead.is_active(Instant::now()).then(|| format!("› {}", safe(&pane.type_ahead.buf)))
+}
+
+/// What building a row needs.
+struct RowCx<'a> {
+    config: &'a Config,
+    pane: &'a Pane,
+    cursor: Option<usize>,
+    columns: &'a [ColumnVm],
+}
+
+impl RowCx<'_> {
+    fn row(&self, i: usize) -> Option<Row> {
+        let (e, key) = (self.pane.entry_at(i)?, self.pane.key_at(i)?);
+        let general = &self.config.general;
+        let kind = RowKind::of(e);
+        let name = if general.show_extensions || kind == RowKind::Dir { e.name.as_str() } else { e.stem() };
+        let class = classify(e);
+        let tag_color = match kind {
+            RowKind::Dir => match folder_colors::folder_color(&e.path) {
+                Some(FolderColor::Tag(t)) => Some(t),
+                // T2.2: fixed colours need the theme's colour depth; tag colours follow it.
+                Some(FolderColor::Rgb(_)) | None => None,
+            },
+            _ => None,
+        };
+        Some(Row {
+            index: i,
+            name: safe(name),
+            kind,
+            class,
+            icon: icons::class_icon(class),
+            size: if kind == RowKind::Dir {
+                String::new()
+            } else {
+                soyuz_core::size::format_size(e.size, general.size_style)
+            },
+            cells: self.columns.iter().map(|c| columns::cell_text(c.column, e, self.config)).collect(),
+            hidden: e.is_hidden(),
+            tag_color,
+            cursor: self.cursor == Some(i),
+            selected: self.pane.selection.contains(key),
         })
     }
 }
 
-/// Lay out and scroll every drawn pane (see the module docs).
+/// Lay out and scroll every drawn pane; load Miller's side columns (see the module docs).
 pub fn prepare(core: &mut AppCore, regions: &Regions) {
     let tab = core.ws.tab_mut();
     for p in &regions.panes {
@@ -204,21 +478,23 @@ pub fn prepare(core: &mut AppCore, regions: &Regions) {
             prepare_pane(pane, p.rect.width, p.rect.height);
         }
     }
-    // T2.3: the Miller view's parent / preview columns (`services.aux_entries`) load here.
+    miller::prepare(core, regions);
 }
 
-/// The list of `pane` is `width` × `rows` cells: layout, scroll, page size.
+/// The pane is `width` × `rows` cells: layout, scroll, page size.
 pub fn prepare_pane(pane: &mut Pane, width: u16, rows: u16) {
-    let w = f32::from(width.max(1));
-    let cell = vec2(w, 1.0);
-    let sig = LayoutSig { vis_version: pane.vis_version, width: w, cell, mode: LAYOUT_MODE };
+    let mode = PaneMode::of(pane);
+    let g = geometry(mode, Rect::new(0, 0, width, rows));
+    let w = f32::from(g.list.width.max(1));
+    let cell = vec2(f32::from(g.cell_w), 1.0);
+    let gap = vec2(f32::from(g.gap), 0.0);
+    let sig = LayoutSig { vis_version: pane.vis_version, width: w, cell, mode: mode.layout_mode() };
     if pane.layout_sig != Some(sig) || pane.layout.is_none() {
-        pane.layout =
-            Some(FlowLayout::new(pane.visible.len(), &pane.groups, w, cell, vec2(0.0, 0.0), vec2(0.0, 0.0), 1.0));
+        pane.layout = Some(FlowLayout::new(pane.visible.len(), &pane.groups, w, cell, gap, vec2(0.0, 0.0), 1.0));
         pane.layout_sig = Some(sig);
     }
     let Some(layout) = pane.layout.as_ref() else { return };
-    let rows = usize::from(rows);
+    let rows = usize::from(g.list.height);
     let max_top = layout.lines().len().saturating_sub(rows);
     let mut top = if pane.scroll_y.is_finite() { pane.scroll_y.max(0.0) as usize } else { 0 };
     let mut restored = false;
@@ -247,118 +523,150 @@ pub fn prepare_pane(pane: &mut Pane, width: u16, rows: u16) {
     pane.page_rows = layout.rows_per_page(pane.viewport_h);
 }
 
-/// Width of the size column.
-const SIZE_W: u16 = 11;
+/// Write `s` at `(x, y)`, at most `w` cells, in `style`.
+pub(crate) fn put(buf: &mut Buffer, x: u16, y: u16, s: &str, w: u16, style: Style) {
+    if w > 0 {
+        buf.set_stringn(x, y, s, usize::from(w), style);
+    }
+}
+
+/// The selection mark of a row (`* `, or `[x] ` / `[ ] ` in checkbox mode).
+fn mark(m: &PaneVm, selected: bool) -> &'static str {
+    match (m.checkboxes, selected) {
+        (true, true) => "[x] ",
+        (true, false) => "[ ] ",
+        (false, true) => "* ",
+        (false, false) => "  ",
+    }
+}
+
+/// Cells taken by the mark and the icon in front of a name.
+fn prefix_w(m: &PaneVm) -> u16 {
+    let mark = if m.checkboxes { 4 } else { 2 };
+    mark + icon_w(m.icons)
+}
+
+/// Cells of an icon plus its space (none in the ASCII set: the kind markers say it).
+fn icon_w(set: IconSet) -> u16 {
+    if set == IconSet::Ascii { 0 } else { 3 }
+}
+
+/// Draw the mark, icon and name of `row` into `w` cells at `(x, y)`.
+fn draw_name(buf: &mut Buffer, m: &PaneVm, row: &Row, x: u16, y: u16, w: u16, theme: &TuiTheme) {
+    let mk = mark(m, row.selected);
+    let mut x = x;
+    let end = x + w;
+    let mark_style = if row.selected { theme.style(Role::Selected) } else { theme.style(Role::Muted) };
+    put(buf, x, y, mk, end - x, mark_style);
+    x = (x + text::width(mk) as u16).min(end);
+    let name_style = row.name_style(theme);
+    if m.icons != IconSet::Ascii {
+        let icon = if row.kind == RowKind::Link { IconId::Link } else { row.icon };
+        put(buf, x, y, icons::glyph(icon, m.icons), end - x, name_style);
+        x = (x + icon_w(m.icons)).min(end);
+    }
+    let label = row.fitted_label(usize::from(end - x));
+    put(buf, x, y, &label, end - x, name_style);
+}
+
+/// The style a row ends with: selection, then cursor.
+fn row_style(m: &PaneVm, row: &Row, theme: &TuiTheme) -> Style {
+    let mut style = Style::new();
+    if row.selected {
+        style = style.patch(theme.style(Role::Selected));
+    }
+    if row.cursor {
+        style = style.patch(theme.style(if m.focused { Role::Cursor } else { Role::CursorInactive }));
+    }
+    style
+}
 
 /// Draw pane `m` into `rect`.
 pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hits: &mut Hits) {
     hits.push(rect, HitTarget::PaneBackground { pane: m.id });
+    let rect = rect.intersection(f.area());
+    if rect.is_empty() {
+        return;
+    }
+    let g = geometry(m.mode, rect);
+    let buf = f.buffer_mut();
+    buf.set_style(rect, theme.style(Role::Text));
+    let fit = columns::fit(&m.columns, g.list.width, prefix_w(m));
+    if m.mode == PaneMode::Details {
+        columns::draw_header(buf, g.header, m, &fit, theme, hits);
+    }
     if let Some(msg) = &m.message
         && m.lines.is_empty()
     {
-        let msg = text::truncate_end(msg, usize::from(rect.width));
-        f.render_widget(Paragraph::new(msg).alignment(Alignment::Center).style(theme.style(Role::Muted)), rect);
+        let msg = text::truncate_end(msg, usize::from(g.list.width));
+        let x = g.list.x + (g.list.width - text::width(&msg) as u16) / 2;
+        put(buf, x, g.list.y, &msg, g.list.width, theme.style(Role::Muted));
     }
-    for (i, line) in m.lines.iter().enumerate().take(usize::from(rect.height)) {
-        let r = Rect { y: rect.y + i as u16, height: 1, ..rect };
-        match line {
+    let cols = if m.mode == PaneMode::List { g.cols() } else { 1 };
+    let (mut line, mut col) = (0u16, 0u16);
+    for l in &m.lines {
+        if line >= g.list.height {
+            break;
+        }
+        let y = g.list.y + line;
+        match l {
             PaneLine::Header { group, label, count } => {
+                if col > 0 {
+                    line += 1;
+                    col = 0;
+                    if line >= g.list.height {
+                        break;
+                    }
+                }
+                let r = Rect { y: g.list.y + line, height: 1, ..g.list };
                 let t = text::truncate_end(&format!("{label} ({count})"), usize::from(r.width));
-                f.render_widget(Paragraph::new(t).style(theme.style(Role::GroupHeader)), r);
+                put(buf, r.x, r.y, &t, r.width, theme.style(Role::GroupHeader));
                 hits.push(r, HitTarget::PaneHeader { pane: m.id, vis_version: m.vis_version, group: *group });
+                line += 1;
             }
             PaneLine::Item(row) => {
-                let size_w = SIZE_W.min(r.width / 3);
-                let [name_r, size_r] = Layout::horizontal([Constraint::Min(1), Constraint::Length(size_w)]).areas(r);
-                let mark = if row.selected { "* " } else { "  " };
-                let label = row.fitted_label(usize::from(name_r.width).saturating_sub(2));
-                f.render_widget(Paragraph::new(format!("{mark}{label}")), name_r);
-                let size = text::truncate_end(&format!("{} ", row.size), usize::from(size_r.width));
-                f.render_widget(Paragraph::new(size).alignment(Alignment::Right), size_r);
-                let mut style = theme.style(Role::Text);
-                if row.selected {
-                    style = style.patch(theme.style(Role::Selected));
+                let r = Rect::new(g.list.x + col * (g.cell_w + g.gap), y, g.cell_w, 1).intersection(g.list);
+                if m.mode == PaneMode::Details {
+                    columns::draw_row(buf, r, m, row, &fit, theme);
+                } else {
+                    draw_name(buf, m, row, r.x, r.y, r.width, theme);
                 }
-                if row.cursor {
-                    style = style.patch(theme.style(if m.focused { Role::Cursor } else { Role::CursorInactive }));
-                }
-                f.buffer_mut().set_style(r, style);
+                buf.set_style(r, row_style(m, row, theme));
                 hits.push(r, HitTarget::PaneRow { pane: m.id, vis_version: m.vis_version, index: row.index });
+                col += 1;
+                if col >= cols {
+                    col = 0;
+                    line += 1;
+                }
             }
         }
     }
+    if let Some(mv) = &m.miller {
+        miller::draw(buf, &g, m, mv, theme, hits);
+    }
+    if let Some(footer) = &m.footer {
+        draw_footer(buf, rect, footer, theme);
+    }
+}
+
+/// The footer overlay: right-aligned on the pane's last line.
+fn draw_footer(buf: &mut Buffer, rect: Rect, footer: &str, theme: &TuiTheme) {
+    let t = text::truncate_end(&format!(" {footer} "), usize::from(rect.width));
+    let w = text::width(&t) as u16;
+    let r = Rect::new(rect.right() - w, rect.bottom() - 1, w, 1);
+    buf.set_style(r, Style::reset());
+    put(buf, r.x, r.y, &t, r.width, theme.style(Role::StatusBar));
+}
+
+/// The sort marker of a column header.
+fn sort_glyph(dir: SortDir, set: IconSet) -> &'static str {
+    icons::glyph(if dir == SortDir::Asc { IconId::CaretUp } else { IconId::CaretDown }, set)
+}
+
+/// `true` when `col` is the column the pane sorts by.
+fn sorted_by(pane: &Pane, col: Column) -> Option<SortDir> {
+    (pane.view.sort.column == col).then_some(pane.view.sort.dir)
 }
 
 #[cfg(test)]
-mod tests {
-    use soyuz_appcore::state::view_memory::ViewState;
-    use soyuz_core::{EntryInfo, Location};
-
-    use super::*;
-
-    fn pane(n: usize) -> Pane {
-        let mut p = Pane::new(Location::Dir("/data".into()), ViewState::default());
-        let entries: Vec<EntryInfo> =
-            (0..n).map(|i| EntryInfo::minimal(format!("/data/f{i:03}.txt").into(), EntryKind::File)).collect();
-        p.set_entries_ordered(entries);
-        p.status = ListingStatus::Ready;
-        p.refresh_visible(true, true);
-        p
-    }
-
-    #[test]
-    fn layout_is_cached_until_the_listing_or_width_changes() {
-        let mut p = pane(50);
-        prepare_pane(&mut p, 40, 10);
-        let sig = p.layout_sig;
-        assert_eq!(p.layout.as_ref().map(|l| (l.n, l.cols)), Some((50, 1)));
-        assert_eq!((p.viewport_h, p.page_rows), (10.0, 10));
-        prepare_pane(&mut p, 40, 12);
-        assert_eq!(p.layout_sig, sig, "a height change keeps the layout");
-        prepare_pane(&mut p, 41, 12);
-        assert_ne!(p.layout_sig, sig);
-    }
-
-    #[test]
-    fn scrolling_follows_the_cursor_only_when_asked() {
-        let mut p = pane(100);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 0.0);
-        p.move_cursor(25, false, false);
-        assert!(p.scroll_to_cursor);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 16.0, "cursor on the last row");
-        assert!(!p.scroll_to_cursor);
-        // A wheel scroll (T2.9) moves the view without the cursor and stays.
-        p.scroll_y = 60.0;
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 60.0);
-        // Clamped to the end of the list.
-        p.scroll_y = 500.0;
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 90.0);
-        p.move_cursor(3, false, false);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 3.0, "cursor on the first row");
-    }
-
-    #[test]
-    fn restore_clamps_and_keeps_the_cursor_visible() {
-        let mut p = pane(100);
-        p.restore_scroll = Some(40.0);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!((p.scroll_y, p.restore_scroll), (40.0, None));
-        // A GUI offset in pixels: clamped, then the cursor is brought into view.
-        p.move_cursor(5, false, false);
-        p.scroll_to_cursor = false;
-        p.restore_scroll = Some(2400.0);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!(p.scroll_y, 5.0);
-        // While loading, an offset the listing cannot reach yet stays pending.
-        let mut p = pane(5);
-        p.status = ListingStatus::Loading { since: std::time::Instant::now() };
-        p.restore_scroll = Some(30.0);
-        prepare_pane(&mut p, 40, 10);
-        assert_eq!((p.scroll_y, p.restore_scroll), (0.0, Some(30.0)));
-    }
-}
+mod tests;

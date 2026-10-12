@@ -15,6 +15,11 @@ pub enum HitTarget {
     PaneHeader { pane: PaneId, vis_version: u64, group: usize },
     /// Empty space of a pane's list.
     PaneBackground { pane: PaneId },
+    /// The details header of column `column` (click to sort).
+    PaneColumn { pane: PaneId, column: soyuz_core::Column },
+    /// Row `index` of a Miller side column (`parent`, else the child column); resolve it
+    /// with `view::pane::miller::entry`.
+    MillerRow { pane: PaneId, parent: bool, index: usize },
     /// The splitter between panes (`vertical`: between columns).
     Splitter { vertical: bool },
     /// Tab `index` of the tab strip.

@@ -38,7 +38,7 @@ use soyuz_appcore::core::AppCore;
 
 pub use self::crumbs::CrumbsVm;
 pub use self::palette::PaletteVm;
-pub use self::pane::{PaneLine, PaneVm, Row, RowKind};
+pub use self::pane::{PaneLine, PaneMode, PaneVm, Row, RowKind};
 pub use self::sidebar::SidebarVm;
 pub use self::status::StatusVm;
 pub use self::tabs::TabsVm;
@@ -116,6 +116,7 @@ mod tests {
     use soyuz_appcore::file_class::FileClass;
     use soyuz_appcore::models::toasts::ToastKind;
     use soyuz_appcore::state::pane::PaneId;
+    use soyuz_core::Column;
     use soyuz_core::config::{Orientation, TuiSection};
 
     use super::*;
@@ -134,14 +135,17 @@ mod tests {
     }
 
     fn row(name: &str, kind: RowKind, cursor: bool, selected: bool, index: usize) -> PaneLine {
+        let size: String = if kind == RowKind::Dir { String::new() } else { "1 KiB".into() };
         PaneLine::Item(Row {
             index,
             name: name.into(),
             kind,
             class: if kind == RowKind::Dir { FileClass::Folder } else { FileClass::Text },
-            size: if kind == RowKind::Dir { String::new() } else { "1 KiB".into() },
+            cells: vec![String::new(), size.clone()],
+            size,
             cursor,
             selected,
+            ..Row::default()
         })
     }
 
@@ -159,6 +163,8 @@ mod tests {
             top: 0,
             total: 3,
             message: None,
+            columns: vec![pane::columns::ColumnVm::new(Column::Name), pane::columns::ColumnVm::new(Column::Size)],
+            ..PaneVm::default()
         }
     }
 
@@ -179,17 +185,19 @@ mod tests {
     fn list_with_cursor_and_selection() {
         let (lines, buf, hits) = screen(&model(), &Facts::default(), 40, 8);
         assert_eq!(lines[0], "/data");
-        assert_eq!(lines[1], "  sub/");
-        assert!(lines[2].starts_with("  a.txt") && lines[2].ends_with("1 KiB"), "{:?}", lines[2]);
-        assert!(lines[3].starts_with("* b.txt"), "{:?}", lines[3]);
+        // T2.3: the details view's column header, then the rows.
+        assert!(lines[1].starts_with("  Name") && lines[1].ends_with("Size"), "{:?}", lines[1]);
+        assert_eq!(lines[2], "  sub/");
+        assert!(lines[3].starts_with("  a.txt") && lines[3].ends_with("1 KiB"), "{:?}", lines[3]);
+        assert!(lines[4].starts_with("* b.txt"), "{:?}", lines[4]);
         assert!(lines[7].starts_with(" 3 items · 1 selected") && lines[7].ends_with("Ctrl+Q quit"), "{:?}", lines[7]);
         // The cursor row is reversed across the whole width, the others are not.
-        assert!(buf[(0, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(buf[(39, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(!buf[(0, 1)].modifier.contains(Modifier::REVERSED));
-        assert!(buf[(2, 3)].modifier.contains(Modifier::BOLD));
+        assert!(buf[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(buf[(39, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
+        assert!(buf[(2, 4)].modifier.contains(Modifier::BOLD));
         // Rows are click targets; below them is the pane's background.
-        assert_eq!(hits.at(5, 2), Some(HitTarget::PaneRow { pane: PaneId(7), vis_version: 3, index: 1 }));
+        assert_eq!(hits.at(5, 3), Some(HitTarget::PaneRow { pane: PaneId(7), vis_version: 3, index: 1 }));
         assert_eq!(hits.at(5, 5), Some(HitTarget::PaneBackground { pane: PaneId(7) }));
     }
 
@@ -198,8 +206,9 @@ mod tests {
         let mut m = model();
         m.panes[0].lines[1] = row("a_very_long_file_name_indeed.txt", RowKind::File, true, false, 1);
         let (lines, _, _) = screen(&m, &Facts::default(), 24, 8);
-        // 24 columns: 8 for the size, 2 for the mark, 14 for the name.
-        assert!(lines[2].starts_with("  a_ver…deed.txt "), "{:?}", lines[2]);
+        // 24 columns: no room for the size column (11 + 1) next to a 12-cell name, so the
+        // name takes all but the mark's 2 cells.
+        assert_eq!(lines[3], "  a_very_lo…e_indeed.txt", "{:?}", lines[3]);
     }
 
     #[test]
@@ -214,7 +223,7 @@ mod tests {
         ];
         let facts = Facts { toasts: 2, ..Facts::default() };
         let (lines, buf, _) = screen(&m, &facts, 40, 8);
-        assert!(lines[1].contains("This folder is empty"), "{lines:?}");
+        assert!(lines[2].contains("This folder is empty"), "{lines:?}");
         assert_eq!(lines[5], "[i] Copied");
         assert_eq!(lines[6], "[x] Failed — why");
         assert!(buf[(0, 6)].modifier.contains(Modifier::BOLD));
@@ -241,12 +250,12 @@ mod tests {
         m.panes = vec![pane(0, false), pane(1, true)];
         let facts = Facts { shown: 2, focused: 1, ..Facts::default() };
         let (lines, buf, hits) = screen(&m, &facts, 80, 8);
-        assert!(lines[1].starts_with("  sub/"), "{:?}", lines[1]);
-        assert_eq!(buf[(43, 1)].symbol(), "s", "the second pane starts after the gap");
+        assert!(lines[2].starts_with("  sub/"), "{:?}", lines[2]);
+        assert_eq!(buf[(43, 2)].symbol(), "s", "the second pane starts after the gap");
         // Only the focused pane's cursor is reversed.
-        assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
-        assert!(buf[(41, 2)].modifier.contains(Modifier::REVERSED));
-        assert_eq!(hits.at(45, 2), Some(HitTarget::PaneRow { pane: PaneId(8), vis_version: 3, index: 1 }));
+        assert!(!buf[(0, 3)].modifier.contains(Modifier::REVERSED));
+        assert!(buf[(41, 3)].modifier.contains(Modifier::REVERSED));
+        assert_eq!(hits.at(45, 3), Some(HitTarget::PaneRow { pane: PaneId(8), vis_version: 3, index: 1 }));
     }
 
     /// Every view at every tiny size: nothing may panic (ratatui panics on writes outside
