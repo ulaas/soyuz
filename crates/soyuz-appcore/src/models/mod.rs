@@ -40,3 +40,9 @@ pub mod workspaces;
 pub mod compare;
 pub mod compare_profiles;
 pub mod compare_state;
+// Phase T7: the tool windows' logic (moved from the GUI) and About, for both frontends.
+pub mod about;
+pub mod dupes;
+pub mod split;
+pub mod treemap;
+pub mod versions;

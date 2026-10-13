@@ -21,15 +21,23 @@
 //! | `OpenSettings` / `CloseSettings` | `input::settings::{open, close}` |
 //! | `Smart` / `Remote` / `Archive` | `input::dialogs::{smart, remote, archive}::open` |
 //! | `Suspend` | `App::request_suspend` (run between frames by `crate::suspend`) |
+//! | `SaveWorkspace` / `ManageWorkspaces` | `input::dialogs::{save_workspace, manage_workspaces}::open` |
+//! | `TabHistory` | `input::dialogs::tab_history::open` |
+//! | `About` | `input::dialogs::about::open` |
+//! | `UnlockDevice` | `input::dialogs::unlock_device::open` |
+//! | `CloseWindowPrompt` | nothing (logged): it cannot happen in the terminal UI |
 //! | `ReleaseFocus` | nothing to do |
-//! | the rest | a "not available in the terminal UI yet" toast ([`unavailable`]) |
 //!
-//! "The rest" is workspaces (save / manage), tab history, the close-window prompt,
-//! devices (unlock, read-only mount) and About.
+//! The hibernated-NTFS offer of a device mount is a `Confirm` (`models::devices::offer_read_only`).
+//!
+//! `CloseWindowPrompt` is pushed only while secondary GUI windows exist
+//! (`models::windows::request_close` / `intercept_main_close`); the terminal UI never
+//! opens one (the window operations are `AppCore::tui_unavailable`). Quitting goes through
+//! `AppCore::handle_close_request`: unsaved editors ask (`EditorUnsaved`), running jobs
+//! ask (the core's `QuitModel`), like the GUI.
 
 use soyuz_appcore::models::frontend::{FrontendCmd, ViewRequest};
 use soyuz_appcore::models::properties::MetaDialog;
-use soyuz_appcore::tr;
 
 use crate::app::App;
 use crate::input::{dialogs, jobs, menu, preview, quicklook, settings};
@@ -76,20 +84,17 @@ pub fn handle(app: &mut App, c: FrontendCmd) {
                 preview::scroll(app, step)
             }
         }
-        other => unavailable(app, other),
+        // ---- Phase T7 ----
+        FrontendCmd::SaveWorkspace(name) => dialogs::save_workspace::open(app, name),
+        FrontendCmd::ManageWorkspaces => dialogs::manage_workspaces::open(app),
+        FrontendCmd::TabHistory { tab, pane } => dialogs::tab_history::open(app, tab, pane),
+        FrontendCmd::About => dialogs::about::open(app),
+        FrontendCmd::UnlockDevice { object, name, kind, pane } => {
+            dialogs::unlock_device::open(app, object, name, kind, pane)
+        }
+        // Unreachable here: no secondary windows in the terminal UI (module docs).
+        FrontendCmd::CloseWindowPrompt { id, tabs } => {
+            log::debug!("tui: close-window prompt for window {id:?} ({tabs} tabs) ignored: no secondary windows")
+        }
     }
-}
-
-/// Requests the terminal UI has no view for yet: say the feature is not available.
-fn unavailable(app: &mut App, c: FrontendCmd) {
-    let feature = match c {
-        FrontendCmd::SaveWorkspace(_) | FrontendCmd::ManageWorkspaces => tr!("tui-feature-workspaces"),
-        FrontendCmd::TabHistory { .. } => tr!("tui-feature-history"),
-        FrontendCmd::CloseWindowPrompt { .. } => tr!("tui-feature-windows"),
-        FrontendCmd::UnlockDevice { .. } | FrontendCmd::OfferReadOnlyMount { .. } => tr!("tui-feature-devices"),
-        FrontendCmd::About => tr!("tui-feature-about"),
-        // Handled in `handle`.
-        _ => return,
-    };
-    app.unavailable(feature);
 }

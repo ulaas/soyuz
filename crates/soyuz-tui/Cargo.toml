@@ -56,6 +56,9 @@ serde_json.workspace = true
 # `widgets/line_edit.rs`); the versions ratatui already resolves.
 unicode-width = "0.2.2"
 unicode-segmentation = "1.13.3"
+# The unlock dialog's passphrase (`input/dialogs/unlock_device.rs`, Phase T7): wiped on
+# submit and on drop, like the GUI's `unlock_volume.rs`; already in the lockfile.
+zeroize.workspace = true
 
 # SIGTERM / SIGHUP / SIGINT / SIGCONT (`signals.rs`); already in the lockfile (via
 # alacritty_terminal).

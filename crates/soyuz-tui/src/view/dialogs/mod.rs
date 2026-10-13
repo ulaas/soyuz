@@ -42,6 +42,16 @@ pub mod table_row;
 pub mod transfer;
 pub mod unsaved;
 
+// ---- Phase T7 ----
+pub mod about;
+pub mod manage_workspaces;
+pub mod save_workspace;
+pub mod shelf;
+pub mod split;
+pub mod tab_history;
+pub mod unlock_device;
+pub mod versions;
+
 use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::widgets::Clear;
@@ -150,6 +160,14 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
             TuiDialog::PlanJson(s) => plan_json::vm(core, s),
             TuiDialog::SearchSize(s) => search_size::vm(core, s),
             TuiDialog::SaveSearch(s) => save_search::vm(core, s),
+            TuiDialog::About(s) => about::vm(core, s),
+            TuiDialog::ManageWorkspaces(s) => manage_workspaces::vm(core, s),
+            TuiDialog::SaveWorkspace(s) => save_workspace::vm(core, s),
+            TuiDialog::Shelf(s) => shelf::vm(core, s),
+            TuiDialog::Split(s) => split::vm(core, s),
+            TuiDialog::TabHistory(s) => tab_history::vm(core, s),
+            TuiDialog::UnlockDevice(s) => unlock_device::vm(core, s),
+            TuiDialog::Versions(s) => versions::vm(core, s),
         }),
     }
 }

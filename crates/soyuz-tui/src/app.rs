@@ -43,9 +43,8 @@ use ratatui::layout::Rect;
 use soyuz_appcore::core::{AppCore, CMD_ROUNDS, FrontendKind, Startup};
 use soyuz_appcore::host::Host as _;
 use soyuz_appcore::models::frontend::SuspendRequest;
-use soyuz_appcore::models::toasts::Toast;
+use soyuz_appcore::ops;
 use soyuz_appcore::services::crash;
-use soyuz_appcore::{ops, tr};
 use soyuz_core::config::{Config, KeyContext, TuiSection};
 
 use crate::host::TuiHost;
@@ -386,11 +385,6 @@ impl App {
         self.drain_frontend();
     }
 
-    /// Say that `feature` has no terminal view yet.
-    pub(crate) fn unavailable(&mut self, feature: &str) {
-        self.core.ui.toasts.push(Toast::info(tr!("tui-not-available")).body(feature));
-    }
-
     /// Carry out (or decline) the core's requests for the frontend (`crate::frontend`).
     pub fn drain_frontend(&mut self) {
         crate::frontend::drain(self);
@@ -464,6 +458,7 @@ impl App {
         view::prepare(&mut self.core, &mut self.input, &regions);
         crate::input::jobs::tick(&self.core, &self.host);
         crate::input::compare::tick(&self.input.compare, &self.host);
+        crate::input::screens::tick(&self.input.screens, &self.host);
         crate::input::dialogs::approval_mcp::tick(&self.core, &self.host);
         let model = ViewModel::from_core(&self.core, &self.input, &regions);
         let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());

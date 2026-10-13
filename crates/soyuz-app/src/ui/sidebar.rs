@@ -503,17 +503,6 @@ pub fn unlock_dialog(app: &mut crate::app::SoyuzApp, object: String, name: Strin
     app.gui.dialogs.push(crate::ui::dialogs::unlock_volume::UnlockVolumeDialog::new(object, name, kind, pane))
 }
 
-/// `FrontendCmd::OfferReadOnlyMount`: explain the hibernated NTFS volume and offer a
-/// read-only mount.
-pub fn offer_read_only(app: &mut crate::app::SoyuzApp, dev: Box<soyuz_fs::udisks::BlockDevice>, name: String) {
-    app.gui.dialogs.push(crate::ui::dialogs::ConfirmDialog::new(
-        &tr!("app-device-hibernated-title", name = name.clone()),
-        tr!("app-device-hibernated-body"),
-        tr!("app-device-mount-ro"),
-        Cmd::Device(DeviceCmd::Mount { dev, name, read_only: true }),
-    ))
-}
-
 /// Rows for devices that are not mounted (or locked): click mounts (and opens) or asks
 /// for the passphrase. They look unlike mounted volumes: a dimmed outline glyph, a muted
 /// label, a filesystem badge and a "Not mounted" / "Locked" line where mounted volumes

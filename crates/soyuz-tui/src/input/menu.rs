@@ -37,6 +37,8 @@ pub enum MenuCmd {
     Catalog(usize),
     /// A command of a job's "More" menu (`input::jobs::open_menu`).
     Job(soyuz_jobs::JobId, soyuz_appcore::models::jobs_rows::JobMenuCmd),
+    /// Row `id` of a full-screen tool's menu (`input::screens::menu_cmd`, Phase T7).
+    Tool(u32),
 }
 
 /// What the open menu's catalogue rows run.
@@ -257,6 +259,7 @@ fn run(app: &mut App, c: MenuCmd) {
     match c {
         MenuCmd::Action(a) => app.core.cmds.push(Cmd::Action(a)),
         MenuCmd::Job(id, c) => soyuz_appcore::models::jobs_rows::apply_menu(&mut app.core, id, c),
+        MenuCmd::Tool(id) => crate::input::screens::menu_cmd(app, id),
         MenuCmd::Catalog(i) => {
             let keep = runs.keep.get(i).copied().unwrap_or(false);
             match runs.runs.into_iter().nth(i).flatten() {

@@ -122,6 +122,11 @@ pub fn test_config() -> Config {
     // Screen text in the tests is ASCII (`/` folders, `>` separators, `v` / `>` chevrons);
     // `headless::theme` covers the Unicode default.
     c.tui.icons = soyuz_core::config::TuiIcons::Ascii;
+    // Phase T7: the sidebar lists unmounted devices (UDisks2) and GTK bookmarks on Linux;
+    // a CI runner's own disks would become rows. The device tests opt back in through
+    // the core's test seam.
+    c.sidebar.unmounted_devices = soyuz_core::config::UnmountedDevices::Off;
+    c.sidebar.gtk_bookmarks = false;
     c
 }
 

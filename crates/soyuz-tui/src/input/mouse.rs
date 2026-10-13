@@ -40,7 +40,10 @@
 //!
 //! Phase T5 / T6 parts get every mouse event (presses, drags, releases, the wheel) over
 //! their own targets through their `on_mouse` (`input::{search, terminal, ai, compare,
-//! settings}`), and every event anywhere while their `captures_mouse` says so; an
+//! settings}`), and every event anywhere while their `captures_mouse` says so; so do the
+//! Phase T7 parts: the full-screen tools (`input::screens`: `Screen*`, `Treemap*`,
+//! `Dupes*`, `ConfirmBar`) and the sidebar's eject mark (`input::sidebar::on_mouse`:
+//! `SidebarEject`). The groups are fixed here; the owners decide what each event does. An
 //! `Overlay` target (under the compare screen / settings editor) swallows the rest, so a
 //! click never reaches the panes below. Not while the palette is open (a press outside it
 //! closes it first).
@@ -164,6 +167,9 @@ fn phase_t56(app: &mut App, m: &MouseEvent) -> bool {
     if super::compare::captures_mouse(&app.core, &app.input) {
         return super::compare::on_mouse(app, any, m);
     }
+    if super::screens::captures_mouse(&app.core, &app.input) {
+        return super::screens::on_mouse(app, any, m);
+    }
     if super::terminal::captures_mouse(&app.core, &app.input) {
         return super::terminal::on_mouse(app, any, m);
     }
@@ -207,6 +213,21 @@ fn phase_t56(app: &mut App, m: &MouseEvent) -> bool {
         | HitTarget::SettingsKeyRow(_)
         | HitTarget::SettingsKeyChip { .. }
         | HitTarget::SettingsKeyAdd(_) => super::settings::on_mouse(app, t, m),
+        // ---- Phase T7 ----
+        HitTarget::SidebarEject(_) => super::sidebar::on_mouse(app, t, m),
+        HitTarget::ScreenButton(_)
+        | HitTarget::ScreenChip(_)
+        | HitTarget::ScreenField(_)
+        | HitTarget::ScreenTab(_)
+        | HitTarget::ScreenClose
+        | HitTarget::ScreenArea(_)
+        | HitTarget::TreemapTile(_)
+        | HitTarget::TreemapCrumb(_)
+        | HitTarget::TreemapSide(_)
+        | HitTarget::DupesRow(_)
+        | HitTarget::DupesRoot(_)
+        | HitTarget::DupesHeader(_)
+        | HitTarget::ConfirmBar(_) => super::screens::on_mouse(app, t, m),
         _ => false,
     }
 }
@@ -380,7 +401,22 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::SettingsClose
             | HitTarget::SettingsKeyRow(_)
             | HitTarget::SettingsKeyChip { .. }
-            | HitTarget::SettingsKeyAdd(_),
+            | HitTarget::SettingsKeyAdd(_)
+            // Phase T7 targets went to their owners before (`phase_t56`).
+            | HitTarget::SidebarEject(_)
+            | HitTarget::ScreenButton(_)
+            | HitTarget::ScreenChip(_)
+            | HitTarget::ScreenField(_)
+            | HitTarget::ScreenTab(_)
+            | HitTarget::ScreenClose
+            | HitTarget::ScreenArea(_)
+            | HitTarget::TreemapTile(_)
+            | HitTarget::TreemapCrumb(_)
+            | HitTarget::TreemapSide(_)
+            | HitTarget::DupesRow(_)
+            | HitTarget::DupesRoot(_)
+            | HitTarget::DupesHeader(_)
+            | HitTarget::ConfirmBar(_),
             _,
         ) => {}
     }

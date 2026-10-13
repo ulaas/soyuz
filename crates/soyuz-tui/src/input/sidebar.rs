@@ -300,3 +300,10 @@ fn typed(core: &mut AppCore, n: &mut SidebarNav, t: &str) {
         select(core, n, &list, i);
     }
 }
+
+/// A mouse event over one of the sidebar's Phase T7 targets (`HitTarget::SidebarEject`,
+/// from `crate::input::mouse`); returns whether it was taken. Skeleton: taken, nothing
+/// happens (agent B: a left press ejects the volume).
+pub fn on_mouse(_app: &mut App, _target: crate::layout::HitTarget, _ev: &crossterm::event::MouseEvent) -> bool {
+    true
+}

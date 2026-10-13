@@ -29,9 +29,6 @@ pub enum FrontendCmd {
     /// Ask for the passphrase / recovery key of a locked device container, then mount it
     /// into `pane`.
     UnlockDevice { object: String, name: String, kind: String, pane: crate::state::pane::PaneId },
-    /// A mount failed because Windows left the NTFS volume hibernated: explain and offer
-    /// a read-only mount.
-    OfferReadOnlyMount { dev: Box<soyuz_fs::udisks::BlockDevice>, name: String },
     /// A smart-folder dialog (`models::smart`).
     Smart(super::smart::SmartPrompt),
     /// A remote-location dialog (`models::remote`).

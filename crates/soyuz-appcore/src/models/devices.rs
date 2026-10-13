@@ -557,7 +557,8 @@ pub fn apply(app: &mut crate::core::AppCore, host: &dyn Host, cmd: DeviceCmd) {
         DeviceCmd::Unlock { object, name, kind } => {
             app.frontend.push(FrontendCmd::UnlockDevice { object, name, kind, pane })
         }
-        DeviceCmd::OfferReadOnly { dev, name } => app.frontend.push(FrontendCmd::OfferReadOnlyMount { dev, name }),
+        // Both frontends ask with their confirm dialog (Phase T7: a core `Confirm`).
+        DeviceCmd::OfferReadOnly { dev, name } => app.frontend.push(offer_read_only(dev, name)),
         DeviceCmd::Mount { dev, name, read_only } => mount_device(&dev, name, pane, read_only),
         DeviceCmd::Hide(key) => {
             if !app.config.sidebar.hidden_devices.contains(&key) {
@@ -565,6 +566,17 @@ pub fn apply(app: &mut crate::core::AppCore, host: &dyn Host, cmd: DeviceCmd) {
                 app.ui.toasts.push(Toast::info(tr!("app-device-hidden")).body(tr!("app-device-hidden-body")));
             }
         }
+    }
+}
+
+/// `DeviceCmd::OfferReadOnly`: explain the hibernated NTFS volume and offer a read-only
+/// mount, as a `FrontendCmd::Confirm` both frontends show with their confirm dialog.
+pub fn offer_read_only(dev: Box<soyuz_fs::udisks::BlockDevice>, name: String) -> FrontendCmd {
+    FrontendCmd::Confirm {
+        title: tr!("app-device-hibernated-title", name = name.clone()),
+        message: tr!("app-device-hibernated-body").into(),
+        confirm: tr!("app-device-mount-ro").into(),
+        on_confirm: Cmd::Device(DeviceCmd::Mount { dev, name, read_only: true }),
     }
 }
 
@@ -642,6 +654,23 @@ pub fn candidates(cache: &mut DevicesCache, cfg: &soyuz_core::config::Sidebar) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hibernated_offer_is_a_core_confirm() {
+        let dev = soyuz_fs::udisks::BlockDevice { object: "/org/x/sdb1".into(), ..Default::default() };
+        let FrontendCmd::Confirm { title, on_confirm, .. } = offer_read_only(Box::new(dev.clone()), "Win".into())
+        else {
+            panic!("not a confirm")
+        };
+        assert!(title.contains("Win"), "{title}");
+        match on_confirm {
+            Cmd::Device(DeviceCmd::Mount { dev: d, name, read_only }) => {
+                assert!(read_only);
+                assert_eq!((*d, name.as_str()), (dev, "Win"));
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 
     #[test]
     fn devices_match_volumes_by_mount_point() {

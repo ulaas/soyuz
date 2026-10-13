@@ -1,13 +1,8 @@
 ### Soyuz arayüz metinleri (tr-TR): tui
 ### Anahtarlar en-US/tui.ftl ile birebir aynı olmalı.
 
-## Shared: the "not available" toast and the features it names
+## Shared: the "not available" toast
 tui-not-available = Terminal arayüzünde henüz yok
-tui-feature-workspaces = Çalışma alanları
-tui-feature-history = Sekme geçmişi
-tui-feature-windows = Pencereler
-tui-feature-devices = Aygıtlar
-tui-feature-about = Hakkında
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 
