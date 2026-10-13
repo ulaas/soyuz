@@ -1,0 +1,69 @@
+# soyuz-tui snapshot: app__menu (100x30, ratatui 0.30.2)
+|                                                                                                    |
+|     Name ▴                                                 Size Kind            Modified           |
+|  ╭───────────────────────────────╮                              Folder          2026-10-01         |
+|  │ Open                    Enter │                              Folder          2026-10-01         |
+|  │ Open with…                    │                              Folder          2026-10-01         |
+|  │ Edit in Soyuz              F4 │                         37 B Rust source     2026-10-01         |
+|* │───────────────────────────────│                         38 B Text file       2026-10-01         |
+|  │ Cut                    Ctrl+X │                         41 B Markdown        2026-10-01         |
+|  │ Copy                   Ctrl+C │                        2 KiB PDF document    2026-10-01         |
+|  │ Restore previous version…     │                         27 B Text file       2026-10-01         |
+|  │ Rename                     F2 │                                                                 |
+|  │ Duplicate              Ctrl+D │                                                                 |
+|  │ Create link…                  │                                                                 |
+|  │ Move to trash             Del │                                                                 |
+|  │ Delete permanently  Shift+Del │                                                                 |
+|  │───────────────────────────────│                                                                 |
+|  │ Copy path        Ctrl+Shift+C │                                                                 |
+|  │ Copy name                     │                                                                 |
+|  │ Reveal in system file manag…  │                                                                 |
+|  │ Compress…                     │                                                                 |
+|  │───────────────────────────────│                                                                 |
+|  │ Tags                        ▸ │                                                                 |
+|  │ Add to shelf                  │                                                                 |
+|  │ Split file…                   │                                                                 |
+|  │ Assistant                   ▸ │                                                                 |
+|  │───────────────────────────────│                                                                 |
+|  │ Attributes & timestamps…      │                                                                 |
+|  │ Checksum                    ▸ │                                                                 |
+|  │ Properties          Alt+Enter │                                                                 |
+|                                                                                                    |
+--- styles
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAABBBBBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCAAAAAAAAAAAACCCCCCCCAAAAAAAAAAA|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCAAAAAAAAAACCCCCCCCCCAAAAAAAAA|
+|CCCDDDDDDDDDDDDDDDDDDDDDDDDDEEEEEDCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCAAAAAAAAAACCCCCCCCCCAAAAAAAAA|
+|CCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCAAAAAAAAAACCCCCCCCCCAAAAAAAAA|
+|CCCAAAAAAAAAAAAAAAAAAAAAAAAAAAACCACAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCCCCCCCCAAAAACCCCCCCCCCAAAAAAAAA|
+|FFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF|
+|CCCAAAAAAAAAAAAAAAAAAAAAAAACCCCCCACAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCCCCCAAAAAAAACCCCCCCCCCAAAAAAAAA|
+|CCCAAAAAAAAAAAAAAAAAAAAAAAACCCCCCACAAAAAAAAAAAAAAAAAAAAAAAACCCCCACCCCCCCCCCCCAAAACCCCCCCCCCAAAAAAAAA|
+|CCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCCCCCCAAAAAAACCCCCCCCCCAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAACCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAACCCCCCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAACCCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAACCCCCCCCCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAACCCCCCCCCCCCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AACAAAAAAAAAAAAAAAAAAAAACCCCCCCCCACAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+--- legend
+A fg=Reset bg=Reset
+B fg=Blue bg=Reset +BOLD
+C fg=DarkGray bg=Reset
+D fg=Reset bg=Reset +REVERSED
+E fg=DarkGray bg=Reset +REVERSED
+F fg=Yellow bg=Reset +BOLD +REVERSED

@@ -1,0 +1,77 @@
+# soyuz-tui snapshot: view__dialog_delete (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|     Name ▴                                                 Size Kind            Modified           |
+|  ■  docs/                                                       Folder          2026-10-01 12:00   |
+|  ■  photos/                                                     Folder          2026-10-01 12:00   |
+|  ■  src/                                                        Folder          2026-10-01 12:00   |
+|  ≡  README.md                                            2.1 KB Markdown        2026-10-01 12:00   |
+|  ▨  archive.zip                                         14.8 MB ZIP archive     2026-10-01 12:00   |
+|  λ  main.rs                                               812 B Rust source     2026-10-01 12:00   |
+|  ≡  notes.txt                                            1.0 KB Text            2026-10-01 12:00   |
+|* ◰  report.pdf   ╭ Delete 3 items permanently? ─────────────────────────────────╮026-10-01 12:00   |
+|  ◩  sunset.jpg   │Permanently deleted items can't be restored.                  │026-10-01 12:00   |
+|  ≡  日~本~語~の~メ~モ~.│                                                              │026-10-01 12:00   |
+|  □  .env         │notes.txt                                                     │026-10-01 12:00   |
+|                  │report.pdf                                                    │                  |
+|                  │old draft.md                                                  │                  |
+|                  │                                                              │                  |
+|                  │                                         [ Cancel ] [ Delete ]│                  |
+|                  │                                                              │                  |
+|                  │Enter confirm · Esc cancel                                    │                  |
+|                  ╰──────────────────────────────────────────────────────────────╯                  |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCCAAAAAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCCAAAAAAAAAAAAAAAACCC|
+|AAECCEEEEEEEEEEECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCCAAAAAAAAAAAAAAAACCC|
+|AAFCCFFFFFFFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCCAAAAAAAAAAAAAAAACCC|
+|GGHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHGGGGGGHGGGGHHHHHHHHHHHHGGGGGGGGGGGGGGGGHHH|
+|IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII|
+|AAJCCJJJJJJJJJJCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCIAAAAAAAAAAAAAAACCC|
+|AACCCC~C~C~C~C~C~CICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCIAAAAAAAAAAAAAAACCC|
+|AAACCAAAACCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCIAAAAAAAAAAAAAAACCC|
+|CCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCKCCCCCCCCLLMLLLLLLLICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCINNNNNNNNNNNNNNNNNNNNNNNNNNCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIICCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|HHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Red bg=Reset
+F fg=Yellow bg=Reset
+G fg=DarkGray bg=Reset +REVERSED
+H fg=Reset bg=Reset +REVERSED
+I fg=Yellow bg=Reset +BOLD
+J fg=Magenta bg=Reset
+K fg=Reset bg=Reset +UNDERLINED
+L fg=Reset bg=Reset +BOLD +REVERSED
+M fg=Reset bg=Reset +BOLD +UNDERLINED +REVERSED
+N fg=Cyan bg=Reset +BOLD

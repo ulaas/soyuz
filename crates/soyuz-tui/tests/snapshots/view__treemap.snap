@@ -1,0 +1,80 @@
+# soyuz-tui snapshot: view__treemap (100x30, ratatui 0.30.2)
+| Disk usage  /home/me                                                                            ×  |
+| [↑] me › Projects › soyuz                                            12 GiB · 48 files [Esc Stop]  |
+| ████████░░░░░░░░░░░░░░░░ Scanning 3 of 9                                                           |
+| ╭ deps 5 GiB ────────────────╮▓▓▓▓▓▓▓▓▓▓                           C Contents   L Largest          |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item0/               1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item1                1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item2/               1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞lib.rs▞▞▞▞▞▞▞▞▞▞▞│日~本~語~.png                          item3                1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞4 GiB▞▞▞▞▞▞▞▞▞▞▞▞│▓▓1 GiB▓▓▓                          item4/               1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item5                1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item6/               1 GiB 12.5% |
+| │▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞▞│▓▓▓▓▓▓▓▓▓▓                          item7                1 GiB 12.5% |
+| ╰────────────────────────────╯▓▓▓▓▓▓▓▓▓▓                          item8/               1 GiB 12.5% |
+|                                                                   item9                1 GiB 12.5% |
+|                                                                   item10/              1 GiB 12.5% |
+|                                                                   item11               1 GiB 12.5% |
+|                                                                   item12/              1 GiB 12.5% |
+|                                                                   item13               1 GiB 12.5% |
+|                                                                   item14/              1 GiB 12.5% |
+|                                                                   item15               1 GiB 12.5% |
+|                                                                   item16/              1 GiB 12.5% |
+|                                                                   item17               1 GiB 12.5% |
+|                                                                   item18/              1 GiB 12.5% |
+|                                                                   item19               1 GiB 12.5% |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| Move “a” (1 GiB) to the trash?                                 [Enter Move to trash] [Esc Cancel]  |
+| ██ Folder  ▓▓ Image  ▒▒ Video  ░░ Audio  ▚▚ Archive  ▞▞ Code  ▤▤ Docs  ▥▥ Exe  ▦▦ Other            |
+| hints                                                                                              |
+--- styles
+|ABBBBBBBBBBAACCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCA|
+|AAAAACCCCCCCCCCCCCCCCBBBBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCCCCCCCADDDDDDDDDDAA|
+|AEEEEEEEECCCCCCCCCCCCCCCCACCCCCCCCCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|ACFFFFFFFFFFFFCCCCCCCCCCCCCCCCCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBACCCCCCCCCCCAAAAAAAAA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAIIIIIIIIIIIIIIIIIIIIIJJJJJJJJJJJA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCG~G~G~GGGGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACHHHHHHHHHHHHHHHHHHHHHHHHHHHHCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|ACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFFFFFFFAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCCCCCCA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDDDDDDDDDDDDDDDDDDDDAAAAAAAAAAAAAAA|
+|AFFACCCCCCAALLACCCCCAALLACCCCCAAMMACCCCCAANNACCCCCCCAAOOACCCCAAAAACCCCAAPPACCCAAAAACCCCCAAAAAAAAAAAA|
+|AQQQQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+--- legend
+A fg=Reset bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=DarkGray bg=Reset
+D fg=Yellow bg=Reset +BOLD
+E fg=Blue bg=Reset
+F fg=Blue bg=Reset +BOLD
+G fg=Magenta bg=Reset +DIM
+H fg=Yellow bg=Reset +BOLD +REVERSED
+I fg=Reset bg=Reset +UNDERLINED
+J fg=DarkGray bg=Reset +UNDERLINED
+K fg=Red bg=Reset +BOLD
+L fg=Magenta bg=Reset
+M fg=Cyan bg=Reset
+N fg=Red bg=Reset
+O fg=Yellow bg=Reset
+P fg=Green bg=Reset
+Q fg=Cyan bg=Reset +BOLD

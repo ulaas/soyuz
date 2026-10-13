@@ -1,0 +1,81 @@
+# soyuz-tui snapshot: view__compare (100x30, ratatui 0.30.2)
+| Compare & sync  a ←→ b                                                                          ×  |
+| Left folder  /tmp/a                                                                                |
+| Right folder /tmp/b                                                                                |
+| By           (•) Date  ( ) Size                                                                    |
+| Mode         (•) Mirror                                                                            |
+| [F5 Compare] [F6 Swap sides] [F8 Profiles]                                                         |
+| 1 [x] Only left 3  2 [x] Newer left 3  3 [x] Different 3  4 [x] Newer ri… /                        |
+|                                                                                                    |
+| 4 KiB · today      │ dir/file0.txt  Only left                               ←                    — |
+| 4 KiB · today      │ dir/file1.txt  Only left                               ·                    — |
+| 4 KiB · today      │ dir/file2.txt  Only left                               →                    — |
+| 4 KiB · today      │ dir/file3.txt  Only left                               ✕                    — |
+| 4 KiB · today      │ dir/file4.txt  Only left                               ←                    — |
+| 4 KiB · today      │ dir/file5.txt  Only left                               ·                    — |
+| 4 KiB · today      │ dir/file6.txt  Only left                               →                    — |
+| 4 KiB · today      │ dir/file7.txt  Only left                               ✕                    — |
+| 4 KiB · today      │ dir/file8.txt  Only left                               ←                    — |
+| 4 KiB · today      │ dir/file9.txt  Only left                               ·                    — |
+| 4 KiB · today      │ dir/file10.txt  Only left                              →                    — |
+| 4 KiB · today      │ dir/file11.txt  Only left                              ✕                    — |
+| 4 KiB · today      │ dir/file12.txt  Only left                              ←                    — |
+| 4 KiB · today      │ dir/file13.txt  Only left                              ·                    — |
+| 4 KiB · today      │ dir/file14.txt  Only left                              →                    — |
+| 4 KiB · today      │ dir/file15.txt  Only left                              ✕                    — |
+| 4 KiB · today      │ dir/file16.txt  Only left                              ←                    — |
+| 4 KiB · today      │ dir/file17.txt  Only left                              ·                    — |
+| 4 KiB · today      │ dir/file18.txt  Only left                              →                    — |
+| 4 KiB · today      │ dir/file19.txt  Only left                              ✕                    — |
+| 3 → right                                                      [C Resolve 2] [Enter Review sync…]  |
+| hints                                                                                              |
+--- styles
+|ABBBBBBBBBBBBBBAACCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCA|
+|ADDDDDDDDDDDAAEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA|
+|ACCCCCCCCCCCCAEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA|
+|ACCAAAAAAAAAAABBBBBBBBAACCCCCCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|ADDDDAAAAAAAAAFFFFFFFFFFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AGGGGGGGGGGGGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|ADDDDDDDDDDDDDDDDDAAHHHHHHHHHHHHHHHHHHAAIIIIIIIIIIIIIIIIIAAJJJJJJJJJJJJJJJAKKEEEEEEEEEEEEEEEEEEEEEEA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAADDAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAACA|
+|AAAAAAAAAAAAAAAAAAAAHHCCCCCCCCCCCCCAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAACA|
+|ANNNNNNNNNNNNNFFFFFFOOFFFFFFFFFFFFFFFPPPPPPPPPFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFQFFFFFFFFFFFFFFFFFFFFNA|
+|ACCCCCCCCCCCCCAAAAAAJJAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAA|
+|ACCCCCCCCCCCCCAAAAAARRAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAADDCCCCCCCCCCCCCAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAACA|
+|AAAAAAAAAAAAAAAAAAAAHHAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAIIAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAJJAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAAAA|
+|ACCCCCCCCCCCCCAAAAAARRCCCCCCCCCCCCCAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAADDAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAACA|
+|AAAAAAAAAAAAAAAAAAAAHHAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAIIAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAJJCCCCCCCCCCCCCCAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAAAA|
+|ACCCCCCCCCCCCCAAAAAARRAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAADDAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAACA|
+|AAAAAAAAAAAAAAAAAAAAHHAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAIICCCCCCCCCCCCCCAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAAAAAAAAAAACA|
+|ACCCCCCCCCCCCCAAAAAAJJAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAALAAAAAAAAAAAAAAAAAAAAAA|
+|ACCCCCCCCCCCCCAAAAAARRAAAAAAAAAAAAAAAADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAAA|
+|ADDDDDDDDDAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJJJJJJJJJJJJJAGGGGGGGGGGGGGGGGGGGGAA|
+|AKKKKKAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+--- legend
+A fg=Reset bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=DarkGray bg=Reset
+D fg=Blue bg=Reset
+E fg=Reset bg=Reset +UNDERLINED
+F fg=Reset bg=Reset +REVERSED
+G fg=Reset bg=Reset +BOLD +REVERSED
+H fg=Green bg=Reset
+I fg=Red bg=Reset +BOLD
+J fg=Yellow bg=Reset +BOLD
+K fg=Cyan bg=Reset +BOLD
+L fg=Blue bg=Reset +BOLD
+M fg=DarkGray bg=Reset +BOLD
+N fg=DarkGray bg=Reset +REVERSED
+O fg=Red bg=Reset +BOLD +REVERSED
+P fg=Blue bg=Reset +REVERSED
+Q fg=Blue bg=Reset +BOLD +REVERSED
+R fg=Magenta bg=Reset

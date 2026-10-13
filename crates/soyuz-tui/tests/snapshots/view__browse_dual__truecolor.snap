@@ -1,0 +1,78 @@
+# soyuz-tui snapshot: view__browse_dual__truecolor (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|─ /home/ada/data ─────────────────────────────────│─ /home/ada/backup ──────────────────────────────|
+|     Name ▴                   Size Kind           │     Name ▴                  Size Kind           |
+|  ■  docs/                         Folder         │  ■  docs/                        Folder         |
+|  ■  photos/                       Folder         │  ■  photos/                      Folder         |
+|  ■  src/                          Folder         │  ■  src/                         Folder         |
+|  ≡  README.md              2.1 KB Markdown       │  ≡  README.md             2.1 KB Markdown       |
+|  ▨  archive.zip           14.8 MB ZIP archive    │  ▨  archive.zip          14.8 MB ZIP archive    |
+|  λ  main.rs                 812 B Rust source    │  λ  main.rs                812 B Rust source    |
+|  ≡  notes.txt              1.0 KB Text           │  ≡  notes.txt             1.0 KB Text           |
+|* ◰  report.pdf             384 KB PDF document   │  ◰  report.pdf            384 KB PDF document   |
+|  ◩  sunset.jpg             3.2 MB JPEG image     │  ◩  sunset.jpg            3.2 MB JPEG image     |
+|  ≡  日~本~語~の~メ~モ~.txt         96 B Text           │  ≡  日~本~語~の~メ~モ~.txt        96 B Text           |
+|  □  .env                     64 B File           │  □  .env                    64 B File           |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|ABBBAAAABBBAAABBBCCCCDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|EFFFFFFFFFFFFFFFFEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG|
+|DDDDDFFFFFFDDDDDDDDDDDDDDDDDDDAAAADAAAADDDDDDDDDDDGDDDDDFFFFFFDDDDDDDDDDDDDDDDDDAAAADAAAADDDDDDDDDDD|
+|AAHDDHHHHHDDDDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDDGAAHDDHHHHHDDDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDD|
+|AAHDDHHHHHHHDDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDDGAAHDDHHHHHHHDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDD|
+|AAHDDHHHHDDDDDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDDGAAHDDHHHHDDDDDDDDDDDDDDDDDDDDDDDDDAAAAAADDDDDDDDD|
+|AAADDAAAAAAAAADDDDDDDDDDDDDDAAAAAADAAAAAAAADDDDDDDGAAADDAAAAAAAAADDDDDDDDDDDDDAAAAAADAAAAAAAADDDDDDD|
+|AAIDDIIIIIIIIIIIDDDDDDDDDDDAAAAAAADAAAAAAAAAAADDDDGAAIDDIIIIIIIIIIIDDDDDDDDDDAAAAAAADAAAAAAAAAAADDDD|
+|AAEDDEEEEEEEDDDDDDDDDDDDDDDDDAAAAADAAAAAAAAAAADDDDGAAEDDEEEEEEEDDDDDDDDDDDDDDDDAAAAADAAAAAAAAAAADDDD|
+|JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJGKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK|
+|LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLGAAMDDMMMMMMMMMMDDDDDDDDDDDDAAAAAADAAAAAAAAAAAADDD|
+|AANDDNNNNNNNNNNDDDDDDDDDDDDDAAAAAADAAAAAAAAAADDDDDGAANDDNNNNNNNNNNDDDDDDDDDDDDAAAAAADAAAAAAAAAADDDDD|
+|AAADDA~A~A~A~A~A~AAAADDDDDDDDDAAAADAAAADDDDDDDDDDDGAAADDA~A~A~A~A~A~AAAADDDDDDDDAAAADAAAADDDDDDDDDDD|
+|AAADDAAAADDDDDDDDDDDDDDDDDDDDDAAAADAAAADDDDDDDDDDDGAAADDAAAADDDDDDDDDDDDDDDDDDDDAAAADAAAADDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD|
+|OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO|
+--- legend
+A fg=#A3A9B7 bg=#0F1115
+B fg=#6B7280 bg=#0F1115
+C fg=#E6E8EC bg=#0F1115 +BOLD
+D fg=#E6E8EC bg=#0F1115
+E fg=#5B8CFF bg=#0F1115
+F fg=#5B8CFF bg=#0F1115 +BOLD
+G fg=#343A47 bg=#0F1115
+H fg=#F2B84B bg=#0F1115
+I fg=#F5B544 bg=#0F1115
+J fg=#FFFFFF bg=#5B8CFF
+K fg=#E6E8EC bg=#232834
+L fg=#E6E8EC bg=#1D273F
+M fg=#F2555A bg=#0F1115
+N fg=#6FCF97 bg=#0F1115
+O fg=#A3A9B7 bg=#161920

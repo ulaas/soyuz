@@ -1,0 +1,69 @@
+# soyuz-tui snapshot: app__dual (100x30, ratatui 0.30.2)
+|                                                                                                    |
+|                                                  │                                                 |
+|     Name ▴                   Size Kind           │     Name ▴                  Size Kind           |
+|  ■  docs/                         Folder         │  ■  docs/                        Folder         |
+|  ■  photos/                       Folder         │  ■  photos/                      Folder         |
+|  ■  src/                          Folder         │  ■  src/                         Folder         |
+|  λ  main.rs                  37 B Rust source    │  λ  main.rs                 37 B Rust source    |
+|* ≡  notes.txt                38 B Text file      │  ≡  notes.txt               38 B Text file      |
+|  ≡  README.md                41 B Markdown       │  ≡  README.md               41 B Markdown       |
+|  ◰  report.pdf              2 KiB PDF document   │  ◰  report.pdf             2 KiB PDF document   |
+|  ≡  todo.txt                 27 B Text file      │  ≡  todo.txt                27 B Text file      |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                  │                                                 |
+|                                                                                                    |
+--- styles
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAACCCCCCAAAAAAAAAAAAAAAAAAABBBBABBBBAAAAAAAAAAABAAAAACCCCCCAAAAAAAAAAAAAAAAAABBBBABBBBAAAAAAAAAAA|
+|BBCAACCCCCAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAABBBCAACCCCCAAAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAA|
+|BBCAACCCCCCCAAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAABBBCAACCCCCCCAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAA|
+|BBCAACCCCAAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAABBBCAACCCCAAAAAAAAAAAAAAAAAAAAAAAAABBBBBBAAAAAAAAA|
+|BBDAADDDDDDDAAAAAAAAAAAAAAAAAABBBBABBBBBBBBBBBAAAABBBDAADDDDDDDAAAAAAAAAAAAAAAAABBBBABBBBBBBBBBBAAAA|
+|EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEBBBAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBABBBBBBBBBAAAAAA|
+|BBAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBABBBBBBBBAAAAAAABBBAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBABBBBBBBBAAAAAAA|
+|BBFAAFFFFFFFFFFAAAAAAAAAAAAAABBBBBABBBBBBBBBBBBAAABBBFAAFFFFFFFFFFAAAAAAAAAAAAABBBBBABBBBBBBBBBBBAAA|
+|BBAAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBABBBBBBBBBAAAAAABBBAAAAAAAAAAAAAAAAAAAAAAAAAAABBBBABBBBBBBBBAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+--- legend
+A fg=Reset bg=Reset
+B fg=DarkGray bg=Reset
+C fg=Blue bg=Reset +BOLD
+D fg=Yellow bg=Reset
+E fg=Yellow bg=Reset +BOLD +REVERSED
+F fg=Red bg=Reset
