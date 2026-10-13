@@ -12,4 +12,5 @@ tui-dupes-confirm = { $count ->
 }
 tui-dupes-setup-line = { $folders } · { $min } · F2 setup
 tui-dupes-no-folders = No folders yet
-tui-dupes-keep-keys = keep: n o s
+# Before the n / o / s chips of a group header (keep newest / oldest / shortest path).
+tui-dupes-keep-in = keep:

@@ -153,16 +153,6 @@ pub fn confirm_bar(
     button(buf, x, r.y, r.right(), &cancel, Role::Button, theme, hits, HitTarget::ConfirmBar(confirm::CANCEL));
 }
 
-/// `s` for an ASCII-only theme: the comparison signs `borders::asciify` leaves alone
-/// (they need two cells) become `>=` / `<=`.
-pub fn ascii_text<'a>(theme: &TuiTheme, s: &'a str) -> std::borrow::Cow<'a, str> {
-    if theme.ascii_only() && s.contains(['≥', '≤']) {
-        std::borrow::Cow::Owned(s.replace('≥', ">=").replace('≤', "<="))
-    } else {
-        std::borrow::Cow::Borrowed(s)
-    }
-}
-
 /// A one-row part taken from the top (`y` advances), empty when it does not fit.
 pub fn take(area: Rect, y: &mut u16, end: u16) -> Rect {
     if *y < end {

@@ -16,7 +16,9 @@
 //!
 //! The setting travels with the theme (`TuiTheme::borders`, rebuilt on `[tui]` changes).
 //! With `icons = "ascii"` and `borders = "ascii"` / `"none"` the screen is pure ASCII:
-//! [`asciify`] replaces the typographic punctuation of labels and translations.
+//! [`asciify`] replaces the typographic punctuation of labels and translations, one cell
+//! for one cell; text drawn by hand goes through [`ascii_text`] first, which also spells
+//! out the signs that need two cells (`≥` → `>=`).
 
 use ratatui::buffer::Buffer;
 use ratatui::style::Style;
@@ -92,8 +94,44 @@ fn ascii_of(s: &str) -> Option<&'static str> {
         "“" | "”" | "„" => "\"",
         "‘" | "’" => "'",
         "\u{a0}" => " ",
+        "−" => "-",
+        "✓" => "+",
+        "●" => "*",
+        "○" => "o",
+        // One cell left: the two-cell spellings are [`ascii_text`]'s.
+        "≥" => ">",
+        "≤" => "<",
+        "↔" => "=",
         _ => return None,
     })
+}
+
+/// The signs whose ASCII spelling takes more than one cell.
+fn ascii_wide(c: char) -> Option<&'static str> {
+    Some(match c {
+        '≥' => ">=",
+        '≤' => "<=",
+        '↔' => "<->",
+        _ => return None,
+    })
+}
+
+/// `s` in ASCII when `ascii_only` (the theme's `ascii_only()`): the two-cell signs are
+/// spelled out (`≥ 1 MB` → `>= 1 MB`) and the typographic characters of [`asciify`]
+/// replaced. Views measure and draw the result, so the widths stay right.
+pub fn ascii_text(ascii_only: bool, s: &str) -> std::borrow::Cow<'_, str> {
+    if !ascii_only || s.is_ascii() {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut tmp = [0u8; 4];
+    for c in s.chars() {
+        match ascii_wide(c) {
+            Some(a) => out.push_str(a),
+            None => out.push_str(ascii_of(c.encode_utf8(&mut tmp)).unwrap_or(c.encode_utf8(&mut tmp))),
+        }
+    }
+    std::borrow::Cow::Owned(out)
 }
 
 /// Replace the typographic characters of `buf` with ASCII look-alikes (see the module
@@ -178,5 +216,14 @@ mod tests {
         asciify(&mut buf);
         let s: String = buf.content.iter().map(|c| c.symbol()).collect();
         assert_eq!(s, "a~b * c > 日 ");
+        // One cell for one cell in a buffer; the two-cell spelling in text.
+        let mut buf = Buffer::with_lines(["≥1 ≤2 −3"]);
+        asciify(&mut buf);
+        let s: String = buf.content.iter().map(|c| c.symbol()).collect();
+        assert_eq!(s, ">1 <2 -3");
+        assert_eq!(ascii_text(true, "≥ 100 KB · a ↔ b …"), ">= 100 KB * a <-> b ~");
+        assert_eq!(ascii_text(true, "≤ 日"), "<= 日");
+        assert_eq!(ascii_text(false, "≥ 1 MB"), "≥ 1 MB");
+        assert!(matches!(ascii_text(true, "plain"), std::borrow::Cow::Borrowed(_)));
     }
 }

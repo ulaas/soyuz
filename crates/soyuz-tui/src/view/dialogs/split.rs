@@ -2,7 +2,8 @@
 //! or the parts and whether a checksum file will verify the result (join), the plan, the
 //! progress while it runs and the last run's message; then the part size presets (split),
 //! the custom size and output folder fields and the buttons. A bad custom size or a
-//! failed run shows as the validation message.
+//! failed run shows as the validation message. While the output folder completes, the
+//! list shows its subfolders instead of the presets.
 
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::split::{CUSTOM, Mode, PRESETS, preset_label};
@@ -12,7 +13,7 @@ use soyuz_core::{SizeStyle, format_size};
 
 use super::DialogVm;
 use crate::dialog::safe;
-use crate::input::dialogs::split::State;
+use crate::input::dialogs::split::{State, completing};
 use crate::widgets::ListRow;
 
 /// What the dialog shows.
@@ -65,7 +66,13 @@ pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
         Some(Err(e)) => d.error = Some(safe(e)),
         None => {}
     }
-    d.hints = if m.running() {
+    if completing(s) {
+        d.list = s.names.iter().map(|n| ListRow::new(format!("{}{}", safe(n), std::path::MAIN_SEPARATOR))).collect();
+        d.list_state = s.names_list.clone();
+    }
+    d.hints = if completing(s) {
+        tr!("tui-split-complete-hints")
+    } else if m.running() {
         tr!("tui-split-running-hints")
     } else if m.finished_ok() {
         tr!("tui-split-done-hints")

@@ -44,6 +44,8 @@ fn glyph(icon: MenuIcon) -> Option<&'static str> {
         MenuIcon::X => ph::X,
         MenuIcon::ArrowLineRight => ph::ARROW_LINE_RIGHT,
         MenuIcon::Plugs => ph::PLUGS,
+        MenuIcon::Eject => ph::EJECT_SIMPLE,
+        MenuIcon::LockOpen => ph::LOCK_SIMPLE_OPEN,
     })
 }
 

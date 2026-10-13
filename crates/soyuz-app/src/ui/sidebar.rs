@@ -17,8 +17,7 @@ pub use crate::models::sidebar::{Place, SidebarState, standard_places};
 
 use crate::cmd::Cmd;
 use crate::models::devices::{
-    self, Work, candidate_badge, candidate_name, candidate_tip, device_at, eject_device, eject_plan, lock_device,
-    mount_device, unmount_device,
+    self, Work, candidate_badge, candidate_name, candidate_tip, device_at, eject_device, eject_plan, mount_device,
 };
 use crate::models::sidebar::{PlaceRole, section_name};
 use crate::state::pane::PaneId;
@@ -27,7 +26,7 @@ use crate::theme::{icons::ph, palette};
 use crate::ui::icons::glyph;
 use crate::ui::views::computer::{volume_glyph, volume_label};
 use crate::ui::views::flow::semibold;
-use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, trunc_galley};
+use crate::ui::widgets::{NavRow, collapsible_header, menu_separator, trunc_galley};
 
 /// Glyph of a standard place.
 pub fn place_glyph(role: PlaceRole) -> &'static str {
@@ -452,7 +451,7 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         crate::ui::native::popup::context_menu(&r, |ui| {
             place_menu(ui, cmds, &v.mount, false);
             if let Some(d) = &dev {
-                device_menu(ui, d, &desk_devices, &label);
+                device_menu(ui, d, &desk_devices, &label, cmds);
             }
         });
     }
@@ -477,25 +476,17 @@ fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
 // The refresher thread, the device operations and their results live in
 // `models::devices`; here are the rows and menus.
 
-/// Unmount / Lock / Eject entries of a mounted device's context menu.
-fn device_menu(ui: &mut Ui, dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks::BlockDevice], name: &str) {
+/// Unmount / Lock / Eject entries of a mounted device's context menu (the core's
+/// `devices::device_menu`, shared with the terminal UI).
+fn device_menu(
+    ui: &mut Ui,
+    dev: &soyuz_fs::udisks::BlockDevice,
+    all: &[soyuz_fs::udisks::BlockDevice],
+    name: &str,
+    cmds: &mut Vec<Cmd>,
+) {
     menu_separator(ui);
-    if menu_item(ui, Some(ph::ARROW_LINE_UP), tr!("app-device-unmount"), None, true).clicked() {
-        unmount_device(dev, name.to_string());
-        ui.close();
-    }
-    if let Some(container) = &dev.crypto_backing
-        && menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-lock"), None, true).clicked()
-    {
-        lock_device(dev, container.clone(), name.to_string());
-        ui.close();
-    }
-    if eject_plan(dev, all).is_some()
-        && menu_item(ui, Some(ph::EJECT_SIMPLE), tr!("app-device-eject"), None, true).clicked()
-    {
-        eject_device(dev, all);
-        ui.close();
-    }
+    crate::ui::context_menu::draw_entries(ui, devices::device_menu(dev, all, name), cmds);
 }
 
 /// `FrontendCmd::UnlockDevice`: ask for the passphrase / recovery key of a locked container.
@@ -531,61 +522,12 @@ fn unmounted_devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) 
                 S::Unsupported => {}
             }
         }
-        let pane = c.pane;
         let cmds = &mut *c.cmds;
-        crate::ui::native::popup::context_menu(&r, |ui| candidate_menu(ui, cand, &name, work.is_none(), pane, cmds));
-    }
-}
-
-fn candidate_menu(
-    ui: &mut Ui,
-    cand: &soyuz_fs::udisks::Candidate,
-    name: &str,
-    idle: bool,
-    pane: PaneId,
-    cmds: &mut Vec<Cmd>,
-) {
-    use soyuz_fs::udisks::CandidateState as S;
-    ui.set_width(220.0);
-    match cand.state {
-        S::Unmounted => {
-            if menu_item(ui, Some(ph::ARROW_LINE_DOWN), tr!("app-device-mount"), None, idle).clicked() {
-                mount_device(&cand.dev, name.to_string(), pane, false);
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-mount-ro"), None, idle).clicked() {
-                mount_device(&cand.dev, name.to_string(), pane, true);
-                ui.close();
-            }
-            if let Some(container) = &cand.container
-                && menu_item(ui, Some(ph::LOCK_SIMPLE), tr!("app-device-lock"), None, idle).clicked()
-            {
-                lock_device(&cand.dev, container.clone(), name.to_string());
-                ui.close();
-            }
-        }
-        S::Locked => {
-            if menu_item(ui, Some(ph::LOCK_SIMPLE_OPEN), tr!("app-device-unlock"), None, idle).clicked() {
-                cmds.push(Cmd::Device(DeviceCmd::Unlock {
-                    object: cand.dev.object.clone(),
-                    name: name.to_string(),
-                    kind: cand.dev.fs_type.clone(),
-                }));
-                ui.close();
-            }
-        }
-        S::Unsupported => {
-            let _ = menu_item(ui, Some(ph::PROHIBIT), tr!("app-device-mount"), None, false);
-        }
-    }
-    menu_separator(ui);
-    if menu_item(ui, Some(ph::EYE_SLASH), tr!("app-device-hide"), None, true).clicked() {
-        cmds.push(Cmd::Device(DeviceCmd::Hide(cand.hide_key())));
-        ui.close();
-    }
-    if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("app-device-copy-path"), None, true).clicked() {
-        cmds.push(Cmd::CopyText(cand.dev.device.display().to_string()));
-        ui.close();
+        crate::ui::native::popup::context_menu(&r, |ui| {
+            // The core's `devices::candidate_menu`, shared with the terminal UI.
+            ui.set_width(220.0);
+            crate::ui::context_menu::draw_entries(ui, devices::candidate_menu(cand, &name, work.is_none()), cmds);
+        });
     }
 }
 

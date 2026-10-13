@@ -12,3 +12,5 @@ tui-split-hints = Yukarı/Aşağı parça boyutu · Tab alanlar · Enter böl ·
 tui-split-join-hints = Tab alanlar · Enter birleştir · Esc iptal
 tui-split-running-hints = Esc durdur (yarım kalan çıktı silinir)
 tui-split-done-hints = Enter / Esc kapat
+# The output folder has completions (subfolders of the typed path).
+tui-split-complete-hints = Yukarı/Aşağı alt klasör seç · Tab kabul et · Enter başlat · Esc iptal

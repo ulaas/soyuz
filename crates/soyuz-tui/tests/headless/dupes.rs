@@ -178,3 +178,39 @@ fn short(data: &Path) {
     common::run_script(&mut app, steps, 44, 12);
     common::ok();
 }
+
+/// The n / o / s chips of a group header keep that rule in the group (mouse).
+#[test]
+fn header_chips_keep_in_the_group() {
+    match common::relaunch(module_path!(), "header_chips_keep_in_the_group", fixture) {
+        Run::Child(data) => header_chips(&data),
+        Run::Parent(r) => all_there(&r.data),
+    }
+}
+
+fn header_chips(data: &Path) {
+    use soyuz_tui::layout::HitTarget;
+    use soyuz_tui::view::screens::dupes::chip;
+
+    use super::ai::{DynStep, click_on, run_dyn};
+
+    let pics = data.join("pics");
+    let mut app = common::new_app(config(), &pics);
+    let p = pics.clone();
+    let chip_at = |i: u8| move |a: &App| click_on(a, |t| t == HitTarget::ScreenChip(chip::KEEP_IN + i));
+    let steps = vec![
+        DynStep::when("the listing of pics", move |a| common::at(a, &p), key(KeyCode::F(12))),
+        DynStep::new("one group: click its n chip", move |a| {
+            if one_group(a) && marked(a) == Some(0) { chip_at(0)(a) } else { None }
+        }),
+        DynStep::new("n kept the newest: two marked; c clears", move |a| {
+            (marked(a) == Some(2)).then(|| key(KeyCode::Char('c')))
+        }),
+        DynStep::new("cleared: click the s chip", move |a| if marked(a) == Some(0) { chip_at(2)(a) } else { None }),
+        DynStep::when("s kept the shortest path: two marked", |a| marked(a) == Some(2), key(KeyCode::Esc)),
+        DynStep::when("closed", |a| screens(a).is_none(), ctrl('q')),
+    ];
+    run_dyn(&mut app, steps, 110, 30);
+    all_there(data);
+    common::ok();
+}

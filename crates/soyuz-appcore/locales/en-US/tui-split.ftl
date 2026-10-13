@@ -12,3 +12,5 @@ tui-split-hints = Up/Down part size · Tab fields · Enter split · Esc cancel
 tui-split-join-hints = Tab fields · Enter join · Esc cancel
 tui-split-running-hints = Esc stop (partial output is removed)
 tui-split-done-hints = Enter / Esc close
+# The output folder has completions (subfolders of the typed path).
+tui-split-complete-hints = Up/Down pick a subfolder · Tab accept it · Enter start · Esc cancel

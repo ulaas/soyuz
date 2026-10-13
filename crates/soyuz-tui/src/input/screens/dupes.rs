@@ -28,7 +28,8 @@
 //!
 //! Mouse: a click on a root removes it, chips pick the size, the buttons do what they say,
 //! a click on a file toggles its mark (double click: reveal), a click on a group header
-//! folds it, a right click opens the file's menu and the wheel scrolls the list.
+//! folds it (its n / o / s chips keep that rule in the group), a right click opens the
+//! file's menu and the wheel scrolls the list.
 
 use std::path::PathBuf;
 use std::time::Instant;
@@ -48,7 +49,7 @@ use crate::app::App;
 use crate::input::menu::MenuCmd;
 use crate::layout::HitTarget;
 use crate::view::screens::chrome::confirm;
-use crate::view::screens::dupes::{AREA_LIST, DupesVm, Geometry, button, chip, field_rect};
+use crate::view::screens::dupes::{AREA_LIST, DupesVm, Geometry, LineKind, button, chip, field_rect};
 use crate::widgets::{EditOutcome, LineEdit, Menu, MenuItem, SelectList};
 
 /// Where the keyboard is on the screen.
@@ -502,6 +503,16 @@ fn click(app: &mut App, target: HitTarget, ev: &MouseEvent) {
             }
         }
         HitTarget::ScreenChip(i) if i >= chip::COMPLETION => st.accept(usize::from(i - chip::COMPLETION)),
+        HitTarget::ScreenChip(i) if i >= chip::KEEP_IN => {
+            // A keep chip of a group header: the group is the header on the clicked row.
+            let row = usize::from(ev.row.saturating_sub(st.geo.list.y));
+            if let Some(LineKind::Header { group, .. }) = st.vm.lines.get(row).map(|l| &l.kind)
+                && let Some(&keep) = Keep::ALL.get(usize::from(i - chip::KEEP_IN))
+            {
+                st.zone = Zone::List;
+                st.model.keep_in(*group, keep);
+            }
+        }
         HitTarget::ScreenChip(i) => {
             st.zone = Zone::Size;
             st.model.set_min(usize::from(i));
