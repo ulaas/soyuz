@@ -126,6 +126,9 @@ pub struct Pane {
     pub viewport_h: f32,
     /// Bumped whenever `visible`/`groups` are recomputed.
     pub vis_version: u64,
+    /// `(show_hidden, show_system)` of the last [`Pane::refresh_visible`], so a change to
+    /// `entries` can recompute `visible` at once instead of leaving stale indices.
+    vis_flags: (bool, bool),
     /// What the open context menu applies to.
     pub context: ContextTarget,
     /// Column header drag (details view): `(visible column index, pointer x)`.
@@ -188,6 +191,7 @@ impl Pane {
             layout_sig: None,
             viewport_h: 400.0,
             vis_version: 0,
+            vis_flags: (false, false),
             context: ContextTarget::Background,
             col_drag: None,
         }
@@ -333,7 +337,9 @@ impl Pane {
                 }
             }
         }
-        self.dirty = true;
+        // `visible` holds indices into `entries`: rebuild it now, so nothing reads stale
+        // indices between this change and the next frame's `refresh_visible`.
+        self.recompute_visible();
     }
 
     /// Replace the entries keeping the given order (no re-sort), e.g. search relevance.
@@ -347,7 +353,7 @@ impl Pane {
     pub fn resort(&mut self) {
         sort_entries(&mut self.entries, &self.view.sort);
         self.rebuild_index();
-        self.dirty = true;
+        self.recompute_visible();
     }
 
     /// Recompute the visible order if needed.
@@ -370,9 +376,18 @@ impl Pane {
             self.collapsed_groups.clear();
             self.dirty = true;
         }
-        if !self.dirty {
-            return;
+        if self.vis_flags != (show_hidden, show_system) {
+            self.vis_flags = (show_hidden, show_system);
+            self.dirty = true;
         }
+        if self.dirty {
+            self.recompute_visible();
+        }
+    }
+
+    /// Rebuild `visible` / `groups` from `entries` with the last view flags.
+    fn recompute_visible(&mut self) {
+        let (show_hidden, show_system) = self.vis_flags;
         self.now = SystemTime::now();
         let f = ViewFilter { show_hidden, show_system, pattern: self.filter_pattern.as_ref() };
         let (mut vis, mut groups) = listing::compute_visible(&self.entries, &f, self.view.group, self.now);
@@ -569,6 +584,22 @@ mod tests {
         assert_eq!(p.visible_pos("c"), Some(0));
         p.on_patch(vec![], &["c".to_string()]);
         assert!(!p.selection.contains("c"));
+    }
+
+    #[test]
+    fn visible_follows_entries_before_the_next_refresh() {
+        // A watcher patch or relist that shrinks `entries` must not leave `visible`
+        // pointing past the end until the frame's `refresh_visible` (a panic in
+        // `selected_entries` when an action ran in between).
+        let mut p = pane_with(&["a", "b", "c"]);
+        p.selection.insert("a".into());
+        p.on_patch(vec![], &["b".to_string(), "c".to_string()]);
+        assert_eq!(p.visible_keys().iter().map(|k| &**k).collect::<Vec<_>>(), ["a"]);
+        assert_eq!(p.selected_entries().len(), 1);
+        p.refreshing = true;
+        p.on_listing(vec![], true, None);
+        assert!(p.visible.is_empty());
+        assert!(p.selected_entries().is_empty());
     }
 
     fn sized(name: &str, size: u64) -> EntryInfo {
