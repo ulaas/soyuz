@@ -74,14 +74,52 @@ pub fn list_models(
     })
 }
 
+/// Secrets kept in memory instead of the OS credential store ([`use_memory_credential_store`]).
+static MEMORY_STORE: std::sync::Mutex<Option<std::collections::BTreeMap<String, String>>> = std::sync::Mutex::new(None);
+
+/// Keep the secrets [`store_secret`] / [`delete_secret`] write in memory for the rest of
+/// this process instead of the OS credential store: for sandboxed runs such as the
+/// headless terminal UI tests, which must never write the user's real store.
+pub fn use_memory_credential_store() {
+    if let Ok(mut m) = MEMORY_STORE.lock() {
+        m.get_or_insert_with(Default::default);
+    }
+}
+
+/// The secret stored under `name` in the in-memory store, if it is in use (tests).
+pub fn memory_credential(name: &str) -> Option<String> {
+    MEMORY_STORE.lock().ok()?.as_ref()?.get(name).cloned()
+}
+
+/// Write to (`Some`) or delete from (`None`) the in-memory store; `false` when it is not in use.
+fn memory_write(name: &str, secret: Option<&Secret>) -> bool {
+    let Ok(mut m) = MEMORY_STORE.lock() else { return false };
+    let Some(m) = m.as_mut() else { return false };
+    match secret {
+        Some(s) => m.insert(name.to_string(), s.expose().to_string()),
+        None => m.remove(name),
+    };
+    true
+}
+
 /// Save a secret under `name` in the OS credential store.
 pub fn store_secret(name: String, secret: Secret, wake: Wake) -> Receiver<Result<(), String>> {
-    spawn("soyuz-ai-cred", wake, move || credentials::store(&name, &secret).map_err(|e| e.to_string()))
+    spawn("soyuz-ai-cred", wake, move || {
+        if memory_write(&name, Some(&secret)) {
+            return Ok(());
+        }
+        credentials::store(&name, &secret).map_err(|e| e.to_string())
+    })
 }
 
 /// Delete a stored secret.
 pub fn delete_secret(name: String, wake: Wake) -> Receiver<Result<(), String>> {
-    spawn("soyuz-ai-cred", wake, move || credentials::delete(&name).map_err(|e| e.to_string()))
+    spawn("soyuz-ai-cred", wake, move || {
+        if memory_write(&name, None) {
+            return Ok(());
+        }
+        credentials::delete(&name).map_err(|e| e.to_string())
+    })
 }
 
 /// Where a profile's key comes from, as shown in the settings page.
@@ -142,5 +180,16 @@ mod tests {
             assert!(credentials::valid_name(&credential_name(n)), "{n}");
         }
         assert_eq!(credential_name("Claude work"), "claude-work");
+    }
+
+    #[test]
+    fn the_memory_store_never_reaches_the_os_store() {
+        use_memory_credential_store();
+        let wake: Wake = std::sync::Arc::new(|| {});
+        let rx = store_secret("soyuz-test-memory".into(), Secret::new("s3cret"), wake.clone());
+        assert_eq!(rx.recv().unwrap(), Ok(()));
+        assert_eq!(memory_credential("soyuz-test-memory").as_deref(), Some("s3cret"));
+        assert_eq!(delete_secret("soyuz-test-memory".into(), wake).recv().unwrap(), Ok(()));
+        assert_eq!(memory_credential("soyuz-test-memory"), None);
     }
 }

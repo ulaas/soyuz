@@ -46,7 +46,7 @@ use soyuz_core::config::{Action, KeyChord, KeyContext, KeyName, Mods};
 use super::InputState;
 use super::settings_keys::{self, KeyFilter};
 use crate::app::App;
-use crate::input::dialogs::{self, TuiDialog};
+use crate::input::dialogs;
 use crate::layout::HitTarget;
 use crate::widgets::{Button, EditOutcome, Form, FormOutcome, LineEdit, SelectList};
 
@@ -895,7 +895,10 @@ pub fn activate(app: &mut App, path: &str) {
             dialogs::list_edit::open(app, path, inbox);
         }
         // The [[table]] editor (Wave 3) owns this dialog.
-        FieldKind::Table { .. } => app.push_dialog(TuiDialog::TableEdit(Default::default())),
+        FieldKind::Table { .. } => {
+            let inbox = app.input.settings.inbox.clone();
+            dialogs::table_edit::open(app, path, inbox);
+        }
         FieldKind::Opaque => {
             app.core.ui.toasts.push(Toast::info(tr!("tui-settings-opaque-hint")).body(path));
         }

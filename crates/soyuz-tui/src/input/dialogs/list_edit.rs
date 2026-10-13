@@ -61,6 +61,9 @@ pub struct State {
     /// The item the field holds (`None`: a new item).
     pub editing: Option<usize>,
     pub inbox: Option<Inbox>,
+    /// What Save checks the value against (`None`: the live config). The table editor's
+    /// element forms pass their own draft: a new element is not live yet.
+    pub base: Option<Box<Draft>>,
 }
 
 /// Button indices.
@@ -137,9 +140,18 @@ pub fn to_value(kind: &ListKind, items: &[String]) -> Result<toml::Value, String
 
 /// Open the list editor for the key at `path`.
 pub fn open(app: &mut App, path: &str, inbox: Inbox) {
-    let Some(row) = schema::row(path) else { return };
-    let table = schema::to_table(&app.core.config);
-    let (kind, items) = read(&row.kind, schema::get_in(&table, path), Draft::default_value(path).as_ref());
+    let base = Draft::from_config(&app.core.config);
+    if let Some(mut s) = state(path, &base, inbox) {
+        s.base = None;
+        app.push_dialog(TuiDialog::ListEdit(s));
+    }
+}
+
+/// The list editor for the key at `path` of `base` (Save checks against `base`), for a
+/// dialog that shows it inside its own (the table editor's element form).
+pub fn state(path: &str, base: &Draft, inbox: Inbox) -> Option<State> {
+    let row = schema::row(path)?;
+    let (kind, items) = read(&row.kind, base.value(path), Draft::default_value(path).as_ref());
     let field = match &kind {
         ListKind::Choices(values) => {
             Field::radio(tr!("tui-settings-list-item"), values.iter().map(|(v, _)| v.clone()).collect(), 0)
@@ -164,9 +176,10 @@ pub fn open(app: &mut App, path: &str, inbox: Inbox) {
         form,
         editing: None,
         inbox: Some(inbox),
+        base: Some(Box::new(base.clone())),
     };
     load(&mut s);
-    app.push_dialog(TuiDialog::ListEdit(s));
+    Some(s)
 }
 
 /// Put the cursor's item into the field.
@@ -256,7 +269,7 @@ fn move_item(s: &mut State, down: bool) {
 /// Save: check the value against the live config, hand it over.
 fn save(core: &AppCore, s: &mut State) -> Outcome {
     let checked = to_value(&s.kind, &s.items).and_then(|v| {
-        let mut d = Draft::from_config(&core.config);
+        let mut d = s.base.as_deref().cloned().unwrap_or_else(|| Draft::from_config(&core.config));
         d.set(&s.path, v.clone()).map(|()| v)
     });
     match checked {

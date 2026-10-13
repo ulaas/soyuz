@@ -412,6 +412,31 @@ pub fn store_secret(
     (format!("credential:{name}"), crate::services::ai_service::store_secret(name.clone(), secret, wake))
 }
 
+/// [`store_secret`] for a frontend that does not link `soyuz_ai` (the terminal UI): the
+/// secret as text.
+pub fn store_secret_text(
+    current_ref: &str,
+    name: String,
+    secret: String,
+    wake: Wake,
+) -> (String, Receiver<Result<(), String>>) {
+    store_secret(current_ref, name, Secret::new(secret), wake)
+}
+
+/// The credential-store name of a `credential:<name>` reference.
+pub fn credential_of(reference: &str) -> Option<String> {
+    match credentials::parse_ref(reference) {
+        Ok(KeyRef::Credential(n)) => Some(n),
+        _ => None,
+    }
+}
+
+/// Check what a credential-reference field may hold: `credential:<name>`, `env:<VAR>` or
+/// nothing. Anything else (a pasted raw key) is refused with the reason.
+pub fn check_reference(reference: &str) -> Result<(), String> {
+    credentials::parse_ref(reference).map(|_| ()).map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -579,5 +604,9 @@ mod tests {
         // An existing credential reference keeps its name (no store call is made here).
         let parsed = credentials::parse_ref("credential:kept").unwrap();
         assert_eq!(parsed, KeyRef::Credential("kept".into()));
+        assert_eq!(credential_of("credential:kept").as_deref(), Some("kept"));
+        assert_eq!(credential_of("env:KEY"), None);
+        assert!(check_reference("").is_ok() && check_reference("env:MY_KEY").is_ok());
+        assert!(check_reference("sk-raw-secret").is_err(), "raw keys never go into config.toml");
     }
 }
