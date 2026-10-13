@@ -228,6 +228,9 @@ fn phase_t56(app: &mut App, m: &MouseEvent) -> bool {
         | HitTarget::DupesRoot(_)
         | HitTarget::DupesHeader(_)
         | HitTarget::ConfirmBar(_) => super::screens::on_mouse(app, t, m),
+        HitTarget::PlacesRow { .. } | HitTarget::PlacesButton { .. } | HitTarget::PlacesArea { .. } => {
+            super::list::places::on_mouse(app, t, m)
+        }
         _ => false,
     }
 }
@@ -416,7 +419,10 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::DupesRow(_)
             | HitTarget::DupesRoot(_)
             | HitTarget::DupesHeader(_)
-            | HitTarget::ConfirmBar(_),
+            | HitTarget::ConfirmBar(_)
+            | HitTarget::PlacesRow { .. }
+            | HitTarget::PlacesButton { .. }
+            | HitTarget::PlacesArea { .. },
             _,
         ) => {}
     }

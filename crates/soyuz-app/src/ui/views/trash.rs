@@ -3,10 +3,8 @@
 //! Empty trash and deleting individual items permanently (`JobKind::PurgeTrash`) run as
 //! jobs, serialized with each other by the engine.
 
-use std::path::PathBuf;
-
 use egui::{Align2, CornerRadius, FontId, Id, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
-use soyuz_core::{EntryInfo, Location, format_size, format_time};
+use soyuz_core::{EntryInfo, format_size, format_time};
 
 use super::ViewCtx;
 use super::flow::{selection_fill, semibold};
@@ -17,7 +15,7 @@ use crate::state::pane::Pane;
 use crate::theme::tokens::radius;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::empty_state::EmptyState;
-use crate::ui::widgets::{menu_item, menu_separator, pill_button, spinner, trunc_galley};
+use crate::ui::widgets::{pill_button, spinner, trunc_galley};
 
 pub use crate::models::trash::{TrashState, key};
 
@@ -51,20 +49,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         semibold(15.0),
         p.text_primary,
     );
-    let total: u64 = ts.items.iter().map(|i| i.size).sum();
-    let sub = if ts.loading && !ts.loaded {
-        tr!("views-trash-reading").to_string()
-    } else if ts.items.is_empty() {
-        tr!("views-trash-empty-short").to_string()
-    } else {
-        let n = ts.items.len();
-        let size = format_size(total, v.config.general.size_style);
-        if ts.selected.is_empty() {
-            tr!("views-trash-summary", count = n, size = size)
-        } else {
-            tr!("views-trash-summary-selected", count = n, size = size, selected = ts.selected.len())
-        }
-    };
+    let sub = ts.summary(v.config.general.size_style);
     painter.text(
         pos2(icon_r.right() + 12.0, hr.top() + 38.0),
         Align2::LEFT_CENTER,
@@ -211,9 +196,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 } else if resp.hovered() {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.bg_surface2);
                 }
-                let name_path =
-                    if it.original.as_os_str().is_empty() { PathBuf::from(&it.id) } else { it.original.clone() };
-                let e = EntryInfo::minimal(name_path.clone(), it.kind);
+                let e = EntryInfo::minimal(crate::models::trash::name_path(it), it.kind);
                 let cy = r.center().y;
                 let font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
                 ui.painter().text(
@@ -243,11 +226,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                 } else {
                     resp
                 };
-                let origin = name_path
-                    .parent()
-                    .map(|d| soyuz_fs::strip_verbatim(d).to_string_lossy().into_owned())
-                    .filter(|s| !s.is_empty() && !it.original.as_os_str().is_empty())
-                    .unwrap_or_else(|| tr!("views-trash-unknown-origin").into());
+                let origin = crate::models::trash::origin(it);
                 let g =
                     trunc_galley(ui.painter(), &origin, FontId::proportional(12.5), p.text_secondary, cols[1].2 - 18.0);
                 ui.painter().galley(pos2(cols[1].1 + 8.0, cy - g.size().y / 2.0), g, p.text_secondary);
@@ -290,25 +269,8 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         let pane_id = pane.id;
         crate::ui::native::popup::context_menu(&resp, |ui| {
             ui.set_width(230.0);
-            if menu_item(ui, Some(ph::ARROW_COUNTER_CLOCKWISE), tr!("views-trash-restore"), None, true).clicked() {
-                cmds.push(Cmd::FileOp(FileOpCmd::TrashRestore(selected.clone())));
-                ui.close();
-            }
-            if let Some(dir) = original.parent().filter(|d| !d.as_os_str().is_empty())
-                && menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-trash-open-original"), None, true).clicked()
-            {
-                cmds.push(Cmd::Navigate { pane: pane_id, location: Location::Dir(dir.to_path_buf()), select: None });
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("views-trash-copy-original"), None, true).clicked() {
-                cmds.push(Cmd::CopyText(soyuz_fs::strip_verbatim(&original).to_string_lossy().into_owned()));
-                ui.close();
-            }
-            menu_separator(ui);
-            if menu_item(ui, Some(ph::X_CIRCLE), tr!("views-trash-delete-permanently"), None, true).clicked() {
-                cmds.push(Cmd::FileOp(FileOpCmd::ConfirmPurge(selected.clone())));
-                ui.close();
-            }
+            let entries = crate::models::trash::menu(selected.clone(), original.clone(), pane_id);
+            crate::ui::context_menu::draw_entries(ui, entries, cmds);
         });
     }
 }

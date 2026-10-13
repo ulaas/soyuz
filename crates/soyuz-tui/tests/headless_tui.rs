@@ -101,6 +101,8 @@ mod headless {
     mod devices;
     /// T7 (agent C): the duplicate finder screen.
     mod dupes;
+    /// T7 (places): the Trash and Computer pages.
+    mod places;
     /// T7 (agent A): the drop shelf dialog.
     mod shelf;
     /// T7 (agent A): split and join files.
