@@ -55,6 +55,12 @@ impl Relaunched {
 /// the child and asserts it passed. In the child: checks the sandbox and returns the data
 /// folder.
 pub fn relaunch(module: &str, name: &str, setup: impl FnOnce(&Path)) -> Run {
+    relaunch_env(module, name, &[], setup)
+}
+
+/// [`relaunch`] with extra environment variables for the child (e.g. `SOYUZ_AI_FAKE`, a
+/// scripted model transcript; the tests cannot set variables in their own process).
+pub fn relaunch_env(module: &str, name: &str, env: &[(&str, &std::ffi::OsStr)], setup: impl FnOnce(&Path)) -> Run {
     if let Some(data) = std::env::var_os(CHILD) {
         let data = PathBuf::from(data);
         check_portable(&data);
@@ -76,6 +82,7 @@ pub fn relaunch(module: &str, name: &str, setup: impl FnOnce(&Path)) -> Run {
     let out = Command::new(&copy)
         .args(["--exact", &path, "--nocapture", "--test-threads=1"])
         .env(CHILD, &data)
+        .envs(env.iter().copied())
         .output()
         .expect("run the copied test binary");
     let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));

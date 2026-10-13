@@ -1,0 +1,16 @@
+# SOYUZ_AI_FAKE transcript of the headless AI panel tests (`tests/headless/ai.rs`): the
+# model answers the first message with one `move` call (a plan card that waits for the
+# user), then ends the task when the plan was answered.
+delay_ms = 0
+model = "fake-move"
+
+[[turn]]
+text = "I suggest moving **a.txt** into `Moved`."
+usage = { input = 1200, output = 40 }
+[[turn.call]]
+name = "move"
+args = { sources = ["{cwd}/a.txt"], dest_dir = "{cwd}/Moved" }
+
+[[turn]]
+text = "Done."
+usage = { input = 1300, output = 10 }
