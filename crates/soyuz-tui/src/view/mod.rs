@@ -455,8 +455,10 @@ mod tests {
             title: "Assistant 日本語".into(),
             status: "Waiting for your approval".into(),
             running: true,
-            info: "fake · move · 1.2k tok".into(),
-            stop: Some("Stop  Esc".into()),
+            chips: vec![ai::AiLine::plain(
+                "[Stop Esc] [fake · move] [Contents] [Tools] 1.2k tok",
+                crate::theme::Role::Muted,
+            )],
             tabs: vec!["Chat".into(), "Recipes".into(), "Audit log".into()],
             lines: vec![ai::AiLine::plain("> move it ".repeat(8), crate::theme::Role::Title); 5],
             footer: vec![ai::AiLine::plain("2 plans wait", crate::theme::Role::Warning)],
