@@ -341,8 +341,16 @@ pub fn on_mouse(app: &mut App, target: HitTarget, ev: &MouseEvent) -> bool {
     }
     let cycles = |p: u8| matches!(p, pill::MODE | pill::DATE | pill::KIND);
     match (target, ev.kind) {
-        (HitTarget::SearchField, MouseEventKind::Down(MouseButton::Left)) => begin(app, Stop::Field),
-        (HitTarget::SearchPill(pill::GLOB), MouseEventKind::Down(MouseButton::Left)) => begin(app, Stop::Glob),
+        (HitTarget::SearchField, MouseEventKind::Down(MouseButton::Left)) => {
+            let drawn = app.input.search.edit.clone();
+            begin(app, Stop::Field);
+            click_cursor(app, ev.column, false, drawn);
+        }
+        (HitTarget::SearchPill(pill::GLOB), MouseEventKind::Down(MouseButton::Left)) => {
+            let drawn = app.input.search.glob.clone();
+            begin(app, Stop::Glob);
+            click_cursor(app, ev.column, true, drawn);
+        }
         (HitTarget::SearchPill(p), MouseEventKind::Down(b @ (MouseButton::Left | MouseButton::Right))) => {
             if app.input.search.editing {
                 app.input.search.stop = Stop::Pill(p);
@@ -359,6 +367,19 @@ pub fn on_mouse(app: &mut App, target: HitTarget, ev: &MouseEvent) -> bool {
         _ => {}
     }
     true
+}
+
+/// Put the query (`glob`: the glob) field's cursor under a click at screen column `x`;
+/// `drawn`: the field's editor as last drawn (its scroll).
+fn click_cursor(app: &mut App, x: u16, glob: bool, drawn: LineEdit) {
+    let Some((col, width)) = crate::view::search::field_click(&app.core, app.regions(), x, glob) else { return };
+    let form = &app.core.ui.search.form;
+    let (text, edit) =
+        if glob { (&form.name_glob, &mut app.input.search.glob) } else { (&form.text, &mut app.input.search.edit) };
+    // As drawn (`view::search` shows the sanitized text, scrolled by `prepare`).
+    let shown = crate::dialog::safe(text);
+    *edit = drawn;
+    edit.click(&shown, col, width);
 }
 
 /// While `true`, every mouse event goes to [`on_mouse`] wherever it is: while the bar has

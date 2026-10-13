@@ -20,3 +20,8 @@ tui-search-size-preset-large = > 100 MB
 tui-search-size-preset-huge = > 1 GB
 # $value: what was typed.
 tui-search-size-invalid = “{ $value }” is not a size (try 512k, 10M or 1.5 GB).
+
+## The status line's key hint while the bar has the keyboard
+
+tui-search-hint-field = Enter search · Tab next · ↓ results · Ctrl+S save · Esc close
+tui-search-hint-controls = Space toggle · ←/→ move · Tab next · ↓ results · Esc close

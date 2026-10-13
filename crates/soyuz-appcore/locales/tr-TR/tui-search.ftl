@@ -20,3 +20,8 @@ tui-search-size-preset-large = > 100 MB
 tui-search-size-preset-huge = > 1 GB
 # $value: yazılan değer.
 tui-search-size-invalid = “{ $value }” bir boyut değil (512k, 10M ya da 1.5 GB deneyin).
+
+## Çubuk klavyedeyken durum satırındaki tuş ipucu
+
+tui-search-hint-field = Enter ara · Tab sonraki · ↓ sonuçlar · Ctrl+S kaydet · Esc kapat
+tui-search-hint-controls = Space değiştir · ←/→ gez · Tab sonraki · ↓ sonuçlar · Esc kapat

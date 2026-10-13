@@ -329,6 +329,12 @@ pub fn prepare(core: &mut AppCore, st: &mut State) {
             transfer::prepare(&mut core.services, t, ui);
         }
     }
+    // Extract to…'s destination completions (`archive::prepare`).
+    if top(core, st) == Some(Top::Tui)
+        && let Some(TuiDialog::Archive(s)) = st.tui.top_mut()
+    {
+        archive::prepare(&mut core.services, s);
+    }
 }
 
 /// A form's mouse (the terminal UI dialogs): a click on a field focuses (a checkbox toggles)
@@ -429,6 +435,18 @@ pub fn route(app: &mut App, events: &[Event]) {
 pub fn mouse(app: &mut App, event: &MouseEvent) {
     let target = crate::input::mouse::hit(&app.hits, event.column, event.row).map(|(_, t)| t);
     let m = DialogMouse { event: *event, target };
+    // A press in a text field's box: `Form::click_field` puts the cursor under it.
+    let field_click = matches!(event.kind, crossterm::event::MouseEventKind::Down(_))
+        .then(|| app.hits.field_text_at(event.column, event.row))
+        .flatten()
+        .map(|(r, _)| (event.column - r.x, r.width));
+    crate::widgets::form::set_field_click(field_click);
+    mouse_dispatch(app, &m);
+    crate::widgets::form::set_field_click(None);
+}
+
+fn mouse_dispatch(app: &mut App, m: &DialogMouse) {
+    let m = *m;
     let Some(which) = top(&app.core, &app.input.dialogs) else { return };
     let out = match which {
         Top::Model => {

@@ -133,6 +133,7 @@ impl ViewModel {
     pub fn from_core(core: &AppCore, input: &InputState, regions: &Regions) -> ViewModel {
         let mut status = StatusVm::from_core(core);
         crate::input::filter::decorate(&input.filter, core, &mut status, regions.area.width);
+        status::decorate_search(core, input, &mut status);
         let mut panes: Vec<PaneVm> = regions.panes.iter().filter_map(|p| PaneVm::from_core(core, p.index)).collect();
         rename::decorate(core, input, &mut panes);
         ViewModel {

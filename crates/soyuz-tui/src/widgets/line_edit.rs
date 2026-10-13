@@ -257,6 +257,24 @@ impl LineEdit {
         if used { EditOutcome::Consumed } else { EditOutcome::Ignored }
     }
 
+    /// A click `col` cells into a field `width` cells wide showing `text` (scrolled as
+    /// [`LineEdit::view`] draws it): the cursor goes before the grapheme under the
+    /// pointer, or to the end past the text.
+    pub fn click(&mut self, text: &str, col: u16, width: u16) {
+        self.view(text, width);
+        let target = self.scroll + usize::from(col);
+        let mut x = 0;
+        for (i, g) in text.grapheme_indices(true) {
+            let w = text::width(g);
+            if target < x + w {
+                self.cursor = i;
+                return;
+            }
+            x += w;
+        }
+        self.cursor = text.len();
+    }
+
     /// What a field `width` cells wide shows of `text`, and the cursor's column in it.
     /// Scrolls so the cursor stays visible (one cell is kept for it at the end).
     pub fn view(&mut self, text: &str, width: u16) -> (String, u16) {
@@ -307,6 +325,27 @@ mod tests {
         let mut f = InputFrame::new(events);
         let out = e.feed(&mut t, &mut f);
         (t, e, out, f)
+    }
+
+    #[test]
+    fn a_click_puts_the_cursor_under_the_pointer() {
+        let mut e = LineEdit::at_end("abcdef");
+        e.click("abcdef", 2, 10);
+        assert_eq!(e.cursor(), 2);
+        e.click("abcdef", 9, 10);
+        assert_eq!(e.cursor(), 6, "past the text: the end");
+        // Wide characters: both cells of 日 put the cursor before it.
+        e.click("a日b", 1, 10);
+        assert_eq!(e.cursor(), 1);
+        e.click("a日b", 2, 10);
+        assert_eq!(e.cursor(), 1);
+        e.click("a日b", 3, 10);
+        assert_eq!(e.cursor(), 4);
+        // Scrolled to the end: the first cell shows "e" of "abcdefgh" in 4 cells.
+        let mut e = LineEdit::at_end("abcdefgh");
+        assert_eq!(e.view("abcdefgh", 4).0, "fgh");
+        e.click("abcdefgh", 0, 4);
+        assert_eq!(e.cursor(), 5);
     }
 
     #[test]

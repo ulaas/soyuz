@@ -243,6 +243,28 @@ pub fn click(app: &mut App, index: usize) {
     }
 }
 
+/// A middle click on entry `index` (`HitTarget::SidebarRow`): open a place on disk or on a
+/// connection, a smart folder or a tree folder in a new tab in the background, like the
+/// GUI's sidebar; the focus and the cursor stay where they are. Other rows ignore it.
+pub fn middle_click(app: &mut App, index: usize) {
+    let core = &mut app.core;
+    let list = entries(core);
+    let location = match list.get(index) {
+        Some(Entry::Place { target: Target::Go(location), .. }) => location.clone(),
+        Some(Entry::Place { target: Target::Remote { uri, .. }, .. }) => Location::Remote(uri.clone()),
+        Some(Entry::Place { target: Target::Smart(index), .. }) => {
+            core.cmds.push(Cmd::Smart(SmartCmd::Open { index: *index, new_tab: true }));
+            return;
+        }
+        Some(Entry::Tree(j)) => match core.ui.tree.rows().get(*j) {
+            Some(r) => Location::Dir(r.key.path.clone()),
+            None => return,
+        },
+        _ => return,
+    };
+    core.cmds.push(Cmd::OpenInNewTab { location, activate: false });
+}
+
 fn tree_step(core: &mut AppCore, n: &mut SidebarNav, step: Nav) {
     tree_key(core, n, KeyInput { steps: vec![step], ..KeyInput::default() });
 }

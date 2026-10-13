@@ -79,13 +79,14 @@ pub fn lines(_core: &AppCore) -> u16 {
     0
 }
 
-/// Where toasts may go: below the tab strip and the location line, above the status
-/// line (the whole screen when only the list is drawn).
+/// Where toasts may go: below the tab strip, the location line and the search bar
+/// (while it is open, so toasts never cover its buttons), above the status line (the
+/// whole screen when only the list is drawn).
 pub fn area(r: &Regions) -> Rect {
     if r.list_only {
         return r.area;
     }
-    let top = r.tabs.bottom().max(r.crumbs.bottom()).max(r.area.y);
+    let top = r.tabs.bottom().max(r.crumbs.bottom()).max(r.search.bottom()).max(r.area.y);
     let bottom = if r.status.is_empty() { r.area.bottom() } else { r.status.y };
     Rect { y: top, height: bottom.saturating_sub(top), ..r.area }
 }
@@ -226,6 +227,20 @@ mod tests {
         // No lines: a blank frame.
         let (lines, _, _) = draw_with(&m, TuiBorders::None, 30, 5);
         assert_eq!(lines[2].trim_end(), "        [x] Failed");
+    }
+
+    #[test]
+    fn area_starts_below_the_search_bar() {
+        use crate::layout::Facts;
+        use soyuz_core::config::TuiSection;
+        let tui = TuiSection::default();
+        let closed = Regions::compute(Rect::new(0, 0, 100, 30), &tui, &Facts::default());
+        assert_eq!(area(&closed).y, closed.crumbs.bottom());
+        let open = Regions::compute(Rect::new(0, 0, 100, 30), &tui, &Facts { search_rows: 2, ..Facts::default() });
+        assert!(!open.search.is_empty());
+        let a = area(&open);
+        assert_eq!(a.y, open.search.bottom(), "toasts never cover the search bar's buttons");
+        assert!(a.intersection(open.search).is_empty());
     }
 
     #[test]

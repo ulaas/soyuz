@@ -17,7 +17,7 @@
 //! | `Tab` / `TabClose` / `NewTab` | activate / close / new tab | close the tab | the tab menu |
 //! | `Crumb` | navigate there; the last crumb edits the address | open in a new tab | |
 //! | `Address` | edit the address | | |
-//! | `SidebarRow` | cursor there; a header toggles, a place / tree folder opens | | a place's menu |
+//! | `SidebarRow` | cursor there; a header toggles, a place / tree folder opens | a place / tree folder in a new tab | a place's menu |
 //! | `Filter` | arm the filter field | | |
 //! | `PaletteRow` | select and run (Ctrl: new tab, Shift: complete only) | | |
 //! | `Toast` | dismiss | | |
@@ -297,6 +297,7 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
         (HitTarget::Crumb(i), MouseButton::Left | MouseButton::Middle) => crumb(app, i, button),
         (HitTarget::Address, MouseButton::Left) => edit_address(app),
         (HitTarget::SidebarRow(i), MouseButton::Left) => super::sidebar::click(app, i),
+        (HitTarget::SidebarRow(i), MouseButton::Middle) => super::sidebar::middle_click(app, i),
         (HitTarget::Filter, MouseButton::Left) => {
             app.core.ui.filter_focus = true;
             super::filter::arm(app);
@@ -320,7 +321,6 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             | HitTarget::NewTab
             | HitTarget::Crumb(_)
             | HitTarget::Address
-            | HitTarget::SidebarRow(_)
             | HitTarget::Filter
             | HitTarget::PaletteRow(_)
             | HitTarget::Toast(_),

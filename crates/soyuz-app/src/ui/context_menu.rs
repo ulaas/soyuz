@@ -64,6 +64,10 @@ pub fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
                     (ItemStyle::Plain, MenuIcon::Dot(color)) => crate::ui::workspaces::dot_item(ui, color, &it.label),
                     (ItemStyle::Plain, icon) => menu_item(ui, glyph(icon), &it.label, chord, it.enabled),
                 };
+                let resp = match it.tip {
+                    Some(tip) => resp.on_hover_text(tip),
+                    None => resp,
+                };
                 if resp.clicked() {
                     if let Some(r) = it.run {
                         catalogue::run(r, cmds);

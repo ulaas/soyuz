@@ -652,17 +652,7 @@ pub fn sidebar_section(
         }
         crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(200.0);
-            if menu_item(ui, Some(ph::MAGNIFYING_GLASS), tr!("views-search-run-saved"), None, true).clicked() {
-                cmds.push(Cmd::RunSavedSearch(i));
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::X), tr!("views-search-remove"), None, i >= n_config)
-                .on_hover_text(if i < n_config { tr!("views-search-defined-in-config") } else { "" })
-                .clicked()
-            {
-                cmds.push(Cmd::RemoveSavedSearch(i));
-                ui.close();
-            }
+            crate::ui::context_menu::draw_entries(ui, crate::models::context_menu::saved_search(i, n_config), cmds);
         });
     }
 }
