@@ -5,7 +5,6 @@
 tui-compare-hints-setup = Tab next field · Enter/F5 compare · F6 swap sides · F8 profiles · Esc close
 tui-compare-hints-rows = ↑↓ move · Space cycle action · ←/→ copy · Del delete · S skip · Shift+key: all visible · 1–5 filters · P mode · Enter review · Esc close
 tui-compare-hints-plan = Enter start sync · Backspace back to the table · Esc back
-tui-compare-hints-profiles = ↑↓ choose · Enter load and compare · R run now · Esc back
 tui-compare-hints-scanning = Esc cancel the compare · F6 swap sides
 tui-compare-progress = { $done } / { $total } items
 tui-compare-profile-load = Load and compare

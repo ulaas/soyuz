@@ -29,7 +29,9 @@
 //! | C (rows) | resolve the two-way conflicts (`TuiDialog::CompareConflict`) |
 //! | Enter (rows) | the conflicts while some are open, else review the plan |
 //! | Enter (plan) | run it: one `JobKind::Sync` job |
-//! | Enter / R (profiles) | load the profile and compare / run it now |
+//! | Enter / R / D / X (profiles) | load the profile and compare / run it now / dry run / cancel its run |
+//! | N / S (profiles) | a new profile: blank / from the current setup (`TuiDialog::CompareProfile`) |
+//! | E or F4 / F2 / Delete (profiles) | edit (folders, method, mode, schedule) / rename / delete the profile |
 //!
 //! Like the GUI's tool windows it is modal: other keys do not reach the keymap (Quit
 //! still does).
@@ -37,17 +39,22 @@
 //! Mouse: a click focuses a field, picks a method / mode / completion, toggles a chip,
 //! presses a button, selects a row (a click in the action column cycles the action) or a
 //! profile; the wheel scrolls the rows, the plan and the profiles.
+//!
+//! The profiles page lists the saved sync profiles (`models::compare_profiles`) with their
+//! schedule and next run or what they are doing; under the list the selected profile's
+//! schedule, last run and run reports (loaded on a worker, `load_reports_async`).
 
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use crossbeam_channel::Receiver;
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::host::Host;
 use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::compare::{Category, CompareModel, Method, Preset, ReviewStep, RowAction, Stage};
-use soyuz_appcore::models::compare_profiles::{self, SyncProfile};
+use soyuz_appcore::models::compare_profiles::{self, RunReport, SyncProfile};
 use soyuz_appcore::models::toasts::Toast;
 use soyuz_appcore::state::crumbs;
 use soyuz_appcore::tr;
@@ -55,12 +62,24 @@ use soyuz_core::config::{Action, KeyChord, KeyName, Mods};
 
 use super::{InputState, TuiFocus, key_context};
 use crate::app::App;
+use crate::input::dialogs::compare_profile as profile_dialog;
 use crate::layout::HitTarget;
 use crate::view::compare::{CompareVm, Geometry};
 use crate::widgets::{EditOutcome, LineEdit, SelectList};
 
 /// The compare model, shared with the conflicts dialog (`input::dialogs::compare_conflict`).
 pub type Shared = Rc<RefCell<CompareModel>>;
+
+/// The profile to select on the profiles page, set by the profile dialog
+/// (`input::dialogs::compare_profile`) after a save or a rename.
+pub type Select = Rc<RefCell<Option<String>>>;
+
+/// Run reports listed for the selected profile at most.
+pub const REPORTS_MAX: usize = 20;
+
+/// While a scan, a sync job or a profile run is busy the screen redraws this often (the
+/// elapsed time, the progress, the activity).
+pub const BUSY_REDRAW: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// `HitTarget::CompareField` ids: the fields, then the options and completions.
 pub mod field {
@@ -95,6 +114,20 @@ pub mod button {
     pub const LOAD: u8 = 8;
     /// Profiles page: run now.
     pub const RUN_PROFILE: u8 = 9;
+    /// Profiles page: a new profile (blank).
+    pub const NEW: u8 = 10;
+    /// Profiles page: edit the selected profile.
+    pub const EDIT: u8 = 11;
+    /// Profiles page: rename it.
+    pub const RENAME: u8 = 12;
+    /// Profiles page: delete it.
+    pub const DELETE: u8 = 13;
+    /// Profiles page: save the current setup as a profile.
+    pub const SAVE_SETUP: u8 = 14;
+    /// Profiles page: dry run.
+    pub const DRY_RUN: u8 = 15;
+    /// Profiles page: cancel the selected profile's run.
+    pub const CANCEL_RUN: u8 = 16;
 }
 
 /// Where the keyboard is on the screen.
@@ -138,6 +171,12 @@ pub struct State {
     pub profiles: SelectList,
     /// The profiles as last listed (`view::compare::prepare`).
     pub profile_list: Vec<SyncProfile>,
+    /// The profile to select next frame (shared with the profile dialog).
+    pub select: Select,
+    /// The run reports of a profile (newest first) as last loaded.
+    pub reports: Option<(String, Vec<RunReport>)>,
+    /// Reports being loaded on a worker, for this profile.
+    pub reports_rx: Option<(String, Receiver<Vec<RunReport>>)>,
     /// Completions of the focused folder field and the highlighted one.
     pub names: Vec<String>,
     pub pick: usize,
@@ -665,7 +704,7 @@ fn plan_key(app: &mut App, model: &Shared, ev: &InputEvent) -> bool {
 fn profiles_key(app: &mut App, model: &Shared, ev: &InputEvent) -> bool {
     let Some(c) = chord(ev) else { return true };
     let len = app.input.compare.profile_list.len();
-    let height = usize::from(app.input.compare.geo.rows.height).max(1);
+    let height = list_height(app);
     if app.input.compare.profiles.apply(ev, len, height) {
         return true;
     }
@@ -676,10 +715,98 @@ fn profiles_key(app: &mut App, model: &Shared, ev: &InputEvent) -> bool {
     match c.key {
         KeyName::Enter => load_profile(app, model, i),
         KeyName::R => run_profile(app, i),
+        KeyName::D => dry_run(app, i),
+        KeyName::X => cancel_run(app, i),
+        KeyName::N => new_profile(app),
+        KeyName::S => save_setup(app, model),
+        KeyName::E | KeyName::F4 => edit_profile(app, i),
+        KeyName::F2 => rename_profile(app, i),
+        KeyName::Delete => delete_profile(app, i),
         KeyName::Backspace => app.input.compare.page = Page::Compare,
         _ => {}
     }
     true
+}
+
+/// Rows of the profiles list (the details take the rest of the body).
+fn list_height(app: &App) -> usize {
+    usize::from(crate::view::compare::profile_split(app.input.compare.geo.rows).0.height).max(1)
+}
+
+/// A new, blank profile (`TuiDialog::CompareProfile`).
+fn new_profile(app: &mut App) {
+    let p = SyncProfile::new("", PathBuf::new(), PathBuf::new(), Preset::Update);
+    let s = profile_dialog::State::new_profile(p, Some(app.input.compare.select.clone()));
+    profile_dialog::open(app, s);
+}
+
+/// The compare screen's setup as a profile named after the loaded one (a hand-edited
+/// table saves as its base mode).
+pub fn setup_profile(m: &CompareModel) -> SyncProfile {
+    let preset = match m.preset {
+        Preset::Custom if m.two_way().is_some() => Preset::TwoWay,
+        Preset::Custom => Preset::Update,
+        other => other,
+    };
+    SyncProfile {
+        name: m.profile_name.trim().to_string(),
+        left: PathBuf::from(m.left.trim()),
+        right: PathBuf::from(m.right.trim()),
+        method: m.method,
+        preset,
+        schedule: Default::default(),
+    }
+}
+
+/// Save the current setup: edits the loaded profile when it still exists (its schedule
+/// stays), else a new profile prefilled with it.
+fn save_setup(app: &mut App, model: &Shared) {
+    let mut p = setup_profile(&model.borrow());
+    let select = Some(app.input.compare.select.clone());
+    let s = match compare_profiles::profile(&p.name) {
+        Some(old) => {
+            p.schedule = old.schedule;
+            profile_dialog::State::edit(&old.name, &p, select)
+        }
+        None => profile_dialog::State::new_profile(p, select),
+    };
+    profile_dialog::open(app, s);
+}
+
+fn edit_profile(app: &mut App, i: usize) {
+    let Some(p) = app.input.compare.profile_list.get(i).cloned() else { return };
+    let s = profile_dialog::State::edit(&p.name, &p, Some(app.input.compare.select.clone()));
+    profile_dialog::open(app, s);
+}
+
+fn rename_profile(app: &mut App, i: usize) {
+    let Some(name) = app.input.compare.profile_list.get(i).map(|p| p.name.clone()) else { return };
+    let s = profile_dialog::State::rename(&name, Some(app.input.compare.select.clone()));
+    profile_dialog::open(app, s);
+}
+
+fn delete_profile(app: &mut App, i: usize) {
+    let Some(name) = app.input.compare.profile_list.get(i).map(|p| p.name.clone()) else { return };
+    profile_dialog::open(app, profile_dialog::State::delete(&name));
+}
+
+/// A dry run of profile `i`: only its report is written.
+fn dry_run(app: &mut App, i: usize) {
+    let Some(pr) = app.input.compare.profile_list.get(i) else { return };
+    if compare_profiles::is_running(&pr.name) {
+        return;
+    }
+    compare_profiles::run_now(&pr.name, true);
+    app.core.ui.toasts.push(Toast::info(tr!("tui-cmpprof-toast-dry-run", name = pr.name.clone())));
+}
+
+/// Cancel the planning or the sync job of profile `i`.
+fn cancel_run(app: &mut App, i: usize) {
+    let Some(name) = app.input.compare.profile_list.get(i).map(|p| p.name.clone()) else { return };
+    if compare_profiles::is_running(&name) {
+        compare_profiles::cancel(&app.core, &name);
+        app.core.ui.toasts.push(Toast::info(tr!("tui-cmpprof-toast-cancelled", name = name)));
+    }
 }
 
 /// Load profile `i` into the setup and compare.
@@ -731,6 +858,7 @@ fn wheel(app: &mut App, model: &Shared, rows: i32) {
     let height = usize::from(app.input.compare.geo.rows.height).max(1);
     if app.input.compare.page == Page::Profiles {
         let len = app.input.compare.profile_list.len();
+        let height = list_height(app);
         app.input.compare.profiles.wheel(rows, len, height);
         return;
     }
@@ -825,6 +953,18 @@ fn press(app: &mut App, model: &Shared, b: u8) {
             let i = app.input.compare.profiles.cursor;
             run_profile(app, i);
         }
+        button::NEW => new_profile(app),
+        button::SAVE_SETUP => save_setup(app, model),
+        b @ (button::EDIT | button::RENAME | button::DELETE | button::DRY_RUN | button::CANCEL_RUN) => {
+            let i = app.input.compare.profiles.cursor;
+            match b {
+                button::EDIT => edit_profile(app, i),
+                button::RENAME => rename_profile(app, i),
+                button::DELETE => delete_profile(app, i),
+                button::DRY_RUN => dry_run(app, i),
+                _ => cancel_run(app, i),
+            }
+        }
         _ => {}
     }
 }
@@ -859,9 +999,63 @@ pub fn pump(core: &mut AppCore, st: &mut State) {
         st.names.clear();
         st.partial = false;
     }
-    st.profile_list = if st.page == Page::Profiles { compare_profiles::profiles() } else { Vec::new() };
+    drop(m);
+    pump_profiles(st);
+}
+
+/// The profiles page: the list, a selection asked for by the profile dialog, and the
+/// selected profile's run reports (loaded on a worker; again when a newer run ended).
+fn pump_profiles(st: &mut State) {
+    if st.page != Page::Profiles {
+        st.profile_list.clear();
+        return;
+    }
+    st.profile_list = compare_profiles::profiles();
     let n = st.profile_list.len();
-    st.profiles.clamp(n, usize::from(st.geo.rows.height).max(1));
+    let height = usize::from(crate::view::compare::profile_split(st.geo.rows).0.height).max(1);
+    let wanted = st.select.borrow_mut().take();
+    if let Some(name) = wanted
+        && let Some(i) = st.profile_list.iter().position(|p| p.name == name)
+    {
+        st.profiles.select(i, n);
+        st.profiles.show_cursor(height);
+    }
+    st.profiles.clamp(n, height);
+    let Some(name) = st.profile_list.get(st.profiles.cursor).map(|p| p.name.clone()) else {
+        st.reports = None;
+        st.reports_rx = None;
+        return;
+    };
+    if let Some((for_name, rx)) = &st.reports_rx
+        && let Ok(v) = rx.try_recv()
+    {
+        st.reports = Some((for_name.clone(), v));
+        st.reports_rx = None;
+    }
+    let loaded = st.reports.as_ref().filter(|(n, _)| *n == name);
+    let loading = st.reports_rx.as_ref().is_some_and(|(n, _)| *n == name);
+    let newer = loaded.is_some_and(|(_, v)| {
+        compare_profiles::last_report(&name).is_some_and(|last| v.first().is_none_or(|f| f.started < last.started))
+    });
+    if !loading && (loaded.is_none() || newer) {
+        st.reports_rx = Some((name.clone(), compare_profiles::load_reports_async(&name, REPORTS_MAX)));
+    }
+}
+
+/// Every frame (`App::frame`): while the screen shows something busy (a scan, a sync
+/// job, a profile run on the profiles page) a redraw in [`BUSY_REDRAW`].
+pub fn tick(st: &State, host: &dyn Host) {
+    if !st.open {
+        return;
+    }
+    let busy = st.model.as_ref().is_some_and(|m| {
+        let m = m.borrow();
+        m.is_scanning() || matches!(m.stage(), Stage::Submitted(_) | Stage::Recording(_))
+    });
+    let running = st.page == Page::Profiles && st.profile_list.iter().any(|p| compare_profiles::is_running(&p.name));
+    if busy || running || st.reports_rx.is_some() {
+        host.redraw_after(BUSY_REDRAW);
+    }
 }
 
 #[cfg(test)]
