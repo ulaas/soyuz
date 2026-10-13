@@ -97,6 +97,8 @@ action-save-workspace = Save workspace as…
 action-save-workspace-desc = Save this window's tabs and layout under a name
 action-update-workspace = Update current workspace
 action-update-workspace-desc = Save this window over the workspace last opened
+action-manage-workspaces = Manage workspaces…
+action-manage-workspaces-desc = Open, rename, reorder, delete saved workspaces and set their hotkeys
 
 ## View
 
