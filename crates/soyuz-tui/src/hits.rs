@@ -142,6 +142,37 @@ pub enum HitTarget {
     SettingsKeyChip { row: usize, chip: usize },
     /// "Add a chord" of key bindings row `index`.
     SettingsKeyAdd(usize),
+    // ---- Phase T7 B (devices; `input::sidebar::on_mouse`) ----
+    /// The eject mark at the end of sidebar row `index` (a mounted volume with an eject
+    /// plan). Device rows themselves are `SidebarRow`s.
+    SidebarEject(usize),
+    // ---- Phase T7 C (the full-screen tools; `input::screens::on_mouse`) ----
+    /// Button `index` of the shown tool screen (toolbar, footer; the screen numbers them).
+    ScreenButton(u8),
+    /// Chip `index` of the shown tool screen (dupes: minimum size, keep rules).
+    ScreenChip(u8),
+    /// Field `index` of the shown tool screen (dupes: the add-folder field).
+    ScreenField(u8),
+    /// Tab `index` of the shown tool screen (treemap side list: contents, largest).
+    ScreenTab(u8),
+    /// The shown tool screen's close mark.
+    ScreenClose,
+    /// A scrollable area `index` of the shown tool screen (the wheel scrolls it).
+    ScreenArea(u8),
+    /// Treemap tile of tree node `id` (frames before children: the deepest wins).
+    TreemapTile(u32),
+    /// Treemap breadcrumb of tree node `id`.
+    TreemapCrumb(u32),
+    /// Row `index` of the treemap's side list.
+    TreemapSide(usize),
+    /// Row `index` of the duplicate finder's list (group headers and files).
+    DupesRow(usize),
+    /// Root chip `index` of the duplicate finder (its × removes it).
+    DupesRoot(usize),
+    /// Group header `index` of the duplicate finder (folds).
+    DupesHeader(usize),
+    /// Button `index` of a tool screen's inline confirm bar (move to trash, cancel).
+    ConfirmBar(u8),
 }
 
 /// A button of the search bar ([`HitTarget::SearchButton`]).

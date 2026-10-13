@@ -8,7 +8,7 @@
 //! | `Menu` | a popup menu is open (`menu::is_open`) | `Dialog`, yes |
 //! | `Palette` | `palette.open` | (the palette reads its own keys, like the GUI) |
 //! | `Settings` | the settings editor is open (`settings::has_focus`) | `Dialog`, yes |
-//! | `Tool` | the compare screen is open (`compare::has_focus`) | `Dialog`, yes |
+//! | `Tool` | the compare screen or a tool screen shows (`compare::has_focus`, `screens::has_focus`) | `Dialog`, yes |
 //! | `QuickLook` | Quick Look is open (`quicklook::open`) | `FileList`, no |
 //! | `Editor` | the editor has the keyboard (`editor::has_focus`) | `Global`, yes |
 //! | `Rename` | an inline rename is active (`rename::active`) | `Rename`, yes |
@@ -28,8 +28,9 @@
 //! `mouse.rs` (T2.9); Phase T3 `dialogs/*`, `menu.rs`, `rename.rs`, `jobs.rs`; Phase T4
 //! `preview.rs`, `quicklook.rs`, `editor.rs`; Phase T5 / T6 `terminal.rs`, `search.rs`,
 //! `ai.rs`, `compare.rs`, `settings.rs` (each with `has_focus`, `route`, `on_mouse` and
-//! `captures_mouse`). Text fields use `crate::widgets::LineEdit`; see its module docs for
-//! the key order.
+//! `captures_mouse`); Phase T7 `screens/` (the full-screen treemap and duplicate finder,
+//! the same four functions; one screen at a time, the compare screen included). Text
+//! fields use `crate::widgets::LineEdit`; see its module docs for the key order.
 //!
 //! The full-screen overlays come before Quick Look because each one takes the keys that
 //! would open the next; `Search` comes before `Terminal` so a passthrough chord from the
@@ -49,6 +50,7 @@ pub mod palette;
 pub mod preview;
 pub mod quicklook;
 pub mod rename;
+pub mod screens;
 pub mod search;
 pub mod settings;
 pub mod settings_keys;
@@ -70,7 +72,7 @@ pub enum TuiFocus {
     Palette,
     /// The settings editor (Phase T6).
     Settings,
-    /// The compare screen (Phase T5).
+    /// The compare screen (Phase T5) or a full-screen tool (Phase T7).
     Tool,
     QuickLook,
     Editor,
@@ -111,6 +113,8 @@ pub struct InputState {
     pub ai: ai::State,
     pub compare: compare::State,
     pub settings: settings::State,
+    /// The full-screen tools (Phase T7).
+    pub screens: screens::State,
 }
 
 /// The focus for the core's state and the TUI's own input state.
@@ -123,7 +127,7 @@ pub fn focus(core: &AppCore, st: &InputState) -> TuiFocus {
         TuiFocus::Palette
     } else if settings::has_focus(core, st) {
         TuiFocus::Settings
-    } else if compare::has_focus(core, st) {
+    } else if compare::has_focus(core, st) || screens::has_focus(core, st) {
         TuiFocus::Tool
     } else if quicklook::open(core, st) {
         TuiFocus::QuickLook
@@ -189,7 +193,8 @@ pub fn route(app: &mut App, events: &[Event]) {
         TuiFocus::Menu => menu::route(app, events),
         TuiFocus::Palette => palette::route(app, events),
         TuiFocus::Settings => settings::route(app, events),
-        TuiFocus::Tool => compare::route(app, events),
+        TuiFocus::Tool if app.input.compare.open => compare::route(app, events),
+        TuiFocus::Tool => screens::route(app, events),
         TuiFocus::QuickLook => quicklook::route(app, events),
         TuiFocus::Editor => editor::route(app, events),
         TuiFocus::Rename => rename::route(app, events),

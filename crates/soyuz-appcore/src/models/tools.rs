@@ -85,6 +85,39 @@ pub fn take_queue() -> Vec<ToolCmd> {
     QUEUE.with_borrow_mut(std::mem::take)
 }
 
+/// Debug / automation hook (like `SOYUZ_THROTTLE_MBPS`): `SOYUZ_OPEN_TOOL` opens tools at
+/// startup, e.g. `treemap=C:\data`, `compare=C:\a|C:\b`, `dupes=C:\a`, `shelf=C:\x|C:\y`,
+/// `split=C:\f.bin`, several separated by `;;`. Queued once per process; both frontends call it
+/// before draining the queue ([`take_queue`]).
+pub fn debug_open_once() {
+    thread_local!(static DONE: Cell<bool> = const { Cell::new(false) });
+    if DONE.with(|d| d.replace(true)) {
+        return;
+    }
+    let Ok(spec) = std::env::var("SOYUZ_OPEN_TOOL") else { return };
+    for item in spec.split(";;") {
+        let Some((tool, arg)) = item.split_once('=') else { continue };
+        let paths: Vec<PathBuf> = arg.split('|').filter(|s| !s.is_empty()).map(PathBuf::from).collect();
+        let first = paths.first().cloned();
+        let c = match (tool.trim(), first) {
+            ("treemap", Some(p)) => ToolCmd::Treemap(p),
+            ("compare", Some(p)) => ToolCmd::Compare(p, paths.get(1).cloned()),
+            ("dupes", Some(_)) => ToolCmd::Duplicates(paths),
+            ("shelf", Some(_)) => ToolCmd::ShelfAdd(paths),
+            ("split", Some(p)) => ToolCmd::Split(p),
+            ("join", Some(p)) => ToolCmd::Join(p),
+            ("profiles", _) => ToolCmd::SyncProfiles,
+            ("profile", _) if !arg.is_empty() => ToolCmd::CompareProfile(arg.to_string()),
+            ("versions", Some(p)) => {
+                let dir = p.is_dir();
+                ToolCmd::Versions(p, dir, None)
+            }
+            _ => continue,
+        };
+        queue(c);
+    }
+}
+
 /// Keep the frontend's wake-up for [`queue`] and the tool workers (first call wins).
 pub fn init(host: &dyn Host) {
     WAKE.with_borrow_mut(|w| {

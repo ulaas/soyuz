@@ -20,6 +20,12 @@
 //! `suspend` (leave the screen for a shell or an editor) and `tools` (the core's tool
 //! queue).
 //!
+//! Phase T7 (feature parity) gives every request that used to get "not available" a
+//! terminal view: the workspace, tab history, About, split / join, shelf, unlock and
+//! previous versions dialogs, device rows in the sidebar, and the full-screen tools
+//! (`input::screens`, `view::screens`: the disk usage treemap and the duplicate finder).
+//! Only extra windows, tab tear-off and Run elevated stay unavailable.
+//!
 //! Entry points: [`launch()`] (console, configuration, then [`run`]) and
 //! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary
 //! (`src/main.rs`) and `soyuz --tui [PATH]` (`soyuz-app`'s `main.rs`).

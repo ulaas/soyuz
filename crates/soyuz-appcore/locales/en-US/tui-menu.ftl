@@ -4,4 +4,3 @@
 
 ## T3.9: the context menu
 tui-menu-open-with = Open with…
-tui-menu-tool-windows = Tool windows

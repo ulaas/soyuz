@@ -450,15 +450,25 @@ pub fn safe_config_path() -> PathBuf {
 /// frontend as this process (`--tui` from the terminal UI).
 pub fn restart_in_safe_mode() -> std::io::Result<()> {
     let exe = std::env::current_exe()?;
-    std::process::Command::new(exe).args(safe_mode_args(crate::core::process_frontend())).spawn().map(drop)
+    let args = safe_mode_args(crate::core::process_frontend(), &exe);
+    std::process::Command::new(exe).args(args).spawn().map(drop)
 }
 
-/// Arguments of the safe-mode restart for `frontend`.
-pub fn safe_mode_args(frontend: crate::core::FrontendKind) -> Vec<&'static str> {
-    match frontend {
-        crate::core::FrontendKind::Gui => vec!["--safe-mode"],
-        crate::core::FrontendKind::Tui => vec!["--tui", "--safe-mode"],
-    }
+/// Arguments of the safe-mode restart for `frontend`, run by executable `exe`.
+pub fn safe_mode_args(frontend: crate::core::FrontendKind, exe: &Path) -> Vec<&'static str> {
+    let mut args = match frontend {
+        crate::core::FrontendKind::Gui => Vec::new(),
+        crate::core::FrontendKind::Tui => tui_relaunch_args(exe).to_vec(),
+    };
+    args.push("--safe-mode");
+    args
+}
+
+/// What starts the terminal UI again from executable `exe`: `--tui` for the `soyuz`
+/// binary; nothing for `soyuz-tui`, which is the terminal UI and rejects `--tui`.
+pub fn tui_relaunch_args(exe: &Path) -> &'static [&'static str] {
+    let stem = exe.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if stem == "soyuz-tui" { &[] } else { &["--tui"] }
 }
 
 // ---------------------------------------------------------------------------
@@ -660,8 +670,20 @@ mod tests {
     #[test]
     fn safe_mode_restart_keeps_the_frontend() {
         use crate::core::FrontendKind;
-        assert_eq!(safe_mode_args(FrontendKind::Gui), vec!["--safe-mode"]);
-        assert_eq!(safe_mode_args(FrontendKind::Tui), vec!["--tui", "--safe-mode"]);
+        let gui = Path::new("/opt/soyuz/soyuz");
+        let gui_exe = Path::new("/opt/Soyuz/soyuz.exe");
+        let tui = Path::new("/usr/bin/soyuz-tui");
+        let tui_exe = Path::new("/opt/Soyuz/Soyuz-TUI.exe");
+        for exe in [gui, gui_exe] {
+            assert_eq!(safe_mode_args(FrontendKind::Gui, exe), vec!["--safe-mode"]);
+            assert_eq!(safe_mode_args(FrontendKind::Tui, exe), vec!["--tui", "--safe-mode"]);
+        }
+        // `soyuz-tui` is the terminal UI already and rejects `--tui` (`soyuz-tui/src/launch.rs`).
+        for exe in [tui, tui_exe] {
+            assert_eq!(safe_mode_args(FrontendKind::Tui, exe), vec!["--safe-mode"]);
+            assert!(tui_relaunch_args(exe).is_empty());
+        }
+        assert_eq!(tui_relaunch_args(gui), ["--tui"]);
     }
 
     #[test]

@@ -250,6 +250,8 @@ fn new_state(model: CompareModel, page: Page) -> State {
 
 fn install(app: &mut App, st: State) {
     close(app);
+    // One full-screen tool at a time (Phase T7): a treemap / duplicate finder closes.
+    crate::input::screens::close(app);
     app.input.compare = st;
 }
 
@@ -279,6 +281,7 @@ pub fn open_profile(app: &mut App, name: String) {
 /// Editing and scheduling profiles is the profile dialog's (`TuiDialog::CompareProfile`).
 pub fn open_profiles(app: &mut App) {
     if app.input.compare.open {
+        crate::input::screens::close(app);
         app.input.compare.page = Page::Profiles;
         return;
     }

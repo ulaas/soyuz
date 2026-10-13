@@ -96,6 +96,21 @@ mod headless {
     mod suspend;
     /// T5: the embedded terminal pane.
     mod terminal;
+    // ---- Phase T7 ----
+    /// T7 (agent B): device rows and menus in the sidebar, unlocking, the read-only offer.
+    mod devices;
+    /// T7 (agent C): the duplicate finder screen.
+    mod dupes;
+    /// T7 (agent A): the drop shelf dialog.
+    mod shelf;
+    /// T7 (agent A): split and join files.
+    mod split;
+    /// T7 (agent C): the disk usage treemap screen.
+    mod treemap;
+    /// T7 (agent B): previous versions (and from Properties).
+    mod versions;
+    /// T7 (agent A): workspaces (save as, manage, hotkeys), tab history, the close-window path and About.
+    mod workspaces;
     // ---- Integration ----
     /// T3 + T4 end to end: copy / paste with a conflict, the jobs history, rename,
     /// preview, Quick Look, the editor.

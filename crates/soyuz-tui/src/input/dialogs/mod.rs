@@ -9,7 +9,8 @@
 //!   reports, unsaved changes; Phase T5 / T6 the location dialogs (smart folders,
 //!   remotes, archives), compare conflicts and sync profiles, AI plan edits and recipe
 //!   names, key recording, list / table / secret edits of the settings editor and the
-//!   search bar's size filter and save prompt.
+//!   search bar's size filter and save prompt; Phase T7 workspaces (save, manage), tab
+//!   history, About, split / join, the drop shelf, device unlock and previous versions.
 //!
 //! Both are stamped by `soyuz_appcore::models::dialogs::next_seq`, so [`top`] picks the
 //! most recently opened dialog of either kind; it owns the keyboard (`TuiFocus::Dialog`)
@@ -20,8 +21,8 @@
 //! model; what the terminal UI adds (focus, text cursors, list scroll) is a [`ModelUi`]
 //! created by the kind's `ui` function when the model reaches the top. Every core prompt
 //! and every request the GUI answers with a dialog has its real view here (shared
-//! helpers: `crate::dialog`); the requests that still get a "not available" toast are
-//! listed in `crate::frontend`. Each kind file has the same shape:
+//! helpers: `crate::dialog`); every request is routed in `crate::frontend`. Each kind
+//! file has the same shape:
 //!
 //! | Core prompts | Terminal UI dialogs |
 //! |---|---|
@@ -29,6 +30,7 @@
 //! | `on_input(&mut DialogModel, &mut ModelUi, &DialogInput) -> Outcome` | `on_input(&mut AppCore, &mut State, &DialogInput) -> Outcome` |
 //! | `on_mouse(&mut DialogModel, &mut ModelUi, &DialogMouse) -> Outcome` | `on_mouse(&mut AppCore, &mut State, &DialogMouse) -> Outcome` |
 //! | `stale(&mut DialogModel) -> bool` | `stale(&AppCore, &State) -> bool` |
+//! | | `tick(&mut AppCore, &mut State)`, when it has work every frame ([`tick`]) |
 
 pub mod approval_mcp;
 pub mod approval_script;
@@ -62,6 +64,16 @@ pub mod table_edit;
 pub mod table_row;
 pub mod transfer;
 pub mod unsaved;
+
+// ---- Phase T7 (agent A: workspaces, history, About, split, shelf; B: unlock, versions) ----
+pub mod about;
+pub mod manage_workspaces;
+pub mod save_workspace;
+pub mod shelf;
+pub mod split;
+pub mod tab_history;
+pub mod unlock_device;
+pub mod versions;
 
 use crossterm::event::{Event, KeyEvent, KeyEventKind, MouseEvent};
 use soyuz_appcore::cmd::Cmd;
@@ -143,6 +155,15 @@ pub enum TuiDialog {
     PlanJson(plan_json::State),
     SearchSize(search_size::State),
     SaveSearch(save_search::State),
+    // ---- Phase T7 ----
+    About(about::State),
+    ManageWorkspaces(manage_workspaces::State),
+    SaveWorkspace(save_workspace::State),
+    Shelf(shelf::State),
+    Split(split::State),
+    TabHistory(tab_history::State),
+    UnlockDevice(unlock_device::State),
+    Versions(versions::State),
 }
 
 impl TuiDialog {
@@ -174,6 +195,14 @@ impl TuiDialog {
             TuiDialog::PlanJson(s) => plan_json::on_input(core, s, i),
             TuiDialog::SearchSize(s) => search_size::on_input(core, s, i),
             TuiDialog::SaveSearch(s) => save_search::on_input(core, s, i),
+            TuiDialog::About(s) => about::on_input(core, s, i),
+            TuiDialog::ManageWorkspaces(s) => manage_workspaces::on_input(core, s, i),
+            TuiDialog::SaveWorkspace(s) => save_workspace::on_input(core, s, i),
+            TuiDialog::Shelf(s) => shelf::on_input(core, s, i),
+            TuiDialog::Split(s) => split::on_input(core, s, i),
+            TuiDialog::TabHistory(s) => tab_history::on_input(core, s, i),
+            TuiDialog::UnlockDevice(s) => unlock_device::on_input(core, s, i),
+            TuiDialog::Versions(s) => versions::on_input(core, s, i),
         }
     }
 
@@ -205,6 +234,14 @@ impl TuiDialog {
             TuiDialog::PlanJson(s) => plan_json::on_mouse(core, s, m),
             TuiDialog::SearchSize(s) => search_size::on_mouse(core, s, m),
             TuiDialog::SaveSearch(s) => save_search::on_mouse(core, s, m),
+            TuiDialog::About(s) => about::on_mouse(core, s, m),
+            TuiDialog::ManageWorkspaces(s) => manage_workspaces::on_mouse(core, s, m),
+            TuiDialog::SaveWorkspace(s) => save_workspace::on_mouse(core, s, m),
+            TuiDialog::Shelf(s) => shelf::on_mouse(core, s, m),
+            TuiDialog::Split(s) => split::on_mouse(core, s, m),
+            TuiDialog::TabHistory(s) => tab_history::on_mouse(core, s, m),
+            TuiDialog::UnlockDevice(s) => unlock_device::on_mouse(core, s, m),
+            TuiDialog::Versions(s) => versions::on_mouse(core, s, m),
         }
     }
 
@@ -236,6 +273,14 @@ impl TuiDialog {
             TuiDialog::PlanJson(s) => plan_json::stale(core, s),
             TuiDialog::SearchSize(s) => search_size::stale(core, s),
             TuiDialog::SaveSearch(s) => save_search::stale(core, s),
+            TuiDialog::About(s) => about::stale(core, s),
+            TuiDialog::ManageWorkspaces(s) => manage_workspaces::stale(core, s),
+            TuiDialog::SaveWorkspace(s) => save_workspace::stale(core, s),
+            TuiDialog::Shelf(s) => shelf::stale(core, s),
+            TuiDialog::Split(s) => split::stale(core, s),
+            TuiDialog::TabHistory(s) => tab_history::stale(core, s),
+            TuiDialog::UnlockDevice(s) => unlock_device::stale(core, s),
+            TuiDialog::Versions(s) => versions::stale(core, s),
         }
     }
 }
@@ -334,6 +379,22 @@ pub fn prepare(core: &mut AppCore, st: &mut State) {
         && let Some(TuiDialog::Archive(s)) = st.tui.top_mut()
     {
         archive::prepare(&mut core.services, s);
+    }
+}
+
+/// Every frame (`view::prepare`, Phase T7): the per-kind `tick` of every open dialog that
+/// has one (worker results, rows rebuilt from the core). Workers wake the frame loop
+/// through `core.wake`.
+pub fn tick(core: &mut AppCore, st: &mut State) {
+    for (_, d) in &mut st.tui.stack {
+        match d {
+            TuiDialog::TabHistory(s) => tab_history::tick(core, s),
+            TuiDialog::Split(s) => split::tick(core, s),
+            TuiDialog::Shelf(s) => shelf::tick(core, s),
+            TuiDialog::UnlockDevice(s) => unlock_device::tick(core, s),
+            TuiDialog::Versions(s) => versions::tick(core, s),
+            _ => {}
+        }
     }
 }
 

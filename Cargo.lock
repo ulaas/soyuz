@@ -7208,6 +7208,7 @@ dependencies = [
  "unicode-segmentation",
  "unicode-width",
  "winresource",
+ "zeroize",
 ]
 
 [[package]]

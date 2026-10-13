@@ -4,4 +4,3 @@
 
 ## T3.9: the context menu
 tui-menu-open-with = Birlikte aç…
-tui-menu-tool-windows = Araç pencereleri

@@ -35,12 +35,13 @@
 //! | `ai.rs` | [`AiVm`] | `draw_ai` | T5 |
 //! | `compare.rs` | [`CompareVm`] | `draw_compare` | T5 |
 //! | `settings.rs` | [`SettingsVm`] | `draw_settings` | T6 |
+//! | `screens/` | [`ScreensVm`] (treemap, duplicate finder) | `draw_screens` | T7 |
 //! | `text.rs` | width-aware truncation / wrapping | | shared |
 //!
 //! Drawing order (later on top): tabs, crumbs, sidebar, panes, pane chrome, preview,
 //! editor, AI panel, the bottom panel (jobs or terminal), search bar, toasts, status,
-//! address completions, Quick Look, compare screen, settings editor, palette, menu,
-//! dialog.
+//! address completions, Quick Look, compare screen, tool screens, settings editor,
+//! palette, menu, dialog.
 //!
 //! All names pass through [`crate::dialog::safe`], so a file name can never write escape
 //! sequences to the terminal.
@@ -57,6 +58,7 @@ pub mod pane;
 pub mod preview;
 pub mod quicklook;
 pub mod rename;
+pub mod screens;
 pub mod search;
 pub mod settings;
 pub mod settings_keys;
@@ -81,6 +83,7 @@ pub use self::palette::PaletteVm;
 pub use self::pane::{PaneLine, PaneMode, PaneVm, Row, RowKind};
 pub use self::preview::PreviewVm;
 pub use self::quicklook::QuickLookVm;
+pub use self::screens::ScreensVm;
 pub use self::search::SearchVm;
 pub use self::settings::SettingsVm;
 pub use self::sidebar::SidebarVm;
@@ -125,6 +128,8 @@ pub struct ViewModel {
     pub compare: CompareVm,
     /// The settings editor (T6).
     pub settings: SettingsVm,
+    /// The full-screen tools (T7).
+    pub screens: ScreensVm,
 }
 
 impl ViewModel {
@@ -155,6 +160,7 @@ impl ViewModel {
             ai: AiVm::from_core(core, input, regions),
             compare: CompareVm::from_core(core, input, regions),
             settings: SettingsVm::from_core(core, input, regions),
+            screens: ScreensVm::from_core(core, input, regions),
         }
     }
 
@@ -179,11 +185,13 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     terminal::prepare(core, input, regions);
     ai::prepare(core, input, regions);
     compare::prepare(core, input, regions);
+    screens::prepare(core, input, regions);
     settings::prepare(core, input, regions);
     crate::input::dialogs::prepare(core, &mut input.dialogs);
     crate::input::dialogs::batch_rename::tick(core, &mut input.dialogs);
     crate::input::dialogs::attributes::tick(core, &mut input.dialogs);
     crate::input::dialogs::link::tick(core, &mut input.dialogs);
+    crate::input::dialogs::tick(core, &mut input.dialogs);
 }
 
 /// Draw a frame. Clears `hits` first.
@@ -208,6 +216,7 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     crumbs::draw_completions(f, regions.crumbs, regions.area, &m.crumbs, theme, hits);
     quicklook::draw_quicklook(f, regions.area, &m.quicklook, theme, hits);
     compare::draw_compare(f, regions.area, &m.compare, theme, hits);
+    screens::draw_screens(f, regions.area, &m.screens, theme, hits);
     settings::draw_settings(f, regions.area, &m.settings, theme, hits);
     palette::draw_palette(f, regions.area, &m.palette, theme, hits);
     menu::draw_menu(f, regions.area, &m.menu, theme, hits);
@@ -305,6 +314,7 @@ mod tests {
             ai: AiVm::default(),
             compare: CompareVm::default(),
             settings: SettingsVm::default(),
+            screens: ScreensVm::default(),
         }
     }
 
@@ -492,6 +502,11 @@ mod tests {
             (&settings, Facts { shown: 2, ai: true, ..Facts::default() }),
             (&tables, Facts { toasts: 3, ..panels }),
         ];
+        // Phase T7: the full-screen tools (`view::screens`), over every region at once.
+        let t7: Vec<ViewModel> =
+            screens::tests::tiny_vms().into_iter().map(|s| ViewModel { screens: s, ..t56.clone() }).collect();
+        let t7_facts = Facts { shown: 2, search_rows: 1, ai: true, bottom_rows: 3, ..Facts::default() };
+        let cases = cases.into_iter().chain(t7.iter().map(|vm| (vm, t7_facts.clone())));
         for (vm, facts) in cases {
             for w in 0..=20 {
                 for h in 0..=6 {

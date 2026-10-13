@@ -1,13 +1,8 @@
 ### Soyuz UI strings (en-US source): tui
 ### Keys: <area>-<thing>, kebab-case. Keep keys identical in tr-TR/tui.ftl.
 
-## Shared: the "not available" toast and the features it names
+## Shared: the "not available" toast
 tui-not-available = Not available in the terminal UI yet
-tui-feature-workspaces = Workspaces
-tui-feature-history = Tab history
-tui-feature-windows = Windows
-tui-feature-devices = Devices
-tui-feature-about = About
 
 ## T1: the frame loop (crash reports, interrupted jobs)
 
