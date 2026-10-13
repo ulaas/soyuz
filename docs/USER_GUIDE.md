@@ -650,6 +650,16 @@ as in the window. `[sidebar] unmounted_devices` chooses which: `all`, `removable
 
 **Trash and This PC.** Both open from the sidebar (*Trash* under Other, *Computer* / *This
 PC* under Devices).
+- The Trash page lists the deleted items with their original location, date deleted and
+  size. Space, Shift and Ctrl select as in the file list. R restores the selection (an
+  undoable job), Del deletes it permanently and E empties the trash, each after a
+  confirmation. R and E work only while those letters have no other binding. Enter, Shift+F10
+  or a right click opens an item's menu: restore, open the original location, copy the
+  original path, delete permanently. The buttons in the header do the same with the mouse,
+  and F5 reads the trash again.
+- The This PC page lists the drives with a usage bar (yellow below 15 % free, red below 5 %),
+  free and total space and the file system. Enter or a click opens a drive; Shift+F10 or a
+  right click opens its menu.
 
 New windows (and moving a tab to one), merging windows and running as administrator are
 not available in the terminal UI; they show a short notice instead.
