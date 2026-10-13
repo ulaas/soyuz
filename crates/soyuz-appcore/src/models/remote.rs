@@ -15,12 +15,15 @@ use soyuz_core::config::{Action, PasteConflict};
 use soyuz_core::{ConflictResolution, EntryInfo, Location};
 use soyuz_jobs::{JobId, JobKind, RemoteOp};
 use soyuz_vfs::registry::HostKeyPrompt;
-use soyuz_vfs::{RemoteUri, Scheme};
+/// The protocols of the connect form and the server states the sidebar shows (named by
+/// the frontends, which do not depend on `soyuz-vfs` themselves).
+pub use soyuz_vfs::{ConnState, RemoteUri, Scheme};
 
 use crate::cmd::Cmd;
 use crate::core::AppCore;
 use crate::host::Host;
 use crate::models::frontend::FrontendCmd;
+use crate::models::jobs_rows::Tone;
 use crate::models::toasts::Toast;
 use crate::ops::fileops::clipboard::ClipMode;
 use crate::ops::{NavOpts, navigate};
@@ -754,5 +757,142 @@ impl ConnectForm {
             });
         }
         Cmd::Remote(RemoteCmd::Open { uri: uri.display(), new_tab: false })
+    }
+}
+
+// ---- frontend helpers (Phase T5) ------------------------------------------------------------
+
+/// The colour of a saved connection's state dot in the sidebar (`None`: not connected,
+/// no dot colour).
+pub fn conn_dot(state: &ConnState) -> Option<Tone> {
+    match state {
+        ConnState::Connected => Some(Tone::Success),
+        ConnState::Connecting => Some(Tone::Warning),
+        ConnState::Failed(_) => Some(Tone::Danger),
+        ConnState::Idle => None,
+    }
+}
+
+/// A connection state in words (the sidebar row's tooltip / status).
+pub fn state_text(state: &ConnState) -> String {
+    match state {
+        ConnState::Connected => tr!("remote-state-connected").to_string(),
+        ConnState::Connecting => tr!("remote-state-connecting").to_string(),
+        ConnState::Failed(m) => tr!("remote-state-failed", error = m),
+        ConnState::Idle => tr!("remote-state-idle").to_string(),
+    }
+}
+
+/// Whether "Disconnect" applies (a connection exists or failed).
+pub fn can_disconnect(state: &ConnState) -> bool {
+    matches!(state, ConnState::Connected | ConnState::Failed(_))
+}
+
+impl ConnectForm {
+    /// Switch the protocol; a sign-in method the new protocol lacks falls back to a
+    /// password (the GUI's segmented control and the terminal UI's radio group).
+    pub fn set_proto(&mut self, proto: Scheme) {
+        self.proto = proto;
+        if !self.auth_options().iter().any(|(a, _)| *a == self.auth) {
+            self.auth = AuthKind::Password;
+        }
+    }
+
+    /// The protocol has a TLS switch (WebDAV over HTTPS, explicit FTPS).
+    pub fn has_tls(&self) -> bool {
+        matches!(self.proto, Scheme::WebDav | Scheme::Ftp)
+    }
+
+    /// The TLS switch's label.
+    pub fn tls_label(&self) -> &'static str {
+        if self.proto == Scheme::WebDav { "HTTPS" } else { "TLS (FTPS)" }
+    }
+}
+
+impl HostKeyAsk {
+    /// `host`, or `host:port` off port 22.
+    pub fn host_label(&self) -> String {
+        if self.prompt.port == 22 {
+            self.prompt.host.clone()
+        } else {
+            format!("{}:{}", self.prompt.host, self.prompt.port)
+        }
+    }
+
+    /// The key trusted before, when the server's key changed.
+    pub fn previous(&self) -> Option<&str> {
+        match &self.prompt.status {
+            soyuz_vfs::known_hosts::HostKeyStatus::Changed { previous } => Some(previous),
+            _ => None,
+        }
+    }
+
+    /// A question about a key (`previous`: the key changed from that one), answered on
+    /// `tx`. Frontend tests build prompts with it.
+    pub fn from_parts(
+        host: &str,
+        port: u16,
+        algorithm: &str,
+        fingerprint: &str,
+        previous: Option<String>,
+        tx: Sender<bool>,
+    ) -> HostKeyAsk {
+        use soyuz_vfs::known_hosts::HostKeyStatus;
+        let status = match previous {
+            Some(previous) => HostKeyStatus::Changed { previous },
+            None => HostKeyStatus::Unknown,
+        };
+        let prompt = HostKeyPrompt {
+            host: host.to_string(),
+            port,
+            algorithm: algorithm.to_string(),
+            fingerprint: fingerprint.to_string(),
+            status,
+        };
+        HostKeyAsk::new(prompt, tx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dots_and_state_words() {
+        assert_eq!(conn_dot(&ConnState::Connected), Some(Tone::Success));
+        assert_eq!(conn_dot(&ConnState::Connecting), Some(Tone::Warning));
+        assert_eq!(conn_dot(&ConnState::Failed("x".into())), Some(Tone::Danger));
+        assert_eq!(conn_dot(&ConnState::Idle), None);
+        assert!(state_text(&ConnState::Failed("boom".into())).contains("boom"));
+        assert!(can_disconnect(&ConnState::Connected) && !can_disconnect(&ConnState::Idle));
+    }
+
+    #[test]
+    fn protocol_switch_keeps_a_valid_sign_in() {
+        let mut f = ConnectForm::new();
+        f.auth = AuthKind::Agent;
+        f.set_proto(Scheme::WebDav);
+        assert_eq!(f.auth, AuthKind::Password, "WebDAV has no agent");
+        assert!(f.has_tls() && f.tls_label() == "HTTPS");
+        f.auth = AuthKind::Anonymous;
+        f.set_proto(Scheme::S3);
+        assert_eq!(f.auth, AuthKind::Anonymous, "S3 keeps public access");
+        assert!(!f.has_tls());
+        assert!(f.build().is_err(), "no bucket");
+    }
+
+    #[test]
+    fn host_key_questions() {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+        let ask =
+            HostKeyAsk::from_parts("example.org", 2222, "ssh-ed25519", "SHA256:abc", Some("SHA256:old".into()), tx);
+        assert_eq!(ask.host_label(), "example.org:2222");
+        assert_eq!(ask.previous(), Some("SHA256:old"));
+        ask.answer(true);
+        ask.answer(false);
+        assert_eq!(rx.try_recv(), Ok(true), "answered once");
+        let (tx, _rx) = crossbeam_channel::bounded(1);
+        let first = HostKeyAsk::from_parts("h", 22, "a", "f", None, tx);
+        assert_eq!((first.host_label().as_str(), first.previous()), ("h", None));
     }
 }

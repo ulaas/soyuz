@@ -13,13 +13,15 @@ use soyuz_vfs::{RemoteUri, Scheme};
 
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::models::remote::{ConnectForm, HostKeyAsk, NameTarget, PROTOCOLS, RemotePrompt, delete_cmd, name_submit};
+use crate::models::remote::{
+    ConnectForm, HostKeyAsk, NameTarget, PROTOCOLS, RemotePrompt, delete_cmd, name_submit, state_text,
+};
 pub use crate::models::remote::{RemoteCmd, apply, execute, handles, open_entry, preview_target, pump, transfer};
 use crate::services::remote::{self as svc, AuthKind};
 use crate::state::pane::PaneId;
 use crate::theme::{icons::ph, palette};
 use crate::ui::dialogs::{ConfirmDialog, Dialog, DialogCtx, footer};
-use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator};
+use crate::ui::widgets::{NavRow, collapsible_header};
 
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Remote`]).
 pub fn prompt(app: &mut SoyuzApp, p: RemotePrompt) {
@@ -67,12 +69,13 @@ pub fn sidebar_section(
     for c in svc::connections() {
         let Some(uri) = c.parsed() else { continue };
         let state = svc::conn_state(&uri);
-        let (color, state_text) = match &state {
-            ConnState::Connected => (Some(p.success), tr!("remote-state-connected").to_string()),
-            ConnState::Connecting => (Some(p.warning), tr!("remote-state-connecting").to_string()),
-            ConnState::Failed(m) => (Some(p.danger), tr!("remote-state-failed", error = m)),
-            ConnState::Idle => (None, tr!("remote-state-idle").to_string()),
+        let color = match &state {
+            ConnState::Connected => Some(p.success),
+            ConnState::Connecting => Some(p.warning),
+            ConnState::Failed(_) => Some(p.danger),
+            ConnState::Idle => None,
         };
+        let state_text = state_text(&state);
         let icon = match uri.scheme {
             Scheme::S3 => ph::CLOUD,
             Scheme::WebDav | Scheme::WebDavs => ph::GLOBE,
@@ -92,30 +95,8 @@ pub fn sidebar_section(
         let saved = svc::is_saved(&c.id);
         crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(220.0);
-            if menu_item(ui, Some(ph::BROWSERS), tr!("remote-open-new-tab"), None, true).clicked() {
-                cmds.push(Cmd::Remote(RemoteCmd::Open { uri: uri.display(), new_tab: true }));
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("remote-edit-connection"), None, saved).clicked() {
-                cmds.push(Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: Some(c.id.clone()), note: None }));
-                ui.close();
-            }
-            let connected = matches!(state, ConnState::Connected | ConnState::Failed(_));
-            if menu_item(ui, Some(ph::PLUGS), tr!("remote-disconnect"), None, connected).clicked() {
-                cmds.push(Cmd::Remote(RemoteCmd::Disconnect(uri.display())));
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("remote-copy-address"), None, true).clicked() {
-                cmds.push(Cmd::CopyText(uri.display()));
-                ui.close();
-            }
-            if saved {
-                menu_separator(ui);
-                if menu_item(ui, Some(ph::TRASH), tr!("remote-remove"), None, true).clicked() {
-                    cmds.push(Cmd::Remote(RemoteCmd::Remove(c.id.clone())));
-                    ui.close();
-                }
-            }
+            let entries = crate::models::context_menu::remote_connection(&c, &uri, &state, saved);
+            crate::ui::context_menu::draw_entries(ui, entries, cmds);
         });
     }
     let r =
@@ -177,14 +158,12 @@ impl Dialog for ConnectDialog {
             let mut proto = f.proto;
             crate::ui::settings::widgets::segmented(ui, &mut proto, PROTOCOLS);
             if proto != f.proto {
-                f.proto = proto;
-                if !f.auth_options().iter().any(|(a, _)| *a == f.auth) {
-                    f.auth = AuthKind::Password;
-                }
+                f.set_proto(proto);
             }
-            if matches!(f.proto, Scheme::WebDav | Scheme::Ftp) {
+            if f.has_tls() {
                 ui.add_space(10.0);
-                ui.checkbox(&mut f.tls, if f.proto == Scheme::WebDav { "HTTPS" } else { "TLS (FTPS)" });
+                let label = f.tls_label();
+                ui.checkbox(&mut f.tls, label);
             }
         });
         let s3 = f.proto == Scheme::S3;

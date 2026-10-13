@@ -50,6 +50,8 @@ pub enum MenuIcon {
     PushPinSlash,
     X,
     ArrowLineRight,
+    /// Disconnect (a server).
+    Plugs,
     /// No glyph, but the icon column stays (unticked rows of a ticked list).
     Blank,
     /// A dot of tag colour `0..8` (tab groups).
@@ -972,6 +974,101 @@ pub fn apply_terminal_tab(app: &mut crate::core::AppCore, host: &dyn crate::host
     }
 }
 
+// ---- sidebar locations: smart folders, saved searches, servers (Phase T5) -------------------
+
+/// The menu of smart folder `i` (a sidebar row): open, open in a new tab, edit, delete
+/// (the GUI's `ui::smart::sidebar_section`), then "New smart folder".
+pub fn smart_folder(i: usize) -> Vec<Entry> {
+    use crate::models::smart::SmartCmd;
+    use IconId as I;
+    vec![
+        cmd_item(I::FolderOpen, tr!("views-smart-open"), Cmd::Smart(SmartCmd::Open { index: i, new_tab: false })),
+        cmd_item(
+            MenuIcon::Plus,
+            tr!("views-smart-open-new-tab"),
+            Cmd::Smart(SmartCmd::Open { index: i, new_tab: true }),
+        ),
+        Entry::Separator,
+        cmd_item(I::PencilSimple, tr!("views-smart-edit"), Cmd::Smart(SmartCmd::Edit(Some(i)))),
+        cmd_item(I::Trash, tr!("views-smart-delete"), Cmd::Smart(SmartCmd::Delete(i))),
+        Entry::Separator,
+        cmd_item(MenuIcon::Plus, tr!("views-smart-new"), Cmd::Smart(SmartCmd::Edit(None))),
+    ]
+}
+
+/// The menu of the smart folders section (its header, the "New smart folder" row): new
+/// smart folder, the index settings, rebuild the index (not when the index failed) —
+/// the GUI's index status chip menu.
+pub fn smart_section(index_failed: bool) -> Vec<Entry> {
+    use crate::models::smart::SmartCmd;
+    use IconId as I;
+    vec![
+        cmd_item(MenuIcon::Plus, tr!("views-smart-new"), Cmd::Smart(SmartCmd::Edit(None))),
+        Entry::Separator,
+        cmd_item(I::GearSix, tr!("views-index-settings"), Cmd::Smart(SmartCmd::OpenSettings)),
+        item(
+            I::ArrowsClockwise.into(),
+            tr!("views-index-rebuild"),
+            None,
+            !index_failed,
+            (!index_failed).then_some(Run::Cmd(Cmd::Smart(SmartCmd::RebuildIndex))),
+        ),
+    ]
+}
+
+/// The menu of saved search `i` (a sidebar row): run, remove. The first `n_config`
+/// searches come from `config.toml` and are removed there, not here.
+pub fn saved_search(i: usize, n_config: usize) -> Vec<Entry> {
+    let removable = i >= n_config;
+    vec![
+        cmd_item(IconId::MagnifyingGlass, tr!("views-search-run-saved"), Cmd::RunSavedSearch(i)),
+        item(
+            MenuIcon::X,
+            tr!("views-search-remove"),
+            None,
+            removable,
+            removable.then_some(Run::Cmd(Cmd::RemoveSavedSearch(i))),
+        ),
+    ]
+}
+
+/// The menu of a saved connection `conn` (a sidebar "Network" row) at `uri` in `state`
+/// (`saved`: stored, not a debug server): open in a new tab, edit, disconnect, copy the
+/// address, remove from the sidebar (the GUI's `ui::remote::sidebar_section`).
+pub fn remote_connection(
+    conn: &crate::services::remote::SavedConn,
+    uri: &soyuz_vfs::RemoteUri,
+    state: &soyuz_vfs::ConnState,
+    saved: bool,
+) -> Vec<Entry> {
+    use crate::models::remote::RemoteCmd;
+    use IconId as I;
+    let address = uri.display();
+    let connected = crate::models::remote::can_disconnect(state);
+    let edit = Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: Some(conn.id.clone()), note: None });
+    let mut out = vec![
+        cmd_item(
+            I::Browsers,
+            tr!("remote-open-new-tab"),
+            Cmd::Remote(RemoteCmd::Open { uri: address.clone(), new_tab: true }),
+        ),
+        item(I::PencilSimple.into(), tr!("remote-edit-connection"), None, saved, saved.then_some(Run::Cmd(edit))),
+        item(
+            MenuIcon::Plugs,
+            tr!("remote-disconnect"),
+            None,
+            connected,
+            connected.then(|| Run::Cmd(Cmd::Remote(RemoteCmd::Disconnect(address.clone())))),
+        ),
+        cmd_item(I::ClipboardText, tr!("remote-copy-address"), Cmd::CopyText(address)),
+    ];
+    if saved {
+        out.push(Entry::Separator);
+        out.push(cmd_item(I::Trash, tr!("remote-remove"), Cmd::Remote(RemoteCmd::Remove(conn.id.clone()))));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1100,5 +1197,60 @@ mod tests {
             vec![TermTabCmd::Rename(7), TermTabCmd::New, TermTabCmd::External(7), TermTabCmd::Close(7)]
         );
         assert!(take_terminal_tab_cmds().is_empty());
+    }
+
+    fn runs(entries: Vec<Entry>) -> Vec<Option<Run>> {
+        entries
+            .into_iter()
+            .filter_map(|e| match e {
+                Entry::Item(it) => Some(it.run),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn smart_and_saved_search_menus() {
+        use crate::models::smart::SmartCmd;
+        let l = labels(&smart_folder(2));
+        assert_eq!(l[0], tr!("views-smart-open"));
+        assert!(l.iter().any(|s| s == tr!("views-smart-delete")));
+        let r = runs(smart_folder(2));
+        assert!(matches!(&r[2], Some(Run::Cmd(Cmd::Smart(SmartCmd::Edit(Some(2)))))));
+        assert!(matches!(&r[3], Some(Run::Cmd(Cmd::Smart(SmartCmd::Delete(2))))));
+        let failed = runs(smart_section(true));
+        assert!(failed.last().is_some_and(Option::is_none), "no rebuild while the index failed");
+        assert!(runs(smart_section(false)).iter().all(Option::is_some));
+        // Saved searches from config.toml cannot be removed here.
+        let cfg = runs(saved_search(0, 1));
+        assert!(matches!(&cfg[0], Some(Run::Cmd(Cmd::RunSavedSearch(0)))) && cfg[1].is_none());
+        let own = runs(saved_search(1, 1));
+        assert!(matches!(&own[1], Some(Run::Cmd(Cmd::RemoveSavedSearch(1)))));
+    }
+
+    #[test]
+    fn remote_connection_menu() {
+        use crate::models::remote::RemoteCmd;
+        use crate::services::remote::{AuthKind, SavedConn};
+        let uri = soyuz_vfs::RemoteUri::parse("sftp://me@example.org/home").unwrap();
+        let conn = SavedConn {
+            id: "c1".into(),
+            name: "Box".into(),
+            uri: uri.display(),
+            auth: AuthKind::Password,
+            key_file: None,
+            has_secret: false,
+        };
+        let idle = remote_connection(&conn, &uri, &soyuz_vfs::ConnState::Idle, true);
+        let l = labels(&idle);
+        assert_eq!(l.last().map(String::as_str), Some(tr!("remote-remove")));
+        let r = runs(idle);
+        assert!(matches!(&r[0], Some(Run::Cmd(Cmd::Remote(RemoteCmd::Open { new_tab: true, .. })))));
+        assert!(r[2].is_none(), "nothing to disconnect");
+        assert!(matches!(&r[3], Some(Run::Cmd(Cmd::CopyText(a))) if a.starts_with("sftp://")));
+        let live = runs(remote_connection(&conn, &uri, &soyuz_vfs::ConnState::Connected, false));
+        assert!(r.len() > live.len(), "a debug server cannot be removed");
+        assert!(live[1].is_none(), "nor edited");
+        assert!(matches!(&live[2], Some(Run::Cmd(Cmd::Remote(RemoteCmd::Disconnect(_))))));
     }
 }

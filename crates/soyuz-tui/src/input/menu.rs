@@ -22,7 +22,6 @@ use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, Run};
 use soyuz_appcore::state::pane::{ContextTarget, PaneId};
 use soyuz_appcore::tr;
-use soyuz_core::Location;
 use soyuz_core::config::Action;
 
 use crate::app::App;
@@ -152,14 +151,10 @@ pub fn open_for(app: &mut App, pane: PaneId, target: ContextTarget, anchor: (u16
     open_entries(app, entries, anchor);
 }
 
-/// The menu of sidebar entry `i` (a place on disk: favourites, bookmarks, drives, cloud
-/// folders; other rows have none, like in the GUI) at `anchor`.
+/// The menu of sidebar entry `i` (`input::sidebar::menu`: a place on disk, a saved
+/// connection, a smart folder, a saved search; other rows have none) at `anchor`.
 pub fn open_sidebar(app: &mut App, i: usize, anchor: (u16, u16)) {
-    use crate::view::sidebar::{Entry as Row, Target};
-    let list = crate::view::sidebar::entries(&app.core);
-    let Some(Row::Place { target: Target::Go(Location::Dir(path)), .. }) = list.get(i) else { return };
-    let removable = app.core.ui.sidebar.favorites.iter().any(|f| &f.path == path);
-    let entries = catalogue::place_menu(path, removable);
+    let entries = crate::input::sidebar::menu(&app.core, i);
     open_entries(app, entries, anchor);
 }
 
