@@ -525,4 +525,137 @@ mod tests {
             }
         }
     }
+
+    /// The dialog boxes of Phase T7, shaped as their kinds build them (the kinds' `vm`s
+    /// need a core; `headless::e2e::t7_views_at_tiny_sizes_*` draws the real ones).
+    fn t7_dialogs() -> Vec<DialogVm> {
+        use soyuz_appcore::tr;
+
+        use crate::widgets::{Button, Field, Form, ListRow};
+        let dialog = |title: &str, fields: Vec<Field>, buttons: &[&str], error: Option<&str>| {
+            let mut form = Form::new(fields, buttons.iter().map(|b| Button::new(*b).accel('x')).collect());
+            form.error = error.map(Into::into);
+            DialogVm::from_form(title, &form)
+        };
+        let row = |text: &str, right: &str| ListRow { text: text.into(), right: right.into(), role: None };
+        let long = "日本語 ".repeat(12);
+        let about = DialogVm {
+            body: vec!["Soyuz 0.2.0".into(), "A keyboard-first file explorer".into()],
+            list: vec![row("Commit", "4329018"), row("Config folder", &long), row("Memory", "512 MiB")],
+            hints: tr!("tui-workspaces-about-hints").into(),
+            ..dialog(tr!("dialogs-about-title"), Vec::new(), &["Copy info", "Close"], None)
+        };
+        let save = DialogVm {
+            hints: tr!("tui-workspaces-save-hints").into(),
+            ..dialog(
+                tr!("workspaces-save-title"),
+                vec![Field::text(tr!("tui-workspaces-name"), long.clone())],
+                &["Save", "Cancel"],
+                Some(tr!("tui-workspaces-name-empty")),
+            )
+        };
+        let manage = DialogVm {
+            list: vec![row("one", "Ctrl+F12"), row(&long, ""), row("three", "Ctrl+Alt+Shift+F11")],
+            hints: tr!("tui-workspaces-manage-hints").into(),
+            ..dialog(
+                tr!("workspaces-manage-title"),
+                vec![
+                    Field::text(tr!("tui-workspaces-name"), "one"),
+                    Field::text(tr!("tui-workspaces-hotkey"), "Nope+"),
+                ],
+                &["Open", "Edit", "Move up", "Delete", "Close"],
+                Some("“Nope+” is not a key chord"),
+            )
+        };
+        let history = DialogVm {
+            list: ["data", "`-a", "  |-b", "  `-c 日本語", "    `-d"].iter().map(|t| row(t, "12:00")).collect(),
+            hints: tr!("tui-workspaces-history-hints").into(),
+            ..dialog(tr!("workspaces-history-title"), Vec::new(), &["Go", "Close"], None)
+        };
+        let shelf = DialogVm {
+            list: vec![
+                row("[x] a.txt", "1 KiB · data"),
+                row("[ ] gone.txt", tr!("tools-shelf-missing")),
+                row(&long, ""),
+            ],
+            hints: tr!("tui-shelf-hints").into(),
+            ..dialog(
+                tr!("tools-shelf-title"),
+                Vec::new(),
+                &[tr!("tools-shelf-copy-here"), tr!("tools-shelf-move-here"), "Remove", "Clear", "Close"],
+                None,
+            )
+        };
+        let empty_shelf =
+            DialogVm { list: Vec::new(), body: vec![tr!("tui-shelf-empty-body").into()], ..shelf.clone() };
+        let split = DialogVm {
+            body: vec![format!("File: {long} · 3 MiB"), "Part 2 of 3 · 45%".into()],
+            list: ["700 MB", "1 GB", "2 GB", "4 GB", "4.7 GB", "Custom size"].iter().map(|t| row(t, "")).collect(),
+            hints: tr!("tui-split-running-hints").into(),
+            ..dialog(
+                tr!("tools-split-title"),
+                vec![Field::text(tr!("tui-split-custom"), "1 MB"), Field::text(tr!("tui-split-output"), long.clone())],
+                &["Split", "Close"],
+                None,
+            )
+        };
+        let mut secret = Field::text("Passphrase", "hunter2");
+        secret.set_secret(true);
+        let unlock = DialogVm {
+            body: vec!["Enter the passphrase or the 48-digit recovery key.".into()],
+            hints: tr!("tui-devices-unlock-hints").into(),
+            ..dialog(&format!("Unlock {long}"), vec![secret], &["Unlock", "Cancel"], Some("Operation not permitted"))
+        };
+        let versions = DialogVm {
+            body: vec![tr!("tools-versions-admin-needed").into(), "only administrators can read ".repeat(6)],
+            list: vec![row("Shadow copy · 8 Oct 2026 14:00", "2.0 KiB"), row(&long, "")],
+            hints: tr!("tui-versions-hints").into(),
+            ..dialog(
+                &format!("Previous versions: {long}"),
+                Vec::new(),
+                &["Open", "Compare", "Copy to", "Restore"],
+                None,
+            )
+        };
+        vec![about, save, manage, history, shelf, empty_shelf, split, unlock, versions]
+    }
+
+    /// Phase T7 (wave 2): every new dialog and both full-screen tools at tiny sizes (down
+    /// to nothing) in every look: mono, ASCII lines, no lines with Nerd Font icons,
+    /// 24-bit colour with Unicode icons and 16 colours with ASCII icons.
+    #[test]
+    fn draw_t7_views_at_tiny_sizes_in_every_look() {
+        use soyuz_appcore::theme::tokens::{ORBIT_DARK, ORBIT_LIGHT};
+        use soyuz_core::config::TuiBorders;
+
+        use crate::icons::IconSet;
+        use crate::theme::ColorMode;
+        let looks = [
+            TuiTheme::plain(),
+            TuiTheme::plain().with_borders(TuiBorders::Ascii),
+            TuiTheme::plain().with_icons(IconSet::Nerd).with_borders(TuiBorders::None),
+            TuiTheme::from_tokens(&ORBIT_DARK, ColorMode::Truecolor, IconSet::Unicode),
+            TuiTheme::from_tokens(&ORBIT_LIGHT, ColorMode::Ansi16, IconSet::Ascii).with_borders(TuiBorders::Ascii),
+        ];
+        let base = model();
+        let mut vms: Vec<ViewModel> =
+            t7_dialogs().into_iter().map(|d| ViewModel { dialog: Some(d), ..base.clone() }).collect();
+        vms.extend(screens::tests::tiny_vms().into_iter().map(|s| ViewModel { screens: s, ..base.clone() }));
+        let facts = [Facts::default(), Facts { sidebar: true, tab_strip: true, toasts: 1, ..Facts::default() }];
+        let sizes = (0..=24).flat_map(|w| (0..=8).map(move |h| (w, h))).chain([(40, 12), (80, 24), (120, 34)]);
+        for (w, h) in sizes {
+            for f in &facts {
+                let regions = Regions::compute(Rect::new(0, 0, w, h), &TuiSection::default(), f);
+                for vm in &vms {
+                    let mut vm = vm.clone();
+                    vm.panes = regions.panes.iter().map(|p| pane(p.index, true)).collect();
+                    for theme in &looks {
+                        let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+                        let mut hits = Hits::default();
+                        t.draw(|fr| draw(fr, &vm, &regions, theme, &mut hits)).unwrap();
+                    }
+                }
+            }
+        }
+    }
 }

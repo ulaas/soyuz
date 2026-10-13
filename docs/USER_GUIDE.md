@@ -357,7 +357,8 @@ cancels; with the mouse on, everything is clickable.
   background), times, attributes and permissions. Alt+A opens the attributes dialog;
   *Checksums…* computes MD5, SHA-1, SHA-256, BLAKE3 and CRC32 in the background (← / → choose,
   Alt+O computes, Alt+L computes all, Alt+Y copies) and *Compare to* checks a pasted
-  checksum.
+  checksum. *Previous versions…* (Alt+V) opens the previous versions of the item (see
+  below).
 
 **Jobs panel.** It opens at the bottom by itself while a job runs, without taking the
 keyboard; Alt+J opens it and moves the keyboard there (Esc gives it back). On the *Jobs*
@@ -559,10 +560,99 @@ next start the terminal UI offers to resume, roll back or discard the jobs that 
 interrupted (leftover partial files can go to the trash), and shows the crash reports
 (view, delete, open the folder), like the window does.
 
-Workspaces, tab history, new windows, devices (unlock, read-only mount), About and the
-tool windows other than Compare & sync (size treemap, duplicates, split / join, previous
-versions) have no terminal view yet: they show a short notice instead (use the window for
-them).
+**Workspaces and tab history.** *Save workspace as…* (palette) asks for a name (the last
+saved workspace's name is suggested, and saving under an existing name updates it);
+*Manage workspaces…* lists them: Enter opens one, F2 edits its name and hotkey (a hotkey
+that is not a key chord is refused with a message), Alt+Up moves it up and Del deletes it
+at once, without undo, as in the window. Ctrl+Alt+W lists the saved workspaces in the
+palette, and a workspace's hotkey opens it from anywhere. The window and the terminal UI
+share `workspaces.toml`; when both change it at the same time, the last one to save wins.
+*Where was I?* (palette, or the tab's menu) shows every place the tab visited as a tree
+with the current one highlighted: Up / Down pick a place, Enter goes there, Esc closes;
+with the mouse on, a click picks a row and a second click goes there.
+
+**About.** *About Soyuz* (palette) shows the version, the commit, the build, the platform,
+the settings folder and the license as text; C (or Alt+C) copies these facts, Enter or Esc
+closes it.
+
+**Shelf.** *Add to shelf* in a file's menu (Shift+F10) puts the selected items on the
+shelf and shows it; *Toggle shelf* (palette) shows or hides it. The shelf dialog lists the
+items with their folders (items that no longer exist are marked *Missing*): Up / Down move,
+Space marks, Enter goes to the item (the pane opens its folder with it selected), Del
+removes it from the shelf, and the buttons' letters run *Copy here* / *Move here* (the
+marked items, or all of them, into the focused pane's folder, as undoable jobs), *Remove*
+and *Clear*. Esc closes it. With the mouse on, a click picks a row, Ctrl+click marks it
+and a second click goes there.
+
+**Split and join.** *Split file* (palette, or *Split file…* in a file's menu) opens a
+dialog: Up / Down pick the part size (presets or *Custom size*), Tab moves to the custom
+size, the output folder and the buttons, Enter starts. The progress shows in the dialog;
+Esc stops a running split and removes the partial output, and closing the dialog any other
+way stops it too. *Join files* (*Join parts…* on a `.001` part) joins the parts into the
+output folder and checks the result against the checksum file that the split wrote, when
+there is one.
+
+**Previous versions.** *Restore previous version…* (palette or the item's menu, and
+*Previous versions…*, Alt+V, in Properties) lists the earlier copies of a file or folder:
+Up / Down pick one, Enter or O opens it (a folder in the pane), C compares it with the
+current file, T copies it elsewhere, R restores it over the original (an undoable copy job
+that asks before replacing), F5 or L looks again, Esc closes. When there are none, the
+dialog says why. On Windows, shadow copies can only be read with administrator rights: the
+terminal UI does not restart itself as administrator. The dialog says so and explains how
+to do it yourself: close Soyuz, open a terminal with *Run as administrator* and start
+`soyuz --tui` (or `soyuz-tui`) there.
+
+**Disk usage treemap and duplicates.** These are full-screen views like Compare & sync.
+Only one shows at a time: opening one, or Compare & sync, closes the other and stops its
+scan. *Open in pane* and *Reveal* only hide the view, so it keeps its results, and opening
+the same tool on the same folder shows it again.
+
+- *Disk usage treemap* (palette, or *Analyze disk usage* in a folder's menu) maps the
+  selected folder, or the current one, as tiles sized by disk use. In 24-bit and 256
+  colours they are coloured by kind; with 16 colours or none, each kind fills with its own
+  character instead (ASCII characters on an ASCII-only screen).
+  - In the map, the arrow keys select the nearest tile in that direction. Enter zooms into
+    a folder (or opens a file), Backspace or Alt+Up goes up a level.
+  - Tab switches between the map and the side list (C: the folder's contents, L: its
+    largest files). On narrow terminals only one of the two shows, and M switches.
+  - O opens the selection in the pane. Del or X asks before moving the selection to the
+    trash (Enter / Y confirms, Esc / N cancels; it is an undoable job).
+  - Shift+F10 opens the tile's menu, F5 or Ctrl+R scans again. Esc stops a scan, then
+    closes the view.
+  - With the mouse on, a click on a tile zooms into its folder, a double click opens a
+    file, and the breadcrumb, tabs, buttons and side rows are clickable.
+- *Find duplicate files* (palette, or *Find duplicates* in a folder's menu) searches the
+  selected folders, or the current one.
+  - The setup at the top has the folders, a field that adds one (with folder completion;
+    Alt+O adds the other pane's folder) and the minimum size. Tab moves between them and
+    the list; on short terminals it folds into one line, and F2 opens it. F5 searches
+    (again).
+  - In the list, Space marks a file. The last unmarked copy of a group is refused, so one
+    copy is always kept. Enter or Left / Right fold a group, and Enter on a file reveals it
+    in the pane.
+  - n / o / s keep the newest, oldest or shortest-path copy in the group (N / O / S: in
+    every group), and C clears the marks.
+  - Del or X asks before moving the marked files to the trash, as one undoable job.
+  - With the mouse on, a click toggles a mark, a double click reveals the file, a click on
+    a group header folds it, and a right click opens the file's menu.
+
+**Devices (Linux).** With UDisks2, the sidebar's Devices section lists the disks and
+partitions that are not mounted and the locked (encrypted) ones, after the mounted drives,
+as in the window. `[sidebar] unmounted_devices` chooses which: `all`, `removable` or `off`.
+- Enter on a device mounts it, or asks for the passphrase of a locked one. The unlock
+  dialog shows bullets (Alt+V shows the passphrase) and accepts a BitLocker recovery key
+  with or without dashes. A wrong passphrase keeps the dialog open with the error. After
+  unlocking, the volume is mounted and opened.
+- Shift+F10 opens the device's menu: mount, mount read-only, unlock, lock, unmount, eject,
+  hide from the sidebar, copy the device path. With the mouse on, a mounted drive's eject
+  mark ejects it.
+- An NTFS volume that Windows left hibernated asks before it is mounted read-only.
+
+**Trash and This PC.** Both open from the sidebar (*Trash* under Other, *Computer* / *This
+PC* under Devices).
+
+New windows (and moving a tab to one), merging windows and running as administrator are
+not available in the terminal UI; they show a short notice instead.
 
 **Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
 Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
