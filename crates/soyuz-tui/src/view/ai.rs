@@ -4,24 +4,29 @@
 //!
 //! ```text
 //! │ * Assistant · Waiting for your approval      [+] [*] [x]
-//! │ fake · move · Strong · 1.2k tok               [Stop Esc]
+//! │ [Stop  Esc] [fake · move v] [Strong] [Metadata v] [Tools v] [Smart search]  1.2k tok *
 //! │  Chat   Recipes   Audit log
 //! │ > move a.txt
 //! │ * I suggest moving a.txt.
 //! │ | -> Move 1 item into Moved
 //! │ |    move · 1 item · Waiting for you
 //! │ |    data/a.txt -> data/Moved/a.txt            moved
-//! │ |    [Approve] [Reject] [Approve all "move"]
+//! │ |    [Approve] [Edit] [Reject] [Approve all "move"]
 //! │ ... 2 plans wait for your approval     [Approve all]
-//! │ > Ask or give a task…   / commands · @ mention
+//! │ > Ask or give a task…
+//! │   (more lines of the message)
 //! ```
 //!
 //! Rows top to bottom ([`parts`]): the header (title, status, new chat / settings / close
-//! marks), the info row (profile · model, route, tokens and cost, Stop while a task
-//! runs), the tabs (chat, recipes, audit log), the body, the footer (the "N plans wait"
+//! marks), the chip rows (Stop while a task runs, the model menu, fast / strong, the
+//! current folder's access menu, the tools and MCP servers menu, smart search, the token
+//! and cost meter with the monthly budget warning `*`; one or two rows), the tabs (chat,
+//! recipes, audit log), the body, the footer (the smart search card, the "N plans wait"
 //! bar, the slash / `@` popup, the mentions), the field (the composer on the chat tab,
-//! the filter on the audit tab) and, while the panel has the keyboard, the key hints.
-//! Small panels drop the info row, the tabs and the hints first.
+//! growing to [`MAX_COMPOSER_ROWS`] rows and then scrolling; the filter on the audit tab)
+//! and, while the panel has the keyboard, the key hints. Small panels drop the chips, the
+//! tabs and the hints first. A chip menu (`input::ai::State::menu`) draws last, over the
+//! panel and the files left of it.
 //!
 //! The body is built in [`prepare`] (`chat::lines` for the chat tab with the MCP
 //! approvals area on top, `pages::recipes` / `pages::audit` for the others) into
@@ -32,11 +37,13 @@
 //! through [`crate::dialog::safe`].
 //!
 //! Click targets: the whole panel is `AiChat` (wheel scrolls, a click gives the panel the
-//! keyboard); `AiTab`, `AiButton` (header, Stop, Approve all), `AiCard` (every line of a
-//! card, the cost question, a task end), `AiCardButton` (the card buttons), `AiRow`
-//! (ideas, recipes, audit rows), `AiMention` (popup rows), `AiMcpUndo` ("Undo everything
-//! <client> did"; [`crate::input::ai::MCP_CLEAR`] is the approvals area's Clear) and
-//! `AiComposer`.
+//! keyboard); `AiTab`, `AiButton` (header, Stop, Approve all, the model chip), `AiCard`
+//! (every line of a card, the cost question, a task end), `AiCardButton` (the card
+//! buttons), `AiRow` (ideas, recipes, audit rows; from [`crate::input::ai::CHIPS`] on the
+//! other chips and the smart search card's controls, [`crate::input::ai::Chip`]),
+//! `AiMention` (popup rows), `AiMcpUndo` ("Undo everything <client> did";
+//! [`crate::input::ai::MCP_CLEAR`] is the approvals area's Clear), `AiComposer` (a click
+//! puts the cursor there) and, while a chip menu is open, `MenuItem`.
 
 pub mod chat;
 pub mod pages;
@@ -53,23 +60,36 @@ use soyuz_appcore::color::Rgba8;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::icon::IconId;
 use soyuz_appcore::tr;
+use soyuz_core::Location;
+use soyuz_core::config::AiAccess;
 
 use crate::dialog::safe;
 use crate::hits::AiButton;
 use crate::icons::{self, IconSet};
 use crate::input::InputState;
-use crate::input::ai::{Part, Sel};
+use crate::input::ai::text_area;
+use crate::input::ai::{Chip, MenuAct, Part, Sel};
 use crate::layout::{HitTarget, Hits, Regions};
 use crate::theme::{Role, TuiTheme, to_color};
 use crate::view::preview::Seg;
 use crate::view::text;
+use crate::widgets::Menu;
 
-/// Footer rows at most (popup rows included).
-pub const MAX_FOOTER: u16 = 8;
+/// Footer rows at most (popup rows and the smart search card included).
+pub const MAX_FOOTER: u16 = 14;
 /// Rows of the slash / mention popup at most.
 pub const MAX_POPUP: usize = 6;
 /// The hints row shows from this panel height.
 pub const HINTS_MIN_ROWS: u16 = 12;
+/// The composer grows up to this many rows, then scrolls.
+pub const MAX_COMPOSER_ROWS: usize = 6;
+/// Chip rows at most (from [`TWO_CHIP_ROWS`] panel rows; one below).
+pub const MAX_CHIP_ROWS: usize = 2;
+/// The panel height from which the chips may take a second row.
+pub const TWO_CHIP_ROWS: u16 = 16;
+/// Lead of the composer's first row and of the rows after it.
+const PROMPT: &str = "> ";
+const INDENT: &str = "  ";
 
 /// A piece of a line: styled text, maybe a click target.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -103,6 +123,12 @@ impl Span {
     /// A card gutter (`│ `).
     pub fn gutter(role: Role) -> Span {
         Span { seg: Seg::new("  ", role), vline: true, ..Span::default() }
+    }
+
+    /// The same span drawn in `role`.
+    pub fn role(mut self, role: Role) -> Span {
+        self.seg.role = Some(role);
+        self
     }
 
     pub fn width(&self) -> usize {
@@ -140,6 +166,40 @@ impl AiLine {
     }
 }
 
+/// `spans` on as few lines of `w` cells as they need (one space apart), at most `max`
+/// lines; a span wider than a line is cut.
+pub fn flow(spans: Vec<Span>, w: usize, max: usize) -> Vec<AiLine> {
+    let mut out: Vec<AiLine> = Vec::new();
+    let mut cur: Vec<Span> = Vec::new();
+    let mut used = 0;
+    if max == 0 {
+        return out;
+    }
+    for mut s in spans {
+        if s.width() > w && !s.vline {
+            s.seg.text = text::truncate_end(&s.seg.text, w);
+        }
+        let sw = s.width();
+        if used > 0 && used + 1 + sw > w {
+            out.push(AiLine::new(std::mem::take(&mut cur)));
+            used = 0;
+            if out.len() == max {
+                return out;
+            }
+        }
+        if used > 0 {
+            cur.push(Span::new(" ", Role::Text));
+            used += 1;
+        }
+        used += sw;
+        cur.push(s);
+    }
+    if !cur.is_empty() && out.len() < max {
+        out.push(AiLine::new(cur));
+    }
+    out
+}
+
 /// What a slash / mention popup row picks.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PopupItem {
@@ -160,7 +220,11 @@ pub struct Built {
     pub pending: Vec<Sel>,
     /// Line ranges of the list rows (recipes, audit).
     pub rows: Vec<(usize, usize)>,
+    /// The chips under the header (model, route, access, tools, smart search, meter).
+    pub chips: Vec<AiLine>,
     pub footer: Vec<AiLine>,
+    /// The text cursor in the footer (the smart search card's field): line, column.
+    pub footer_cursor: Option<(usize, u16)>,
     /// What the popup rows pick (`AiMention(i)`).
     pub popup: Vec<PopupItem>,
     pub body_h: usize,
@@ -174,15 +238,16 @@ impl Built {
     }
 }
 
-/// The composer / filter row.
+/// The composer / filter rows.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FieldVm {
+    /// The first row's lead (the others are indented as wide).
     pub prefix: String,
-    /// The visible part of the text.
-    pub text: String,
+    /// The visible rows of the text.
+    pub lines: Vec<String>,
     pub placeholder: String,
-    /// The cursor column in `text` while the field has the keyboard.
-    pub cursor: Option<u16>,
+    /// The cursor (row, column in the row's text) while the field has the keyboard.
+    pub cursor: Option<(u16, u16)>,
     pub target: Option<HitTarget>,
 }
 
@@ -195,18 +260,21 @@ pub struct AiVm {
     pub title: String,
     pub status: String,
     pub running: bool,
-    /// Profile · model, route, tokens and cost.
-    pub info: String,
-    /// "Stop  Esc" while a task runs.
-    pub stop: Option<String>,
+    /// The chip rows: Stop while a task runs, model, route, folder access, tools, smart
+    /// search and the token / cost meter (with the monthly budget warning).
+    pub chips: Vec<AiLine>,
     pub new_chat: bool,
     pub tabs: Vec<String>,
     pub tab: usize,
     /// The visible body lines.
     pub lines: Vec<AiLine>,
     pub footer: Vec<AiLine>,
+    pub footer_cursor: Option<(usize, u16)>,
     pub field: Option<FieldVm>,
     pub hints: String,
+    /// An open chip menu and where it may draw.
+    pub menu: Option<Menu<MenuAct>>,
+    pub menu_screen: Rect,
 }
 
 impl AiVm {
@@ -224,22 +292,25 @@ impl AiVm {
             PanelTab::Recipes => 1,
             PanelTab::Audit => 2,
         };
-        let parts = parts(regions.ai, b.footer.len() as u16, has_field(core), st.focused);
+        let rows = field_rows(core, regions);
+        let p = parts(regions.ai, b.chips.len() as u16, b.footer.len() as u16, rows, st.focused);
         AiVm {
             visible: true,
             focused: st.focused,
             title: tr!("ai-panel-title").into(),
             status: safe(&status(core)),
             running: ai.running.is_some(),
-            info: safe(&info(core)),
-            stop: ai.running.is_some().then(|| tr!("ai-stop-esc").to_string()),
+            chips: b.chips.clone(),
             new_chat: ai.running.is_none(),
             tabs: vec![tr!("ai-tab-chat").into(), tr!("ai-tab-recipes").into(), tr!("ai-tab-audit").into()],
             tab,
             lines,
             footer: b.footer.clone(),
-            field: field(core, input, parts.field.width),
+            footer_cursor: b.footer_cursor,
+            field: field(core, input, p.field),
             hints: if st.focused { hints(core, input) } else { String::new() },
+            menu: st.menu.clone(),
+            menu_screen: st.menu_screen,
         }
     }
 }
@@ -247,11 +318,6 @@ impl AiVm {
 /// It is drawn this frame.
 pub fn shown(core: &AppCore) -> bool {
     core.ai.panel.open
-}
-
-/// The field row: the composer (chat) or the filter (audit).
-fn has_field(core: &AppCore) -> bool {
-    matches!(core.ai.panel.tab, PanelTab::Chat | PanelTab::Audit)
 }
 
 /// "Working · 3s", "Waiting for your approval", the external requests, idle.
@@ -277,42 +343,127 @@ pub fn status(core: &AppCore) -> String {
     }
 }
 
-/// "profile · model · Strong · 1.2k tok · $0.010".
-pub fn info(core: &AppCore) -> String {
+/// The profile and model of the next message: `(profile, model)`.
+fn model_label(core: &AppCore) -> Option<(String, String)> {
     let ai = &core.ai;
-    let route = ai.panel.route;
-    let label = match &ai.panel.profile_override {
+    match &ai.panel.profile_override {
         Some(name) => core.config.ai.profile(name).map(|p| (p.name.clone(), p.model.clone())),
-        None => model::route_label(&core.config.ai, route),
-    };
-    let mut parts = vec![match &label {
-        Some((prof, m)) if m.is_empty() => prof.clone(),
+        None => model::route_label(&core.config.ai, ai.panel.route),
+    }
+}
+
+/// "profile · model" (or "no model").
+fn model_text(core: &AppCore) -> String {
+    match model_label(core) {
+        Some((prof, m)) if m.is_empty() => prof,
         Some((prof, m)) => format!("{prof} \u{00b7} {m}"),
         None => tr!("ai-no-model").into(),
-    }];
-    if ai.panel.profile_override.is_none() {
-        parts.push(match route {
-            Route::Fast => tr!("ai-route-fast").into(),
-            Route::Strong => tr!("ai-route-strong").into(),
-        });
     }
+}
+
+fn route_word(r: Route) -> &'static str {
+    match r {
+        Route::Fast => tr!("ai-route-fast"),
+        Route::Strong => tr!("ai-route-strong"),
+    }
+}
+
+/// The token / cost meter and whether this month's spend of the profile reached
+/// `[ai] budget_warn_percent` of its monthly budget (the GUI's warning dot).
+pub fn meter(core: &AppCore) -> (String, bool) {
+    let ai = &core.ai;
     let (usage, cost) = match &ai.running {
         Some(r) => (r.usage, r.cost),
         None => (ai.session_usage, (ai.session_cost > 0.0).then_some(ai.session_cost)),
     };
-    parts.push(match cost {
+    let text = match cost {
         Some(c) => {
             tr!("ai-meter-tokens-cost", tokens = tokens(usage.total()), cost = soyuz_core::locale::format_decimal(c, 3))
         }
         None => tr!("ai-meter-tokens", tokens = tokens(usage.total())),
+    };
+    let warn = model_label(core).is_some_and(|(prof, _)| {
+        let cap = core.config.ai.profile(&prof).map_or(0.0, |p| p.monthly_budget_usd);
+        let spent = ai.month.as_ref().map_or(0.0, |l| l.spend(&soyuz_ai::pricing::current_month(), &prof).cost_usd);
+        budget_warns(spent, cap, core.config.ai.budget_warn_percent)
     });
-    parts.join(" \u{00b7} ")
+    (text, warn)
+}
+
+/// The GUI's rule for the budget warning dot.
+pub fn budget_warns(spent: f64, cap: f64, percent: u32) -> bool {
+    cap > 0.0 && spent / cap * 100.0 >= f64::from(percent)
+}
+
+/// The access chip's word for `a`.
+pub fn access_short(a: AiAccess) -> &'static str {
+    match a {
+        AiAccess::None => tr!("ai-access-short-none"),
+        AiAccess::Metadata => tr!("ai-access-short-metadata"),
+        AiAccess::Contents => tr!("ai-access-short-contents"),
+    }
+}
+
+/// The chip rows for a panel `w` cells wide (at most `max` rows): Stop while a task
+/// runs, the model menu, fast / strong, the folder's access menu, the tools menu, smart
+/// search, then the meter.
+pub fn chips(core: &AppCore, w: usize, max: usize, set: IconSet) -> Vec<AiLine> {
+    let ai = &core.ai;
+    let caret = icons::glyph(IconId::CaretDown, set);
+    let mut spans = Vec::new();
+    if ai.running.is_some() {
+        spans.push(Span::button(tr!("ai-stop-esc"), HitTarget::AiButton(AiButton::Stop), true).role(Role::Danger));
+    }
+    let model = text::truncate_end(&safe(&model_text(core)), (w / 2).max(8));
+    spans.push(Span::button(&format!("{model} {caret}"), HitTarget::AiButton(AiButton::Profile), true));
+    if ai.panel.profile_override.is_none() {
+        spans.push(Span::button(route_word(ai.panel.route), Chip::Route.target(), true));
+    }
+    if let Location::Dir(dir) = &core.ws.pane().location {
+        let (access, explicit) = soyuz_appcore::ai::state::access_for(core, dir);
+        let word = if explicit {
+            access_short(access).to_string()
+        } else {
+            tr!("ai-access-inherited", access = access_short(access))
+        };
+        let chip = Span::button(&format!("{word} {caret}"), Chip::Access.target(), true);
+        spans.push(if access == AiAccess::Contents { chip.role(Role::Warning) } else { chip });
+    }
+    let ext = ai.external.tools().len();
+    let tools = if ext == 0 { tr!("ai-tools").to_string() } else { tr!("ai-tools-connected", count = ext) };
+    spans.push(Span::button(&format!("{tools} {caret}"), Chip::Tools.target(), true));
+    if ai.panel.tab == PanelTab::Chat {
+        let smart = Span::button(tr!("ai-smart-chip"), Chip::Smart.target(), true);
+        spans.push(if ai.smart.open { smart.role(Role::Accent) } else { smart });
+    }
+    let (m, warn) = meter(core);
+    let mut meter = vec![Span::new(m, Role::Muted)];
+    if warn {
+        let dot = if set == IconSet::Ascii { " *" } else { " \u{25cf}" };
+        meter.push(Span::new(dot, Role::Warning));
+    }
+    let meter_w: usize = meter.iter().map(Span::width).sum();
+    let mut lines = flow(spans, w, max);
+    // The meter goes after the chips on the last row when it fits, else on a row of its
+    // own while there is one.
+    let last_w = lines.last().map_or(0, |l| l.spans.iter().map(Span::width).sum::<usize>());
+    let n = lines.len();
+    match lines.last_mut() {
+        Some(l) if last_w + 2 + meter_w <= w => {
+            l.spans.push(Span::new("  ", Role::Text));
+            l.spans.extend(meter);
+        }
+        _ if n < max => lines.push(AiLine::new(meter)),
+        _ => {}
+    }
+    lines
 }
 
 fn hints(core: &AppCore, input: &InputState) -> String {
     let st = &input.ai;
     match (core.ai.panel.tab, st.part) {
         (PanelTab::Chat, Part::Composer) => tr!("tui-ai-hints-composer").into(),
+        (PanelTab::Chat, Part::Smart) => tr!("tui-ai-hints-smart").into(),
         (PanelTab::Chat, _) => tr!("tui-ai-hints-cards").into(),
         (PanelTab::Recipes, _) if st.delete_armed.is_some() => tr!("tui-ai-delete-again").into(),
         (PanelTab::Recipes, _) => tr!("tui-ai-hints-recipes").into(),
@@ -321,25 +472,42 @@ fn hints(core: &AppCore, input: &InputState) -> String {
     }
 }
 
-fn field(core: &AppCore, input: &InputState, width: u16) -> Option<FieldVm> {
+/// The width the composer wraps at in a field `width` cells wide.
+pub fn wrap_width(width: u16) -> usize {
+    usize::from(width).saturating_sub(text::width(PROMPT)).max(1)
+}
+
+/// Rows the field wants: the composer's wrapped lines (1 to [`MAX_COMPOSER_ROWS`]), one
+/// for the audit filter, none on the recipes tab.
+fn field_rows(core: &AppCore, regions: &Regions) -> u16 {
+    match core.ai.panel.tab {
+        PanelTab::Chat => {
+            let w = parts(regions.ai, 0, 0, 1, false).inner.width;
+            let n = text_area::rows(&core.ai.panel.composer, Some(wrap_width(w))).len();
+            n.clamp(1, MAX_COMPOSER_ROWS) as u16
+        }
+        PanelTab::Audit => 1,
+        PanelTab::Recipes => 0,
+    }
+}
+
+fn field(core: &AppCore, input: &InputState, r: Rect) -> Option<FieldVm> {
     let st = &input.ai;
-    let prefix = "> ".to_string();
-    let w = width.saturating_sub(text::width(&prefix) as u16);
     match core.ai.panel.tab {
         PanelTab::Chat => {
             let text = &core.ai.panel.composer;
-            let has = st.focused && st.part == Part::Composer;
-            let mut edit = st.edit.clone();
-            let (shown, col) = edit.view(text, w);
+            let has = st.focused && st.part == Part::Composer && st.menu.is_none();
+            let w = wrap_width(r.width);
+            let (lines, (row, col)) = st.composer.view(text, Some(w), w, usize::from(r.height.max(1)));
             Some(FieldVm {
-                prefix,
-                text: safe(&shown),
+                prefix: PROMPT.into(),
+                lines: lines.iter().map(|l| safe(l)).collect(),
                 placeholder: if core.ai.running.is_some() {
                     tr!("ai-composer-busy").into()
                 } else {
                     tr!("ai-composer-hint").into()
                 },
-                cursor: has.then_some(col),
+                cursor: has.then_some((row, col)),
                 target: Some(HitTarget::AiComposer),
             })
         }
@@ -347,12 +515,12 @@ fn field(core: &AppCore, input: &InputState, width: u16) -> Option<FieldVm> {
             let text = &core.ai.audit.filter;
             let has = st.focused && st.part == Part::Filter;
             let mut edit = st.filter_edit.clone();
-            let (shown, col) = edit.view(text, w);
+            let (shown, col) = edit.view(text, r.width.saturating_sub(2));
             Some(FieldVm {
                 prefix: "/ ".into(),
-                text: safe(&shown),
+                lines: vec![safe(&shown)],
                 placeholder: tr!("ai-audit-filter-hint").into(),
-                cursor: has.then_some(col),
+                cursor: has.then_some((0, col)),
                 target: Some(HitTarget::AiComposer),
             })
         }
@@ -366,6 +534,7 @@ pub struct Parts {
     /// The panel without its left line.
     pub inner: Rect,
     pub header: Rect,
+    /// The chip rows.
     pub info: Rect,
     pub tabs: Rect,
     pub body: Rect,
@@ -374,10 +543,10 @@ pub struct Parts {
     pub hints: Rect,
 }
 
-/// Split the panel `area` (`footer` rows wanted, a field row, the hints row while
-/// focused). Small panels drop the info row, the tabs and the hints first; the body
-/// keeps at least one row while there is room.
-pub fn parts(area: Rect, footer: u16, field: bool, hints: bool) -> Parts {
+/// Split the panel `area` (`chips` chip rows wanted, `footer` rows wanted, `field` rows
+/// of the composer / filter, the hints row while focused). Small panels drop the chips,
+/// the tabs and the hints first; the body keeps at least one row while there is room.
+pub fn parts(area: Rect, chips: u16, footer: u16, field: u16, hints: bool) -> Parts {
     let mut p = Parts::default();
     if area.is_empty() {
         return p;
@@ -389,32 +558,31 @@ pub fn parts(area: Rect, footer: u16, field: bool, hints: bool) -> Parts {
     let h = inner.height;
     let mut top = inner.y;
     let mut bottom = inner.bottom();
-    let take_top = |top: &mut u16, bottom: u16| -> Rect {
-        if *top < bottom {
-            let r = row(*top);
-            *top += 1;
-            r
-        } else {
-            Rect::default()
-        }
-    };
-    p.header = take_top(&mut top, bottom);
-    if h >= 7 {
-        p.info = take_top(&mut top, bottom);
+    if top < bottom {
+        p.header = row(top);
+        top += 1;
     }
-    if h >= 5 {
-        p.tabs = take_top(&mut top, bottom);
+    if h >= 7 && chips > 0 {
+        let n = chips.min(if h >= TWO_CHIP_ROWS { MAX_CHIP_ROWS as u16 } else { 1 }).min(bottom - top);
+        p.info = Rect { y: top, height: n, ..inner };
+        top += n;
+    }
+    if h >= 5 && top < bottom {
+        p.tabs = row(top);
+        top += 1;
     }
     if hints && h >= HINTS_MIN_ROWS && bottom > top + 1 {
         bottom -= 1;
         p.hints = row(bottom);
     }
-    if field && bottom > top + 1 {
-        bottom -= 1;
-        p.field = row(bottom);
+    if field > 0 && bottom > top + 1 {
+        let room = bottom - top;
+        let f = field.min(room - 1).min((room / 2).max(1));
+        bottom -= f;
+        p.field = Rect { y: bottom, height: f, ..inner };
     }
     let room = bottom.saturating_sub(top);
-    let f = footer.min(MAX_FOOTER).min(room / 2);
+    let f = footer.min(MAX_FOOTER).min(room * 2 / 3);
     if f > 0 {
         bottom -= f;
         p.footer = Rect { y: bottom, height: f, ..inner };
@@ -429,6 +597,7 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     crate::input::ai::sync(core, &mut input.ai);
     if !shown(core) || regions.ai.is_empty() {
         input.ai.view = Built::default();
+        input.ai.menu = None;
         return;
     }
     match core.ai.panel.tab {
@@ -437,23 +606,38 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         _ => {}
     }
     let set = IconSet::from_config(&core.config.tui);
-    let inner_w = usize::from(parts(regions.ai, 0, false, false).inner.width);
+    let inner_w = usize::from(parts(regions.ai, 0, 0, 0, false).inner.width);
     let w = inner_w.saturating_sub(1).max(1);
-    let (footer, popup) = if core.ai.panel.tab == PanelTab::Chat {
+    let max_chips = if regions.ai.height >= TWO_CHIP_ROWS { MAX_CHIP_ROWS } else { 1 };
+    let chip_lines = chips(core, w, max_chips, set);
+    let foot = if core.ai.panel.tab == PanelTab::Chat {
         chat::footer(core, &input.ai, w, set)
     } else {
-        (Vec::new(), Vec::new())
+        chat::Footer::default()
     };
-    let p = parts(regions.ai, footer.len() as u16, has_field(core), input.ai.focused);
+    let rows = field_rows(core, regions);
+    let p = parts(regions.ai, chip_lines.len() as u16, foot.lines.len() as u16, rows, input.ai.focused);
     let st = &mut input.ai;
     let mut b = match core.ai.panel.tab {
         PanelTab::Chat => chat::lines(core, st, w, set),
         PanelTab::Recipes => pages::recipes(core, st, w),
         PanelTab::Audit => pages::audit(core, st, w),
     };
-    b.footer = footer.into_iter().take(usize::from(p.footer.height)).collect();
-    b.popup = popup;
+    let fh = usize::from(p.footer.height);
+    b.chips = chip_lines.into_iter().take(usize::from(p.info.height)).collect();
+    b.footer = foot.lines.into_iter().take(fh).collect();
+    b.footer_cursor = foot.cursor.filter(|(l, _)| *l < fh);
+    b.popup = foot.popup;
     b.body_h = usize::from(p.body.height);
+    // The composer wraps at the field's width and keeps its cursor in view.
+    st.field_rect = p.field;
+    st.wrap = wrap_width(p.field.width);
+    if core.ai.panel.tab == PanelTab::Chat {
+        let h = usize::from(p.field.height.max(1));
+        st.composer.scroll_to_cursor(&core.ai.panel.composer, Some(st.wrap), st.wrap, h);
+    }
+    // A chip menu may cover the panel and the files left of it, never the rows below.
+    st.menu_screen = Rect { x: regions.area.x, width: regions.ai.right().saturating_sub(regions.area.x), ..regions.ai };
     if std::mem::take(&mut core.ai.panel.scroll_to_bottom) {
         st.scroll_up = 0;
     }
@@ -468,7 +652,8 @@ pub fn draw_ai(f: &mut Frame<'_>, area: Rect, m: &AiVm, theme: &TuiTheme, hits: 
         return;
     }
     f.render_widget(Clear, area);
-    let p = parts(area, m.footer.len() as u16, m.field.is_some(), m.focused);
+    let field_h = m.field.as_ref().map_or(0, |fv| fv.lines.len().max(1) as u16);
+    let p = parts(area, m.chips.len() as u16, m.footer.len() as u16, field_h, m.focused);
     let cursor = {
         let buf = f.buffer_mut();
         let base = theme.style(Role::Text);
@@ -484,20 +669,12 @@ pub fn draw_ai(f: &mut Frame<'_>, area: Rect, m: &AiVm, theme: &TuiTheme, hits: 
             }
         }
         header(buf, p.header, m, theme, set, hits);
-        if !p.info.is_empty() {
-            let end = p.info.right();
-            let mut right = end;
-            if let Some(stop) = &m.stop {
-                let s = format!("[{stop}]");
-                let w = text::width(&s) as u16;
-                if w + 4 < p.info.width {
-                    right = end - w;
-                    put(buf, right, p.info.y, end, &s, theme.style(Role::Danger));
-                    hits.push(Rect::new(right, p.info.y, w, 1), HitTarget::AiButton(AiButton::Stop));
-                    right = right.saturating_sub(1);
-                }
+        for (k, l) in m.chips.iter().enumerate() {
+            let y = p.info.y + k as u16;
+            if y >= p.info.bottom() {
+                break;
             }
-            put(buf, p.info.x + 1, p.info.y, right, &m.info, theme.style(Role::Muted));
+            draw_line(buf, Rect { y, height: 1, ..p.info }, l, theme, hits);
         }
         if !p.tabs.is_empty() {
             let mut x = p.tabs.x + 1;
@@ -524,31 +701,49 @@ pub fn draw_ai(f: &mut Frame<'_>, area: Rect, m: &AiVm, theme: &TuiTheme, hits: 
             draw_line(buf, Rect { y, height: 1, ..p.footer }, l, theme, hits);
         }
         let mut cursor = None;
+        if let Some((l, c)) = m.footer_cursor
+            && (l as u16) < p.footer.height
+        {
+            let x = p.footer.x.saturating_add(1).saturating_add(c).min(p.footer.right().saturating_sub(1));
+            cursor = Some(Position { x, y: p.footer.y + l as u16 });
+        }
         if let (Some(fv), false) = (&m.field, p.field.is_empty()) {
-            let r = p.field;
-            buf.set_style(r, theme.style(Role::Input));
-            if let Some(t) = fv.target {
-                hits.push(r, t);
-            }
-            let x = put(buf, r.x, r.y, r.right(), &fv.prefix, theme.style(Role::Accent));
-            if fv.text.is_empty() && fv.cursor.is_none() {
-                put(buf, x, r.y, r.right(), &fv.placeholder, theme.style(Role::Faint));
-            } else {
-                put(buf, x, r.y, r.right(), &fv.text, theme.style(Role::Input));
-            }
-            if let Some(c) = fv.cursor {
-                let cx = x.saturating_add(c).min(r.right().saturating_sub(1));
-                cursor = Some(Position { x: cx, y: r.y });
-            }
+            cursor = draw_field(buf, p.field, fv, theme, hits).or(cursor);
         }
         if !p.hints.is_empty() && !m.hints.is_empty() {
             put(buf, p.hints.x + 1, p.hints.y, p.hints.right(), &m.hints, theme.style(Role::KeyHint));
         }
         cursor
     };
-    if let Some(c) = cursor {
+    if let Some(menu) = &m.menu {
+        menu.clone().draw(f, m.menu_screen, theme, hits);
+    } else if let Some(c) = cursor {
         f.set_cursor_position(c);
     }
+}
+
+/// The composer / filter rows; returns the cursor's cell.
+fn draw_field(buf: &mut Buffer, r: Rect, fv: &FieldVm, theme: &TuiTheme, hits: &mut Hits) -> Option<Position> {
+    buf.set_style(r, theme.style(Role::Input));
+    if let Some(t) = fv.target {
+        hits.push(r, t);
+    }
+    let lead_w = text::width(&fv.prefix) as u16;
+    let empty = fv.lines.iter().all(String::is_empty);
+    for k in 0..r.height {
+        let y = r.y + k;
+        let lead = if k == 0 { fv.prefix.as_str() } else { INDENT };
+        let x = put(buf, r.x, y, r.right(), lead, theme.style(Role::Accent));
+        if k == 0 && empty && fv.cursor.is_none() {
+            put(buf, x, y, r.right(), &fv.placeholder, theme.style(Role::Faint));
+        } else if let Some(l) = fv.lines.get(usize::from(k)) {
+            put(buf, x, y, r.right(), l, theme.style(Role::Input));
+        }
+    }
+    let (row, col) = fv.cursor?;
+    let row = row.min(r.height.saturating_sub(1));
+    let x = r.x.saturating_add(lead_w).saturating_add(col).min(r.right().saturating_sub(1));
+    Some(Position { x, y: r.y + row })
 }
 
 fn header(buf: &mut Buffer, r: Rect, m: &AiVm, theme: &TuiTheme, set: IconSet, hits: &mut Hits) {
@@ -671,8 +866,10 @@ mod tests {
             title: "Assistant".into(),
             status: "Waiting for your approval".into(),
             running: true,
-            info: "fake · move · Strong · 1.2k tok".into(),
-            stop: Some("Stop  Esc".into()),
+            chips: vec![AiLine::new(vec![
+                Span::new("fake · move", Role::Muted),
+                Span::button("Stop  Esc", HitTarget::AiButton(AiButton::Stop), true),
+            ])],
             new_chat: false,
             tabs: vec!["Chat".into(), "Recipes".into(), "Audit log".into()],
             tab: 0,
@@ -695,14 +892,17 @@ mod tests {
                 .with_target(HitTarget::AiCard { id: 1, task: 2 }),
             ],
             footer: vec![AiLine::plain("2 plans wait", Role::Warning)],
+            footer_cursor: None,
             field: Some(FieldVm {
                 prefix: "> ".into(),
-                text: "hello".into(),
+                lines: vec!["hello".into()],
                 placeholder: "Ask".into(),
-                cursor: Some(5),
+                cursor: Some((0, 5)),
                 target: Some(HitTarget::AiComposer),
             }),
             hints: "Enter send".into(),
+            menu: None,
+            menu_screen: Rect::default(),
         }
     }
 
@@ -722,6 +922,8 @@ mod tests {
         let (lines, hits) = draw(&vm(), 60, 14);
         assert!(lines[0].contains("Assistant") && lines[0].contains("Waiting"), "{lines:?}");
         assert!(lines[1].contains("fake") && lines[1].ends_with("[Stop  Esc]"), "{lines:?}");
+        let stop = lines[1].chars().take_while(|c| *c != '[').count() as u16;
+        assert_eq!(hits.at(stop + 1, 1), Some(HitTarget::AiButton(AiButton::Stop)));
         assert!(lines[2].contains("Chat") && lines[2].contains("Audit log"), "{lines:?}");
         assert!(lines[3].contains("> move it"), "{lines:?}");
         assert!(lines[4].contains("[Approve] [Reject]"), "{lines:?}");
@@ -743,11 +945,11 @@ mod tests {
     #[test]
     fn parts_shrink_without_overlap() {
         for w in 0..30 {
-            for h in 0..20 {
-                for footer in [0, 3, 9] {
-                    for (field, hints) in [(true, true), (false, false), (true, false)] {
+            for h in 0..24 {
+                for footer in [0, 3, 9, 20] {
+                    for (chips, field, hints) in [(1, 1, true), (0, 0, false), (2, 6, false), (2, 3, true)] {
                         let a = Rect::new(2, 1, w, h);
-                        let p = parts(a, footer, field, hints);
+                        let p = parts(a, chips, footer, field, hints);
                         let rows = [p.header, p.info, p.tabs, p.body, p.footer, p.field, p.hints];
                         let total: u16 = rows.iter().map(|r| r.height).sum();
                         assert!(total <= h, "{w}x{h}: {p:?}");
@@ -758,9 +960,42 @@ mod tests {
                 }
             }
         }
-        let p = parts(Rect::new(0, 0, 40, 20), 2, true, true);
+        let p = parts(Rect::new(0, 0, 40, 20), 1, 2, 1, true);
         assert_eq!((p.header.y, p.info.y, p.tabs.y, p.body.y), (0, 1, 2, 3));
         assert_eq!((p.footer.y, p.footer.height, p.field.y, p.hints.y), (16, 2, 18, 19));
+        // A multi-line composer grows upwards; two chip rows on a tall panel.
+        let p = parts(Rect::new(0, 0, 40, 30), 2, 0, 4, true);
+        assert_eq!((p.info.height, p.tabs.y), (2, 3));
+        assert_eq!((p.field.y, p.field.height, p.hints.y), (25, 4, 29));
+    }
+
+    #[test]
+    fn multi_line_composer_and_footer_cursor() {
+        let mut m = vm();
+        m.field = Some(FieldVm {
+            prefix: "> ".into(),
+            lines: vec!["first".into(), "second".into()],
+            placeholder: String::new(),
+            cursor: Some((1, 3)),
+            target: Some(HitTarget::AiComposer),
+        });
+        let (lines, hits) = draw(&m, 60, 16);
+        assert!(lines[13].contains("> first"), "{lines:?}");
+        assert!(lines[14].contains("  second"), "{lines:?}");
+        assert_eq!(hits.at(10, 14), Some(HitTarget::AiComposer));
+        assert!(budget_warns(80.0, 100.0, 80));
+        assert!(!budget_warns(10.0, 0.0, 0), "no cap, no warning");
+        assert!(!budget_warns(79.0, 100.0, 80));
+    }
+
+    #[test]
+    fn chips_flow_onto_rows() {
+        let spans: Vec<Span> = (0..6).map(|i| Span::button(&format!("chip{i}"), HitTarget::AiChat, true)).collect();
+        let rows = flow(spans.clone(), 20, 2);
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.spans.iter().map(Span::width).sum::<usize>() <= 20));
+        assert_eq!(flow(spans.clone(), 200, 2).len(), 1);
+        assert!(flow(spans, 3, 0).is_empty());
     }
 
     #[test]

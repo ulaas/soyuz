@@ -180,6 +180,8 @@ pub fn route(app: &mut App, events: &[Event]) {
     }
     filter::arm(app);
     search::arm(app);
+    // The AI panel's every-frame work; Esc / ToggleAiPanel it takes are gone from `events`.
+    let events: &[Event] = &ai::arm(app, events);
     mouse::route(app, events);
     menu::menu_key(app, events);
     match focus(&app.core, &app.input) {
