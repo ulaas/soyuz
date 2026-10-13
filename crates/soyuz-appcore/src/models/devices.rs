@@ -1,6 +1,9 @@
 //! Devices of the sidebar (frontend-agnostic; Linux desktop): GTK bookmarks and UDisks2
 //! devices (mount, unlock, unmount, lock, eject) plus `Cmd::Device`. The GUI rows and
-//! menus are in `ui::sidebar`.
+//! menus are in `ui::sidebar`; the terminal UI's in `view::sidebar` / `input::sidebar`
+//! with the menus as data ([`device_menu`], [`candidate_menu`]) and the unlock dialog's
+//! submit ([`submit_unlock`]). The UDisks2 calls go through a [`DeskBackend`], which
+//! tests replace ([`set_desk_backend`]).
 
 use std::path::{Path, PathBuf};
 
@@ -46,7 +49,79 @@ pub fn gtk_bookmarks(cfg: &soyuz_core::config::Sidebar) -> Vec<soyuz_fs::xdg_dir
 
 /// Every block device UDisks2 knows (empty off Linux or before the first scan).
 pub fn block_devices() -> Vec<soyuz_fs::udisks::BlockDevice> {
-    if cfg!(target_os = "linux") { desk().lock().devices.clone() } else { Vec::new() }
+    // Only the Linux refresher (or a test backend, `set_desk_backend`) fills the list.
+    desk().lock().devices.clone()
+}
+
+/// The UDisks2 calls behind the device rows: the real `soyuz_fs::udisks` (polkit may
+/// ask: every call is interactive), or a test fake installed with [`set_desk_backend`]
+/// so tests never reach D-Bus (neither the unlock nor the mount that follows it).
+#[doc(hidden)]
+pub trait DeskBackend: Send + Sync {
+    /// UDisks2 answers (asked once per refresher run).
+    fn available(&self) -> bool;
+    fn block_devices(&self) -> std::io::Result<Vec<soyuz_fs::udisks::BlockDevice>>;
+    fn mount(&self, object: &str, options: &soyuz_fs::udisks::MountOptions) -> std::io::Result<PathBuf>;
+    fn unmount(&self, object: &str) -> std::io::Result<()>;
+    fn lock(&self, object: &str) -> std::io::Result<()>;
+    /// Returns the cleartext device's object.
+    fn unlock(&self, object: &str, passphrase: &str) -> std::io::Result<String>;
+    fn eject(&self, drive: &str) -> std::io::Result<()>;
+    fn power_off(&self, drive: &str) -> std::io::Result<()>;
+}
+
+/// The real backend: `soyuz_fs::udisks` (interactive, not forced).
+struct UDisks;
+
+impl DeskBackend for UDisks {
+    fn available(&self) -> bool {
+        soyuz_fs::udisks::available()
+    }
+    fn block_devices(&self) -> std::io::Result<Vec<soyuz_fs::udisks::BlockDevice>> {
+        soyuz_fs::udisks::block_devices()
+    }
+    fn mount(&self, object: &str, options: &soyuz_fs::udisks::MountOptions) -> std::io::Result<PathBuf> {
+        soyuz_fs::udisks::mount(object, options)
+    }
+    fn unmount(&self, object: &str) -> std::io::Result<()> {
+        soyuz_fs::udisks::unmount(object, false, true)
+    }
+    fn lock(&self, object: &str) -> std::io::Result<()> {
+        soyuz_fs::udisks::lock(object, true)
+    }
+    fn unlock(&self, object: &str, passphrase: &str) -> std::io::Result<String> {
+        soyuz_fs::udisks::unlock(object, passphrase, true)
+    }
+    fn eject(&self, drive: &str) -> std::io::Result<()> {
+        soyuz_fs::udisks::eject(drive, true)
+    }
+    fn power_off(&self, drive: &str) -> std::io::Result<()> {
+        soyuz_fs::udisks::power_off(drive, true)
+    }
+}
+
+static BACKEND: parking_lot::RwLock<Option<std::sync::Arc<dyn DeskBackend>>> = parking_lot::RwLock::new(None);
+
+/// The backend device operations use now.
+fn backend() -> std::sync::Arc<dyn DeskBackend> {
+    BACKEND.read().clone().unwrap_or_else(|| std::sync::Arc::new(UDisks))
+}
+
+/// Tests: replace the UDisks2 calls with `b` for the rest of the process, and list its
+/// devices right away (on every platform; the Linux refresher keeps asking `b`). Not a
+/// cargo feature: tests of other crates (the terminal UI's headless runs) need it too.
+#[doc(hidden)]
+pub fn set_desk_backend(b: Box<dyn DeskBackend>) {
+    let b: std::sync::Arc<dyn DeskBackend> = std::sync::Arc::from(b);
+    *BACKEND.write() = Some(b.clone());
+    let devices = b.block_devices().unwrap_or_default();
+    {
+        let mut d = desk().lock();
+        d.available = b.available();
+        d.devices = devices;
+        d.generation += 1;
+    }
+    desk_rescan();
 }
 
 /// UDisks object paths with an operation running, and what it is.
@@ -127,11 +202,11 @@ pub fn start(host: &dyn Host) {
     drop(d);
     let wake = host.wake();
     let spawned = std::thread::Builder::new().name("soyuz-desktop-places".into()).spawn(move || {
-        let udisks = soyuz_fs::udisks::available();
+        let udisks = backend().available();
         loop {
             let gtk = soyuz_fs::xdg_dirs::gtk_bookmarks();
             let devices = if udisks {
-                match soyuz_fs::udisks::block_devices() {
+                match backend().block_devices() {
                     Ok(v) => Some(v),
                     Err(e) => {
                         log::debug!("udisks: {e}");
@@ -299,7 +374,7 @@ fn mount_now(d: &soyuz_fs::udisks::BlockDevice, name: String, pane: PaneId, read
     let mut tries = if fresh { 10 } else { 1 };
     loop {
         tries -= 1;
-        match soyuz_fs::udisks::mount(&d.object, &o) {
+        match backend().mount(&d.object, &o) {
             Ok(path) => return DeskEvent::Mounted { pane, path },
             Err(e) => {
                 let text = e.to_string();
@@ -325,7 +400,7 @@ fn mount_now(d: &soyuz_fs::udisks::BlockDevice, name: String, pane: PaneId, read
 pub fn unmount_device(dev: &soyuz_fs::udisks::BlockDevice, name: String) {
     let object = dev.object.clone();
     let fs = dev.fs_type.clone();
-    desk_op(&dev.object, Work::Unmounting, move || match soyuz_fs::udisks::unmount(&object, false, true) {
+    desk_op(&dev.object, Work::Unmounting, move || match backend().unmount(&object) {
         Ok(()) => DeskEvent::Unmounted { name },
         Err(e) => {
             DeskEvent::Failed { title: tr!("app-device-unmount-failed", name = name), body: udisks_reason(&e, &fs) }
@@ -343,10 +418,10 @@ pub fn lock_device(cleartext: &soyuz_fs::udisks::BlockDevice, container: String,
             title: tr!("app-device-lock-failed", name = name.clone()),
             body: udisks_reason(&e, &fs),
         };
-        if mounted && let Err(e) = soyuz_fs::udisks::unmount(&object, false, true) {
+        if mounted && let Err(e) = backend().unmount(&object) {
             return failed(e);
         }
-        match soyuz_fs::udisks::lock(&container, true) {
+        match backend().lock(&container) {
             Ok(()) => DeskEvent::Locked { name: name.clone() },
             Err(e) => failed(e),
         }
@@ -374,7 +449,7 @@ pub fn unlock_device(
     let key = object.clone();
     let target = object.clone();
     let spawned = std::thread::Builder::new().name("soyuz-udisks-unlock".into()).spawn(move || {
-        let r = soyuz_fs::udisks::unlock(&target, secret.as_str(), true);
+        let r = backend().unlock(&target, secret.as_str());
         zeroize::Zeroize::zeroize(&mut *secret);
         drop(secret);
         desk().lock().busy.remove(&key);
@@ -493,20 +568,16 @@ pub fn eject_device(dev: &soyuz_fs::udisks::BlockDevice, all: &[soyuz_fs::udisks
             body: udisks_reason(&e, &fs),
         };
         for o in &plan.unmount {
-            if let Err(e) = soyuz_fs::udisks::unmount(o, false, true) {
+            if let Err(e) = backend().unmount(o) {
                 return failed(e);
             }
         }
         for o in &plan.lock {
-            if let Err(e) = soyuz_fs::udisks::lock(o, true) {
+            if let Err(e) = backend().lock(o) {
                 return failed(e);
             }
         }
-        let r = if plan.eject {
-            soyuz_fs::udisks::eject(&plan.drive, true)
-        } else {
-            soyuz_fs::udisks::power_off(&plan.drive, true)
-        };
+        let r = if plan.eject { backend().eject(&plan.drive) } else { backend().power_off(&plan.drive) };
         match r {
             Ok(()) => DeskEvent::Ejected { name: name.clone() },
             Err(e) => failed(e),
@@ -548,6 +619,12 @@ pub enum DeviceCmd {
     Mount { dev: Box<soyuz_fs::udisks::BlockDevice>, name: String, read_only: bool },
     /// "Hide from sidebar": add the key to `[sidebar] hidden_devices`.
     Hide(String),
+    /// Unmount a mounted device (the menus of [`device_menu`]).
+    Unmount { dev: Box<soyuz_fs::udisks::BlockDevice>, name: String },
+    /// Unmount `dev` (an unlocked container's cleartext device), then lock `container`.
+    Lock { dev: Box<soyuz_fs::udisks::BlockDevice>, container: String, name: String },
+    /// Eject the drive of `dev` ([`eject_device`] with the current device list).
+    Eject { dev: Box<soyuz_fs::udisks::BlockDevice> },
 }
 
 /// Apply a [`DeviceCmd`].
@@ -566,7 +643,181 @@ pub fn apply(app: &mut crate::core::AppCore, host: &dyn Host, cmd: DeviceCmd) {
                 app.ui.toasts.push(Toast::info(tr!("app-device-hidden")).body(tr!("app-device-hidden-body")));
             }
         }
+        DeviceCmd::Unmount { dev, name } => unmount_device(&dev, name),
+        DeviceCmd::Lock { dev, container, name } => lock_device(&dev, container, name),
+        DeviceCmd::Eject { dev } => eject_device(&dev, &block_devices()),
     }
+}
+
+/// The device entries of a mounted volume's menu (after the place entries): Unmount,
+/// Lock (an unlocked container's filesystem), Eject (when [`eject_plan`] allows it) —
+/// the GUI's `ui::sidebar` device menu as data.
+pub fn device_menu(
+    dev: &soyuz_fs::udisks::BlockDevice,
+    all: &[soyuz_fs::udisks::BlockDevice],
+    name: &str,
+) -> Vec<crate::models::context_menu::Entry> {
+    use crate::icon::IconId as I;
+    let boxed = || Box::new(dev.clone());
+    let mut out = vec![menu_cmd(
+        I::ArrowLineUp.into(),
+        tr!("app-device-unmount"),
+        true,
+        Cmd::Device(DeviceCmd::Unmount { dev: boxed(), name: name.to_string() }),
+    )];
+    if let Some(container) = &dev.crypto_backing {
+        out.push(menu_cmd(
+            I::LockSimple.into(),
+            tr!("app-device-lock"),
+            true,
+            Cmd::Device(DeviceCmd::Lock { dev: boxed(), container: container.clone(), name: name.to_string() }),
+        ));
+    }
+    if eject_plan(dev, all).is_some() {
+        out.push(menu_cmd(
+            I::ArrowLineUp.into(),
+            tr!("app-device-eject"),
+            true,
+            Cmd::Device(DeviceCmd::Eject { dev: boxed() }),
+        ));
+    }
+    out
+}
+
+/// The menu of an unmounted / locked device row: Mount, Mount read-only, Lock (an
+/// unlocked container), or Unlock…; then Hide from sidebar, Copy device path. `idle`:
+/// no operation runs on it (the actions are disabled otherwise). The GUI's
+/// `ui::sidebar` candidate menu as data.
+pub fn candidate_menu(
+    cand: &soyuz_fs::udisks::Candidate,
+    name: &str,
+    idle: bool,
+) -> Vec<crate::models::context_menu::Entry> {
+    use crate::icon::IconId as I;
+    use crate::models::context_menu::{Entry, MenuIcon};
+    use soyuz_fs::udisks::CandidateState as S;
+    let dev = || Box::new(cand.dev.clone());
+    let mount = |read_only| Cmd::Device(DeviceCmd::Mount { dev: dev(), name: name.to_string(), read_only });
+    let mut out = Vec::new();
+    match cand.state {
+        S::Unmounted => {
+            out.push(menu_cmd(I::ArrowLineDown.into(), tr!("app-device-mount"), idle, mount(false)));
+            out.push(menu_cmd(I::LockSimple.into(), tr!("app-device-mount-ro"), idle, mount(true)));
+            if let Some(container) = &cand.container {
+                let lock = DeviceCmd::Lock { dev: dev(), container: container.clone(), name: name.to_string() };
+                out.push(menu_cmd(I::LockSimple.into(), tr!("app-device-lock"), idle, Cmd::Device(lock)));
+            }
+        }
+        S::Locked => {
+            let unlock = DeviceCmd::Unlock {
+                object: cand.dev.object.clone(),
+                name: name.to_string(),
+                kind: cand.dev.fs_type.clone(),
+            };
+            out.push(menu_cmd(I::LockSimple.into(), tr!("app-device-unlock"), idle, Cmd::Device(unlock)));
+        }
+        S::Unsupported => {
+            out.push(menu_cmd(
+                MenuIcon::Prohibit,
+                tr!("app-device-mount"),
+                false,
+                Cmd::Device(DeviceCmd::Hide(String::new())),
+            ));
+        }
+    }
+    out.push(Entry::Separator);
+    out.push(menu_cmd(I::EyeSlash.into(), tr!("app-device-hide"), true, Cmd::Device(DeviceCmd::Hide(cand.hide_key()))));
+    out.push(menu_cmd(
+        I::ClipboardText.into(),
+        tr!("app-device-copy-path"),
+        true,
+        Cmd::CopyText(cand.dev.device.display().to_string()),
+    ));
+    out
+}
+
+/// A menu item running `cmd` (disabled items run nothing).
+fn menu_cmd(
+    icon: crate::models::context_menu::MenuIcon,
+    label: &str,
+    enabled: bool,
+    cmd: Cmd,
+) -> crate::models::context_menu::Entry {
+    use crate::models::context_menu::{Entry, Item, ItemStyle, Run};
+    Entry::Item(Item {
+        icon,
+        label: label.to_string(),
+        chord: None,
+        enabled,
+        style: ItemStyle::Plain,
+        run: enabled.then_some(Run::Cmd(cmd)),
+        keep_open: false,
+        tip: None,
+    })
+}
+
+/// The status line of a device row (where mounted volumes show their usage): what runs
+/// on it, else its state and size ("Not mounted · 32 GB").
+pub fn candidate_status(work: Option<Work>, state: soyuz_fs::udisks::CandidateState, size: u64) -> String {
+    use soyuz_fs::udisks::CandidateState as S;
+    let size = if size > 0 { format_size(size, SizeStyle::Decimal) } else { String::new() };
+    match (work, state) {
+        (Some(Work::Mounting), _) => tr!("app-device-status-mounting").to_string(),
+        (Some(Work::Unlocking), _) => tr!("app-device-status-unlocking").to_string(),
+        (Some(Work::Locking), _) => tr!("app-device-status-locking").to_string(),
+        (Some(Work::Unmounting), _) => tr!("app-device-status-unmounting").to_string(),
+        (None, S::Unmounted) => tr!("app-device-status-unmounted", size = size),
+        (None, S::Locked) => tr!("app-device-status-locked", size = size),
+        (None, S::Unsupported) => tr!("app-device-status-unsupported", size = size),
+    }
+}
+
+/// A BitLocker container (`BitLocker` / `crypto_BITLK`): the unlock dialog offers the
+/// recovery key.
+pub fn is_bitlocker(kind: &str) -> bool {
+    kind.eq_ignore_ascii_case("bitlocker") || kind.eq_ignore_ascii_case("crypto_bitlk")
+}
+
+/// A BitLocker recovery key as typed: 48 digits in eight dash-separated groups (spaces
+/// and missing dashes are tolerated); `None` when the text is not one.
+pub fn recovery_key(text: &str) -> Option<zeroize::Zeroizing<String>> {
+    let digits: zeroize::Zeroizing<String> =
+        zeroize::Zeroizing::new(text.chars().filter(|c| !c.is_whitespace() && *c != '-').collect());
+    if digits.len() != 48 || !digits.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let mut key = zeroize::Zeroizing::new(String::with_capacity(55));
+    for i in 0..8 {
+        if i > 0 {
+            key.push('-');
+        }
+        key.push_str(&digits[i * 6..i * 6 + 6]);
+    }
+    Some(key)
+}
+
+/// The unlock dialogs' submit: a BitLocker recovery key is normalized to its dashed form
+/// (the typed text is wiped), then [`unlock_device`] runs. The receiver gets `Ok(())`
+/// once unlocked (the mount follows), or the reason it failed; it disconnects without a
+/// message when another operation runs on the device.
+pub fn submit_unlock(
+    object: &str,
+    name: String,
+    kind: &str,
+    mut typed: zeroize::Zeroizing<String>,
+    pane: PaneId,
+) -> std::sync::mpsc::Receiver<Result<(), String>> {
+    let secret = if is_bitlocker(kind)
+        && let Some(k) = recovery_key(&typed)
+    {
+        zeroize::Zeroize::zeroize(&mut *typed);
+        k
+    } else {
+        typed
+    };
+    let (tx, rx) = std::sync::mpsc::channel();
+    unlock_device(object, name, secret, pane, tx);
+    rx
 }
 
 /// `DeviceCmd::OfferReadOnly`: explain the hibernated NTFS volume and offer a read-only
@@ -636,10 +887,20 @@ pub struct DevicesCache {
     list: Vec<soyuz_fs::udisks::Candidate>,
 }
 
+impl DevicesCache {
+    /// The list of the last [`candidates`] call (the terminal UI builds its rows from it
+    /// without `&mut`).
+    pub fn list(&self) -> &[soyuz_fs::udisks::Candidate] {
+        &self.list
+    }
+}
+
 pub fn candidates(cache: &mut DevicesCache, cfg: &soyuz_core::config::Sidebar) -> Vec<soyuz_fs::udisks::Candidate> {
     use soyuz_core::config::UnmountedDevices;
     let d = desk().lock();
     if !d.available || cfg.unmounted_devices == UnmountedDevices::Off {
+        cache.key = None;
+        cache.list.clear();
         return Vec::new();
     }
     let key = (d.generation, cfg.unmounted_devices, cfg.hidden_devices.clone());
@@ -844,6 +1105,96 @@ mod tests {
         });
         assert_eq!(nav, Some(PaneId(7)), "the closed pane is replaced by the focused one");
         assert!(take_volumes_stale());
+    }
+
+    /// The labels and commands of a menu's enabled items, in order.
+    fn items(menu: &[crate::models::context_menu::Entry]) -> Vec<(String, Option<Cmd>)> {
+        use crate::models::context_menu::{Entry, Run};
+        menu.iter()
+            .filter_map(|e| match e {
+                Entry::Item(i) => Some((
+                    i.label.clone(),
+                    match &i.run {
+                        Some(Run::Cmd(c)) => Some(c.clone()),
+                        _ => None,
+                    },
+                )),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn mounted_device_menus_unmount_lock_and_eject() {
+        // An unlocked LUKS stick: the cleartext device is mounted, its container on the stick.
+        let mut luks = usb("sdb1", &[]);
+        luks.encrypted = true;
+        luks.cleartext = Some(obj("dm0"));
+        let mut clear = blk("dm0", None, &["/run/media/u/Secret"]);
+        clear.crypto_backing = Some(obj("sdb1"));
+        let all = [luks, clear.clone()];
+        let menu = items(&device_menu(&clear, &all, "Secret"));
+        let labels: Vec<&str> = menu.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["Unmount", "Lock", "Eject"]);
+        assert!(
+            matches!(&menu[0].1, Some(Cmd::Device(DeviceCmd::Unmount { dev, name })) if **dev == clear && name == "Secret")
+        );
+        assert!(
+            matches!(&menu[1].1, Some(Cmd::Device(DeviceCmd::Lock { container, .. })) if *container == obj("sdb1"))
+        );
+        assert!(matches!(&menu[2].1, Some(Cmd::Device(DeviceCmd::Eject { .. }))));
+        // A fixed internal disk: only Unmount.
+        let fixed = blk("sda1", Some("Ssd"), &["/run/media/u/Games"]);
+        let menu = items(&device_menu(&fixed, std::slice::from_ref(&fixed), "Games"));
+        assert_eq!(menu.len(), 1);
+    }
+
+    #[test]
+    fn candidate_menus_follow_the_state() {
+        use soyuz_fs::udisks::CandidateState as S;
+        let c = cand("Games", "ntfs", 1_000_000_000);
+        let menu = items(&candidate_menu(&c, "Games", true));
+        let labels: Vec<&str> = menu.iter().map(|(l, _)| l.as_str()).collect();
+        assert_eq!(labels, ["Mount", "Mount read-only", "Hide from sidebar", "Copy device path"]);
+        assert!(matches!(&menu[1].1, Some(Cmd::Device(DeviceCmd::Mount { read_only: true, .. }))));
+        assert!(matches!(&menu[2].1, Some(Cmd::Device(DeviceCmd::Hide(k))) if *k == c.hide_key()));
+        assert!(matches!(&menu[3].1, Some(Cmd::CopyText(t)) if t.contains("sdb1")));
+        // Busy: the actions are disabled, hiding / copying still work.
+        let busy = items(&candidate_menu(&c, "Games", false));
+        assert!(busy[0].1.is_none() && busy[1].1.is_none() && busy[2].1.is_some());
+        // An unlocked container's filesystem can be locked again.
+        let opened = soyuz_fs::udisks::Candidate { container: Some(obj("sdb2")), ..c.clone() };
+        assert!(items(&candidate_menu(&opened, "Games", true)).iter().any(|(l, _)| l == "Lock"));
+        let locked = soyuz_fs::udisks::Candidate { state: S::Locked, ..c.clone() };
+        let menu = items(&candidate_menu(&locked, "Games", true));
+        assert_eq!(menu[0].0, "Unlock…");
+        assert!(
+            matches!(&menu[0].1, Some(Cmd::Device(DeviceCmd::Unlock { name, kind, .. })) if name == "Games" && kind == "ntfs")
+        );
+        let odd = soyuz_fs::udisks::Candidate { state: S::Unsupported, ..c };
+        let menu = items(&candidate_menu(&odd, "Games", true));
+        assert!(menu[0].1.is_none(), "unsupported filesystems can't be mounted");
+    }
+
+    #[test]
+    fn candidate_status_lines() {
+        use soyuz_fs::udisks::CandidateState as S;
+        assert_eq!(candidate_status(None, S::Unmounted, 32_000_000_000), "Not mounted · 32 GB");
+        assert_eq!(candidate_status(None, S::Locked, 0), "Locked · ");
+        assert_eq!(candidate_status(Some(Work::Mounting), S::Locked, 1), "Mounting…");
+        assert_eq!(candidate_status(Some(Work::Unlocking), S::Locked, 1), "Unlocking…");
+    }
+
+    #[test]
+    fn recovery_keys_are_normalized() {
+        let k = "123456-234567-345678-456789-567890-678901-789012-890123";
+        let key = |t: &str| recovery_key(t).map(|z| z.as_str().to_string());
+        assert_eq!(key(k).as_deref(), Some(k));
+        assert_eq!(key(&k.replace('-', "")).as_deref(), Some(k));
+        assert_eq!(key(&k.replace('-', " ")).as_deref(), Some(k));
+        assert_eq!(key("hunter2"), None);
+        assert_eq!(key(&"1".repeat(47)), None);
+        assert!(is_bitlocker("BitLocker") && is_bitlocker("crypto_BITLK") && !is_bitlocker("crypto_LUKS"));
     }
 
     #[test]

@@ -26,6 +26,7 @@ use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::checksums::{ALGOS, ChecksumSet, HashState};
 use soyuz_appcore::models::folder_stats::{self, Stats};
 use soyuz_appcore::models::properties::{Bg, Start, Tab};
+use soyuz_appcore::models::tools::ToolCmd;
 use soyuz_appcore::state::pane::PaneId;
 use soyuz_appcore::tr;
 use soyuz_core::config::Action;
@@ -41,6 +42,8 @@ use crate::widgets::{Button, Field, Form, FormOutcome, SelectList};
 pub enum Btn {
     Attributes,
     Checksums,
+    /// "Previous versions…" (Phase T7): the versions dialog opens over this one.
+    Versions,
     Compute,
     ComputeAll,
     Copy,
@@ -75,6 +78,9 @@ pub struct State {
     pub show_sums: bool,
     /// Cursor and scroll of the rows.
     pub list: SelectList,
+    /// A single item with previous versions on (`[sync] previous_versions`): the
+    /// "Previous versions…" button (the GUI's Properties tab).
+    pub versions: bool,
 }
 
 impl std::fmt::Debug for State {
@@ -139,6 +145,7 @@ impl State {
             s.stats = Some(folder_stats::spawn(app.core.wake.clone(), &entries, ctl.clone()));
             s.ctl = Some(ctl);
         }
+        s.versions = single && soyuz_appcore::models::versions::VersionsCfg::from_config(&app.core.config).enabled();
         s.entries = entries;
         s.show_sums = s.sums.is_some() && matches!(start, Some(Start::Hash(_) | Start::Compare));
         s.rebuild();
@@ -175,6 +182,9 @@ impl State {
         } else if self.sums.is_some() {
             bmap.push(Btn::Checksums);
         }
+        if !self.show_sums && self.versions {
+            bmap.push(Btn::Versions);
+        }
         bmap.push(Btn::Close);
         let buttons: Vec<Button> = bmap
             .iter()
@@ -186,6 +196,7 @@ impl State {
                     x
                 }
                 Btn::Checksums => Button::new(tr!("tui-ops-checksums")).accel('k'),
+                Btn::Versions => Button::new(tr!("tui-versions-button")).accel('v'),
                 Btn::Compute => Button::new(tr!("dialogs-hash-compute")).accel('o'),
                 Btn::ComputeAll => Button::new(tr!("dialogs-hash-compute-all")).accel('l'),
                 Btn::Copy => Button::new(tr!("common-copy")).accel('y'),
@@ -253,6 +264,14 @@ fn press(core: &mut AppCore, s: &mut State, b: usize) -> Outcome {
         (Btn::Checksums, _) => {
             s.show_sums = true;
             s.rebuild();
+        }
+        (Btn::Versions, _) => {
+            // The versions dialog opens over this one (`crate::tools::drain`).
+            if let Some(e) = s.current().first() {
+                let current = Some((e.size, e.modified));
+                let is_dir = e.is_dir_like();
+                soyuz_appcore::models::tools::queue(ToolCmd::Versions(e.path.clone(), is_dir, current));
+            }
         }
         (Btn::Compute, _) => {
             let algo = s.algo();

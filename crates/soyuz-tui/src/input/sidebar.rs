@@ -5,7 +5,7 @@
 //! |---|---|---|
 //! | Up / Down | previous / next row (into and out of the tree) | `models::tree::keyboard` |
 //! | Home / End, PageUp / PageDown | first / last row, a page | the tree's (tree-only mode) |
-//! | Enter | open the place (`FocusPane` + `Navigate`, the GUI's click); toggle a header | open the folder |
+//! | Enter | open the place (`FocusPane` + `Navigate`, the GUI's click); mount / unlock a device; toggle a header | open the folder |
 //! | Right / Left | expand / collapse a header; Left on a place goes to its header | expand / collapse, child / parent |
 //! | Esc | back to the list (`Action::FocusList`) | the same (the tree's Esc) |
 //! | typing | the next place starting with the letter | type-ahead |
@@ -14,8 +14,12 @@
 //! core's catalogue `models::context_menu`): a place on disk ([`place_menu`]), a saved
 //! connection (open in a new tab, edit, disconnect, copy the address, remove), a smart
 //! folder (open, open in a new tab, edit, delete, new), the smart folders header or its
-//! "New smart folder" row (new, index settings, rebuild the index) and a saved search
-//! (run, remove).
+//! "New smart folder" row (new, index settings, rebuild the index), a saved search
+//! (run, remove); a mounted volume adds its device entries (unmount, lock, eject:
+//! `models::devices::device_menu`), an unmounted / locked device has its own (mount,
+//! mount read-only, unlock, lock, hide, copy the device path:
+//! `models::devices::candidate_menu`). A click on a volume's eject mark ejects it
+//! ([`on_mouse`]).
 //!
 //! The cursor itself (new compared with the GUI) is a `crate::view::sidebar::SidebarNav`
 //! kept in [`State`], which the view reads too. Enter on a place moves the keyboard to the
@@ -27,6 +31,7 @@ use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::core::{AppCore, Focus};
 use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::context_menu as catalogue;
+use soyuz_appcore::models::devices::{self, DeviceCmd};
 use soyuz_appcore::models::remote::RemoteCmd;
 use soyuz_appcore::models::smart::SmartCmd;
 use soyuz_appcore::models::tree::model::Nav;
@@ -37,7 +42,7 @@ use soyuz_core::config::{Action, KeyName, Mods, SidebarMode, SidebarSection};
 
 use super::{TuiFocus, core_input, key_context};
 use crate::app::App;
-use crate::view::sidebar::{Entry, Section, SidebarNav, Target, cursor_index, entries, sync_focus};
+use crate::view::sidebar::{Entry, Mark, Section, SidebarNav, Target, cursor_index, ejectable, entries, sync_focus};
 
 /// What the sidebar keeps between frames.
 #[derive(Debug, Default)]
@@ -130,12 +135,13 @@ fn key(app: &mut App, k: KeyName) {
             };
             section.set_open(core, want);
         }
-        (KeyName::ArrowLeft, Some(Entry::Place { .. })) => {
+        (KeyName::ArrowLeft, Some(Entry::Place { .. } | Entry::Device { .. })) => {
             if let Some(h) = cur.and_then(|c| list[..c].iter().rposition(|e| matches!(e, Entry::Header { .. }))) {
                 select(core, n, &list, h);
             }
         }
         (KeyName::Enter, Some(Entry::Place { target, .. })) => activate(core, target.clone()),
+        (KeyName::Enter, Some(Entry::Device { cand, .. })) => activate_device(core, *cand),
         _ => {}
     }
 }
@@ -193,15 +199,47 @@ pub fn activate(core: &mut AppCore, target: Target) {
     }
 }
 
+/// Mount an unmounted device or ask for a locked one's passphrase (the GUI's click on a
+/// device row); nothing while an operation runs on it or for unsupported filesystems.
+pub fn activate_device(core: &mut AppCore, cand: usize) {
+    use soyuz_fs::udisks::CandidateState as S;
+    let Some(c) = core.ui.sidebar.devices.list().get(cand).cloned() else { return };
+    if devices::busy().contains_key(&c.dev.object) {
+        return;
+    }
+    let name = devices::candidate_name(&c);
+    match c.state {
+        S::Unmounted => core.cmds.push(Cmd::Device(DeviceCmd::Mount { dev: Box::new(c.dev), name, read_only: false })),
+        S::Locked => {
+            core.cmds.push(Cmd::Device(DeviceCmd::Unlock { object: c.dev.object.clone(), name, kind: c.dev.fs_type }))
+        }
+        S::Unsupported => {}
+    }
+}
+
 /// The menu of sidebar entry `i` (see the module docs; empty for rows without one).
 pub fn menu(core: &AppCore, i: usize) -> Vec<catalogue::Entry> {
     use soyuz_appcore::services::remote as svc;
     let list = entries(core);
     match list.get(i) {
-        Some(Entry::Place { target: Target::Go(Location::Dir(path)), .. }) => {
+        Some(Entry::Place { target: Target::Go(Location::Dir(path)), mark, label, .. }) => {
             let removable = core.ui.sidebar.favorites.iter().any(|f| &f.path == path);
-            catalogue::place_menu(path, removable)
+            let mut out = catalogue::place_menu(path, removable);
+            // A mounted volume: its device's entries (unmount, lock, eject).
+            let all = devices::block_devices();
+            if *mark == Mark::Volume
+                && !all.is_empty()
+                && let Some(dev) = devices::device_at(&all, path)
+            {
+                out.push(catalogue::Entry::Separator);
+                out.extend(devices::device_menu(&dev, &all, label));
+            }
+            out
         }
+        Some(Entry::Device { cand, label, busy, .. }) => match core.ui.sidebar.devices.list().get(*cand) {
+            Some(c) => devices::candidate_menu(c, label, !*busy),
+            None => Vec::new(),
+        },
         Some(Entry::Place { target: Target::Remote { id, .. }, .. }) => {
             let Some(conn) = svc::connections().into_iter().find(|c| &c.id == id) else { return Vec::new() };
             let Some(uri) = conn.parsed() else { return Vec::new() };
@@ -233,6 +271,7 @@ pub fn click(app: &mut App, index: usize) {
     match e {
         Entry::Header { section, open, .. } => section.set_open(core, !*open),
         Entry::Place { target, .. } => activate(core, target.clone()),
+        Entry::Device { cand, .. } => activate_device(core, *cand),
         Entry::Tree(j) => {
             let pane = core.ws.pane().id;
             if let Some(key) = core.ui.tree.rows().get(*j).map(|r| r.key.clone()) {
@@ -293,7 +332,9 @@ fn typed(core: &mut AppCore, n: &mut SidebarNav, t: &str) {
     }
     let start = cur.map_or(0, |c| c + 1);
     let hit = (start..list.len()).chain(0..start).find(|&i| match &list[i] {
-        Entry::Place { label, .. } => soyuz_core::fold_for_match(label).starts_with(&needle),
+        Entry::Place { label, .. } | Entry::Device { label, .. } => {
+            soyuz_core::fold_for_match(label).starts_with(&needle)
+        }
         _ => false,
     });
     if let Some(i) = hit {
@@ -302,8 +343,19 @@ fn typed(core: &mut AppCore, n: &mut SidebarNav, t: &str) {
 }
 
 /// A mouse event over one of the sidebar's Phase T7 targets (`HitTarget::SidebarEject`,
-/// from `crate::input::mouse`); returns whether it was taken. Skeleton: taken, nothing
-/// happens (agent B: a left press ejects the volume).
-pub fn on_mouse(_app: &mut App, _target: crate::layout::HitTarget, _ev: &crossterm::event::MouseEvent) -> bool {
+/// from `crate::input::mouse`); returns whether it was taken. A left press on a volume's
+/// eject mark ejects its drive (`DeviceCmd::Eject`: unmount, lock, eject or power off).
+pub fn on_mouse(app: &mut App, target: crate::layout::HitTarget, ev: &crossterm::event::MouseEvent) -> bool {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    let crate::layout::HitTarget::SidebarEject(i) = target else { return false };
+    if ev.kind != MouseEventKind::Down(MouseButton::Left) {
+        return true;
+    }
+    let core = &mut app.core;
+    if let Some(Entry::Place { target: Target::Go(Location::Dir(path)), mark: Mark::Volume, .. }) = entries(core).get(i)
+        && let Some(dev) = ejectable(&devices::block_devices(), path)
+    {
+        core.cmds.push(Cmd::Device(DeviceCmd::Eject { dev: Box::new(dev) }));
+    }
     true
 }

@@ -90,6 +90,25 @@ impl Field {
         }
     }
 
+    /// Show a password field's text in clear (`false`: bullets again). Phase T7 (unlock).
+    pub fn set_secret(&mut self, on: bool) {
+        if let FieldKind::Text { secret, .. } = &mut self.kind {
+            *secret = on;
+        }
+    }
+
+    /// Move a text field's text out (no copy), leaving it empty. Phase T7 (unlock: the
+    /// passphrase goes into a `Zeroizing` buffer).
+    pub fn take_text(&mut self) -> String {
+        match &mut self.kind {
+            FieldKind::Text { text, edit, .. } => {
+                *edit = LineEdit::new();
+                std::mem::take(text)
+            }
+            _ => String::new(),
+        }
+    }
+
     /// Whether a checkbox is on.
     pub fn on(&self) -> Option<bool> {
         match self.kind {
@@ -503,6 +522,16 @@ pub enum FieldVmKind {
     },
 }
 
+/// A revealed password lives in the drawn text too: wipe every drawn text when it goes
+/// (Phase T7, unlock dialog; best effort, the model is rebuilt every frame).
+impl Drop for FieldVm {
+    fn drop(&mut self) {
+        if let FieldVmKind::Text { text, .. } = &mut self.kind {
+            zeroize::Zeroize::zeroize(text);
+        }
+    }
+}
+
 /// A button as drawn.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ButtonVm {
@@ -759,6 +788,22 @@ mod tests {
             }
             k => panic!("{k:?}"),
         }
+    }
+
+    #[test]
+    fn secrets_can_be_revealed_and_taken() {
+        let mut f = Form::new(vec![Field::secret("Password")], vec![Button::new("OK")]);
+        f.apply(&txt("hunter2"));
+        f.fields[0].set_secret(false);
+        assert!(matches!(&f.field_vms()[0].kind, FieldVmKind::Text { text, .. } if text == "hunter2"));
+        f.fields[0].set_secret(true);
+        assert!(matches!(&f.field_vms()[0].kind, FieldVmKind::Text { text, .. } if text == "•••••••"));
+        assert_eq!(f.fields[0].take_text(), "hunter2");
+        assert_eq!(f.fields[0].value(), Some(""));
+        // The cursor went with the text: typing starts again at 0.
+        f.apply(&txt("x"));
+        assert_eq!(f.fields[0].value(), Some("x"));
+        assert_eq!(Field::check("c", true).take_text(), "");
     }
 
     #[test]
