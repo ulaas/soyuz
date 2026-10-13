@@ -658,6 +658,7 @@ pub fn device_menu(
     name: &str,
 ) -> Vec<crate::models::context_menu::Entry> {
     use crate::icon::IconId as I;
+    use crate::models::context_menu::MenuIcon;
     let boxed = || Box::new(dev.clone());
     let mut out = vec![menu_cmd(
         I::ArrowLineUp.into(),
@@ -675,7 +676,7 @@ pub fn device_menu(
     }
     if eject_plan(dev, all).is_some() {
         out.push(menu_cmd(
-            I::ArrowLineUp.into(),
+            MenuIcon::Eject,
             tr!("app-device-eject"),
             true,
             Cmd::Device(DeviceCmd::Eject { dev: boxed() }),
@@ -714,7 +715,7 @@ pub fn candidate_menu(
                 name: name.to_string(),
                 kind: cand.dev.fs_type.clone(),
             };
-            out.push(menu_cmd(I::LockSimple.into(), tr!("app-device-unlock"), idle, Cmd::Device(unlock)));
+            out.push(menu_cmd(MenuIcon::LockOpen, tr!("app-device-unlock"), idle, Cmd::Device(unlock)));
         }
         S::Unsupported => {
             out.push(menu_cmd(
@@ -1174,6 +1175,49 @@ mod tests {
         let odd = soyuz_fs::udisks::Candidate { state: S::Unsupported, ..c };
         let menu = items(&candidate_menu(&odd, "Games", true));
         assert!(menu[0].1.is_none(), "unsupported filesystems can't be mounted");
+    }
+
+    /// The GUI draws these menus too (`ui::sidebar`): icons, enabled state and the
+    /// separator are part of the shared definition.
+    #[test]
+    fn menu_icons_separators_and_enabled_state() {
+        use crate::icon::IconId as I;
+        use crate::models::context_menu::{Entry, MenuIcon};
+        use soyuz_fs::udisks::CandidateState as S;
+        let shape = |menu: &[Entry]| -> Vec<Option<(MenuIcon, bool)>> {
+            menu.iter()
+                .map(|e| match e {
+                    Entry::Item(i) => Some((i.icon, i.enabled)),
+                    _ => None,
+                })
+                .collect()
+        };
+        let mut luks = usb("sdb1", &[]);
+        luks.encrypted = true;
+        luks.cleartext = Some(obj("dm0"));
+        let mut clear = blk("dm0", None, &["/run/media/u/Secret"]);
+        clear.crypto_backing = Some(obj("sdb1"));
+        let all = [luks, clear.clone()];
+        assert_eq!(
+            shape(&device_menu(&clear, &all, "Secret")),
+            [Some((I::ArrowLineUp.into(), true)), Some((I::LockSimple.into(), true)), Some((MenuIcon::Eject, true))]
+        );
+        let c = soyuz_fs::udisks::Candidate { container: Some(obj("sdb2")), ..cand("Games", "ntfs", 1) };
+        let tail = [None, Some((I::EyeSlash.into(), true)), Some((I::ClipboardText.into(), true))];
+        let busy = shape(&candidate_menu(&c, "Games", false));
+        let mount = [
+            Some((I::ArrowLineDown.into(), false)),
+            Some((I::LockSimple.into(), false)),
+            Some((I::LockSimple.into(), false)),
+        ];
+        assert_eq!(busy, [&mount[..], &tail[..]].concat());
+        let locked = soyuz_fs::udisks::Candidate { state: S::Locked, ..c.clone() };
+        assert_eq!(shape(&candidate_menu(&locked, "Games", true))[0], Some((MenuIcon::LockOpen, true)));
+        let odd = soyuz_fs::udisks::Candidate { state: S::Unsupported, ..c };
+        assert_eq!(
+            shape(&candidate_menu(&odd, "Games", true)),
+            [&[Some((MenuIcon::Prohibit, false))][..], &tail[..]].concat()
+        );
     }
 
     #[test]

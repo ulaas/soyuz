@@ -24,7 +24,9 @@
 //! terminal view: the workspace, tab history, About, split / join, shelf, unlock and
 //! previous versions dialogs, device rows in the sidebar, and the full-screen tools
 //! (`input::screens`, `view::screens`: the disk usage treemap and the duplicate finder).
-//! Only extra windows, tab tear-off and Run elevated stay unavailable.
+//! Only extra windows (new window, tab / group tear-off, merge windows) and elevation (Run
+//! elevated, the previous-versions Elevate fallback) stay unavailable
+//! (`AppCore::tui_unavailable`); the welcome card is GUI-only (`actions::gui_only`).
 //!
 //! Entry points: [`launch()`] (console, configuration, then [`run`]) and
 //! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary

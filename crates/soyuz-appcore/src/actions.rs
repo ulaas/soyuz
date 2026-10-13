@@ -504,6 +504,12 @@ pub fn tui_only(a: &Action) -> bool {
     )
 }
 
+/// Actions only the GUI has (the terminal UI's palette leaves them out): the welcome
+/// card is a GUI view. Their keys stay editable in the keyboard settings.
+pub fn gui_only(a: &Action) -> bool {
+    matches!(a, Action::Welcome)
+}
+
 /// Actions without an implementation yet: hidden from the command palette and the
 /// keyboard settings (a binding in `config.toml` still answers with a "coming soon").
 pub fn unavailable(a: &Action) -> bool {

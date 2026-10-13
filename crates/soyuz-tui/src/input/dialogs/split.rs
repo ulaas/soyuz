@@ -9,6 +9,11 @@
 //! picks it; fields and buttons as usual. While it runs the fields are read-only and a
 //! ticker wakes the frame loop every 100 ms for the progress line. Closing the dialog
 //! any way while it runs (Esc twice, a quit, a stale close) cancels: [`State`]'s `Drop`.
+//!
+//! The output folder has folder completion like "Extract to…" and the duplicate finder's
+//! field (`state::crumbs::completion`, refreshed in [`tick`]): while it has the focus and
+//! there are subfolders, the list shows them instead of the presets; Up / Down pick one,
+//! Tab accepts it, a click on one too.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,12 +24,16 @@ use soyuz_appcore::core::AppCore;
 use soyuz_appcore::host::Wake;
 use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::split::{CUSTOM, Mode, PRESETS, SplitModel};
+use soyuz_appcore::services::Services;
+use soyuz_appcore::state::crumbs;
 use soyuz_appcore::tr;
+use soyuz_core::config::KeyName;
 
 use super::confirm::{ListClick, list_mouse};
-use super::prompt::{LIST_PAGE, click, list_key};
+use super::prompt::{LIST_PAGE, click, is_key, left_click, list_key, set_text, wheel};
 use super::{DialogInput, DialogMouse, Outcome, TuiDialog};
 use crate::app::App;
+use crate::layout::HitTarget;
 use crate::widgets::form::FieldKind;
 use crate::widgets::{Button, Field, Form, FormOutcome, SelectList};
 
@@ -70,6 +79,10 @@ pub struct State {
     pub list: SelectList,
     /// Fields: the custom size (split), the output folder; buttons: start / done, cancel.
     pub form: Form,
+    /// The subfolders completing the typed output folder (while it has the focus).
+    pub names: Vec<String>,
+    /// The picked completion.
+    pub names_list: SelectList,
     ticker: Option<Ticker>,
 }
 
@@ -103,7 +116,14 @@ pub fn state(model: SplitModel) -> State {
     let mut form = Form::new(fields, vec![Button::new(start), Button::new(tr!("common-cancel"))]).default_button(START);
     let mut list = SelectList::new();
     list.select(model.preset, PRESETS.len());
-    let mut s = State { model: Some(model), list, form: Form::default(), ticker: None };
+    let mut s = State {
+        model: Some(model),
+        list,
+        form: Form::default(),
+        names: Vec::new(),
+        names_list: SelectList::default(),
+        ticker: None,
+    };
     sync(&mut form, s.model.as_ref());
     form.focus_button(START);
     s.form = form;
@@ -184,6 +204,59 @@ fn outcome(s: &mut State, o: FormOutcome, wake: &Wake) -> Option<Outcome> {
     None
 }
 
+/// Whether the list shows the output folder's completions (else the presets).
+pub fn completing(s: &State) -> bool {
+    let out = s.model.as_ref().filter(|m| !m.running()).map(output_field);
+    !s.names.is_empty() && out.is_some() && s.form.focused_field() == out
+}
+
+/// The output folder's completions of the typed text (this also asks for its listing, off
+/// the UI thread); none while another stop has the focus.
+fn complete(services: &mut Services, s: &mut State) {
+    let out = s.model.as_ref().filter(|m| !m.running()).map(output_field);
+    let names = match out {
+        Some(i) if s.form.focused_field() == Some(i) => crumbs::completion(services, &text_of(&s.form, i)).names,
+        _ => Vec::new(),
+    };
+    if names != s.names {
+        s.names = names;
+        s.names_list = SelectList::default();
+    }
+}
+
+/// Accept completion `i` into the output folder.
+fn accept(s: &mut State, i: usize) {
+    let Some(name) = s.names.get(i).cloned() else { return };
+    let Some(m) = s.model.as_mut() else { return };
+    let out = output_field(m);
+    let mut dest = text_of(&s.form, out);
+    crumbs::accept(&mut dest, &name);
+    set_text(&mut s.form, out, &dest);
+    m.out_dir = dest;
+    m.result = None;
+    s.form.focus = out;
+    s.names.clear();
+    s.names_list = SelectList::default();
+}
+
+/// Up / Down / Tab over the output folder's completions: whether `ev` was one of them.
+fn completion_key(s: &mut State, ev: &InputEvent) -> bool {
+    let n = s.names.len();
+    if !completing(s) {
+        return false;
+    }
+    if is_key(ev, KeyName::Tab) {
+        accept(s, s.names_list.cursor);
+    } else if is_key(ev, KeyName::ArrowDown) {
+        s.names_list.select((s.names_list.cursor + 1) % n, n);
+    } else if is_key(ev, KeyName::ArrowUp) {
+        s.names_list.select((s.names_list.cursor + n - 1) % n, n);
+    } else {
+        return false;
+    }
+    true
+}
+
 /// Pick preset `i` (split).
 fn pick(s: &mut State, i: usize) {
     if let Some(m) = s.model.as_mut().filter(|m| m.mode == Mode::Split && !m.running()) {
@@ -210,7 +283,7 @@ fn preset_key(s: &mut State, ev: &InputEvent) -> bool {
 /// A key press or paste.
 pub fn on_input(core: &mut AppCore, s: &mut State, i: &DialogInput) -> Outcome {
     for ev in &i.events {
-        if !preset_key(s, ev) {
+        if !completion_key(s, ev) && !preset_key(s, ev) {
             let o = s.form.apply(ev);
             if let Some(out) = outcome(s, o, &core.wake) {
                 return out;
@@ -223,8 +296,18 @@ pub fn on_input(core: &mut AppCore, s: &mut State, i: &DialogInput) -> Outcome {
 
 /// A mouse event.
 pub fn on_mouse(core: &mut AppCore, s: &mut State, e: &DialogMouse) -> Outcome {
+    if completing(s) {
+        // A click on a completion accepts it; the wheel scrolls them.
+        if let (true, Some(HitTarget::DialogRow(r))) = (left_click(e), e.target) {
+            accept(s, r);
+            return Outcome::Keep;
+        }
+        if wheel(&mut s.names_list, e, s.names.len()) {
+            return Outcome::Keep;
+        }
+    }
     let split = s.model.as_ref().is_some_and(|m| m.mode == Mode::Split);
-    if split {
+    if split && !completing(s) {
         match list_mouse(&mut s.list, PRESETS.len(), e) {
             Some(ListClick::Row { i, .. }) => {
                 pick(s, i);
@@ -247,11 +330,13 @@ pub fn stale(_core: &AppCore, _s: &State) -> bool {
 }
 
 /// Every frame while it is open (`input::dialogs::tick`, from `view::prepare`): the probe's
-/// findings and a finished run's result (its toast); the ticker stops with the run.
+/// findings and a finished run's result (its toast); the ticker stops with the run; the
+/// output folder's completions.
 pub fn tick(core: &mut AppCore, s: &mut State) {
     if let Some(t) = advance(s) {
         core.ui.toasts.push(t);
     }
+    complete(&mut core.services, s);
 }
 
 /// [`tick`] without the core: returns the toast of a finished run.
@@ -286,7 +371,7 @@ mod tests {
         let i = key(k);
         let mut out = Outcome::Keep;
         for ev in &i.events {
-            if !preset_key(s, ev) {
+            if !completion_key(s, ev) && !preset_key(s, ev) {
                 let o = s.form.apply(ev);
                 if let Some(o) = outcome(s, o, &soyuz_appcore::host::no_wake()) {
                     out = o;
@@ -347,6 +432,34 @@ mod tests {
         }
         let all = (1..=32).all(|n| part(n).exists());
         assert!(all || !part(1).exists(), "no partial output");
+    }
+
+    #[test]
+    fn the_output_folder_completes() {
+        let t = tempfile::tempdir().unwrap();
+        let f = t.path().join("a.bin");
+        std::fs::write(&f, vec![7u8; 3000]).unwrap();
+        let mut s = state(SplitModel::split(f));
+        settle(&mut s, |m| !m.probing());
+        let out = output_field(s.model.as_ref().unwrap());
+        let typed = format!("{}{}o", t.path().display(), std::path::MAIN_SEPARATOR);
+        set_text(&mut s.form, out, &typed);
+        s.names = vec!["one".into(), "other".into()];
+        assert!(!completing(&s), "only while the output folder has the focus");
+        assert!(!completion_key(&mut s, &InputEvent::Chord("Tab".parse().unwrap())));
+        s.form.focus = out;
+        assert!(completing(&s));
+        keys(&mut s, "Down");
+        assert_eq!(s.names_list.cursor, 1);
+        assert_eq!(s.form.focus, out, "Down picks a completion, not a preset");
+        keys(&mut s, "Tab");
+        let want = format!("{}{}other{}", t.path().display(), std::path::MAIN_SEPARATOR, std::path::MAIN_SEPARATOR);
+        assert_eq!(text_of(&s.form, out), want);
+        assert_eq!(s.model.as_ref().unwrap().out_dir, want);
+        assert!(s.names.is_empty() && !completing(&s));
+        // With nothing to complete, Tab moves on to the buttons.
+        keys(&mut s, "Tab");
+        assert_ne!(s.form.focus, out);
     }
 
     #[test]

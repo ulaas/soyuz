@@ -121,3 +121,26 @@ fn go_to_folder(data: PathBuf) {
     app.finish();
     common::ok();
 }
+
+/// Welcome is a GUI card (`actions::gui_only`): the terminal UI's palette leaves it out,
+/// while About (a TUI dialog since T7) stays.
+#[test]
+fn palette_hides_gui_only_actions() {
+    match common::relaunch(module_path!(), "palette_hides_gui_only_actions", |_| {}) {
+        Run::Child(data) => hides_gui_only(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn hides_gui_only(data: PathBuf) {
+    let mut app = common::new_app(common::test_config(), &data);
+    assert!(soyuz_appcore::actions::gui_only(&Action::Welcome));
+    let offered = |q: &str| -> Vec<Exec> {
+        soyuz_appcore::palette::rank_commands(&app.core, q).into_iter().map(|i| i.exec).collect()
+    };
+    assert!(!offered("").contains(&Exec::Action(Action::Welcome)));
+    assert!(!offered("welcome").contains(&Exec::Action(Action::Welcome)));
+    assert!(offered("about").contains(&Exec::Action(Action::About)));
+    app.finish();
+    common::ok();
+}

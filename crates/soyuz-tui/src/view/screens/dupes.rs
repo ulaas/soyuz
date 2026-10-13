@@ -55,10 +55,16 @@ pub mod button {
     pub const SETUP: u8 = 8;
 }
 
-/// `HitTarget::ScreenChip` ids: the minimum sizes, then the folder completions.
+/// `HitTarget::ScreenChip` ids: the minimum sizes, then the keep rules of a group header
+/// (the group is the header's row), then the folder completions.
 pub mod chip {
+    /// Keep newest / oldest / shortest path in the clicked group (`Keep::ALL` order).
+    pub const KEEP_IN: u8 = 5;
     pub const COMPLETION: u8 = 10;
 }
+
+/// The keys of the keep rules in a group header (`Keep::ALL` order; also its chips).
+pub const KEEP_KEYS: [&str; 3] = ["n", "o", "s"];
 
 /// `HitTarget::ScreenField` id of the add-folder field.
 pub const FIELD_ADD: u8 = 0;
@@ -182,7 +188,8 @@ pub struct Labels {
     pub trash: String,
     pub cancel: String,
     pub keep_one: String,
-    pub keep_keys: String,
+    /// Before the keep chips of a group header ("keep:").
+    pub keep_in: String,
 }
 
 /// What the duplicate finder screen draws.
@@ -224,6 +231,9 @@ pub struct DupesVm {
 pub fn prepare(core: &mut AppCore, st: &mut State, area: Rect) {
     st.geo = geometry(area, st.zone != Zone::List, !st.model.groups.is_empty());
     crate::input::screens::dupes::pump(core, st);
+    // The pump may bring the first groups (and with them the bulk row): the layout the
+    // frame draws, which mouse clicks resolve against.
+    st.geo = geometry(area, st.zone != Zone::List, !st.model.groups.is_empty());
     st.vm = build(core, st);
 }
 
@@ -242,7 +252,7 @@ fn labels() -> Labels {
         trash: tr!("tools-move-to-trash").into(),
         cancel: tr!("common-cancel").into(),
         keep_one: tr!("tools-dupes-keep-one").into(),
-        keep_keys: tr!("tui-dupes-keep-keys").into(),
+        keep_in: tr!("tui-dupes-keep-in").into(),
     }
 }
 
@@ -485,7 +495,7 @@ fn sizes(buf: &mut Buffer, r: Rect, m: &DupesVm, theme: &TuiTheme, hits: &mut Hi
             break;
         }
         let on = m.min_idx == i;
-        let item = format!("({}) {}", if on { "•" } else { " " }, chrome::ascii_text(theme, s));
+        let item = format!("({}) {}", if on { "•" } else { " " }, crate::borders::ascii_text(theme.ascii_only(), s));
         let style = match (on, m.sizes_focused) {
             (true, true) => theme.style(Role::PaletteSelected),
             (true, false) => theme.style(Role::Text).add_modifier(Modifier::BOLD),
@@ -509,7 +519,7 @@ fn summary(buf: &mut Buffer, r: Rect, m: &DupesVm, theme: &TuiTheme, hits: &mut 
     let find = if m.running { format!("Esc {}", m.labels.stop) } else { format!("F5 {}", m.labels.find) };
     let fw = chrome::button_w(&find);
     let end = r.right().saturating_sub(fw);
-    put(buf, r.x, r.y, end, &chrome::ascii_text(theme, &m.summary), theme.style(Role::Muted));
+    put(buf, r.x, r.y, end, &crate::borders::ascii_text(theme.ascii_only(), &m.summary), theme.style(Role::Muted));
     chrome::button(buf, end, r.y, r.right(), &find, Role::Button, theme, hits, HitTarget::ScreenButton(button::FIND));
 }
 
@@ -549,14 +559,20 @@ fn list(buf: &mut Buffer, r: Rect, m: &DupesVm, theme: &TuiTheme, hits: &mut Hit
             LineKind::Header { group, collapsed, title, reclaim } => {
                 hits.push(lr, HitTarget::DupesHeader(*group));
                 let caret = if *collapsed { "▸ " } else { "▾ " };
-                let keys = &m.labels.keep_keys;
-                let kw = text::width(keys) as u16;
+                // "keep: n o s" on the right: each letter is a chip (`chip::KEEP_IN`).
+                let kw = (text::width(&m.labels.keep_in) + 2 * KEEP_KEYS.len()) as u16;
                 let end = if lr.width > kw + 20 { lr.right() - kw - 1 } else { lr.right() };
                 let mut x = put(buf, lr.x, y, end, caret, st(Role::Faint));
                 x = put(buf, x, y, end, title, st(Role::GroupHeader));
                 put(buf, x.saturating_add(2).min(end), y, end, reclaim, st(Role::Success));
                 if end < lr.right() {
-                    put(buf, end + 1, y, lr.right(), keys, st(Role::Faint));
+                    let mut x = put(buf, end + 1, y, lr.right(), &m.labels.keep_in, st(Role::Faint));
+                    let chip_style = st(Role::Muted).add_modifier(Modifier::UNDERLINED);
+                    for (i, k) in KEEP_KEYS.iter().enumerate() {
+                        x = x.saturating_add(1).min(lr.right());
+                        let t = HitTarget::ScreenChip(chip::KEEP_IN + i as u8);
+                        x = put_hit(buf, x, y, lr.right(), k, chip_style, hits, t);
+                    }
                 }
             }
             LineKind::File { marked, name, folder, date, size, refused } => {
@@ -679,7 +695,7 @@ pub(crate) mod tests {
                 trash: "Move to trash".into(),
                 cancel: "Cancel".into(),
                 keep_one: "Keep at least one copy".into(),
-                keep_keys: "keep: n o s".into(),
+                keep_in: "keep:".into(),
             },
             hints: "hints".into(),
             ..DupesVm::default()
@@ -727,6 +743,27 @@ pub(crate) mod tests {
         assert!(lines[usize::from(g.footer.y)].contains("5 marked"));
         assert_eq!(hits.at(g.footer.right() - 2, g.footer.y), Some(HitTarget::ScreenButton(button::TRASH)));
         assert_eq!(hits.at(50, 29), Some(HitTarget::Overlay));
+    }
+
+    #[test]
+    fn group_headers_have_keep_chips() {
+        let (lines, hits) = draw_with(&vm(), 100, 30, &themes()[0]);
+        let g = geometry(Rect::new(0, 0, 100, 30), false, true);
+        let header = &lines[usize::from(g.list.y)];
+        assert!(header.trim_end().ends_with("keep: n o s"), "{header}");
+        // "keep: n o s" ends at the list's right edge: s, o, n from the right, one blank apart.
+        let s = header.trim_end().chars().count() as u16 - 1;
+        for (i, x) in [(2u8, s), (1, s - 2), (0, s - 4)] {
+            assert_eq!(hits.at(x, g.list.y), Some(HitTarget::ScreenChip(chip::KEEP_IN + i)), "chip {i}");
+        }
+        assert_eq!(hits.at(s - 1, g.list.y), Some(HitTarget::DupesHeader(0)), "between chips: the header");
+        // Narrow: no chips, the header folds.
+        let (lines, hits) = draw_with(&vm(), 30, 30, &themes()[0]);
+        let g = geometry(Rect::new(0, 0, 30, 30), false, true);
+        assert!(!lines[usize::from(g.list.y)].contains("keep:"));
+        assert!((g.list.x..g.list.right()).all(|x| hits.at(x, g.list.y) == Some(HitTarget::DupesHeader(0))));
+        // Ids stay between the sizes and the completions.
+        assert!(SIZES.len() <= usize::from(chip::KEEP_IN) && chip::KEEP_IN + 3 <= chip::COMPLETION);
     }
 
     #[test]

@@ -12,4 +12,5 @@ tui-dupes-confirm = { $count ->
 }
 tui-dupes-setup-line = { $folders } · { $min } · F2 ayarlar
 tui-dupes-no-folders = Henüz klasör yok
-tui-dupes-keep-keys = tut: n o s
+# Before the n / o / s chips of a group header (keep newest / oldest / shortest path).
+tui-dupes-keep-in = tut:

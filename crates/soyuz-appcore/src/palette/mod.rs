@@ -234,6 +234,7 @@ fn palette_actions(app: &AppCore) -> Vec<Action> {
             !matches!(a, Action::OpenBookmark(n) if *n as usize > n_bm)
                 && !crate::actions::unavailable(a)
                 && !(crate::actions::tui_only(a) && app.frontend_kind == crate::core::FrontendKind::Gui)
+                && !(crate::actions::gui_only(a) && app.frontend_kind == crate::core::FrontendKind::Tui)
                 && crate::models::workspaces::palette_shows(app, a)
         })
         .collect();

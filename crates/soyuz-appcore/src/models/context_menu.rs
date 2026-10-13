@@ -52,6 +52,10 @@ pub enum MenuIcon {
     ArrowLineRight,
     /// Disconnect (a server).
     Plugs,
+    /// Eject a drive (device menus).
+    Eject,
+    /// Unlock an encrypted volume (device menus).
+    LockOpen,
     /// No glyph, but the icon column stays (unticked rows of a ticked list).
     Blank,
     /// A dot of tag colour `0..8` (tab groups).
