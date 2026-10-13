@@ -454,21 +454,15 @@ pub fn restart_in_safe_mode() -> std::io::Result<()> {
     std::process::Command::new(exe).args(args).spawn().map(drop)
 }
 
-/// Arguments of the safe-mode restart for `frontend`, run by executable `exe`.
+/// Arguments of the safe-mode restart for `frontend`, run by executable `exe`. The
+/// terminal UI needs `--tui` from the `soyuz` binary, but not from `soyuz-tui`, which is
+/// the terminal UI and rejects `--tui`.
 pub fn safe_mode_args(frontend: crate::core::FrontendKind, exe: &Path) -> Vec<&'static str> {
-    let mut args = match frontend {
-        crate::core::FrontendKind::Gui => Vec::new(),
-        crate::core::FrontendKind::Tui => tui_relaunch_args(exe).to_vec(),
-    };
-    args.push("--safe-mode");
-    args
-}
-
-/// What starts the terminal UI again from executable `exe`: `--tui` for the `soyuz`
-/// binary; nothing for `soyuz-tui`, which is the terminal UI and rejects `--tui`.
-pub fn tui_relaunch_args(exe: &Path) -> &'static [&'static str] {
     let stem = exe.file_stem().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    if stem == "soyuz-tui" { &[] } else { &["--tui"] }
+    match frontend {
+        crate::core::FrontendKind::Tui if stem != "soyuz-tui" => vec!["--tui", "--safe-mode"],
+        _ => vec!["--safe-mode"],
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -681,9 +675,8 @@ mod tests {
         // `soyuz-tui` is the terminal UI already and rejects `--tui` (`soyuz-tui/src/launch.rs`).
         for exe in [tui, tui_exe] {
             assert_eq!(safe_mode_args(FrontendKind::Tui, exe), vec!["--safe-mode"]);
-            assert!(tui_relaunch_args(exe).is_empty());
+            assert_eq!(safe_mode_args(FrontendKind::Gui, exe), vec!["--safe-mode"]);
         }
-        assert_eq!(tui_relaunch_args(gui), ["--tui"]);
     }
 
     #[test]
