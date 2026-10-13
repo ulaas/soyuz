@@ -218,13 +218,24 @@ fn draw_filter_line(f: &mut Frame<'_>, rect: Rect, fv: &FilterVm, theme: &TuiThe
     f.render_widget(Paragraph::new(Line::from(spans)).style(theme.style(Role::StatusBar)), rect);
     if let Some(c) = cursor.filter(|&c| c < rect.width) {
         f.set_cursor_position(Position { x: rect.x + c, y: rect.y });
+        hits.set_caret(Position { x: rect.x + c, y: rect.y });
     }
     hits.push(rect, HitTarget::Filter);
 }
 
 /// Draw the status line into `rect` (an empty rect when it is hidden: then only an open
 /// filter field is drawn, on the bottom row of the screen).
+///
+/// Screen-reader mode (T8): only an open filter field is drawn here; otherwise the row is
+/// `crate::a11y`'s, which writes the status sentence (or the newest toast) into it.
 pub fn draw_status(f: &mut Frame<'_>, rect: Rect, m: &StatusVm, theme: &TuiTheme, hits: &mut Hits) {
+    if theme.screen_reader() && !rect.is_empty() {
+        hits.push(rect, HitTarget::Status);
+        if let Some(fv) = m.filter.as_ref().filter(|fv| fv.cursor.is_some()) {
+            draw_filter_line(f, rect, fv, theme, hits);
+        }
+        return;
+    }
     if rect.is_empty() {
         let area = f.area();
         if let Some(fv) = m.filter.as_ref().filter(|fv| fv.cursor.is_some())
@@ -270,6 +281,7 @@ pub fn draw_status(f: &mut Frame<'_>, rect: Rect, m: &StatusVm, theme: &TuiTheme
     f.render_widget(Paragraph::new(Line::from(spans)).style(bar), rect);
     if let Some(c) = cursor.filter(|&c| c < rect.width) {
         f.set_cursor_position(Position { x: rect.x + c, y: rect.y });
+        hits.set_caret(Position { x: rect.x + c, y: rect.y });
     }
 
     // Right: smart folder, free space, view mode, sort, hint; the last ones go first when

@@ -174,10 +174,17 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
 
 /// Draw `d` centred in `area`, recording `DialogField`, `DialogButton` and `DialogRow`
 /// targets; the terminal cursor goes into the focused text field.
+///
+/// The caret (`Hits::set_caret`) is the text cursor, else the focused button, else the
+/// list's cursor row, else the title row. Screen-reader mode (T8): `area` is cleared
+/// first, so the dialog reads top to bottom with no text of the screen below on its rows.
 pub fn draw_dialog(f: &mut Frame<'_>, area: Rect, d: &DialogVm, theme: &TuiTheme, hits: &mut Hits) {
     let area = area.intersection(f.area());
     if area.is_empty() {
         return;
+    }
+    if theme.screen_reader() {
+        f.render_widget(Clear, area);
     }
     let want = if d.width == 0 { DEFAULT_WIDTH } else { d.width };
     let width = area.width.saturating_sub(4).clamp(1, want).min(area.width);
@@ -302,6 +309,25 @@ pub fn draw_dialog(f: &mut Frame<'_>, area: Rect, d: &DialogVm, theme: &TuiTheme
     if let Some((x, y)) = text_cursor.or(cursor) {
         f.set_cursor_position(Position { x, y });
     }
+    hits.set_caret(caret(d, r, text_cursor.or(cursor), hits));
+}
+
+/// Where the caret goes in the dialog box `r` (see [`draw_dialog`]): `cursor` (a text
+/// cursor), else the focused button's or the list cursor's drawn target, else the title row.
+fn caret(d: &DialogVm, r: Rect, cursor: Option<(u16, u16)>, hits: &Hits) -> Position {
+    use crate::layout::HitTarget;
+    if let Some((x, y)) = cursor {
+        return Position { x, y };
+    }
+    let target =
+        |t: HitTarget| hits.iter().filter(|(_, h)| *h == t).last().map(|(rr, _)| Position { x: rr.x, y: rr.y });
+    let button = d.focus.checked_sub(d.fields.len()).filter(|&b| b < d.buttons.len());
+    let field = (d.focus < d.fields.len()).then_some(d.focus);
+    button
+        .and_then(|b| target(HitTarget::DialogButton(b)))
+        .or_else(|| field.and_then(|i| target(HitTarget::DialogField(i))))
+        .or_else(|| (!d.list.is_empty()).then(|| target(HitTarget::DialogRow(d.list_state.cursor))).flatten())
+        .unwrap_or(Position { x: r.x, y: r.y })
 }
 
 #[cfg(test)]

@@ -22,7 +22,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::{Modifier, Style};
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::file_class::classify;
@@ -382,7 +382,18 @@ fn visible<T>(all: &[T], n: Nav) -> &[T] {
 
 /// Draw page `m` of pane `pane` into `rect`.
 pub fn draw(buf: &mut Buffer, rect: Rect, pane: PaneId, m: &PlacesVm, theme: &TuiTheme, hits: &mut Hits) {
+    // Screen-reader mode (T8): no icons.
+    let plain;
+    let m = if theme.screen_reader() && m.icons != IconSet::Ascii {
+        plain = PlacesVm { icons: IconSet::Ascii, ..m.clone() };
+        &plain
+    } else {
+        m
+    };
     hits.push(rect, HitTarget::PlacesArea { pane });
+    if m.focused {
+        hits.set_caret(Position { x: rect.x, y: rect.y });
+    }
     buf.set_style(rect, theme.style(Role::Text));
     let g = geometry(rect);
     draw_header(buf, g.header, pane, m, theme, hits);
@@ -447,6 +458,9 @@ pub fn draw(buf: &mut Buffer, rect: Rect, pane: PaneId, m: &PlacesVm, theme: &Tu
         }
         buf.set_style(r, style);
         hits.push(r, HitTarget::PlacesRow { pane, index: row.index });
+        if row.cursor && m.focused {
+            hits.set_caret(Position { x: r.x, y: r.y });
+        }
     }
 }
 

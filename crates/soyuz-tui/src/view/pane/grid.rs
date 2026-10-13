@@ -29,7 +29,7 @@
 //! show the item's icon glyph (in the icon set of `[tui] icons`) instead.
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::icon::IconId;
 use soyuz_appcore::services::preview_gfx::Tex;
@@ -236,6 +236,11 @@ pub(super) fn draw_lines(buf: &mut Buffer, g: &PaneGeom, m: &PaneVm, gv: &GridVm
                 if !r.is_empty() {
                     draw_cell(buf, m, gv, row, r, theme);
                     hits.push(r, HitTarget::PaneRow { pane: m.id, vis_version: m.vis_version, index: row.index });
+                    if m.focused && row.cursor {
+                        // The name line (the only line in screen-reader mode).
+                        let y = if gv.spec.compact() || theme.screen_reader() { r.y } else { r.bottom() - 1 };
+                        hits.set_caret(Position { x: r.x, y });
+                    }
                     if let Some(e) = &row.edit {
                         let (name_r, prefix) = if gv.spec.compact() {
                             (r, super::prefix_w(m))
@@ -258,7 +263,8 @@ pub(super) fn draw_lines(buf: &mut Buffer, g: &PaneGeom, m: &PaneVm, gv: &GridVm
 /// Draw one cell of `row` into `r`.
 fn draw_cell(buf: &mut Buffer, m: &PaneVm, gv: &GridVm, row: &Row, r: Rect, theme: &TuiTheme) {
     let style = row_style(m, row, theme);
-    if gv.spec.compact() || r.height < 2 {
+    // Screen-reader mode (T8): the name line only (no images, no big icons).
+    if gv.spec.compact() || r.height < 2 || theme.screen_reader() {
         let line = Rect { height: 1, ..r };
         draw_name(buf, m, row, line.x, line.y, line.width, theme);
         buf.set_style(line, style);

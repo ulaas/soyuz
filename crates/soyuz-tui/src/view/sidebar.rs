@@ -39,7 +39,7 @@
 use std::time::Duration;
 
 use ratatui::Frame;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Modifier;
 use ratatui::widgets::Paragraph;
 use soyuz_appcore::core::{AppCore, Focus};
@@ -682,9 +682,14 @@ pub fn prepare(core: &mut AppCore, n: &mut SidebarNav, regions: &Regions) {
     n.top = n.top.min(entries.len().saturating_sub(h));
 }
 
-/// The chevron of an open / closed header or folder.
-fn chevron(open: bool, set: IconSet) -> &'static str {
-    glyph(if open { IconId::CaretDown } else { IconId::CaretRight }, set)
+/// The chevron of an open / closed header or folder (`-` / `+` in screen-reader mode,
+/// `sr`: no arrow a reader would read as "greater than").
+fn chevron(open: bool, set: IconSet, sr: bool) -> &'static str {
+    match (sr, open) {
+        (true, true) => "-",
+        (true, false) => "+",
+        (false, _) => glyph(if open { IconId::CaretDown } else { IconId::CaretRight }, set),
+    }
 }
 
 /// The one-cell mark before a place's label.
@@ -741,9 +746,9 @@ fn with_right(left: &str, right: &str, w: usize) -> String {
 }
 
 /// The text of `line` in `w` cells.
-fn line_text(line: &SidebarLine, w: usize, set: IconSet) -> String {
+fn line_text(line: &SidebarLine, w: usize, set: IconSet, sr: bool) -> String {
     let s = match line.kind {
-        LineKind::Header { open } => format!("{} {}", chevron(open, set), line.label),
+        LineKind::Header { open } => format!("{} {}", chevron(open, set, sr), line.label),
         LineKind::Place if line.eject => {
             let body =
                 text::truncate_end(&format!("{} {}", mark_glyph(line.mark, set), line.label), w.saturating_sub(2));
@@ -760,7 +765,7 @@ fn line_text(line: &SidebarLine, w: usize, set: IconSet) -> String {
             let mark = if loading && expanded {
                 "…"
             } else if expandable {
-                chevron(expanded, set)
+                chevron(expanded, set, sr)
             } else {
                 " "
             };
@@ -790,7 +795,10 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         if line.cursor && m.focused {
             style = style.patch(theme.style(Role::Cursor));
         }
-        f.render_widget(Paragraph::new(line_text(line, w, theme.icons())), r);
+        f.render_widget(Paragraph::new(line_text(line, w, theme.icons(), theme.screen_reader())), r);
+        if line.cursor && m.focused {
+            hits.set_caret(Position { x: r.x, y: r.y });
+        }
         f.buffer_mut().set_style(r, style);
         // The mark in its colour (a state dot keeps it on the cursor row too).
         let mark_role = match line.mark {

@@ -30,3 +30,25 @@ tui-hint = Ctrl+Q çık · Enter aç · Backspace yukarı
 tui-hint-filter = Enter ilk eşleşme · Esc temizle
 
 ## T2.9: mouse
+
+## T8: screen-reader mode (the status sentence, the toasts in the status row)
+# $path: the folders of the panes not drawn (joined with "; ").
+tui-sr-other-pane = Diğer bölme: { $path }
+# A list row read out. $kind: tui-sr-folder / -file / -link; $pos: its position, $total: the items.
+tui-sr-item = { $name }, { $kind }, { $total } öğeden { $pos }.
+tui-sr-item-size = { $name }, { $kind }, { $size }, { $total } öğeden { $pos }.
+tui-sr-folder = klasör
+tui-sr-file = dosya
+tui-sr-link = bağlantı
+tui-sr-selected = seçili
+# $column: the sort column's label; $dir: tui-sr-ascending / tui-sr-descending.
+tui-sr-sorted = sıralama: { $column }, { $dir }
+tui-sr-ascending = artan
+tui-sr-descending = azalan
+# The kind of a toast, before its title ("Warning: Copy failed").
+tui-sr-info = Bilgi
+tui-sr-success = Tamamlandı
+tui-sr-warning = Uyarı
+tui-sr-error = Hata
+tui-sr-checked = işaretli
+tui-sr-unchecked = işaretli değil

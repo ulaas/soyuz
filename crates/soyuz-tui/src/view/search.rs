@@ -392,6 +392,7 @@ pub fn draw_search(f: &mut Frame<'_>, area: Rect, m: &SearchVm, theme: &TuiTheme
     }
     if let Some((x, y)) = cursor {
         f.set_cursor_position(Position { x, y });
+        hits.set_caret(Position { x, y });
     }
 }
 
@@ -430,6 +431,9 @@ fn field_row(buf: &mut Buffer, r: Rect, bar: &BarVm, theme: &TuiTheme, hits: &mu
         let nx = put(buf, x0, r.y, r.right(), &button_text(&b.label), theme.style(role));
         if nx > x0 {
             hits.push(Rect::new(x0, r.y, nx - x0, 1), HitTarget::SearchButton(b.button));
+            if b.focused {
+                hits.set_caret(Position { x: x0, y: r.y });
+            }
         }
     }
     cursor
@@ -488,6 +492,9 @@ fn draw_pills(buf: &mut Buffer, rows: &[Rect], pills: &[PillVm], theme: &TuiThem
         let nx = put(buf, x, row.y, row.right(), &s, style);
         if nx > x {
             hits.push(Rect::new(x, row.y, nx - x, 1), HitTarget::SearchPill(p.id));
+            if p.focused {
+                hits.set_caret(Position { x, y: row.y });
+            }
         }
         x = nx.saturating_add(1);
     }

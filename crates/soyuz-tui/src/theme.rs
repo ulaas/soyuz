@@ -376,22 +376,26 @@ impl TuiTheme {
         self.dark
     }
 
-    /// The icon set (`[tui] icons`).
+    /// The icon set (`[tui] icons`; ASCII in screen-reader mode: no icon glyphs, the kind
+    /// markers say it).
     pub fn icons(&self) -> IconSet {
-        self.icons
+        if self.screen_reader { IconSet::Ascii } else { self.icons }
     }
 
-    /// The box lines (`[tui] borders`).
+    /// The box lines (`[tui] borders`; none in screen-reader mode).
     pub fn borders(&self) -> TuiBorders {
-        self.borders
+        if self.screen_reader { TuiBorders::None } else { self.borders }
     }
 
     /// Only ASCII is drawn: `[tui] icons = "ascii"` with `borders = "ascii"` or `"none"`.
     /// `view::draw` then also replaces the typographic punctuation of labels and
     /// translations (`…`, `·`, arrows, quotes) with ASCII look-alikes
     /// ([`crate::borders::asciify`]); other characters (names in other scripts) stay.
+    /// In screen-reader mode only `[tui] icons = "ascii"` asks for it (the boxes are gone
+    /// anyway; Unicode punctuation stays for the reader otherwise).
     pub fn ascii_only(&self) -> bool {
-        self.icons == IconSet::Ascii && matches!(self.borders, TuiBorders::Ascii | TuiBorders::None)
+        self.icons == IconSet::Ascii
+            && (self.screen_reader || matches!(self.borders, TuiBorders::Ascii | TuiBorders::None))
     }
 
     /// The whole screen's base style: `bg.window` behind `text.primary` with colours, the

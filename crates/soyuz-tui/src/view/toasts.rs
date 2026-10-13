@@ -116,8 +116,11 @@ fn toast_mark(kind: ToastKind, set: IconSet) -> &'static str {
 
 /// Draw the toasts into the top-right corner of `area` ([`area`]), newest on top;
 /// older ones that do not fit are left out.
+///
+/// Screen-reader mode (T8): no boxes; the newest toast is written into the status row
+/// instead (`crate::a11y::status_line`).
 pub fn draw_toasts(f: &mut Frame<'_>, area: Rect, m: &ToastsVm, theme: &TuiTheme, hits: &mut Hits) {
-    if area.is_empty() {
+    if area.is_empty() || theme.screen_reader() {
         return;
     }
     let mut y = area.y;
