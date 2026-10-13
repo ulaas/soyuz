@@ -521,7 +521,7 @@ fn draw_grid(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
     use soyuz_term::{GridCell, GridCursor, TermColor};
@@ -555,7 +555,7 @@ mod tests {
         }
     }
 
-    fn vm() -> TerminalVm {
+    pub(crate) fn vm() -> TerminalVm {
         TerminalVm {
             visible: true,
             focused: true,

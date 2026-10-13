@@ -1172,13 +1172,13 @@ fn profile_detail_rows(buf: &mut Buffer, r: Rect, d: &ProfileDetailVm, theme: &T
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
     use super::*;
 
-    fn vm() -> CompareVm {
+    pub(crate) fn vm() -> CompareVm {
         let rows = (0..30)
             .map(|i| RowVm {
                 index: i,

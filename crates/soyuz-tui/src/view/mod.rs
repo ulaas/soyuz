@@ -444,6 +444,31 @@ mod tests {
         quad.panes = (0..4).map(|i| pane(i, i == 2)).collect();
         let mut dual = m.clone();
         dual.panes = vec![pane(0, true), pane(1, false)];
+        // Phase T5 / T6 (W4): the models of the new regions and overlays, as their own
+        // modules' tests build them (the AI panel by hand: its file belongs to the composer).
+        let mut t56 = dual.clone();
+        t56.search = search::tests::sample();
+        t56.terminal = terminal::tests::vm();
+        t56.ai = AiVm {
+            visible: true,
+            focused: true,
+            title: "Assistant 日本語".into(),
+            status: "Waiting for your approval".into(),
+            running: true,
+            info: "fake · move · 1.2k tok".into(),
+            stop: Some("Stop  Esc".into()),
+            tabs: vec!["Chat".into(), "Recipes".into(), "Audit log".into()],
+            lines: vec![ai::AiLine::plain("> move it ".repeat(8), crate::theme::Role::Title); 5],
+            footer: vec![ai::AiLine::plain("2 plans wait", crate::theme::Role::Warning)],
+            hints: "Enter send · Tab cards".into(),
+            ..AiVm::default()
+        };
+        let mut compare = t56.clone();
+        compare.compare = compare::tests::vm();
+        let mut settings = t56.clone();
+        settings.settings = settings::tests::vm();
+        let mut tables = settings.clone();
+        tables.dialog = with_dialog.dialog.clone();
         let cases = [
             (&m, Facts { toasts: 3, ..Facts::default() }),
             (&with_dialog, Facts { toasts: 3, sidebar: true, tab_strip: true, ..Facts::default() }),
@@ -454,7 +479,16 @@ mod tests {
             (&with_dialog, Facts { editor_maximized: true, ..panels.clone() }),
             // Phase T5 / T6: the search bar, the AI panel (beside or over the body).
             (&dual, Facts { shown: 2, search_rows: 2, ai: true, ..Facts::default() }),
-            (&with_menu, Facts { search_rows: 1, ai: true, ai_ratio: 0.6, ..panels }),
+            (&with_menu, Facts { search_rows: 1, ai: true, ai_ratio: 0.6, ..panels.clone() }),
+            // W4: every T5 / T6 region filled at once (search bar + status row, terminal in
+            // the bottom panel, AI panel beside or over the body) ...
+            (&t56, Facts { shown: 2, search_rows: 3, ai: true, bottom_rows: 3, ..Facts::default() }),
+            (&t56, Facts { search_rows: 2, ai: true, ai_ratio: 0.25, ..panels.clone() }),
+            // ... and the full-screen overlays: the compare screen, the settings editor and
+            // a table editor dialog over it.
+            (&compare, Facts { bottom_rows: 3, search_rows: 1, ..Facts::default() }),
+            (&settings, Facts { shown: 2, ai: true, ..Facts::default() }),
+            (&tables, Facts { toasts: 3, ..panels }),
         ];
         for (vm, facts) in cases {
             for w in 0..=20 {

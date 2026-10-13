@@ -415,14 +415,154 @@ bar or leaves the editor, and Alt+E goes back into it. The editor shortcuts live
 *Editor* key context, so you can rebind them in `[keys.bindings]` like any other.
 Quitting with unsaved documents asks first.
 
+**Search bar.** Ctrl+Shift+F (F3, or Alt+Shift+F where the terminal cannot send it) opens
+the search bar under the breadcrumbs, as in the window: type the query and press Enter;
+the results replace the list and the bar keeps the keyboard (Down moves it to the
+results, Esc closes the bar, the results stay). Tab moves through the query field, the
+"in files" field of a content search, the pills (mode, case, contents, size, date, kind,
+hidden files, `.gitignore`, everywhere) and the Run / Save / close buttons; Space or Enter
+toggles a pill or picks its next option (Shift: the previous one), and the size pill opens
+a dialog with the minimum, the maximum and presets. Changing a pill searches again. The
+status row under the bar shows the hits, how much was scanned, whether the index answered
+and the folder being searched, with *Cancel*, *Relevance*, *Make smart folder* (or *Edit*)
+and *Refine*. Ctrl+S saves the search under a name (`searches.toml`): it shows in the
+sidebar, where Enter runs it again and its menu removes it. *Toggle flat view* lists a
+folder tree in one list as in the window.
+
+**Smart folders, archives and remote locations.** Smart folders work as in the window: the
+sidebar's *New smart folder* row (or its menu, Shift+F10) opens the editor with the name,
+the query, "include hidden", how the query will be answered and a cheat sheet of the query
+language; a smart folder's menu opens it, opens it in a new tab, edits or deletes it, and
+the status line shows the index state while one is open. Enter on an archive (zip, tar.*,
+7z, single RAR) browses it like a folder; an encrypted one asks for its password first.
+*Extract to…* (destination with folder completion, "each archive into its own folder"),
+*Compress…* (name, format, level, password) and renaming an entry inside a zip are
+dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network
+section) opens the connection form for SFTP, WebDAV, FTP(S), S3 and, off Windows, SMB, with the
+fields of the chosen protocol and sign-in method; a new SSH host key asks before it is trusted.
+Saved connections show a state dot in the sidebar and have a menu (open in a new tab,
+edit, disconnect, copy the address, remove). Passwords and keys go to the OS credential
+store, never to `config.toml`.
+
+**Terminal pane.** Ctrl+` (Alt+` on legacy terminals) shows the integrated terminal in
+the bottom panel (it shares the panel with the jobs, `[tui] terminal_rows` high) and gives
+it the keyboard; Alt+T moves the keyboard back into it later. The shell starts in the
+current folder (`[terminal] shell`, `args`, as in the window). While it has the keyboard
+every key goes to the shell, except a few passthrough chords that stay Soyuz's: Ctrl+` /
+Alt+` (hide), Ctrl+Tab / Ctrl+PageDown (next session), Ctrl+Shift+letter (Alt+Shift+letter),
+Alt+P, Alt+J (jobs), Alt+E (editor) and F12 (sidebar). Esc at an empty prompt gives the
+keyboard back to the file list (`[terminal] escape_returns_focus`); elsewhere Esc goes to
+the program. Shift+PageUp / PageDown scroll back; Ctrl+Shift+C (Alt+Shift+C) copies the
+selection, Ctrl+C copies one when there is a selection and interrupts otherwise, and
+Ctrl+Shift+V (Alt+Shift+V) pastes the clipboard's text on Windows (a paste from the
+terminal itself always reaches the shell). Sessions sit in a strip above the grid: `[+]`
+starts one, a click switches, a double click renames, the close mark or a middle click
+closes, a right click opens the session menu, and the arrow opens an external terminal.
+With the mouse on, dragging selects (double click: words, triple: lines), Ctrl+click opens
+a link or a path, and programs that want the mouse get it (hold Shift to select instead).
+When a program in the terminal wants to set the clipboard (OSC 52) and `[terminal] osc52`
+is `ask`, a bar above the grid shows the text: `a` allows it once, `s` always for this
+session, `d` or Esc denies. `exit` ends the session and closes the pane.
+
+**Suspend to the shell.** With `[tui] shell_mode = "suspend"` (*Settings → Terminal UI*)
+the terminal actions leave the terminal UI instead: Soyuz restores the terminal and runs
+your shell in the current folder (or one command line, such as a custom command that runs
+in the terminal, which waits for Enter afterwards so the output stays readable) until you `exit`, then comes back where
+you were. Ctrl+C in the shell never stops Soyuz. *Edit config file* (and Ctrl+E in the
+settings editor) runs a text editor on `config.toml` the same way: `[tui] editor` (for
+example `nvim` or `code --wait`), then `$VISUAL`, `$EDITOR`, then the first of nvim, vim,
+nano, micro, hx and vi (and `edit` on Windows) on `PATH`. There is no graphical fallback:
+when none is found a toast lists the names tried and, for the config file, the built-in
+settings editor opens instead. After the editor exits the settings are reloaded (or the
+parse error is shown).
+
+**Folder compare and sync.** *Compare folders* (the two selected folders, or both panes'
+folders) opens Compare & sync as a full-screen view, the same as the window's: the left
+and right folders (with folder completion), the method and the sync mode at the top; F5
+(or Ctrl+R) compares, F6 swaps the sides, Esc cancels a running scan. The rows show what
+differs; 1–5 hide or show a category (only left, newer left, different, newer right, only
+right), Space cycles a row's action, Left / Right / Delete / S copy to the left / right,
+delete or skip (with Shift: every visible row), M / P change the method / the sync mode,
+C resolves the conflicts of a two-way sync. Enter shows the plan, and Enter again runs it
+as one undoable job. F8 opens the sync profiles: Enter loads a profile and compares, R runs
+it now, D does a dry run, X cancels its run, N / S create one (blank / from the current
+setup), E (or F4) edits its folders, method, mode and schedule (every so many minutes,
+daily at a time, …), F2 renames and Delete deletes it (not while it runs). The page shows
+each profile's schedule, next run, last run and its run reports. Scheduled profiles run
+while the terminal UI is open, as in the window.
+
+**AI assistant.** Ctrl+I (Alt+I on legacy terminals) opens the assistant panel beside the
+files (`[tui] ai_ratio` of the width; below 100 columns it covers them) with the keyboard
+in the composer; Ctrl+I focuses a panel that is open but does not have the keyboard, and a
+second Ctrl+I closes it. Type a request and press Enter; `/` and `@` open the command and
+mention lists. The assistant never touches files itself: every change it proposes is a
+plan card. Tab moves to the cards (Up / Down choose one, Enter expands it): A approves, R
+rejects, K approves every plan of the same kind, U undoes the task and S saves it as a
+recipe; an approved plan runs as a job (Alt+J shows it, undo works as usual). A cost
+question asks before an expensive request starts. F1 / F2 / F3 (Alt+1 / 2 / 3) switch
+between the chat, the recipes and the audit log, Ctrl+N starts a new chat, and Esc stops a
+running task. With `[ai.mcp] approval_ui = "panel"`, requests from external MCP clients
+show up as cards in the panel too.
+
+The composer is multi-line: Enter sends; Alt+Enter, Ctrl+J (and Shift+Enter where the
+terminal speaks the kitty keyboard protocol) insert a new line; a paste keeps its new
+lines; Up / Down move between lines; the composer grows to six rows and then scrolls, and a
+click places the cursor. On the chat tab, with the panel focused, Alt+M opens the model /
+profile menu, Alt+R switches between fast and strong, Alt+F opens the folder-access menu,
+Alt+O the tools / MCP-servers menu and Alt+S the smart search card (Enter searches,
+Alt+Enter asks the assistant, Esc closes it). The chips under the header show Stop, the
+model, the route, folder access, tools, smart search and the token meter with the monthly
+budget warning. E edits a pending card (the names table for rename plans, a JSON dialog
+with the arguments for other tools; also the card's *[Edit]* button): in the JSON dialog
+Enter starts a new indented line, Ctrl+S or Alt+S applies (an invalid edit shows why and
+stays open), Ctrl+E, Alt+E or F4 edits the arguments in `$EDITOR`, Tab reaches the buttons
+and Esc cancels. Shift+E sends any tool's arguments straight to `$EDITOR`. Esc stops a
+running task while the panel is open, also when the list, the sidebar, the preview or the
+jobs have the keyboard.
+
+**Settings editor.** Ctrl+, (Alt+, on legacy terminals and in Windows Terminal) opens the
+settings as a full-screen view generated from the configuration: the sections on the left
+(hidden on narrow terminals), their keys on the right, each with its value; changed keys
+are marked and keys that only apply after a restart say so. Every change applies at once
+and is saved to `config.toml` shortly after, keeping your comments. Up / Down move, Tab
+switches between sections and keys (Ctrl+PageUp / PageDown: the previous / next section),
+Enter edits (a switch toggles, a choice opens its list, numbers and text are edited in
+place, lists open the list editor), Space toggles a switch or picks the next value, Left /
+Right step a choice or a number (Shift: by ten), Backspace or Delete resets a key and
+Ctrl+R the whole section (after a question). `/`, Ctrl+F or just typing searches every
+section. F1 or `?` shows or hides the description lines (shown when the terminal has at
+least 24 rows). Ctrl+E edits `config.toml` in your text editor (see *Suspend* above);
+afterwards the settings editor shows the file's values, as it does when the file changes
+on disk. Esc cancels an edit, clears the search and closes.
+
+Tables such as bookmarks, custom commands, AI profiles, MCP clients and servers,
+automation rules and saved searches open the table editor: Insert (Alt+A) adds an element,
+Alt+D duplicates it, Delete (Alt+R) removes it after a question, Alt+Up / Alt+Down move it
+and Enter opens its form, which has the same field kinds as the main editor (a key of a map
+is asked for first, and taken names are refused). Fields that hold a secret (an AI
+profile's API key, an MCP token) take a `credential:` or `env:` reference or *Set secret…*
+(Alt+S): the secret, typed as bullets, goes to the OS credential store and only the
+reference is written to `config.toml`; Alt+R removes it, and for an MCP client token Alt+G
+generates a new one and shows it once with the client snippet. Fields a form cannot hold
+(automation rule actions, a saved search's query) say "Edit in $EDITOR (Ctrl+E)".
+
+**Key bindings.** The settings' *Keyboard* section (also *Show keybindings*, Ctrl+/ or
+Alt+/) shows the preset and the `[keys]` switches, the problems of the key map (conflicts,
+invalid entries) and every action with its shortcuts as chips, grouped by category, with
+the alternatives Soyuz adds for legacy terminals tagged. Enter on an action records another
+shortcut (a conflict shows before it is kept), Left / Right choose a chip, Delete removes
+it, Backspace goes back to the preset's shortcuts, and Alt+C / Alt+M show only the conflicts
+/ only the changed actions. The search field filters the actions.
+
 **Crash recovery.** If Soyuz stops unexpectedly, the terminal is restored first. On the
 next start the terminal UI offers to resume, roll back or discard the jobs that were
 interrupted (leftover partial files can go to the trash), and shows the crash reports
 (view, delete, open the folder), like the window does.
 
-Settings, workspaces, tab history, devices (unlock, read-only mount), smart folders,
-remote locations, archive extract / create, About and the integrated terminal panel have
-no terminal view yet: they show a short notice instead (use the window for them).
+Workspaces, tab history, new windows, devices (unlock, read-only mount), About and the
+tool windows other than Compare & sync (size treemap, duplicates, split / join, previous
+versions) have no terminal view yet: they show a short notice instead (use the window for
+them).
 
 **Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
 Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
@@ -450,8 +590,10 @@ Settings → Terminal UI: turn the mouse off to keep the terminal's own text sel
 choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
 it), the colour depth, the icons (Unicode, Nerd Font or ASCII), the box lines (rounded,
 plain, ASCII or none; ASCII icons with ASCII or no lines give a pure ASCII screen), the
-sidebar width, the jobs panel height, the preview width, images and the cell size, and
-the OSC 52 clipboard. In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
+sidebar width, the jobs panel height, the preview width, images and the cell size, the
+OSC 52 clipboard, the terminal mode (`shell_mode`: the terminal pane or suspend to the
+shell), the terminal pane's height (`terminal_rows`), the AI panel's width (`ai_ratio`) and
+the text editor (`editor`). In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
 UI keeps its own session (`session-tui.toml`) and log (`soyuz-tui.log`) in the settings
 folder.
 
