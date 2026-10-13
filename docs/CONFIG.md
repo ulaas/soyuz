@@ -120,6 +120,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `mono_font` | string | — | Legacy (schema 1): moved into `[fonts.terminal]` / `code` / `hex` on load. |
 | `font_size` | float | `13.0` | Base UI text size in points. |
 | `reduced_motion` | boolean | `false` | Turn off animations (transitions and springs jump to their end state). |
+| `toast_time_scale` | float | `0.5` | How long notifications stay up, as a multiple of their standard time (info 4 s, warning 6 s, error 8 s): 0.5 = half as long. Hovering one pauses its timer. |
 | `high_contrast` | boolean | `false` | High-contrast palette (stronger text, borders and focus rings). |
 | `icon_style` | `"colored"` \| `"mono"` | `"colored"` | `colored` file-type icons or `mono` (single color; folder colors stay). |
 | `show_thumbnails` | boolean | `true` | Picture and video thumbnails in the grid and gallery views. |

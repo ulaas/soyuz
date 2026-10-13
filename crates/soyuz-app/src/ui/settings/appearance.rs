@@ -116,6 +116,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
+            tr!("settings-appearance-toast-time"),
+            tr!("settings-appearance-toast-time-desc"),
+            "notification toast duration timeout",
+            |ui| {
+                number(ui, &mut d.appearance.toast_time_scale, 0.1..=5.0, "×");
+            },
+        );
+        r.row_kw(
             tr!("settings-appearance-high-contrast"),
             tr!("settings-appearance-high-contrast-desc"),
             "accessibility a11y contrast vision",

@@ -91,6 +91,7 @@ impl Default for Appearance {
             mono_font: String::new(),
             font_size: 13.0,
             reduced_motion: false,
+            toast_time_scale: 0.5,
             high_contrast: false,
             icon_style: IconStyle::Colored,
             show_thumbnails: true,

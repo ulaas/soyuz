@@ -172,6 +172,9 @@ pub struct Appearance {
     pub font_size: f32,
     /// Turn off animations (transitions and springs jump to their end state).
     pub reduced_motion: bool,
+    /// How long notifications stay up, as a multiple of their standard time (info 4 s,
+    /// warning 6 s, error 8 s): 0.5 = half as long. Hovering one pauses its timer.
+    pub toast_time_scale: f32,
     /// High-contrast palette (stronger text, borders and focus rings).
     pub high_contrast: bool,
     /// `colored` file-type icons or `mono` (single color; folder colors stay).

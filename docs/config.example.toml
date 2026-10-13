@@ -32,6 +32,7 @@ density = "cozy"                 # compact | cozy | comfortable | touch (large t
 ui_scale = 1.0
 font_size = 13.0
 reduced_motion = false
+toast_time_scale = 0.5           # notification time × this (info 4 s, warning 6 s, error 8 s)
 high_contrast = false            # stronger text, borders and focus rings
 icon_style = "colored"           # colored | mono
 show_thumbnails = true

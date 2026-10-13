@@ -266,7 +266,11 @@ impl AppCore {
 
         let mut ui = UiState {
             sidebar,
-            toasts: Toasts::default(),
+            toasts: {
+                let mut t = Toasts::default();
+                t.set_time_scale(config.appearance.toast_time_scale);
+                t
+            },
             show_hidden: session.as_ref().and_then(|s| s.show_hidden).unwrap_or(config.general.show_hidden),
             show_system: config.general.show_system,
             checkbox_mode: session.as_ref().is_some_and(|s| s.checkbox_mode),

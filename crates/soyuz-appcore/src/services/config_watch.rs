@@ -173,6 +173,7 @@ pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
     host.config_changed(&old, c);
     if old.appearance != c.appearance || old.fonts != c.fonts || old.theme != c.theme {
         app.ui.reduced_motion = c.appearance.reduced_motion;
+        app.ui.toasts.set_time_scale(c.appearance.toast_time_scale);
         if old.appearance.theme != c.appearance.theme {
             app.ui.theme = crate::host::ThemePref::from_config(&c.appearance.theme);
         }

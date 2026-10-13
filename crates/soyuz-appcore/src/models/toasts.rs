@@ -75,10 +75,17 @@ pub struct Live {
     pub closing: Option<f64>,
 }
 
-#[derive(Default)]
 pub struct Toasts {
     pub live: Vec<Live>,
     next: u64,
+    /// `[appearance] toast_time_scale`: multiplies each pushed toast's duration.
+    time_scale: f32,
+}
+
+impl Default for Toasts {
+    fn default() -> Self {
+        Toasts { live: Vec::new(), next: 0, time_scale: 1.0 }
+    }
 }
 
 /// Fraction of the auto-dismiss timer still left (`None` for sticky toasts).
@@ -90,7 +97,13 @@ pub fn timer_fraction(remaining: Option<f32>, duration: Option<f32>) -> Option<f
 }
 
 impl Toasts {
-    pub fn push(&mut self, toast: Toast) -> u64 {
+    /// Toasts pushed from now on stay up `scale` times their own duration.
+    pub fn set_time_scale(&mut self, scale: f32) {
+        self.time_scale = if scale.is_finite() { scale.clamp(0.1, 5.0) } else { 1.0 };
+    }
+
+    pub fn push(&mut self, mut toast: Toast) -> u64 {
+        toast.duration = toast.duration.map(|d| d * self.time_scale);
         self.next += 1;
         let id = self.next;
         // Collapse exact duplicates (e.g. repeated "coming soon").
@@ -132,6 +145,20 @@ mod tests {
         assert!(t.live.last().unwrap().remaining.is_none());
         t.dismiss(id);
         assert!(t.live.last().unwrap().closing.is_some());
+    }
+
+    #[test]
+    fn time_scale_shortens_timers() {
+        let mut t = Toasts::default();
+        t.set_time_scale(0.5);
+        t.push(Toast::info("a"));
+        t.push(Toast::error("b"));
+        t.push(Toast::info("c").sticky());
+        let rem: Vec<_> = t.live.iter().map(|l| (l.remaining, l.toast.duration)).collect();
+        assert_eq!(rem, [(Some(2.0), Some(2.0)), (Some(4.0), Some(4.0)), (None, None)]);
+        t.set_time_scale(f32::NAN);
+        t.push(Toast::info("d"));
+        assert_eq!(t.live.last().unwrap().remaining, Some(4.0));
     }
 
     #[test]
