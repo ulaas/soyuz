@@ -174,7 +174,10 @@ fn bookmarks_add_edit_move_remove() {
     assert!(ui.title().contains("bookmarks · Code"), "back in the form: {}", ui.title());
     let row = ui.dialog().unwrap().list.iter().find(|r| r.text == "hotkey").cloned().unwrap();
     assert_eq!(row.right, "F9");
-    // Nothing is live while the editor's dialogs are open; closing them applies.
+    // Each committed field is live at once, while the editor's dialogs are still open.
+    let c = &ui.app.core.config;
+    assert_eq!(c.bookmarks.len(), 1, "live before the dialogs close");
+    assert_eq!((c.bookmarks[0].name.as_str(), c.bookmarks[0].hotkey.as_str()), ("Code", "F9"));
     ui.close_dialogs();
     let c = &ui.app.core.config;
     assert_eq!(c.bookmarks.len(), 1);

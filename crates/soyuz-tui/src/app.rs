@@ -446,6 +446,9 @@ impl App {
         crate::tools::drain(self);
         self.apply_cmds();
         self.input(events);
+        // Settings edits made in dialogs over the settings editor (tables, lists, the
+        // shortcut recorder) apply in the same frame, not when the dialog closes.
+        crate::input::settings::sync(self);
         self.apply_cmds();
         // Tool commands the input queued (menus, actions) apply in the same frame.
         crate::tools::drain(self);
