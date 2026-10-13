@@ -352,6 +352,135 @@ pub fn folder_sizes(app: &mut AppCore) {
     }
 }
 
+// ---- status row -------------------------------------------------------------------------
+
+/// What the status row under a search shows (the GUI's strip and the TUI's row): the
+/// head (`"x" · 12 hits`), the detail (scanned / from the index, limit reached,
+/// cancelled, unreadable, the folder being read) and which buttons exist.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchStatus {
+    pub done: bool,
+    pub cancelled: bool,
+    pub head: String,
+    /// The detail parts joined with ` · `.
+    pub detail: String,
+    /// The search is still running: Cancel is offered.
+    pub can_cancel: bool,
+    /// A fuzzy name search: Relevance is offered.
+    pub fuzzy: bool,
+    /// Results are ordered by relevance.
+    pub ranked: bool,
+    /// The smart folder this search shows (Edit is offered).
+    pub smart: Option<String>,
+    /// An index plan backs it: "Smart folder" (make one) is offered.
+    pub can_make_smart: bool,
+    /// The bar is closed and it is not a smart folder: Refine is offered.
+    pub can_refine: bool,
+}
+
+/// A button of the status row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatusAct {
+    Cancel,
+    /// Toggle the relevance order.
+    Relevance,
+    /// Edit the smart folder shown.
+    EditSmart,
+    /// Make a smart folder from the search.
+    MakeSmart,
+    Refine,
+}
+
+/// The status row of search `id` (`None`: it is no longer known).
+pub fn status_line(app: &AppCore, id: SearchId) -> Option<SearchStatus> {
+    let prog = svc::progress(id)?;
+    let spec = svc::spec(id);
+    let title = spec.as_ref().map(|s| s.title.clone()).unwrap_or_default();
+    let head = tr!("views-search-head", title = title, count = prog.hits);
+    let secs = prog.elapsed.as_secs_f32();
+    let mut parts = vec![if prog.indexed {
+        tr!("views-search-from-index", ms = prog.elapsed.as_millis().max(1) as u64)
+    } else {
+        tr!("views-search-scanned", count = prog.scanned, secs = soyuz_core::locale::format_decimal(f64::from(secs), 1))
+    }];
+    if prog.truncated && !prog.cancelled {
+        parts.push(tr!("views-search-limit-reached").to_string());
+    }
+    if prog.cancelled {
+        parts.push(tr!("views-search-cancelled").to_string());
+    }
+    if prog.errors > 0 {
+        parts.push(tr!("views-search-unreadable", count = prog.errors));
+    }
+    if !prog.done && !prog.current.as_os_str().is_empty() {
+        parts.push(soyuz_fs::strip_verbatim(&prog.current).display().to_string());
+    }
+    let fuzzy =
+        spec.as_ref().and_then(|s| s.query.name.as_ref()).is_some_and(|n| n.kind == soyuz_core::PatternKind::Fuzzy);
+    let smart = spec.as_ref().and_then(|s| s.smart.clone());
+    let can_make_smart = smart.is_none() && spec.as_ref().is_some_and(|s| s.plan.is_some());
+    let can_refine = !app.ui.search.open && smart.is_none();
+    Some(SearchStatus {
+        done: prog.done,
+        cancelled: prog.cancelled,
+        head,
+        detail: parts.join(" · "),
+        can_cancel: !prog.done,
+        fuzzy,
+        ranked: prog.ranked,
+        smart,
+        can_make_smart,
+        can_refine,
+    })
+}
+
+/// Press status-row button `act` for search `id`.
+pub fn status_act(app: &mut AppCore, id: SearchId, act: StatusAct) {
+    match act {
+        StatusAct::Cancel => svc::cancel(id),
+        StatusAct::Relevance => {
+            if let Some(p) = svc::progress(id) {
+                svc::set_ranked(id, !p.ranked);
+            }
+        }
+        StatusAct::EditSmart => {
+            let name = svc::spec(id).and_then(|s| s.smart);
+            if let Some(name) = name
+                && let Some(i) = crate::models::smart::folders().iter().position(|f| f.name == name)
+            {
+                app.cmds.push(crate::cmd::Cmd::Smart(crate::models::smart::SmartCmd::Edit(Some(i))));
+            }
+        }
+        StatusAct::MakeSmart => {
+            app.cmds.push(crate::cmd::Cmd::Smart(crate::models::smart::SmartCmd::FromSearch));
+        }
+        StatusAct::Refine => refine(app),
+    }
+}
+
+// ---- option cycling (keyboard frontends) -------------------------------------------------
+
+fn cycle<T: Copy + PartialEq>(all: &[T], now: T, forward: bool) -> T {
+    let n = all.len();
+    let i = all.iter().position(|x| *x == now).unwrap_or(0);
+    all[if forward { (i + 1) % n } else { (i + n - 1) % n }]
+}
+
+/// The next (or previous) name mode.
+pub fn cycle_mode(form: &mut SearchForm, forward: bool) {
+    form.mode = cycle(&NameMode::ALL, form.mode, forward);
+}
+
+/// The next (or previous) date range.
+pub fn cycle_date(form: &mut SearchForm, forward: bool) {
+    form.date = cycle(&DateRange::ALL, form.date, forward);
+}
+
+/// The next (or previous) kind filter.
+pub fn cycle_kind(form: &mut SearchForm, forward: bool) {
+    form.kind = cycle(&KindFilter::ALL, form.kind, forward);
+}
+
 // ---- labels ---------------------------------------------------------------------------
 
 /// The size option's label (`> 100M`, `< 16k`, `1k – 2M`).
@@ -398,5 +527,29 @@ pub fn date_label(d: DateRange) -> &'static str {
         DateRange::Month => tr!("views-search-date-month"),
         DateRange::Year => tr!("views-search-date-year"),
         DateRange::OlderThanYear => tr!("views-search-date-older"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cycling_wraps_both_ways() {
+        let mut f = SearchForm::default();
+        assert_eq!(f.mode, NameMode::Substring);
+        cycle_mode(&mut f, true);
+        assert_eq!(f.mode, NameMode::Glob);
+        cycle_mode(&mut f, false);
+        cycle_mode(&mut f, false);
+        assert_eq!(f.mode, NameMode::Fuzzy);
+        for _ in 0..DateRange::ALL.len() {
+            cycle_date(&mut f, true);
+        }
+        assert_eq!(f.date, DateRange::Any);
+        cycle_kind(&mut f, false);
+        assert_eq!(f.kind, *KindFilter::ALL.last().unwrap());
+        cycle_kind(&mut f, true);
+        assert_eq!(f.kind, KindFilter::Any);
     }
 }

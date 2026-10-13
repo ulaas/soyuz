@@ -501,45 +501,32 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
 
 fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
     let p = palette(ui.ctx());
-    let Some(prog) = svc::progress(id) else { return };
-    let title = svc::spec(id).map(|s| s.title).unwrap_or_default();
+    // The text and the buttons come from the core (`models::search::status_line`), shared
+    // with the terminal UI.
+    let Some(st) = model::status_line(&app.core, id) else { return };
     let cy = row.center().y;
     let mut x = row.left() + 14.0;
-    if prog.done {
-        let (g, c) = if prog.cancelled { (ph::STOP_CIRCLE, p.warning) } else { (ph::CHECK_CIRCLE, p.success) };
+    if st.done {
+        let (g, c) = if st.cancelled { (ph::STOP_CIRCLE, p.warning) } else { (ph::CHECK_CIRCLE, p.success) };
         ui.painter().text(pos2(x, cy), Align2::CENTER_CENTER, g, icons::font_fill(14.0), c);
     } else {
         spinner(ui, pos2(x, cy), 6.0, p.accent);
     }
     x += 14.0;
-    let head = tr!("views-search-head", title = title, count = prog.hits);
-    let hg =
-        trunc_galley(ui.painter(), &head, crate::ui::views::flow::semibold(12.0), p.text_primary, row.width() * 0.45);
+    let hg = trunc_galley(
+        ui.painter(),
+        &st.head,
+        crate::ui::views::flow::semibold(12.0),
+        p.text_primary,
+        row.width() * 0.45,
+    );
     let hw = hg.size().x;
     ui.painter().galley(pos2(x, cy - hg.size().y / 2.0), hg, p.text_primary);
     x += hw + 12.0;
-    let secs = prog.elapsed.as_secs_f32();
-    let mut parts = vec![if prog.indexed {
-        tr!("views-search-from-index", ms = prog.elapsed.as_millis().max(1) as u64)
-    } else {
-        tr!("views-search-scanned", count = prog.scanned, secs = soyuz_core::locale::format_decimal(f64::from(secs), 1))
-    }];
-    if prog.truncated && !prog.cancelled {
-        parts.push(tr!("views-search-limit-reached").to_string());
-    }
-    if prog.cancelled {
-        parts.push(tr!("views-search-cancelled").to_string());
-    }
-    if prog.errors > 0 {
-        parts.push(tr!("views-search-unreadable", count = prog.errors));
-    }
-    if !prog.done && !prog.current.as_os_str().is_empty() {
-        parts.push(soyuz_fs::strip_verbatim(&prog.current).display().to_string());
-    }
-    let detail = parts.join(" · ");
     // Right side controls.
+    let mut act = None;
     let mut rx = row.right() - 8.0;
-    if !prog.done {
+    if st.can_cancel {
         let w = pill_width(ui, true, tr!("common-cancel"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -554,12 +541,11 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         )
         .clicked()
         {
-            svc::cancel(id);
+            act = Some(model::StatusAct::Cancel);
         }
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
-    let fuzzy = svc::spec(id).and_then(|s| s.query.name).is_some_and(|n| n.kind == soyuz_core::PatternKind::Fuzzy);
-    if fuzzy {
+    if st.fuzzy {
         let w = pill_width(ui, true, tr!("views-search-relevance"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -569,17 +555,15 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             Id::new("soyuz.search.rank"),
             Some(ph::SPARKLE),
             tr!("views-search-relevance"),
-            prog.ranked,
+            st.ranked,
             tr!("views-search-relevance-tip"),
         )
         .clicked()
         {
-            svc::set_ranked(id, !prog.ranked);
+            act = Some(model::StatusAct::Relevance);
         }
     }
-    let spec = svc::spec(id);
-    let smart = spec.as_ref().and_then(|s| s.smart.clone());
-    if let Some(name) = &smart {
+    if st.smart.is_some() {
         let w = pill_width(ui, true, tr!("views-search-edit"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -593,11 +577,10 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
             tr!("views-search-edit-smart-tip"),
         )
         .clicked()
-            && let Some(i) = crate::models::smart::folders().iter().position(|f| &f.name == name)
         {
-            app.core.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::Edit(Some(i))));
+            act = Some(model::StatusAct::EditSmart);
         }
-    } else if spec.as_ref().is_some_and(|s| s.plan.is_some()) {
+    } else if st.can_make_smart {
         let w = pill_width(ui, true, tr!("views-search-smart-folder"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -612,10 +595,10 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         )
         .clicked()
         {
-            app.core.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::FromSearch));
+            act = Some(model::StatusAct::MakeSmart);
         }
     }
-    if !app.core.ui.search.open && smart.is_none() {
+    if st.can_refine {
         let w = pill_width(ui, true, tr!("views-search-refine"));
         let r = Rect::from_min_size(pos2(rx - w, cy - 11.0), vec2(w, 22.0));
         rx = r.left() - 6.0;
@@ -630,11 +613,15 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         )
         .clicked()
         {
-            model::refine(&mut app.core);
+            act = Some(model::StatusAct::Refine);
         }
     }
-    let dg = trunc_galley(ui.painter(), &detail, FontId::proportional(11.5), p.text_tertiary, (rx - x - 8.0).max(0.0));
+    let dg =
+        trunc_galley(ui.painter(), &st.detail, FontId::proportional(11.5), p.text_tertiary, (rx - x - 8.0).max(0.0));
     ui.painter().galley(pos2(x, cy - dg.size().y / 2.0), dg, p.text_tertiary);
+    if let Some(act) = act {
+        model::status_act(&mut app.core, id, act);
+    }
 }
 
 /// Sidebar section with saved searches (called from the sidebar).
