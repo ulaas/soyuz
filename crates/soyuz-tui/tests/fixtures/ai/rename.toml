@@ -1,0 +1,13 @@
+# SOYUZ_AI_FAKE transcript of the headless AI panel tests (`tests/headless/ai.rs`): one
+# `rename` call, so the card offers the name table (Edit names).
+delay_ms = 0
+model = "fake-rename"
+
+[[turn]]
+text = "A clearer name:"
+[[turn.call]]
+name = "rename"
+args = { path = "{cwd}/a.txt", new_name = "b.txt" }
+
+[[turn]]
+text = "Renamed."
