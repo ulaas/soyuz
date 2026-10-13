@@ -528,7 +528,7 @@ fn status_row(buf: &mut Buffer, r: Rect, s: &StatusVm, own_detail: bool, theme: 
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -569,7 +569,7 @@ mod tests {
         assert!(lines(0, true, true).is_empty());
     }
 
-    fn sample() -> SearchVm {
+    pub(crate) fn sample() -> SearchVm {
         let pills = (0..pill::COUNT)
             .map(|id| PillVm { id, label: format!("pill{id}"), active: id == pill::CASE, focused: id == pill::KIND })
             .collect();

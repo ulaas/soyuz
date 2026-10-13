@@ -652,7 +652,7 @@ fn draw_desc(buf: &mut Buffer, area: Rect, m: &SettingsVm, theme: &TuiTheme) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
@@ -662,7 +662,7 @@ mod tests {
         LineVm { index, label: label.into(), value: value.into(), ..LineVm::default() }
     }
 
-    fn vm() -> SettingsVm {
+    pub(crate) fn vm() -> SettingsVm {
         SettingsVm {
             visible: true,
             title: "Settings · Terminal UI".into(),

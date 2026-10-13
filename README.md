@@ -78,7 +78,7 @@ with 100 000 entries scroll smoothly, and a dead network share cannot hang the w
 - Disk-usage treemap, folder compare and two-way sync with scheduled profiles, previous versions, duplicate finder, split / join, checksums
 - Git status column, renameable color tags, folder colors, drop shelf, recent places
 - Automation: sandboxed Rhai scripts, watcher-driven rules, and a `soyuz cp|mv|rm …` CLI that queues jobs in the running window
-- Terminal UI (preview): `soyuz-tui [folder]` runs inside the terminal you start it from (also `soyuz --tui`) with the same settings, keys, jobs and undo: file operations and their dialogs, the jobs panel, context menus, the preview pane, Quick Look, grid and gallery views with images (kitty, sixel, iTerm2 or half-blocks), the text / hex / image editors, and OSC 52 copy over SSH
+- Terminal UI (preview): `soyuz-tui [folder]` runs inside the terminal you start it from (also `soyuz --tui`) with the same settings, keys, jobs and undo: file operations and their dialogs, the jobs panel, context menus, the preview pane, Quick Look, grid and gallery views with images (kitty, sixel, iTerm2 or half-blocks), the text / hex / image editors, the search bar, smart folders, archives and remote locations, an embedded terminal pane (or suspend to your shell), folder compare and sync with profiles, the AI assistant panel, a settings editor with key bindings and table editing (or `$EDITOR`), and OSC 52 copy over SSH
 
 **Optional AI assistant (off by default)**
 - Works with Anthropic, OpenAI, Gemini or local OpenAI-compatible models (Ollama, LM Studio, llama.cpp, vLLM); bring your own key
