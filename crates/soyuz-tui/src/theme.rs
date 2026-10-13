@@ -30,6 +30,7 @@ use soyuz_appcore::models::toasts::ToastKind;
 use soyuz_appcore::theme::tokens::blend_over;
 use soyuz_appcore::theme::{AccentChoice, Tokens};
 use soyuz_core::config::{TuiBorders, TuiColorMode, TuiSection};
+use soyuz_term::{TermColor, TermPalette};
 
 use crate::icons::IconSet;
 
@@ -249,6 +250,9 @@ pub struct TuiTheme {
     borders: TuiBorders,
     /// `None` for the 16-colour and mono modes (fixed tables).
     colors: Option<Box<Colors>>,
+    /// The embedded terminal's palette for `[terminal] theme = "auto"`, from the same
+    /// tokens (`soyuz_appcore::theme::terminal_palette`; Phase T5).
+    term: Box<TermPalette>,
 }
 
 impl Default for TuiTheme {
@@ -266,6 +270,7 @@ impl TuiTheme {
             icons: IconSet::default(),
             borders: TuiBorders::default(),
             colors: None,
+            term: Box::new(TermPalette::dark()),
         }
     }
 
@@ -275,7 +280,8 @@ impl TuiTheme {
             ColorMode::Truecolor | ColorMode::Ansi256 => Some(Box::new(Colors::of(t, mode))),
             ColorMode::Ansi16 | ColorMode::Mono => None,
         };
-        TuiTheme { mode, dark: t.dark, icons, borders: TuiBorders::default(), colors }
+        let term = Box::new(soyuz_appcore::theme::terminal_palette(t, "auto"));
+        TuiTheme { mode, dark: t.dark, icons, borders: TuiBorders::default(), colors, term }
     }
 
     /// The theme for the core's current settings, the colour depth from `[tui]` or the
@@ -391,6 +397,127 @@ impl TuiTheme {
             (None, _) => plain(role),
         }
     }
+
+    /// The embedded terminal's palette for `[terminal] theme`: `"dark"` / `"light"` are
+    /// the built-in schemes, anything else (`"auto"`) follows this theme's tokens like the
+    /// GUI's terminal.
+    pub fn terminal_palette(&self, setting: &str) -> TermPalette {
+        match setting.trim().to_ascii_lowercase().as_str() {
+            "dark" => TermPalette::dark(),
+            "light" => TermPalette::light(),
+            _ => (*self.term).clone(),
+        }
+    }
+
+    /// The style of one terminal cell whose colours are already resolved (`fg`, `bg`), in
+    /// this theme's colour mode (`[tui] color_mode`): truecolor as is, 256 colours through
+    /// the nearest cube / grey entry, 16 colours and mono by matching `palette` (the
+    /// palette's default colours become the terminal's own, ANSI entries their index;
+    /// default text on the default background swapped shows as reversed). See
+    /// [`term_style`].
+    pub fn term_style(&self, fg: TermColor, bg: TermColor, palette: &TermPalette) -> Style {
+        term_style(self.mode, fg, bg, palette)
+    }
+}
+
+/// What a resolved terminal colour is in a [`TermPalette`] (16-colour and mono modes).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TermSlot {
+    /// The default foreground.
+    Fg,
+    /// The default background.
+    Bg,
+    /// ANSI entry `0..16`.
+    Ansi(u8),
+}
+
+/// The palette entry nearest to `c` (exact matches first; defaults win ties).
+pub fn term_slot(c: TermColor, palette: &TermPalette) -> TermSlot {
+    let d2 = |a: TermColor| {
+        let d = |x: u8, y: u8| (i32::from(x) - i32::from(y)).pow(2);
+        d(a.r, c.r) + d(a.g, c.g) + d(a.b, c.b)
+    };
+    let mut best = (TermSlot::Fg, d2(palette.fg));
+    let mut consider = |slot: TermSlot, col: TermColor| {
+        let d = d2(col);
+        if d < best.1 {
+            best = (slot, d);
+        }
+    };
+    consider(TermSlot::Bg, palette.bg);
+    for (i, col) in palette.ansi.iter().enumerate() {
+        consider(TermSlot::Ansi(i as u8), *col);
+    }
+    best.0
+}
+
+/// The ANSI colour `i` (0-15) as a ratatui colour.
+fn ansi_color(i: u8) -> Color {
+    match i {
+        0 => Color::Black,
+        1 => Color::Red,
+        2 => Color::Green,
+        3 => Color::Yellow,
+        4 => Color::Blue,
+        5 => Color::Magenta,
+        6 => Color::Cyan,
+        7 => Color::Gray,
+        8 => Color::DarkGray,
+        9 => Color::LightRed,
+        10 => Color::LightGreen,
+        11 => Color::LightYellow,
+        12 => Color::LightBlue,
+        13 => Color::LightMagenta,
+        14 => Color::LightCyan,
+        _ => Color::White,
+    }
+}
+
+/// The ANSI entry nearest to `c` (for a default colour in the other slot).
+fn nearest_ansi(c: TermColor, palette: &TermPalette) -> u8 {
+    let only = TermPalette { fg: palette.ansi[0], bg: palette.ansi[0], ..palette.clone() };
+    match term_slot(c, &only) {
+        TermSlot::Ansi(i) => i,
+        _ => 0,
+    }
+}
+
+/// [`TuiTheme::term_style`] for colour mode `mode`.
+pub fn term_style(mode: ColorMode, fg: TermColor, bg: TermColor, palette: &TermPalette) -> Style {
+    let rgb = |c: TermColor| Rgba8::rgb(c.r, c.g, c.b);
+    match mode {
+        ColorMode::Truecolor | ColorMode::Ansi256 => {
+            Style::new().fg(to_color(rgb(fg), mode)).bg(to_color(rgb(bg), mode))
+        }
+        ColorMode::Ansi16 | ColorMode::Mono => {
+            let (f, b) = (term_slot(fg, palette), term_slot(bg, palette));
+            // Reverse video of the default colours: the terminal's own, swapped.
+            if f == TermSlot::Bg && b == TermSlot::Fg {
+                return Style::new().fg(Color::Reset).bg(Color::Reset).add_modifier(Modifier::REVERSED);
+            }
+            if mode == ColorMode::Mono {
+                return Style::new().fg(Color::Reset).bg(Color::Reset);
+            }
+            let fg = match f {
+                TermSlot::Fg => Color::Reset,
+                TermSlot::Ansi(i) => ansi_color(i),
+                TermSlot::Bg => ansi_color(nearest_ansi(fg, palette)),
+            };
+            let bg = match b {
+                TermSlot::Bg => Color::Reset,
+                TermSlot::Ansi(i) => ansi_color(i),
+                TermSlot::Fg => ansi_color(nearest_ansi(bg, palette)),
+            };
+            Style::new().fg(fg).bg(bg)
+        }
+    }
+}
+
+/// `top` (with its alpha) composited over the opaque `under`.
+pub fn term_blend(top: TermColor, under: TermColor) -> TermColor {
+    let a = u16::from(top.a);
+    let mix = |t: u8, u: u8| ((u16::from(t) * a + u16::from(u) * (255 - a) + 127) / 255) as u8;
+    TermColor::rgb(mix(top.r, under.r), mix(top.g, under.g), mix(top.b, under.b))
 }
 
 const OS_POLL: Duration = Duration::from_secs(3);
@@ -821,5 +948,46 @@ mod tests {
             assert_eq!(t.style(r), plain(r), "{r:?}");
         }
         assert_eq!(t.base().bg, Some(Color::Reset));
+    }
+
+    #[test]
+    fn terminal_colours_follow_the_colour_mode() {
+        let p = TermPalette::dark();
+        let (fg, bg) = (p.fg, p.bg);
+        // Truecolor: as is; 256: the nearest cube / grey entry.
+        let t = term_style(ColorMode::Truecolor, p.ansi[1], bg, &p);
+        assert_eq!(t.fg, Some(Color::Rgb(p.ansi[1].r, p.ansi[1].g, p.ansi[1].b)));
+        let t = term_style(ColorMode::Ansi256, TermColor::rgb(255, 0, 0), TermColor::rgb(0, 0, 0), &p);
+        assert_eq!((t.fg, t.bg), (Some(Color::Indexed(196)), Some(Color::Indexed(16))));
+        // 16 colours: default colours are the terminal's own, ANSI entries their index.
+        let t = term_style(ColorMode::Ansi16, fg, bg, &p);
+        assert_eq!((t.fg, t.bg), (Some(Color::Reset), Some(Color::Reset)));
+        for (i, want) in [(1, Color::Red), (2, Color::Green), (4, Color::Blue), (12, Color::LightBlue)] {
+            let t = term_style(ColorMode::Ansi16, p.ansi[i], p.ansi[0], &p);
+            assert_eq!(t.fg, Some(want), "ansi {i}");
+            assert_eq!(t.bg, Some(Color::Black), "ansi 0 behind {i}");
+        }
+        // Reverse video of the default colours.
+        let t = term_style(ColorMode::Ansi16, bg, fg, &p);
+        assert!(t.add_modifier.contains(Modifier::REVERSED));
+        let t = term_style(ColorMode::Mono, bg, fg, &p);
+        assert!(t.add_modifier.contains(Modifier::REVERSED));
+        let t = term_style(ColorMode::Mono, p.ansi[1], bg, &p);
+        assert_eq!((t.fg, t.bg, t.add_modifier), (Some(Color::Reset), Some(Color::Reset), Modifier::empty()));
+        // A colour near an ANSI entry maps to it.
+        let near = TermColor::rgb(p.ansi[2].r.saturating_sub(3), p.ansi[2].g, p.ansi[2].b.saturating_add(2));
+        assert_eq!(term_slot(near, &p), TermSlot::Ansi(2));
+        // Blending: opaque wins, transparent leaves the background.
+        assert_eq!(term_blend(TermColor::rgba(10, 20, 30, 255), bg), TermColor::rgb(10, 20, 30));
+        assert_eq!(term_blend(TermColor::rgba(10, 20, 30, 0), bg), TermColor::rgb(bg.r, bg.g, bg.b));
+    }
+
+    #[test]
+    fn terminal_palette_follows_the_setting_and_the_tokens() {
+        let t = TuiTheme::from_tokens(&ORBIT_LIGHT, ColorMode::Truecolor, IconSet::default());
+        assert_eq!(t.terminal_palette("auto"), soyuz_appcore::theme::terminal_palette(&ORBIT_LIGHT, "auto"));
+        assert_eq!(t.terminal_palette(" Dark "), TermPalette::dark());
+        assert_eq!(t.terminal_palette("light"), TermPalette::light());
+        assert_eq!(TuiTheme::plain().terminal_palette("auto"), TermPalette::dark());
     }
 }
