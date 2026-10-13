@@ -7204,6 +7204,7 @@ dependencies = [
  "soyuz-script",
  "soyuz-term",
  "tempfile",
+ "toml",
  "unicode-segmentation",
  "unicode-width",
  "winresource",

@@ -513,8 +513,8 @@ fn after(app: &mut App, req: &SuspendRequest, spec: &ChildSpec, result: io::Resu
     match req {
         SuspendRequest::Editor { purpose: EditPurpose::Config, .. } => {
             soyuz_appcore::services::config_watch::reload_now(&mut app.core, &app.host);
-            // TODO(W2-settings-editor): rebuild an open settings draft from the reloaded
-            // config (no hook in `input::settings` yet; `host.config_changed` fires).
+            // An open settings editor starts again from the reloaded file.
+            crate::input::settings::reload(app);
         }
         SuspendRequest::Editor { path, purpose: EditPurpose::Scratch(token) } => {
             app.finished_edits.push(FinishedEdit { token: *token, path: path.clone(), exit: code });
