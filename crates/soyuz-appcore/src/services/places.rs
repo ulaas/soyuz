@@ -54,7 +54,23 @@ impl PlacesService {
     }
 }
 
+/// What lists the volumes: `soyuz_fs::volumes` unless a test replaced it
+/// ([`set_volume_source`]).
+pub type VolumeSource = std::sync::Arc<dyn Fn() -> Vec<VolumeInfo> + Send + Sync>;
+
+static VOLUME_SOURCE: std::sync::RwLock<Option<VolumeSource>> = std::sync::RwLock::new(None);
+
+/// Test seam: the places thread lists volumes with `f` (`None`: the real ones), so
+/// headless tests show made-up drives in temporary folders.
+#[doc(hidden)]
+pub fn set_volume_source(f: Option<VolumeSource>) {
+    *VOLUME_SOURCE.write().unwrap_or_else(|e| e.into_inner()) = f;
+}
+
 fn volumes_with_space() -> Vec<VolumeInfo> {
+    if let Some(f) = VOLUME_SOURCE.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        return f();
+    }
     let mut v = soyuz_fs::volumes();
     for vol in &mut v {
         if vol.total == 0
@@ -280,6 +296,33 @@ pub fn volume_kind_label(kind: VolumeKind) -> &'static str {
     }
 }
 
+/// How full a volume is: the colour of its usage bar.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UsageLevel {
+    Normal,
+    /// Less than 15 % free.
+    Warning,
+    /// Less than 5 % free.
+    Danger,
+}
+
+/// The level of a volume with `used` (0..=1) of its space taken.
+pub fn usage_level(used: f32) -> UsageLevel {
+    let free = 1.0 - used.clamp(0.0, 1.0);
+    if free < 0.05 {
+        UsageLevel::Danger
+    } else if free < 0.15 {
+        UsageLevel::Warning
+    } else {
+        UsageLevel::Normal
+    }
+}
+
+/// The share of `v`'s space in use (`None` when its size is unknown).
+pub fn used_share(v: &VolumeInfo) -> Option<f32> {
+    (v.total > 0).then(|| 1.0 - v.free as f32 / v.total as f32)
+}
+
 /// Display name of a volume: its own label, else the localized kind name, followed by
 /// the mount (`Local Disk (C:)`, `Yerel Disk (C:)`, `Backup (D:)`).
 pub fn volume_label(v: &VolumeInfo) -> String {
@@ -292,6 +335,15 @@ pub fn volume_label(v: &VolumeInfo) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn usage_levels_follow_the_free_share() {
+        assert_eq!(usage_level(0.5), UsageLevel::Normal);
+        assert_eq!(usage_level(0.86), UsageLevel::Warning);
+        assert_eq!(usage_level(0.96), UsageLevel::Danger);
+        assert_eq!(usage_level(7.0), UsageLevel::Danger);
+        assert_eq!(usage_level(-1.0), UsageLevel::Normal);
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

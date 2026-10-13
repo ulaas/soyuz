@@ -173,6 +173,13 @@ pub enum HitTarget {
     DupesHeader(usize),
     /// Button `index` of a tool screen's inline confirm bar (move to trash, cancel).
     ConfirmBar(u8),
+    // ---- Phase T7 places (the Trash and Computer pages; `input::list::places::on_mouse`) ----
+    /// Row `index` of pane `pane`'s Trash / Computer page (a trashed item, a volume).
+    PlacesRow { pane: PaneId, index: usize },
+    /// Header button `button` of pane `pane`'s Trash / Computer page.
+    PlacesButton { pane: PaneId, button: u8 },
+    /// The rest of pane `pane`'s Trash / Computer page.
+    PlacesArea { pane: PaneId },
 }
 
 /// A button of the search bar ([`HitTarget::SearchButton`]).

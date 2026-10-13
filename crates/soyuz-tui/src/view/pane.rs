@@ -43,10 +43,14 @@
 //!
 //! The pending key sequence (`g …`) and the type-ahead buffer show as a small overlay on
 //! the focused pane's last line.
+//!
+//! The Trash and Computer locations have no listing: their pages ([`places`]) draw
+//! instead of the rows.
 
 pub mod columns;
 pub mod grid;
 pub mod miller;
+pub mod places;
 
 use std::time::Instant;
 
@@ -378,6 +382,8 @@ pub struct PaneVm {
     pub footer: Option<String>,
     /// Grid and gallery: the cell shape and the thumbnails in view.
     pub grid: Option<grid::GridVm>,
+    /// The Trash or Computer page drawn instead of the rows (Phase T7).
+    pub places: Option<places::PlacesVm>,
 }
 
 impl Default for PaneVm {
@@ -398,6 +404,7 @@ impl Default for PaneVm {
             icons: IconSet::default(),
             footer: None,
             grid: None,
+            places: None,
         }
     }
 }
@@ -441,6 +448,11 @@ impl PaneVm {
         };
         let mut vm = PaneVm::build(pane, index, cx);
         grid::request_thumbs(core, pane, &mut vm);
+        vm.places = places::vm(core, pane, focused);
+        if vm.places.is_some() {
+            vm.message = None;
+            vm.footer = None;
+        }
         Some(vm)
     }
 
@@ -499,6 +511,7 @@ impl PaneVm {
             icons,
             footer,
             grid,
+            places: None,
         }
     }
 }
@@ -578,6 +591,7 @@ pub fn prepare(core: &mut AppCore, regions: &Regions) {
         }
     }
     miller::prepare(core, regions);
+    places::prepare(core, regions);
 }
 
 /// The pane is `width` × `rows` cells: layout, scroll, page size (grid cells for the
@@ -700,6 +714,11 @@ fn row_style(m: &PaneVm, row: &Row, theme: &TuiTheme) -> Style {
 
 /// Draw pane `m` into `rect`.
 pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hits: &mut Hits) {
+    if let Some(pv) = &m.places {
+        let rect = rect.intersection(f.area());
+        places::draw(f.buffer_mut(), rect, m.id, pv, theme, hits);
+        return;
+    }
     hits.push(rect, HitTarget::PaneBackground { pane: m.id });
     let rect = rect.intersection(f.area());
     if rect.is_empty() {

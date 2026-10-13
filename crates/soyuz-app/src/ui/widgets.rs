@@ -149,14 +149,12 @@ impl NavRow<'_> {
 
 /// Thin free-space bar: accent normally, `warning` when < 15 % free, `danger` < 5 %.
 pub fn usage_bar(ui: &Ui, p: &Palette, rect: Rect, used: f32) {
+    use crate::services::places::{UsageLevel, usage_level};
     let used = used.clamp(0.0, 1.0);
-    let free = 1.0 - used;
-    let color = if free < 0.05 {
-        p.danger
-    } else if free < 0.15 {
-        p.warning
-    } else {
-        p.accent
+    let color = match usage_level(used) {
+        UsageLevel::Danger => p.danger,
+        UsageLevel::Warning => p.warning,
+        UsageLevel::Normal => p.accent,
     };
     let painter = ui.painter();
     painter.rect_filled(rect, CornerRadius::same(2), p.border_subtle);

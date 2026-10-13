@@ -86,6 +86,9 @@ pub fn is_open(st: &State) -> bool {
 /// selected first (like a right click); otherwise the background menu. While the sidebar
 /// has the keyboard: the menu of the place under its cursor.
 pub fn open_context(app: &mut App) {
+    if crate::input::list::places::open_context(app) {
+        return;
+    }
     if app.focus() == crate::input::TuiFocus::Sidebar {
         let list = crate::view::sidebar::entries(&app.core);
         if let Some(i) = crate::view::sidebar::cursor_index(&app.core, &list, &app.input.sidebar.nav) {

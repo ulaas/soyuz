@@ -9,6 +9,10 @@
 //! current folder like Ctrl+V in the GUI. Text fields (address, filter, palette, dialogs)
 //! still get the text. This is done in every terminal, not only Windows Terminal: any
 //! terminal paste into the list means "paste here".
+//!
+//! The Trash and Computer pages (Phase T7) read their own keys first ([`places`]).
+
+pub mod places;
 
 use crossterm::event::Event;
 
@@ -43,6 +47,10 @@ pub fn split_pastes(events: &[Event]) -> Vec<Part<'_>> {
 }
 
 pub fn route(app: &mut App, events: &[Event]) {
+    if places::active(&app.core).is_some() {
+        places::route(app, events);
+        return;
+    }
     let (kctx, text) = key_context(TuiFocus::List);
     for part in split_pastes(events) {
         match part {
