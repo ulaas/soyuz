@@ -7,8 +7,10 @@
 //! keyboard (`crate::input::sidebar`) and the click targets alike:
 //! `HitTarget::SidebarRow(i)` is entry `i`.
 //!
-//! - `places`: Favorites (favorites, `[[bookmarks]]`, GTK bookmarks), Devices (Computer
-//!   and the drives), Portal pins, Cloud folders, Other (Recent, Timeline, Trash),
+//! - `places`: Favorites (favorites, `[[bookmarks]]`, GTK bookmarks), Devices (Computer,
+//!   the drives with an eject mark where they can be ejected, then the unmounted and
+//!   locked devices of `[sidebar] unmounted_devices`, Linux / UDisks2: Phase T7), Portal
+//!   pins, Cloud folders, Other (Recent, Timeline, Trash),
 //!   Network (saved connections with their state dot, "Connect to server…"), Tags, Smart
 //!   folders ("New smart folder") and saved searches;
 //! - `both`: the same with the folder tree as the `tree` section (at the end when the
@@ -17,6 +19,13 @@
 //!
 //! The tree is `soyuz_appcore::models::tree`: [`prepare`] pumps it (background listings,
 //! follow-the-pane, lazy loading) while it is shown; the keys go to its `keyboard`.
+//!
+//! Devices (`soyuz_appcore::models::devices`, like the GUI's `ui::sidebar`): [`prepare`]
+//! starts the core's refresher while the sidebar shows (UDisks2 devices and the GTK
+//! bookmarks) and re-classifies the unmounted devices into `SidebarState::devices`; an
+//! [`Entry::Device`] row shows its state mark (locked, not mounted, busy), the name and
+//! the filesystem (or what runs on it) on the right. A mounted volume that can be ejected
+//! ends with an eject mark (`HitTarget::SidebarEject`).
 //!
 //! # The keyboard cursor
 //!
@@ -36,6 +45,7 @@ use ratatui::widgets::Paragraph;
 use soyuz_appcore::core::{AppCore, Focus};
 use soyuz_appcore::host::{Host, ThemePref, Wake, WindowCmd, WindowId};
 use soyuz_appcore::icon::IconId;
+use soyuz_appcore::models::devices;
 use soyuz_appcore::models::jobs_rows::Tone;
 use soyuz_appcore::models::sidebar::section_name;
 use soyuz_appcore::models::tree::model::Visibility;
@@ -44,6 +54,7 @@ use soyuz_appcore::services::places::{drive_volumes, volume_label};
 use soyuz_appcore::tr;
 use soyuz_core::Location;
 use soyuz_core::config::{Config, SidebarMode, SidebarSection};
+use soyuz_fs::udisks::{BlockDevice, CandidateState};
 
 use super::text;
 use crate::dialog::safe;
@@ -120,6 +131,9 @@ pub enum Mark {
     Dot(Tone),
     /// An action row ("Connect to server…", "New smart folder").
     Plus,
+    /// A mounted volume of the Devices section (nothing before the label; its menu has
+    /// the device entries, an ejectable one ends with the eject mark).
+    Volume,
 }
 
 /// One line of the sidebar.
@@ -138,6 +152,16 @@ pub enum Entry {
     },
     /// Row `i` of the folder tree (`TreeState::rows`).
     Tree(usize),
+    /// Unmounted / locked device `cand` of `SidebarState::devices` (Phase T7).
+    Device {
+        cand: usize,
+        label: String,
+        state: CandidateState,
+        /// An operation runs on it (mount, unlock, …): `detail` says which.
+        busy: bool,
+        /// The filesystem badge, or what runs on it.
+        detail: String,
+    },
     /// A note (loading, no drives yet); the cursor skips it.
     Message(String),
 }
@@ -253,7 +277,21 @@ fn devices(core: &AppCore, out: &mut Vec<Entry>) {
     place(core, out, computer.to_string(), Location::Computer);
     let vols = drive_volumes(&core.ui.volumes, &core.ui.cloud);
     for v in vols.iter() {
-        place(core, out, volume_label(v), Location::Dir(v.mount.clone()));
+        let location = Location::Dir(v.mount.clone());
+        let active = core.ws.pane().location == location;
+        let label = safe(&volume_label(v));
+        out.push(Entry::Place { label, target: Target::Go(location), active, mark: Mark::Volume });
+    }
+    // Unmounted and locked devices (`prepare` classified them for the config).
+    let busy = devices::busy();
+    for (cand, c) in core.ui.sidebar.devices.list().iter().enumerate() {
+        let work = busy.get(&c.dev.object).copied();
+        let detail = match work {
+            Some(_) => devices::candidate_status(work, c.state, c.dev.size),
+            None => devices::candidate_badge(c),
+        };
+        let label = safe(&devices::candidate_name(c));
+        out.push(Entry::Device { cand, label, state: c.state, busy: work.is_some(), detail });
     }
     if vols.is_empty() {
         out.push(Entry::Message(tr!("app-sidebar-scanning").to_string()));
@@ -436,13 +474,29 @@ pub struct SidebarLine {
     pub dim: bool,
     /// What a place row shows before its label.
     pub mark: Mark,
+    /// Right-aligned text (a device's filesystem or what runs on it).
+    pub right: String,
+    /// A mounted volume that can be ejected: the eject mark at the end.
+    pub eject: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LineKind {
-    Header { open: bool },
+    Header {
+        open: bool,
+    },
     Place,
-    Folder { expandable: bool, expanded: bool, loading: bool, failed: bool },
+    /// An unmounted / locked device (Phase T7).
+    Device {
+        state: CandidateState,
+        busy: bool,
+    },
+    Folder {
+        expandable: bool,
+        expanded: bool,
+        loading: bool,
+        failed: bool,
+    },
     Message,
 }
 
@@ -458,6 +512,7 @@ impl SidebarVm {
             _ => None,
         };
         let rows = core.ui.tree.rows();
+        let all = devices::block_devices();
         let lines = entries
             .iter()
             .enumerate()
@@ -473,12 +528,23 @@ impl SidebarVm {
                     cursor: cursor == Some(index),
                     dim: false,
                     mark: Mark::None,
+                    right: String::new(),
+                    eject: false,
                 };
                 Some(match e {
                     Entry::Header { label, open, .. } => line(LineKind::Header { open: *open }, label.clone(), false),
-                    Entry::Place { label, active, mark, .. } => {
-                        SidebarLine { mark: *mark, ..line(LineKind::Place, label.clone(), *active) }
+                    Entry::Place { label, active, mark, target } => {
+                        let eject = match (mark, target) {
+                            (Mark::Volume, Target::Go(Location::Dir(p))) => ejectable(&all, p).is_some(),
+                            _ => false,
+                        };
+                        SidebarLine { mark: *mark, eject, ..line(LineKind::Place, label.clone(), *active) }
                     }
+                    Entry::Device { label, state, busy, detail, .. } => SidebarLine {
+                        right: detail.clone(),
+                        dim: *state == CandidateState::Unsupported,
+                        ..line(LineKind::Device { state: *state, busy: *busy }, label.clone(), false)
+                    },
                     Entry::Message(m) => line(LineKind::Message, m.clone(), false),
                     Entry::Tree(i) => {
                         let r = rows.get(*i)?;
@@ -499,6 +565,15 @@ impl SidebarVm {
             .collect();
         SidebarVm { lines, focused: n.focused }
     }
+}
+
+/// The device of the volume mounted at `mount` when its drive can be ejected
+/// (`models::devices::{device_at, eject_plan}`, the GUI's eject button).
+pub fn ejectable(all: &[BlockDevice], mount: &std::path::Path) -> Option<BlockDevice> {
+    if all.is_empty() {
+        return None;
+    }
+    devices::device_at(all, mount).filter(|d| devices::eject_plan(d, all).is_some())
 }
 
 /// Whether the sidebar takes columns (`layout::Facts::sidebar`; hidden anyway below
@@ -576,6 +651,10 @@ pub fn prepare(core: &mut AppCore, n: &mut SidebarNav, regions: &Regions) {
     }
     // While the places probe runs this asks for frames; the idle tick brings them.
     let _ = core.ui.sidebar.refresh_favorites();
+    // The device refresher (Linux: UDisks2 and the GTK bookmarks; once per process), then
+    // the unmounted devices for the config (`[sidebar] unmounted_devices`, hidden ones).
+    devices::start(&WakeHost(core.wake.clone()));
+    let _ = devices::candidates(&mut core.ui.sidebar.devices, &core.config.sidebar);
     if tree_shown(core) {
         pump_tree(core);
     }
@@ -611,18 +690,69 @@ fn chevron(open: bool, set: IconSet) -> &'static str {
 /// The one-cell mark before a place's label.
 fn mark_glyph(mark: Mark, set: IconSet) -> &'static str {
     match (mark, set) {
-        (Mark::None, _) => " ",
+        (Mark::None | Mark::Volume, _) => " ",
         (Mark::Plus, _) => "+",
         (Mark::Dot(_), IconSet::Ascii) => "*",
         (Mark::Dot(_), _) => "●",
     }
 }
 
+/// The one-cell mark before a device's label: busy, locked, not mounted, unsupported.
+fn device_glyph(state: CandidateState, busy: bool, set: IconSet) -> &'static str {
+    let ascii = set == IconSet::Ascii;
+    match state {
+        _ if busy => {
+            if ascii {
+                "~"
+            } else {
+                "…"
+            }
+        }
+        CandidateState::Locked => glyph(IconId::LockSimple, set),
+        CandidateState::Unmounted => {
+            if ascii {
+                "-"
+            } else {
+                "○"
+            }
+        }
+        CandidateState::Unsupported => {
+            if ascii {
+                "x"
+            } else {
+                "×"
+            }
+        }
+    }
+}
+
+/// The eject mark at the end of an ejectable volume's row (one cell).
+fn eject_glyph(set: IconSet) -> &'static str {
+    if set == IconSet::Ascii { "^" } else { "⏏" }
+}
+
+/// `left` with `right` right-aligned in `w` cells when both fit (else `left` cut).
+fn with_right(left: &str, right: &str, w: usize) -> String {
+    let (lw, rw) = (text::width(left), text::width(right));
+    if right.is_empty() || lw + 1 + rw > w {
+        return text::truncate_end(left, w);
+    }
+    format!("{left}{:pad$}{right}", "", pad = w - lw - rw)
+}
+
 /// The text of `line` in `w` cells.
 fn line_text(line: &SidebarLine, w: usize, set: IconSet) -> String {
     let s = match line.kind {
         LineKind::Header { open } => format!("{} {}", chevron(open, set), line.label),
+        LineKind::Place if line.eject => {
+            let body =
+                text::truncate_end(&format!("{} {}", mark_glyph(line.mark, set), line.label), w.saturating_sub(2));
+            return with_right(&body, eject_glyph(set), w);
+        }
         LineKind::Place => format!("{} {}", mark_glyph(line.mark, set), line.label),
+        LineKind::Device { state, busy } => {
+            return with_right(&format!("{} {}", device_glyph(state, busy, set), line.label), &line.right, w);
+        }
         LineKind::Message => format!("  {}", line.label),
         LineKind::Folder { expandable, expanded, loading, failed } => {
             // Two cells per level, but never more than half the width.
@@ -649,6 +779,8 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         let mut style = theme.style(match line.kind {
             LineKind::Header { .. } => Role::GroupHeader,
             LineKind::Message => Role::Muted,
+            LineKind::Device { .. } if line.dim => Role::Disabled,
+            LineKind::Device { .. } => Role::Muted,
             LineKind::Folder { .. } if line.dim => Role::Muted,
             LineKind::Folder { .. } | LineKind::Place => Role::Text,
         });
@@ -664,7 +796,7 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         let mark_role = match line.mark {
             Mark::Dot(t) => Some(crate::view::jobs::role(t)),
             Mark::Plus => Some(Role::Accent),
-            Mark::None => None,
+            Mark::None | Mark::Volume => None,
         };
         if let Some(role) = mark_role
             && line.kind == LineKind::Place
@@ -672,8 +804,19 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         {
             f.buffer_mut().set_style(Rect { width: 1, ..r }, theme.style(role));
         }
+        if let LineKind::Device { state: CandidateState::Locked, busy: false } = line.kind
+            && r.width > 0
+        {
+            f.buffer_mut().set_style(Rect { width: 1, ..r }, theme.style(Role::Warning));
+        }
         if line.kind != LineKind::Message {
             hits.push(r, HitTarget::SidebarRow(line.index));
+        }
+        // The eject mark is its own target (pushed last: it wins over the row).
+        if line.eject && r.width >= 3 {
+            let mark = Rect { x: r.right() - 1, width: 1, ..r };
+            f.buffer_mut().set_style(mark, theme.style(Role::Accent));
+            hits.push(mark, HitTarget::SidebarEject(line.index));
         }
     }
 }
@@ -695,6 +838,8 @@ mod tests {
             cursor: false,
             dim: false,
             mark: Mark::None,
+            right: String::new(),
+            eject: false,
         }
     }
 
@@ -755,6 +900,44 @@ mod tests {
         m.focused = false;
         let (_, buf, _) = draw(&m, 20, 8);
         assert!(!buf[(0, 2)].modifier.contains(Modifier::REVERSED));
+    }
+
+    #[test]
+    fn device_rows_and_the_eject_mark() {
+        let dev = |state, busy| LineKind::Device { state, busy };
+        let m = SidebarVm {
+            lines: vec![
+                SidebarLine { mark: Mark::Volume, eject: true, ..line(0, LineKind::Place, "STICK") },
+                SidebarLine { right: "NTFS".into(), ..line(1, dev(CandidateState::Unmounted, false), "Games") },
+                SidebarLine { right: "BitLocker".into(), ..line(2, dev(CandidateState::Locked, false), "Vault") },
+                SidebarLine { right: "Mounting…".into(), ..line(3, dev(CandidateState::Unmounted, true), "Data") },
+                SidebarLine {
+                    right: "APFS".into(),
+                    dim: true,
+                    ..line(4, dev(CandidateState::Unsupported, false), "Mac")
+                },
+            ],
+            focused: false,
+        };
+        let (lines, buf, hits) = draw(&m, 20, 6);
+        assert_eq!(lines[0], "  STICK            ^");
+        assert_eq!(lines[1], "- Games         NTFS");
+        assert_eq!(lines[2], "L Vault    BitLocker");
+        assert_eq!(lines[3], "~ Data     Mounting…");
+        assert_eq!(lines[4], "x Mac           APFS");
+        // The eject mark is its own target; the rest of the row is the row.
+        assert_eq!(hits.at(19, 0), Some(HitTarget::SidebarEject(0)));
+        assert_eq!(hits.at(5, 0), Some(HitTarget::SidebarRow(0)));
+        assert_eq!(hits.at(5, 2), Some(HitTarget::SidebarRow(2)));
+        // Narrow: the badge goes first, the label is cut.
+        let (lines, _, _) = draw(&m, 9, 6);
+        assert_eq!(lines[2], "L Vault");
+        assert!(!buf[(0, 1)].modifier.contains(Modifier::REVERSED));
+        for w in 0..=6 {
+            for h in 0..=3 {
+                let _ = draw(&m, w, h);
+            }
+        }
     }
 
     #[test]

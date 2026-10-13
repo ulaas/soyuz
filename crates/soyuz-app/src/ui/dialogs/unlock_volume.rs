@@ -1,13 +1,15 @@
 //! "Unlock volume": asks for the passphrase of a locked BitLocker / LUKS container in
 //! the sidebar's Devices section (Linux, UDisks2 `Encrypted.Unlock`). The unlock runs on
-//! a worker thread ([`crate::ui::sidebar::unlock_device`]); a wrong passphrase keeps the
+//! a worker thread (`models::devices::submit_unlock`); a wrong passphrase keeps the
 //! dialog open with an error, success closes it and the volume is mounted and opened.
 //! The passphrase is never logged; its buffers are zeroized after use.
 
-use std::sync::mpsc::{Receiver, TryRecvError, channel};
+use std::sync::mpsc::{Receiver, TryRecvError};
 
 use egui::{Align, FontId, Key, Layout, Margin, RichText, TextEdit, Ui};
 use zeroize::{Zeroize, Zeroizing};
+
+use crate::models::devices::{is_bitlocker, submit_unlock};
 
 use super::conflict::{Btn, button};
 use super::{Dialog, DialogCtx};
@@ -59,27 +61,6 @@ impl UnlockVolumeDialog {
             ctx.data_mut(|d| d.remove::<egui::text_edit::TextEditState>(*id));
         }
     }
-}
-
-fn is_bitlocker(kind: &str) -> bool {
-    kind.eq_ignore_ascii_case("bitlocker") || kind.eq_ignore_ascii_case("crypto_bitlk")
-}
-
-/// A BitLocker recovery key as typed: 48 digits in eight dash-separated groups (spaces
-/// and missing dashes are tolerated); `None` when the text is not one.
-fn recovery_key(text: &str) -> Option<Zeroizing<String>> {
-    let digits: Zeroizing<String> = Zeroizing::new(text.chars().filter(|c| !c.is_whitespace() && *c != '-').collect());
-    if digits.len() != 48 || !digits.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    let mut key = Zeroizing::new(String::with_capacity(55));
-    for i in 0..8 {
-        if i > 0 {
-            key.push('-');
-        }
-        key.push_str(&digits[i * 6..i * 6 + 6]);
-    }
-    Some(key)
 }
 
 impl Drop for UnlockVolumeDialog {
@@ -189,42 +170,15 @@ impl Dialog for UnlockVolumeDialog {
         });
         if submit && !working && !self.pass.is_empty() {
             // Move the buffer out (no copy); a recovery key is normalized to its dashed form.
-            let mut typed = Zeroizing::new(std::mem::take(&mut self.pass));
-            let secret = if self.bitlocker()
-                && let Some(k) = recovery_key(&typed)
-            {
-                typed.zeroize();
-                k
-            } else {
-                typed
-            };
+            let typed = Zeroizing::new(std::mem::take(&mut self.pass));
             // Drop egui's copy of the text (undo history) too.
             self.forget_field();
-            let (tx, rx) = channel();
-            crate::ui::sidebar::unlock_device(&self.object, self.name.clone(), secret, self.pane, tx);
-            self.pending = Some(rx);
+            self.pending = Some(submit_unlock(&self.object, self.name.clone(), &self.kind, typed, self.pane));
             self.error = None;
         }
         if cancel {
             self.forget_field();
         }
         !cancel
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn recovery_keys_are_normalized() {
-        let k = "123456-234567-345678-456789-567890-678901-789012-890123";
-        let key = |t: &str| recovery_key(t).map(|z| z.as_str().to_string());
-        assert_eq!(key(k).as_deref(), Some(k));
-        assert_eq!(key(&k.replace('-', "")).as_deref(), Some(k));
-        assert_eq!(key(&k.replace('-', " ")).as_deref(), Some(k));
-        assert_eq!(key("hunter2"), None);
-        assert_eq!(key(&"1".repeat(47)), None);
-        assert!(is_bitlocker("BitLocker") && is_bitlocker("crypto_BITLK") && !is_bitlocker("crypto_LUKS"));
     }
 }

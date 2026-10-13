@@ -668,16 +668,7 @@ fn candidate_row(
         let galley = trunc_galley(&painter, name, FontId::proportional(13.0), label_color, max_w);
         painter.galley(pos2(rect.left() + 34.0, text_y - galley.size().y / 2.0), galley, label_color);
         // Second line, where mounted volumes show their usage bar.
-        let size_txt = if cand.dev.size > 0 { format_size(cand.dev.size, SizeStyle::Decimal) } else { String::new() };
-        let status = match (work, cand.state) {
-            (Some(Work::Mounting), _) => tr!("app-device-status-mounting").to_string(),
-            (Some(Work::Unlocking), _) => tr!("app-device-status-unlocking").to_string(),
-            (Some(Work::Locking), _) => tr!("app-device-status-locking").to_string(),
-            (Some(Work::Unmounting), _) => tr!("app-device-status-unmounting").to_string(),
-            (None, S::Unmounted) => tr!("app-device-status-unmounted", size = size_txt),
-            (None, S::Locked) => tr!("app-device-status-locked", size = size_txt),
-            (None, S::Unsupported) => tr!("app-device-status-unsupported", size = size_txt),
-        };
+        let status = devices::candidate_status(work, cand.state, cand.dev.size);
         let line_y = rect.bottom() - 8.0;
         let mut x = rect.left() + 34.0;
         if work.is_some() {
