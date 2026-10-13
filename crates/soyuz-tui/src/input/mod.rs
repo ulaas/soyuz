@@ -51,6 +51,7 @@ pub mod quicklook;
 pub mod rename;
 pub mod search;
 pub mod settings;
+pub mod settings_keys;
 pub mod sidebar;
 pub mod terminal;
 

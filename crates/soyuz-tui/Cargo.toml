@@ -44,6 +44,8 @@ image.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 log.workspace = true
+# Config values of the settings editor (`soyuz_appcore::models::settings_draft`, Phase T6).
+toml.workspace = true
 # Display widths and grapheme clusters for truncation and the line editor (`view/text.rs`,
 # `widgets/line_edit.rs`); the versions ratatui already resolves.
 unicode-width = "0.2.2"
