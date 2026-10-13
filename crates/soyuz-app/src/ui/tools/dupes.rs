@@ -4,275 +4,43 @@
 //! shortest path); marked files go to the trash through the jobs engine. A group can
 //! never have all of its copies marked. Files leave the list only once the trash job has
 //! finished and they are really gone (failed / skipped items stay, still marked).
+//!
+//! The search, the groups, the marks and the trash job live in the core
+//! (`models::dupes::DupesModel`, Phase T7); this window draws them.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Instant, SystemTime};
 
-use crossbeam_channel::Receiver;
 use egui::{Align, Align2, CornerRadius, FontId, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, pos2, vec2};
-use soyuz_core::{EntryInfo, OpControl, SizeStyle, format_size, format_time};
-use soyuz_jobs::{DeleteMode, JobId, JobKind};
-use soyuz_search::DupeEvent;
+use soyuz_core::{format_size, format_time};
 
 use super::{button, progress_bar, text_field, tool_window};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
-use crate::services::jobs::{JobMeta, OpKind};
+use crate::models::dupes::{DupesModel, Empty, Keep, SIZES, other_pane_dir, short_folder, size_label};
 use crate::theme::{icons, icons::ph, palette};
-use crate::ui::toasts::Toast;
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::trunc_galley;
 
-/// Which copy a helper keeps.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Keep {
-    Newest,
-    Oldest,
-    ShortestPath,
-}
-
-impl Keep {
-    pub fn label(self) -> &'static str {
-        match self {
-            Keep::Newest => tr!("tools-dupes-keep-newest"),
-            Keep::Oldest => tr!("tools-dupes-keep-oldest"),
-            Keep::ShortestPath => tr!("tools-dupes-keep-shortest"),
-        }
-    }
-
-    /// Short chip text in a group header.
-    fn short_label(self) -> &'static str {
-        match self {
-            Keep::Newest => tr!("tools-dupes-newest"),
-            Keep::Oldest => tr!("tools-dupes-oldest"),
-            Keep::ShortestPath => tr!("tools-dupes-shortest"),
-        }
-    }
-}
-
-/// Index of the file to keep in a group.
-pub fn keeper(files: &[EntryInfo], keep: Keep) -> usize {
-    let t = |e: &EntryInfo| e.modified.unwrap_or(SystemTime::UNIX_EPOCH);
-    let len = |e: &EntryInfo| e.path.as_os_str().len();
-    let idx = 0..files.len();
-    match keep {
-        Keep::Newest => idx.max_by(|&a, &b| t(&files[a]).cmp(&t(&files[b])).then(b.cmp(&a))),
-        Keep::Oldest => idx.min_by(|&a, &b| t(&files[a]).cmp(&t(&files[b])).then(a.cmp(&b))),
-        Keep::ShortestPath => idx.min_by(|&a, &b| len(&files[a]).cmp(&len(&files[b])).then(a.cmp(&b))),
-    }
-    .unwrap_or(0)
-}
-
-pub struct Group {
-    pub files: Vec<EntryInfo>,
-    pub marked: Vec<bool>,
-    pub collapsed: bool,
-}
-
-impl Group {
-    pub fn size(&self) -> u64 {
-        self.files.first().map_or(0, |e| e.size)
-    }
-
-    pub fn wasted(&self) -> u64 {
-        self.size() * self.files.len().saturating_sub(1) as u64
-    }
-
-    /// Mark everything except the keeper.
-    pub fn apply(&mut self, keep: Keep) {
-        let k = keeper(&self.files, keep);
-        for (i, m) in self.marked.iter_mut().enumerate() {
-            *m = i != k;
-        }
-    }
-
-    /// Toggle a mark, refusing to mark the last unmarked copy. Returns false when refused.
-    pub fn toggle(&mut self, i: usize) -> bool {
-        if !self.marked[i] && self.marked.iter().filter(|m| !**m).count() <= 1 {
-            return false;
-        }
-        self.marked[i] = !self.marked[i];
-        true
-    }
-}
-
-/// Minimum sizes; an empty label is "Any" (translated at draw time).
-const SIZES: [(&str, u64); 5] =
-    [("", 1), ("≥ 100 KB", 100_000), ("≥ 1 MB", 1_000_000), ("≥ 10 MB", 10_000_000), ("≥ 100 MB", 100_000_000)];
-
-struct Running {
-    rx: Receiver<DupeEvent>,
-    ctl: Arc<OpControl>,
-    started: Instant,
-    hashed: u64,
-    total: u64,
-    bytes: u64,
-}
-
 pub struct DupesWindow {
     pub open: bool,
-    roots: Vec<PathBuf>,
+    model: DupesModel,
     new_root: String,
-    min_idx: usize,
-    running: Option<Running>,
-    groups: Vec<Group>,
-    done: Option<(u64, u64, f32)>,
-    confirm: bool,
-    refused: Option<(usize, usize, Instant)>,
-    /// Files sent to the trash from this window.
-    removed: usize,
-    /// Trash jobs in flight and the paths each was asked to remove.
-    trashing: Vec<(JobId, Vec<PathBuf>)>,
-    /// Existence checks of finished trash jobs, running on worker threads.
-    gone_rx: Vec<crossbeam_channel::Receiver<HashSet<PathBuf>>>,
 }
 
 impl DupesWindow {
     pub fn new(roots: Vec<PathBuf>) -> Self {
-        let mut w = DupesWindow {
-            open: true,
-            roots,
-            new_root: String::new(),
-            min_idx: 1,
-            running: None,
-            groups: Vec::new(),
-            done: None,
-            confirm: false,
-            refused: None,
-            removed: 0,
-            trashing: Vec::new(),
-            gone_rx: Vec::new(),
-        };
-        if !w.roots.is_empty() {
-            w.start();
-        }
-        w
-    }
-
-    fn start(&mut self) {
-        self.stop();
-        self.removed = 0;
-        self.groups.clear();
-        self.done = None;
-        self.confirm = false;
-        if self.roots.is_empty() {
-            return;
-        }
-        let (rx, ctl) = soyuz_search::find_duplicates(self.roots.clone(), SIZES[self.min_idx].1, super::wake());
-        self.running = Some(Running { rx, ctl, started: Instant::now(), hashed: 0, total: 0, bytes: 0 });
-    }
-
-    fn stop(&mut self) {
-        if let Some(r) = self.running.take() {
-            r.ctl.cancel();
-        }
-    }
-
-    fn poll(&mut self) {
-        let Some(r) = &mut self.running else { return };
-        let mut finished = None;
-        loop {
-            match r.rx.try_recv() {
-                Ok(DupeEvent::Progress { hashed, total, bytes }) => {
-                    r.hashed = hashed;
-                    r.total = total;
-                    r.bytes = bytes;
-                }
-                Ok(DupeEvent::Group(mut files)) => {
-                    files.sort_by(|a, b| a.path.cmp(&b.path));
-                    let n = files.len();
-                    self.groups.push(Group { files, marked: vec![false; n], collapsed: false });
-                }
-                Ok(DupeEvent::Done { groups, wasted_bytes }) => {
-                    finished = Some((groups, wasted_bytes, r.started.elapsed().as_secs_f32()));
-                    break;
-                }
-                Err(crossbeam_channel::TryRecvError::Empty) => break,
-                Err(crossbeam_channel::TryRecvError::Disconnected) => {
-                    finished = Some((self.groups.len() as u64, 0, r.started.elapsed().as_secs_f32()));
-                    break;
-                }
-            }
-        }
-        if let Some(f) = finished {
-            self.running = None;
-            self.done = Some(f);
-            self.groups.sort_by_key(|g| std::cmp::Reverse(g.wasted()));
-        }
-    }
-
-    /// Drop the files of finished trash jobs that are really gone (one existence check
-    /// per file, once per finished job).
-    fn poll_trash(&mut self, app: &SoyuzApp) {
-        let finished: Vec<usize> = (0..self.trashing.len())
-            .filter(|&i| app.core.fileops.jobs.snapshot(self.trashing[i].0).is_none_or(|s| s.state.is_terminal()))
-            .collect();
-        for i in finished.into_iter().rev() {
-            let (_, paths) = self.trashing.remove(i);
-            // One existence check per file, off the UI thread.
-            let (tx, rx) = crossbeam_channel::bounded(1);
-            let wake = super::wake();
-            let _ = std::thread::Builder::new().name("soyuz-dupes-gone".into()).spawn(move || {
-                let gone: HashSet<PathBuf> = paths.into_iter().filter(|p| !soyuz_fs::exists_nofollow(p)).collect();
-                let _ = tx.send(gone);
-                wake();
-            });
-            self.gone_rx.push(rx);
-        }
-        let mut landed = Vec::new();
-        self.gone_rx.retain(|rx| match rx.try_recv() {
-            Ok(g) => {
-                landed.push(g);
-                false
-            }
-            Err(crossbeam_channel::TryRecvError::Empty) => true,
-            Err(crossbeam_channel::TryRecvError::Disconnected) => false,
-        });
-        for gone in landed {
-            self.removed += gone.len();
-            for g in &mut self.groups {
-                let keep: Vec<(EntryInfo, bool)> =
-                    g.files.drain(..).zip(g.marked.drain(..)).filter(|(e, _)| !gone.contains(&e.path)).collect();
-                for (e, m) in keep {
-                    g.files.push(e);
-                    g.marked.push(m);
-                }
-            }
-            self.groups.retain(|g| g.files.len() > 1);
-        }
-    }
-
-    fn marked(&self) -> (usize, u64, Vec<PathBuf>) {
-        let mut n = 0;
-        let mut bytes = 0;
-        let mut paths = Vec::new();
-        for g in &self.groups {
-            for (i, m) in g.marked.iter().enumerate() {
-                if *m {
-                    n += 1;
-                    bytes += g.files[i].size;
-                    paths.push(g.files[i].path.clone());
-                }
-            }
-        }
-        (n, bytes, paths)
+        DupesWindow { open: true, model: DupesModel::new(roots, super::wake()), new_root: String::new() }
     }
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
-        self.poll();
-        self.poll_trash(app);
-        let sub = match self.roots.as_slice() {
-            [] => String::new(),
-            [one] => super::tags_ui::show_path(one),
-            many => tr!("tools-dupes-folders", count = many.len()),
-        };
+        self.model.poll();
+        self.model.poll_trash(&app.core.fileops.jobs);
+        let sub = self.model.subtitle();
         let keep = tool_window(ctx, "dupes", tr!("tools-dupes-title"), &sub, ph::FILES, vec2(900.0, 640.0), |ui| {
             self.body(ui, app)
         });
         if !keep {
-            self.stop();
+            self.model.stop();
             self.open = false;
         }
     }
@@ -285,7 +53,7 @@ impl DupesWindow {
                 RichText::new(tr!("tools-dupes-search-in")).font(FontId::proportional(12.0)).color(p.text_tertiary),
             );
             let mut remove = None;
-            for (i, r) in self.roots.iter().enumerate() {
+            for (i, r) in self.model.roots.iter().enumerate() {
                 let label = format!("{}  ×", soyuz_core::entry::display_name(r));
                 if super::chip(ui, &label, p.accent)
                     .on_hover_text(tr!("tools-dupes-root-tip", path = r.display().to_string()))
@@ -295,24 +63,21 @@ impl DupesWindow {
                 }
             }
             if let Some(i) = remove {
-                self.roots.remove(i);
+                self.model.remove_root(i);
             }
             let r = text_field(ui, &mut self.new_root, tr!("tools-dupes-add-path-hint"), 220.0);
             let enter = r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
             if (enter || button(ui, Some(ph::PLUS), tr!("tools-add"), 0, !self.new_root.trim().is_empty()).clicked())
                 && !self.new_root.trim().is_empty()
             {
-                let pb = PathBuf::from(self.new_root.trim());
-                if !self.roots.contains(&pb) {
-                    self.roots.push(pb);
-                }
+                self.model.add_root(&self.new_root);
                 self.new_root.clear();
             }
-            if let Some(other) = other_pane_dir(app)
-                && !self.roots.contains(&other)
+            if let Some(other) = other_pane_dir(&app.core)
+                && !self.model.roots.contains(&other)
                 && button(ui, Some(ph::SQUARE_SPLIT_HORIZONTAL), tr!("tools-dupes-add-other-pane"), 0, true).clicked()
             {
-                self.roots.push(other);
+                self.model.add_path(other);
             }
         });
         ui.add_space(4.0);
@@ -320,82 +85,48 @@ impl DupesWindow {
             ui.label(
                 RichText::new(tr!("tools-dupes-min-size")).font(FontId::proportional(12.0)).color(p.text_tertiary),
             );
-            for (i, (label, _)) in SIZES.iter().enumerate() {
-                let mut on = self.min_idx == i;
-                let label = if label.is_empty() { tr!("tools-dupes-size-any") } else { label };
-                if super::toggle_chip(ui, label, &mut on, p.accent).clicked() {
-                    self.min_idx = i;
+            for i in 0..SIZES.len() {
+                let mut on = self.model.min_idx == i;
+                if super::toggle_chip(ui, size_label(i), &mut on, p.accent).clicked() {
+                    self.model.set_min(i);
                 }
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if self.running.is_some() {
+                if self.model.is_running() {
                     if button(ui, Some(ph::STOP), tr!("tools-stop"), 0, true).clicked() {
-                        self.stop();
-                        self.done = Some((self.groups.len() as u64, 0, 0.0));
-                        self.groups.sort_by_key(|g| std::cmp::Reverse(g.wasted()));
+                        self.model.stop_search();
                     }
                 } else if button(
                     ui,
                     Some(ph::MAGNIFYING_GLASS),
                     tr!("tools-menu-find-duplicates"),
                     1,
-                    !self.roots.is_empty(),
+                    !self.model.roots.is_empty(),
                 )
                 .clicked()
                 {
-                    self.start();
+                    self.model.start();
                 }
             });
         });
         ui.add_space(4.0);
         // Progress / summary line.
-        let wasted: u64 = self.groups.iter().map(Group::wasted).sum();
-        if let Some(r) = &self.running {
-            let frac = (r.total > 0).then(|| r.hashed as f32 / r.total as f32);
+        if let Some((hashed, total, text)) = self.model.progress() {
+            let frac = (total > 0).then(|| hashed as f32 / total as f32);
             progress_bar(ui, ui.available_width(), frac);
-            ui.label(
-                RichText::new(tr!(
-                    "tools-dupes-hashing",
-                    done = r.hashed,
-                    total = r.total,
-                    size = format_size(r.bytes, SizeStyle::Binary),
-                    groups = self.groups.len(),
-                    secs = r.started.elapsed().as_secs()
-                ))
-                .font(FontId::proportional(12.0))
-                .color(p.text_secondary),
-            );
+            ui.label(RichText::new(text).font(FontId::proportional(12.0)).color(p.text_secondary));
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));
-        } else if let Some((_, _, secs)) = self.done {
-            ui.label(
-                RichText::new({
-                    let groups = self.groups.len();
-                    let size = format_size(wasted, SizeStyle::Binary);
-                    if secs >= 1.0 {
-                        let secs = soyuz_core::locale::format_decimal(f64::from(secs), 1);
-                        tr!("tools-dupes-summary-secs", groups = groups, size = size, secs = secs)
-                    } else if secs > 0.0 {
-                        let ms = (secs * 1000.0).round() as u64;
-                        tr!("tools-dupes-summary-ms", groups = groups, size = size, ms = ms)
-                    } else {
-                        tr!("tools-dupes-summary", groups = groups, size = size)
-                    }
-                })
-                .font(FontId::proportional(12.5))
-                .color(p.text_primary),
-            );
+        } else if let Some(summary) = self.model.summary() {
+            ui.label(RichText::new(summary).font(FontId::proportional(12.5)).color(p.text_primary));
         }
-        if self.groups.is_empty() {
-            let (g, t, s) = if self.running.is_some() {
-                (ph::SPINNER, tr!("tools-dupes-empty-running"), tr!("tools-dupes-empty-running-body"))
-            } else if self.done.is_some() && self.removed > 0 {
-                (ph::SPARKLE, tr!("tools-dupes-empty-handled"), tr!("tools-dupes-empty-handled-body"))
-            } else if self.done.is_some() {
-                (ph::CHECK_CIRCLE, tr!("tools-dupes-empty-none"), tr!("tools-dupes-empty-none-body"))
-            } else {
-                (ph::FILES, tr!("tools-dupes-empty-start"), tr!("tools-dupes-empty-start-body"))
+        if let Some(empty) = self.model.empty_state() {
+            let g = match empty {
+                Empty::Running => ph::SPINNER,
+                Empty::Handled => ph::SPARKLE,
+                Empty::None => ph::CHECK_CIRCLE,
+                Empty::Start => ph::FILES,
             };
-            super::compare::empty_note(ui, g, t, s);
+            super::compare::empty_note(ui, g, empty.title(), empty.body());
             return;
         }
         // Bulk helpers.
@@ -406,19 +137,13 @@ impl DupesWindow {
                     .font(FontId::proportional(12.0))
                     .color(p.text_tertiary),
             );
-            for k in [Keep::Newest, Keep::Oldest, Keep::ShortestPath] {
+            for k in Keep::ALL {
                 if button(ui, None, k.label(), 0, true).clicked() {
-                    for g in &mut self.groups {
-                        g.apply(k);
-                    }
-                    self.confirm = false;
+                    self.model.keep_all(k);
                 }
             }
             if button(ui, None, tr!("tools-clear"), 0, true).clicked() {
-                for g in &mut self.groups {
-                    g.marked.iter_mut().for_each(|m| *m = false);
-                }
-                self.confirm = false;
+                self.model.clear_marks();
             }
         });
         ui.add_space(4.0);
@@ -426,40 +151,28 @@ impl DupesWindow {
         let h = (ui.available_height() - footer).max(80.0);
         self.list(ui, app, h);
         // Footer.
-        let (n, bytes, paths) = self.marked();
+        let (n, _, _) = self.model.marked();
         ui.add_space(6.0);
         ui.horizontal(|ui| {
-            let text = if n == 0 {
-                tr!("tools-dupes-mark-hint").to_string()
-            } else {
-                tr!("tools-dupes-marked", count = n, size = format_size(bytes, SizeStyle::Binary))
-            };
+            let text = self.model.marked_text();
             ui.label(RichText::new(text).font(FontId::proportional(12.5)).color(if n > 0 {
                 p.text_primary
             } else {
                 p.text_tertiary
             }));
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if self.confirm {
-                    let busy = !self.trashing.is_empty() || !self.gone_rx.is_empty();
+                if self.model.confirm {
+                    let busy = self.model.busy();
                     if button(ui, Some(ph::TRASH), &tr!("tools-dupes-move-n-to-trash", count = n), 2, n > 0 && !busy)
                         .clicked()
                     {
-                        let spec = app
-                            .core
-                            .fileops
-                            .jobs
-                            .spec(JobKind::Delete { paths: paths.clone(), mode: DeleteMode::Trash });
-                        let id = app.core.fileops.jobs.submit(spec, JobMeta::new(OpKind::Trash, &paths, None));
-                        self.trashing.push((id, paths));
-                        self.confirm = false;
-                        app.core.ui.toasts.push(Toast::info(tr!("tools-dupes-toast-moving", count = n)));
+                        self.model.trash_marked(&mut app.core);
                     }
                     if button(ui, None, tr!("common-cancel"), 0, true).clicked() {
-                        self.confirm = false;
+                        self.model.confirm = false;
                     }
                 } else if button(ui, Some(ph::TRASH), tr!("tools-dupes-delete-marked"), 2, n > 0).clicked() {
-                    self.confirm = true;
+                    self.model.confirm = true;
                 }
             });
         });
@@ -471,6 +184,7 @@ impl DupesWindow {
         let row_h = 26.0;
         let gap = 8.0;
         let heights: Vec<f32> = self
+            .model
             .groups
             .iter()
             .map(|g| header_h + if g.collapsed { 0.0 } else { g.files.len() as f32 * row_h } + gap)
@@ -478,7 +192,7 @@ impl DupesWindow {
         let total: f32 = heights.iter().sum();
         let cfg = app.core.config.general.clone();
         let drag_default = app.core.config.behaviour.drag_default;
-        let roots = self.roots.clone();
+        let roots = self.model.roots.clone();
         let mut reveal = None;
         ScrollArea::vertical().id_salt("dupes.list").max_height(height).auto_shrink([false, false]).show_viewport(
             ui,
@@ -486,7 +200,9 @@ impl DupesWindow {
                 let width = ui.available_width();
                 let (area, _) = ui.allocate_exact_size(vec2(width, total), Sense::hover());
                 let mut y = 0.0;
-                for (gi, g) in self.groups.iter_mut().enumerate() {
+                let model = &mut self.model;
+                let mut toggles: Vec<(usize, usize)> = Vec::new();
+                for (gi, g) in model.groups.iter_mut().enumerate() {
                     let gh = heights[gi];
                     if y + gh < viewport.top() || y > viewport.bottom() {
                         y += gh;
@@ -613,8 +329,9 @@ impl DupesWindow {
                                 egui::StrokeKind::Inside,
                             );
                         }
-                        let refused =
-                            self.refused.is_some_and(|(a, b, t)| a == gi && b == fi && t.elapsed().as_secs_f32() < 1.2);
+                        let refused = model.refused.is_some_and(|(a, b, t)| {
+                            a == gi && b == fi && t.elapsed() < crate::models::dupes::REFUSED_FLASH
+                        });
                         let name = e.name.clone();
                         let folder = e.path.parent().map(|f| short_folder(&roots, f)).unwrap_or_default();
                         let nc = if marked { p.text_tertiary } else { p.text_primary };
@@ -653,8 +370,8 @@ impl DupesWindow {
                                 p.warning,
                             );
                         }
-                        if resp.clicked() && !g.toggle(fi) {
-                            self.refused = Some((gi, fi, Instant::now()));
+                        if resp.clicked() {
+                            toggles.push((gi, fi));
                         }
                         if resp.double_clicked() {
                             reveal = Some(e.path.clone());
@@ -693,66 +410,13 @@ impl DupesWindow {
                     }
                     y += gh;
                 }
+                for (gi, fi) in toggles {
+                    model.toggle(gi, fi);
+                }
             },
         );
         if let Some(p) = reveal {
             app.core.cmds.push(Cmd::RevealPath(p));
         }
-    }
-}
-
-/// A folder shown relative to the search root it lives in (`root\sub\dir`).
-pub fn short_folder(roots: &[PathBuf], folder: &std::path::Path) -> String {
-    for r in roots {
-        if let Ok(rel) = folder.strip_prefix(r) {
-            let name = soyuz_core::entry::display_name(r);
-            return if rel.as_os_str().is_empty() {
-                name
-            } else {
-                format!("{name}{}{}", std::path::MAIN_SEPARATOR, rel.display())
-            };
-        }
-    }
-    super::tags_ui::show_path(folder)
-}
-
-fn other_pane_dir(app: &SoyuzApp) -> Option<PathBuf> {
-    let tab = app.core.ws.tab();
-    if !tab.dual || tab.panes.len() < 2 {
-        return None;
-    }
-    match &tab.panes[1 - tab.focused.min(1)].location {
-        soyuz_core::Location::Dir(d) => Some(d.clone()),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::Duration;
-
-    fn f(path: &str, secs: u64) -> EntryInfo {
-        let mut e = EntryInfo::minimal(PathBuf::from(path), soyuz_core::EntryKind::File);
-        e.modified = Some(SystemTime::UNIX_EPOCH + Duration::from_secs(secs));
-        e.size = 100;
-        e
-    }
-
-    #[test]
-    fn keep_helpers_pick_one_and_mark_the_rest() {
-        let files = vec![f("/a/long/path/x.jpg", 50), f("/b/x.jpg", 10), f("/c/d/x.jpg", 90)];
-        assert_eq!(keeper(&files, Keep::Newest), 2);
-        assert_eq!(keeper(&files, Keep::Oldest), 1);
-        assert_eq!(keeper(&files, Keep::ShortestPath), 1);
-        let mut g = Group { files, marked: vec![false; 3], collapsed: false };
-        g.apply(Keep::Newest);
-        assert_eq!(g.marked, vec![true, true, false]);
-        assert_eq!(g.wasted(), 200);
-        // The last unmarked copy cannot be marked.
-        assert!(!g.toggle(2));
-        assert!(g.toggle(0));
-        assert!(g.toggle(2));
-        assert_eq!(g.marked, vec![false, true, true]);
     }
 }

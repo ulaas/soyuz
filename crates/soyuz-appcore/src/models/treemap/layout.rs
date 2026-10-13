@@ -1,6 +1,7 @@
 //! Squarified treemap layout (Bruls, Huizing, van Wijk 2000). Pure geometry, no egui:
 //! [`squarify`] turns weights sorted in descending order into rectangles whose areas are
-//! proportional to the weights and whose aspect ratios stay close to 1.
+//! proportional to the weights and whose aspect ratios stay close to 1. Moved from the GUI's
+//! `ui/tools/treemap/layout.rs` (Phase T7).
 
 /// Axis-aligned rectangle in layout space (`x`, `y` = top-left).
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
