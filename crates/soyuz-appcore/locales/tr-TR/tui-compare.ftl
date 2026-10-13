@@ -5,7 +5,6 @@
 tui-compare-hints-setup = Tab sonraki alan · Enter/F5 karşılaştır · F6 tarafları değiştir · F8 profiller · Esc kapat
 tui-compare-hints-rows = ↑↓ gezin · Boşluk eylemi değiştir · ←/→ kopyala · Del sil · S atla · Shift+tuş: görünen tümü · 1–5 süzgeçler · P mod · Enter gözden geçir · Esc kapat
 tui-compare-hints-plan = Enter eşitlemeyi başlat · Backspace tabloya dön · Esc geri
-tui-compare-hints-profiles = ↑↓ seç · Enter yükle ve karşılaştır · R şimdi çalıştır · Esc geri
 tui-compare-hints-scanning = Esc karşılaştırmayı iptal et · F6 tarafları değiştir
 tui-compare-progress = { $done } / { $total } öğe
 tui-compare-profile-load = Yükle ve karşılaştır

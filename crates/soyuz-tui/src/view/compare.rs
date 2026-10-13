@@ -10,7 +10,9 @@
 //!   sync job, the review table (category chips with counts, the name filter, one row per
 //!   difference: left side, category bar, name with its tag, action, right side; the plan
 //!   summary and Review / Conflicts below), the plan (its actions and Start sync) or the
-//!   profiles page;
+//!   profiles page (the profiles with their schedule and next run; under them, from
+//!   [`PROFILE_DETAIL_MIN_ROWS`] rows, the selected profile's schedule, last run and run
+//!   reports; New, Edit, Rename, Delete, Save setup, Run now, Dry run / Cancel);
 //! - a key-hints row on screens at least [`HINTS_MIN_ROWS`] high.
 //!
 //! [`prepare`] pumps the model (`crate::input::compare::pump`) and builds [`CompareVm`]
@@ -25,7 +27,7 @@ use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::compare::{
     Category, CompareModel, Method, PlanStats, Preset, ReviewStep, RowAction, Side, Stage, two_way_reason,
 };
-use soyuz_appcore::models::compare_profiles;
+use soyuz_appcore::models::compare_profiles::{self, RunStatus};
 use soyuz_appcore::tr;
 use soyuz_core::{SizeStyle, format_size, format_time};
 use soyuz_jobs::SyncAction;
@@ -42,6 +44,21 @@ pub const HINTS_MIN_ROWS: u16 = 16;
 pub const META_MIN_COLS: u16 = 70;
 /// Width of the action column.
 pub const ACTION_COLS: u16 = 5;
+/// The profiles page shows the selected profile's details from this many body rows.
+pub const PROFILE_DETAIL_MIN_ROWS: u16 = 8;
+/// Rows of the details at most.
+pub const PROFILE_DETAIL_MAX_ROWS: u16 = 10;
+
+/// The profiles page's body: the list and the selected profile's details (empty when the
+/// body is short).
+pub fn profile_split(rows: Rect) -> (Rect, Rect) {
+    if rows.height < PROFILE_DETAIL_MIN_ROWS {
+        return (rows, Rect::default());
+    }
+    let h = (rows.height / 2).min(PROFILE_DETAIL_MAX_ROWS);
+    let list = Rect::new(rows.x, rows.y, rows.width, rows.height - h);
+    (list, Rect::new(rows.x, list.bottom(), rows.width, h))
+}
 
 /// The screen's layout (one-row parts; empty when they do not fit).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -212,9 +229,23 @@ pub struct ProfileVm {
     pub paths: String,
     /// "Next run" or what it is doing now.
     pub status: String,
+    /// It is running now (planning, syncing, recording).
+    pub running: bool,
     pub cursor: bool,
     /// Index (the click target).
     pub index: usize,
+}
+
+/// The selected profile's details.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProfileDetailVm {
+    /// "Daily at 18:00 · Next: today 18:00".
+    pub schedule: String,
+    /// What it is doing, its last run, or "Never run".
+    pub last: (String, Role),
+    pub reports_title: String,
+    /// The run reports, newest first (or "Loading…" / "No runs yet").
+    pub reports: Vec<(String, Role)>,
 }
 
 /// The profiles page.
@@ -224,6 +255,9 @@ pub struct ProfilesVm {
     pub note: String,
     pub rows: Vec<ProfileVm>,
     pub empty: Option<(String, String)>,
+    pub detail: Option<ProfileDetailVm>,
+    /// The selected profile is running (Cancel instead of Run now / Dry run).
+    pub running: bool,
 }
 
 /// The body under the setup.
@@ -395,7 +429,7 @@ fn build(core: &AppCore, st: &mut State, m: &CompareModel) -> CompareVm {
 
 fn hints(st: &State, m: &CompareModel) -> String {
     if st.page == Page::Profiles {
-        return tr!("tui-compare-hints-profiles").into();
+        return tr!("tui-cmpprof-hints-page").into();
     }
     if m.is_scanning() {
         return tr!("tui-compare-hints-scanning").into();
@@ -574,15 +608,69 @@ fn plan_body(st: &mut State, m: &CompareModel) -> BodyVm {
     })
 }
 
+/// A run status's colour role (the GUI's `status_color`).
+pub fn status_role(s: RunStatus) -> Role {
+    match s {
+        RunStatus::InSync | RunStatus::Applied => Role::Success,
+        RunStatus::DryRun => Role::Accent,
+        RunStatus::Partial => Role::Warning,
+        RunStatus::Failed => Role::Danger,
+        RunStatus::Cancelled => Role::Muted,
+    }
+}
+
+fn profile_detail(core: &AppCore, st: &State, enabled: bool) -> Option<ProfileDetailVm> {
+    let p = st.profile_list.get(st.profiles.cursor)?;
+    let schedule = tr!(
+        "tui-cmpprof-schedule-line",
+        schedule = p.schedule.label(),
+        next = compare_profiles::next_label(p, enabled)
+    );
+    let last = match (compare_profiles::activity(&p.name), compare_profiles::last_report(&p.name)) {
+        (Some(what), _) => (what.to_string(), Role::Accent),
+        (None, Some(r)) => {
+            let when = soyuz_core::time::format_time_at(
+                r.finished.unwrap_or(r.started),
+                &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Relative),
+                std::time::SystemTime::now(),
+            );
+            let text = tr!("tools-profiles-last-run", when = when, trigger = r.trigger.label(), summary = r.summary());
+            (format!("{} · {text}", r.status.label()), status_role(r.status))
+        }
+        (None, None) => (tr!("tools-profiles-never-run").to_string(), Role::Muted),
+    };
+    let date = &core.config.general.date_format;
+    let reports = match st.reports.as_ref().filter(|(n, _)| *n == p.name) {
+        None => vec![(tr!("common-loading").to_string(), Role::Muted)],
+        Some((_, v)) if v.is_empty() => vec![(tr!("tools-profiles-no-runs").to_string(), Role::Muted)],
+        Some((_, v)) => v
+            .iter()
+            .map(|r| {
+                let line = tr!(
+                    "tui-cmpprof-report-line",
+                    when = format_time(r.started, date),
+                    status = r.status.label(),
+                    trigger = r.trigger.label(),
+                    summary = r.summary()
+                );
+                (line, status_role(r.status))
+            })
+            .collect(),
+    };
+    Some(ProfileDetailVm { schedule, last, reports_title: tr!("tools-profiles-reports").into(), reports })
+}
+
 fn profiles_body(core: &AppCore, st: &State) -> BodyVm {
     let enabled = core.config.sync.scheduler;
-    let height = usize::from(st.geo.rows.height);
+    let (list_r, detail_r) = profile_split(st.geo.rows);
+    let height = usize::from(list_r.height);
     let list = &st.profile_list;
     let rows = st
         .profiles
         .visible(list.len(), height)
         .map(|i| {
             let p = &list[i];
+            let activity = compare_profiles::activity(&p.name);
             ProfileVm {
                 name: p.name.clone(),
                 paths: tr!(
@@ -592,9 +680,10 @@ fn profiles_body(core: &AppCore, st: &State) -> BodyVm {
                     mode = p.preset.label(),
                     method = p.method.label()
                 ),
-                status: compare_profiles::activity(&p.name)
-                    .map(str::to_string)
-                    .unwrap_or_else(|| compare_profiles::next_label(p, enabled)),
+                status: activity.map(str::to_string).unwrap_or_else(|| {
+                    format!("{} · {}", p.schedule.label(), compare_profiles::next_label(p, enabled))
+                }),
+                running: activity.is_some(),
                 cursor: i == st.profiles.cursor,
                 index: i,
             }
@@ -607,6 +696,8 @@ fn profiles_body(core: &AppCore, st: &State) -> BodyVm {
         empty: list
             .is_empty()
             .then(|| (tr!("tools-profiles-empty").to_string(), tr!("tools-profiles-empty-body").to_string())),
+        detail: if detail_r.is_empty() { None } else { profile_detail(core, st, enabled) },
+        running: list.get(st.profiles.cursor).is_some_and(|p| compare_profiles::is_running(&p.name)),
     })
 }
 
@@ -1014,7 +1105,7 @@ fn profiles(buf: &mut Buffer, g: &Geometry, p: &ProfilesVm, theme: &TuiTheme, hi
         g2.footer = Rect::default();
         note(buf, g2, t, b, Role::Title, theme);
     }
-    let r = g.rows;
+    let (r, detail_r) = profile_split(g.rows);
     let name_w = p.rows.iter().map(|x| text::width(&x.name)).max().unwrap_or(0).min(usize::from(r.width / 3)) as u16;
     for (row, y) in p.rows.iter().zip(r.y..r.bottom()) {
         let line = Rect::new(r.x, y, r.width, 1);
@@ -1022,31 +1113,61 @@ fn profiles(buf: &mut Buffer, g: &Geometry, p: &ProfilesVm, theme: &TuiTheme, hi
         let base = if row.cursor { theme.style(Role::Cursor) } else { Style::default() };
         buf.set_style(line, base);
         let st = |role: Role| theme.style(role).patch(base);
-        let sw = (text::width(&row.status) as u16).min(r.width / 4);
+        let sw = (text::width(&row.status) as u16).min(r.width / 3);
         let end = r.right().saturating_sub(sw + 1);
         put(buf, r.x, y, end, &row.name, st(Role::Text).add_modifier(Modifier::BOLD));
         put(buf, (r.x + name_w + 2).min(end), y, end, &row.paths, st(Role::Muted));
-        put(buf, r.right() - sw, y, r.right(), &row.status, st(Role::Accent));
+        let role = if row.running { Role::Accent } else { Role::Text };
+        put(buf, r.right() - sw, y, r.right(), &row.status, st(role));
+    }
+    if let Some(d) = &p.detail {
+        profile_detail_rows(buf, detail_r, d, theme);
     }
     let r = g.footer;
     if !r.is_empty() {
-        let mut x = btn(
-            buf,
-            r.x,
-            r.y,
-            r.right(),
-            &format!("Esc {}", tr!("tools-back")),
-            Role::Button,
-            theme,
-            hits,
-            button::BACK,
-        );
+        let back = format!("Esc {}", tr!("tools-back"));
+        let mut x = btn(buf, r.x, r.y, r.right(), &back, Role::Button, theme, hits, button::BACK);
+        let mut items: Vec<(String, Role, u8)> = Vec::new();
         if p.empty.is_none() {
-            let load = format!("Enter {}", tr!("tui-compare-profile-load"));
-            x = btn(buf, x, r.y, r.right(), &load, Role::ButtonFocused, theme, hits, button::LOAD);
-            let run = format!("R {}", tr!("tools-profiles-run-now"));
-            btn(buf, x, r.y, r.right(), &run, Role::Button, theme, hits, button::RUN_PROFILE);
+            items.push((format!("Enter {}", tr!("tui-compare-profile-load")), Role::ButtonFocused, button::LOAD));
+            if p.running {
+                items.push((format!("X {}", tr!("common-cancel")), Role::Warning, button::CANCEL_RUN));
+            } else {
+                items.push((format!("R {}", tr!("tools-profiles-run-now")), Role::Button, button::RUN_PROFILE));
+                items.push((format!("D {}", tr!("tools-status-dry-run")), Role::Button, button::DRY_RUN));
+            }
+            items.push((format!("E {}", tr!("tui-cmpprof-edit")), Role::Button, button::EDIT));
+            items.push((format!("F2 {}", tr!("common-rename")), Role::Button, button::RENAME));
+            items.push((format!("Del {}", tr!("common-delete")), Role::Button, button::DELETE));
         }
+        items.push((format!("N {}", tr!("tui-cmpprof-new")), Role::Button, button::NEW));
+        items.push((format!("S {}", tr!("tui-cmpprof-save-setup")), Role::Button, button::SAVE_SETUP));
+        for (label, role, id) in &items {
+            // Whole buttons only: one that does not fit is left out with the rest.
+            if x.saturating_add(text::width(label) as u16 + 2) > r.right() {
+                break;
+            }
+            x = btn(buf, x, r.y, r.right(), label, *role, theme, hits, *id);
+        }
+    }
+}
+
+/// The selected profile's schedule, last run and run reports in `r`.
+fn profile_detail_rows(buf: &mut Buffer, r: Rect, d: &ProfileDetailVm, theme: &TuiTheme) {
+    if r.is_empty() {
+        return;
+    }
+    let mut lines: Vec<(&str, Style)> = vec![
+        (&d.schedule, theme.style(Role::Text)),
+        (&d.last.0, theme.style(d.last.1)),
+        (&d.reports_title, theme.style(Role::Title).add_modifier(Modifier::BOLD)),
+    ];
+    lines.extend(d.reports.iter().map(|(s, role)| (s.as_str(), theme.style(*role))));
+    // A faint rule above the details.
+    let rule = "─".repeat(usize::from(r.width));
+    put(buf, r.x, r.y, r.right(), &rule, theme.style(Role::Faint));
+    for ((s, style), y) in lines.iter().zip(r.y + 1..r.bottom()) {
+        put(buf, r.x, y, r.right(), s, *style);
     }
 }
 
@@ -1147,6 +1268,7 @@ mod tests {
                 name: "p".into(),
                 paths: "a ←→ b".into(),
                 status: "Manual".into(),
+                running: false,
                 cursor: true,
                 index: 0,
             }],
