@@ -46,6 +46,12 @@ parking_lot.workspace = true
 log.workspace = true
 # Config values of the settings editor (`soyuz_appcore::models::settings_draft`, Phase T6).
 toml.workspace = true
+# The AI panel's tools menu and budget warning (`soyuz_ai::tools::catalog`,
+# `soyuz_ai::pricing::current_month`, `soyuz_mcp::client::ServerStatus`) and plan arguments
+# as JSON (the plan JSON editor); all were dev-dependencies, so the lockfile is unchanged.
+soyuz-ai.workspace = true
+soyuz-mcp.workspace = true
+serde_json.workspace = true
 # Display widths and grapheme clusters for truncation and the line editor (`view/text.rs`,
 # `widgets/line_edit.rs`); the versions ratatui already resolves.
 unicode-width = "0.2.2"
@@ -59,11 +65,7 @@ signal-hook = "0.4.5"
 [dev-dependencies]
 tempfile.workspace = true
 # MCP approval requests and script plans in the dialog tests (`input/dialogs/approval_*.rs`).
-soyuz-ai.workspace = true
-soyuz-mcp.workspace = true
 soyuz-script.workspace = true
-# serde_json plants a crash journal in the headless recovery tests (`tests/headless/recovery.rs`).
-serde_json.workspace = true
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz-tui.exe (Windows hosts with rc.exe only; no-op elsewhere).

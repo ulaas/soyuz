@@ -2,8 +2,9 @@
 //! "Undo everything <client> did", Clear), then the conversation (your messages, the
 //! assistant's markdown through the preview's renderer, tool rows, plan cards, notices,
 //! the cost question, task ends with "Undo everything" and "Save as recipe") or, for an
-//! empty chat, the ideas; and the footer above the composer (the "N plans wait" bar, the
-//! slash / `@` popup, the mentions). Like the GUI's `ui/ai/{chat,cards,mcp_area}.rs`.
+//! empty chat, the ideas; and the footer above the composer (the smart search card, the
+//! "N plans wait" bar, the slash / `@` popup, the mentions). Like the GUI's
+//! `ui/ai/{chat,cards,mcp_area,pages}.rs`.
 
 use soyuz_appcore::ai::agent::Finish;
 use soyuz_appcore::ai::mcp::{clients_with_history, irreversible};
@@ -17,11 +18,12 @@ use super::{AiLine, Built, MAX_POPUP, PopupItem, Span};
 use crate::dialog::safe;
 use crate::hits::{AiButton, CardButton};
 use crate::icons::{self, IconSet};
-use crate::input::ai::{MCP_CLEAR, Part, Sel, State};
+use crate::input::ai::{Chip, MCP_CLEAR, Part, Sel, State};
 use crate::layout::HitTarget;
 use crate::theme::Role;
 use crate::view::preview::markdown;
 use crate::view::text;
+use crate::widgets::LineEdit;
 
 /// Items of a plan shown while a card is folded.
 pub const FOLDED_ITEMS: usize = 8;
@@ -159,7 +161,11 @@ pub fn lines(core: &AppCore, _st: &State, w: usize, set: IconSet) -> Built {
             ChatItem::User { text, mentions } => {
                 o.push(AiLine::default());
                 let mark = if set == IconSet::Ascii { "> " } else { "\u{203a} " };
-                o.para(vec![Span::new(mark, Role::Accent)], &safe(text), Role::Title, None);
+                // Every line of a multi-line message is its own paragraph.
+                for (k, line) in text.split('\n').enumerate() {
+                    let lead = if k == 0 { mark } else { "  " };
+                    o.para(vec![Span::new(lead, Role::Accent)], &safe(line), Role::Title, None);
+                }
                 if !mentions.is_empty() {
                     let names: Vec<String> = mentions
                         .iter()
@@ -418,9 +424,12 @@ fn card_lines(o: &mut Out, card: &PlanCard, live: bool, sel: Sel) {
     if pending {
         let can = card.plan.executable;
         let mut b = vec![Span::button(tr!("ai-card-approve"), sel.button(CardButton::Approve), can)];
-        if is_rename(&card.tool) && !card.plan.items.is_empty() {
-            b.push(Span::button(tr!("tui-ai-edit-names"), sel.button(CardButton::Edit), true));
-        }
+        let label = if is_rename(&card.tool) && !card.plan.items.is_empty() {
+            tr!("tui-ai-edit-names")
+        } else {
+            tr!("tui-ai-edit-json")
+        };
+        b.push(Span::button(label, sel.button(CardButton::Edit), true));
         b.push(Span::button(tr!("ai-card-reject"), sel.button(CardButton::Reject), true));
         let (label, bulk) = match &card.origin {
             CardOrigin::Assistant => (tr!("ai-card-approve-kind", tool = safe(&card.tool)), true),
@@ -515,10 +524,24 @@ fn task_end(o: &mut Out, t: &TaskEnd) {
     }
 }
 
-/// The lines above the composer and what the popup rows pick.
-pub fn footer(core: &AppCore, st: &State, w: usize, set: IconSet) -> (Vec<AiLine>, Vec<PopupItem>) {
-    let mut out = Vec::new();
-    let mut popup = Vec::new();
+/// The lines above the composer, what the popup rows pick and the text cursor of the
+/// smart search card's field (line, column).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Footer {
+    pub lines: Vec<AiLine>,
+    pub popup: Vec<PopupItem>,
+    pub cursor: Option<(usize, u16)>,
+}
+
+/// The footer: the smart search card, the "N plans wait" bar, the slash / `@` popup and
+/// the mentions of the next message.
+pub fn footer(core: &AppCore, st: &State, w: usize, set: IconSet) -> Footer {
+    let mut f = Footer::default();
+    if core.ai.smart.open {
+        f.cursor = smart_card(core, st, w, set, &mut f.lines);
+    }
+    let out = &mut f.lines;
+    let popup = &mut f.popup;
     // "N plans wait for your approval  [Approve all]".
     if let Some(r) = &core.ai.running {
         let pending: Vec<bool> = core
@@ -574,7 +597,113 @@ pub fn footer(core: &AppCore, st: &State, w: usize, set: IconSet) -> (Vec<AiLine
             mentions.iter().map(|m| format!("@{}", safe(&soyuz_core::entry::display_name(m)))).collect();
         out.push(AiLine::new(vec![Span::new(text::truncate_end(&names.join(" "), w), Role::Accent)]));
     }
-    (out, popup)
+    f
+}
+
+/// One field of the smart search card.
+struct SmartField<'a> {
+    lead: &'a str,
+    value: &'a str,
+    edit: &'a LineEdit,
+    placeholder: &'a str,
+    focused: bool,
+    target: HitTarget,
+}
+
+impl SmartField<'_> {
+    /// `lead` then the visible text (or the placeholder), the whole line a click target;
+    /// the cursor's column while it has the keyboard.
+    fn line(&self, w: usize) -> (AiLine, Option<u16>) {
+        let lead_w = text::width(self.lead);
+        let room = w.saturating_sub(lead_w).max(1) as u16;
+        let mut e = self.edit.clone();
+        let (shown, col) = e.view(self.value, room);
+        let mut spans = vec![Span::new(self.lead, Role::Accent)];
+        if self.value.is_empty() && !self.focused {
+            spans.push(Span::new(text::truncate_end(self.placeholder, usize::from(room)), Role::Faint));
+        } else {
+            spans.push(Span::new(safe(&shown), Role::Input));
+        }
+        let line = AiLine { spans, target: Some(self.target), sel: false };
+        (line, self.focused.then_some(lead_w as u16 + col))
+    }
+}
+
+/// The smart search card (the GUI's `pages::smart_card`): plain words, the filters they
+/// became (click one to remove it), the query (editable), the error, Search and Ask the
+/// assistant. Returns the text cursor while one of its fields has the keyboard.
+fn smart_card(core: &AppCore, st: &State, w: usize, set: IconSet, out: &mut Vec<AiLine>) -> Option<(usize, u16)> {
+    let s = &core.ai.smart;
+    let has = st.focused && st.part == Part::Smart && st.menu.is_none();
+    let mut cursor = None;
+    // Title and close.
+    let close = Span::button(icons::glyph(IconId::X, set), Chip::SmartClose.target(), true);
+    let title = format!("{} {}", icons::glyph(IconId::MagnifyingGlass, set), tr!("ai-smart-title"));
+    let room = w.saturating_sub(close.width() + 1);
+    out.push(AiLine::new(vec![
+        Span::bold(text::fit(&text::truncate_end(&title, room), room), Role::Accent),
+        Span::new(" ", Role::Text),
+        close,
+    ]));
+    // The plain words.
+    let words = SmartField {
+        lead: "> ",
+        value: &s.input,
+        edit: &st.smart_edit,
+        placeholder: tr!("ai-smart-hint"),
+        focused: has && st.smart_field == 0,
+        target: Chip::SmartInput.target(),
+    };
+    let (line, col) = words.line(w);
+    if let Some(c) = col {
+        cursor = Some((out.len(), c));
+    }
+    out.push(line);
+    // The filters.
+    if s.pills.is_empty() {
+        out.push(AiLine::plain(text::truncate_end(tr!("ai-smart-empty"), w), Role::Muted));
+    } else {
+        let x = if set == IconSet::Ascii { "x" } else { "\u{00d7}" };
+        let pills = s
+            .pills
+            .iter()
+            .enumerate()
+            .take(usize::from(u8::MAX))
+            .map(|(i, p)| {
+                Span::button(&format!("{}:{} {x}", p.key.word(), safe(&p.value)), Chip::Pill(i as u8).target(), true)
+            })
+            .collect();
+        out.extend(super::flow(pills, w, 2));
+    }
+    // The query.
+    let lead = format!("{}: ", tr!("ai-smart-query"));
+    let query = SmartField {
+        lead: &lead,
+        value: &s.query_text,
+        edit: &st.query_edit,
+        placeholder: "",
+        focused: has && st.smart_field == 1,
+        target: Chip::SmartQuery.target(),
+    };
+    let (line, col) = query.line(w);
+    if let Some(c) = col {
+        cursor = Some((out.len(), c));
+    }
+    out.push(line);
+    if let Some(e) = &s.error {
+        out.push(AiLine::plain(text::truncate_end(&safe(e), w), Role::Danger));
+    }
+    let buttons = vec![
+        Span::button(tr!("ai-smart-search"), Chip::SmartRun.target(), !s.query_text.trim().is_empty()),
+        Span::button(
+            tr!("ai-smart-ask"),
+            Chip::SmartAsk.target(),
+            !s.input.trim().is_empty() && core.ai.running.is_none(),
+        ),
+    ];
+    out.extend(super::flow(buttons, w, 2));
+    out.push(AiLine::plain("\u{2500}".repeat(w.min(60)), Role::Faint));
+    cursor
 }
 
 fn popup_line(i: usize, label: &str, desc: &str, cursor: usize, w: usize) -> AiLine {

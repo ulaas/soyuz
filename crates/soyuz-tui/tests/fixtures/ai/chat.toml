@@ -1,0 +1,10 @@
+# SOYUZ_AI_FAKE transcript of the headless composer tests (`tests/headless/ai_composer.rs`):
+# the model answers every message with plain text and no tool call.
+delay_ms = 0
+model = "fake-chat"
+
+[[turn]]
+text = "Noted."
+
+[[turn]]
+text = "Noted again."
