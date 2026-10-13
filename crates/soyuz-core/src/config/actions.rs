@@ -78,7 +78,7 @@ define_actions! {
         NewTab, CloseTab, ReopenClosedTab, DuplicateTab, PinTab, MoveTabLeft, MoveTabRight,
         TabToNewWindow, ToggleDualPane, SwapPanes, MirrorPaneToOther, OpenInOtherPane,
         SyncNavigation, NewWindow, CloseWindow, ToggleQuadPane, NewTabGroup, UngroupTab,
-        MergeWindows, Workspaces, SaveWorkspace, UpdateWorkspace,
+        MergeWindows, Workspaces, SaveWorkspace, UpdateWorkspace, ManageWorkspaces,
     ],
     View: [
         ViewDetails, ViewGrid, ViewList, ViewMiller, ViewGallery, ZoomIn, ZoomOut, ZoomReset,

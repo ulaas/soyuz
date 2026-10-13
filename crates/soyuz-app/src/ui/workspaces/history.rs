@@ -6,6 +6,7 @@ use egui::{Align2, CornerRadius, FontId, RichText, ScrollArea, Sense, Stroke, Ui
 
 use super::WsCmd;
 use crate::cmd::Cmd;
+use crate::models::workspaces::{history_rows, when_label};
 use crate::state::crumbs::location_title;
 use crate::state::pane::PaneId;
 use crate::state::workspace::TabId;
@@ -28,22 +29,6 @@ impl HistoryDialog {
     }
 }
 
-/// `14:05` today, `Mon 14:05` this week, else `12 Oct`.
-pub fn when_label(ts: u64, now: u64) -> String {
-    use chrono::{Datelike, TimeZone};
-    let Some(t) = chrono::Local.timestamp_opt(ts as i64, 0).single() else { return String::new() };
-    let age = now.saturating_sub(ts);
-    let l = soyuz_core::locale::current();
-    if age < 20 * 3600 {
-        t.format("%H:%M").to_string()
-    } else if age < 6 * 86_400 {
-        let day = soyuz_core::locale::weekday_abbr(l)[t.weekday().num_days_from_monday() as usize];
-        format!("{day} {}", t.format("%H:%M"))
-    } else {
-        format!("{:02} {}", t.day(), soyuz_core::locale::month_abbr(l)[t.month0() as usize])
-    }
-}
-
 impl Dialog for HistoryDialog {
     fn title(&self) -> &str {
         tr!("workspaces-history-title")
@@ -59,17 +44,9 @@ impl Dialog for HistoryDialog {
 
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        let Some(tab) = ctx.ws.tabs.iter_mut().find(|t| t.id == self.tab) else { return false };
         // Panes that haven't moved yet (e.g. restored tabs) still show where they are.
+        let Some(rows) = history_rows(ctx.ws, self.tab, self.pane) else { return false };
         let now = crate::services::recent::unix_now();
-        let shown = tab.shown();
-        for i in 0..shown {
-            let (id, loc) = (tab.panes[i].id, tab.panes[i].location.clone());
-            if tab.visits.cursor(id).is_none() {
-                tab.visits.visit(id, &loc, now, crate::state::workspace_visits::VisitKind::New);
-            }
-        }
-        let rows = tab.visits.rows(Some(self.pane));
         ui.label(RichText::new(tr!("workspaces-history-intro")).color(p.text_secondary));
         ui.add_space(10.0);
         if rows.is_empty() {
@@ -158,18 +135,5 @@ impl Dialog for HistoryDialog {
             return false;
         }
         !crate::ui::dialogs::close_footer(ui, tr!("common-close"))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn when_labels() {
-        let now = 1_791_385_200u64;
-        assert_eq!(when_label(now - 60, now).len(), 5, "HH:MM today");
-        assert!(when_label(now - 3 * 86_400, now).contains(':'), "weekday + time this week");
-        assert!(!when_label(now - 30 * 86_400, now).contains(':'), "date only");
     }
 }

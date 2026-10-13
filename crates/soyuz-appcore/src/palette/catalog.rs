@@ -211,6 +211,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::Workspaces => (IconId::Stack, "layout session"),
         A::SaveWorkspace => (IconId::FloppyDisk, "layout session"),
         A::UpdateWorkspace => (IconId::ArrowsClockwise, "layout"),
+        A::ManageWorkspaces => (IconId::Stack, "layout session rename hotkey delete"),
         A::OpenWorkspace(_) => (IconId::Stack, "layout"),
         // ---- view ----
         A::ViewDetails => (IconId::List, "table columns"),

@@ -96,6 +96,8 @@ action-save-workspace = Çalışma alanını farklı kaydet…
 action-save-workspace-desc = Bu pencerenin sekmelerini ve düzenini bir adla kaydet
 action-update-workspace = Geçerli çalışma alanını güncelle
 action-update-workspace-desc = Bu pencereyi en son açılan çalışma alanının üzerine kaydet
+action-manage-workspaces = Çalışma alanlarını yönet…
+action-manage-workspaces-desc = Kayıtlı çalışma alanlarını aç, yeniden adlandır, sırala, sil ve kısayollarını ayarla
 
 ## View
 

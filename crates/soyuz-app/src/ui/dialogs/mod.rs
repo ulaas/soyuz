@@ -431,39 +431,10 @@ impl AboutDialog {
         AboutDialog { renderer, icon: None }
     }
 
-    /// `(label, value)` facts copied by "Copy info" (English, for bug reports).
+    /// `(label, value)` facts copied by "Copy info" (`models::about::facts`).
     pub fn facts(&self) -> Vec<(&'static str, String)> {
-        vec![
-            ("Version", env!("CARGO_PKG_VERSION").to_string()),
-            ("Commit", crate::GIT_SHA.to_string()),
-            ("Build", if cfg!(debug_assertions) { "debug".into() } else { "release".into() }),
-            ("Platform", format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)),
-            ("Renderer", self.renderer.to_string()),
-            ("Config", soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir()).display().to_string()),
-            ("Memory", memory_line()),
-        ]
+        crate::models::about::facts(self.renderer)
     }
-
-    /// Translated label of a [`facts`](Self::facts) entry.
-    fn fact_label(key: &str) -> &'static str {
-        match key {
-            "Commit" => tr!("dialogs-about-commit"),
-            "Build" => tr!("dialogs-about-build"),
-            "Platform" => tr!("dialogs-about-platform"),
-            "Renderer" => tr!("dialogs-about-renderer"),
-            "Config" => tr!("dialogs-about-config"),
-            "Memory" => tr!("dialogs-about-memory"),
-            _ => tr!("dialogs-about-version"),
-        }
-    }
-}
-
-/// Cache memory for the About dialog: thumbnails and previews (decoded bytes).
-fn memory_line() -> String {
-    let mib = |b: u64| format!("{} MiB", soyuz_core::locale::format_decimal(b as f64 / (1024.0 * 1024.0), 1));
-    let (tb, tn) = crate::services::thumbs::memory();
-    let (pb, pn) = crate::services::preview_cache::memory();
-    tr!("dialogs-about-memory-line", thumbs = mib(tb), thumb_count = tn, previews = mib(pb), preview_count = pn)
 }
 
 /// Upper-case for small captions, with the Turkish dotted/dotless i rules
@@ -519,7 +490,7 @@ impl Dialog for AboutDialog {
         egui::Grid::new("soyuz.about.facts").num_columns(2).striped(false).spacing([16.0, 6.0]).show(ui, |ui| {
             // The version is already in the header.
             for (k, v) in facts.iter().skip(1) {
-                ui.label(RichText::new(Self::fact_label(k)).color(p.text_tertiary));
+                ui.label(RichText::new(crate::models::about::fact_label(k)).color(p.text_tertiary));
                 ui.add(egui::Label::new(RichText::new(v).color(p.text_primary)).truncate());
                 ui.end_row();
             }
@@ -528,8 +499,7 @@ impl Dialog for AboutDialog {
         ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(11.5));
         let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
-            let text = facts.iter().map(|(k, v)| format!("{k}: {v}")).collect::<Vec<_>>().join("\n");
-            ctx.cmds.push(Cmd::CopyText(format!("Soyuz\n{text}")));
+            ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));
         }
         !close && !ui.input(|i| i.key_pressed(Key::Enter))
     }

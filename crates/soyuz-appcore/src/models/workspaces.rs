@@ -23,6 +23,7 @@ use crate::state::pane::{Pane, PaneId};
 use crate::state::session::{GroupSession, PaneSession, TabSession, WindowSession};
 use crate::state::workspace::{GroupId, PaneLayout, Tab, TabGroup, TabId, Workspace};
 use crate::state::workspace_store::WorkspaceStore;
+use crate::state::workspace_visits::{VisitKind, VisitRow};
 use crate::state::workspace_windows::{DropTarget, WindowGeom, WindowId};
 
 /// Workspace commands (pushed as `Cmd::Workspace`). Indices refer to the tabs of the
@@ -326,7 +327,12 @@ pub fn action(app: &mut AppCore, a: &Action) -> bool {
         }
         Action::NewTabGroup => apply(app, WsCmd::NewGroup(i)),
         Action::UngroupTab => apply(app, WsCmd::RemoveFromGroup(i)),
-        Action::MergeWindows => app.workspaces.ops.push(WinOp::MergeInto(app.workspaces.current)),
+        // Other windows are GUI viewports: nothing to merge in the terminal UI.
+        Action::MergeWindows => {
+            if !app.tui_unavailable() {
+                app.workspaces.ops.push(WinOp::MergeInto(app.workspaces.current))
+            }
+        }
         Action::Workspaces => crate::palette::open(app, crate::palette::query::Mode::Commands, "workspace "),
         Action::SaveWorkspace => {
             let name = app.workspaces.last.clone().unwrap_or_else(|| default_name(app));
@@ -349,6 +355,7 @@ pub fn action(app: &mut AppCore, a: &Action) -> bool {
                 );
             }
         }
+        Action::ManageWorkspaces => app.frontend.push(FrontendCmd::ManageWorkspaces),
         Action::TabHistory => {
             let tab = app.ws.tab().id;
             let pane = app.ws.pane().id;
@@ -361,6 +368,38 @@ pub fn action(app: &mut AppCore, a: &Action) -> bool {
         _ => return false,
     }
     true
+}
+
+/// The rows of the tab history graph ("Where was I?") of tab `tab`, the cursor of `pane`
+/// marked (`None`: the tab is gone, the dialog closes). Shown panes that have not moved
+/// yet (e.g. restored tabs) are first recorded where they are, so they show up too.
+pub fn history_rows(ws: &mut Workspace, tab: TabId, pane: PaneId) -> Option<Vec<VisitRow>> {
+    let tab = ws.tabs.iter_mut().find(|t| t.id == tab)?;
+    let now = crate::services::recent::unix_now();
+    for i in 0..tab.shown() {
+        let (id, loc) = (tab.panes[i].id, tab.panes[i].location.clone());
+        if tab.visits.cursor(id).is_none() {
+            tab.visits.visit(id, &loc, now, VisitKind::New);
+        }
+    }
+    Some(tab.visits.rows(Some(pane)))
+}
+
+/// When a history row was last visited: `14:05` today, `Mon 14:05` this week, else
+/// `12 Oct` (local time, the locale's day and month names).
+pub fn when_label(ts: u64, now: u64) -> String {
+    use chrono::{Datelike, TimeZone};
+    let Some(t) = chrono::Local.timestamp_opt(ts as i64, 0).single() else { return String::new() };
+    let age = now.saturating_sub(ts);
+    let l = soyuz_core::locale::current();
+    if age < 20 * 3600 {
+        t.format("%H:%M").to_string()
+    } else if age < 6 * 86_400 {
+        let day = soyuz_core::locale::weekday_abbr(l)[t.weekday().num_days_from_monday() as usize];
+        format!("{day} {}", t.format("%H:%M"))
+    } else {
+        format!("{:02} {}", t.day(), soyuz_core::locale::month_abbr(l)[t.month0() as usize])
+    }
 }
 
 fn default_name(app: &AppCore) -> String {
@@ -704,6 +743,45 @@ mod tests {
         ws.groups.push(TabGroup::new("a".to_string(), 5));
         ws.groups.push(TabGroup::new("b".to_string(), 3));
         assert_eq!(next_color(&ws), 1);
+    }
+
+    #[test]
+    fn when_labels() {
+        let now = 1_791_385_200u64;
+        assert_eq!(when_label(now - 60, now).len(), 5, "HH:MM today");
+        assert!(when_label(now - 3 * 86_400, now).contains(':'), "weekday + time this week");
+        assert!(!when_label(now - 30 * 86_400, now).contains(':'), "date only");
+    }
+
+    #[test]
+    fn history_rows_record_unvisited_panes_and_keep_branches() {
+        let d = |s: &str| Location::Dir(s.into());
+        let mut ws = Workspace::new(Tab::new(Pane::new(d("/a"), Default::default())));
+        let (tab, pane) = (ws.tabs[0].id, ws.tabs[0].panes[0].id);
+        // A restored pane that never moved is recorded where it is.
+        let rows = history_rows(&mut ws, tab, pane).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert!(rows[0].current);
+        // a → b → c, back to b, then d: a branch at b.
+        let v = &mut ws.tabs[0].visits;
+        v.visit(pane, &d("/a/b"), 2, VisitKind::New);
+        v.visit(pane, &d("/a/b/c"), 3, VisitKind::New);
+        v.visit(pane, &d("/a/b"), 4, VisitKind::Revisit);
+        v.visit(pane, &d("/a/b/d"), 5, VisitKind::New);
+        let rows = history_rows(&mut ws, tab, pane).unwrap();
+        let shape: Vec<(String, usize, bool)> =
+            rows.iter().map(|r| (r.location.display(), r.depth, r.current)).collect();
+        assert_eq!(
+            shape,
+            [
+                ("/a".to_string(), 0, false),
+                ("/a/b".into(), 1, false),
+                ("/a/b/c".into(), 2, false),
+                ("/a/b/d".into(), 2, true)
+            ]
+        );
+        assert!(rows[1].branches);
+        assert!(history_rows(&mut ws, TabId(u64::MAX), pane).is_none(), "a closed tab has no rows");
     }
 
     #[test]
