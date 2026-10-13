@@ -226,6 +226,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::UiZoomOut => (IconId::MagnifyingGlassMinus, "ui scale smaller"),
         A::UiZoomReset => (IconId::MagnifyingGlass, "ui scale"),
         A::ToggleHighContrast => (IconId::CircleHalf, "accessibility a11y"),
+        A::ToggleScreenReader => (IconId::CircleHalf, "accessibility a11y screen reader narrator nvda orca voiceover"),
         A::ToggleHidden => (IconId::EyeSlash, "dotfiles"),
         A::ToggleFlatView => (IconId::TreeStructure, "recursive flatten"),
         A::ToggleSortDir => (IconId::ArrowsDownUp, "sort"),

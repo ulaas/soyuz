@@ -533,6 +533,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `terminal_rows` | integer | `12` | Height of the embedded terminal pane in terminal rows. Values outside 3–40 are clamped when read; the pane hides when the terminal is too short. |
 | `ai_ratio` | float | `0.4` | Share of the width the AI assistant panel takes beside the files. Values outside 0.25–0.6 are clamped when read; below 100 columns the panel takes the whole area. |
 | `editor` | string | `""` | Program that "Edit config file" (and other text edits) runs in the terminal, with its arguments, e.g. `nvim` or `code --wait`. Empty: `$VISUAL`, then `$EDITOR`, then the first of nvim, vim, nano, micro, hx, vi (and edit on Windows) found on `PATH`. |
+| `screen_reader` | boolean | `false` | Screen-reader mode: no box drawing, one pane at a time, plain-text markers, the terminal's cursor on the focused item and a status line that reads as a sentence, for Narrator, NVDA, Orca and VoiceOver. `soyuz --tui --screen-reader` turns it on for one run without saving it. |
 
 ## `[keys]`
 

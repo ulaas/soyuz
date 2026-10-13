@@ -253,6 +253,9 @@ pub struct TuiTheme {
     /// The embedded terminal's palette for `[terminal] theme = "auto"`, from the same
     /// tokens (`soyuz_appcore::theme::terminal_palette`; Phase T5).
     term: Box<TermPalette>,
+    /// Screen-reader mode (`[tui] screen_reader` or the run-only `--screen-reader`; Phase
+    /// T8, `crate::a11y`): set per frame by `App::frame` ([`Self::with_screen_reader`]).
+    screen_reader: bool,
 }
 
 impl Default for TuiTheme {
@@ -271,6 +274,7 @@ impl TuiTheme {
             borders: TuiBorders::default(),
             colors: None,
             term: Box::new(TermPalette::dark()),
+            screen_reader: false,
         }
     }
 
@@ -281,7 +285,7 @@ impl TuiTheme {
             ColorMode::Ansi16 | ColorMode::Mono => None,
         };
         let term = Box::new(soyuz_appcore::theme::terminal_palette(t, "auto"));
-        TuiTheme { mode, dark: t.dark, icons, borders: TuiBorders::default(), colors, term }
+        TuiTheme { mode, dark: t.dark, icons, borders: TuiBorders::default(), colors, term, screen_reader: false }
     }
 
     /// The theme for the core's current settings, the colour depth from `[tui]` or the
@@ -321,6 +325,17 @@ impl TuiTheme {
     /// This theme with the icon set `icons`.
     pub fn with_icons(self, icons: IconSet) -> TuiTheme {
         TuiTheme { icons, ..self }
+    }
+
+    /// This theme in screen-reader mode (`on`) or not (`crate::a11y::active`).
+    pub fn with_screen_reader(self, on: bool) -> TuiTheme {
+        TuiTheme { screen_reader: on, ..self }
+    }
+
+    /// Screen-reader mode is on: the views draw their linear, box-free variants and record
+    /// the focused element's caret (`Hits::set_caret`).
+    pub fn screen_reader(&self) -> bool {
+        self.screen_reader
     }
 
     /// The theme for this frame, rebuilt only when needed: `dirty` (the host saw an

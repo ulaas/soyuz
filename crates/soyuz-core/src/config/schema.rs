@@ -1029,6 +1029,11 @@ pub struct TuiSection {
     /// its arguments, e.g. `nvim` or `code --wait`. Empty: `$VISUAL`, then `$EDITOR`, then
     /// the first of nvim, vim, nano, micro, hx, vi (and edit on Windows) found on `PATH`.
     pub editor: String,
+    /// Screen-reader mode: no box drawing, one pane at a time, plain-text markers, the
+    /// terminal's cursor on the focused item and a status line that reads as a sentence,
+    /// for Narrator, NVDA, Orca and VoiceOver. `soyuz --tui --screen-reader` turns it on
+    /// for one run without saving it.
+    pub screen_reader: bool,
 }
 
 impl Default for TuiSection {
@@ -1049,6 +1054,7 @@ impl Default for TuiSection {
             terminal_rows: Self::TERMINAL_ROWS_DEFAULT,
             ai_ratio: Self::AI_RATIO_DEFAULT,
             editor: String::new(),
+            screen_reader: false,
         }
     }
 }

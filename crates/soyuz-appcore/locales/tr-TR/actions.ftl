@@ -544,6 +544,8 @@ actions-ui-zoom = Arayüz yakınlaştırma
 actions-ui-zoom-body = %{ $percent }  ·  Ctrl+0 sıfırlar
 actions-high-contrast-on = Yüksek karşıtlık açık
 actions-high-contrast-off = Yüksek karşıtlık kapalı
+actions-screen-reader-on = Ekran okuyucu kipi açık
+actions-screen-reader-off = Ekran okuyucu kipi kapalı
 actions-config-create-failed = Yapılandırma dosyası oluşturulamadı
 # $action: eylem başlığı.
 actions-coming-soon = “{ $action }” yakında kullanıma sunulacak
@@ -604,3 +606,5 @@ action-editor-replace-all = Düzenleyici: Tümünü değiştir
 action-editor-replace-all-desc = Belgedeki her eşleşmeyi değiştir (terminal arayüzü)
 action-editor-resize-image = Düzenleyici: Görüntüyü yeniden boyutlandır
 action-editor-resize-image-desc = Görüntüyü piksel olarak yeni bir boyuta ölçekle (terminal arayüzü)
+action-toggle-screen-reader = Ekran okuyucu kipini aç/kapat
+action-toggle-screen-reader-desc = Ekran okuyucular için düz metin: çerçeve çizgisi yok, bir seferde bir bölme, imleç odaklı öğenin üzerinde (terminal arayüzü)

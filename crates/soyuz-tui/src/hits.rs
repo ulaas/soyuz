@@ -267,12 +267,30 @@ pub struct Hits {
     /// The text boxes of dialog text fields (`DialogField(i)` rows), so a click can put
     /// the cursor under the pointer ([`Hits::field_text_at`]).
     field_texts: Vec<(Rect, usize)>,
+    /// Where the terminal's cursor goes in screen-reader mode (Phase T8): the focused
+    /// element's cell, recorded by its draw function ([`Hits::set_caret`]; the last one
+    /// recorded wins, so overlays drawn later win).
+    caret: Option<Position>,
 }
 
 impl Hits {
     pub fn clear(&mut self) {
         self.items.clear();
         self.field_texts.clear();
+        self.caret = None;
+    }
+
+    /// Record the focused element's cell (a list's cursor row, a text field's caret, a
+    /// menu's highlighted item, a dialog's focused button). Only the element that has the
+    /// keyboard records one; `view::draw` puts the terminal's cursor there in
+    /// screen-reader mode.
+    pub fn set_caret(&mut self, pos: Position) {
+        self.caret = Some(pos);
+    }
+
+    /// The caret recorded last this frame.
+    pub fn caret(&self) -> Option<Position> {
+        self.caret
     }
 
     /// Record the text box of dialog text field `field` (drawn inside its
@@ -334,5 +352,16 @@ mod tests {
         assert_eq!(h.at(10, 0), None);
         h.clear();
         assert!(h.is_empty() && h.at(2, 2).is_none());
+    }
+
+    #[test]
+    fn last_caret_wins_until_cleared() {
+        let mut h = Hits::default();
+        assert_eq!(h.caret(), None);
+        h.set_caret(Position { x: 1, y: 2 });
+        h.set_caret(Position { x: 3, y: 4 });
+        assert_eq!(h.caret(), Some(Position { x: 3, y: 4 }));
+        h.clear();
+        assert_eq!(h.caret(), None);
     }
 }

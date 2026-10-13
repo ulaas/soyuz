@@ -23,6 +23,7 @@ pub mod cmd;
 pub mod color;
 pub mod commands;
 pub mod core;
+pub mod devscript;
 pub mod editors;
 pub mod file_class;
 pub mod geom;

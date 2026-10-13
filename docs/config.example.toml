@@ -306,6 +306,7 @@ shell_mode = "pane"              # pane | suspend (suspend: terminal actions lea
 terminal_rows = 12               # embedded terminal pane height in rows (clamped to 3-40)
 ai_ratio = 0.4                   # share of the width the AI assistant panel takes (clamped to 0.25-0.6)
 editor = ""                      # e.g. "nvim" or "code --wait"; empty = $VISUAL, $EDITOR, then nvim / vim / nano / micro / hx / vi on PATH
+screen_reader = false            # screen-reader mode: no box drawing, one pane, cursor on the focused item (--screen-reader: one run only)
 
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true

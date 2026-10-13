@@ -410,6 +410,15 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
                 tr!("actions-high-contrast-off")
             }));
         }
+        A::ToggleScreenReader => {
+            let on = !app.config.tui.screen_reader;
+            crate::models::settings::update_config(app, host, |c| c.tui.screen_reader = on);
+            app.ui.toasts.push(Toast::info(if on {
+                tr!("actions-screen-reader-on")
+            } else {
+                tr!("actions-screen-reader-off")
+            }));
+        }
         A::ShowKeybindings => {
             app.frontend.push(FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Keyboard)))
         }
@@ -501,6 +510,7 @@ pub fn tui_only(a: &Action) -> bool {
             | Action::EditorRegex
             | Action::EditorReplaceAll
             | Action::EditorResizeImage
+            | Action::ToggleScreenReader
     )
 }
 

@@ -28,14 +28,20 @@
 //! elevated, the previous-versions Elevate fallback) stay unavailable
 //! (`AppCore::tui_unavailable`); the welcome card is GUI-only (`actions::gui_only`).
 //!
+//! Phase T8 (testing, accessibility, docs) adds `a11y` (screen-reader mode), `devscript`
+//! (`SOYUZ_SCRIPT` in the terminal UI, on the core's runner), `snapshot` (snapshot tests of
+//! drawn buffers) and `shot` (the script's `shot:` files: text, snapshot, SVG).
+//!
 //! Entry points: [`launch()`] (console, configuration, then [`run`]) and
 //! [`launch::init_logging`], shared by this crate's `soyuz-tui [PATH]` binary
 //! (`src/main.rs`) and `soyuz --tui [PATH]` (`soyuz-app`'s `main.rs`).
 #![deny(unsafe_code)]
 
+pub mod a11y;
 pub mod app;
 pub mod borders;
 pub mod clipboard;
+pub mod devscript;
 pub mod dialog;
 pub mod frontend;
 pub mod hits;
@@ -47,7 +53,10 @@ pub mod keys;
 pub mod launch;
 pub mod layout;
 pub mod overlay;
+pub mod shot;
 pub mod signals;
+#[doc(hidden)]
+pub mod snapshot;
 pub mod suspend;
 pub mod term;
 pub mod theme;

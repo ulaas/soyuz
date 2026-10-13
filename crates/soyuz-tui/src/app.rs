@@ -39,8 +39,10 @@ use crossbeam_channel::{Receiver, Sender};
 use crossterm::event::Event;
 use ratatui::Terminal;
 use ratatui::backend::Backend;
+use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use soyuz_appcore::core::{AppCore, CMD_ROUNDS, FrontendKind, Startup};
+use soyuz_appcore::devscript::Runner;
 use soyuz_appcore::host::Host as _;
 use soyuz_appcore::models::frontend::SuspendRequest;
 use soyuz_appcore::ops;
@@ -282,6 +284,18 @@ pub struct App {
     /// Editor runs for `EditPurpose::Scratch` that finished, until their owner takes them
     /// ([`App::take_finished_edit`]).
     pub(crate) finished_edits: Vec<FinishedEdit>,
+    // ---- Phase T8 ----
+    /// The `SOYUZ_SCRIPT` being run (`crate::devscript`): from the environment in [`run`]
+    /// only, or [`App::with_script`] in tests.
+    pub(crate) script: Option<Runner>,
+    /// The buffer of the last frame drawn, kept only while a script runs (its `shot:` and
+    /// `screen~` steps read it).
+    pub(crate) last_buffer: Option<Buffer>,
+    /// `--screen-reader`: screen-reader mode for this run, ORed with `[tui]
+    /// screen_reader` (`crate::a11y::active`) and never written to the config.
+    pub sr_override: bool,
+    /// What screen-reader mode keeps between frames.
+    pub(crate) a11y: crate::a11y::State,
 }
 
 impl App {
@@ -315,7 +329,33 @@ impl App {
             child_runner: crate::suspend::default_runner,
             input_gate: Arc::new(InputGate::default()),
             finished_edits: Vec::new(),
+            script: None,
+            last_buffer: None,
+            sr_override: false,
+            a11y: crate::a11y::State::default(),
         }
+    }
+
+    /// This app running the `SOYUZ_SCRIPT`-style `script` (steps separated by `;`), for
+    /// in-process tests (`crate::devscript`).
+    pub fn with_script(mut self, script: &str) -> App {
+        self.script = Some(Runner::parse(script));
+        self
+    }
+
+    /// The script being run, if any (its `expect` results: `Runner::failures`).
+    pub fn script(&self) -> Option<&Runner> {
+        self.script.as_ref()
+    }
+
+    /// The buffer of the last frame drawn, while a script runs.
+    pub fn last_buffer(&self) -> Option<&Buffer> {
+        self.last_buffer.as_ref()
+    }
+
+    /// Screen-reader mode is on (the setting or `--screen-reader`).
+    pub fn screen_reader(&self) -> bool {
+        crate::a11y::active(&self.core.config.tui, self.sr_override)
     }
 
     /// Leave the screen for a shell / command / editor after this frame (the first
@@ -398,6 +438,7 @@ impl App {
 
     /// Count down the toasts' timers; drop expired and dismissed ones.
     fn tick_toasts(&mut self, dt: f32) {
+        let dt = crate::a11y::toast_dt(dt, self.core.config.appearance.toast_time_scale, self.screen_reader());
         self.core.ui.toasts.live.retain_mut(|l| {
             if l.closing.is_some() {
                 return false;
@@ -454,17 +495,19 @@ impl App {
         let size = terminal.size().map_err(io::Error::other)?;
         self.core.prepare_visible_panes();
         let area = Rect::new(0, 0, size.width, size.height);
-        let regions = Regions::compute(area, &self.core.config.tui, &Facts::from_core(&self.core));
+        let sr = self.screen_reader();
+        let facts = Facts::from_core(&self.core, self.focus(), sr);
+        let regions = Regions::compute(area, &self.core.config.tui, &facts);
         view::prepare(&mut self.core, &mut self.input, &regions);
         crate::input::jobs::tick(&self.core, &self.host);
         crate::input::compare::tick(&self.input.compare, &self.host);
         crate::input::screens::tick(&self.input.screens, &self.host);
         crate::input::dialogs::approval_mcp::tick(&self.core, &self.host);
         let model = ViewModel::from_core(&self.core, &self.input, &regions);
-        let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty());
+        let theme = TuiTheme::cached(&self.core, self.host.take_palette_dirty()).with_screen_reader(sr);
         let hits = &mut self.hits;
         crate::images::begin_frame(&self.core.config);
-        terminal
+        let drawn = terminal
             .draw(|f| {
                 let area = f.area();
                 f.buffer_mut().set_style(area, theme.base());
@@ -473,6 +516,10 @@ impl App {
                 crate::images::end_frame(f);
             })
             .map_err(io::Error::other)?;
+        if self.script.is_some() {
+            self.last_buffer = Some(drawn.buffer.clone());
+        }
+        crate::a11y::after_frame(&mut self.a11y, sr, &model, &regions, &self.hits, io)?;
         self.regions = regions;
         self.view = Some(model);
 
@@ -540,11 +587,16 @@ where
         }
         app.frame(terminal, &events, io)?;
         events.clear();
+        // `SOYUZ_SCRIPT` (Phase T8): its synthetic input goes to the next frame.
+        crate::devscript::pump(app, &mut events);
         if let Some(req) = app.pending_suspend.take() {
             crate::suspend::run(app, terminal, io, req)?;
         }
         let started = Instant::now();
-        let timeout = app.timeout(started);
+        let mut timeout = app.timeout(started);
+        if !events.is_empty() {
+            timeout = Duration::ZERO;
+        }
         let mut got = source.next(app, app.host.redraw_rx(), timeout);
         // Only a wake-up of the core: keep frames apart.
         if got.is_empty() {
@@ -632,6 +684,8 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
     };
     let mut app = App::new(config, startup);
     app.input_gate = gate;
+    // Only the production entry reads `SOYUZ_SCRIPT` (in-process tests never pick it up).
+    app.script = Runner::from_env();
     let mut io_ = StdoutIo { guard };
     let mut source = ChannelSource { rx };
     let result = run_loop(&mut app, &mut terminal, &mut source, &mut io_);

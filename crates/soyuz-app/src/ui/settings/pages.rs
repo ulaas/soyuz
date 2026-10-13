@@ -1433,6 +1433,15 @@ pub fn terminal_ui(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
             },
         );
+    }) | group(ui, q, "Terminal UI tui text mode console", tr!("settings-tui-accessibility"), |r| {
+        r.row_kw(
+            tr!("settings-tui-screen-reader"),
+            tr!("settings-tui-screen-reader-desc"),
+            "screen reader accessibility a11y narrator nvda orca voiceover blind braille",
+            |ui| {
+                switch(ui, &mut d.tui.screen_reader);
+            },
+        );
     })
 }
 

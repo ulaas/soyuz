@@ -69,6 +69,11 @@ pub mod terminal;
 pub mod text;
 pub mod toasts;
 
+/// Phase T8 tier-A snapshots: hand-built models drawn and compared with
+/// `tests/snapshots/view__*.snap` (`crate::snapshot`).
+#[cfg(test)]
+mod snapshots;
+
 use ratatui::Frame;
 use soyuz_appcore::core::AppCore;
 
@@ -130,6 +135,9 @@ pub struct ViewModel {
     pub settings: SettingsVm,
     /// The full-screen tools (T7).
     pub screens: ScreensVm,
+    /// Screen-reader mode (T8): the location of the panes not drawn, for the "Other pane:
+    /// <path>" line (`crate::a11y`); `None` outside screen-reader mode or with one pane.
+    pub other_pane: Option<String>,
 }
 
 impl ViewModel {
@@ -161,6 +169,7 @@ impl ViewModel {
             compare: CompareVm::from_core(core, input, regions),
             settings: SettingsVm::from_core(core, input, regions),
             screens: ScreensVm::from_core(core, input, regions),
+            other_pane: None,
         }
     }
 
@@ -223,8 +232,16 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     if let Some(d) = &m.dialog {
         dialogs::draw_dialog(f, regions.area, d, theme, hits);
     }
+    // Screen-reader mode (T8): its own lines ("Other pane: …"), then the terminal's cursor
+    // on the focused element (the caret recorded last).
+    crate::a11y::draw(f, regions, m, theme, hits);
     if theme.ascii_only() {
         crate::borders::asciify(f.buffer_mut());
+    }
+    if theme.screen_reader()
+        && let Some(caret) = hits.caret()
+    {
+        f.set_cursor_position(caret);
     }
 }
 
@@ -315,6 +332,7 @@ mod tests {
             compare: CompareVm::default(),
             settings: SettingsVm::default(),
             screens: ScreensVm::default(),
+            other_pane: None,
         }
     }
 

@@ -258,6 +258,50 @@ pub fn at(app: &App, dir: &Path) -> bool {
     app.core.ws.pane().location == soyuz_core::Location::Dir(dir.to_path_buf())
 }
 
+// ---- Phase T8 ----
+
+/// An event source that sends nothing: the app's own script (`App::with_script`) drives
+/// it, and the app must quit by itself (the script's `quit`) within `cap`.
+pub struct IdleSource {
+    pub since: Instant,
+    pub cap: Duration,
+}
+
+impl IdleSource {
+    pub fn new(cap: Duration) -> IdleSource {
+        IdleSource { since: Instant::now(), cap }
+    }
+}
+
+impl EventSource for IdleSource {
+    fn next(&mut self, _app: &App, redraw: &Receiver<()>, timeout: Duration) -> Vec<TuiEvent> {
+        assert!(self.since.elapsed() < self.cap, "the scripted app did not quit within {:?}", self.cap);
+        let _ = redraw.recv_timeout(timeout.min(Duration::from_millis(10)));
+        Vec::new()
+    }
+}
+
+/// How long a scripted run ([`run_scripted`]) may take by default (its `wait_for:` steps
+/// wait up to 30 s each).
+pub const SCRIPT_CAP: Duration = Duration::from_secs(180);
+
+/// Run the frame loop on a `w` × `h` test terminal until the app's script quits it,
+/// within `cap`.
+pub fn run_scripted(app: &mut App, w: u16, h: u16, cap: Duration) -> (Terminal<TestBackend>, NullIo) {
+    let mut source = IdleSource::new(cap);
+    let mut terminal = Terminal::new(TestBackend::new(w, h)).expect("test terminal");
+    let mut io = NullIo::default();
+    let end = run_loop(app, &mut terminal, &mut source, &mut io).expect("the loop runs");
+    assert_eq!(end, LoopEnd::Quit);
+    (terminal, io)
+}
+
+/// Compare the last frame with snapshot `name` (`tests/snapshots/<name>.snap`; bless with
+/// `SOYUZ_BLESS_SNAPSHOTS=1`).
+pub fn assert_screen(name: &str, terminal: &Terminal<TestBackend>, opts: &soyuz_tui::snapshot::SnapOpts) {
+    soyuz_tui::snapshot::assert_snapshot(name, terminal.backend().buffer(), opts);
+}
+
 /// The last frame as text, one line per row.
 pub fn screen(terminal: &Terminal<TestBackend>) -> String {
     let buf = terminal.backend().buffer();

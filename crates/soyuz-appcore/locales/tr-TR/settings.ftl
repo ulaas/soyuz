@@ -450,6 +450,9 @@ settings-tui-cell-pixels-desc = Bir terminal hücresinin piksel cinsinden boyutu
 settings-tui-clipboard = Pano
 settings-tui-osc52 = Terminal üzerinden kopyala (OSC 52)
 settings-tui-osc52-desc = Kopyalanan metin terminale gönderilir; terminal onu üzerinde çalıştığı bilgisayarın panosuna koyar, bu SSH üzerinden de çalışır. Otomatik, bunu SSH üzerinden ya da yerel pano metni alamadığında gönderir; Her zaman her kopyalamada gönderir; Hiçbir zaman kopyaları yalnızca yerel panoda tutar.
+settings-tui-accessibility = Erişilebilirlik
+settings-tui-screen-reader = Ekran okuyucu kipi
+settings-tui-screen-reader-desc = Bir ekran okuyucunun izleyebileceği düz metin çizer: çerçeve çizgisi yok, bir seferde bir bölme, simgeler yerine metin işaretleri, terminal imleci odaklı öğenin üzerinde ve bir cümle gibi okunan bir durum satırı. Yalnızca bir çalıştırma için açmak üzere --screen-reader ile başlatın.
 settings-deny = Reddet
 
 ## Preview & search page

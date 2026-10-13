@@ -545,6 +545,8 @@ actions-ui-zoom = Interface zoom
 actions-ui-zoom-body = { $percent } %  ·  Ctrl+0 resets
 actions-high-contrast-on = High contrast on
 actions-high-contrast-off = High contrast off
+actions-screen-reader-on = Screen-reader mode on
+actions-screen-reader-off = Screen-reader mode off
 actions-config-create-failed = Couldn't create the config file
 # $action: an action title.
 actions-coming-soon = { $action } is coming soon
@@ -605,3 +607,5 @@ action-editor-replace-all = Editor: Replace all
 action-editor-replace-all-desc = Replace every match in the document (terminal UI)
 action-editor-resize-image = Editor: Resize image
 action-editor-resize-image-desc = Scale the image to a new size in pixels (terminal UI)
+action-toggle-screen-reader = Toggle screen-reader mode
+action-toggle-screen-reader-desc = Plain text for screen readers: no box drawing, one pane at a time, the cursor on the focused item (terminal UI)

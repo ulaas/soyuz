@@ -459,6 +459,9 @@ settings-tui-cell-pixels-desc = Size of one terminal cell in pixels (width × he
 settings-tui-clipboard = Clipboard
 settings-tui-osc52 = Copy through the terminal (OSC 52)
 settings-tui-osc52-desc = Copied text is sent to the terminal, which puts it on the clipboard of the computer it runs on; this also works over SSH. Auto sends it over SSH or when the local clipboard cannot take the text; Always sends it with every copy; Never keeps copies on the local clipboard only.
+settings-tui-accessibility = Accessibility
+settings-tui-screen-reader = Screen-reader mode
+settings-tui-screen-reader-desc = Draws plain text a screen reader can follow: no box drawing, one pane at a time, text markers instead of icons, the terminal cursor on the focused item and a status line that reads as a sentence. Start with --screen-reader to turn it on for one run only.
 settings-deny = Deny
 
 ## Preview & search page

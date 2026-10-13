@@ -53,6 +53,7 @@ use soyuz_appcore::core::AppCore;
 use soyuz_core::config::{EditorDock, Orientation, TuiSection};
 
 pub use crate::hits::{HitTarget, Hits};
+use crate::input::TuiFocus;
 
 /// Below this many rows only the list is drawn.
 pub const LIST_ONLY_BELOW_ROWS: u16 = 3;
@@ -121,6 +122,13 @@ pub struct Facts {
     pub ai: bool,
     /// Share of the body's width the AI panel takes (`[tui] ai_ratio`, clamped).
     pub ai_ratio: f32,
+    // ---- Phase T8 ----
+    /// Who owns the keyboard (`crate::input::focus`), e.g. the screen-reader layout hides
+    /// the panes while the sidebar has focus.
+    pub focus: TuiFocus,
+    /// Screen-reader mode (`crate::a11y::active`): only the focused pane, the "Other
+    /// pane" line ([`Regions::other_pane`]), panels stacked below.
+    pub screen_reader: bool,
 }
 
 impl Default for Facts {
@@ -145,12 +153,16 @@ impl Default for Facts {
             search_rows: 0,
             ai: false,
             ai_ratio: TuiSection::AI_RATIO_DEFAULT,
+            focus: TuiFocus::List,
+            screen_reader: false,
         }
     }
 }
 
 impl Facts {
-    pub fn from_core(core: &AppCore) -> Facts {
+    /// The facts of the core's state, with the frame's keyboard `focus` and whether
+    /// screen-reader mode is on (`crate::a11y::active`).
+    pub fn from_core(core: &AppCore, focus: TuiFocus, screen_reader: bool) -> Facts {
         let tab = core.ws.tab();
         let editor = crate::view::editor::placement(core);
         Facts {
@@ -178,6 +190,8 @@ impl Facts {
             search_rows: crate::view::search::rows(core),
             ai: crate::view::ai::shown(core),
             ai_ratio: core.config.tui.ai_ratio_clamped(),
+            focus,
+            screen_reader,
         }
     }
 }
@@ -216,6 +230,9 @@ pub struct Regions {
     pub search: Rect,
     /// The AI assistant panel.
     pub ai: Rect,
+    /// Screen-reader mode (Phase T8): the "Other pane: <path>" line above the status line
+    /// (empty otherwise).
+    pub other_pane: Rect,
     /// Too small for anything but the list.
     pub list_only: bool,
     /// Dual / quad panes are stacked into one column.

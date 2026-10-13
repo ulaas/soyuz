@@ -1,0 +1,2 @@
+# Snapshot files of the terminal UI tests (crate::snapshot) compare byte for byte: LF on every OS.
+crates/soyuz-tui/tests/snapshots/** text eol=lf

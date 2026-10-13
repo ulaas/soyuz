@@ -113,6 +113,17 @@ mod headless {
     mod versions;
     /// T7 (agent A): workspaces (save as, manage, hotkeys), tab history, the close-window path and About.
     mod workspaces;
+    // ---- Phase T8 ----
+    /// T8 (P4): the shipped binary in headless mode (`SOYUZ_TUI_HEADLESS`), a scripted smoke run.
+    mod binary;
+    /// T8 (P3): screen-reader mode (the toggle, the look, the caret).
+    mod screen_reader;
+    /// T8 (P2): tier-B app snapshots (the real loop on a fixture).
+    mod snapshots;
+    /// T8 (P6): screen-reader snapshots.
+    mod sr_snapshots;
+    /// T8 (P4): the keyboard tour (`SOYUZ_SCRIPT` in process; en-US / tr-TR × overlays).
+    mod tour;
     // ---- Integration ----
     /// T3 + T4 end to end: copy / paste with a conflict, the jobs history, rename,
     /// preview, Quick Look, the editor.
