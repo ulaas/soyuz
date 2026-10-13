@@ -1,8 +1,9 @@
 //! The status line, like the GUI's status bar (`soyuz-app/src/ui/statusbar.rs`), for the
 //! focused pane: the filter field (while it is open or a filter is set), item counts
 //! (`3 of 10 items` while filtered), hidden items, the selection with its total size on
-//! the left; the volume's free space, the view mode, the sort and a key hint on the
-//! right (dropped from the end when the line is too narrow).
+//! the left; on a smart folder its name and the index status (`models::smart::status_line`,
+//! the GUI's index chip), the volume's free space, the view mode, the sort and a key hint
+//! on the right (dropped from the end when the line is too narrow).
 //!
 //! The line follows `ui.status_visible`. When it is hidden, an open filter field still
 //! takes the bottom row (over the list), so typing is never invisible.
@@ -46,6 +47,9 @@ pub struct StatusVm {
     pub hidden: String,
     /// "2 selected  (1.5 KB)", or empty.
     pub selected: String,
+    /// On a smart folder: its name and the index status ("Photos · Index ready …"), or
+    /// empty.
+    pub smart: String,
     /// "12 GB free" on the volume of the pane's folder, or empty.
     pub free: String,
     /// The view mode ("Details").
@@ -119,12 +123,24 @@ impl StatusVm {
             counts,
             hidden,
             selected,
+            smart: smart_segment(&pane.location),
             free,
             mode: mode_label(pane.view.mode).to_string(),
             sort: format!("{} {arrow}", labels::column(sort.column)),
             hint: tr!("tui-hint").to_string(),
             filter,
         }
+    }
+}
+
+/// The smart folder segment for a pane at `loc`: the folder's name, then the index status
+/// while the index runs.
+fn smart_segment(loc: &Location) -> String {
+    use soyuz_appcore::models::smart;
+    let Some(name) = smart::shown_name(loc) else { return String::new() };
+    match soyuz_appcore::services::index::status() {
+        Some(st) => format!("{} · {}", safe(&name), smart::status_line(&st)),
+        None => safe(&name),
     }
 }
 
@@ -242,9 +258,13 @@ pub fn draw_status(f: &mut Frame<'_>, rect: Rect, m: &StatusVm, theme: &TuiTheme
         f.set_cursor_position(Position { x: rect.x + c, y: rect.y });
     }
 
-    // Right: free space, view mode, sort, hint; the last ones go first when it is narrow.
-    let mut right: Vec<&str> =
-        [&m.free, &m.mode, &m.sort, &m.hint].into_iter().map(String::as_str).filter(|s| !s.is_empty()).collect();
+    // Right: smart folder, free space, view mode, sort, hint; the last ones go first when
+    // it is narrow.
+    let mut right: Vec<&str> = [&m.smart, &m.free, &m.mode, &m.sort, &m.hint]
+        .into_iter()
+        .map(String::as_str)
+        .filter(|s| !s.is_empty())
+        .collect();
     while !right.is_empty() {
         let s = format!("{} ", right.join(" · "));
         let sw = text::width(&s);
@@ -271,6 +291,7 @@ mod tests {
             counts: "3 of 10 items".into(),
             hidden: String::new(),
             selected: "1 selected  (2 KB)".into(),
+            smart: String::new(),
             free: "12 GB free".into(),
             mode: "Details".into(),
             sort: "Name ↑".into(),
@@ -353,6 +374,16 @@ mod tests {
         let m = StatusVm { visible: false, filter: Some(FilterVm { cursor: None, ..open }), ..vm() };
         let (lines, _, hits) = draw(&m, 30, 3, false);
         assert!(lines.iter().all(|l| l.trim().is_empty()) && hits.is_empty());
+    }
+
+    #[test]
+    fn the_smart_folder_segment_leads_the_right_side() {
+        let m = StatusVm { smart: "Photos · 12 files".into(), free: String::new(), ..vm() };
+        let (lines, _, _) = draw(&m, 100, 1, true);
+        assert!(lines[0].trim_end().ends_with("Photos · 12 files · Details · Name ↑ · Ctrl+Q quit"), "{:?}", lines[0]);
+        // Narrow: it stays while the others go.
+        let (lines, _, _) = draw(&m, 60, 1, true);
+        assert!(lines[0].trim_end().ends_with("Photos · 12 files"), "{:?}", lines[0]);
     }
 
     #[test]

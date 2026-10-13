@@ -43,6 +43,7 @@ fn glyph(icon: MenuIcon) -> Option<&'static str> {
         MenuIcon::PushPinSlash => ph::PUSH_PIN_SLASH,
         MenuIcon::X => ph::X,
         MenuIcon::ArrowLineRight => ph::ARROW_LINE_RIGHT,
+        MenuIcon::Plugs => ph::PLUGS,
     })
 }
 

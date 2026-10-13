@@ -10,7 +10,7 @@ use soyuz_core::Location;
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 pub use crate::models::smart::{SmartCmd, SmartFolder, SmartPrompt, SmartStore, apply, folders, pump, status_line};
-use crate::models::smart::{name_taken, shown_name};
+use crate::models::smart::{coverage_text, query_help, shown_name, validate};
 use crate::services::index::{self as ix};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dialogs::conflict::{Btn, button};
@@ -168,20 +168,6 @@ impl SmartDialog {
     }
 }
 
-/// Query cheat sheet: `(example, what it does)`; the examples are query syntax.
-fn help() -> [(&'static str, &'static str); 8] {
-    [
-        ("report \"exact phrase\"", tr!("views-smart-help-words")),
-        ("*.pdf  ext:pdf,docx", tr!("views-smart-help-pattern")),
-        ("kind:image  kind:folder", tr!("views-smart-help-kind")),
-        ("size:>5MB  size:1k..2M", tr!("views-smart-help-size")),
-        ("modified:<7d  created:2026-01", tr!("views-smart-help-age")),
-        ("tag:red  path:docs  in:\"~/Projects\"", tr!("views-smart-help-tag")),
-        ("content:todo", tr!("views-smart-help-content")),
-        ("-draft  a OR b  (a b)", tr!("views-smart-help-logic")),
-    ]
-}
-
 impl Dialog for SmartDialog {
     fn title(&self) -> &str {
         if self.index.is_some() { tr!("views-smart-dialog-edit") } else { tr!("views-smart-dialog-new") }
@@ -228,16 +214,9 @@ impl Dialog for SmartDialog {
                 ui.label(RichText::new(&e.msg).font(FontId::proportional(11.5)).color(p.danger));
             }
             (Ok(_), false) => {
-                let plan = ix::plan_from_query(&self.folder.query, self.folder.include_hidden).ok();
-                let live = plan.as_ref().is_some_and(ix::can_serve);
-                let text = if live {
-                    tr!("views-smart-live")
-                } else if ix::is_enabled() {
-                    tr!("views-smart-not-covered")
-                } else {
-                    tr!("views-smart-index-off")
-                };
-                ui.label(RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                if let Some(text) = coverage_text(&self.folder.query, self.folder.include_hidden) {
+                    ui.label(RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                }
             }
         }
         ui.add_space(6.0);
@@ -250,7 +229,7 @@ impl Dialog for SmartDialog {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.spacing_mut().item_spacing.y = 3.0;
-                for (example, what) in help() {
+                for (example, what) in query_help() {
                     ui.horizontal(|ui| {
                         ui.allocate_ui_with_layout(vec2(250.0, 16.0), Layout::left_to_right(Align::Center), |ui| {
                             ui.set_min_width(250.0);
@@ -265,14 +244,7 @@ impl Dialog for SmartDialog {
                     });
                 }
             });
-        let err = match &parsed {
-            _ if self.folder.name.trim().is_empty() => Some(tr!("views-smart-need-name").to_string()),
-            _ if self.folder.query.trim().is_empty() => Some(tr!("views-smart-type-query").to_string()),
-            Err(e) => Some(e.msg.clone()),
-            Ok(_) => None,
-        };
-        let taken = name_taken(self.index, &self.folder.name);
-        let err = err.or_else(|| taken.then(|| tr!("views-smart-name-taken").to_string()));
+        let err = validate(&self.folder, self.index);
         ui.add_space(14.0);
         let mut ok = false;
         let mut cancel = false;

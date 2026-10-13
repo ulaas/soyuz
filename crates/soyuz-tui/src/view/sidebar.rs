@@ -9,7 +9,8 @@
 //!
 //! - `places`: Favorites (favorites, `[[bookmarks]]`, GTK bookmarks), Devices (Computer
 //!   and the drives), Portal pins, Cloud folders, Other (Recent, Timeline, Trash),
-//!   Network (saved connections), Tags, Smart folders and saved searches;
+//!   Network (saved connections with their state dot, "Connect to server…"), Tags, Smart
+//!   folders ("New smart folder") and saved searches;
 //! - `both`: the same with the folder tree as the `tree` section (at the end when the
 //!   section list leaves it out, like the GUI);
 //! - `tree`: only the folder tree.
@@ -35,6 +36,7 @@ use ratatui::widgets::Paragraph;
 use soyuz_appcore::core::{AppCore, Focus};
 use soyuz_appcore::host::{Host, ThemePref, Wake, WindowCmd, WindowId};
 use soyuz_appcore::icon::IconId;
+use soyuz_appcore::models::jobs_rows::Tone;
 use soyuz_appcore::models::sidebar::section_name;
 use soyuz_appcore::models::tree::model::Visibility;
 use soyuz_appcore::models::tree::{TreeArgs, TreeIo};
@@ -101,6 +103,23 @@ pub enum Target {
     Smart(usize),
     /// Run saved search `i`.
     Search(usize),
+    /// Open saved connection `id` at `uri` (like `Go`; its menu knows the connection).
+    Remote { id: String, uri: String },
+    /// "Connect to server…" (`RemoteCmd::ConnectDialog`).
+    Connect,
+    /// "New smart folder" (`SmartCmd::Edit(None)`).
+    NewSmart,
+}
+
+/// What a place row shows before its label.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Mark {
+    #[default]
+    None,
+    /// A server's state dot (`models::remote::conn_dot`).
+    Dot(Tone),
+    /// An action row ("Connect to server…", "New smart folder").
+    Plus,
 }
 
 /// One line of the sidebar.
@@ -115,6 +134,7 @@ pub enum Entry {
         label: String,
         target: Target,
         active: bool,
+        mark: Mark,
     },
     /// Row `i` of the folder tree (`TreeState::rows`).
     Tree(usize),
@@ -197,7 +217,7 @@ fn header(core: &AppCore, out: &mut Vec<Entry>, section: Section) -> bool {
 
 fn place(core: &AppCore, out: &mut Vec<Entry>, label: String, location: Location) {
     let active = core.ws.pane().location == location;
-    out.push(Entry::Place { label: safe(&label), target: Target::Go(location), active });
+    out.push(Entry::Place { label: safe(&label), target: Target::Go(location), active, mark: Mark::None });
 }
 
 fn favorites(core: &AppCore, out: &mut Vec<Entry>) {
@@ -271,15 +291,24 @@ fn other(core: &AppCore, out: &mut Vec<Entry>) {
 }
 
 fn network(core: &AppCore, out: &mut Vec<Entry>) {
+    use soyuz_appcore::models::remote::conn_dot;
+    use soyuz_appcore::services::remote as svc;
     if !header(core, out, Section::Of(SidebarSection::Network)) {
         return;
     }
-    // "Connect to server…" opens a dialog the terminal UI does not have yet.
-    for c in soyuz_appcore::services::remote::connections() {
-        if let Some(uri) = c.parsed() {
-            place(core, out, c.name.clone(), Location::Remote(uri.display()));
-        }
+    let here = match &core.ws.pane().location {
+        Location::Remote(u) => soyuz_appcore::models::remote::RemoteUri::parse(u).ok().map(|u| u.conn_key()),
+        _ => None,
+    };
+    for c in svc::connections() {
+        let Some(uri) = c.parsed() else { continue };
+        let mark = conn_dot(&svc::conn_state(&uri)).map_or(Mark::None, Mark::Dot);
+        let active = here.as_deref() == Some(uri.conn_key().as_str());
+        let target = Target::Remote { id: c.id.clone(), uri: uri.display() };
+        out.push(Entry::Place { label: safe(&c.name), target, active, mark });
     }
+    let connect = tr!("remote-connect").to_string();
+    out.push(Entry::Place { label: connect, target: Target::Connect, active: false, mark: Mark::Plus });
 }
 
 fn tags(core: &AppCore, out: &mut Vec<Entry>) {
@@ -293,13 +322,20 @@ fn tags(core: &AppCore, out: &mut Vec<Entry>) {
 }
 
 fn smart(core: &AppCore, out: &mut Vec<Entry>) {
-    let list = soyuz_appcore::models::smart::folders();
-    if list.is_empty() || !header(core, out, Section::Of(SidebarSection::Smart)) {
+    use soyuz_appcore::models::smart;
+    let list = smart::folders();
+    // Shown with smart folders or while the index runs (the GUI's rule).
+    let shown = !list.is_empty() || soyuz_appcore::services::index::is_enabled();
+    if !shown || !header(core, out, Section::Of(SidebarSection::Smart)) {
         return;
     }
+    let current = smart::shown_name(&core.ws.pane().location);
     for (i, f) in list.iter().enumerate() {
-        out.push(Entry::Place { label: safe(&f.name), target: Target::Smart(i), active: false });
+        let active = current.as_deref() == Some(f.name.as_str());
+        out.push(Entry::Place { label: safe(&f.name), target: Target::Smart(i), active, mark: Mark::None });
     }
+    let new = tr!("views-smart-new").to_string();
+    out.push(Entry::Place { label: new, target: Target::NewSmart, active: false, mark: Mark::Plus });
 }
 
 fn searches(core: &AppCore, out: &mut Vec<Entry>) {
@@ -308,7 +344,7 @@ fn searches(core: &AppCore, out: &mut Vec<Entry>) {
         return;
     }
     for (i, n) in names.iter().enumerate() {
-        out.push(Entry::Place { label: safe(n), target: Target::Search(i), active: false });
+        out.push(Entry::Place { label: safe(n), target: Target::Search(i), active: false, mark: Mark::None });
     }
 }
 
@@ -398,6 +434,8 @@ pub struct SidebarLine {
     pub cursor: bool,
     /// Hidden folder or failed listing.
     pub dim: bool,
+    /// What a place row shows before its label.
+    pub mark: Mark,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -434,10 +472,13 @@ impl SidebarVm {
                     active,
                     cursor: cursor == Some(index),
                     dim: false,
+                    mark: Mark::None,
                 };
                 Some(match e {
                     Entry::Header { label, open, .. } => line(LineKind::Header { open: *open }, label.clone(), false),
-                    Entry::Place { label, active, .. } => line(LineKind::Place, label.clone(), *active),
+                    Entry::Place { label, active, mark, .. } => {
+                        SidebarLine { mark: *mark, ..line(LineKind::Place, label.clone(), *active) }
+                    }
                     Entry::Message(m) => line(LineKind::Message, m.clone(), false),
                     Entry::Tree(i) => {
                         let r = rows.get(*i)?;
@@ -567,11 +608,22 @@ fn chevron(open: bool, set: IconSet) -> &'static str {
     glyph(if open { IconId::CaretDown } else { IconId::CaretRight }, set)
 }
 
+/// The one-cell mark before a place's label.
+fn mark_glyph(mark: Mark, set: IconSet) -> &'static str {
+    match (mark, set) {
+        (Mark::None, _) => " ",
+        (Mark::Plus, _) => "+",
+        (Mark::Dot(_), IconSet::Ascii) => "*",
+        (Mark::Dot(_), _) => "●",
+    }
+}
+
 /// The text of `line` in `w` cells.
 fn line_text(line: &SidebarLine, w: usize, set: IconSet) -> String {
     let s = match line.kind {
         LineKind::Header { open } => format!("{} {}", chevron(open, set), line.label),
-        LineKind::Place | LineKind::Message => format!("  {}", line.label),
+        LineKind::Place => format!("{} {}", mark_glyph(line.mark, set), line.label),
+        LineKind::Message => format!("  {}", line.label),
         LineKind::Folder { expandable, expanded, loading, failed } => {
             // Two cells per level, but never more than half the width.
             let indent = (2 + 2 * line.depth).min(w / 2);
@@ -608,6 +660,18 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         }
         f.render_widget(Paragraph::new(line_text(line, w, theme.icons())), r);
         f.buffer_mut().set_style(r, style);
+        // The mark in its colour (a state dot keeps it on the cursor row too).
+        let mark_role = match line.mark {
+            Mark::Dot(t) => Some(crate::view::jobs::role(t)),
+            Mark::Plus => Some(Role::Accent),
+            Mark::None => None,
+        };
+        if let Some(role) = mark_role
+            && line.kind == LineKind::Place
+            && r.width > 0
+        {
+            f.buffer_mut().set_style(Rect { width: 1, ..r }, theme.style(role));
+        }
         if line.kind != LineKind::Message {
             hits.push(r, HitTarget::SidebarRow(line.index));
         }
@@ -622,7 +686,16 @@ mod tests {
     use super::*;
 
     fn line(index: usize, kind: LineKind, label: &str) -> SidebarLine {
-        SidebarLine { index, kind, label: label.into(), depth: 0, active: false, cursor: false, dim: false }
+        SidebarLine {
+            index,
+            kind,
+            label: label.into(),
+            depth: 0,
+            active: false,
+            cursor: false,
+            dim: false,
+            mark: Mark::None,
+        }
     }
 
     fn model() -> SidebarVm {

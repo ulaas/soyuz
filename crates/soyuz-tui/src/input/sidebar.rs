@@ -10,6 +10,13 @@
 //! | Esc | back to the list (`Action::FocusList`) | the same (the tree's Esc) |
 //! | typing | the next place starting with the letter | type-ahead |
 //!
+//! Shift+F10 (or the Menu key, or a right click) opens the row's menu ([`menu`], from the
+//! core's catalogue `models::context_menu`): a place on disk ([`place_menu`]), a saved
+//! connection (open in a new tab, edit, disconnect, copy the address, remove), a smart
+//! folder (open, open in a new tab, edit, delete, new), the smart folders header or its
+//! "New smart folder" row (new, index settings, rebuild the index) and a saved search
+//! (run, remove).
+//!
 //! The cursor itself (new compared with the GUI) is a `crate::view::sidebar::SidebarNav`
 //! kept in [`State`], which the view reads too. Enter on a place moves the keyboard to the
 //! list (the GUI's `FocusPane`); on a tree row it stays in the sidebar, like the GUI's
@@ -19,15 +26,18 @@ use crossterm::event::Event;
 use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::core::{AppCore, Focus};
 use soyuz_appcore::keys::input::InputEvent;
+use soyuz_appcore::models::context_menu as catalogue;
+use soyuz_appcore::models::remote::RemoteCmd;
 use soyuz_appcore::models::smart::SmartCmd;
 use soyuz_appcore::models::tree::model::Nav;
 use soyuz_appcore::models::tree::{KeyInput, TreeIo};
 use soyuz_appcore::services::places::drive_volumes;
-use soyuz_core::config::{Action, KeyName, Mods, SidebarMode};
+use soyuz_core::Location;
+use soyuz_core::config::{Action, KeyName, Mods, SidebarMode, SidebarSection};
 
 use super::{TuiFocus, core_input, key_context};
 use crate::app::App;
-use crate::view::sidebar::{Entry, SidebarNav, Target, cursor_index, entries, sync_focus};
+use crate::view::sidebar::{Entry, Section, SidebarNav, Target, cursor_index, entries, sync_focus};
 
 /// What the sidebar keeps between frames.
 #[derive(Debug, Default)]
@@ -174,6 +184,39 @@ pub fn activate(core: &mut AppCore, target: Target) {
         }
         Target::Smart(index) => core.cmds.push(Cmd::Smart(SmartCmd::Open { index, new_tab: false })),
         Target::Search(i) => core.cmds.push(Cmd::RunSavedSearch(i)),
+        Target::Remote { uri, .. } => {
+            core.cmds.push(Cmd::FocusPane(pane));
+            core.cmds.push(Cmd::Navigate { pane, location: Location::Remote(uri), select: None });
+        }
+        Target::Connect => core.cmds.push(Cmd::Remote(RemoteCmd::ConnectDialog { uri: None, edit: None, note: None })),
+        Target::NewSmart => core.cmds.push(Cmd::Smart(SmartCmd::Edit(None))),
+    }
+}
+
+/// The menu of sidebar entry `i` (see the module docs; empty for rows without one).
+pub fn menu(core: &AppCore, i: usize) -> Vec<catalogue::Entry> {
+    use soyuz_appcore::services::remote as svc;
+    let list = entries(core);
+    match list.get(i) {
+        Some(Entry::Place { target: Target::Go(Location::Dir(path)), .. }) => {
+            let removable = core.ui.sidebar.favorites.iter().any(|f| &f.path == path);
+            catalogue::place_menu(path, removable)
+        }
+        Some(Entry::Place { target: Target::Remote { id, .. }, .. }) => {
+            let Some(conn) = svc::connections().into_iter().find(|c| &c.id == id) else { return Vec::new() };
+            let Some(uri) = conn.parsed() else { return Vec::new() };
+            let state = svc::conn_state(&uri);
+            catalogue::remote_connection(&conn, &uri, &state, svc::is_saved(id))
+        }
+        Some(Entry::Place { target: Target::Smart(i), .. }) => catalogue::smart_folder(*i),
+        Some(Entry::Place { target: Target::NewSmart, .. })
+        | Some(Entry::Header { section: Section::Of(SidebarSection::Smart), .. }) => {
+            catalogue::smart_section(soyuz_appcore::models::smart::index_failed())
+        }
+        Some(Entry::Place { target: Target::Search(i), .. }) => {
+            catalogue::saved_search(*i, core.ui.search.config_count())
+        }
+        _ => Vec::new(),
     }
 }
 

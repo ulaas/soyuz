@@ -290,6 +290,11 @@ pub fn status_line(st: &soyuz_index::IndexStatus) -> String {
     }
 }
 
+/// The background index stopped with an error (no rebuild then).
+pub fn index_failed() -> bool {
+    ix::status().is_some_and(|st| matches!(st.phase, soyuz_index::Phase::Failed(_)))
+}
+
 /// Query cheat sheet for the smart-folder editor: `(example, what it does)`; the
 /// examples are query syntax (shown untranslated, monospace).
 pub fn query_help() -> [(&'static str, &'static str); 8] {

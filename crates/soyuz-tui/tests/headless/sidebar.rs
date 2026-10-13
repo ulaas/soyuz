@@ -250,3 +250,56 @@ fn tree(data: PathBuf) {
     common::run_script(&mut app, steps, 100, 24);
     common::ok();
 }
+
+// ---- Phase T5: the menus of saved searches (W2-locations) ----
+
+/// A saved search of `searches.toml` (made in the sandbox) is listed; Shift+F10 on it →
+/// Remove takes it out of the sidebar and the file.
+#[test]
+fn saved_search_menu_removes_it() {
+    let run = common::relaunch(module_path!(), "saved_search_menu_removes_it", |_| {});
+    if let Run::Child(data) = run {
+        saved_search(data);
+    }
+}
+
+fn saved_search(data: PathBuf) {
+    use crossterm::event::KeyModifiers;
+    use soyuz_appcore::tr;
+
+    use super::menu::{drive, menu_open, pick};
+    let mut c = config();
+    c.sidebar.sections = Vec::new();
+    let mut app = super::menu::app(c, &data);
+    app.core.ui.search.form.text = "notes".into();
+    app.core.ui.search.saving = Some("Mine".into());
+    soyuz_appcore::models::search::finish_save(&mut app.core, true);
+    let file = soyuz_core::config::config_dir().join("searches.toml");
+    assert!(std::fs::read_to_string(&file).unwrap().contains("Mine"));
+    let mut stage = 0;
+    drive(&mut app, |a| match stage {
+        0 if sidebar_has(a, "Mine") => {
+            stage = 1;
+            Some(key(KeyCode::F(12)))
+        }
+        1 if a.key_context() == KeyContext::Sidebar && sidebar_cursor(a).as_deref() == Some("Mine") => {
+            stage = 2;
+            Some(common::key_mods(KeyCode::F(10), KeyModifiers::SHIFT))
+        }
+        2 if menu_open(a) => {
+            let e = pick(a, tr!("views-search-remove"));
+            if e.as_ref().is_some_and(|e| *e == key(KeyCode::Enter)) {
+                stage = 3;
+            }
+            e
+        }
+        3 if !sidebar_has(a, "Mine") && a.core.ui.search.names().is_empty() => {
+            stage = 4;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    assert_eq!(stage, 4);
+    assert!(!std::fs::read_to_string(&file).unwrap_or_default().contains("Mine"));
+    common::ok();
+}
