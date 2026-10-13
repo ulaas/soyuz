@@ -365,10 +365,15 @@ impl Form {
         }
     }
 
-    /// A click on field `i` (`DialogField`): focus it; a checkbox toggles.
+    /// A click on field `i` (`DialogField`): focus it; a checkbox toggles. A click in a
+    /// text field's box ([`set_field_click`]) puts the cursor under the pointer.
     pub fn click_field(&mut self, i: usize) -> FormOutcome {
+        let at = FIELD_CLICK.take();
         let Some(f) = self.fields.get_mut(i).filter(|f| f.enabled) else { return FormOutcome::Ignored };
         self.focus = i;
+        if let (FieldKind::Text { text, edit, secret }, Some((col, width))) = (&mut f.kind, at) {
+            place_cursor(text, edit, *secret, col, width);
+        }
         if let FieldKind::Check(on) = &mut f.kind {
             *on = !*on;
             return FormOutcome::Changed(i);
@@ -428,6 +433,40 @@ impl Form {
             })
             .collect()
     }
+}
+
+thread_local! {
+    /// The click being handed to the top-most dialog, when it landed in a text field's
+    /// box: its column in the box and the box's width ([`set_field_click`]).
+    static FIELD_CLICK: std::cell::Cell<Option<(u16, u16)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Before a dialog gets a mouse press (`input::dialogs::mouse`): it landed `col` cells
+/// into the text box of the field it hit, `width` cells wide (`Hits::field_text_at`), so
+/// [`Form::click_field`] puts the cursor there; `None` after the dispatch. Kinds that do
+/// not call `click_field` ignore it.
+pub fn set_field_click(click: Option<(u16, u16)>) {
+    FIELD_CLICK.set(click);
+}
+
+/// Put `edit`'s cursor under a click `col` cells into the box (`width` cells) showing
+/// `text` as [`Form::field_vms`] / [`draw_fields`] draw it (bullets for a secret).
+fn place_cursor(text: &str, edit: &mut LineEdit, secret: bool, col: u16, width: u16) {
+    if !secret {
+        // The drawn editor starts unscrolled with the same cursor (`field_vms`).
+        let mut e = LineEdit::new();
+        e.set_cursor(text, edit.cursor());
+        e.click(text, col, width);
+        edit.set_cursor(text, e.cursor());
+        return;
+    }
+    let bullets = "•".repeat(text.chars().count());
+    let mut e = LineEdit::new();
+    e.set_cursor(&bullets, "•".len() * text[..edit.cursor()].chars().count());
+    e.click(&bullets, col, width);
+    let n = e.cursor() / "•".len();
+    let pos = text.char_indices().nth(n).map_or(text.len(), |(b, _)| b);
+    edit.set_cursor(text, pos);
 }
 
 /// The letter of a key (`a`–`z`).
@@ -515,6 +554,7 @@ pub fn draw_fields(
                 let fw = area.right().saturating_sub(fx);
                 if fw > 0 {
                     let field = Rect::new(fx, y, fw, 1);
+                    hits.push_field_text(field, i);
                     buf.set_style(field, theme.style(Role::Input));
                     let mut e = edit.clone();
                     let (shown, col) = e.view(value, fw);
@@ -614,6 +654,45 @@ mod tests {
             ],
             vec![Button::new("OK").accel('o'), Button::new("Cancel").accel('c')],
         )
+    }
+
+    #[test]
+    fn a_click_in_a_text_box_places_the_cursor() {
+        let mut f = sample();
+        f.focus = 1;
+        set_field_click(Some((2, 20)));
+        assert_eq!(f.click_field(0), FormOutcome::Consumed);
+        assert_eq!(f.focus, 0);
+        let FieldKind::Text { edit, .. } = &f.fields[0].kind else { unreachable!() };
+        assert_eq!(edit.cursor(), 2);
+        // Taken once: a click without a box position keeps the cursor.
+        f.click_field(0);
+        let FieldKind::Text { edit, .. } = &f.fields[0].kind else { unreachable!() };
+        assert_eq!(edit.cursor(), 2);
+        // A secret maps the bullets back to characters.
+        let mut f = Form::new(vec![Field::secret("Password")], vec![Button::new("OK")]);
+        f.fields[0].kind =
+            FieldKind::Text { text: "pässwörd".into(), edit: LineEdit::at_end("pässwörd"), secret: true };
+        set_field_click(Some((2, 20)));
+        f.click_field(0);
+        let FieldKind::Text { edit, text, .. } = &f.fields[0].kind else { unreachable!() };
+        assert_eq!(&text[edit.cursor()..], "sswörd");
+        set_field_click(None);
+    }
+
+    #[test]
+    fn text_boxes_are_recorded_for_clicks() {
+        let m = sample();
+        let mut t = ratatui::Terminal::new(ratatui::backend::TestBackend::new(30, 4)).unwrap();
+        let mut hits = Hits::default();
+        t.draw(|f| {
+            draw_fields(f.buffer_mut(), Rect::new(0, 0, 30, 3), &m.field_vms(), &TuiTheme::plain(), &mut hits);
+        })
+        .unwrap();
+        let (r, i) = hits.field_text_at(10, 0).expect("the name box");
+        assert_eq!((r.x, r.width, i), (5, 25, 0));
+        assert_eq!(hits.field_text_at(1, 0), None, "the label");
+        assert_eq!(hits.field_text_at(10, 1), None, "a checkbox has no box");
     }
 
     #[test]

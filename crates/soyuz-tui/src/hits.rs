@@ -226,11 +226,31 @@ pub enum JobButton {
 #[derive(Clone, Debug, Default)]
 pub struct Hits {
     items: Vec<(Rect, HitTarget)>,
+    /// The text boxes of dialog text fields (`DialogField(i)` rows), so a click can put
+    /// the cursor under the pointer ([`Hits::field_text_at`]).
+    field_texts: Vec<(Rect, usize)>,
 }
 
 impl Hits {
     pub fn clear(&mut self) {
         self.items.clear();
+        self.field_texts.clear();
+    }
+
+    /// Record the text box of dialog text field `field` (drawn inside its
+    /// `DialogField(field)` row).
+    pub fn push_field_text(&mut self, rect: Rect, field: usize) {
+        if !rect.is_empty() {
+            self.field_texts.push((rect, field));
+        }
+    }
+
+    /// The text box at cell `(x, y)` and its field, when the top-most target there is
+    /// that field's row.
+    pub fn field_text_at(&self, x: u16, y: u16) -> Option<(Rect, usize)> {
+        let p = Position { x, y };
+        let (r, i) = self.field_texts.iter().rev().find(|(r, _)| r.contains(p)).copied()?;
+        (self.at(x, y) == Some(HitTarget::DialogField(i))).then_some((r, i))
     }
 
     /// Record `target` at `rect` (empty rects are skipped).

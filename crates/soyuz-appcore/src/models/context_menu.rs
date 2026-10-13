@@ -101,6 +101,8 @@ pub struct Item {
     pub run: Option<Run>,
     /// Activating it keeps the menu open (column toggles).
     pub keep_open: bool,
+    /// Why it is disabled, or what it does: the GUI's hover text (`None`: none).
+    pub tip: Option<&'static str>,
 }
 
 /// Which submenu (frontends size them).
@@ -189,7 +191,16 @@ pub fn hide_warnings(names: &[String]) -> Vec<String> {
 }
 
 fn item(icon: MenuIcon, label: impl Into<String>, chord: Option<String>, enabled: bool, run: Option<Run>) -> Entry {
-    Entry::Item(Item { icon, label: label.into(), chord, enabled, style: ItemStyle::Plain, run, keep_open: false })
+    Entry::Item(Item {
+        icon,
+        label: label.into(),
+        chord,
+        enabled,
+        style: ItemStyle::Plain,
+        run,
+        keep_open: false,
+        tip: None,
+    })
 }
 
 fn check(on: bool, label: impl Into<String>, chord: Option<String>, run: Option<Run>) -> Entry {
@@ -201,6 +212,7 @@ fn check(on: bool, label: impl Into<String>, chord: Option<String>, run: Option<
         style: ItemStyle::Check(on),
         run,
         keep_open: false,
+        tip: None,
     })
 }
 
@@ -884,6 +896,7 @@ pub fn column_menu(pane: &Pane) -> Vec<Entry> {
             style: ItemStyle::Plain,
             run: Some(Run::Cmd(Cmd::Column(ColumnCmd::Show { pane: pane.id, column: col, visible: !on }))),
             keep_open: true,
+            tip: None,
         }));
     }
     out.push(Entry::Separator);
@@ -980,6 +993,16 @@ pub fn apply_terminal_tab(app: &mut crate::core::AppCore, host: &dyn crate::host
 /// (the GUI's `ui::smart::sidebar_section`), then "New smart folder".
 pub fn smart_folder(i: usize) -> Vec<Entry> {
     use crate::models::smart::SmartCmd;
+    let mut out = smart_folder_row(i);
+    out.push(Entry::Separator);
+    out.push(cmd_item(MenuIcon::Plus, tr!("views-smart-new"), Cmd::Smart(SmartCmd::Edit(None))));
+    out
+}
+
+/// The GUI's smart folder row menu: [`smart_folder`] without "New smart folder" (the GUI
+/// has a "New smart folder" row right under the list).
+pub fn smart_folder_row(i: usize) -> Vec<Entry> {
+    use crate::models::smart::SmartCmd;
     use IconId as I;
     vec![
         cmd_item(I::FolderOpen, tr!("views-smart-open"), Cmd::Smart(SmartCmd::Open { index: i, new_tab: false })),
@@ -991,8 +1014,6 @@ pub fn smart_folder(i: usize) -> Vec<Entry> {
         Entry::Separator,
         cmd_item(I::PencilSimple, tr!("views-smart-edit"), Cmd::Smart(SmartCmd::Edit(Some(i)))),
         cmd_item(I::Trash, tr!("views-smart-delete"), Cmd::Smart(SmartCmd::Delete(i))),
-        Entry::Separator,
-        cmd_item(MenuIcon::Plus, tr!("views-smart-new"), Cmd::Smart(SmartCmd::Edit(None))),
     ]
 }
 
@@ -1020,16 +1041,19 @@ pub fn smart_section(index_failed: bool) -> Vec<Entry> {
 /// searches come from `config.toml` and are removed there, not here.
 pub fn saved_search(i: usize, n_config: usize) -> Vec<Entry> {
     let removable = i >= n_config;
-    vec![
-        cmd_item(IconId::MagnifyingGlass, tr!("views-search-run-saved"), Cmd::RunSavedSearch(i)),
-        item(
-            MenuIcon::X,
-            tr!("views-search-remove"),
-            None,
-            removable,
-            removable.then_some(Run::Cmd(Cmd::RemoveSavedSearch(i))),
-        ),
-    ]
+    let mut remove = item(
+        MenuIcon::X,
+        tr!("views-search-remove"),
+        None,
+        removable,
+        removable.then_some(Run::Cmd(Cmd::RemoveSavedSearch(i))),
+    );
+    if let Entry::Item(it) = &mut remove
+        && !removable
+    {
+        it.tip = Some(tr!("views-search-defined-in-config"));
+    }
+    vec![cmd_item(IconId::MagnifyingGlass, tr!("views-search-run-saved"), Cmd::RunSavedSearch(i)), remove]
 }
 
 /// The menu of a saved connection `conn` (a sidebar "Network" row) at `uri` in `state`
@@ -1226,6 +1250,17 @@ mod tests {
         assert!(matches!(&cfg[0], Some(Run::Cmd(Cmd::RunSavedSearch(0)))) && cfg[1].is_none());
         let own = runs(saved_search(1, 1));
         assert!(matches!(&own[1], Some(Run::Cmd(Cmd::RemoveSavedSearch(1)))));
+        // The disabled remove row says why (the GUI's hover text).
+        let tip = |e: &[Entry]| match &e[1] {
+            Entry::Item(it) => it.tip,
+            _ => None,
+        };
+        assert_eq!(tip(&saved_search(0, 1)), Some(tr!("views-search-defined-in-config")));
+        assert_eq!(tip(&saved_search(1, 1)), None);
+        // The GUI's row menu: the same rows without "New smart folder".
+        let row = labels(&smart_folder_row(2));
+        assert_eq!(row[..], labels(&smart_folder(2))[..row.len()]);
+        assert!(!row.iter().any(|s| s == tr!("views-smart-new")));
     }
 
     #[test]

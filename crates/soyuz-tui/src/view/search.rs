@@ -290,6 +290,16 @@ pub fn rows(core: &AppCore) -> u16 {
     bar + u16::from(model::shown_search(core).is_some())
 }
 
+/// Where a click at screen column `x` lands in the query field (`glob`: the glob field)
+/// of the bar drawn in `regions.search`: its column in the text box and the box's width
+/// (`None` left of the box), for `LineEdit::click`.
+pub fn field_click(core: &AppCore, regions: &Regions, x: u16, glob: bool) -> Option<(u16, u16)> {
+    let geo = field_row_geo(core, regions.search.width);
+    let (fx, fw) = if glob { geo.glob? } else { geo.field };
+    let start = regions.search.x + fx;
+    (x >= start && fw > 0).then(|| ((x - start).min(fw - 1), fw))
+}
+
 /// Step 1 of a frame (`view::prepare`): scroll the fields to their cursors.
 pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     if !core.ui.search.open || regions.search.is_empty() {

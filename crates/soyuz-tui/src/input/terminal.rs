@@ -17,6 +17,7 @@
 //! | Esc at an empty prompt, `[terminal] escape_returns_focus` | give the keyboard back to the file list |
 //! | Ctrl+Shift+C / Alt+Shift+C | copy the selection |
 //! | Ctrl+C with a selection | copy it and clear it (without one: interrupt, `0x03`) |
+//! | Ctrl+Shift+V / Alt+Shift+V | paste the local clipboard's text (Windows, [`is_paste_chord`]) |
 //!
 //! A bracketed paste from the terminal (`Event::Paste`) is pasted into the shell (as a
 //! bracketed paste when the program asked for one). Key releases are dropped.
@@ -267,11 +268,29 @@ fn key(app: &mut App, ev: &Event, k: &KeyEvent) {
         copy_selection(app, true);
         return;
     }
+    // 6b. Paste the local clipboard's text (Windows: the console sends no paste for it).
+    if is_paste_chord(k)
+        && let Some(text) = soyuz_appcore::services::os_clipboard::get_text().filter(|s| !s.is_empty())
+    {
+        t.select_clear();
+        t.paste(&text);
+        return;
+    }
     // 7. The shell.
     if let Some(bytes) = key_bytes(k, &modes) {
         t.select_clear();
         t.input(bytes);
     }
+}
+
+/// Ctrl+Shift+V (Alt+Shift+V on terminals that drop Shift with Ctrl): paste the local
+/// clipboard's text (`os_clipboard::get_text`, Windows; elsewhere the key goes on to the
+/// shell and the terminal emulator's own paste arrives as `Event::Paste`).
+pub fn is_paste_chord(k: &KeyEvent) -> bool {
+    let m = k.modifiers;
+    matches!(k.code, KeyCode::Char('v' | 'V'))
+        && m.contains(KeyModifiers::SHIFT)
+        && m.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
 }
 
 /// Copy the active session's selection (`clear`: then drop it).
@@ -509,6 +528,16 @@ mod tests {
 
     fn k(code: KeyCode, m: KeyModifiers) -> KeyEvent {
         KeyEvent::new(code, m)
+    }
+
+    #[test]
+    fn the_paste_chord() {
+        let cs = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+        assert!(is_paste_chord(&k(KeyCode::Char('V'), cs)));
+        assert!(is_paste_chord(&k(KeyCode::Char('v'), KeyModifiers::ALT | KeyModifiers::SHIFT)));
+        assert!(!is_paste_chord(&k(KeyCode::Char('v'), KeyModifiers::CONTROL)), "Ctrl+V goes to the shell");
+        assert!(!is_paste_chord(&k(KeyCode::Char('V'), KeyModifiers::SHIFT)), "typing V");
+        assert!(!is_paste_chord(&k(KeyCode::Char('c'), cs)));
     }
 
     #[test]

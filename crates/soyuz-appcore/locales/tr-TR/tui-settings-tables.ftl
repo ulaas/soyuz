@@ -35,3 +35,5 @@ tui-tables-secret-empty = Önce gizli bilgiyi yazın
 tui-tables-secret-stored = Gizli bilgi kimlik bilgisi deposuna kaydedildi
 tui-tables-secret-removed = Gizli bilgi kimlik bilgisi deposundan kaldırıldı
 tui-tables-secret-failed = Kimlik bilgisi deposu: { $error }
+tui-tables-secret-hint-mcp = Enter kaydet · Alt+G belirteç üret · Alt+R kayıtlı belirteci kaldır · Esc vazgeç
+tui-tables-token-hint = Alt+T belirteci kopyala · Alt+C istemci yapılandırmasını kopyala · Esc kapat

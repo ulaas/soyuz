@@ -3,8 +3,9 @@
 //! - **Password**: a listing needs a password ("wrong" when the last one failed); Unlock
 //!   remembers it for the session and re-lists the pane (`models::archive::unlock`);
 //! - **Extract to…**: what is extracted, the destination folder and "each archive into its
-//!   own folder"; Extract runs `ExtractForm::submit`'s jobs (no completion list for the
-//!   destination: it is typed or pasted);
+//!   own folder"; Extract runs `ExtractForm::submit`'s jobs. The destination has folder
+//!   completion like "Copy to" and the compare screen (`state::crumbs::completion`,
+//!   [`prepare`]): Up / Down pick a subfolder, Tab accepts it, a click on one too;
 //! - **Compress…**: the archive's name, the format (`writable_formats`), the compression
 //!   level (Store / Fast / Normal / Max: levels 0, 3, 6, 9) and, for formats that encrypt,
 //!   a password; changing the format keeps the name's stem (`CreateForm::set_format`) and
@@ -17,16 +18,22 @@ use std::path::PathBuf;
 
 use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::core::AppCore;
+use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::archive::{
     ArchivePrompt, CreateForm, ExtractForm, format_label, level_label, rename_cmd, unlock, valid_entry_name,
     writable_formats,
 };
+use soyuz_appcore::services::Services;
+use soyuz_appcore::state::crumbs;
 use soyuz_appcore::state::pane::PaneId;
 use soyuz_appcore::tr;
+use soyuz_core::config::KeyName;
 
+use super::prompt::{is_key, left_click, set_text, wheel};
 use super::{DialogInput, DialogMouse, Outcome, TuiDialog};
 use crate::app::App;
-use crate::widgets::{Button, Field, FieldKind, Form, FormOutcome, LineEdit};
+use crate::layout::HitTarget;
+use crate::widgets::{Button, Field, FieldKind, Form, FormOutcome, LineEdit, SelectList};
 
 /// The compression levels offered (Store, Fast, Normal, Max).
 pub const LEVELS: [u8; 4] = [0, 3, 6, 9];
@@ -54,6 +61,16 @@ pub enum Kind {
 pub struct State {
     pub kind: Kind,
     pub form: Form,
+    /// Extract to…: the subfolders completing the typed destination ([`prepare`]).
+    pub names: Vec<String>,
+    /// The picked completion.
+    pub list: SelectList,
+}
+
+impl State {
+    fn new(kind: Kind, form: Form) -> State {
+        State { kind, form, names: Vec::new(), list: SelectList::default() }
+    }
 }
 
 /// Open the dialog for the core's request (`crate::frontend`).
@@ -70,7 +87,7 @@ pub fn state(prompt: ArchivePrompt) -> State {
             if wrong {
                 form.error = Some(tr!("views-archive-password-wrong").into());
             }
-            State { kind: Kind::Password { pane, archive, wrong }, form }
+            State::new(Kind::Password { pane, archive, wrong }, form)
         }
         ArchivePrompt::Extract(f) => {
             let form = Form::new(
@@ -80,16 +97,16 @@ pub fn state(prompt: ArchivePrompt) -> State {
                 ],
                 buttons(tr!("views-archive-extract")),
             );
-            State { kind: Kind::Extract(f), form }
+            State::new(Kind::Extract(f), form)
         }
         ArchivePrompt::Create(f) => {
             let form = create_form(&f, 0);
-            State { kind: Kind::Create(f), form }
+            State::new(Kind::Create(f), form)
         }
         ArchivePrompt::Rename { archive, from, is_dir } => {
             let name = from.rsplit('/').next().unwrap_or_default().to_string();
             let form = Form::new(vec![Field::text(tr!("remote-name"), name)], buttons(tr!("common-rename")));
-            State { kind: Kind::Rename { archive, from, is_dir }, form }
+            State::new(Kind::Rename { archive, from, is_dir }, form)
         }
     }
 }
@@ -228,9 +245,54 @@ fn outcome(core: &mut AppCore, s: &mut State, o: FormOutcome) -> Option<Outcome>
     }
 }
 
+/// Every frame while the dialog is on top (`input::dialogs::prepare`): Extract to…'s
+/// completions of the typed destination (this also asks for its listing, off the UI
+/// thread).
+pub fn prepare(services: &mut Services, s: &mut State) {
+    if !matches!(s.kind, Kind::Extract(_)) {
+        return;
+    }
+    let c = crumbs::completion(services, &text(&s.form, 0));
+    if c.names != s.names {
+        s.names = c.names;
+        s.list = SelectList::default();
+    }
+}
+
+/// Accept completion `i` into the destination field.
+fn accept(s: &mut State, i: usize) {
+    let Some(name) = s.names.get(i).cloned() else { return };
+    let mut dest = text(&s.form, 0);
+    crumbs::accept(&mut dest, &name);
+    set_text(&mut s.form, 0, &dest);
+    s.names.clear();
+    s.list = SelectList::default();
+}
+
+/// Up / Down / Tab over the destination's completions: whether `ev` was one of them.
+fn completion_key(s: &mut State, ev: &InputEvent) -> bool {
+    let n = s.names.len();
+    if !matches!(s.kind, Kind::Extract(_)) || s.form.focused_field() != Some(0) || n == 0 {
+        return false;
+    }
+    if is_key(ev, KeyName::Tab) {
+        accept(s, s.list.cursor);
+    } else if is_key(ev, KeyName::ArrowDown) {
+        s.list.select((s.list.cursor + 1) % n, n);
+    } else if is_key(ev, KeyName::ArrowUp) {
+        s.list.select((s.list.cursor + n - 1) % n, n);
+    } else {
+        return false;
+    }
+    true
+}
+
 /// A key press or paste.
 pub fn on_input(core: &mut AppCore, s: &mut State, i: &DialogInput) -> Outcome {
     for ev in &i.events {
+        if completion_key(s, ev) {
+            continue;
+        }
         let o = s.form.apply(ev);
         if let Some(out) = outcome(core, s, o) {
             return out;
@@ -241,6 +303,17 @@ pub fn on_input(core: &mut AppCore, s: &mut State, i: &DialogInput) -> Outcome {
 
 /// A mouse event.
 pub fn on_mouse(core: &mut AppCore, s: &mut State, m: &DialogMouse) -> Outcome {
+    if matches!(s.kind, Kind::Extract(_)) {
+        // A click on a completion accepts it; the wheel scrolls them.
+        if let (true, Some(HitTarget::DialogRow(r))) = (left_click(m), m.target) {
+            accept(s, r);
+            s.form.focus = 0;
+            return Outcome::Keep;
+        }
+        if wheel(&mut s.list, m, s.names.len()) {
+            return Outcome::Keep;
+        }
+    }
     match super::confirm::click(&mut s.form, m) {
         Some(o) => outcome(core, s, o).unwrap_or(Outcome::Keep),
         None => Outcome::Keep,
@@ -309,6 +382,34 @@ mod tests {
         let Kind::Rename { archive, from, .. } = &s.kind else { unreachable!() };
         assert!(rename_cmd(archive, from, "old.txt").is_none(), "same name: nothing to do");
         assert!(rename_cmd(archive, from, "new.txt").is_some());
+    }
+
+    #[test]
+    fn extract_destination_completes_folders() {
+        let sep = std::path::MAIN_SEPARATOR;
+        let f = ExtractForm::new(vec![PathBuf::from("/x/a.zip")], None, PathBuf::from("/x"));
+        let mut s = state(ArchivePrompt::Extract(f));
+        // Completions as `prepare` finds them: Down picks the second, Tab takes it.
+        set_text(&mut s.form, 0, &format!("{sep}x{sep}d"));
+        s.names = vec!["docs".into(), "downloads".into()];
+        assert!(completion_key(&mut s, &chord("Down")));
+        assert_eq!(s.list.cursor, 1);
+        assert!(completion_key(&mut s, &chord("Up")));
+        assert!(completion_key(&mut s, &chord("Up")), "wraps");
+        assert_eq!(s.list.cursor, 1);
+        assert!(completion_key(&mut s, &chord("Tab")));
+        assert_eq!(text(&s.form, 0), format!("{sep}x{sep}downloads{sep}"));
+        assert!(s.names.is_empty());
+        // Without completions Tab is the form's (on to the checkbox).
+        assert!(!completion_key(&mut s, &chord("Tab")));
+        // Not on the destination field, nor in other dialogs.
+        s.names = vec!["x".into()];
+        s.form.focus = 1;
+        assert!(!completion_key(&mut s, &chord("Tab")));
+        let mut r =
+            state(ArchivePrompt::Rename { archive: PathBuf::from("/x/a.zip"), from: "a".into(), is_dir: false });
+        r.names = vec!["x".into()];
+        assert!(!completion_key(&mut r, &chord("Tab")));
     }
 
     #[test]

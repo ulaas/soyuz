@@ -133,6 +133,20 @@ impl StatusVm {
     }
 }
 
+/// While the model is built (`ViewModel::from_core`): the search bar's key hint while it
+/// has the keyboard (in a field, or on a pill or a button).
+pub fn decorate_search(core: &AppCore, input: &crate::input::InputState, status: &mut StatusVm) {
+    use crate::input::search::Stop;
+    if crate::input::focus(core, input) != crate::input::TuiFocus::Search {
+        return;
+    }
+    status.hint = match input.search.stop {
+        Stop::Field | Stop::Glob => tr!("tui-search-hint-field"),
+        Stop::Pill(_) | Stop::Button(_) => tr!("tui-search-hint-controls"),
+    }
+    .to_string();
+}
+
 /// The smart folder segment for a pane at `loc`: the folder's name, then the index status
 /// while the index runs.
 fn smart_segment(loc: &Location) -> String {

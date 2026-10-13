@@ -337,6 +337,7 @@ mod tests {
             style: ItemStyle::Plain,
             run,
             keep_open: false,
+            tip: None,
         })
     }
 

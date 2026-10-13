@@ -15,7 +15,7 @@ use crate::services::index::{self as ix};
 use crate::theme::{icons, icons::ph, palette};
 use crate::ui::dialogs::conflict::{Btn, button};
 use crate::ui::dialogs::{Dialog, DialogCtx};
-use crate::ui::widgets::{NavRow, collapsible_header, menu_item, menu_separator, spinner};
+use crate::ui::widgets::{NavRow, collapsible_header, menu_item, spinner};
 
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Smart`]).
 pub fn prompt(app: &mut SoyuzApp, p: SmartPrompt) {
@@ -56,23 +56,7 @@ pub fn sidebar_section(ui: &mut Ui, collapsed: &mut BTreeSet<String>, current: &
         }
         crate::ui::native::popup::context_menu(&r, |ui| {
             ui.set_width(210.0);
-            if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("views-smart-open"), None, true).clicked() {
-                cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: false }));
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::PLUS), tr!("views-smart-open-new-tab"), None, true).clicked() {
-                cmds.push(Cmd::Smart(SmartCmd::Open { index: i, new_tab: true }));
-                ui.close();
-            }
-            menu_separator(ui);
-            if menu_item(ui, Some(ph::PENCIL_SIMPLE), tr!("views-smart-edit"), None, true).clicked() {
-                cmds.push(Cmd::Smart(SmartCmd::Edit(Some(i))));
-                ui.close();
-            }
-            if menu_item(ui, Some(ph::TRASH), tr!("views-smart-delete"), None, true).clicked() {
-                cmds.push(Cmd::Smart(SmartCmd::Delete(i)));
-                ui.close();
-            }
+            crate::ui::context_menu::draw_entries(ui, crate::models::context_menu::smart_folder_row(i), cmds);
         });
     }
     let r = NavRow {

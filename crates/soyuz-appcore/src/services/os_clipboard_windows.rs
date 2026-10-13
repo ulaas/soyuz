@@ -177,6 +177,20 @@ pub(super) fn set_text(text: &str) -> Result<(), String> {
     block.set(&s, CF_UNICODETEXT)
 }
 
+/// The clipboard's plain text (`CF_UNICODETEXT`), if it holds any.
+pub(super) fn get_text() -> Option<String> {
+    // SAFETY: plain query, no clipboard session needed.
+    if unsafe { IsClipboardFormatAvailable(CF_UNICODETEXT) } == 0 {
+        return None;
+    }
+    let s = Session::open().ok()?;
+    let bytes = get_bytes(&s, CF_UNICODETEXT)?;
+    drop(s);
+    let units: Vec<u16> =
+        bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).take_while(|&u| u != 0).collect();
+    Some(String::from_utf16_lossy(&units))
+}
+
 pub(super) fn has_files() -> bool {
     // SAFETY: plain query, no clipboard session needed.
     unsafe { IsClipboardFormatAvailable(CF_HDROP) != 0 }

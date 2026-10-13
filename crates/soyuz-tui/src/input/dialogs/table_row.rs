@@ -355,6 +355,7 @@ fn sub_input(core: &mut AppCore, row: &mut Row, draft: &mut Draft, pending: &mut
             secret_set::Done::Keep => (false, None),
             secret_set::Done::Cancel => (true, None),
             secret_set::Done::Set { reference, pending } => (true, Some((reference, pending))),
+            secret_set::Done::Generated { reference, pending } => (false, Some((reference, pending))),
         },
         None => return,
     };
@@ -369,6 +370,7 @@ fn sub_mouse(core: &mut AppCore, row: &mut Row, draft: &mut Draft, pending: &mut
             secret_set::Done::Keep => (false, None),
             secret_set::Done::Cancel => (true, None),
             secret_set::Done::Set { reference, pending } => (true, Some((reference, pending))),
+            secret_set::Done::Generated { reference, pending } => (false, Some((reference, pending))),
         },
         None => return,
     };

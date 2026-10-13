@@ -7,6 +7,7 @@ use soyuz_appcore::tr;
 use super::DialogVm;
 use crate::dialog::safe;
 use crate::input::dialogs::archive::{Kind, State, names_encrypted};
+use crate::widgets::ListRow;
 
 /// What the dialog shows.
 pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
@@ -45,6 +46,9 @@ pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
         body: body.iter().map(|l| safe(l)).collect(),
         hints: hints.into(),
         width: 64,
+        // Extract to…: the subfolders completing the destination (the picked one marked).
+        list: s.names.iter().map(|n| ListRow::new(format!("{}{}", safe(n), std::path::MAIN_SEPARATOR))).collect(),
+        list_state: s.list.clone(),
         ..DialogVm::from_form(title, &s.form)
     }
 }

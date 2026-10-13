@@ -35,3 +35,5 @@ tui-tables-secret-empty = Type the secret first
 tui-tables-secret-stored = Secret stored in the credential store
 tui-tables-secret-removed = Secret removed from the credential store
 tui-tables-secret-failed = Credential store: { $error }
+tui-tables-secret-hint-mcp = Enter store · Alt+G generate a token · Alt+R remove the stored token · Esc cancel
+tui-tables-token-hint = Alt+T copy the token · Alt+C copy the client config · Esc close

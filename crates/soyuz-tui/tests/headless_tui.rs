@@ -79,6 +79,9 @@ mod headless {
     mod keys_editor;
     /// T5: MCP approval cards in the AI panel.
     mod mcp_panel;
+    /// T5 + T6 polish (wave 4): toasts under the search bar, hints, middle click,
+    /// completion, token generation, field clicks.
+    mod polish;
     /// T5: remote locations.
     mod remote;
     /// T5: the search bar.

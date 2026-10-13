@@ -138,6 +138,25 @@ pub fn set_text(text: &str) -> bool {
     }
 }
 
+/// The system clipboard's plain text, read directly (Windows: `CF_UNICODETEXT` through raw
+/// user32 calls, for the terminal UI's Ctrl+Shift+V in the terminal pane). `None` where
+/// this module has no direct text path (other OSes: the terminal emulator pastes there),
+/// when the clipboard holds no text, or while the system clipboard is off
+/// ([`set_system_clipboard`], the headless tests).
+pub fn get_text() -> Option<String> {
+    if !system() {
+        return None;
+    }
+    #[cfg(windows)]
+    {
+        imp::get_text()
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 /// Files on the clipboard, with copy-vs-move.
 pub type Files = Option<(ClipMode, Vec<PathBuf>)>;
 

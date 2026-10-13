@@ -395,6 +395,13 @@ pub fn secret_name(row_path: &str, element_name: &str) -> String {
     }
 }
 
+/// A new MCP client token (the GUI's "Generate token", `soyuz_mcp::trust::generate_token`),
+/// for a frontend that does not link `soyuz_mcp` (the terminal UI). Store it with
+/// [`store_secret_text`]; only the reference goes into the config.
+pub fn generate_mcp_token() -> String {
+    soyuz_mcp::trust::generate_token()
+}
+
 /// Store `secret` in the OS credential store (on a worker thread; `wake` when done) and
 /// return the reference to put into the config: the current reference's name when it
 /// already is a `credential:<name>`, else `name`. The secret itself never reaches the
