@@ -1,0 +1,76 @@
+# soyuz-tui snapshot: view__browse_quad (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|─ /home/ada/data ─────────────────────────────────│─ /home/ada/backup ──────────────────────────────|
+|     Name ▴                   Size Kind           │     Name ▴                  Size Kind           |
+|  ■  docs/                         Folder         │  ■  docs/                        Folder         |
+|  ■  photos/                       Folder         │  ■  photos/                      Folder         |
+|  ■  src/                          Folder         │  ■  src/                         Folder         |
+|  ≡  README.md              2.1 KB Markdown       │  ≡  README.md             2.1 KB Markdown       |
+|  ▨  archive.zip           14.8 MB ZIP archive    │  ▨  archive.zip          14.8 MB ZIP archive    |
+|  λ  main.rs                 812 B Rust source    │  λ  main.rs                812 B Rust source    |
+|  ≡  notes.txt              1.0 KB Text           │  ≡  notes.txt             1.0 KB Text           |
+|  ◰  report.pdf             384 KB PDF document   │  ◰  report.pdf            384 KB PDF document   |
+|  ◩  sunset.jpg             3.2 MB JPEG image     │  ◩  sunset.jpg            3.2 MB JPEG image     |
+|  ≡  日~本~語~の~メ~モ~.txt         96 B Text           │  ≡  日~本~語~の~メ~モ~.txt        96 B Text           |
+|  □  .env                     64 B File           │  □  .env                    64 B File           |
+|                                                  │                                                 |
+|──────────────────────────────────────────────────┼─────────────────────────────────────────────────|
+|─ /srv/media ─────────────────────────────────────│─ /tmp ──────────────────────────────────────────|
+|     Name ▴                   Size Kind           │     Name ▴                  Size Kind           |
+|  ■  docs/                         Folder         │  ■  docs/                        Folder         |
+|  ■  photos/                       Folder         │  ■  photos/                      Folder         |
+|  ■  src/                          Folder         │  ■  src/                         Folder         |
+|  ≡  README.md              2.1 KB Markdown       │  ≡  README.md             2.1 KB Markdown       |
+|  ▨  archive.zip           14.8 MB ZIP archive    │  ▨  archive.zip          14.8 MB ZIP archive    |
+|  λ  main.rs                 812 B Rust source    │  λ  main.rs                812 B Rust source    |
+|  ≡  notes.txt              1.0 KB Text           │  ≡  notes.txt             1.0 KB Text           |
+|  ◰  report.pdf             384 KB PDF document   │* ◰  report.pdf            384 KB PDF document   |
+|  ◩  sunset.jpg             3.2 MB JPEG image     │  ◩  sunset.jpg            3.2 MB JPEG image     |
+|  ≡  日~本~語~の~メ~モ~.txt         96 B Text           │  ≡  日~本~語~の~メ~モ~.txt        96 B Text           |
+|  □  .env                     64 B File           │  □  .env                    64 B File           |
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCACCCCCDDDDDDCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCAAACCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCC|
+|AAECCEEEEEEEEEEECCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCAAAECCEEEEEEEEEEECCCCCCCCCCAAAAAAACAAAAAAAAAAACCCC|
+|AAFCCFFFFFFFCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCAAAFCCFFFFFFFCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCC|
+|GGHHHHHHHHHHHHHHHHHHHHHHHHHHGGGGGGHGGGGHHHHHHHHHHHAGGHHHHHHHHHHHHHHHHHHHHHHHHHGGGGGGHGGGGHHHHHHHHHHH|
+|AAECCEEEEEEEEEECCCCCCCCCCCCCAAAAAACAAAAAAAAAAAACCCAAAECCEEEEEEEEEECCCCCCCCCCCCAAAAAACAAAAAAAAAAAACCC|
+|AAICCIIIIIIIIIICCCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCCAAAICCIIIIIIIIIICCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCC|
+|AACCCC~C~C~C~C~C~CCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCAAACCCC~C~C~C~C~C~CCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AAACCAAAACCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCAAAACCAAAACCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAJDDDDDDJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCACCCCCDDDDDDCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCAAADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCAAACCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCC|
+|AAECCEEEEEEEEEEECCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCAAAECCEEEEEEEEEEECCCCCCCCCCAAAAAAACAAAAAAAAAAACCCC|
+|AAFCCFFFFFFFCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCAAAFCCFFFFFFFCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCC|
+|GGHHHHHHHHHHHHHHHHHHHHHHHHHHGGGGGGHGGGGHHHHHHHHHHHAKKLLLLLLLLLLLLLLLLLLLLLLLLLKKKKKKLKKKKLLLLLLLLLLL|
+|AAECCEEEEEEEEEECCCCCCCCCCCCCAAAAAACAAAAAAAAAAAACCCAMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM|
+|AAICCIIIIIIIIIICCCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCCAAAICCIIIIIIIIIICCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCC|
+|AACCCC~C~C~C~C~C~CCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCAAACCCC~C~C~C~C~C~CCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AAACCAAAACCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCAAAACCAAAACCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Red bg=Reset
+F fg=Yellow bg=Reset
+G fg=DarkGray bg=Reset +UNDERLINED
+H fg=Reset bg=Reset +UNDERLINED
+I fg=Magenta bg=Reset
+J fg=Blue bg=Reset
+K fg=DarkGray bg=Reset +REVERSED
+L fg=Reset bg=Reset +REVERSED
+M fg=Yellow bg=Reset +BOLD

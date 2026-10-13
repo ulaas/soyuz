@@ -119,6 +119,16 @@ jobs:
             cargo test -p "$c" --locked
             echo "::endgroup::"
           done
+      # Terminal UI snapshots that differ on this OS (crates/soyuz-tui/src/snapshot.rs):
+      # bless from these files without that OS. `always()`: the macOS test steps above
+      # continue on error, so `failure()` would never fire there.
+      - name: Upload changed terminal UI snapshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tui-snapshots-${{ matrix.os }}
+          path: crates/soyuz-tui/tests/snapshots/*.new
+          if-no-files-found: ignore
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Clippy (optional features)

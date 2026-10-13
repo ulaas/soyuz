@@ -1,0 +1,72 @@
+# soyuz-tui snapshot: view__settings (100x30, ratatui 0.30.2)
+| Settings · Terminal UI                                                                    Saved  × |
+|/ Search all settings                                                                               |
+| General             │ [tui]                                                                        |
+| Appearance          │   mouse                          [x]                                         |
+| Fonts               │ • borders                        plain                                       |
+| Views & layout      │   sidebar_width                  22                                         ↻|
+| Behaviour           │   jobs_rows                      8                                           |
+| File operations     │   accent                         ■ #ff0000                                   |
+| Terminal            │                                                                              |
+| Terminal UI         │                                                                              |
+| Preview & search    │                                                                              |
+| Editor              │                                                                              |
+| Keyboard            │                                                                              |
+| Custom commands     │                                                                              |
+| Bookmarks           │                                                                              |
+| Scripts             │                                                                              |
+| Automations         │                                                                              |
+| AI assistant        │                                                                              |
+| Advanced            │                                                                              |
+| About & updates     │                                                                              |
+|                     │                                                                              |
+|                     │                                                                              |
+|                     │                                                                              |
+|                     │                                                                              |
+|                     │                                                                              |
+|                     │                                                                              |
+| Invalid value: jobs_rows: not a number                                                             |
+| Box lines of the terminal UI.                                                                      |
+| tui.borders · Default: rounded                                                                     |
+|↑↓ move · Enter edit · Esc close                                                                    |
+--- styles
+|AAAAAAAAAAAAAAAAAAAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCCBBCB|
+|DBCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBAAAAABBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBEFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBG|
+|BBBBBBBBBBBBBBBBBBBBBCBBBHHHHHHHHHBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|GGGGGGGGGGGGGGGGGGGGGCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BBBBBBBBBBBBBBBBBBBBBCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|BCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+|IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB|
+--- legend
+A fg=Reset bg=Reset +BOLD
+B fg=Reset bg=Reset
+C fg=DarkGray bg=Reset
+D fg=Blue bg=Reset
+E fg=Blue bg=Reset +REVERSED
+F fg=Reset bg=Reset +REVERSED
+G fg=Yellow bg=Reset +BOLD
+H fg=Red bg=Reset +BOLD
+I fg=Cyan bg=Reset +BOLD

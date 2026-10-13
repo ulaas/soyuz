@@ -1,0 +1,79 @@
+# soyuz-tui snapshot: app__palette (100x30, ratatui 0.30.2)
+|                                                                                                    |
+|     Name ▴                                                 Size Kind            Modified           |
+|  ■  docs/                                                       Folder          2026-10-01         |
+|  ■  pho╭──────────────────────────────────────────────────────────────────────────────────╮        |
+|  ■  src│ ⌘ new folder                                                                 Esc │        |
+|  λ  mai├──────────────────────────────────────────────────────────────────────────────────┤        |
+|* ≡  not│ COMMANDS                                                                         │        |
+|  ≡  REA│ ⊞ New folder  Create a new folder here                       File  Ctrl+Shift+N  │        |
+|  ◰  rep╰ ↑↓ move · Enter run ───────────────── : path @ bookmarks / search > shell # tabs ╯        |
+|  ≡  todo.txt                                               27 B Text file       2026-10-01         |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|           a                                                                                        |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+--- styles
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAABBBBBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCAAAAAAAAAAAACCCCCCCCAAAAAAAAAAA|
+|CCBAABBBBBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCCCAAAAAAAAAACCCCCCCCCCAAAAAAAAA|
+|CCBAABBBDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDAAAAAAAA|
+|CCBAABBBDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEFFFFFDAAAAAAAA|
+|CCGAAGGGDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDAAAAAAAA|
+|HHHHHHHHDIIIIIIIIIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADHHHHHHHH|
+|CCAAAAAADJJJKKKLKKKKKKMMMMMMMMMMMMMMMMMMMMMMMMMMLLLLLLLLLLLLLLLLLLLLLLLMMMMMMNNNNNNNNNNNNLLDAAAAAAAA|
+|CCOAAOOODFFFFFFFFFFFFFFFFFFFFFDDDDDDDDDDDDDDDDDDCCCCCCDCCCCCCCCCCCDCCCCCCCCDCCCCCCCDCCCCCCDDAAAAAAAA|
+|CCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACCCCACCCCCCCCCAAAAAAACCCCCCCCCCAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAPAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+--- legend
+A fg=Reset bg=Reset
+B fg=Blue bg=Reset +BOLD
+C fg=DarkGray bg=Reset
+D fg=Blue bg=Reset
+E fg=Reset bg=Reset +UNDERLINED
+F fg=Cyan bg=Reset +BOLD
+G fg=Yellow bg=Reset
+H fg=Yellow bg=Reset +BOLD +REVERSED
+I fg=Reset bg=Reset +BOLD
+J fg=Cyan bg=Reset +REVERSED
+K fg=Blue bg=Reset +BOLD +REVERSED
+L fg=Reset bg=Reset +REVERSED
+M fg=DarkGray bg=Reset +REVERSED
+N fg=Cyan bg=Reset +BOLD +REVERSED
+O fg=Red bg=Reset
+P fg=Cyan bg=Reset

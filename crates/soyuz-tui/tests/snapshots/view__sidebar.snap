@@ -1,0 +1,74 @@
+# soyuz-tui snapshot: view__sidebar (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|▾ Favorites                   Name ▴                        Size Kind            Modified           |
+|  data                     ■  docs/                              Folder          2026-10-01 12:00   |
+|  Documents                ■  photos/                            Folder          2026-10-01 12:00   |
+|  Downloads                ■  src/                               Folder          2026-10-01 12:00   |
+|▾ Devices                  ≡  README.md                   2.1 KB Markdown        2026-10-01 12:00   |
+|  System                   ▨  archive.zip                14.8 MB ZIP archive     2026-10-01 12:00   |
+|  USB stick            ⏏   λ  main.rs                      812 B Rust source     2026-10-01 12:00   |
+|▾ Folders                  ≡  notes.txt                   1.0 KB Text            2026-10-01 12:00   |
+|  ▾ home                 * ◰  report.pdf                  384 KB PDF document    2026-10-01 12:00   |
+|    ▾ ada                  ◩  sunset.jpg                  3.2 MB JPEG image      2026-10-01 12:00   |
+|      ▸ data               ≡  日~本~語~の~メ~モ~.txt              96 B Text            2026-10-01 12:00   |
+|      ▸ .cache             □  .env                          64 B File            2026-10-01 12:00   |
+|▸ Servers                                                                                           |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+|                                                                                                    |
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|BBBBBBBBBBBBBBBBBBBBBBBBCCCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCCAAAAAAAACCCCCCCCCCC|
+|DDDDDDDDDDDDDDDDDDDDDDDDCAADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCAADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCAADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|BBBBBBBBBBBBBBBBBBBBBBBBCAACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCCAAAAAAAAAAAAAAAACCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCAAECCEEEEEEEEEEECCCCCCCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCCAAAAAAAAAAAAAAAACCC|
+|CCCCCCCCCCCCCCCCCCCCCCCFCAAGCCGGGGGGGCCCCCCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCCAAAAAAAAAAAAAAAACCC|
+|BBBBBBBBBBBBBBBBBBBBBBBBCHHIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIHHHHHHIHHHHIIIIIIIIIIIIHHHHHHHHHHHHHHHHIII|
+|CCCCCCCCCCCCCCCCCCCCCCCCCJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ|
+|CCCCCCCCCCCCCCCCCCCCCCCCCAAKCCKKKKKKKKKKCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCCCAAAAAAAAAAAAAAAACCC|
+|IIIIIIIIIIIIIIIIIIIIIIIICAACCCC~C~C~C~C~C~CCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|AAAAAAAAAAAAAAAAAAAAAAAACAAACCAAAACCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCCAAAAAAAAAAAAAAAACCC|
+|BBBBBBBBBBBBBBBBBBBBBBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|IIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Red bg=Reset
+F fg=Blue bg=Reset
+G fg=Yellow bg=Reset
+H fg=DarkGray bg=Reset +REVERSED
+I fg=Reset bg=Reset +REVERSED
+J fg=Yellow bg=Reset +BOLD
+K fg=Magenta bg=Reset

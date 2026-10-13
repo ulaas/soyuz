@@ -1,0 +1,79 @@
+# soyuz-tui snapshot: view__ai_plan (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|     Name ▴                        Size Kind           │ ✦ Assistant · Waiting for your appro… ⚙  ✕ |
+|  ■  docs/                              Folder         │ fake · local  Folder: data                 |
+|  ■  photos/                            Folder         │  Chat   Recipes   Audit log                |
+|  ■  src/                               Folder         │ > sort the photos into folders by year     |
+|  ≡  README.md                   2.1 KB Markdown       │                                            |
+|  ▨  archive.zip                14.8 MB ZIP archive    │ I will move 3 photos into new year folders.|
+|  λ  main.rs                      812 B Rust source    │                                            |
+|  ≡  notes.txt                   1.0 KB Text           │ │ move_items  plan · 3 changes             |
+|* ◰  report.pdf                  384 KB PDF document   │ │ photos/a.jpg → photos/2024/a.jpg         |
+|  ◩  sunset.jpg                  3.2 MB JPEG image     │ │ photos/b.jpg → photos/2025/b.jpg         |
+|  ≡  日~本~語~の~メ~モ~.txt              96 B Text           │ │ photos/c.jpg → photos/2025/c.jpg         |
+|  □  .env                          64 B File           │ │ [Approve] [Edit] [Reject]                |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │                                            |
+|                                                       │ 1 plan waits for approval                  |
+|                                                       │> Ask about this folder                     |
+|                                                       │ Tab cards · A approve · R reject           |
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCECEEBBBBBBBBBAAAEEEEEEEEEEEEEEEEEEEEEEEAAAAAA|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCECAAAAAAAAAAAACCAAAAAAAAAAAACCCCCCCCCCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCECFFFFFFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCECBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBCCCCC|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAGCCGGGGGGGGGGGCCCCCCCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAHCCHHHHHHHCCCCCCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|IIJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJIIIIIIJIIIIJJJJJJJJJJJECEEDDDDDDDDDDAAAAAAAAAAAAAAAAAACCCCCCCCCCCCC|
+|KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKECEECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AALCCLLLLLLLLLLCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCCECEECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AACCCC~C~C~C~C~C~CCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCECEECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAACCAAAACCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCECEECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECKKKKKKKKKKKKKKKKKKKKKKKKKCCCCCCCCCCCCCCCCCC|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEMMNNNNNNNNNNNNNNNNNNNNNOOOOOOOOOOOOOOOOOOOOO|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPPCCCCCCCCCCC|
+|JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Blue bg=Reset
+F fg=Reset bg=Reset +BOLD +REVERSED
+G fg=Red bg=Reset
+H fg=Yellow bg=Reset
+I fg=DarkGray bg=Reset +REVERSED
+J fg=Reset bg=Reset +REVERSED
+K fg=Yellow bg=Reset +BOLD
+L fg=Magenta bg=Reset
+M fg=Blue bg=Reset +UNDERLINED
+N fg=DarkGray bg=Reset +UNDERLINED
+O fg=Reset bg=Reset +UNDERLINED
+P fg=Cyan bg=Reset +BOLD

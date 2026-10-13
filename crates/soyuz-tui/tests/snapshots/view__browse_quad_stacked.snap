@@ -1,0 +1,58 @@
+# soyuz-tui snapshot: view__browse_quad_stacked (58x24, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                     |
+|─ /home/ada/data ─────────────────────────────────────────|
+|     Name ▴                           Size Kind           |
+|  ■  docs/                                 Folder         |
+|  ■  photos/                               Folder         |
+|──────────────────────────────────────────────────────────|
+|─ /home/ada/backup ───────────────────────────────────────|
+|     Name ▴                           Size Kind           |
+|  ■  docs/                                 Folder         |
+|  ■  photos/                               Folder         |
+|──────────────────────────────────────────────────────────|
+|─ /srv/media ─────────────────────────────────────────────|
+|     Name ▴                           Size Kind           |
+|  ■  docs/                                 Folder         |
+|  ■  photos/                               Folder         |
+|──────────────────────────────────────────────────────────|
+|─ /tmp ───────────────────────────────────────────────────|
+|     Name ▴                           Size Kind           |
+|  ■  docs/                                 Folder         |
+|  ■  photos/                               Folder         |
+|  ■  src/                                  Folder         |
+|  ≡  README.md                      2.1 KB Markdown       |
+|  ▨  archive.zip                   14.8 MB ZIP archive    |
+| 11 items · 1 selected (384 KB)     120 GB free · Details |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|EDDDDDDDDDDDDDDDDDDEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCC|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCC|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCC|
+|AAFCCFFFFFFFFFFFCCCCCCCCCCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCC|
+|GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Blue bg=Reset
+F fg=Red bg=Reset
+G fg=Reset bg=Reset +REVERSED
