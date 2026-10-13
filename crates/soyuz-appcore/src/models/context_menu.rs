@@ -81,6 +81,9 @@ pub enum Run {
     ClearRecent(PaneId),
     /// Set (or clear) the colour of folders.
     FolderColor(Vec<PathBuf>, Option<FolderColor>),
+    /// A terminal session tab's command ([`terminal_tab`]): queued for the frontend that
+    /// drew the strip ([`take_terminal_tab_cmds`], [`apply_terminal_tab`]).
+    Terminal(TermTabCmd),
 }
 
 /// A clickable row.
@@ -165,6 +168,7 @@ pub fn run(r: Run, cmds: &mut Vec<Cmd>) {
             cmds.push(Cmd::PaneAction(pane, Action::Refresh));
         }
         Run::FolderColor(dirs, color) => crate::services::folder_colors::set_color(&dirs, color),
+        Run::Terminal(c) => TERM_TAB_QUEUE.with_borrow_mut(|q| q.push(c)),
     }
 }
 
@@ -910,6 +914,64 @@ pub fn apply_column(app: &mut crate::core::AppCore, c: ColumnCmd) {
     app.cmds.push(Cmd::ViewChanged(id));
 }
 
+/// What a terminal session tab's menu ([`terminal_tab`]) runs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TermTabCmd {
+    /// Start renaming session `.0` (its label as the text).
+    Rename(u64),
+    /// A new session in the focused pane's folder.
+    New,
+    /// An external terminal in session `.0`'s folder.
+    External(u64),
+    /// Close (and kill) session `.0`.
+    Close(u64),
+}
+
+thread_local! {
+    static TERM_TAB_QUEUE: std::cell::RefCell<Vec<TermTabCmd>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// The menu of terminal session `id` (the session strip's right click): rename, new
+/// session, external terminal, close. Activated entries queue a [`TermTabCmd`]
+/// ([`run`]); the frontend takes them with [`take_terminal_tab_cmds`].
+pub fn terminal_tab(id: u64) -> Vec<Entry> {
+    let run = |c: TermTabCmd| Some(Run::Terminal(c));
+    vec![
+        item(IconId::PencilSimple.into(), tr!("common-rename"), None, true, run(TermTabCmd::Rename(id))),
+        item(MenuIcon::Plus, tr!("panels-terminal-new"), None, true, run(TermTabCmd::New)),
+        item(
+            IconId::ArrowSquareOut.into(),
+            tr!("panels-terminal-open-external"),
+            None,
+            true,
+            run(TermTabCmd::External(id)),
+        ),
+        Entry::Separator,
+        item(MenuIcon::X, tr!("common-close"), None, true, run(TermTabCmd::Close(id))),
+    ]
+}
+
+/// The terminal tab commands activated since the last call (this thread's).
+pub fn take_terminal_tab_cmds() -> Vec<TermTabCmd> {
+    TERM_TAB_QUEUE.with_borrow_mut(std::mem::take)
+}
+
+/// Carry out a [`TermTabCmd`].
+pub fn apply_terminal_tab(app: &mut crate::core::AppCore, host: &dyn crate::host::Host, c: TermTabCmd) {
+    use crate::models::terminal as term;
+    match c {
+        TermTabCmd::Rename(id) => {
+            if let Some(label) = app.ui.terminal.session(id).map(term::Session::label) {
+                app.ui.terminal.renaming = Some((id, label));
+                app.ui.terminal.focused = true;
+            }
+        }
+        TermTabCmd::New => term::new_session(app, host),
+        TermTabCmd::External(id) => term::open_external(app, id),
+        TermTabCmd::Close(id) => term::close_session(app, id),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,5 +1077,28 @@ mod tests {
         let mut cmds = Vec::new();
         run(Run::Cmd(Cmd::PaneAction(PaneId::next(), Action::Refresh)), &mut cmds);
         assert_eq!(cmds.len(), 1);
+    }
+
+    #[test]
+    fn terminal_tab_menu_queues_its_commands() {
+        let entries = terminal_tab(7);
+        let runs: Vec<Run> = entries
+            .into_iter()
+            .filter_map(|e| match e {
+                Entry::Item(it) => it.run,
+                _ => None,
+            })
+            .collect();
+        assert_eq!(runs.len(), 4);
+        let mut cmds = Vec::new();
+        for r in runs {
+            run(r, &mut cmds);
+        }
+        assert!(cmds.is_empty());
+        assert_eq!(
+            take_terminal_tab_cmds(),
+            vec![TermTabCmd::Rename(7), TermTabCmd::New, TermTabCmd::External(7), TermTabCmd::Close(7)]
+        );
+        assert!(take_terminal_tab_cmds().is_empty());
     }
 }

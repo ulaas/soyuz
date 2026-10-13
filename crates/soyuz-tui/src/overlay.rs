@@ -5,7 +5,8 @@
 //!   default chord in any preset; the GUI reaches the sidebar with the mouse and Tab) gets
 //!   F12, which no preset binds; `FocusActivityPanel` (the jobs panel) gets Alt+J. Like
 //!   the alternatives below, a default is only added while its chord is free, so a user
-//!   binding of F12 wins. `FocusEditor` gets Alt+E. The editors' own commands
+//!   binding of F12 wins. `FocusEditor` gets Alt+E, `FocusTerminal` Alt+T (the embedded
+//!   terminal's own passthrough set is [`terminal_passthrough_tui`]). The editors' own commands
 //!   ([`EDITOR_DEFAULTS`], `KeyContext::Editor`) get the terminal's chords: Replace is
 //!   Ctrl+R (Ctrl+H is Backspace or Ctrl+Backspace in many terminals, so the editor
 //!   deletes the word before the caret with it), plus save as, wrap, maximize, the dock
@@ -115,7 +116,30 @@ pub const TUI_DEFAULTS: &[(Action, &str, KeyContext)] = &[
     (Action::FocusActivityPanel, "Alt+J", KeyContext::Global),
     // Back into the editor after Esc (Phase T4).
     (Action::FocusEditor, "Alt+E", KeyContext::Global),
+    // Into the embedded terminal pane (Phase T5): no preset binds FocusTerminal, and
+    // Ctrl+` (Toggle terminal) is NUL on legacy terminals.
+    (Action::FocusTerminal, "Alt+T", KeyContext::Global),
 ];
+
+/// Chords the terminal UI lets out of the embedded terminal pane (to the key map, in
+/// `KeyContext::Terminal`) besides the core's
+/// `soyuz_appcore::models::terminal::terminal_passthrough`: the stand-ins of
+/// [`ALTERNATIVES`] and [`WT_ALTERNATIVES`] whose original passes (Alt+Shift+letter for
+/// Ctrl+Shift+letter, Alt+` for Ctrl+`, Ctrl+PageUp / PageDown for Ctrl+Tab, Ctrl+F1…F5
+/// for the views), and the global [`TUI_DEFAULTS`] (F12, Alt+J, Alt+E) except
+/// FocusTerminal's own chord, which the shell keeps (Alt+T transposes words). Everything
+/// else reaches the shell: Ctrl+R, Ctrl+C, arrows, the other F-keys.
+pub fn terminal_passthrough_tui(c: KeyChord) -> bool {
+    use soyuz_appcore::models::terminal::terminal_passthrough;
+    let stand_in = ALTERNATIVES
+        .iter()
+        .chain(WT_ALTERNATIVES)
+        .any(|(from, to)| chord(to) == c && terminal_passthrough(chord(from)));
+    stand_in
+        || TUI_DEFAULTS
+            .iter()
+            .any(|(action, ch, ctx)| *ctx == KeyContext::Global && *action != Action::FocusTerminal && chord(ch) == c)
+}
 
 /// `(editor command, chords)` the terminal UI binds in `KeyContext::Editor`
 /// ([`editor_defaults`]). Ctrl+Shift+S arrives as Ctrl+S in legacy terminals: save as
@@ -770,5 +794,24 @@ mod tests {
         assert_eq!(km.lookup(KeyContext::Global, "Alt+Shift+T".parse().unwrap()), None);
         assert_eq!(km.lookup(KeyContext::FileList, "Alt+Shift+T".parse().unwrap()), Some(&Action::Refresh));
         assert!(!km.chords_for(&Action::ReopenClosedTab).contains(&"Alt+Shift+T".parse().unwrap()));
+    }
+
+    #[test]
+    fn terminal_passthrough_tui_table() {
+        // Stand-ins of chords the core lets out of the terminal.
+        for s in ["Alt+Shift+T", "Alt+Shift+F", "Alt+`", "Ctrl+PageDown", "Ctrl+PageUp", "Ctrl+F1", "Alt+Shift+A"] {
+            assert!(terminal_passthrough_tui(ch(s)), "{s}");
+        }
+        // The terminal UI's own globals.
+        for s in ["Alt+J", "Alt+E", "F12"] {
+            assert!(terminal_passthrough_tui(ch(s)), "{s}");
+        }
+        // The shell keeps the rest: copy / paste stand-ins, Alt+T (FocusTerminal),
+        // Ctrl+letters, plain keys, other F-keys, Alt+letters.
+        for s in
+            ["Alt+Shift+C", "Alt+Shift+V", "Alt+T", "Ctrl+R", "Ctrl+C", "Up", "F5", "Alt+B", "Alt+I", "Enter", "Escape"]
+        {
+            assert!(!terminal_passthrough_tui(ch(s)), "{s}");
+        }
     }
 }
