@@ -1,6 +1,8 @@
 //! Treemap data: an arena of nodes built from `soyuz_search::size_tree` results, and the
 //! background scan that fills it progressively (the root's subfolders are measured one
 //! after another so tiles appear while the scan runs; deeper levels load on drill-in).
+//! Moved from the GUI's `ui/tools/treemap/scan.rs` (Phase T7); [`Tree::generation`] lets a
+//! frontend cache a layout until the tree changes.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,7 +11,7 @@ use crossbeam_channel::Sender;
 use soyuz_core::OpControl;
 use soyuz_search::TreeNode;
 
-use crate::ui::views::icons::{FileClass, classify_ext};
+use crate::file_class::{FileClass, classify_ext};
 
 /// Levels of detail fetched below each scanned folder.
 pub const DEPTH: usize = 4;
@@ -92,6 +94,8 @@ impl Node {
 #[derive(Clone, Debug)]
 pub struct Tree {
     pub nodes: Vec<Node>,
+    /// Bumped whenever nodes are added, replaced or removed (layout caches key on it).
+    pub generation: u64,
 }
 
 fn class_of(name: &str, is_dir: bool, other: bool) -> FileClass {
@@ -123,6 +127,7 @@ impl Tree {
                 parent: None,
                 children: Vec::new(),
             }],
+            generation: 0,
         }
     }
 
@@ -150,6 +155,7 @@ impl Tree {
     /// Add a scanned child under `parent`, updating totals up the chain.
     pub fn add_child(&mut self, parent: usize, s: SubTree) -> usize {
         let (bytes, files) = (s.bytes, s.files);
+        self.generation += 1;
         let id = self.push(parent, s);
         self.nodes[parent].children.push(id);
         self.sort(parent);
@@ -161,6 +167,7 @@ impl Tree {
     pub fn replace(&mut self, at: usize, s: SubTree) {
         let old_bytes = self.nodes[at].bytes as i128;
         let old_files = self.nodes[at].files as i128;
+        self.generation += 1;
         let kids: Vec<usize> = s.children.into_iter().map(|c| self.push(at, c)).collect();
         let n = &mut self.nodes[at];
         n.children = kids;
@@ -198,6 +205,7 @@ impl Tree {
     /// Unlink a node (after it was sent to the trash) and subtract its size.
     pub fn remove(&mut self, id: usize) {
         let Some(parent) = self.nodes[id].parent else { return };
+        self.generation += 1;
         self.nodes[parent].children.retain(|&k| k != id);
         let (b, f) = (self.nodes[id].bytes as i128, self.nodes[id].files as i128);
         self.bump(parent, -b, -f);
@@ -365,6 +373,7 @@ mod tests {
         };
         let d = t.add_child(0, dir);
         assert_eq!(t.nodes[0].bytes, 400);
+        assert_eq!(t.generation, 2, "every change bumps the generation");
         assert_eq!(t.nodes[0].files, 3);
         assert_eq!(t.nodes[0].children[0], d, "children sorted by size");
         assert_eq!(t.nodes[t.nodes[d].children[0]].class, FileClass::Image);

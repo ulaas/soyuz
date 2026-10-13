@@ -3,29 +3,25 @@
 //! parent), click to drill in, a breadcrumb to go back up, a side list of the largest
 //! items, and a context menu (open, reveal, move to trash via the jobs engine). The scan
 //! runs on a worker and the map fills in live.
-
-pub mod layout;
-pub mod scan;
+//!
+//! The scan, the tree, the layout and what the toolbar, side list and menu do live in the
+//! core (`models::treemap::TreemapModel`, Phase T7); this window draws them.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
 
-use crossbeam_channel::{Receiver, Sender, unbounded};
 use egui::epaint::{Mesh, Vertex, WHITE_UV};
 use egui::{Align2, Color32, CornerRadius, FontId, Rect, Sense, Shape, Stroke, StrokeKind, Ui, pos2, vec2};
-use soyuz_core::{Location, OpControl, SizeStyle, format_size};
-use soyuz_jobs::DeleteMode;
+use soyuz_core::{SizeStyle, format_size};
 
 use super::{button, progress_bar, tool_window};
 use crate::app::SoyuzApp;
-use crate::cmd::Cmd;
-use crate::ops::fileops::FileOpCmd;
+use crate::models::treemap::layout::{Tile, squarify};
+use crate::models::treemap::scan::Tree;
+use crate::models::treemap::{Bucket, SideTab, Status, TreemapItem, TreemapModel, percent, share};
 use crate::theme::{Palette, icons, icons::ph, palette};
 use crate::ui::views::icons::FileClass;
 use crate::ui::widgets::{icon_button, menu_item, menu_separator, trunc_galley};
-use layout::{Tile, squarify};
-use scan::{ScanMsg, Tree};
 
 /// Folder frames nest this many levels below the current node; deeper content is drawn
 /// as one cushion per folder.
@@ -35,50 +31,22 @@ const SIDE_W: f32 = 280.0;
 
 /// Tile color for a file class (theme glyph tokens where they exist).
 pub fn class_color(class: FileClass, p: &Palette) -> Color32 {
-    match class {
-        FileClass::Folder => p.glyph_folder,
-        FileClass::Image => p.glyph_image,
-        FileClass::Video => p.glyph_video,
-        FileClass::Audio => p.glyph_audio,
-        FileClass::Archive => Color32::from_rgb(0xE8, 0x87, 0x5B),
-        FileClass::Code => p.glyph_code,
-        FileClass::Pdf | FileClass::Doc | FileClass::Sheet | FileClass::Slides | FileClass::Text => {
-            Color32::from_rgb(0x3C, 0xC6, 0xB4)
-        }
-        FileClass::Exe => p.glyph_exe,
-        FileClass::Font | FileClass::Link | FileClass::Other => Color32::from_rgb(0x8A, 0x91, 0xA0),
-    }
+    bucket_color(Bucket::of(class), p)
 }
 
-const LEGEND: [FileClass; 9] = [
-    FileClass::Folder,
-    FileClass::Image,
-    FileClass::Video,
-    FileClass::Audio,
-    FileClass::Archive,
-    FileClass::Code,
-    FileClass::Doc,
-    FileClass::Exe,
-    FileClass::Other,
-];
-
-fn legend_label(class: FileClass) -> &'static str {
-    match class {
-        FileClass::Folder => tr!("tools-treemap-legend-folders"),
-        FileClass::Image => tr!("tools-treemap-legend-images"),
-        FileClass::Video => tr!("tools-treemap-legend-video"),
-        FileClass::Audio => tr!("tools-treemap-legend-audio"),
-        FileClass::Archive => tr!("tools-treemap-legend-archives"),
-        FileClass::Code => tr!("tools-treemap-legend-code"),
-        FileClass::Doc => tr!("tools-treemap-legend-documents"),
-        FileClass::Exe => tr!("tools-treemap-legend-programs"),
-        _ => tr!("tools-treemap-legend-other"),
+/// Tile color for a legend bucket.
+pub fn bucket_color(b: Bucket, p: &Palette) -> Color32 {
+    match b {
+        Bucket::Folder => p.glyph_folder,
+        Bucket::Image => p.glyph_image,
+        Bucket::Video => p.glyph_video,
+        Bucket::Audio => p.glyph_audio,
+        Bucket::Archive => Color32::from_rgb(0xE8, 0x87, 0x5B),
+        Bucket::Code => p.glyph_code,
+        Bucket::Docs => Color32::from_rgb(0x3C, 0xC6, 0xB4),
+        Bucket::Exe => p.glyph_exe,
+        Bucket::Other => Color32::from_rgb(0x8A, 0x91, 0xA0),
     }
-}
-
-/// `12.5%` / `%12,5`.
-fn percent(v: f64) -> String {
-    tr!("tools-percent", pct = soyuz_core::locale::format_decimal(v, 1))
 }
 
 fn scale(c: Color32, f: f32) -> Color32 {
@@ -117,169 +85,32 @@ fn cushion(mesh: &mut Mesh, r: Rect, base: Color32, dark_theme: bool) {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SideTab {
-    Contents,
-    Largest,
-}
-
-struct Scanning {
-    ctl: Arc<OpControl>,
-    started: Instant,
-    total: usize,
-    done: usize,
-    current: PathBuf,
-}
-
 pub struct TreemapWindow {
     pub open: bool,
-    root: PathBuf,
-    tree: Tree,
-    current: usize,
-    tx: Sender<ScanMsg>,
-    rx: Receiver<ScanMsg>,
-    scanning: Option<Scanning>,
-    sub_ctl: Arc<OpControl>,
-    errors: u32,
-    failed: Option<String>,
+    model: TreemapModel,
     hover: Option<usize>,
     side_hover: Option<usize>,
-    selected: Option<usize>,
     menu_target: Option<usize>,
-    confirm_delete: Option<usize>,
-    tab: SideTab,
-    finished_in: Option<f32>,
 }
 
 impl TreemapWindow {
     pub fn new(root: PathBuf) -> Self {
-        let (tx, rx) = unbounded();
-        let mut w = TreemapWindow {
+        TreemapWindow {
             open: true,
-            tree: Tree::new(&root),
-            root,
-            current: 0,
-            tx,
-            rx,
-            scanning: None,
-            sub_ctl: OpControl::new(),
-            errors: 0,
-            failed: None,
+            model: TreemapModel::new(root, super::wake()),
             hover: None,
             side_hover: None,
-            selected: None,
             menu_target: None,
-            confirm_delete: None,
-            tab: SideTab::Contents,
-            finished_in: None,
-        };
-        w.rescan();
-        w
+        }
     }
 
     pub fn root_path(&self) -> &Path {
-        &self.root
-    }
-
-    fn rescan(&mut self) {
-        self.cancel();
-        let (tx, rx) = unbounded();
-        self.tx = tx;
-        self.rx = rx;
-        self.tree = Tree::new(&self.root);
-        self.current = 0;
-        self.selected = None;
-        self.errors = 0;
-        self.failed = None;
-        self.finished_in = None;
-        self.sub_ctl = OpControl::new();
-        let ctl = OpControl::new();
-        scan::start_scan(self.root.clone(), self.tx.clone(), ctl.clone(), super::wake());
-        self.scanning = Some(Scanning { ctl, started: Instant::now(), total: 0, done: 0, current: PathBuf::new() });
-    }
-
-    fn cancel(&mut self) {
-        if let Some(s) = self.scanning.take() {
-            s.ctl.cancel();
-            self.tree.nodes[0].loading = false;
-        }
-        self.sub_ctl.cancel();
-    }
-
-    fn poll(&mut self) {
-        for msg in self.rx.try_iter() {
-            match msg {
-                ScanMsg::Begin { files, dirs } => {
-                    for f in files {
-                        self.tree.add_child(0, f);
-                    }
-                    if let Some(s) = &mut self.scanning {
-                        s.total = dirs;
-                    }
-                }
-                ScanMsg::Child(c) => {
-                    self.tree.add_child(0, c);
-                    if let Some(s) = &mut self.scanning {
-                        s.done += 1;
-                    }
-                }
-                ScanMsg::Progress { done, current } => {
-                    if let Some(s) = &mut self.scanning {
-                        s.done = done;
-                        s.current = current;
-                    }
-                }
-                ScanMsg::Done { errors } => {
-                    self.errors = errors;
-                    let n = &mut self.tree.nodes[0];
-                    n.loading = false;
-                    n.complete = true;
-                    self.finished_in = self.scanning.take().map(|s| s.started.elapsed().as_secs_f32());
-                }
-                ScanMsg::Failed(e) => {
-                    self.failed = Some(e);
-                    self.scanning = None;
-                    self.tree.nodes[0].loading = false;
-                }
-                ScanMsg::Subtree { path, result } => {
-                    if let Some(id) = self.tree.find(&path) {
-                        match result {
-                            Ok(s) => self.tree.replace(id, s),
-                            Err(_) => {
-                                let n = &mut self.tree.nodes[id];
-                                n.loading = false;
-                                n.complete = true;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /// Drill into `id` (folders only), loading deeper levels when needed.
-    fn enter(&mut self, id: usize) {
-        let n = &self.tree.nodes[id];
-        if !n.is_dir || n.other {
-            self.selected = Some(id);
-            return;
-        }
-        // Measure deeper when this level (or a folder right below it) was cut off by the
-        // scan depth, so the view always shows real contents.
-        let shallow =
-            !n.complete || n.children.iter().any(|&c| self.tree.nodes[c].is_dir && !self.tree.nodes[c].complete);
-        if shallow && !n.loading {
-            let path = n.path.clone();
-            self.tree.nodes[id].loading = true;
-            scan::scan_subtree(path, self.tx.clone(), self.sub_ctl.clone(), super::wake());
-        }
-        self.current = id;
-        self.selected = None;
+        self.model.root_path()
     }
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
-        self.poll();
-        let sub = super::tags_ui::show_path(&self.root);
+        self.model.poll();
+        let sub = super::tags_ui::show_path(self.model.root_path());
         let keep = tool_window(
             ctx,
             "treemap",
@@ -292,7 +123,7 @@ impl TreemapWindow {
             },
         );
         if !keep {
-            self.cancel();
+            self.model.cancel();
             self.open = false;
         }
     }
@@ -302,20 +133,19 @@ impl TreemapWindow {
         let style = app.core.config.general.size_style;
         // Toolbar: up, breadcrumb, totals, rescan / cancel.
         ui.horizontal(|ui| {
-            let up = self.tree.nodes[self.current].parent;
+            let up = self.model.tree.nodes[self.model.current].parent;
             if icon_button(ui, ph::ARROW_UP, tr!("tools-treemap-up"), up.is_some()).clicked()
                 && let Some(u) = up
             {
-                self.current = u;
-                self.selected = None;
+                self.model.go(u);
             }
-            let chain = self.tree.chain(self.current);
+            let chain = self.model.crumbs();
             for (k, id) in chain.iter().enumerate() {
                 if k > 0 {
                     ui.label(icons::icon(ph::CARET_RIGHT, 11.0).color(p.text_tertiary));
                 }
                 let last = k + 1 == chain.len();
-                let name = self.tree.nodes[*id].label().to_string();
+                let name = self.model.tree.nodes[*id].label().to_string();
                 let text = egui::RichText::new(name).font(if last {
                     crate::ui::views::flow::semibold(13.0)
                 } else {
@@ -327,66 +157,44 @@ impl TreemapWindow {
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
                 {
-                    self.current = *id;
-                    self.selected = None;
+                    self.model.go(*id);
                 }
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if self.scanning.is_some() {
+                if self.model.is_scanning() {
                     if button(ui, Some(ph::STOP), tr!("tools-stop"), 0, true).clicked() {
-                        self.cancel();
+                        self.model.cancel();
                     }
                 } else if button(ui, Some(ph::ARROW_CLOCKWISE), tr!("tools-rescan"), 0, true).clicked() {
-                    self.rescan();
+                    self.model.rescan();
                 }
-                let n = &self.tree.nodes[self.current];
                 ui.label(
-                    egui::RichText::new(tr!(
-                        "tools-treemap-totals",
-                        size = format_size(n.bytes, style),
-                        count = n.files
-                    ))
-                    .font(FontId::proportional(12.5))
-                    .color(p.text_secondary),
+                    egui::RichText::new(self.model.totals(style))
+                        .font(FontId::proportional(12.5))
+                        .color(p.text_secondary),
                 );
             });
         });
-        if let Some(s) = &self.scanning {
-            let frac = (s.total > 0).then(|| s.done as f32 / s.total as f32);
-            progress_bar(ui, ui.available_width(), frac);
-            let cur = if s.current.as_os_str().is_empty() {
-                tr!("tools-treemap-listing").to_string()
-            } else {
-                soyuz_core::entry::display_name(&s.current)
-            };
-            ui.label(
-                egui::RichText::new(tr!(
-                    "tools-treemap-scanning",
-                    done = s.done.min(s.total),
-                    total = s.total,
-                    size = format_size(self.tree.nodes[0].bytes, style),
-                    current = cur
-                ))
-                .font(FontId::proportional(11.5))
-                .color(p.text_tertiary),
-            );
-            ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
-        } else if let Some(e) = &self.failed {
-            ui.label(egui::RichText::new(tr!("tools-treemap-failed", error = e)).color(p.danger));
-        } else if let Some(secs) = self.finished_in {
-            let secs = soyuz_core::locale::format_decimal(f64::from(secs), 1);
-            let s = if self.errors > 0 {
-                tr!("tools-treemap-scanned-errors", secs = secs, errors = self.errors)
-            } else {
-                tr!("tools-treemap-scanned", secs = secs)
-            };
-            ui.label(egui::RichText::new(s).font(FontId::proportional(11.5)).color(p.text_tertiary));
+        let status = self.model.status(style);
+        match &status {
+            Status::Scanning { text, .. } => {
+                progress_bar(ui, ui.available_width(), status.fraction());
+                ui.label(egui::RichText::new(text).font(FontId::proportional(11.5)).color(p.text_tertiary));
+                ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
+            }
+            Status::Failed(e) => {
+                ui.label(egui::RichText::new(e).color(p.danger));
+            }
+            Status::Done(s) => {
+                ui.label(egui::RichText::new(s).font(FontId::proportional(11.5)).color(p.text_tertiary));
+            }
+            Status::Idle => {}
         }
         ui.add_space(4.0);
 
         let area = ui.available_rect_before_wrap();
         let legend_h = 24.0;
-        let confirm_h = if self.confirm_delete.is_some() { 40.0 } else { 0.0 };
+        let confirm_h = if self.model.confirm_delete.is_some() { 40.0 } else { 0.0 };
         let map =
             Rect::from_min_max(area.min, pos2(area.right() - SIDE_W - 10.0, area.bottom() - legend_h - confirm_h));
         let side = Rect::from_min_max(pos2(map.right() + 10.0, area.top()), pos2(area.right(), map.bottom()));
@@ -396,9 +204,9 @@ impl TreemapWindow {
         // Legend.
         let lr = Rect::from_min_max(pos2(area.left(), map.bottom() + 6.0), pos2(area.right(), map.bottom() + legend_h));
         let mut x = lr.left() + 2.0;
-        for class in LEGEND {
-            let label = legend_label(class);
-            let c = class_color(class, &p);
+        for b in Bucket::LEGEND {
+            let label = b.label();
+            let c = bucket_color(b, &p);
             ui.painter().rect_filled(
                 Rect::from_center_size(pos2(x + 5.0, lr.center().y), vec2(10.0, 10.0)),
                 CornerRadius::same(3),
@@ -410,11 +218,9 @@ impl TreemapWindow {
             x += w + 30.0;
         }
         // Delete confirmation bar.
-        if let Some(id) = self.confirm_delete {
+        if let Some(msg) = self.model.confirm_text(style) {
             let cr = Rect::from_min_max(pos2(area.left(), area.bottom() - confirm_h + 4.0), area.max);
             ui.painter().rect_filled(cr, CornerRadius::same(8), p.danger.gamma_multiply(0.12));
-            let n = &self.tree.nodes[id];
-            let msg = tr!("tools-treemap-confirm-trash", name = n.label(), size = format_size(n.bytes, style));
             ui.painter().text(
                 pos2(cr.left() + 14.0, cr.center().y),
                 Align2::LEFT_CENTER,
@@ -427,17 +233,10 @@ impl TreemapWindow {
                 egui::UiBuilder::new().max_rect(br).layout(egui::Layout::right_to_left(egui::Align::Center)),
             );
             if button(&mut bu, Some(ph::TRASH), tr!("tools-move-to-trash"), 2, true).clicked() {
-                let path = n.path.clone();
-                app.core.cmds.push(Cmd::FileOp(FileOpCmd::Delete { paths: vec![path], mode: DeleteMode::Trash }));
-                if self.tree.is_under(self.current, id) {
-                    self.current = self.tree.nodes[id].parent.unwrap_or(0);
-                }
-                self.tree.remove(id);
-                self.selected = None;
-                self.confirm_delete = None;
+                self.model.confirm_trash(&mut app.core);
             }
             if button(&mut bu, None, tr!("common-cancel"), 0, true).clicked() {
-                self.confirm_delete = None;
+                self.model.confirm_delete = None;
             }
         }
     }
@@ -460,7 +259,7 @@ impl TreemapWindow {
             labels: &mut labels,
             style: app.core.config.general.size_style,
         };
-        self.layout_level(ui, &p, inner, self.current, 0, &mut out);
+        self.layout_level(ui, &p, inner, self.model.current, 0, &mut out);
         let painter = ui.painter_at(rect);
         // Frame backgrounds, then the cushions, then frame borders and labels.
         painter.extend(bgs);
@@ -473,10 +272,10 @@ impl TreemapWindow {
             let style = app.core.config.general.size_style;
             let total = hits.len();
             for (pos, (r, id)) in hits.iter().enumerate() {
-                let n = &self.tree.nodes[*id];
+                let n = &self.model.tree.nodes[*id];
                 let label = tr!("tools-treemap-tile-a11y", name = n.label(), size = format_size(n.bytes, style));
                 let aid = ui.id().with(("treemap.tile", *id));
-                crate::ui::a11y::list_item(ui, aid, *r, &label, self.selected == Some(*id), pos, total);
+                crate::ui::a11y::list_item(ui, aid, *r, &label, self.model.selected == Some(*id), pos, total);
             }
         }
         // Live highlights of what the assistant / MCP clients read or change. A folder
@@ -485,7 +284,7 @@ impl TreemapWindow {
             let shown: std::collections::HashSet<usize> = hits.iter().map(|(_, id)| *id).collect();
             let reduced = app.core.ui.reduced_motion;
             for (r, id) in &hits {
-                let n = &self.tree.nodes[*id];
+                let n = &self.model.tree.nodes[*id];
                 let opened = n.children.iter().any(|c| shown.contains(c));
                 let t = if n.is_dir && !opened {
                     crate::ai::touch::get_within(&n.path)
@@ -498,9 +297,9 @@ impl TreemapWindow {
             }
         }
 
-        let n = &self.tree.nodes[self.current];
+        let n = &self.model.tree.nodes[self.model.current];
         if n.children.is_empty() {
-            let (glyph, text) = if n.loading || self.scanning.is_some() {
+            let (glyph, text) = if n.loading || self.model.is_scanning() {
                 (ph::SPINNER, tr!("tools-treemap-measuring"))
             } else if n.is_dir {
                 (ph::FOLDER_DASHED, tr!("tools-treemap-empty-folder"))
@@ -534,12 +333,12 @@ impl TreemapWindow {
             }
         };
         highlight(self.side_hover, p.text_primary.gamma_multiply(0.85), 2.0);
-        highlight(self.selected, p.accent, 2.0);
+        highlight(self.model.selected, p.accent, 2.0);
         highlight(self.hover, Color32::WHITE.gamma_multiply(0.9), 1.5);
         if let Some(id) = self.hover {
-            let parent_bytes = self.tree.nodes[id].parent.map(|pp| self.tree.nodes[pp].bytes).unwrap_or(0);
-            let cur_bytes = self.tree.nodes[self.current].bytes;
-            let tree = &self.tree;
+            let parent_bytes = self.model.tree.nodes[id].parent.map(|pp| self.model.tree.nodes[pp].bytes).unwrap_or(0);
+            let cur_bytes = self.model.tree.nodes[self.model.current].bytes;
+            let tree = &self.model.tree;
             let style = app.core.config.general.size_style;
             resp.clone().on_hover_ui_at_pointer(|ui| tooltip(ui, tree, id, parent_bytes, cur_bytes, style));
         }
@@ -547,21 +346,13 @@ impl TreemapWindow {
             && let Some(id) = self.hover
         {
             // Clicking a tile drills into the top-level child of the current view that contains it.
-            let chain = self.tree.chain(id);
-            let pos = chain.iter().position(|&c| c == self.current).unwrap_or(0);
-            let target = if self.tree.nodes[id].is_dir { id } else { chain.get(pos + 1).copied().unwrap_or(id) };
-            if self.tree.nodes[target].is_dir && !self.tree.nodes[target].other {
-                self.enter(target);
-            } else {
-                self.selected = Some(id);
-            }
+            self.model.click(id);
         }
         if resp.double_clicked()
             && let Some(id) = self.hover
-            && !self.tree.nodes[id].is_dir
-            && !self.tree.nodes[id].other
+            && self.model.launchable(id)
         {
-            let path = self.tree.nodes[id].path.clone();
+            let path = self.model.tree.nodes[id].path.clone();
             crate::ops::launch(&mut app.core, &path);
         }
         if resp.secondary_clicked() {
@@ -574,12 +365,16 @@ impl TreemapWindow {
 
     fn layout_level(&self, ui: &Ui, p: &Palette, rect: Rect, node: usize, depth: usize, out: &mut Out<'_>) {
         let style = out.style;
-        let kids: Vec<usize> =
-            self.tree.nodes[node].children.iter().copied().filter(|&k| self.tree.nodes[k].bytes > 0).collect();
+        let kids: Vec<usize> = self.model.tree.nodes[node]
+            .children
+            .iter()
+            .copied()
+            .filter(|&k| self.model.tree.nodes[k].bytes > 0)
+            .collect();
         if kids.is_empty() || rect.width() < 2.0 || rect.height() < 2.0 {
             return;
         }
-        let weights: Vec<f64> = kids.iter().map(|&k| self.tree.nodes[k].bytes as f64).collect();
+        let weights: Vec<f64> = kids.iter().map(|&k| self.model.tree.nodes[k].bytes as f64).collect();
         let tiles = squarify(
             &weights,
             Tile::new(rect.left() as f64, rect.top() as f64, rect.width() as f64, rect.height() as f64),
@@ -590,7 +385,7 @@ impl TreemapWindow {
             if r.width() < 1.5 || r.height() < 1.5 {
                 continue;
             }
-            let n = &self.tree.nodes[*k];
+            let n = &self.model.tree.nodes[*k];
             let nested =
                 n.is_dir && !n.children.is_empty() && depth < MAX_NEST && r.width() > 44.0 && r.height() > 34.0;
             out.hits.push((r, *k));
@@ -668,28 +463,21 @@ impl TreemapWindow {
                 (SideTab::Contents, tr!("tools-treemap-tab-contents")),
                 (SideTab::Largest, tr!("tools-treemap-tab-largest")),
             ] {
-                let mut on = self.tab == t;
+                let mut on = self.model.side == t;
                 let r = super::toggle_chip(ui, label, &mut on, p.accent);
                 if r.clicked() {
-                    self.tab = t;
+                    self.model.side = t;
                 }
             }
         });
         ui.add_space(4.0);
-        let items: Vec<usize> = match self.tab {
-            SideTab::Contents => self.tree.nodes[self.current].children.clone(),
-            SideTab::Largest => self.tree.largest_files(self.current, 100),
-        };
+        let items: Vec<usize> = self.model.side_items();
         if items.is_empty() {
-            let msg = if self.tree.nodes[self.current].loading {
-                tr!("tools-treemap-measuring")
-            } else {
-                tr!("tools-treemap-no-files")
-            };
+            let msg = self.model.side_empty();
             ui.add_space(12.0);
             ui.label(egui::RichText::new(msg).font(FontId::proportional(12.0)).color(p.text_tertiary));
         }
-        let total = self.tree.nodes[self.current].bytes.max(1);
+        let total = self.model.tree.nodes[self.model.current].bytes.max(1);
         let mut hover = None;
         let mut click = None;
         egui::ScrollArea::vertical().id_salt("treemap.side").auto_shrink([false, false]).show_rows(
@@ -698,10 +486,10 @@ impl TreemapWindow {
             items.len(),
             |ui, range| {
                 for &id in &items[range] {
-                    let n = &self.tree.nodes[id];
+                    let n = &self.model.tree.nodes[id];
                     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
                     let painter = ui.painter();
-                    let sel = self.selected == Some(id);
+                    let sel = self.model.selected == Some(id);
                     if sel {
                         painter.rect_filled(r, CornerRadius::same(6), p.accent_subtle);
                     } else if resp.hovered() {
@@ -759,10 +547,10 @@ impl TreemapWindow {
                     if resp.clicked() {
                         click = Some(id);
                     }
-                    if self.tab == SideTab::Largest {
+                    if self.model.side == SideTab::Largest {
                         let rel = n
                             .path
-                            .strip_prefix(&self.tree.nodes[self.current].path)
+                            .strip_prefix(&self.model.tree.nodes[self.model.current].path)
                             .unwrap_or(&n.path)
                             .to_string_lossy()
                             .into_owned();
@@ -773,56 +561,37 @@ impl TreemapWindow {
         );
         self.side_hover = hover;
         if let Some(id) = click {
-            if self.tree.nodes[id].is_dir && !self.tree.nodes[id].other {
-                self.enter(id);
-            } else {
-                self.selected = Some(id);
-            }
+            self.model.side_click(id);
         }
     }
 
     fn menu(&mut self, ui: &mut Ui, app: &mut SoyuzApp, id: usize) {
         ui.set_width(230.0);
-        let n = self.tree.nodes[id].clone();
-        if n.other {
-            menu_item(ui, Some(ph::INFO), tr!("tools-treemap-many-small"), None, false);
-            return;
-        }
-        if n.is_dir {
-            if menu_item(ui, Some(ph::MAGNIFYING_GLASS_PLUS), tr!("tools-treemap-zoom-in"), None, true).clicked() {
-                self.enter(id);
+        for item in self.model.menu_items(id) {
+            if item == TreemapItem::Trash {
+                menu_separator(ui);
+            }
+            let enabled = self.model.item_enabled(id, item);
+            if menu_item(ui, Some(item_icon(item)), item.label(), None, enabled).clicked() {
+                self.model.apply_item(&mut app.core, id, item);
                 ui.close();
             }
-            if menu_item(ui, Some(ph::FOLDER_OPEN), tr!("tools-open-in-pane"), None, true).clicked() {
-                let pane = app.core.ws.pane().id;
-                app.core.cmds.push(Cmd::Navigate { pane, location: Location::Dir(n.path.clone()), select: None });
-                ui.close();
-            }
-        } else if menu_item(ui, Some(ph::ARROW_SQUARE_OUT), tr!("tools-open"), None, true).clicked() {
-            crate::ops::launch(&mut app.core, &n.path);
-            ui.close();
         }
-        if menu_item(ui, Some(ph::ARROW_SQUARE_RIGHT), tr!("tools-shelf-reveal"), None, true).clicked() {
-            app.core.cmds.push(Cmd::RevealPath(n.path.clone()));
-            ui.close();
-        }
-        if menu_item(ui, Some(ph::ARROW_SQUARE_UP_RIGHT), tr!("tools-reveal-in-system"), None, true).clicked() {
-            app.core.cmds.push(Cmd::RevealInSystem(n.path.clone()));
-            ui.close();
-        }
-        if menu_item(ui, Some(ph::CLIPBOARD_TEXT), tr!("tools-copy-path"), None, true).clicked() {
-            app.core.cmds.push(Cmd::CopyText(super::tags_ui::show_path(&n.path)));
-            ui.close();
-        }
-        if menu_item(ui, Some(ph::TRAY_ARROW_DOWN), tr!("tools-menu-add-to-shelf"), None, true).clicked() {
-            super::queue(super::ToolCmd::ShelfAdd(vec![n.path.clone()]));
-            ui.close();
-        }
-        menu_separator(ui);
-        if menu_item(ui, Some(ph::TRASH), tr!("tools-move-to-trash-dialog"), None, id != 0).clicked() {
-            self.confirm_delete = Some(id);
-            ui.close();
-        }
+    }
+}
+
+/// The GUI's icon of a tile menu entry.
+fn item_icon(item: TreemapItem) -> &'static str {
+    match item {
+        TreemapItem::ManySmall => ph::INFO,
+        TreemapItem::ZoomIn => ph::MAGNIFYING_GLASS_PLUS,
+        TreemapItem::OpenInPane => ph::FOLDER_OPEN,
+        TreemapItem::Open => ph::ARROW_SQUARE_OUT,
+        TreemapItem::Reveal => ph::ARROW_SQUARE_RIGHT,
+        TreemapItem::RevealInSystem => ph::ARROW_SQUARE_UP_RIGHT,
+        TreemapItem::CopyPath => ph::CLIPBOARD_TEXT,
+        TreemapItem::AddToShelf => ph::TRAY_ARROW_DOWN,
+        TreemapItem::Trash => ph::TRASH,
     }
 }
 
@@ -857,7 +626,6 @@ fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u6
                 .color(p.text_tertiary),
         );
     }
-    let pct = |b: u64, of: u64| if of == 0 { 0.0 } else { b as f64 * 100.0 / of as f64 };
     ui.label(
         egui::RichText::new(format_size(n.bytes, style))
             .font(crate::ui::views::flow::semibold(14.0))
@@ -866,8 +634,8 @@ fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u6
     ui.label(
         egui::RichText::new(tr!(
             "tools-treemap-share",
-            parent = percent(pct(n.bytes, parent_bytes)),
-            view = percent(pct(n.bytes, cur_bytes))
+            parent = percent(share(n.bytes, parent_bytes)),
+            view = percent(share(n.bytes, cur_bytes))
         ))
         .font(FontId::proportional(11.5))
         .color(p.text_secondary),

@@ -2,8 +2,11 @@
 //! [`ScreensVm`] for the shown screen, drawn by [`draw_screens`] over the whole area like
 //! the compare screen (an `Overlay` target first, so no click reaches the panes).
 //!
-//! Skeleton (Phase T7 wave 0): filled by agent C.
+//! [`prepare`] pumps the shown screen's model and builds its view model into the input
+//! state (`treemap::prepare`, `dupes::prepare`); [`ScreensVm::from_core`] copies it into
+//! the frame's `ViewModel`. [`chrome`] holds what both screens draw alike.
 
+pub mod chrome;
 pub mod dupes;
 pub mod treemap;
 
@@ -12,6 +15,7 @@ use ratatui::layout::Rect;
 use soyuz_appcore::core::AppCore;
 
 use crate::input::InputState;
+use crate::input::screens::Screen;
 use crate::layout::{Hits, Regions};
 use crate::theme::TuiTheme;
 
@@ -26,19 +30,37 @@ pub struct ScreensVm {
 /// The shown screen's model.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScreenVm {
-    Treemap(treemap::TreemapVm),
-    Dupes(dupes::DupesVm),
+    Treemap(Box<treemap::TreemapVm>),
+    Dupes(Box<dupes::DupesVm>),
 }
 
 impl ScreensVm {
     pub fn from_core(_core: &AppCore, input: &InputState, _regions: &Regions) -> ScreensVm {
-        ScreensVm { visible: crate::input::screens::shown(&input.screens), screen: None }
+        if !crate::input::screens::shown(&input.screens) {
+            return ScreensVm::default();
+        }
+        let screen = match &input.screens.screen {
+            Some(Screen::Treemap(t)) => Some(ScreenVm::Treemap(Box::new(t.vm.clone()))),
+            Some(Screen::Dupes(d)) => Some(ScreenVm::Dupes(Box::new(d.vm.clone()))),
+            None => None,
+        };
+        ScreensVm { visible: true, screen }
     }
 }
 
 /// Step 1 (`view::prepare`): what the shown screen needs from `&mut AppCore` (worker
-/// results, the cell layout for the area).
-pub fn prepare(_core: &mut AppCore, _input: &mut InputState, _regions: &Regions) {}
+/// results, the cell layout for the area). A hidden screen is not pumped: its results
+/// wait in the channels until it shows again.
+pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
+    if !crate::input::screens::shown(&input.screens) {
+        return;
+    }
+    match input.screens.screen.as_mut() {
+        Some(Screen::Treemap(t)) => treemap::prepare(core, t, regions.area),
+        Some(Screen::Dupes(d)) => dupes::prepare(core, d, regions.area),
+        None => {}
+    }
+}
 
 /// Draw the shown screen over `area`, recording its click targets.
 pub fn draw_screens(f: &mut Frame<'_>, area: Rect, m: &ScreensVm, theme: &TuiTheme, hits: &mut Hits) {
@@ -57,11 +79,11 @@ pub fn draw_screens(f: &mut Frame<'_>, area: Rect, m: &ScreensVm, theme: &TuiThe
 pub(crate) mod tests {
     use super::*;
 
-    /// Models for `view::tests::draw_every_view_at_tiny_sizes` (agent C adds filled ones).
+    /// Models for `view::tests::draw_every_view_at_tiny_sizes`.
     pub(crate) fn tiny_vms() -> Vec<ScreensVm> {
         vec![
-            ScreensVm { visible: true, screen: Some(ScreenVm::Treemap(treemap::TreemapVm::default())) },
-            ScreensVm { visible: true, screen: Some(ScreenVm::Dupes(dupes::DupesVm::default())) },
+            ScreensVm { visible: true, screen: Some(ScreenVm::Treemap(Box::new(treemap::tests::vm()))) },
+            ScreensVm { visible: true, screen: Some(ScreenVm::Dupes(Box::new(dupes::tests::vm()))) },
         ]
     }
 }
