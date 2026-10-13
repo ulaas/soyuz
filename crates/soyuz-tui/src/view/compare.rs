@@ -760,6 +760,8 @@ pub fn draw_compare(f: &mut Frame<'_>, area: Rect, m: &CompareVm, theme: &TuiThe
         return;
     }
     hits.push(area, HitTarget::Overlay);
+    // The caret starts on the title; a focused row or the text cursor wins (below).
+    hits.set_caret(Position { x: area.x, y: area.y });
     f.render_widget(Clear, area);
     f.buffer_mut().set_style(area, theme.base().patch(theme.style(Role::Text)));
     let g = geometry(area);
@@ -787,6 +789,7 @@ pub fn draw_compare(f: &mut Frame<'_>, area: Rect, m: &CompareVm, theme: &TuiThe
     }
     if let Some((x, y)) = cursor {
         f.set_cursor_position(Position { x, y });
+        hits.set_caret(Position { x, y });
     }
 }
 
@@ -1008,6 +1011,9 @@ fn table(buf: &mut Buffer, g: &Geometry, t: &TableVm, theme: &TuiTheme, hits: &m
 #[allow(clippy::too_many_arguments)]
 fn draw_row(buf: &mut Buffer, g: &Geometry, r: Rect, row: &RowVm, focused: bool, theme: &TuiTheme, hits: &mut Hits) {
     hits.push(r, HitTarget::CompareRow(row.index));
+    if row.cursor && focused {
+        hits.set_caret(Position { x: r.x, y: r.y });
+    }
     let base = if row.cursor {
         theme.style(if focused { Role::Cursor } else { Role::CursorInactive })
     } else {

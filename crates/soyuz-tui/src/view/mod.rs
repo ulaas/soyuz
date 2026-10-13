@@ -74,6 +74,10 @@ pub mod toasts;
 #[cfg(test)]
 mod snapshots;
 
+/// Phase T8 screen-reader mode: the look, the caret, the status sentence (`crate::a11y`).
+#[cfg(test)]
+mod sr_tests;
+
 use ratatui::Frame;
 use soyuz_appcore::core::AppCore;
 
@@ -169,7 +173,7 @@ impl ViewModel {
             compare: CompareVm::from_core(core, input, regions),
             settings: SettingsVm::from_core(core, input, regions),
             screens: ScreensVm::from_core(core, input, regions),
-            other_pane: None,
+            other_pane: crate::a11y::other_pane(core, regions),
         }
     }
 
@@ -232,16 +236,11 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     if let Some(d) = &m.dialog {
         dialogs::draw_dialog(f, regions.area, d, theme, hits);
     }
-    // Screen-reader mode (T8): its own lines ("Other pane: …"), then the terminal's cursor
-    // on the focused element (the caret recorded last).
+    // Screen-reader mode (T8): its own lines ("Other pane: …", the status sentence) and the
+    // terminal's cursor on the focused element (the caret recorded last).
     crate::a11y::draw(f, regions, m, theme, hits);
     if theme.ascii_only() {
         crate::borders::asciify(f.buffer_mut());
-    }
-    if theme.screen_reader()
-        && let Some(caret) = hits.caret()
-    {
-        f.set_cursor_position(caret);
     }
 }
 

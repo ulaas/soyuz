@@ -233,6 +233,10 @@ pub struct Regions {
     /// Screen-reader mode (Phase T8): the "Other pane: <path>" line above the status line
     /// (empty otherwise).
     pub other_pane: Rect,
+    /// Who had the keyboard when the split was made (`Facts::focus`; `None` for regions not
+    /// built by [`Regions::compute`]): screen-reader mode puts the terminal's cursor by it
+    /// (`crate::a11y`).
+    pub focus: Option<TuiFocus>,
     /// Too small for anything but the list.
     pub list_only: bool,
     /// Dual / quad panes are stacked into one column.
@@ -261,8 +265,13 @@ impl Regions {
             editor: at(area.x, area.bottom()),
             search: at(area.x, area.y),
             ai: at(area.x, area.bottom()),
+            other_pane: at(area.x, area.bottom()),
+            focus: Some(facts.focus),
             ..Regions::default()
         };
+        if facts.screen_reader {
+            return compute_screen_reader(r, facts);
+        }
         if area.height < LIST_ONLY_BELOW_ROWS {
             r.list_only = true;
             r.panes = vec![PaneRect { index: facts.focused, rect: area }];
@@ -380,6 +389,120 @@ impl Regions {
         r.stacked = stacked;
         r
     }
+}
+
+/// The screen-reader layout (Phase T8, `crate::a11y`), from the empty regions `r`: one line
+/// per thing, never two things side by side on a row (a screen reader reads whole lines).
+/// - only the focused pane is drawn, at full width (no titles, no splitters); a line above
+///   the status line names the other panes' folders ([`Regions::other_pane`]);
+/// - the status line always takes the bottom row (it carries the status sentence and the
+///   toasts, which take no rows of their own);
+/// - the sidebar takes the body while it has the keyboard and is hidden otherwise;
+/// - the AI panel, the editor and the preview stack below the pane instead of beside it
+///   (each takes the whole body when there is no room below).
+fn compute_screen_reader(mut r: Regions, facts: &Facts) -> Regions {
+    let area = r.area;
+    let at = |x: u16, y: u16| Rect::new(x, y, 0, 0);
+    if area.height < LIST_ONLY_BELOW_ROWS {
+        r.list_only = true;
+        r.panes = vec![PaneRect { index: facts.focused, rect: area }];
+        return r;
+    }
+    let row = |y: u16| Rect::new(area.x, y, area.width, 1);
+    let mut top = area.y;
+    let mut bottom = area.bottom() - 1;
+    r.status = row(bottom);
+    r.crumbs = row(top);
+    top += 1;
+    if facts.tab_strip && bottom.saturating_sub(top) >= 3 {
+        r.tabs = r.crumbs;
+        r.crumbs = row(top);
+        top += 1;
+    }
+    r.search = at(area.x, top);
+    if facts.search_rows > 0 {
+        let want = facts.search_rows + u16::from(area.width < SEARCH_WRAP_BELOW_COLS);
+        let rows = want.min(bottom.saturating_sub(top).saturating_sub(2));
+        if rows > 0 {
+            r.search = Rect::new(area.x, top, area.width, rows);
+            top += rows;
+        }
+    }
+    r.other_pane = at(area.x, bottom);
+    if facts.shown > 1 && bottom.saturating_sub(top) >= 3 {
+        bottom -= 1;
+        r.other_pane = row(bottom);
+    }
+    r.toasts = at(area.x, bottom);
+    r.bottom = at(area.x, bottom);
+    if facts.bottom_rows > 0 {
+        let rows = facts.bottom_rows.min(bottom.saturating_sub(top).saturating_sub(BODY_MIN_ROWS));
+        if rows >= BOTTOM_MIN_ROWS {
+            bottom -= rows;
+            r.bottom = Rect::new(area.x, bottom, area.width, rows);
+        }
+    }
+    let mut body = Rect::new(area.x, top, area.width, bottom - top);
+    r.sidebar = at(body.x, body.y);
+    r.editor = at(body.x, body.y);
+    r.preview = at(body.x, body.y);
+    r.ai = at(body.x, body.y);
+    let hidden_pane = |body: Rect| vec![PaneRect { index: facts.focused, rect: at(body.x, body.y) }];
+    if facts.sidebar && facts.focus == TuiFocus::Sidebar {
+        r.sidebar = body;
+        r.panes = hidden_pane(body);
+        return r;
+    }
+    // A panel below the pane: `share` of the body's height, or the whole body.
+    let below = |body: Rect, share: f32| -> Option<(Rect, Rect)> {
+        (body.height >= BELOW_MIN_ROWS).then(|| {
+            let h = ((f32::from(body.height) * share).round() as u16).clamp(1, body.height - 1);
+            (Rect { height: body.height - h, ..body }, Rect { y: body.bottom() - h, height: h, ..body })
+        })
+    };
+    let ratio = |v: f32, min: f32, max: f32, default: f32| if v.is_finite() { v.clamp(min, max) } else { default };
+    if facts.ai {
+        let share =
+            ratio(facts.ai_ratio, TuiSection::AI_RATIO_MIN, TuiSection::AI_RATIO_MAX, TuiSection::AI_RATIO_DEFAULT);
+        match below(body, share) {
+            Some((rest, panel)) => {
+                body = rest;
+                r.ai = panel;
+            }
+            None => {
+                r.ai = body;
+                r.panes = hidden_pane(body);
+                return r;
+            }
+        }
+    }
+    if facts.editor {
+        match below(body, EDITOR_SHARE).filter(|_| !facts.editor_maximized) {
+            Some((rest, panel)) => {
+                body = rest;
+                r.editor = panel;
+            }
+            None => {
+                r.editor = body;
+                r.panes = hidden_pane(body);
+                return r;
+            }
+        }
+    }
+    if facts.preview {
+        let share = ratio(
+            facts.preview_ratio,
+            TuiSection::PREVIEW_RATIO_MIN,
+            TuiSection::PREVIEW_RATIO_MAX,
+            TuiSection::PREVIEW_RATIO_DEFAULT,
+        );
+        if let Some((rest, panel)) = below(body, share) {
+            body = rest;
+            r.preview = panel;
+        }
+    }
+    r.panes = vec![PaneRect { index: facts.focused, rect: body }];
+    r
 }
 
 /// The editor's rect and what stays for the panes, or `None` when the editor takes the
@@ -710,6 +833,51 @@ mod tests {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn screen_reader_layout_is_one_column_of_lines() {
+        let sr = Facts { screen_reader: true, ..Facts::default() };
+        // One pane: location, list, status (always, even when hidden), no other-pane line.
+        let r = regions(80, 24, &Facts { status: false, toasts: 2, ..sr.clone() });
+        assert_eq!(r.crumbs, Rect::new(0, 0, 80, 1));
+        assert_eq!(r.panes, vec![PaneRect { index: 0, rect: Rect::new(0, 1, 80, 22) }]);
+        assert_eq!(r.status, Rect::new(0, 23, 80, 1));
+        assert!(r.other_pane.is_empty() && r.toasts.is_empty() && r.focus == Some(TuiFocus::List));
+        // Dual / quad: only the focused pane at full width, the other-pane line above the
+        // status line, no titles or splitters.
+        for (shown, focused) in [(2, 1), (4, 3)] {
+            let r = regions(120, 30, &Facts { shown, focused, sidebar: true, ..sr.clone() });
+            assert_eq!(r.panes, vec![PaneRect { index: focused, rect: Rect::new(0, 1, 120, 27) }]);
+            assert_eq!(r.other_pane, Rect::new(0, 28, 120, 1));
+            assert!(r.titles.is_empty() && r.splitters.is_empty() && r.sidebar.is_empty());
+        }
+        // The sidebar takes the body while it has the keyboard; the pane is kept empty.
+        let r = regions(120, 30, &Facts { sidebar: true, focus: TuiFocus::Sidebar, ..sr.clone() });
+        assert_eq!(r.sidebar, Rect::new(0, 1, 120, 28));
+        assert!(r.panes.len() == 1 && r.panes[0].rect.is_empty());
+        // Panels stack below the pane (the whole body when there is no room below).
+        let r = regions(200, 40, &Facts { ai: true, ai_ratio: 0.5, preview: true, ..sr.clone() });
+        assert!(r.ai.width == 200 && r.preview.width == 200 && r.panes[0].rect.width == 200, "{r:?}");
+        assert!(r.panes[0].rect.bottom() <= r.preview.y && r.preview.bottom() <= r.ai.y, "{r:?}");
+        let r = regions(200, 8, &Facts { editor: true, ..sr.clone() });
+        assert_eq!(r.editor, Rect::new(0, 1, 200, 6));
+        assert!(r.panes[0].rect.is_empty());
+        // Tiny sizes: never two things side by side, nothing outside the area.
+        for p in [sr.clone(), Facts { shown: 2, ai: true, editor: true, preview: true, bottom_rows: 9, ..sr.clone() }] {
+            for w in 0..=60 {
+                for h in 0..=30 {
+                    let r = regions(w, h, &p);
+                    assert_eq!(r.panes.len(), 1);
+                    for b in [r.panes[0].rect, r.ai, r.editor, r.preview, r.bottom, r.status, r.other_pane] {
+                        assert!(
+                            b.is_empty() || (b.x == 0 && b.width == w && r.area.union(b) == r.area),
+                            "{w}x{h} {b:?}"
+                        );
                     }
                 }
             }

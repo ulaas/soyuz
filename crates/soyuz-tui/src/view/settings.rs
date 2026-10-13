@@ -488,6 +488,7 @@ pub fn draw_settings(f: &mut Frame<'_>, area: Rect, m: &SettingsVm, theme: &TuiT
     }
     if let Some((x, y)) = cursor {
         f.set_cursor_position(Position { x, y });
+        hits.set_caret(Position { x, y });
     }
 }
 
@@ -525,6 +526,9 @@ fn draw_nav(buf: &mut Buffer, g: &Geometry, m: &SettingsVm, theme: &TuiTheme, hi
         }
         let rect = Rect::new(n.x, y, n.width, 1);
         buf.set_style(rect, style);
+        if i == m.nav_cursor && m.nav_focused {
+            hits.set_caret(Position { x: rect.x, y });
+        }
         put(
             buf,
             n.x + 1,
@@ -557,6 +561,9 @@ fn draw_lines(buf: &mut Buffer, area: Rect, m: &SettingsVm, theme: &TuiTheme, hi
         if l.cursor {
             base = base.patch(theme.style(if m.rows_focused { Role::Cursor } else { Role::CursorInactive }));
             buf.set_style(rect, base);
+            if m.rows_focused {
+                hits.set_caret(Position { x: rect.x, y });
+            }
         }
         let w = area.width;
         match l.kind {

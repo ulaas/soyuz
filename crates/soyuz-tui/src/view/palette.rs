@@ -238,12 +238,18 @@ struct Geom {
 
 /// The box for `n_lines` list lines.
 fn geometry(area: Rect, n_lines: usize) -> Geom {
+    geometry_in(area, n_lines, false)
+}
+
+/// [`geometry`], as wide as `area` when `full` (screen-reader mode: no text of the screen
+/// below shares a row with the palette's).
+fn geometry_in(area: Rect, n_lines: usize, full: bool) -> Geom {
     if area.is_empty() {
         return Geom::default();
     }
     let bordered = area.width >= 24 && area.height >= 6;
     let (chrome, margin) = if bordered { (4, if area.width >= 50 { 2 } else { 0 }) } else { (1, 0) };
-    let width = if bordered { (area.width - 2 * margin).min(MAX_WIDTH) } else { area.width };
+    let width = if bordered && !full { (area.width - 2 * margin).min(MAX_WIDTH) } else { area.width };
     let space = area.height.saturating_sub(chrome);
     let offset = if bordered { (area.height * 13 / 100).min(space.saturating_sub(1)) } else { 0 };
     let wanted = (n_lines.max(1)).min(usize::from(MAX_LIST_LINES)) as u16;
@@ -310,7 +316,8 @@ fn fit_runs(runs: &[(String, bool)], max: usize, normal: Style, strong: Style) -
 /// One result row, `w` cells wide.
 fn row_line(r: &PaletteRow, w: usize, theme: &TuiTheme) -> Line<'static> {
     let base = if r.selected { theme.style(Role::PaletteSelected) } else { theme.style(Role::Text) };
-    let icon = format!(" {} ", r.icon);
+    // Screen-reader mode (T8): no icons.
+    let icon = if theme.screen_reader() { " ".to_string() } else { format!(" {} ", r.icon) };
     let left_w = text::width(&icon);
     // The right side drops the tag first, then the chord, to leave the title room.
     let mut tag = r.tag.clone();
@@ -351,7 +358,7 @@ pub fn draw_palette(f: &mut Frame<'_>, area: Rect, m: &PaletteVm, theme: &TuiThe
     if !m.open {
         return;
     }
-    let g = geometry(area, m.lines.len());
+    let g = geometry_in(area, m.lines.len(), theme.screen_reader());
     if g.outer.is_empty() {
         return;
     }
@@ -404,7 +411,9 @@ fn draw_input(f: &mut Frame<'_>, r: Rect, m: &PaletteVm, theme: &TuiTheme, hits:
     }
     hits.push(r, HitTarget::PaletteInput);
     let w = usize::from(r.width);
-    let mut spans = vec![Span::styled(format!(" {} ", m.glyph), theme.style(Role::Accent))];
+    // Screen-reader mode (T8): no mode glyph (the chip names the mode).
+    let lead = if theme.screen_reader() { " ".to_string() } else { format!(" {} ", m.glyph) };
+    let mut spans = vec![Span::styled(lead, theme.style(Role::Accent))];
     let mut used = text::width(&spans[0].content);
     if let Some(chip) = &m.chip
         && used + text::width(chip) + 3 < w
@@ -439,7 +448,9 @@ fn draw_input(f: &mut Frame<'_>, r: Rect, m: &PaletteVm, theme: &TuiTheme, hits:
     if let Some(col) = caret
         && field > 0
     {
-        f.set_cursor_position(Position { x: field_x + col.min(field as u16 - 1), y: r.y });
+        let at = Position { x: field_x + col.min(field as u16 - 1), y: r.y };
+        f.set_cursor_position(at);
+        hits.set_caret(at);
     }
 }
 
@@ -464,6 +475,10 @@ fn draw_list(f: &mut Frame<'_>, r: Rect, m: &PaletteVm, theme: &TuiTheme, hits: 
             PaletteLine::Item(row) => {
                 f.render_widget(Paragraph::new(row_line(row, w, theme)), lr);
                 hits.push(lr, HitTarget::PaletteRow(row.index));
+                // The highlighted result wins over the query's caret (screen-reader mode).
+                if row.selected {
+                    hits.set_caret(Position { x: lr.x, y: lr.y });
+                }
             }
         }
     }

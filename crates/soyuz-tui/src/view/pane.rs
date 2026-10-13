@@ -56,7 +56,7 @@ use std::time::Instant;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::file_class::{FileClass, classify};
@@ -713,7 +713,17 @@ fn row_style(m: &PaneVm, row: &Row, theme: &TuiTheme) -> Style {
 }
 
 /// Draw pane `m` into `rect`.
+///
+/// Screen-reader mode (T8): no icons (the ASCII set's kind markers: folders end in `/`),
+/// and the focused pane records its cursor row as the caret (`Hits::set_caret`).
 pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hits: &mut Hits) {
+    let plain;
+    let m = if theme.screen_reader() && m.icons != IconSet::Ascii {
+        plain = PaneVm { icons: IconSet::Ascii, ..m.clone() };
+        &plain
+    } else {
+        m
+    };
     if let Some(pv) = &m.places {
         let rect = rect.intersection(f.area());
         places::draw(f.buffer_mut(), rect, m.id, pv, theme, hits);
@@ -725,6 +735,10 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
         return;
     }
     let g = geometry_for(m.mode, rect, m.grid.as_ref().map(|gv| gv.spec).unwrap_or_default());
+    if m.focused {
+        // The cursor row (below) wins; an empty list keeps the caret on its first line.
+        hits.set_caret(Position { x: g.list.x, y: g.list.y });
+    }
     let buf = f.buffer_mut();
     buf.set_style(rect, theme.style(Role::Text));
     let fit = columns::fit(&m.columns, g.list.width, prefix_w(m));
@@ -773,8 +787,14 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
                 }
                 buf.set_style(r, row_style(m, row, theme));
                 hits.push(r, HitTarget::PaneRow { pane: m.id, vis_version: m.vis_version, index: row.index });
+                if m.focused && row.cursor {
+                    hits.set_caret(Position { x: r.x, y: r.y });
+                }
                 if let Some(e) = &row.edit {
                     super::rename::draw_edit(buf, r, prefix_w(m), e, theme, hits);
+                    if m.focused {
+                        hits.set_caret(rename_caret(r, prefix_w(m), e));
+                    }
                 }
                 col += 1;
                 if col >= cols {
@@ -790,6 +810,25 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
     if let Some(footer) = &m.footer {
         draw_footer(buf, rect, footer, theme);
     }
+}
+
+/// The cell of the rename field's text cursor on `row` (`super::rename::draw_edit` with the
+/// same `prefix`: the field starts after it and shares the row with an error message).
+fn rename_caret(row: Rect, prefix: u16, e: &super::rename::EditVm) -> Position {
+    let x0 = row.x + prefix.min(row.width.saturating_sub(1));
+    let avail = row.right().saturating_sub(x0);
+    let err_w = match &e.error {
+        Some(m) if avail >= 16 => {
+            let w = text::width(&format!(" ! {m}")) as u16;
+            let need = (text::width(&e.text) as u16).saturating_add(2).max(8);
+            w.min(avail.saturating_sub(need)).max(w.min(avail / 2))
+        }
+        _ => 0,
+    };
+    let fw = avail - err_w;
+    let mut ed = e.edit.clone();
+    let (_, col) = ed.view(&e.text, fw);
+    Position { x: (x0 + col).min(row.right().saturating_sub(1)), y: row.y }
 }
 
 /// The footer overlay: right-aligned on the pane's last line.

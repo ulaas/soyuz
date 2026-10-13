@@ -132,7 +132,9 @@ pub fn draw_crumbs(f: &mut Frame<'_>, rect: Rect, m: &CrumbsVm, theme: &TuiTheme
     }
     let width = usize::from(rect.width);
     let (first, cut) = fit(&m.segments, width, theme.icons());
-    let sep = separator(theme.icons());
+    // Screen-reader mode (T8): a slash, not an arrow a reader calls "greater than" (the
+    // same width, so `fit` holds).
+    let sep = if theme.screen_reader() { " / ".to_string() } else { separator(theme.icons()) };
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut x = rect.x;
     let right = rect.right();
@@ -178,12 +180,21 @@ fn draw_field(f: &mut Frame<'_>, rect: Rect, e: &AddressVm, theme: &TuiTheme) {
     let shown = text::fit(&shown, width);
     f.render_widget(Paragraph::new(shown).style(theme.style(Role::Input)), rect);
     if e.focused {
-        let x = rect.x + (col - scroll).min(width.saturating_sub(1)) as u16;
-        if let Some(cell) = f.buffer_mut().cell_mut(Position { x, y: rect.y }) {
+        let at = field_caret(rect, e);
+        if let Some(cell) = f.buffer_mut().cell_mut(at) {
             cell.modifier.insert(Modifier::REVERSED);
         }
-        f.set_cursor_position(Position { x, y: rect.y });
+        f.set_cursor_position(at);
     }
+}
+
+/// The cell of the address field's cursor in `rect` (the text scrolled as [`draw_field`]
+/// scrolls it).
+fn field_caret(rect: Rect, e: &AddressVm) -> Position {
+    let width = usize::from(rect.width);
+    let col = text::width(&e.text[..e.cursor.min(e.text.len())]);
+    let scroll = (col + 1).saturating_sub(width);
+    Position { x: rect.x + (col - scroll).min(width.saturating_sub(1)) as u16, y: rect.y }
 }
 
 /// `s` without its first `cols` cells (whole graphemes; a wide one cut in half is
@@ -208,6 +219,11 @@ pub const POPUP_ROWS: usize = soyuz_appcore::state::crumbs::COMPLETION_LIMIT;
 /// it lies on top of them.
 pub fn draw_completions(f: &mut Frame<'_>, rect: Rect, area: Rect, m: &CrumbsVm, theme: &TuiTheme, hits: &mut Hits) {
     let Some(e) = &m.edit else { return };
+    // Recorded here, after the panes are drawn (the field is drawn before them): the
+    // focused field's caret (screen-reader mode, `Hits::set_caret`).
+    if e.focused && !rect.is_empty() {
+        hits.set_caret(field_caret(rect, e));
+    }
     if e.completions.is_empty() || !e.focused || rect.is_empty() {
         return;
     }

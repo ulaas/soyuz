@@ -31,7 +31,7 @@ use std::time::SystemTime;
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Position, Rect};
 use ratatui::style::Style;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::icon::IconId;
@@ -436,6 +436,10 @@ pub fn draw_jobs(f: &mut Frame<'_>, area: Rect, m: &JobsVm, theme: &TuiTheme, hi
     if area.is_empty() || !m.visible {
         return;
     }
+    if m.focused {
+        // The cursor row (below) wins; an empty list keeps the caret on the header.
+        hits.set_caret(Position { x: area.x, y: area.y });
+    }
     let buf = f.buffer_mut();
     let base = theme.style(Role::Text);
     buf.set_style(area, base);
@@ -521,6 +525,9 @@ pub fn draw_jobs(f: &mut Frame<'_>, area: Rect, m: &JobsVm, theme: &TuiTheme, hi
             buf.set_style(rect, theme.style(Role::Selected));
         }
         hits.push(rect, HitTarget::JobRow(index));
+        if cursor {
+            hits.set_caret(Position { x: rect.x, y: rect.y });
+        }
         draw_item(buf, rect, item, index, cursor, ascii, theme, hits);
     }
 }
@@ -566,9 +573,13 @@ fn draw_item(
         }
     }
     let text_end = if placed.is_empty() { end } else { bx };
-    let mut x = put(buf, x0, y, text_end, if cursor { "> " } else { "  " }, style(Role::KeyHint));
-    x = put(buf, x, y, text_end, icons::glyph(item.icon, theme.icons()), style(role(item.icon_tone)));
-    x = put(buf, x, y, text_end, " ", style(Role::Text));
+    // Screen-reader mode (T8): no `>` marker and no icon (the caret marks the row).
+    let sr = theme.screen_reader();
+    let mut x = put(buf, x0, y, text_end, if cursor && !sr { "> " } else { "  " }, style(Role::KeyHint));
+    if !sr {
+        x = put(buf, x, y, text_end, icons::glyph(item.icon, theme.icons()), style(role(item.icon_tone)));
+        x = put(buf, x, y, text_end, " ", style(Role::Text));
+    }
     let title_role = if item.dim { Role::Faint } else { Role::Title };
     x = put(buf, x, y, text_end, &item.title, style(title_role));
     if let Some((t, tone)) = &item.tag {
@@ -589,8 +600,10 @@ fn draw_item(
         put(buf, right_x, y, end, &item.right, style(Role::Muted));
     }
     let w = usize::from(rect.width);
+    // Screen-reader mode: the percentage only (a bar of `#` reads as noise).
     if let Some(bar) = item.bar
         && w >= BAR_MIN_WIDTH
+        && !sr
     {
         let cells = (w / 4).min(BAR_MAX);
         let filled = bar_cells(bar.permille, cells);
