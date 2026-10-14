@@ -137,6 +137,10 @@ impl Driver {
             }
         }
         assert!(cond(&self.app), "{what} no longer holds after settling");
+        // A full redraw: ratatui's diff never rewrites the cell after a wide character,
+        // which a terminal clears but the test backend keeps (a stale letter in the shot).
+        self.term.clear().expect("clear");
+        self.frame(&[]);
     }
 
     /// The screen's rows as text.

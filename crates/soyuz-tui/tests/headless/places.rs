@@ -25,7 +25,7 @@ use soyuz_tui::layout::HitTarget;
 use soyuz_tui::view::pane::places::{PlacesVm, button};
 
 use super::menu::{drive, menu_labels, open_menu};
-use crate::common::{self, Run, at, ctrl, dialog_title, key, key_mods, shift, wait_jobs_idle};
+use crate::common::{self, Run, at, ctrl, dialog_title, key, key_mods, shift};
 
 /// The fake bin: `bin/$R<name>` (the item) and `bin/$I<name>` (a Recycle Bin record of
 /// `orig/<name>`) for each of a.txt, b.txt, c.txt.
@@ -232,12 +232,12 @@ fn restores_and_purges(data: PathBuf) {
             0 if names(a).len() == 3 => key(KeyCode::Down),
             1 if selected(a) == ["b.txt"] => key(KeyCode::Char('r')),
             // The job ran and the list was read again.
-            2 if wait_jobs_idle(a) && names(a) == ["a.txt", "c.txt"] => {
+            2 if common::wait_jobs_idle(a) && names(a) == ["a.txt", "c.txt"] => {
                 press(row_at(a, 0)?, MouseButton::Left, KeyModifiers::NONE)
             }
             3 if selected(a) == ["a.txt"] => key_mods(KeyCode::Delete, KeyModifiers::SHIFT),
             4 if dialog_title(a).as_deref() == Some(purge_title.as_str()) => key(KeyCode::Enter),
-            5 if dialog_title(a).is_none() && wait_jobs_idle(a) && names(a) == ["c.txt"] => ctrl('q'),
+            5 if dialog_title(a).is_none() && common::wait_jobs_idle(a) && names(a) == ["c.txt"] => ctrl('q'),
             _ => return None,
         };
         phase += 1;
