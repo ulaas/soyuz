@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.2.0"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.3.0"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.2.0}
+%{!?soyuz_version: %global soyuz_version 0.3.0}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 %global appid io.github.ulaas.Soyuz
 %{!?_metainfodir: %global _metainfodir %{_datadir}/metainfo}
@@ -89,6 +89,9 @@ fi
 %{_metainfodir}/%{appid}.metainfo.xml
 
 %changelog
+* Wed Oct 14 2026 The Soyuz contributors - 0.3.0-1
+- Version 0.3.0.
+
 * Sun Oct 11 2026 The Soyuz contributors - 0.2.0-1
 - Version 0.2.0.
 
