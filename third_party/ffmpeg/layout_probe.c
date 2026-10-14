@@ -209,6 +209,7 @@ int main(void) {
     OFF(AVFrameSideData, data);
     OFF(AVFrameSideData, size);
     OFF(AVFrameSideData, metadata);
+    OFF(AVFrameSideData, buf);
 
     printf("{\"majors\":{\"avutil\":%d,\"swresample\":%d,\"swscale\":%d,\"avcodec\":%d,\"avformat\":%d}}\n",
            LIBAVUTIL_VERSION_MAJOR, LIBSWRESAMPLE_VERSION_MAJOR, LIBSWSCALE_VERSION_MAJOR, LIBAVCODEC_VERSION_MAJOR,
