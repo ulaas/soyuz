@@ -6,7 +6,8 @@ AccessKit is switched on automatically when a screen reader or another UI Automa
 connects. Until then egui builds no accessibility tree, so it costs nothing.
 
 This document covers what is exposed, how keyboard-only use works, the automated checks, and
-the manual certification checklist for screen readers.
+the manual certification checklist for screen readers. The terminal UI has its own section:
+[Terminal UI](#terminal-ui) (screen-reader mode and its checklist).
 
 ## What is exposed
 
@@ -145,6 +146,106 @@ Linux notes:
 macOS is out of scope for now. When it comes back, repeat the NVDA list with VoiceOver
 (`accesskit_macos`, VO+arrow navigation).
 
+## Terminal UI
+
+The terminal UI (`soyuz-tui`, `soyuz --tui`) has no accessibility tree: a screen reader reads
+the terminal's text, as it does for any console program. Its **screen-reader mode** draws that
+text so it reads well. Turn it on with *Toggle screen-reader mode* in the command palette, with
+`[tui] screen_reader = true` (*Settings → Terminal UI → Accessibility* in the window, the
+*Terminal UI* section of the terminal UI's settings editor), or for one run with
+`soyuz-tui --screen-reader` (never saved). The code is in `crates/soyuz-tui/src/a11y.rs`;
+the user guide describes it in [Screen-reader mode](USER_GUIDE.md#screen-reader-mode).
+
+| Part | Default look | Screen-reader mode |
+|---|---|---|
+| Lines, icons, pictures | box drawing, icons, images, bars, spinners | none: plain lines; any box, block or braille character left over is blanked |
+| File rows | icon, highlight, `>` marker | `*` for selected rows, `/` after folders, no icons or markers |
+| Panes | every pane of the tab | the focused pane only, plus an "Other pane: <folder>" line |
+| Terminal cursor | hidden (a drawn caret) | on the focused row, field or button (the editors, the AI composer and the terminal pane keep their own cursor) |
+| Status line | counts, free space, view and sort with symbols | one sentence led by the focused item ("Q3 mission report.md, file, 556 B, 3 of 3, selected; 3 items, …; Details, sorted by Name, ascending"), rewritten in full whenever it changes |
+| Toasts | boxes in a corner | text in the status line ("Warning: title. body"), at least their unscaled duration |
+| Dialogs, menus, palette | boxes over the panes | the rows they cover are cleared first; form labels end with a colon |
+| Job progress | live bar and numbers | the percentage only, updated per 10 % or every 2 s |
+| Miller columns, settings editor | several columns | one column |
+
+### Automated checks
+
+- `crates/soyuz-tui/src/view/sr_tests.rs`: the look, the caret for each kind of focus, the
+  one-pane layout, the status sentence and the toasts, on hand-built view models.
+- Snapshots of screen-reader screens: `view__*__sr.snap` (tier A, fixed models) and
+  `sr__*.snap` (tier B, the real app on a fixture) in `crates/soyuz-tui/tests/snapshots/`;
+  each tier-B shot also checks that the cursor is on the focused row.
+- `crates/soyuz-tui/tests/headless/screen_reader.rs`: the palette toggle (saved), the
+  `--screen-reader` override (never saved) and the keyboard tour in screen-reader mode.
+- `crates/soyuz-tui/tests/headless/tour.rs`: the keyboard-only tour (browse, file operations,
+  a dialog, the context menu, tabs, dual panes, the palette, the jobs panel, search,
+  settings, quit) in English and Turkish, with the default and the legacy-terminal key map,
+  keys only.
+- `crates/soyuz-tui/tests/headless/binary.rs`: the shipped binary run headless with
+  `--screen-reader`; no box drawing character may be left on its screen.
+
+```sh
+cargo test -p soyuz-tui --lib view::sr_tests
+cargo test -p soyuz-tui --test headless_tui headless::screen_reader
+cargo test -p soyuz-tui --test headless_tui headless::sr_snapshots
+cargo test -p soyuz-tui --test headless_tui headless::tour
+```
+
+These check what is written to the terminal, not what a screen reader says about it. That
+part needs the manual run below.
+
+### Manual checklist (terminal UI)
+
+**Not run by a human yet.** The owner deferred the screen-reader run (2026-10-09, confirmed for
+Phase T8 on 2026-10-14). This is the script for it; record the results in this file.
+
+Use a portable copy (an empty `portable` file next to a copy of `soyuz-tui`), a terminal of
+at least 100×30, and both English and Turkish (`[general] language`). Start with
+`soyuz-tui --screen-reader <folder>`; once, start without the flag and use the palette's
+*Toggle screen-reader mode* instead.
+
+| Reader | Terminal | Notes |
+|---|---|---|
+| Narrator | Windows Terminal | Narrator reads new text as the terminal reports it; scan mode (`Caps Lock+Space`) reads line by line. |
+| NVDA | Windows Terminal, then the classic console (`conhost`) | Turn on *Report dynamic content changes*; the review cursor should follow the system caret. |
+| Orca | GNOME Terminal (VTE), then Konsole | Orca speaks changed text; flat review (`KP_8`) reads the cursor line. |
+| VoiceOver | Terminal.app | Optional while macOS screen-reader testing is deferred for the window too. |
+
+Steps (for each: what you hear should match the status line or the line under the cursor):
+
+1. **Start.** The first status sentence is read: the focused item, the item count, the free
+   space, the view and the sort.
+2. **File list.** Arrow down through a folder. Each move reads the new item ("name, file,
+   size, n of m"). `Space` (or your selection key) adds ", selected", and the row shows `*`.
+3. **Review the cursor line.** With the reader's review cursor, read the current line: it is
+   the focused row, not the status line or another pane.
+4. **Panes.** Turn on dual panes and switch panes. Only one pane is drawn; the "Other pane"
+   line names the other folder, and switching reads the other pane's focused item.
+5. **Command palette.** `Ctrl+K`, type a few letters, arrow through the results. The focused
+   command is read; `Esc` closes the palette and the list's sentence comes back.
+6. **Conflict dialog.** Copy a file onto an existing one. The dialog title and its focused
+   button are read; `Tab` moves between the buttons and each one is read; `Esc` decides later.
+7. **Delete confirmation.** `Shift+Del` on a test file in the sandbox. The question and the
+   focused button are read; `Esc` cancels.
+8. **Rename and forms.** `F2`, then a *New folder* dialog: the field's label ("Name:") and its
+   text are read; typing does not make the status line repeat itself on every key.
+9. **Jobs.** Copy a large file (start with `SOYUZ_THROTTLE_MBPS=4` to slow copies down).
+   Progress is read about every 10 percent, not on every frame; `Alt+J` moves to the jobs
+   panel and its rows are read.
+10. **Toasts.** Undo something (`Ctrl+Z`). The toast is read once, in full, and stays long
+    enough to finish.
+11. **Settings.** `Ctrl+,` (`Alt+,` in Windows Terminal). One column is shown; sections and
+    keys are read with their values; toggling `[tui] mouse` reads the new value.
+12. **Menus.** `Shift+F10` on a file. The focused entry is read; the arrows move, `Esc`
+    closes.
+13. **Language.** Switch to Turkish (settings): the sentences change language at once.
+14. **Quit.** `Ctrl+Q`. The terminal is restored and the reader is back at the shell prompt.
+
+Known limits to note, not to fail: pictures are not drawn (the preview says "Picture (not
+shown in screen-reader mode)"); the editors, the AI composer and the embedded terminal place
+the cursor themselves; screen-reader mode is not turned on automatically when a screen reader
+runs.
+
 ## Known gaps
 
 - **Linux: vendored `accesskit_unix` patch** for at-spi2-core 2.62+ (see "Orca (Linux)"
@@ -154,6 +255,9 @@ macOS is out of scope for now. When it comes back, repeat the NVDA list with Voi
   (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader
   receives (names, roles, states) in six states, but not how NVDA / Narrator announce it or
   whether navigation feels right; it does not replace this run.
+- **Terminal UI:** no human run of its checklist yet (see [Terminal UI](#terminal-ui)); the
+  terminal's cursor marks the focus only in screen-reader mode (the default look keeps its
+  drawn caret), and the mode is not turned on automatically when a screen reader runs.
 - Right-to-left layout is not supported yet; Arabic / Hebrew names render
   with a system fallback font but are laid out in logical order.
 - egui exposes text runs, not a rich document model. The text editor reads line by line,

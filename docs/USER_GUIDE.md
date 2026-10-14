@@ -12,6 +12,7 @@ of the *Explorer* preset; the command palette always shows the active ones.
 - [Tools](#tools)
 - [Search](#search)
 - [Customizing](#customizing)
+- [Terminal UI](#terminal-ui)
 - [Accessibility](#accessibility)
 - [Installing, updates and the default file manager](#installing-updates-and-the-default-file-manager)
 - [Portable mode and data files](#portable-mode-and-data-files)
@@ -300,7 +301,7 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 - **Automations** (Settings → Automations): rules that watch a folder and act on matching items (name globs / regex, kind, size, age) after they stop changing: move, copy, rename with a pattern, tag, trash or run a script. Each rule shows what it would match right now, has *Run now*, a dry-run switch and a run log. Every step is a job with a robot badge in the activity panel, so it can be undone.
 - **Command line**: `soyuz cp|mv|rm|trash|ls|open|reveal|jobs` (or `soyuz-cli`, which a shell waits for). With a Soyuz window open the jobs run there, with progress in the activity panel and conflict prompts in the window; otherwise they run in the terminal. `--queue` returns at once, `--json` prints machine-readable events, `--conflict skip|overwrite|rename|ask`. Exit codes: 0 ok, 1 failed, 2 usage, 3 cancelled, 4 unavailable, 5 not found.
 
-## Terminal UI (preview)
+## Terminal UI
 
 `soyuz-tui [folder]` runs Soyuz inside the terminal you start it from (Windows Terminal,
 PowerShell, cmd, or any terminal on Linux and macOS). It uses the same settings, key
@@ -308,15 +309,20 @@ bindings, jobs and undo history as the window. `soyuz-tui` ships next to `soyuz`
 package (`soyuz-tui.exe` on Windows; with the MSI's PATH option or the MSIX it works from
 any terminal; in the Flatpak: `flatpak run --command=soyuz-tui io.github.ulaas.Soyuz`).
 
-- `soyuz-tui [--safe-mode] [folder]`: a file opens its folder with the file selected;
-  `--safe-mode` starts with default settings. `soyuz-tui --help` and `--version` print and
-  exit.
+### Starting
+
+- `soyuz-tui [--safe-mode] [--screen-reader] [folder]`: a file opens its folder with the
+  file selected; `--safe-mode` starts with default settings and `--screen-reader` turns on
+  [screen-reader mode](#screen-reader-mode) for this run. `soyuz-tui --help` and
+  `--version` print and exit.
 - `soyuz --tui [folder]` starts the same terminal UI from the app binary. On Linux and
   macOS it runs in the current terminal too; on Windows `soyuz.exe` is a windowed program,
   so it opens a console window of its own instead (use `soyuz-tui` to stay in your
   terminal).
 
-It browses like the window: tabs, dual and quad panes, the details / list / grid / gallery
+### Screen and layout
+
+The terminal UI browses like the window: tabs, dual and quad panes, the details / list / grid / gallery
 / Miller views, breadcrumbs and the address bar (Ctrl+L), the sidebar with places and the folder
 tree, the command palette (Ctrl+K), the filter (Ctrl+F), the status line and toasts, all in
 the colours of your theme. Move with the arrow keys (or your key preset), Enter opens,
@@ -326,16 +332,75 @@ UI default; bind *Focus sidebar* to change it). With the mouse on, clicks select
 click opens, a column header sorts (again: the other way round), and the sidebar, tabs,
 crumbs, toasts and Miller columns are clickable.
 
+![The terminal UI with two panes: the sidebar, the Reports folder and its older copy](../site/assets/shots/tui-browse.svg)
+
+**Images and grid views.** `[tui] images` decides how pictures are drawn: `auto` asks the
+terminal which graphics protocol it speaks (kitty, sixel or iTerm2) and otherwise uses
+coloured half-block characters; `kitty`, `sixel` and `iterm2` force a protocol,
+`halfblocks` always uses characters and `off` shows none. On Windows `auto` always uses
+half-blocks (the console cannot be asked); Windows Terminal 1.22 or newer draws real
+images with `images = "sixel"`. Inside tmux and screen `auto` uses half-blocks too.
+`[tui] cell_pixels` is the size of a terminal cell in pixels for sixel images when the
+terminal does not report it. The grid and gallery views (Ctrl+Shift+2 / Ctrl+Shift+5;
+Ctrl+F2 / Ctrl+F5 where the terminal cannot send them) show icons or thumbnails in cells;
+the mouse wheel scrolls one line of cells per notch there.
+
+**Workspaces and tab history.** *Save workspace as…* (palette) asks for a name (the last
+saved workspace's name is suggested, and saving under an existing name updates it);
+*Manage workspaces…* lists them: Enter opens one, F2 edits its name and hotkey (a hotkey
+that is not a key chord is refused with a message), Alt+Up moves it up and Del deletes it
+at once, without undo, as in the window. Ctrl+Alt+W lists the saved workspaces in the
+palette, and a workspace's hotkey opens it from anywhere. The window and the terminal UI
+share `workspaces.toml`; when both change it at the same time, the last one to save wins.
+*Where was I?* (palette, or the tab's menu) shows every place the tab visited as a tree
+with the current one highlighted: Up / Down pick a place, Enter goes there, Esc closes;
+with the mouse on, a click picks a row and a second click goes there.
+
+### Keys on different terminals
+
+The terminal UI uses your key preset and your own bindings. The *Terminal UI* column of
+[KEYBOARD.md](KEYBOARD.md#explorer-preset-default) shows where its keys differ from the
+window's (F12 for the sidebar, Alt+J for the jobs panel, Alt+E for the editor, Alt+T for
+the terminal pane), and [Terminal UI on legacy terminals and in Windows
+Terminal](KEYBOARD.md#terminal-ui-on-legacy-terminals-and-in-windows-terminal) lists the
+extra chords below per terminal. *Show keybindings* (Ctrl+/) shows the map in use.
+
+![The command palette in the terminal UI, filtered to "copy"](../site/assets/shots/tui-palette.svg)
+
 Terminals without the kitty keyboard protocol cannot send some chords (Ctrl+Shift+letter
 arrives as Ctrl+letter); there Soyuz adds free alternatives: Alt+Shift+letter for
 Ctrl+Shift+letter, Ctrl+PageDown / PageUp for Ctrl+Tab / Ctrl+Shift+Tab, Ctrl+F1…F5 for
 the view modes (Ctrl+Shift+1…5), Alt+I, Alt+`, Alt+/, Alt+, and Alt+Backspace for their
 Ctrl versions.
 
+**Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
+Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
+Alt+Enter full screen, Ctrl+V paste, Ctrl+= / - / 0 font size, …). Inside it (Soyuz checks
+`WT_SESSION`, also in WSL) the terminal UI adds stand-ins without changing your bindings
+or the window: Ctrl+K (or Alt+Shift+P) for the command palette, Alt+Shift+T to reopen a
+closed tab, F3 or Alt+Shift+F to search, Ctrl+PageDown / PageUp for the next / previous
+tab, Ctrl+F1…F5 for the view modes, Alt+, for settings, Alt+Shift+N for a new folder,
+Alt+Shift+V to paste as link and Alt+Shift+Enter for Properties. On Windows, Windows
+Terminal's Ctrl+V types the clipboard's text into the app, so Paste also gets Alt+V; in
+WSL, Ctrl+V arrives as a paste and pastes files. Shortcut hints (palette, toasts) show the
+chord that works. UI zoom is left to the terminal's own font size. To give a chord back to
+Soyuz instead, unbind it in Windows Terminal's `settings.json`:
+
+```json
+"actions": [
+    { "command": "unbound", "keys": "ctrl+shift+p" },
+    { "command": "unbound", "keys": "ctrl+v" }
+]
+```
+
+(Newer versions also accept `{ "id": null, "keys": "ctrl+shift+p" }` in `keybindings`.)
+
 A paste from the terminal (its paste key, or a right / middle click) into the file list
 runs Soyuz's Paste instead of typing the text: files copied in Soyuz or another file
 manager land in the current folder. In the address bar, the filter, the palette and
 dialogs it pastes text as usual.
+
+### Files and jobs
 
 **File operations and dialogs.** Copy, cut and paste (Ctrl+C / Ctrl+X / Ctrl+V), F5 / F6 to
 the other pane, Del (to the trash) and Shift+Del (permanently), new folders and files all
@@ -360,6 +425,8 @@ cancels; with the mouse on, everything is clickable.
   checksum. *Previous versions…* (Alt+V) opens the previous versions of the item (see
   below).
 
+![The conflict dialog in the terminal UI: Replace, Keep both, Skip, More…](../site/assets/shots/tui-conflict.svg)
+
 **Jobs panel.** It opens at the bottom by itself while a job runs, without taking the
 keyboard; Alt+J opens it and moves the keyboard there (Esc gives it back). On the *Jobs*
 tab: P or Space pauses / resumes, C or Del cancels (removes a finished job), Enter
@@ -368,6 +435,8 @@ answers a job's postponed question, L shows the job's errors and log, M opens it
 cancel all, X clears finished jobs. Tab (or ← / →) switches to *History*, where U
 undoes (or redoes) and R retries failed items. The panel's height is
 `[tui] jobs_rows`.
+
+![The jobs panel with a copy in progress and a finished copy](../site/assets/shots/tui-jobs.svg)
 
 **Context menus.** Shift+F10 (or the Menu key, where the terminal reports it) opens the
 file list's context menu, the same entries as the window's right-click menu; with the
@@ -383,6 +452,48 @@ Inside tmux and GNU screen the sequence is wrapped in their pass-through (tmux 3
 newer need `set -g allow-passthrough on`). Copied files stay on Soyuz's and the system's file clipboard
 as in the window.
 
+**Shelf.** *Add to shelf* in a file's menu (Shift+F10) puts the selected items on the
+shelf and shows it; *Toggle shelf* (palette) shows or hides it. The shelf dialog lists the
+items with their folders (items that no longer exist are marked *Missing*): Up / Down move,
+Space marks, Enter goes to the item (the pane opens its folder with it selected), Del
+removes it from the shelf, and the buttons' letters run *Copy here* / *Move here* (the
+marked items, or all of them, into the focused pane's folder, as undoable jobs), *Remove*
+and *Clear*. Esc closes it. With the mouse on, a click picks a row, Ctrl+click marks it
+and a second click goes there.
+
+**Split and join.** *Split file* (palette, or *Split file…* in a file's menu) opens a
+dialog: Up / Down pick the part size (presets or *Custom size*), Tab moves to the custom
+size, the output folder and the buttons, Enter starts. The progress shows in the dialog;
+Esc stops a running split and removes the partial output, and closing the dialog any other
+way stops it too. *Join files* (*Join parts…* on a `.001` part) joins the parts into the
+output folder and checks the result against the checksum file that the split wrote, when
+there is one.
+
+**Previous versions.** *Restore previous version…* (palette or the item's menu, and
+*Previous versions…*, Alt+V, in Properties) lists the earlier copies of a file or folder:
+Up / Down pick one, Enter or O opens it (a folder in the pane), C compares it with the
+current file, T copies it elsewhere, R restores it over the original (an undoable copy job
+that asks before replacing), F5 or L looks again, Esc closes. When there are none, the
+dialog says why. On Windows, shadow copies can only be read with administrator rights: the
+terminal UI does not restart itself as administrator. The dialog says so and explains how
+to do it yourself: close Soyuz, open a terminal with *Run as administrator* and start
+`soyuz --tui` (or `soyuz-tui`) there.
+
+**Trash and This PC.** Both open from the sidebar (*Trash* under Other, *Computer* / *This
+PC* under Devices).
+- The Trash page lists the deleted items with their original location, date deleted and
+  size. Space, Shift and Ctrl select as in the file list. R restores the selection (an
+  undoable job), Del deletes it permanently and E empties the trash, each after a
+  confirmation. R and E work only while those letters have no other binding. Enter, Shift+F10
+  or a right click opens an item's menu: restore, open the original location, copy the
+  original path, delete permanently. The buttons in the header do the same with the mouse,
+  and F5 reads the trash again.
+- The This PC page lists the drives with a usage bar (yellow below 15 % free, red below 5 %),
+  free and total space and the file system. Enter or a click opens a drive; Shift+F10 or a
+  right click opens its menu.
+
+### Panels
+
 **Preview pane and Quick Look.** Alt+P shows the preview pane next to the list (its
 width is `[tui] preview_ratio`): text and code with syntax colours, images, archives (a
 listing; Enter opens the archive at that entry), hex for binary files (*Toggle hex
@@ -393,16 +504,7 @@ Commander preset) opens Quick Look over the list: ← / → (or ↑ / ↓) step 
 first / last item, PageUp / PageDown and Shift+Up / Down scroll, Enter opens the item,
 Esc or Space closes it; the preview scroll keys scroll Quick Look while it is open.
 
-**Images and grid views.** `[tui] images` decides how pictures are drawn: `auto` asks the
-terminal which graphics protocol it speaks (kitty, sixel or iTerm2) and otherwise uses
-coloured half-block characters; `kitty`, `sixel` and `iterm2` force a protocol,
-`halfblocks` always uses characters and `off` shows none. On Windows `auto` always uses
-half-blocks (the console cannot be asked); Windows Terminal 1.22 or newer draws real
-images with `images = "sixel"`. Inside tmux and screen `auto` uses half-blocks too.
-`[tui] cell_pixels` is the size of a terminal cell in pixels for sixel images when the
-terminal does not report it. The grid and gallery views (Ctrl+Shift+2 / Ctrl+Shift+5;
-Ctrl+F2 / Ctrl+F5 where the terminal cannot send them) show icons or thumbnails in cells;
-the mouse wheel scrolls one line of cells per notch there.
+![The preview pane beside the file list, showing a README](../site/assets/shots/tui-preview.svg)
 
 **Editors.** F4 opens the file in the built-in editor panel, as in the window: text (with
 syntax colours), hex (any size; Tab switches between the hex and text columns) or image
@@ -415,35 +517,6 @@ wrap, Alt+M maximizes the panel and Alt+Shift+M moves it to the other side. Esc 
 bar or leaves the editor, and Alt+E goes back into it. The editor shortcuts live in the
 *Editor* key context, so you can rebind them in `[keys.bindings]` like any other.
 Quitting with unsaved documents asks first.
-
-**Search bar.** Ctrl+Shift+F (F3, or Alt+Shift+F where the terminal cannot send it) opens
-the search bar under the breadcrumbs, as in the window: type the query and press Enter;
-the results replace the list and the bar keeps the keyboard (Down moves it to the
-results, Esc closes the bar, the results stay). Tab moves through the query field, the
-"in files" field of a content search, the pills (mode, case, contents, size, date, kind,
-hidden files, `.gitignore`, everywhere) and the Run / Save / close buttons; Space or Enter
-toggles a pill or picks its next option (Shift: the previous one), and the size pill opens
-a dialog with the minimum, the maximum and presets. Changing a pill searches again. The
-status row under the bar shows the hits, how much was scanned, whether the index answered
-and the folder being searched, with *Cancel*, *Relevance*, *Make smart folder* (or *Edit*)
-and *Refine*. Ctrl+S saves the search under a name (`searches.toml`): it shows in the
-sidebar, where Enter runs it again and its menu removes it. *Toggle flat view* lists a
-folder tree in one list as in the window.
-
-**Smart folders, archives and remote locations.** Smart folders work as in the window: the
-sidebar's *New smart folder* row (or its menu, Shift+F10) opens the editor with the name,
-the query, "include hidden", how the query will be answered and a cheat sheet of the query
-language; a smart folder's menu opens it, opens it in a new tab, edits or deletes it, and
-the status line shows the index state while one is open. Enter on an archive (zip, tar.*,
-7z, single RAR) browses it like a folder; an encrypted one asks for its password first.
-*Extract to…* (destination with folder completion, "each archive into its own folder"),
-*Compress…* (name, format, level, password) and renaming an entry inside a zip are
-dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network
-section) opens the connection form for SFTP, WebDAV, FTP(S), S3 and, off Windows, SMB, with the
-fields of the chosen protocol and sign-in method; a new SSH host key asks before it is trusted.
-Saved connections show a state dot in the sidebar and have a menu (open in a new tab,
-edit, disconnect, copy the address, remove). Passwords and keys go to the OS credential
-store, never to `config.toml`.
 
 **Terminal pane.** Ctrl+` (Alt+` on legacy terminals) shows the integrated terminal in
 the bottom panel (it shares the panel with the jobs, `[tui] terminal_rows` high) and gives
@@ -477,21 +550,6 @@ when none is found a toast lists the names tried and, for the config file, the b
 settings editor opens instead. After the editor exits the settings are reloaded (or the
 parse error is shown).
 
-**Folder compare and sync.** *Compare folders* (the two selected folders, or both panes'
-folders) opens Compare & sync as a full-screen view, the same as the window's: the left
-and right folders (with folder completion), the method and the sync mode at the top; F5
-(or Ctrl+R) compares, F6 swaps the sides, Esc cancels a running scan. The rows show what
-differs; 1–5 hide or show a category (only left, newer left, different, newer right, only
-right), Space cycles a row's action, Left / Right / Delete / S copy to the left / right,
-delete or skip (with Shift: every visible row), M / P change the method / the sync mode,
-C resolves the conflicts of a two-way sync. Enter shows the plan, and Enter again runs it
-as one undoable job. F8 opens the sync profiles: Enter loads a profile and compares, R runs
-it now, D does a dry run, X cancels its run, N / S create one (blank / from the current
-setup), E (or F4) edits its folders, method, mode and schedule (every so many minutes,
-daily at a time, …), F2 renames and Delete deletes it (not while it runs). The page shows
-each profile's schedule, next run, last run and its run reports. Scheduled profiles run
-while the terminal UI is open, as in the window.
-
 **AI assistant.** Ctrl+I (Alt+I on legacy terminals) opens the assistant panel beside the
 files (`[tui] ai_ratio` of the width; below 100 columns it covers them) with the keyboard
 in the composer; Ctrl+I focuses a panel that is open but does not have the keyboard, and a
@@ -521,86 +579,51 @@ and Esc cancels. Shift+E sends any tool's arguments straight to `$EDITOR`. Esc s
 running task while the panel is open, also when the list, the sidebar, the preview or the
 jobs have the keyboard.
 
-**Settings editor.** Ctrl+, (Alt+, on legacy terminals and in Windows Terminal) opens the
-settings as a full-screen view generated from the configuration: the sections on the left
-(hidden on narrow terminals), their keys on the right, each with its value; changed keys
-are marked and keys that only apply after a restart say so. Every change applies at once
-and is saved to `config.toml` shortly after, keeping your comments. Up / Down move, Tab
-switches between sections and keys (Ctrl+PageUp / PageDown: the previous / next section),
-Enter edits (a switch toggles, a choice opens its list, numbers and text are edited in
-place, lists open the list editor), Space toggles a switch or picks the next value, Left /
-Right step a choice or a number (Shift: by ten), Backspace or Delete resets a key and
-Ctrl+R the whole section (after a question). `/`, Ctrl+F or just typing searches every
-section. F1 or `?` shows or hides the description lines (shown when the terminal has at
-least 24 rows). Ctrl+E edits `config.toml` in your text editor (see *Suspend* above);
-afterwards the settings editor shows the file's values, as it does when the file changes
-on disk. Esc cancels an edit, clears the search and closes.
+### Tools
 
-Tables such as bookmarks, custom commands, AI profiles, MCP clients and servers,
-automation rules and saved searches open the table editor: Insert (Alt+A) adds an element,
-Alt+D duplicates it, Delete (Alt+R) removes it after a question, Alt+Up / Alt+Down move it
-and Enter opens its form, which has the same field kinds as the main editor (a key of a map
-is asked for first, and taken names are refused). Fields that hold a secret (an AI
-profile's API key, an MCP token) take a `credential:` or `env:` reference or *Set secret…*
-(Alt+S): the secret, typed as bullets, goes to the OS credential store and only the
-reference is written to `config.toml`; Alt+R removes it, and for an MCP client token Alt+G
-generates a new one and shows it once with the client snippet. Fields a form cannot hold
-(automation rule actions, a saved search's query) say "Edit in $EDITOR (Ctrl+E)".
+**Search bar.** Ctrl+Shift+F (F3, or Alt+Shift+F where the terminal cannot send it) opens
+the search bar under the breadcrumbs, as in the window: type the query and press Enter;
+the results replace the list and the bar keeps the keyboard (Down moves it to the
+results, Esc closes the bar, the results stay). Tab moves through the query field, the
+"in files" field of a content search, the pills (mode, case, contents, size, date, kind,
+hidden files, `.gitignore`, everywhere) and the Run / Save / close buttons; Space or Enter
+toggles a pill or picks its next option (Shift: the previous one), and the size pill opens
+a dialog with the minimum, the maximum and presets. Changing a pill searches again. The
+status row under the bar shows the hits, how much was scanned, whether the index answered
+and the folder being searched, with *Cancel*, *Relevance*, *Make smart folder* (or *Edit*)
+and *Refine*. Ctrl+S saves the search under a name (`searches.toml`): it shows in the
+sidebar, where Enter runs it again and its menu removes it. *Toggle flat view* lists a
+folder tree in one list as in the window.
 
-**Key bindings.** The settings' *Keyboard* section (also *Show keybindings*, Ctrl+/ or
-Alt+/) shows the preset and the `[keys]` switches, the problems of the key map (conflicts,
-invalid entries) and every action with its shortcuts as chips, grouped by category, with
-the alternatives Soyuz adds for legacy terminals tagged. Enter on an action records another
-shortcut (a conflict shows before it is kept), Left / Right choose a chip, Delete removes
-it, Backspace goes back to the preset's shortcuts, and Alt+C / Alt+M show only the conflicts
-/ only the changed actions. The search field filters the actions.
+**Smart folders, archives and remote locations.** Smart folders work as in the window: the
+sidebar's *New smart folder* row (or its menu, Shift+F10) opens the editor with the name,
+the query, "include hidden", how the query will be answered and a cheat sheet of the query
+language; a smart folder's menu opens it, opens it in a new tab, edits or deletes it, and
+the status line shows the index state while one is open. Enter on an archive (zip, tar.*,
+7z, single RAR) browses it like a folder; an encrypted one asks for its password first.
+*Extract to…* (destination with folder completion, "each archive into its own folder"),
+*Compress…* (name, format, level, password) and renaming an entry inside a zip are
+dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network
+section) opens the connection form for SFTP, WebDAV, FTP(S), S3 and, off Windows, SMB, with the
+fields of the chosen protocol and sign-in method; a new SSH host key asks before it is trusted.
+Saved connections show a state dot in the sidebar and have a menu (open in a new tab,
+edit, disconnect, copy the address, remove). Passwords and keys go to the OS credential
+store, never to `config.toml`.
 
-**Crash recovery.** If Soyuz stops unexpectedly, the terminal is restored first. On the
-next start the terminal UI offers to resume, roll back or discard the jobs that were
-interrupted (leftover partial files can go to the trash), and shows the crash reports
-(view, delete, open the folder), like the window does.
-
-**Workspaces and tab history.** *Save workspace as…* (palette) asks for a name (the last
-saved workspace's name is suggested, and saving under an existing name updates it);
-*Manage workspaces…* lists them: Enter opens one, F2 edits its name and hotkey (a hotkey
-that is not a key chord is refused with a message), Alt+Up moves it up and Del deletes it
-at once, without undo, as in the window. Ctrl+Alt+W lists the saved workspaces in the
-palette, and a workspace's hotkey opens it from anywhere. The window and the terminal UI
-share `workspaces.toml`; when both change it at the same time, the last one to save wins.
-*Where was I?* (palette, or the tab's menu) shows every place the tab visited as a tree
-with the current one highlighted: Up / Down pick a place, Enter goes there, Esc closes;
-with the mouse on, a click picks a row and a second click goes there.
-
-**About.** *About Soyuz* (palette) shows the version, the commit, the build, the platform,
-the settings folder and the license as text; C (or Alt+C) copies these facts, Enter or Esc
-closes it.
-
-**Shelf.** *Add to shelf* in a file's menu (Shift+F10) puts the selected items on the
-shelf and shows it; *Toggle shelf* (palette) shows or hides it. The shelf dialog lists the
-items with their folders (items that no longer exist are marked *Missing*): Up / Down move,
-Space marks, Enter goes to the item (the pane opens its folder with it selected), Del
-removes it from the shelf, and the buttons' letters run *Copy here* / *Move here* (the
-marked items, or all of them, into the focused pane's folder, as undoable jobs), *Remove*
-and *Clear*. Esc closes it. With the mouse on, a click picks a row, Ctrl+click marks it
-and a second click goes there.
-
-**Split and join.** *Split file* (palette, or *Split file…* in a file's menu) opens a
-dialog: Up / Down pick the part size (presets or *Custom size*), Tab moves to the custom
-size, the output folder and the buttons, Enter starts. The progress shows in the dialog;
-Esc stops a running split and removes the partial output, and closing the dialog any other
-way stops it too. *Join files* (*Join parts…* on a `.001` part) joins the parts into the
-output folder and checks the result against the checksum file that the split wrote, when
-there is one.
-
-**Previous versions.** *Restore previous version…* (palette or the item's menu, and
-*Previous versions…*, Alt+V, in Properties) lists the earlier copies of a file or folder:
-Up / Down pick one, Enter or O opens it (a folder in the pane), C compares it with the
-current file, T copies it elsewhere, R restores it over the original (an undoable copy job
-that asks before replacing), F5 or L looks again, Esc closes. When there are none, the
-dialog says why. On Windows, shadow copies can only be read with administrator rights: the
-terminal UI does not restart itself as administrator. The dialog says so and explains how
-to do it yourself: close Soyuz, open a terminal with *Run as administrator* and start
-`soyuz --tui` (or `soyuz-tui`) there.
+**Folder compare and sync.** *Compare folders* (the two selected folders, or both panes'
+folders) opens Compare & sync as a full-screen view, the same as the window's: the left
+and right folders (with folder completion), the method and the sync mode at the top; F5
+(or Ctrl+R) compares, F6 swaps the sides, Esc cancels a running scan. The rows show what
+differs; 1–5 hide or show a category (only left, newer left, different, newer right, only
+right), Space cycles a row's action, Left / Right / Delete / S copy to the left / right,
+delete or skip (with Shift: every visible row), M / P change the method / the sync mode,
+C resolves the conflicts of a two-way sync. Enter shows the plan, and Enter again runs it
+as one undoable job. F8 opens the sync profiles: Enter loads a profile and compares, R runs
+it now, D does a dry run, X cancels its run, N / S create one (blank / from the current
+setup), E (or F4) edits its folders, method, mode and schedule (every so many minutes,
+daily at a time, …), F2 renames and Delete deletes it (not while it runs). The page shows
+each profile's schedule, next run, last run and its run reports. Scheduled profiles run
+while the terminal UI is open, as in the window.
 
 **Disk usage treemap and duplicates.** These are full-screen views like Compare & sync.
 Only one shows at a time: opening one, or Compare & sync, closes the other and stops its
@@ -648,43 +671,47 @@ as in the window. `[sidebar] unmounted_devices` chooses which: `all`, `removable
   mark ejects it.
 - An NTFS volume that Windows left hibernated asks before it is mounted read-only.
 
-**Trash and This PC.** Both open from the sidebar (*Trash* under Other, *Computer* / *This
-PC* under Devices).
-- The Trash page lists the deleted items with their original location, date deleted and
-  size. Space, Shift and Ctrl select as in the file list. R restores the selection (an
-  undoable job), Del deletes it permanently and E empties the trash, each after a
-  confirmation. R and E work only while those letters have no other binding. Enter, Shift+F10
-  or a right click opens an item's menu: restore, open the original location, copy the
-  original path, delete permanently. The buttons in the header do the same with the mouse,
-  and F5 reads the trash again.
-- The This PC page lists the drives with a usage bar (yellow below 15 % free, red below 5 %),
-  free and total space and the file system. Enter or a click opens a drive; Shift+F10 or a
-  right click opens its menu.
+**About.** *About Soyuz* (palette) shows the version, the commit, the build, the platform,
+the settings folder and the license as text; C (or Alt+C) copies these facts, Enter or Esc
+closes it.
 
-New windows (and moving a tab to one), merging windows and running as administrator are
-not available in the terminal UI; they show a short notice instead.
+### Settings
 
-**Windows Terminal** keeps some chords for itself (Ctrl+Shift+P command palette,
-Ctrl+Shift+T new tab, Ctrl+Shift+F find, Ctrl+Tab, Ctrl+Shift+1…9, Ctrl+, settings,
-Alt+Enter full screen, Ctrl+V paste, Ctrl+= / - / 0 font size, …). Inside it (Soyuz checks
-`WT_SESSION`, also in WSL) the terminal UI adds stand-ins without changing your bindings
-or the window: Ctrl+K (or Alt+Shift+P) for the command palette, Alt+Shift+T to reopen a
-closed tab, F3 or Alt+Shift+F to search, Ctrl+PageDown / PageUp for the next / previous
-tab, Ctrl+F1…F5 for the view modes, Alt+, for settings, Alt+Shift+N for a new folder,
-Alt+Shift+V to paste as link and Alt+Shift+Enter for Properties. On Windows, Windows
-Terminal's Ctrl+V types the clipboard's text into the app, so Paste also gets Alt+V; in
-WSL, Ctrl+V arrives as a paste and pastes files. Shortcut hints (palette, toasts) show the
-chord that works. UI zoom is left to the terminal's own font size. To give a chord back to
-Soyuz instead, unbind it in Windows Terminal's `settings.json`:
+**Settings editor.** Ctrl+, (Alt+, on legacy terminals and in Windows Terminal) opens the
+settings as a full-screen view generated from the configuration: the sections on the left
+(hidden on narrow terminals), their keys on the right, each with its value; changed keys
+are marked and keys that only apply after a restart say so. Every change applies at once
+and is saved to `config.toml` shortly after, keeping your comments. Up / Down move, Tab
+switches between sections and keys (Ctrl+PageUp / PageDown: the previous / next section),
+Enter edits (a switch toggles, a choice opens its list, numbers and text are edited in
+place, lists open the list editor), Space toggles a switch or picks the next value, Left /
+Right step a choice or a number (Shift: by ten), Backspace or Delete resets a key and
+Ctrl+R the whole section (after a question). `/`, Ctrl+F or just typing searches every
+section. F1 or `?` shows or hides the description lines (shown when the terminal has at
+least 24 rows). Ctrl+E edits `config.toml` in your text editor (see *Suspend* above);
+afterwards the settings editor shows the file's values, as it does when the file changes
+on disk. Esc cancels an edit, clears the search and closes.
 
-```json
-"actions": [
-    { "command": "unbound", "keys": "ctrl+shift+p" },
-    { "command": "unbound", "keys": "ctrl+v" }
-]
-```
+![The settings editor on its Terminal UI section](../site/assets/shots/tui-settings.svg)
 
-(Newer versions also accept `{ "id": null, "keys": "ctrl+shift+p" }` in `keybindings`.)
+Tables such as bookmarks, custom commands, AI profiles, MCP clients and servers,
+automation rules and saved searches open the table editor: Insert (Alt+A) adds an element,
+Alt+D duplicates it, Delete (Alt+R) removes it after a question, Alt+Up / Alt+Down move it
+and Enter opens its form, which has the same field kinds as the main editor (a key of a map
+is asked for first, and taken names are refused). Fields that hold a secret (an AI
+profile's API key, an MCP token) take a `credential:` or `env:` reference or *Set secret…*
+(Alt+S): the secret, typed as bullets, goes to the OS credential store and only the
+reference is written to `config.toml`; Alt+R removes it, and for an MCP client token Alt+G
+generates a new one and shows it once with the client snippet. Fields a form cannot hold
+(automation rule actions, a saved search's query) say "Edit in $EDITOR (Ctrl+E)".
+
+**Key bindings.** The settings' *Keyboard* section (also *Show keybindings*, Ctrl+/ or
+Alt+/) shows the preset and the `[keys]` switches, the problems of the key map (conflicts,
+invalid entries) and every action with its shortcuts as chips, grouped by category, with
+the alternatives Soyuz adds for legacy terminals tagged. Enter on an action records another
+shortcut (a conflict shows before it is kept), Left / Right choose a chip, Delete removes
+it, Backspace goes back to the preset's shortcuts, and Alt+C / Alt+M show only the conflicts
+/ only the changed actions. The search field filters the actions.
 
 Settings → Terminal UI: turn the mouse off to keep the terminal's own text selection,
 choose the keyboard protocol (Auto uses the kitty protocol where the terminal supports
@@ -693,9 +720,81 @@ plain, ASCII or none; ASCII icons with ASCII or no lines give a pure ASCII scree
 sidebar width, the jobs panel height, the preview width, images and the cell size, the
 OSC 52 clipboard, the terminal mode (`shell_mode`: the terminal pane or suspend to the
 shell), the terminal pane's height (`terminal_rows`), the AI panel's width (`ai_ratio`) and
-the text editor (`editor`). In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
+the text editor (`editor`) and [screen-reader mode](#screen-reader-mode) (`screen_reader`). In raw terminal mode Ctrl+C is Copy and Ctrl+Z is Undo, as in the window. The terminal
 UI keeps its own session (`session-tui.toml`) and log (`soyuz-tui.log`) in the settings
 folder.
+
+### Screen-reader mode
+
+Screen-reader mode makes the terminal UI easy to follow with a screen reader that reads
+the terminal: Narrator or NVDA with Windows Terminal, Orca with GNOME Terminal and other
+Linux terminals, VoiceOver with Terminal.app. Turn it on with *Toggle screen-reader mode*
+in the command palette (it has no default shortcut; bind one in *Settings → Keyboard*),
+with *Screen-reader mode* in *Settings → Terminal UI* (`[tui] screen_reader = true`), or
+for one run with `soyuz-tui --screen-reader` (`soyuz --tui --screen-reader`), which is not
+saved.
+
+![Screen-reader mode: one pane as plain lines, the other pane's folder and the status sentence](../site/assets/shots/tui-screen-reader.svg)
+
+- **Plain lines.** No box lines, icons, pictures, bars or spinners. A selected row starts
+  with `*`, a folder ends with `/`, the sort reads "Name ascending" instead of an arrow, and
+  form fields read "Name: …". Miller columns and the settings editor show one column at a
+  time.
+- **One pane.** Only the focused pane is drawn; the line above the status line says which
+  folder the other pane shows ("Other pane: …"). Switch panes as usual.
+- **The cursor is on the focus.** The terminal's cursor sits on the focused row, field or
+  button, so a reader that follows the cursor (or its review cursor) reads that line.
+- **The status line is a sentence** that starts with the focused item: "Q3 mission
+  report.md, file, 556 B, 3 of 3, selected; 3 items, 1 selected (556 B); 688 GB free;
+  Details, sorted by Name, ascending". In a dialog it starts with the dialog and the focused
+  control ("New folder: Name"). When it changes, the whole line is written again, so
+  readers that speak new text read all of it, not only the changed end.
+- **Toasts** show in the status line as text ("Warning: title. body") and stay at least
+  their normal time, even when `[appearance] toast_time_scale` shortens them.
+- **Overlays** (dialogs, menus, the palette) clear the lines they cover, so no line mixes
+  their text with the file list.
+- **Job progress** on screen changes every 10 percent (or every 2 seconds) and shows the
+  percentage without a bar, so a running copy does not flood the reader.
+
+Keys, the mouse, dialogs and settings work as usual. The checklist for testing it with
+Narrator, NVDA and Orca is in [ACCESSIBILITY.md](ACCESSIBILITY.md#terminal-ui); a run with
+a human screen-reader user has not been recorded yet.
+
+### Scripted runs and screenshots
+
+For tests and documentation the terminal UI runs scripts like the window does:
+`SOYUZ_SCRIPT` holds steps separated by `;`, for example
+`wait_for:has=README.md;select:README.md;keys:{Enter};shot:readme.svg;quit`. Next to the
+window's steps (`cd:`, `select:`, `wait:`, `wait_for:`, `expect:`, `config:`, action names,
+…) the terminal UI understands `keys:` (keys typed into it: `{Ctrl+K}`, `{Down}` or plain
+text), `shot:<file>` (the next frame as text in a `.txt` file, text with its styles in a
+`.snap` file, or a picture in an `.svg` file) and `size:<columns>x<rows>`;
+`expect:screen~<text>` checks that the screen shows a text. The results go to
+`soyuz-tui.log` (`SOYUZ_SCRIPT: expect ok …` or `expect FAILED …`).
+
+`SOYUZ_TUI_HEADLESS=<columns>x<rows>` runs the terminal UI without any terminal, on an
+in-memory screen of that size: the script alone drives it, and it quits when the script
+ends (with exit code 1 when a check failed). Run it on a portable copy (a copy of
+`soyuz-tui` next to an empty `portable` file) so that your own settings are not used.
+`scripts/tui-screenshots.ps1` makes the pictures in this chapter that way, from a
+generated demo folder.
+
+### Troubleshooting the terminal UI
+
+**Crash recovery.** If Soyuz stops unexpectedly, the terminal is restored first. On the
+next start the terminal UI offers to resume, roll back or discard the jobs that were
+interrupted (leftover partial files can go to the trash), and shows the crash reports
+(view, delete, open the folder), like the window does.
+
+New windows (and moving a tab to one), merging windows and running as administrator are
+not available in the terminal UI; they show a short notice instead.
+
+- **Lines or icons show as boxes or question marks**: the terminal's font lacks those
+  characters. Choose ASCII icons or plain / ASCII lines in *Settings → Terminal UI*
+  (`[tui] icons`, `[tui] borders`); `icons = "nerd"` needs a Nerd Font in the terminal.
+- **A shortcut does nothing**: the terminal keeps it or cannot send it; see [Keys on
+  different terminals](#keys-on-different-terminals).
+- **Logs**: `soyuz-tui.log` in the settings folder (next to `config.toml`).
 
 ## Accessibility
 
@@ -712,6 +811,11 @@ folder.
 - **Touch density**: 40 px rows and larger buttons, menus and scrollbars.
 - **Interface zoom**: `Ctrl+=`, `Ctrl+-`, `Ctrl+0` scale the whole interface (50–300 %),
   stored as `appearance.ui_scale`.
+- **Terminal UI**: [screen-reader mode](#screen-reader-mode) draws plain lines without box
+  drawing, one pane at a time, with the terminal's cursor on the focused item and a status
+  line that reads as a sentence (`[tui] screen_reader`, or `soyuz-tui --screen-reader` for
+  one run). [ACCESSIBILITY.md](ACCESSIBILITY.md#terminal-ui) has the details and the
+  screen-reader checklist.
 
 ## Installing, updates and the default file manager
 

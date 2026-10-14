@@ -1,0 +1,233 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1260" height="648" viewBox="0 0 1260 648" font-family="'Cascadia Mono', Consolas, 'DejaVu Sans Mono', Menlo, monospace" font-size="15">
+<rect width="1260" height="648" fill="#1E1E1E"/>
+<rect x="0" y="0" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="18" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="36" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="54" width="207" height="18" fill="#0F1115"/>
+<rect x="207" y="54" width="1053" height="18" fill="#5B8CFF"/>
+<rect x="0" y="72" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="90" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="108" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="126" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="144" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="162" width="189" height="18" fill="#1D273F"/>
+<rect x="189" y="162" width="1071" height="18" fill="#0F1115"/>
+<rect x="0" y="180" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="198" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="216" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="234" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="252" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="270" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="288" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="306" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="324" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="342" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="360" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="378" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="396" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="414" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="432" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="450" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="468" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="486" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="504" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="522" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="540" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="558" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="576" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="594" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="612" width="1260" height="18" fill="#0F1115"/>
+<rect x="0" y="630" width="1260" height="18" fill="#0F1115"/>
+<text x="9 18 27 36 45 54 63 72" y="14" fill="#E6E8EC" font-weight="bold">Settings</text>
+<text x="90" y="14" fill="#E6E8EC" font-weight="bold">·</text>
+<text x="108 117 126 135 144 153 162 171" y="14" fill="#E6E8EC" font-weight="bold">Terminal</text>
+<text x="189 198" y="14" fill="#E6E8EC" font-weight="bold">UI</text>
+<text x="1242" y="14" fill="#A3A9B7">×</text>
+<text x="0" y="32" fill="#5B8CFF">/</text>
+<text x="18 27 36 45" y="32" fill="#A3A9B7">Type</text>
+<text x="63 72" y="32" fill="#A3A9B7">to</text>
+<text x="90 99 108 117 126 135" y="32" fill="#A3A9B7">search</text>
+<text x="153 162 171" y="32" fill="#A3A9B7">all</text>
+<text x="189 198 207 216 225 234 243 252" y="32" fill="#A3A9B7">settings</text>
+<text x="9 18 27 36 45 54 63" y="50" fill="#E6E8EC">General</text>
+<text x="207 216 225 234 243" y="50" fill="#A3A9B7" font-weight="bold">[tui]</text>
+<text x="9 18 27 36 45 54 63 72 81 90" y="68" fill="#E6E8EC">Appearance</text>
+<text x="225 234 243 252 261" y="68" fill="#FFFFFF">mouse</text>
+<text x="540 549 558" y="68" fill="#FFFFFF">[x]</text>
+<text x="9 18 27 36 45" y="86" fill="#E6E8EC">Fonts</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315 324 333 342 351 360 369" y="86" fill="#E6E8EC">keyboard_protocol</text>
+<text x="540 549 558 567" y="86" fill="#E6E8EC">auto</text>
+<text x="9 18 27 36 45" y="104" fill="#E6E8EC">Views</text>
+<text x="63" y="104" fill="#E6E8EC">&amp;</text>
+<text x="81 90 99 108 117 126" y="104" fill="#E6E8EC">layout</text>
+<text x="207" y="104" fill="#5B8CFF">•</text>
+<text x="225 234 243 252 261 270 279 288 297 306" y="104" fill="#E6E8EC">color_mode</text>
+<text x="540 549 558 567 576 585 594 603 612" y="104" fill="#E6E8EC">truecolor</text>
+<text x="9 18 27 36 45 54 63 72 81" y="122" fill="#E6E8EC">Behaviour</text>
+<text x="225 234 243 252 261" y="122" fill="#E6E8EC">icons</text>
+<text x="540 549 558 567 576 585 594" y="122" fill="#E6E8EC">unicode</text>
+<text x="9 18 27 36" y="140" fill="#E6E8EC">File</text>
+<text x="54 63 72 81 90 99 108 117 126 135" y="140" fill="#E6E8EC">operations</text>
+<text x="225 234 243 252 261 270 279" y="140" fill="#E6E8EC">borders</text>
+<text x="540 549 558 567 576 585 594" y="140" fill="#E6E8EC">rounded</text>
+<text x="9 18 27 36 45 54 63 72" y="158" fill="#E6E8EC">Terminal</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315 324 333" y="158" fill="#E6E8EC">sidebar_width</text>
+<text x="540 549" y="158" fill="#E6E8EC">28</text>
+<text x="9 18 27 36 45 54 63 72" y="176" fill="#E6E8EC">Terminal</text>
+<text x="90 99" y="176" fill="#E6E8EC">UI</text>
+<text x="225 234 243 252 261" y="176" fill="#E6E8EC">osc52</text>
+<text x="540 549 558 567" y="176" fill="#E6E8EC">auto</text>
+<text x="9 18 27 36 45 54 63" y="194" fill="#E6E8EC">Preview</text>
+<text x="81" y="194" fill="#E6E8EC">&amp;</text>
+<text x="99 108 117 126 135 144" y="194" fill="#E6E8EC">search</text>
+<text x="225 234 243 252 261 270 279 288 297" y="194" fill="#E6E8EC">jobs_rows</text>
+<text x="540" y="194" fill="#E6E8EC">8</text>
+<text x="9 18 27 36 45 54" y="212" fill="#E6E8EC">Editor</text>
+<text x="207" y="212" fill="#5B8CFF">•</text>
+<text x="225 234 243 252 261 270" y="212" fill="#E6E8EC">images</text>
+<text x="540 549 558" y="212" fill="#E6E8EC">off</text>
+<text x="9 18 27 36 45 54 63 72" y="230" fill="#E6E8EC">Keyboard</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315" y="230" fill="#E6E8EC">cell_pixels</text>
+<text x="540 549 558" y="230" fill="#E6E8EC">10,</text>
+<text x="576 585" y="230" fill="#E6E8EC">20</text>
+<text x="9 18 27 36 45 54" y="248" fill="#E6E8EC">Custom</text>
+<text x="72 81 90 99 108 117 126 135" y="248" fill="#E6E8EC">commands</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315 324 333" y="248" fill="#E6E8EC">preview_ratio</text>
+<text x="540 549 558 567" y="248" fill="#E6E8EC">0.38</text>
+<text x="9 18 27 36 45 54 63 72 81" y="266" fill="#E6E8EC">Bookmarks</text>
+<text x="225 234 243 252 261 270 279 288 297 306" y="266" fill="#E6E8EC">shell_mode</text>
+<text x="540 549 558 567" y="266" fill="#E6E8EC">pane</text>
+<text x="9 18 27 36 45 54 63" y="284" fill="#E6E8EC">Scripts</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315 324 333" y="284" fill="#E6E8EC">terminal_rows</text>
+<text x="540 549" y="284" fill="#E6E8EC">12</text>
+<text x="9 18 27 36 45 54 63 72 81 90 99" y="302" fill="#E6E8EC">Automations</text>
+<text x="225 234 243 252 261 270 279 288" y="302" fill="#E6E8EC">ai_ratio</text>
+<text x="540 549 558" y="302" fill="#E6E8EC">0.4</text>
+<text x="9 18" y="320" fill="#E6E8EC">AI</text>
+<text x="36 45 54 63 72 81 90 99 108" y="320" fill="#E6E8EC">assistant</text>
+<text x="225 234 243 252 261 270" y="320" fill="#E6E8EC">editor</text>
+<text x="540 549 558 567 576 585 594" y="320" fill="#A3A9B7">(empty)</text>
+<text x="9 18 27 36 45 54 63 72" y="338" fill="#E6E8EC">Advanced</text>
+<text x="225 234 243 252 261 270 279 288 297 306 315 324 333" y="338" fill="#E6E8EC">screen_reader</text>
+<text x="540" y="338" fill="#E6E8EC">[</text>
+<text x="558" y="338" fill="#E6E8EC">]</text>
+<text x="9 18 27 36 45" y="356" fill="#E6E8EC">About</text>
+<text x="63" y="356" fill="#E6E8EC">&amp;</text>
+<text x="81 90 99 108 117 126 135" y="356" fill="#E6E8EC">updates</text>
+<text x="9 18 27" y="608" fill="#A3A9B7">Use</text>
+<text x="45 54 63" y="608" fill="#A3A9B7">the</text>
+<text x="81 90 99 108 117" y="608" fill="#A3A9B7">mouse</text>
+<text x="135 144 153 162 171 180" y="608" fill="#A3A9B7">(click</text>
+<text x="198 207" y="608" fill="#A3A9B7">to</text>
+<text x="225 234 243 252 261 270 279" y="608" fill="#A3A9B7">select,</text>
+<text x="297 306 315 324 333" y="608" fill="#A3A9B7">wheel</text>
+<text x="351 360" y="608" fill="#A3A9B7">to</text>
+<text x="378 387 396 405 414 423 432 441" y="608" fill="#A3A9B7">scroll).</text>
+<text x="459 468 477" y="608" fill="#A3A9B7">Off</text>
+<text x="495 504 513 522 531 540" y="608" fill="#A3A9B7">leaves</text>
+<text x="558 567 576" y="608" fill="#A3A9B7">the</text>
+<text x="594 603 612 621 630 639 648 657 666 675" y="608" fill="#A3A9B7">terminal&apos;s</text>
+<text x="693 702 711" y="608" fill="#A3A9B7">own</text>
+<text x="729 738 747 756" y="608" fill="#A3A9B7">text</text>
+<text x="774 783 792 801 810 819 828 837 846" y="608" fill="#A3A9B7">selection</text>
+<text x="864 873 882 891 900 909 918 927" y="608" fill="#A3A9B7">working.</text>
+<text x="9 18 27 36 45 54 63 72 81" y="626" fill="#A3A9B7">tui.mouse</text>
+<text x="99" y="626" fill="#A3A9B7">·</text>
+<text x="117 126 135 144 153 162 171 180" y="626" fill="#A3A9B7">Default:</text>
+<text x="198 207 216 225" y="626" fill="#A3A9B7">true</text>
+<text x="0 9" y="644" fill="#5B8CFF" font-weight="bold">↑↓</text>
+<text x="27 36 45 54" y="644" fill="#5B8CFF" font-weight="bold">move</text>
+<text x="72" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="90 99 108 117 126" y="644" fill="#5B8CFF" font-weight="bold">Enter</text>
+<text x="144 153 162 171" y="644" fill="#5B8CFF" font-weight="bold">edit</text>
+<text x="189" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="207 216" y="644" fill="#5B8CFF" font-weight="bold">←→</text>
+<text x="234 243 252 261 270 279" y="644" fill="#5B8CFF" font-weight="bold">change</text>
+<text x="297" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="315 324 333" y="644" fill="#5B8CFF" font-weight="bold">Del</text>
+<text x="351 360 369 378 387" y="644" fill="#5B8CFF" font-weight="bold">reset</text>
+<text x="405" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="423" y="644" fill="#5B8CFF" font-weight="bold">/</text>
+<text x="441 450 459 468 477 486" y="644" fill="#5B8CFF" font-weight="bold">search</text>
+<text x="504" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="522 531 540" y="644" fill="#5B8CFF" font-weight="bold">Tab</text>
+<text x="558 567 576 585 594 603 612 621" y="644" fill="#5B8CFF" font-weight="bold">sections</text>
+<text x="639" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="657 666 675 684 693 702" y="644" fill="#5B8CFF" font-weight="bold">Ctrl+R</text>
+<text x="720 729 738 747 756" y="644" fill="#5B8CFF" font-weight="bold">reset</text>
+<text x="774 783 792 801 810 819 828" y="644" fill="#5B8CFF" font-weight="bold">section</text>
+<text x="846" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="864 873 882 891 900 909" y="644" fill="#5B8CFF" font-weight="bold">Ctrl+E</text>
+<text x="927 936 945 954" y="644" fill="#5B8CFF" font-weight="bold">edit</text>
+<text x="972 981 990 999" y="644" fill="#5B8CFF" font-weight="bold">file</text>
+<text x="1017" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="1035 1044" y="644" fill="#5B8CFF" font-weight="bold">F1</text>
+<text x="1062 1071 1080 1089" y="644" fill="#5B8CFF" font-weight="bold">help</text>
+<text x="1107" y="644" fill="#5B8CFF" font-weight="bold">·</text>
+<text x="1125 1134 1143" y="644" fill="#5B8CFF" font-weight="bold">Esc</text>
+<text x="1161 1170 1179 1188 1197" y="644" fill="#5B8CFF" font-weight="bold">close</text>
+<g stroke-linecap="square" fill="none">
+<line x1="193.5" y1="45" x2="193.5" y2="36" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="45" x2="193.5" y2="54" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="63" x2="193.5" y2="54" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="63" x2="193.5" y2="72" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="81" x2="193.5" y2="72" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="81" x2="193.5" y2="90" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="99" x2="193.5" y2="90" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="99" x2="193.5" y2="108" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="117" x2="193.5" y2="108" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="117" x2="193.5" y2="126" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="135" x2="193.5" y2="126" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="135" x2="193.5" y2="144" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="153" x2="193.5" y2="144" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="153" x2="193.5" y2="162" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="171" x2="193.5" y2="162" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="171" x2="193.5" y2="180" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="189" x2="193.5" y2="180" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="189" x2="193.5" y2="198" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="207" x2="193.5" y2="198" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="207" x2="193.5" y2="216" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="225" x2="193.5" y2="216" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="225" x2="193.5" y2="234" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="243" x2="193.5" y2="234" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="243" x2="193.5" y2="252" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="261" x2="193.5" y2="252" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="261" x2="193.5" y2="270" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="279" x2="193.5" y2="270" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="279" x2="193.5" y2="288" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="297" x2="193.5" y2="288" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="297" x2="193.5" y2="306" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="315" x2="193.5" y2="306" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="315" x2="193.5" y2="324" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="333" x2="193.5" y2="324" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="333" x2="193.5" y2="342" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="351" x2="193.5" y2="342" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="351" x2="193.5" y2="360" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="369" x2="193.5" y2="360" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="369" x2="193.5" y2="378" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="387" x2="193.5" y2="378" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="387" x2="193.5" y2="396" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="405" x2="193.5" y2="396" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="405" x2="193.5" y2="414" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="423" x2="193.5" y2="414" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="423" x2="193.5" y2="432" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="441" x2="193.5" y2="432" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="441" x2="193.5" y2="450" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="459" x2="193.5" y2="450" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="459" x2="193.5" y2="468" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="477" x2="193.5" y2="468" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="477" x2="193.5" y2="486" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="495" x2="193.5" y2="486" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="495" x2="193.5" y2="504" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="513" x2="193.5" y2="504" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="513" x2="193.5" y2="522" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="531" x2="193.5" y2="522" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="531" x2="193.5" y2="540" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="549" x2="193.5" y2="540" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="549" x2="193.5" y2="558" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="567" x2="193.5" y2="558" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="567" x2="193.5" y2="576" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="585" x2="193.5" y2="576" stroke="#343A47" stroke-width="1.2"/>
+<line x1="193.5" y1="585" x2="193.5" y2="594" stroke="#343A47" stroke-width="1.2"/>
+</g>
+</svg>
