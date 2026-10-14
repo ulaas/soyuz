@@ -22,11 +22,10 @@
 //! Supported releases (one row of [`Majors::SUPPORTED`] at a time, mixed sets are refused):
 //! the bundled 9.0 (avcodec 63) plus the distro / Flatpak-runtime 8.x (62) and 7.1 (61).
 //!
-//! Phase V1a implements the loader, `probe`, `grab_frame` and the audio reader; the
-//! player (V2a) and the transcoder (V2c) are still stubs returning
-//! [`MediaError::NotLoaded`]. Tests: `cargo test -p soyuz-media` runs without libraries;
-//! `SOYUZ_FFMPEG_DIR=<folder> SOYUZ_MEDIA_TESTS=1` adds the with-library suite
-//! (`tests/with_libs.rs`), which fails instead of skipping when no runtime loads.
+//! Tests: `cargo test -p soyuz-media` runs without libraries;
+//! `SOYUZ_FFMPEG_DIR=<folder> SOYUZ_MEDIA_TESTS=1` adds the with-library suites
+//! (`tests/with_libs.rs`, `tests/player.rs`, `tests/transcode.rs`), which fail instead of
+//! skipping when no runtime loads.
 
 #![deny(unsafe_code)]
 #![deny(clippy::undocumented_unsafe_blocks)]
