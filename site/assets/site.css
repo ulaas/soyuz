@@ -317,6 +317,7 @@ section { position: relative; }
 .more-item h3 { font-size: 1.08rem; }
 .more-item p { margin-top: .5rem; color: var(--ink-2); font-size: .98rem; }
 .more-item .query { margin-top: .8rem; }
+.more-item .query-note { margin-top: .4rem; color: var(--ink-3); font-size: .9rem; }
 .more-item .query code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-word; color: var(--ink); }
 
 /* Assistant */
