@@ -84,7 +84,11 @@ pub enum ScopeError {
 /// Compiled scope.
 #[derive(Clone, Debug)]
 pub struct Scope {
+    /// The roots resolved (symlinks, junctions and 8.3 short names expanded).
     roots: Vec<PathBuf>,
+    /// The roots as configured, `.` / `..` resolved: a path spelled the same way (a short
+    /// name such as `C:\Users\RUNNER~1`, a junction) is inside them before resolving.
+    given: Vec<PathBuf>,
     blocked: GlobSet,
     patterns: Vec<String>,
 }
@@ -111,8 +115,9 @@ impl Scope {
             }
         }
         let blocked = b.build().unwrap_or_else(|_| GlobSet::empty());
+        let given = roots.iter().filter_map(|r| lexical(r)).collect();
         let roots = roots.into_iter().filter_map(|r| resolve(&r).ok()).collect();
-        Scope { roots, blocked, patterns }
+        Scope { roots, given, blocked, patterns }
     }
 
     /// From the `[ai.scope]` config (empty roots = the home folder).
@@ -154,14 +159,17 @@ impl Scope {
         }
         let lexical = lexical(path).ok_or_else(|| ScopeError::Invalid(path.to_path_buf()))?;
         let real = resolve(&lexical).map_err(|_| ScopeError::Invalid(path.to_path_buf()))?;
-        for p in [&lexical, &real] {
+        // The path as given may match the roots as given or resolved; the resolved path
+        // must be inside a resolved root (no escape through a link).
+        let all: Vec<&PathBuf> = self.roots.iter().chain(&self.given).collect();
+        for (p, roots) in [(&lexical, all), (&real, self.roots.iter().collect())] {
             if self.is_blocked(p) {
                 return Err(ScopeError::Sensitive(path.to_path_buf()));
             }
-            if !self.roots.iter().any(|r| within(p, r)) {
+            if !roots.iter().any(|r| within(p, r)) {
                 return Err(ScopeError::OutsideRoots(path.to_path_buf()));
             }
-            if write && self.roots.iter().any(|r| same(p, r)) {
+            if write && roots.iter().any(|r| same(p, r)) {
                 return Err(ScopeError::RootItself(path.to_path_buf()));
             }
         }
@@ -286,5 +294,28 @@ mod tests {
         let s = Scope::new(vec![dir.path().to_path_buf()], &[], false);
         let upper = PathBuf::from(dir.path().to_string_lossy().to_uppercase()).join("x");
         assert!(s.check_read(&upper).is_ok());
+    }
+
+    /// A root reached through a junction (like an 8.3 short name such as
+    /// `C:\Users\RUNNER~1` on CI) resolves to another spelling; paths written the
+    /// way the root was given are still inside it, and the link cannot be used to escape.
+    #[cfg(windows)]
+    #[test]
+    fn roots_given_through_a_junction() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir_all(real.join("sub")).unwrap();
+        std::fs::create_dir_all(dir.path().join("other")).unwrap();
+        let link = dir.path().join("link");
+        soyuz_fs::junction(&real, &link).unwrap();
+        let s = Scope::new(vec![link.clone()], &[], false);
+        assert!(s.check_read(&link.join("sub")).is_ok());
+        assert!(s.check_write(&link.join("sub/new.txt")).is_ok());
+        assert!(s.check_read(&real.join("sub")).is_ok(), "the resolved spelling too");
+        assert!(matches!(s.check_write(&link), Err(ScopeError::RootItself(_))));
+        assert!(matches!(s.check_read(&dir.path().join("other")), Err(ScopeError::OutsideRoots(_))));
+        // A junction inside the root that points out of it is still refused.
+        soyuz_fs::junction(&dir.path().join("other"), &real.join("out")).unwrap();
+        assert!(matches!(s.check_read(&link.join("out")), Err(ScopeError::OutsideRoots(_))));
     }
 }
