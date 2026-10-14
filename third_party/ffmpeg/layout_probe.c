@@ -200,6 +200,12 @@ int main(void) {
 
     /* AVCodecContext: never read as a struct except hw_device_ctx (V4b). */
     OFF(AVCodecContext, hw_device_ctx);
+    /* AVCodec: the public prefix read for the encoder open-probe; identical on 7.1 / 8.x / 9.0. */
+    OFF(AVCodec, name);
+    OFF(AVCodec, long_name);
+    OFF(AVCodec, type);
+    OFF(AVCodec, id);
+    OFF(AVCodec, capabilities);
 
     /* AVPacketSideData / AVFrameSideData: type, data, size. */
     OFF(AVPacketSideData, data);
