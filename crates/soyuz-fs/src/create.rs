@@ -99,13 +99,31 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> FsResult<()> {
         }
         f.sync_all().map_err(err::map("write_atomic", &tmp))?;
         drop(f);
-        crate::mv::rename(&tmp, path, crate::mv::RenameMode::Replace)
-            .map_err(|e| FsError { op: "write_atomic".into(), ..e })
+        replace_with_retry(&tmp, path).map_err(|e| FsError { op: "write_atomic".into(), ..e })
     })();
     if res.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
     res
+}
+
+/// Rename `tmp` over `path`. On Windows, replacing a file that another process (an
+/// antivirus scan, a sync client, a reader) has open fails with "access denied" or a
+/// sharing violation until that handle closes, so retry for about a third of a second
+/// before giving up.
+fn replace_with_retry(tmp: &Path, path: &Path) -> FsResult<()> {
+    const BACKOFF_MS: [u64; 7] = [5, 10, 20, 40, 80, 100, 100];
+    let mut waits = BACKOFF_MS.iter();
+    loop {
+        match crate::mv::rename(tmp, path, crate::mv::RenameMode::Replace) {
+            // ERROR_ACCESS_DENIED / ERROR_SHARING_VIOLATION
+            Err(e) if cfg!(windows) && matches!(e.code, Some(5 | 32)) && !path.is_dir() => match waits.next() {
+                Some(ms) => std::thread::sleep(std::time::Duration::from_millis(*ms)),
+                None => return Err(e),
+            },
+            other => return other,
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -151,6 +169,25 @@ mod imp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A reader holding the file open while it is replaced (an antivirus scan, a test
+    /// polling the file) only delays the write.
+    #[test]
+    fn write_atomic_waits_for_a_reader_to_close() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("store.toml");
+        std::fs::write(&path, "old").unwrap();
+        let reader = std::fs::File::open(&path).unwrap();
+        let closer = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(60));
+            drop(reader);
+        });
+        write_atomic(&path, b"new").unwrap();
+        closer.join().unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        let leftovers: Vec<_> = std::fs::read_dir(d.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(leftovers, [std::ffi::OsString::from("store.toml")]);
+    }
 
     #[test]
     fn dirs_and_files() {
