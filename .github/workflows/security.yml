@@ -49,9 +49,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        with:
-          tool: cargo-audit
+      # Only allow-listed actions run in this repository: build cargo-audit from crates.io
+      # (the cache keeps the binary in ~/.cargo/bin between runs).
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install cargo-audit
+        run: cargo audit --version || cargo install cargo-audit --locked
       # Vulnerabilities, unsound and yanked crates fail; "unmaintained" notices are shown
       # (transitive ones via syntect are listed in deny.toml). Ignores, if ever needed, go
       # into deny.toml [advisories].ignore AND here via --ignore, each with a reason.
