@@ -31,6 +31,7 @@ impl Default for Config {
             archive: Archive::default(),
             search: Search::default(),
             preview: Preview::default(),
+            media: Media::default(),
             editor: Editor::default(),
             git: Git::default(),
             sync: SyncSection::default(),
@@ -354,14 +355,35 @@ impl Default for Preview {
             model_turntable: true,
             audio_waveform: true,
             audio_playback: true,
-            video_ffmpeg: true,
-            ffmpeg_path: "ffmpeg".into(),
+            video: true,
             diff: true,
             max_document_mib: 64,
             sheet_rows: 200,
             max_model_mib: 128,
             max_audio_mib: 512,
             max_diff_kib: 1024,
+        }
+    }
+}
+
+impl Default for Media {
+    fn default() -> Self {
+        Media {
+            ffmpeg: true,
+            ffmpeg_dir: String::new(),
+            threads: 0,
+            hw_decode: HwDecode::Auto,
+            audio_backend: AudioBackend::Auto,
+            player: true,
+            autoplay: false,
+            loop_: false,
+            volume: 80,
+            muted: false,
+            seek_step_secs: 5.0,
+            max_px: 1280,
+            tui_fps: 8,
+            poster_secs: 0.0,
+            tools: true,
         }
     }
 }

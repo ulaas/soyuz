@@ -85,6 +85,7 @@ pub fn key_context(c: KeyContext) -> &'static str {
         KeyContext::Rename => tr!("core-key-context-rename"),
         KeyContext::Sidebar => tr!("core-key-context-sidebar"),
         KeyContext::Editor => tr!("core-key-context-editor"),
+        KeyContext::Player => tr!("core-key-context-player"),
     }
 }
 

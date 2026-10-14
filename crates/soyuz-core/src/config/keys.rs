@@ -178,11 +178,14 @@ pub enum KeyContext {
     /// A built-in editor document (text, hex, image) has keyboard focus: its commands
     /// shadow the global chords there ([`Action::is_editor`]).
     Editor,
+    /// The video player has keyboard focus (the preview pane with a playing video, or
+    /// Quick Look on a video): its transport keys shadow the global chords there.
+    Player,
 }
 
 impl KeyContext {
     /// Every context, in display order.
-    pub const ALL: [KeyContext; 8] = [
+    pub const ALL: [KeyContext; 9] = [
         KeyContext::Global,
         KeyContext::FileList,
         KeyContext::Sidebar,
@@ -191,6 +194,7 @@ impl KeyContext {
         KeyContext::Omnibar,
         KeyContext::Rename,
         KeyContext::Editor,
+        KeyContext::Player,
     ];
 
     /// Human label ("File list").
@@ -204,6 +208,7 @@ impl KeyContext {
             KeyContext::Rename => "Rename",
             KeyContext::Sidebar => "Sidebar",
             KeyContext::Editor => "Editor",
+            KeyContext::Player => "Player",
         }
     }
 }

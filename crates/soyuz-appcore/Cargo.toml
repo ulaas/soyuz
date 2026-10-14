@@ -36,6 +36,7 @@ soyuz-ai.workspace = true
 soyuz-mcp.workspace = true
 soyuz-script.workspace = true
 soyuz-vfs.workspace = true
+soyuz-media.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
 zeroize.workspace = true

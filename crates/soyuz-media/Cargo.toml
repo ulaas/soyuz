@@ -1,0 +1,22 @@
+[package]
+name = "soyuz-media"
+description = "Soyuz media layer: the FFmpeg libraries loaded at run time (probe, frames, audio, playback, transcoding)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+# No soyuz-core, no audio device, no GUI toolkit: the crate's tests run headless and the
+# frontends adapt its closures / traits (`FrameSink`, `AudioOutput`) themselves.
+[dependencies]
+libloading.workspace = true
+image.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

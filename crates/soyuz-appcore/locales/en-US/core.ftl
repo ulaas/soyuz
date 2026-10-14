@@ -51,6 +51,7 @@ core-key-context-omnibar = Text fields
 core-key-context-rename = Rename
 core-key-context-sidebar = Sidebar
 core-key-context-editor = Editor
+core-key-context-player = Player
 
 core-key-preset-explorer = Explorer
 core-key-preset-commander = Commander (F-keys)

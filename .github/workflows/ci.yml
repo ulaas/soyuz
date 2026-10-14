@@ -40,6 +40,17 @@ jobs:
             echo "::error::shell / COM shell APIs are banned in crates/"
             exit 1
           fi
+      # `unsafe` is denied workspace-wide; the files that opt a module back in are listed in
+      # scripts/unsafe-allowlist.txt (CLAUDE.md names the modules). A new allow site must be
+      # added there deliberately, in the same change.
+      - name: Unsafe allowlist
+        shell: bash
+        run: |
+          grep -rlI "allow(unsafe_code)" crates/ | sort > /tmp/unsafe-sites.txt
+          if ! diff -u scripts/unsafe-allowlist.txt /tmp/unsafe-sites.txt; then
+            echo "::error::allow(unsafe_code) sites differ from scripts/unsafe-allowlist.txt"
+            exit 1
+          fi
 
   # No credentials in the repository, ever: gitleaks over the full history on every push and
   # pull request (deliberate test fixtures are allow-listed in .gitleaks.toml). The release

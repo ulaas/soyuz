@@ -128,7 +128,7 @@ impl Section {
             Section::Jobs => &["jobs", "sync"],
             Section::Terminal => &["terminal"],
             Section::TerminalUi => &["tui"],
-            Section::Preview => &["preview", "git", "search"],
+            Section::Preview => &["preview", "media", "git", "search"],
             Section::Editor => &["editor"],
             Section::Keyboard => &["keys"],
             Section::Commands => &["custom_commands"],
@@ -194,6 +194,7 @@ impl Section {
             Section::TerminalUi => c.tui = d.tui,
             Section::Preview => {
                 c.preview = d.preview;
+                c.media = d.media;
                 c.git = d.git;
                 let saved = std::mem::take(&mut c.search.saved);
                 c.search = d.search;

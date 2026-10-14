@@ -51,6 +51,7 @@ core-key-context-omnibar = Metin alanları
 core-key-context-rename = Yeniden adlandırma
 core-key-context-sidebar = Kenar çubuğu
 core-key-context-editor = Düzenleyici
+core-key-context-player = Oynatıcı
 
 core-key-preset-explorer = Explorer
 core-key-preset-commander = Commander (F tuşları)

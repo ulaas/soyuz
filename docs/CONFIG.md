@@ -52,6 +52,7 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[[search.saved]]`](#searchsaved)
 - [`[search.index]`](#searchindex)
 - [`[preview]`](#preview)
+- [`[media]`](#media)
 - [`[editor]`](#editor)
 - [`[git]`](#git)
 - [`[sync]`](#sync)
@@ -84,7 +85,7 @@ written as a list of quoted values is an enumeration: use one of them.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `schema` | integer | `2` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
+| `schema` | integer | `3` | Schema version (`version` is accepted as an alias); see `config::migrate`. |
 
 ## `[general]`
 
@@ -135,7 +136,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `accent` | string | `"theme"` | `"theme"` (the theme's own accent) \| `"system"` (the OS accent color, followed live) \| `"#RRGGBB"`. |
 | `extension_badges` | boolean | `true` | Extension label badges on file icons in the grid / gallery views. |
 | `folder_thumbnails` | boolean | `true` | 2×2 mosaic of the first images inside folders (grid / gallery views). |
-| `video_thumbnails` | boolean | `true` | First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found). |
+| `video_thumbnails` | boolean | `true` | First-frame video thumbnails through the FFmpeg libraries (`[media]`). |
 | `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
 | `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails the system already made (Windows: Explorer's `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`; read-only) before decoding a file ourselves. |
 | `write_os_thumbnails` | boolean | `true` | Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them. Ignored on Windows and macOS. |
@@ -425,14 +426,35 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `model_turntable` | boolean | `true` | Slowly spin 3D models until they are dragged (off with reduced motion too). |
 | `audio_waveform` | boolean | `true` | Decode audio for a waveform image. |
 | `audio_playback` | boolean | `true` | Play / pause / seek audio in the preview. |
-| `video_ffmpeg` | boolean | `true` | Poster frame for videos through an `ffmpeg` executable (when one is found). |
-| `ffmpeg_path` | string | `"ffmpeg"` | The `ffmpeg` program: a name looked up on PATH or a full path. |
+| `video` | boolean | `true` | Video previews: container metadata, and a poster frame when the FFmpeg libraries are loaded (`[media]`). |
 | `diff` | boolean | `true` | Side-by-side / unified diff when exactly two text files are selected. |
 | `max_document_mib` | integer | `64` | Office / EPUB / PDF files (and each part inside them) larger than this are not parsed (MiB). |
 | `sheet_rows` | integer | `200` | Spreadsheet preview: rows read from the first sheet. |
 | `max_model_mib` | integer | `128` | 3D model files larger than this are not loaded (MiB). |
 | `max_audio_mib` | integer | `512` | Audio files larger than this get no waveform (MiB). |
 | `max_diff_kib` | integer | `1024` | Each side of a diff is read up to this size (KiB). |
+
+## `[media]`
+
+`[media]`: the FFmpeg libraries (loaded at run time, never linked), the in-app video player and the media tools (Convert, Extract audio, Trim, Save frame).
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `ffmpeg` | boolean | `true` | Use the FFmpeg libraries when they are found (bundled, `ffmpeg_dir`, the config dir's `ffmpeg/` folder, or the system's). Off: metadata-only video previews, Symphonia audio, no player or media tools. |
+| `ffmpeg_dir` | string | `""` | Folder searched first for the libraries (`avcodec-63.dll` / `libavcodec.so.63` / `libavcodec.63.dylib` and the other four); empty = next to the executable, then `<config dir>/ffmpeg`, then the system folders. A change applies to the next load (after a restart once libraries were loaded). |
+| `threads` | integer | `0` | Decoder threads per file; 0 = one per core. |
+| `hw_decode` | `"auto"` \| `"off"` \| `"d3d11va"` \| `"vaapi"` \| `"videotoolbox"` | `"auto"` | Hardware video decoding (`auto` picks the platform's decoder when the codec has one). (`auto`: The platform's decoder (D3D11VA, VAAPI, VideoToolbox) when the codec has one; `off`: Software decoding only; `d3d11va`: Windows; `vaapi`: Linux; `videotoolbox`: macOS) |
+| `audio_backend` | `"auto"` \| `"ffmpeg"` \| `"symphonia"` | `"auto"` | Which decoder plays and analyses audio: `auto` = FFmpeg when loaded, else Symphonia. (`auto`: FFmpeg when its libraries are loaded, Symphonia otherwise; `ffmpeg`: Always the FFmpeg libraries (no audio preview without them); `symphonia`: Always the pure-Rust decoder (mp3, flac, wav, ogg, aac, alac, …)) |
+| `player` | boolean | `true` | Play videos in the preview pane and Quick Look (off: poster frame only). |
+| `autoplay` | boolean | `false` | Start playing as soon as a video is previewed. |
+| `loop` | boolean | `false` | Restart from the beginning at the end. |
+| `volume` | integer | `80` | Player volume, 0–100 (written back when changed in the player). |
+| `muted` | boolean | `false` | Player muted (written back when changed in the player). |
+| `seek_step_secs` | float | `5.0` | Seconds the player skips on ←/→. |
+| `max_px` | integer | `1280` | Longest edge of video frames decoded for the preview pane and Quick Look (pixels); bigger sources are scaled down while decoding. |
+| `tui_fps` | integer | `8` | Frames per second drawn as terminal images by the terminal UI's player. |
+| `poster_secs` | float | `0.0` | The poster frame is taken this many seconds in (clamped to the duration); 0 = a tenth of the duration, at most 5 s. |
+| `tools` | boolean | `true` | Show the media tools (Convert…, Extract audio…, Trim…, Save frame…) in menus. |
 
 ## `[editor]`
 

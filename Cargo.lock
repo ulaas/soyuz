@@ -6958,6 +6958,7 @@ dependencies = [
  "soyuz-index",
  "soyuz-jobs",
  "soyuz-mcp",
+ "soyuz-media",
  "soyuz-script",
  "soyuz-search",
  "soyuz-term",
@@ -7093,6 +7094,7 @@ dependencies = [
  "soyuz-archive",
  "soyuz-core",
  "soyuz-fs",
+ "soyuz-media",
  "soyuz-vfs",
  "tempfile",
 ]
@@ -7122,6 +7124,17 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "soyuz-media"
+version = "0.3.2"
+dependencies = [
+ "image",
+ "libloading",
+ "log",
+ "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

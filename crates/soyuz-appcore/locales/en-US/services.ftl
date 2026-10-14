@@ -85,7 +85,7 @@ services-preview-decimated = { $count } (decimated)
 services-preview-waveform-skipped = Skipped above { $size } MiB ([preview] max_audio_mib)
 services-preview-poster-disk-only = Poster frames are only made for files on disk.
 # $path: the configured ffmpeg command.
-services-preview-no-ffmpeg = Install ffmpeg (or set [preview] ffmpeg_path) for a poster frame; "{ $path }" wasn't found.
+services-preview-no-ffmpeg = Install ffmpeg on PATH for a poster frame; "{ $path }" wasn't found.
 services-preview-no-pdf-renderer = This build has no PDF renderer (cargo feature `pdf`).
 services-preview-no-pdf-renderer-short = No PDF renderer in this build
 services-preview-cant-read-pdf = Can't read this PDF

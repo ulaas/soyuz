@@ -1,0 +1,6 @@
+crates/soyuz-ai/src/credentials/mod.rs
+crates/soyuz-appcore/src/services/os_clipboard.rs
+crates/soyuz-fs/src/lib.rs
+crates/soyuz-mcp/src/pipe/mod.rs
+crates/soyuz-media/src/lib.rs
+crates/soyuz-term/src/lib.rs

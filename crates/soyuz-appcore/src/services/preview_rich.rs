@@ -39,7 +39,10 @@ pub struct RichLimits {
     pub models: bool,
     pub waveform: bool,
     pub playback: bool,
-    pub ffmpeg: bool,
+    /// Video previews (`[preview] video`).
+    pub video: bool,
+    /// The `ffmpeg` program for poster frames (a PATH lookup; no config key since schema
+    /// 3). Goes away with the CLI fallback when the FFmpeg libraries take over (Phase V).
     pub ffmpeg_path: String,
     pub max_document: u64,
     pub sheet_rows: usize,
@@ -65,8 +68,8 @@ impl RichLimits {
             models: c.models,
             waveform: c.audio_waveform,
             playback: c.audio_playback,
-            ffmpeg: c.video_ffmpeg,
-            ffmpeg_path: c.ffmpeg_path.clone(),
+            video: c.video,
+            ffmpeg_path: "ffmpeg".into(),
             max_document: c.max_document_mib.max(1).saturating_mul(1 << 20),
             sheet_rows: c.sheet_rows.clamp(1, 100_000) as usize,
             max_model: c.max_model_mib.max(1).saturating_mul(1 << 20),
@@ -157,7 +160,7 @@ pub fn route(name: &str, head: &[u8], detected: Kind, lim: &RichLimits) -> Optio
     }
     match detected {
         Kind::Audio if lim.waveform || lim.playback => Some(RichKind::Audio),
-        Kind::Video if lim.ffmpeg => Some(RichKind::Video),
+        Kind::Video if lim.video => Some(RichKind::Video),
         Kind::Pdf if lim.pdf => Some(RichKind::Pdf),
         _ => None,
     }

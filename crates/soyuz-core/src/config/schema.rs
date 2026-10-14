@@ -13,7 +13,7 @@ use crate::time::DateFormat;
 use super::keys::KeyPreset;
 
 /// Current schema version written by [`save_pretty`](super::save_pretty).
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -41,6 +41,8 @@ pub struct Config {
     pub archive: Archive,
     pub search: Search,
     pub preview: Preview,
+    /// The FFmpeg libraries: video previews, playback and the media tools.
+    pub media: Media,
     pub editor: Editor,
     pub git: Git,
     /// Scheduled sync profiles, two-way sync and previous versions.
@@ -208,7 +210,7 @@ pub struct Appearance {
     pub extension_badges: bool,
     /// 2×2 mosaic of the first images inside folders (grid / gallery views).
     pub folder_thumbnails: bool,
-    /// First-frame video thumbnails through an `ffmpeg` binary on `PATH` (when found).
+    /// First-frame video thumbnails through the FFmpeg libraries (`[media]`).
     pub video_thumbnails: bool,
     /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
     /// `[preview] pdfium_dir`); without it PDFs keep their icon.
@@ -775,10 +777,9 @@ pub struct Preview {
     pub audio_waveform: bool,
     /// Play / pause / seek audio in the preview.
     pub audio_playback: bool,
-    /// Poster frame for videos through an `ffmpeg` executable (when one is found).
-    pub video_ffmpeg: bool,
-    /// The `ffmpeg` program: a name looked up on PATH or a full path.
-    pub ffmpeg_path: String,
+    /// Video previews: container metadata, and a poster frame when the FFmpeg libraries
+    /// are loaded (`[media]`).
+    pub video: bool,
     /// Side-by-side / unified diff when exactly two text files are selected.
     pub diff: bool,
     /// Office / EPUB / PDF files (and each part inside them) larger than this are not parsed (MiB).
@@ -791,6 +792,81 @@ pub struct Preview {
     pub max_audio_mib: u64,
     /// Each side of a diff is read up to this size (KiB).
     pub max_diff_kib: u64,
+}
+
+/// `[media]`: the FFmpeg libraries (loaded at run time, never linked), the in-app video
+/// player and the media tools (Convert, Extract audio, Trim, Save frame).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Media {
+    /// Use the FFmpeg libraries when they are found (bundled, `ffmpeg_dir`, the config
+    /// dir's `ffmpeg/` folder, or the system's). Off: metadata-only video previews,
+    /// Symphonia audio, no player or media tools.
+    pub ffmpeg: bool,
+    /// Folder searched first for the libraries (`avcodec-63.dll` / `libavcodec.so.63` /
+    /// `libavcodec.63.dylib` and the other four); empty = next to the executable, then
+    /// `<config dir>/ffmpeg`, then the system folders. A change applies to the next load
+    /// (after a restart once libraries were loaded).
+    pub ffmpeg_dir: String,
+    /// Decoder threads per file; 0 = one per core.
+    pub threads: u32,
+    /// Hardware video decoding (`auto` picks the platform's decoder when the codec has one).
+    pub hw_decode: HwDecode,
+    /// Which decoder plays and analyses audio: `auto` = FFmpeg when loaded, else Symphonia.
+    pub audio_backend: AudioBackend,
+    /// Play videos in the preview pane and Quick Look (off: poster frame only).
+    pub player: bool,
+    /// Start playing as soon as a video is previewed.
+    pub autoplay: bool,
+    /// Restart from the beginning at the end.
+    #[serde(rename = "loop")]
+    pub loop_: bool,
+    /// Player volume, 0–100 (written back when changed in the player).
+    pub volume: u8,
+    /// Player muted (written back when changed in the player).
+    pub muted: bool,
+    /// Seconds the player skips on ←/→.
+    pub seek_step_secs: f32,
+    /// Longest edge of video frames decoded for the preview pane and Quick Look (pixels);
+    /// bigger sources are scaled down while decoding.
+    pub max_px: u32,
+    /// Frames per second drawn as terminal images by the terminal UI's player.
+    pub tui_fps: u8,
+    /// The poster frame is taken this many seconds in (clamped to the duration); 0 = a
+    /// tenth of the duration, at most 5 s.
+    pub poster_secs: f32,
+    /// Show the media tools (Convert…, Extract audio…, Trim…, Save frame…) in menus.
+    pub tools: bool,
+}
+
+/// `media.hw_decode`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum HwDecode {
+    /// The platform's decoder (D3D11VA, VAAPI, VideoToolbox) when the codec has one.
+    #[default]
+    Auto,
+    /// Software decoding only.
+    Off,
+    /// Windows.
+    D3d11va,
+    /// Linux.
+    Vaapi,
+    /// macOS.
+    Videotoolbox,
+}
+
+/// `media.audio_backend`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AudioBackend {
+    /// FFmpeg when its libraries are loaded, Symphonia otherwise.
+    #[default]
+    Auto,
+    /// Always the FFmpeg libraries (no audio preview without them).
+    Ffmpeg,
+    /// Always the pure-Rust decoder (mp3, flac, wav, ogg, aac, alac, …).
+    Symphonia,
 }
 
 /// `[editor]`: the built-in text / hex / image editors ("Edit in Soyuz", F4).

@@ -304,8 +304,12 @@ pub fn is_newer(latest: &Version, current: &str) -> bool {
 
 /// The asset to download for this OS/arch. Installed copies prefer the `.msi` installer,
 /// then a regular `.zip`; portable copies (a `portable` marker next to the exe) prefer the
-/// `-portable.zip`, then any `.zip`. Names follow `soyuz-<ver>-<os>-<arch>[-portable].<ext>`.
+/// `-portable.zip`, then any `.zip`. Names follow `soyuz-<ver>-<os>-<arch>[-portable].<ext>`
+/// and only names with that `soyuz-<ver>-` prefix are considered: anything else on the
+/// release (checksum lists, source tarballs, an `ffmpeg-runtime-*` archive) is never the
+/// app.
 pub fn pick_asset<'a>(release: &'a Release, os: &str, arch: &str, portable: bool) -> Option<&'a Asset> {
+    let prefix = format!("soyuz-{}-", release.version).to_ascii_lowercase();
     let os_words: &[&str] = match os {
         "windows" => &["windows", "win64"],
         "macos" => &["macos", "darwin"],
@@ -318,7 +322,9 @@ pub fn pick_asset<'a>(release: &'a Release, os: &str, arch: &str, portable: bool
     };
     let fits = |a: &Asset| {
         let n = a.name.to_ascii_lowercase();
-        os_words.iter().any(|w| n.contains(w)) && (arch_words.iter().any(|w| n.contains(w)) || n.contains("universal"))
+        n.starts_with(&prefix)
+            && os_words.iter().any(|w| n.contains(w))
+            && (arch_words.iter().any(|w| n.contains(w)) || n.contains("universal"))
     };
     let is_portable = |a: &Asset| a.name.to_ascii_lowercase().contains("portable");
     // (extension, wants the portable flavour)
@@ -1326,6 +1332,37 @@ mod tests {
     }
 
     #[test]
+    fn only_the_app_archives_of_the_release_are_picked() {
+        // An FFmpeg runtime (its own release tag, but a copy of it or a source tarball may
+        // sit next to the app) names an OS and an arch and ends like an app archive: the
+        // `soyuz-<version>-` prefix keeps every matcher away from it.
+        let mut r = parse_releases(FIXTURE, false).unwrap();
+        r.assets.clear();
+        for n in [
+            "ffmpeg-runtime-9.0.2-windows-x64.zip",
+            "ffmpeg-runtime-9.0.2-windows-x64-portable.zip",
+            "ffmpeg-runtime-9.0.2-macos-universal.zip",
+            "ffmpeg-runtime-9.0.2-linux-x86_64.tar.xz",
+            "ffmpeg-runtime-9.0.2-linux-x86_64.tar.gz",
+            "ffmpeg-9.0.2.tar.xz",
+            "soyuz-0.1.0-windows-x64.zip",
+            "SOYUZ-0.2.0-windows-x64.msi.sig",
+        ] {
+            r.assets.push(Asset { name: n.into(), url: format!("https://example.invalid/{n}"), size: 1, sha256: None });
+        }
+        for (os, arch) in [("windows", "x86_64"), ("macos", "aarch64"), ("macos", "x86_64"), ("linux", "x86_64")] {
+            for portable in [false, true] {
+                assert_eq!(pick_asset(&r, os, arch, portable), None, "{os}/{arch} portable={portable}");
+            }
+        }
+        // The app's own archives are still found, whatever their case.
+        r.assets.push(Asset { name: "Soyuz-0.2.0-macOS-universal.zip".into(), url: "u".into(), size: 1, sha256: None });
+        r.assets.push(Asset { name: "soyuz-0.2.0-windows-x64.zip".into(), url: "u".into(), size: 1, sha256: None });
+        assert_eq!(pick_asset(&r, "macos", "aarch64", false).unwrap().name, "Soyuz-0.2.0-macOS-universal.zip");
+        assert_eq!(pick_asset(&r, "windows", "x86_64", true).unwrap().name, "soyuz-0.2.0-windows-x64.zip");
+    }
+
+    #[test]
     fn checksum_file_parsing() {
         let h1 = "a".repeat(64);
         let h2 = "B".repeat(64);
@@ -1389,15 +1426,15 @@ mod tests {
         assert_eq!(a.name, "soyuz-0.2.0-linux-x86_64.tar.gz");
         assert_eq!(pick_asset(&r, "linux", "x86_64", true).unwrap().name, a.name, "portable copies too");
         assert_eq!(pick_asset(&r, "linux", "aarch64", false), None);
-        // The older x64 spelling still matches.
+        // The older x64 spelling still matches (the asset of the release being considered).
         let mut old = parse_releases(FIXTURE, false).unwrap();
         old.assets.push(Asset {
-            name: "soyuz-0.1.0-linux-x64.tar.gz".into(),
+            name: "soyuz-0.2.0-linux-x64.tar.gz".into(),
             url: "https://x/y".into(),
             size: 1,
             sha256: None,
         });
-        assert_eq!(pick_asset(&old, "linux", "x86_64", false).unwrap().name, "soyuz-0.1.0-linux-x64.tar.gz");
+        assert_eq!(pick_asset(&old, "linux", "x86_64", false).unwrap().name, "soyuz-0.2.0-linux-x64.tar.gz");
         let sums: Vec<&str> = checksum_assets(&r, &a.name).iter().map(|s| s.name.as_str()).collect();
         assert_eq!(sums[0], "soyuz-0.2.0-linux-x86_64.tar.gz.sha256", "own .sha256 first");
         assert!(sums.contains(&"SHA256SUMS-linux.txt"));

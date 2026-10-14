@@ -79,8 +79,11 @@ pub fn load_or_default(path: &Path) -> Result<Loaded, ConfigError> {
 
 /// Keys of removed settings: still accepted in old config files, without a warning.
 /// (`startup_placeholder` / `cpu_first_frame`: the startup placeholder window and the
-/// CPU-drawn first frames, removed 2026-10-09.)
-pub const REMOVED_KEYS: &[&str] = &["appearance.startup_placeholder", "performance.cpu_first_frame"];
+/// CPU-drawn first frames, removed 2026-10-09. `preview.video_ffmpeg` / `ffmpeg_path`:
+/// the `ffmpeg` program, replaced by the FFmpeg libraries (`[media]`) in schema 3; a
+/// hand-restored key is ignored, the migration moves `video_ffmpeg` to `video`.)
+pub const REMOVED_KEYS: &[&str] =
+    &["appearance.startup_placeholder", "performance.cpu_first_frame", "preview.video_ffmpeg", "preview.ffmpeg_path"];
 
 /// Parse config text (see [`load`]).
 pub fn parse_str(text: &str) -> Result<Loaded, ConfigError> {

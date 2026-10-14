@@ -33,11 +33,18 @@ impl std::fmt::Debug for Migration {
 }
 
 /// The registered migrations (schema 1 is the first released schema).
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    from: 1,
-    describe: "sidebar: portal section, new section order, disk tree as its own view",
-    apply: sidebar_portal_v2,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        from: 1,
+        describe: "sidebar: portal section, new section order, disk tree as its own view",
+        apply: sidebar_portal_v2,
+    },
+    Migration {
+        from: 2,
+        describe: "media: [preview] video_ffmpeg is [preview] video, ffmpeg_path is gone ([media] section)",
+        apply: media_v3,
+    },
+];
 
 /// The schema 1 default `[sidebar] sections`.
 const SIDEBAR_V1_DEFAULT: [&str; 8] = ["favorites", "smart", "devices", "cloud", "tags", "network", "trash", "tree"];
@@ -76,6 +83,37 @@ fn sidebar_portal_v2(doc: &mut DocumentMut) -> Result<(), String> {
     if mode.is_none() {
         sidebar.insert("mode", value("both"));
     }
+    Ok(())
+}
+
+/// v2 → v3: the `ffmpeg` program is no longer used (the FFmpeg libraries are loaded
+/// instead, `[media]`): `[preview] video_ffmpeg` (video previews on / off) keeps its
+/// meaning under the name `video`, and `[preview] ffmpeg_path` is dropped. An explicit
+/// `video` key wins over an old `video_ffmpeg`.
+fn media_v3(doc: &mut DocumentMut) -> Result<(), String> {
+    let Some(preview) = doc.get_mut("preview").and_then(|p| p.as_table_like_mut()) else { return Ok(()) };
+    if preview.contains_key("video_ffmpeg") {
+        if !preview.get("video_ffmpeg").is_some_and(toml_edit::Item::is_bool) {
+            return Err("`[preview] video_ffmpeg` must be true or false".into());
+        }
+        let keep_old = preview.contains_key("video");
+        // Re-insert every key in place so the renamed one keeps its position and comments.
+        let entries: Vec<(toml_edit::Key, toml_edit::Item)> =
+            preview.iter().map(|(k, v)| (preview.key(k).cloned().unwrap_or_else(|| k.into()), v.clone())).collect();
+        preview.clear();
+        for (key, item) in entries {
+            let name = match key.get() {
+                "video_ffmpeg" if keep_old => continue,
+                "video_ffmpeg" => "video",
+                other => other,
+            };
+            preview.insert(name, item);
+            if let Some(mut k) = preview.key_mut(name) {
+                *k.leaf_decor_mut() = key.leaf_decor().clone();
+            }
+        }
+    }
+    preview.remove("ffmpeg_path");
     Ok(())
 }
 
@@ -338,6 +376,38 @@ mod tests {
         sidebar_portal_v2(&mut doc).unwrap();
         sidebar_portal_v2(&mut doc).unwrap();
         assert_eq!(doc["sidebar"]["sections"].as_array().unwrap().len(), 2, "{doc}");
+    }
+
+    #[test]
+    fn media_v3_renames_video_and_drops_the_program() {
+        let text = "schema = 2\n[preview]\n# posters\nvideo_ffmpeg = false\nffmpeg_path = \"C:/tools/ffmpeg.exe\"\npdf = true\n";
+        let (out, from) = migrate_text_with(text, MIGRATIONS, 3).unwrap().unwrap();
+        assert_eq!(from, 2);
+        assert!(out.contains("schema = 3"), "{out}");
+        assert!(out.contains("video = false") && out.contains("# posters") && out.contains("pdf = true"), "{out}");
+        assert!(!out.contains("video_ffmpeg") && !out.contains("ffmpeg_path"), "{out}");
+        assert!(out.find("video = false") < out.find("pdf = true"), "the key keeps its place: {out}");
+        assert_eq!(migrate_text_with(&out, MIGRATIONS, 3).unwrap(), None, "done once");
+        let l = super::super::parse_str(&out).unwrap();
+        assert!(l.warnings.is_empty(), "{:?}", l.warnings);
+        assert!(!l.config.preview.video);
+        // A schema 1 file goes through both steps.
+        let (out, from) =
+            migrate_text_with("[preview]\nvideo_ffmpeg = true\n", MIGRATIONS, SCHEMA_VERSION).unwrap().unwrap();
+        assert_eq!(from, 1);
+        assert!(out.contains("video = true"), "{out}");
+        // An explicit `video` wins; `ffmpeg_path` alone just disappears; no [preview] is fine.
+        let (out, _) = migrate_text_with("schema = 2\n[preview]\nvideo = true\nvideo_ffmpeg = false\n", MIGRATIONS, 3)
+            .unwrap()
+            .unwrap();
+        assert!(out.contains("video = true") && !out.contains("video_ffmpeg"), "{out}");
+        let (out, _) =
+            migrate_text_with("schema = 2\n[preview]\nffmpeg_path = \"ffmpeg\"\n", MIGRATIONS, 3).unwrap().unwrap();
+        assert!(!out.contains("ffmpeg_path") && !out.contains("video"), "{out}");
+        let (out, _) =
+            migrate_text_with("schema = 2\n[general]\nshow_hidden = true\n", MIGRATIONS, 3).unwrap().unwrap();
+        assert!(!out.contains("[preview]"), "{out}");
+        assert!(migrate_text_with("schema = 2\n[preview]\nvideo_ffmpeg = \"yes\"\n", MIGRATIONS, 3).is_err());
     }
 
     #[test]

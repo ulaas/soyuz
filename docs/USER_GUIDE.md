@@ -141,9 +141,9 @@ and *Retry failed*.
     `model_turntable = false`.
   - **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause / seek
     (click the waveform). Playback stops when the preview moves away.
-  - **Video**: container metadata, plus a poster frame when `ffmpeg` is installed (on
-    `PATH`, or set `ffmpeg_path`). Playback inside Soyuz is out of scope; `Enter` opens
-    the file in your player.
+  - **Video**: container metadata, plus a poster frame when `ffmpeg` is installed on
+    `PATH` (`[preview] video`). Playback inside Soyuz is out of scope; `Enter` opens the
+    file in your player.
   - **Diff**: select exactly two text files and the preview compares them (older on the
     left; swap, unified or side by side).
 - **Terminal** (``Ctrl+` ``): your shell in the current folder. It follows navigation (and,

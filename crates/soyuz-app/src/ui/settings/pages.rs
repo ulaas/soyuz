@@ -1588,11 +1588,8 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-preview-playback"), tr!("settings-preview-playback-desc"), "play music sound", |ui| {
             switch(ui, &mut d.preview.audio_playback);
         });
-        r.row_kw(tr!("settings-preview-video"), tr!("settings-preview-video-desc"), "ffmpeg thumbnail", |ui| {
-            switch(ui, &mut d.preview.video_ffmpeg);
-        });
-        r.row_kw(tr!("settings-preview-ffmpeg"), tr!("settings-preview-ffmpeg-desc"), "ffmpeg path", |ui| {
-            text(ui, &mut d.preview.ffmpeg_path, "ffmpeg", 220.0);
+        r.row_kw(tr!("settings-preview-video"), tr!("settings-preview-video-desc"), "ffmpeg video poster", |ui| {
+            switch(ui, &mut d.preview.video);
         });
         r.row_kw(tr!("settings-preview-diff"), tr!("settings-preview-diff-desc"), "diff compare", |ui| {
             switch(ui, &mut d.preview.diff);
