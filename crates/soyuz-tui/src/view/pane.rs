@@ -734,7 +734,18 @@ pub fn draw_pane(f: &mut Frame<'_>, rect: Rect, m: &PaneVm, theme: &TuiTheme, hi
     if rect.is_empty() {
         return;
     }
-    let g = geometry_for(m.mode, rect, m.grid.as_ref().map(|gv| gv.spec).unwrap_or_default());
+    let mut g = geometry_for(m.mode, rect, m.grid.as_ref().map(|gv| gv.spec).unwrap_or_default());
+    if theme.screen_reader() && !g.parent.is_empty() {
+        // Screen-reader mode: Miller's current folder alone, at full width (the side
+        // columns would share its rows).
+        g = PaneGeom {
+            list: rect,
+            parent: Rect { width: 0, ..rect },
+            child: Rect { width: 0, ..rect },
+            cell_w: rect.width,
+            ..g
+        };
+    }
     if m.focused {
         // The cursor row (below) wins; an empty list keeps the caret on its first line.
         hits.set_caret(Position { x: g.list.x, y: g.list.y });

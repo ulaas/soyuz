@@ -150,6 +150,8 @@ fn lead(m: &ViewModel, focus: Option<TuiFocus>) -> Option<String> {
                 None => d.focus.checked_sub(d.fields.len()).and_then(|b| d.buttons.get(b)).map(|b| b.label.clone()),
             };
             Some(match part {
+                // "Delete 3 items? Delete", not "…?: Delete".
+                Some(p) if d.title.ends_with(['?', '!', '.', ':']) => format!("{} {p}", d.title),
                 Some(p) if !d.title.is_empty() => format!("{}: {p}", d.title),
                 Some(p) => p,
                 None => d.title.clone(),

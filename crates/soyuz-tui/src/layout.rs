@@ -241,6 +241,9 @@ pub struct Regions {
     pub list_only: bool,
     /// Dual / quad panes are stacked into one column.
     pub stacked: bool,
+    /// Split for screen-reader mode (`Facts::screen_reader`): the views' `prepare` steps
+    /// see it here (e.g. the jobs panel's progress throttling, `view::jobs`).
+    pub screen_reader: bool,
 }
 
 impl Regions {
@@ -267,6 +270,7 @@ impl Regions {
             ai: at(area.x, area.bottom()),
             other_pane: at(area.x, area.bottom()),
             focus: Some(facts.focus),
+            screen_reader: facts.screen_reader,
             ..Regions::default()
         };
         if facts.screen_reader {

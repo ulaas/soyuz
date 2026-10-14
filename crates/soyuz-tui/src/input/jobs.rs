@@ -30,7 +30,7 @@
 //! every [`REDRAW_EVERY`] (progress, speed and ETA move).
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::core::AppCore;
@@ -66,6 +66,43 @@ pub struct State {
     pub follow: bool,
     /// The details of the expanded jobs (read by `view::jobs::prepare`).
     pub details: HashMap<JobId, Vec<(Tone, String)>>,
+    /// Screen-reader mode (T8): the progress text each job shows, throttled ([`due`];
+    /// kept by `view::jobs::prepare`, empty outside screen-reader mode).
+    pub spoken: HashMap<JobId, Spoken>,
+}
+
+/// Screen-reader mode: a job's progress text changes at most once per [`SPOKEN_STEP`]
+/// of progress or every [`SPOKEN_EVERY`] ([`due`]), so a reader that speaks changed text
+/// is not flooded. The core's rows (`jobs_rows`, shared with the GUI) stay live.
+pub const SPOKEN_EVERY: Duration = Duration::from_secs(2);
+/// Progress, in thousandths, that changes the text at once (10 percent).
+pub const SPOKEN_STEP: u16 = 100;
+
+/// A job's progress text as screen-reader mode shows it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Spoken {
+    /// When it was taken.
+    pub at: Instant,
+    /// The job's state (running, paused, waiting, failed, done, its buttons): a change
+    /// shows at once.
+    pub state: String,
+    /// Done, in thousandths.
+    pub permille: Option<u16>,
+    /// The state line, the counts and the speed / time left.
+    pub line: String,
+    pub stats: String,
+    pub right: String,
+}
+
+/// Whether the shown progress text `last` gives way to the live one (`state`,
+/// `permille`) at `now`: nothing shown yet, another state, another 10 percent step, or
+/// [`SPOKEN_EVERY`] passed.
+pub fn due(last: Option<&Spoken>, state: &str, permille: Option<u16>, now: Instant) -> bool {
+    let Some(last) = last else { return true };
+    let step = |p: Option<u16>| p.map(|p| p / SPOKEN_STEP);
+    last.state != state
+        || step(last.permille) != step(permille)
+        || now.saturating_duration_since(last.at) >= SPOKEN_EVERY
 }
 
 /// Whether the panel has the keyboard (it must be shown).
@@ -404,5 +441,36 @@ mod tests {
         assert_eq!(key_cmd(&chord("Ctrl+C")), None, "Copy stays global");
         assert_eq!(key_cmd(&chord("Shift+U")), None);
         assert_eq!(key_cmd(&InputEvent::Text("p".into())), None);
+    }
+
+    #[test]
+    fn spoken_progress_changes_per_ten_percent_or_every_two_seconds() {
+        let t0 = Instant::now();
+        let shown = |permille: Option<u16>| Spoken {
+            at: t0,
+            state: "running".into(),
+            permille,
+            line: String::new(),
+            stats: String::new(),
+            right: String::new(),
+        };
+        // Nothing shown yet.
+        assert!(due(None, "running", Some(0), t0));
+        let at_42 = shown(Some(420));
+        // Within the same step and under 2 s: held.
+        for p in [420, 450, 499] {
+            assert!(!due(Some(&at_42), "running", Some(p), t0 + Duration::from_millis(1999)), "{p}");
+        }
+        // The next step, at once.
+        assert!(due(Some(&at_42), "running", Some(500), t0 + Duration::from_millis(10)));
+        assert!(due(Some(&at_42), "running", Some(1000), t0));
+        // 2 s later, even without a new step (speed and time left move).
+        assert!(due(Some(&at_42), "running", Some(430), t0 + SPOKEN_EVERY));
+        // Another state (paused, done, failed) at once.
+        assert!(due(Some(&at_42), "paused", Some(420), t0));
+        // A known fraction appears or goes.
+        assert!(due(Some(&shown(None)), "running", Some(10), t0));
+        assert!(due(Some(&at_42), "running", None, t0));
+        assert!(!due(Some(&shown(None)), "running", None, t0 + Duration::from_secs(1)));
     }
 }

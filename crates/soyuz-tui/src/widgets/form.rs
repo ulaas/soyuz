@@ -557,10 +557,15 @@ pub fn draw_fields(
     if area.is_empty() {
         return None;
     }
+    // Screen-reader mode (T8): "Name: a.txt", the label read with its colon.
+    let sr = theme.screen_reader();
+    let label = |f: &FieldVm| {
+        if sr && !f.label.is_empty() && !f.label.ends_with(':') { format!("{}:", f.label) } else { f.label.clone() }
+    };
     let label_w = fields
         .iter()
         .filter(|f| !matches!(f.kind, FieldVmKind::Check(_)))
-        .map(|f| text::width(&f.label))
+        .map(|f| text::width(&label(f)))
         .max()
         .unwrap_or(0)
         .min(usize::from(area.width) / 3);
@@ -578,7 +583,7 @@ pub fn draw_fields(
             }
             FieldVmKind::Text { text: value, edit } => {
                 let gap = if label_w > 0 { 1 } else { 0 };
-                buf.set_stringn(area.x, y, text::truncate_end(&f.label, label_w), label_w, base);
+                buf.set_stringn(area.x, y, text::truncate_end(&label(f), label_w), label_w, base);
                 let fx = area.x + (label_w + gap) as u16;
                 let fw = area.right().saturating_sub(fx);
                 if fw > 0 {
@@ -595,10 +600,11 @@ pub fn draw_fields(
             }
             FieldVmKind::Radio { options, selected } => {
                 let gap = if label_w > 0 { 1 } else { 0 };
-                buf.set_stringn(area.x, y, text::truncate_end(&f.label, label_w), label_w, base);
+                buf.set_stringn(area.x, y, text::truncate_end(&label(f), label_w), label_w, base);
                 let mut x = area.x + (label_w + gap) as u16;
                 for (k, o) in options.iter().enumerate() {
-                    let item = format!("({}) {o}", if k == *selected { "•" } else { " " });
+                    let on = if sr { "x" } else { "•" };
+                    let item = format!("({}) {o}", if k == *selected { on } else { " " });
                     let iw = text::width(&item);
                     let room = usize::from(area.right().saturating_sub(x));
                     if room == 0 {

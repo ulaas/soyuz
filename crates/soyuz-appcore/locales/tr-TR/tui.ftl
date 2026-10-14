@@ -52,3 +52,5 @@ tui-sr-warning = Uyarı
 tui-sr-error = Hata
 tui-sr-checked = işaretli
 tui-sr-unchecked = işaretli değil
+# A picture of the preview, which screen-reader mode does not draw.
+tui-sr-picture = Resim (ekran okuyucu modunda gösterilmez)

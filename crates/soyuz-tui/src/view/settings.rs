@@ -457,7 +457,15 @@ pub fn draw_settings(f: &mut Frame<'_>, area: Rect, m: &SettingsVm, theme: &TuiT
     hits.push(area, HitTarget::Overlay);
     f.render_widget(Clear, area);
     f.buffer_mut().set_style(area, theme.base().patch(theme.style(Role::Text)));
-    let g = geometry(area, m.desc_rows);
+    let mut g = geometry(area, m.desc_rows);
+    if theme.screen_reader() && !g.nav.is_empty() {
+        // Screen-reader mode (T8): the section list or the keys at full width, whichever
+        // has the keyboard, never both on one row.
+        let body = Rect { x: area.x, width: area.width, ..g.list };
+        let none = Rect::new(body.x, body.y, 0, 0);
+        (g.nav, g.list) = if m.nav_focused { (body, none) } else { (none, body) };
+        g.sep = none;
+    }
     let mut cursor: Option<(u16, u16)> = None;
     {
         let buf = f.buffer_mut();

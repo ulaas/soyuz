@@ -750,9 +750,13 @@ fn line_text(line: &SidebarLine, w: usize, set: IconSet, sr: bool) -> String {
     let s = match line.kind {
         LineKind::Header { open } => format!("{} {}", chevron(open, set, sr), line.label),
         LineKind::Place if line.eject => {
-            let body =
-                text::truncate_end(&format!("{} {}", mark_glyph(line.mark, set), line.label), w.saturating_sub(2));
-            return with_right(&body, eject_glyph(set), w);
+            // Screen-reader mode (T8): the word, not a `^` read as "caret".
+            let eject = if sr { tr!("app-device-eject") } else { eject_glyph(set) };
+            let body = text::truncate_end(
+                &format!("{} {}", mark_glyph(line.mark, set), line.label),
+                w.saturating_sub(1 + text::width(eject)),
+            );
+            return with_right(&body, eject, w);
         }
         LineKind::Place => format!("{} {}", mark_glyph(line.mark, set), line.label),
         LineKind::Device { state, busy } => {
@@ -822,7 +826,8 @@ pub fn draw_sidebar(f: &mut Frame<'_>, rect: Rect, m: &SidebarVm, theme: &TuiThe
         }
         // The eject mark is its own target (pushed last: it wins over the row).
         if line.eject && r.width >= 3 {
-            let mark = Rect { x: r.right() - 1, width: 1, ..r };
+            let mark_w = if theme.screen_reader() { text::width(tr!("app-device-eject")) as u16 } else { 1 };
+            let mark = Rect { x: r.right().saturating_sub(mark_w), width: mark_w.min(r.width), ..r };
             f.buffer_mut().set_style(mark, theme.style(Role::Accent));
             hits.push(mark, HitTarget::SidebarEject(line.index));
         }
