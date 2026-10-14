@@ -100,6 +100,11 @@ services-audio-unsupported-codec = Unsupported codec ({ $error })
 services-audio-player-failed = The audio player failed on this file
 services-audio-no-device = No audio output device ({ $error })
 services-audio-cant-play = Can't play this file ({ $error })
+services-audio-no-ffmpeg = The FFmpeg libraries are not loaded ([media] audio_backend = ffmpeg)
+services-audio-open-timeout = Opening the file for playback took too long
+# $major: the avcodec major version (63).
+services-audio-decoder-ffmpeg = FFmpeg (avcodec { $major })
+services-audio-decoder-symphonia = Built in (Symphonia)
 # $error: what the FFmpeg libraries said.
 services-video-no-frame = No poster frame ({ $error })
 services-diff-failed = The diff failed on these files

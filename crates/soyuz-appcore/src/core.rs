@@ -89,6 +89,8 @@ pub struct UiState {
     /// The preview / info pane (open, width, mode); the frontend keeps what it renders.
     pub preview: crate::models::preview::PreviewModel,
     pub quicklook: crate::models::quicklook::QuickLook,
+    /// The media player (the previewed / Quick-Looked video, Phase V).
+    pub player: crate::models::player::PlayerModel,
     pub search: crate::models::search::SearchState,
     /// Show the welcome / onboarding card (first run, or `Action::Welcome`).
     pub welcome: bool,
@@ -297,6 +299,7 @@ impl AppCore {
             welcome_seen,
             tree: Default::default(),
             settings_open: false,
+            player: Default::default(),
         };
         if let Some(s) = &session {
             ui.tree.restore_expanded(s.tree_expanded.iter().cloned());
@@ -466,6 +469,8 @@ impl AppCore {
         crate::models::settings::pump(self, host);
         // Scheduled folder-sync profiles run whichever frontend is open.
         crate::models::compare_profiles::tick(self, host);
+        // `[media]` volume / mute / player changes reach the open media player.
+        crate::models::player::pump(self, host);
     }
 
     /// Phase 5: the jobs engine (prompts, finished jobs, pending renames).
@@ -677,6 +682,7 @@ pub fn apply_core_settings(c: &Config) {
     crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
     crate::services::thumb_video::set_poster_secs(c.media.poster_secs);
     crate::services::media::configure(&c.media);
+    crate::services::preview_audio::configure(&c.media);
     crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
     crate::services::thumbs::set_write_os_cache(c.appearance.write_os_thumbnails);
     crate::services::lister::set_dot_hidden(c.general.honour_dot_hidden);

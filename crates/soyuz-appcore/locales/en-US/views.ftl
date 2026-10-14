@@ -377,6 +377,13 @@ views-rich-contents = CONTENTS
 views-rich-model-hint-full = Drag to rotate · scroll to zoom · double-click resets
 views-rich-model-hint = Drag to rotate
 views-rich-play = Play
+views-rich-audio-mono = mono
+views-rich-audio-stereo = stereo
+# $count: channels (6).
+views-rich-audio-channels = { $count } channels
+views-player-off = The video player is off ([media] player)
+# $error: why the file could not be opened.
+views-player-cant-open = Can't open this file for playback ({ $error })
 views-rich-pause = Pause
 views-rich-poster-note = Poster frame (FFmpeg) · playback opens in your player (Enter)
 views-rich-prev-page = Previous page  (PgUp)

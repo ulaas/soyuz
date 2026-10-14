@@ -572,6 +572,13 @@ fn audio(
         ui.painter().galley(pos2(inner.center().x - sg.size().x / 2.0, y), sg, p.text_secondary);
         y += 18.0;
     }
+    // Codec, rate and the decoder that read the file (FFmpeg or the built-in one).
+    let facts = audio_facts(info);
+    if !facts.is_empty() {
+        let fg = trunc_galley(ui.painter(), &facts, FontId::proportional(11.0), p.text_tertiary, inner.width());
+        ui.painter().galley(pos2(inner.center().x - fg.size().x / 2.0, y), fg, p.text_tertiary);
+        y += 16.0;
+    }
     y += 8.0;
     // Waveform.
     let wave = Rect::from_min_size(pos2(inner.left(), y), vec2(inner.width(), wave_h));
@@ -664,6 +671,27 @@ fn audio(
             p.danger,
         );
     }
+}
+
+/// `FLAC · 44100 Hz · stereo · FFmpeg (avcodec 63)` under an audio title.
+fn audio_facts(info: &preview_audio::AudioInfo) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(c) = &info.codec {
+        parts.push(c.clone());
+    }
+    if let Some(r) = info.sample_rate.filter(|r| *r > 0) {
+        parts.push(format!("{r} Hz"));
+    }
+    match info.channels {
+        Some(1) => parts.push(tr!("views-rich-audio-mono").to_string()),
+        Some(2) => parts.push(tr!("views-rich-audio-stereo").to_string()),
+        Some(n) if n > 2 => parts.push(tr!("views-rich-audio-channels", count = n.to_string())),
+        _ => {}
+    }
+    if !parts.is_empty() {
+        parts.push(info.decoder.label());
+    }
+    parts.join(" · ")
 }
 
 /// `1920 × 1080 · 29.97 fps · H.264` under a poster, from what the libraries read.

@@ -13,6 +13,7 @@ pub mod frontend;
 pub mod jobs_rows;
 pub mod link_dialog;
 pub mod panels;
+pub mod player;
 pub mod portal;
 pub mod preview;
 pub mod preview_hex;

@@ -140,7 +140,12 @@ and *Retry failed*.
     zoom in Quick Look, double-click to reset. Models spin slowly unless reduced motion or
     `model_turntable = false`.
   - **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause / seek
-    (click the waveform). Playback stops when the preview moves away.
+    (click the waveform). Playback stops when the preview moves away. Two decoders
+    (`[media] audio_backend`): `auto` uses the FFmpeg libraries when they are loaded, which
+    adds Opus, WMA, APE, AC-3, DSD, Matroska audio and everything else FFmpeg reads, and
+    falls back to the built-in Symphonia decoder (mp3, flac, wav, ogg, aac, alac) without
+    them; `ffmpeg` and `symphonia` force one. The facts list names the decoder used. The
+    player follows `[media] volume` and `muted`, which the player writes back when changed.
   - **Video** (`[preview] video`): container metadata, and with the FFmpeg libraries the
     streams (codec and profile, size, frame rate, pixel format, HDR, rotation, audio
     codec / channels / rate, bitrates, chapters, tags) plus a poster frame at
