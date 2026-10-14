@@ -1,7 +1,8 @@
 //! Keyboard-only path: drives the real binary with synthetic key events
 //! only (`SOYUZ_SCRIPT` `keys:` steps; no pointer input at all) through open, copy
 //! (duplicate), rename, permanent delete, settings and the command palette, in English
-//! and in Turkish, and checks the results on disk and through `expect:` steps.
+//! and in Turkish, and checks the results on disk and through `expect:` / `wait_for:` steps
+//! (each step waits for its check instead of a fixed time; a timeout logs `expect FAILED`).
 //!
 //! Launches the GUI in portable mode on a temporary folder (no user settings or folders
 //! are touched; permanent delete is used so the Recycle Bin is never involved). Needs a
@@ -30,9 +31,8 @@ fn finds_failed_expectations() {
     assert!(!gui_came_up("[ERROR soyuz] soyuz: wgpu error: no suitable adapter found"));
 }
 
-fn script(data: &Path, lang: &str, palette_query: &str) -> String {
+fn script(data: &Path, lang: &str, palette_query: &str, new_folder: &str) -> String {
     let d = data.display();
-    let sub = data.join("sub");
     [
         "welcome:off".to_string(),
         format!("config:general.language=\"{lang}\""),
@@ -40,15 +40,16 @@ fn script(data: &Path, lang: &str, palette_query: &str) -> String {
         "config:appearance.native_dialogs=false".into(),
         format!("expect:lang={lang}"),
         format!("cd:{d}"),
-        "wait:1500".into(),
+        format!("wait_for:cwd={}", data.file_name().unwrap().to_string_lossy()),
+        // The listing is in once its files show (cwd changes first).
+        "wait_for:has=c.txt".into(),
         // Open a folder with Enter, go back up with Backspace.
         "select:sub".into(),
         "keys:{Enter}".into(),
-        "wait:700".into(),
-        "expect:cwd=sub".into(),
+        "wait_for:cwd=sub".into(),
         "keys:{Backspace}".into(),
-        "wait:700".into(),
-        format!("expect:cwd={}", data.file_name().unwrap().to_string_lossy()),
+        format!("wait_for:cwd={}", data.file_name().unwrap().to_string_lossy()),
+        "wait_for:has=a.txt".into(),
         // Copy: duplicate a.txt (Ctrl+D) — no OS clipboard involved.
         "select:a.txt".into(),
         "keys:{Ctrl+D}".into(),
@@ -58,37 +59,30 @@ fn script(data: &Path, lang: &str, palette_query: &str) -> String {
         "keys:{F2}".into(),
         "wait:400".into(),
         "keys:renamed{Enter}".into(),
-        "wait:1000".into(),
-        format!("expect:exists={}", data.join("renamed.txt").display()),
+        format!("wait_for:exists={}", data.join("renamed.txt").display()),
         // Permanent delete with keyboard confirmation (Enter = the dialog's default).
         "select:c.txt".into(),
         "keys:{Shift+Delete}".into(),
-        "wait:500".into(),
-        "expect:dialog=open".into(),
+        "wait_for:dialog=open".into(),
         "keys:{Enter}".into(),
-        "wait:1200".into(),
-        "expect:dialog=closed".into(),
-        format!("expect:missing={}", data.join("c.txt").display()),
+        "wait_for:dialog=closed".into(),
+        format!("wait_for:missing={}", data.join("c.txt").display()),
         // Settings open and close with the keyboard.
         "keys:{Ctrl+Comma}".into(),
-        "wait:600".into(),
-        "expect:settings=open".into(),
+        "wait_for:settings=open".into(),
         "keys:{Escape}".into(),
-        "wait:500".into(),
-        "expect:settings=closed".into(),
+        "wait_for:settings=closed".into(),
         // Command palette: type a query in the UI language, run it with Enter.
         "keys:{Ctrl+Shift+P}".into(),
-        "wait:500".into(),
-        "expect:palette=open".into(),
+        "wait_for:palette=open".into(),
         format!("keys:{palette_query}"),
         "wait:500".into(),
         "keys:{Enter}".into(),
-        "wait:800".into(),
-        "expect:palette=closed".into(),
+        "wait_for:palette=closed".into(),
         // The new folder starts in inline rename: accept the default name.
         "keys:{Enter}".into(),
-        "wait:1000".into(),
-        format!("expect:exists={}", sub.display()),
+        format!("wait_for:exists={}", data.join(new_folder).display()),
+        format!("wait_for:has={new_folder}"),
         "quit".into(),
     ]
     .join(";")
@@ -118,7 +112,7 @@ log:
     }
 }
 
-fn run(lang: &str, palette_query: &str) {
+fn run(lang: &str, palette_query: &str, new_folder: &str) {
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path().join("data");
     std::fs::create_dir_all(data.join("sub")).unwrap();
@@ -132,7 +126,7 @@ fn run(lang: &str, palette_query: &str) {
     std::fs::write(bin.join("portable"), b"").unwrap();
 
     let mut child = Command::new(&exe)
-        .env("SOYUZ_SCRIPT", script(&data, lang, palette_query))
+        .env("SOYUZ_SCRIPT", script(&data, lang, palette_query, new_folder))
         // Linux: keep freedesktop thumbnail writes out of the real ~/.cache.
         .env("XDG_CACHE_HOME", tmp.path().join("cache"))
         .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
@@ -195,11 +189,11 @@ log:
 #[test]
 #[ignore = "launches the GUI; run manually or in a desktop CI job"]
 fn keyboard_only_english() {
-    run("en-US", "new folder");
+    run("en-US", "new folder", "New folder");
 }
 
 #[test]
 #[ignore = "launches the GUI; run manually or in a desktop CI job"]
 fn keyboard_only_turkish() {
-    run("tr-TR", "yeni klas");
+    run("tr-TR", "yeni klas", "Yeni klasör");
 }
