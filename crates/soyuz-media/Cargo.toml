@@ -13,9 +13,11 @@ publish.workspace = true
 libloading.workspace = true
 image.workspace = true
 log.workspace = true
+serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 tempfile.workspace = true
 
 [lints]
