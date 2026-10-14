@@ -41,6 +41,8 @@ enum Cli {
     /// `--tui [PATH]`: the terminal UI in this terminal.
     Tui {
         startup: soyuz_app::app::Startup,
+        /// `--screen-reader`: screen-reader mode for this run only.
+        screen_reader: bool,
     },
     Help,
     Version,
@@ -48,8 +50,8 @@ enum Cli {
 
 const USAGE: &str = "\
 Usage: soyuz [OPTIONS] [PATH]...
-       soyuz --tui [--safe-mode] [PATH]
-       soyuz-tui [--safe-mode] [PATH]      (the terminal UI as its own console program)
+       soyuz --tui [--safe-mode] [--screen-reader] [PATH]
+       soyuz-tui [--safe-mode] [--screen-reader] [PATH]   (the terminal UI as its own console program)
        soyuz <cp|mv|rm|trash|ls|open|reveal|jobs> …   (run `soyuz cp --help`)
 
 Arguments:
@@ -60,6 +62,7 @@ Options:
   --tui                   Run the terminal UI (in this terminal; on Windows a release build
                           opens a console window of its own: run `soyuz-tui` to stay in
                           the terminal); opens at most one PATH
+  --screen-reader         With --tui: screen-reader mode for this run (the setting stays)
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
   --new-window            Secondary window: don't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
@@ -90,6 +93,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut renderer = RendererChoice::Wgpu;
     let mut renderer_given = false;
     let mut tui = false;
+    let mut screen_reader = false;
     let mut startup = soyuz_app::app::Startup::default();
     let mut paths: Vec<std::path::PathBuf> = Vec::new();
     let mut dbus_file_manager = false;
@@ -114,6 +118,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             "-V" | "--version" => return Ok(Cli::Version),
             "--new-window" => startup.secondary = true,
             "--tui" => tui = true,
+            "--screen-reader" => screen_reader = true,
             "--safe-mode" => startup.safe_mode = true,
             "--dbus-file-manager" => dbus_file_manager = true,
             "--" => {
@@ -138,7 +143,10 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
             return Err("--tui opens one folder (got several paths)".into());
         }
         startup.open = paths.into_iter().next();
-        return Ok(Cli::Tui { startup });
+        return Ok(Cli::Tui { startup, screen_reader });
+    }
+    if screen_reader {
+        return Err("--screen-reader needs --tui (the GUI follows the system's screen reader)".into());
     }
     let mut paths = paths.into_iter();
     startup.open = paths.next();
@@ -249,8 +257,8 @@ fn with_window_backend(
 /// session is the one `soyuz-tui` runs (`soyuz_tui::launch`); here a GUI-subsystem
 /// release build on Windows opens a console window of its own.
 #[cfg(feature = "tui")]
-fn run_tui(startup: soyuz_app::app::Startup) -> ExitCode {
-    soyuz_tui::launch(startup)
+fn run_tui(startup: soyuz_app::app::Startup, screen_reader: bool) -> ExitCode {
+    soyuz_tui::launch::launch_with(startup, soyuz_tui::launch::RunOpts { screen_reader })
 }
 
 /// Logging for `--tui`: a capped log file and the crash-report panic hook.
@@ -266,7 +274,7 @@ fn init_tui_logging() {
 }
 
 #[cfg(not(feature = "tui"))]
-fn run_tui(_startup: soyuz_app::app::Startup) -> ExitCode {
+fn run_tui(_startup: soyuz_app::app::Startup, _screen_reader: bool) -> ExitCode {
     soyuz_fs::console::attach_parent();
     err!("soyuz: built without the terminal UI (cargo feature `tui`)");
     ExitCode::from(2)
@@ -333,7 +341,7 @@ Run `soyuz <command> --help` for usage."
             out!("soyuz {} ({})", env!("CARGO_PKG_VERSION"), soyuz_app::GIT_SHA);
             return ExitCode::SUCCESS;
         }
-        Cli::Tui { startup } => return run_tui(startup),
+        Cli::Tui { startup, screen_reader } => return run_tui(startup, screen_reader),
         Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),
     };
     let (renderer, startup, extra, dbus_file_manager) = renderer;
@@ -509,14 +517,18 @@ mod tests {
         let tui = |open: Option<&str>| {
             Ok(Cli::Tui {
                 startup: soyuz_app::app::Startup { open: open.map(std::path::PathBuf::from), ..Default::default() },
+                screen_reader: false,
             })
         };
         assert_eq!(parse(&["--tui"]), tui(None));
         assert_eq!(parse(&["--tui", "dir"]), tui(Some("dir")));
         assert_eq!(parse(&["dir", "--tui"]), tui(Some("dir")));
         assert_eq!(parse(&["--tui", "--", "-dash"]), tui(Some("-dash")));
-        let Ok(Cli::Tui { startup }) = parse(&["--tui", "--safe-mode"]) else { panic!("parse") };
+        let Ok(Cli::Tui { startup, .. }) = parse(&["--tui", "--safe-mode"]) else { panic!("parse") };
         assert!(startup.safe_mode);
+        let Ok(Cli::Tui { screen_reader, .. }) = parse(&["--tui", "--screen-reader"]) else { panic!("parse") };
+        assert!(screen_reader);
+        assert!(parse(&["--screen-reader"]).is_err());
         // After `--` it is a path: the GUI opens a folder named `--tui`.
         let Ok(Cli::Run { startup, .. }) = parse(&["--", "--tui"]) else { panic!("parse") };
         assert_eq!(startup.open, Some(std::path::PathBuf::from("--tui")));

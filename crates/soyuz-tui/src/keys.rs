@@ -36,6 +36,7 @@
 //! is Ctrl+letter. `crate::overlay` binds sendable alternatives for the defaults hit by this.
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use soyuz_appcore::devscript::KeyTok;
 use soyuz_appcore::keys::input::{InputEvent, InputFrame};
 use soyuz_core::config::{KeyChord, KeyName, Mods};
 
@@ -234,6 +235,93 @@ fn function_key(n: u8) -> Option<KeyName> {
         N::F24,
     ];
     F.get((n as usize).checked_sub(1)?).copied()
+}
+
+// ---- Phase T8: `SOYUZ_SCRIPT` `keys:` ----
+
+/// A `keys:` token → the crossterm events a terminal would send for it (the inverse of
+/// [`convert`]: [`convert`] turns them back into the same chord). Text is a key press of
+/// its character (Shift for an ASCII upper-case letter, like the Windows console), `\n`
+/// is Enter and `\t` Tab; `{Copy}` / `{Cut}` are Ctrl+C / Ctrl+X; `{Paste:text}` is a
+/// bracketed paste (`Event::Paste`).
+pub fn to_crossterm(tok: &KeyTok) -> Vec<Event> {
+    let press = |code, m| vec![Event::Key(KeyEvent::new(code, m))];
+    match tok {
+        KeyTok::Text('\n') => press(KeyCode::Enter, KeyModifiers::NONE),
+        KeyTok::Text('\t') => press(KeyCode::Tab, KeyModifiers::NONE),
+        KeyTok::Text(c) => {
+            press(KeyCode::Char(*c), if c.is_ascii_uppercase() { KeyModifiers::SHIFT } else { KeyModifiers::NONE })
+        }
+        KeyTok::Chord(chord) => {
+            let (code, m) = chord_event(*chord);
+            press(code, m)
+        }
+        KeyTok::Copy => press(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        KeyTok::Cut => press(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        KeyTok::Paste(s) => vec![Event::Paste(s.clone())],
+    }
+}
+
+/// The key code and modifiers a terminal reports for `chord`.
+fn chord_event(chord: KeyChord) -> (KeyCode, KeyModifiers) {
+    use KeyName as N;
+    let mut m = KeyModifiers::NONE;
+    for (from, to) in [
+        (Mods::CTRL, KeyModifiers::CONTROL),
+        (Mods::SHIFT, KeyModifiers::SHIFT),
+        (Mods::ALT, KeyModifiers::ALT),
+        (Mods::CMD, KeyModifiers::SUPER),
+    ] {
+        if chord.mods.contains(from) {
+            m |= to;
+        }
+    }
+    let shift = chord.mods.contains(Mods::SHIFT);
+    // A character key: its US-layout character, the shifted one with Shift where that
+    // still names the same key (`Shift+;` is `:`).
+    let ch = |plain: char, shifted: char| KeyCode::Char(if shift { shifted } else { plain });
+    let code = match chord.key {
+        N::Enter => KeyCode::Enter,
+        N::Escape => KeyCode::Esc,
+        N::Tab if shift => KeyCode::BackTab,
+        N::Tab => KeyCode::Tab,
+        N::Space => KeyCode::Char(' '),
+        N::Backspace => KeyCode::Backspace,
+        N::Delete => KeyCode::Delete,
+        N::Insert => KeyCode::Insert,
+        N::Home => KeyCode::Home,
+        N::End => KeyCode::End,
+        N::PageUp => KeyCode::PageUp,
+        N::PageDown => KeyCode::PageDown,
+        N::ArrowUp => KeyCode::Up,
+        N::ArrowDown => KeyCode::Down,
+        N::ArrowLeft => KeyCode::Left,
+        N::ArrowRight => KeyCode::Right,
+        N::Backtick => ch('`', '~'),
+        N::Minus => ch('-', '_'),
+        N::Plus => KeyCode::Char('+'),
+        N::Equals => KeyCode::Char('='),
+        N::Comma => ch(',', '<'),
+        N::Period => ch('.', '>'),
+        N::Slash => ch('/', '?'),
+        N::Backslash => ch('\\', '|'),
+        N::Semicolon => ch(';', ':'),
+        N::Quote => ch('\'', '"'),
+        N::OpenBracket => ch('[', '{'),
+        N::CloseBracket => ch(']', '}'),
+        key => {
+            let name = key.as_str();
+            match name.strip_prefix('F').and_then(|n| n.parse::<u8>().ok()) {
+                Some(n) => KeyCode::F(n),
+                // A letter (upper-case with Shift) or a digit.
+                None => {
+                    let c = name.chars().next().unwrap_or(' ');
+                    KeyCode::Char(if shift { c } else { c.to_ascii_lowercase() })
+                }
+            }
+        }
+    };
+    (code, m)
 }
 
 #[cfg(test)]
@@ -437,5 +525,50 @@ mod tests {
         // Paste is text.
         let (f, _) = feed(&km, &[Event::Paste("abc".into())]);
         assert_eq!(f.typed_text(), "abc");
+    }
+
+    /// `keys:` chords survive the round trip through crossterm events and back.
+    #[test]
+    fn script_chords_round_trip() {
+        let mods = [
+            Mods::empty(),
+            Mods::CTRL,
+            Mods::ALT,
+            Mods::SHIFT,
+            Mods::CMD,
+            Mods::CTRL | Mods::SHIFT,
+            Mods::ALT | Mods::SHIFT,
+            Mods::CTRL | Mods::ALT,
+        ];
+        for &key in KeyName::ALL {
+            for m in mods {
+                // `+` is a shifted key on most layouts: the presets spell it without Shift.
+                let want = if key == KeyName::Plus { m - Mods::SHIFT } else { m };
+                let chord = KeyChord::new(m, key);
+                let events = to_crossterm(&KeyTok::Chord(chord));
+                assert_eq!(events.len(), 1, "{chord}");
+                let back = convert(&events[0], false, false);
+                assert_eq!(back.first(), Some(&InputEvent::Chord(KeyChord::new(want, key))), "{chord}: {events:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn script_text_and_clipboard_tokens() {
+        let typed =
+            |t: &[KeyTok]| frame(&t.iter().flat_map(to_crossterm).collect::<Vec<_>>(), true, false).typed_text();
+        let typing: Vec<KeyTok> = "aB ş:日".chars().map(KeyTok::Text).collect();
+        assert_eq!(typed(&typing), "aB ş:日");
+        assert_eq!(to_crossterm(&KeyTok::Text('\n')), vec![key(KeyCode::Enter, NONE)]);
+        assert_eq!(to_crossterm(&KeyTok::Copy), vec![key(KeyCode::Char('c'), CTRL)]);
+        assert_eq!(to_crossterm(&KeyTok::Cut), vec![key(KeyCode::Char('x'), CTRL)]);
+        assert_eq!(to_crossterm(&KeyTok::Paste("x y".into())), vec![Event::Paste("x y".into())]);
+        // A whole spec, as the script parses it.
+        let spec = soyuz_appcore::devscript::parse_keys("ab{Ctrl+Shift+P}{Shift+Tab}");
+        let events: Vec<Event> = spec.iter().flat_map(to_crossterm).collect();
+        assert_eq!(
+            frame(&events, true, false).events,
+            vec![ch("A"), text("a"), ch("B"), text("b"), ch("Ctrl+Shift+P"), ch("Shift+Tab")]
+        );
     }
 }

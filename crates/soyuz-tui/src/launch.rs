@@ -1,11 +1,19 @@
 //! Process entry shared by the two ways to start the terminal UI:
 //!
-//! - `soyuz-tui [--safe-mode] [PATH]` (this crate's binary, `src/main.rs`): a console
-//!   program on every platform, so on Windows it runs inside the terminal that started it;
-//! - `soyuz --tui [--safe-mode] [PATH]` (`soyuz-app`'s `main.rs`): the same session from
-//!   the GUI binary; a GUI-subsystem release `soyuz.exe` opens a console window of its own.
+//! - `soyuz-tui [--safe-mode] [--screen-reader] [PATH]` (this crate's binary,
+//!   `src/main.rs`): a console program on every platform, so on Windows it runs inside the
+//!   terminal that started it;
+//! - `soyuz --tui [--safe-mode] [--screen-reader] [PATH]` (`soyuz-app`'s `main.rs`): the
+//!   same session from the GUI binary; a GUI-subsystem release `soyuz.exe` opens a console
+//!   window of its own.
 //!
-//! Both call [`init_logging`] before anything else logs, then [`launch`].
+//! Both call [`init_logging`] before anything else logs, then [`launch`] /
+//! [`launch_with`]. `--screen-reader` turns screen-reader mode on for this run only
+//! ([`RunOpts`]); it is never written to the settings.
+//!
+//! Debug hook: `SOYUZ_TUI_HEADLESS=<w>x<h>` runs the session on an in-memory screen
+//! driven by `SOYUZ_SCRIPT` (`crate::devscript::run_headless`), without a console or
+//! terminal.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -37,6 +45,24 @@ pub fn init_logging() {
 /// GUI-subsystem `soyuz.exe`), refuses redirected stdio, claims the crash-journal slot,
 /// loads the configuration (safe defaults with `--safe-mode`) and runs [`crate::run`].
 pub fn launch(startup: Startup) -> ExitCode {
+    launch_with(startup, RunOpts::default())
+}
+
+/// What a run asks for besides the [`Startup`]; nothing here is saved.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RunOpts {
+    /// `--screen-reader`: screen-reader mode for this run (`App::sr_override`).
+    pub screen_reader: bool,
+}
+
+/// [`launch`] with the run-only options `opts`. With `SOYUZ_TUI_HEADLESS` set the session
+/// runs headless (`crate::devscript::run_headless`): no console, no terminal checks.
+pub fn launch_with(startup: Startup, opts: RunOpts) -> ExitCode {
+    if let Some(size) = crate::devscript::headless_size(|k| std::env::var_os(k)) {
+        crash::startup(startup.safe_mode);
+        let config = if startup.safe_mode { crash::safe_config() } else { soyuz_appcore::core::load_config() };
+        return crate::devscript::run_headless(config, startup, opts.screen_reader, size);
+    }
     // Windows: the process console, or a new console window for a GUI-subsystem
     // release build (never the parent shell's console: both would read the keyboard).
     // Restores the console modes / code pages when dropped.
@@ -58,20 +84,20 @@ pub fn launch(startup: Startup) -> ExitCode {
     let config = if startup.safe_mode { crash::safe_config() } else { soyuz_appcore::core::load_config() };
     // Installs the legacy-terminal keymap overlay itself when the kitty keyboard protocol
     // is not used (it knows after querying the terminal), before the core is built.
-    crate::run(config, startup)
+    crate::run(config, startup, opts.screen_reader)
 }
 
 /// What the `soyuz-tui` command line asks for.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Cli {
-    Run(Startup),
+    Run(Startup, RunOpts),
     Help,
     Version,
 }
 
 /// `soyuz-tui --help`.
 pub const USAGE: &str = "\
-Usage: soyuz-tui [--safe-mode] [PATH]
+Usage: soyuz-tui [--safe-mode] [--screen-reader] [PATH]
 
 Soyuz in the terminal it is started from (the same terminal UI as `soyuz --tui`).
 
@@ -81,6 +107,9 @@ Arguments:
 
 Options:
   --safe-mode    Default settings; no session restore, folder watching, thumbnails or git
+  --screen-reader
+                 Screen-reader mode for this run (plain lines, no box drawing; the
+                 setting stays as it is)
   -h, --help     Print help
   -V, --version  Print version
   --             End of options: the next argument is a path";
@@ -104,6 +133,7 @@ pub fn arg_path(arg: String) -> PathBuf {
 /// win wherever they appear before `--`.
 pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String> {
     let mut startup = Startup::default();
+    let mut opts = RunOpts::default();
     let mut paths: Vec<PathBuf> = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -111,6 +141,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String>
             "-h" | "--help" => return Ok(Cli::Help),
             "-V" | "--version" => return Ok(Cli::Version),
             "--safe-mode" => startup.safe_mode = true,
+            "--screen-reader" => opts.screen_reader = true,
             "--" => paths.extend(it.by_ref().map(arg_path)),
             other if other.starts_with('-') && other != "-" => return Err(format!("unexpected argument '{other}'")),
             _ => paths.push(arg_path(arg)),
@@ -120,7 +151,7 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String>
         return Err("the terminal UI opens one folder (got several paths)".into());
     }
     startup.open = paths.into_iter().next();
-    Ok(Cli::Run(startup))
+    Ok(Cli::Run(startup, opts))
 }
 
 #[cfg(test)]
@@ -132,7 +163,7 @@ mod tests {
     }
 
     fn run(open: Option<&str>, safe_mode: bool) -> Result<Cli, String> {
-        Ok(Cli::Run(Startup { open: open.map(PathBuf::from), safe_mode, ..Default::default() }))
+        Ok(Cli::Run(Startup { open: open.map(PathBuf::from), safe_mode, ..Default::default() }, RunOpts::default()))
     }
 
     #[test]
@@ -143,7 +174,7 @@ mod tests {
         assert_eq!(parse(&["dir", "--safe-mode"]), run(Some("dir"), true));
         assert_eq!(parse(&["--safe-mode", "C:\\data"]), run(Some("C:\\data"), true));
         // Never a secondary window: the TUI keeps its own session.
-        let Ok(Cli::Run(s)) = parse(&["dir"]) else { panic!("parse") };
+        let Ok(Cli::Run(s, _)) = parse(&["dir"]) else { panic!("parse") };
         assert!(!s.secondary);
     }
 
@@ -155,6 +186,17 @@ mod tests {
         assert_eq!(parse(&["--"]), run(None, false));
         // A lone `-` is a path, not an option.
         assert_eq!(parse(&["-"]), run(Some("-"), false));
+    }
+
+    #[test]
+    fn screen_reader_is_a_run_option() {
+        let Ok(Cli::Run(s, opts)) = parse(&["--screen-reader", "dir"]) else { panic!("parse") };
+        assert!(opts.screen_reader);
+        assert_eq!(s.open, Some(PathBuf::from("dir")));
+        let Ok(Cli::Run(_, opts)) = parse(&["dir"]) else { panic!("parse") };
+        assert!(!opts.screen_reader);
+        assert_eq!(parse(&["--", "--screen-reader"]), run(Some("--screen-reader"), false));
+        assert!(USAGE.contains("--screen-reader"));
     }
 
     #[test]
@@ -182,13 +224,13 @@ mod tests {
 
     #[test]
     fn file_uris() {
-        let Ok(Cli::Run(s)) = parse(&["file:///tmp/a%20b"]) else { panic!("parse") };
+        let Ok(Cli::Run(s, _)) = parse(&["file:///tmp/a%20b"]) else { panic!("parse") };
         if cfg!(windows) {
             assert!(s.open.is_some());
         } else {
             assert_eq!(s.open, Some(PathBuf::from("/tmp/a b")));
         }
-        let Ok(Cli::Run(s)) = parse(&["sftp://host/x"]) else { panic!("parse") };
+        let Ok(Cli::Run(s, _)) = parse(&["sftp://host/x"]) else { panic!("parse") };
         assert_eq!(s.open, Some(PathBuf::from("sftp://host/x")));
     }
 }
