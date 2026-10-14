@@ -296,6 +296,8 @@ pub struct App {
     pub sr_override: bool,
     /// What screen-reader mode keeps between frames.
     pub(crate) a11y: crate::a11y::State,
+    /// A script's `shot:` file, saved after the next frame (`crate::devscript`).
+    pub(crate) pending_shot: Option<std::path::PathBuf>,
 }
 
 impl App {
@@ -333,6 +335,7 @@ impl App {
             last_buffer: None,
             sr_override: false,
             a11y: crate::a11y::State::default(),
+            pending_shot: None,
         }
     }
 
@@ -436,6 +439,28 @@ impl App {
         crate::input::route(self, events);
     }
 
+    /// "Toggle screen-reader mode" ran this frame while `--screen-reader` is on
+    /// ([`App::sr_override`]): the core flipped `[tui] screen_reader` (`setting_before` →
+    /// now) and said so in a toast. The user meant "off": the override goes for the rest
+    /// of the session and the setting is (back to) off, so the mode really ends. Other
+    /// edits of the setting (the settings editor) leave the override alone.
+    fn override_toggled(&mut self, setting_before: bool) {
+        if !self.sr_override || self.core.config.tui.screen_reader == setting_before {
+            return;
+        }
+        let (on, off) =
+            (soyuz_appcore::tr!("actions-screen-reader-on"), soyuz_appcore::tr!("actions-screen-reader-off"));
+        let toggled = self.core.ui.toasts.live.last().is_some_and(|l| l.toast.title == on || l.toast.title == off);
+        if !toggled {
+            return;
+        }
+        self.sr_override = false;
+        soyuz_appcore::models::settings::update_config(&mut self.core, &self.host, |c| c.tui.screen_reader = false);
+        self.core.ui.toasts.live.retain(|l| l.toast.title != on);
+        self.core.ui.toasts.push_replacing(soyuz_appcore::models::toasts::Toast::info(off));
+        log::info!("tui: screen-reader mode off for this session (--screen-reader overridden)");
+    }
+
     /// Count down the toasts' timers; drop expired and dismissed ones.
     fn tick_toasts(&mut self, dt: f32) {
         let dt = crate::a11y::toast_dt(dt, self.core.config.appearance.toast_time_scale, self.screen_reader());
@@ -464,6 +489,7 @@ impl App {
         B::Error: Send + Sync + 'static,
     {
         let now = Instant::now();
+        let sr_setting = self.core.config.tui.screen_reader;
         let dt = now.duration_since(self.last_frame).as_secs_f32();
         self.last_frame = now;
         if crash::take_needs_full_redraw() {
@@ -490,6 +516,7 @@ impl App {
         // The editors' worker results (loads, saves, answers to "Save changes?"), every
         // frame like the GUI's editor panel: a quit that saves first goes on from here.
         soyuz_appcore::editors::pump(&mut self.core, &self.host);
+        self.override_toggled(sr_setting);
         self.tick_toasts(dt);
 
         let size = terminal.size().map_err(io::Error::other)?;
@@ -642,7 +669,10 @@ fn restore_for_panic() {
 /// Windows), plus the Windows Terminal stand-ins when `WT_SESSION` is set.
 /// After the loop the terminal is restored and an "Install & restart" update restarts the
 /// process (`services::updates`).
-pub fn run(config: Config, startup: Startup) -> ExitCode {
+///
+/// `screen_reader`: `--screen-reader`, screen-reader mode for this run only
+/// ([`App::sr_override`]).
+pub fn run(config: Config, startup: Startup, screen_reader: bool) -> ExitCode {
     soyuz_fs::register_ui_thread();
     // Before any thread reads terminal input: the query reads the terminal's answer.
     let keyboard_supported = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false);
@@ -684,6 +714,7 @@ pub fn run(config: Config, startup: Startup) -> ExitCode {
     };
     let mut app = App::new(config, startup);
     app.input_gate = gate;
+    app.sr_override = screen_reader;
     // Only the production entry reads `SOYUZ_SCRIPT` (in-process tests never pick it up).
     app.script = Runner::from_env();
     let mut io_ = StdoutIo { guard };

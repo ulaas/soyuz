@@ -1,4 +1,4 @@
-//! `soyuz-tui [--safe-mode] [PATH]`: the Soyuz terminal UI as a console program.
+//! `soyuz-tui [--safe-mode] [--screen-reader] [PATH]`: the Soyuz terminal UI as a console program.
 //!
 //! Unlike `soyuz --tui` (on Windows a GUI-subsystem `soyuz.exe` that opens a console
 //! window of its own), this binary is console-subsystem everywhere: it runs in the
@@ -29,9 +29,9 @@ fn main() -> ExitCode {
             let _ = writeln!(std::io::stderr(), "soyuz-tui: {e}\n\n{}", launch::USAGE);
             ExitCode::from(2)
         }
-        Ok(Cli::Run(startup)) => {
+        Ok(Cli::Run(startup, opts)) => {
             launch::init_logging();
-            launch::launch(startup)
+            launch::launch_with(startup, opts)
         }
     }
 }
