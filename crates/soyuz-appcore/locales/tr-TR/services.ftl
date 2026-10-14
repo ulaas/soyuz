@@ -94,6 +94,11 @@ services-audio-unsupported-codec = Desteklenmeyen kodek ({ $error })
 services-audio-player-failed = Ses oynatıcı bu dosyada başarısız oldu
 services-audio-no-device = Ses çıkış aygıtı yok ({ $error })
 services-audio-cant-play = Bu dosya oynatılamıyor ({ $error })
+services-audio-no-ffmpeg = FFmpeg kitaplıkları yüklü değil ([media] audio_backend = ffmpeg)
+services-audio-open-timeout = Dosyayı oynatma için açmak çok uzun sürdü
+# $major: avcodec ana sürümü (63).
+services-audio-decoder-ffmpeg = FFmpeg (avcodec { $major })
+services-audio-decoder-symphonia = Yerleşik (Symphonia)
 services-video-no-frame = Kapak karesi yok ({ $error })
 services-diff-failed = Bu dosyalarda karşılaştırma başarısız oldu
 

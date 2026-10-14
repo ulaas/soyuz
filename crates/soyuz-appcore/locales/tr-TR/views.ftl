@@ -335,6 +335,13 @@ views-rich-contents = İÇİNDEKİLER
 views-rich-model-hint-full = Döndürmek için sürükleyin · yakınlaştırmak için kaydırın · çift tıklama sıfırlar
 views-rich-model-hint = Döndürmek için sürükleyin
 views-rich-play = Oynat
+views-rich-audio-mono = mono
+views-rich-audio-stereo = stereo
+# $count: kanal sayısı (6).
+views-rich-audio-channels = { $count } kanal
+views-player-off = Video oynatıcı kapalı ([media] player)
+# $error: dosyanın neden açılamadığı.
+views-player-cant-open = Bu dosya oynatma için açılamıyor ({ $error })
 views-rich-pause = Duraklat
 views-rich-poster-note = Kapak karesi (FFmpeg) · oynatma, oynatıcınızda açılır (Enter)
 views-rich-prev-page = Önceki sayfa  (PgUp)

@@ -531,6 +531,9 @@ fn audio(
     if let Some(c) = &info.codec {
         fact(&mut facts, "Codec", c.clone());
     }
+    if info.codec.is_some() || !info.peaks.is_empty() {
+        fact(&mut facts, "Decoder", info.decoder.label());
+    }
     if let Some(d) = info.duration {
         fact(&mut facts, "Duration", format_duration(d));
         if d > 0.5 {

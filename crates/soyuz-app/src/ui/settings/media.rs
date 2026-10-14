@@ -1,15 +1,16 @@
 //! Settings → Preview & search → Media: the `[media]` keys the app reads today (the
 //! FFmpeg libraries switch, the folder searched first, decoder threads, the frame size and
-//! the poster time) under a status card that says which libraries are loaded, or where
-//! they were looked for and where to get them (the `ffmpeg-runtime-<version>` release;
-//! the in-app download arrives with V4c). The player and tools keys get their rows with
-//! their steps.
+//! the poster time), the audio decoder and the player keys (player, autoplay, loop,
+//! volume, muted, seek step) under a status card that says which libraries are loaded, or
+//! where they were looked for and where to get them (the `ffmpeg-runtime-<version>`
+//! release; the in-app download arrives with V4c). The tools key gets its row with V3c.
 
 use std::path::Path;
 
 use egui::{Align2, Ui, pos2, vec2};
+use soyuz_core::config::AudioBackend;
 
-use super::widgets::{group, number, small_button, switch, text};
+use super::widgets::{group, number, segmented, small_button, switch, text};
 use crate::app::SoyuzApp;
 use crate::services::media::{self, State};
 use crate::theme::icons::ph;
@@ -59,6 +60,50 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-media-poster"), tr!("settings-media-poster-desc"), "thumbnail frame seconds", |ui| {
             number(ui, &mut d.media.poster_secs, 0.0..=3600.0, " s");
         });
+        r.row_kw(
+            tr!("settings-media-audio-backend"),
+            tr!("settings-media-audio-backend-desc"),
+            "symphonia decoder opus wma ape waveform",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.media.audio_backend,
+                    &[
+                        (AudioBackend::Auto, tr!("settings-media-backend-auto")),
+                        (AudioBackend::Ffmpeg, "FFmpeg"),
+                        (AudioBackend::Symphonia, "Symphonia"),
+                    ],
+                );
+            },
+        );
+        r.row_kw(tr!("settings-media-player"), tr!("settings-media-player-desc"), "video playback quick look", |ui| {
+            switch(ui, &mut d.media.player);
+        });
+        r.row_kw(
+            tr!("settings-media-autoplay"),
+            tr!("settings-media-autoplay-desc"),
+            "start automatically play",
+            |ui| {
+                switch(ui, &mut d.media.autoplay);
+            },
+        );
+        r.row_kw(tr!("settings-media-loop"), tr!("settings-media-loop-desc"), "repeat restart", |ui| {
+            switch(ui, &mut d.media.loop_);
+        });
+        r.row_kw(tr!("settings-media-volume"), tr!("settings-media-volume-desc"), "loudness percent audio", |ui| {
+            number(ui, &mut d.media.volume, 0..=100, " %");
+        });
+        r.row_kw(tr!("settings-media-muted"), tr!("settings-media-muted-desc"), "mute silent audio", |ui| {
+            switch(ui, &mut d.media.muted);
+        });
+        r.row_kw(
+            tr!("settings-media-seek-step"),
+            tr!("settings-media-seek-step-desc"),
+            "skip arrow keys seconds",
+            |ui| {
+                number(ui, &mut d.media.seek_step_secs, 0.5..=60.0, " s");
+            },
+        );
     });
     if retry {
         media::retry();
