@@ -470,7 +470,7 @@ const DIGITS: [KeyName; 9] = [
 /// Bindings shared by both presets.
 fn common(km: &mut Keymap) {
     use Action as A;
-    use KeyContext::{Editor as E, FileList as L, Global as G};
+    use KeyContext::{Editor as E, FileList as L, Global as G, Player as P};
     let mut b = |ctx, action, mods, key| km.bind(ctx, action, KeyChord::new(mods, key));
 
     // Global
@@ -574,6 +574,17 @@ fn common(km: &mut Keymap) {
     b(E, A::EditorCloseDocument, CTRL, KeyName::W);
     b(E, A::EditorNextDocument, CTRL, KeyName::PageDown);
     b(E, A::EditorPrevDocument, CTRL, KeyName::PageUp);
+
+    // The media player while it has the keyboard (preview pane or Quick Look; it shadows
+    // the global and list chords there). K / J / L as in most video players.
+    b(P, A::PlayerPlayPause, NONE, KeyName::K);
+    b(P, A::PlayerSeekBack, NONE, KeyName::J);
+    b(P, A::PlayerSeekForward, NONE, KeyName::L);
+    b(P, A::PlayerSeekBack, NONE, KeyName::ArrowLeft);
+    b(P, A::PlayerSeekForward, NONE, KeyName::ArrowRight);
+    b(P, A::PlayerVolumeDown, NONE, KeyName::Minus);
+    b(P, A::PlayerVolumeUp, NONE, KeyName::Equals);
+    b(P, A::PlayerMute, NONE, KeyName::M);
 }
 
 /// Build the key map for a preset (before `[keys.bindings]` overrides).

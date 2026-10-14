@@ -240,9 +240,15 @@ impl KeyPreset {
 }
 
 /// The context an action without a preset binding is bound in by `[keys.bindings]`:
-/// `Editor` for the editors' commands, `Global` otherwise.
+/// `Editor` for the editors' commands, `Player` for the media player's, `Global` otherwise.
 pub fn home_context(a: &Action) -> KeyContext {
-    if a.is_editor() { KeyContext::Editor } else { KeyContext::Global }
+    if a.is_editor() {
+        KeyContext::Editor
+    } else if a.is_player() {
+        KeyContext::Player
+    } else {
+        KeyContext::Global
+    }
 }
 
 /// A multi-key sequence (`"g g"`, `"Ctrl+K Ctrl+S"`): chords separated by whitespace.

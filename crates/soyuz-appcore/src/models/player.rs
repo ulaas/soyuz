@@ -306,6 +306,24 @@ pub fn toggle_mute(app: &mut AppCore, host: &dyn Host) {
     set_muted(app, host, muted);
 }
 
+/// Volume step of the player's volume actions (percentage points).
+pub const VOLUME_STEP: i16 = 5;
+
+/// Run a player action ([`Action::is_player`](soyuz_core::config::Action::is_player)) on
+/// the open player; without one, only the volume / mute settings change.
+pub fn execute(app: &mut AppCore, action: soyuz_core::config::Action, host: &dyn Host) {
+    use soyuz_core::config::Action as A;
+    match action {
+        A::PlayerPlayPause => app.ui.player.toggle(),
+        A::PlayerSeekBack => app.ui.player.seek_step_by(false),
+        A::PlayerSeekForward => app.ui.player.seek_step_by(true),
+        A::PlayerVolumeUp => adjust_volume(app, host, VOLUME_STEP),
+        A::PlayerVolumeDown => adjust_volume(app, host, -VOLUME_STEP),
+        A::PlayerMute => toggle_mute(app, host),
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

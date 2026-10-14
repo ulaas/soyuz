@@ -309,6 +309,14 @@ action-redo = Yinele
 action-redo-desc = Geri alınan son işlemi yinele
 action-previous-versions = Önceki sürümü geri yükle…
 action-previous-versions-desc = Gölge kopyalardaki önceki sürümlere göz at ve geri yükle
+action-media-convert = Medyayı dönüştür…
+action-media-convert-desc = Bir video veya ses dosyasını başka bir biçime dönüştür (FFmpeg)
+action-media-extract-audio = Sesi çıkar…
+action-media-extract-audio-desc = Bir videonun ses kanalını ses dosyası olarak kaydet (FFmpeg)
+action-media-trim = Medyayı kırp…
+action-media-trim-desc = Bir video veya ses dosyasının yalnızca bir bölümünü tut (FFmpeg)
+action-media-save-frame = Video karesini kaydet…
+action-media-save-frame-desc = Bir videonun bir karesini resim olarak kaydet (FFmpeg)
 
 ## Tools
 
@@ -606,5 +614,17 @@ action-editor-replace-all = Düzenleyici: Tümünü değiştir
 action-editor-replace-all-desc = Belgedeki her eşleşmeyi değiştir (terminal arayüzü)
 action-editor-resize-image = Düzenleyici: Görüntüyü yeniden boyutlandır
 action-editor-resize-image-desc = Görüntüyü piksel olarak yeni bir boyuta ölçekle (terminal arayüzü)
+action-player-play-pause = Oynatıcı: Oynat / duraklat
+action-player-play-pause-desc = Önizlemede veya Hızlı Bakış'ta oynayan videoyu ya da sesi başlat veya duraklat
+action-player-seek-back = Oynatıcı: Geri
+action-player-seek-back-desc = Atlama adımı kadar geri git ([media] seek_step_secs)
+action-player-seek-forward = Oynatıcı: İleri
+action-player-seek-forward-desc = Atlama adımı kadar ileri git ([media] seek_step_secs)
+action-player-volume-up = Oynatıcı: Sesi aç
+action-player-volume-up-desc = Oynatıcının ses düzeyini artır
+action-player-volume-down = Oynatıcı: Sesi kıs
+action-player-volume-down-desc = Oynatıcının ses düzeyini azalt
+action-player-mute = Oynatıcı: Sesi kapat / aç
+action-player-mute-desc = Oynatıcının sesini kapat veya aç
 action-toggle-screen-reader = Ekran okuyucu kipini aç/kapat
 action-toggle-screen-reader-desc = Ekran okuyucular için düz metin: çerçeve çizgisi yok, bir seferde bir bölme, imleç odaklı öğenin üzerinde (terminal arayüzü)

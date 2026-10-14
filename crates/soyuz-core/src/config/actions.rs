@@ -103,6 +103,8 @@ define_actions! {
         CopyPath, CopyPathPosix, CopyPathQuoted, CopyName, CopyAsFileList, CreateArchive,
         ExtractHere, ExtractToFolder, ExtractTo, TestArchive, CompareChecksum, SetAttributes,
         TouchTimestamps, SplitFile, JoinFiles, ClearTags, Undo, Redo, PreviousVersions,
+        // Media tools (FFmpeg, Phase V): jobs with a dry-run plan.
+        MediaConvert, MediaExtractAudio, MediaTrim, MediaSaveFrame,
     ],
     Tools: [
         CommandPalette, Search, SearchContent, FolderSize, DiskUsageTreemap, FindDuplicates,
@@ -117,6 +119,9 @@ define_actions! {
         EditorFindPrev, EditorCloseDocument, EditorNextDocument, EditorPrevDocument,
         EditorToggleWrap, EditorMaximize, EditorToggleDock, EditorNoticeAction, EditorMatchCase,
         EditorWholeWord, EditorRegex, EditorReplaceAll, EditorResizeImage,
+        // The media player (`KeyContext::Player`, see [`Action::is_player`]).
+        PlayerPlayPause, PlayerSeekBack, PlayerSeekForward, PlayerVolumeUp, PlayerVolumeDown,
+        PlayerMute,
     ],
     Jobs: [
         JobsPauseAll, JobsResumeAll, JobsCancelAll, JobsClearFinished, JobsShowHistory,
@@ -218,6 +223,22 @@ impl Action {
                 | A::EditorRegex
                 | A::EditorReplaceAll
                 | A::EditorResizeImage
+        )
+    }
+
+    /// A command of the media player: bound in `KeyContext::Player` and run while a
+    /// player (preview pane or Quick Look) has the keyboard, or from the palette on the
+    /// open player.
+    pub fn is_player(&self) -> bool {
+        use Action as A;
+        matches!(
+            self,
+            A::PlayerPlayPause
+                | A::PlayerSeekBack
+                | A::PlayerSeekForward
+                | A::PlayerVolumeUp
+                | A::PlayerVolumeDown
+                | A::PlayerMute
         )
     }
 

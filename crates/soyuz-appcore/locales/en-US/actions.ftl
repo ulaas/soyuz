@@ -310,6 +310,14 @@ action-redo = Redo
 action-redo-desc = Redo the last undone operation
 action-previous-versions = Restore previous version…
 action-previous-versions-desc = Browse and restore earlier versions from shadow copies
+action-media-convert = Convert media…
+action-media-convert-desc = Convert a video or audio file to another format (FFmpeg)
+action-media-extract-audio = Extract audio…
+action-media-extract-audio-desc = Save the sound track of a video as an audio file (FFmpeg)
+action-media-trim = Trim media…
+action-media-trim-desc = Keep only a part of a video or audio file (FFmpeg)
+action-media-save-frame = Save video frame…
+action-media-save-frame-desc = Save one frame of a video as a picture (FFmpeg)
 
 ## Tools
 
@@ -607,5 +615,17 @@ action-editor-replace-all = Editor: Replace all
 action-editor-replace-all-desc = Replace every match in the document (terminal UI)
 action-editor-resize-image = Editor: Resize image
 action-editor-resize-image-desc = Scale the image to a new size in pixels (terminal UI)
+action-player-play-pause = Player: Play / pause
+action-player-play-pause-desc = Start or pause the video or audio playing in the preview or Quick Look
+action-player-seek-back = Player: Back
+action-player-seek-back-desc = Jump back by the seek step ([media] seek_step_secs)
+action-player-seek-forward = Player: Forward
+action-player-seek-forward-desc = Jump forward by the seek step ([media] seek_step_secs)
+action-player-volume-up = Player: Louder
+action-player-volume-up-desc = Raise the player volume
+action-player-volume-down = Player: Quieter
+action-player-volume-down-desc = Lower the player volume
+action-player-mute = Player: Mute / unmute
+action-player-mute-desc = Turn the player sound off or on
 action-toggle-screen-reader = Toggle screen-reader mode
 action-toggle-screen-reader-desc = Plain text for screen readers: no box drawing, one pane at a time, the cursor on the focused item (terminal UI)
