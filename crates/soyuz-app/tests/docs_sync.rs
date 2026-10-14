@@ -39,7 +39,10 @@ fn check(rel: &str, fresh: &str) {
     }
 }
 
+/// The committed files carry the terminal UI column (`soyuz-tui`, the `tui` feature), so
+/// without the feature there is nothing to compare against.
 #[test]
+#[cfg_attr(not(feature = "tui"), ignore = "the keyboard docs need the `tui` feature")]
 fn keyboard_reference_is_current() {
     check("docs/KEYBOARD.md", &docs_gen::keyboard::markdown());
     check("docs/keyboard.html", &docs_gen::keyboard::html());

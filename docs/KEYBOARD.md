@@ -22,123 +22,182 @@ their usual editing keys.
 
 ## Explorer preset (default)
 
+The *Terminal UI* column is for `soyuz --tui`: *same* means the same keys as in the window,
+— that the terminal UI does not have the action. Terminals that cannot send some chords get
+extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#terminal-ui-on-legacy-terminals-and-in-windows-terminal).
+
 ### Navigation
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| Back | <kbd>Alt</kbd>+<kbd>←</kbd> | Go back in this pane's history |
-| Forward | <kbd>Alt</kbd>+<kbd>→</kbd> | Go forward in this pane's history |
-| Up | <kbd>Alt</kbd>+<kbd>↑</kbd>, <kbd>Backspace</kbd> *(file list)* | Go to the parent folder |
-| Focus address bar | <kbd>Ctrl</kbd>+<kbd>L</kbd> | Edit the path in the address bar |
-| Refresh | <kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>F5</kbd> | Reload the folder listing |
-| Toggle sidebar | <kbd>Ctrl</kbd>+<kbd>B</kbd> | Show or hide the sidebar |
-| Next tab | <kbd>Ctrl</kbd>+<kbd>Tab</kbd> | Switch to the next tab |
-| Prev tab | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | Switch to the previous tab |
-| Go to folder… | <kbd>Ctrl</kbd>+<kbd>P</kbd> | Fuzzy-jump to a recent or frequent folder |
-| Open bookmark 1–9 | <kbd>Alt</kbd>+<kbd>1</kbd> … <kbd>Alt</kbd>+<kbd>9</kbd> | Navigate to a configured bookmark |
-| Go to tab 1–8 | <kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>Ctrl</kbd>+<kbd>8</kbd> | Switch to a tab by position |
-| Go to last tab | <kbd>Ctrl</kbd>+<kbd>9</kbd> | Switch to a tab by position |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| Back | <kbd>Alt</kbd>+<kbd>←</kbd> | same | Go back in this pane's history |
+| Forward | <kbd>Alt</kbd>+<kbd>→</kbd> | same | Go forward in this pane's history |
+| Up | <kbd>Alt</kbd>+<kbd>↑</kbd>, <kbd>Backspace</kbd> *(file list)* | same | Go to the parent folder |
+| Focus address bar | <kbd>Ctrl</kbd>+<kbd>L</kbd> | same | Edit the path in the address bar |
+| Refresh | <kbd>Ctrl</kbd>+<kbd>R</kbd>, <kbd>F5</kbd> | same | Reload the folder listing |
+| Toggle sidebar | <kbd>Ctrl</kbd>+<kbd>B</kbd> | same | Show or hide the sidebar |
+| Focus sidebar | — | <kbd>F12</kbd> | Move keyboard focus to the sidebar |
+| Focus terminal | — | <kbd>Alt</kbd>+<kbd>T</kbd> | Move keyboard focus to the terminal |
+| Next tab | <kbd>Ctrl</kbd>+<kbd>Tab</kbd> | same | Switch to the next tab |
+| Prev tab | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd> | same | Switch to the previous tab |
+| Go to folder… | <kbd>Ctrl</kbd>+<kbd>P</kbd> | same | Fuzzy-jump to a recent or frequent folder |
+| Focus jobs panel | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>J</kbd> | Move keyboard focus to the running and finished operations (terminal UI) |
+| Focus editor | — | <kbd>Alt</kbd>+<kbd>E</kbd> | Give the keyboard back to the open editor document |
+| Open bookmark 1–9 | <kbd>Alt</kbd>+<kbd>1</kbd> … <kbd>Alt</kbd>+<kbd>9</kbd> | same | Navigate to a configured bookmark |
+| Go to tab 1–8 | <kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>Ctrl</kbd>+<kbd>8</kbd> | same | Switch to a tab by position |
+| Go to last tab | <kbd>Ctrl</kbd>+<kbd>9</kbd> | same | Switch to a tab by position |
 
 ### Tabs & panes
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| New tab | <kbd>Ctrl</kbd>+<kbd>T</kbd> | Open a new tab |
-| Close tab | <kbd>Ctrl</kbd>+<kbd>W</kbd> | Close the current tab |
-| Reopen closed tab | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | Reopen the most recently closed tab |
-| Toggle dual pane | <kbd>F9</kbd> | Show or hide the second pane |
-| New window | <kbd>Ctrl</kbd>+<kbd>N</kbd> | Open a new Soyuz window |
-| Toggle quad layout (2×2) | <kbd>Shift</kbd>+<kbd>F9</kbd> | Show four panes in a 2×2 grid |
-| Workspaces… | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> | Open, save and manage named workspaces |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| New tab | <kbd>Ctrl</kbd>+<kbd>T</kbd> | same | Open a new tab |
+| Close tab | <kbd>Ctrl</kbd>+<kbd>W</kbd> | same | Close the current tab |
+| Reopen closed tab | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | same | Reopen the most recently closed tab |
+| Toggle dual pane | <kbd>F9</kbd> | same | Show or hide the second pane |
+| New window | <kbd>Ctrl</kbd>+<kbd>N</kbd> | same | Open a new Soyuz window |
+| Toggle quad layout (2×2) | <kbd>Shift</kbd>+<kbd>F9</kbd> | same | Show four panes in a 2×2 grid |
+| Workspaces… | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> | same | Open, save and manage named workspaces |
 
 ### View
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| View: Details | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> | Show the folder as a detailed table |
-| View: Grid | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> | Show icons or thumbnails in a grid |
-| View: List | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd> | Show a compact multi-column list |
-| View: Columns (Miller) | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd> | Browse with cascading columns |
-| View: Gallery | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd> | Large preview with a filmstrip |
-| Larger icons | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd> | Make icons and thumbnails larger |
-| Smaller icons | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd> | Make icons and thumbnails smaller |
-| Reset icon size | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd> | Reset the icon size |
-| Zoom in (interface) | <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>=</kbd> | Scale the whole interface up |
-| Zoom out (interface) | <kbd>Ctrl</kbd>+<kbd>-</kbd> | Scale the whole interface down |
-| Reset interface zoom | <kbd>Ctrl</kbd>+<kbd>0</kbd> | Back to 100 % interface scale |
-| Toggle hidden files | <kbd>Ctrl</kbd>+<kbd>H</kbd> | Show or hide hidden files |
-| Toggle preview pane | <kbd>Alt</kbd>+<kbd>P</kbd> | Show or hide the preview pane |
-| Toggle terminal | <kbd>Ctrl</kbd>+<kbd>&#96;</kbd> | Show or hide the integrated terminal |
-| Toggle activity panel | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> | Show or hide running jobs |
-| Toggle AI assistant | <kbd>Ctrl</kbd>+<kbd>I</kbd> | Show or hide the AI assistant panel |
-| Toggle disk tree | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | Switch the sidebar between places and the disk tree |
-| Scroll preview up | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> | Scroll the preview pane up one line (terminal UI) |
-| Scroll preview down | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd> | Scroll the preview pane down one line (terminal UI) |
-| Preview page up | <kbd>Alt</kbd>+<kbd>PageUp</kbd> | Scroll the preview pane up one page (terminal UI) |
-| Preview page down | <kbd>Alt</kbd>+<kbd>PageDown</kbd> | Scroll the preview pane down one page (terminal UI) |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| View: Details | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd> | same | Show the folder as a detailed table |
+| View: Grid | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd> | same | Show icons or thumbnails in a grid |
+| View: List | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd> | same | Show a compact multi-column list |
+| View: Columns (Miller) | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd> | same | Browse with cascading columns |
+| View: Gallery | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd> | same | Large preview with a filmstrip |
+| Larger icons | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd> | same | Make icons and thumbnails larger |
+| Smaller icons | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd> | same | Make icons and thumbnails smaller |
+| Reset icon size | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd> | same | Reset the icon size |
+| Zoom in (interface) | <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>=</kbd> | same | Scale the whole interface up |
+| Zoom out (interface) | <kbd>Ctrl</kbd>+<kbd>-</kbd> | same | Scale the whole interface down |
+| Reset interface zoom | <kbd>Ctrl</kbd>+<kbd>0</kbd> | same | Back to 100 % interface scale |
+| Toggle hidden files | <kbd>Ctrl</kbd>+<kbd>H</kbd> | same | Show or hide hidden files |
+| Toggle preview pane | <kbd>Alt</kbd>+<kbd>P</kbd> | same | Show or hide the preview pane |
+| Toggle terminal | <kbd>Ctrl</kbd>+<kbd>&#96;</kbd> | same | Show or hide the integrated terminal |
+| Toggle activity panel | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> | same | Show or hide running jobs |
+| Toggle AI assistant | <kbd>Ctrl</kbd>+<kbd>I</kbd> | same | Show or hide the AI assistant panel |
+| Toggle disk tree | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | same | Switch the sidebar between places and the disk tree |
+| Scroll preview up | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd> | Scroll the preview pane up one line (terminal UI) |
+| Scroll preview down | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd> | Scroll the preview pane down one line (terminal UI) |
+| Preview page up | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>PageUp</kbd> | Scroll the preview pane up one page (terminal UI) |
+| Preview page down | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>PageDown</kbd> | Scroll the preview pane down one page (terminal UI) |
 
 ### Selection
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| Select all | <kbd>Ctrl</kbd>+<kbd>A</kbd> *(file list)* | Select every item |
-| Select none | <kbd>Esc</kbd> *(file list)* | Clear the selection |
-| Invert selection | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> *(file list)* | Select everything that isn't selected |
-| Cursor up | <kbd>↑</kbd> *(file list)* | Move the cursor up |
-| Cursor down | <kbd>↓</kbd> *(file list)* | Move the cursor down |
-| Cursor page up | <kbd>PageUp</kbd> *(file list)* | Move the cursor one page up |
-| Cursor page down | <kbd>PageDown</kbd> *(file list)* | Move the cursor one page down |
-| Cursor home | <kbd>Home</kbd> *(file list)* | Jump to the first item |
-| Cursor end | <kbd>End</kbd> *(file list)* | Jump to the last item |
-| Extend up | <kbd>Shift</kbd>+<kbd>↑</kbd> *(file list)* | Extend the selection upwards |
-| Extend down | <kbd>Shift</kbd>+<kbd>↓</kbd> *(file list)* | Extend the selection downwards |
-| Filter this folder | <kbd>Ctrl</kbd>+<kbd>F</kbd> | Filter the list as you type |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| Select all | <kbd>Ctrl</kbd>+<kbd>A</kbd> *(file list)* | same | Select every item |
+| Select none | <kbd>Esc</kbd> *(file list)* | same | Clear the selection |
+| Invert selection | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> *(file list)* | same | Select everything that isn't selected |
+| Cursor up | <kbd>↑</kbd> *(file list)* | same | Move the cursor up |
+| Cursor down | <kbd>↓</kbd> *(file list)* | same | Move the cursor down |
+| Cursor page up | <kbd>PageUp</kbd> *(file list)* | same | Move the cursor one page up |
+| Cursor page down | <kbd>PageDown</kbd> *(file list)* | same | Move the cursor one page down |
+| Cursor home | <kbd>Home</kbd> *(file list)* | same | Jump to the first item |
+| Cursor end | <kbd>End</kbd> *(file list)* | same | Jump to the last item |
+| Extend up | <kbd>Shift</kbd>+<kbd>↑</kbd> *(file list)* | same | Extend the selection upwards |
+| Extend down | <kbd>Shift</kbd>+<kbd>↓</kbd> *(file list)* | same | Extend the selection downwards |
+| Filter this folder | <kbd>Ctrl</kbd>+<kbd>F</kbd> | same | Filter the list as you type |
 
 ### File
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| Open | <kbd>Enter</kbd> *(file list)* | Open the selection |
-| Edit in Soyuz | <kbd>F4</kbd> *(file list)* | Open the file in the built-in text, hex or image editor |
-| Open in new tab | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> *(file list)* | Open the selected folders in new tabs |
-| Copy | <kbd>Ctrl</kbd>+<kbd>C</kbd> *(file list)* | Copy the selection to the clipboard |
-| Cut | <kbd>Ctrl</kbd>+<kbd>X</kbd> *(file list)* | Cut the selection to the clipboard |
-| Paste | <kbd>Ctrl</kbd>+<kbd>V</kbd> *(file list)* | Paste the clipboard into this folder |
-| Paste as link | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> *(file list)* | Paste the clipboard as links |
-| Copy to other pane | <kbd>F5</kbd> *(file list)* | Copy the selection to the other pane |
-| Move to other pane | <kbd>F6</kbd> *(file list)* | Move the selection to the other pane |
-| Duplicate | <kbd>Ctrl</kbd>+<kbd>D</kbd> *(file list)* | Make a copy next to the original |
-| Rename | <kbd>F2</kbd> *(file list)* | Rename the item under the cursor |
-| Batch rename… | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> *(file list)* | Rename many items with patterns |
-| New folder | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> *(file list)* | Create a new folder here |
-| New file | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> *(file list)* | Create a new empty file here |
-| Move to trash | <kbd>Del</kbd> *(file list)* | Move the selection to the trash |
-| Delete permanently | <kbd>Shift</kbd>+<kbd>Del</kbd> *(file list)* | Delete without the trash |
-| Properties | <kbd>Alt</kbd>+<kbd>Enter</kbd> *(file list)* | Show size, dates and attributes |
-| Copy path | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> *(file list)* | Copy the full path to the clipboard |
-| Undo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | Undo the last file operation |
-| Redo | <kbd>Ctrl</kbd>+<kbd>Y</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | Redo the last undone operation |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| Open | <kbd>Enter</kbd> *(file list)* | same | Open the selection |
+| Edit in Soyuz | <kbd>F4</kbd> *(file list)* | same | Open the file in the built-in text, hex or image editor |
+| Open in new tab | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> *(file list)* | same | Open the selected folders in new tabs |
+| Copy | <kbd>Ctrl</kbd>+<kbd>C</kbd> *(file list)* | same | Copy the selection to the clipboard |
+| Cut | <kbd>Ctrl</kbd>+<kbd>X</kbd> *(file list)* | same | Cut the selection to the clipboard |
+| Paste | <kbd>Ctrl</kbd>+<kbd>V</kbd> *(file list)* | same | Paste the clipboard into this folder |
+| Paste as link | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> *(file list)* | same | Paste the clipboard as links |
+| Copy to other pane | <kbd>F5</kbd> *(file list)* | same | Copy the selection to the other pane |
+| Move to other pane | <kbd>F6</kbd> *(file list)* | same | Move the selection to the other pane |
+| Duplicate | <kbd>Ctrl</kbd>+<kbd>D</kbd> *(file list)* | same | Make a copy next to the original |
+| Rename | <kbd>F2</kbd> *(file list)* | same | Rename the item under the cursor |
+| Batch rename… | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> *(file list)* | same | Rename many items with patterns |
+| New folder | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> *(file list)* | same | Create a new folder here |
+| New file | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd> *(file list)* | same | Create a new empty file here |
+| Move to trash | <kbd>Del</kbd> *(file list)* | same | Move the selection to the trash |
+| Delete permanently | <kbd>Shift</kbd>+<kbd>Del</kbd> *(file list)* | same | Delete without the trash |
+| Properties | <kbd>Alt</kbd>+<kbd>Enter</kbd> *(file list)* | same | Show size, dates and attributes |
+| Copy path | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> *(file list)* | same | Copy the full path to the clipboard |
+| Undo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | same | Undo the last file operation |
+| Redo | <kbd>Ctrl</kbd>+<kbd>Y</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | same | Redo the last undone operation |
 
 ### Tools
 
-| Action | Shortcut | What it does |
-|---|---|---|
-| Command palette | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, <kbd>Ctrl</kbd>+<kbd>K</kbd> | Search and run any command |
-| Search | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, <kbd>F3</kbd> | Search this folder and its subfolders |
-| Settings | <kbd>Ctrl</kbd>+<kbd>,</kbd> | Open the settings |
-| Keyboard shortcuts | <kbd>Ctrl</kbd>+<kbd>/</kbd> | Browse and edit keyboard shortcuts |
-| Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | Quit Soyuz |
-| Quick Look | <kbd>Space</kbd> *(file list)* | Preview the item in a popup |
-| Open context menu | <kbd>Shift</kbd>+<kbd>F10</kbd> | Show the menu of the focused item, like a right click (terminal UI) |
-| Editor: Save | <kbd>Ctrl</kbd>+<kbd>S</kbd> *(editor)* | Save the document in the editor |
-| Editor: Find | <kbd>Ctrl</kbd>+<kbd>F</kbd> *(editor)* | Find text in the document |
-| Editor: Replace | <kbd>Ctrl</kbd>+<kbd>H</kbd> *(editor)* | Find and replace text in the document |
-| Editor: Go to line | <kbd>Ctrl</kbd>+<kbd>G</kbd> *(editor)* | Jump to a line (text) or an offset (hex) |
-| Editor: Find next | <kbd>F3</kbd> *(editor)* | Select the next match |
-| Editor: Find previous | <kbd>Shift</kbd>+<kbd>F3</kbd> *(editor)* | Select the previous match |
-| Editor: Close document | <kbd>Ctrl</kbd>+<kbd>W</kbd> *(editor)* | Close the document (asks to save changes first) |
-| Editor: Next document | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> *(editor)* | Switch to the next editor tab |
-| Editor: Previous document | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> *(editor)* | Switch to the previous editor tab |
+| Action | Shortcut | Terminal UI | What it does |
+|---|---|---|---|
+| Command palette | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, <kbd>Ctrl</kbd>+<kbd>K</kbd> | same | Search and run any command |
+| Search | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, <kbd>F3</kbd> | same | Search this folder and its subfolders |
+| Settings | <kbd>Ctrl</kbd>+<kbd>,</kbd> | same | Open the settings |
+| Keyboard shortcuts | <kbd>Ctrl</kbd>+<kbd>/</kbd> | same | Browse and edit keyboard shortcuts |
+| Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | same | Quit Soyuz |
+| Quick Look | <kbd>Space</kbd> *(file list)* | same | Preview the item in a popup |
+| Open context menu | — *(terminal UI only)* | <kbd>Shift</kbd>+<kbd>F10</kbd> | Show the menu of the focused item, like a right click (terminal UI) |
+| Editor: Save | <kbd>Ctrl</kbd>+<kbd>S</kbd> *(editor)* | same | Save the document in the editor |
+| Editor: Save as | — *(terminal UI only)* | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> *(editor)*, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> *(editor)* | Save a copy of the document under a new name and edit the copy (terminal UI) |
+| Editor: Find | <kbd>Ctrl</kbd>+<kbd>F</kbd> *(editor)* | same | Find text in the document |
+| Editor: Replace | <kbd>Ctrl</kbd>+<kbd>H</kbd> *(editor)* | <kbd>Ctrl</kbd>+<kbd>R</kbd> *(editor)* | Find and replace text in the document |
+| Editor: Go to line | <kbd>Ctrl</kbd>+<kbd>G</kbd> *(editor)* | same | Jump to a line (text) or an offset (hex) |
+| Editor: Find next | <kbd>F3</kbd> *(editor)* | same | Select the next match |
+| Editor: Find previous | <kbd>Shift</kbd>+<kbd>F3</kbd> *(editor)* | same | Select the previous match |
+| Editor: Close document | <kbd>Ctrl</kbd>+<kbd>W</kbd> *(editor)* | same | Close the document (asks to save changes first) |
+| Editor: Next document | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> *(editor)* | same | Switch to the next editor tab |
+| Editor: Previous document | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> *(editor)* | same | Switch to the previous editor tab |
+| Editor: Toggle word wrap | — | <kbd>Alt</kbd>+<kbd>Z</kbd> *(editor)* | Wrap long lines at the panel's edge or scroll sideways |
+| Editor: Maximize | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>M</kbd> *(editor)* | Let the editor fill the file panes' area, or restore it (terminal UI) |
+| Editor: Switch dock side | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd> *(editor)* | Dock the editor on the right or at the bottom (terminal UI) |
+| Editor: Answer notice | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>E</kbd> *(editor)* | Run the action of the document's notice: reload a changed file, edit a lossy file anyway, allow editing a large file (terminal UI) |
+| Editor: Toggle match case | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>C</kbd> *(editor)* | Match upper and lower case in find (terminal UI) |
+| Editor: Toggle whole word | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>W</kbd> *(editor)* | Find whole words only (terminal UI) |
+| Editor: Toggle regular expression | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>R</kbd> *(editor)* | Find with a regular expression (terminal UI) |
+| Editor: Replace all | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>A</kbd> *(editor)* | Replace every match in the document (terminal UI) |
+| Editor: Resize image | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>S</kbd> *(editor)* | Scale the image to a new size in pixels (terminal UI) |
+
+## Terminal UI on legacy terminals and in Windows Terminal
+
+A terminal without the kitty keyboard protocol (most terminals on Linux and macOS) sends
+<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+letter as <kbd>Ctrl</kbd>+letter and <kbd>Ctrl</kbd>+<kbd>Tab</kbd> as
+<kbd>Tab</kbd>, and nothing for <kbd>Ctrl</kbd> with most punctuation. Windows Terminal keeps some
+chords for itself (new tab, split pane, its own palette, …). The terminal UI detects both and adds
+the chords below to the Explorer preset; the original chords keep working wherever they arrive.
+The Windows console and terminals with the kitty protocol need none of them. An extra chord is
+only added while it is free, so your own bindings win.
+
+| Action | Legacy terminal | Windows Terminal | WSL in Windows Terminal |
+|---|---|---|---|
+| Next tab | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> | <kbd>Ctrl</kbd>+<kbd>PageDown</kbd> |
+| Prev tab | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> | <kbd>Ctrl</kbd>+<kbd>PageUp</kbd> |
+| Reopen closed tab | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd> |
+| View: Details | <kbd>Ctrl</kbd>+<kbd>F1</kbd> | <kbd>Ctrl</kbd>+<kbd>F1</kbd> | <kbd>Ctrl</kbd>+<kbd>F1</kbd> |
+| View: Grid | <kbd>Ctrl</kbd>+<kbd>F2</kbd> | <kbd>Ctrl</kbd>+<kbd>F2</kbd> | <kbd>Ctrl</kbd>+<kbd>F2</kbd> |
+| View: List | <kbd>Ctrl</kbd>+<kbd>F3</kbd> | <kbd>Ctrl</kbd>+<kbd>F3</kbd> | <kbd>Ctrl</kbd>+<kbd>F3</kbd> |
+| View: Columns (Miller) | <kbd>Ctrl</kbd>+<kbd>F4</kbd> | <kbd>Ctrl</kbd>+<kbd>F4</kbd> | <kbd>Ctrl</kbd>+<kbd>F4</kbd> |
+| View: Gallery | <kbd>Ctrl</kbd>+<kbd>F5</kbd> | <kbd>Ctrl</kbd>+<kbd>F5</kbd> | <kbd>Ctrl</kbd>+<kbd>F5</kbd> |
+| Toggle terminal | <kbd>Alt</kbd>+<kbd>&#96;</kbd> | — | <kbd>Alt</kbd>+<kbd>&#96;</kbd> |
+| Toggle activity panel | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd> |
+| Toggle AI assistant | <kbd>Alt</kbd>+<kbd>I</kbd> | — | <kbd>Alt</kbd>+<kbd>I</kbd> |
+| Toggle disk tree | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> |
+| Invert selection | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> *(file list)* | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd> *(file list)* |
+| Paste | — | <kbd>Alt</kbd>+<kbd>V</kbd> *(file list)* | — |
+| Paste as link | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> *(file list)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> *(file list)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> *(file list)* |
+| Batch rename… | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> *(file list)* | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> *(file list)* |
+| New folder | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> *(file list)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> *(file list)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> *(file list)* |
+| Properties | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> *(file list)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> *(file list)* |
+| Copy path | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> *(file list)* | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> *(file list)* |
+| Redo | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> |
+| Command palette | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd> |
+| Search | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> | — | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> |
+| Settings | <kbd>Alt</kbd>+<kbd>,</kbd> | <kbd>Alt</kbd>+<kbd>,</kbd> | <kbd>Alt</kbd>+<kbd>,</kbd> |
+| Keyboard shortcuts | <kbd>Alt</kbd>+<kbd>/</kbd> | — | <kbd>Alt</kbd>+<kbd>/</kbd> |
+
+Inside Windows Terminal the terminal UI also lists a working chord first in menus, hints and
+the palette. These default chords never reach it there: <kbd>Alt</kbd>+<kbd>Enter</kbd>, <kbd>Ctrl</kbd>+<kbd>,</kbd>, <kbd>Ctrl</kbd>+<kbd>-</kbd>, <kbd>Ctrl</kbd>+<kbd>0</kbd>, <kbd>Ctrl</kbd>+<kbd>=</kbd>, <kbd>Ctrl</kbd>+<kbd>+</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd>, <kbd>Ctrl</kbd>+<kbd>Tab</kbd>, <kbd>Ctrl</kbd>+<kbd>V</kbd>. Unbind them in Windows Terminal's settings (Actions) to use them in Soyuz. Windows Terminal's
+paste chords paste text; under WSL a paste into the file list runs Soyuz's Paste.
 
 ## Commander (F-keys) preset
 

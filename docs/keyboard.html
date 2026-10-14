@@ -37,15 +37,32 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; border: 1px solid
       font: 600 10.5px/1.5 "Cascadia Mono", Consolas, ui-monospace, monospace; }
 .ctx { display: block; color: var(--muted); font-size: 10px; }
 .none { color: var(--muted); }
+.note { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
 .diff td { padding-right: 8px; }
 .diff td.k { text-align: left; }
 footer { margin-top: 16px; color: var(--muted); font-size: 11px; }
 @media (max-width: 640px) { body { padding: 16px 16px 32px; } td.k { white-space: normal; } }
-@page { size: A4; margin: 12mm; }
+.c { white-space: nowrap; }
+@page { size: A4; margin: 10mm; }
+/* Two A4 pages: the Explorer preset, then what the other presets and the terminal UI change. */
 @media print {
-  body { padding: 0; font-size: 10px; background: #fff; color: #000; }
+  body { padding: 0; font-size: 8.5px; line-height: 1.25; background: #fff; color: #000; }
   :root { --bg: #fff; --fg: #000; --card: #fff; --kbd-bg: #fff; }
-  .grid { columns: 3; }
+  header { padding-bottom: 4px; margin-bottom: 8px; }
+  h1 { font-size: 16px; }
+  h2 { font-size: 12px; margin: 0 0 6px; }
+  h3 { font-size: 8.5px; margin: 0 0 2px; }
+  .grid { columns: 3; column-gap: 8px; }
+  section { padding: 4px 6px 3px; margin: 0 0 6px; border-radius: 4px; }
+  section.diff { break-inside: auto; }
+  td, th { padding: 1px 0; }
+  .diff td { padding-right: 4px; }
+  .diff td.k { white-space: normal; }
+  kbd { min-width: 1.4em; padding: 0 2px; border-bottom-width: 1px; border-radius: 3px; font-size: 7.5px;
+        line-height: 1.35; }
+  .ctx { display: inline; margin-left: 3px; font-size: 7.5px; }
+  .note { font-size: 7.5px; }
+  footer { margin-top: 4px; font-size: 7.5px; }
   .page { break-before: page; }
 }
 </style>
@@ -55,104 +72,99 @@ footer { margin-top: 16px; color: var(--muted); font-size: 11px; }
 <header><h1>Soyuz keyboard shortcuts</h1><p>Explorer preset (default) · Ctrl+K opens the command palette with every action · Settings → Keyboard changes any binding</p></header>
 <div class="grid">
 <section><h3>Navigation</h3><table>
-<tr><td title="Go back in this pane's history">Back</td><td class="k"><kbd>Alt</kbd>+<kbd>←</kbd></td></tr>
-<tr><td title="Go forward in this pane's history">Forward</td><td class="k"><kbd>Alt</kbd>+<kbd>→</kbd></td></tr>
-<tr><td title="Go to the parent folder">Up</td><td class="k"><kbd>Alt</kbd>+<kbd>↑</kbd><br><kbd>Backspace</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Edit the path in the address bar">Focus address bar</td><td class="k"><kbd>Ctrl</kbd>+<kbd>L</kbd></td></tr>
-<tr><td title="Reload the folder listing">Refresh</td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd><br><kbd>F5</kbd></td></tr>
-<tr><td title="Show or hide the sidebar">Toggle sidebar</td><td class="k"><kbd>Ctrl</kbd>+<kbd>B</kbd></td></tr>
-<tr><td title="Switch to the next tab">Next tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td></tr>
-<tr><td title="Switch to the previous tab">Prev tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td></tr>
-<tr><td title="Fuzzy-jump to a recent or frequent folder">Go to folder…</td><td class="k"><kbd>Ctrl</kbd>+<kbd>P</kbd></td></tr>
-<tr><td title="Navigate to a configured bookmark">Open bookmark 1–9</td><td class="k"><kbd>Alt</kbd>+<kbd>1</kbd> … <kbd>Alt</kbd>+<kbd>9</kbd></td></tr>
-<tr><td title="Switch to a tab by position">Go to tab 1–8</td><td class="k"><kbd>Ctrl</kbd>+<kbd>1</kbd> … <kbd>Ctrl</kbd>+<kbd>8</kbd></td></tr>
-<tr><td title="Switch to a tab by position">Go to last tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>9</kbd></td></tr>
+<tr><td title="Go back in this pane's history">Back</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>←</kbd></span></td></tr>
+<tr><td title="Go forward in this pane's history">Forward</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>→</kbd></span></td></tr>
+<tr><td title="Go to the parent folder">Up</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>↑</kbd></span><br><span class="c"><kbd>Backspace</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Edit the path in the address bar">Focus address bar</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>L</kbd></span></td></tr>
+<tr><td title="Reload the folder listing">Refresh</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span><br><span class="c"><kbd>F5</kbd></span></td></tr>
+<tr><td title="Show or hide the sidebar">Toggle sidebar</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>B</kbd></span></td></tr>
+<tr><td title="Switch to the next tab">Next tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Tab</kbd></span></td></tr>
+<tr><td title="Switch to the previous tab">Prev tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></span></td></tr>
+<tr><td title="Fuzzy-jump to a recent or frequent folder">Go to folder…</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>P</kbd></span></td></tr>
+<tr><td title="Navigate to a configured bookmark">Open bookmark 1–9</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>1</kbd></span> … <span class="c"><kbd>Alt</kbd>+<kbd>9</kbd></span></td></tr>
+<tr><td title="Switch to a tab by position">Go to tab 1–8</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>1</kbd></span> … <span class="c"><kbd>Ctrl</kbd>+<kbd>8</kbd></span></td></tr>
+<tr><td title="Switch to a tab by position">Go to last tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>9</kbd></span></td></tr>
 </table></section>
 <section><h3>Tabs &amp; panes</h3><table>
-<tr><td title="Open a new tab">New tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>T</kbd></td></tr>
-<tr><td title="Close the current tab">Close tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>W</kbd></td></tr>
-<tr><td title="Reopen the most recently closed tab">Reopen closed tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></td></tr>
-<tr><td title="Show or hide the second pane">Toggle dual pane</td><td class="k"><kbd>F9</kbd></td></tr>
-<tr><td title="Open a new Soyuz window">New window</td><td class="k"><kbd>Ctrl</kbd>+<kbd>N</kbd></td></tr>
-<tr><td title="Show four panes in a 2×2 grid">Toggle quad layout (2×2)</td><td class="k"><kbd>Shift</kbd>+<kbd>F9</kbd></td></tr>
-<tr><td title="Open, save and manage named workspaces">Workspaces…</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd></td></tr>
+<tr><td title="Open a new tab">New tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>T</kbd></span></td></tr>
+<tr><td title="Close the current tab">Close tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>W</kbd></span></td></tr>
+<tr><td title="Reopen the most recently closed tab">Reopen closed tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd></span></td></tr>
+<tr><td title="Show or hide the second pane">Toggle dual pane</td><td class="k"><span class="c"><kbd>F9</kbd></span></td></tr>
+<tr><td title="Open a new Soyuz window">New window</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>N</kbd></span></td></tr>
+<tr><td title="Show four panes in a 2×2 grid">Toggle quad layout (2×2)</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>F9</kbd></span></td></tr>
+<tr><td title="Open, save and manage named workspaces">Workspaces…</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd></span></td></tr>
 </table></section>
 <section><h3>View</h3><table>
-<tr><td title="Show the folder as a detailed table">View: Details</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td></tr>
-<tr><td title="Show icons or thumbnails in a grid">View: Grid</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></td></tr>
-<tr><td title="Show a compact multi-column list">View: List</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></td></tr>
-<tr><td title="Browse with cascading columns">View: Columns (Miller)</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></td></tr>
-<tr><td title="Large preview with a filmstrip">View: Gallery</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></td></tr>
-<tr><td title="Make icons and thumbnails larger">Larger icons</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>+</kbd><br><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd></td></tr>
-<tr><td title="Make icons and thumbnails smaller">Smaller icons</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></td></tr>
-<tr><td title="Reset the icon size">Reset icon size</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></td></tr>
-<tr><td title="Scale the whole interface up">Zoom in (interface)</td><td class="k"><kbd>Ctrl</kbd>+<kbd>+</kbd><br><kbd>Ctrl</kbd>+<kbd>=</kbd></td></tr>
-<tr><td title="Scale the whole interface down">Zoom out (interface)</td><td class="k"><kbd>Ctrl</kbd>+<kbd>-</kbd></td></tr>
-<tr><td title="Back to 100 % interface scale">Reset interface zoom</td><td class="k"><kbd>Ctrl</kbd>+<kbd>0</kbd></td></tr>
-<tr><td title="Show or hide hidden files">Toggle hidden files</td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd></td></tr>
-<tr><td title="Show or hide the preview pane">Toggle preview pane</td><td class="k"><kbd>Alt</kbd>+<kbd>P</kbd></td></tr>
-<tr><td title="Show or hide the integrated terminal">Toggle terminal</td><td class="k"><kbd>Ctrl</kbd>+<kbd>`</kbd></td></tr>
-<tr><td title="Show or hide running jobs">Toggle activity panel</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd></td></tr>
-<tr><td title="Show or hide the AI assistant panel">Toggle AI assistant</td><td class="k"><kbd>Ctrl</kbd>+<kbd>I</kbd></td></tr>
-<tr><td title="Switch the sidebar between places and the disk tree">Toggle disk tree</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></td></tr>
-<tr><td title="Scroll the preview pane up one line (terminal UI)">Scroll preview up</td><td class="k"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd></td></tr>
-<tr><td title="Scroll the preview pane down one line (terminal UI)">Scroll preview down</td><td class="k"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd></td></tr>
-<tr><td title="Scroll the preview pane up one page (terminal UI)">Preview page up</td><td class="k"><kbd>Alt</kbd>+<kbd>PageUp</kbd></td></tr>
-<tr><td title="Scroll the preview pane down one page (terminal UI)">Preview page down</td><td class="k"><kbd>Alt</kbd>+<kbd>PageDown</kbd></td></tr>
+<tr><td title="Show the folder as a detailed table">View: Details</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></span></td></tr>
+<tr><td title="Show icons or thumbnails in a grid">View: Grid</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></span></td></tr>
+<tr><td title="Show a compact multi-column list">View: List</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></span></td></tr>
+<tr><td title="Browse with cascading columns">View: Columns (Miller)</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></span></td></tr>
+<tr><td title="Large preview with a filmstrip">View: Gallery</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></span></td></tr>
+<tr><td title="Make icons and thumbnails larger">Larger icons</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>+</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>=</kbd></span></td></tr>
+<tr><td title="Make icons and thumbnails smaller">Smaller icons</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>-</kbd></span></td></tr>
+<tr><td title="Reset the icon size">Reset icon size</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>0</kbd></span></td></tr>
+<tr><td title="Scale the whole interface up">Zoom in (interface)</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>+</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>=</kbd></span></td></tr>
+<tr><td title="Scale the whole interface down">Zoom out (interface)</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>-</kbd></span></td></tr>
+<tr><td title="Back to 100 % interface scale">Reset interface zoom</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>0</kbd></span></td></tr>
+<tr><td title="Show or hide hidden files">Toggle hidden files</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span></td></tr>
+<tr><td title="Show or hide the preview pane">Toggle preview pane</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>P</kbd></span></td></tr>
+<tr><td title="Show or hide the integrated terminal">Toggle terminal</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>`</kbd></span></td></tr>
+<tr><td title="Show or hide running jobs">Toggle activity panel</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>J</kbd></span></td></tr>
+<tr><td title="Show or hide the AI assistant panel">Toggle AI assistant</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>I</kbd></span></td></tr>
+<tr><td title="Switch the sidebar between places and the disk tree">Toggle disk tree</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></span></td></tr>
 </table></section>
 <section><h3>Selection</h3><table>
-<tr><td title="Select every item">Select all</td><td class="k"><kbd>Ctrl</kbd>+<kbd>A</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Clear the selection">Select none</td><td class="k"><kbd>Esc</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Select everything that isn't selected">Invert selection</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the cursor up">Cursor up</td><td class="k"><kbd>↑</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the cursor down">Cursor down</td><td class="k"><kbd>↓</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the cursor one page up">Cursor page up</td><td class="k"><kbd>PageUp</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the cursor one page down">Cursor page down</td><td class="k"><kbd>PageDown</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Jump to the first item">Cursor home</td><td class="k"><kbd>Home</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Jump to the last item">Cursor end</td><td class="k"><kbd>End</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Extend the selection upwards">Extend up</td><td class="k"><kbd>Shift</kbd>+<kbd>↑</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Extend the selection downwards">Extend down</td><td class="k"><kbd>Shift</kbd>+<kbd>↓</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Filter the list as you type">Filter this folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd></td></tr>
+<tr><td title="Select every item">Select all</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>A</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Clear the selection">Select none</td><td class="k"><span class="c"><kbd>Esc</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Select everything that isn't selected">Invert selection</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the cursor up">Cursor up</td><td class="k"><span class="c"><kbd>↑</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the cursor down">Cursor down</td><td class="k"><span class="c"><kbd>↓</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the cursor one page up">Cursor page up</td><td class="k"><span class="c"><kbd>PageUp</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the cursor one page down">Cursor page down</td><td class="k"><span class="c"><kbd>PageDown</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Jump to the first item">Cursor home</td><td class="k"><span class="c"><kbd>Home</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Jump to the last item">Cursor end</td><td class="k"><span class="c"><kbd>End</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Extend the selection upwards">Extend up</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↑</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Extend the selection downwards">Extend down</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↓</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Filter the list as you type">Filter this folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span></td></tr>
 </table></section>
 <section><h3>File</h3><table>
-<tr><td title="Open the selection">Open</td><td class="k"><kbd>Enter</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Open the file in the built-in text, hex or image editor">Edit in Soyuz</td><td class="k"><kbd>F4</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Open the selected folders in new tabs">Open in new tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Enter</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Copy the selection to the clipboard">Copy</td><td class="k"><kbd>Ctrl</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Cut the selection to the clipboard">Cut</td><td class="k"><kbd>Ctrl</kbd>+<kbd>X</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Paste the clipboard into this folder">Paste</td><td class="k"><kbd>Ctrl</kbd>+<kbd>V</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Paste the clipboard as links">Paste as link</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Copy the selection to the other pane">Copy to other pane</td><td class="k"><kbd>F5</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the selection to the other pane">Move to other pane</td><td class="k"><kbd>F6</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Make a copy next to the original">Duplicate</td><td class="k"><kbd>Ctrl</kbd>+<kbd>D</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Rename the item under the cursor">Rename</td><td class="k"><kbd>F2</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Rename many items with patterns">Batch rename…</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Create a new folder here">New folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Create a new empty file here">New file</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Move the selection to the trash">Move to trash</td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Delete without the trash">Delete permanently</td><td class="k"><kbd>Shift</kbd>+<kbd>Del</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Show size, dates and attributes">Properties</td><td class="k"><kbd>Alt</kbd>+<kbd>Enter</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Copy the full path to the clipboard">Copy path</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Undo the last file operation">Undo</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td></tr>
-<tr><td title="Redo the last undone operation">Redo</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Y</kbd><br><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td></tr>
+<tr><td title="Open the selection">Open</td><td class="k"><span class="c"><kbd>Enter</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Open the file in the built-in text, hex or image editor">Edit in Soyuz</td><td class="k"><span class="c"><kbd>F4</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Open the selected folders in new tabs">Open in new tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Enter</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Copy the selection to the clipboard">Copy</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Cut the selection to the clipboard">Cut</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>X</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Paste the clipboard into this folder">Paste</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Paste the clipboard as links">Paste as link</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Copy the selection to the other pane">Copy to other pane</td><td class="k"><span class="c"><kbd>F5</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the selection to the other pane">Move to other pane</td><td class="k"><span class="c"><kbd>F6</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Make a copy next to the original">Duplicate</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>D</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Rename the item under the cursor">Rename</td><td class="k"><span class="c"><kbd>F2</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Rename many items with patterns">Batch rename…</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Create a new folder here">New folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Create a new empty file here">New file</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Move the selection to the trash">Move to trash</td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Delete without the trash">Delete permanently</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>Del</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Show size, dates and attributes">Properties</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Enter</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Copy the full path to the clipboard">Copy path</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Undo the last file operation">Undo</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span></td></tr>
+<tr><td title="Redo the last undone operation">Redo</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Y</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></span></td></tr>
 </table></section>
 <section><h3>Tools</h3><table>
-<tr><td title="Search and run any command">Command palette</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd><br><kbd>Ctrl</kbd>+<kbd>K</kbd></td></tr>
-<tr><td title="Search this folder and its subfolders">Search</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><br><kbd>F3</kbd></td></tr>
-<tr><td title="Open the settings">Settings</td><td class="k"><kbd>Ctrl</kbd>+<kbd>,</kbd></td></tr>
-<tr><td title="Browse and edit keyboard shortcuts">Keyboard shortcuts</td><td class="k"><kbd>Ctrl</kbd>+<kbd>/</kbd></td></tr>
-<tr><td title="Quit Soyuz">Quit</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Q</kbd></td></tr>
-<tr><td title="Preview the item in a popup">Quick Look</td><td class="k"><kbd>Space</kbd><span class="ctx">file list</span></td></tr>
-<tr><td title="Show the menu of the focused item, like a right click (terminal UI)">Open context menu</td><td class="k"><kbd>Shift</kbd>+<kbd>F10</kbd></td></tr>
-<tr><td title="Save the document in the editor">Editor: Save</td><td class="k"><kbd>Ctrl</kbd>+<kbd>S</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Find text in the document">Editor: Find</td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Find and replace text in the document">Editor: Replace</td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Jump to a line (text) or an offset (hex)">Editor: Go to line</td><td class="k"><kbd>Ctrl</kbd>+<kbd>G</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Select the next match">Editor: Find next</td><td class="k"><kbd>F3</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Select the previous match">Editor: Find previous</td><td class="k"><kbd>Shift</kbd>+<kbd>F3</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Close the document (asks to save changes first)">Editor: Close document</td><td class="k"><kbd>Ctrl</kbd>+<kbd>W</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Switch to the next editor tab">Editor: Next document</td><td class="k"><kbd>Ctrl</kbd>+<kbd>PageDown</kbd><span class="ctx">editor</span></td></tr>
-<tr><td title="Switch to the previous editor tab">Editor: Previous document</td><td class="k"><kbd>Ctrl</kbd>+<kbd>PageUp</kbd><span class="ctx">editor</span></td></tr>
+<tr><td title="Search and run any command">Command palette</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>K</kbd></span></td></tr>
+<tr><td title="Search this folder and its subfolders">Search</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>F3</kbd></span></td></tr>
+<tr><td title="Open the settings">Settings</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>,</kbd></span></td></tr>
+<tr><td title="Browse and edit keyboard shortcuts">Keyboard shortcuts</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>/</kbd></span></td></tr>
+<tr><td title="Quit Soyuz">Quit</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Q</kbd></span></td></tr>
+<tr><td title="Preview the item in a popup">Quick Look</td><td class="k"><span class="c"><kbd>Space</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td title="Save the document in the editor">Editor: Save</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>S</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Find text in the document">Editor: Find</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Find and replace text in the document">Editor: Replace</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Jump to a line (text) or an offset (hex)">Editor: Go to line</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>G</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Select the next match">Editor: Find next</td><td class="k"><span class="c"><kbd>F3</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Select the previous match">Editor: Find previous</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>F3</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Close the document (asks to save changes first)">Editor: Close document</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>W</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Switch to the next editor tab">Editor: Next document</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>PageDown</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td title="Switch to the previous editor tab">Editor: Previous document</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>PageUp</kbd></span><span class="ctx">editor</span></td></tr>
 </table></section>
 </div>
 <div class="page">
@@ -160,87 +172,110 @@ footer { margin-top: 16px; color: var(--muted); font-size: 11px; }
 <div class="grid">
 <section class="diff"><h3>Commander (F-keys)</h3><table>
 <tr><th>Action</th><th>Explorer</th><th>Commander (F-keys)</th></tr>
-<tr><td>Refresh</td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd><br><kbd>F5</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd></td></tr>
-<tr><td>Focus other pane</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Tab</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Toggle dual pane</td><td class="k"><kbd>F9</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Swap panes</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>U</kbd></td></tr>
-<tr><td>Toggle mark</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Space</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Mark and move down</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Ins</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Filter this folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd><br><kbd>Ctrl</kbd>+<kbd>S</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Rename</td><td class="k"><kbd>F2</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Shift</kbd>+<kbd>F6</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>New folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span class="ctx">file list</span><br><kbd>F7</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Move to trash</td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span><br><kbd>F8</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Search</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><br><kbd>F3</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><br><kbd>Alt</kbd>+<kbd>F7</kbd></td></tr>
-<tr><td>Quick Look</td><td class="k"><kbd>Space</kbd><span class="ctx">file list</span></td><td class="k"><kbd>F3</kbd><span class="ctx">file list</span></td></tr>
+<tr><td>Refresh</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span><br><span class="c"><kbd>F5</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span></td></tr>
+<tr><td>Focus other pane</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Tab</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Toggle dual pane</td><td class="k"><span class="c"><kbd>F9</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Swap panes</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>U</kbd></span></td></tr>
+<tr><td>Toggle mark</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Space</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Mark and move down</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Ins</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Filter this folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>S</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Rename</td><td class="k"><span class="c"><kbd>F2</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>F6</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>New folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>F7</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Move to trash</td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>F8</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Search</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>F3</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>Alt</kbd>+<kbd>F7</kbd></span></td></tr>
+<tr><td>Quick Look</td><td class="k"><span class="c"><kbd>Space</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>F3</kbd></span><span class="ctx">file list</span></td></tr>
 </table></section>
 <section class="diff"><h3>Finder</h3><table>
 <tr><th>Action</th><th>Explorer</th><th>Finder</th></tr>
-<tr><td>Back</td><td class="k"><kbd>Alt</kbd>+<kbd>←</kbd></td><td class="k"><kbd>Alt</kbd>+<kbd>←</kbd><br><kbd>Ctrl</kbd>+<kbd>[</kbd></td></tr>
-<tr><td>Forward</td><td class="k"><kbd>Alt</kbd>+<kbd>→</kbd></td><td class="k"><kbd>Alt</kbd>+<kbd>→</kbd><br><kbd>Ctrl</kbd>+<kbd>]</kbd></td></tr>
-<tr><td>Up</td><td class="k"><kbd>Alt</kbd>+<kbd>↑</kbd><br><kbd>Backspace</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Alt</kbd>+<kbd>↑</kbd><br><kbd>Ctrl</kbd>+<kbd>↑</kbd></td></tr>
-<tr><td>Home</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></td></tr>
-<tr><td>Go to path…</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></td></tr>
-<tr><td>Refresh</td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd><br><kbd>F5</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd></td></tr>
-<tr><td>Go to tab 1</td><td class="k"><kbd>Ctrl</kbd>+<kbd>1</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 2</td><td class="k"><kbd>Ctrl</kbd>+<kbd>2</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 3</td><td class="k"><kbd>Ctrl</kbd>+<kbd>3</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 4</td><td class="k"><kbd>Ctrl</kbd>+<kbd>4</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 5</td><td class="k"><kbd>Ctrl</kbd>+<kbd>5</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 6</td><td class="k"><kbd>Ctrl</kbd>+<kbd>6</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 7</td><td class="k"><kbd>Ctrl</kbd>+<kbd>7</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to tab 8</td><td class="k"><kbd>Ctrl</kbd>+<kbd>8</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Go to last tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>9</kbd></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>View: Details</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>2</kbd></td></tr>
-<tr><td>View: Grid</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>1</kbd></td></tr>
-<tr><td>View: List</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>5</kbd></td></tr>
-<tr><td>View: Columns (Miller)</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>3</kbd></td></tr>
-<tr><td>View: Gallery</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>4</kbd></td></tr>
-<tr><td>Toggle hidden files</td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd><br><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd></td></tr>
-<tr><td>Open</td><td class="k"><kbd>Enter</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>↓</kbd><span class="ctx">file list</span><br><kbd>Ctrl</kbd>+<kbd>O</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy to other pane</td><td class="k"><kbd>F5</kbd><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Move to other pane</td><td class="k"><kbd>F6</kbd><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Rename</td><td class="k"><kbd>F2</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Enter</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Move to trash</td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span><br><kbd>Ctrl</kbd>+<kbd>Backspace</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Properties</td><td class="k"><kbd>Alt</kbd>+<kbd>Enter</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Alt</kbd>+<kbd>Enter</kbd><span class="ctx">file list</span><br><kbd>Ctrl</kbd>+<kbd>I</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy path</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd><span class="ctx">file list</span><br><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Search</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><br><kbd>F3</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
+<tr><td>Back</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>←</kbd></span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>←</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>[</kbd></span></td></tr>
+<tr><td>Forward</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>→</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>]</kbd></span></td></tr>
+<tr><td>Up</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>↑</kbd></span><br><span class="c"><kbd>Backspace</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>↑</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>↑</kbd></span></td></tr>
+<tr><td>Home</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>H</kbd></span></td></tr>
+<tr><td>Go to path…</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>G</kbd></span></td></tr>
+<tr><td>Refresh</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span><br><span class="c"><kbd>F5</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span></td></tr>
+<tr><td>Go to tab 1</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>1</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 2</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>2</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 3</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>3</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 4</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>4</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 5</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>5</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 6</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>6</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 7</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>7</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to tab 8</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>8</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Go to last tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>9</kbd></span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>View: Details</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>1</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>2</kbd></span></td></tr>
+<tr><td>View: Grid</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>2</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>1</kbd></span></td></tr>
+<tr><td>View: List</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>3</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>5</kbd></span></td></tr>
+<tr><td>View: Columns (Miller)</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>4</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>3</kbd></span></td></tr>
+<tr><td>View: Gallery</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>5</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>4</kbd></span></td></tr>
+<tr><td>Toggle hidden files</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>.</kbd></span></td></tr>
+<tr><td>Open</td><td class="k"><span class="c"><kbd>Enter</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>↓</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>O</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy to other pane</td><td class="k"><span class="c"><kbd>F5</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Move to other pane</td><td class="k"><span class="c"><kbd>F6</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Rename</td><td class="k"><span class="c"><kbd>F2</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Enter</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Move to trash</td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>Backspace</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Properties</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Enter</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Enter</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>I</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy path</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Search</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>F3</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span></td></tr>
 </table></section>
 <section class="diff"><h3>Vim-ish</h3><table>
 <tr><th>Action</th><th>Explorer</th><th>Vim-ish</th></tr>
-<tr><td>Back</td><td class="k"><kbd>Alt</kbd>+<kbd>←</kbd></td><td class="k"><kbd>Alt</kbd>+<kbd>←</kbd><br><kbd>Shift</kbd>+<kbd>H</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Forward</td><td class="k"><kbd>Alt</kbd>+<kbd>→</kbd></td><td class="k"><kbd>Alt</kbd>+<kbd>→</kbd><br><kbd>Shift</kbd>+<kbd>L</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Up</td><td class="k"><kbd>Alt</kbd>+<kbd>↑</kbd><br><kbd>Backspace</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Alt</kbd>+<kbd>↑</kbd><br><kbd>H</kbd><span class="ctx">file list</span><br><kbd>Backspace</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Home</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>G</kbd> <kbd>H</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Refresh</td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd><br><kbd>F5</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>R</kbd></td></tr>
-<tr><td>Next tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Tab</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Tab</kbd><br><kbd>G</kbd> <kbd>T</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Prev tab</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd><br><kbd>G</kbd> <kbd>Shift</kbd>+<kbd>T</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Toggle hidden files</td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>H</kbd><br><kbd>Z</kbd> <kbd>H</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Invert selection</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd><span class="ctx">file list</span><br><kbd>V</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Mark and move down</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Space</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Cursor up</td><td class="k"><kbd>↑</kbd><span class="ctx">file list</span></td><td class="k"><kbd>↑</kbd><span class="ctx">file list</span><br><kbd>K</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Cursor down</td><td class="k"><kbd>↓</kbd><span class="ctx">file list</span></td><td class="k"><kbd>↓</kbd><span class="ctx">file list</span><br><kbd>J</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Cursor home</td><td class="k"><kbd>Home</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Home</kbd><span class="ctx">file list</span><br><kbd>G</kbd> <kbd>G</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Cursor end</td><td class="k"><kbd>End</kbd><span class="ctx">file list</span></td><td class="k"><kbd>End</kbd><span class="ctx">file list</span><br><kbd>Shift</kbd>+<kbd>G</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Extend up</td><td class="k"><kbd>Shift</kbd>+<kbd>↑</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Shift</kbd>+<kbd>↑</kbd><span class="ctx">file list</span><br><kbd>Shift</kbd>+<kbd>K</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Extend down</td><td class="k"><kbd>Shift</kbd>+<kbd>↓</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Shift</kbd>+<kbd>↓</kbd><span class="ctx">file list</span><br><kbd>Shift</kbd>+<kbd>J</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Filter this folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>F</kbd><br><kbd>/</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Open</td><td class="k"><kbd>Enter</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Enter</kbd><span class="ctx">file list</span><br><kbd>L</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy</td><td class="k"><kbd>Ctrl</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>C</kbd><span class="ctx">file list</span><br><kbd>Y</kbd> <kbd>Y</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Cut</td><td class="k"><kbd>Ctrl</kbd>+<kbd>X</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>X</kbd><span class="ctx">file list</span><br><kbd>D</kbd> <kbd>D</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Paste</td><td class="k"><kbd>Ctrl</kbd>+<kbd>V</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>V</kbd><span class="ctx">file list</span><br><kbd>P</kbd> <kbd>P</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Paste as link</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd><span class="ctx">file list</span><br><kbd>P</kbd> <kbd>L</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy to other pane</td><td class="k"><kbd>F5</kbd><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Move to other pane</td><td class="k"><kbd>F6</kbd><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
-<tr><td>Rename</td><td class="k"><kbd>F2</kbd><span class="ctx">file list</span></td><td class="k"><kbd>F2</kbd><span class="ctx">file list</span><br><kbd>C</kbd> <kbd>W</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>New folder</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd><span class="ctx">file list</span><br><kbd>G</kbd> <kbd>N</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Move to trash</td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Del</kbd><span class="ctx">file list</span><br><kbd>D</kbd> <kbd>Del</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy path</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd><span class="ctx">file list</span></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd><span class="ctx">file list</span><br><kbd>Y</kbd> <kbd>P</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Copy name</td><td class="k"><span class="none">—</span></td><td class="k"><kbd>Y</kbd> <kbd>N</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Undo</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Z</kbd><br><kbd>U</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Command palette</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd><br><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd><br><kbd>Ctrl</kbd>+<kbd>K</kbd><br><kbd>Shift</kbd>+<kbd>;</kbd><span class="ctx">file list</span></td></tr>
-<tr><td>Search</td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd><br><kbd>F3</kbd></td><td class="k"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td></tr>
-<tr><td>Quick Look</td><td class="k"><kbd>Space</kbd><span class="ctx">file list</span></td><td class="k"><kbd>I</kbd><span class="ctx">file list</span></td></tr>
+<tr><td>Back</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>←</kbd></span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>←</kbd></span><br><span class="c"><kbd>Shift</kbd>+<kbd>H</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Forward</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>→</kbd></span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>→</kbd></span><br><span class="c"><kbd>Shift</kbd>+<kbd>L</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Up</td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>↑</kbd></span><br><span class="c"><kbd>Backspace</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>↑</kbd></span><br><span class="c"><kbd>H</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Backspace</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Home</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>G</kbd> <kbd>H</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Refresh</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span><br><span class="c"><kbd>F5</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span></td></tr>
+<tr><td>Next tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Tab</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Tab</kbd></span><br><span class="c"><kbd>G</kbd> <kbd>T</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Prev tab</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Tab</kbd></span><br><span class="c"><kbd>G</kbd> <kbd>Shift</kbd>+<kbd>T</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Toggle hidden files</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span><br><span class="c"><kbd>Z</kbd> <kbd>H</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Invert selection</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>V</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Mark and move down</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Space</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Cursor up</td><td class="k"><span class="c"><kbd>↑</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>↑</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>K</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Cursor down</td><td class="k"><span class="c"><kbd>↓</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>↓</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>J</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Cursor home</td><td class="k"><span class="c"><kbd>Home</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Home</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>G</kbd> <kbd>G</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Cursor end</td><td class="k"><span class="c"><kbd>End</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>End</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Shift</kbd>+<kbd>G</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Extend up</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↑</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↑</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Shift</kbd>+<kbd>K</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Extend down</td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↓</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>↓</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Shift</kbd>+<kbd>J</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Filter this folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>/</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Open</td><td class="k"><span class="c"><kbd>Enter</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Enter</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>L</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Y</kbd> <kbd>Y</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Cut</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>X</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>X</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>D</kbd> <kbd>D</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Paste</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>P</kbd> <kbd>P</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Paste as link</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>P</kbd> <kbd>L</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy to other pane</td><td class="k"><span class="c"><kbd>F5</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Move to other pane</td><td class="k"><span class="c"><kbd>F6</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="none">—</span></td></tr>
+<tr><td>Rename</td><td class="k"><span class="c"><kbd>F2</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>F2</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>C</kbd> <kbd>W</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>New folder</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>G</kbd> <kbd>N</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Move to trash</td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Del</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>D</kbd> <kbd>Del</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy path</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></span><span class="ctx">file list</span><br><span class="c"><kbd>Y</kbd> <kbd>P</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Copy name</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Y</kbd> <kbd>N</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Undo</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Z</kbd></span><br><span class="c"><kbd>U</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Command palette</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>K</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>P</kbd></span><br><span class="c"><kbd>Ctrl</kbd>+<kbd>K</kbd></span><br><span class="c"><kbd>Shift</kbd>+<kbd>;</kbd></span><span class="ctx">file list</span></td></tr>
+<tr><td>Search</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span><br><span class="c"><kbd>F3</kbd></span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></span></td></tr>
+<tr><td>Quick Look</td><td class="k"><span class="c"><kbd>Space</kbd></span><span class="ctx">file list</span></td><td class="k"><span class="c"><kbd>I</kbd></span><span class="ctx">file list</span></td></tr>
 </table></section>
+<section class="diff"><h3>Terminal UI (soyuz --tui)</h3><table>
+<tr><th>Action</th><th>Window</th><th>Terminal UI</th></tr>
+<tr><td>Focus sidebar</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>F12</kbd></span></td></tr>
+<tr><td>Focus terminal</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>T</kbd></span></td></tr>
+<tr><td>Focus jobs panel</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>J</kbd></span></td></tr>
+<tr><td>Focus editor</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>E</kbd></span></td></tr>
+<tr><td>Scroll preview up</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd></span></td></tr>
+<tr><td>Scroll preview down</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd></span></td></tr>
+<tr><td>Preview page up</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>PageUp</kbd></span></td></tr>
+<tr><td>Preview page down</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>PageDown</kbd></span></td></tr>
+<tr><td>Open context menu</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Shift</kbd>+<kbd>F10</kbd></span></td></tr>
+<tr><td>Editor: Save as</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></span><span class="ctx">editor</span><br><span class="c"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Replace</td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>H</kbd></span><span class="ctx">editor</span></td><td class="k"><span class="c"><kbd>Ctrl</kbd>+<kbd>R</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Toggle word wrap</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Z</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Maximize</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>M</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Switch dock side</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>M</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Answer notice</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>E</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Toggle match case</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>C</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Toggle whole word</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>W</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Toggle regular expression</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>R</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Replace all</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>A</kbd></span><span class="ctx">editor</span></td></tr>
+<tr><td>Editor: Resize image</td><td class="k"><span class="none">—</span></td><td class="k"><span class="c"><kbd>Alt</kbd>+<kbd>S</kbd></span><span class="ctx">editor</span></td></tr>
+</table><p class="note">Everything else is the same. Legacy terminals and Windows Terminal get extra chords; see docs/KEYBOARD.md.</p></section>
 </div>
 </div>
 <footer>Generated from the default key maps in soyuz-core (see docs/KEYBOARD.md). Print with your browser's “Save as PDF” for a two-page A4 sheet.</footer>

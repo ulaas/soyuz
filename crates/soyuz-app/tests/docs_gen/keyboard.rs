@@ -1,6 +1,13 @@
 //! `docs/KEYBOARD.md` and `docs/keyboard.html` from soyuz-core's default key maps
 //! (`config::defaults::preset`) and the English palette titles / descriptions.
+//!
+//! With the `tui` feature, the Explorer tables get a *Terminal UI* column: the Explorer
+//! preset run through `soyuz_tui::overlay::tui_defaults`, the layer the terminal UI always
+//! installs. KEYBOARD.md also lists what the legacy-terminal and Windows Terminal overlays
+//! add on top. Without the feature the column and that section are left out (the
+//! `docs_sync` keyboard test is ignored then, so the committed files keep them).
 
+use soyuz_app::actions::{gui_only, tui_only};
 use soyuz_app::palette::catalog::{description_in, title_in};
 use soyuz_core::Locale;
 use soyuz_core::config::defaults::preset;
@@ -24,10 +31,95 @@ struct Key {
     ctx: KeyContext,
 }
 
+/// The terminal UI's shortcut for a row.
+#[derive(Clone, PartialEq)]
+enum Tui {
+    /// Same keys as the GUI.
+    Same,
+    /// The terminal UI does not have the action.
+    GuiOnly,
+    /// Different keys (empty: none).
+    Keys(Vec<Key>),
+}
+
 struct Row {
     title: String,
     desc: String,
     keys: Vec<Key>,
+    /// `None` without the `tui` feature.
+    tui: Option<Tui>,
+    /// Only the terminal UI has the action.
+    tui_only: bool,
+}
+
+// ---------------------------------------------------------------------------
+// The terminal UI's key layers
+// ---------------------------------------------------------------------------
+
+/// The terminal UI's key map on the Explorer preset: `tui_defaults`, which every terminal
+/// gets.
+#[cfg(feature = "tui")]
+fn tui_keymap() -> Option<Keymap> {
+    let mut km = preset(KeyPreset::Explorer);
+    soyuz_tui::overlay::tui_defaults(&mut km);
+    Some(km)
+}
+
+#[cfg(not(feature = "tui"))]
+fn tui_keymap() -> Option<Keymap> {
+    None
+}
+
+/// The extra overlays, as `(column title, key map)` on the Explorer preset. The paste
+/// events flag of `wt_stand_ins` is fixed per column so the output does not depend on
+/// the OS that generates it: the Windows console reads a paste as typed keys, WSL gets
+/// bracketed pastes.
+#[cfg(feature = "tui")]
+fn overlay_keymaps() -> Vec<(&'static str, Keymap)> {
+    use soyuz_tui::overlay::{legacy, tui_defaults, wt_stand_ins};
+    let mut leg = preset(KeyPreset::Explorer);
+    legacy(&mut leg);
+    let mut wt = preset(KeyPreset::Explorer);
+    tui_defaults(&mut wt);
+    wt_stand_ins(&mut wt, false);
+    let mut wsl = preset(KeyPreset::Explorer);
+    legacy(&mut wsl);
+    wt_stand_ins(&mut wsl, true);
+    vec![("Legacy terminal", leg), ("Windows Terminal", wt), ("WSL in Windows Terminal", wsl)]
+}
+
+/// Chords of the terminal UI's Explorer map that Windows Terminal always takes for itself
+/// (for `action`; WT's paste counts as taken for everything but Paste, as on Windows).
+#[cfg(feature = "tui")]
+fn wt_taken(c: &KeyChord, action: &Action) -> bool {
+    soyuz_tui::overlay::wt_blocks(*c, action, false)
+}
+
+/// What the overlay `over` adds to `base` per action: `(action, added keys)`, in the
+/// order of the tables above. A chord only moved within a binding does not count.
+#[cfg(feature = "tui")]
+fn added(base: &Keymap, over: &Keymap) -> Vec<(Action, Vec<Key>)> {
+    let mut out = Vec::new();
+    for cat in CATEGORIES {
+        for a in Action::all().into_iter().filter(|a| a.category() == cat) {
+            let b = keys_of(base, &a);
+            let new: Vec<Key> = keys_of(over, &a).into_iter().filter(|k| !b.contains(k)).collect();
+            if !new.is_empty() {
+                out.push((a, new));
+            }
+        }
+    }
+    out
+}
+
+fn tui_cell(gui: &[Key], tui: &[Key], a: &Action) -> Tui {
+    if gui_only(a) {
+        Tui::GuiOnly
+    } else if gui == tui {
+        Tui::Same
+    } else {
+        Tui::Keys(tui.to_vec())
+    }
 }
 
 fn key_parts(c: &KeyChord) -> Vec<String> {
@@ -74,7 +166,7 @@ fn slot(a: &Action) -> Option<(&'static str, u8)> {
     }
 }
 
-fn rows(km: &Keymap, cat: ActionCategory) -> Vec<Row> {
+fn rows(km: &Keymap, tui: Option<&Keymap>, cat: ActionCategory) -> Vec<Row> {
     let actions: Vec<Action> = Action::all().into_iter().filter(|a| a.category() == cat).collect();
     let mut out: Vec<Row> = Vec::new();
     let mut i = 0;
@@ -110,13 +202,39 @@ fn rows(km: &Keymap, cat: ActionCategory) -> Vec<Row> {
                 if let Some(l) = last.chords[0].last_mut() {
                     *l = n.to_string();
                 }
-                out.push(Row { title, desc: description_in(a, Locale::EnUs), keys: vec![first, last] });
+                // The terminal UI column of a range: "same" when every slot is unchanged,
+                // otherwise the terminal UI's keys of the first and the last slot.
+                let range = &actions[i..i + n as usize];
+                let tui = tui.map(|t| {
+                    if range.iter().all(|r| tui_cell(&keys_of(km, r), &keys_of(t, r), r) == Tui::Same) {
+                        Tui::Same
+                    } else {
+                        let (f, l) = (keys_of(t, &range[0]), keys_of(t, &range[range.len() - 1]));
+                        Tui::Keys(f.into_iter().chain(l).collect())
+                    }
+                });
+                out.push(Row {
+                    title,
+                    desc: description_in(a, Locale::EnUs),
+                    keys: vec![first, last],
+                    tui,
+                    tui_only: false,
+                });
                 i += n as usize;
                 continue;
             }
         }
-        if !keys.is_empty() {
-            out.push(Row { title: title_in(a, Locale::EnUs), desc: description_in(a, Locale::EnUs), keys });
+        let tui_keys = tui.map(|t| keys_of(t, a));
+        let only = tui_only(a);
+        let gui_keys = if only { Vec::new() } else { keys };
+        if !gui_keys.is_empty() || tui_keys.as_ref().is_some_and(|k| !k.is_empty()) {
+            out.push(Row {
+                title: title_in(a, Locale::EnUs),
+                desc: description_in(a, Locale::EnUs),
+                tui: tui_keys.map(|t| tui_cell(&gui_keys, &t, a)),
+                keys: gui_keys,
+                tui_only: only,
+            });
         }
         i += 1;
     }
@@ -196,6 +314,64 @@ fn md_keys(keys: &[Key], range: bool) -> String {
     keys.iter().map(md_key).collect::<Vec<_>>().join(sep)
 }
 
+/// "Terminal UI on legacy terminals and in Windows Terminal": what each overlay adds to
+/// the terminal UI's Explorer map, and the chords Windows Terminal keeps for itself.
+#[cfg(feature = "tui")]
+fn md_overlays(s: &mut String) {
+    let Some(base) = tui_keymap() else { return };
+    let overlays = overlay_keymaps();
+    s.push_str(
+        "## Terminal UI on legacy terminals and in Windows Terminal\n\n\
+         A terminal without the kitty keyboard protocol (most terminals on Linux and macOS) sends\n\
+         <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+letter as <kbd>Ctrl</kbd>+letter and <kbd>Ctrl</kbd>+<kbd>Tab</kbd> as\n\
+         <kbd>Tab</kbd>, and nothing for <kbd>Ctrl</kbd> with most punctuation. Windows Terminal keeps some\n\
+         chords for itself (new tab, split pane, its own palette, …). The terminal UI detects both and adds\n\
+         the chords below to the Explorer preset; the original chords keep working wherever they arrive.\n\
+         The Windows console and terminals with the kitty protocol need none of them. An extra chord is\n\
+         only added while it is free, so your own bindings win.\n\n",
+    );
+    s.push_str("| Action |");
+    for (title, _) in &overlays {
+        s.push_str(&format!(" {title} |"));
+    }
+    s.push_str("\n|---|");
+    s.push_str(&"---|".repeat(overlays.len()));
+    s.push('\n');
+    let per: Vec<Vec<(Action, Vec<Key>)>> = overlays.iter().map(|(_, km)| added(&base, km)).collect();
+    for cat in CATEGORIES {
+        for a in Action::all().into_iter().filter(|a| a.category() == cat) {
+            let cells: Vec<Option<&Vec<Key>>> =
+                per.iter().map(|list| list.iter().find(|(b, _)| *b == a).map(|(_, k)| k)).collect();
+            if cells.iter().all(Option::is_none) {
+                continue;
+            }
+            s.push_str(&format!("| {} |", md_escape(&title_in(&a, Locale::EnUs))));
+            for c in cells {
+                s.push_str(&format!(" {} |", c.map_or_else(|| "—".to_string(), |k| md_keys(k, false))));
+            }
+            s.push('\n');
+        }
+    }
+    let mut taken: Vec<KeyChord> = Vec::new();
+    for ((_, a), chords) in &base.bindings {
+        for c in chords.iter().filter(|c| wt_taken(c, a)) {
+            if !taken.contains(c) {
+                taken.push(*c);
+            }
+        }
+    }
+    taken.sort_by_key(|c| c.to_string());
+    s.push_str(
+        "\nInside Windows Terminal the terminal UI also lists a working chord first in menus, hints and\n\
+         the palette. These default chords never reach it there: ",
+    );
+    s.push_str(&taken.iter().map(|c| md_chord(&key_parts(c))).collect::<Vec<_>>().join(", "));
+    s.push_str(
+        ". Unbind them in Windows Terminal's settings (Actions) to use them in Soyuz. Windows Terminal's\n\
+         paste chords paste text; under WSL a paste into the file list runs Soyuz's Paste.\n\n",
+    );
+}
+
 pub fn markdown() -> String {
     let mut s = String::new();
     s.push_str("# Keyboard shortcuts\n\n");
@@ -219,22 +395,41 @@ pub fn markdown() -> String {
     }
     s.push_str("\n## Explorer preset (default)\n\n");
     let km = preset(KeyPreset::Explorer);
+    let tui = tui_keymap();
+    if tui.is_some() {
+        s.push_str(
+            "The *Terminal UI* column is for `soyuz --tui`: *same* means the same keys as in the window,\n\
+             — that the terminal UI does not have the action. Terminals that cannot send some chords get\n\
+             extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#terminal-ui-on-legacy-terminals-and-in-windows-terminal).\n\n",
+        );
+    }
     for cat in CATEGORIES {
-        let rows = rows(&km, cat);
+        let rows = rows(&km, tui.as_ref(), cat);
         if rows.is_empty() {
             continue;
         }
-        s.push_str(&format!("### {}\n\n| Action | Shortcut | What it does |\n|---|---|---|\n", cat.label()));
-        for r in &rows {
+        if tui.is_some() {
             s.push_str(&format!(
-                "| {} | {} | {} |\n",
-                md_escape(&r.title),
-                md_keys(&r.keys, is_range(r)),
-                md_escape(&r.desc)
+                "### {}\n\n| Action | Shortcut | Terminal UI | What it does |\n|---|---|---|---|\n",
+                cat.label()
             ));
+        } else {
+            s.push_str(&format!("### {}\n\n| Action | Shortcut | What it does |\n|---|---|---|\n", cat.label()));
+        }
+        for r in &rows {
+            let gui = if r.tui_only { "— *(terminal UI only)*".to_string() } else { md_keys(&r.keys, is_range(r)) };
+            let tui = match &r.tui {
+                None => String::new(),
+                Some(Tui::Same) => " same |".to_string(),
+                Some(Tui::GuiOnly) => " — |".to_string(),
+                Some(Tui::Keys(k)) => format!(" {} |", md_keys(k, is_range(r))),
+            };
+            s.push_str(&format!("| {} | {gui} |{tui} {} |\n", md_escape(&r.title), md_escape(&r.desc)));
         }
         s.push('\n');
     }
+    #[cfg(feature = "tui")]
+    md_overlays(&mut s);
     for p in [KeyPreset::Commander, KeyPreset::Finder, KeyPreset::Vim] {
         s.push_str(&format!(
             "## {} preset\n\n{} Only the bindings that differ from the Explorer preset are listed.\n\n",
@@ -272,6 +467,8 @@ fn html_key(k: &Key) -> String {
         .map(|c| c.iter().map(|p| format!("<kbd>{}</kbd>", html_escape(p))).collect::<Vec<_>>().join("+"))
         .collect::<Vec<_>>()
         .join(" ");
+    // A chord never wraps inside itself.
+    let s = format!("<span class=\"c\">{s}</span>");
     match ctx_note(k.ctx) {
         Some(n) => format!("{s}<span class=\"ctx\">{n}</span>"),
         None => s,
@@ -318,15 +515,32 @@ kbd { display: inline-block; min-width: 1.6em; padding: 0 4px; border: 1px solid
       font: 600 10.5px/1.5 "Cascadia Mono", Consolas, ui-monospace, monospace; }
 .ctx { display: block; color: var(--muted); font-size: 10px; }
 .none { color: var(--muted); }
+.note { margin: 4px 0 0; color: var(--muted); font-size: 10px; }
 .diff td { padding-right: 8px; }
 .diff td.k { text-align: left; }
 footer { margin-top: 16px; color: var(--muted); font-size: 11px; }
 @media (max-width: 640px) { body { padding: 16px 16px 32px; } td.k { white-space: normal; } }
-@page { size: A4; margin: 12mm; }
+.c { white-space: nowrap; }
+@page { size: A4; margin: 10mm; }
+/* Two A4 pages: the Explorer preset, then what the other presets and the terminal UI change. */
 @media print {
-  body { padding: 0; font-size: 10px; background: #fff; color: #000; }
+  body { padding: 0; font-size: 8.5px; line-height: 1.25; background: #fff; color: #000; }
   :root { --bg: #fff; --fg: #000; --card: #fff; --kbd-bg: #fff; }
-  .grid { columns: 3; }
+  header { padding-bottom: 4px; margin-bottom: 8px; }
+  h1 { font-size: 16px; }
+  h2 { font-size: 12px; margin: 0 0 6px; }
+  h3 { font-size: 8.5px; margin: 0 0 2px; }
+  .grid { columns: 3; column-gap: 8px; }
+  section { padding: 4px 6px 3px; margin: 0 0 6px; border-radius: 4px; }
+  section.diff { break-inside: auto; }
+  td, th { padding: 1px 0; }
+  .diff td { padding-right: 4px; }
+  .diff td.k { white-space: normal; }
+  kbd { min-width: 1.4em; padding: 0 2px; border-bottom-width: 1px; border-radius: 3px; font-size: 7.5px;
+        line-height: 1.35; }
+  .ctx { display: inline; margin-left: 3px; font-size: 7.5px; }
+  .note { font-size: 7.5px; }
+  footer { margin-top: 4px; font-size: 7.5px; }
   .page { break-before: page; }
 }
 "#;
@@ -345,7 +559,7 @@ pub fn html() -> String {
     );
     let km = preset(KeyPreset::Explorer);
     for cat in CATEGORIES {
-        let rows = rows(&km, cat);
+        let rows = rows(&km, None, cat);
         if rows.is_empty() {
             continue;
         }
@@ -376,6 +590,31 @@ pub fn html() -> String {
             ));
         }
         s.push_str("</table></section>\n");
+    }
+    if let Some(tui) = tui_keymap() {
+        // Only what differs from the window: the full tables would not fit two pages.
+        s.push_str(
+            "<section class=\"diff\"><h3>Terminal UI (soyuz --tui)</h3><table>\n\
+             <tr><th>Action</th><th>Window</th><th>Terminal UI</th></tr>\n",
+        );
+        for cat in CATEGORIES {
+            for r in rows(&km, Some(&tui), cat) {
+                let t = match &r.tui {
+                    Some(Tui::GuiOnly) => html_keys(&[], false),
+                    Some(Tui::Keys(k)) => html_keys(k, is_range(&r)),
+                    Some(Tui::Same) | None => continue,
+                };
+                let gui = if r.tui_only { html_keys(&[], false) } else { html_keys(&r.keys, is_range(&r)) };
+                s.push_str(&format!(
+                    "<tr><td>{}</td><td class=\"k\">{gui}</td><td class=\"k\">{t}</td></tr>\n",
+                    html_escape(&r.title)
+                ));
+            }
+        }
+        s.push_str(
+            "</table><p class=\"note\">Everything else is the same. Legacy terminals and Windows Terminal \
+             get extra chords; see docs/KEYBOARD.md.</p></section>\n",
+        );
     }
     s.push_str(
         "</div>\n</div>\n<footer>Generated from the default key maps in soyuz-core \
