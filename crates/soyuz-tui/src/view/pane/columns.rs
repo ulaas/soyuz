@@ -3,9 +3,10 @@
 //!
 //! The GUI stores column widths in points; a terminal cell counts as [`PT_PER_CELL`]
 //! points (Size 90 pt → 11 cells, Modified 150 pt → 19). The name column fills the free
-//! width (its stored width is only a minimum in the GUI too) and keeps at least
-//! [`NAME_MIN`] cells after the mark and icon; columns that do not fit then are left out
-//! from the right (a terminal has no horizontal scrolling).
+//! width (its stored width is only a minimum in the GUI too) and keeps at least about
+//! a third of the list after the mark and icon ([`NAME_MIN`] to [`NAME_WIDE`] cells);
+//! columns that do not fit then are left out from the right (a terminal has no
+//! horizontal scrolling).
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -26,6 +27,8 @@ use crate::view::text;
 
 /// Narrowest name (cells, without the mark and icon).
 pub const NAME_MIN: u16 = 12;
+/// The name's floor never grows past this (wide panes keep every column).
+pub const NAME_WIDE: u16 = 18;
 /// Narrowest / widest other column.
 pub const COL_MIN: u16 = 4;
 pub const COL_MAX: u16 = 40;
@@ -104,7 +107,7 @@ pub struct Placed {
 /// Fit `cols` into `width` cells, `prefix` cells of mark and icon in front of the name
 /// (see the module docs). Columns are separated by one blank cell.
 pub fn fit(cols: &[ColumnVm], width: u16, prefix: u16) -> Vec<Placed> {
-    let name_min = prefix + NAME_MIN.min(width.saturating_sub(prefix));
+    let name_min = prefix + name_floor(width.saturating_sub(prefix));
     let mut keep: Vec<usize> = (0..cols.len()).collect();
     let others = |keep: &[usize]| -> u16 {
         keep.iter().filter(|&&i| cols[i].column != Column::Name).map(|&i| cols[i].width + 1).sum()
@@ -138,6 +141,13 @@ pub fn fit(cols: &[ColumnVm], width: u16, prefix: u16) -> Vec<Placed> {
         }
     }
     placed
+}
+
+/// The narrowest name in a list `room` cells wide (without the mark and icon): a third
+/// of the room, between [`NAME_MIN`] and [`NAME_WIDE`], so narrow panes leave out
+/// columns before names shrink to a stub.
+fn name_floor(room: u16) -> u16 {
+    (room / 3).clamp(NAME_MIN, NAME_WIDE).min(room)
 }
 
 /// The header line: labels, the sort column marked.

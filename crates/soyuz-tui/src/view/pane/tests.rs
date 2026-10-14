@@ -8,7 +8,7 @@ use soyuz_appcore::state::layout::NavDir;
 use soyuz_appcore::state::view_memory::ViewState;
 use soyuz_core::{EntryInfo, Location, SortDir};
 
-use super::columns::{ColumnVm, NAME_MIN, Placed, fit};
+use super::columns::{ColumnVm, NAME_MIN, NAME_WIDE, Placed, fit};
 use super::*;
 
 fn pane_in(n: usize, mode: ViewMode) -> Pane {
@@ -145,9 +145,17 @@ fn columns_fit_the_width() {
     assert_eq!(f.len(), 4);
     assert_eq!(f[0], Placed { index: Some(0), column: Column::Name, x: 0, w: 100 - 48 });
     assert_eq!(f[3].x + f[3].w, 100);
-    // Narrower: columns leave from the right, the name keeps its minimum.
-    let f = fit(&cols, 2 + NAME_MIN + 12 + 16, 2);
+    // Narrower: columns leave from the right, the name keeps a third of the room.
+    let f = fit(&cols, 2 + 15 + 12 + 16, 2);
     assert_eq!(f.iter().map(|p| p.column).collect::<Vec<_>>(), [Column::Name, Column::Size, Column::Kind]);
+    assert_eq!(f[0].w, 2 + 15);
+    // A dual pane next to the sidebar: Kind goes before the name shrinks to NAME_MIN.
+    let f = fit(&cols, 2 + NAME_MIN + 12 + 16, 2);
+    assert_eq!(f.iter().map(|p| p.column).collect::<Vec<_>>(), [Column::Name, Column::Size]);
+    assert_eq!(f[0].w, 2 + NAME_MIN + 16);
+    // Wide panes keep every column once the name has NAME_WIDE cells.
+    let f = fit(&cols, 2 + NAME_WIDE + 48, 2);
+    assert_eq!(f.len(), 4);
     let f = fit(&cols, 20, 2);
     assert_eq!(f, [Placed { index: Some(0), column: Column::Name, x: 0, w: 20 }]);
     // The name in the middle; no name column listed: it comes first.
