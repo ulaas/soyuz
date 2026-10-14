@@ -311,7 +311,9 @@ mod tests {
         let s = Scope::new(vec![link.clone()], &[], false);
         assert!(s.check_read(&link.join("sub")).is_ok());
         assert!(s.check_write(&link.join("sub/new.txt")).is_ok());
-        assert!(s.check_read(&real.join("sub")).is_ok(), "the resolved spelling too");
+        // Resolved fully: the temp folder itself may be spelled with a short name.
+        let resolved = soyuz_fs::strip_verbatim(&std::fs::canonicalize(&real).unwrap());
+        assert!(s.check_read(&resolved.join("sub")).is_ok(), "the resolved spelling too");
         assert!(matches!(s.check_write(&link), Err(ScopeError::RootItself(_))));
         assert!(matches!(s.check_read(&dir.path().join("other")), Err(ScopeError::OutsideRoots(_))));
         // A junction inside the root that points out of it is still refused.
