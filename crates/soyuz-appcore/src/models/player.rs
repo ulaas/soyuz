@@ -169,6 +169,10 @@ impl PlayerModel {
     pub fn close(&mut self) {
         if let Some(o) = self.open.take() {
             o.engine.send(PlayerCmd::Stop);
+            // Dropping the player joins its threads (bounded, `soyuz_media::JOIN_TIMEOUT`):
+            // not on the UI thread.
+            let engine = o.engine;
+            let _ = std::thread::Builder::new().name("soyuz-player-close".into()).spawn(move || drop(engine));
         }
     }
 
