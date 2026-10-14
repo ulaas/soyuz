@@ -274,9 +274,14 @@ pub fn state_line(s: &JobSnapshot) -> String {
     }
 }
 
-/// Bytes and items done ("12 MiB of 40 MiB · 3 of 9 items").
+/// Bytes and items done ("12 MiB of 40 MiB · 3 of 9 items"). A job cancelled before it
+/// did anything shows none ("0 B of 48 MiB" reads like a failure); its state line
+/// already says "Cancelled".
 fn stats(s: &JobSnapshot, summary: Option<&JobSummary>) -> String {
     let pr = &s.progress;
+    if matches!(s.state, JobState::Cancelled) && pr.bytes_done == 0 && pr.items_done == 0 {
+        return String::new();
+    }
     let mut left = Vec::new();
     if pr.bytes_total > 0 {
         left.push(tr!(
@@ -641,6 +646,13 @@ mod tests {
         s.progress.items_total = 2;
         s.progress.items_done = 1;
         assert_eq!(stats(&s, None), "1 KiB of 4 KiB · 1 of 2 items");
+        // Cancelled: what got done stays; nothing done shows nothing.
+        s.state = JobState::Cancelled;
+        assert_eq!(stats(&s, None), "1 KiB of 4 KiB · 1 of 2 items");
+        s.progress.bytes_done = 0;
+        s.progress.items_done = 0;
+        assert_eq!(stats(&s, None), "");
+        s.state = JobState::Running;
         s.speed_bps = 2048.0;
         s.eta = Some(Duration::from_secs(5));
         assert!(speed(&s, None).contains("left"), "{}", speed(&s, None));
