@@ -59,9 +59,27 @@ fn fnv(bytes: &[u8], mut h: u64) -> u64 {
 
 /// The cache key of a thumbnail. Paths compare case-insensitively on Windows.
 pub fn cache_key(kind: Kind, path: &Path, size: u64, mtime: Option<SystemTime>, px: u32) -> u64 {
+    cache_key_with_source(kind, path, size, mtime, px, "")
+}
+
+/// [`cache_key`] with a `source` tag of what made the picture (the FFmpeg build for
+/// video frames, `services::media::source_tag`), so a picture from one decoder is never
+/// served for another; the empty tag is [`cache_key`].
+pub fn cache_key_with_source(
+    kind: Kind,
+    path: &Path,
+    size: u64,
+    mtime: Option<SystemTime>,
+    px: u32,
+    source: &str,
+) -> u64 {
     let mut h = 0xCBF2_9CE4_8422_2325;
     h = fnv(&FORMAT_VERSION.to_le_bytes(), h);
     h = fnv(&[kind as u8], h);
+    if !source.is_empty() {
+        h = fnv(source.as_bytes(), h);
+        h = fnv(&[0], h);
+    }
     let p = soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned();
     let p = if cfg!(windows) { p.to_lowercase().replace('/', "\\") } else { p };
     h = fnv(p.as_bytes(), h);
@@ -189,6 +207,11 @@ mod tests {
         let base = cache_key(Kind::Image, Path::new("/a/b.png"), 10, Some(t), 128);
         assert_eq!(base, cache_key(Kind::Image, Path::new("/a/b.png"), 10, Some(t), 128), "deterministic");
         assert_ne!(base, cache_key(Kind::Video, Path::new("/a/b.png"), 10, Some(t), 128));
+        let video = cache_key(Kind::Video, Path::new("/a/b.mp4"), 10, Some(t), 128);
+        assert_eq!(video, cache_key_with_source(Kind::Video, Path::new("/a/b.mp4"), 10, Some(t), 128, ""));
+        let lib = cache_key_with_source(Kind::Video, Path::new("/a/b.mp4"), 10, Some(t), 128, "ffmpeg-63");
+        assert_ne!(video, lib, "a frame from the libraries never serves an older cached one");
+        assert_ne!(lib, cache_key_with_source(Kind::Video, Path::new("/a/b.mp4"), 10, Some(t), 128, "ffmpeg-62"));
         assert_ne!(base, cache_key(Kind::Image, Path::new("/a/c.png"), 10, Some(t), 128));
         assert_ne!(base, cache_key(Kind::Image, Path::new("/a/b.png"), 11, Some(t), 128));
         assert_ne!(base, cache_key(Kind::Image, Path::new("/a/b.png"), 10, Some(t + Duration::from_micros(1)), 128));

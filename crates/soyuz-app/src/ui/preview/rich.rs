@@ -47,7 +47,9 @@ pub fn show(ui: &mut Ui, rect: Rect, rich: &Rich, entry: &EntryInfo, interactive
         Rich::Audio { info, src, ext, playback, cover } => {
             audio(ui, rect, entry, info, src, ext, *playback, cover.as_ref(), &p, interactive)
         }
-        Rich::Video { poster, note } => video(ui, rect, entry, poster.as_ref(), note.as_deref(), &p),
+        Rich::Video { poster, note, info } => {
+            video(ui, rect, entry, poster.as_ref(), note.as_deref(), info.as_deref(), &p)
+        }
         Rich::Pdf(v) => return pdf(ui, rect, v, id, &p, interactive),
     }
     None
@@ -664,7 +666,35 @@ fn audio(
     }
 }
 
-fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note: Option<&str>, p: &Palette) {
+/// `1920 × 1080 · 29.97 fps · H.264` under a poster, from what the libraries read.
+fn video_summary(info: &crate::services::media::MediaInfo) -> Option<String> {
+    let v = info.video()?;
+    let mut parts = Vec::new();
+    if v.width > 0 && v.height > 0 {
+        let (w, h) = if v.rotation == 90 || v.rotation == 270 { (v.height, v.width) } else { (v.width, v.height) };
+        parts.push(format!("{w} × {h}"));
+    }
+    if let Some(f) = v.fps.filter(|f| f.is_finite() && *f > 0.0) {
+        parts.push(if (f - f.round()).abs() < 0.005 { format!("{f:.0} fps") } else { format!("{f:.2} fps") });
+    }
+    if !v.codec.is_empty() {
+        parts.push(v.codec.clone());
+    }
+    if let Some(d) = info.duration {
+        parts.push(format_duration(d));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn video(
+    ui: &mut Ui,
+    rect: Rect,
+    entry: &EntryInfo,
+    poster: Option<&Tex>,
+    note: Option<&str>,
+    info: Option<&crate::services::media::MediaInfo>,
+    p: &Palette,
+) {
     let ppp = ui.ctx().pixels_per_point();
     match poster {
         Some(t) => {
@@ -682,10 +712,12 @@ fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note:
                 icons::font_fill(15.0),
                 Color32::WHITE,
             );
+            // The stream summary when the libraries read one, else what the poster is.
+            let caption = info.and_then(video_summary).unwrap_or_else(|| tr!("views-rich-poster-note").to_string());
             ui.painter().text(
                 pos2(rect.center().x, rect.bottom() - 14.0),
                 Align2::CENTER_CENTER,
-                tr!("views-rich-poster-note"),
+                caption,
                 FontId::proportional(11.0),
                 Color32::from_gray(170),
             );
@@ -697,6 +729,17 @@ fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note:
             ui.painter().text(c, Align2::CENTER_CENTER, ph::FILM_SLATE, icons::font_fill(46.0), p.glyph_video);
             let tg = trunc_galley(ui.painter(), &entry.name, semibold(14.0), p.text_primary, rect.width() - 32.0);
             ui.painter().galley(pos2(rect.center().x - tg.size().x / 2.0, disc.bottom() + 14.0), tg, p.text_primary);
+            let mut y = disc.bottom() + 40.0;
+            if let Some(s) = info.and_then(video_summary) {
+                ui.painter().text(
+                    pos2(rect.center().x, y),
+                    Align2::CENTER_CENTER,
+                    s,
+                    FontId::proportional(11.5),
+                    p.text_secondary,
+                );
+                y += 20.0;
+            }
             if let Some(n) = note {
                 let g = ui.painter().layout(
                     n.to_string(),
@@ -704,7 +747,7 @@ fn video(ui: &mut Ui, rect: Rect, entry: &EntryInfo, poster: Option<&Tex>, note:
                     p.text_tertiary,
                     (rect.width() - 40.0).clamp(80.0, 380.0),
                 );
-                ui.painter().galley(pos2(rect.center().x - g.size().x / 2.0, disc.bottom() + 40.0), g, p.text_tertiary);
+                ui.painter().galley(pos2(rect.center().x - g.size().x / 2.0, y), g, p.text_tertiary);
             }
         }
     }

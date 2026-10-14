@@ -216,8 +216,8 @@ const TEXT_EXT: &[&str] = &[
     "manifest",
 ];
 const IMAGE_EXT: &[&str] = &["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "tif", "tiff"];
-const AUDIO_EXT: &[&str] = &["mp3", "wav", "flac", "ogg", "oga", "opus", "m4a", "aac", "wma", "aiff", "aif"];
-const VIDEO_EXT: &[&str] = &["mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "mpg", "mpeg", "3gp"];
+// Audio / video extensions: one table in `file_class` (the FFmpeg-only ones count when
+// the libraries are loaded).
 
 /// Category by file name alone (`None` = decide from the content).
 pub fn kind_by_name(name: &str) -> Option<Kind> {
@@ -244,8 +244,8 @@ pub fn kind_by_name(name: &str) -> Option<Kind> {
         "pdf" => Kind::Pdf,
         "zip" | "jar" | "tar" | "tgz" | "tbz2" | "tbz" | "txz" | "tzst" | "7z" => Kind::Archive,
         _ if IMAGE_EXT.contains(&e) => Kind::Image,
-        _ if AUDIO_EXT.contains(&e) => Kind::Audio,
-        _ if VIDEO_EXT.contains(&e) => Kind::Video,
+        _ if crate::file_class::is_audio_ext(e, super::media::runtime().is_some()) => Kind::Audio,
+        _ if crate::file_class::is_video_ext(e, super::media::runtime().is_some()) => Kind::Video,
         _ if TEXT_EXT.contains(&e) => Kind::Text,
         _ => return None,
     })

@@ -527,7 +527,7 @@ fn media_lines(loaded: &Loaded, entry: &EntryInfo) -> Vec<PLine> {
     if let Some(a) = fact(loaded, "Artist") {
         lines.push(PLine::plain(a, Role::Muted));
     }
-    lines.extend(summary(loaded, &["Duration", "Dimensions", "Format", "Container"]));
+    lines.extend(summary(loaded, &["Duration", "Dimensions", "Frame rate", "Video", "Audio", "Format", "Container"]));
     lines
 }
 
@@ -563,7 +563,9 @@ fn rich_body(r: &Rich, loaded: &Loaded, entry: &EntryInfo, scroll: &mut usize, w
             }
             window(all, scroll, h, 0)
         }
-        Rich::Video { poster, note } => {
+        // The facts carry what the libraries read (`info`), so the summary line and the
+        // info section already show them.
+        Rich::Video { poster, note, info: _ } => {
             let mut lines = media_lines(loaded, entry);
             match poster {
                 Some(p) => picture(vec![Pic { tex: p.clone(), caption: None }], lines),

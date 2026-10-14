@@ -23,11 +23,9 @@ pub fn apply_settings(c: &Config) {
     EXT_BADGES.store(c.appearance.extension_badges, Ordering::Relaxed);
     SPRING_ON.store(c.behaviour.spring_loaded_folders, Ordering::Relaxed);
     SPRING_MS.store(c.behaviour.spring_load_delay_ms.clamp(100, 10_000), Ordering::Relaxed);
-    crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
+    // Video thumbnails and the FFmpeg runtime are core settings (`apply_core_settings`),
+    // so the terminal UI gets them too.
     crate::services::thumb_disk::set_cap_bytes(c.appearance.thumb_disk_cache_mib.saturating_mul(1024 * 1024));
-    if c.appearance.video_thumbnails && c.appearance.show_thumbnails {
-        crate::services::thumb_video::probe_in_background();
-    }
 }
 
 pub fn extension_badges() -> bool {

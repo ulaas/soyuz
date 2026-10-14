@@ -11,6 +11,7 @@ mod editor;
 mod fonts;
 mod keybindings;
 mod lists;
+mod media;
 mod pages;
 mod system;
 mod themes_ui;
@@ -38,6 +39,8 @@ enum PickPurpose {
     Import,
     ThemeExport,
     ThemeImport,
+    /// `[media] ffmpeg_dir`: the folder of the picked library file.
+    FfmpegDir,
 }
 
 /// Delay between the last edit and writing `config.toml`.
@@ -764,6 +767,7 @@ fn show_picker(ctx: &egui::Context, app: &mut SoyuzApp) {
                 PickPurpose::Import => import(app, &path),
                 PickPurpose::ThemeExport => export_theme(app, &path),
                 PickPurpose::ThemeImport => import_theme(app, &path),
+                PickPurpose::FfmpegDir => media::picked(app, &path),
             }
         }
     }

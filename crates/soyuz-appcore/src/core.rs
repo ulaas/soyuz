@@ -674,6 +674,9 @@ pub fn load_config() -> Config {
 pub fn apply_core_settings(c: &Config) {
     crate::i18n::apply_setting(&c.general.language);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
+    crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
+    crate::services::thumb_video::set_poster_secs(c.media.poster_secs);
+    crate::services::media::configure(&c.media);
     crate::services::thumbs::set_os_cache(c.appearance.os_thumbnail_cache);
     crate::services::thumbs::set_write_os_cache(c.appearance.write_os_thumbnails);
     crate::services::lister::set_dot_hidden(c.general.honour_dot_hidden);

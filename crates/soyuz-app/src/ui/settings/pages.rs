@@ -1609,6 +1609,10 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
     });
+    // `[media]`: the FFmpeg libraries (its own module; it needs the whole app for the
+    // status and the folder picker).
+    any |= super::media::media(ui, app, q);
+    let d = &mut app.gui.settings.draft;
     any |= group(ui, q, ctx, tr!("settings-search"), |r| {
         r.row_kw(tr!("settings-search-threads"), tr!("settings-search-threads-desc"), "parallel", |ui| {
             number(ui, &mut d.search.threads, 0..=64, "");

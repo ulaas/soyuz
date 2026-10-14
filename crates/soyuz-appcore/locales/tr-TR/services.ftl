@@ -79,7 +79,8 @@ services-preview-cant-read-model = Bu model okunamıyor
 services-preview-decimated = { $count } (seyreltilmiş)
 services-preview-waveform-skipped = { $size } MiB üzerinde atlandı ([preview] max_audio_mib)
 services-preview-poster-disk-only = Kapak kareleri yalnızca diskteki dosyalar için oluşturulur.
-services-preview-no-ffmpeg = Kapak karesi için ffmpeg'i PATH üzerine yükleyin; “{ $path }” bulunamadı.
+services-preview-no-ffmpeg-libs = FFmpeg kitaplıkları yüklü olmadığından kapak karesi yok. Soyuz onları programın yanında dağıtır; eklemek için GitHub'daki “{ $tag }” sürümünü indirip { $dir } klasörüne açın ya da Ayarlar → Önizleme → Medya'da klasörlerini gösterin.
+services-preview-crashed-last-time = Önizlenmedi: bu dosyanın çözülmesi geçen sefer medya kitaplığını çökertti. Yeniden denemek için Hızlı Bakış'ta açın.
 services-preview-no-pdf-renderer = Bu derlemede PDF işleyici yok (cargo özelliği `pdf`).
 services-preview-no-pdf-renderer-short = Bu derlemede PDF işleyici yok
 services-preview-cant-read-pdf = Bu PDF okunamıyor
@@ -93,10 +94,7 @@ services-audio-unsupported-codec = Desteklenmeyen kodek ({ $error })
 services-audio-player-failed = Ses oynatıcı bu dosyada başarısız oldu
 services-audio-no-device = Ses çıkış aygıtı yok ({ $error })
 services-audio-cant-play = Bu dosya oynatılamıyor ({ $error })
-services-video-cant-start = ffmpeg başlatılamıyor ({ $error })
-services-video-no-output = ffmpeg çıktı vermedi
-services-video-timeout = ffmpeg çok uzun sürdü
-services-video-no-frame = ffmpeg kare üretmedi
+services-video-no-frame = Kapak karesi yok ({ $error })
 services-diff-failed = Bu dosyalarda karşılaştırma başarısız oldu
 
 ## Places, timeline, stores

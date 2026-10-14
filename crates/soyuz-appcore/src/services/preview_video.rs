@@ -1,45 +1,12 @@
-//! Video poster frames through an optional `ffmpeg` executable. Soyuz never
-//! bundles or downloads ffmpeg: when `[preview] video_ffmpeg` is on and the program is
-//! found (a full path in `ffmpeg_path`, or the name looked up on `PATH`), one frame is
-//! decoded to PNG on stdout. The process runs with no console window, is killed when the
-//! request goes stale or takes too long, and its output is size-capped. Playback is out
-//! of scope (see docs/USER_GUIDE.md).
+//! Video poster frames through the FFmpeg libraries (`soyuz_media::grab_frame`, when
+//! `services::media` has loaded them): one keyframe near the poster time, rotated and
+//! fitted into `[media] max_px`. Soyuz never spawns an `ffmpeg` program: without the
+//! libraries a video shows its container metadata (`preview_media`) and a card that says
+//! where to get them. Playback arrives with the player (Phase V, wave 3).
 
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::path::Path;
 
-/// Give up on ffmpeg after this long.
-const TIMEOUT: Duration = Duration::from_secs(10);
-/// Largest PNG accepted from ffmpeg.
-const MAX_PNG: u64 = 64 * 1024 * 1024;
-
-/// Resolve the configured ffmpeg program to an existing file.
-pub fn find_ffmpeg(configured: &str) -> Option<PathBuf> {
-    let c = configured.trim();
-    let c = if c.is_empty() { "ffmpeg" } else { c };
-    let p = Path::new(c);
-    if p.components().count() > 1 || p.is_absolute() {
-        return p.is_file().then(|| p.to_path_buf());
-    }
-    let exts: Vec<String> = if cfg!(windows) {
-        let has_ext = p.extension().is_some();
-        if has_ext { vec![String::new()] } else { vec![".exe".into(), ".com".into()] }
-    } else {
-        vec![String::new()]
-    };
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        for e in &exts {
-            let cand = dir.join(format!("{c}{e}"));
-            if cand.is_file() {
-                return Some(cand);
-            }
-        }
-    }
-    None
-}
+use soyuz_media::{FrameRequest, MediaError, Runtime, Source};
 
 /// Seconds to seek to for a representative frame: 10% in, at most 5 s.
 pub fn poster_time(duration: Option<f64>) -> f64 {
@@ -49,51 +16,41 @@ pub fn poster_time(duration: Option<f64>) -> f64 {
     }
 }
 
-/// Run ffmpeg for one PNG frame of `video` at `at` seconds, scaled to `max_w` wide.
-pub fn poster(ffmpeg: &Path, video: &Path, at: f64, max_w: u32, stale: &dyn Fn() -> bool) -> Result<Vec<u8>, String> {
-    let mut cmd = Command::new(ffmpeg);
-    cmd.args(["-hide_banner", "-loglevel", "error", "-nostdin", "-ss"])
-        .arg(format!("{at:.3}"))
-        .arg("-i")
-        .arg(video)
-        .args(["-frames:v", "1", "-vf"])
-        .arg(format!("scale='min({max_w},iw)':-2"))
-        .args(["-f", "image2pipe", "-vcodec", "png", "pipe:1"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // CREATE_NO_WINDOW: no console flashes up for the child.
-        cmd.creation_flags(0x0800_0000);
-    }
-    let mut child = cmd.spawn().map_err(|e| tr!("services-video-cant-start", error = e.to_string()))?;
-    let Some(mut out) = child.stdout.take() else {
-        let _ = child.kill();
-        return Err(tr!("services-video-no-output").into());
-    };
-    let reader = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        let _ = out.by_ref().take(MAX_PNG).read_to_end(&mut buf);
-        buf
-    });
-    let start = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(_)) => break,
-            Ok(None) => {}
-            Err(e) => return Err(e.to_string()),
+/// Where the poster frame is taken: `[media] poster_secs` clamped to the duration, or
+/// [`poster_time`] when it is 0.
+pub fn poster_at(poster_secs: f32, duration: Option<f64>) -> f64 {
+    if poster_secs > 0.0 && poster_secs.is_finite() {
+        let secs = f64::from(poster_secs);
+        match duration {
+            Some(d) if d.is_finite() && d > 0.0 => secs.min(d),
+            _ => secs,
         }
-        if stale() || start.elapsed() > TIMEOUT {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(if stale() { "stale".into() } else { tr!("services-video-timeout").into() });
-        }
-        std::thread::sleep(Duration::from_millis(25));
+    } else {
+        poster_time(duration)
     }
-    let bytes = reader.join().unwrap_or_default();
-    if bytes.starts_with(b"\x89PNG") { Ok(bytes) } else { Err(tr!("services-video-no-frame").into()) }
+}
+
+/// One keyframe of `video` near `at` seconds, fitted into `max_px`, through the loaded
+/// libraries. `Err("stale")` when the request was abandoned.
+pub fn poster(
+    rt: &Runtime,
+    video: &Path,
+    at: f64,
+    max_px: u32,
+    stale: &dyn Fn() -> bool,
+) -> Result<image::RgbaImage, String> {
+    let src = Source::File(video.to_path_buf());
+    match soyuz_media::grab_frame(rt, &src, FrameRequest::near(at, max_px), stale) {
+        Ok(img) => Ok(img),
+        Err(MediaError::Stale) => Err("stale".into()),
+        // The first keyframe is always worth a try when the seek target has none.
+        Err(e) if at > 0.0 => match soyuz_media::grab_frame(rt, &src, FrameRequest::near(0.0, max_px), stale) {
+            Ok(img) => Ok(img),
+            Err(MediaError::Stale) => Err("stale".into()),
+            Err(_) => Err(tr!("services-video-no-frame", error = e.to_string())),
+        },
+        Err(e) => Err(tr!("services-video-no-frame", error = e.to_string())),
+    }
 }
 
 /// Parse a "1:02:03" / "4:05" / "12.5 s" duration fact back into seconds.
@@ -126,8 +83,15 @@ mod tests {
     }
 
     #[test]
-    fn missing_ffmpeg_is_none() {
-        assert_eq!(find_ffmpeg("definitely-not-a-real-program-soyuz"), None);
-        assert_eq!(find_ffmpeg("C:/nope/ffmpeg.exe"), None);
+    fn poster_secs_semantics() {
+        // 0 = today's fraction logic.
+        assert_eq!(poster_at(0.0, Some(20.0)), 2.0);
+        assert_eq!(poster_at(0.0, None), 1.0);
+        // A value: that many seconds, clamped to the duration.
+        assert_eq!(poster_at(30.0, Some(20.0)), 20.0);
+        assert_eq!(poster_at(3.0, Some(20.0)), 3.0);
+        assert_eq!(poster_at(3.0, None), 3.0);
+        assert_eq!(poster_at(f32::NAN, Some(20.0)), 2.0);
+        assert_eq!(poster_at(-1.0, Some(20.0)), 2.0);
     }
 }
