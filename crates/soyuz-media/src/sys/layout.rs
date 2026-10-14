@@ -475,11 +475,15 @@ pub(crate) fn common_fields() -> Vec<(&'static str, &'static str, usize)> {
         AVStream { av_class, index, id, codecpar, priv_data, time_base, start_time, duration, nb_frames, disposition, discard, sample_aspect_ratio, metadata, avg_frame_rate, attached_pic }
         AVFormatContext { av_class, iformat, oformat, priv_data, pb, ctx_flags, nb_streams, streams, nb_stream_groups, stream_groups, nb_chapters, chapters, url, start_time, duration, bit_rate, packet_size, max_delay, flags, probesize, max_analyze_duration, key, keylen, nb_programs, programs, video_codec_id, audio_codec_id, subtitle_codec_id, data_codec_id, metadata, start_time_realtime, fps_probe_size, error_recognition, interrupt_callback }
         AVChapter { id, time_base, start, end, metadata }
+        AVCodecPrefix { name, long_name, r#type, id, capabilities }
     };
-    // `r#type` must compare as `type`.
+    // `r#type` must compare as `type`; the probe calls the AVCodec prefix "AVCodec".
     for row in &mut v {
         if row.1 == "r#type" {
             row.1 = "type";
+        }
+        if row.0 == "AVCodecPrefix" {
+            row.0 = "AVCodec";
         }
     }
     v
@@ -664,6 +668,11 @@ mod tests {
             ("AVChapter", "start", 16),
             ("AVChapter", "end", 24),
             ("AVChapter", "metadata", 32),
+            ("AVCodec", "name", 0),
+            ("AVCodec", "long_name", 8),
+            ("AVCodec", "type", 16),
+            ("AVCodec", "id", 20),
+            ("AVCodec", "capabilities", 24),
         ];
         assert_eq!(common_fields(), common);
         assert_eq!(size_of::<AVPacket>(), 104);
@@ -739,7 +748,13 @@ mod tests {
         for (f, off) in layout.frame.fields() {
             assert_eq!(off, probed("AVFrame", f), "AVFrame.{f} for {majors:?}");
         }
+        // The AVCodec rows are optional in the probe (older layout_probe.c builds print
+        // none): checked only when present.
+        let has_codec_rows = rows.iter().any(|(s, _, _)| s == "AVCodec");
         for (s, f, off) in common_fields() {
+            if s == "AVCodec" && !has_codec_rows {
+                continue;
+            }
             assert_eq!(off, probed(s, f), "{s}.{f} for {majors:?}");
         }
     }
