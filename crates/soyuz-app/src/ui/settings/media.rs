@@ -1,0 +1,164 @@
+//! Settings → Preview & search → Media: the `[media]` keys the app reads today (the
+//! FFmpeg libraries switch, the folder searched first, decoder threads, the frame size and
+//! the poster time) under a status card that says which libraries are loaded, or where
+//! they were looked for and where to get them (the `ffmpeg-runtime-<version>` release;
+//! the in-app download arrives with V4c). The player and tools keys get their rows with
+//! their steps.
+
+use std::path::Path;
+
+use egui::{Align2, Ui, pos2, vec2};
+
+use super::widgets::{group, number, small_button, switch, text};
+use crate::app::SoyuzApp;
+use crate::services::media::{self, State};
+use crate::theme::icons::ph;
+use crate::theme::palette;
+
+const CTX: &str = "Preview media ffmpeg libraries video";
+
+pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
+    let status = media::status();
+    let mut retry = false;
+    let mut browse = false;
+    let d = &mut app.gui.settings.draft;
+    let any = group(ui, q, CTX, tr!("settings-media"), |r| {
+        let (desc, keywords) = status_desc(&status);
+        r.row_kw(tr!("settings-media-status"), &desc, &keywords, |ui| match &status.state {
+            State::Loaded(_) => status_pill(ui, ph::CHECK_CIRCLE, tr!("settings-media-status-ok"), true),
+            State::Loading => status_pill(ui, ph::CIRCLE_DASHED, tr!("settings-media-status-loading-short"), false),
+            State::Disabled => status_pill(ui, ph::PROHIBIT, tr!("settings-off"), false),
+            State::Failed { .. } => {
+                retry = small_button(ui, Some(ph::ARROWS_CLOCKWISE), tr!("settings-media-retry"), false).clicked();
+                status_pill(ui, ph::WARNING_CIRCLE, tr!("settings-media-status-missing-short"), false);
+            }
+        });
+        r.row_kw(tr!("settings-media-ffmpeg"), tr!("settings-media-ffmpeg-desc"), "enable libraries runtime", |ui| {
+            switch(ui, &mut d.media.ffmpeg);
+        });
+        let (dir_desc, dir_hint) = if cfg!(windows) {
+            (tr!("settings-media-dir-desc"), tr!("settings-media-dir-hint"))
+        } else {
+            (tr!("settings-media-dir-desc-unix"), tr!("settings-media-dir-hint-unix"))
+        };
+        r.row_kw(tr!("settings-media-dir"), dir_desc, "folder path dll so dylib avcodec", |ui| {
+            browse = small_button(ui, Some(ph::FOLDER_OPEN), tr!("settings-media-browse"), false).clicked();
+            text(ui, &mut d.media.ffmpeg_dir, dir_hint, 200.0);
+        });
+        r.row_kw(tr!("settings-media-threads"), tr!("settings-media-threads-desc"), "decoder cores parallel", |ui| {
+            number(ui, &mut d.media.threads, 0..=64, "");
+        });
+        r.row_kw(
+            tr!("settings-media-max-px"),
+            tr!("settings-media-max-px-desc"),
+            "resolution poster frame size",
+            |ui| {
+                number(ui, &mut d.media.max_px, 256..=4096, " px");
+            },
+        );
+        r.row_kw(tr!("settings-media-poster"), tr!("settings-media-poster-desc"), "thumbnail frame seconds", |ui| {
+            number(ui, &mut d.media.poster_secs, 0.0..=3600.0, " s");
+        });
+    });
+    if retry {
+        media::retry();
+    }
+    if browse {
+        start_pick(app);
+    }
+    any
+}
+
+/// The status row's description and search keywords.
+fn status_desc(status: &media::Status) -> (String, String) {
+    let searched = || {
+        status
+            .dirs
+            .iter()
+            .map(|d| {
+                if d.as_os_str().is_empty() {
+                    tr!("settings-media-loader-path").to_string()
+                } else {
+                    soyuz_fs::strip_verbatim(d).display().to_string()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    match &status.state {
+        State::Disabled => (tr!("settings-media-status-off").to_string(), String::new()),
+        State::Loading => (tr!("settings-media-status-loading").to_string(), String::new()),
+        State::Loaded(i) => {
+            let mut desc = tr!(
+                "settings-media-status-loaded",
+                version = i.version_line(),
+                dir = soyuz_fs::strip_verbatim(&i.dir).display().to_string(),
+                decoders = i.decoders,
+                encoders = i.encoders
+            );
+            if i.versions.gpl {
+                desc.push('\n');
+                desc.push_str(tr!("settings-media-status-gpl"));
+            }
+            (desc, i.version_line())
+        }
+        State::Failed { reason, .. } => {
+            let dir = soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir().join("ffmpeg"));
+            let desc = format!(
+                "{}\n{}\n{}",
+                tr!("settings-media-status-missing", reason = reason.as_str()),
+                tr!("settings-media-status-get", tag = media::runtime_release_tag(), dir = dir.display().to_string()),
+                tr!("settings-media-status-searched", dirs = searched())
+            );
+            (desc, "missing not found download".into())
+        }
+    }
+}
+
+/// A small coloured status label (icon + text) in the control column.
+fn status_pill(ui: &mut Ui, icon: &str, label: &str, ok: bool) {
+    let p = palette(ui.ctx());
+    let font = egui::FontId::proportional(12.0);
+    let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), p.text_primary);
+    let w = g.size().x + 34.0;
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, 24.0), egui::Sense::hover());
+    let (fill, fg) = if ok { (p.success.gamma_multiply(0.16), p.success) } else { (p.bg_surface3, p.text_secondary) };
+    ui.painter().rect_filled(rect, egui::CornerRadius::same(12), fill);
+    ui.painter().text(
+        pos2(rect.left() + 14.0, rect.center().y),
+        Align2::CENTER_CENTER,
+        icon,
+        crate::theme::icons::font(13.0),
+        fg,
+    );
+    ui.painter().galley(pos2(rect.left() + 26.0, rect.center().y - g.size().y / 2.0), g, fg);
+    crate::ui::a11y::name(&resp, label);
+}
+
+/// Open the in-app picker on the library file; its folder becomes `[media] ffmpeg_dir`.
+fn start_pick(app: &mut SoyuzApp) {
+    use crate::ui::path_picker::{PathPicker, PickMode};
+    let configured = app.gui.settings.draft.media.ffmpeg_dir.trim();
+    let start = if !configured.is_empty() && Path::new(configured).is_dir() {
+        Path::new(configured).to_path_buf()
+    } else {
+        std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf)).unwrap_or_else(soyuz_fs::home)
+    };
+    // The file names of the bundled row: avcodec-63.dll / libavcodec.so.63 / libavcodec.63.dylib.
+    let names = media::lib_file_names(media::Majors::BUNDLED);
+    let exts: Vec<String> = media::Majors::SUPPORTED
+        .iter()
+        .flat_map(|m| media::lib_file_names(*m))
+        .filter_map(|n| Path::new(&n).extension().map(|e| e.to_string_lossy().into_owned()))
+        .collect();
+    let exts: Vec<&str> = exts.iter().map(String::as_str).collect();
+    let title = tr!("settings-media-pick-title", file = names[3].as_str());
+    let picker = PathPicker::new(&title, PickMode::Open, start, "", &exts);
+    app.gui.settings.picker = Some((super::PickPurpose::FfmpegDir, picker));
+}
+
+/// The picker's result: the folder of the chosen file.
+pub(super) fn picked(app: &mut SoyuzApp, path: &Path) {
+    let dir = if path.is_dir() { path } else { path.parent().unwrap_or(path) };
+    app.gui.settings.draft.media.ffmpeg_dir = soyuz_fs::strip_verbatim(dir).display().to_string();
+}

@@ -141,9 +141,32 @@ and *Retry failed*.
     `model_turntable = false`.
   - **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause / seek
     (click the waveform). Playback stops when the preview moves away.
-  - **Video**: container metadata, plus a poster frame when `ffmpeg` is installed on
-    `PATH` (`[preview] video`). Playback inside Soyuz is out of scope; `Enter` opens the
-    file in your player.
+  - **Video** (`[preview] video`): container metadata, and with the FFmpeg libraries the
+    streams (codec and profile, size, frame rate, pixel format, HDR, rotation, audio
+    codec / channels / rate, bitrates, chapters, tags) plus a poster frame at
+    `[media] poster_secs` (0 = a tenth of the length, at most 5 s), sized by
+    `[media] max_px`. `Enter` opens the file in your player (in-app playback is on the
+    roadmap).
+  - **The FFmpeg libraries** (`[media]`, Settings → Preview & search → Media): Soyuz loads
+    `avcodec`, `avformat`, `avutil`, `swscale` and `swresample` at run time and never spawns
+    an `ffmpeg` program. The release packages ship them next to the program (an LGPL build,
+    FFmpeg 9.0; the distro's or Flatpak runtime's 8.x / 7.1 libraries are accepted on
+    Linux). The search order is `SOYUZ_FFMPEG_DIR` (for tests), `[media] ffmpeg_dir`, the
+    program's folder, the config folder's `ffmpeg/` sub-folder, then the system folders;
+    the Media page lists them with the loaded versions or the reason nothing loaded. To add
+    or replace the libraries, get the `ffmpeg-runtime-<version>` release from GitHub and
+    unpack it into `<config dir>/ffmpeg/`, or choose their folder on the Media page.
+    `[media] ffmpeg = false` turns them off (metadata-only video previews, Symphonia
+    audio). Without them videos show their metadata and a card that says where the
+    libraries come from.
+  - *Crash safety*: decoding runs inside Soyuz, so before a thumbnail or preview decodes a
+    file the file is noted in `<config dir>/media-inflight`. A file still noted at the
+    next start crashed the libraries; automatic previews skip it ("it crashed the media
+    library last time") until you open it in Quick Look, which tries again.
+  - *Codecs and patents*: Soyuz ships no patent licence. H.264, HEVC, AAC and other
+    formats may be patented in some jurisdictions; the libraries are distributed under
+    the LGPL-2.1 as FFmpeg's legal page describes, and the About dialog shows which build
+    is loaded.
   - **Diff**: select exactly two text files and the preview compares them (older on the
     left; swap, unified or side by side).
 - **Terminal** (``Ctrl+` ``): your shell in the current folder. It follows navigation (and,
@@ -247,8 +270,8 @@ Search the settings with `Ctrl+F` inside the window.
   files in `themes/`, each with a dark and a light variant), mode (system follows the OS
   switch live / dark / light), accent color (the theme's, the Windows accent, or any color),
   density, font size, interface scale, reduced motion, high contrast, icons and thumbnails
-  (icon pack, extension badges, folder mosaics, ffmpeg video frames, PDF first pages
-  through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
+  (icon pack, extension badges, folder mosaics, video keyframes through the FFmpeg
+  libraries, PDF first pages through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
   share theme files.
 - *Icon packs*: *Appearance → Icon pack* switches between the built-in glyphs, the built-in
   *Flat* pack and your own packs, with a live sample row. A pack is a folder in `icons/`

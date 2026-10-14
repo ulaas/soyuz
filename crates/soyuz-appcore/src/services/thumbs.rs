@@ -5,8 +5,8 @@
 //! decoded textures within a byte budget (`[preview] thumb_cache_mib`, see
 //! [`set_budget_bytes`]); [`memory`] reports the current use for the About dialog.
 //!
-//! Besides pictures, workers make video thumbnails (ffmpeg, `thumb_video`) with a
-//! duration label, PDF first pages (pdfium, when the library is found; otherwise PDFs
+//! Besides pictures, workers make video thumbnails (the FFmpeg libraries, `thumb_video`;
+//! without them a duration label only), PDF first pages (pdfium, when the library is found; otherwise PDFs
 //! keep their icon) and folder mosaics (`thumb_folder`); every decoded result also goes
 //! through the on-disk cache (`thumb_disk`) so it survives restarts. On Linux / BSD,
 //! pictures, video frames and PDF pages Soyuz makes itself are also written to the shared
@@ -80,7 +80,8 @@ enum Slot {
 /// `[appearance] video_thumbnails` (read by the workers).
 static VIDEO_FRAMES: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
-/// Turn ffmpeg frame extraction on / off (`[appearance] video_thumbnails`).
+/// Turn video frame decoding on / off (`[appearance] video_thumbnails`; needs the FFmpeg
+/// libraries, `services::media`).
 pub fn set_video_frames(on: bool) {
     VIDEO_FRAMES.store(on, Ordering::Relaxed);
 }
@@ -193,7 +194,7 @@ impl Thumbs {
     }
 
     /// Like [`Self::get`], plus the label to show on it (a video's duration). A video
-    /// without a frame (no ffmpeg) returns `(None, Some(duration))`.
+    /// without a frame (no FFmpeg libraries) returns `(None, Some(duration))`.
     pub fn get_labeled(&self, key: &ThumbKey) -> (Option<Tex>, Option<String>) {
         let kind = if super::thumb_video::is_video(&key.path) {
             Kind::Video
@@ -323,12 +324,14 @@ fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
 fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
     use super::thumb_disk;
     let label = if kind == Kind::Video { super::thumb_video::duration_label(&key.path) } else { None };
-    let disk_key = thumb_disk::cache_key(kind, &key.path, key.size, key.mtime, key.px);
+    // Video frames are keyed by the library build that made them (`media::source_tag`).
+    let source = if kind == Kind::Video { super::media::source_tag() } else { String::new() };
+    let disk_key = thumb_disk::cache_key_with_source(kind, &key.path, key.size, key.mtime, key.px, &source);
     if let Some(img) = thumb_disk::get(disk_key) {
         return (Some(img), label);
     }
     // The OS cache (Explorer's / freedesktop, read-only): no decode, and videos / PDFs
-    // get a picture even without ffmpeg / pdfium.
+    // get a picture even without the FFmpeg libraries / pdfium.
     if kind != Kind::Folder
         && OS_CACHE.load(Ordering::Relaxed)
         && let Some(img) = os_cached(key)
@@ -336,7 +339,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
         thumb_disk::put(disk_key, &img);
         return (Some(img), label);
     }
-    if kind == Kind::Video && !(VIDEO_FRAMES.load(Ordering::Relaxed) && super::thumb_video::ffmpeg_path().is_some()) {
+    if kind == Kind::Video && !(VIDEO_FRAMES.load(Ordering::Relaxed) && super::media::runtime().is_some()) {
         return (None, label);
     }
     if kind == Kind::Pdf && !pdf_available() {
@@ -578,6 +581,49 @@ mod tests {
         assert_eq!((t.width, t.height), (128, 64));
         let back = image::load_from_memory(&t.data).unwrap().to_rgba8();
         assert_eq!(back.get_pixel(5, 5).0, [200, 100, 50, 255]);
+    }
+
+    /// Without the FFmpeg libraries a video gets its duration label and no picture (the
+    /// pre-Phase-V behaviour minus the `ffmpeg` program); with them, a 24-byte "mp4"
+    /// still decodes to nothing.
+    #[test]
+    fn video_without_a_runtime_is_label_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("clip.mp4");
+        // A minimal MP4 header with an mvhd box: 1 s at timescale 1000 (no frames).
+        let mut mp4 = Vec::new();
+        mp4.extend_from_slice(b"\0\0\0\x18ftypisom\0\0\0\0isomiso2");
+        let mvhd = {
+            let mut b = Vec::new();
+            b.extend_from_slice(&[0, 0, 0, 0]); // version + flags
+            b.extend_from_slice(&[0; 8]); // creation / modification
+            b.extend_from_slice(&1000u32.to_be_bytes()); // timescale
+            b.extend_from_slice(&1000u32.to_be_bytes()); // duration
+            let mut boxed = ((b.len() + 8) as u32).to_be_bytes().to_vec();
+            boxed.extend_from_slice(b"mvhd");
+            boxed.extend(b);
+            boxed
+        };
+        let mut moov = ((mvhd.len() + 8) as u32).to_be_bytes().to_vec();
+        moov.extend_from_slice(b"moov");
+        moov.extend(mvhd);
+        mp4.extend(moov);
+        std::fs::write(&p, &mp4).unwrap();
+        let size = mp4.len() as u64;
+        // Never read the user's Explorer / freedesktop cache from a test.
+        set_os_cache(false);
+        set_video_frames(true);
+        let key = ThumbKey { path: p, mtime: None, size, px: 64 };
+        let (img, label) = produce(&key, Kind::Video);
+        assert!(img.is_none());
+        assert_eq!(label.as_deref(), Some("0:01"));
+        // The feature switch alone keeps the label too.
+        set_video_frames(false);
+        let (img, label) = produce(&key, Kind::Video);
+        assert!(img.is_none());
+        assert_eq!(label.as_deref(), Some("0:01"));
+        set_video_frames(true);
+        set_os_cache(true);
     }
 
     #[test]

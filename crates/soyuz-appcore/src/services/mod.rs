@@ -14,6 +14,7 @@ pub mod jobs;
 pub mod lister;
 pub mod mailbox;
 pub mod mcp_bridge;
+pub mod media;
 pub mod os_clipboard;
 pub mod places;
 pub mod preview;

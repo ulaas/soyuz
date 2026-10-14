@@ -497,6 +497,7 @@ impl Dialog for AboutDialog {
         });
         ui.add_space(10.0);
         ui.label(RichText::new(tr!("dialogs-about-license")).color(p.text_tertiary).size(11.5));
+        ui.label(RichText::new(crate::models::about::ffmpeg_notice()).color(p.text_tertiary).size(11.5));
         let (close, copy) = footer(ui, tr!("common-close"), tr!("dialogs-about-copy-info"));
         if copy {
             ctx.cmds.push(Cmd::CopyText(crate::models::about::copy_text(&facts)));

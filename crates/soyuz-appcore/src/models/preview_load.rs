@@ -127,7 +127,7 @@ impl PreviewLoader {
             pixels_per_point: self.pixels_per_point,
             rich: crate::services::preview_rich::RichLimits {
                 terminal: self.terminal,
-                ..crate::services::preview_rich::RichLimits::from_config(&cfg.preview, self.big)
+                ..crate::services::preview_rich::RichLimits::from_config(&cfg.preview, &cfg.media, self.big)
             },
         }
     }

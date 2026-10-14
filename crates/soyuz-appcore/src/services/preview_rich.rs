@@ -1,7 +1,8 @@
 //! Rich previews: the dispatch between the generic preview loader
 //! ([`super::preview`]) and the format modules — Office / ODF documents, EPUB, fonts,
-//! 3D models, audio (waveform + player), video poster frames (ffmpeg) and PDF (pdfium,
-//! with a pure-Rust text fallback).
+//! 3D models, audio (waveform + player), video metadata and poster frames (the FFmpeg
+//! libraries, `services::media`, with the pure-Rust `preview_media` fallback) and PDF
+//! (pdfium, with a pure-Rust text fallback).
 //!
 //! Everything here runs on the preview worker threads: inputs are size-capped by the
 //! `[preview]` limits, long loops check the request's staleness, and the caller's
@@ -12,8 +13,10 @@ use std::io::{Read, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use soyuz_core::config::Preview as PreviewCfg;
+use soyuz_core::config::{Media as MediaCfg, Preview as PreviewCfg};
+use soyuz_media::{MediaInfo, Source as MediaSource, StreamKind};
 
+use super::media;
 use super::preview::{Content, Kind, Limits, Loaded, ReadSeek, Source};
 use super::preview_audio::{self, AudioInfo, AudioSrc};
 use super::preview_epub::{self, EpubModel};
@@ -28,7 +31,7 @@ use super::preview_text;
 use super::preview_video;
 use crate::icon::IconId;
 
-/// Per-request switches and caps (from `[preview]`).
+/// Per-request switches and caps (from `[preview]` and `[media]`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct RichLimits {
     pub pdf: bool,
@@ -41,9 +44,11 @@ pub struct RichLimits {
     pub playback: bool,
     /// Video previews (`[preview] video`).
     pub video: bool,
-    /// The `ffmpeg` program for poster frames (a PATH lookup; no config key since schema
-    /// 3). Goes away with the CLI fallback when the FFmpeg libraries take over (Phase V).
-    pub ffmpeg_path: String,
+    /// Longest edge of a poster frame (`[media] max_px`).
+    pub media_max_px: u32,
+    /// Where the poster frame is taken (`[media] poster_secs`; 0 = a tenth of the
+    /// duration, at most 5 s).
+    pub poster_secs: f32,
     pub max_document: u64,
     pub sheet_rows: usize,
     pub max_model: u64,
@@ -58,7 +63,7 @@ pub struct RichLimits {
 }
 
 impl RichLimits {
-    pub fn from_config(c: &PreviewCfg, big: bool) -> Self {
+    pub fn from_config(c: &PreviewCfg, m: &MediaCfg, big: bool) -> Self {
         RichLimits {
             pdf: c.pdf,
             pdfium_dir: c.pdfium_dir.clone(),
@@ -69,7 +74,8 @@ impl RichLimits {
             waveform: c.audio_waveform,
             playback: c.audio_playback,
             video: c.video,
-            ffmpeg_path: "ffmpeg".into(),
+            media_max_px: m.max_px.clamp(64, 8192),
+            poster_secs: m.poster_secs,
             max_document: c.max_document_mib.max(1).saturating_mul(1 << 20),
             sheet_rows: c.sheet_rows.clamp(1, 100_000) as usize,
             max_model: c.max_model_mib.max(1).saturating_mul(1 << 20),
@@ -88,7 +94,7 @@ impl RichLimits {
 
 impl Default for RichLimits {
     fn default() -> Self {
-        RichLimits::from_config(&PreviewCfg::default(), false)
+        RichLimits::from_config(&PreviewCfg::default(), &MediaCfg::default(), false)
     }
 }
 
@@ -120,11 +126,33 @@ pub struct PdfView {
 #[derive(Clone)]
 pub enum Rich {
     Office(Arc<Office>),
-    Epub { model: Arc<EpubModel>, cover: Option<Tex> },
-    Font { meta: Arc<FontMeta>, strips: Arc<Vec<(String, Tex)>> },
-    Model { model: Arc<Model>, turntable: bool },
-    Audio { info: Arc<AudioInfo>, src: AudioSrc, ext: String, playback: bool, cover: Option<Tex> },
-    Video { poster: Option<Tex>, note: Option<String> },
+    Epub {
+        model: Arc<EpubModel>,
+        cover: Option<Tex>,
+    },
+    Font {
+        meta: Arc<FontMeta>,
+        strips: Arc<Vec<(String, Tex)>>,
+    },
+    Model {
+        model: Arc<Model>,
+        turntable: bool,
+    },
+    Audio {
+        info: Arc<AudioInfo>,
+        src: AudioSrc,
+        ext: String,
+        playback: bool,
+        cover: Option<Tex>,
+    },
+    /// `info`: what the FFmpeg libraries read (`None` without them; the facts then come
+    /// from `preview_media`). `note`: why there is no poster (no libraries, not on disk,
+    /// skipped after a crash, decode error).
+    Video {
+        poster: Option<Tex>,
+        note: Option<String>,
+        info: Option<Arc<MediaInfo>>,
+    },
     Pdf(PdfView),
 }
 
@@ -536,22 +564,156 @@ fn video(
     ppp: f32,
     stale: &dyn Fn() -> bool,
 ) -> Loaded {
-    let _ = reader.seek(SeekFrom::Start(0));
-    let facts = preview_media::probe(&mut *reader, len, ext);
-    let (poster, note) = match (path, preview_video::find_ffmpeg(&lim.ffmpeg_path)) {
-        (None, _) => (None, Some(tr!("services-preview-poster-disk-only").to_string())),
-        (Some(_), None) => (None, Some(tr!("services-preview-no-ffmpeg", path = &lim.ffmpeg_path))),
-        (Some(p), Some(ff)) => {
-            let dur = facts.iter().find(|(k, _)| k == "Duration").and_then(|(_, v)| preview_video::parse_duration(v));
-            let w = ((if lim.big { 1280.0 } else { 640.0 }) * ppp).min(1920.0) as u32;
-            match preview_video::poster(&ff, p, preview_video::poster_time(dur), w, stale) {
-                Ok(png) => (decode_image(up, format!("preview:poster:{id}"), &png, w), None),
-                Err(e) if e == "stale" => return card(Kind::Video, IconId::FilmSlate, "", ""),
-                Err(e) => (None, Some(e)),
+    let _ = ppp;
+    let mut facts = Vec::new();
+    let mut info: Option<MediaInfo> = None;
+    let mut poster = None;
+    let mut note = None;
+    match (media::runtime(), path) {
+        (None, _) => {
+            let dir = soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir().join("ffmpeg"));
+            note = Some(tr!(
+                "services-preview-no-ffmpeg-libs",
+                tag = media::runtime_release_tag(),
+                dir = dir.display().to_string()
+            ));
+        }
+        (Some(_), None) => note = Some(tr!("services-preview-poster-disk-only").to_string()),
+        (Some(rt), Some(p)) => {
+            // Quick Look is the user's explicit choice: a file skipped after a crash gets
+            // another go there; the preview pane keeps skipping it.
+            let sentinel = media::sentinel();
+            if lim.big {
+                sentinel.forgive(p);
+            }
+            match sentinel.begin(p) {
+                None => note = Some(tr!("services-preview-crashed-last-time").to_string()),
+                Some(_inflight) => {
+                    match soyuz_media::probe(&rt, &MediaSource::File(p.to_path_buf())) {
+                        Ok(i) => info = Some(i),
+                        Err(e) => log::debug!("probe {}: {e}", p.display()),
+                    }
+                    if stale() {
+                        return card(Kind::Video, IconId::FilmSlate, "", "");
+                    }
+                    let dur = info.as_ref().and_then(|i| i.duration);
+                    let at = preview_video::poster_at(lim.poster_secs, dur);
+                    match preview_video::poster(&rt, p, at, lim.media_max_px, stale) {
+                        Ok(img) => poster = Some(Tex::upload_rgba(up, format!("preview:poster:{id}"), &img)),
+                        Err(e) if e == "stale" => return card(Kind::Video, IconId::FilmSlate, "", ""),
+                        Err(e) => note = Some(e),
+                    }
+                }
             }
         }
-    };
-    loaded(Kind::Video, Rich::Video { poster, note }, facts)
+    }
+    if let Some(i) = &info {
+        media_facts(&mut facts, i);
+    }
+    // The pure-Rust parser: everything without the libraries, the gaps with them.
+    let _ = reader.seek(SeekFrom::Start(0));
+    for (k, v) in preview_media::probe(&mut *reader, len, ext) {
+        fact(&mut facts, &k, v);
+    }
+    loaded(Kind::Video, Rich::Video { poster, note, info: info.map(Arc::new) }, facts)
+}
+
+/// `1920 × 1080`-style size of a stream.
+fn dimensions(w: u32, h: u32) -> String {
+    format!("{w} × {h}")
+}
+
+fn kbps(bits: u64) -> String {
+    format!("{} kbps", (bits as f64 / 1000.0).round())
+}
+
+/// The facts rows of a video from what the FFmpeg libraries read (keys are the English
+/// names `models::preview_info::info_label` translates).
+pub fn media_facts(facts: &mut Vec<(String, String)>, i: &MediaInfo) {
+    // Container-level tags first: the title headline, then the usual music-style tags.
+    for (tag, key) in [
+        ("title", "Title"),
+        ("artist", "Artist"),
+        ("album", "Album"),
+        ("date", "Year"),
+        ("genre", "Genre"),
+        ("comment", "Comment"),
+        ("encoder", "Encoder"),
+    ] {
+        if let Some(v) = i.tag(tag) {
+            fact(facts, key, v.chars().take(200).collect::<String>());
+        }
+    }
+    let container = if i.container_long.is_empty() { i.container.as_str() } else { i.container_long.as_str() };
+    fact(facts, "Container", container);
+    if let Some(d) = i.duration {
+        fact(facts, "Duration", format_duration(d));
+    }
+    if let Some(v) = i.video() {
+        let mut codec = if v.codec_long.is_empty() { v.codec.clone() } else { v.codec_long.clone() };
+        if let Some(p) = &v.profile {
+            codec = format!("{codec} ({p})");
+        }
+        fact(facts, "Video", codec);
+        if v.width > 0 && v.height > 0 {
+            // The display size: rotation swaps the sides.
+            let (w, h) = if v.rotation == 90 || v.rotation == 270 { (v.height, v.width) } else { (v.width, v.height) };
+            fact(facts, "Dimensions", dimensions(w, h));
+        }
+        if let Some(f) = v.fps.filter(|f| f.is_finite() && *f > 0.0) {
+            let text = if (f - f.round()).abs() < 0.005 { format!("{f:.0} fps") } else { format!("{f:.2} fps") };
+            fact(facts, "Frame rate", text);
+        }
+        if let Some(p) = &v.pix_fmt {
+            fact(facts, "Pixel format", p.clone());
+        }
+        if let Some(h) = v.hdr {
+            fact(
+                facts,
+                "HDR",
+                match h {
+                    soyuz_media::Hdr::Hdr10 => "HDR10",
+                    soyuz_media::Hdr::Hdr10Plus => "HDR10+",
+                    soyuz_media::Hdr::Hlg => "HLG",
+                    soyuz_media::Hdr::DolbyVision => "Dolby Vision",
+                },
+            );
+        }
+        if v.rotation != 0 {
+            fact(facts, "Rotation", format!("{}°", v.rotation));
+        }
+        if let Some(b) = v.bit_rate.filter(|b| *b > 0) {
+            fact(facts, "Video bitrate", kbps(b));
+        }
+    }
+    if let Some(a) = i.audio() {
+        let codec = if a.codec_long.is_empty() { a.codec.clone() } else { a.codec_long.clone() };
+        fact(facts, "Audio", codec);
+        if !a.channel_layout.is_empty() {
+            fact(facts, "Channels", a.channel_layout.clone());
+        } else if a.channels > 0 {
+            fact(facts, "Channels", a.channels.to_string());
+        }
+        if a.sample_rate > 0 {
+            fact(facts, "Sample rate", format!("{} Hz", a.sample_rate));
+        }
+        if let Some(l) = &a.language {
+            fact(facts, "Language", l.clone());
+        }
+        if let Some(b) = a.bit_rate.filter(|b| *b > 0) {
+            fact(facts, "Audio bitrate", kbps(b));
+        }
+    }
+    if let Some(b) = i.bit_rate.filter(|b| *b > 0) {
+        fact(facts, "Bitrate", kbps(b));
+    }
+    let subs = i.streams.iter().filter(|s| s.kind == Some(StreamKind::Subtitle)).count();
+    if subs > 0 {
+        fact(facts, "Subtitles", subs.to_string());
+    }
+    if !i.chapters.is_empty() {
+        fact(facts, "Chapters", i.chapters.len().to_string());
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -743,7 +905,75 @@ mod tests {
             mono: crate::services::preview_gfx::TextFont::monospace(12.0),
             fg: crate::services::preview_gfx::WHITE,
             pixels_per_point: 1.0,
-            rich: RichLimits { ffmpeg_path: "definitely-missing-ffmpeg".into(), ..RichLimits::default() },
+            rich: RichLimits::default(),
+        }
+    }
+
+    #[test]
+    fn media_facts_rows() {
+        use soyuz_media::{Chapter, Hdr, StreamInfo};
+        let info = MediaInfo {
+            container: "matroska,webm".into(),
+            container_long: "Matroska / WebM".into(),
+            duration: Some(125.0),
+            bit_rate: Some(2_500_000),
+            streams: vec![
+                StreamInfo {
+                    index: 0,
+                    kind: Some(StreamKind::Video),
+                    codec: "hevc".into(),
+                    codec_long: "H.265 / HEVC".into(),
+                    profile: Some("Main 10".into()),
+                    width: 1920,
+                    height: 1080,
+                    rotation: 90,
+                    fps: Some(29.97),
+                    pix_fmt: Some("yuv420p10le".into()),
+                    hdr: Some(Hdr::Hdr10),
+                    bit_rate: Some(2_000_000),
+                    ..Default::default()
+                },
+                StreamInfo {
+                    index: 1,
+                    kind: Some(StreamKind::Audio),
+                    codec: "aac".into(),
+                    channel_layout: "stereo".into(),
+                    channels: 2,
+                    sample_rate: 48_000,
+                    language: Some("eng".into()),
+                    ..Default::default()
+                },
+                StreamInfo { index: 2, kind: Some(StreamKind::Subtitle), ..Default::default() },
+            ],
+            chapters: vec![Chapter { start: 0.0, end: 1.0, title: None }],
+            tags: vec![("TITLE".into(), "Clip".into()), ("encoder".into(), "Lavf".into())],
+            ..Default::default()
+        };
+        let mut facts = Vec::new();
+        media_facts(&mut facts, &info);
+        // Fallback facts never overwrite the library's.
+        fact(&mut facts, "Duration", "0:00");
+        let get = |k: &str| facts.iter().find(|(fk, _)| fk == k).map(|(_, v)| v.as_str());
+        assert_eq!(get("Title"), Some("Clip"));
+        assert_eq!(get("Container"), Some("Matroska / WebM"));
+        assert_eq!(get("Duration"), Some("2:05"));
+        assert_eq!(get("Video"), Some("H.265 / HEVC (Main 10)"));
+        assert_eq!(get("Dimensions"), Some("1080 × 1920"), "rotation swaps the display size");
+        assert_eq!(get("Frame rate"), Some("29.97 fps"));
+        assert_eq!(get("Pixel format"), Some("yuv420p10le"));
+        assert_eq!(get("HDR"), Some("HDR10"));
+        assert_eq!(get("Rotation"), Some("90°"));
+        assert_eq!(get("Video bitrate"), Some("2000 kbps"));
+        assert_eq!(get("Audio"), Some("aac"));
+        assert_eq!(get("Channels"), Some("stereo"));
+        assert_eq!(get("Sample rate"), Some("48000 Hz"));
+        assert_eq!(get("Language"), Some("eng"));
+        assert_eq!(get("Bitrate"), Some("2500 kbps"));
+        assert_eq!(get("Subtitles"), Some("1"));
+        assert_eq!(get("Chapters"), Some("1"));
+        assert_eq!(get("Encoder"), Some("Lavf"));
+        for (k, _) in &facts {
+            assert_ne!(crate::models::preview_info::info_label(k), "", "{k}");
         }
     }
 
@@ -793,14 +1023,20 @@ mod tests {
         client.request(Source::File(docx), false, false, off);
         assert_eq!(wait(&client).kind, Kind::Archive);
 
-        // Video without ffmpeg: metadata plus a note.
+        // Video: 24 header bytes decode to nothing, with or without the libraries. Without
+        // them the note says where the runtime comes from (its release tag).
         let mp4 = dir.path().join("v.mp4");
         std::fs::write(&mp4, b"\0\0\0\x18ftypisom\0\0\0\0isomiso2").unwrap();
         client.request(Source::File(mp4), false, false, limits());
         match wait(&client).content {
-            Content::Rich(Rich::Video { poster, note }) => {
+            Content::Rich(Rich::Video { poster, note, info }) => {
                 assert!(poster.is_none());
-                assert!(note.unwrap().contains("ffmpeg"));
+                let note = note.expect("a note says why there is no poster");
+                if media::runtime().is_none() {
+                    assert!(note.contains(&media::runtime_release_tag()), "{note}");
+                    assert!(note.contains("ffmpeg"), "{note}");
+                    assert!(info.is_none());
+                }
             }
             _ => panic!("expected video"),
         }

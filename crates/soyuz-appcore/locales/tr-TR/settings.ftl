@@ -41,7 +41,7 @@ settings-section-terminal-desc = Tümleşik terminal paneli.
 settings-section-terminal-ui = Terminal arayüzü
 settings-section-terminal-ui-desc = Bir terminalin içinde çalışan metin tabanlı arayüz (soyuz --tui).
 settings-section-preview = Önizleme ve arama
-settings-section-preview-desc = Önizleme sınırları, arama varsayılanları ve Git tümleştirmesi.
+settings-section-preview-desc = Önizleme sınırları, FFmpeg kitaplıkları, arama varsayılanları ve Git tümleştirmesi.
 settings-section-editor = Düzenleyici
 settings-section-editor-desc = Yerleşik metin, onaltılık ve resim düzenleyicileri (Soyuz'da düzenle, F4).
 settings-section-keyboard = Klavye
@@ -495,7 +495,40 @@ settings-preview-audio-limit-desc = Daha büyük ses dosyalarının dalga biçim
 settings-preview-playback = Ses çalma
 settings-preview-playback-desc = Önizlemenin içinde çal, duraklat ve sar.
 settings-preview-video = Video önizlemeleri
-settings-preview-video-desc = Kapsayıcı bilgileri ve ffmpeg kuruluysa bir kapak karesi. Hiçbir şey indirilmez.
+settings-preview-video-desc = Kapsayıcı bilgileri; FFmpeg kitaplıkları yüklüyse akış ayrıntıları ve bir kapak karesi (aşağıdaki Medya).
+
+## Media (FFmpeg libraries) group of the Preview page
+
+settings-media = Medya
+settings-media-status = FFmpeg kitaplıkları
+settings-media-status-ok = Yüklü
+settings-media-status-missing-short = Yüklü değil
+settings-media-status-loading-short = Yükleniyor…
+settings-media-status-off = Kapalı: videolar yalnızca kapsayıcı bilgilerini gösterir, ses yerleşik çözücüyle çalar.
+settings-media-status-loading = Kitaplıklar aranıyor…
+settings-media-status-loaded = { $version }, { $dir } klasöründen · { $decoders } çözücü, { $encoders } kodlayıcı.
+settings-media-status-gpl = GPL derlemesi: çalışır, ancak Soyuz onunla birlikte dağıtılamaz.
+settings-media-status-missing = { $reason }.
+settings-media-status-get = Soyuz kitaplıkları programın yanında dağıtır. Eklemek ya da değiştirmek için GitHub'daki “{ $tag }” sürümünü indirip { $dir } klasörüne açın ya da aşağıdan klasörlerini seçin.
+settings-media-status-searched = Aranan yerler:
+    { $dirs }
+settings-media-loader-path = (sistemin kitaplık arama yolu)
+settings-media-retry = Yeniden dene
+settings-media-ffmpeg = FFmpeg kitaplıklarını kullan
+settings-media-ffmpeg-desc = Kitaplıkları bulunduğunda video kapakları, küçük resimler ve akış ayrıntıları FFmpeg ile alınır. Kapalı: yalnızca bilgi gösteren video önizlemeleri; oynatıcı ve medya araçları yok.
+settings-media-dir = Kitaplık klasörü
+settings-media-dir-desc = avcodec-63.dll ve diğer dördü önce burada aranır. Boş: soyuz.exe'nin yanı, sonra yapılandırma klasörünün ffmpeg alt klasörü. Bir sonraki yüklemede geçerli olur (kitaplıklar yüklendikten sonra yeniden başlatınca).
+settings-media-dir-desc-unix = libavcodec.so.63 / libavcodec.63.dylib ve diğer dördü önce burada aranır. Boş: soyuz programının yanı, sonra yapılandırma klasörünün ffmpeg alt klasörü, sonra sistem kitaplık klasörleri. Bir sonraki yüklemede geçerli olur (kitaplıklar yüklendikten sonra yeniden başlatınca).
+settings-media-dir-hint = soyuz.exe'nin yanında
+settings-media-dir-hint-unix = soyuz programının yanında
+settings-media-browse = Seç…
+settings-media-pick-title = Kitaplıkların klasöründeki { $file } dosyasını seçin
+settings-media-threads = Çözücü iş parçacıkları
+settings-media-threads-desc = Çözülen dosya başına iş parçacığı; 0 her çekirdeğe bir tane kullanır. Küçük resimler her zaman bir tane kullanır.
+settings-media-max-px = Kare boyutu
+settings-media-max-px-desc = Kapak karelerinin (ve oynatıcı karelerinin) uzun kenarı, piksel olarak; daha büyük kaynaklar çözülürken küçültülür.
+settings-media-poster = Kapak zamanı
+settings-media-poster-desc = Kapak karesi ve küçük resim için videonun kaçıncı saniyesi; uzunluğuyla sınırlanır. 0: uzunluğun onda biri, en çok 5 sn.
 settings-preview-diff = İki dosyayı karşılaştır
 settings-preview-diff-desc = Tam olarak iki metin dosyası seçiliyken önizleme farklarını gösterir.
 settings-preview-diff-limit = Fark boyutu sınırı
@@ -571,8 +604,8 @@ settings-token-tag-gray = Etiket gri
 
 ## Appearance page
 
-settings-appearance-video-thumbs-desc = Videoların ilk karesi ffmpeg ile alınır ({ $path }).
-settings-appearance-video-thumbs-missing = Videoların ilk karesi ffmpeg ile alınır — ffmpeg PATH üzerinde bulunamadı, bu yüzden videolarda süreleri gösterilir.
+settings-appearance-video-thumbs-desc = Her videodan bir anahtar kare FFmpeg kitaplıklarıyla alınır ({ $version }).
+settings-appearance-video-thumbs-missing = Her videodan bir anahtar kare FFmpeg kitaplıklarıyla alınır — kitaplıklar yüklü değil (nedenini Önizleme → Medya söyler), bu yüzden videolarda süreleri gösterilir.
 settings-appearance-overrides = { $count } geçersiz kılma
 
 settings-appearance-theme = Tema
@@ -617,9 +650,9 @@ settings-appearance-folder-thumbs-desc = Izgara görünümleri her klasörün i�
 settings-appearance-video-thumbs = Video küçük resimleri
 settings-appearance-pdf-thumbs = PDF küçük resimleri
 settings-appearance-os-thumbs = Windows küçük resim önbelleği
-settings-appearance-os-thumbs-desc = Dosyaları çözmeden önce Gezgin'in hazırladığı küçük resimleri kullanır (thumbcache_*.db, salt okunur). Gezgin'de varsa videolar ve PDF'ler ffmpeg ya da pdfium olmadan da resimle görünür.
+settings-appearance-os-thumbs-desc = Dosyaları çözmeden önce Gezgin'in hazırladığı küçük resimleri kullanır (thumbcache_*.db, salt okunur). Gezgin'de varsa videolar ve PDF'ler FFmpeg kitaplıkları ya da pdfium olmadan da resimle görünür.
 settings-appearance-os-thumbs-linux = Paylaşılan küçük resim önbelleği
-settings-appearance-os-thumbs-desc-linux = Dosyaları çözmeden önce diğer uygulamaların freedesktop küçük resim önbelleğinde (~/.cache/thumbnails, salt okunur) hazırladığı küçük resimleri kullanır. Varsa videolar ve PDF'ler ffmpeg ya da pdfium olmadan da resimle görünür.
+settings-appearance-os-thumbs-desc-linux = Dosyaları çözmeden önce diğer uygulamaların freedesktop küçük resim önbelleğinde (~/.cache/thumbnails, salt okunur) hazırladığı küçük resimleri kullanır. Varsa videolar ve PDF'ler FFmpeg kitaplıkları ya da pdfium olmadan da resimle görünür.
 settings-appearance-pdf-thumbs-desc = PDF'lerin ilk sayfası pdfium ile çizilir (pdfium.dll soyuz.exe'nin yanında, yapılandırma klasöründe ya da Önizleme altında belirtilen klasörde). Yoksa PDF'ler simgeleriyle görünür.
 settings-appearance-pdf-thumbs-desc-unix = PDF'lerin ilk sayfası pdfium ile (soyuz programının yanında, yapılandırma klasöründe, Önizleme altında ayarlanan klasörde ya da bir sistem kitaplığı klasöründe libpdfium.so). O olmadan PDF'ler simgelerini korur.
 settings-appearance-icon-pack = Simge paketi

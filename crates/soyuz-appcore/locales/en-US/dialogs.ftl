@@ -34,6 +34,8 @@ dialogs-about-platform = Platform
 dialogs-about-renderer = Renderer
 dialogs-about-config = Config
 dialogs-about-memory = Memory
+dialogs-about-ffmpeg = FFmpeg
+dialogs-about-ffmpeg-license = This software uses libraries from the FFmpeg project under the LGPLv2.1 (loaded at run time; see THIRD-PARTY-NOTICES.md).
 # $thumbs / $previews: sizes like "12.5 MiB"; $thumb_count / $preview_count: cached entries.
 dialogs-about-memory-line = thumbnails { $thumbs } ({ $thumb_count }) · previews { $previews } ({ $preview_count })
 dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Icons: Phosphor (MIT).

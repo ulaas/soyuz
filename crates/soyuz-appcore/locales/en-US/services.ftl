@@ -84,8 +84,9 @@ services-preview-cant-read-model = Can't read this model
 services-preview-decimated = { $count } (decimated)
 services-preview-waveform-skipped = Skipped above { $size } MiB ([preview] max_audio_mib)
 services-preview-poster-disk-only = Poster frames are only made for files on disk.
-# $path: the configured ffmpeg command.
-services-preview-no-ffmpeg = Install ffmpeg on PATH for a poster frame; "{ $path }" wasn't found.
+# $tag: the GitHub release that carries the libraries (ffmpeg-runtime-9.0.2); $dir: the config folder's ffmpeg/ sub-folder.
+services-preview-no-ffmpeg-libs = The FFmpeg libraries aren't loaded, so there is no poster frame. Soyuz ships them next to the program; to add them, get the "{ $tag }" release from GitHub and unpack it into { $dir }, or point Settings → Preview → Media at their folder.
+services-preview-crashed-last-time = Not previewed: decoding this file crashed the media library last time. Open it in Quick Look to try again.
 services-preview-no-pdf-renderer = This build has no PDF renderer (cargo feature `pdf`).
 services-preview-no-pdf-renderer-short = No PDF renderer in this build
 services-preview-cant-read-pdf = Can't read this PDF
@@ -99,10 +100,8 @@ services-audio-unsupported-codec = Unsupported codec ({ $error })
 services-audio-player-failed = The audio player failed on this file
 services-audio-no-device = No audio output device ({ $error })
 services-audio-cant-play = Can't play this file ({ $error })
-services-video-cant-start = Can't start ffmpeg ({ $error })
-services-video-no-output = ffmpeg gave no output
-services-video-timeout = ffmpeg took too long
-services-video-no-frame = ffmpeg produced no frame
+# $error: what the FFmpeg libraries said.
+services-video-no-frame = No poster frame ({ $error })
 services-diff-failed = The diff failed on these files
 
 ## Places, timeline, stores

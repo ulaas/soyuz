@@ -22,6 +22,7 @@ pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
             format!("Soyuz · {}", tr!("dialogs-about-version-line", version = version)),
             tr!("dialogs-about-tagline").into(),
             tr!("dialogs-about-license").into(),
+            soyuz_appcore::models::about::ffmpeg_notice().into(),
         ],
         list: facts
             .map(|(k, v)| {

@@ -44,7 +44,7 @@ settings-section-terminal-desc = The integrated terminal panel.
 settings-section-terminal-ui = Terminal UI
 settings-section-terminal-ui-desc = The text-mode interface that runs inside a terminal (soyuz --tui).
 settings-section-preview = Preview & search
-settings-section-preview-desc = Preview limits, search defaults and git integration.
+settings-section-preview-desc = Preview limits, the FFmpeg libraries, search defaults and git integration.
 settings-section-editor = Editor
 settings-section-editor-desc = The built-in text, hex and image editors (Edit in Soyuz, F4).
 settings-section-keyboard = Keyboard
@@ -504,7 +504,45 @@ settings-preview-audio-limit-desc = Larger audio files get no waveform.
 settings-preview-playback = Audio playback
 settings-preview-playback-desc = Play, pause and seek inside the preview.
 settings-preview-video = Video previews
-settings-preview-video-desc = Container metadata, plus a poster frame when ffmpeg is installed. Nothing is downloaded.
+settings-preview-video-desc = Container metadata, plus the streams and a poster frame when the FFmpeg libraries are loaded (Media, below).
+
+## Media (FFmpeg libraries) group of the Preview page
+
+settings-media = Media
+settings-media-status = FFmpeg libraries
+settings-media-status-ok = Loaded
+settings-media-status-missing-short = Not loaded
+settings-media-status-loading-short = Loading…
+settings-media-status-off = Off: videos show their container metadata only, audio plays through the built-in decoder.
+settings-media-status-loading = Looking for the libraries…
+# $version: "9.0 (avcodec 63.2.100)"; $dir: the folder; $decoders / $encoders: counts.
+settings-media-status-loaded = { $version } from { $dir } · { $decoders } decoders, { $encoders } encoders.
+settings-media-status-gpl = A GPL build: it works, but Soyuz can't be redistributed with it.
+# $reason: the loader's message.
+settings-media-status-missing = { $reason }.
+# $tag: the GitHub release (ffmpeg-runtime-9.0.2); $dir: the config folder's ffmpeg/ sub-folder.
+settings-media-status-get = Soyuz ships the libraries next to the program. To add or replace them, get the "{ $tag }" release from GitHub and unpack it into { $dir }, or choose their folder below.
+# $dirs: one folder per line.
+settings-media-status-searched = Searched:
+    { $dirs }
+settings-media-loader-path = (the system's library search path)
+settings-media-retry = Try again
+settings-media-ffmpeg = Use the FFmpeg libraries
+settings-media-ffmpeg-desc = Video posters, thumbnails and stream details through FFmpeg when its libraries are found. Off: metadata-only video previews, no player or media tools.
+settings-media-dir = Library folder
+settings-media-dir-desc = Searched first for avcodec-63.dll and the other four. Empty: next to soyuz.exe, then the config folder's ffmpeg sub-folder. Applies to the next load (after a restart once libraries were loaded).
+settings-media-dir-desc-unix = Searched first for libavcodec.so.63 / libavcodec.63.dylib and the other four. Empty: next to the soyuz program, then the config folder's ffmpeg sub-folder, then the system library folders. Applies to the next load (after a restart once libraries were loaded).
+settings-media-dir-hint = next to soyuz.exe
+settings-media-dir-hint-unix = next to the soyuz program
+settings-media-browse = Choose…
+# $file: the library file to pick (avcodec-63.dll).
+settings-media-pick-title = Choose { $file } in the libraries' folder
+settings-media-threads = Decoder threads
+settings-media-threads-desc = Threads per decoded file; 0 uses one per core. Thumbnails always use one.
+settings-media-max-px = Frame size
+settings-media-max-px-desc = Longest edge of poster frames (and of the player's frames) in pixels; larger sources are scaled down while decoding.
+settings-media-poster = Poster time
+settings-media-poster-desc = Seconds into the video for the poster frame and the thumbnail, clamped to its length. 0: a tenth of the length, at most 5 s.
 settings-preview-diff = Compare two files
 settings-preview-diff-desc = With exactly two text files selected, the preview shows their diff.
 settings-preview-diff-limit = Diff size limit
@@ -580,9 +618,9 @@ settings-token-tag-gray = Tag gray
 
 ## Appearance page
 
-# $path = the ffmpeg program found.
-settings-appearance-video-thumbs-desc = First frame of videos through ffmpeg ({ $path }).
-settings-appearance-video-thumbs-missing = First frame of videos through ffmpeg — not found on PATH, so videos show their length instead.
+# $version = the loaded FFmpeg libraries ("9.0 (avcodec 63.2.100)").
+settings-appearance-video-thumbs-desc = A keyframe of each video through the FFmpeg libraries ({ $version }).
+settings-appearance-video-thumbs-missing = A keyframe of each video through the FFmpeg libraries — they aren't loaded (Preview → Media says why), so videos show their length instead.
 settings-appearance-overrides = { $count ->
     [one] { $count } override
    *[other] { $count } overrides
@@ -630,9 +668,9 @@ settings-appearance-folder-thumbs-desc = Grid views show a 2×2 mosaic of the fi
 settings-appearance-video-thumbs = Video thumbnails
 settings-appearance-pdf-thumbs = PDF thumbnails
 settings-appearance-os-thumbs = Windows thumbnail cache
-settings-appearance-os-thumbs-desc = Show the thumbnails Explorer already made (thumbcache_*.db, read-only) before decoding files. Also gives videos and PDFs a picture without ffmpeg or pdfium when Explorer has one.
+settings-appearance-os-thumbs-desc = Show the thumbnails Explorer already made (thumbcache_*.db, read-only) before decoding files. Also gives videos and PDFs a picture without the FFmpeg libraries or pdfium when Explorer has one.
 settings-appearance-os-thumbs-linux = Shared thumbnail cache
-settings-appearance-os-thumbs-desc-linux = Show the thumbnails other apps already made in the freedesktop thumbnail cache (~/.cache/thumbnails, read-only) before decoding files. Also gives videos and PDFs a picture without ffmpeg or pdfium when one exists.
+settings-appearance-os-thumbs-desc-linux = Show the thumbnails other apps already made in the freedesktop thumbnail cache (~/.cache/thumbnails, read-only) before decoding files. Also gives videos and PDFs a picture without the FFmpeg libraries or pdfium when one exists.
 settings-appearance-pdf-thumbs-desc = First page of PDFs through pdfium (pdfium.dll next to soyuz.exe, in the config folder or in the folder set under Preview). Without it PDFs keep their icon.
 settings-appearance-pdf-thumbs-desc-unix = First page of PDFs through pdfium (libpdfium.so next to the soyuz program, in the config folder, in the folder set under Preview or in a system library folder). Without it PDFs keep their icon.
 settings-appearance-icon-pack = Icon pack

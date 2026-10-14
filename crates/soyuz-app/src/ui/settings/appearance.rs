@@ -220,10 +220,11 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.appearance.folder_thumbnails);
             },
         );
-        let ff = crate::services::thumb_video::ffmpeg_path();
-        let video_desc = match &ff {
-            Some(p) => tr!("settings-appearance-video-thumbs-desc", path = p.display().to_string()),
-            None => tr!("settings-appearance-video-thumbs-missing").to_string(),
+        let video_desc = match crate::services::media::status().state {
+            crate::services::media::State::Loaded(i) => {
+                tr!("settings-appearance-video-thumbs-desc", version = i.version_line())
+            }
+            _ => tr!("settings-appearance-video-thumbs-missing").to_string(),
         };
         r.row_kw(tr!("settings-appearance-video-thumbs"), &video_desc, "ffmpeg movie mp4 frame", |ui| {
             switch(ui, &mut d.appearance.video_thumbnails);

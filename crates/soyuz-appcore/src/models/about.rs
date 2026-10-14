@@ -1,6 +1,6 @@
 //! The About dialog's facts (Phase T7, agent A): version, commit, build, platform,
-//! renderer, config folder and memory, and the "Copy info" text, for the GUI's
-//! `AboutDialog` and the terminal UI's `TuiDialog::About`.
+//! renderer, FFmpeg libraries, config folder and memory, and the "Copy info" text, for
+//! the GUI's `AboutDialog` and the terminal UI's `TuiDialog::About`.
 
 /// `(label, value)` facts copied by "Copy info" (English, for bug reports). `renderer`:
 /// the GUI's wgpu / glow backend, or the terminal UI's colour depth and icons.
@@ -11,6 +11,7 @@ pub fn facts(renderer: &str) -> Vec<(&'static str, String)> {
         ("Build", if cfg!(debug_assertions) { "debug".into() } else { "release".into() }),
         ("Platform", format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)),
         ("Renderer", renderer.to_string()),
+        ("FFmpeg", crate::services::media::about_line()),
         ("Config", soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir()).display().to_string()),
         ("Memory", memory_line()),
     ]
@@ -23,10 +24,17 @@ pub fn fact_label(key: &str) -> &'static str {
         "Build" => tr!("dialogs-about-build"),
         "Platform" => tr!("dialogs-about-platform"),
         "Renderer" => tr!("dialogs-about-renderer"),
+        "FFmpeg" => tr!("dialogs-about-ffmpeg"),
         "Config" => tr!("dialogs-about-config"),
         "Memory" => tr!("dialogs-about-memory"),
         _ => tr!("dialogs-about-version"),
     }
+}
+
+/// The FFmpeg attribution the LGPL asks for ("This software uses libraries from the
+/// FFmpeg project under the LGPLv2.1"), shown under the license line.
+pub fn ffmpeg_notice() -> &'static str {
+    tr!("dialogs-about-ffmpeg-license")
 }
 
 /// Cache memory: thumbnails and previews (decoded bytes).
@@ -51,14 +59,17 @@ mod tests {
     fn facts_cover_the_build_and_copy_as_lines() {
         let f = facts("tui");
         let keys: Vec<&str> = f.iter().map(|(k, _)| *k).collect();
-        assert_eq!(keys, ["Version", "Commit", "Build", "Platform", "Renderer", "Config", "Memory"]);
+        assert_eq!(keys, ["Version", "Commit", "Build", "Platform", "Renderer", "FFmpeg", "Config", "Memory"]);
         assert_eq!(f[1].1, crate::GIT_SHA);
         assert_eq!(f[4].1, "tui");
+        assert!(!f[5].1.is_empty(), "the FFmpeg line always says something");
         let text = copy_text(&f);
         assert!(text.starts_with("Soyuz\nVersion: "), "{text}");
         assert!(text.contains(&format!("Commit: {}", crate::GIT_SHA)));
+        assert!(text.contains("\nFFmpeg: "));
         for k in keys {
             assert!(!fact_label(k).is_empty());
         }
+        assert!(ffmpeg_notice().contains("FFmpeg") && ffmpeg_notice().contains("LGPL"));
     }
 }
