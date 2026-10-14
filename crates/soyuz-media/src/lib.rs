@@ -40,12 +40,14 @@ use std::time::SystemTime;
 pub(crate) mod sys;
 
 pub mod audio;
+pub(crate) mod clock;
 pub(crate) mod decode;
 pub mod fixtures;
 pub mod frame;
 pub mod info;
 pub mod player;
 pub mod presets;
+pub(crate) mod queue;
 pub mod transcode;
 
 pub use audio::{AudioReader, peaks};
