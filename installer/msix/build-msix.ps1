@@ -10,8 +10,12 @@
     Sign the result with a certificate whose Subject equals -Publisher:
         signtool sign /fd SHA256 /f cert.pfx /p <password> dist/soyuz-<ver>-windows-x64.msix
 
+    -FfmpegDir <folder> stages the FFmpeg runtime too (every *.dll in the package root next
+    to soyuz.exe, LICENSE.md / BUILD.txt / SOURCES.txt under ffmpeg\); the in-app runtime
+    download is hidden inside MSIX, so the package is the only way to get it.
+
 .EXAMPLE
-    ./installer/msix/build-msix.ps1 -Publisher "CN=Soyuz Dev"
+    ./installer/msix/build-msix.ps1 -Publisher "CN=Soyuz Dev" -FfmpegDir ffmpeg-rt
 #>
 [CmdletBinding()]
 param(
@@ -19,6 +23,7 @@ param(
     [string]$OutDir = "dist",
     [string]$Publisher = "CN=Soyuz Contributors",
     [string]$MakeAppx = "",
+    [string]$FfmpegDir = "",
     [switch]$DryRun
 )
 
@@ -33,18 +38,31 @@ try {
             Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
     }
     $msix = Join-Path $OutDir "soyuz-$version-windows-x64.msix"
+    $ffmpegDlls = @()
+    if ($FfmpegDir) { $ffmpegDlls = @(Get-ChildItem -Path $FfmpegDir -File -Filter "*.dll" -ErrorAction SilentlyContinue | Sort-Object Name) }
     Write-Host "MSIX $pkgVersion ($Publisher) -> $msix using $MakeAppx"
+    if ($FfmpegDir) { Write-Host "ffmpeg runtime: $(($ffmpegDlls | ForEach-Object { $_.Name }) -join ', ') + ffmpeg/LICENSE.md, BUILD.txt, SOURCES.txt from $FfmpegDir" }
     if ($DryRun) { Write-Host "dry run: nothing built"; return }
     if (-not $MakeAppx -or -not (Test-Path $MakeAppx)) { throw "makeappx.exe not found (install the Windows 10/11 SDK)" }
     $exes = @((Join-Path $BinDir "soyuz.exe"), (Join-Path $BinDir "soyuz-tui.exe"))
     foreach ($exe in $exes) {
         if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app -p soyuz-tui first)" }
     }
+    if ($FfmpegDir -and $ffmpegDlls.Count -eq 0) { throw "no *.dll in -FfmpegDir $FfmpegDir" }
 
     $stage = Join-Path $OutDir "msix-stage"
     if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
     New-Item -ItemType Directory -Force (Join-Path $stage "Assets") | Out-Null
     Copy-Item $exes[0], $exes[1], README.md, LICENSE, THIRD-PARTY-NOTICES.md $stage
+    if ($FfmpegDir) {
+        $ffmpegDlls | ForEach-Object { Copy-Item $_.FullName $stage }
+        New-Item -ItemType Directory -Force (Join-Path $stage "ffmpeg") | Out-Null
+        foreach ($doc in @("LICENSE.md", "BUILD.txt", "SOURCES.txt")) {
+            $src = Join-Path $FfmpegDir $doc
+            if (-not (Test-Path $src)) { throw "missing $src" }
+            Copy-Item $src (Join-Path $stage "ffmpeg")
+        }
+    }
     (Get-Content installer/msix/AppxManifest.xml -Raw) -replace '@VERSION@', $pkgVersion -replace '@PUBLISHER@', [Security.SecurityElement]::Escape($Publisher) |
         Set-Content -Encoding utf8 (Join-Path $stage "AppxManifest.xml")
 

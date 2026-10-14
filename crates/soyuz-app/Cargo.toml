@@ -110,6 +110,15 @@ assets = [
     ["../../installer/linux/icons/hicolor/512x512/apps/soyuz.png", "usr/share/icons/hicolor/512x512/apps/soyuz.png", "644"],
     ["../../installer/linux/io.github.ulaas.Soyuz.metainfo.xml", "usr/share/metainfo/io.github.ulaas.Soyuz.metainfo.xml", "644"],
     ["../../README.md", "usr/share/doc/soyuz/README.md", "644"],
+    # The FFmpeg runtime (docs/RELEASING.md, "FFmpeg runtime"): `cargo deb` needs the Linux
+    # runtime unpacked into ffmpeg-rt/ at the repository root first (the ffmpeg-linux64 CI
+    # artifact or ffmpeg-runtime-<ver>-linux-x86_64.tar.xz); the glob must match. /usr/lib/soyuz
+    # is where the exe looks (<exe dir>/../lib/soyuz). Mode 644: `$auto` (dpkg-shlibdeps) does
+    # not scan non-executables, so the package neither provides nor requires the sonames.
+    ["../../ffmpeg-rt/lib*.so.*", "usr/lib/soyuz/", "644"],
+    ["../../ffmpeg-rt/LICENSE.md", "usr/share/doc/soyuz/ffmpeg/LICENSE.md", "644"],
+    ["../../ffmpeg-rt/BUILD.txt", "usr/share/doc/soyuz/ffmpeg/BUILD.txt", "644"],
+    ["../../ffmpeg-rt/SOURCES.txt", "usr/share/doc/soyuz/ffmpeg/SOURCES.txt", "644"],
 ]
 
 # `cargo bundle -p soyuz-app --release` (macOS .app, also .deb / .msi via cargo-bundle).

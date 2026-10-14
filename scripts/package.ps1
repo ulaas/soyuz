@@ -13,6 +13,12 @@
 
     -Msi also builds the Windows installer (installer/windows/build-msi.ps1, needs WiX v5).
 
+    -FfmpegDir <folder> adds the FFmpeg runtime (the output of scripts/ffmpeg-build.sh, or an
+    unpacked ffmpeg-runtime-<ver>-<os>-<arch> archive): the five libraries go next to the
+    executables (*.dll / *.dylib / lib*.so.*; the first place soyuz-media looks after
+    [media] ffmpeg_dir) and LICENSE.md, BUILD.txt, SOURCES.txt under ffmpeg/. Also passed on
+    to the MSI. Without it the package has no runtime (videos show metadata only).
+
     Every artifact gets a `<file>.sha256` next to it, and dist/SHA256SUMS-<os>.txt lists
     them all in `sha256sum` format (what the in-app update check verifies against).
 
@@ -22,7 +28,7 @@
 .EXAMPLE
     ./scripts/package.ps1
     ./scripts/package.ps1 -Portable -Features glow
-    ./scripts/package.ps1 -Msi -SkipBuild
+    ./scripts/package.ps1 -Msi -SkipBuild -FfmpegDir ffmpeg-rt
     ./scripts/package.ps1 -DryRun -Portable -Msi
 #>
 [CmdletBinding()]
@@ -33,6 +39,7 @@ param(
     [string]$OutDir = "dist",
     [switch]$Msi,
     [string]$Wix = "",
+    [string]$FfmpegDir = "",
     [switch]$SkipBuild,
     [switch]$DryRun
 )
@@ -68,6 +75,18 @@ try {
         @("docs/USER_GUIDE.md", "docs/USER_GUIDE.md"),
         @("docs/config.example.toml", "docs/config.example.toml")
     )
+    # The FFmpeg runtime: libraries flat next to the executables, licence texts under ffmpeg/.
+    if ($FfmpegDir) {
+        $libPattern = if ($isWin) { "*.dll" } elseif ($IsMacOS) { "*.dylib" } else { "lib*.so.*" }
+        $libs = @(Get-ChildItem -Path $FfmpegDir -File -Filter $libPattern | Sort-Object Name)
+        if ($libs.Count -eq 0) { throw "no $libPattern in -FfmpegDir $FfmpegDir" }
+        foreach ($l in $libs) { $files += , @($l.FullName, $l.Name) }
+        foreach ($doc in @("LICENSE.md", "BUILD.txt", "SOURCES.txt")) {
+            $src = Join-Path $FfmpegDir $doc
+            if (-not (Test-Path $src)) { throw "missing $src (the runtime folder carries its licence texts)" }
+            $files += , @($src, "ffmpeg/$doc")
+        }
+    }
 
     $cargoArgs = @("build", "--release", "-p", "soyuz-app", "-p", "soyuz-tui", "--locked")
     if ($Features) {
@@ -84,7 +103,7 @@ try {
         if ($Portable) { Write-Host ("  {0,-28} (empty marker: settings in portable-data/)" -f "portable") }
         if ($Msi) {
             Write-Host "msi:"
-            & (Join-Path $PSScriptRoot "../installer/windows/build-msi.ps1") -OutDir $OutDir -Wix $Wix -DryRun
+            & (Join-Path $PSScriptRoot "../installer/windows/build-msi.ps1") -OutDir $OutDir -Wix $Wix -FfmpegDir $FfmpegDir -DryRun
         }
         Write-Host "checksums: <artifact>.sha256 and $sums"
         Write-Host "dry run: nothing built or written"
@@ -123,7 +142,7 @@ try {
 
     if ($Msi) {
         if (-not $isWin) { throw "-Msi is Windows-only" }
-        & (Join-Path $PSScriptRoot "../installer/windows/build-msi.ps1") -OutDir $OutDir -Wix $Wix
+        & (Join-Path $PSScriptRoot "../installer/windows/build-msi.ps1") -OutDir $OutDir -Wix $Wix -FfmpegDir $FfmpegDir
         $artifacts += (Join-Path $OutDir "soyuz-$version-windows-$arch.msi")
     }
 

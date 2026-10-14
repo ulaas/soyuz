@@ -118,6 +118,113 @@ Linux in-place updater (`services/updates.rs`) replaces both from the tarball.
   need `libasound2-dev` (audio preview via rodio / cpal / ALSA) besides the X11 / Wayland /
   GL / fontconfig dev packages.
 
+## FFmpeg runtime
+
+Soyuz loads FFmpeg as shared libraries at run time (`crates/soyuz-media`; Phase V). The
+libraries are **our own LGPL-2.1 build**, made by `scripts/ffmpeg-build.sh` from the
+tarballs pinned in `third_party/ffmpeg/pins.env` (FFmpeg 9.0.x, dav1d, libopus, libvpx,
+the NVIDIA / AMD / Intel header-only SDKs; `third_party/ffmpeg/README.md` has the table),
+and every artifact carries them:
+
+| Package | Libraries | Licence texts (`LICENSE.md`, `BUILD.txt`, `SOURCES.txt`) |
+|---|---|---|
+| Windows zip / portable zip / MSI / MSIX | next to `soyuz.exe` (`avutil-61.dll`, `swresample-7.dll`, `swscale-10.dll`, `avcodec-63.dll`, `avformat-63.dll`) | `ffmpeg\` |
+| Linux tarball / rpm / deb | `lib/soyuz/libav*.so.NN` (`%{_libdir}/soyuz/` in the rpm, `/usr/lib/soyuz/` in the deb); the exe looks in `<exe dir>/../lib/soyuz` and `../lib64/soyuz` | `share/licenses/soyuz/ffmpeg/` |
+| macOS tarball (unsigned) | next to `soyuz` (`libav*.NN.dylib`, install names `@rpath/…` + `LC_RPATH @loader_path`) | `ffmpeg/` |
+| macOS `Soyuz.app` (signed) | `Contents/Frameworks/` | `Contents/Resources/ffmpeg/` |
+| Flatpak | none: the 25.08 runtime's FFmpeg 7.1 plus `codecs-extra` (searched first inside the sandbox) | — |
+
+`scripts/package.ps1 -FfmpegDir <dir>`, `scripts/package.sh --ffmpeg-dir <dir>`,
+`installer/windows/build-msi.ps1 -FfmpegDir` and `installer/msix/build-msix.ps1 -FfmpegDir`
+take the folder (the output of the build script or an unpacked runtime archive) and fail
+when it lacks the libraries or the three texts; without the option the package has no
+runtime. `cargo deb` expects it unpacked in `ffmpeg-rt/` at the repository root.
+
+### CI and the cache
+
+- **`ffmpeg` job** (`ci.yml` and `release.yml`, three targets: `linux64` and `win64` on
+  Ubuntu — Windows is a mingw-w64 cross build — and `macos-universal` on the arm64 runner,
+  arm64 + x86_64 slices joined with `lipo`). `actions/cache` is keyed on
+  `hashFiles('third_party/ffmpeg/pins.env', 'scripts/ffmpeg-build.sh')`: a pin or script
+  change rebuilds (10–20 minutes per target), otherwise the cache is restored in seconds.
+  A manual run (*Run workflow*) has a `rebuild_ffmpeg` switch that ignores the cache. The
+  job uploads `ffmpeg-<target>` artifacts (the libraries, the texts, `include/` for the
+  layout probe) and `ffmpeg-sources` (every input archive).
+- **`media` job** (`ci.yml`): downloads the artifact and runs
+  `SOYUZ_FFMPEG_DIR=… SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs`
+  on all three OSes (a missing runtime is a failure, not a skip), after the layout oracle:
+  `third_party/ffmpeg/layout_probe.c` compiled against the built headers prints the C
+  `offsetof()` of every field `soyuz-media` reads, and `SOYUZ_FFMPEG_LAYOUT=<json> cargo test
+  -p soyuz-media -- layout` compares them with the Rust prefix structs.
+- **`media-v7` job**: the same crate tests against Debian 13's FFmpeg 7.1 runtime packages
+  (`container: debian:trixie`, `libavcodec61` et al.; the `-dev` headers are installed only
+  afterwards, for the C probe). Ubuntu's own packages are not used (24.04 ships 6.1, which
+  Soyuz refuses by design).
+- The `package` job (pushes to `main` / `phase-*`) and every `release.yml` job take the
+  artifact and pass `-FfmpegDir` / `--ffmpeg-dir`; the Linux release job also checks the
+  tarball layout (`lib/soyuz/libavcodec.so.NN`, the texts) and that the rpm neither
+  provides nor requires the bundled sonames (`__provides_exclude_from`, `__requires_exclude`
+  in `soyuz.spec`; libva / libdrm stay ordinary requires of the VAAPI build).
+
+### The separate `ffmpeg-runtime-<version>` release
+
+The `publish` job never attaches FFmpeg files to the app release (an older Soyuz's update
+check matches assets by OS / arch words, and `services::updates::pick_asset` only takes
+`soyuz-<version>-…` names since 0.3.3). Instead it creates or updates the release
+**`ffmpeg-runtime-<FFMPEG_VERSION>`** (`gh release create … --latest=false`, so
+`/releases/latest` keeps pointing at the app) with:
+
+- `ffmpeg-runtime-<ver>-windows-x64.zip`, `…-linux-x86_64.tar.xz`, `…-macos-universal.tar.xz`:
+  the five libraries plus `LICENSE.md`, `BUILD.txt`, `SOURCES.txt`;
+- every input source archive from `pins.env` (`ffmpeg-<ver>.tar.xz` and its `.asc`, dav1d,
+  opus, libvpx, nv-codec-headers, libvpl, `AMF-headers-<commit>.tar.gz`), `BUILD-<target>.txt`,
+  `LICENSE.md`, `SOURCES.txt` and `SHA256SUMS.txt`.
+
+That release is the LGPL "complete corresponding source" offer and the place users (and the
+in-app runtime download, Phase V4c) get replacement libraries from. It is published
+immediately (not a draft); app releases stay drafts for review.
+
+### Updating the pins
+
+1. Pick the newest point release of the 9.0 line (https://ffmpeg.org/releases/; point
+   releases are mostly security fixes for demuxers and decoders that run on untrusted
+   files, so do not fall behind). A new *major* also needs a layout table in
+   `soyuz-media/src/sys/layout.rs`, `FFMPEG_MAJORS` in `pins.env` and the version row in
+   `Majors`.
+2. Download the tarball and its `.asc`, verify (`gpg --verify`; key
+   `FCF986EA15E6E293A5644F10B4322F04D67658D8`), `sha256sum` both, and write version, URL and
+   sums into `pins.env`. Same for dav1d / opus / libvpx / nv-codec-headers / libvpl; AMF is
+   pinned by tag **and commit** (sparse checkout; read the commit from
+   `https://api.github.com/repos/GPUOpen-LibrariesAndSDKs/AMF/git/refs/tags/v<ver>`).
+3. Push: the cache key changes, the `ffmpeg` job rebuilds, the `media` job proves the
+   libraries on all three OSes. Note the bump in `CHANGELOG.md`; the next tagged app release
+   publishes the new `ffmpeg-runtime-<ver>` release.
+
+Locally, `scripts/ffmpeg-build.sh <target> <out dir> --dry-run` prints the full plan
+(inputs, sums, every configure line) without touching the network, and the real build runs
+on any Linux box with the tools listed in the script's header (Windows DLLs are
+cross-compiled from Linux; macOS needs an Apple-silicon Mac with Xcode's command-line
+tools and `brew install nasm meson ninja pkgconf`).
+
+### Checking LGPL compliance of a build
+
+- `BUILD.txt` must show `avcodec_configuration()` without `--enable-gpl`,
+  `--enable-nonfree` or `--enable-version3` (the script fails otherwise; FFmpeg's own
+  `LICENSE.md` lists what each switch would pull in).
+- The libraries are loaded dynamically and replaceable (see the table above and the
+  `disable-library-validation` entitlement in `installer/macos/entitlements.plist`), which
+  is the LGPL 2.1 §6 "relinking" condition.
+- The corresponding source is on the runtime release; `SOURCES.txt` lists every archive
+  with its SHA-256 and `sha256sum -c SOURCES.txt` checks a download.
+- `THIRD-PARTY-NOTICES.md` ("FFmpeg libraries") and `LICENSE.md` next to the libraries
+  carry the LGPL-2.1 text, the dav1d / Opus / libvpx BSD notices, the MIT notices of the
+  header-only SDKs and the patent note (wording from https://ffmpeg.org/legal.html); the
+  About dialog names the loaded versions. Always spell the project name "FFmpeg".
+- Windows DLLs may import only Windows system DLLs and each other (the script's objdump
+  gate: libgcc, libstdc++, winpthread and zlib are linked statically); Linux libraries carry
+  `RUNPATH $ORIGIN`; macOS dylibs are universal, `@rpath` + `@loader_path`, and signed
+  (ad-hoc by the script, with the Developer ID by the release job, before the app).
+
 ## Changelog
 
 `CHANGELOG.md` is generated from `git log`, grouped by commit prefix the same way as

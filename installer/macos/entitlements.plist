@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements of the signed Soyuz.app (release.yml, "codesign (hardened runtime)";
+  docs/RELEASING.md, "FFmpeg runtime").
+
+  com.apple.security.cs.disable-library-validation: with the hardened runtime, the app may
+  load dynamic libraries that are not signed with its own Team ID. Soyuz needs it for a
+  user-supplied FFmpeg runtime (`[media] ffmpeg_dir`, `~/Library/Application Support/soyuz/
+  ffmpeg`) and for pdfium next to the app; the bundled libraries in Contents/Frameworks are
+  signed with the same identity and would load without it. A standard entitlement for
+  plug-in hosts; notarization accepts it.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

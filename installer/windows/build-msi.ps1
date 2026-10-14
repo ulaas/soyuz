@@ -15,9 +15,15 @@
     The MSI version is the numeric part of the workspace version (MSI versions cannot carry
     a pre-release tag): 0.3.0-rc.1 -> 0.3.0.
 
+    -FfmpegDir <folder> installs the FFmpeg runtime (the output of scripts/ffmpeg-build.sh or
+    an unpacked ffmpeg-runtime-<ver>-windows-x64.zip): every *.dll next to soyuz.exe and
+    LICENSE.md / BUILD.txt / SOURCES.txt under ffmpeg\ (soyuz.wxs, FfmpegDir). Without it
+    the MSI carries no runtime.
+
 .EXAMPLE
     ./installer/windows/build-msi.ps1                       # after cargo build --release
     ./installer/windows/build-msi.ps1 -UI -Wix C:\tools\wix.exe
+    ./installer/windows/build-msi.ps1 -FfmpegDir ffmpeg-rt
     ./installer/windows/build-msi.ps1 -DryRun
 #>
 [CmdletBinding()]
@@ -26,6 +32,7 @@ param(
     [string]$OutDir = "dist",
     [string]$Wix = "",
     [string]$Arch = "x64",
+    [string]$FfmpegDir = "",
     [switch]$UI,
     [switch]$DryRun
 )
@@ -60,9 +67,16 @@ try {
         $rtf = Join-Path $obj "license.rtf"
         $wixArgs += @("-ext", "WixToolset.UI.wixext", "-d", "UseUI=1", "-d", "LicenseRtf=$rtf")
     }
+    $ffmpegDlls = @()
+    if ($FfmpegDir) {
+        $ffmpegAbs = (Resolve-Path $FfmpegDir -ErrorAction SilentlyContinue) ?? $FfmpegDir
+        $ffmpegDlls = @(Get-ChildItem -Path $FfmpegDir -File -Filter "*.dll" -ErrorAction SilentlyContinue | Sort-Object Name | ForEach-Object { $_.Name })
+        $wixArgs += @("-d", "FfmpegDir=$ffmpegAbs")
+    }
 
     Write-Host "MSI $msiVersion -> $msi"
     Write-Host "files: $($exes -join ', ') + docs from $wxs"
+    if ($FfmpegDir) { Write-Host "ffmpeg runtime: $($ffmpegDlls -join ', ') + ffmpeg/LICENSE.md, BUILD.txt, SOURCES.txt from $FfmpegDir" } else { Write-Host "ffmpeg runtime: none (-FfmpegDir not given)" }
     Write-Host "$Wix $($wixArgs -join ' ')"
     if ($DryRun) {
         Write-Host "dry run: nothing built"
@@ -70,6 +84,12 @@ try {
     }
     foreach ($exe in $exes) {
         if (-not (Test-Path $exe)) { throw "missing $exe (run cargo build --release -p soyuz-app -p soyuz-tui first)" }
+    }
+    if ($FfmpegDir) {
+        if ($ffmpegDlls.Count -eq 0) { throw "no *.dll in -FfmpegDir $FfmpegDir" }
+        foreach ($doc in @("LICENSE.md", "BUILD.txt", "SOURCES.txt")) {
+            if (-not (Test-Path (Join-Path $FfmpegDir $doc))) { throw "missing $doc in -FfmpegDir $FfmpegDir" }
+        }
     }
 
     if ($UI) {

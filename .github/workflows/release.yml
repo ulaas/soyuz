@@ -13,12 +13,21 @@
 # Without the Windows secrets the Windows artifacts are published unsigned, with a warning. The
 # signed macOS job runs only when all macOS secrets are present (otherwise an unsigned
 # arm64 tarball is built); Linux gets an x86_64 PREFIX tarball and an .rpm.
+# Every artifact also carries the FFmpeg runtime (the five LGPL libraries built by the
+# `ffmpeg` job, cached per pin change), and the `publish` job puts the same libraries, the
+# input source archives and the build record on their OWN release, `ffmpeg-runtime-<ffver>`
+# (never on the app release: an older Soyuz's update check must not mistake them for the app).
 name: Release
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      rebuild_ffmpeg:
+        description: "Rebuild the FFmpeg runtime even if the cache has one for these pins"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -27,6 +36,69 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Mirror of the `ffmpeg` job in ci.yml (same cache key, so a release normally restores
+  # what CI built). See scripts/ffmpeg-build.sh and docs/RELEASING.md, "FFmpeg runtime".
+  ffmpeg:
+    name: FFmpeg runtime (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux64, os: ubuntu-latest }
+          - { target: win64, os: ubuntu-latest }
+          - { target: macos-universal, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      OUT: ffmpeg-out/${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore the runtime for these pins
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ffmpeg-out/${{ matrix.target }}
+          key: ffmpeg-${{ matrix.target }}-${{ hashFiles('third_party/ffmpeg/pins.env', 'scripts/ffmpeg-build.sh') }}${{ inputs.rebuild_ffmpeg == true && format('-{0}', github.run_id) || '' }}
+      - name: Install the build tools (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl ca-certificates git tar xz-utils gnupg \
+            nasm meson ninja-build pkg-config cmake patchelf binutils \
+            zlib1g-dev libva-dev libdrm-dev \
+            mingw-w64 libz-mingw-w64-dev
+      - name: Install the build tools (macOS)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        run: brew install nasm meson ninja pkgconf
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          bash scripts/ffmpeg-build.sh "${{ matrix.target }}" "$OUT" \
+            --work "$RUNNER_TEMP/ffmpeg-work" --downloads "$RUNNER_TEMP/ffmpeg-downloads"
+      - name: Show the build record
+        shell: bash
+        run: |
+          ls -la "$OUT"
+          cat "$OUT/BUILD.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: |
+            ffmpeg-out/${{ matrix.target }}
+            !ffmpeg-out/${{ matrix.target }}/sources
+            !ffmpeg-out/${{ matrix.target }}/layout_probe*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.target == 'linux64'
+        with:
+          name: ffmpeg-sources
+          path: ffmpeg-out/linux64/sources
+          if-no-files-found: error
+
   # Job-level `if:` cannot read secrets directly, so expose "is it configured" as outputs.
   signing-config:
     name: Detect signing secrets
@@ -56,7 +128,7 @@ jobs:
 
   windows:
     name: Windows x64 (Authenticode ${{ needs.signing-config.outputs.windows == 'true' && 'signed' || 'UNSIGNED' }})
-    needs: signing-config
+    needs: [signing-config, ffmpeg]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,12 +139,18 @@ jobs:
         # Pinned to v5 (MS-RL). WiX v6+ needs the OSMF EULA accepted; see installer/windows/build-msi.ps1.
         shell: pwsh
         run: dotnet tool install --global wix --version 5.0.2
+      # The FFmpeg runtime DLLs (ffmpeg job, mingw cross build) go next to soyuz.exe in
+      # every artifact; package.ps1 / build-msi.ps1 take the folder.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-win64
+          path: ffmpeg-rt
 
       - name: Build soyuz.exe and soyuz-tui.exe
         shell: pwsh
         run: cargo build --release -p soyuz-app -p soyuz-tui --locked
 
-      - name: Authenticode-sign soyuz.exe and soyuz-tui.exe (skeleton, needs a code-signing certificate)
+      - name: Authenticode-sign soyuz.exe, soyuz-tui.exe and the FFmpeg DLLs (skeleton, needs a code-signing certificate)
         if: needs.signing-config.outputs.windows == 'true'
         shell: pwsh
         env:
@@ -82,12 +160,14 @@ jobs:
         run: |
           ./scripts/sign-windows.ps1 target/release/soyuz.exe
           ./scripts/sign-windows.ps1 target/release/soyuz-tui.exe
+          # Our own LGPL build, signed like the exe (a replacement runtime loads unsigned too).
+          Get-ChildItem ffmpeg-rt/*.dll | ForEach-Object { ./scripts/sign-windows.ps1 $_.FullName }
 
       - name: Package (zip, portable zip, MSI)
         shell: pwsh
         run: |
-          ./scripts/package.ps1 -SkipBuild -Msi
-          ./scripts/package.ps1 -SkipBuild -Portable
+          ./scripts/package.ps1 -SkipBuild -Msi -FfmpegDir ffmpeg-rt
+          ./scripts/package.ps1 -SkipBuild -Portable -FfmpegDir ffmpeg-rt
 
       - name: Authenticode-sign the MSI (skeleton)
         if: needs.signing-config.outputs.windows == 'true'
@@ -132,6 +212,7 @@ jobs:
   # Unsigned. See docs/RELEASING.md, "Linux".
   linux:
     name: Linux x86_64 (tarball + rpm)
+    needs: ffmpeg
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -150,16 +231,37 @@ jobs:
         run: |
           desktop-file-validate crates/soyuz-app/assets/soyuz.desktop
           appstreamcli validate --no-net installer/linux/io.github.ulaas.Soyuz.metainfo.xml
+      # The FFmpeg runtime (ffmpeg job): lib/soyuz/ in the tarball, %{_libdir}/soyuz/ in the rpm.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-linux64
+          path: ffmpeg-rt
       - name: Build and package (tarball + rpm)
-        run: ./scripts/package.sh --rpm
+        run: ./scripts/package.sh --rpm --ffmpeg-dir ffmpeg-rt
       - name: Check the tarball layout
         run: |
           set -euo pipefail
           tar -tzf dist/soyuz-*-linux-x86_64.tar.gz | sed 's|^[^/]*/||' | sort > "$RUNNER_TEMP/layout.txt"
           for f in bin/soyuz bin/soyuz-tui share/applications/soyuz.desktop share/icons/hicolor/256x256/apps/soyuz.png \
-                   share/metainfo/io.github.ulaas.Soyuz.metainfo.xml share/licenses/soyuz/LICENSE; do
+                   share/metainfo/io.github.ulaas.Soyuz.metainfo.xml share/licenses/soyuz/LICENSE \
+                   share/licenses/soyuz/ffmpeg/LICENSE.md share/licenses/soyuz/ffmpeg/BUILD.txt; do
             grep -qxF "$f" "$RUNNER_TEMP/layout.txt" || { echo "::error::tarball is missing $f"; exit 1; }
           done
+          # The five libraries by soname (the exe looks in <exe dir>/../lib/soyuz).
+          for lib in avutil swresample swscale avcodec avformat; do
+            grep -qE "^lib/soyuz/lib$lib\.so\.[0-9]+$" "$RUNNER_TEMP/layout.txt" || { echo "::error::tarball is missing lib/soyuz/lib$lib.so.N"; exit 1; }
+          done
+      - name: Check the rpm's dependencies
+        # The private libraries must neither be provided (they are not in the ld.so path)
+        # nor required (a user may replace them); libva / libdrm stay as ordinary requires.
+        run: |
+          set -euo pipefail
+          rpm -qp --provides dist/soyuz-*.rpm | tee "$RUNNER_TEMP/provides.txt"
+          rpm -qp --requires dist/soyuz-*.rpm | tee "$RUNNER_TEMP/requires.txt"
+          if grep -E '^lib(avcodec|avformat|avutil|swscale|swresample)\.so' "$RUNNER_TEMP/provides.txt" "$RUNNER_TEMP/requires.txt"; then
+            echo "::error::the rpm provides or requires the bundled FFmpeg sonames"; exit 1
+          fi
+          rpm -qpl dist/soyuz-*.rpm | grep -E '/soyuz/libavcodec\.so\.[0-9]+$'
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: soyuz-linux-x86_64
@@ -175,7 +277,7 @@ jobs:
   # secrets exist.
   macos-unsigned:
     name: macOS arm64 (UNSIGNED)
-    needs: signing-config
+    needs: [signing-config, ffmpeg]
     if: needs.signing-config.outputs.macos != 'true'
     runs-on: macos-latest
     steps:
@@ -183,9 +285,14 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      # The universal dylibs sit next to the binary in the tarball (@loader_path).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-macos-universal
+          path: ffmpeg-rt
       - name: Build and package
         shell: pwsh
-        run: ./scripts/package.ps1
+        run: ./scripts/package.ps1 -FfmpegDir ffmpeg-rt
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: soyuz-macos-arm64-unsigned
@@ -197,7 +304,7 @@ jobs:
 
   macos:
     name: macOS universal (signed + notarized)
-    needs: signing-config
+    needs: [signing-config, ffmpeg]
     # Runs only once Apple Developer ID credentials exist; see docs/RELEASING.md.
     if: needs.signing-config.outputs.macos == 'true'
     runs-on: macos-latest
@@ -210,6 +317,10 @@ jobs:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
       - name: Install cargo-bundle
         run: cargo install cargo-bundle --locked
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-macos-universal
+          path: ffmpeg-rt
       - name: Build .app bundle (skeleton)
         run: |
           set -euo pipefail
@@ -223,6 +334,13 @@ jobs:
           # bundle below); run it as Soyuz.app/Contents/MacOS/soyuz-tui.
           lipo -create -output "$APP/Contents/MacOS/soyuz-tui" \
             target/aarch64-apple-darwin/release/soyuz-tui target/x86_64-apple-darwin/release/soyuz-tui
+          # The FFmpeg runtime (universal dylibs, install names @rpath/…, LC_RPATH
+          # @loader_path): Contents/Frameworks is where the app looks (<exe>/../Frameworks).
+          # Its licence texts go to Contents/Resources/ffmpeg.
+          mkdir -p "$APP/Contents/Frameworks" "$APP/Contents/Resources/ffmpeg"
+          cp ffmpeg-rt/*.dylib "$APP/Contents/Frameworks/"
+          cp ffmpeg-rt/LICENSE.md ffmpeg-rt/BUILD.txt ffmpeg-rt/SOURCES.txt "$APP/Contents/Resources/ffmpeg/"
+          lipo -info "$APP/Contents/Frameworks/"*.dylib
           echo "APP=$APP" >> "$GITHUB_ENV"
 
       - name: Import Developer ID certificate into a temporary keychain
@@ -247,10 +365,20 @@ jobs:
           SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
         run: |
           set -euo pipefail
-          # Nested helper tool first (inside out), then the bundle.
+          # Inside out, every nested code object explicitly (Apple discourages --deep): the
+          # FFmpeg dylibs (replacing the build's ad-hoc signatures), the helper tool, then
+          # the bundle. The app gets installer/macos/entitlements.plist: with the hardened
+          # runtime, com.apple.security.cs.disable-library-validation lets it load a
+          # runtime the user supplied (config dir / [media] ffmpeg_dir) or pdfium; the
+          # bundled dylibs carry the same Team ID and would load without it.
+          for lib in "$APP"/Contents/Frameworks/*.dylib; do
+            codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$lib"
+          done
           codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP/Contents/MacOS/soyuz-tui"
-          codesign --force --deep --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
-          codesign --verify --strict --verbose=2 "$APP"
+          codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+            --entitlements installer/macos/entitlements.plist "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign --display --entitlements - "$APP" | grep -q disable-library-validation
 
       - name: Notarize and staple
         env:
@@ -288,18 +416,27 @@ jobs:
   # update check). Tags with a hyphen (v0.2.0-rc.1) become pre-releases.
   publish:
     name: Draft GitHub Release
-    needs: [windows, linux, macos-unsigned, macos]
+    needs: [ffmpeg, windows, linux, macos-unsigned, macos]
     if: >-
       always() && startsWith(github.ref, 'refs/tags/v') &&
-      needs.windows.result == 'success' && needs.linux.result == 'success'
+      needs.ffmpeg.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Only the app artifacts (soyuz-*) go on the app release.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          pattern: soyuz-*
           path: dist
           merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ffmpeg-*
+          path: runtime
       - name: Create draft release
         shell: bash
         env:
@@ -308,6 +445,58 @@ jobs:
         run: |
           set -euo pipefail
           ls -la dist
+          if ls dist | grep -q '^ffmpeg-'; then echo "::error::ffmpeg-* files must not be on the app release"; exit 1; fi
           flags=(--draft --generate-notes --title "Soyuz ${TAG#v}")
           [[ "$TAG" == *-* ]] && flags+=(--prerelease)
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" "${flags[@]}" dist/*
+
+      # The FFmpeg runtime on its own release, `ffmpeg-runtime-<ffver>`: one archive per OS
+      # (the five libraries, LICENSE.md, BUILD.txt, SOURCES.txt), every input source archive
+      # (LGPL: complete corresponding source) and a checksum list. Created the first time a
+      # pin version is released (never marked "latest": the app's update check reads
+      # /releases/latest) and updated with --clobber afterwards, so runtime rebuilds and app
+      # releases stay independent. Published immediately, not as a draft: the libraries in
+      # the app artifacts above are already public once the draft is published.
+      - name: Publish the FFmpeg runtime release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source <(tr -d '\r' < third_party/ffmpeg/pins.env)
+          tag="ffmpeg-runtime-$FFMPEG_VERSION"
+          out="$RUNNER_TEMP/runtime-dist"; rm -rf "$out"; mkdir -p "$out"
+          pack() { # <artifact folder> <archive name> <zip|tar.xz>
+            local src="$1" name="$2" kind="$3" stage="$RUNNER_TEMP/stage/$2"
+            rm -rf "$stage"; mkdir -p "$stage"
+            find "$src" -maxdepth 1 \( -name '*.dll' -o -name '*.dylib' -o -name 'lib*.so.*' \) -exec cp {} "$stage/" \;
+            cp "$src/LICENSE.md" "$src/BUILD.txt" "$src/SOURCES.txt" "$stage/"
+            [[ "$(find "$stage" -maxdepth 1 \( -name '*.dll' -o -name '*.dylib' -o -name 'lib*.so.*' \) | wc -l)" -eq 5 ]] || { echo "::error::$src does not hold five libraries"; exit 1; }
+            if [[ "$kind" == zip ]]; then (cd "$stage" && zip -q -X -r "$out/$name.zip" .)
+            else tar -C "$stage" --sort=name --owner=0 --group=0 --numeric-owner -cJf "$out/$name.tar.xz" .; fi
+            cp "$src/BUILD.txt" "$out/BUILD-$name.txt"
+          }
+          pack runtime/ffmpeg-win64 "ffmpeg-runtime-$FFMPEG_VERSION-windows-x64" zip
+          pack runtime/ffmpeg-linux64 "ffmpeg-runtime-$FFMPEG_VERSION-linux-x86_64" tar.xz
+          pack runtime/ffmpeg-macos-universal "ffmpeg-runtime-$FFMPEG_VERSION-macos-universal" tar.xz
+          cp runtime/ffmpeg-linux64/LICENSE.md runtime/ffmpeg-linux64/SOURCES.txt "$out/"
+          cp runtime/ffmpeg-sources/* "$out/"
+          (cd "$out" && sha256sum -- * > SHA256SUMS.txt)
+          ls -la "$out"
+          notes="$RUNNER_TEMP/runtime-notes.md"
+          {
+            echo "FFmpeg $FFMPEG_VERSION shared libraries built by Soyuz under the LGPL-2.1-or-later"
+            echo "(\`scripts/ffmpeg-build.sh\`, no GPL / non-free parts, dav1d $DAV1D_VERSION, libopus $OPUS_VERSION,"
+            echo "libvpx $LIBVPX_VERSION, hardware encoders through the vendors' headers). Soyuz ships these"
+            echo "libraries inside every app artifact; this release holds them separately for replacing"
+            echo "or adding them (unpack into \`<config dir>/ffmpeg\` or the folder of \`[media] ffmpeg_dir\`),"
+            echo "together with every input source archive (\`SOURCES.txt\`), the exact build commands"
+            echo "(\`BUILD-*.txt\`) and the licence texts (\`LICENSE.md\`). Not a Soyuz release: the app is"
+            echo "on the \`v*\` tags."
+          } > "$notes"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" --repo "$GITHUB_REPOSITORY" --clobber "$out"/*
+          else
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --latest=false \
+              --title "FFmpeg runtime $FFMPEG_VERSION" --notes-file "$notes" "$out"/*
+          fi

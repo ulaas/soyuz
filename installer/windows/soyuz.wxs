@@ -16,9 +16,14 @@
     e.g.  msiexec /i soyuz.msi ADDLOCAL=Main,ContextMenu,AddToPath /qn
 
   Preprocessor variables (passed by build-msi.ps1):
-    Version   numeric x.y.z
-    BinDir    folder with soyuz.exe and soyuz-tui.exe
-    RootDir   repository root (README, licenses, docs, icon)
+    Version    numeric x.y.z
+    BinDir     folder with soyuz.exe and soyuz-tui.exe
+    RootDir    repository root (README, licenses, docs, icon)
+    FfmpegDir  (optional) the FFmpeg runtime: every *.dll in it is installed next to
+               soyuz.exe (one component per file, harvested at build time, so a new FFmpeg
+               major needs no edit here) and LICENSE.md / BUILD.txt / SOURCES.txt under
+               ffmpeg\. When the variable is set the files are required; without it the MSI
+               has no runtime (videos show metadata only). Release builds always set it.
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
@@ -45,6 +50,7 @@
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="Soyuz">
         <Directory Id="DocsFolder" Name="docs" />
+        <Directory Id="FfmpegDocsFolder" Name="ffmpeg" />
       </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
@@ -74,6 +80,23 @@
         <File Source="$(var.RootDir)\docs\config.example.toml" KeyPath="yes" />
       </Component>
     </ComponentGroup>
+
+    <!-- ===== FFmpeg runtime (LGPL-2.1-or-later, loaded at run time; see ffmpeg\LICENSE.md) ===== -->
+    <?ifdef FfmpegDir ?>
+    <ComponentGroup Id="FfmpegRuntime" Directory="INSTALLFOLDER">
+      <!-- avutil-NN.dll, swresample-NN.dll, swscale-NN.dll, avcodec-NN.dll, avformat-NN.dll -->
+      <Files Include="$(var.FfmpegDir)\*.dll" />
+      <Component Id="FfmpegLicense" Directory="FfmpegDocsFolder" Guid="*">
+        <File Id="FfmpegLicenseFile" Source="$(var.FfmpegDir)\LICENSE.md" KeyPath="yes" />
+      </Component>
+      <Component Id="FfmpegBuildRecord" Directory="FfmpegDocsFolder" Guid="*">
+        <File Id="FfmpegBuildFile" Source="$(var.FfmpegDir)\BUILD.txt" KeyPath="yes" />
+      </Component>
+      <Component Id="FfmpegSources" Directory="FfmpegDocsFolder" Guid="*">
+        <File Id="FfmpegSourcesFile" Source="$(var.FfmpegDir)\SOURCES.txt" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+    <?endif?>
 
     <ComponentGroup Id="StartMenu" Directory="ProgramMenuFolder">
       <Component Id="StartMenuShortcut" Guid="0f5f8f3e-77d4-4f5c-9a4e-3b9d1a2c6e01">
@@ -132,6 +155,9 @@
 
     <Feature Id="Main" Title="Soyuz" Description="The Soyuz application, licenses, user guide and a Start menu shortcut." Level="1" AllowAbsent="no" Display="expand" ConfigurableDirectory="INSTALLFOLDER">
       <ComponentGroupRef Id="MainFiles" />
+      <?ifdef FfmpegDir ?>
+      <ComponentGroupRef Id="FfmpegRuntime" />
+      <?endif?>
       <ComponentGroupRef Id="StartMenu" />
       <Feature Id="ContextMenu" Title="“Open in Soyuz” on folders" Description="Adds an “Open in Soyuz” entry to the right-click menu of folders and drives. File Explorer stays the default; make Soyuz the default file manager in Settings → Advanced." Level="1000">
         <ComponentGroupRef Id="ContextMenuKeys" />

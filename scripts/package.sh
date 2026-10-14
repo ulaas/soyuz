@@ -12,6 +12,8 @@
 #     share/metainfo/io.github.ulaas.Soyuz.metainfo.xml
 #     share/licenses/soyuz/{LICENSE,THIRD-PARTY-NOTICES.md}
 #     share/doc/soyuz/{README.md,USER_GUIDE.md,config.example.toml}
+#     lib/soyuz/lib{avutil,swresample,swscale,avcodec,avformat}.so.NN   (with --ffmpeg-dir)
+#     share/licenses/soyuz/ffmpeg/{LICENSE.md,BUILD.txt,SOURCES.txt}     (with --ffmpeg-dir)
 #
 # Install for the current user (no root, no install script):
 #   tar -C ~/.local --strip-components=1 -xf soyuz-<version>-linux-<arch>.tar.gz
@@ -28,18 +30,23 @@
 #   --out-dir <dir>          default: dist
 #   --rpm                    also build an .rpm from the tarball (installer/linux/soyuz.spec,
 #                            needs rpmbuild)
+#   --ffmpeg-dir <dir>       add the FFmpeg runtime (the output of scripts/ffmpeg-build.sh or an
+#                            unpacked ffmpeg-runtime-<ver>-linux-<arch>.tar.xz): lib*.so.* into
+#                            lib/soyuz/ (the exe looks in <exe dir>/../lib/soyuz), LICENSE.md /
+#                            BUILD.txt / SOURCES.txt into share/licenses/soyuz/ffmpeg/; the rpm
+#                            then installs them under %{_libdir}/soyuz/
 #   --dry-run                print the plan without building or writing anything
 #
 # Examples:
 #   scripts/package.sh
-#   scripts/package.sh --skip-build --rpm
+#   scripts/package.sh --skip-build --rpm --ffmpeg-dir ffmpeg-rt
 #   scripts/package.sh --dry-run
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-skip_build=0 features="" no_default=0 out_dir="dist" rpm=0 dry_run=0
+skip_build=0 features="" no_default=0 out_dir="dist" rpm=0 dry_run=0 ffmpeg_dir=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-build) skip_build=1 ;;
@@ -49,6 +56,8 @@ while [[ $# -gt 0 ]]; do
         --out-dir) out_dir="${2:?--out-dir needs a value}"; shift ;;
         --out-dir=*) out_dir="${1#*=}" ;;
         --rpm) rpm=1 ;;
+        --ffmpeg-dir) ffmpeg_dir="${2:?--ffmpeg-dir needs a value}"; shift ;;
+        --ffmpeg-dir=*) ffmpeg_dir="${1#*=}" ;;
         --dry-run) dry_run=1 ;;
         -h | --help) sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'; exit 0 ;;
         *) echo "package.sh: unknown option '$1' (see --help)" >&2; exit 2 ;;
@@ -81,6 +90,22 @@ files=(
 for icon in installer/linux/icons/hicolor/*/apps/soyuz.png installer/linux/icons/hicolor/scalable/apps/soyuz.svg; do
     [[ -f "$icon" ]] && files+=("$icon|share/icons/${icon#installer/linux/icons/}|644")
 done
+# The FFmpeg runtime: private libraries (mode 644: dlopen() needs no execute bit, and
+# dependency scanners skip non-executables) plus their licence texts.
+if [[ -n "$ffmpeg_dir" ]]; then
+    n=0
+    for lib in "$ffmpeg_dir"/lib*.so.*; do
+        [[ -f "$lib" ]] || continue
+        files+=("$lib|lib/soyuz/$(basename "$lib")|644")
+        n=$((n + 1))
+    done
+    [[ $n -gt 0 ]] || { echo "package.sh: no lib*.so.* in --ffmpeg-dir $ffmpeg_dir" >&2; exit 1; }
+    for doc in LICENSE.md BUILD.txt SOURCES.txt; do
+        [[ -f "$ffmpeg_dir/$doc" ]] || { echo "package.sh: missing $ffmpeg_dir/$doc (the runtime folder carries its licence texts)" >&2; exit 1; }
+        files+=("$ffmpeg_dir/$doc|share/licenses/soyuz/ffmpeg/$doc|644")
+    done
+fi
+rpm_ffmpeg=0; [[ -n "$ffmpeg_dir" ]] && rpm_ffmpeg=1
 
 cargo_args=(build --release -p soyuz-app -p soyuz-tui --locked)
 if [[ -n "$features" ]]; then
@@ -101,7 +126,7 @@ if [[ $dry_run -eq 1 ]]; then
         IFS='|' read -r src dest mode <<<"$f"
         printf '  %-58s <- %s (%s)\n' "$name/$dest" "$src" "$mode"
     done
-    [[ $rpm -eq 1 ]] && echo "rpm:      rpmbuild -bb installer/linux/soyuz.spec (Source0 = $name.tar.gz)"
+    [[ $rpm -eq 1 ]] && echo "rpm:      rpmbuild -bb installer/linux/soyuz.spec (Source0 = $name.tar.gz, soyuz_ffmpeg $rpm_ffmpeg)"
     echo "checksums: <artifact>.sha256 and $sums"
     echo "dry run: nothing built or written"
     exit 0
@@ -138,7 +163,8 @@ if [[ $rpm -eq 1 ]]; then
     rpmbuild -bb installer/linux/soyuz.spec \
         --define "_topdir $rpm_top" \
         --define "soyuz_version $version" \
-        --define "soyuz_arch $arch"
+        --define "soyuz_arch $arch" \
+        --define "soyuz_ffmpeg $rpm_ffmpeg"
     for r in "$rpm_top"/RPMS/*/*.rpm; do
         cp "$r" "$out_dir/"
         artifacts+=("$out_dir/$(basename "$r")")

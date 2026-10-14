@@ -2,9 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "phase-*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      rebuild_ffmpeg:
+        description: "Rebuild the FFmpeg runtime even if the cache has one for these pins"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -179,6 +184,174 @@ jobs:
             fi
           done
 
+  # The FFmpeg runtime (Phase V): the five LGPL shared libraries Soyuz loads at run time,
+  # built by scripts/ffmpeg-build.sh from the tarballs pinned in third_party/ffmpeg/pins.env.
+  # Built once per pin change (the cache key hashes the pins and the script; a miss costs
+  # 10-20 minutes per target), then uploaded as artifacts for the media job and the packages.
+  # Linux and Windows (mingw-w64 cross) build on Ubuntu, the universal macOS slice on the
+  # arm64 runner. The job also compiles third_party/ffmpeg/layout_probe.c against the built
+  # headers (the Windows probe is cross-compiled here and run on the Windows media leg).
+  ffmpeg:
+    name: FFmpeg runtime (${{ matrix.target }})
+    needs: no-shell32
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux64, os: ubuntu-latest }
+          - { target: win64, os: ubuntu-latest }
+          - { target: macos-universal, os: macos-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    env:
+      OUT: ffmpeg-out/${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Restore the runtime for these pins
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ffmpeg-out/${{ matrix.target }}
+          key: ffmpeg-${{ matrix.target }}-${{ hashFiles('third_party/ffmpeg/pins.env', 'scripts/ffmpeg-build.sh') }}${{ inputs.rebuild_ffmpeg == true && format('-{0}', github.run_id) || '' }}
+      - name: Install the build tools (Linux)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl ca-certificates git tar xz-utils gnupg \
+            nasm meson ninja-build pkg-config cmake patchelf binutils \
+            zlib1g-dev libva-dev libdrm-dev \
+            mingw-w64 libz-mingw-w64-dev
+      - name: Install the build tools (macOS)
+        if: steps.cache.outputs.cache-hit != 'true' && runner.os == 'macOS'
+        run: brew install nasm meson ninja pkgconf
+      - name: Build
+        if: steps.cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          bash scripts/ffmpeg-build.sh "${{ matrix.target }}" "$OUT" \
+            --work "$RUNNER_TEMP/ffmpeg-work" --downloads "$RUNNER_TEMP/ffmpeg-downloads"
+      - name: Layout probe (C offsetof of every field soyuz-media reads)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.target }}" == win64 ]]; then
+            sudo apt-get update >/dev/null && sudo apt-get install -y --no-install-recommends mingw-w64 >/dev/null
+            x86_64-w64-mingw32-gcc -static -I "$OUT/include" -o "$OUT/layout_probe.exe" third_party/ffmpeg/layout_probe.c
+          else
+            cc -I "$OUT/include" -o "$OUT/layout_probe" third_party/ffmpeg/layout_probe.c
+            "$OUT/layout_probe" | tail -n 1
+          fi
+      - name: Show the build record
+        shell: bash
+        run: |
+          ls -la "$OUT"
+          cat "$OUT/BUILD.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: |
+            ffmpeg-out/${{ matrix.target }}
+            !ffmpeg-out/${{ matrix.target }}/sources
+          if-no-files-found: error
+      # The input archives (the LGPL "complete corresponding source"), once.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: matrix.target == 'linux64'
+        with:
+          name: ffmpeg-sources
+          path: ffmpeg-out/linux64/sources
+          if-no-files-found: error
+
+  # With-libraries tests on every OS: SOYUZ_MEDIA_TESTS=1 turns a missing runtime into a
+  # failure, SOYUZ_FFMPEG_DIR points at the artifact. The layout oracle compares the C
+  # offsetof() output with the #[repr(C)] prefix structs in soyuz-media (SOYUZ_FFMPEG_LAYOUT).
+  media:
+    name: Media tests with the FFmpeg runtime (${{ matrix.os }})
+    needs: ffmpeg
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: win64 }
+          - { os: ubuntu-latest, target: linux64 }
+          - { os: macos-latest, target: macos-universal }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      SOYUZ_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-rt
+      SOYUZ_MEDIA_TESTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Install Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libasound2-dev \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libfontconfig1-dev
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ffmpeg-rt
+      - name: Layout oracle (C offsetof vs. the Rust tables)
+        shell: bash
+        env:
+          SOYUZ_FFMPEG_LAYOUT: ${{ github.workspace }}/layout.json
+        run: |
+          set -euo pipefail
+          probe=ffmpeg-rt/layout_probe
+          [[ "$RUNNER_OS" == Windows ]] && probe=ffmpeg-rt/layout_probe.exe
+          chmod +x "$probe"
+          "$probe" > layout.json
+          tail -n 1 layout.json
+          cargo test -p soyuz-media --locked -- layout
+      - name: Tests with the runtime
+        shell: bash
+        run: cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs --locked
+
+  # A second FFmpeg major, for free: Debian 13 ships 7.1 (avcodec 61). Only the runtime
+  # packages are installed for the tests (nothing of Soyuz links FFmpeg); the -dev headers
+  # come in afterwards, for the C layout probe only, once every Rust build step is done.
+  media-v7:
+    name: Media tests with FFmpeg 7.1 (Debian 13)
+    needs: no-shell32
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    timeout-minutes: 60
+    env:
+      SOYUZ_FFMPEG_DIR: /usr/lib/x86_64-linux-gnu
+      SOYUZ_MEDIA_TESTS: "1"
+    steps:
+      - name: Install the 7.1 runtime libraries and a C toolchain
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential pkg-config \
+            libavcodec61 libavformat61 libavutil59 libswscale8 libswresample5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Tests with the distribution's 7.1 libraries
+        run: cargo test -p soyuz-media --locked
+      - name: Layout oracle against the 7.1 headers
+        run: |
+          set -euo pipefail
+          apt-get install -y --no-install-recommends \
+            libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev
+          cc -o "$RUNNER_TEMP/layout_probe" third_party/ffmpeg/layout_probe.c
+          "$RUNNER_TEMP/layout_probe" > "$RUNNER_TEMP/layout.json"
+          tail -n 1 "$RUNNER_TEMP/layout.json"
+          SOYUZ_FFMPEG_LAYOUT="$RUNNER_TEMP/layout.json" cargo test -p soyuz-media --locked -- layout
+
   # Keyboard-only GUI test: launches the real window on the runner's desktop
   # session and drives it with synthetic key events only (`SOYUZ_SCRIPT` `keys:` steps),
   # in English and Turkish. Hosted runners have no GPU, so wgpu is pointed at the WARP
@@ -205,18 +378,19 @@ jobs:
   # Release binaries for every desktop OS (pushes to main and manual runs), downloadable
   # from the run's Artifacts: Windows x64 (.zip), Linux x64 (.tar.gz), macOS arm64
   # (.tar.gz, unsigned: Gatekeeper needs `xattr -d com.apple.quarantine soyuz` or
-  # right-click > Open). Each holds `soyuz` and `soyuz-tui` (the terminal UI).
+  # right-click > Open). Each holds `soyuz` and `soyuz-tui` (the terminal UI) and the
+  # FFmpeg runtime libraries (from the ffmpeg job).
   package:
     name: Package (${{ matrix.name }})
     if: github.event_name != 'pull_request'
-    needs: build
+    needs: [build, ffmpeg]
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { name: windows-x64, os: windows-latest }
-          - { name: linux-x64, os: ubuntu-latest }
-          - { name: macos-arm64, os: macos-latest }
+          - { name: windows-x64, os: windows-latest, ffmpeg: win64 }
+          - { name: linux-x64, os: ubuntu-latest, ffmpeg: linux64 }
+          - { name: macos-arm64, os: macos-latest, ffmpeg: macos-universal }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -233,15 +407,19 @@ jobs:
             pkg-config libasound2-dev \
             libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             libgl1-mesa-dev libfontconfig1-dev
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ffmpeg-${{ matrix.ffmpeg }}
+          path: ffmpeg-rt
       - name: Build and package
         if: runner.os != 'Linux'
         shell: pwsh
-        run: ./scripts/package.ps1
-      # Linux: relocatable PREFIX tree (bin, desktop entry, hicolor icons, metainfo).
+        run: ./scripts/package.ps1 -FfmpegDir ffmpeg-rt
+      # Linux: relocatable PREFIX tree (bin, desktop entry, hicolor icons, metainfo, lib/soyuz).
       - name: Build and package (Linux)
         if: runner.os == 'Linux'
         shell: bash
-        run: ./scripts/package.sh
+        run: ./scripts/package.sh --ffmpeg-dir ffmpeg-rt
       # Both executables are in every package; the terminal UI binary must start.
       - name: soyuz-tui --version
         shell: bash

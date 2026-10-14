@@ -18,6 +18,16 @@
 # X11 WM_CLASS stays `soyuz` (crates/soyuz-app/src/main.rs) and the desktop entry keeps
 # StartupWMClass=soyuz, which GNOME Shell and KDE Plasma use to match the window to the
 # launcher when app_id and desktop id differ.
+#
+# FFmpeg: NO bundled libraries here (unlike the zip / tarball / MSI / rpm). The 25.08
+# runtime ships FFmpeg 7.1 (libavcodec.so.61, a build without H.264 / HEVC) and the
+# auto-installed org.freedesktop.Platform.codecs-extra extension the full build at
+# /usr/lib/<triplet>/codecs-extra/lib; soyuz-media (crates/soyuz-media/src/lib.rs,
+# `search_dirs`) looks there first inside a sandbox (/.flatpak-info), then on the loader's
+# path, then in the config dir, so the Flatpak gets the distribution-maintained codecs and
+# a smaller download. Users may still drop a runtime into ~/.var/app/<id>/config/soyuz/ffmpeg
+# or point [media] ffmpeg_dir at one (host files are visible: --filesystem=host). Verified
+# only by the search-order unit tests until the Flatpak is built end to end.
 
 id: io.github.ulaas.Soyuz
 runtime: org.freedesktop.Platform

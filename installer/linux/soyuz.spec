@@ -11,6 +11,10 @@
 
 %{!?soyuz_version: %global soyuz_version 0.3.2}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
+# 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
+# lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
+# <exe dir>/../lib/soyuz and ../lib64/soyuz), the licence texts next to LICENSE.
+%{!?soyuz_ffmpeg: %global soyuz_ffmpeg 0}
 %global appid io.github.ulaas.Soyuz
 %{!?_metainfodir: %global _metainfodir %{_datadir}/metainfo}
 
@@ -18,6 +22,13 @@
 %global debug_package %{nil}
 %global _build_id_links none
 %global __strip /bin/true
+
+# The bundled FFmpeg libraries are private: they must not satisfy any other package's
+# dependency (they are not in the ld.so path), and this package must not depend on their
+# sonames either (the user may replace the runtime, [media] ffmpeg_dir). libva / libdrm
+# (VAAPI) stay ordinary automatic requires.
+%global __provides_exclude_from ^%{_libdir}/soyuz/.*$
+%global __requires_exclude ^lib(avcodec|avformat|avutil|swscale|swresample)\\.so
 
 Name:           soyuz
 Version:        %{soyuz_version}
@@ -65,6 +76,13 @@ install -Dm644 share/metainfo/%{appid}.metainfo.xml %{buildroot}%{_metainfodir}/
 for icon in share/icons/hicolor/*/apps/soyuz.*; do
     install -Dm644 "$icon" "%{buildroot}%{_datadir}/${icon#share/}"
 done
+%if %{soyuz_ffmpeg}
+install -d %{buildroot}%{_libdir}/soyuz
+install -m644 lib/soyuz/lib*.so.* %{buildroot}%{_libdir}/soyuz/
+install -d %{buildroot}%{_datadir}/licenses/soyuz/ffmpeg
+install -m644 share/licenses/soyuz/ffmpeg/LICENSE.md share/licenses/soyuz/ffmpeg/BUILD.txt \
+    share/licenses/soyuz/ffmpeg/SOURCES.txt %{buildroot}%{_datadir}/licenses/soyuz/ffmpeg/
+%endif
 
 %check
 if command -v desktop-file-validate >/dev/null; then
@@ -87,6 +105,13 @@ fi
 %{_datadir}/applications/soyuz.desktop
 %{_datadir}/icons/hicolor/*/apps/soyuz.*
 %{_metainfodir}/%{appid}.metainfo.xml
+%if %{soyuz_ffmpeg}
+%dir %{_libdir}/soyuz
+%{_libdir}/soyuz/lib*.so.*
+%license %{_datadir}/licenses/soyuz/ffmpeg/LICENSE.md
+%{_datadir}/licenses/soyuz/ffmpeg/BUILD.txt
+%{_datadir}/licenses/soyuz/ffmpeg/SOURCES.txt
+%endif
 
 %changelog
 * Wed Oct 14 2026 The Soyuz contributors - 0.3.2-1
