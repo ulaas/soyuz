@@ -60,6 +60,8 @@ fn script(data: &Path, lang: &str, palette_query: &str, new_folder: &str) -> Str
         "wait:400".into(),
         "keys:renamed{Enter}".into(),
         format!("wait_for:exists={}", data.join("renamed.txt").display()),
+        // The list catches up with the rename after the disk does; select only then.
+        "wait_for:has=renamed.txt".into(),
         // Permanent delete with keyboard confirmation (Enter = the dialog's default).
         "select:c.txt".into(),
         "keys:{Shift+Delete}".into(),
