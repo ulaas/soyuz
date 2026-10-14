@@ -135,3 +135,16 @@ fn override_child(data: PathBuf) {
     assert!(!saved, "the override is never written");
     common::ok();
 }
+
+/// The keyboard tour (`headless::tour`) with `[tui] screen_reader = true`: every step still
+/// works on the one-column, box-free screen.
+#[test]
+fn keyboard_tour_in_screen_reader_mode() {
+    crate::headless::tour::run_tour(
+        module_path!(),
+        "keyboard_tour_in_screen_reader_mode",
+        &crate::headless::tour::EN,
+        soyuz_tui::overlay::Overlay::Defaults,
+        |c| c.tui.screen_reader = true,
+    );
+}
