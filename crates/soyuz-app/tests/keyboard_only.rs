@@ -127,15 +127,26 @@ fn run(lang: &str, palette_query: &str, new_folder: &str) {
     std::fs::copy(env!("CARGO_BIN_EXE_soyuz"), &exe).unwrap();
     std::fs::write(bin.join("portable"), b"").unwrap();
 
-    let mut child = Command::new(&exe)
-        .env("SOYUZ_SCRIPT", script(&data, lang, palette_query, new_folder))
+    let mut cmd = Command::new(&exe);
+    cmd.env("SOYUZ_SCRIPT", script(&data, lang, palette_query, new_folder))
         // Linux: keep freedesktop thumbnail writes out of the real ~/.cache.
         .env("XDG_CACHE_HOME", tmp.path().join("cache"))
         .env("RUST_LOG", "info,wgpu=warn,naga=warn,wgpu_hal=error")
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("launch soyuz");
+        .stderr(Stdio::piped());
+    // On Linux the other language's test may fork while this copy is open for writing;
+    // until that child execs, starting the copy fails with "Text file busy": retry.
+    let begin = Instant::now();
+    let mut child = loop {
+        match cmd.spawn() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::ExecutableFileBusy && begin.elapsed() < Duration::from_secs(10) =>
+            {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            r => break r.expect("launch soyuz"),
+        }
+    };
     let stderr = child.stderr.take().unwrap();
     let reader = std::thread::spawn(move || {
         let mut log = String::new();

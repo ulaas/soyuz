@@ -589,12 +589,24 @@ mod tests {
         let data = tmp.path().join("data");
         std::fs::create_dir_all(data.join("sub")).unwrap();
         std::fs::write(data.join("a.txt"), b"a").unwrap();
-        let out = std::process::Command::new(&copy)
-            .args(["--exact", "devscript::tests::runner_drives_a_core", "--nocapture", "--test-threads=1"])
+        let mut cmd = std::process::Command::new(&copy);
+        cmd.args(["--exact", "devscript::tests::runner_drives_a_core", "--nocapture", "--test-threads=1"])
             .env(CHILD, &data)
-            .env_remove(ENV)
-            .output()
-            .expect("run the copied test binary");
+            .env_remove(ENV);
+        // On Linux a test thread that forks while the copy is open for writing makes the
+        // start fail with "Text file busy" (ETXTBSY) until that child execs: retry.
+        let begin = std::time::Instant::now();
+        let out = loop {
+            match cmd.output() {
+                Err(e)
+                    if e.kind() == std::io::ErrorKind::ExecutableFileBusy
+                        && begin.elapsed() < std::time::Duration::from_secs(10) =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(20))
+                }
+                r => break r.expect("run the copied test binary"),
+            }
+        };
         let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
         assert!(out.status.success(), "child run failed:\n{log}");
         assert!(log.contains("devscript child: ok"), "the child did not run the test:\n{log}");

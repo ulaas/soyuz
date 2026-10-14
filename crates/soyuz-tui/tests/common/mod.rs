@@ -79,16 +79,30 @@ pub fn relaunch_env(module: &str, name: &str, env: &[(&str, &std::ffi::OsStr)], 
     let data = tmp.path().join("data");
     std::fs::create_dir_all(&data).expect("data folder");
     setup(&data);
-    let out = Command::new(&copy)
-        .args(["--exact", &path, "--nocapture", "--test-threads=1"])
-        .env(CHILD, &data)
-        .envs(env.iter().copied())
-        .output()
-        .expect("run the copied test binary");
+    let mut cmd = Command::new(&copy);
+    cmd.args(["--exact", &path, "--nocapture", "--test-threads=1"]).env(CHILD, &data).envs(env.iter().copied());
+    let out = retry_busy(|| cmd.output()).expect("run the copied test binary");
     let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     assert!(out.status.success(), "headless TUI run of {path} failed:\n{log}");
     assert!(log.contains(OK), "the child did not run {path}:\n{log}");
     Run::Parent(Relaunched { tmp, data, log })
+}
+
+/// Start a program that was just copied. On Linux another test thread may fork while the
+/// copy's write handle is open; until that child execs, starting the copy fails with
+/// "Text file busy" (ETXTBSY), so retry for a moment.
+pub fn retry_busy<T>(mut start: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let begin = Instant::now();
+    loop {
+        match start() {
+            Err(e)
+                if e.kind() == std::io::ErrorKind::ExecutableFileBusy && begin.elapsed() < Duration::from_secs(10) =>
+            {
+                std::thread::sleep(Duration::from_millis(20))
+            }
+            r => return r,
+        }
+    }
 }
 
 /// The child passed its checks.

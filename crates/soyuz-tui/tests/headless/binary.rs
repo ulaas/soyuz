@@ -12,23 +12,6 @@ use soyuz_core::config;
 /// How long one headless run may take.
 const RUN_CAP: Duration = Duration::from_secs(120);
 
-/// Start `cmd`, whose program was just copied. On Linux another test thread may fork while
-/// the copy's write handle is open; until that child execs, starting the copy fails with
-/// "Text file busy" (ETXTBSY), so retry for a moment.
-fn spawn_copied(cmd: &mut Command) -> std::process::Child {
-    let start = Instant::now();
-    loop {
-        match cmd.spawn() {
-            Err(e)
-                if e.kind() == std::io::ErrorKind::ExecutableFileBusy && start.elapsed() < Duration::from_secs(10) =>
-            {
-                std::thread::sleep(Duration::from_millis(20))
-            }
-            r => return r.expect("start soyuz-tui"),
-        }
-    }
-}
-
 /// A sandbox: a copy of the binary next to a `portable` marker, and a data folder.
 struct Sandbox {
     tmp: tempfile::TempDir,
@@ -75,7 +58,7 @@ impl Sandbox {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = spawn_copied(&mut cmd);
+        let mut child = crate::common::retry_busy(|| cmd.spawn()).expect("start soyuz-tui");
         let start = Instant::now();
         while child.try_wait().expect("wait").is_none() {
             if start.elapsed() > RUN_CAP {
