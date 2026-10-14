@@ -311,6 +311,8 @@ section { position: relative; }
 .keys span, .pal-hint span { display: inline-flex; align-items: center; gap: .25rem; }
 
 .more { background: var(--bg-deep); }
+/* The terminal section continues the feature tour on the same background. */
+.features.terminal { padding-top: 0; }
 .more-item { padding-top: 1.4rem; border-top: 1px solid var(--line); }
 .more-item h3 { font-size: 1.08rem; }
 .more-item p { margin-top: .5rem; color: var(--ink-2); font-size: .98rem; }
@@ -430,7 +432,7 @@ dialog::backdrop { background: rgba(5, 7, 10, .55); -webkit-backdrop-filter: blu
 @media (max-width: 720px) {
   .top-in { gap: .4rem 1rem; }
   .nav { order: 3; width: 100%; margin: 0 -.7rem; }
-  .nav ul { gap: 0; }
+  .nav ul { gap: 0; flex-wrap: wrap; }
   .nav a { padding: .35rem .7rem; font-size: .92rem; }
   .palette-open kbd { display: none; }
   .gh span { display: none; }

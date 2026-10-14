@@ -4,20 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Soyuz — the keyboard-first file explorer for Windows, macOS and Linux</title>
-<meta name="description" content="Soyuz is a fast, keyboard-first file explorer for Windows, macOS and Linux, written in Rust. Every copy, move and delete runs as a background job you can pause, cancel and undo. Free, open source, no telemetry.">
+<meta name="description" content="Soyuz is a fast, keyboard-first file explorer for Windows, macOS and Linux, written in Rust, in a window or in your terminal. Every copy, move and delete runs as a background job you can pause, cancel and undo. Free, open source, no telemetry.">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Soyuz — the keyboard-first file explorer">
-<meta property="og:description" content="A fast, keyboard-first file explorer for Windows, macOS and Linux. Every file operation is a background job you can pause, cancel and undo. Open source, no telemetry.">
+<meta property="og:description" content="A fast, keyboard-first file explorer for Windows, macOS and Linux, in a window or in your terminal. Every file operation is a background job you can pause, cancel and undo. Open source, no telemetry.">
 <meta property="og:image" content="https://ulaas.github.io/soyuz/assets/shots/hero.png">
 <meta property="og:image:width" content="1600">
 <meta property="og:image:height" content="1000">
 <meta property="og:image:alt" content="The Soyuz window: a folder in details view with a preview pane on the right">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Soyuz — the keyboard-first file explorer">
-<meta name="twitter:description" content="A fast, keyboard-first file explorer for Windows, macOS and Linux. Every file operation is a background job you can pause, cancel and undo. Open source, no telemetry.">
+<meta name="twitter:description" content="A fast, keyboard-first file explorer for Windows, macOS and Linux, in a window or in your terminal. Every file operation is a background job you can pause, cancel and undo. Open source, no telemetry.">
 <meta name="twitter:image" content="https://ulaas.github.io/soyuz/assets/shots/hero.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="512x512" href="favicon.png">
@@ -40,6 +40,7 @@
       <ul>
         <li><a href="#principles">Principles</a></li>
         <li><a href="#features">Features</a></li>
+        <li><a href="#terminal">Terminal</a></li>
         <li><a href="#ai">Assistant</a></li>
         <li><a href="#download">Download</a></li>
       </ul>
@@ -99,7 +100,7 @@
     <ul class="wrap stats-in">
       <li><strong>100k+</strong><span>entries per folder, scrolling smoothly</span></li>
       <li><strong>Undo</strong><span>for copies, moves, renames, deletes and archive edits</span></li>
-      <li><strong>3 platforms</strong><span>native builds for Windows, macOS and Linux</span></li>
+      <li><strong>3 platforms</strong><span>native builds for Windows, macOS and Linux, in a window or a terminal</span></li>
       <li><strong>0</strong><span>telemetry, accounts or ads</span></li>
     </ul>
   </div>
@@ -244,16 +245,49 @@
           <figcaption>The light theme, grid view with thumbnails.</figcaption>
         </figure>
       </article>
+    </div>
+  </section>
+
+  <section class="features terminal" id="terminal" aria-labelledby="terminal-title">
+    <div class="wrap">
+      <header class="sec-head" data-reveal>
+        <h2 id="terminal-title">The whole explorer, in a terminal</h2>
+        <p>Run <code>soyuz --tui</code> in any terminal, locally or over SSH, on Windows, macOS and Linux. It is the same app with the same jobs, undo and settings, drawn in text instead of a window.</p>
+      </header>
 
       <article class="feat">
         <div class="feat-text">
-          <h3>The same explorer in a terminal</h3>
-          <p>Run <code>soyuz --tui</code> over SSH or in any terminal and get the same panes, tabs, jobs, palette and tools, with the keyboard and the mouse. It shares your settings and bookmarks with the window, and a screen-reader mode reads one plain line at a time.</p>
-          <p class="keys"><span><kbd>soyuz</kbd> <kbd>--tui</kbd> terminal UI</span><span><kbd>--screen-reader</kbd> screen-reader mode</span></p>
+          <h3>Everything the window does</h3>
+          <p>Tabs, dual and quad panes, the sidebar with drives and devices, every view and every dialog. File operations run as the same background jobs, with conflict prompts and full undo. Settings, bookmarks, tags and workspaces are shared with the window.</p>
+          <p class="keys"><span><kbd>soyuz</kbd> <kbd>--tui</kbd> start it</span><span><kbd>F9</kbd> dual pane</span><span><kbd>Ctrl</kbd><kbd>Q</kbd> quit</span></p>
         </div>
         <figure class="shot" data-reveal>
-          <div class="frame"><img src="assets/shots/tui-browse.svg" width="1260" height="648" loading="lazy" alt="Soyuz running in a terminal: two panes of files drawn with text characters, with tabs, a breadcrumb path and a status line."></div>
-          <figcaption>The terminal UI in dual-pane mode.</figcaption>
+          <div class="frame"><img src="assets/shots/tui-browse.svg" width="1260" height="648" loading="lazy" alt="Soyuz in a terminal: tabs along the top, a breadcrumb path, a sidebar with favorites and drives, and two panes of files with size and kind columns."></div>
+          <figcaption>Dual panes and the sidebar, drawn with text characters.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>Keyboard and mouse, on any terminal</h3>
+          <p>The command palette, context menus, Quick Look with pictures on terminals that can show them, the preview pane, editors, folder compare and sync, the treemap, remote locations and the assistant. Click, scroll and drag with the mouse, or never touch it. Legacy consoles and Windows Terminal get their own shortcuts, so every command stays reachable.</p>
+          <p class="keys"><span><kbd>Ctrl</kbd><kbd>K</kbd> command palette</span><span><kbd>Space</kbd> Quick Look</span><span><kbd>Alt</kbd><kbd>J</kbd> jobs</span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/tui-palette.svg" width="1260" height="648" loading="lazy" alt="The command palette open in the terminal, listing copy commands with a short description and their shortcuts."></div>
+          <figcaption>The command palette, with each command's shortcut.</figcaption>
+        </figure>
+      </article>
+
+      <article class="feat">
+        <div class="feat-text">
+          <h3>A mode for screen readers</h3>
+          <p>Screen-reader mode drops box drawing and icons, shows one pane as plain lines, puts the terminal cursor on the focused item and turns the status line into a sentence that starts with it. Switch it on in the settings, from the palette or with <code>--screen-reader</code> for a single run.</p>
+          <p class="keys"><span><kbd>soyuz</kbd> <kbd>--tui</kbd> <kbd>--screen-reader</kbd></span></p>
+        </div>
+        <figure class="shot" data-reveal>
+          <div class="frame"><img src="assets/shots/tui-screen-reader.svg" width="1260" height="648" loading="lazy" alt="Screen-reader mode: a plain list of files without borders or icons, an Other pane line and a status sentence that begins with the selected file."></div>
+          <figcaption>Screen-reader mode: plain lines and a status sentence.</figcaption>
         </figure>
       </article>
     </div>
@@ -297,7 +331,7 @@
         </div>
         <div class="more-item" data-reveal>
           <h3>Accessible</h3>
-          <p>Screen-reader support, a high-contrast theme, reduced motion, large touch targets, interface zoom and a visible focus indicator everywhere.</p>
+          <p>Screen-reader support, a high-contrast theme, reduced motion, large touch targets, interface zoom and a visible focus indicator everywhere. The terminal UI has a screen-reader mode of its own.</p>
         </div>
       </div>
     </div>
