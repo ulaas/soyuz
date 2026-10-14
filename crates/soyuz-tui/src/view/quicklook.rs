@@ -313,7 +313,9 @@ fn draw_footer(buf: &mut Buffer, r: Rect, m: &QuickLookVm, theme: &TuiTheme) {
 
 fn draw_image(f: &mut Frame<'_>, r: Rect, img: &QlImage, theme: &TuiTheme) {
     let mut state = ImageState::default();
-    match images::draw(f, r, &img.tex, &mut state) {
+    // Screen-reader mode (T8): no graphics (no kitty / sixel requests), the line instead.
+    let drawn = if theme.screen_reader() { Drawn::Off } else { images::draw(f, r, &img.tex, &mut state) };
+    match drawn {
         Drawn::Image | Drawn::Pending | Drawn::Placeholder | Drawn::NoRoom => {}
         Drawn::Missing | Drawn::Off => {
             // No image on this terminal: say what it is.

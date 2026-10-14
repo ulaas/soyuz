@@ -10,7 +10,7 @@
 |  ≡  notes.t│1 of 2 waiting                                                            │-01 12:00   |
 |* ◰  report.│                                                                          │-01 12:00   |
 |  ◩  sunset.│The destination already has a file named “notes.txt”.                     │-01 12:00   |
-|  ≡  日~本~語~の~                                                                          │-01 12:00   |
+|  ≡  日~本~語~ │                                                                          │-01 12:00   |
 |  □  .env   │Source: notes.txt                                                         │-01 12:00   |
 |            │4 KiB · Larger · — · data                                                 │            |
 |            │Destination: notes.txt                                                    │            |
@@ -41,7 +41,7 @@
 |HHIIIIIIIIIIFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFHHHHHHHHHIII|
 |FFFFFFFFFFFFFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFFFFFFFFFFFFF|
 |AAJCCJJJJJJJFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFAAAAAAAAACCC|
-|AACCCC~C~C~C~CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFAAAAAAAAACCC|
+|AACCCC~C~C~CFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFAAAAAAAAACCC|
 |AAACCAAAACCCFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFAAAAAAAAACCC|
 |CCCCCCCCCCCCFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFCCCCCCCCCCCC|
 |CCCCCCCCCCCCFCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCFCCCCCCCCCCCC|

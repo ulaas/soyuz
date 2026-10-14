@@ -28,6 +28,7 @@ use soyuz_core::{Column, SortDir};
 use super::*;
 use crate::hits::{CardButton, JobButton};
 use crate::icons::{self, IconSet};
+use crate::input::TuiFocus;
 use crate::input::menu::MenuCmd;
 use crate::layout::{Facts, HitTarget};
 use crate::snapshot::{SnapOpts, assert_snapshot};
@@ -50,6 +51,9 @@ enum Look {
     Mono,
     /// 24-bit colour from the built-in dark tokens.
     Truecolor,
+    /// Screen-reader mode (`crate::a11y`) over the default look: no box lines, ASCII
+    /// markers, the one-pane layout (`Facts::screen_reader` is set by [`render`]).
+    ScreenReader,
 }
 
 impl Look {
@@ -61,11 +65,12 @@ impl Look {
             }
             Look::Mono => TuiTheme::from_tokens(&ORBIT_DARK, ColorMode::Mono, IconSet::Unicode),
             Look::Truecolor => TuiTheme::from_tokens(&ORBIT_DARK, ColorMode::Truecolor, IconSet::Unicode),
+            Look::ScreenReader => Look::Default.theme().with_screen_reader(true),
         }
     }
 
     fn icons(self) -> IconSet {
-        if self == Look::Ascii { IconSet::Ascii } else { IconSet::Unicode }
+        if matches!(self, Look::Ascii | Look::ScreenReader) { IconSet::Ascii } else { IconSet::Unicode }
     }
 
     /// The snapshot name's suffix.
@@ -75,6 +80,7 @@ impl Look {
             Look::Ascii => "__ascii",
             Look::Mono => "__mono",
             Look::Truecolor => "__truecolor",
+            Look::ScreenReader => "__sr",
         }
     }
 }
@@ -82,11 +88,30 @@ impl Look {
 /// Draw `m` like `App::frame` does (base style, then `view::draw`) into a `w` × `h`
 /// terminal.
 fn render(m: &ViewModel, facts: &Facts, w: u16, h: u16, look: Look) -> (Buffer, Regions) {
+    let (buf, regions, _) = render_with_cursor(m, facts, w, h, look);
+    (buf, regions)
+}
+
+/// [`render`], plus the terminal's cursor when it is shown (screen-reader mode puts it on
+/// the focused element; it is not part of the buffer).
+fn render_with_cursor(
+    m: &ViewModel,
+    facts: &Facts,
+    w: u16,
+    h: u16,
+    look: Look,
+) -> (Buffer, Regions, Option<ratatui::layout::Position>) {
     let theme = look.theme();
-    let regions = Regions::compute(Rect::new(0, 0, w, h), &TuiSection::default(), facts);
+    let sr = look == Look::ScreenReader;
+    let facts = Facts { screen_reader: sr || facts.screen_reader, ..facts.clone() };
+    let regions = Regions::compute(Rect::new(0, 0, w, h), &TuiSection::default(), &facts);
     let mut m = m.clone();
     for p in &mut m.panes {
         p.icons = look.icons();
+    }
+    if sr {
+        // Like `ViewModel::from_core`: models only for the drawn panes (the focused one).
+        m.panes.retain(|p| regions.panes.iter().any(|r| r.index == p.index));
     }
     assert_eq!(m.panes.len(), regions.panes.len(), "one pane model per drawn pane");
     let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
@@ -97,7 +122,9 @@ fn render(m: &ViewModel, facts: &Facts, w: u16, h: u16, look: Look) -> (Buffer, 
         draw(f, &m, &regions, &theme, &mut hits);
     })
     .unwrap();
-    (t.backend().buffer().clone(), regions)
+    let b = t.backend_mut();
+    let cursor = b.cursor_visible().then(|| b.cursor_position());
+    (t.backend().buffer().clone(), regions, cursor)
 }
 
 /// Draw and compare with `view__<name>[__<look>]`.
@@ -887,4 +914,129 @@ fn the_ascii_look_is_pure_ascii_in_its_lines() {
     let (buf, _) = render(&m, &facts, W, H, Look::Ascii);
     let text = crate::snapshot::lines(&buf).concat();
     assert!(!text.chars().any(|c| ('\u{2500}'..='\u{259F}').contains(&c)), "{text}");
+}
+
+// ---- Screen-reader mode (Phase T8 P6, `crate::a11y`) ----
+
+/// Draw `m` in screen-reader mode with the keyboard on `facts.focus`, compare with
+/// `view__<name>__sr`, and check what the buffer cannot show: the terminal's cursor is on
+/// the row of the focused element, which contains `want`; no box character is left.
+fn snap_sr(name: &str, m: &ViewModel, facts: &Facts, want: &str) {
+    let (buf, _, cursor) = render_with_cursor(m, facts, W, H, Look::ScreenReader);
+    assert_snapshot(&format!("view__{name}__sr"), &buf, &SnapOpts::styled());
+    let rows = crate::snapshot::lines(&buf);
+    assert!(!rows.concat().chars().any(crate::a11y::is_box_char), "{name}: box characters left\n{rows:#?}");
+    let at = cursor.unwrap_or_else(|| panic!("{name}: the cursor is hidden"));
+    let row = &rows[usize::from(at.y)];
+    assert!(row.contains(want), "{name}: the cursor is on row {} ({row:?}), not on {want:?}", at.y);
+}
+
+fn sr_facts(focus: TuiFocus) -> Facts {
+    Facts { focus, ..Facts::default() }
+}
+
+#[test]
+fn screen_reader_browse() {
+    snap_sr("browse_details", &base(), &sr_facts(TuiFocus::List), "notes.txt");
+}
+
+#[test]
+fn screen_reader_dual_with_the_other_pane_line() {
+    let (mut m, facts) = dual();
+    m.other_pane = Some("Other pane: /home/ada/backup".into());
+    snap_sr("browse_dual", &m, &facts, "notes.txt");
+    // The second pane focused: its model is drawn, the first pane's folder is named.
+    let (mut m, facts) = multi(2, 1);
+    m.other_pane = Some("Other pane: /home/ada/data".into());
+    let (buf, regions, _) = render_with_cursor(&m, &facts, W, H, Look::ScreenReader);
+    assert_eq!(regions.panes.len(), 1);
+    assert_eq!(regions.panes[0].index, 1);
+    let rows = crate::snapshot::lines(&buf);
+    assert_eq!(rows[usize::from(regions.other_pane.y)].trim_end(), "Other pane: /home/ada/data");
+}
+
+#[test]
+fn screen_reader_miller_draws_the_current_folder_alone() {
+    use pane::miller::{AuxRow, MillerCol, MillerVm};
+    let aux = |index: usize, name: &str| AuxRow {
+        index,
+        name: name.into(),
+        kind: RowKind::Dir,
+        class: FileClass::Folder,
+        icon: icons::class_icon(FileClass::Folder),
+        hidden: false,
+        on_path: name == "data",
+    };
+    let mut m = base();
+    let mut p = pane_vm(0, true, PaneMode::Miller);
+    p.miller = Some(MillerVm {
+        parent: MillerCol { rows: vec![aux(0, "backup"), aux(1, "data"), aux(2, "music")], message: None },
+        child: MillerCol { rows: Vec::new(), message: Some("Text · 1.0 KB".into()) },
+    });
+    m.panes = vec![p];
+    snap_sr("browse_miller", &m, &sr_facts(TuiFocus::List), "notes.txt");
+    let (buf, ..) = render_with_cursor(&m, &sr_facts(TuiFocus::List), W, H, Look::ScreenReader);
+    let text = crate::snapshot::lines(&buf).concat();
+    assert!(!text.contains("backup") && !text.contains("music"), "no side column shares a row: {text}");
+}
+
+#[test]
+fn screen_reader_dialogs() {
+    let mut m = base();
+    m.dialog = Some(delete_prompt());
+    snap_sr("dialog_delete", &m, &sr_facts(TuiFocus::Dialog), "[ ");
+    // Fields read "Label: value".
+    m.dialog = Some(form_dialog());
+    snap_sr("dialog_form", &m, &sr_facts(TuiFocus::Dialog), "Name: New folder");
+}
+
+#[test]
+fn screen_reader_palette() {
+    let mut m = base();
+    m.palette = palette();
+    snap_sr("palette", &m, &sr_facts(TuiFocus::Palette), "New folder");
+}
+
+#[test]
+fn screen_reader_menu() {
+    let mut m = base();
+    m.menu = menu();
+    snap_sr("menu", &m, &sr_facts(TuiFocus::Menu), "Open");
+}
+
+#[test]
+fn screen_reader_jobs_with_progress() {
+    let mut m = base();
+    m.jobs = jobs_panel();
+    snap_sr("jobs", &m, &Facts { bottom_rows: 9, ..sr_facts(TuiFocus::Jobs) }, "Copying 12 files to backup");
+}
+
+#[test]
+fn screen_reader_settings() {
+    let mut m = base();
+    m.settings = settings::tests::vm();
+    snap_sr("settings", &m, &sr_facts(TuiFocus::Settings), "borders");
+    // The section list has the keyboard: it alone, at full width.
+    m.settings.nav_focused = true;
+    m.settings.rows_focused = false;
+    snap_sr("settings_nav", &m, &sr_facts(TuiFocus::Settings), "Terminal UI");
+    let (buf, ..) = render_with_cursor(&m, &sr_facts(TuiFocus::Settings), W, H, Look::ScreenReader);
+    assert!(!crate::snapshot::lines(&buf).concat().contains("sidebar_width"), "no key shares a row with the list");
+}
+
+#[test]
+fn screen_reader_toast() {
+    let mut m = base();
+    m.toasts = toasts();
+    snap_sr("toasts", &m, &Facts { toasts: 3, ..sr_facts(TuiFocus::List) }, "notes.txt");
+    let (buf, regions, _) = render_with_cursor(&m, &Facts { toasts: 3, ..Facts::default() }, W, H, Look::ScreenReader);
+    let status = &crate::snapshot::lines(&buf)[usize::from(regions.status.y)];
+    assert_eq!(status.trim_end(), "Error: Cannot delete old-logs. Access is denied");
+}
+
+#[test]
+fn screen_reader_sidebar() {
+    let mut m = base();
+    m.sidebar = sidebar();
+    snap_sr("sidebar", &m, &Facts { sidebar: true, ..sr_facts(TuiFocus::Sidebar) }, "data");
 }

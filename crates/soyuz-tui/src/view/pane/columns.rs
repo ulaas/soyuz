@@ -14,6 +14,7 @@ use soyuz_appcore::i18n::labels;
 use soyuz_appcore::services::{git, search, tags};
 use soyuz_appcore::state::listing::kind_label;
 use soyuz_appcore::state::pane::Pane;
+use soyuz_appcore::tr;
 use soyuz_core::config::Config;
 use soyuz_core::{Attributes, Column, EntryInfo, SortDir, format_time};
 
@@ -150,6 +151,11 @@ pub fn draw_header(buf: &mut Buffer, r: Rect, m: &PaneVm, fit: &[Placed], theme:
         let label = c.map_or_else(|| header_label(Column::Name), |c| c.label.clone());
         let sort = c.and_then(|c| c.sort);
         let label = match sort {
+            // Screen-reader mode (T8): the direction as a word, not `^` / `v`.
+            Some(dir) if theme.screen_reader() => {
+                let word = if dir == SortDir::Asc { tr!("tui-sr-ascending") } else { tr!("tui-sr-descending") };
+                format!("{label} {word}")
+            }
             Some(dir) => format!("{label} {}", sort_glyph(dir, m.icons)),
             None => label,
         };

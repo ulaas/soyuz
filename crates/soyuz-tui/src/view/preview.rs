@@ -1099,8 +1099,13 @@ fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme
             slot.height -= 1;
         }
         let mut st = ImageState::default();
-        let drawn = images::draw_in(buf, slot, &pic.tex, &mut st);
-        let Some(msg) = status_text(drawn) else { continue };
+        // Screen-reader mode (T8): no graphics (no kitty / sixel requests), a line instead.
+        let msg = if theme.screen_reader() {
+            Some(tr!("tui-sr-picture"))
+        } else {
+            status_text(images::draw_in(buf, slot, &pic.tex, &mut st))
+        };
+        let Some(msg) = msg else { continue };
         // Graphics images blank their cells while they encode: say so under them.
         let y = match st.drawn {
             Some(d) if d.bottom() < slot.bottom() => d.bottom(),

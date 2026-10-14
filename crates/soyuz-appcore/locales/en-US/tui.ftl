@@ -52,3 +52,5 @@ tui-sr-warning = Warning
 tui-sr-error = Error
 tui-sr-checked = checked
 tui-sr-unchecked = not checked
+# A picture of the preview, which screen-reader mode does not draw.
+tui-sr-picture = Picture (not shown in screen-reader mode)

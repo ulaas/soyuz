@@ -236,6 +236,8 @@ pub fn draw(f: &mut Frame<'_>, m: &ViewModel, regions: &Regions, theme: &TuiThem
     if let Some(d) = &m.dialog {
         dialogs::draw_dialog(f, regions.area, d, theme, hits);
     }
+    // A wide character whose second cell an overlay's edge drew over would hide that edge.
+    text::unstraddle(f.buffer_mut());
     // Screen-reader mode (T8): its own lines ("Other pane: …", the status sentence) and the
     // terminal's cursor on the focused element (the caret recorded last).
     crate::a11y::draw(f, regions, m, theme, hits);

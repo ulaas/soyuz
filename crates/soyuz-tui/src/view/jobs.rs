@@ -27,7 +27,7 @@
 //! `TuiFocus::Jobs`).
 
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
@@ -44,6 +44,7 @@ use crate::dialog::safe;
 use crate::hits::JobButton;
 use crate::icons::{self, IconSet};
 use crate::input::InputState;
+use crate::input::jobs::Spoken;
 use crate::layout::{HitTarget, Hits, Regions};
 use crate::theme::{Role, TuiTheme};
 use crate::view::text;
@@ -186,9 +187,27 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     }
     st.details.clear();
     if history {
+        st.spoken.clear();
         return;
     }
     let snaps = jobs_rows::sorted_snapshots(core);
+    // Screen-reader mode (T8): the progress text shown changes per 10 percent or every
+    // 2 s (`crate::input::jobs::due`).
+    if regions.screen_reader {
+        let now = Instant::now();
+        let mut old = std::mem::take(&mut st.spoken);
+        for s in &snaps {
+            let live = spoken(&JobRow::new(core, s), now);
+            let last = old.remove(&s.id);
+            let keep = match last {
+                Some(l) if !crate::input::jobs::due(Some(&l), &live.state, live.permille, now) => l,
+                _ => live,
+            };
+            st.spoken.insert(s.id, keep);
+        }
+    } else {
+        st.spoken.clear();
+    }
     for s in &snaps {
         if jobs_rows::is_expanded(core, s.id) {
             let lines = jobs_rows::detail_lines(core, s.id);
@@ -303,7 +322,28 @@ fn label(b: RowButton) -> String {
     .to_string()
 }
 
-fn job_item(r: &JobRow, details: Option<&Vec<(Tone, String)>>) -> JobItem {
+/// Done, in thousandths (`None` while unknown).
+fn permille(r: &JobRow) -> Option<u16> {
+    r.fraction.map(|f| (f.clamp(0.0, 1.0) * 1000.0).round() as u16)
+}
+
+/// The progress text of `r` as screen-reader mode shows it, taken at `now`.
+fn spoken(r: &JobRow, now: Instant) -> Spoken {
+    Spoken {
+        at: now,
+        state: format!(
+            "{:?}",
+            (r.active, r.waiting, r.queued, r.failed, r.status, r.done_mark, r.badge, &r.buttons, r.summary.is_some())
+        ),
+        permille: permille(r),
+        line: safe(&r.line),
+        stats: r.stats.clone(),
+        right: r.speed.clone(),
+    }
+}
+
+/// `spoken`: the throttled progress text (screen-reader mode) in place of the live one.
+fn job_item(r: &JobRow, details: Option<&Vec<(Tone, String)>>, spoken: Option<&Spoken>) -> JobItem {
     let icon = match r.done_mark {
         Some(DoneMark::Check) => IconId::SealCheck,
         Some(DoneMark::Warning) => IconId::WarningCircle,
@@ -312,7 +352,7 @@ fn job_item(r: &JobRow, details: Option<&Vec<(Tone, String)>>) -> JobItem {
     };
     let icon_tone = if r.done_mark.is_some() { r.status } else { jobs_rows::op_tone(r.op) };
     let tag = r.badge.map(|b| (b.to_string(), if r.summary.is_some() { Tone::Success } else { Tone::Accent }));
-    let permille = r.fraction.map(|f| (f.clamp(0.0, 1.0) * 1000.0).round() as u16);
+    let permille = spoken.map_or_else(|| permille(r), |s| s.permille);
     let log_label = if details.is_some() { tr!("tui-jobs-hide-log") } else { tr!("tui-jobs-log") };
     let mut buttons = vec![ButtonVm { kind: JobButton::Details, label: log_label.to_string(), enabled: true }];
     if r.active {
@@ -325,12 +365,12 @@ fn job_item(r: &JobRow, details: Option<&Vec<(Tone, String)>>) -> JobItem {
         title: safe(&r.title),
         dim: false,
         tag,
-        line: safe(&r.line),
+        line: spoken.map_or_else(|| safe(&r.line), |s| s.line.clone()),
         line_tone: r.line_tone,
         bar: Some(Bar { permille, tone: r.status }),
-        stats: r.stats.clone(),
+        stats: spoken.map_or_else(|| r.stats.clone(), |s| s.stats.clone()),
         stats_tone: Tone::Faint,
-        right: r.speed.clone(),
+        right: spoken.map_or_else(|| r.speed.clone(), |s| s.right.clone()),
         buttons,
         log: details.map(|d| d.iter().take(LOG_LINES).map(|(t, l)| (safe(l), *t)).collect()).unwrap_or_default(),
     }
@@ -381,7 +421,10 @@ impl JobsVm {
             range.clone().map(|i| history_item(&HistoryRow::new(&all[all.len() - 1 - i], now))).collect()
         } else {
             let snaps = jobs_rows::sorted_snapshots(core);
-            snaps[range.clone()].iter().map(|s| job_item(&JobRow::new(core, s), st.details.get(&s.id))).collect()
+            snaps[range.clone()]
+                .iter()
+                .map(|s| job_item(&JobRow::new(core, s), st.details.get(&s.id), st.spoken.get(&s.id)))
+                .collect()
         };
         let empty = (n == 0).then(|| {
             if history {

@@ -232,6 +232,10 @@ pub fn draw(f: &mut Frame<'_>, area: Rect, m: &ImageVm, doc: u64, theme: &TuiThe
             put(f.buffer_mut(), pic, x, pic.y + pic.height / 2, &s, usize::from(pic.width), theme.style(Role::Muted));
         };
         match &m.tex {
+            // Screen-reader mode (T8): no graphics (no kitty / sixel requests), its size.
+            Some(_) if theme.screen_reader() => {
+                placeholder(f, &tr!("tui-quicklook-image", width = m.size.0, height = m.size.1))
+            }
             Some((t, _)) => {
                 let mut state = ImageState { upscale: true, ..ImageState::default() };
                 match crate::images::draw(f, pic, &t.0, &mut state) {

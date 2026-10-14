@@ -164,6 +164,10 @@ pub fn draw_crumbs(f: &mut Frame<'_>, rect: Rect, m: &CrumbsVm, theme: &TuiTheme
         hits.push(r, HitTarget::Crumb(i));
         if !current {
             let room = usize::from(right - x);
+            // Screen-reader mode: no second slash after a root that ends in one ("/",
+            // "C:\"); blanks of the same width.
+            let root = label.ends_with('/') || label.ends_with('\\');
+            let sep = if theme.screen_reader() && root { " ".repeat(sep.len()) } else { sep.clone() };
             push(&mut spans, &mut x, text::truncate_end(&sep, room), Role::Faint);
         }
     }

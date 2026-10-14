@@ -146,6 +146,30 @@ pub fn wrap(s: &str, w: usize) -> Vec<String> {
     lines
 }
 
+/// Blank every wide character whose second cell was drawn over later (a dialog's or a
+/// menu's left edge on a CJK name): the terminal would draw the character across that
+/// cell and hide what is there, a border usually. ratatui blanks the cell after a wide
+/// character when it writes one, so any other symbol there came later.
+pub fn unstraddle(buf: &mut ratatui::buffer::Buffer) {
+    let area = buf.area;
+    for y in area.top()..area.bottom() {
+        let mut x = area.left();
+        while x + 1 < area.right() {
+            let w = buf[(x, y)].symbol().width() as u16;
+            if w < 2 {
+                x += 1;
+                continue;
+            }
+            if matches!(buf[(x + 1, y)].symbol(), " " | "") {
+                x += w;
+            } else {
+                buf[(x, y)].set_symbol(" ");
+                x += 1;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -246,5 +270,25 @@ mod tests {
         }
         // Wider than the line: alone, never dropped.
         assert_eq!(wrap("日", 1), vec!["日"]);
+    }
+
+    #[test]
+    fn a_wide_character_under_a_later_edge_is_blanked() {
+        use ratatui::buffer::Buffer;
+        use ratatui::layout::Rect;
+        use ratatui::style::Style;
+        let mut buf = Buffer::empty(Rect::new(0, 0, 8, 1));
+        buf.set_string(0, 0, "日本語x", Style::new());
+        // A box's left edge on the second cell of 本.
+        buf.set_string(3, 0, "│", Style::new());
+        unstraddle(&mut buf);
+        let row: Vec<&str> = buf.content.iter().map(|c| c.symbol()).collect();
+        assert_eq!(row, ["日", " ", " ", "│", "語", " ", "x", " "]);
+        // Nothing drawn over: unchanged.
+        let mut clean = Buffer::empty(Rect::new(0, 0, 8, 1));
+        clean.set_string(0, 0, "日本語x", Style::new());
+        let before = clean.clone();
+        unstraddle(&mut clean);
+        assert_eq!(clean, before);
     }
 }
