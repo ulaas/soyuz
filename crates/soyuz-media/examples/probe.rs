@@ -2,10 +2,11 @@
 //! of every file given (a manual test tool; `soyuz-cli media-info` later):
 //!
 //! ```text
-//! SOYUZ_FFMPEG_DIR=<folder> cargo run -p soyuz-media --example probe -- clip.mp4 song.flac
+//! SOYUZ_FFMPEG_DIR=<folder> cargo run -p soyuz-media --example probe -- [--json] clip.mp4 song.flac
 //! ```
 //!
-//! Exit code 2 when no runtime loads (the V0 skeleton always: the loader lands in V1a).
+//! `--json` prints one JSON document per file instead of the Rust debug form. Exit code
+//! 2 when no runtime loads, 1 when a file fails.
 
 use std::path::PathBuf;
 
@@ -31,11 +32,33 @@ fn main() {
         }
     };
     let v = rt.versions();
-    println!("loaded {} from {}", v.majors().describe(), rt.dir().display());
+    println!(
+        "loaded FFmpeg {} ({}) from {}{}",
+        v.majors().release().unwrap_or("?"),
+        v.majors().describe(),
+        if rt.dir().as_os_str().is_empty() { "the loader's path".to_string() } else { rt.dir().display().to_string() },
+        if v.gpl { " [GPL build]" } else { "" }
+    );
+    let mut json = false;
+    let mut failed = false;
     for arg in std::env::args().skip(1) {
-        match probe(&rt, &Source::File(PathBuf::from(&arg))) {
-            Ok(info) => println!("{arg}: {info:#?}"),
-            Err(e) => eprintln!("{arg}: {e}"),
+        if arg == "--json" {
+            json = true;
+            continue;
         }
+        match probe(&rt, &Source::File(PathBuf::from(&arg))) {
+            Ok(info) if json => match serde_json::to_string_pretty(&info) {
+                Ok(text) => println!("{text}"),
+                Err(e) => eprintln!("{arg}: {e}"),
+            },
+            Ok(info) => println!("{arg}: {info:#?}"),
+            Err(e) => {
+                eprintln!("{arg}: {e}");
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        std::process::exit(1);
     }
 }

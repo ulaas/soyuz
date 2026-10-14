@@ -22,21 +22,26 @@
 //! Supported releases (one row of [`Majors::SUPPORTED`] at a time, mixed sets are refused):
 //! the bundled 9.0 (avcodec 63) plus the distro / Flatpak-runtime 8.x (62) and 7.1 (61).
 //!
-//! This is the Phase V0 skeleton: the public API is final, the bodies arrive in waves 1–4
-//! (`docs/ROADMAP.md`). Functions that need the libraries return [`MediaError::NotLoaded`];
-//! [`Runtime::get`] reports [`LoadError::Missing`] after computing the folders it would
-//! search.
+//! Phase V1a implements the loader, `probe`, `grab_frame` and the audio reader; the
+//! player (V2a) and the transcoder (V2c) are still stubs returning
+//! [`MediaError::NotLoaded`]. Tests: `cargo test -p soyuz-media` runs without libraries;
+//! `SOYUZ_FFMPEG_DIR=<folder> SOYUZ_MEDIA_TESTS=1` adds the with-library suite
+//! (`tests/with_libs.rs`), which fails instead of skipping when no runtime loads.
 
 #![deny(unsafe_code)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 #[allow(unsafe_code)]
 pub(crate) mod sys;
 
 pub mod audio;
+pub(crate) mod decode;
+pub mod fixtures;
 pub mod frame;
 pub mod info;
 pub mod player;
@@ -78,7 +83,7 @@ pub enum MediaError {
 }
 
 /// Why the libraries could not be loaded.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum LoadError {
     /// No complete set of libraries in any of the folders searched (an empty entry stands
     /// for the dynamic loader's own search path, see [`LOADER_PATH`]).
@@ -198,25 +203,64 @@ pub struct CodecDesc {
 /// a found file's modification time changes.
 #[derive(Debug)]
 pub struct Runtime {
-    versions: Versions,
-    /// Where the libraries were found (the folder of `avcodec`).
-    dir: PathBuf,
+    av: &'static sys::Av,
+    /// `has_encoder` results (opening a hardware encoder costs a driver round trip).
+    encoders: Mutex<HashMap<String, bool>>,
 }
 
 static LOADED: OnceLock<Arc<Runtime>> = OnceLock::new();
 
+/// The last failed attempt, so an unchanged situation is not re-tried.
+struct Attempt {
+    dirs: Vec<PathBuf>,
+    stamp: Option<(PathBuf, SystemTime)>,
+    error: LoadError,
+}
+
+static TRIED: Mutex<Option<Attempt>> = Mutex::new(None);
+
 impl Runtime {
     /// Load the libraries from the first folder of `dirs` holding a complete, supported
     /// set (`dirs` is usually [`search_dirs`]). The first successful load wins for the
-    /// process and is returned again by every later call, whatever `dirs` says then.
-    ///
-    /// V0 stub: always [`LoadError::Missing`] (the loader lands in V1a).
+    /// process and is returned again by every later call, whatever `dirs` says then. A
+    /// failed attempt is remembered and only repeated when `dirs` or the modification
+    /// time of the first library file found in them changes.
     pub fn get(dirs: &[PathBuf]) -> Result<Arc<Runtime>, LoadError> {
         if let Some(rt) = LOADED.get() {
             return Ok(Arc::clone(rt));
         }
-        log::debug!("soyuz-media: no loader yet; would search {}", describe_dirs(dirs));
-        Err(LoadError::Missing { searched: dirs.to_vec() })
+        let mut tried = TRIED.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(rt) = LOADED.get() {
+            return Ok(Arc::clone(rt));
+        }
+        let stamp = sys::loader::stamp(dirs);
+        if let Some(a) = tried.as_ref()
+            && a.dirs == dirs
+            && a.stamp == stamp
+        {
+            return Err(a.error.clone());
+        }
+        match sys::loader::load(dirs) {
+            Ok(av) => {
+                let v = &av.versions;
+                log::info!(
+                    "soyuz-media: FFmpeg {} loaded from {} (avcodec {}{})",
+                    v.majors().release().unwrap_or("?"),
+                    describe_dirs(std::slice::from_ref(&av.dir)),
+                    Versions::text(v.avcodec),
+                    if v.gpl { ", GPL build" } else { "" }
+                );
+                let rt = Arc::new(Runtime { av, encoders: Mutex::new(HashMap::new()) });
+                let rt = LOADED.get_or_init(|| rt);
+                *tried = None;
+                Ok(Arc::clone(rt))
+            }
+            Err(e) => {
+                log::debug!("soyuz-media: {e}");
+                *tried = Some(Attempt { dirs: dirs.to_vec(), stamp, error: e.clone() });
+                Err(e)
+            }
+        }
     }
 
     /// The runtime if [`Runtime::get`] succeeded earlier; never loads.
@@ -225,29 +269,38 @@ impl Runtime {
     }
 
     pub fn versions(&self) -> &Versions {
-        &self.versions
+        &self.av.versions
     }
 
-    /// The folder the libraries were loaded from.
+    /// The folder the libraries were loaded from (empty for the loader's own path).
     pub fn dir(&self) -> &Path {
-        &self.dir
+        &self.av.dir
+    }
+
+    pub(crate) fn av(&self) -> &'static sys::Av {
+        self.av
     }
 
     /// `avcodec_find_decoder_by_name(name)` succeeds.
     pub fn has_decoder(&self, name: &str) -> bool {
-        let _ = name;
-        false
+        sys::codec::has_decoder(self.av, name)
     }
 
-    /// The encoder exists *and* opens (hardware encoders are probed once and cached).
+    /// The encoder exists *and* opens with a small default configuration (hardware
+    /// encoders fail on machines without the driver); probed once per name and cached.
     pub fn has_encoder(&self, name: &str) -> bool {
-        let _ = name;
-        false
+        if let Some(v) = self.encoders.lock().unwrap_or_else(|e| e.into_inner()).get(name) {
+            return *v;
+        }
+        let v = sys::codec::encoder_opens(self.av, name);
+        self.encoders.lock().unwrap_or_else(|e| e.into_inner()).insert(name.to_string(), v);
+        v
     }
 
-    /// Every codec of the build, for the About dialog and the Settings status card.
+    /// Every codec of the build (one row per codec id, with whether a decoder and an
+    /// encoder exist), for the About dialog and the Settings status card.
     pub fn codecs(&self) -> Vec<CodecDesc> {
-        Vec::new()
+        sys::codec::codec_list(self.av)
     }
 }
 
@@ -501,18 +554,28 @@ mod tests {
         assert!(LoadError::Unsupported { found: v }.to_string().contains("avcodec 63"));
     }
 
+    /// Without libraries (an empty temp folder; never the loader's path, which might
+    /// find a system FFmpeg on a developer machine) the error lists what was searched,
+    /// and an unchanged attempt is answered from memory.
     #[test]
-    fn stub_runtime_reports_missing() {
-        let dirs = vec![PathBuf::from("/nowhere"), PathBuf::from(LOADER_PATH)];
+    fn missing_runtime_lists_the_searched_folders() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dirs = vec![tmp.path().join("nowhere"), tmp.path().to_path_buf()];
         match Runtime::get(&dirs) {
             Err(LoadError::Missing { searched }) => {
                 assert_eq!(searched, dirs);
                 let text = LoadError::Missing { searched }.to_string();
-                assert!(text.contains("/nowhere") && text.contains("loader's search path"), "{text}");
+                assert!(text.contains("nowhere"), "{text}");
             }
             other => panic!("{other:?}"),
         }
         assert!(Runtime::loaded().is_none());
+        // The attempt is remembered (same dirs, no library file appeared).
+        assert!(matches!(Runtime::get(&dirs), Err(LoadError::Missing { .. })));
+        assert_eq!(
+            LoadError::Missing { searched: vec![PathBuf::from(LOADER_PATH)] }.to_string(),
+            "FFmpeg libraries not found (searched the loader's search path)"
+        );
         assert_eq!(
             LoadError::Missing { searched: vec![] }.to_string(),
             "FFmpeg libraries not found (searched nowhere)"
