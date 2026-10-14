@@ -45,6 +45,7 @@ pub(crate) mod decode;
 pub mod fixtures;
 pub mod frame;
 pub mod info;
+pub mod mux;
 pub mod player;
 pub mod presets;
 pub(crate) mod queue;
@@ -53,6 +54,7 @@ pub mod transcode;
 pub use audio::{AudioReader, peaks};
 pub use frame::{FrameRequest, grab_frame};
 pub use info::{Chapter, ColorInfo, Hdr, MediaInfo, Source, StreamInfo, StreamKind, probe};
+pub use mux::{audio_copy_container, container_accepts, container_for_ext, ext_for_container};
 pub use player::{
     AudioOutput, AudioSink, FramePixels, FrameSink, HwPref, Player, PlayerCmd, PlayerOptions, PlayerState,
 };
