@@ -6849,7 +6849,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-ai"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -6878,7 +6878,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-app"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "blake3",
  "chrono",
@@ -6919,7 +6919,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-appcore"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "ab_glyph",
  "base64 0.23.1",
@@ -6980,7 +6980,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-archive"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bzip2",
  "cab",
@@ -7004,7 +7004,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-core"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bitflags 2.13.2",
  "chrono",
@@ -7025,7 +7025,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-fs"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "bitflags 2.13.2",
  "blake3",
@@ -7063,7 +7063,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-index"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -7082,7 +7082,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-jobs"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -7099,7 +7099,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-mcp"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -7126,7 +7126,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-script"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -7148,7 +7148,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-search"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "blake3",
  "criterion",
@@ -7170,7 +7170,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-term"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "alacritty_terminal",
  "crossbeam-channel",
@@ -7184,7 +7184,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-tui"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "crossbeam-channel",
  "crossterm",
@@ -7213,7 +7213,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-vfs"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "base64 0.23.1",
  "chrono",

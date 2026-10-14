@@ -87,6 +87,11 @@
   </requires>
 
   <releases>
+    <release version="0.3.2" date="2026-10-14" type="development">
+      <description>
+        <p>Fixes to the test suite on Linux and Windows; the app itself is unchanged from 0.3.1.</p>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-10-14" type="development">
       <description>
         <p>The assistant's folder scope accepts paths written with short (8.3) names or through junctions.</p>
