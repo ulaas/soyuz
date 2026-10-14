@@ -87,6 +87,11 @@
   </requires>
 
   <releases>
+    <release version="0.3.1" date="2026-10-14" type="development">
+      <description>
+        <p>The assistant's folder scope accepts paths written with short (8.3) names or through junctions.</p>
+      </description>
+    </release>
     <release version="0.3.0" date="2026-10-14" type="development">
       <description>
         <p>The terminal UI (soyuz --tui) reaches feature parity with the window and gains a screen-reader mode; saves on Windows no longer get lost when another program has the file open.</p>
