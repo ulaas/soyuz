@@ -119,6 +119,7 @@ impl Section {
             ],
             Section::Behaviour => &[
                 "behaviour",
+                "open",
                 "general.single_click_open",
                 "general.confirm_delete",
                 "general.confirm_permanent_delete",
@@ -180,6 +181,7 @@ impl Section {
             }
             Section::Behaviour => {
                 c.behaviour = d.behaviour;
+                c.open = d.open;
                 c.general.single_click_open = d.general.single_click_open;
                 c.general.confirm_delete = d.general.confirm_delete;
                 c.general.confirm_permanent_delete = d.general.confirm_permanent_delete;

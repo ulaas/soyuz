@@ -36,6 +36,8 @@ pub struct Config {
     pub tags: TagsSection,
     pub columns: Columns,
     pub behaviour: Behaviour,
+    /// The applications Soyuz opens files with (`[open]`).
+    pub open: OpenSection,
     pub jobs: Jobs,
     pub terminal: Terminal,
     pub archive: Archive,
@@ -516,6 +518,96 @@ pub enum MiddleClick {
     NewTab,
     OtherPane,
     Nothing,
+}
+
+/// `[open]`: the applications Soyuz opens files with instead of the system's default
+/// (Enter, double-click, Open, `soyuz open`). Set from Open with… ("Always use this app")
+/// or Settings → Behaviour.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OpenSection {
+    /// Open with… preselects the application last chosen for the same file type.
+    pub remember_choice: bool,
+    /// Default applications by file type: the first rule naming the file's extension wins;
+    /// files without a rule open with the system's default application.
+    pub default_apps: Vec<DefaultApp>,
+    /// The application last chosen in Open with…, by extension (its `id`, else its program
+    /// path). Written by Soyuz.
+    pub last_used: BTreeMap<String, String>,
+}
+
+/// One `[[open.default_apps]]` rule.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DefaultApp {
+    /// Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the
+    /// end of the name.
+    pub extensions: Vec<String>,
+    /// The application's name (shown in Settings and Open with…).
+    pub name: String,
+    /// The program: an absolute path (macOS: the `.app` bundle).
+    pub program: PathBuf,
+    /// Arguments; `%1` is replaced by the file (appended when no argument has a
+    /// placeholder). On Windows, command-line fragments as the registry has them.
+    pub args: Vec<String>,
+    /// The registered application it came from (ProgId / desktop entry / bundle id);
+    /// empty for a program chosen by path.
+    pub id: String,
+}
+
+impl DefaultApp {
+    /// Whether this rule names the file `name`'s extension.
+    pub fn matches(&self, name: &str) -> bool {
+        let lower = name.to_lowercase();
+        self.extensions.iter().any(|e| {
+            let e = e.trim().trim_start_matches('.').to_lowercase();
+            !e.is_empty() && lower.len() > e.len() + 1 && lower.ends_with(&format!(".{e}"))
+        })
+    }
+
+    /// The key [`OpenSection::last_used`] keeps for this application.
+    pub fn key(&self) -> String {
+        if self.id.is_empty() { self.program.display().to_string() } else { self.id.clone() }
+    }
+
+    /// The same application (extensions aside).
+    pub fn same_app(&self, other: &DefaultApp) -> bool {
+        self.program == other.program && self.args == other.args && self.id == other.id
+    }
+}
+
+impl OpenSection {
+    /// The extension a file's choice is kept under: the last one, lowercase (`None` for
+    /// `README` or `.bashrc`).
+    pub fn ext_of(name: &str) -> Option<String> {
+        let (stem, ext) = name.rsplit_once('.')?;
+        (!stem.is_empty() && !ext.is_empty()).then(|| ext.to_lowercase())
+    }
+
+    /// The default application for the file `name`, if a rule names its extension.
+    pub fn app_for(&self, name: &str) -> Option<&DefaultApp> {
+        self.default_apps.iter().find(|r| r.matches(name))
+    }
+
+    /// Make `app` the default for `ext` (`None`: no default, the system's applies). The
+    /// extension leaves every other rule (a rule left without extensions goes); `app` joins
+    /// a rule for the same application when there is one.
+    pub fn set_default(&mut self, ext: &str, app: Option<DefaultApp>) {
+        let ext = ext.trim().trim_start_matches('.').to_lowercase();
+        if ext.is_empty() {
+            return;
+        }
+        for r in &mut self.default_apps {
+            r.extensions.retain(|e| e.trim().trim_start_matches('.').to_lowercase() != ext);
+        }
+        self.default_apps.retain(|r| !r.extensions.is_empty());
+        if let Some(app) = app {
+            match self.default_apps.iter_mut().find(|r| r.same_app(&app)) {
+                Some(r) => r.extensions.push(ext),
+                None => self.default_apps.push(DefaultApp { extensions: vec![ext], ..app }),
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -5,10 +5,14 @@
 //! shows under the field); Cancel / Esc closes. Up / Down move through the list from
 //! anywhere; a click picks a row, a second click on it opens.
 //!
-//! The GUI has no "always use this application" choice, so neither does this dialog.
+//! Like the GUI, it starts on the extension's default or last-used application
+//! (`[open]`, `model::preselect`, applied by [`tick`] once the applications are known),
+//! and a file with an extension gets an "Always use this app for .ext files" checkbox
+//! (Tab to it, Space ticks): the choice becomes the extension's default.
 
 use std::path::PathBuf;
 
+use soyuz_appcore::cmd::Cmd;
 use soyuz_appcore::core::AppCore;
 use soyuz_appcore::keys::input::InputEvent;
 use soyuz_appcore::models::requests::open_with::{self as model, AppsLookup};
@@ -29,25 +33,58 @@ pub struct State {
     pub path: PathBuf,
     pub apps: AppsLookup,
     pub list: SelectList,
+    /// The starting choice was applied ([`tick`]).
+    pub preselected: bool,
 }
 
 /// Open the dialog (from `crate::frontend`).
 pub fn open(app: &mut App, path: PathBuf) {
     let apps = AppsLookup::start(&path, app.core.wake.clone());
-    let s = State { title: model::title(&path), form: form(), path, apps, list: SelectList::new() };
+    let s = State {
+        title: model::title(&path),
+        form: form(&path, "", false),
+        path,
+        apps,
+        list: SelectList::new(),
+        preselected: false,
+    };
     app.push_dialog(TuiDialog::OpenWith(s));
 }
 
-/// The form of a new dialog.
-pub fn form() -> Form {
-    Form::new(
-        vec![Field::text(tr!("dialogs-openwith-other"), "")],
-        vec![Button::new(tr!("dialogs-openwith-open")), Button::new(tr!("common-cancel"))],
-    )
+/// The form: the program field (`custom`), the "always" checkbox when `path` has an
+/// extension, Open and Cancel.
+pub fn form(path: &std::path::Path, custom: &str, always: bool) -> Form {
+    let mut fields = vec![Field::text(tr!("dialogs-openwith-other"), custom)];
+    if let Some(label) = model::always_label(path) {
+        fields.push(Field::check(label, always));
+    }
+    Form::new(fields, vec![Button::new(tr!("dialogs-openwith-open")), Button::new(tr!("common-cancel"))])
+}
+
+/// Every frame: once the applications are known, start on the default / last-used one
+/// (unless a program was typed meanwhile).
+pub fn tick(core: &AppCore, s: &mut State) {
+    if s.preselected {
+        return;
+    }
+    let Some(apps) = s.apps.get() else { return };
+    s.preselected = true;
+    if !custom(s).trim().is_empty() {
+        return;
+    }
+    let pre = model::preselect(&core.config.open, &s.path, &apps);
+    if let Some(i) = pre.selected {
+        s.list.select(i, apps.len());
+    }
+    s.form = form(&s.path, &pre.custom, pre.always);
 }
 
 fn custom(s: &State) -> String {
     s.form.fields.first().and_then(|f| f.value()).unwrap_or_default().to_string()
+}
+
+fn always(s: &State) -> bool {
+    s.form.fields.get(1).and_then(|f| f.on()).unwrap_or(false)
 }
 
 /// Open with the typed program or the cursor row (or say what is missing).
@@ -55,7 +92,7 @@ fn submit(s: &mut State) -> Outcome {
     let apps = s.apps.get();
     let selected = apps.as_ref().filter(|l| !l.is_empty()).map(|_| s.list.cursor);
     match model::choose(&custom(s), selected, apps.as_deref()) {
-        Ok(app) => Outcome::Close(Some(model::open_cmd(&s.path, app))),
+        Ok(app) => Outcome::Close(Some(Cmd::Batch(model::choice_cmds(&s.path, app, always(s))))),
         Err(e) => {
             s.form.error = Some(crate::dialog::safe(&e));
             Outcome::Keep

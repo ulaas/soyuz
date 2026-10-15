@@ -850,6 +850,19 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             );
         });
     });
+    any |= group(ui, q, ctx, tr!("settings-open-title"), |r| {
+        r.row_kw(
+            tr!("settings-open-remember"),
+            tr!("settings-open-remember-desc"),
+            "open with remember last application program",
+            |ui| {
+                switch(ui, &mut d.open.remember_choice);
+            },
+        );
+        r.block(tr!("settings-open-defaults"), tr!("settings-open-defaults-desc"), |ui| {
+            default_apps_editor(ui, &mut d.open.default_apps);
+        });
+    });
     any |= group(ui, q, ctx, tr!("settings-behaviour-refreshing"), |r| {
         r.row_kw(
             tr!("settings-behaviour-auto-refresh"),
@@ -875,6 +888,52 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         }
     });
     any
+}
+
+/// `[[open.default_apps]]`: one row per rule (extensions, name, program, remove). The
+/// extensions field keeps its text while focused, so separators can be typed.
+fn default_apps_editor(ui: &mut Ui, rules: &mut Vec<soyuz_core::config::DefaultApp>) {
+    let p = palette(ui.ctx());
+    let ext_id = |i: usize| egui::Id::new(("settings.open.ext", i));
+    if rules.is_empty() {
+        ui.label(RichText::new(tr!("settings-open-defaults-empty")).size(11.5).color(p.text_tertiary));
+    }
+    let mut remove = None;
+    for (i, r) in rules.iter_mut().enumerate() {
+        ui.horizontal(|ui| {
+            let mut exts = ui.data(|d| d.get_temp::<String>(ext_id(i))).unwrap_or_else(|| r.extensions.join(" "));
+            let resp = text(ui, &mut exts, tr!("settings-open-extensions-hint"), 120.0);
+            if resp.changed() {
+                r.extensions = exts
+                    .split([' ', ',', ';'])
+                    .map(|e| e.trim().trim_start_matches('.').to_lowercase())
+                    .filter(|e| !e.is_empty())
+                    .collect();
+            }
+            if resp.has_focus() {
+                ui.data_mut(|d| d.insert_temp(ext_id(i), exts));
+            } else {
+                ui.data_mut(|d| d.remove::<String>(ext_id(i)));
+            }
+            text(ui, &mut r.name, tr!("settings-name"), 110.0);
+            let mut program = r.program.display().to_string();
+            let w = (ui.available_width() - 40.0).max(120.0);
+            if code(ui, &mut program, crate::models::requests::open_with::program_hint(), w).changed() {
+                r.program = program.into();
+            }
+            if small_button(ui, Some(ph::TRASH), "", true).on_hover_text(tr!("settings-open-remove")).clicked() {
+                remove = Some(i);
+            }
+        });
+    }
+    if let Some(i) = remove {
+        rules.remove(i);
+        ui.data_mut(|d| (i..=rules.len()).for_each(|j| d.remove::<String>(ext_id(j))));
+    }
+    ui.add_space(4.0);
+    if small_button(ui, Some(ph::PLUS), tr!("settings-open-add"), false).clicked() {
+        rules.push(soyuz_core::config::DefaultApp::default());
+    }
 }
 
 /// Dragging items out to other apps works here (OLE on Windows, XDND on X11, a

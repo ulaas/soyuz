@@ -440,6 +440,8 @@ dialogs-openwith-none = No registered applications for this file type
 dialogs-openwith-default-handler = { $app } (opens with the default handler)
 dialogs-openwith-other = Or another program (full path):
 dialogs-openwith-open = Open
+dialogs-openwith-always = Always use this app for .{ $ext } files
+dialogs-openwith-always-system = This application opens through the system, so it can't be the default in Soyuz
 # $path: the typed program path.
 dialogs-openwith-not-program = { $path } is not a program file
 dialogs-openwith-choose = Choose an application or type a program path

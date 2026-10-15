@@ -127,11 +127,17 @@ fn worker() -> &'static Sender<Req> {
                         postman.send(msg);
                     }
                     Req::Open { archive, inner, limits, postman } => {
-                        if let Err(e) = open_entry(&archive, &inner, &limits) {
-                            let name = inner.rsplit('/').next().unwrap_or(&inner).to_string();
-                            postman.send(UiMsg::Notice(
-                                Toast::error(tr!("services-archive-open-failed", name = name)).body(e),
-                            ));
+                        // The extracted copy opens like any file (`[open] default_apps`).
+                        match open_entry(&archive, &inner, &limits) {
+                            Ok(dest) => {
+                                postman.send(UiMsg::Launch(dest));
+                            }
+                            Err(e) => {
+                                let name = inner.rsplit('/').next().unwrap_or(&inner).to_string();
+                                postman.send(UiMsg::Notice(
+                                    Toast::error(tr!("services-archive-open-failed", name = name)).body(e),
+                                ));
+                            }
                         }
                     }
                 }
@@ -264,7 +270,7 @@ pub fn temp_entry_name(name: &str) -> Result<&str, String> {
     Ok(name)
 }
 
-fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<(), String> {
+fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<PathBuf, String> {
     let name = temp_entry_name(inner.rsplit('/').next().unwrap_or(inner))?;
     // A fresh per-open subfolder: the same entry can be opened twice, and a stale file
     // from an earlier open is never overwritten while an app may still hold it.
@@ -298,7 +304,7 @@ fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<(),
         let _ = std::fs::remove_dir(&dir);
         return Err(e);
     }
-    soyuz_fs::launch::open_default(&dest).map_err(|e| e.to_string())
+    Ok(dest)
 }
 
 // ---- jobs hand-off -----------------------------------------------------------------

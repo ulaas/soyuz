@@ -258,11 +258,12 @@ pub fn open_entry(app: &mut AppCore, id: PaneId, key: &str) {
     launch(app, &path);
 }
 
-/// Launch a file with its default application on a short-lived thread (association
-/// lookup and process spawn never block the UI).
+/// Launch a file with its default application (`[open] default_apps`, else the system's)
+/// on a short-lived thread (association lookup and process spawn never block the UI).
 pub fn launch(app: &mut AppCore, path: &Path) {
     crate::services::recent::opened_file(path);
     let postman = app.services.mailbox.postman();
+    let rule = default_app(&app.config, path);
     let path = path.to_path_buf();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Ok(Some(target)) = soyuz_fs::launch::shortcut_target(&path)
@@ -271,7 +272,7 @@ pub fn launch(app: &mut AppCore, path: &Path) {
             postman.send(UiMsg::OpenDir(target));
             return;
         }
-        if let Err(e) = soyuz_fs::launch::open_default(&path) {
+        if let Err(e) = open_file(&path, rule.as_ref()) {
             postman.send(UiMsg::Notice(
                 Toast::error(tr!("ops-open-failed", name = soyuz_core::entry::display_name(&path))).body(e.to_string()),
             ));
@@ -279,6 +280,21 @@ pub fn launch(app: &mut AppCore, path: &Path) {
     });
     if let Err(e) = spawned {
         app.ui.toasts.push(Toast::error(tr!("ops-launcher-failed")).body(e.to_string()));
+    }
+}
+
+/// The `[open] default_apps` application for `path`, if a rule names its extension.
+pub fn default_app(cfg: &soyuz_core::config::Config, path: &Path) -> Option<soyuz_fs::AppInfo> {
+    let name = path.file_name()?.to_str()?;
+    cfg.open.app_for(name).map(crate::models::requests::open_with::rule_app)
+}
+
+/// Open a file with `rule` (from [`default_app`]), else the system's default application.
+/// Blocks (call it off the UI thread).
+pub fn open_file(path: &Path, rule: Option<&soyuz_fs::AppInfo>) -> soyuz_core::FsResult<()> {
+    match rule {
+        Some(app) => soyuz_fs::launch::open_with(path, app),
+        None => soyuz_fs::launch::open_default(path),
     }
 }
 
@@ -785,6 +801,9 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::OpenWith { path, app: info } => {
             let title = tr!("ops-open-with-failed", app = &info.name);
             spawn_launch(app, title, move || soyuz_fs::launch::open_with(&path, &info).map_err(|e| e.to_string()));
+        }
+        Cmd::RememberOpenWith { ext, app: info, always } => {
+            crate::models::requests::open_with::remember(app, host, &ext, &info, always)
         }
         Cmd::HistoryJump { pane, back, n } => history_jump(app, pane, back, n),
         Cmd::FocusPane(id) => focus_pane(app, id),

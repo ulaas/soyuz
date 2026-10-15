@@ -45,6 +45,8 @@ written as a list of quoted values is an enumeration: use one of them.
 - [`[tags]`](#tags)
 - [`[columns]`](#columns)
 - [`[behaviour]`](#behaviour)
+- [`[open]`](#open)
+- [`[[open.default_apps]]`](#opendefault_apps)
 - [`[jobs]`](#jobs)
 - [`[terminal]`](#terminal)
 - [`[archive]`](#archive)
@@ -323,6 +325,29 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `spring_loaded_folders` | boolean | `true` | Hovering a folder during a drag opens it (Explorer / Finder "spring-loaded folders"). |
 | `spring_load_delay_ms` | integer | `700` | Hover time before a spring-loaded folder opens (ms). |
 | `drag_out` | boolean | `true` | Dragging items out of the window hands them to other apps (desktop, Explorer, editors) as files (Windows OLE drag and drop). |
+
+## `[open]`
+
+`[open]`: the applications Soyuz opens files with instead of the system's default (Enter, double-click, Open, `soyuz open`). Set from Open with… ("Always use this app") or Settings → Behaviour.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `remember_choice` | boolean | `true` | Open with… preselects the application last chosen for the same file type. |
+| `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path). Written by Soyuz. |
+
+## `[[open.default_apps]]`
+
+One `[[open.default_apps]]` rule.
+
+A list of tables; empty by default. Defaults below are for a new entry's omitted keys.
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `extensions` | array of strings | — | Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the end of the name. |
+| `name` | string | — | The application's name (shown in Settings and Open with…). |
+| `program` | string | — | The program: an absolute path (macOS: the `.app` bundle). |
+| `args` | array of strings | — | Arguments; `%1` is replaced by the file (appended when no argument has a placeholder). On Windows, command-line fragments as the registry has them. |
+| `id` | string | — | The registered application it came from (ProgId / desktop entry / bundle id); empty for a program chosen by path. |
 
 ## `[jobs]`
 

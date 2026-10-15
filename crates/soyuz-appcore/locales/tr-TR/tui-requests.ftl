@@ -14,7 +14,7 @@ tui-requests-pattern-hints = Enter seç · Tab sonraki · Space işaretle · Esc
 tui-requests-columns-hints = Yukarı/Aşağı seç · Space göster veya gizle · Enter tamam · Esc kapat
 
 ## Open with
-tui-requests-openwith-hints = Yukarı/Aşağı seç · Enter aç · Tab sonraki · Esc vazgeç
+tui-requests-openwith-hints = Yukarı/Aşağı seç · Enter aç · Tab sonraki · Boşluk işaretle · Esc vazgeç
 
 ## Interrupted operations
 tui-requests-recovery-hints = Yukarı/Aşağı işlemler · R sürdür · B geri al · D yoksay · L veya Esc sonra karar ver

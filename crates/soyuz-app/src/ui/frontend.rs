@@ -36,7 +36,9 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
             }
             FrontendCmd::SelectByPattern(pane) => app.gui.dialogs.push(dialogs::PatternDialog::new(pane)),
             FrontendCmd::ChooseColumns(pane) => app.gui.dialogs.push(dialogs::ColumnsDialog::new(pane)),
-            FrontendCmd::OpenWith(path) => app.gui.dialogs.push(dialogs::open_with::OpenWithDialog::new(path)),
+            FrontendCmd::OpenWith(path) => {
+                app.gui.dialogs.push(dialogs::open_with::OpenWithDialog::new(path, app.core.config.open.clone()))
+            }
             FrontendCmd::Properties { pane, entries, tab, start } => {
                 let d = dialogs::properties::PropertiesDialog::new(
                     pane,

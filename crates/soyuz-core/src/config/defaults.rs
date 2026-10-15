@@ -26,6 +26,7 @@ impl Default for Config {
             tags: TagsSection::default(),
             columns: Columns::default(),
             behaviour: Behaviour::default(),
+            open: OpenSection::default(),
             jobs: Jobs::default(),
             terminal: Terminal::default(),
             archive: Archive::default(),
@@ -194,6 +195,12 @@ impl Default for Columns {
         let details = vec![Column::Name, Column::Size, Column::Kind, Column::Modified];
         let widths = details.iter().map(|c| (c.to_string(), c.default_width())).collect();
         Columns { details, widths }
+    }
+}
+
+impl Default for OpenSection {
+    fn default() -> Self {
+        OpenSection { remember_choice: true, default_apps: Vec::new(), last_used: BTreeMap::new() }
     }
 }
 
@@ -546,6 +553,8 @@ fn common(km: &mut Keymap) {
     b(L, A::SelectNone, NONE, KeyName::Escape);
     b(L, A::Open, NONE, KeyName::Enter);
     b(L, A::Properties, ALT, KeyName::Enter);
+    // Enter opens with the default app, Shift+Enter picks one (Open with…).
+    b(L, A::OpenWith, SHIFT, KeyName::Enter);
     b(L, A::BatchRename, CTRL_SHIFT, KeyName::R);
     b(L, A::Delete, NONE, KeyName::Delete);
     b(L, A::DeletePermanent, SHIFT, KeyName::Delete);
@@ -716,6 +725,43 @@ mod tests {
             assert!(km.prefix_conflicts().is_empty(), "{p:?}: {:?}", km.prefix_conflicts());
             assert!(km.bindings.len() > 40);
         }
+    }
+
+    #[test]
+    fn default_apps_by_extension() {
+        let vlc = DefaultApp { name: "VLC".into(), program: "/usr/bin/vlc".into(), ..Default::default() };
+        let mpv = DefaultApp { name: "mpv".into(), program: "/usr/bin/mpv".into(), ..Default::default() };
+        let mut o = OpenSection::default();
+        assert!(o.remember_choice && o.app_for("a.mp4").is_none());
+        for p in KeyPreset::ALL {
+            let chord = KeyChord::new(Mods::SHIFT, KeyName::Enter);
+            assert_eq!(preset(p).lookup(KeyContext::FileList, chord), Some(&Action::OpenWith), "{p:?}");
+        }
+        o.set_default("MP4", Some(vlc.clone()));
+        o.set_default(".mkv", Some(vlc.clone()));
+        assert_eq!(o.default_apps.len(), 1, "one rule per application");
+        assert_eq!(o.default_apps[0].extensions, ["mp4", "mkv"]);
+        assert_eq!(o.app_for("Clip.MKV").map(|a| a.name.as_str()), Some("VLC"));
+        assert!(o.app_for("mp4").is_none() && o.app_for(".mp4").is_none(), "a bare extension is not a match");
+        o.set_default("mkv", Some(mpv));
+        assert_eq!(o.app_for("x.mkv").map(|a| a.name.as_str()), Some("mpv"));
+        assert_eq!(o.app_for("x.mp4").map(|a| a.name.as_str()), Some("VLC"));
+        o.set_default("mp4", None);
+        assert!(o.app_for("x.mp4").is_none());
+        assert_eq!(o.default_apps.len(), 1, "a rule without extensions goes");
+        let gz = DefaultApp { extensions: vec!["tar.gz".into()], ..vlc };
+        assert!(gz.matches("a.TAR.GZ") && !gz.matches("a.gz"));
+        assert_eq!(OpenSection::ext_of("a.b.TXT").as_deref(), Some("txt"));
+        assert_eq!(OpenSection::ext_of(".bashrc"), None);
+        assert_eq!(OpenSection::ext_of("README"), None);
+
+        #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
+        struct Wrap {
+            open: OpenSection,
+        }
+        let w = Wrap { open: o };
+        let s = toml::to_string(&w).unwrap();
+        assert_eq!(toml::from_str::<Wrap>(&s).unwrap(), w, "{s}");
     }
 
     #[test]

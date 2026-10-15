@@ -107,6 +107,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Action | Shortcut | Terminal UI | What it does |
 |---|---|---|---|
 | Open | <kbd>Enter</kbd> *(file list)* | same | Open the selection |
+| Open with… | <kbd>Shift</kbd>+<kbd>Enter</kbd> *(file list)* | same | Open with a chosen application |
 | Edit in Soyuz | <kbd>F4</kbd> *(file list)* | same | Open the file in the built-in text, hex or image editor |
 | Open in new tab | <kbd>Ctrl</kbd>+<kbd>Enter</kbd> *(file list)* | same | Open the selected folders in new tabs |
 | Copy | <kbd>Ctrl</kbd>+<kbd>C</kbd> *(file list)* | same | Copy the selection to the clipboard |

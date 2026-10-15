@@ -108,6 +108,13 @@ pub enum Cmd {
     },
     /// Open the "Open with" chooser for a file.
     ChooseOpenWith(PathBuf),
+    /// Keep an Open with… choice for the extension `ext` (`[open]`): the last-used app
+    /// (with `remember_choice`), and `app` as the default (`always`) or no default.
+    RememberOpenWith {
+        ext: String,
+        app: AppInfo,
+        always: bool,
+    },
     /// Open a path in a new Soyuz window (in-process or a new process, see
     /// `[workspace] new_window` and `ops::window`).
     NewWindow(Location),

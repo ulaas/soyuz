@@ -397,6 +397,8 @@ dialogs-openwith-none = Bu dosya türü için kayıtlı uygulama yok
 dialogs-openwith-default-handler = { $app } (varsayılan işleyiciyle açılır)
 dialogs-openwith-other = Ya da başka bir program (tam yol):
 dialogs-openwith-open = Aç
+dialogs-openwith-always = .{ $ext } dosyaları için her zaman bu uygulamayı kullan
+dialogs-openwith-always-system = Bu uygulama sistem üzerinden açılır, bu yüzden Soyuz'da varsayılan olamaz
 dialogs-openwith-not-program = { $path } bir program dosyası değil
 dialogs-openwith-choose = Bir uygulama seçin veya bir program yolu yazın
 

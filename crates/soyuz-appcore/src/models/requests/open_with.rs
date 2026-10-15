@@ -1,15 +1,22 @@
 //! "Open with…" (`FrontendCmd::OpenWith`): the applications registered for a file's type
 //! (looked up off the UI thread, [`AppsLookup`]) plus any program by path. The choice
 //! becomes `Cmd::OpenWith`; nothing is launched here.
+//!
+//! `[open]` keeps choices: "Always use this app for .ext files" makes the application the
+//! extension's default (`default_apps`, used by Enter / double-click, [`crate::ops::launch`]),
+//! and with `remember_choice` the dialog preselects the application last chosen for the
+//! extension ([`preselect`]). Both go through `Cmd::RememberOpenWith` ([`remember`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use soyuz_core::config::{DefaultApp, OpenSection};
 use soyuz_fs::AppInfo;
 
 use crate::cmd::Cmd;
-use crate::host::Wake;
+use crate::core::AppCore;
+use crate::host::{Host, Wake};
 
 /// The dialog's title for `path`.
 pub fn title(path: &Path) -> String {
@@ -62,6 +69,115 @@ pub fn choose(custom: &str, selected: Option<usize>, apps: Option<&[AppInfo]>) -
 /// The command for the chosen application.
 pub fn open_cmd(path: &Path, app: AppInfo) -> Cmd {
     Cmd::OpenWith { path: path.to_path_buf(), app }
+}
+
+/// The commands for a choice: keep it for the file's extension (`always`: as its default;
+/// off: no default), then open `path` with `app`. A file without an extension keeps nothing.
+pub fn choice_cmds(path: &Path, app: AppInfo, always: bool) -> Vec<Cmd> {
+    let mut cmds = Vec::new();
+    if let Some(ext) = ext_of(path) {
+        cmds.push(Cmd::RememberOpenWith { ext, app: app.clone(), always });
+    }
+    cmds.push(open_cmd(path, app));
+    cmds
+}
+
+/// The extension a choice for `path` is kept under (`None`: no extension).
+pub fn ext_of(path: &Path) -> Option<String> {
+    path.file_name().and_then(|n| n.to_str()).and_then(OpenSection::ext_of)
+}
+
+/// The "Always use this app" checkbox's label for `path` (`None`: no extension, no
+/// checkbox).
+pub fn always_label(path: &Path) -> Option<String> {
+    ext_of(path).map(|ext| tr!("dialogs-openwith-always", ext = ext).to_string())
+}
+
+/// The application of a `[[open.default_apps]]` rule.
+pub fn rule_app(rule: &DefaultApp) -> AppInfo {
+    AppInfo {
+        id: rule.id.clone(),
+        name: rule.name.clone(),
+        exec: rule.program.clone(),
+        args: rule.args.clone(),
+        icon: None,
+        launchable: true,
+    }
+}
+
+/// A rule (without extensions) for `app`.
+pub fn rule_of(app: &AppInfo) -> DefaultApp {
+    DefaultApp {
+        extensions: Vec::new(),
+        name: app.name.clone(),
+        program: app.exec.clone(),
+        args: app.args.clone(),
+        id: app.id.clone(),
+    }
+}
+
+/// Whether `app` can be a default: one that opens through the system's handler
+/// (`launchable == false`, e.g. a Store app) cannot be launched by Soyuz directly.
+pub fn can_be_default(app: &AppInfo) -> bool {
+    app.launchable
+}
+
+/// What the dialog starts with once the applications are known.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Preselect {
+    /// The row to select.
+    pub selected: Option<usize>,
+    /// A program path for the "another program" field (the application is not listed).
+    pub custom: String,
+    /// The "Always use this app" checkbox (the extension has a default).
+    pub always: bool,
+}
+
+/// The starting choice for `path`: the extension's default application, else (with
+/// `remember_choice`) the one last chosen, else the first listed.
+pub fn preselect(cfg: &OpenSection, path: &Path, apps: &[AppInfo]) -> Preselect {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+    let rule = cfg.app_for(name);
+    let find = |key: &str| {
+        apps.iter().position(|a| (!a.id.is_empty() && a.id == key) || a.exec.as_os_str() == std::ffi::OsStr::new(key))
+    };
+    let first = (!apps.is_empty()).then_some(0);
+    let mut out = Preselect { always: rule.is_some(), ..Preselect::default() };
+    let wanted = match rule {
+        Some(r) => Some(r.key()),
+        None if cfg.remember_choice => ext_of(path).and_then(|e| cfg.last_used.get(&e).cloned()),
+        None => None,
+    };
+    match wanted.as_deref().map(|k| (k, find(k))) {
+        Some((_, Some(i))) => out.selected = Some(i),
+        // Not listed (a program chosen by path, or uninstalled): its path in the field.
+        Some((key, None)) => match rule {
+            Some(r) => out.custom = r.program.display().to_string(),
+            None if Path::new(key).is_absolute() => out.custom = key.to_string(),
+            None => out.selected = first,
+        },
+        None => out.selected = first,
+    }
+    out
+}
+
+/// Keep a choice (`Cmd::RememberOpenWith`): the last-used application for `ext` (with
+/// `remember_choice`), and `app` as its default (`always`) or no default. Saved like any
+/// settings change (nothing is written when nothing changed).
+pub fn remember(core: &mut AppCore, host: &dyn Host, ext: &str, app: &AppInfo, always: bool) {
+    let rule = rule_of(app);
+    crate::models::settings::update_config(core, host, |c| {
+        if c.open.remember_choice {
+            c.open.last_used.insert(ext.to_string(), rule.key());
+        }
+        let current = c.open.app_for(&format!("x.{ext}")).cloned();
+        match (always && can_be_default(app), current) {
+            (true, Some(r)) if r.same_app(&rule) => {}
+            (true, _) => c.open.set_default(ext, Some(rule.clone())),
+            (false, Some(_)) => c.open.set_default(ext, None),
+            (false, None) => {}
+        }
+    });
 }
 
 /// A lookup of the applications for one file, on a worker thread.
@@ -126,5 +242,46 @@ mod tests {
         na.launchable = false;
         assert!(app_label(&na).contains("one") && app_label(&na) != "one");
         assert_eq!(AppsLookup::ready(apps.clone()).get(), Some(apps));
+    }
+
+    fn app(id: &str, exec: &str) -> AppInfo {
+        AppInfo { id: id.into(), ..custom_app(Path::new(exec)) }
+    }
+
+    #[test]
+    fn preselects_the_default_then_the_last_used() {
+        let tool = std::env::temp_dir().join("soyuz-tool");
+        let tool_key = tool.display().to_string();
+        let apps = vec![app("photos", "/bin/photos"), app("gimp.desktop", "/usr/bin/gimp")];
+        let png = Path::new("a.png");
+        let mut cfg = OpenSection::default();
+        assert_eq!(preselect(&cfg, png, &apps), Preselect { selected: Some(0), ..Default::default() });
+        cfg.last_used.insert("png".into(), "gimp.desktop".into());
+        assert_eq!(preselect(&cfg, png, &apps).selected, Some(1), "the last used");
+        cfg.remember_choice = false;
+        assert_eq!(preselect(&cfg, png, &apps).selected, Some(0), "remembering is off");
+        cfg.remember_choice = true;
+        cfg.last_used.insert("png".into(), tool_key.clone());
+        let p = preselect(&cfg, png, &apps);
+        assert_eq!((p.selected, p.custom.as_str()), (None, tool_key.as_str()), "a program by path");
+        cfg.set_default("png", Some(rule_of(&apps[1])));
+        let p = preselect(&cfg, Path::new("B.PNG"), &apps);
+        assert_eq!((p.selected, p.always), (Some(1), true), "the default wins");
+        cfg.set_default("png", Some(rule_of(&custom_app(&tool))));
+        let p = preselect(&cfg, png, &apps);
+        assert!(p.always && p.selected.is_none() && p.custom == tool_key, "{p:?}");
+        assert!(!preselect(&cfg, Path::new("README"), &apps).always);
+    }
+
+    #[test]
+    fn choices_keep_by_extension() {
+        let a = app("vlc", "/usr/bin/vlc");
+        let cmds = choice_cmds(Path::new("clip.MP4"), a.clone(), true);
+        assert!(matches!(&cmds[0], Cmd::RememberOpenWith { ext, always: true, .. } if ext == "mp4"));
+        assert!(matches!(&cmds[1], Cmd::OpenWith { .. }));
+        assert_eq!(choice_cmds(Path::new("Makefile"), a.clone(), true).len(), 1, "no extension: open only");
+        assert_eq!(rule_app(&rule_of(&a)), a);
+        assert!(always_label(Path::new("clip.mp4")).is_some_and(|l| l.contains("mp4")));
+        assert!(always_label(Path::new("Makefile")).is_none());
     }
 }

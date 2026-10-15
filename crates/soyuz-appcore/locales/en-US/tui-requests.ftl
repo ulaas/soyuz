@@ -14,7 +14,7 @@ tui-requests-pattern-hints = Enter select · Tab next · Space tick · Esc cance
 tui-requests-columns-hints = Up/Down choose · Space show or hide · Enter done · Esc close
 
 ## Open with
-tui-requests-openwith-hints = Up/Down choose · Enter open · Tab next · Esc cancel
+tui-requests-openwith-hints = Up/Down choose · Enter open · Tab next · Space tick · Esc cancel
 
 ## Interrupted operations
 tui-requests-recovery-hints = Up/Down operations · R resume · B roll back · D discard · L or Esc decide later

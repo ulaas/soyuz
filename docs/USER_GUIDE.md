@@ -96,6 +96,7 @@ mode (status bar or palette) adds tick boxes for mouse and touch users.
 | `Ctrl+Shift+N` / `Ctrl+Alt+N` | new folder / new file |
 | `Alt+Enter` | properties: attributes, times, permissions, checksums, details |
 | `Space` | Quick Look; arrows move to the next item while it is open |
+| `Enter` / `Shift+Enter` | open with the default app / choose the app (*Open with…*) |
 
 Drag and drop works between panes, tabs, the sidebar, the shelf and other applications.
 The default drop effect follows the platform convention (move on the same drive, copy
@@ -103,6 +104,23 @@ across drives); hold `Ctrl` to copy, `Shift` to move, or set *Behaviour → Drag
 to *Ask*. While dragging, rest on a folder, a breadcrumb segment, a sidebar place or
 another tab for a moment and it opens (spring-loaded folders; delay and on/off in
 *Behaviour → Drag and drop*).
+
+### Default apps
+
+`Enter` opens a file with its default app. Unless you set one in Soyuz, that is the
+system's default. `Shift+Enter` (or *Open with…* in the context menu) lists the apps
+registered for the file type: ↑ / ↓ choose, `Enter` opens, and `Tab` reaches the program
+field and the **Always use this app for .ext files** checkbox (`Space` ticks it). With
+the box ticked, the choice becomes the default for that extension in Soyuz: `Enter`,
+double-click, files opened from archives and remote folders, and `soyuz open` all use it,
+in the window and in the terminal UI. Untick it to go back to the system's default.
+
+*Open with…* starts on the extension's default app, or on the app you chose last time
+for that extension (`[open] remember_choice`). *Settings → Behaviour → Opening files
+with* lists the defaults: edit their extensions (`mp4 mkv`), name or program, or remove
+them. They are kept in `[[open.default_apps]]` in `config.toml`. Soyuz doesn't change
+the system's own default apps. Apps that open through the system, such as Store apps,
+can't be a Soyuz default.
 
 ## Background jobs, conflicts and undo
 

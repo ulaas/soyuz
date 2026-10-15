@@ -670,10 +670,11 @@ fn pump_cli(app: &mut AppCore, host: &dyn Host) {
 /// `soyuz open <path>`: folders open in a new tab, files launch (decided off-thread).
 fn open_path(app: &mut AppCore, path: PathBuf) {
     let postman = app.services.mailbox.postman();
+    let rule = crate::ops::default_app(&app.config, &path);
     let _ = std::thread::Builder::new().name("soyuz-cli-open".into()).spawn(move || {
         if soyuz_fs::stat(&path, true).is_ok_and(|e| e.is_dir_like()) {
             postman.send(crate::services::mailbox::UiMsg::OpenDir(path));
-        } else if let Err(e) = soyuz_fs::launch::open_default(&path) {
+        } else if let Err(e) = crate::ops::open_file(&path, rule.as_ref()) {
             postman.send(crate::services::mailbox::UiMsg::Notice(
                 Toast::error(tr!("automation-open-failed", name = soyuz_core::entry::display_name(&path)))
                     .body(e.to_string()),

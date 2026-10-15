@@ -401,6 +401,7 @@ pub fn tick(core: &mut AppCore, st: &mut State) {
             TuiDialog::Shelf(s) => shelf::tick(core, s),
             TuiDialog::UnlockDevice(s) => unlock_device::tick(core, s),
             TuiDialog::Versions(s) => versions::tick(core, s),
+            TuiDialog::OpenWith(s) => open_with::tick(core, s),
             _ => {}
         }
     }

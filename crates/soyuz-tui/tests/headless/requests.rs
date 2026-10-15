@@ -136,6 +136,54 @@ fn open_with(data: PathBuf) {
 }
 
 #[test]
+fn open_with_starts_on_the_default_app_and_keeps_choices() {
+    match common::relaunch(module_path!(), "open_with_starts_on_the_default_app_and_keeps_choices", files) {
+        Run::Child(data) => open_with_default(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn open_with_default(data: PathBuf) {
+    use soyuz_appcore::models::requests::open_with as model;
+    use soyuz_tui::widgets::form::FieldVmKind;
+    let tool = data.join("tool.bin");
+    std::fs::write(&tool, b"").unwrap();
+    let mut c = common::test_config();
+    c.open.set_default("txt", Some(model::rule_of(&model::custom_app(&tool))));
+    let mut app = common::new_app(c, &data);
+    app.core.cmds.push(Cmd::ChooseOpenWith(data.join("a.txt")));
+    // Kept without opening anything: `.rs` gets the tool as its default and last used.
+    app.core.cmds.push(Cmd::RememberOpenWith { ext: "rs".into(), app: model::custom_app(&tool), always: true });
+    let tool_text = tool.display().to_string();
+    let steps = vec![
+        Step::new(
+            "the default in the program field, Always ticked",
+            move |a| {
+                let Some(d) = a.view().and_then(|v| v.dialog.as_ref()) else { return false };
+                let text = matches!(&d.fields.first().map(|f| &f.kind), Some(FieldVmKind::Text { text, .. }) if *text == tool_text);
+                let always =
+                    d.fields.get(1).is_some_and(|f| f.kind == FieldVmKind::Check(true) && f.label.contains(".txt"));
+                text && always
+            },
+            key(KeyCode::Esc),
+        ),
+        Step::new(
+            "closed, .rs kept",
+            |a| {
+                let o = &a.core.config.open;
+                no_dialog(a)
+                    && o.app_for("main.rs").is_some()
+                    && o.app_for("a.txt").is_some()
+                    && o.last_used.get("rs").is_some_and(|k| k.ends_with("tool.bin"))
+            },
+            ctrl('q'),
+        ),
+    ];
+    common::run_script(&mut app, steps, 80, 24);
+    common::ok();
+}
+
+#[test]
 fn confirm_runs_the_command_only_when_confirmed() {
     match common::relaunch(module_path!(), "confirm_runs_the_command_only_when_confirmed", files) {
         Run::Child(data) => confirm(data),

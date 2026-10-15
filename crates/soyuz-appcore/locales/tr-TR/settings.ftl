@@ -1295,3 +1295,13 @@ settings-views-hidden-devices-clear = Tümünü yeniden göster
 ## thumbs
 settings-appearance-write-os-thumbs = Küçük resimleri diğer uygulamalarla paylaş
 settings-appearance-write-os-thumbs-desc = Soyuz'un hazırladığı küçük resimleri freedesktop küçük resim önbelleğine (~/.cache/thumbnails) kaydeder; dosya yöneticileri ve dosya seçiciler dosyaları yeniden çözmeden bunları gösterebilir.
+
+settings-open-title = Dosyaları açma
+settings-open-remember = Son uygulamayı hatırla
+settings-open-remember-desc = Birlikte aç…, aynı dosya türü için en son seçilen uygulamayla başlar.
+settings-open-defaults = Varsayılan uygulamalar
+settings-open-defaults-desc = Enter ve çift tıklama bu dosya türlerini sistemin varsayılanı yerine burada verilen uygulamayla açar. Birlikte aç… içinde "Her zaman bu uygulamayı kullan" ile ayarlanır.
+settings-open-defaults-empty = Henüz varsayılan uygulama yok. Her dosya sistemin varsayılan uygulamasıyla açılır.
+settings-open-extensions-hint = mp4 mkv
+settings-open-remove = Bu varsayılanı kaldır
+settings-open-add = Varsayılan uygulama ekle

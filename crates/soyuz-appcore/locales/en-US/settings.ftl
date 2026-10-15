@@ -1353,3 +1353,13 @@ settings-views-hidden-devices-clear = Show all again
 ## thumbs
 settings-appearance-write-os-thumbs = Share thumbnails with other apps
 settings-appearance-write-os-thumbs-desc = Save the thumbnails Soyuz makes into the freedesktop thumbnail cache (~/.cache/thumbnails), so file managers and file choosers can show them without decoding the files again.
+
+settings-open-title = Opening files with
+settings-open-remember = Remember the last app
+settings-open-remember-desc = Open with… starts on the application last chosen for the same file type.
+settings-open-defaults = Default apps
+settings-open-defaults-desc = Enter and double-click open these file types with the app given here instead of the system's default. Set one from Open with… with "Always use this app".
+settings-open-defaults-empty = No default apps yet. Every file opens with the system's default application.
+settings-open-extensions-hint = mp4 mkv
+settings-open-remove = Remove this default
+settings-open-add = Add a default app
