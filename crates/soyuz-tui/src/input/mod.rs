@@ -115,6 +115,8 @@ pub struct InputState {
     pub settings: settings::State,
     /// The full-screen tools (Phase T7).
     pub screens: screens::State,
+    /// The media player (Phase V3b, `crate::player`).
+    pub player: crate::player::State,
 }
 
 /// The focus for the core's state and the TUI's own input state.
@@ -175,6 +177,18 @@ pub fn key_context(f: TuiFocus) -> (KeyContext, bool) {
         TuiFocus::Sidebar => (KeyContext::Sidebar, false),
         TuiFocus::List => (KeyContext::FileList, false),
     }
+}
+
+/// [`key_context`] for the app's focus, with the media player's context (Phase V3b):
+/// `Player` while Quick Look or the focused preview pane shows the open player
+/// (`crate::player::active`); its chords fall back to `Global`.
+pub fn key_context_of(app: &App) -> (KeyContext, bool) {
+    let f = focus(&app.core, &app.input);
+    let (kctx, text) = key_context(f);
+    if matches!(f, TuiFocus::Preview | TuiFocus::QuickLook) && crate::player::active(&app.core, &app.input.player) {
+        return (KeyContext::Player, text);
+    }
+    (kctx, text)
 }
 
 /// Hand this frame's `events` to whoever owns them.

@@ -14,6 +14,12 @@
 //! A press anywhere outside the pane gives the keyboard back to whatever was pressed.
 //! The `PreviewScroll*` / `PreviewPage*` actions (Alt+Shift+Up / Down, Alt+PageUp /
 //! PageDown) scroll the pane from anywhere; the wheel over it scrolls it.
+//!
+//! While the pane shows an open player (Phase V3b, `crate::player::active`) its core
+//! context is `Player` instead of `Global`: K / J / L, ← / →, - / =, M run the `Player*`
+//! actions (the global chords still work through the context's fallback). A click on the
+//! status row's mark plays / pauses (`PlayerPlay`), one on the bar seeks there
+//! (`PlayerSeek`).
 
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -27,7 +33,7 @@ use soyuz_appcore::models::preview_load::{DiffState, PreviewLoader};
 use soyuz_core::Location;
 use soyuz_core::config::{KeyName, Mods};
 
-use super::{InputState, TuiFocus, core_input, key_context};
+use super::{InputState, TuiFocus, core_input};
 use crate::app::App;
 use crate::layout::HitTarget;
 use crate::view::preview::{Body, PreviewVm};
@@ -110,13 +116,18 @@ pub fn route(app: &mut App, events: &[Event]) {
     for ev in events {
         if let Event::Mouse(m) = ev
             && matches!(m.kind, MouseEventKind::Down(_))
-            && !matches!(app.hits.at(m.column, m.row), Some(HitTarget::PreviewScroll | HitTarget::ArchiveRow(_)))
+            && !matches!(
+                app.hits.at(m.column, m.row),
+                Some(
+                    HitTarget::PreviewScroll | HitTarget::ArchiveRow(_) | HitTarget::PlayerPlay | HitTarget::PlayerSeek
+                )
+            )
         {
             app.input.preview.focused = false;
             return super::list::route(app, events);
         }
     }
-    let (kctx, text) = key_context(TuiFocus::Preview);
+    let (kctx, text) = super::key_context_of(app);
     let frame = core_input(app, events, kctx, text);
     for i in frame.live() {
         if crate::input::focus(&app.core, &app.input) != TuiFocus::Preview {
@@ -179,9 +190,14 @@ fn open_row(app: &mut App, index: usize) {
 }
 
 /// A mouse press on one of the pane's targets: it takes the keyboard; on an archive row
-/// the cursor moves there and a double-click opens it.
+/// the cursor moves there and a double-click opens it; the player's mark plays / pauses
+/// and its bar seeks.
 pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
     if !matches!(m.kind, MouseEventKind::Down(MouseButton::Left)) {
+        return;
+    }
+    if player_click(app, target, m) {
+        app.input.preview.focused = crate::view::preview::shown(&app.core);
         return;
     }
     let st = &mut app.input.preview;
@@ -206,6 +222,21 @@ pub fn click(app: &mut App, target: HitTarget, m: &MouseEvent) {
             open_row(app, i);
         }
     }
+}
+
+/// A left press on the player's targets (Quick Look's too): the mark toggles play /
+/// pause, the bar seeks to the pressed fraction. Returns whether `target` was one.
+pub fn player_click(app: &mut App, target: HitTarget, m: &MouseEvent) -> bool {
+    match target {
+        HitTarget::PlayerPlay => app.core.ui.player.toggle(),
+        HitTarget::PlayerSeek => {
+            let Some((r, HitTarget::PlayerSeek)) = super::mouse::hit(&app.hits, m.column, m.row) else { return true };
+            let f = if r.width > 1 { f64::from(m.column - r.x) / f64::from(r.width - 1) } else { 0.0 };
+            crate::player::seek_fraction(&app.core, f);
+        }
+        _ => return false,
+    }
+    true
 }
 
 /// The wheel over one of the pane's targets (`rows`: negative scrolls up).

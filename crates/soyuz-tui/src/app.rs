@@ -410,7 +410,7 @@ impl App {
 
     /// Key context of the frame's input (the core's prompts own the keyboard when open).
     pub fn key_context(&self) -> KeyContext {
-        crate::input::key_context(self.focus()).0
+        crate::input::key_context_of(self).0
     }
 
     /// Apply queued commands (bounded rounds, like the core's); the frontend requests are

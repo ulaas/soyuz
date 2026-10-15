@@ -32,6 +32,9 @@ soyuz-appcore.workspace = true
 soyuz-core.workspace = true
 soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
+# The media player (Phase V3b, `player.rs`): `soyuz_media::Player` opened on a worker
+# thread with the terminal UI's own frame sink; the core already depends on it.
+soyuz-media.workspace = true
 # The embedded terminal pane and suspend-to-shell (Phase T5): the toolkit-free API only
 # (no `egui` feature; it is unified on under `cargo test --workspace`, never relied on).
 soyuz-term.workspace = true

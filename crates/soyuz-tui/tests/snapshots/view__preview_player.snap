@@ -1,0 +1,74 @@
+# soyuz-tui snapshot: view__preview_player (100x30, ratatui 0.30.2)
+|/ ▸ home ▸ ada ▸ data                                                                               |
+|     Name ▴                               Size Kind           ╭────────────────────────────────────╮|
+|  ■  docs/                                     Folder         │► clip.mp4                     Video│|
+|  ■  photos/                                   Folder         │                                    │|
+|  ■  src/                                      Folder         │                                    │|
+|  ≡  README.md                          2.1 KB Markdown       │                                    │|
+|  ▨  archive.zip                       14.8 MB ZIP archive    │                                    │|
+|  λ  main.rs                             812 B Rust source    │                                    │|
+|  ≡  notes.txt                          1.0 KB Text           │                                    │|
+|* ◰  report.pdf                         384 KB PDF document   │                                    │|
+|  ◩  sunset.jpg                         3.2 MB JPEG image     │                                    │|
+|  ≡  日~本~語~の~メ~モ~.txt                     96 B Text           │                                    │|
+|  □  .env                                 64 B File           │              ██████                │|
+|                                                              │              ██████                │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │                                    │|
+|                                                              │⏸ 0:12 / 1:30 ━━●────────── 80% loop│|
+|                                                              │────────────────────────────────────│|
+|                                                              │Duration   1:30                     │|
+|                                                              │Dimensions 1280 × 720               │|
+|                                                              │Video      H.264                    │|
+|                                                              ╰────────────────────────────────────╯|
+| 11 items · 1 selected (384 KB)                    120 GB free · Details · Name ↑ · Ctrl+K commands |
+--- styles
+|AAAAAAAAAAAAAAAAABBBBCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC|
+|CCCCCDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE|
+|AADCCDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCEFCDDDDDDDDCCCCCCCCCCCCCCCCCCCCCAAAAAE|
+|AADCCDDDDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AADCCDDDDCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAACCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AAGCCGGGGGGGGGGGCCCCCCCCCCCCCCCCCCCCCCCAAAAAAACAAAAAAAAAAACCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AAHCCHHHHHHHCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAAACAAAAAAAAAAACCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|IIJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJIIIIIIJIIIIJJJJJJJJJJJECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AAFCCFFFFFFFFFFCCCCCCCCCCCCCCCCCCCCCCCCCAAAAAACAAAAAAAAAACCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AACCCC~C~C~C~C~C~CCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|AAACCAAAACCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCAAAACAAAACCCCCCCCCCCECCCCCCCCCCCCCCGGGGGGCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCGGGGGGCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCECCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEDCCCCCCCCCCCCCEEEEEEEEEEEEECAAAAAAAAE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEAAAAAAAAAAACCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEAAAAAAAAAAACCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEAAAAAAAAAAACCCCCCCCCCCCCCCCCCCCCCCCCE|
+|CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE|
+|JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ|
+--- legend
+A fg=DarkGray bg=Reset
+B fg=Reset bg=Reset +BOLD
+C fg=Reset bg=Reset
+D fg=Blue bg=Reset +BOLD
+E fg=Blue bg=Reset
+F fg=Magenta bg=Reset
+G fg=Red bg=Reset
+H fg=Yellow bg=Reset
+I fg=DarkGray bg=Reset +REVERSED
+J fg=Reset bg=Reset +REVERSED
+K fg=Yellow bg=Reset +BOLD

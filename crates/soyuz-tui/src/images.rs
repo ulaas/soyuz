@@ -40,6 +40,12 @@
 //! redrawn: call it when something wrote to the terminal outside ratatui (a child process
 //! in the terminal, a suspend / resume without `Terminal::clear`). Overlays drawn in the
 //! same frame after the image need no call.
+//!
+//! # Streams (the media player, Phase V3b)
+//! Video frames replace one another at the same place many times a second. With
+//! [`ImageState::stream`] a graphics image is drawn without the blank frame between two
+//! textures at the same rect, and while the new frame is still encoding the previous one
+//! stays on the screen instead of blank cells.
 
 pub mod blocks;
 pub mod store;
@@ -315,6 +321,8 @@ struct Engine {
     worker: Option<worker::Worker>,
     placed: Vec<Placement>,
     shown: HashMap<(Rect, u64), Shown>,
+    /// The texture last drawn as a stream at each rect ([`ImageState::stream`]).
+    streams: HashMap<Rect, u64>,
     redraw: bool,
     frames: u64,
 }
@@ -335,6 +343,7 @@ impl Engine {
             worker: None,
             placed: Vec::new(),
             shown: HashMap::new(),
+            streams: HashMap::new(),
             redraw: false,
             frames: 0,
         };
@@ -366,6 +375,7 @@ impl Engine {
         self.protos.map.clear();
         self.pending.clear();
         self.shown.clear();
+        self.streams.clear();
     }
 
     fn collect(&mut self) {
@@ -442,11 +452,21 @@ impl Engine {
         self.collect();
         // Sixel and iTerm2 skip all but the first cell: track them (see the module docs).
         let tracked = matches!(picker.protocol_type(), ProtocolType::Sixel | ProtocolType::Iterm2);
+        // A stream: the previous frame at this rect, when it is still encoded (and, for
+        // tracked protocols, clean on the screen).
+        let previous = st
+            .stream
+            .then(|| self.streams.get(&rect).copied())
+            .flatten()
+            .filter(|prev| *prev != id)
+            .filter(|prev| !tracked || self.shown.get(&(rect, *prev)) == Some(&Shown::Clean))
+            .map(|prev| (prev, (prev, rect.width, rect.height, self.generation)))
+            .filter(|(_, k)| matches!(self.protos.map.get(k), Some((Some(_), _))));
         let state = self.protos.touch(&key).map(Option::is_some);
         match state {
             Some(false) => Drawn::Missing,
             Some(true) => {
-                if tracked && !self.shown.contains_key(&(rect, id)) {
+                if tracked && !self.shown.contains_key(&(rect, id)) && previous.is_none() {
                     blank(buf, rect);
                     self.place(buf, rect, id, false, true);
                     return Drawn::Pending;
@@ -457,11 +477,24 @@ impl Engine {
                 if tracked {
                     self.place(buf, rect, id, true, true);
                 }
+                if st.stream {
+                    self.streams.insert(rect, id);
+                }
                 Drawn::Image
             }
             None => {
                 if !self.pending.contains(&key) {
                     self.submit(worker::Job { key, img, px, cells: Size::new(rect.width, rect.height), picker });
+                }
+                if let Some((prev, prev_key)) = previous {
+                    // Still encoding: the previous frame stays instead of blank cells.
+                    if let Some((Some(proto), _)) = self.protos.map.get(&prev_key) {
+                        Image::new(proto).allow_clipping(true).render(rect, buf);
+                    }
+                    if tracked {
+                        self.place(buf, rect, prev, true, true);
+                    }
+                    return Drawn::Pending;
                 }
                 if tracked {
                     blank(buf, rect);
@@ -598,6 +631,9 @@ pub enum Drawn {
 pub struct ImageState {
     /// Scale images up to fill the area (default: at most their own pixel size).
     pub upscale: bool,
+    /// Frames replacing one another at the same place (the media player): no blank frame
+    /// between two textures there, the previous frame stays while the new one encodes.
+    pub stream: bool,
     /// The cells the image took in the last draw.
     pub drawn: Option<Rect>,
     /// The last result.
@@ -667,6 +703,12 @@ pub fn active() -> Option<ProtocolType> {
         Backend::Blocks => Some(ProtocolType::Halfblocks),
         Backend::Graphics(p) => Some(p.protocol_type()),
     })
+}
+
+/// The cell size in pixels images are fitted with now (the terminal's answer, else
+/// `[tui] cell_pixels`).
+pub fn cell_size() -> (u16, u16) {
+    ENGINE.with_borrow(|e| e.cell)
 }
 
 /// The colour mode half-block images use now.
@@ -916,6 +958,44 @@ mod tests {
                 .unwrap();
             }
         }
+    }
+
+    /// A stream (video frames) on sixel: the first frame goes through the blank step, the
+    /// next one is drawn in its place without it, and while it encodes the previous frame
+    /// stays on the screen.
+    #[test]
+    fn sixel_streams_replace_frames_without_blanking() {
+        let c = config(TuiImages::Sixel, TuiColorMode::Truecolor);
+        let up = install(&c, no_wake());
+        begin_frame(&c);
+        let a = red_tex(&up, 40, 40);
+        let b = red_tex(&up, 40, 40);
+        let area = Rect::new(0, 0, 10, 4);
+        let mut st = ImageState { stream: true, ..ImageState::default() };
+        let frame = |tex: &Tex, st: &mut ImageState| {
+            begin_frame(&c);
+            let mut buf = Buffer::empty(Rect::new(0, 0, 12, 6));
+            let r = draw_in(&mut buf, area, tex, st);
+            end_frame_in(&mut buf);
+            (r, buf)
+        };
+        assert_eq!(frame(&a, &mut st).0, Drawn::Pending, "encoding the first frame");
+        assert!(wait_encoded(Duration::from_secs(20)));
+        assert_eq!(frame(&a, &mut st).0, Drawn::Image, "the blank frame settled");
+        let rect = st.drawn.unwrap();
+        // The next frame: the first stays while it encodes, then it replaces it directly.
+        let (r, buf) = frame(&b, &mut st);
+        assert_eq!(r, Drawn::Pending);
+        let anchor = buf[(rect.x, rect.y)].symbol().to_string();
+        assert!(anchor.contains("\x1bP"), "the previous frame stays: {anchor:?}");
+        assert!(wait_encoded(Duration::from_secs(20)));
+        let (r, buf) = frame(&b, &mut st);
+        assert_eq!(r, Drawn::Image, "no blank frame between two stream frames");
+        assert!(buf[(rect.x, rect.y)].symbol().contains("\x1bP"));
+        // Without the stream hint the usual blank step applies.
+        let mut plain = ImageState::default();
+        assert_eq!(frame(&a, &mut plain).0, Drawn::Pending, "blanked first");
+        assert_eq!(frame(&a, &mut plain).0, Drawn::Image);
     }
 
     /// Sixel: blank first, the image next frame, un-skipped overlay cells, blank again

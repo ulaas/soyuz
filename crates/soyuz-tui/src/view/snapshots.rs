@@ -516,6 +516,46 @@ fn preview() -> PreviewVm {
     }
 }
 
+/// The preview pane playing a video: a red half-block frame and the status row. Installs
+/// the terminal UI's image store for this thread (half-blocks, 16 colours like the look).
+fn preview_player() -> PreviewVm {
+    use crate::player::{Status, StatusVm};
+    use preview::{Body, Pic};
+    let mut c = soyuz_core::config::Config::default();
+    c.tui.images = soyuz_core::config::TuiImages::Halfblocks;
+    c.tui.color_mode = soyuz_core::config::TuiColorMode::Ansi16;
+    let up = crate::images::install(&c, soyuz_appcore::host::no_wake());
+    crate::images::begin_frame(&c);
+    let rgba: Vec<u8> = (0..64 * 36).flat_map(|_| [200, 30, 30, 255]).collect();
+    let px = soyuz_appcore::services::preview_gfx::Pixels { size: [64, 36], rgba: &rgba, premultiplied: false };
+    let tex = soyuz_appcore::services::preview_gfx::Tex::upload(&up, "frame".into(), px);
+    // The store is dropped with `up`; the texture keeps it alive until the frame is drawn.
+    std::mem::forget(up);
+    let status = StatusVm {
+        status: Status::Playing,
+        pos_ds: 123,
+        duration_ds: Some(900),
+        volume: 80,
+        muted: false,
+        loop_: true,
+        video: true,
+    };
+    PreviewVm {
+        visible: true,
+        focused: true,
+        title: "clip.mp4".into(),
+        class: Some(FileClass::Video),
+        kind: "Video".into(),
+        body: Body::Player { status, pics: vec![Pic { tex, caption: None }], lines: Vec::new(), serial: 7 },
+        info: vec![
+            ("Duration".into(), "1:30".into()),
+            ("Dimensions".into(), "1280 × 720".into()),
+            ("Video".into(), "H.264".into()),
+        ],
+        ..PreviewVm::default()
+    }
+}
+
 fn editor() -> EditorVm {
     use editor::{BodyVm, TabKind, TabVm};
     EditorVm {
@@ -820,6 +860,55 @@ fn preview_text() {
     let mut m = base();
     m.preview = preview();
     snap("preview", &m, &Facts { preview: true, ..Facts::default() }, (W, H), Look::Default);
+}
+
+/// Phase V3b: the player in the preview pane, and its words in screen-reader mode.
+#[test]
+fn preview_player_status() {
+    let mut m = base();
+    m.preview = preview_player();
+    let facts = Facts { preview: true, focus: TuiFocus::Preview, ..Facts::default() };
+    snap("preview_player", &m, &facts, (W, H), Look::Default);
+    snap("preview_player", &m, &facts, (W, H), Look::ScreenReader);
+}
+
+/// Phase V3b: Quick Look on an audio file with the player's hints in the footer.
+#[test]
+fn quicklook_player() {
+    use crate::player::{Status, StatusVm};
+    use preview::{Body, PLine};
+    let mut m = base();
+    let status = StatusVm {
+        status: Status::Paused,
+        pos_ds: 455,
+        duration_ds: Some(2_150),
+        volume: 65,
+        muted: true,
+        loop_: false,
+        video: false,
+    };
+    m.quicklook = QuickLookVm {
+        visible: true,
+        title: "song.flac".into(),
+        class: Some(FileClass::Audio),
+        position: "2 / 11".into(),
+        size: "24 MB".into(),
+        preview: PreviewVm {
+            visible: true,
+            focused: true,
+            body: Body::Player {
+                status,
+                pics: Vec::new(),
+                lines: vec![PLine::plain("Song title", Role::Title), PLine::plain("The Artist", Role::Muted)],
+                serial: 0,
+            },
+            ..PreviewVm::default()
+        },
+        image: None,
+        summary: "Audio · 24 MB · 3:35".into(),
+        hints: "Esc close · K play / pause · ← → seek · M mute · ↑↓ previous / next · Enter open".into(),
+    };
+    snap("quicklook_player", &m, &Facts { focus: TuiFocus::QuickLook, ..Facts::default() }, (W, H), Look::Default);
 }
 
 #[test]

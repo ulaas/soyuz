@@ -353,7 +353,9 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
         (t @ (HitTarget::BottomTab(_) | HitTarget::JobRow(_) | HitTarget::JobButton { .. }), _) => {
             super::jobs::click(app, t, m)
         }
-        (t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_)), _) => super::preview::click(app, t, m),
+        (t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_) | HitTarget::PlayerPlay | HitTarget::PlayerSeek), _) => {
+            super::preview::click(app, t, m)
+        }
         (t @ (HitTarget::EditorTab(_) | HitTarget::EditorClose(_) | HitTarget::EditorCell { .. }), _) => {
             super::editor::click(app, t, m)
         }
@@ -538,7 +540,10 @@ fn wheel(app: &mut App, m: &MouseEvent, rows: i32) {
         Some((_, t @ (HitTarget::BottomTab(_) | HitTarget::JobRow(_) | HitTarget::JobButton { .. }))) => {
             return super::jobs::wheel(app, t, rows);
         }
-        Some((_, t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_)))) => {
+        Some((
+            _,
+            t @ (HitTarget::PreviewScroll | HitTarget::ArchiveRow(_) | HitTarget::PlayerPlay | HitTarget::PlayerSeek),
+        )) => {
             return super::preview::wheel(app, t, rows);
         }
         Some((_, t @ (HitTarget::EditorTab(_) | HitTarget::EditorClose(_) | HitTarget::EditorCell { .. }))) => {
