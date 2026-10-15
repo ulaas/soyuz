@@ -10,9 +10,17 @@
 //! the texture in place). Volume and mute changes go through [`set_volume`] /
 //! [`set_muted`], which write `[media] volume` / `muted` back to `config.toml` and apply
 //! them to the open player and to the audio preview's player.
+//!
+//! `Player::open` reads the file, so frontends open through
+//! [`PlayerModel::open_in_background`]: a worker thread opens, the model is *pending*
+//! for that key meanwhile ([`PlayerModel::is_pending`]), and [`pump`] installs the
+//! engine (or keeps the error, [`PlayerModel::open_error`]) once it arrives. Looping is
+//! the model's (a local toggle seeded by `[media] loop`, [`PlayerModel::set_loop`]): the
+//! engine is opened without its own loop and [`pump`] restarts it at the end.
 
 use std::sync::Arc;
 
+use crossbeam_channel::{Receiver, bounded};
 use parking_lot::Mutex;
 use soyuz_core::config::{HwDecode, Media as MediaCfg};
 use soyuz_media::{FramePixels, FrameSink, HwPref, PlayerCmd, PlayerOptions, PlayerState, Source};
@@ -22,6 +30,10 @@ use crate::host::{Host, Wake};
 use crate::services::media;
 use crate::services::media_player::RodioOutput;
 use crate::services::preview_gfx::{Pixels, Tex, Uploader};
+
+/// Re-exported for frontends that open and draw the player without a `soyuz-media`
+/// dependency of their own.
+pub use soyuz_media::{PlayerState as EngineState, Source as MediaSource};
 
 /// The latest presented picture (cheap to clone).
 #[derive(Clone)]
@@ -77,10 +89,29 @@ struct Open {
     slot: Arc<Mutex<Option<FrameSlot>>>,
 }
 
+/// The result a background open sends back.
+pub type OpenResult = Result<Box<dyn Engine>, String>;
+
+/// An open in progress on a worker thread.
+struct Pending {
+    key: String,
+    rx: Receiver<OpenResult>,
+    slot: Arc<Mutex<Option<FrameSlot>>>,
+    cfg: MediaCfg,
+}
+
 /// The open player, if any, and what it was opened with.
 #[derive(Default)]
 pub struct PlayerModel {
     open: Option<Open>,
+    pending: Option<Pending>,
+    /// Why the last open failed, with its key (shown until the target changes).
+    error: Option<(String, String)>,
+    /// Restart at the end (seeded by `[media] loop`, toggled in the player).
+    loop_: bool,
+    /// A play action arrived while nothing was open: the frontend showing the media
+    /// opens (and starts) its player.
+    play_request: bool,
     /// Seconds one seek step moves (`[media] seek_step_secs`).
     seek_step: f64,
     /// `(volume, muted)` last pushed into the engine, to forward config changes.
@@ -93,7 +124,9 @@ impl std::fmt::Debug for PlayerModel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PlayerModel")
             .field("key", &self.key())
+            .field("pending", &self.pending_key())
             .field("seek_step", &self.seek_step)
+            .field("loop", &self.loop_)
             .finish_non_exhaustive()
     }
 }
@@ -116,6 +149,15 @@ pub fn options(cfg: &MediaCfg) -> PlayerOptions {
         volume: f32::from(cfg.volume.min(100)) / 100.0,
         muted: cfg.muted,
     }
+}
+
+/// What the engine is opened with: [`options`] without the engine's own loop (the model
+/// loops, so the toggle in the player is authoritative) and playing at once when `play`.
+fn engine_options(cfg: &MediaCfg, play: bool) -> PlayerOptions {
+    let mut o = options(cfg);
+    o.loop_ = false;
+    o.autoplay = o.autoplay || play;
+    o
 }
 
 impl PlayerModel {
@@ -146,27 +188,120 @@ impl PlayerModel {
             slot: Arc::clone(&slot),
             serial: 0,
         };
-        let player =
-            soyuz_media::Player::open(rt, src, options(cfg), Box::new(sink), Some(Arc::new(RodioOutput)), wake.clone())
-                .map_err(|e| tr!("views-player-cant-open", error = e.to_string()))?;
+        let player = soyuz_media::Player::open(
+            rt,
+            src,
+            engine_options(cfg, false),
+            Box::new(sink),
+            Some(Arc::new(RodioOutput)),
+            wake.clone(),
+        )
+        .map_err(|e| tr!("views-player-cant-open", error = e.to_string()))?;
         self.install(key, Box::new(player), slot, cfg);
         Ok(())
+    }
+
+    /// Like [`open`](Self::open), but the file is opened on a worker thread: the model
+    /// is pending for `key` until [`poll`](Self::poll) (every frame, from [`pump`])
+    /// installs the engine or records the error. `play` starts playback as soon as it
+    /// is open (on top of `[media] autoplay`). Already open or pending for `key`:
+    /// nothing happens. The synchronous errors (player off, no libraries) come back at
+    /// once.
+    pub fn open_in_background(
+        &mut self,
+        key: &str,
+        src: Source,
+        cfg: &MediaCfg,
+        uploader: &Uploader,
+        wake: &Wake,
+        play: bool,
+    ) -> Result<(), String> {
+        if self.key() == Some(key) || self.pending_key() == Some(key) {
+            return Ok(());
+        }
+        if !cfg.player {
+            return Err(tr!("views-player-off").into());
+        }
+        let Some(rt) = media::runtime() else { return Err(tr!("services-audio-no-ffmpeg").into()) };
+        self.close();
+        self.error = None;
+        self.opened += 1;
+        let slot = Arc::new(Mutex::new(None));
+        let sink = CoreFrameSink {
+            upload: uploader.clone(),
+            name: format!("player:{}", self.opened),
+            slot: Arc::clone(&slot),
+            serial: 0,
+        };
+        let opts = engine_options(cfg, play);
+        let (tx, rx) = bounded::<OpenResult>(1);
+        let wake = wake.clone();
+        let spawned = std::thread::Builder::new().name("soyuz-player-open".into()).spawn(move || {
+            let r = soyuz_media::Player::open(rt, src, opts, Box::new(sink), Some(Arc::new(RodioOutput)), wake.clone())
+                .map(|p| Box::new(p) as Box<dyn Engine>)
+                .map_err(|e| tr!("views-player-cant-open", error = e.to_string()));
+            // The receiver is gone when the target moved on: the player (if any) is
+            // dropped here, on this thread.
+            let _ = tx.send(r);
+            wake();
+        });
+        if let Err(e) = spawned {
+            return Err(tr!("views-player-cant-open", error = e.to_string()));
+        }
+        self.pending = Some(Pending { key: key.to_string(), rx, slot, cfg: cfg.clone() });
+        Ok(())
+    }
+
+    /// Become pending for `key` on `rx` (tests, and frontends that open their own
+    /// engine off-thread); [`poll`](Self::poll) installs what arrives.
+    pub fn open_pending_with(&mut self, key: &str, rx: Receiver<OpenResult>, cfg: &MediaCfg) {
+        self.close();
+        self.error = None;
+        self.pending = Some(Pending { key: key.to_string(), rx, slot: Arc::new(Mutex::new(None)), cfg: cfg.clone() });
     }
 
     /// Open with a ready engine (tests, and frontends with their own engine).
     pub fn open_with(&mut self, key: &str, engine: Box<dyn Engine>, cfg: &MediaCfg) {
         self.close();
+        self.error = None;
         self.install(key, engine, Arc::new(Mutex::new(None)), cfg);
     }
 
     fn install(&mut self, key: &str, engine: Box<dyn Engine>, slot: Arc<Mutex<Option<FrameSlot>>>, cfg: &MediaCfg) {
         self.seek_step = f64::from(cfg.seek_step_secs.max(0.1));
         self.applied = Some((cfg.volume.min(100), cfg.muted));
+        self.loop_ = cfg.loop_;
         self.open = Some(Open { key: key.to_string(), engine, slot });
+    }
+
+    /// Every frame: a finished background open is installed (or its error kept), and
+    /// a player that reached the end restarts while looping. Returns `true` when the
+    /// open player changed (installed or failed).
+    pub fn poll(&mut self) -> bool {
+        let mut changed = false;
+        if let Some(p) = &self.pending
+            && let Ok(r) = p.rx.try_recv()
+        {
+            let p = self.pending.take().expect("pending");
+            match r {
+                Ok(engine) => self.install(&p.key, engine, p.slot, &p.cfg),
+                Err(e) => self.error = Some((p.key, e)),
+            }
+            changed = true;
+        }
+        if self.loop_
+            && let Some(s) = self.state()
+            && s.ended
+            && s.error.is_none()
+        {
+            self.play();
+        }
+        changed
     }
 
     /// Close the player (stops the threads and frees the frame).
     pub fn close(&mut self) {
+        self.pending = None;
         if let Some(o) = self.open.take() {
             o.engine.send(PlayerCmd::Stop);
             // Dropping the player joins its threads (bounded, `soyuz_media::JOIN_TIMEOUT`):
@@ -176,10 +311,14 @@ impl PlayerModel {
         }
     }
 
-    /// Close unless `key` is what is open (the preview moved to another file).
+    /// Close unless `key` is what is open or pending (the preview moved to another
+    /// file); the open error of another key is forgotten too.
     pub fn sync_target(&mut self, key: Option<&str>) {
-        if self.open.is_some() && self.key() != key {
+        if (self.open.is_some() || self.pending.is_some()) && self.key() != key && self.pending_key() != key {
             self.close();
+        }
+        if self.error.as_ref().is_some_and(|(k, _)| Some(k.as_str()) != key) {
+            self.error = None;
         }
     }
 
@@ -187,9 +326,39 @@ impl PlayerModel {
         self.open.is_some()
     }
 
+    /// A background open is in progress.
+    pub fn is_pending(&self) -> bool {
+        self.pending.is_some()
+    }
+
     /// The key the player was opened with.
     pub fn key(&self) -> Option<&str> {
         self.open.as_ref().map(|o| o.key.as_str())
+    }
+
+    /// The key a background open is for.
+    pub fn pending_key(&self) -> Option<&str> {
+        self.pending.as_ref().map(|p| p.key.as_str())
+    }
+
+    /// Why the last open of `key` failed.
+    pub fn open_error(&self, key: &str) -> Option<&str> {
+        self.error.as_ref().filter(|(k, _)| k == key).map(|(_, e)| e.as_str())
+    }
+
+    /// Restart at the end (the local loop toggle).
+    pub fn loop_enabled(&self) -> bool {
+        self.loop_
+    }
+
+    pub fn set_loop(&mut self, on: bool) {
+        self.loop_ = on;
+    }
+
+    /// A play action arrived while nothing was open (see [`execute`]); the frontend
+    /// that shows the media takes it and opens its player playing.
+    pub fn take_play_request(&mut self) -> bool {
+        std::mem::take(&mut self.play_request)
     }
 
     /// A snapshot of the open player.
@@ -269,9 +438,11 @@ impl PlayerModel {
     }
 }
 
-/// Every frame: forward `[media]` changes (Settings, a config reload) to the open
-/// player, close it when the player is turned off.
+/// Every frame: install a finished background open, restart at the end while looping,
+/// forward `[media]` changes (Settings, a config reload) to the open player, close it
+/// when the player is turned off.
 pub fn pump(app: &mut AppCore, _host: &dyn Host) {
+    app.ui.player.poll();
     let cfg = &app.config.media;
     if app.ui.player.applied != Some((cfg.volume.min(100), cfg.muted))
         || (!cfg.player && app.ui.player.is_open())
@@ -310,13 +481,43 @@ pub fn toggle_mute(app: &mut AppCore, host: &dyn Host) {
 pub const VOLUME_STEP: i16 = 5;
 
 /// Run a player action ([`Action::is_player`](soyuz_core::config::Action::is_player)) on
-/// the open player; without one, only the volume / mute settings change.
+/// the open player. Without one, the transport keys drive the audio preview's player
+/// when it has a track, and a play with nothing loaded becomes a
+/// [`PlayerModel::take_play_request`] for the frontend; the volume / mute settings
+/// change either way.
 pub fn execute(app: &mut AppCore, action: soyuz_core::config::Action, host: &dyn Host) {
+    use crate::services::preview_audio as audio;
     use soyuz_core::config::Action as A;
+    let video = app.ui.player.is_open();
+    let step = app.ui.player.seek_step();
     match action {
-        A::PlayerPlayPause => app.ui.player.toggle(),
-        A::PlayerSeekBack => app.ui.player.seek_step_by(false),
-        A::PlayerSeekForward => app.ui.player.seek_step_by(true),
+        A::PlayerPlayPause if video => app.ui.player.toggle(),
+        A::PlayerPlayPause => {
+            if app.ui.player.is_pending() {
+                return;
+            }
+            let s = audio::state();
+            if s.key.is_some() {
+                if s.playing {
+                    audio::pause();
+                } else {
+                    audio::resume();
+                }
+            } else {
+                app.ui.player.play_request = true;
+            }
+        }
+        A::PlayerSeekBack | A::PlayerSeekForward => {
+            let forward = action == A::PlayerSeekForward;
+            if video {
+                app.ui.player.seek_step_by(forward);
+            } else {
+                let s = audio::state();
+                if s.key.is_some() {
+                    audio::seek((s.pos + if forward { step } else { -step }).max(0.0));
+                }
+            }
+        }
         A::PlayerVolumeUp => adjust_volume(app, host, VOLUME_STEP),
         A::PlayerVolumeDown => adjust_volume(app, host, -VOLUME_STEP),
         A::PlayerMute => toggle_mute(app, host),
@@ -478,6 +679,87 @@ mod tests {
     }
 
     #[test]
+    fn background_opens_are_pending_until_polled() {
+        let mut m = PlayerModel::default();
+        let cfg = MediaCfg { loop_: true, ..Default::default() };
+        let (tx, rx) = bounded::<OpenResult>(1);
+        m.open_pending_with("v.mp4", rx, &cfg);
+        assert!(m.is_pending() && !m.is_open());
+        assert_eq!(m.pending_key(), Some("v.mp4"));
+        assert!(m.state().is_none() && m.frame().is_none());
+        assert!(!m.poll(), "nothing arrived yet");
+        assert!(m.is_pending());
+        // The same key stays pending; another key drops the pending open.
+        m.sync_target(Some("v.mp4"));
+        assert!(m.is_pending());
+        assert!(format!("{m:?}").contains("v.mp4"));
+        let (e, cmds) = fake(Some(4.0));
+        tx.send(Ok(e)).unwrap();
+        assert!(m.poll(), "installed");
+        assert!(m.is_open() && !m.is_pending());
+        assert_eq!(m.key(), Some("v.mp4"));
+        assert!(m.loop_enabled(), "seeded by [media] loop");
+        assert!(cmds.lock().unwrap().is_empty(), "the engine was opened with the options already");
+        // The end restarts while looping (the model loops, not the engine).
+        m.send(PlayerCmd::Stop);
+        assert!(m.state().unwrap().ended);
+        m.poll();
+        assert_eq!(cmds.lock().unwrap().last(), Some(&PlayerCmd::Play));
+        m.set_loop(false);
+        m.send(PlayerCmd::Stop);
+        let n = cmds.lock().unwrap().len();
+        m.poll();
+        assert_eq!(cmds.lock().unwrap().len(), n, "no restart without the loop");
+        // Moving on while pending drops the open; its result is ignored.
+        let (tx2, rx2) = bounded::<OpenResult>(1);
+        m.open_pending_with("w.mp4", rx2, &cfg);
+        assert!(!m.is_open() && m.is_pending());
+        m.sync_target(Some("x.mp4"));
+        assert!(!m.is_pending());
+        assert!(tx2.send(Ok(fake(None).0)).is_err(), "the receiver is gone");
+    }
+
+    #[test]
+    fn failed_opens_keep_their_error_for_the_key() {
+        let mut m = PlayerModel::default();
+        let (tx, rx) = bounded::<OpenResult>(1);
+        m.open_pending_with("bad.mp4", rx, &MediaCfg::default());
+        tx.send(Err("no codec".into())).unwrap();
+        assert!(m.poll());
+        assert!(!m.is_open() && !m.is_pending());
+        assert_eq!(m.open_error("bad.mp4"), Some("no codec"));
+        assert_eq!(m.open_error("other.mp4"), None);
+        m.sync_target(Some("bad.mp4"));
+        assert!(m.open_error("bad.mp4").is_some(), "kept while the target stays");
+        m.sync_target(Some("other.mp4"));
+        assert!(m.open_error("bad.mp4").is_none(), "forgotten with the target");
+        let (tx, rx) = bounded::<OpenResult>(1);
+        m.open_pending_with("bad.mp4", rx, &MediaCfg::default());
+        tx.send(Err("again".into())).unwrap();
+        m.poll();
+        m.open_with("good.mp4", fake(None).0, &MediaCfg::default());
+        assert!(m.open_error("bad.mp4").is_none(), "a new open clears it");
+    }
+
+    #[test]
+    fn engine_options_leave_looping_to_the_model() {
+        let cfg = MediaCfg { loop_: true, autoplay: false, ..Default::default() };
+        let o = engine_options(&cfg, false);
+        assert!(!o.loop_ && !o.autoplay);
+        assert!(engine_options(&cfg, true).autoplay);
+        assert!(options(&cfg).loop_, "the plain options keep the key");
+    }
+
+    #[test]
+    fn play_requests_are_taken_once() {
+        let mut m = PlayerModel::default();
+        assert!(!m.take_play_request());
+        m.play_request = true;
+        assert!(m.take_play_request());
+        assert!(!m.take_play_request());
+    }
+
+    #[test]
     fn open_needs_the_player_setting_and_the_libraries() {
         let mut m = PlayerModel::default();
         let up = crate::services::preview_gfx::no_upload();
@@ -485,10 +767,38 @@ mod tests {
         let off = MediaCfg { player: false, ..Default::default() };
         let err = m.open("v.mp4", Source::File("v.mp4".into()), &off, &up, &wake).unwrap_err();
         assert_eq!(err, tr!("views-player-off"));
+        let err = m.open_in_background("v.mp4", Source::File("v.mp4".into()), &off, &up, &wake, true).unwrap_err();
+        assert_eq!(err, tr!("views-player-off"));
         if media::runtime().is_none() {
             let err = m.open("v.mp4", Source::File("v.mp4".into()), &MediaCfg::default(), &up, &wake).unwrap_err();
             assert_eq!(err, tr!("services-audio-no-ffmpeg"));
+            let err = m
+                .open_in_background("v.mp4", Source::File("v.mp4".into()), &MediaCfg::default(), &up, &wake, false)
+                .unwrap_err();
+            assert_eq!(err, tr!("services-audio-no-ffmpeg"));
         }
-        assert!(!m.is_open());
+        assert!(!m.is_open() && !m.is_pending());
+    }
+
+    /// With the libraries (`SOYUZ_FFMPEG_DIR`): a missing file fails on the worker, not
+    /// synchronously.
+    #[test]
+    fn background_open_of_a_missing_file_fails_in_the_background() {
+        let Some(_) = media::runtime() else { return };
+        let mut m = PlayerModel::default();
+        let up = crate::services::preview_gfx::no_upload();
+        let wake = crate::host::no_wake();
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing.mp4");
+        let key = missing.display().to_string();
+        m.open_in_background(&key, Source::File(missing), &MediaCfg::default(), &up, &wake, false).unwrap();
+        assert!(m.is_pending());
+        let t = std::time::Instant::now();
+        while m.is_pending() && t.elapsed() < std::time::Duration::from_secs(10) {
+            m.poll();
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(!m.is_pending() && !m.is_open());
+        assert!(m.open_error(&key).is_some());
     }
 }

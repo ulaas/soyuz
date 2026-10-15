@@ -52,6 +52,15 @@ fn scripted_tour_stays_within_frame_budget() {
     for i in 0..5_000 {
         std::fs::write(data.join(format!("file_{i:05}.txt")), b"x").unwrap();
     }
+    // A clip for the "preview a video" step (plays when the FFmpeg libraries load;
+    // the poster card otherwise): 10 fps, 6 s of alternating colours.
+    {
+        use soyuz_media::fixtures::{AviCodec, avi, jpeg_solid};
+        let a = jpeg_solid(640, 360, [220, 30, 30]);
+        let b = jpeg_solid(640, 360, [30, 40, 220]);
+        let frames: Vec<Vec<u8>> = (0..60).map(|i| if (i / 10) % 2 == 0 { a.clone() } else { b.clone() }).collect();
+        std::fs::write(data.join("clip.avi"), avi(640, 360, 10, AviCodec::Mjpeg, &frames)).unwrap();
+    }
     // Portable copy of the binary.
     let bin = tmp.path().join("bin");
     std::fs::create_dir(&bin).unwrap();
@@ -82,6 +91,16 @@ fn scripted_tour_stays_within_frame_budget() {
         "command_palette".into(),
         "wait:300".into(),
         "command_palette".into(),
+        "wait:300".into(),
+        // Preview a video: the pane's player (autoplay), then Quick Look on it.
+        "config:media.autoplay=true".into(),
+        "select:clip.avi".into(),
+        "toggle_preview_pane".into(),
+        "wait:2000".into(),
+        "quick_look".into(),
+        "wait:1500".into(),
+        "quick_look".into(),
+        "toggle_preview_pane".into(),
         "wait:300".into(),
         "quit".into(),
     ]

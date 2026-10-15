@@ -622,6 +622,7 @@ fn audio(
             .line_segment([pos2(x, wave.top() + 3.0), pos2(x, wave.bottom() - 3.0)], Stroke::new(1.5, p.accent));
     }
     let wresp = ui.interact(wave, Id::new(("soyuz.audio.wave", &key, big)), Sense::click_and_drag());
+    let wave_id = wresp.id;
     if playback
         && dur > 0.0
         && (wresp.clicked() || wresp.dragged())
@@ -638,16 +639,22 @@ fn audio(
         wresp.on_hover_cursor(egui::CursorIcon::PointingHand);
     }
     y = wave.bottom() + 12.0;
-    // Transport.
-    let btn = Rect::from_center_size(pos2(inner.center().x, y + 18.0), vec2(36.0, 36.0));
+    // Transport: play / pause and the time on the left, volume and mute on the right
+    // (through the player model, which writes `[media] volume` / `muted` back).
+    let btn_x = if playback { inner.left() + 18.0 } else { inner.center().x };
+    let btn = Rect::from_center_size(pos2(btn_x, y + 18.0), vec2(36.0, 36.0));
     if playback {
         let bresp = ui.interact(btn, Id::new(("soyuz.audio.play", &key, big)), Sense::click());
         let fill = if bresp.hovered() { p.accent_hover } else { p.accent };
         ui.painter().circle_filled(btn.center(), 18.0, fill);
         let glyph = if playing { ph::PAUSE } else { ph::PLAY };
-        ui.painter().text(btn.center(), Align2::CENTER_CENTER, glyph, icons::font_fill(16.0), Color32::WHITE);
+        ui.painter().text(btn.center(), Align2::CENTER_CENTER, glyph, icons::font_fill(16.0), p.on_accent());
         crate::ui::a11y::button(&bresp, if playing { tr!("views-rich-pause") } else { tr!("views-rich-play") });
-        if bresp.clicked() {
+        if bresp.has_focus() {
+            ui.painter().circle_stroke(btn.center(), 20.0, Stroke::new(2.0, p.accent));
+        }
+        // A play key (K) with no video player open reaches the card here.
+        if bresp.clicked() || super::video::take_audio_play_request() {
             if playing {
                 preview_audio::pause();
             } else if mine {
@@ -656,10 +663,30 @@ fn audio(
                 preview_audio::play(src.clone(), ext, 0.0);
             }
         }
+        let (vol, muted) = preview_audio::volume();
+        let slider_w = if big { 90.0 } else { 64.0 };
+        let with_slider = inner.width() > 300.0;
+        let cluster_w = 32.0 + if with_slider { slider_w + 8.0 } else { 0.0 };
+        let cr = Rect::from_min_size(pos2(inner.right() - cluster_w, btn.center().y - 16.0), vec2(cluster_w, 32.0));
+        let mut c =
+            ui.new_child(UiBuilder::new().max_rect(cr).layout(egui::Layout::left_to_right(egui::Align::Center)));
+        c.spacing_mut().item_spacing.x = 8.0;
+        let drag_id = Id::new(("soyuz.audio.vol", &key, big));
+        let mut drag = ui.data(|d| d.get_temp::<Option<u8>>(drag_id)).flatten();
+        let (mute_id, vol_change, mute_change, slider_id) =
+            super::video::volume_cluster(&mut c, vol, muted, with_slider.then_some(slider_w), &mut drag);
+        ui.data_mut(|d| d.insert_temp(drag_id, drag));
+        if let Some(v) = vol_change {
+            super::video::push_audio_cmd(super::video::AudioCmd::Volume(v));
+        }
+        if let Some(m) = mute_change {
+            super::video::push_audio_cmd(super::video::AudioCmd::Muted(m));
+        }
+        super::video::register_focus_ids(ui.ctx(), [bresp.id, wave_id, mute_id].into_iter().chain(slider_id));
     }
     let time =
         if dur > 0.0 { format!("{} / {}", format_duration(pos), format_duration(dur)) } else { "—".to_string() };
-    let tx = if playback { btn.right() + 14.0 } else { inner.center().x };
+    let tx = if playback { btn.right() + 12.0 } else { inner.center().x };
     let align = if playback { Align2::LEFT_CENTER } else { Align2::CENTER_CENTER };
     ui.painter().text(pos2(tx, btn.center().y), align, time, FontId::monospace(11.5), p.text_secondary);
     if let Some(e) = ps.error.as_ref().filter(|_| mine || ps.key.is_none()) {

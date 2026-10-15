@@ -80,6 +80,8 @@ raw-window-handle = "0.6.2"
 # `docs_sync` (CONFIG.md generation).
 regex.workspace = true
 tempfile.workspace = true
+# `player_smoke` / `frame_budget` write a tiny MJPEG clip with `soyuz_media::fixtures`.
+soyuz-media.workspace = true
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz.exe (Windows hosts with rc.exe only; no-op elsewhere).

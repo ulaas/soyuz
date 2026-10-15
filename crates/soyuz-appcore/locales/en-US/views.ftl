@@ -385,6 +385,14 @@ views-player-off = The video player is off ([media] player)
 # $error: why the file could not be opened.
 views-player-cant-open = Can't open this file for playback ({ $error })
 views-rich-pause = Pause
+# $name: the file shown by the video player (its surface is a play / pause button).
+views-player-surface = Video: { $name }
+views-player-opening = Opening…
+views-player-position = Position
+views-player-volume = Volume
+views-player-mute = Mute
+views-player-unmute = Unmute
+views-player-loop = Loop
 views-rich-poster-note = Poster frame (FFmpeg) · playback opens in your player (Enter)
 views-rich-prev-page = Previous page  (PgUp)
 views-rich-next-page = Next page  (PgDn)

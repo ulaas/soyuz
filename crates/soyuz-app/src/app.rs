@@ -94,6 +94,10 @@ impl SoyuzApp {
         let text_focused = ctx.memory(|m| m.focused()).is_some_and(|id| TextEdit::load_state(ctx, id).is_some());
         if text_focused {
             (KeyContext::Omnibar, true)
+        } else if crate::ui::preview::video::owns_keyboard(self, ctx) {
+            // The preview pane's player (its surface or a control) has focus: the
+            // transport keys shadow the global chords, which still fall through.
+            (KeyContext::Player, false)
         } else if self.core.ui.focus == Focus::List {
             (KeyContext::FileList, false)
         } else if self.core.ui.focus == Focus::Sidebar {

@@ -28,6 +28,8 @@ them so it gets a role, a name and its state.
 | Terminal | Terminal | "Terminal n" | visible screen text as value |
 | Text / hex editors | multiline text input (egui) | file name | — |
 | Treemap tiles | ListItem | file / folder name | size as description |
+| Video player (preview pane, Quick Look) | Button for the picture ("Video: *name*", play / pause) and the play, mute and loop buttons; Slider for the position ("Position", value *elapsed / total*) and the volume ("Volume", value in %) | translated labels | toggled (mute, loop); the position and volume sliders take ← / → |
+| Audio card | Button (play / pause, mute), Slider (volume) | translated labels | toggled (mute) |
 | Settings controls | the matching egui role (CheckBox for switches, ComboBox, Slider, TextInput) | row label | value |
 
 All names are translated (Fluent). They follow the UI
@@ -47,6 +49,11 @@ Settings → Keys shows the full table, which you can change.
   `Delete` moves to the Recycle Bin, `Shift+Delete` deletes permanently (asks first), and
   `Ctrl+Z` undoes.
 - **Command palette:** `Ctrl+Shift+P` or `Ctrl+K`. Type, use the arrow keys, then `Enter`.
+- **Media player:** `Tab` to the picture of a previewed video (or open the video in Quick
+  Look with `Space`); then `K` plays / pauses, `J` / `L` and `←` / `→` seek, `-` / `=` change
+  the volume, `M` mutes (the *Player* context in Settings → Keys). The scrubber and the
+  volume slider are reachable with `Tab` and move with the arrow keys; every control is
+  named, and the sliders report their value.
 - **Settings:** `Ctrl+,`. Use `Tab` through the controls and `Esc` to close.
 - **Dialogs:** dialogs are modal, and focus is trapped inside (egui `Modal`). `Tab` /
   `Shift+Tab` cycle through the dialog's controls only. `Enter` triggers the primary button

@@ -6904,6 +6904,7 @@ dependencies = [
  "soyuz-index",
  "soyuz-jobs",
  "soyuz-mcp",
+ "soyuz-media",
  "soyuz-script",
  "soyuz-search",
  "soyuz-term",

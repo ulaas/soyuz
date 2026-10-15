@@ -8,6 +8,7 @@ pub mod hex;
 pub mod markdown;
 pub mod render;
 pub mod rich;
+pub mod video;
 
 use egui::{
     Align2, CornerRadius, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2,
@@ -63,10 +64,15 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     if std::mem::take(&mut app.core.ui.preview.hex_toggle) {
         app.gui.preview.toggle_hex();
     }
+    // Quick Look drives the media player while it is open; the pane shows posters.
+    let ql_open = app.core.ui.quicklook.open;
     if !app.core.ui.preview.open {
         if !app.gui.preview.cleared {
             app.gui.preview.clear();
             app.gui.preview.cleared = true;
+        }
+        if !ql_open {
+            app.core.ui.player.sync_target(None);
         }
         return;
     }
@@ -84,6 +90,23 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let limits = st.limits(&app.core.config, &p);
     st.set_target(target.as_ref(), limits);
     st.poll(&ctx);
+    // The player follows the pane's target: anything but a settled video (or a diff,
+    // the info mode, Quick Look) closes it; the audio card gets a pending play request.
+    let settled_video = !info_only
+        && pair.is_none()
+        && st.loading_since.is_none()
+        && st.loaded.as_ref().is_some_and(|l| video::takes(l, &app.core.config));
+    if !ql_open && !settled_video {
+        app.core.ui.player.sync_target(None);
+    }
+    if !ql_open
+        && matches!(
+            st.loaded.as_ref().map(|l| &l.content),
+            Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+        )
+    {
+        video::set_audio_play_request(app.core.ui.player.take_play_request());
+    }
     let mut action = None;
     let mut close = false;
     let resp = Panel::right("soyuz.preview")
@@ -186,6 +209,11 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             if !info_only {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
                 child.set_clip_rect(content_r);
+                let media = if settled_video && !ql_open {
+                    st.entry.as_ref().zip(st.loaded.as_ref()).and_then(|(e, l)| video::Media::of(e, l))
+                } else {
+                    None
+                };
                 if let Some((a, b)) = &pair {
                     diff::show(
                         &mut child,
@@ -195,6 +223,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
                         b,
                         app.core.config.preview.max_diff_kib,
                     );
+                } else if let Some(m) = media {
+                    video::show(&mut child, content_r, &mut app.core, m, false);
                 } else if let Some(a) = render::content(&mut child, content_r, st, false) {
                     action = Some(a);
                 }
@@ -215,6 +245,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         });
     app.core.ui.preview.width = resp.response.rect.width();
     crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.preview", tr!("app-a11y-resize-preview"));
+    video::apply_audio_cmds(&mut app.core, &crate::host::EguiHost::new(&ctx));
     if close {
         app.core.ui.preview.toggle();
         if !app.core.ui.preview.open {
