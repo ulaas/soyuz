@@ -26,7 +26,7 @@ pub use engine::{EngineConfig, JobEngine, JobEvent};
 pub use history::{HistoryEntry, HistoryId, UndoStamp};
 pub use job::{
     CreateKind, DeleteMode, JobId, JobKind, JobKindBrief, JobOptions, JobSpec, JobState, JobSummary, LogLevel, LogLine,
-    Priority, QueueMode, RemoteOp, SyncAction, SyncPlan,
+    MediaOptions, Priority, QueueMode, RemoteOp, SyncAction, SyncPlan,
 };
 pub use journal::{JournalJob, JournalSlot, Recovered};
 pub use progress::{JobSnapshot, Progress};

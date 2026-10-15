@@ -26,8 +26,9 @@ use crate::decode::{ChLayout, Decoder, Demuxer, Frame, Limits, Packet, Recv, Str
 use crate::frame::{FrameRequest, grab_frame};
 use crate::info::{Chapter, MediaInfo, Source, StreamInfo, StreamKind, stream_info};
 use crate::mux::{
-    self, AudioConv, EncSpec, Encoder, Got, Muxer, OutStream, OwnedPar, PixConv, audio_copy_container,
-    container_accepts, container_for_trim, ext_for_container, output_format,
+    self, AudioConv, EncSpec, Encoder, Got, Muxer, OutChapter, OutStream, OwnedPar, PixConv, audio_copy_container,
+    container_accepts, container_for_trim, container_holds_cover, container_keeps_chapters, container_keeps_rotation,
+    ext_for_container, output_format,
 };
 use crate::presets::{self, PresetId};
 use crate::sys::layout::AVRational;
@@ -126,6 +127,32 @@ pub struct Progress {
     pub out_bytes: u64,
 }
 
+/// How [`run_with`] does the work (not part of the serialized [`MediaOp`]: the
+/// `[media]` settings at the time the job runs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RunOptions {
+    /// Decoder and encoder threads per stream (`[media] threads`); 0 = FFmpeg's choice
+    /// (one per core).
+    pub threads: u32,
+    /// MP4 / MOV / M4A: move the index (`moov`) in front of the samples once the file
+    /// is written, so players can start before the whole file has arrived
+    /// (`[media] faststart`).
+    pub faststart: bool,
+}
+
+impl Default for RunOptions {
+    fn default() -> Self {
+        RunOptions { threads: 0, faststart: true }
+    }
+}
+
+impl RunOptions {
+    /// The `threads` AVOption value.
+    fn threads_opt(&self) -> String {
+        if self.threads == 0 { "auto".into() } else { self.threads.to_string() }
+    }
+}
+
 /// The `check` closure asked to stop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cancelled;
@@ -205,6 +232,8 @@ fn remux_all(info: &MediaInfo, container: &str, ext: &str, window: Option<(f64, 
         Resolved { container: container.into(), ext: ext.into(), actions: Vec::new(), window, warnings: Vec::new() };
     for s in &info.streams {
         let action = match s.kind {
+            // Cover art: decided by `keep_covers`.
+            Some(StreamKind::Video) if s.attached_pic => Action::Drop("cover art".into()),
             Some(StreamKind::Video | StreamKind::Audio | StreamKind::Subtitle) => {
                 if container_accepts(container, &s.codec) {
                     Action::Copy
@@ -358,6 +387,63 @@ fn reencode_options(encoder: &str) -> Vec<(String, String)> {
 /// container; `own_encoder(codec)` names the build's default encoder for a codec, for
 /// re-encoded trims; `has_encoder` says which encoders open). Pure: no library call.
 fn resolve(
+    info: &MediaInfo,
+    dest_ext: Option<&str>,
+    op: &MediaOp,
+    has_encoder: &dyn Fn(&str) -> bool,
+    own_encoder: &dyn Fn(&str) -> Option<String>,
+) -> Result<Resolved, MediaError> {
+    let mut r = resolve_streams(info, dest_ext, op, has_encoder, own_encoder)?;
+    if !matches!(op, MediaOp::Frame { .. }) {
+        keep_covers(info, &mut r);
+        let w = fidelity_warnings(info, &r);
+        r.warnings.extend(w);
+    }
+    Ok(r)
+}
+
+/// Cover art (attached pictures) is copied as is wherever the container has a slot for
+/// it, whatever the operation chose for the other streams; elsewhere it is left out
+/// without a warning (an Opus or WAV file has no picture, that is expected).
+fn keep_covers(info: &MediaInfo, r: &mut Resolved) {
+    for (idx, action) in &mut r.actions {
+        let Some(s) = info.streams.iter().find(|s| s.index == *idx) else { continue };
+        if s.kind != Some(StreamKind::Video) || !s.attached_pic {
+            continue;
+        }
+        *action = if container_holds_cover(&r.container, &s.codec) {
+            Action::Copy
+        } else {
+            Action::Drop(format!("{} has no place for cover art", r.container))
+        };
+    }
+}
+
+/// What the output container cannot keep of the input: its chapters, a video stream's
+/// rotation.
+fn fidelity_warnings(info: &MediaInfo, r: &Resolved) -> Vec<String> {
+    let mut w = Vec::new();
+    if !info.chapters.is_empty() && !container_keeps_chapters(&r.container) {
+        w.push(format!("chapters are not copied: {} has no chapters", r.container));
+    }
+    if !container_keeps_rotation(&r.container) {
+        for (idx, _) in r.kept() {
+            let Some(s) = info.streams.iter().find(|s| s.index == idx) else { continue };
+            if s.kind == Some(StreamKind::Video) && !s.attached_pic && s.rotation != 0 {
+                w.push(format!(
+                    "{}: the rotation ({} degrees) is lost: {} cannot store it, the picture stays as coded",
+                    stream_label(s),
+                    s.rotation,
+                    r.container
+                ));
+            }
+        }
+    }
+    w
+}
+
+/// The per-stream decisions of `op` (cover art and warnings come after, in [`resolve`]).
+fn resolve_streams(
     info: &MediaInfo,
     dest_ext: Option<&str>,
     op: &MediaOp,
@@ -611,10 +697,7 @@ pub fn plan(rt: &Runtime, src: &Path, op: &MediaOp) -> Result<PlanInfo, MediaErr
         (MediaOp::Trim { start, end, .. }, d) => Some(d.map_or(end - start, |d| (end.min(d) - start).max(0.0))),
         (_, d) => d,
     };
-    let mut warnings = r.warnings.clone();
-    if !info.chapters.is_empty() && !matches!(op, MediaOp::Frame { .. }) {
-        warnings.push("chapters are not copied".into());
-    }
+    let warnings = r.warnings.clone();
     Ok(PlanInfo {
         estimated_bytes: if matches!(op, MediaOp::Frame { .. }) { None } else { estimate_bytes(&info, &r) },
         streams: r.actions.iter().map(|(i, a)| (*i, a.describe())).collect(),
@@ -638,6 +721,19 @@ pub fn run(
     progress: &mut dyn FnMut(Progress),
     check: &mut dyn FnMut() -> Result<(), Cancelled>,
 ) -> Result<Outcome, MediaError> {
+    run_with(rt, src, dest, op, &RunOptions::default(), progress, check)
+}
+
+/// [`run`] with explicit [`RunOptions`] (threads, faststart).
+pub fn run_with(
+    rt: &Runtime,
+    src: &Path,
+    dest: &Path,
+    op: &MediaOp,
+    opts: &RunOptions,
+    progress: &mut dyn FnMut(Progress),
+    check: &mut dyn FnMut() -> Result<(), Cancelled>,
+) -> Result<Outcome, MediaError> {
     if dest.exists() {
         return Err(MediaError::Io(std::io::Error::new(
             std::io::ErrorKind::AlreadyExists,
@@ -647,7 +743,7 @@ pub fn run(
     let part = part_path(dest);
     let result = match op {
         MediaOp::Frame { .. } => save_frame(rt, src, &part, op, progress, check),
-        _ => run_inner(rt, src, &part, dest, op, progress, check),
+        _ => run_inner(rt, src, &part, dest, op, opts, progress, check),
     };
     match result {
         Ok(outcome) => {
@@ -743,6 +839,9 @@ struct CopyState {
     tb_in: AVRational,
     tb_out: AVRational,
     video: bool,
+    /// Cover art (an attached picture): `Some(written)`; its one packet is written once,
+    /// at time 0, whatever the trim window (the demuxer repeats it after a seek).
+    cover: Option<bool>,
     last_dts: Option<i64>,
     /// Non-monotonic timestamps were fixed up (reported once).
     fixed: bool,
@@ -826,6 +925,17 @@ impl Engine<'_> {
     /// Stream copy of one packet (timestamps shifted to the origin and rescaled).
     fn copy_packet(&mut self, idx: usize, pkt: &mut Packet) -> Result<(), MediaError> {
         let Some(State::Copy(c)) = self.states[idx].as_mut() else { return Ok(()) };
+        if let Some(written) = c.cover.as_mut() {
+            if *written {
+                return Ok(());
+            }
+            *written = true;
+            let out = c.out;
+            mux::pkt_set_ts(pkt, 0, 0);
+            mux::pkt_set_stream_index(pkt, out);
+            mux::pkt_clear_pos(pkt);
+            return self.muxer.write(pkt);
+        }
         let (tb_in, tb_out, out, video) = (c.tb_in, c.tb_out, c.out, c.video);
         let ts = if pkt.pts() == types::AV_NOPTS_VALUE { pkt.dts() } else { pkt.pts() };
         let secs = tb_in.secs(ts);
@@ -1136,16 +1246,19 @@ fn video_spec(
     Ok((fmt, tb, framerate))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_inner(
     rt: &Runtime,
     src: &Path,
     part: &Path,
     dest: &Path,
     op: &MediaOp,
+    opts: &RunOptions,
     progress: &mut dyn FnMut(Progress),
     check: &mut dyn FnMut() -> Result<(), Cancelled>,
 ) -> Result<Outcome, MediaError> {
     let av = rt.av();
+    let threads = opts.threads_opt();
     let mut d = Demuxer::open(av, &Source::File(src.to_path_buf()), None, Limits::default())?;
     let info = info_of(av, &d);
     let r = resolve_with(rt, &info, dest_ext(dest).as_deref(), op)?;
@@ -1175,14 +1288,13 @@ fn run_inner(
         progress,
         opkt: Packet::new(av)?,
     };
-    if !info.chapters.is_empty() {
-        engine.warnings.push("chapters are not copied".into());
-    }
-    // The main stream: the first kept video stream, else the first kept stream.
+    // The main stream: the first kept video stream, else the first kept stream that is
+    // not cover art.
     let kept: Vec<(usize, &Action)> = r.kept().collect();
     engine.main = kept
         .iter()
         .find(|(i, _)| info.streams[*i].kind == Some(StreamKind::Video) && !info.streams[*i].attached_pic)
+        .or_else(|| kept.iter().find(|(i, _)| !info.streams[*i].attached_pic))
         .or_else(|| kept.first())
         .map(|(i, _)| *i)
         .ok_or_else(|| MediaError::Unsupported("no stream to write".into()))?;
@@ -1192,8 +1304,38 @@ fn run_inner(
     for (idx, action) in &kept {
         let idx = *idx;
         let s = d.stream(idx).ok_or(MediaError::Unsupported(format!("stream {idx} vanished")))?;
-        let tags = s.metadata();
+        let mut tags = s.metadata();
+        // Ogg keeps tags per stream only (Vorbis comments): the container's go into
+        // each audio stream, under the stream's own.
+        if r.container == "ogg" && s.kind() == Some(StreamKind::Audio) {
+            for (k, v) in &info.tags {
+                if !tags.iter().any(|(t, _)| t.eq_ignore_ascii_case(k)) {
+                    tags.push((k.clone(), v.clone()));
+                }
+            }
+        }
         match action {
+            Action::Copy if r.container == "matroska" && info.streams[idx].attached_pic => {
+                // Matroska keeps cover art as an attachment (its muxer would write an
+                // attached picture as a one-frame video track); its packet is not used.
+                let Some(bytes) = s.attached_pic() else { continue };
+                let codec = &info.streams[idx].codec;
+                let (ext, mime) = match codec.as_str() {
+                    "png" => ("png", "image/png"),
+                    "bmp" => ("bmp", "image/bmp"),
+                    "gif" => ("gif", "image/gif"),
+                    _ => ("jpg", "image/jpeg"),
+                };
+                let mut tags: Vec<(String, String)> =
+                    tags.iter().filter(|(k, _)| !k.eq_ignore_ascii_case("duration")).cloned().collect();
+                if !tags.iter().any(|(k, _)| k.eq_ignore_ascii_case("filename")) {
+                    tags.push(("filename".into(), format!("cover.{ext}")));
+                }
+                if !tags.iter().any(|(k, _)| k.eq_ignore_ascii_case("mimetype")) {
+                    tags.push(("mimetype".into(), mime.into()));
+                }
+                engine.muxer.add_attachment(s.par().codec_id, &bytes, &tags)?;
+            }
             Action::Copy => {
                 let out = engine.muxer.add_stream(&OutStream {
                     par: s.par_ptr(),
@@ -1209,6 +1351,7 @@ fn run_inner(
                     tb_in: s.time_base(),
                     tb_out: AVRational::new(0, 1),
                     video: s.kind() == Some(StreamKind::Video),
+                    cover: (s.disposition() & types::AV_DISPOSITION_ATTACHED_PIC != 0).then_some(false),
                     last_dts: None,
                     fixed: false,
                 }));
@@ -1216,10 +1359,15 @@ fn run_inner(
             Action::Encode { encoder, options } => {
                 let kind = s.kind().ok_or_else(|| MediaError::Unsupported(format!("stream {idx} has no type")))?;
                 let (_, decoder) = d.best_stream(kind, Some(idx))?;
-                let dec = Decoder::open(av, decoder, s.par_ptr(), s.time_base(), &[("threads", "auto")])?;
+                let dec = Decoder::open(av, decoder, s.par_ptr(), s.time_base(), &[("threads", threads.as_str())])?;
                 let (codec_ptr, _, _) = Encoder::find(av, encoder)
                     .ok_or_else(|| MediaError::Unsupported(format!("no encoder {encoder}")))?;
-                let opts: Vec<(&str, &str)> = options.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                let mut opts: Vec<(&str, &str)> = options.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+                // Video encoders thread like the decoders (`Encoder::open` defaults to
+                // "auto"); audio encoders keep FFmpeg's default.
+                if kind == StreamKind::Video && !opts.iter().any(|(k, _)| *k == "threads") {
+                    opts.push(("threads", threads.as_str()));
+                }
                 let par = s.par();
                 let (enc, warnings, video, audio) = if kind == StreamKind::Video {
                     if par.width <= 0 || par.height <= 0 {
@@ -1295,8 +1443,19 @@ fn run_inner(
     }
     drop(enc_pars);
     engine.muxer.set_metadata(&info.tags);
+    if container_keeps_chapters(&r.container) {
+        // Chapters move with the output's time zero and a trim keeps the part of each
+        // that overlaps the window.
+        let (zero, until) = window.unwrap_or((start_time, f64::INFINITY));
+        let chapters: Vec<OutChapter> = mux::input_chapters(av, &d)
+            .into_iter()
+            .filter(|c| c.end > zero && c.start < until)
+            .map(|c| OutChapter { start: c.start.max(zero) - zero, end: c.end.min(until) - zero, ..c })
+            .collect();
+        engine.muxer.set_chapters(&chapters)?;
+    }
     // No `movflags=+faststart`: the MOV muxer re-opens the file by URL for that, which
-    // a custom AVIO cannot do.
+    // our write AVIO cannot do; `faststart::relocate` moves the index afterwards.
     let header_warnings = engine.muxer.write_header(&[])?;
     engine.warnings.extend(header_warnings);
     for st in engine.states.iter_mut().flatten() {
@@ -1360,7 +1519,13 @@ fn run_inner(
     let out_bytes = engine.muxer.bytes_written();
     engine.prog.tick(-1, Some(engine.out_secs), out_bytes, engine.progress, true);
     let duration = (engine.out_secs > 0.0).then_some(engine.out_secs);
-    Ok(Outcome { out_bytes, duration, warnings: engine.warnings })
+    let warnings = std::mem::take(&mut engine.warnings);
+    // Closes the output before it is reopened for the move.
+    drop(engine);
+    if opts.faststart && matches!(r.container.as_str(), "mp4" | "ipod" | "mov") {
+        crate::faststart::relocate(part)?;
+    }
+    Ok(Outcome { out_bytes, duration, warnings })
 }
 
 #[cfg(test)]

@@ -547,7 +547,7 @@ settings-media-browse = Choose…
 # $file: the library file to pick (avcodec-63.dll).
 settings-media-pick-title = Choose { $file } in the libraries' folder
 settings-media-threads = Decoder threads
-settings-media-threads-desc = Threads per decoded file; 0 uses one per core. Thumbnails always use one.
+settings-media-threads-desc = Threads per decoded file (the player and the media tools, which also encode video with them); 0 uses one per core. Thumbnails always use one.
 settings-media-max-px = Frame size
 settings-media-max-px-desc = Longest edge of poster frames (and of the player's frames) in pixels; larger sources are scaled down while decoding.
 settings-media-poster = Poster time
@@ -571,6 +571,8 @@ settings-media-tui-fps = Terminal frame rate
 settings-media-tui-fps-desc = Video frames per second the terminal UI draws as pictures (applies to the next video opened).
 settings-media-tools = Media tools
 settings-media-tools-desc = Convert, Extract audio, Trim and Save frame in the context menu and the palette (jobs through FFmpeg).
+settings-media-faststart = Web-ready MP4
+settings-media-faststart-desc = MP4, MOV and M4A files made by the media tools get their index at the start ("faststart"), so they play before they are fully downloaded.
 settings-preview-diff = Compare two files
 settings-preview-diff-desc = With exactly two text files selected, the preview shows their diff.
 settings-preview-diff-limit = Diff size limit

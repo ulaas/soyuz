@@ -6,11 +6,11 @@
 //! Callback rule (review must-fix 9): every `extern "C"` callback body runs inside
 //! `catch_unwind`; a panic becomes `AVERROR_EXTERNAL`.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::io::{Seek, SeekFrom, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-use super::demux::Packet;
+use super::demux::{Demuxer, Packet};
 use super::layout::*;
 use super::loader::Av;
 use super::types::*;
@@ -202,6 +202,40 @@ pub(crate) struct OutStream<'a> {
     pub clear_tag: bool,
 }
 
+/// A chapter for [`Muxer::set_chapters`]: seconds of the output, every tag (`title`, …).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct OutChapter {
+    pub start: f64,
+    pub end: f64,
+    pub tags: Vec<(String, String)>,
+}
+
+/// The chapters of an opened input, in seconds of its own clock, with all their tags.
+pub(crate) fn input_chapters(av: &Av, d: &Demuxer<'_>) -> Vec<OutChapter> {
+    // SAFETY: a live input context (the demuxer owns it for its lifetime).
+    let c = unsafe { &*d.as_ptr() };
+    let mut out = Vec::new();
+    if c.chapters.is_null() {
+        return out;
+    }
+    for i in 0..c.nb_chapters as usize {
+        // SAFETY: `i < nb_chapters`; the chapters are owned by the context.
+        let ch = unsafe { *c.chapters.add(i) };
+        if ch.is_null() {
+            continue;
+        }
+        // SAFETY: a live chapter.
+        let ch = unsafe { &*ch };
+        let Some(start) = ch.time_base.secs(ch.start) else { continue };
+        let end = ch.time_base.secs(ch.end).filter(|e| *e >= start).unwrap_or(start);
+        out.push(OutChapter { start, end, tags: super::dict_entries(av, ch.metadata) });
+    }
+    out
+}
+
+/// Chapter times are written in microseconds.
+const CHAPTER_TB: AVRational = AVRational { num: 1, den: 1_000_000 };
+
 /// An output context writing through [`WriteAvio`]. Field order: the context is freed
 /// before the AVIO it wrote through.
 pub(crate) struct Muxer {
@@ -293,6 +327,48 @@ impl Muxer {
         }
     }
 
+    /// An attachment stream (Matroska): `data` becomes its `extradata`; `tags` must name
+    /// a `filename` and should give a `mimetype`. Returns its output index.
+    pub(crate) fn add_attachment(
+        &mut self,
+        codec_id: c_int,
+        data: &[u8],
+        tags: &[(String, String)],
+    ) -> Result<usize, MediaError> {
+        if self.header {
+            return Err(MediaError::Unsupported("stream added after the header".into()));
+        }
+        let pad = super::encode::AV_INPUT_BUFFER_PADDING_SIZE;
+        // SAFETY: a live output context; NULL codec.
+        let st = unsafe { (self.av.f.avformat_new_stream)(self.ctx, std::ptr::null()) };
+        if st.is_null() {
+            return Err(av_err(self.av, AVERROR_ENOMEM));
+        }
+        // SAFETY: plain allocation of the bytes plus FFmpeg's zeroed padding.
+        let buf = unsafe { (self.av.f.av_malloc)(data.len() + pad) }.cast::<u8>();
+        if buf.is_null() {
+            return Err(av_err(self.av, AVERROR_ENOMEM));
+        }
+        // SAFETY: `buf` has `data.len() + pad` bytes; the stream was just allocated with
+        // its `codecpar`, which owns `buf` from now on (`avcodec_parameters_free` frees
+        // `extradata` when the context is freed).
+        unsafe {
+            std::ptr::copy_nonoverlapping(data.as_ptr(), buf, data.len());
+            std::ptr::write_bytes(buf.add(data.len()), 0, pad);
+            let stream = &mut *st;
+            let par = &mut *stream.codecpar;
+            par.codec_type = AVMEDIA_TYPE_ATTACHMENT;
+            par.codec_id = codec_id;
+            par.extradata = buf;
+            par.extradata_size = c_int::try_from(data.len()).unwrap_or(c_int::MAX);
+            for (k, v) in tags {
+                let (kc, vc) = (cstring(k), cstring(v));
+                (self.av.f.av_dict_set)(&mut stream.metadata, kc.as_ptr(), vc.as_ptr(), 0);
+            }
+            Ok(usize::try_from(stream.index).unwrap_or(0))
+        }
+    }
+
     /// Container-level tags (`title`, `artist`, …).
     pub(crate) fn set_metadata(&mut self, tags: &[(String, String)]) {
         for (k, v) in tags {
@@ -300,6 +376,58 @@ impl Muxer {
             // SAFETY: a live output context; `metadata` is its dictionary (NULL = empty).
             unsafe { (self.av.f.av_dict_set)(&mut (*self.ctx).metadata, kc.as_ptr(), vc.as_ptr(), 0) };
         }
+    }
+
+    /// The output's chapters (before the header; muxers without chapters ignore them).
+    /// The array and each `AVChapter` are allocated with `av_malloc`, so
+    /// `avformat_free_context` frees them like a demuxer's own.
+    pub(crate) fn set_chapters(&mut self, chapters: &[OutChapter]) -> Result<(), MediaError> {
+        if self.header {
+            return Err(MediaError::Unsupported("chapters set after the header".into()));
+        }
+        if chapters.is_empty() || self.get().nb_chapters != 0 {
+            return Ok(());
+        }
+        let n = chapters.len().min(c_uint::MAX as usize);
+        let av = self.av;
+        // SAFETY: plain allocation of `n` pointers; checked for NULL.
+        let array = unsafe { (av.f.av_malloc)(n * std::mem::size_of::<*mut AVChapter>()) }.cast::<*mut AVChapter>();
+        if array.is_null() {
+            return Err(av_err(av, AVERROR_ENOMEM));
+        }
+        let mut filled = 0usize;
+        for (i, c) in chapters.iter().take(n).enumerate() {
+            // SAFETY: plain allocation of one chapter; checked for NULL.
+            let ch = unsafe { (av.f.av_malloc)(std::mem::size_of::<AVChapter>()) }.cast::<AVChapter>();
+            if ch.is_null() {
+                break;
+            }
+            let secs = |s: f64| (s * f64::from(CHAPTER_TB.den)).round() as i64;
+            // SAFETY: `ch` is a fresh allocation of the chapter's size; `array` has room
+            // for `n` pointers and `i < n`.
+            unsafe {
+                ch.write(AVChapter {
+                    id: i as i64 + 1,
+                    time_base: CHAPTER_TB,
+                    start: secs(c.start),
+                    end: secs(c.end),
+                    metadata: std::ptr::null_mut(),
+                });
+                for (k, v) in &c.tags {
+                    let (kc, vc) = (cstring(k), cstring(v));
+                    (av.f.av_dict_set)(&mut (*ch).metadata, kc.as_ptr(), vc.as_ptr(), 0);
+                }
+                *array.add(i) = ch;
+            }
+            filled = i + 1;
+        }
+        // SAFETY: a fresh output context without chapters; it owns the array from now on
+        // (`avformat_free_context` frees `filled` chapters, their tags and the array).
+        unsafe {
+            (*self.ctx).chapters = array;
+            (*self.ctx).nb_chapters = filled as c_uint;
+        }
+        Ok(())
     }
 
     /// `avformat_write_header` with muxer options (`movflags`, …); unknown options are

@@ -232,7 +232,7 @@ impl OwnedPar {
 }
 
 /// `AV_INPUT_BUFFER_PADDING_SIZE`.
-const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
+pub(crate) const AV_INPUT_BUFFER_PADDING_SIZE: usize = 64;
 
 impl Drop for OwnedPar {
     fn drop(&mut self) {

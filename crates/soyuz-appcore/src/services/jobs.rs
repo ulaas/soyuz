@@ -14,7 +14,7 @@ use soyuz_core::{HashAlgo, Location};
 use soyuz_fs::{CopyOptions, Preserve, RealProbe, Reflink};
 use soyuz_jobs::{
     EngineConfig, HistoryEntry, HistoryId, JobEngine, JobEvent, JobId, JobKind, JobKindBrief, JobOptions, JobSnapshot,
-    JobSpec, LogLine, QueueMode, UndoRecord,
+    JobSpec, LogLine, MediaOptions, QueueMode, UndoRecord,
 };
 
 use crate::host::Host;
@@ -63,6 +63,15 @@ impl OpKind {
             JobKindBrief::SetMeta => OpKind::SetMeta,
             JobKindBrief::Media => OpKind::Media(MediaTool::Convert),
             _ => OpKind::Other,
+        }
+    }
+
+    /// The kind of a full job description: like [`Self::from_brief`], plus the media
+    /// tool (convert / extract audio / trim / save frame) from the operation.
+    pub fn of_kind(kind: &JobKind) -> OpKind {
+        match kind {
+            JobKind::Media { op, .. } => OpKind::Media(MediaTool::of_op(op)),
+            k => OpKind::from_brief(k.brief()),
         }
     }
 
@@ -188,6 +197,8 @@ pub struct JobsService {
     /// `[archive]` safety settings (merged into every extract spec).
     extract_limits: ExtractLimits,
     preserve_special_bits: bool,
+    /// `[media] threads` / `faststart` (merged into every media spec).
+    media: MediaOptions,
     /// Debug hook: `SOYUZ_THROTTLE_MBPS` caps copy throughput (to watch progress / pause).
     throttle_bps: Option<u64>,
     /// Undo state of every history entry seen so far (`None` until the first refresh,
@@ -257,6 +268,7 @@ impl JobsService {
             copy: copy_options(config),
             extract_limits: extract_limits(config),
             preserve_special_bits: config.archive.preserve_special_bits,
+            media: media_options(config),
             throttle_bps,
             seen: None,
             moves: Vec::new(),
@@ -266,9 +278,11 @@ impl JobsService {
         s
     }
 
-    /// Re-read `[jobs]` copy options and `[archive]` safety settings (config reload).
+    /// Re-read `[jobs]` copy options, `[archive]` safety settings and the `[media]`
+    /// transcoder options (config reload).
     pub fn reconfigure(&mut self, config: &Config) {
         self.copy = copy_options(config);
+        self.media = media_options(config);
         self.extract_limits = extract_limits(config);
         self.preserve_special_bits = config.archive.preserve_special_bits;
     }
@@ -295,9 +309,12 @@ impl JobsService {
             spec.options.extract_limits = self.extract_limits.clone();
             spec.options.preserve_special_bits = self.preserve_special_bits;
         }
-        // Media tools are CPU-bound: they yield to copies unless asked otherwise.
-        if matches!(spec.kind, JobKind::Media { .. }) && spec.options.priority == soyuz_jobs::Priority::Normal {
-            spec.options.priority = soyuz_jobs::Priority::Low;
+        if matches!(spec.kind, JobKind::Media { .. }) {
+            spec.options.media = self.media;
+            // Media tools are CPU-bound: they yield to copies unless asked otherwise.
+            if spec.options.priority == soyuz_jobs::Priority::Normal {
+                spec.options.priority = soyuz_jobs::Priority::Low;
+            }
         }
         let kind = spec.kind.clone();
         let id = self.engine.submit(spec);
@@ -448,6 +465,12 @@ pub fn engine_config(config: &Config) -> EngineConfig {
     }
 }
 
+/// `[media]` → how media jobs run the transcoder.
+pub fn media_options(config: &Config) -> MediaOptions {
+    let threads = u16::try_from(config.media.threads).unwrap_or(u16::MAX);
+    MediaOptions { threads, faststart: config.media.faststart }
+}
+
 /// Where a resumed `Media` job may load the FFmpeg libraries from (`[media] ffmpeg`,
 /// `ffmpeg_dir`); empty when the libraries are off.
 fn media_dirs(config: &Config) -> Vec<PathBuf> {
@@ -531,6 +554,16 @@ mod tests {
     }
 
     #[test]
+    fn media_options_from_media_section() {
+        let mut c = Config::default();
+        assert_eq!(media_options(&c), MediaOptions { threads: 0, faststart: true });
+        c.media.threads = 3;
+        c.media.faststart = false;
+        assert_eq!(media_options(&c), MediaOptions { threads: 3, faststart: false });
+        assert_eq!(media_options(&c).run_options(), soyuz_media::RunOptions { threads: 3, faststart: false });
+    }
+
+    #[test]
     fn media_jobs_default_to_low_priority() {
         let kind = JobKind::Media {
             src: "/v/a.mp4".into(),
@@ -538,6 +571,13 @@ mod tests {
             op: soyuz_media::MediaOp::Remux { container: "matroska".into() },
         };
         assert_eq!(OpKind::from_brief(kind.brief()), OpKind::Media(MediaTool::Convert));
+        let trim = JobKind::Media {
+            src: "/v/a.mp4".into(),
+            dest: "/v/a.cut.mp4".into(),
+            op: soyuz_media::MediaOp::Trim { start: 1.0, end: 2.0, stream_copy: true },
+        };
+        assert_eq!(OpKind::of_kind(&trim), OpKind::Media(MediaTool::Trim), "the tool comes from the op");
+        assert_eq!(OpKind::of_kind(&JobKind::EmptyTrash), OpKind::EmptyTrash);
         assert!(OpKind::Media(MediaTool::Trim).undoable());
         let mut spec = JobSpec::new(kind);
         assert_eq!(spec.options.priority, soyuz_jobs::Priority::Normal);

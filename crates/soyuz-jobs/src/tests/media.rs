@@ -325,3 +325,46 @@ fn journal_round_trips_the_kind() {
     assert_eq!(journal::resume_kind(&kind), Some(kind.clone()), "re-run as a whole");
     assert_eq!(crate::kinds::retry_kind(&kind, &crate::JobSummary::default()), Some(kind));
 }
+
+#[test]
+fn a_resumed_trim_keeps_its_op_label_and_options() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join(journal::JOURNAL_FILE);
+    let kind = media_kind(
+        Path::new("/v/clip.mp4"),
+        Path::new("/v/clip.cut.mp4"),
+        MediaOp::Trim { start: 1.0, end: 2.5, stream_copy: true },
+    );
+    let media = crate::MediaOptions { threads: 2, faststart: false };
+    let j = JournalJob {
+        id: 9,
+        label: crate::job::default_label(&kind),
+        kind: kind.clone(),
+        options: JobOptions { journal: true, media, ..JobOptions::default() },
+        started: std::time::SystemTime::UNIX_EPOCH,
+        records: Vec::new(),
+        stamps: Vec::new(),
+        items_done: 0,
+        items_total: 1,
+        bytes_done: 0,
+        bytes_total: 0,
+    };
+    assert_eq!(j.label, "Trim \u{201c}clip.mp4\u{201d} to \u{201c}clip.cut.mp4\u{201d}");
+    std::fs::write(&p, journal::to_json(std::slice::from_ref(&j))).unwrap();
+    let back = journal::read_journal(&p).unwrap().remove(0);
+    assert_eq!(back.kind, kind, "the op survives the journal");
+    assert_eq!(back.options.media, media, "and so do the transcoder options");
+    // Journals written before the options existed read as the defaults.
+    let old = journal::to_json(std::slice::from_ref(&j)).replace(",\"media\":{\"threads\":2,\"faststart\":false}", "");
+    assert!(!old.contains("faststart"), "{old}");
+    std::fs::write(&p, old).unwrap();
+    assert_eq!(journal::read_journal(&p).unwrap()[0].options.media, crate::MediaOptions::default());
+    // The resumed job is still a trim (its label names the op, not "Convert").
+    let h = H::new();
+    let id = h.engine.resume_journaled(&back).expect("a media job is re-run as a whole");
+    let snap = h.snap(id);
+    assert_eq!(snap.kind, JobKindBrief::Media);
+    assert_eq!(snap.label, "Resume: Trim \u{201c}clip.mp4\u{201d} to \u{201c}clip.cut.mp4\u{201d}");
+    h.engine.cancel(id);
+    h.done(id);
+}

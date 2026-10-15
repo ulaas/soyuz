@@ -808,7 +808,8 @@ pub struct Media {
     /// `<config dir>/ffmpeg`, then the system folders. A change applies to the next load
     /// (after a restart once libraries were loaded).
     pub ffmpeg_dir: String,
-    /// Decoder threads per file; 0 = one per core.
+    /// Decoder threads per file (the player, and the decoders and video encoders of the
+    /// media tools); 0 = one per core.
     pub threads: u32,
     /// Hardware video decoding (`auto` picks the platform's decoder when the codec has one).
     pub hw_decode: HwDecode,
@@ -837,6 +838,9 @@ pub struct Media {
     pub poster_secs: f32,
     /// Show the media tools (Convert…, Extract audio…, Trim…, Save frame…) in menus.
     pub tools: bool,
+    /// MP4 / MOV / M4A files written by the media tools get their index in front of the
+    /// samples ("faststart"), so they start playing before they are fully downloaded.
+    pub faststart: bool,
 }
 
 /// `media.hw_decode`.
