@@ -104,6 +104,14 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 number(ui, &mut d.media.seek_step_secs, 0.5..=60.0, " s");
             },
         );
+        r.row_kw(
+            tr!("settings-media-tui-fps"),
+            tr!("settings-media-tui-fps-desc"),
+            "terminal tui frames per second video",
+            |ui| {
+                number(ui, &mut d.media.tui_fps, 1..=30, " fps");
+            },
+        );
     });
     if retry {
         media::retry();
