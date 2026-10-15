@@ -9,6 +9,7 @@ pub mod markdown;
 pub mod render;
 pub mod rich;
 pub mod video;
+pub mod video_gpu;
 
 use egui::{
     Align2, CornerRadius, FontId, Frame, Margin, Panel, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder, pos2, vec2,

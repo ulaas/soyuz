@@ -100,6 +100,31 @@ impl Decoder {
         time_base: AVRational,
         options: &[(&str, &str)],
     ) -> Result<Decoder, MediaError> {
+        Decoder::open_on(av, codec, par, time_base, options, None)
+    }
+
+    /// [`open`](Self::open) with a hardware device attached (`hw_device_ctx`): frames
+    /// come in the codec's hardware format when FFmpeg's hwaccel accepts the stream, in
+    /// a software format otherwise.
+    pub(crate) fn open_hw(
+        av: &'static Av,
+        codec: *const AVCodec,
+        par: *const AVCodecParameters,
+        time_base: AVRational,
+        options: &[(&str, &str)],
+        device: &super::hwdec::HwDevice,
+    ) -> Result<Decoder, MediaError> {
+        Decoder::open_on(av, codec, par, time_base, options, Some(device))
+    }
+
+    fn open_on(
+        av: &'static Av,
+        codec: *const AVCodec,
+        par: *const AVCodecParameters,
+        time_base: AVRational,
+        options: &[(&str, &str)],
+        device: Option<&super::hwdec::HwDevice>,
+    ) -> Result<Decoder, MediaError> {
         if codec.is_null() {
             return Err(MediaError::Unsupported("no decoder".into()));
         }
@@ -119,6 +144,9 @@ impl Decoder {
         opt_set(av, obj, "err_detect", "careful")?;
         for (k, v) in options {
             opt_set(av, obj, k, v)?;
+        }
+        if let Some(device) = device {
+            super::hwdec::attach(av, ctx, device)?;
         }
         // SAFETY: a configured context; no options dictionary.
         ok(av, unsafe { (av.f.avcodec_open2)(d.ctx, codec, std::ptr::null_mut()) })?;
@@ -261,6 +289,23 @@ impl Frame {
         self.field(self.av.layout.frame.color_trc)
     }
 
+    pub(crate) fn color_primaries(&self) -> c_int {
+        self.field(self.av.layout.frame.color_primaries)
+    }
+
+    pub(crate) fn colorspace(&self) -> c_int {
+        self.field(self.av.layout.frame.colorspace)
+    }
+
+    /// Copy a hardware frame (`self`) into system memory: `dst` gets the transfer
+    /// format FFmpeg picks first (NV12 / P010 for the supported devices) and this
+    /// frame's size.
+    pub(crate) fn transfer_to(&self, dst: &mut Frame) -> Result<(), MediaError> {
+        dst.unref();
+        // SAFETY: two live frames; `dst` is blank (format unset), so FFmpeg allocates it.
+        ok(self.av, unsafe { (self.av.f.av_hwframe_transfer_data)(dst.ptr, self.ptr, 0) }).map(drop)
+    }
+
     /// The eight plane pointers.
     pub(crate) fn data(&self) -> [*const u8; 8] {
         let d: [*mut u8; 8] = self.field(self.av.layout.frame.data);
@@ -294,12 +339,80 @@ impl Frame {
         // SAFETY: a live frame.
         unsafe { (self.av.f.av_frame_unref)(self.ptr) };
     }
+
+    /// Make this a blank `w × h` picture in `fmt` with its own buffers (the target of a
+    /// scaler).
+    pub(crate) fn alloc_video(&mut self, w: c_int, h: c_int, fmt: c_int) -> Result<(), MediaError> {
+        self.unref();
+        let l = self.av.layout.frame;
+        // SAFETY: an unreferenced live frame of the loaded library; the offsets come from
+        // that major's table (prefix fields), written with their C types.
+        unsafe {
+            let base = self.ptr.cast::<u8>();
+            std::ptr::write_unaligned(base.add(l.width).cast::<c_int>(), w);
+            std::ptr::write_unaligned(base.add(l.height).cast::<c_int>(), h);
+            std::ptr::write_unaligned(base.add(l.format).cast::<c_int>(), fmt);
+        }
+        // SAFETY: size and format set above; FFmpeg allocates the planes.
+        ok(self.av, unsafe { (self.av.f.av_frame_get_buffer)(self.ptr, 0) }).map(drop)
+    }
 }
 
 impl Drop for Frame {
     fn drop(&mut self) {
         // SAFETY: `ptr` came from `av_frame_alloc`.
         unsafe { (self.av.f.av_frame_free)(&mut self.ptr) };
+    }
+}
+
+/// An owned copy of a stream's `AVCodecParameters` (a decoder can be reopened later, on
+/// another thread, without touching the demuxer's stream).
+pub(crate) struct Params {
+    av: &'static Av,
+    ptr: *mut AVCodecParameters,
+}
+
+// SAFETY: heap data owned by this handle, only read by `avcodec_parameters_to_context`.
+unsafe impl Send for Params {}
+
+impl Params {
+    pub(crate) fn copy_of(av: &'static Av, src: *const AVCodecParameters) -> Result<Params, MediaError> {
+        // SAFETY: plain allocation, NULL-checked.
+        let ptr = unsafe { (av.f.avcodec_parameters_alloc)() };
+        if ptr.is_null() {
+            return Err(av_err(av, AVERROR_ENOMEM));
+        }
+        let p = Params { av, ptr };
+        // SAFETY: a fresh parameter set and a live source (the caller's stream).
+        ok(av, unsafe { (av.f.avcodec_parameters_copy)(p.ptr, src) })?;
+        Ok(p)
+    }
+
+    pub(crate) fn as_ptr(&self) -> *const AVCodecParameters {
+        self.ptr
+    }
+
+    /// `[color_range, color_primaries, color_trc, color_space]` of the stream.
+    pub(crate) fn color(&self) -> [c_int; 4] {
+        // SAFETY: an owned, initialised parameter set (prefix struct identical on every
+        // supported release).
+        let p = unsafe { &*self.ptr };
+        [p.color_range, p.color_primaries, p.color_trc, p.color_space]
+    }
+}
+
+/// A codec description (`AVCodec`): static data inside the library, which is never
+/// unloaded, so the pointer may move between threads.
+#[derive(Clone, Copy)]
+pub(crate) struct CodecRef(pub *const AVCodec);
+
+// SAFETY: points at an immutable static of the loaded library.
+unsafe impl Send for CodecRef {}
+
+impl Drop for Params {
+    fn drop(&mut self) {
+        // SAFETY: `ptr` came from `avcodec_parameters_alloc`.
+        unsafe { (self.av.f.avcodec_parameters_free)(&mut self.ptr) };
     }
 }
 

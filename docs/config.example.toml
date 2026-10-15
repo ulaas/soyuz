@@ -251,7 +251,8 @@ max_diff_kib = 1024              # each side of a diff is read up to this size
 ffmpeg = true                    # use the libraries when found (bundled, ffmpeg_dir, <config>/ffmpeg, system)
 ffmpeg_dir = ""                  # folder searched first for avcodec-63.dll / libavcodec.so.63 / libavcodec.63.dylib
 threads = 0                      # decoder threads per file; 0 = one per core
-hw_decode = "auto"               # auto | off | d3d11va | vaapi | videotoolbox
+hw_decode = "auto"               # auto | off | d3d11va | vaapi | videotoolbox (falls back to software)
+gpu_yuv = false                  # convert video frames on the GPU (wgpu renderer): own colour matrix, HDR tone mapping
 audio_backend = "auto"           # auto (FFmpeg when loaded, else Symphonia) | ffmpeg | symphonia
 player = true                    # play videos in the preview pane and Quick Look
 autoplay = false                 # start playing when a video is previewed

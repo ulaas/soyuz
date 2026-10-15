@@ -3,12 +3,12 @@
 //! the poster time), the audio decoder and the player keys (player, autoplay, loop,
 //! volume, muted, seek step) under a status card that says which libraries are loaded, or
 //! where they were looked for and where to get them (the `ffmpeg-runtime-<version>`
-//! release; the in-app download arrives with V4c). The tools key gets its row with V3c.
+//! release; the in-app download arrives with V4c). Also the tools switch, hardware decoding and GPU colour conversion.
 
 use std::path::Path;
 
 use egui::{Align2, Ui, pos2, vec2};
-use soyuz_core::config::AudioBackend;
+use soyuz_core::config::{AudioBackend, HwDecode};
 
 use super::widgets::{group, number, segmented, small_button, switch, text};
 use crate::app::SoyuzApp;
@@ -118,6 +118,37 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             "convert extract audio trim frame ffmpeg menu",
             |ui| {
                 switch(ui, &mut d.media.tools);
+            },
+        );
+        r.row_kw(
+            tr!("settings-media-hw-decode"),
+            tr!("settings-media-hw-decode-desc"),
+            "hardware gpu decoding d3d11va vaapi videotoolbox acceleration",
+            |ui| {
+                let native = if cfg!(windows) {
+                    (HwDecode::D3d11va, "D3D11VA")
+                } else if cfg!(target_os = "macos") {
+                    (HwDecode::Videotoolbox, "VideoToolbox")
+                } else {
+                    (HwDecode::Vaapi, "VAAPI")
+                };
+                segmented(
+                    ui,
+                    &mut d.media.hw_decode,
+                    &[
+                        (HwDecode::Auto, tr!("settings-media-backend-auto")),
+                        (HwDecode::Off, tr!("settings-off")),
+                        native,
+                    ],
+                );
+            },
+        );
+        r.row_kw(
+            tr!("settings-media-gpu-yuv"),
+            tr!("settings-media-gpu-yuv-desc"),
+            "gpu yuv colour color conversion hdr tone mapping shader",
+            |ui| {
+                switch(ui, &mut d.media.gpu_yuv);
             },
         );
     });

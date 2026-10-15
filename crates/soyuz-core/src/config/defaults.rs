@@ -373,6 +373,7 @@ impl Default for Media {
             ffmpeg_dir: String::new(),
             threads: 0,
             hw_decode: HwDecode::Auto,
+            gpu_yuv: false,
             audio_backend: AudioBackend::Auto,
             player: true,
             autoplay: false,

@@ -11,7 +11,8 @@
 //! - [`Scaler`]: picture to RGBA; [`Resampler`]: audio to interleaved `f32`.
 //! - [`ChLayout`]: an owned `AVChannelLayout` (channel count and description).
 
-pub(crate) use crate::sys::codec::{ChLayout, Decoder, Frame, Recv};
+pub(crate) use crate::sys::codec::{ChLayout, CodecRef, Decoder, Frame, Params, Recv, pix_fmt};
 pub(crate) use crate::sys::demux::{Demuxer, Limits, Packet, StreamRef};
+pub(crate) use crate::sys::hwdec::{HwDevice, hw_pix_fmt};
 pub(crate) use crate::sys::resample::Resampler;
 pub(crate) use crate::sys::scale::{Quality, Scaler};

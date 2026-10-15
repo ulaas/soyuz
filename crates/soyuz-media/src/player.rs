@@ -21,6 +21,14 @@
 //! [`PlayerCmd`]s and reads [`PlayerState`]; `Play` / `Pause` / volume take effect in
 //! [`Player::send`] itself, seeks are queued for the demux thread.
 //!
+//! Hardware decoding (`[media] hw_decode`, V4b, [`crate::hw`]): the video decoder is
+//! opened with a device when one works for the codec; hardware frames are copied to
+//! system memory before scaling. A decoding error while the device is active reopens the
+//! decoder in software and seeks to the current position ([`PlayerState::hw`] turns
+//! `None`). A sink that asks for YUV ([`FrameSink::wants_yuv`]) gets the planes
+//! ([`YuvFrame`]) instead of RGBA, at the decoded size (scaled down in YUV only when the
+//! picture is much larger than the output size), for a GPU colour conversion.
+//!
 //! A seek is accurate: the queues are flushed, the demuxer seeks to the keyframe at or
 //! before the target, a flush marker makes both decoders drop their buffers and discard
 //! output until the target. After a seek the first video frame is presented even while
@@ -34,6 +42,7 @@
 //! `catch_unwind`; a panic or a decoding error surfaces in [`PlayerState::error`] and
 //! stops the player, never the process.
 
+use std::ffi::c_int;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -42,11 +51,15 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use crate::clock::Clock;
-use crate::decode::{Decoder, Demuxer, Frame, Limits, Packet, Quality, Recv, Resampler, Scaler};
+use crate::decode::{
+    CodecRef, Decoder, Demuxer, Frame, Limits, Packet, Params, Quality, Recv, Resampler, Scaler, pix_fmt,
+};
+use crate::hw::{self, HwActive};
 use crate::info::{Source, StreamInfo, StreamKind, stream_info};
 use crate::queue::{Bounded, Pop, PushError, Signal};
 use crate::sys::layout::AVRational;
 use crate::sys::{Av, types};
+use crate::yuv::{Transfer, YuvColor, YuvFrame, YuvLayout, YuvMatrix};
 use crate::{MediaError, Runtime};
 
 /// An audio device the frontend provides (rodio in `soyuz-appcore`).
@@ -88,10 +101,20 @@ pub struct FramePixels<'a> {
 /// Called on the video thread; must return quickly (copy, then wake the UI).
 pub trait FrameSink: Send {
     fn present(&mut self, frame: FramePixels<'_>);
+
+    /// Take this picture (decoded size `width × height`) as planes through
+    /// [`present_yuv`](Self::present_yuv) instead of RGBA. Asked per frame, so a sink can
+    /// switch at any time; pictures in a format without a YUV form still come as RGBA.
+    fn wants_yuv(&self, _width: u32, _height: u32) -> bool {
+        false
+    }
+
+    /// A picture as planes (only called after [`wants_yuv`](Self::wants_yuv) said yes).
+    fn present_yuv(&mut self, _frame: YuvFrame<'_>) {}
 }
 
-/// Hardware decoding preference (`[media] hw_decode`). V2a decodes in software whatever
-/// the preference says; V4b (optional) adds the devices.
+/// Hardware decoding preference (`[media] hw_decode`, [`crate::hw`]): anything but `Off`
+/// tries that device and falls back to software silently.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HwPref {
     /// The platform's decoder when the codec has one, software otherwise.
@@ -421,6 +444,16 @@ struct Picked {
     decoder: Decoder,
     info: StreamInfo,
     time_base: AVRational,
+    /// Video: what reopening the decoder in software needs, and the active device.
+    reopen: Option<Reopen>,
+    hw: Option<HwActive>,
+}
+
+/// A software decoder for the stream, made on demand (hardware fallback).
+struct Reopen {
+    codec: CodecRef,
+    params: Params,
+    options: Vec<(String, String)>,
 }
 
 impl Player {
@@ -442,8 +475,9 @@ impl Player {
         let av = rt.av();
         let d: Demuxer<'static> = Demuxer::open(av, &src, None, Limits::default())?;
         let threads = if opts.threads == 0 { "auto".to_string() } else { opts.threads.to_string() };
-        let video = pick(av, &d, StreamKind::Video, &[("threads", threads.as_str())])?;
-        let audio_stream = if audio.is_some() { pick(av, &d, StreamKind::Audio, &[("threads", "1")])? } else { None };
+        let video = pick(av, &d, StreamKind::Video, &[("threads", threads.as_str())], Some(opts.hw))?;
+        let audio_stream =
+            if audio.is_some() { pick(av, &d, StreamKind::Audio, &[("threads", "1")], None)? } else { None };
         if video.is_none() && audio_stream.is_none() {
             // An audio file without an output: nothing to play.
             return Err(if audio.is_some() {
@@ -496,6 +530,7 @@ impl Player {
             muted: opts.muted,
             video: video.as_ref().map(|v| v.info.clone()),
             audio: audio_stream.as_ref().map(|a| a.info.clone()),
+            hw: video.as_ref().and_then(|v| v.hw).map(|h| h.api.name().to_string()),
             ..Default::default()
         };
         let threads_to_start = 1 + usize::from(video.is_some()) + usize::from(audio_stream.is_some());
@@ -543,9 +578,19 @@ impl Player {
         if let Some(v) = video {
             let rotation = v.info.rotation;
             let sar = AVRational::new(v.info.sar.0, v.info.sar.1);
+            let color = v.reopen.as_ref().map(|r| r.params.color()).unwrap_or([0, 2, 2, 2]);
             let worker = VideoThread {
                 av,
                 dec: v.decoder,
+                hw: v.hw,
+                hw_seen: None,
+                reopen: v.reopen,
+                resync: false,
+                xfer: None,
+                yuv_tmp: None,
+                yuv_scaler: None,
+                yuv: YuvFormats::lookup(av),
+                stream_color: color,
                 sink: frames,
                 tb: v.time_base,
                 start,
@@ -694,6 +739,7 @@ fn pick(
     d: &Demuxer<'static>,
     kind: StreamKind,
     options: &[(&str, &str)],
+    hw_pref: Option<HwPref>,
 ) -> Result<Option<Picked>, MediaError> {
     let (index, decoder) = match d.best_stream(kind, None) {
         Ok(found) => found,
@@ -706,8 +752,17 @@ fn pick(
     }
     let info = stream_info(av, d, s);
     let time_base = s.time_base();
-    let decoder = Decoder::open(av, decoder, s.par_ptr(), time_base, options)?;
-    Ok(Some(Picked { index, decoder, info, time_base }))
+    let Some(pref) = hw_pref else {
+        let decoder = Decoder::open(av, decoder, s.par_ptr(), time_base, options)?;
+        return Ok(Some(Picked { index, decoder, info, time_base, reopen: None, hw: None }));
+    };
+    let reopen = Reopen {
+        codec: CodecRef(decoder),
+        params: Params::copy_of(av, s.par_ptr())?,
+        options: options.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+    };
+    let (decoder, hw) = hw::open_video_decoder(av, decoder, s.par_ptr(), time_base, options, pref)?;
+    Ok(Some(Picked { index, decoder, info, time_base, reopen: Some(reopen), hw }))
 }
 
 /// One of the player's threads: `run` does the work, `finish` frees or forgets the
@@ -873,6 +928,22 @@ impl Worker for DemuxThread {
 struct VideoThread {
     av: &'static Av,
     dec: Decoder,
+    /// The device the decoder was opened with (`None`: software).
+    hw: Option<HwActive>,
+    /// Whether the last frame came in the hardware format (what `PlayerState::hw` says).
+    hw_seen: Option<bool>,
+    reopen: Option<Reopen>,
+    /// Reopened in software: packets are skipped until the seek's flush marker.
+    resync: bool,
+    /// System-memory copy of a hardware frame.
+    xfer: Option<Frame>,
+    /// A picture scaled down for the YUV sink, and its scaler.
+    yuv_tmp: Option<Frame>,
+    yuv_scaler: Option<Scaler>,
+    yuv: Option<YuvFormats>,
+    /// `[range, primaries, transfer, matrix]` of the stream (frames that leave theirs
+    /// unspecified inherit these).
+    stream_color: [c_int; 4],
     sink: Box<dyn FrameSink>,
     tb: AVRational,
     start: f64,
@@ -896,6 +967,82 @@ enum Flow {
     Continue,
     /// A seek or stop arrived while waiting: drop everything decoded so far.
     Abandon,
+}
+
+/// The pixel formats the YUV path hands over as they are (looked up by name).
+#[derive(Clone, Copy)]
+struct YuvFormats {
+    yuv420p: c_int,
+    yuvj420p: c_int,
+    nv12: c_int,
+    p010: c_int,
+    yuv420p10: c_int,
+}
+
+impl YuvFormats {
+    fn lookup(av: &'static Av) -> Option<YuvFormats> {
+        Some(YuvFormats {
+            yuv420p: pix_fmt(av, "yuv420p")?,
+            yuvj420p: pix_fmt(av, "yuvj420p")?,
+            nv12: pix_fmt(av, "nv12")?,
+            p010: pix_fmt(av, "p010le")?,
+            yuv420p10: pix_fmt(av, "yuv420p10le")?,
+        })
+    }
+
+    /// `(layout, bytes per sample, depth, msb-aligned)` of a format handed over as is.
+    fn describe(&self, fmt: c_int) -> Option<(YuvLayout, u8, u8, bool)> {
+        if fmt == self.yuv420p || fmt == self.yuvj420p {
+            Some((YuvLayout::I420, 1, 8, false))
+        } else if fmt == self.nv12 {
+            Some((YuvLayout::Nv12, 1, 8, false))
+        } else if fmt == self.p010 {
+            Some((YuvLayout::Nv12, 2, 10, true))
+        } else if fmt == self.yuv420p10 {
+            Some((YuvLayout::I420, 2, 10, false))
+        } else {
+            None
+        }
+    }
+}
+
+/// The colour description of a frame: its own fields, else the stream's, else guessed
+/// from the size (HD = BT.709) and the format (`yuvj*` = full range).
+fn frame_color(frame: &Frame, stream: [c_int; 4], full_range_fmt: bool) -> YuvColor {
+    let pick = |own: c_int, st: c_int, unspecified: c_int| if own != unspecified { own } else { st };
+    let range = pick(frame.color_range(), stream[0], types::AVCOL_RANGE_UNSPECIFIED);
+    let primaries = pick(frame.color_primaries(), stream[1], types::AVCOL_UNSPECIFIED);
+    let trc = pick(frame.color_trc(), stream[2], types::AVCOL_UNSPECIFIED);
+    let space = pick(frame.colorspace(), stream[3], types::AVCOL_UNSPECIFIED);
+    yuv_color(range, primaries, trc, space, frame.width(), frame.height(), full_range_fmt)
+}
+
+/// [`frame_color`] on plain values (`AVColorRange`, `AVColorPrimaries`,
+/// `AVColorTransferCharacteristic`, `AVColorSpace`).
+fn yuv_color(range: c_int, primaries: c_int, trc: c_int, space: c_int, w: c_int, h: c_int, full_fmt: bool) -> YuvColor {
+    const RANGE_JPEG: c_int = 2;
+    const PRI_BT2020: c_int = 9;
+    const SPC_BT709: c_int = 1;
+    const SPC_BT470BG: c_int = 5;
+    const SPC_SMPTE170M: c_int = 6;
+    const SPC_BT2020_NCL: c_int = 9;
+    const SPC_BT2020_CL: c_int = 10;
+    let bt2020_primaries = primaries == PRI_BT2020;
+    let matrix = match space {
+        SPC_BT709 => YuvMatrix::Bt709,
+        SPC_BT470BG | SPC_SMPTE170M => YuvMatrix::Bt601,
+        SPC_BT2020_NCL | SPC_BT2020_CL => YuvMatrix::Bt2020,
+        _ if bt2020_primaries => YuvMatrix::Bt2020,
+        _ if w >= 1280 || h > 576 => YuvMatrix::Bt709,
+        _ => YuvMatrix::Bt601,
+    };
+    let transfer = match trc {
+        types::AVCOL_TRC_SMPTE2084 => Transfer::Pq,
+        types::AVCOL_TRC_ARIB_STD_B67 => Transfer::Hlg,
+        _ => Transfer::Sdr,
+    };
+    let full_range = range == RANGE_JPEG || (range == types::AVCOL_RANGE_UNSPECIFIED && full_fmt);
+    YuvColor { matrix, full_range, transfer, bt2020_primaries }
 }
 
 impl VideoThread {
@@ -955,24 +1102,53 @@ impl VideoThread {
         Ok(Flow::Continue)
     }
 
+    /// Note whether frames come from the device (FFmpeg falls back to software formats
+    /// by itself when its hwaccel refuses a stream) and keep `PlayerState::hw` in step.
+    fn note_hw(&mut self, sh: &Shared, frame: &Frame) -> bool {
+        let Some(hw) = self.hw else { return false };
+        let on = frame.format() == hw.pix_fmt;
+        if self.hw_seen != Some(on) {
+            self.hw_seen = Some(on);
+            sh.lock_state().hw = on.then(|| hw.api.name().to_string());
+            sh.wake();
+        }
+        on
+    }
+
     fn present(&mut self, sh: &Shared, frame: &Frame, pts: f64) -> Result<(), MediaError> {
-        let (fw, fh) = (frame.width(), frame.height());
+        if self.note_hw(sh, frame) {
+            let mut xfer = match self.xfer.take() {
+                Some(f) => f,
+                None => Frame::new(self.av)?,
+            };
+            let r = frame.transfer_to(&mut xfer).and_then(|()| self.present_sw(sh, &xfer, frame, pts));
+            self.xfer = Some(xfer);
+            return r;
+        }
+        self.present_sw(sh, frame, frame, pts)
+    }
+
+    /// Present `pic` (a frame in system memory); `orig` is the decoder's frame (colour
+    /// description).
+    fn present_sw(&mut self, sh: &Shared, pic: &Frame, orig: &Frame, pts: f64) -> Result<(), MediaError> {
+        let (fw, fh) = (pic.width(), pic.height());
         if fw <= 0 || fh <= 0 {
             return Ok(());
         }
+        let (uw, uh) = (u32::try_from(fw).unwrap_or(1), u32::try_from(fh).unwrap_or(1));
+        if self.sink.wants_yuv(uw, uh) && self.present_yuv(sh, pic, orig, pts)? {
+            self.last_present = Some(Instant::now());
+            sh.wake_frame();
+            return Ok(());
+        }
         let max_px = sh.max_px.load(Ordering::Relaxed);
-        let (dw, dh) = fit_dims(
-            u32::try_from(fw).unwrap_or(1),
-            u32::try_from(fh).unwrap_or(1),
-            (self.sar.num, self.sar.den),
-            max_px,
-        );
-        let fresh = self.scaler.as_ref().is_none_or(|s| !s.matches(frame) || s.dst_w != dw || s.dst_h != dh);
+        let (dw, dh) = fit_dims(uw, uh, (self.sar.num, self.sar.den), max_px);
+        let fresh = self.scaler.as_ref().is_none_or(|s| !s.matches(pic) || s.dst_w != dw || s.dst_h != dh);
         if fresh {
-            self.scaler = Some(Scaler::new(self.av, fw, fh, frame.format(), dw, dh, Quality::Fast)?);
+            self.scaler = Some(Scaler::new(self.av, fw, fh, pic.format(), dw, dh, Quality::Fast)?);
         }
         let sc = self.scaler.as_mut().expect("set above");
-        sc.scale(frame, &mut self.rgba)?;
+        sc.scale(pic, &mut self.rgba)?;
         let (w, h, pixels) = if self.rotation == 0 {
             (dw, dh, self.rgba.as_slice())
         } else {
@@ -983,6 +1159,85 @@ impl VideoThread {
         self.last_present = Some(Instant::now());
         sh.wake_frame();
         Ok(())
+    }
+
+    /// Hand `pic` to the sink as planes: as it is when its format has a YUV form and it
+    /// is not much larger than the output size, else scaled down by swscale to 8-bit
+    /// I420 (10-bit for HDR). `false`: no YUV form (non-4:2:0 SDR), present RGBA.
+    fn present_yuv(&mut self, sh: &Shared, pic: &Frame, orig: &Frame, pts: f64) -> Result<bool, MediaError> {
+        let Some(fmts) = self.yuv else { return Ok(false) };
+        let fmt = pic.format();
+        let full_fmt = fmt == fmts.yuvj420p;
+        let color = frame_color(orig, self.stream_color, full_fmt);
+        let (fw, fh) = (pic.width(), pic.height());
+        let (uw, uh) = (u32::try_from(fw).unwrap_or(1), u32::try_from(fh).unwrap_or(1));
+        let max_px = sh.max_px.load(Ordering::Relaxed);
+        let too_big = u64::from(uw.max(uh)) * 2 > u64::from(max_px) * 3;
+        let direct = fmts.describe(fmt);
+        let hdr = color.transfer != Transfer::Sdr;
+        let src: &Frame = if direct.is_some() && !too_big {
+            pic
+        } else {
+            if direct.is_none() && !hdr {
+                return Ok(false);
+            }
+            let ten = hdr || direct.is_some_and(|d| d.2 > 8);
+            let dst_fmt = if ten { fmts.yuv420p10 } else { fmts.yuv420p };
+            let (dw, dh) = fit_dims(uw, uh, (self.sar.num, self.sar.den), max_px);
+            let fresh = self
+                .yuv_scaler
+                .as_ref()
+                .is_none_or(|s| !s.matches(pic) || s.dst_w != dw || s.dst_h != dh || s.dst_fmt != dst_fmt);
+            if fresh {
+                self.yuv_scaler = Some(Scaler::new_fmt(self.av, fw, fh, fmt, dw, dh, dst_fmt, Quality::Fast)?);
+            }
+            let tmp = match &mut self.yuv_tmp {
+                Some(t) => t,
+                slot => slot.insert(Frame::new(self.av)?),
+            };
+            self.yuv_scaler.as_mut().expect("set above").scale_frame(pic, tmp)?;
+            tmp
+        };
+        let Some((layout, bytes, depth, msb)) = fmts.describe(src.format()) else { return Ok(false) };
+        let (w, h) = (src.width().max(1) as u32, src.height().max(1) as u32);
+        let linesize = src.linesize();
+        let mut planes: [&[u8]; 3] = [&[], &[], &[]];
+        let mut strides = [0usize; 3];
+        let count = if layout == YuvLayout::I420 { 3 } else { 2 };
+        for i in 0..count {
+            let (pw, ph) = if i == 0 { (w, h) } else { (w.div_ceil(2), h.div_ceil(2)) };
+            let texel = usize::from(bytes) * if i == 1 && layout == YuvLayout::Nv12 { 2 } else { 1 };
+            let row = pw as usize * texel;
+            let Ok(stride) = usize::try_from(linesize[i]) else { return Ok(false) };
+            if stride < row {
+                return Ok(false);
+            }
+            let Some(p) = src.plane(i, stride * (ph as usize - 1) + row) else { return Ok(false) };
+            planes[i] = p;
+            strides[i] = stride;
+        }
+        // Shown size: the decoded size with the sample aspect ratio applied (the same
+        // shape the RGBA path produces).
+        let display = if src.width() == fw && src.height() == fh {
+            fit_dims(w, h, (self.sar.num, self.sar.den), u32::MAX)
+        } else {
+            (w, h)
+        };
+        self.sink.present_yuv(YuvFrame {
+            width: w,
+            height: h,
+            layout,
+            bytes,
+            depth,
+            msb,
+            planes,
+            strides,
+            color,
+            display,
+            rotation: self.rotation,
+            pts,
+        });
+        Ok(true)
     }
 
     /// Pull every frame the decoder has; `Abandon` when a seek / stop interrupted.
@@ -997,6 +1252,28 @@ impl VideoThread {
                 return Ok((Flow::Abandon, false));
             }
         }
+    }
+
+    /// A decoding error with the device active: reopen in software and seek to where
+    /// playback is, so it goes on. Without a device (or when the software decoder does
+    /// not open) the error stands.
+    fn fall_back(&mut self, sh: &Shared, err: MediaError) -> Result<(), MediaError> {
+        let (Some(hw), Some(r)) = (self.hw, &self.reopen) else { return Err(err) };
+        if matches!(err, MediaError::Stale | MediaError::Cancelled) {
+            return Err(err);
+        }
+        log::info!("soyuz-media: {} decoding failed ({err}); continuing in software", hw.api.name());
+        let options: Vec<(&str, &str)> = r.options.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        self.dec = Decoder::open(self.av, r.codec.0, r.params.as_ptr(), self.tb, &options)?;
+        self.hw = None;
+        self.hw_seen = None;
+        self.xfer = None;
+        self.scaler = None;
+        self.yuv_scaler = None;
+        self.resync = true;
+        sh.lock_state().hw = None;
+        sh.request_seek(sh.clock.now());
+        Ok(())
     }
 }
 
@@ -1019,21 +1296,30 @@ impl Worker for VideoThread {
                         self.eof = false;
                     }
                     self.serial = serial;
+                    self.resync = false;
                 }
                 Pop::Item(Item::Packet(pkt)) => {
-                    if self.eof {
+                    if self.eof || self.resync {
                         continue;
                     }
-                    self.dec.send(Some(&pkt))?;
+                    let r = self.dec.send(Some(&pkt)).and_then(|()| self.drain(sh, &mut frame).map(drop));
                     drop(pkt);
-                    let _ = self.drain(sh, &mut frame)?;
+                    if let Err(e) = r {
+                        self.fall_back(sh, e)?;
+                    }
                 }
                 Pop::Item(Item::Eof) => {
-                    if self.eof {
+                    if self.eof || self.resync {
                         continue;
                     }
-                    self.dec.send(None)?;
-                    let (flow, _) = self.drain(sh, &mut frame)?;
+                    let r = self.dec.send(None).and_then(|()| self.drain(sh, &mut frame));
+                    let flow = match r {
+                        Ok((flow, _)) => flow,
+                        Err(e) => {
+                            self.fall_back(sh, e)?;
+                            continue;
+                        }
+                    };
                     if let Flow::Abandon = flow {
                         continue;
                     }
@@ -1374,6 +1660,109 @@ mod tests {
         assert_eq!(out, image::imageops::rotate90(&img).into_raw());
         rotate_rgba(&src, 2, 3, 270, &mut out);
         assert_eq!(out, image::imageops::rotate270(&img).into_raw());
+    }
+
+    /// CPU cost per frame of the two ways a picture reaches the sink, for 720p, 1080p and
+    /// 2160p sources at the default `max_px` (1280): swscale to RGBA (the CPU path) and
+    /// the plane copy into a `YuvImage` (the GPU path's share). Run by hand:
+    /// `SOYUZ_FFMPEG_DIR=<dir> cargo test -p soyuz-media --release --lib -- --ignored present_cost --nocapture`.
+    #[test]
+    #[ignore = "benchmark; needs the FFmpeg libraries"]
+    fn present_cost() {
+        use crate::decode::{Demuxer, Limits, Packet};
+        let Some(dir) = std::env::var_os(crate::DIR_ENV) else { return };
+        let rt = Runtime::get(&[PathBuf::from(dir)]).expect("runtime");
+        let av = rt.av();
+        for (w, h) in [(1280u32, 720u32), (1920, 1080), (3840, 2160)] {
+            let (cw, ch) = ((w / 2) as usize, (h / 2) as usize);
+            let frame = [vec![81u8; (w * h) as usize], vec![90u8; cw * ch], vec![240u8; cw * ch]].concat();
+            let clip = crate::fixtures::avi(w, h, 25, crate::fixtures::AviCodec::I420, &[frame]);
+            let src = Source::Mem(Arc::from(clip.into_boxed_slice()));
+            let mut d: Demuxer<'_> = Demuxer::open(av, &src, None, Limits::default()).unwrap();
+            let (idx, codec) = d.best_stream(StreamKind::Video, None).unwrap();
+            let s = d.stream(idx).unwrap();
+            let mut dec = Decoder::open(av, codec, s.par_ptr(), s.time_base(), &[]).unwrap();
+            let mut pkt = Packet::new(av).unwrap();
+            let mut f = Frame::new(av).unwrap();
+            while d.read(&mut pkt).unwrap() {
+                dec.send(Some(&pkt)).unwrap();
+                if dec.receive(&mut f).unwrap() == Recv::Frame {
+                    break;
+                }
+            }
+            let (dw, dh) = fit_dims(w, h, (1, 1), 1280);
+            let mut sc = Scaler::new(av, f.width(), f.height(), f.format(), dw, dh, Quality::Fast).unwrap();
+            let mut rgba = Vec::new();
+            let n = 30;
+            let t = Instant::now();
+            for _ in 0..n {
+                sc.scale(&f, &mut rgba).unwrap();
+            }
+            let cpu = t.elapsed().as_secs_f64() * 1000.0 / f64::from(n);
+            // The YUV path as the player runs it: planes as they are up to 1.5 × max_px,
+            // else scaled down in YUV first.
+            let yuv_fmt = pix_fmt(av, "yuv420p").unwrap();
+            let mut ysc =
+                Scaler::new_fmt(av, f.width(), f.height(), f.format(), dw, dh, yuv_fmt, Quality::Fast).unwrap();
+            let mut small = Frame::new(av).unwrap();
+            let t = Instant::now();
+            for _ in 0..n {
+                let pic = if w * 2 > 1280 * 3 {
+                    ysc.scale_frame(&f, &mut small).unwrap();
+                    &small
+                } else {
+                    &f
+                };
+                let (pw, ph) = (pic.width() as u32, pic.height() as u32);
+                let ls = pic.linesize().map(|l| l as usize);
+                let planes = [
+                    pic.plane(0, ls[0] * ph as usize).unwrap(),
+                    pic.plane(1, ls[1] * ph.div_ceil(2) as usize).unwrap(),
+                    pic.plane(2, ls[2] * ph.div_ceil(2) as usize).unwrap(),
+                ];
+                let yf = YuvFrame {
+                    width: pw,
+                    height: ph,
+                    layout: YuvLayout::I420,
+                    bytes: 1,
+                    depth: 8,
+                    msb: false,
+                    planes,
+                    strides: [ls[0], ls[1], ls[2]],
+                    color: YuvColor::default(),
+                    display: (pw, ph),
+                    rotation: 0,
+                    pts: 0.0,
+                };
+                std::hint::black_box(crate::yuv::YuvImage::from_frame(&yf).unwrap());
+            }
+            let gpu = t.elapsed().as_secs_f64() * 1000.0 / f64::from(n);
+            eprintln!("{w}x{h}: RGBA {dw}x{dh} {cpu:.2} ms/frame, YUV planes {gpu:.2} ms/frame");
+        }
+    }
+
+    #[test]
+    fn colour_descriptions_fall_back_by_size_and_format() {
+        let u = types::AVCOL_UNSPECIFIED;
+        let r = types::AVCOL_RANGE_UNSPECIFIED;
+        // Untagged: BT.601 for SD, BT.709 for HD; limited unless the format is yuvj.
+        assert_eq!(yuv_color(r, u, u, u, 720, 576, false).matrix, YuvMatrix::Bt601);
+        assert_eq!(yuv_color(r, u, u, u, 1280, 720, false).matrix, YuvMatrix::Bt709);
+        assert!(!yuv_color(r, u, u, u, 64, 48, false).full_range);
+        assert!(yuv_color(r, u, u, u, 64, 48, true).full_range);
+        // Tags win: JPEG range, BT.709 matrix on SD, BT.2020 + PQ / HLG.
+        assert!(yuv_color(2, u, u, u, 64, 48, false).full_range);
+        assert!(!yuv_color(1, u, u, u, 64, 48, true).full_range, "an explicit MPEG range beats yuvj");
+        assert_eq!(yuv_color(r, u, u, 1, 64, 48, false).matrix, YuvMatrix::Bt709);
+        let hdr = yuv_color(1, 9, types::AVCOL_TRC_SMPTE2084, 9, 3840, 2160, false);
+        assert_eq!((hdr.matrix, hdr.transfer, hdr.bt2020_primaries), (YuvMatrix::Bt2020, Transfer::Pq, true));
+        assert_eq!(yuv_color(1, 9, types::AVCOL_TRC_ARIB_STD_B67, u, 64, 48, false).transfer, Transfer::Hlg);
+        assert_eq!(
+            yuv_color(1, 9, u, u, 64, 48, false).matrix,
+            YuvMatrix::Bt2020,
+            "BT.2020 primaries imply the matrix"
+        );
+        assert_eq!(yuv_color(1, u, 1, 6, 1920, 1080, false).matrix, YuvMatrix::Bt601, "a 601-tagged HD stream");
     }
 
     #[test]

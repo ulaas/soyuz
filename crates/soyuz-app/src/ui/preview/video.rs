@@ -3,7 +3,9 @@
 //! (play / pause, scrubber with hover time and the buffered range, elapsed / total,
 //! volume, mute, loop). The engine is [`soyuz_appcore::models::player::PlayerModel`]
 //! (`core.ui.player`): opened on a worker thread, followed with `sync_target`, closed
-//! when the preview moves on or Quick Look closes.
+//! when the preview moves on or Quick Look closes. With `[media] gpu_yuv` and the wgpu
+//! renderer, frames arrive as YUV planes and are converted on the GPU
+//! ([`super::video_gpu`]); otherwise as RGBA textures.
 //!
 //! Keyboard: `KeyContext::Player` (K / J / L, ← / →, - / =, M by default) is active while
 //! Quick Look shows a video or audio file, or while the pane's player surface or one of
@@ -17,7 +19,7 @@ use egui::{
     Align2, Color32, CornerRadius, EventFilter, FontId, Id, Rect, Sense, Stroke, StrokeKind, Ui, UiBuilder, WidgetInfo,
     pos2, vec2,
 };
-use soyuz_appcore::models::player::{self as player, MediaSource};
+use soyuz_appcore::models::player::{self as player, MediaSource, Picture};
 use soyuz_core::EntryInfo;
 use soyuz_core::config::{Config, KeyContext};
 
@@ -204,6 +206,7 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
     let cfg = core.config.media.clone();
     let model = &mut core.ui.player;
     model.sync_target(Some(&key));
+    model.set_yuv_output(if cfg.gpu_yuv { super::video_gpu::max_side() } else { 0 });
     let mut want_open: Option<bool> = None; // Some(play now)
     if model.take_play_request() {
         want_open = Some(true);
@@ -249,7 +252,14 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
     let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
     match (&frame, m.poster) {
         (Some(f), _) => {
-            painter.image(f.tex.id(), fit(f.tex.size[0] as f32, f.tex.size[1] as f32), uv, Color32::WHITE);
+            let [w, h] = f.picture.size();
+            let r = fit(w as f32, h as f32);
+            match &f.picture {
+                Picture::Rgba(t) => {
+                    painter.image(t.id(), r, uv, Color32::WHITE);
+                }
+                Picture::Yuv(y) => super::video_gpu::paint(&painter, r, id.value(), y.clone()),
+            }
         }
         (None, Some(t)) => {
             painter.image(t.id(), fit(t.size[0] as f32, t.size[1] as f32), uv, Color32::WHITE);

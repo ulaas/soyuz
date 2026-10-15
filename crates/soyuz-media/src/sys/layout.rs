@@ -21,7 +21,11 @@
 //!   `AVDictionaryEntry`: identical on 7.1 / 8.x / 9.0, one struct each.
 //! - `AVFrame`: [`FrameOff`] per major, never read past `decode_error_flags`
 //!   (`ch_layout` comes from the decoder's `ch_layout` AVOption instead).
-//! - `AVCodecContext`: never read as a struct (AVOptions only).
+//! - `AVCodecContext`: never read as a struct (AVOptions only); one field is *written*
+//!   by offset, `hw_device_ctx` ([`CodecCtxOff`], hardware decoding, V4b), identical on
+//!   7.1 / 8.x / 9.0 (560 on 64-bit) and cross-checked at run time against the offset
+//!   FFmpeg's own option table reports for the next field, `hwaccel_flags`.
+//! - `AVCodecHWConfig`, `AVOption` (`name`, `help`, `offset`): identical everywhere.
 
 use std::ffi::{c_char, c_int, c_uint, c_void};
 use std::mem::offset_of;
@@ -256,6 +260,24 @@ pub(crate) struct AVCodecPrefix {
     pub max_lowres: u8,
 }
 
+/// `AVCodecHWConfig` (identical on 7.1 / 8.x / 9.0).
+#[repr(C)]
+pub(crate) struct AVCodecHWConfig {
+    pub pix_fmt: c_int,
+    pub methods: c_int,
+    pub device_type: c_int,
+}
+
+/// `AVOption` prefix: `name`, `help`, `offset` (the byte offset of the option's field
+/// in its object), `type`.
+#[repr(C)]
+pub(crate) struct AVOptionPrefix {
+    pub name: *const c_char,
+    pub help: *const c_char,
+    pub offset: c_int,
+    pub r#type: c_int,
+}
+
 /// `AVInputFormat`: `name`, `long_name`, `flags` (the rest is private to lavf).
 #[repr(C)]
 pub(crate) struct AVInputFormat {
@@ -406,16 +428,36 @@ macro_rules! frame_off {
     };
 }
 
+/// Byte offsets of the `AVCodecContext` fields the crate writes (hardware decoding).
+/// Computed from the headers of each release (`n7.1`, `n8.0`, `n8.1`, the 9.0 runtime's
+/// `include/`) with the field sizes of LP64 / LLP64; `layout_probe.c` prints the same
+/// field for CI, and [`super::hwdec`] refuses the offset at run time unless the
+/// `hwaccel_flags` AVOption sits one pointer after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CodecCtxOff {
+    pub hw_device_ctx: usize,
+}
+
+/// `hw_device_ctx` of 7.1 / 8.x / 9.0. 7.1's extra `ticks_per_frame` (`FF_API_TICKS_PER_FRAME`)
+/// moves the fields before `get_format` by 4 bytes, which the alignment padding in front
+/// of that pointer absorbs (`get_format` is at 192 in all four headers).
+#[cfg(target_pointer_width = "64")]
+const CODEC_CTX: CodecCtxOff = CodecCtxOff { hw_device_ctx: 560 };
+/// No 32-bit table: hardware decoding is off there ([`super::hwdec`] checks for 0).
+#[cfg(not(target_pointer_width = "64"))]
+const CODEC_CTX: CodecCtxOff = CodecCtxOff { hw_device_ctx: 0 };
+
 /// The layout of one supported release.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Layout {
     pub majors: Majors,
     pub frame: FrameOff,
+    pub codec_ctx: CodecCtxOff,
 }
 
-pub(crate) const V9: Layout = Layout { majors: Majors::V9, frame: frame_off!(AVFrame8) };
-pub(crate) const V8: Layout = Layout { majors: Majors::V8, frame: frame_off!(AVFrame8) };
-pub(crate) const V7: Layout = Layout { majors: Majors::V7, frame: frame_off!(AVFrame7) };
+pub(crate) const V9: Layout = Layout { majors: Majors::V9, frame: frame_off!(AVFrame8), codec_ctx: CODEC_CTX };
+pub(crate) const V8: Layout = Layout { majors: Majors::V8, frame: frame_off!(AVFrame8), codec_ctx: CODEC_CTX };
+pub(crate) const V7: Layout = Layout { majors: Majors::V7, frame: frame_off!(AVFrame7), codec_ctx: CODEC_CTX };
 
 /// The layout of a supported row of majors.
 pub(crate) fn for_majors(m: Majors) -> Option<&'static Layout> {
@@ -688,6 +730,14 @@ mod tests {
         assert_eq!(offset_of!(AVCodecPrefix, max_lowres), 28);
         assert_eq!(offset_of!(AVIOContextPrefix, buffer), 8);
         assert_eq!(offset_of!(AVIOContextPrefix, buffer_size), 16);
+        assert_eq!(offset_of!(AVCodecHWConfig, methods), 4);
+        assert_eq!(offset_of!(AVCodecHWConfig, device_type), 8);
+        assert_eq!(offset_of!(AVOptionPrefix, offset), 16);
+        assert_eq!(offset_of!(AVOptionPrefix, r#type), 20);
+        // AVCodecContext.hw_device_ctx, from the n7.1, n8.0, n8.1 and 9.0 headers.
+        for l in [&V9, &V8, &V7] {
+            assert_eq!(l.codec_ctx.hw_device_ctx, 560, "{:?}", l.majors);
+        }
     }
 
     #[test]
@@ -748,6 +798,11 @@ mod tests {
         for (f, off) in layout.frame.fields() {
             assert_eq!(off, probed("AVFrame", f), "AVFrame.{f} for {majors:?}");
         }
+        assert_eq!(
+            layout.codec_ctx.hw_device_ctx,
+            probed("AVCodecContext", "hw_device_ctx"),
+            "AVCodecContext.hw_device_ctx for {majors:?}"
+        );
         // The AVCodec rows are optional in the probe (older layout_probe.c builds print
         // none): checked only when present.
         let has_codec_rows = rows.iter().any(|(s, _, _)| s == "AVCodec");

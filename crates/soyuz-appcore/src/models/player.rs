@@ -7,7 +7,10 @@
 //! `volume`, `muted`, `seek_step_secs`, `max_px`, `threads`, `hw_decode`), the rodio
 //! output ([`media_player::RodioOutput`]) and the core's texture uploader (every presented
 //! picture becomes a [`Tex`] under one stable name per player, so a frontend can update
-//! the texture in place). Volume and mute changes go through [`set_volume`] /
+//! the texture in place). A frontend that converts YUV on the GPU turns on
+//! [`PlayerModel::set_yuv_output`] (`[media] gpu_yuv` with the GPU renderer): frames then
+//! arrive as planes ([`Picture::Yuv`]) instead of uploaded RGBA; the switch applies to
+//! the open player at once. Volume and mute changes go through [`set_volume`] /
 //! [`set_muted`], which write `[media] volume` / `muted` back to `config.toml` and apply
 //! them to the open player and to the audio preview's player.
 //!
@@ -19,11 +22,12 @@
 //! engine is opened without its own loop and [`pump`] restarts it at the end.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crossbeam_channel::{Receiver, bounded};
 use parking_lot::Mutex;
 use soyuz_core::config::{HwDecode, Media as MediaCfg};
-use soyuz_media::{FramePixels, FrameSink, HwPref, PlayerCmd, PlayerOptions, PlayerState, Source};
+use soyuz_media::{FramePixels, FrameSink, HwPref, PlayerCmd, PlayerOptions, PlayerState, Source, YuvFrame, YuvImage};
 
 use crate::core::AppCore;
 use crate::host::{Host, Wake};
@@ -33,12 +37,33 @@ use crate::services::preview_gfx::{Pixels, Tex, Uploader};
 
 /// Re-exported for frontends that open and draw the player without a `soyuz-media`
 /// dependency of their own.
-pub use soyuz_media::{PlayerState as EngineState, Source as MediaSource};
+pub use soyuz_media::{PlayerState as EngineState, Source as MediaSource, yuv};
+
+/// A presented picture: an uploaded RGBA texture, or YUV planes for the frontend's GPU
+/// conversion.
+#[derive(Clone)]
+pub enum Picture {
+    Rgba(Tex),
+    Yuv(Arc<YuvImage>),
+}
+
+impl Picture {
+    /// The shown size in pixels (rotation and sample aspect ratio applied).
+    pub fn size(&self) -> [usize; 2] {
+        match self {
+            Picture::Rgba(t) => t.size,
+            Picture::Yuv(y) => {
+                let (w, h) = y.shown_size();
+                [w as usize, h as usize]
+            }
+        }
+    }
+}
 
 /// The latest presented picture (cheap to clone).
 #[derive(Clone)]
 pub struct FrameSlot {
-    pub tex: Tex,
+    pub picture: Picture,
     /// Presentation time (seconds).
     pub pts: f64,
     /// Counts up with every presented frame (a frontend skips unchanged ones).
@@ -68,6 +93,8 @@ struct CoreFrameSink {
     name: String,
     slot: Arc<Mutex<Option<FrameSlot>>>,
     serial: u64,
+    /// The largest texture side the frontend's YUV conversion takes; 0 = RGBA only.
+    yuv_max: Arc<AtomicU32>,
 }
 
 impl FrameSink for CoreFrameSink {
@@ -79,7 +106,19 @@ impl FrameSink for CoreFrameSink {
         let pixels = Pixels { size: [w, h], rgba: &frame.rgba[..w * h * 4], premultiplied: false };
         let tex = Tex::upload(&self.upload, self.name.clone(), pixels);
         self.serial += 1;
-        *self.slot.lock() = Some(FrameSlot { tex, pts: frame.pts, serial: self.serial });
+        *self.slot.lock() = Some(FrameSlot { picture: Picture::Rgba(tex), pts: frame.pts, serial: self.serial });
+    }
+
+    fn wants_yuv(&self, width: u32, height: u32) -> bool {
+        let max = self.yuv_max.load(Ordering::Relaxed);
+        max > 0 && width <= max && height <= max
+    }
+
+    fn present_yuv(&mut self, frame: YuvFrame<'_>) {
+        let Some(img) = YuvImage::from_frame(&frame) else { return };
+        self.serial += 1;
+        let picture = Picture::Yuv(Arc::new(img));
+        *self.slot.lock() = Some(FrameSlot { picture, pts: frame.pts, serial: self.serial });
     }
 }
 
@@ -118,6 +157,8 @@ pub struct PlayerModel {
     applied: Option<(u8, bool)>,
     /// Players opened so far (texture names stay unique).
     opened: u64,
+    /// [`set_yuv_output`](Self::set_yuv_output), shared with the open player's sink.
+    yuv_max: Arc<AtomicU32>,
 }
 
 impl std::fmt::Debug for PlayerModel {
@@ -182,12 +223,7 @@ impl PlayerModel {
         self.close();
         self.opened += 1;
         let slot = Arc::new(Mutex::new(None));
-        let sink = CoreFrameSink {
-            upload: uploader.clone(),
-            name: format!("player:{}", self.opened),
-            slot: Arc::clone(&slot),
-            serial: 0,
-        };
+        let sink = self.sink(uploader, &slot);
         let player = soyuz_media::Player::open(
             rt,
             src,
@@ -227,12 +263,7 @@ impl PlayerModel {
         self.error = None;
         self.opened += 1;
         let slot = Arc::new(Mutex::new(None));
-        let sink = CoreFrameSink {
-            upload: uploader.clone(),
-            name: format!("player:{}", self.opened),
-            slot: Arc::clone(&slot),
-            serial: 0,
-        };
+        let sink = self.sink(uploader, &slot);
         let opts = engine_options(cfg, play);
         let (tx, rx) = bounded::<OpenResult>(1);
         let wake = wake.clone();
@@ -265,6 +296,23 @@ impl PlayerModel {
         self.close();
         self.error = None;
         self.install(key, engine, Arc::new(Mutex::new(None)), cfg);
+    }
+
+    fn sink(&self, uploader: &Uploader, slot: &Arc<Mutex<Option<FrameSlot>>>) -> CoreFrameSink {
+        CoreFrameSink {
+            upload: uploader.clone(),
+            name: format!("player:{}", self.opened),
+            slot: Arc::clone(slot),
+            serial: 0,
+            yuv_max: Arc::clone(&self.yuv_max),
+        }
+    }
+
+    /// Frames as YUV planes ([`Picture::Yuv`]) up to `max_side` pixels per side (the
+    /// frontend's texture limit), RGBA when 0. Applies to the open player from its next
+    /// frame.
+    pub fn set_yuv_output(&self, max_side: u32) {
+        self.yuv_max.store(max_side, Ordering::Relaxed);
     }
 
     fn install(&mut self, key: &str, engine: Box<dyn Engine>, slot: Arc<Mutex<Option<FrameSlot>>>, cfg: &MediaCfg) {
@@ -673,13 +721,43 @@ mod tests {
             Arc::new(())
         });
         let slot = Arc::new(Mutex::new(None));
-        let mut sink = CoreFrameSink { upload: up, name: "player:1".into(), slot: Arc::clone(&slot), serial: 0 };
+        let yuv_max = Arc::new(AtomicU32::new(0));
+        let mut sink = CoreFrameSink {
+            upload: up,
+            name: "player:1".into(),
+            slot: Arc::clone(&slot),
+            serial: 0,
+            yuv_max: Arc::clone(&yuv_max),
+        };
         let rgba = vec![0u8; 2 * 3 * 4];
+        assert!(!sink.wants_yuv(2, 3), "RGBA unless the frontend asks");
         sink.present(FramePixels { width: 2, height: 3, rgba: &rgba, pts: 0.5 });
         sink.present(FramePixels { width: 2, height: 3, rgba: &rgba, pts: 1.0 });
         sink.present(FramePixels { width: 9, height: 9, rgba: &rgba, pts: 2.0 }); // short buffer: ignored
         let f = slot.lock().clone().unwrap();
-        assert_eq!((f.pts, f.serial, f.tex.size), (1.0, 2, [2, 3]));
+        assert_eq!((f.pts, f.serial, f.picture.size()), (1.0, 2, [2, 3]));
+        assert!(matches!(f.picture, Picture::Rgba(_)));
+        // YUV planes once the frontend takes them (up to its texture limit).
+        yuv_max.store(8, Ordering::Relaxed);
+        assert!(sink.wants_yuv(8, 4) && !sink.wants_yuv(9, 4));
+        let (y, u, v) = ([16u8; 8], [128u8; 2], [128u8; 2]);
+        sink.present_yuv(YuvFrame {
+            width: 4,
+            height: 2,
+            layout: soyuz_media::YuvLayout::I420,
+            bytes: 1,
+            depth: 8,
+            msb: false,
+            planes: [&y, &u, &v],
+            strides: [4, 2, 2],
+            color: Default::default(),
+            display: (4, 2),
+            rotation: 90,
+            pts: 3.0,
+        });
+        let f = slot.lock().clone().unwrap();
+        assert_eq!((f.pts, f.serial, f.picture.size()), (3.0, 3, [2, 4]), "rotated shown size");
+        assert!(matches!(f.picture, Picture::Yuv(_)));
         assert_eq!(
             names.lock().unwrap().clone(),
             vec![("player:1".to_string(), [2, 3]), ("player:1".to_string(), [2, 3])]

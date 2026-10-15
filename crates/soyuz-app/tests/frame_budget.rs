@@ -12,12 +12,23 @@ use std::time::{Duration, Instant};
 
 /// `frame <n> ui <ms> ms` lines after the `mark` step → frame times in ms.
 fn frame_times(log: &str, mark: &str) -> Vec<f64> {
+    frame_times_until(log, mark, None)
+}
+
+/// [`frame_times`] from `mark` up to the `until` mark (exclusive).
+fn frame_times_until(log: &str, mark: &str, until: Option<&str>) -> Vec<f64> {
     let mut counting = false;
     let mut out = Vec::new();
     for line in log.lines() {
         if line.contains(&format!("SOYUZ_SCRIPT: mark {mark}")) {
             counting = true;
             continue;
+        }
+        if let Some(u) = until
+            && counting
+            && line.contains(&format!("SOYUZ_SCRIPT: mark {u}"))
+        {
+            break;
         }
         if !counting {
             continue;
@@ -36,6 +47,19 @@ fn frame_times(log: &str, mark: &str) -> Vec<f64> {
 fn parses_frame_log() {
     let log = "frame 1 ui 40.00 ms\nINFO SOYUZ_SCRIPT: mark tour\nINFO frame 2 ui 3.25 ms\nx frame 3 ui 12.00 ms\n";
     assert_eq!(frame_times(log, "tour"), vec![3.25, 12.0]);
+    let log = "INFO SOYUZ_SCRIPT: mark a\nframe 1 ui 1.00 ms\nINFO SOYUZ_SCRIPT: mark b\nframe 2 ui 2.00 ms\n";
+    assert_eq!(frame_times_until(log, "a", Some("b")), vec![1.0]);
+    assert_eq!(frame_times_until(log, "b", None), vec![2.0]);
+    assert_eq!(stats(&[1.0, 3.0, 2.0]), (3.0, 3.0));
+}
+
+/// `(worst, p95)` of frame times in ms.
+fn stats(times: &[f64]) -> (f64, f64) {
+    let worst = times.iter().copied().fold(0.0, f64::max);
+    let mut sorted = times.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let p95 = sorted.get((sorted.len() * 95 / 100).min(sorted.len().saturating_sub(1))).copied().unwrap_or(0.0);
+    (worst, p95)
 }
 
 #[test]
@@ -60,6 +84,15 @@ fn scripted_tour_stays_within_frame_budget() {
         let b = jpeg_solid(640, 360, [30, 40, 220]);
         let frames: Vec<Vec<u8>> = (0..60).map(|i| if (i / 10) % 2 == 0 { a.clone() } else { b.clone() }).collect();
         std::fs::write(data.join("clip.avi"), avi(640, 360, 10, AviCodec::Mjpeg, &frames)).unwrap();
+        // 720p 4:2:0 (raw I420, 24 fps, 2 s) for the CPU-RGBA vs GPU-YUV comparison
+        // (`[media] gpu_yuv`): two copies, so each opens fresh and autoplays.
+        let plane = |w: usize, h: usize, v: u8| vec![v; w * h];
+        let a = [plane(1280, 720, 81), plane(640, 360, 90), plane(640, 360, 240)].concat();
+        let b = [plane(1280, 720, 41), plane(640, 360, 240), plane(640, 360, 110)].concat();
+        let frames: Vec<Vec<u8>> = (0..48).map(|i| if (i / 6) % 2 == 0 { a.clone() } else { b.clone() }).collect();
+        let clip = avi(1280, 720, 24, AviCodec::I420, &frames);
+        std::fs::write(data.join("hd_cpu.avi"), &clip).unwrap();
+        std::fs::write(data.join("hd_gpu.avi"), &clip).unwrap();
     }
     // Portable copy of the binary.
     let bin = tmp.path().join("bin");
@@ -102,6 +135,28 @@ fn scripted_tour_stays_within_frame_budget() {
         "quick_look".into(),
         "toggle_preview_pane".into(),
         "wait:300".into(),
+        // 720p through the CPU (RGBA textures), then through the GPU YUV path.
+        "config:media.gpu_yuv=false".into(),
+        "select:hd_cpu.avi".into(),
+        "mark:cpu".into(),
+        "toggle_preview_pane".into(),
+        "wait:2000".into(),
+        "quick_look".into(),
+        "wait:1500".into(),
+        "quick_look".into(),
+        "toggle_preview_pane".into(),
+        "wait:300".into(),
+        "config:media.gpu_yuv=true".into(),
+        "select:hd_gpu.avi".into(),
+        "mark:gpu".into(),
+        "toggle_preview_pane".into(),
+        "wait:2000".into(),
+        "quick_look".into(),
+        "wait:1500".into(),
+        "quick_look".into(),
+        "toggle_preview_pane".into(),
+        "wait:300".into(),
+        "mark:end".into(),
         "quit".into(),
     ]
     .join(";");
@@ -135,10 +190,12 @@ fn scripted_tour_stays_within_frame_budget() {
     let log = reader.join().unwrap();
     let times = frame_times(&log, "tour");
     assert!(times.len() > 10, "too few frames logged:\n{log}");
-    let worst = times.iter().copied().fold(0.0, f64::max);
-    let mut sorted = times.clone();
-    sorted.sort_by(f64::total_cmp);
-    let p95 = sorted[(sorted.len() * 95 / 100).min(sorted.len() - 1)];
+    let (worst, p95) = stats(&times);
     println!("{} frames after load: worst {worst:.2} ms, p95 {p95:.2} ms (budget {budget} ms)", times.len());
+    for (name, from, to) in [("720p CPU RGBA", "cpu", "gpu"), ("720p GPU YUV", "gpu", "end")] {
+        let seg = frame_times_until(&log, from, Some(to));
+        let (w, p) = stats(&seg);
+        println!("  {name}: {} frames, worst {w:.2} ms, p95 {p:.2} ms", seg.len());
+    }
     assert!(worst <= budget, "a frame took {worst:.2} ms (> {budget} ms)");
 }
