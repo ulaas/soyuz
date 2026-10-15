@@ -6937,6 +6937,7 @@ dependencies = [
  "intl-memoizer",
  "log",
  "lopdf",
+ "lzma-rust2 0.21.0",
  "memchr",
  "nucleo-matcher",
  "parking_lot",

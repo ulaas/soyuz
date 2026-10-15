@@ -237,6 +237,7 @@ fn palette_actions(app: &AppCore) -> Vec<Action> {
                 && !(crate::actions::gui_only(a) && app.frontend_kind == crate::core::FrontendKind::Tui)
                 && crate::models::workspaces::palette_shows(app, a)
                 && crate::models::media_tools::palette_shows(app, a)
+                && crate::services::updates::ffmpeg_runtime::palette_shows(a)
         })
         .collect();
     v.extend(

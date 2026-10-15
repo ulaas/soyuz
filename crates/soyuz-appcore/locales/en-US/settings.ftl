@@ -527,6 +527,15 @@ settings-media-status-searched = Searched:
     { $dirs }
 settings-media-loader-path = (the system's library search path)
 settings-media-retry = Try again
+settings-media-download = Download FFmpeg runtime
+settings-media-download-tooltip = Downloads { $name } from the “{ $tag }” release of { $repo }, checks its SHA-256 and unpacks the libraries into { $dir }.
+settings-media-download-no-repo = Set an update repository under About & updates to download the libraries.
+settings-media-download-fetching = Looking up the “{ $tag }” release…
+settings-media-download-progress = Downloading { $name }: { $done } of { $total }
+settings-media-download-installing = Verifying and unpacking…
+settings-media-download-installed = Installed in { $dir }.
+settings-media-download-failed = Download failed: { $error }
+settings-media-download-dismiss = Dismiss
 settings-media-ffmpeg = Use the FFmpeg libraries
 settings-media-ffmpeg-desc = Video posters, thumbnails and stream details through FFmpeg when its libraries are found. Off: metadata-only video previews, no player or media tools.
 settings-media-dir = Library folder

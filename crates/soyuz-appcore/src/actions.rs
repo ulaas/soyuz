@@ -387,6 +387,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         }
 
         A::About => app.frontend.push(FrontendCmd::About),
+        A::DownloadFfmpegRuntime => crate::services::updates::ffmpeg_runtime::start_from_action(app),
         A::Welcome => app.ui.welcome = true,
         A::UiZoomIn | A::UiZoomOut | A::UiZoomReset => {
             let cur = if app.config.appearance.ui_scale > 0.25 { app.config.appearance.ui_scale } else { 1.0 };

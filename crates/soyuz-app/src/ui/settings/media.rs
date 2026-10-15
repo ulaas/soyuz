@@ -2,8 +2,10 @@
 //! FFmpeg libraries switch, the folder searched first, decoder threads, the frame size and
 //! the poster time), the audio decoder and the player keys (player, autoplay, loop,
 //! volume, muted, seek step) under a status card that says which libraries are loaded, or
-//! where they were looked for and where to get them (the `ffmpeg-runtime-<version>`
-//! release; the in-app download arrives with V4c). The tools key gets its row with V3c.
+//! where they were looked for and where to get them: the `ffmpeg-runtime-<version>`
+//! release, which "Download FFmpeg runtime" fetches, verifies and loads in place (V4c,
+//! `services::updates::ffmpeg_runtime`; not offered inside Flatpak / MSIX). The tools key
+//! gets its row with V3c.
 
 use std::path::Path;
 
@@ -13,6 +15,7 @@ use soyuz_core::config::AudioBackend;
 use super::widgets::{group, number, segmented, small_button, switch, text};
 use crate::app::SoyuzApp;
 use crate::services::media::{self, State};
+use crate::services::updates::ffmpeg_runtime::{self as runtime_dl, Offer, Phase as DlPhase};
 use crate::theme::icons::ph;
 use crate::theme::palette;
 
@@ -20,8 +23,13 @@ const CTX: &str = "Preview media ffmpeg libraries video";
 
 pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     let status = media::status();
+    let dl = runtime_dl::phase();
+    let offered = runtime_dl::offer() == Offer::Offered;
+    let repo = app.core.config.updates.repo.clone();
     let mut retry = false;
     let mut browse = false;
+    let mut download = false;
+    let mut dl_action = None;
     let d = &mut app.gui.settings.draft;
     let any = group(ui, q, CTX, tr!("settings-media"), |r| {
         let (desc, keywords) = status_desc(&status);
@@ -30,10 +38,17 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             State::Loading => status_pill(ui, ph::CIRCLE_DASHED, tr!("settings-media-status-loading-short"), false),
             State::Disabled => status_pill(ui, ph::PROHIBIT, tr!("settings-off"), false),
             State::Failed { .. } => {
+                if offered && !dl.busy() {
+                    download = download_button(ui, &repo);
+                }
                 retry = small_button(ui, Some(ph::ARROWS_CLOCKWISE), tr!("settings-media-retry"), false).clicked();
                 status_pill(ui, ph::WARNING_CIRCLE, tr!("settings-media-status-missing-short"), false);
             }
         });
+        let loaded = matches!(status.state, State::Loaded(_));
+        if !matches!(dl, DlPhase::Idle) && !(loaded && matches!(dl, DlPhase::Installed(_))) {
+            r.block("", "", |ui| dl_action = download_status(ui, &dl));
+        }
         r.row_kw(tr!("settings-media-ffmpeg"), tr!("settings-media-ffmpeg-desc"), "enable libraries runtime", |ui| {
             switch(ui, &mut d.media.ffmpeg);
         });
@@ -124,6 +139,14 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
     if retry {
         media::retry();
     }
+    if download && let Err(e) = runtime_dl::start(&repo, crate::host::egui_wake(ui.ctx())) {
+        app.core.ui.toasts.push(crate::models::toasts::Toast::warning(tr!("services-ffmpeg-dl-cannot")).body(e));
+    }
+    match dl_action {
+        Some(DlAction::Cancel) => runtime_dl::cancel(),
+        Some(DlAction::Dismiss) => runtime_dl::dismiss(),
+        None => {}
+    }
     if browse {
         start_pick(app);
     }
@@ -174,6 +197,109 @@ fn status_desc(status: &media::Status) -> (String, String) {
             (desc, "missing not found download".into())
         }
     }
+}
+
+/// "Download FFmpeg runtime", disabled without an update repository (the download uses
+/// the update check's GitHub repository, and only then). Returns whether it was clicked.
+fn download_button(ui: &mut Ui, repo: &str) -> bool {
+    let tag = media::runtime_release_tag();
+    let name = runtime_dl::asset_name(&tag, std::env::consts::OS, std::env::consts::ARCH).unwrap_or_default();
+    let dir = soyuz_fs::strip_verbatim(&soyuz_core::config::config_dir().join(runtime_dl::DIR_NAME));
+    let can = !repo.trim().is_empty();
+    ui.add_enabled_ui(can, |ui| {
+        small_button(ui, Some(ph::DOWNLOAD_SIMPLE), tr!("settings-media-download"), false)
+            .on_hover_text(tr!(
+                "settings-media-download-tooltip",
+                name = name.as_str(),
+                tag = tag.as_str(),
+                repo = repo.trim(),
+                dir = dir.display().to_string()
+            ))
+            .on_disabled_hover_text(tr!("settings-media-download-no-repo"))
+            .clicked()
+    })
+    .inner
+}
+
+enum DlAction {
+    Cancel,
+    Dismiss,
+}
+
+/// The download's progress, result or error under the status row.
+fn download_status(ui: &mut Ui, phase: &DlPhase) -> Option<DlAction> {
+    let p = palette(ui.ctx());
+    let mut action = None;
+    let line = |ui: &mut Ui, text: &str, color| {
+        ui.add(egui::Label::new(egui::RichText::new(text).size(12.0).color(color)).wrap());
+    };
+    let busy = |ui: &mut Ui, text: String, frac: Option<f32>, action: &mut Option<DlAction>| {
+        line(ui, &text, p.text_secondary);
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            let w = (ui.available_width() - 110.0).max(80.0);
+            progress_bar(ui, w, frac, &text);
+            if small_button(ui, Some(ph::X_CIRCLE), tr!("settings-cancel"), true).clicked() {
+                *action = Some(DlAction::Cancel);
+            }
+        });
+    };
+    match phase {
+        DlPhase::Idle => {}
+        DlPhase::Fetching => {
+            let text = tr!("settings-media-download-fetching", tag = media::runtime_release_tag());
+            busy(ui, text, None, &mut action);
+        }
+        DlPhase::Downloading { asset, got, total } => {
+            let text = tr!(
+                "settings-media-download-progress",
+                name = asset.as_str(),
+                done = mib(*got),
+                total = if *total > 0 { mib(*total) } else { "?".into() }
+            );
+            let frac = (*total > 0).then(|| (*got as f32 / *total as f32).clamp(0.0, 1.0));
+            busy(ui, text, frac, &mut action);
+        }
+        DlPhase::Installing => busy(ui, tr!("settings-media-download-installing").to_string(), None, &mut action),
+        DlPhase::Installed(dir) => {
+            let dir = soyuz_fs::strip_verbatim(dir).display().to_string();
+            line(ui, &tr!("settings-media-download-installed", dir = dir), p.success);
+        }
+        DlPhase::Failed(e) => {
+            line(ui, &tr!("settings-media-download-failed", error = e.as_str()), p.danger);
+            ui.add_space(4.0);
+            if small_button(ui, Some(ph::X), tr!("settings-media-download-dismiss"), false).clicked() {
+                action = Some(DlAction::Dismiss);
+            }
+        }
+    }
+    action
+}
+
+/// A thin determinate (`Some`) or indeterminate bar in the accent colour, announced as a
+/// progress indicator named `label`.
+fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>, label: &str) {
+    let p = palette(ui.ctx());
+    let (r, _) = ui.allocate_exact_size(vec2(width, 4.0), egui::Sense::hover());
+    ui.painter().rect_filled(r, egui::CornerRadius::same(2), p.border_subtle);
+    let fill = match frac {
+        Some(f) => egui::Rect::from_min_size(r.min, vec2((r.width() * f).max(3.0), r.height())),
+        None => {
+            let t = ui.input(|i| i.time) as f32;
+            let w = r.width() * 0.3;
+            let x = r.left() + (t * 0.8).fract() * (r.width() + w) - w;
+            ui.ctx().request_repaint();
+            egui::Rect::from_min_max(pos2(x.max(r.left()), r.top()), pos2((x + w).min(r.right()), r.bottom()))
+        }
+    };
+    if fill.width() > 0.0 {
+        ui.painter().rect_filled(fill, egui::CornerRadius::same(2), p.accent);
+    }
+    crate::ui::a11y::progress(ui, ui.id().with("ffmpeg-download"), r, label, frac);
+}
+
+fn mib(b: u64) -> String {
+    format!("{} MiB", soyuz_core::locale::format_decimal(b as f64 / (1024.0 * 1024.0), 1))
 }
 
 /// A small coloured status label (icon + text) in the control column.

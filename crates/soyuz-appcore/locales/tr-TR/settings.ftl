@@ -514,6 +514,15 @@ settings-media-status-searched = Aranan yerler:
     { $dirs }
 settings-media-loader-path = (sistemin kitaplık arama yolu)
 settings-media-retry = Yeniden dene
+settings-media-download = FFmpeg çalışma ortamını indir
+settings-media-download-tooltip = { $repo } deposunun “{ $tag }” sürümünden { $name } dosyasını indirir, SHA-256 değerini denetler ve kitaplıkları { $dir } klasörüne açar.
+settings-media-download-no-repo = Kitaplıkları indirmek için Hakkında ve güncellemeler bölümünde bir güncelleme deposu ayarlayın.
+settings-media-download-fetching = “{ $tag }” sürümü aranıyor…
+settings-media-download-progress = { $name } indiriliyor: { $done } / { $total }
+settings-media-download-installing = Doğrulanıyor ve açılıyor…
+settings-media-download-installed = { $dir } klasörüne kuruldu.
+settings-media-download-failed = İndirme başarısız: { $error }
+settings-media-download-dismiss = Kapat
 settings-media-ffmpeg = FFmpeg kitaplıklarını kullan
 settings-media-ffmpeg-desc = Kitaplıkları bulunduğunda video kapakları, küçük resimler ve akış ayrıntıları FFmpeg ile alınır. Kapalı: yalnızca bilgi gösteren video önizlemeleri; oynatıcı ve medya araçları yok.
 settings-media-dir = Kitaplık klasörü

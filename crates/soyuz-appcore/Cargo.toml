@@ -67,6 +67,8 @@ similar.workspace = true
 resvg.workspace = true
 zip.workspace = true
 flate2.workspace = true
+# The FFmpeg runtime download (`services::updates::ffmpeg_runtime`): .tar.xz archives.
+lzma-rust2.workspace = true
 # Update check: GitHub Releases JSON + asset download, rustls/ring only.
 reqwest.workspace = true
 rustls.workspace = true

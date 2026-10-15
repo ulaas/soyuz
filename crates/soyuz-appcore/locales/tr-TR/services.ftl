@@ -79,7 +79,7 @@ services-preview-cant-read-model = Bu model okunamıyor
 services-preview-decimated = { $count } (seyreltilmiş)
 services-preview-waveform-skipped = { $size } MiB üzerinde atlandı ([preview] max_audio_mib)
 services-preview-poster-disk-only = Kapak kareleri yalnızca diskteki dosyalar için oluşturulur.
-services-preview-no-ffmpeg-libs = FFmpeg kitaplıkları yüklü olmadığından kapak karesi yok. Soyuz onları programın yanında dağıtır; eklemek için GitHub'daki “{ $tag }” sürümünü indirip { $dir } klasörüne açın ya da Ayarlar → Önizleme → Medya'da klasörlerini gösterin.
+services-preview-no-ffmpeg-libs = FFmpeg kitaplıkları yüklü olmadığından kapak karesi yok. Soyuz onları programın yanında dağıtır; eklemek için “FFmpeg çalışma ortamını indir” komutunu çalıştırın (Ayarlar → Önizleme → Medya ya da komut paleti), GitHub'daki “{ $tag }” sürümünü indirip { $dir } klasörüne açın ya da Ayarlar → Önizleme → Medya'da klasörlerini gösterin.
 services-preview-crashed-last-time = Önizlenmedi: bu dosyanın çözülmesi geçen sefer medya kitaplığını çökertti. Yeniden denemek için Hızlı Bakış'ta açın.
 services-preview-no-pdf-renderer = Bu derlemede PDF işleyici yok (cargo özelliği `pdf`).
 services-preview-no-pdf-renderer-short = Bu derlemede PDF işleyici yok
@@ -316,10 +316,30 @@ services-update-install-not-tarball = yerinde yalnızca Linux sürüm arşivi (.
 services-update-install-no-binary = arşivde bin/{ $name } yok
 services-update-install-bad-archive = arşiv bozuk ya da bir Soyuz sürümü değil
 services-update-install-not-elf = arşivdeki bin/soyuz bu bilgisayarın işlemcisi için bir program değil; hiçbir şey değiştirilmedi
+services-update-install-lib-not-elf = arşivdeki lib/soyuz/{ $name } bu bilgisayarın işlemcisi için bir kitaplık değil; hiçbir şey değiştirilmedi
 services-update-install-changed = indirilen dosya doğrulandıktan sonra değişti; yeniden indirin
 # $path: folder of the running soyuz executable.
 services-update-install-no-permission = { $path } klasörüne yazılamıyor ({ $error }). Soyuz sistem genelinde kurulduysa sudo ile güncelleyin, örneğin “sudo tar -C /usr/local --strip-components=1 -xf <dosya>”.
 services-update-install-failed = güncelleme kurulamadı: { $error }
+## FFmpeg runtime download (services::updates::ffmpeg_runtime)
+services-ffmpeg-dl-flatpak = Flatpak, çalışma ortamının FFmpeg'ini kullanır; indirilecek bir şey yok.
+services-ffmpeg-dl-msix = Microsoft Store / MSIX paketi FFmpeg kitaplıklarını içerir; onarmak için paketi yeniden kurun.
+services-ffmpeg-dl-unsupported = Bu sistem ve işlemci için yayımlanmış bir FFmpeg çalışma ortamı yok. FFmpeg'i paket yöneticinizle kurun ve klasörünü Ayarlar → Önizleme → Medya'da seçin.
+services-ffmpeg-dl-no-repo = Güncelleme deposu ayarlanmamış (Ayarlar → Hakkında ve güncellemeler), bu yüzden Soyuz internete çıkmaz.
+services-ffmpeg-dl-busy = FFmpeg çalışma ortamı zaten indiriliyor.
+services-ffmpeg-dl-no-release = Depoda “{ $tag }” sürümü yok.
+services-ffmpeg-dl-no-asset = “{ $tag }” sürümünde bu sistem için bir indirme yok.
+services-ffmpeg-dl-bad-archive = indirilen arşiv bozuk ({ $error })
+services-ffmpeg-dl-incomplete = indirilen arşivde beş FFmpeg kitaplığı ve lisansları yok; hiçbir şey değiştirilmedi
+services-ffmpeg-dl-in-use = { $path } değiştirilemiyor ({ $error }). Soyuz kitaplıkları oradan yüklediyse yeniden başlatıp tekrar deneyin.
+services-ffmpeg-dl-started = FFmpeg çalışma ortamı indiriliyor
+services-ffmpeg-dl-started-body = Geldiğinde doğrulanıp yüklenir; çalışmaya devam edebilirsiniz.
+services-ffmpeg-dl-cannot = FFmpeg çalışma ortamı indirilemiyor
+services-ffmpeg-dl-loaded = FFmpeg kitaplıkları zaten yüklü
+services-ffmpeg-dl-done = FFmpeg çalışma ortamı kuruldu
+services-ffmpeg-dl-done-body = Kitaplıklar { $dir } klasöründe ve şimdi yükleniyor; video önizlemeleri ve oynatıcı yeniden başlatmadan çalışır.
+services-ffmpeg-dl-failed = FFmpeg çalışma ortamı kurulamadı
+services-ffmpeg-dl-cancelled = FFmpeg çalışma ortamı indirmesi iptal edildi
 
 ## macos
 services-clipboard-mac-failed = dosyalar macOS panosuna konamadı

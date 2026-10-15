@@ -35,6 +35,8 @@ use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use soyuz_fs::integration::Signature;
 
+pub mod ffmpeg_runtime;
+
 /// Current app version.
 pub const CURRENT: &str = env!("CARGO_PKG_VERSION");
 /// Largest Releases JSON we accept.
@@ -242,14 +244,9 @@ pub struct Release {
     pub assets: Vec<Asset>,
 }
 
-fn convert(r: RawRelease) -> Option<Release> {
-    if r.draft {
-        return None;
-    }
-    let version = Version::parse(&r.tag_name)?;
-    let assets = r
-        .assets
-        .into_iter()
+/// The `https://` assets of a release, with GitHub's digest when it reports one.
+fn convert_assets(raw: Vec<RawAsset>) -> Vec<Asset> {
+    raw.into_iter()
         .filter(|a| a.browser_download_url.starts_with("https://"))
         .map(|a| Asset {
             sha256: a
@@ -262,7 +259,15 @@ fn convert(r: RawRelease) -> Option<Release> {
             url: a.browser_download_url,
             size: a.size,
         })
-        .collect();
+        .collect()
+}
+
+fn convert(r: RawRelease) -> Option<Release> {
+    if r.draft {
+        return None;
+    }
+    let version = Version::parse(&r.tag_name)?;
+    let assets = convert_assets(r.assets);
     Some(Release {
         title: r.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| r.tag_name.clone()),
         tag: r.tag_name,
@@ -615,25 +620,7 @@ async fn download_verified(
     wake: &Wake,
 ) -> Result<(PathBuf, String), String> {
     let client = client()?;
-    // Expected hash: every source that exists must agree.
-    let mut expected: Vec<(String, String)> = Vec::new();
-    if let Some(h) = &asset.sha256 {
-        expected.push(("GitHub asset digest".into(), h.clone()));
-    }
-    for sums in checksum_assets(release, &asset.name) {
-        let text = get_text(&client, &sums.url, MAX_SUMS).await?;
-        if let Some(h) = parse_sums(&text, &asset.name) {
-            expected.push((sums.name.clone(), h));
-            break;
-        }
-    }
-    if expected.is_empty() {
-        return Err(tr!("services-update-no-checksum").into());
-    }
-    if expected.windows(2).any(|w| w[0].1 != w[1].1) {
-        return Err(tr!("services-update-checksums-disagree").into());
-    }
-    let want = expected[0].1.clone();
+    let want = expected_sha256(&client, asset, &checksum_assets(release, &asset.name)).await?;
 
     let name = safe_file_name(&asset.name).ok_or(tr!("services-update-bad-asset-name"))?;
     std::fs::create_dir_all(dir)
@@ -642,57 +629,20 @@ async fn download_verified(
     let mut file = std::fs::File::create(&part).map_err(|e| {
         tr!("services-update-cannot-write-file", path = part.display().to_string(), error = e.to_string())
     })?;
-    let mut resp =
-        client.get(&asset.url).send().await.map_err(|e| tr!("services-update-network", error = e.to_string()))?;
     let cleanup = |e: String| {
         let _ = std::fs::remove_file(&part);
         e
     };
-    if !resp.status().is_success() {
-        return Err(cleanup(tr!("services-update-download-failed", status = resp.status().to_string())));
-    }
-    let total = resp.content_length().unwrap_or(asset.size);
-    let mut hasher = Sha256::new();
-    let mut got = 0u64;
-    let mut last_report = std::time::Instant::now();
-    loop {
-        if cancel.load(AtomicOrdering::SeqCst) {
-            drop(file);
-            return Err(cleanup(tr!("services-update-cancelled").into()));
+    let progress = |got: u64, total: u64| {
+        if let Phase::Downloading { got: g, total: t, .. } = &mut STATE.lock().phase {
+            *g = got;
+            *t = total;
         }
-        let chunk = match resp.chunk().await {
-            Ok(Some(c)) => c,
-            Ok(None) => break,
-            Err(e) => {
-                drop(file);
-                return Err(cleanup(tr!("services-update-network", error = e.to_string())));
-            }
-        };
-        got += chunk.len() as u64;
-        if got > MAX_ASSET {
-            drop(file);
-            return Err(cleanup(tr!("services-update-too-large").into()));
-        }
-        hasher.update(&chunk);
-        if let Err(e) = file.write_all(&chunk) {
-            drop(file);
-            return Err(cleanup(tr!("services-update-cannot-write", error = e.to_string())));
-        }
-        if last_report.elapsed() > Duration::from_millis(100) {
-            last_report = std::time::Instant::now();
-            if let Phase::Downloading { got: g, total: t, .. } = &mut STATE.lock().phase {
-                *g = got;
-                *t = total;
-            }
-            wake();
-        }
-    }
-    if let Err(e) = file.sync_all() {
-        drop(file);
-        return Err(cleanup(tr!("services-update-cannot-write", error = e.to_string())));
-    }
+        wake();
+    };
+    let have = fetch_into(&client, &asset.url, asset.size, &mut file, cancel, progress).await;
     drop(file);
-    let have = hex(&hasher.finalize());
+    let have = have.map_err(cleanup)?;
     if have != want {
         return Err(cleanup(tr!("services-update-checksum-mismatch", expected = &want[..12], got = &have[..12])));
     }
@@ -700,6 +650,69 @@ async fn download_verified(
     std::fs::rename(&part, &target)
         .map_err(|e| cleanup(tr!("services-update-cannot-rename", error = e.to_string())))?;
     Ok((target, have))
+}
+
+/// The SHA-256 `asset` must have: GitHub's digest and the first checksum file of `sums`
+/// that lists it; every source that exists must agree, and at least one must exist.
+async fn expected_sha256(client: &reqwest::Client, asset: &Asset, sums: &[&Asset]) -> Result<String, String> {
+    let mut expected: Vec<String> = asset.sha256.iter().cloned().collect();
+    for file in sums {
+        let text = get_text(client, &file.url, MAX_SUMS).await?;
+        if let Some(h) = parse_sums(&text, &asset.name) {
+            expected.push(h);
+            break;
+        }
+    }
+    if expected.is_empty() {
+        return Err(tr!("services-update-no-checksum").into());
+    }
+    if expected.windows(2).any(|w| w[0] != w[1]) {
+        return Err(tr!("services-update-checksums-disagree").into());
+    }
+    Ok(expected.swap_remove(0))
+}
+
+/// Stream `url` into `file` (synced at the end), reporting `(got, total)` every 100 ms and
+/// stopping when `cancel` is set or more than [`MAX_ASSET`] bytes arrive. Returns the
+/// SHA-256 (lower-case hex) of what was written; the caller removes the file on an error.
+async fn fetch_into(
+    client: &reqwest::Client,
+    url: &str,
+    size_hint: u64,
+    file: &mut std::fs::File,
+    cancel: &AtomicBool,
+    mut progress: impl FnMut(u64, u64),
+) -> Result<String, String> {
+    let mut resp = client.get(url).send().await.map_err(|e| tr!("services-update-network", error = e.to_string()))?;
+    if !resp.status().is_success() {
+        return Err(tr!("services-update-download-failed", status = resp.status().to_string()));
+    }
+    let total = resp.content_length().unwrap_or(size_hint);
+    let mut hasher = Sha256::new();
+    let mut got = 0u64;
+    let mut last_report = std::time::Instant::now();
+    loop {
+        if cancel.load(AtomicOrdering::SeqCst) {
+            return Err(tr!("services-update-cancelled").into());
+        }
+        let chunk = match resp.chunk().await {
+            Ok(Some(c)) => c,
+            Ok(None) => break,
+            Err(e) => return Err(tr!("services-update-network", error = e.to_string())),
+        };
+        got += chunk.len() as u64;
+        if got > MAX_ASSET {
+            return Err(tr!("services-update-too-large").into());
+        }
+        hasher.update(&chunk);
+        file.write_all(&chunk).map_err(|e| tr!("services-update-cannot-write", error = e.to_string()))?;
+        if last_report.elapsed() > Duration::from_millis(100) {
+            last_report = std::time::Instant::now();
+            progress(got, total);
+        }
+    }
+    file.sync_all().map_err(|e| tr!("services-update-cannot-write", error = e.to_string()))?;
+    Ok(hex(&hasher.finalize()))
 }
 
 fn hex(bytes: &[u8]) -> String {
@@ -815,25 +828,21 @@ fn tar_octal(field: &[u8]) -> Option<u64> {
     if s.is_empty() { Some(0) } else { u64::from_str_radix(s, 8).ok() }
 }
 
-/// Copy the `bin/<names[i]>` entries of a release tarball (`<top>/bin/<name>`, or
-/// `bin/<name>`) from the uncompressed tar stream `r` into `outs[i]`. Only those regular
-/// files are read; the output files are ours, so entry names can never escape anywhere.
-/// Returns the size of each entry, `None` for one the archive does not have. Reads up to
-/// the end-of-archive marker (or the end of the stream); an entry that appears twice is
-/// refused.
-fn extract_binaries(
+/// Walk the uncompressed tar stream `r` and call `each(path, size, body)` for every
+/// regular file (`./` stripped, GNU long names and pax `path=` applied); `body` yields at
+/// most the entry's data and whatever the callback leaves unread is skipped. Other entry
+/// types (directories, links, devices) are never passed on, so nothing can be redirected
+/// through a link. Stops at the end-of-archive marker (or the end of the stream).
+fn walk_tar(
     mut r: impl std::io::Read,
-    names: &[&str],
-    outs: &mut [&mut dyn std::io::Write],
-) -> Result<Vec<Option<u64>>, String> {
+    mut each: impl FnMut(&str, u64, &mut dyn std::io::Read) -> Result<(), String>,
+) -> Result<(), String> {
     use std::io::Read as _;
-    debug_assert_eq!(names.len(), outs.len());
-    let mut found: Vec<Option<u64>> = vec![None; names.len()];
     let mut header = [0u8; 512];
     let mut long_name: Option<String> = None;
     loop {
         if r.read_exact(&mut header).is_err() || header.iter().all(|b| *b == 0) {
-            return Ok(found);
+            return Ok(());
         }
         let field = |a: usize, b: usize| String::from_utf8_lossy(&header[a..b]).trim_end_matches('\0').to_string();
         let size = tar_octal(&header[124..136]).ok_or(tr!("services-update-install-bad-archive"))?;
@@ -869,28 +878,135 @@ fn extract_binaries(
                 continue;
             }
             b'0' | 0 => {
-                let rel = name.trim_start_matches("./");
-                let parts: Vec<&str> = rel.split('/').filter(|p| !p.is_empty()).collect();
-                let file = match parts.as_slice() {
-                    ["bin", f] | [_, "bin", f] => Some(*f),
-                    _ => None,
-                };
-                if let Some(i) = file.and_then(|f| names.iter().position(|n| *n == f)) {
-                    if size > MAX_BINARY || found[i].is_some() {
-                        return Err(tr!("services-update-install-bad-archive").into());
-                    }
-                    let mut data = (&mut body).take(size);
-                    let n = std::io::copy(&mut data, &mut outs[i]).map_err(|e| e.to_string())?;
-                    if n != size {
-                        return Err(tr!("services-update-install-bad-archive").into());
-                    }
-                    found[i] = Some(n);
-                }
+                let mut data = (&mut body).take(size);
+                each(name.trim_start_matches("./"), size, &mut data)?;
             }
             _ => {}
         }
         std::io::copy(&mut body, &mut std::io::sink()).map_err(|e| e.to_string())?;
     }
+}
+
+/// `<file>` of a release tarball entry `<top>/bin/<file>` or `bin/<file>`.
+fn bin_entry(path: &str) -> Option<&str> {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    match parts.as_slice() {
+        ["bin", f] | [_, "bin", f] => Some(*f),
+        _ => None,
+    }
+}
+
+/// Copy the `bin/<names[i]>` entries of a release tarball (`<top>/bin/<name>`, or
+/// `bin/<name>`) from the uncompressed tar stream `r` into `outs[i]`, and hand every
+/// [`SIDE_DIRS`] file to `side(dir index, file name, size, body)`. Only regular files are
+/// read; the output files are ours, so entry names can never escape anywhere. Returns
+/// the size of each binary, `None` for one the archive does not have. Reads up to the
+/// end-of-archive marker (or the end of the stream); a binary that appears twice is
+/// refused.
+fn extract_binaries(
+    r: impl std::io::Read,
+    names: &[&str],
+    outs: &mut [&mut dyn std::io::Write],
+    mut side: impl FnMut(usize, &str, u64, &mut dyn std::io::Read) -> Result<(), String>,
+) -> Result<Vec<Option<u64>>, String> {
+    debug_assert_eq!(names.len(), outs.len());
+    let mut found: Vec<Option<u64>> = vec![None; names.len()];
+    walk_tar(r, |path, size, body| {
+        if let Some((dir, file)) = side_entry(path) {
+            return side(dir, file, size, body);
+        }
+        let Some(i) = bin_entry(path).and_then(|f| names.iter().position(|n| *n == f)) else { return Ok(()) };
+        if size > MAX_BINARY || found[i].is_some() {
+            return Err(tr!("services-update-install-bad-archive").into());
+        }
+        let n = std::io::copy(body, &mut outs[i]).map_err(|e| e.to_string())?;
+        if n != size {
+            return Err(tr!("services-update-install-bad-archive").into());
+        }
+        found[i] = Some(n);
+        Ok(())
+    })?;
+    Ok(found)
+}
+
+/// A folder of a release tarball whose files are installed next to the binaries (Phase V:
+/// the FFmpeg runtime). `dir` is relative to the archive's top folder and to the install
+/// root (`<exe dir>/..`, see [`install_root`]).
+struct SideDir {
+    dir: &'static [&'static str],
+    /// The file names taken from the archive (anything else there is ignored).
+    takes: fn(&str) -> bool,
+    /// The files must be ELF objects for this CPU.
+    elf: bool,
+    /// Installed files a new archive replaces even when it no longer ships them (an older
+    /// FFmpeg major's libraries); everything else in the folder is left alone.
+    stale: fn(&str) -> bool,
+}
+
+/// `lib/soyuz/` (the FFmpeg libraries; the exe looks in `<exe dir>/../lib/soyuz`) and
+/// their licence texts.
+const SIDE_DIRS: [SideDir; 2] = [
+    SideDir { dir: &["lib", "soyuz"], takes: is_lib_file, elf: true, stale: is_ffmpeg_lib },
+    SideDir { dir: &["share", "licenses", "soyuz", "ffmpeg"], takes: is_ffmpeg_text, elf: false, stale: never },
+];
+
+/// The licence / build texts that travel with the FFmpeg libraries.
+pub const FFMPEG_TEXTS: [&str; 3] = ["LICENSE.md", "BUILD.txt", "SOURCES.txt"];
+
+fn is_ffmpeg_text(name: &str) -> bool {
+    FFMPEG_TEXTS.contains(&name)
+}
+
+fn never(_: &str) -> bool {
+    false
+}
+
+/// `lib<x>.so[.<n>…]`, a plain file name.
+fn is_lib_file(name: &str) -> bool {
+    name.starts_with("lib")
+        && name.contains(".so")
+        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-+".contains(&b))
+}
+
+/// `lib{avutil,swresample,swscale,avcodec,avformat}.so.<digits>[.<digits>…]`.
+fn is_ffmpeg_lib(name: &str) -> bool {
+    ["avutil", "swresample", "swscale", "avcodec", "avformat"].iter().any(|lib| {
+        name.strip_prefix("lib")
+            .and_then(|n| n.strip_prefix(lib))
+            .and_then(|n| n.strip_prefix(".so."))
+            .is_some_and(|v| v.split('.').all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit())))
+    })
+}
+
+/// `(index into SIDE_DIRS, file name)` of a tarball entry `<top>/<dir>/<file>` or
+/// `<dir>/<file>` that the folder takes.
+fn side_entry(path: &str) -> Option<(usize, &str)> {
+    let parts: Vec<&str> = path.split('/').filter(|p| !p.is_empty()).collect();
+    SIDE_DIRS.iter().enumerate().find_map(|(i, d)| {
+        let n = d.dir.len();
+        let file = if parts.len() == n + 1 && parts[..n] == *d.dir {
+            parts[n]
+        } else if parts.len() == n + 2 && parts[1..=n] == *d.dir {
+            parts[n + 1]
+        } else {
+            return None;
+        };
+        (d.takes)(file).then_some((i, file))
+    })
+}
+
+/// The install root of a tarball copy: `<root>/bin/<exe>` → `<root>`. `None` when the
+/// executable is not in a `bin` folder (a build folder): no side files are installed then.
+fn install_root(exe: &Path) -> Option<&Path> {
+    let dir = exe.parent()?;
+    if dir.file_name()? == "bin" { dir.parent() } else { None }
+}
+
+/// A side file being extracted: its [`SIDE_DIRS`] index, name and temp file.
+struct SideFile {
+    dir: usize,
+    name: String,
+    temp: (std::fs::File, PathBuf),
 }
 
 /// Where each of [`ARCHIVE_BINARIES`] goes for the running executable `exe` (already
@@ -917,6 +1033,12 @@ fn install_targets(exe: &Path) -> (Vec<PathBuf>, usize) {
 /// file next to `exe`, checked to be an ELF executable for this CPU, made executable,
 /// synced and renamed over its target (atomic; a running process keeps its old inode),
 /// `exe` last. Returns the path to restart into (`exe`).
+///
+/// When `exe` sits in `<root>/bin/`, the archive's [`SIDE_DIRS`] files go the same way
+/// into `<root>/lib/soyuz/` (the FFmpeg libraries, ELF-checked, mode 644) and
+/// `<root>/share/licenses/soyuz/ffmpeg/`, before the binaries; libraries of another
+/// FFmpeg major that the archive no longer ships are removed at the end (other files in
+/// those folders are never touched). An archive without them leaves the folders alone.
 pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: InstallKind) -> Result<PathBuf, String> {
     if kind != InstallKind::Tarball {
         return Err(tr!("services-update-package-managed", kind = kind.key()));
@@ -926,11 +1048,16 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
         return Err(tr!("services-update-install-not-tarball").into());
     }
     let fail = |e: &dyn std::fmt::Display| tr!("services-update-install-failed", error = e.to_string());
+    let no_permission = |dir: &Path, e: &dyn std::fmt::Display| {
+        tr!("services-update-install-no-permission", path = dir.display().to_string(), error = e.to_string())
+    };
     // One open of the archive: the bytes extracted are the bytes hashed (the file in
     // ~/Downloads cannot be swapped between a check and the extraction).
     let archive_file = std::fs::File::open(archive).map_err(|e| fail(&e))?;
     let exe = std::fs::canonicalize(exe).unwrap_or_else(|_| exe.to_path_buf());
     let dir = exe.parent().ok_or_else(|| fail(&"no parent folder"))?;
+    let root = install_root(&exe).map(Path::to_path_buf);
+    let side_dir = |i: usize| root.as_ref().map(|r| SIDE_DIRS[i].dir.iter().fold(r.clone(), |p, c| p.join(c)));
     let (targets, running) = install_targets(&exe);
     let mut temps: Vec<(std::fs::File, PathBuf)> = Vec::new();
     for _ in ARCHIVE_BINARIES {
@@ -938,24 +1065,36 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
             Ok(t) => temps.push(t),
             Err(e) => {
                 remove_temps(temps);
-                return Err(tr!(
-                    "services-update-install-no-permission",
-                    path = dir.display().to_string(),
-                    error = e.to_string()
-                ));
+                return Err(no_permission(dir, &e));
             }
         }
     }
+    let mut sides: Vec<SideFile> = Vec::new();
     let result = (|| -> Result<(), String> {
         use std::io::{Read as _, Seek as _};
-        // 1. Extract the binaries into the temp files next to the executable (same
-        //    filesystem → atomic rename), hashing the archive on the way through.
+        // 1. Extract the binaries into the temp files next to the executable and the side
+        //    files into temp files in their folders (same filesystem → atomic rename),
+        //    hashing the archive on the way through.
         let hashing = HashingReader { inner: archive_file, hasher: Sha256::new() };
         let mut gz = flate2::read::GzDecoder::new(std::io::BufReader::new(hashing));
         let extracted = {
             let mut outs: Vec<&mut dyn std::io::Write> =
                 temps.iter_mut().map(|(f, _)| f as &mut dyn std::io::Write).collect();
-            extract_binaries(&mut gz, &ARCHIVE_BINARIES, &mut outs)
+            extract_binaries(&mut gz, &ARCHIVE_BINARIES, &mut outs, |i, name, size, body| {
+                let Some(to) = side_dir(i) else { return Ok(()) };
+                if size > MAX_BINARY || sides.iter().any(|s| s.dir == i && s.name == name) {
+                    return Err(tr!("services-update-install-bad-archive").into());
+                }
+                std::fs::create_dir_all(&to).map_err(|e| no_permission(&to, &e))?;
+                let temp = create_temp_in(&to).map_err(|e| no_permission(&to, &e))?;
+                sides.push(SideFile { dir: i, name: name.to_string(), temp });
+                let out = &mut sides.last_mut().expect("just pushed").temp.0;
+                let n = std::io::copy(body, out).map_err(|e| fail(&e))?;
+                if n != size {
+                    return Err(tr!("services-update-install-bad-archive").into());
+                }
+                Ok(())
+            })
         };
         // 2. Hash the rest of the archive (everything below the decoder was hashed as
         //    it was read, buffered bytes included) and compare before anything else.
@@ -968,9 +1107,25 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
         if found[running].is_none() {
             return Err(tr!("services-update-install-no-binary", name = ARCHIVE_BINARIES[running]));
         }
+        let mut head = [0u8; 64];
+        for side in &mut sides {
+            let out = &mut side.temp.0;
+            out.sync_all().map_err(|e| fail(&e))?;
+            if SIDE_DIRS[side.dir].elf {
+                out.rewind().map_err(|e| fail(&e))?;
+                let n = out.read(&mut head).map_err(|e| fail(&e))?;
+                if !is_elf_for(&head[..n], elf_machine()) {
+                    return Err(tr!("services-update-install-lib-not-elf", name = side.name.as_str()));
+                }
+            }
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                out.set_permissions(std::fs::Permissions::from_mode(0o644)).map_err(|e| fail(&e))?;
+            }
+        }
         for (out, _) in temps.iter_mut().zip(&found).filter(|(_, f)| f.is_some()).map(|(t, _)| t) {
             out.sync_all().map_err(|e| fail(&e))?;
-            let mut head = [0u8; 64];
             out.rewind().map_err(|e| fail(&e))?;
             let n = out.read(&mut head).map_err(|e| fail(&e))?;
             if !is_elf_for(&head[..n], elf_machine()) {
@@ -982,15 +1137,36 @@ pub fn install_tarball_to(archive: &Path, sha256: &str, exe: &Path, kind: Instal
                 out.set_permissions(std::fs::Permissions::from_mode(0o755)).map_err(|e| fail(&e))?;
             }
         }
-        // 3. Only verified binaries replace the installed ones; the running one last.
+        // 3. Only verified files replace the installed ones: the side files first, then
+        //    the binaries with the running one last.
+        for side in &sides {
+            let to = side_dir(side.dir).ok_or_else(|| fail(&"no install root"))?;
+            std::fs::rename(&side.temp.1, to.join(&side.name)).map_err(|e| fail(&e))?;
+        }
         let order = (0..temps.len()).filter(|i| *i != running).chain(Some(running));
         for i in order.filter(|i| found[*i].is_some()) {
             std::fs::rename(&temps[i].1, &targets[i]).map_err(|e| fail(&e))?;
+        }
+        // 4. Libraries of an FFmpeg major the archive no longer ships (the new binaries
+        //    do not load them; a running process keeps its mapped copies).
+        for (i, d) in SIDE_DIRS.iter().enumerate() {
+            let Some(folder) = side_dir(i).filter(|_| sides.iter().any(|s| s.dir == i)) else { continue };
+            let Ok(entries) = std::fs::read_dir(&folder) else { continue };
+            for e in entries.flatten() {
+                let name = e.file_name().to_string_lossy().into_owned();
+                if (d.stale)(&name)
+                    && !sides.iter().any(|s| s.dir == i && s.name == name)
+                    && let Err(err) = std::fs::remove_file(e.path())
+                {
+                    log::warn!("cannot remove the old library {}: {err}", e.path().display());
+                }
+            }
         }
         Ok(())
     })();
     // Temp files not renamed (not in the archive, or after a failure) are removed.
     remove_temps(temps);
+    remove_temps(sides.into_iter().map(|s| s.temp).collect());
     result.map(|()| exe)
 }
 
@@ -1175,6 +1351,7 @@ pub fn weekly_due(last: Option<SystemTime>, now: SystemTime) -> bool {
 /// Per-frame hook: starts the opt-in weekly check once per session and turns its result
 /// into a notification.
 pub fn pump(app: &mut crate::core::AppCore) {
+    ffmpeg_runtime::pump(app);
     let notice = {
         let mut s = STATE.lock();
         if !s.started_weekly {
@@ -1459,7 +1636,7 @@ mod tests {
     }
 
     /// A minimal ustar archive with `entries` (name, data, type flag).
-    fn tar(entries: &[(&str, &[u8], u8)]) -> Vec<u8> {
+    pub(super) fn tar(entries: &[(&str, &[u8], u8)]) -> Vec<u8> {
         let mut out = Vec::new();
         for (name, data, kind) in entries {
             let mut h = [0u8; 512];
@@ -1497,7 +1674,7 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn extract(r: &[u8]) -> Result<(Option<Vec<u8>>, Option<Vec<u8>>), String> {
         let (mut gui, mut tui) = (Vec::new(), Vec::new());
-        let found = extract_binaries(r, &ARCHIVE_BINARIES, &mut [&mut gui, &mut tui])?;
+        let found = extract_binaries(r, &ARCHIVE_BINARIES, &mut [&mut gui, &mut tui], |_, _, _, _| Ok(()))?;
         Ok((found[0].map(|_| gui), found[1].map(|_| tui)))
     }
 
@@ -1639,6 +1816,125 @@ mod tests {
         assert_eq!(std::fs::read(&gui).unwrap(), b"old gui");
         assert_eq!(std::fs::read(&tui).unwrap(), tui_elf());
         assert_eq!(std::fs::read_dir(&bin).unwrap().count(), 2, "no temp file left");
+    }
+
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> =
+            std::fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+        v.sort();
+        v
+    }
+
+    #[test]
+    fn tarball_install_updates_the_ffmpeg_libraries() {
+        let d = tempfile::tempdir().unwrap();
+        let root = d.path().join("soyuz");
+        let bin = root.join("bin");
+        let libs = root.join("lib").join("soyuz");
+        let texts = root.join("share").join("licenses").join("soyuz").join("ffmpeg");
+        std::fs::create_dir_all(&bin).unwrap();
+        std::fs::create_dir_all(&libs).unwrap();
+        let exe = bin.join("soyuz");
+        std::fs::write(&exe, b"old build").unwrap();
+        // The previous release's FFmpeg 8 libraries, plus files that are not ours to remove.
+        for f in ["libavcodec.so.62", "libavutil.so.60", "libavcodec.so.63", "libother.so.1", "notes.txt"] {
+            std::fs::write(libs.join(f), b"old").unwrap();
+        }
+        let lib = |tag: &[u8]| {
+            let mut e = elf();
+            e.extend_from_slice(tag);
+            e
+        };
+        let (codec, util) = (lib(b"avcodec 63"), lib(b"avutil 61"));
+        let archive = d.path().join("soyuz-0.4.0-linux-x86_64.tar.gz");
+        std::fs::write(
+            &archive,
+            gz(&tar(&[
+                ("soyuz-0.4.0-linux-x86_64/bin/soyuz", &elf(), b'0'),
+                ("soyuz-0.4.0-linux-x86_64/lib/soyuz/libavcodec.so.63", &codec, b'0'),
+                ("soyuz-0.4.0-linux-x86_64/lib/soyuz/libavutil.so.61", &util, b'0'),
+                // A link, a nested file and a non-library are never installed.
+                ("soyuz-0.4.0-linux-x86_64/lib/soyuz/libswscale.so.10", b"", b'2'),
+                ("soyuz-0.4.0-linux-x86_64/lib/soyuz/sub/libx.so.1", &codec, b'0'),
+                ("soyuz-0.4.0-linux-x86_64/lib/soyuz/README", b"x", b'0'),
+                ("soyuz-0.4.0-linux-x86_64/share/licenses/soyuz/ffmpeg/LICENSE.md", b"lgpl", b'0'),
+            ])),
+        )
+        .unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&archive).unwrap()));
+        install_tarball_to(&archive, &sha, &exe, InstallKind::Tarball).unwrap();
+        assert_eq!(std::fs::read(&exe).unwrap(), elf());
+        assert_eq!(
+            names_in(&libs),
+            ["libavcodec.so.63", "libavutil.so.61", "libother.so.1", "notes.txt"],
+            "new libraries in, the old major out, foreign files kept, no temp file left"
+        );
+        assert_eq!(std::fs::read(libs.join("libavcodec.so.63")).unwrap(), codec);
+        assert_eq!(std::fs::read(texts.join("LICENSE.md")).unwrap(), b"lgpl");
+        assert_eq!(names_in(&bin), ["soyuz"]);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(libs.join("libavutil.so.61")).unwrap().permissions().mode() & 0o777, 0o644);
+        }
+
+        // A library that is not ELF for this CPU: nothing changes anywhere.
+        std::fs::write(&exe, b"old build").unwrap();
+        let bad = d.path().join("bad.tar.gz");
+        std::fs::write(
+            &bad,
+            gz(&tar(&[("x/bin/soyuz", &elf(), b'0'), ("x/lib/soyuz/libavcodec.so.64", b"#!/bin/sh\n", b'0')])),
+        )
+        .unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&bad).unwrap()));
+        let err = install_tarball_to(&bad, &sha, &exe, InstallKind::Tarball).unwrap_err();
+        assert!(err.contains("libavcodec.so.64"), "{err}");
+        assert_eq!(std::fs::read(&exe).unwrap(), b"old build");
+        assert_eq!(names_in(&libs), ["libavcodec.so.63", "libavutil.so.61", "libother.so.1", "notes.txt"]);
+
+        // An archive without libraries (before Phase V) leaves the folder alone.
+        let plain = d.path().join("soyuz-0.3.0-linux-x86_64.tar.gz");
+        std::fs::write(&plain, gz(&tar(&[("x/bin/soyuz", &elf(), b'0')]))).unwrap();
+        let sha = hex(&Sha256::digest(std::fs::read(&plain).unwrap()));
+        install_tarball_to(&plain, &sha, &exe, InstallKind::Tarball).unwrap();
+        assert_eq!(names_in(&libs), ["libavcodec.so.63", "libavutil.so.61", "libother.so.1", "notes.txt"]);
+
+        // An executable outside a `bin` folder (a build folder) gets no side files.
+        let dev = d.path().join("target");
+        std::fs::create_dir_all(&dev).unwrap();
+        std::fs::write(dev.join("soyuz"), b"old").unwrap();
+        install_tarball_to(
+            &archive,
+            &hex(&Sha256::digest(std::fs::read(&archive).unwrap())),
+            &dev.join("soyuz"),
+            InstallKind::Tarball,
+        )
+        .unwrap();
+        assert_eq!(names_in(&dev), ["soyuz"]);
+        assert!(!d.path().join("lib").exists());
+    }
+
+    #[test]
+    fn side_file_names() {
+        assert_eq!(side_entry("top/lib/soyuz/libavcodec.so.63"), Some((0, "libavcodec.so.63")));
+        assert_eq!(side_entry("lib/soyuz/libavcodec.so.63"), Some((0, "libavcodec.so.63")));
+        assert_eq!(side_entry("top/share/licenses/soyuz/ffmpeg/BUILD.txt"), Some((1, "BUILD.txt")));
+        for none in [
+            "top/lib/soyuz/sub/libx.so",
+            "a/b/lib/soyuz/libavcodec.so.63",
+            "top/lib/soyuz/README",
+            "top/lib/soyuz/..",
+            "top/share/licenses/soyuz/ffmpeg/evil.sh",
+            "top/lib/other/libavcodec.so.63",
+        ] {
+            assert_eq!(side_entry(none), None, "{none}");
+        }
+        assert!(is_ffmpeg_lib("libavcodec.so.62") && is_ffmpeg_lib("libswresample.so.5.1.100"));
+        for not in ["libavcodec.so", "libavcodec.so.", "libavcodec.so.6x", "libother.so.1", "libavcodecx.so.1"] {
+            assert!(!is_ffmpeg_lib(not), "{not}");
+        }
+        assert_eq!(install_root(Path::new("/opt/soyuz/bin/soyuz")), Some(Path::new("/opt/soyuz")));
+        assert_eq!(install_root(Path::new("/src/target/release/soyuz")), None);
     }
 
     #[test]

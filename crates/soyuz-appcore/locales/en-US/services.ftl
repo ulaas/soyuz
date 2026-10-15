@@ -85,7 +85,7 @@ services-preview-decimated = { $count } (decimated)
 services-preview-waveform-skipped = Skipped above { $size } MiB ([preview] max_audio_mib)
 services-preview-poster-disk-only = Poster frames are only made for files on disk.
 # $tag: the GitHub release that carries the libraries (ffmpeg-runtime-9.0.2); $dir: the config folder's ffmpeg/ sub-folder.
-services-preview-no-ffmpeg-libs = The FFmpeg libraries aren't loaded, so there is no poster frame. Soyuz ships them next to the program; to add them, get the "{ $tag }" release from GitHub and unpack it into { $dir }, or point Settings → Preview → Media at their folder.
+services-preview-no-ffmpeg-libs = The FFmpeg libraries aren't loaded, so there is no poster frame. Soyuz ships them next to the program; to add them, run “Download FFmpeg runtime” (Settings → Preview → Media or the command palette), get the "{ $tag }" release from GitHub and unpack it into { $dir }, or point Settings → Preview → Media at their folder.
 services-preview-crashed-last-time = Not previewed: decoding this file crashed the media library last time. Open it in Quick Look to try again.
 services-preview-no-pdf-renderer = This build has no PDF renderer (cargo feature `pdf`).
 services-preview-no-pdf-renderer-short = No PDF renderer in this build
@@ -346,10 +346,30 @@ services-update-install-not-tarball = only the Linux release tarball (.tar.gz) c
 services-update-install-no-binary = the archive does not contain bin/{ $name }
 services-update-install-bad-archive = the archive is damaged or not a Soyuz release
 services-update-install-not-elf = bin/soyuz in the archive is not a program for this computer's processor; nothing was changed
+services-update-install-lib-not-elf = lib/soyuz/{ $name } in the archive is not a library for this computer's processor; nothing was changed
 services-update-install-changed = the downloaded file changed after it was verified; download it again
 # $path: folder of the running soyuz executable.
 services-update-install-no-permission = cannot write to { $path } ({ $error }). If Soyuz was installed system-wide, update it with sudo, e.g. “sudo tar -C /usr/local --strip-components=1 -xf <file>”.
 services-update-install-failed = installing the update failed: { $error }
+## FFmpeg runtime download (services::updates::ffmpeg_runtime)
+services-ffmpeg-dl-flatpak = The Flatpak uses the FFmpeg of its runtime; there is nothing to download.
+services-ffmpeg-dl-msix = The Microsoft Store / MSIX package carries the FFmpeg libraries; reinstall the package to repair them.
+services-ffmpeg-dl-unsupported = No FFmpeg runtime is published for this system and processor. Install FFmpeg with your package manager and choose its folder in Settings → Preview → Media.
+services-ffmpeg-dl-no-repo = No update repository is set (Settings → About & updates), so Soyuz does not go online.
+services-ffmpeg-dl-busy = The FFmpeg runtime is already being downloaded.
+services-ffmpeg-dl-no-release = The repository has no “{ $tag }” release.
+services-ffmpeg-dl-no-asset = The “{ $tag }” release has no download for this system.
+services-ffmpeg-dl-bad-archive = the downloaded archive is damaged ({ $error })
+services-ffmpeg-dl-incomplete = the downloaded archive does not contain the five FFmpeg libraries and their licence; nothing was changed
+services-ffmpeg-dl-in-use = cannot replace { $path } ({ $error }). If Soyuz loaded libraries from there, restart it and try again.
+services-ffmpeg-dl-started = Downloading the FFmpeg runtime
+services-ffmpeg-dl-started-body = It is verified and loaded when it arrives; you can keep working.
+services-ffmpeg-dl-cannot = Cannot download the FFmpeg runtime
+services-ffmpeg-dl-loaded = The FFmpeg libraries are already loaded
+services-ffmpeg-dl-done = FFmpeg runtime installed
+services-ffmpeg-dl-done-body = The libraries are in { $dir } and are loading now; video previews and the player work without a restart.
+services-ffmpeg-dl-failed = The FFmpeg runtime could not be installed
+services-ffmpeg-dl-cancelled = FFmpeg runtime download cancelled
 
 ## macos
 services-clipboard-mac-failed = the files could not be put on the macOS pasteboard

@@ -114,6 +114,8 @@ define_actions! {
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,
         OpenScripts, ReloadScripts, OpenAutomations, ContextMenu,
+        // Fetch the FFmpeg libraries (`services::updates::ffmpeg_runtime`, Phase V4c).
+        DownloadFfmpegRuntime,
         // The built-in editors (`KeyContext::Editor`, see [`Action::is_editor`]).
         EditorSave, EditorSaveAs, EditorFind, EditorReplace, EditorGoTo, EditorFindNext,
         EditorFindPrev, EditorCloseDocument, EditorNextDocument, EditorPrevDocument,

@@ -339,6 +339,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::Computer => (IconId::DesktopTower, "this pc volumes"),
         A::ShowKeybindings => (IconId::Keyboard, "keys hotkeys"),
         A::About => (IconId::Planet, ""),
+        A::DownloadFfmpegRuntime => (IconId::DownloadSimple, "ffmpeg libraries video codecs install media"),
         A::Welcome => (IconId::HandWaving, "onboarding help intro"),
         A::Quit => (IconId::Power, "exit close"),
         A::QuickLook => (IconId::Eye, "space"),
