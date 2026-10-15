@@ -343,6 +343,14 @@ views-player-off = Video oynatıcı kapalı ([media] player)
 # $error: dosyanın neden açılamadığı.
 views-player-cant-open = Bu dosya oynatma için açılamıyor ({ $error })
 views-rich-pause = Duraklat
+# $name: video oynatıcının gösterdiği dosya (yüzeyi bir oynat / duraklat düğmesidir).
+views-player-surface = Video: { $name }
+views-player-opening = Açılıyor…
+views-player-position = Konum
+views-player-volume = Ses düzeyi
+views-player-mute = Sessize al
+views-player-unmute = Sesi aç
+views-player-loop = Döngü
 views-rich-poster-note = Kapak karesi (FFmpeg) · oynatma, oynatıcınızda açılır (Enter)
 views-rich-prev-page = Önceki sayfa  (PgUp)
 views-rich-next-page = Sonraki sayfa  (PgDn)

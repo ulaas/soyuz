@@ -14,10 +14,12 @@ use soyuz_core::{Location, format_size};
 use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::models::quicklook::Step;
+use crate::services::preview::Content;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
 use crate::ui::preview::render::{self, PreviewAction, PreviewState};
+use crate::ui::preview::video;
 use crate::ui::views::flow::semibold;
 use crate::ui::views::icons as file_icons;
 use crate::ui::widgets::{icon_toggle, kbd, trunc_galley};
@@ -47,20 +49,32 @@ fn clear_view(v: &mut View) {
     v.shown = false;
 }
 
+/// The overlay shows a video (through the player) or an audio file: the player's keys
+/// (`KeyContext::Player`) are live, and ← / → seek instead of browsing.
+fn showing_media(cfg: &soyuz_core::config::Config) -> bool {
+    VIEW.with_borrow(|v| {
+        v.state.as_ref().and_then(|s| s.loaded.as_ref()).is_some_and(|l| {
+            video::takes(l, cfg)
+                || matches!(&l.content, Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+        })
+    })
+}
+
 /// Keyboard while open: consumes Esc / Space / arrows / Enter so the file list doesn't
 /// see them. Returns `true` when Quick Look handled input this frame.
 pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
     if !app.core.ui.quicklook.open {
         return false;
     }
+    let media = showing_media(&app.core.config);
     let (esc, space, up, down, left, right, enter, home, end) = ctx.input_mut(|i| {
         (
             i.consume_key(Modifiers::NONE, Key::Escape),
             i.consume_key(Modifiers::NONE, Key::Space),
             i.consume_key(Modifiers::NONE, Key::ArrowUp),
             i.consume_key(Modifiers::NONE, Key::ArrowDown),
-            i.consume_key(Modifiers::NONE, Key::ArrowLeft),
-            i.consume_key(Modifiers::NONE, Key::ArrowRight),
+            !media && i.consume_key(Modifiers::NONE, Key::ArrowLeft),
+            !media && i.consume_key(Modifiers::NONE, Key::ArrowRight),
             i.consume_key(Modifiers::NONE, Key::Enter),
             i.consume_key(Modifiers::NONE, Key::Home),
             i.consume_key(Modifiers::NONE, Key::End),
@@ -69,6 +83,9 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
     if esc || space {
         crate::models::quicklook::close(&mut app.core);
         return true;
+    }
+    if media {
+        video::dispatch_player_keys(app, ctx);
     }
     let dir = if up || left {
         Some(Step::Prev)
@@ -99,8 +116,11 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
         }
         if !app.core.ui.quicklook.open && v.shown {
             clear_view(v);
+            // Playback stops with the overlay (the pane shows its poster again).
+            app.core.ui.player.close();
         }
     });
+    video::apply_audio_cmds(&mut app.core, &crate::host::EguiHost::new(ctx));
 }
 
 fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
@@ -127,6 +147,20 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
     let limits = st.limits(&app.core.config, &p);
     st.set_target(Some(&target), limits);
     st.poll(ctx);
+    // The player follows the overlay's item: a settled video plays here; anything else
+    // that finished loading closes it (a load in progress leaves the pane's player be).
+    let settled_video = pair.is_none()
+        && st.loading_since.is_none()
+        && st.loaded.as_ref().is_some_and(|l| video::takes(l, &app.core.config));
+    if !settled_video && st.loaded.is_some() && st.loading_since.is_none() {
+        app.core.ui.player.sync_target(None);
+    }
+    if matches!(
+        st.loaded.as_ref().map(|l| &l.content),
+        Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+    ) {
+        video::set_audio_play_request(app.core.ui.player.take_play_request());
+    }
 
     let t = ctx.animate_bool_with_time(
         Id::new("soyuz.ql.anim"),
@@ -264,8 +298,15 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
         );
         let mut child = ui.new_child(UiBuilder::new().max_rect(body));
         child.set_clip_rect(body);
+        let media = if settled_video {
+            st.entry.as_ref().zip(st.loaded.as_ref()).and_then(|(e, l)| video::Media::of(e, l))
+        } else {
+            None
+        };
         if let Some((a, b)) = &pair {
             crate::ui::preview::diff::show(&mut child, body, &mut v.diff, a, b, diff_cap);
+        } else if let Some(m) = media {
+            video::show(&mut child, body, &mut app.core, m, true);
         } else if let Some(a) = render::content(&mut child, body, st, true) {
             action = Some(a);
         }

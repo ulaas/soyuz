@@ -150,8 +150,23 @@ and *Retry failed*.
     streams (codec and profile, size, frame rate, pixel format, HDR, rotation, audio
     codec / channels / rate, bitrates, chapters, tags) plus a poster frame at
     `[media] poster_secs` (0 = a tenth of the length, at most 5 s), sized by
-    `[media] max_px`. `Enter` opens the file in your player (in-app playback is on the
-    roadmap).
+    `[media] max_px`. `Enter` opens the file in your player.
+  - **Video playback** (`[media] player`, on by default, with the FFmpeg libraries): the
+    poster shows first with a play button; click it (or the picture, or press `K`) and
+    the video plays right there, in the preview pane or in Quick Look, scaled to the
+    view. The bar under the picture has play / pause, a scrubber (hover shows the time
+    under the pointer; the lighter part is what is buffered ahead), elapsed / total
+    time, volume, mute and a loop toggle. Keys while the player has the keyboard
+    (Quick Look on a video or audio file, or the pane's player clicked or tabbed to):
+    `K` play / pause, `J` / `L` or `←` / `→` jump by `[media] seek_step_secs`, `-` / `=`
+    volume, `M` mute (the *Player* context in Settings → Keys). `[media] autoplay`
+    starts playing as soon as a video is previewed, `[media] loop` seeds the loop
+    toggle, and `[media] volume` / `muted` are written back when you change them in the
+    player (they apply to audio previews too). Playback stops when the preview moves
+    to another file, when the pane closes and when Quick Look closes. Decoding happens
+    on worker threads at the view's size, so the file list stays responsive; a file
+    the libraries cannot open says why in place of the picture. `[media] player = false`
+    keeps the poster only.
   - **The FFmpeg libraries** (`[media]`, Settings → Preview & search → Media): Soyuz loads
     `avcodec`, `avformat`, `avutil`, `swscale` and `swresample` at run time and never spawns
     an `ffmpeg` program. The release packages ship them next to the program (an LGPL build,
