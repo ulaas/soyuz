@@ -1,6 +1,10 @@
 //! The plumbing between the player's threads: a bounded queue ([`Bounded`]) that a
 //! producer can be pulled out of (seek, stop) and a [`Signal`] the threads sleep on so a
 //! command wakes them at once instead of at their next poll. Pure `std`, no libraries.
+//!
+//! A queue is bounded twice: by item count and by bytes ([`Bounded::with_budget`]), so a
+//! stream of huge packets (4K intra-only video, raw frames) cannot pile up hundreds of
+//! megabytes behind a decoder.
 
 use std::collections::VecDeque;
 use std::sync::{Condvar, Mutex, MutexGuard};
@@ -27,29 +31,54 @@ pub(crate) enum Pop<T> {
 }
 
 struct Inner<T> {
-    items: VecDeque<T>,
+    /// Items with their weight (bytes) at push time.
+    items: VecDeque<(T, usize)>,
+    /// Sum of the queued weights.
+    bytes: usize,
     closed: bool,
     interrupted: bool,
+    /// A producer is blocked in `push` (the queue is full).
+    waiting: bool,
 }
 
 /// A bounded FIFO between one producer and one consumer. `push` blocks while the queue
-/// is full; [`interrupt`](Self::interrupt) makes it return early until the producer
-/// acknowledges with [`clear_interrupt`](Self::clear_interrupt), [`flush`](Self::flush)
-/// drops what is queued, [`close`](Self::close) ends both sides.
+/// is full (`cap` items, or `budget` bytes as `weigh` counts them);
+/// [`interrupt`](Self::interrupt) makes it return early until the producer acknowledges
+/// with [`clear_interrupt`](Self::clear_interrupt), [`flush`](Self::flush) drops what is
+/// queued, [`close`](Self::close) ends both sides.
 pub(crate) struct Bounded<T> {
     inner: Mutex<Inner<T>>,
     not_full: Condvar,
     not_empty: Condvar,
     cap: usize,
+    budget: usize,
+    weigh: fn(&T) -> usize,
 }
 
 impl<T> Bounded<T> {
+    /// A queue bounded by count only (the tests).
+    #[cfg(test)]
     pub(crate) fn new(cap: usize) -> Bounded<T> {
+        Bounded::with_budget(cap, usize::MAX, |_| 0)
+    }
+
+    /// A queue of at most `cap` items weighing at most `budget` bytes together. An item
+    /// always gets into an empty queue, however heavy, so one packet larger than the
+    /// budget cannot wedge the producer.
+    pub(crate) fn with_budget(cap: usize, budget: usize, weigh: fn(&T) -> usize) -> Bounded<T> {
         Bounded {
-            inner: Mutex::new(Inner { items: VecDeque::with_capacity(cap.max(1)), closed: false, interrupted: false }),
+            inner: Mutex::new(Inner {
+                items: VecDeque::with_capacity(cap.clamp(1, 1024)),
+                bytes: 0,
+                closed: false,
+                interrupted: false,
+                waiting: false,
+            }),
             not_full: Condvar::new(),
             not_empty: Condvar::new(),
             cap: cap.max(1),
+            budget,
+            weigh,
         }
     }
 
@@ -59,22 +88,28 @@ impl<T> Bounded<T> {
 
     /// Queue `item`, waiting while the queue is full.
     pub(crate) fn push(&self, item: T) -> Result<(), PushError> {
+        let w = (self.weigh)(&item);
         let mut g = self.lock();
-        loop {
+        let r = loop {
             if g.closed {
-                return Err(PushError::Closed);
+                break Err(PushError::Closed);
             }
             if g.interrupted {
-                return Err(PushError::Interrupted);
+                break Err(PushError::Interrupted);
             }
-            if g.items.len() < self.cap {
-                g.items.push_back(item);
+            if g.items.len() < self.cap && (g.items.is_empty() || g.bytes.saturating_add(w) <= self.budget) {
+                g.items.push_back((item, w));
+                g.bytes += w;
+                g.waiting = false;
                 drop(g);
                 self.not_empty.notify_one();
                 return Ok(());
             }
+            g.waiting = true;
             g = self.not_full.wait(g).unwrap_or_else(|e| e.into_inner());
-        }
+        };
+        g.waiting = false;
+        r
     }
 
     /// The next item, waiting up to `timeout` for one.
@@ -82,7 +117,8 @@ impl<T> Bounded<T> {
         let deadline = Instant::now() + timeout;
         let mut g = self.lock();
         loop {
-            if let Some(item) = g.items.pop_front() {
+            if let Some((item, w)) = g.items.pop_front() {
+                g.bytes -= w;
                 drop(g);
                 self.not_full.notify_one();
                 return Pop::Item(item);
@@ -103,6 +139,7 @@ impl<T> Bounded<T> {
         let mut g = self.lock();
         let n = g.items.len();
         g.items.clear();
+        g.bytes = 0;
         drop(g);
         self.not_full.notify_all();
         n
@@ -126,9 +163,21 @@ impl<T> Bounded<T> {
         self.not_empty.notify_all();
     }
 
-    #[cfg(test)]
+    /// The producer is blocked in `push` because the queue is full: nothing behind this
+    /// queue moves until its consumer takes an item.
+    pub(crate) fn producer_waiting(&self) -> bool {
+        self.lock().waiting
+    }
+
+    #[cfg(any(test, feature = "test-seams"))]
     pub(crate) fn len(&self) -> usize {
         self.lock().items.len()
+    }
+
+    /// Bytes queued (the weights of the items).
+    #[cfg(any(test, feature = "test-seams"))]
+    pub(crate) fn bytes(&self) -> usize {
+        self.lock().bytes
     }
 }
 
@@ -217,6 +266,57 @@ mod tests {
         assert_eq!(t.join().unwrap(), Err(PushError::Closed));
         assert_eq!(q.pop_timeout(Duration::ZERO), Pop::Item(4));
         assert_eq!(q.pop_timeout(Duration::ZERO), Pop::Closed);
+    }
+
+    #[test]
+    fn heavy_items_are_bounded_by_bytes() {
+        const MB: usize = 1 << 20;
+        // 64 items allowed by count, but 10 MB items in a 32 MB budget: three at a time.
+        let q: Arc<Bounded<Vec<u8>>> = Arc::new(Bounded::with_budget(64, 32 * MB, |v| v.len()));
+        let q2 = Arc::clone(&q);
+        let producer = std::thread::spawn(move || {
+            for _ in 0..12 {
+                q2.push(vec![0u8; 10 * MB]).unwrap();
+            }
+            q2.close();
+        });
+        let (mut peak_len, mut peak_bytes, mut got) = (0, 0, 0);
+        loop {
+            std::thread::sleep(Duration::from_millis(5));
+            peak_len = peak_len.max(q.len());
+            peak_bytes = peak_bytes.max(q.bytes());
+            match q.pop_timeout(Duration::from_secs(5)) {
+                Pop::Item(v) => {
+                    assert_eq!(v.len(), 10 * MB);
+                    got += 1;
+                }
+                Pop::Closed => break,
+                Pop::Empty => panic!("the producer stalled"),
+            }
+        }
+        producer.join().unwrap();
+        assert_eq!(got, 12);
+        assert!(peak_bytes <= 32 * MB, "{peak_bytes} bytes queued");
+        assert!((2..=3).contains(&peak_len), "{peak_len} queued: the budget, not the count, bounds the queue");
+        assert_eq!(q.bytes(), 0);
+        // One item heavier than the whole budget still gets into an empty queue, and the
+        // producer is reported as waiting behind it.
+        let q: Arc<Bounded<Vec<u8>>> = Arc::new(Bounded::with_budget(64, 100, |v| v.len()));
+        q.push(vec![0; 1000]).unwrap();
+        assert!(!q.producer_waiting());
+        let q2 = Arc::clone(&q);
+        let t = std::thread::spawn(move || q2.push(vec![0; 1]));
+        let started = Instant::now();
+        while !q.producer_waiting() {
+            assert!(started.elapsed() < Duration::from_secs(5), "the second push should block");
+            std::thread::yield_now();
+        }
+        assert!(matches!(q.pop_timeout(Duration::ZERO), Pop::Item(v) if v.len() == 1000));
+        assert_eq!(t.join().unwrap(), Ok(()));
+        assert!(!q.producer_waiting());
+        assert_eq!((q.len(), q.bytes()), (1, 1));
+        assert_eq!(q.flush(), 1);
+        assert_eq!(q.bytes(), 0);
     }
 
     #[test]

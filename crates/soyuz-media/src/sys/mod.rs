@@ -30,6 +30,15 @@
 //! - `check.rs`: the load-time self-test (an in-memory WAV and a 2-frame rawvideo AVI
 //!   from `crate::fixtures`).
 //!
+//! Threads: the RAII handles (`Demuxer`, `Packet`, `Decoder`, `Frame`, `Params`,
+//! `ChLayout`, `Scaler`, `Resampler`, the encoder / muxer handles) are `Send` and not
+//! `Sync`: each FFmpeg context is used by one thread at a time, the one holding the
+//! handle, so moving a handle is sound and sharing one is never needed. FFmpeg's own
+//! decoder threads stay inside the context. A `Demuxer` borrowing a `stale` closure must
+//! stay with the closure's owner (only `'static`, `None`-stale demuxers such as the one
+//! in `AudioReader` are moved). `HwDevice` is the one `Sync` handle (an atomically
+//! reference-counted device context, only read after creation).
+//!
 //! Rules for every `extern "C"` callback: the body is wrapped in
 //! `std::panic::catch_unwind(AssertUnwindSafe(..))` and a panic becomes `AVERROR_EXTERNAL`
 //! (a panic unwinding into C aborts the process). Every `unsafe` block carries a

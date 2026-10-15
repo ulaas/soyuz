@@ -16,9 +16,15 @@ log.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
+[features]
+# Hidden test seams (fault injection, queue introspection: `player::seams`) for this
+# crate's own tests, switched on by the self dev-dependency below; never in a normal build.
+test-seams = []
+
 [dev-dependencies]
 serde_json.workspace = true
 tempfile.workspace = true
+soyuz-media = { path = ".", features = ["test-seams"] }
 
 [lints]
 workspace = true

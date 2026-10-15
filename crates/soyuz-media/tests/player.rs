@@ -4,14 +4,15 @@
 //! Frames go to a counting [`FrameSink`]; audio to a [`NullAudioOutput`] whose sink
 //! behaves like a device: it accepts up to half a second, and `played_frames` advances
 //! with the wall clock while not paused, past what was pushed (underruns play silence).
+//! It records how much was queued each time the player let it run (the pre-roll).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use soyuz_media::{
-    AudioOutput, AudioSink, DIR_ENV, FramePixels, FrameSink, MediaError, Player, PlayerCmd, PlayerOptions, PlayerState,
-    Runtime, Source, fixtures, search_dirs,
+    AudioOutput, AudioReader, AudioSink, DIR_ENV, FramePixels, FrameSink, HwPref, MediaError, Player, PlayerCmd,
+    PlayerOptions, PlayerState, Runtime, Source, fixtures, player::seams, preroll_frames, search_dirs,
 };
 
 fn runtime() -> Option<Arc<Runtime>> {
@@ -95,6 +96,8 @@ struct NullState {
     running_since: Option<Instant>,
     volume: f32,
     flushes: u32,
+    /// Frames queued (pushed, not played) at every pause → run transition.
+    started_with: Vec<u64>,
 }
 
 impl NullState {
@@ -118,7 +121,12 @@ impl NullAudioOutput {
             running_since: None,
             volume: -1.0,
             flushes: 0,
+            started_with: Vec::new(),
         })))
+    }
+
+    fn started_with(&self) -> Vec<u64> {
+        self.0.lock().unwrap().started_with.clone()
     }
 
     fn pushed(&self) -> u64 {
@@ -157,12 +165,19 @@ impl AudioSink for NullSink {
         self.0.lock().unwrap().played()
     }
 
+    fn queued_frames(&self) -> u64 {
+        let s = self.0.lock().unwrap();
+        s.pushed.saturating_sub(s.played())
+    }
+
     fn pause(&mut self, on: bool) {
         let mut s = self.0.lock().unwrap();
         if on {
             s.played_at_pause = s.played();
             s.running_since = None;
         } else if s.running_since.is_none() {
+            let queued = s.pushed.saturating_sub(s.played());
+            s.started_with.push(queued);
             s.running_since = Some(Instant::now());
         }
     }
@@ -350,9 +365,77 @@ fn audio_and_video_follow_the_audio_clock() {
     let s = wait_for(&p, "playing from 0.5", Duration::from_secs(2), |s| s.playing && (0.45..0.8).contains(&s.pos));
     assert!(!s.ended);
     assert!(out.0.lock().unwrap().flushes >= 1);
+    // The device ran only with a full pre-roll queued: at the open, and after the seek.
+    let starts = out.started_with();
+    assert!(starts.len() >= 2, "{starts:?}");
+    assert!(starts.iter().all(|q| *q >= preroll_frames(22_050)), "started with too little audio: {starts:?}");
     let started = Instant::now();
     drop(p);
     assert!(started.elapsed() < Duration::from_millis(500), "drop joined in {:?}", started.elapsed());
+}
+
+#[test]
+fn the_clock_waits_for_the_preroll() {
+    let rt = rt!();
+    let rate = 8000;
+    let wav = fixtures::wav(rate, 1, &fixtures::sine(rate, 220.0, 0.5, 2 * rate as usize));
+    let frames = Frames::default();
+    let out = NullAudioOutput::new();
+    let opts = PlayerOptions { autoplay: true, ..Default::default() };
+    let p = Player::open(rt, mem(wav), opts, frames.sink(), Some(Arc::new(out.clone())), no_wake()).expect("open");
+    let need = preroll_frames(rate);
+    let s = wait_for(&p, "the clock to run", Duration::from_secs(2), |s| s.pos > 0.05);
+    assert!(s.playing && s.error.is_none());
+    let starts = out.started_with();
+    assert_eq!(starts.len(), 1, "one start: {starts:?}");
+    assert!(starts[0] >= need, "the device started with {} of {need} frames", starts[0]);
+    // A seek pauses the device until the new position is queued again; the position
+    // stands at the target meanwhile and then runs from there.
+    p.send(PlayerCmd::Seek(1.0));
+    let s = wait_for(&p, "the clock to run after the seek", Duration::from_secs(2), |s| s.pos > 1.02);
+    assert!(s.pos < 1.5, "pos {}", s.pos);
+    let starts = out.started_with();
+    assert_eq!(starts.len(), 2, "{starts:?}");
+    assert!(starts[1] >= need, "after the seek the device started with {} of {need} frames", starts[1]);
+    // Pause and resume with the device full: it runs again at once.
+    p.send(PlayerCmd::Pause);
+    std::thread::sleep(Duration::from_millis(50));
+    p.send(PlayerCmd::Play);
+    let starts = out.started_with();
+    assert_eq!(starts.len(), 3, "resumed at once: {starts:?}");
+    assert!(starts[2] >= need);
+    // A file shorter than the pre-roll starts with what it has and still ends.
+    let short = fixtures::wav(rate, 1, &fixtures::sine(rate, 220.0, 0.5, (need / 2) as usize));
+    let out = NullAudioOutput::new();
+    let p = Player::open(
+        runtime().unwrap(),
+        mem(short),
+        PlayerOptions { autoplay: true, ..Default::default() },
+        frames.sink(),
+        Some(Arc::new(out.clone())),
+        no_wake(),
+    )
+    .expect("open short");
+    let s = wait_for(&p, "the end of a short file", Duration::from_secs(2), |s| s.ended);
+    assert!(s.error.is_none());
+    let starts = out.started_with();
+    assert_eq!(starts.len(), 1, "{starts:?}");
+    assert!((need / 2..need).contains(&starts[0]), "started with the whole file: {starts:?}");
+}
+
+#[test]
+fn audio_reader_moves_between_threads() {
+    let rt = rt!();
+    let rate = 8000;
+    let wav = fixtures::wav(rate, 1, &fixtures::sine(rate, 220.0, 0.5, rate as usize));
+    // Opened here, read on another thread (as the preview's feeder does).
+    let mut r = AudioReader::open(&rt, &mem(wav), None, None).expect("open");
+    let read = std::thread::spawn(move || {
+        let mut out = Vec::new();
+        while r.read(&mut out, 1024).expect("read") > 0 {}
+        out.len()
+    });
+    assert_eq!(read.join().unwrap(), rate as usize);
 }
 
 #[test]
@@ -438,4 +521,67 @@ fn drop_while_playing_joins_quickly() {
     let started = Instant::now();
     drop(p);
     assert!(started.elapsed() < Duration::from_millis(500), "drop joined in {:?}", started.elapsed());
+}
+
+/// Records the pts of every presented picture.
+struct Pts(Arc<Mutex<Vec<f64>>>);
+
+impl FrameSink for Pts {
+    fn present(&mut self, f: FramePixels<'_>) {
+        self.0.lock().unwrap().push(f.pts);
+    }
+}
+
+#[test]
+fn a_hardware_decoding_error_reopens_in_software_and_plays_on() {
+    let rt = rt!();
+    // Two seconds of 30 fps Motion JPEG; the decoder fails once at packet 21 (0.67 s).
+    let frames: Vec<Vec<u8>> = (0..60u8).map(|i| fixtures::jpeg_solid(32, 16, [i * 4, 64, 255 - i * 4])).collect();
+    let clip = fixtures::avi(32, 16, 30, fixtures::AviCodec::Mjpeg, &frames);
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    seams::inject_hw_fault(20);
+    let opts = PlayerOptions { max_px: 32, autoplay: true, hw: HwPref::Auto, ..Default::default() };
+    let p = Player::open(rt, mem(clip), opts, Box::new(Pts(Arc::clone(&shown))), None, no_wake()).expect("open");
+    let s = wait_for(&p, "the end", Duration::from_secs(5), |s| s.ended);
+    assert!(s.error.is_none(), "the error was absorbed: {s:?}");
+    assert_eq!(s.hw, None, "software after the fallback");
+    assert_eq!(p.seek_count(), 1, "the fallback seeked once, to where playback was");
+    let pts = shown.lock().unwrap().clone();
+    assert_eq!(pts.first().copied(), Some(0.0));
+    assert!((pts.last().unwrap() - 59.0 / 30.0).abs() < 1e-6, "played to the end: {pts:?}");
+    // Continued from the current position: never back to the start, no jump ahead.
+    for w in pts.windows(2) {
+        assert!(w[1] >= w[0], "went back: {pts:?}");
+        assert!(w[1] - w[0] < 0.2, "skipped from {} to {}: {pts:?}", w[0], w[1]);
+    }
+    assert!(pts.len() + s.dropped as usize >= 55, "{} shown, {} dropped", pts.len(), s.dropped);
+}
+
+#[test]
+fn large_packets_stay_under_the_byte_budget() {
+    let rt = rt!();
+    // Raw 1080p frames: 3 MB packets. The count cap (64) alone would queue all 16
+    // (50 MB) while the player is paused.
+    let (w, h) = (1920u32, 1080u32);
+    let frame = vec![128u8; (w * h * 3 / 2) as usize];
+    let clip = fixtures::avi(w, h, 30, fixtures::AviCodec::I420, &vec![frame; 16]);
+    let shown = Arc::new(Mutex::new(Vec::new()));
+    let opts = PlayerOptions { max_px: 32, ..Default::default() };
+    let p = Player::open(rt, mem(clip), opts, Box::new(Pts(Arc::clone(&shown))), None, no_wake()).expect("open");
+    // Paused: the first picture is shown, then the demuxer fills the queue until the
+    // budget stops it.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !p.video_queue().2 {
+        assert!(Instant::now() < deadline, "the demuxer never blocked: {:?}", p.video_queue());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (n, bytes, _) = p.video_queue();
+    assert!(bytes <= seams::VIDEO_QUEUE_BYTES, "{bytes} bytes in {n} packets");
+    assert!((2..14).contains(&n), "{n} packets queued");
+    // Playing drains it to the end.
+    p.send(PlayerCmd::Play);
+    let s = wait_for(&p, "the end", Duration::from_secs(5), |s| s.ended);
+    assert!(s.error.is_none(), "{s:?}");
+    assert_eq!(shown.lock().unwrap().len() + s.dropped as usize, 16);
+    assert_eq!(p.video_queue().1, 0);
 }
