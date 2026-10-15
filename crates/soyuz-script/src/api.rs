@@ -5,20 +5,28 @@
 //! | register (top level only) | `register_action(#{…})`, `register_menu_item(#{…})`, `register_column(#{…})`, `register_previewer(#{…})` |
 //! | read (capped) | `list(dir)`, `stat(path)`, `exists(path)`, `is_dir(path)`, `read_text(path)`, `read_text(path, max_bytes)`, `search(dir, glob)` |
 //! | write (planned jobs) | `copy(src, dest_dir)`, `move_to(src, dest_dir)`, `rename(path, new_name)`, `trash(paths)`, `mkdir(path)` |
+//! | media (FFmpeg; actions and rules) | `media_info(path)`; planned jobs: `convert(src, preset)`, `extract_audio(src)`, `extract_audio(src, codec)`, `trim(src, start, end)`, `save_frame(src, secs)`, `save_frame(src, secs, format)` |
 //! | UI | `navigate(path)`, `select(paths)`, `toast(msg)`, `copy_text(text)`, `tag(paths, color)` |
 //! | helpers | `file_name`, `file_stem`, `extension`, `parent`, `join_path`, `now()`, `format_size(n)`, `format_date(secs, fmt)` |
 //!
 //! `src` / `paths` take a string or an array of strings. Entries are maps
 //! `#{ name, path, is_dir, is_file, is_link, size, modified, ext, hidden }` (`modified`
 //! in Unix seconds, `()` when unknown).
+//!
+//! The media functions need the FFmpeg libraries the app loaded (`[media] ffmpeg`); the
+//! planned media jobs also need `[media] tools` ([`set_media_access`]). Each media job
+//! writes a new file beside its input, named like the media tools dialog does
+//! (`clip.mp4` → `clip.mkv`, `clip (2).mkv` when taken).
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Instant, SystemTime};
 
 use rhai::{Array, Dynamic, Engine, FnPtr, ImmutableString, Map};
 use soyuz_core::{EntryInfo, EntryKind};
 use soyuz_jobs::{CreateKind, DeleteMode, JobKind};
+use soyuz_media::{AudioCodecChoice, ImageFormat, MediaOp, PresetId, Runtime, StreamKind};
 
 use crate::sandbox::{ApiResult, Mode, fail, require, state};
 use crate::script::{ActionDef, ColumnDef, MenuContext, PreviewerDef};
@@ -50,6 +58,14 @@ pub(crate) fn register(e: &mut Engine) {
     e.register_fn("rename", plan_rename);
     e.register_fn("trash", plan_trash);
     e.register_fn("mkdir", plan_mkdir);
+    // --- media ---
+    e.register_fn("media_info", media_info);
+    e.register_fn("convert", plan_convert);
+    e.register_fn("extract_audio", |src: Dynamic| plan_extract_audio(src, "copy"));
+    e.register_fn("extract_audio", plan_extract_audio);
+    e.register_fn("trim", plan_trim);
+    e.register_fn("save_frame", |src: Dynamic, secs: Dynamic| plan_save_frame(src, secs, "png"));
+    e.register_fn("save_frame", plan_save_frame);
     // --- UI ---
     e.register_fn("navigate", |p: &str| ui_op("navigate", abs(p).map(UiOp::Navigate)));
     e.register_fn("select", |paths: Dynamic| ui_op("select", paths_of(paths).map(UiOp::Select)));
@@ -294,6 +310,179 @@ fn plan_mkdir(path: &str) -> ApiResult<()> {
     let path = abs(path)?;
     let summary = format!("New folder {}", quoted(&path));
     push_job(JobKind::Create { path, kind: CreateKind::Dir }, summary)
+}
+
+// --- media ---
+
+static MEDIA_FFMPEG: AtomicBool = AtomicBool::new(true);
+static MEDIA_TOOLS: AtomicBool = AtomicBool::new(true);
+
+/// `[media] ffmpeg` / `[media] tools` for the media functions (the app sets them from its
+/// config; both default to on).
+pub fn set_media_access(ffmpeg: bool, tools: bool) {
+    MEDIA_FFMPEG.store(ffmpeg, Ordering::Relaxed);
+    MEDIA_TOOLS.store(tools, Ordering::Relaxed);
+}
+
+/// The libraries this process loaded (scripts never load them), or why not.
+fn media_runtime(what: &str) -> ApiResult<std::sync::Arc<Runtime>> {
+    if !MEDIA_FFMPEG.load(Ordering::Relaxed) {
+        return fail(format!("{what}(): the FFmpeg libraries are turned off ([media] ffmpeg = false)"));
+    }
+    match Runtime::loaded() {
+        Some(rt) => Ok(rt),
+        None => fail(format!("{what}(): FFmpeg libraries not loaded")),
+    }
+}
+
+/// `media_info(path)`: container, duration, size, streams, tags and chapters (`()` for
+/// unknown numbers).
+fn media_info(p: &str) -> ApiResult<Map> {
+    require("media_info", Mode::Full)?;
+    read_gate("media_info")?;
+    let path = abs(p)?;
+    let rt = media_runtime("media_info")?;
+    let info = soyuz_media::probe(&rt, &soyuz_media::Source::File(path.clone()))
+        .map_err(|e| format!("media_info({}): {e}", path.display()))?;
+    let opt_f = |v: Option<f64>| v.map(Dynamic::from_float).unwrap_or(Dynamic::UNIT);
+    let int = |v: u64| Dynamic::from_int(v.min(i64::MAX as u64) as i64);
+    let pairs = |tags: &[(String, String)]| {
+        let mut m = Map::new();
+        for (k, v) in tags.iter().take(64) {
+            m.insert(k.as_str().into(), v.chars().take(500).collect::<String>().into());
+        }
+        m
+    };
+    let streams: Array = info
+        .streams
+        .iter()
+        .map(|s| {
+            let mut m = Map::new();
+            m.insert("index".into(), int(s.index as u64));
+            m.insert("kind".into(), s.kind.map(|k| k.to_string()).unwrap_or_else(|| "other".into()).into());
+            m.insert("codec".into(), s.codec.clone().into());
+            m.insert("language".into(), s.language.clone().map(Dynamic::from).unwrap_or(Dynamic::UNIT));
+            match s.kind {
+                Some(StreamKind::Video) => {
+                    m.insert("width".into(), int(s.width.into()));
+                    m.insert("height".into(), int(s.height.into()));
+                    m.insert("rotation".into(), Dynamic::from_int(s.rotation.into()));
+                    m.insert("fps".into(), opt_f(s.fps));
+                    m.insert("cover_art".into(), s.attached_pic.into());
+                }
+                Some(StreamKind::Audio) => {
+                    m.insert("sample_rate".into(), int(s.sample_rate.into()));
+                    m.insert("channels".into(), int(s.channels.into()));
+                }
+                _ => {}
+            }
+            Dynamic::from_map(m)
+        })
+        .collect();
+    let chapters: Array = info
+        .chapters
+        .iter()
+        .take(200)
+        .map(|c| {
+            let mut m = Map::new();
+            m.insert("start".into(), Dynamic::from_float(c.start));
+            m.insert("end".into(), Dynamic::from_float(c.end));
+            m.insert("title".into(), c.title.clone().map(Dynamic::from).unwrap_or(Dynamic::UNIT));
+            Dynamic::from_map(m)
+        })
+        .collect();
+    let mut m = Map::new();
+    m.insert("container".into(), info.container.clone().into());
+    m.insert("container_long".into(), info.container_long.clone().into());
+    m.insert("duration".into(), opt_f(info.duration));
+    m.insert("size".into(), int(info.size));
+    m.insert("bit_rate".into(), info.bit_rate.map(int).unwrap_or(Dynamic::UNIT));
+    m.insert("streams".into(), streams.into());
+    m.insert("tags".into(), pairs(&info.tags).into());
+    m.insert("chapters".into(), chapters.into());
+    Ok(m)
+}
+
+/// A Rhai number (float or integer) → seconds.
+fn secs_of(what: &str, name: &str, v: &Dynamic) -> ApiResult<f64> {
+    let s = v.as_float().ok().or_else(|| v.as_int().ok().map(|i| i as f64));
+    match s {
+        Some(s) if s.is_finite() && s >= 0.0 => Ok(s),
+        _ => fail(format!("{what}(): {name} must be a number of seconds ≥ 0")),
+    }
+}
+
+/// Plan one media job per source; the output is named beside it (the dialog's naming).
+/// With reads allowed, the dry run checks the operation against the file and gives the
+/// exact extension.
+fn plan_media(what: &str, src: Dynamic, op: MediaOp, verb: &str) -> ApiResult<()> {
+    require(what, Mode::Full)?;
+    if !MEDIA_TOOLS.load(Ordering::Relaxed) {
+        return fail(format!("{what}(): the media tools are turned off ([media] tools = false)"));
+    }
+    let rt = media_runtime(what)?;
+    if let MediaOp::Convert { preset, .. } = &op {
+        let available = soyuz_media::presets(&rt);
+        if !available.iter().any(|p| p.id == *preset) {
+            let names: Vec<&str> = available.iter().map(|p| p.id.name()).collect();
+            return fail(format!(
+                "{what}(): “{}” cannot be encoded by this FFmpeg build (available: {})",
+                preset.name(),
+                names.join(", ")
+            ));
+        }
+    }
+    let read = state(|s| s.limits.allow_read).unwrap_or(false);
+    for src in paths_of(src)? {
+        let ext = if read {
+            soyuz_media::plan(&rt, &src, &op).map_err(|e| format!("{what}({}): {e}", src.display()))?.ext
+        } else {
+            String::new()
+        };
+        let ext = if ext.is_empty() { soyuz_jobs::kinds::media::expected_ext(&src, &op) } else { ext };
+        let dest = soyuz_jobs::kinds::media::default_dest(&src, &ext);
+        let summary = format!("{verb} {} to {}", quoted(&src), quoted(&dest));
+        push_job(JobKind::Media { src, dest, op: op.clone() }, summary)?;
+    }
+    Ok(())
+}
+
+fn plan_convert(src: Dynamic, preset: &str) -> ApiResult<()> {
+    let Some(preset) = PresetId::parse(preset.trim()) else {
+        return fail(format!("convert(): unknown preset “{preset}” (e.g. mkv-copy, mp4-copy, webm-vp9, audio-flac)"));
+    };
+    plan_media("convert", src, MediaOp::Convert { preset, video_stream: None, audio_stream: None }, "Convert")
+}
+
+fn plan_extract_audio(src: Dynamic, codec: &str) -> ApiResult<()> {
+    let codec = match codec.trim().to_ascii_lowercase().as_str() {
+        "" | "copy" => AudioCodecChoice::Copy,
+        "flac" => AudioCodecChoice::Flac,
+        "aac" | "m4a" => AudioCodecChoice::Aac,
+        "opus" => AudioCodecChoice::Opus,
+        "wav" => AudioCodecChoice::Wav,
+        other => return fail(format!("extract_audio(): unknown codec “{other}” (copy, flac, aac, opus, wav)")),
+    };
+    plan_media("extract_audio", src, MediaOp::ExtractAudio { codec }, "Extract the audio of")
+}
+
+fn plan_trim(src: Dynamic, start: Dynamic, end: Dynamic) -> ApiResult<()> {
+    let start = secs_of("trim", "start", &start)?;
+    let end = secs_of("trim", "end", &end)?;
+    if end <= start {
+        return fail("trim(): end must be after start");
+    }
+    plan_media("trim", src, MediaOp::Trim { start, end, stream_copy: true }, "Trim")
+}
+
+fn plan_save_frame(src: Dynamic, secs: Dynamic, format: &str) -> ApiResult<()> {
+    let at = secs_of("save_frame", "secs", &secs)?;
+    let format = match format.trim().to_ascii_lowercase().as_str() {
+        "" | "png" => ImageFormat::Png,
+        "jpg" | "jpeg" => ImageFormat::Jpeg,
+        other => return fail(format!("save_frame(): unknown format “{other}” (png, jpeg)")),
+    };
+    plan_media("save_frame", src, MediaOp::Frame { at, format, max_px: None }, "Save a frame of")
 }
 
 fn ui_op(what: &str, op: ApiResult<UiOp>) -> ApiResult<()> {

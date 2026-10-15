@@ -29,6 +29,7 @@ pub fn tool_style(tool: &str, p: &Palette) -> (&'static str, egui::Color32) {
         "trash" => (ph::TRASH, p.danger),
         "delete_permanent" | "empty_trash" => (ph::X_CIRCLE, p.danger),
         "compress" | "extract" => (ph::ARCHIVE, p.glyph_archive),
+        "media_convert" | "media_extract_audio" | "media_trim" | "media_frame" => (ph::FILM_STRIP, p.accent),
         "set_attributes" => (ph::SLIDERS, p.warning),
         "tag" => (ph::TAG, p.tags[6]),
         "sync_apply" => (ph::ARROWS_CLOCKWISE, p.warning),

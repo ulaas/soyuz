@@ -9,7 +9,9 @@ use std::time::Duration;
 
 use parking_lot::RwLock;
 use serde_json::{Value, json};
-use soyuz_ai::tools::{CallContext, FsToolHost, LimitArg, Plan, PlanAction, Scope, ToolError, ToolHost, ToolInput};
+use soyuz_ai::tools::{
+    CallContext, FsToolHost, LimitArg, MediaAccess, Plan, PlanAction, Scope, ToolError, ToolHost, ToolInput,
+};
 use soyuz_core::OpControl;
 use soyuz_core::config::{Ai, AiMcpClient};
 use soyuz_jobs::{EngineConfig, HistoryId, JobEngine, JobId};
@@ -29,6 +31,11 @@ pub struct HeadlessHost {
 impl HeadlessHost {
     pub fn new(ai: &Ai, engine: Arc<JobEngine>) -> Self {
         HeadlessHost { fs: FsToolHost::from_config(&ai.scope), engine }
+    }
+
+    /// The same host with `[media]` settings for the media tools.
+    pub fn with_media(self, media: MediaAccess) -> Self {
+        HeadlessHost { fs: self.fs.with_media(media), ..self }
     }
 }
 
@@ -92,10 +99,22 @@ impl HeadlessBackend {
     /// `history`: `history.jsonl` to share with the window (`None` = in memory);
     /// `audit_path`: usually [`soyuz_ai::audit::default_path`].
     pub fn new(ai: Ai, config_path: Option<PathBuf>, history: Option<PathBuf>, audit_path: PathBuf) -> Arc<Self> {
-        let cfg = EngineConfig { history_path: history, ..EngineConfig::default() };
+        Self::with_media(ai, MediaAccess::default(), config_path, history, audit_path)
+    }
+
+    /// [`HeadlessBackend::new`] with `[media]` settings: the media tools (and their jobs)
+    /// load the FFmpeg libraries from `media.dirs`, as nothing else in this process does.
+    pub fn with_media(
+        ai: Ai,
+        media: MediaAccess,
+        config_path: Option<PathBuf>,
+        history: Option<PathBuf>,
+        audit_path: PathBuf,
+    ) -> Arc<Self> {
+        let cfg = EngineConfig { history_path: history, media_dirs: media.dirs.clone(), ..EngineConfig::default() };
         let engine = JobEngine::new(cfg, Arc::new(soyuz_fs::RealProbe), Arc::new(|| {}));
         Arc::new(HeadlessBackend {
-            host: Arc::new(HeadlessHost::new(&ai, engine.clone())),
+            host: Arc::new(HeadlessHost::new(&ai, engine.clone()).with_media(media)),
             engine,
             ai: RwLock::new(ai),
             config_path,

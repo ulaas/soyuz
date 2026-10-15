@@ -39,6 +39,10 @@ pub enum PlanOp {
     SyncDelete,
     Undo,
     RunCommand,
+    MediaConvert,
+    MediaExtractAudio,
+    MediaTrim,
+    MediaFrame,
 }
 
 /// A problem with one planned item.
@@ -89,7 +93,7 @@ pub struct PlanItem {
 }
 
 impl PlanItem {
-    fn new(op: PlanOp, src: Option<PathBuf>, dst: Option<PathBuf>) -> Self {
+    pub(crate) fn new(op: PlanOp, src: Option<PathBuf>, dst: Option<PathBuf>) -> Self {
         PlanItem { op, src, dst, kind: String::new(), bytes: 0, entries: 0, conflict: None }
     }
 }
@@ -124,7 +128,7 @@ pub struct Plan {
 }
 
 impl Plan {
-    fn finish(tool: &str, risk: Risk, summary: String, items: Vec<PlanItem>, action: PlanAction) -> Plan {
+    pub(crate) fn finish(tool: &str, risk: Risk, summary: String, items: Vec<PlanItem>, action: PlanAction) -> Plan {
         let total_bytes = items.iter().map(|i| i.bytes).sum();
         let total_entries = items.iter().map(|i| i.entries).sum();
         let conflicts = items.iter().filter(|i| i.conflict.is_some()).count();
@@ -247,7 +251,7 @@ fn labelled(kind: JobKind, label: String) -> JobSpec {
     spec
 }
 
-fn exists_conflict(dst: &Path, resolution: &str) -> Option<PlanConflict> {
+pub(crate) fn exists_conflict(dst: &Path, resolution: &str) -> Option<PlanConflict> {
     soyuz_fs::stat(dst, false).ok().map(|e| PlanConflict::Exists {
         kind: kind_name(&e.kind).into(),
         size: e.size,
@@ -330,7 +334,7 @@ pub fn transfer(
     Ok(plan)
 }
 
-fn check_new_name(name: &str) -> Option<PlanConflict> {
+pub(crate) fn check_new_name(name: &str) -> Option<PlanConflict> {
     if name.contains(['/', '\\']) {
         return Some(PlanConflict::InvalidName { reason: "names cannot contain path separators".into() });
     }

@@ -17,6 +17,7 @@ soyuz-core.workspace = true
 soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
 soyuz-mcp.workspace = true
+soyuz-media.workspace = true
 # Embedded scripting (MIT OR Apache-2.0, pure Rust). `sync`: the engine and compiled
 # scripts are shared with worker threads; `no_module`: no `import` (no file resolver).
 rhai = { version = "1.26.1", default-features = false, features = ["std", "sync", "no_module", "no_custom_syntax"] }

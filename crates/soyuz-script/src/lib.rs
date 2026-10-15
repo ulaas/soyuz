@@ -19,6 +19,7 @@ pub mod script;
 
 use std::path::PathBuf;
 
+pub use api::set_media_access;
 pub use sandbox::{Limits, ScriptError};
 pub use script::{ActionCtx, ActionDef, ColumnDef, MenuContext, Preview, PreviewerDef, Script, ScriptSet};
 

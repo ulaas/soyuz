@@ -107,7 +107,7 @@ ai-slash-find = Bir tarife uyan dosyaları bul
 ai-tools = Araçlar
 ai-tools-connected = Araçlar · { $count } bağlı
 ai-tools-tip = Asistanın kullanabileceği araçlar: Soyuz'un kendi araçları ve bağlı MCP sunucularınınkiler
-ai-tools-builtin = { $count } yerleşik araç (dosyalar, arama, işler, arayüz) · risk sınırı: { $risk ->
+ai-tools-builtin = { $count } yerleşik araç (dosyalar, arama, medya, işler, arayüz) · risk sınırı: { $risk ->
     [read] okuma
     [write] yazma
    *[destructive] yıkıcı

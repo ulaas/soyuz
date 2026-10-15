@@ -138,7 +138,7 @@ ai-tools = Tools
 ai-tools-connected = Tools · { $count } connected
 ai-tools-tip = Tools the assistant can use: Soyuz's own and those of connected MCP servers
 # $risk: "read" | "write" | "destructive" (the assistant's risk ceiling).
-ai-tools-builtin = { $count } built-in tools (files, search, jobs, UI) · up to { $risk ->
+ai-tools-builtin = { $count } built-in tools (files, search, media, jobs, UI) · up to { $risk ->
     [read] Read
     [write] Write
    *[destructive] Destructive

@@ -43,6 +43,10 @@ pub fn sides(i: &PlanItem) -> (Side, Side) {
         PlanOp::Move => (i.src.clone().map(|s| (s, Change::Moved)), i.dst.clone().map(|d| (d, Change::Moved))),
         PlanOp::Rename => (i.src.clone().map(|s| (s, Change::Renamed)), i.dst.clone().map(|d| (d, Change::Renamed))),
         PlanOp::Copy | PlanOp::SyncCopy => (None, i.dst.clone().map(|d| (d, Change::Added))),
+        // Media tools write a new file beside the input (an overwrite replaces it).
+        PlanOp::MediaConvert | PlanOp::MediaExtractAudio | PlanOp::MediaTrim | PlanOp::MediaFrame => {
+            (None, i.dst.clone().map(|d| (d, Change::Added)))
+        }
         PlanOp::Create | PlanOp::Mkdir | PlanOp::Extract | PlanOp::Compress | PlanOp::Restore => {
             (None, i.dst.clone().map(|d| (d, Change::Added)))
         }

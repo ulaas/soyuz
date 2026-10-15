@@ -405,6 +405,29 @@
     "approval": false,
     "category": "read",
     "content": false,
+    "description": "Facts of a video / audio file read with the FFmpeg libraries: container, duration, size, streams and codecs, rotation, tags, chapters, and the conversion presets this build can encode.",
+    "dry_run": false,
+    "name": "media_info",
+    "risk": "read",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "Absolute path.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "read",
+    "content": false,
     "description": "Git branch and changed files of the repository containing a folder.",
     "dry_run": false,
     "name": "git_status",
@@ -1029,6 +1052,395 @@
       },
       "required": [
         "ids"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Convert or remux a video / audio file with a built-in preset into a new file (background job, undoable).",
+    "dry_run": true,
+    "name": "media_convert",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict": {
+          "default": "ask",
+          "description": "What to do when the output file exists (the media tools dialog's choices).",
+          "oneOf": [
+            {
+              "enum": [
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (the new file gets a free name).",
+              "type": "string"
+            },
+            {
+              "const": "overwrite",
+              "description": "Replace it (the old file goes to the trash, undoable).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest": {
+          "default": null,
+          "description": "Output file (absolute). Default: the input's name with the preset's extension,\nbeside the input, made unique.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Only return the plan, do not request execution.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Absolute path of the video or audio file.",
+          "type": "string"
+        },
+        "preset": {
+          "description": "Built-in conversion preset. Only the presets the loaded FFmpeg build can encode are\naccepted (`media_info` lists them).",
+          "oneOf": [
+            {
+              "const": "mkv-copy",
+              "description": "Remux every stream into Matroska (no re-encoding).",
+              "type": "string"
+            },
+            {
+              "const": "mp4-copy",
+              "description": "Remux into MP4 (no re-encoding).",
+              "type": "string"
+            },
+            {
+              "const": "mp4-h264-hw",
+              "description": "H.264 in MP4 with the hardware encoder.",
+              "type": "string"
+            },
+            {
+              "const": "mp4-hevc-hw",
+              "description": "HEVC in MP4 with the hardware encoder.",
+              "type": "string"
+            },
+            {
+              "const": "webm-vp9",
+              "description": "VP9 + Opus in WebM.",
+              "type": "string"
+            },
+            {
+              "const": "webm-vp8",
+              "description": "VP8 + Opus in WebM.",
+              "type": "string"
+            },
+            {
+              "const": "mov-prores",
+              "description": "ProRes + PCM in MOV.",
+              "type": "string"
+            },
+            {
+              "const": "mp4-mpeg4",
+              "description": "MPEG-4 part 2 + AAC in MP4.",
+              "type": "string"
+            },
+            {
+              "const": "avi-mpeg4",
+              "description": "MPEG-4 part 2 + MP2 in AVI.",
+              "type": "string"
+            },
+            {
+              "const": "audio-flac",
+              "description": "Audio only: FLAC.",
+              "type": "string"
+            },
+            {
+              "const": "audio-aac",
+              "description": "Audio only: AAC (M4A).",
+              "type": "string"
+            },
+            {
+              "const": "audio-opus",
+              "description": "Audio only: Opus.",
+              "type": "string"
+            },
+            {
+              "const": "audio-wav",
+              "description": "Audio only: WAV.",
+              "type": "string"
+            },
+            {
+              "const": "audio-alac",
+              "description": "Audio only: ALAC (M4A).",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "preset"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Save the audio track of a video / audio file as a new file, copied or re-encoded (background job, undoable).",
+    "dry_run": true,
+    "name": "media_extract_audio",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "default": "copy",
+          "description": "Codec of an extracted audio track.",
+          "oneOf": [
+            {
+              "enum": [
+                "flac",
+                "aac",
+                "opus",
+                "wav"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "copy",
+              "description": "Keep the stream as is (no quality loss); the container is chosen to fit.",
+              "type": "string"
+            }
+          ]
+        },
+        "conflict": {
+          "default": "ask",
+          "description": "What to do when the output file exists (the media tools dialog's choices).",
+          "oneOf": [
+            {
+              "enum": [
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (the new file gets a free name).",
+              "type": "string"
+            },
+            {
+              "const": "overwrite",
+              "description": "Replace it (the old file goes to the trash, undoable).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest": {
+          "default": null,
+          "description": "Output file (absolute). Default: beside the input with the codec's extension.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Only return the plan, do not request execution.",
+          "type": "boolean"
+        },
+        "path": {
+          "description": "Absolute path of the video or audio file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Save the part between two times of a video / audio file as a new file (background job, undoable).",
+    "dry_run": true,
+    "name": "media_trim",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "conflict": {
+          "default": "ask",
+          "description": "What to do when the output file exists (the media tools dialog's choices).",
+          "oneOf": [
+            {
+              "enum": [
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (the new file gets a free name).",
+              "type": "string"
+            },
+            {
+              "const": "overwrite",
+              "description": "Replace it (the old file goes to the trash, undoable).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest": {
+          "default": null,
+          "description": "Output file (absolute). Default: beside the input in the same container, made unique.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Only return the plan, do not request execution.",
+          "type": "boolean"
+        },
+        "end": {
+          "description": "End of the kept part, in seconds (> start).",
+          "format": "double",
+          "type": "number"
+        },
+        "path": {
+          "description": "Absolute path of the video or audio file.",
+          "type": "string"
+        },
+        "start": {
+          "description": "Start of the kept part, in seconds (≥ 0).",
+          "format": "double",
+          "type": "number"
+        },
+        "stream_copy": {
+          "default": true,
+          "description": "Keep the packets as they are (fast, cuts land on keyframes; default true); false\nre-encodes for frame-exact cuts.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "scope": "paths"
+  },
+  {
+    "approval": false,
+    "category": "write",
+    "content": false,
+    "description": "Save one frame of a video as a PNG / JPEG picture (background job, undoable).",
+    "dry_run": true,
+    "name": "media_frame",
+    "risk": "write",
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "description": "Time of the frame, in seconds (≥ 0).",
+          "format": "double",
+          "type": "number"
+        },
+        "conflict": {
+          "default": "ask",
+          "description": "What to do when the output file exists (the media tools dialog's choices).",
+          "oneOf": [
+            {
+              "enum": [
+                "skip"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "ask",
+              "description": "Ask the user when the job runs.",
+              "type": "string"
+            },
+            {
+              "const": "keep_both",
+              "description": "Keep both (the new file gets a free name).",
+              "type": "string"
+            },
+            {
+              "const": "overwrite",
+              "description": "Replace it (the old file goes to the trash, undoable).",
+              "type": "string"
+            }
+          ]
+        },
+        "dest": {
+          "default": null,
+          "description": "Output picture (absolute). Default: beside the video with the format's extension.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dry_run": {
+          "default": false,
+          "description": "Only return the plan, do not request execution.",
+          "type": "boolean"
+        },
+        "format": {
+          "default": "png",
+          "enum": [
+            "png",
+            "jpeg"
+          ],
+          "type": "string"
+        },
+        "max_px": {
+          "default": null,
+          "description": "Scale the picture down to fit this many pixels on its longer edge.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "Absolute path of the video file.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "at"
       ],
       "type": "object"
     },

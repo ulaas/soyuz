@@ -13,6 +13,7 @@ soyuz-fs.workspace = true
 soyuz-jobs.workspace = true
 soyuz-search.workspace = true
 soyuz-archive.workspace = true
+soyuz-media.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 schemars.workspace = true
