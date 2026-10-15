@@ -18,6 +18,11 @@
 //! Every other key goes to the core's bindings in the file-list context (Ctrl+Q,
 //! type-ahead, the palette, …). Mouse: a press outside the card closes it, the `‹` / `›`
 //! marks in its title step, `×` closes, the wheel scrolls.
+//!
+//! With an open player (Phase V3b, `crate::player::active`) the core context is `Player`
+//! and Left / Right are left to it (seek); Up / Down still step through the items. A
+//! press on the status row's mark plays / pauses, one on the bar seeks
+//! (`crate::input::preview::player_click`).
 
 use crossterm::event::{Event, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::core::AppCore;
@@ -27,8 +32,9 @@ use soyuz_appcore::models::preview_load::PreviewLoader;
 use soyuz_appcore::models::quicklook::{self as ql, Step};
 use soyuz_core::config::{KeyName, Mods};
 
-use super::{InputState, TuiFocus, key_context};
+use super::InputState;
 use crate::app::App;
+use crate::layout::HitTarget;
 use crate::view::quicklook::{QuickLookVm, geometry};
 use crate::widgets::SelectList;
 
@@ -92,6 +98,7 @@ pub fn open(core: &AppCore, _st: &InputState) -> bool {
 /// Keys while it is open: its own first (in order), the rest to the core's bindings.
 pub fn route(app: &mut App, events: &[Event]) {
     let mut frame = crate::keys::frame(events, app.core.config.keys.cmd_is_ctrl, cfg!(windows));
+    let player = crate::player::active(&app.core, &app.input.player);
     let mut i = 0;
     while i < frame.events.len() {
         if !app.core.ui.quicklook.open {
@@ -99,7 +106,7 @@ pub fn route(app: &mut App, events: &[Event]) {
         }
         if let InputEvent::Chord(c) = &frame.events[i]
             && !c.mods.intersects(Mods::CTRL | Mods::ALT | Mods::CMD)
-            && key(app, c.key, c.mods.contains(Mods::SHIFT))
+            && key(app, c.key, c.mods.contains(Mods::SHIFT), player)
         {
             frame.consumed[i] = true;
             // Space also types a blank: not for type-ahead.
@@ -113,12 +120,13 @@ pub fn route(app: &mut App, events: &[Event]) {
         }
         i += 1;
     }
-    let (kctx, text) = key_context(TuiFocus::QuickLook);
+    let (kctx, text) = super::key_context_of(app);
     app.core.input(&app.host, &mut frame, kctx, text);
 }
 
-/// One key (`shift`: Shift held); returns whether Quick Look used it.
-fn key(app: &mut App, k: KeyName, shift: bool) -> bool {
+/// One key (`shift`: Shift held; `player`: an open player takes Left / Right); returns
+/// whether Quick Look used it.
+fn key(app: &mut App, k: KeyName, shift: bool, player: bool) -> bool {
     let st = &mut app.input.quicklook;
     let page = st.page.saturating_sub(1).max(1) as i32;
     if shift {
@@ -130,6 +138,7 @@ fn key(app: &mut App, k: KeyName, shift: bool) -> bool {
         return true;
     }
     match k {
+        KeyName::ArrowLeft | KeyName::ArrowRight if player => return false,
         KeyName::Escape | KeyName::Space => ql::close(&mut app.core),
         KeyName::ArrowUp | KeyName::ArrowLeft => ql::step(&mut app.core, Step::Prev),
         KeyName::ArrowDown | KeyName::ArrowRight => ql::step(&mut app.core, Step::Next),
@@ -152,7 +161,9 @@ pub fn mouse(app: &mut App, m: &MouseEvent) {
         MouseEventKind::ScrollDown => app.input.quicklook.scroll_by(super::mouse::WHEEL_ROWS),
         MouseEventKind::ScrollUp => app.input.quicklook.scroll_by(-super::mouse::WHEEL_ROWS),
         MouseEventKind::Down(MouseButton::Left) => {
-            if !g.card.contains(p) || g.close.contains(p) {
+            if let Some(t @ (HitTarget::PlayerPlay | HitTarget::PlayerSeek)) = app.hits.at(m.column, m.row) {
+                super::preview::player_click(app, t, m);
+            } else if !g.card.contains(p) || g.close.contains(p) {
                 ql::close(&mut app.core);
             } else if g.prev.contains(p) {
                 ql::step(&mut app.core, Step::Prev);

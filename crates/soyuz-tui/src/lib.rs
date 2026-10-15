@@ -53,6 +53,7 @@ pub mod keys;
 pub mod launch;
 pub mod layout;
 pub mod overlay;
+pub mod player;
 pub mod shot;
 pub mod signals;
 #[doc(hidden)]

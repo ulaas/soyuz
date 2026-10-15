@@ -60,6 +60,8 @@ mod headless {
     mod grid;
     /// T4: images (`[tui] images`).
     mod images;
+    /// Phase V3b: the media player in the preview pane and Quick Look.
+    mod player;
     /// T4: the preview pane.
     mod preview;
     /// T4: Quick Look.

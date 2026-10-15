@@ -7216,6 +7216,7 @@ dependencies = [
  "soyuz-fs",
  "soyuz-jobs",
  "soyuz-mcp",
+ "soyuz-media",
  "soyuz-script",
  "soyuz-term",
  "tempfile",

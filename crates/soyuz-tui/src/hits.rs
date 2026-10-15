@@ -62,6 +62,10 @@ pub enum HitTarget {
     PreviewScroll,
     /// Row `index` of the preview's archive listing.
     ArchiveRow(usize),
+    /// The player's play / pause mark in the preview pane or Quick Look (Phase V3b).
+    PlayerPlay,
+    /// The player's progress bar (a click seeks to that fraction).
+    PlayerSeek,
     /// Tab `index` of the editor's document tabs.
     EditorTab(usize),
     /// The close mark of editor tab `index`.

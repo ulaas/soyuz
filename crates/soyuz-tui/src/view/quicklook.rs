@@ -17,6 +17,11 @@
 //! The whole screen is one `QuickLook` click target; [`geometry`] gives
 //! `crate::input::quicklook` the card and its marks. Images under the card (the preview
 //! pane's, grid thumbnails) are repaired by `crate::images::end_frame` when it closes.
+//!
+//! An audio or video file plays here (Phase V3b, `crate::player`): the body is the
+//! preview pane's player body (`view::preview::player_body`: frames, the status row),
+//! the footer adds the player's keys, and the `Player` key context is active
+//! (`crate::input::quicklook`).
 
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
@@ -36,6 +41,7 @@ use crate::dialog::safe;
 use crate::images::{self, Drawn, ImageState};
 use crate::input::InputState;
 use crate::layout::{HitTarget, Hits, Regions};
+use crate::player::{self, Want};
 use crate::theme::{Role, TuiTheme};
 use crate::view::preview::{self, Body, PLAIN_FG, PreviewVm};
 use crate::view::text;
@@ -191,6 +197,8 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         }
     }
     let kind = loader.loaded.as_ref().map(|l| kind_label(l.kind).to_string()).unwrap_or_default();
+    let want = Want::of(loader, preview::longest_edge_px(g.body));
+    let playing = want.as_ref().is_some_and(|w| player::shows(core, &input.player, &w.key));
     let mut vm = QuickLookVm {
         visible: true,
         title: safe(&target.name),
@@ -198,7 +206,7 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         position: tr!("tui-quicklook-position", pos = pos, count = count),
         size,
         summary: summary.join(" · "),
-        hints: hints(),
+        hints: hints(playing.then_some(&core.keymap)),
         ..QuickLookVm::default()
     };
     vm.preview = PreviewVm {
@@ -211,24 +219,44 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         ..PreviewVm::default()
     };
     match loader.loaded.as_ref().map(|l| &l.content) {
+        _ if playing => {
+            vm.preview.body = preview::player_body(core, &input.player, loader, want.as_ref().expect("want"));
+        }
         Some(Content::Image(img)) if !loader.force_hex => {
             vm.image = Some(QlImage { tex: img.tex.clone(), width: img.width, height: img.height });
             vm.preview.body = Body::Nothing;
         }
         _ => vm.preview.body = preview::content_body(loader, &mut st.scroll, &mut st.archive, w, h),
     }
-    st.vm = vm;
+    input.player.ask.quicklook = want;
+    input.quicklook.vm = vm;
 }
 
-/// The footer's key hints.
-fn hints() -> String {
-    [
-        format!("Esc {}", tr!("views-quicklook-hint-close")),
-        format!("←→ {}", tr!("views-quicklook-hint-browse")),
-        format!("PgUp/PgDn {}", tr!("tui-quicklook-hint-scroll")),
-        format!("Enter {}", tr!("views-quicklook-hint-open")),
-    ]
-    .join(" · ")
+/// The footer's key hints; with `keymap`, the player's keys instead of the browse keys
+/// (←→ seek then; ↑↓ still step through the items).
+fn hints(keymap: Option<&soyuz_core::config::Keymap>) -> String {
+    let mut parts = vec![format!("Esc {}", tr!("views-quicklook-hint-close"))];
+    match keymap {
+        Some(km) => {
+            use soyuz_core::config::Action as A;
+            let label = |a: A| soyuz_appcore::keys::chord_label(km, &a).unwrap_or_default();
+            parts.push(format!("{} {}", label(A::PlayerPlayPause), tr!("tui-player-hint-play")));
+            parts.push(format!(
+                "{} {} {}",
+                label(A::PlayerSeekBack),
+                label(A::PlayerSeekForward),
+                tr!("tui-player-hint-seek")
+            ));
+            parts.push(format!("{} {}", label(A::PlayerMute), tr!("tui-player-hint-mute")));
+            parts.push(format!("↑↓ {}", tr!("views-quicklook-hint-browse")));
+        }
+        None => {
+            parts.push(format!("←→ {}", tr!("views-quicklook-hint-browse")));
+            parts.push(format!("PgUp/PgDn {}", tr!("tui-quicklook-hint-scroll")));
+        }
+    }
+    parts.push(format!("Enter {}", tr!("views-quicklook-hint-open")));
+    parts.join(" · ")
 }
 
 fn put(buf: &mut Buffer, x: u16, y: u16, s: &str, w: u16, style: Style) {

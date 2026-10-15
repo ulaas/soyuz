@@ -172,6 +172,18 @@ fn lead(m: &ViewModel, focus: Option<TuiFocus>) -> Option<String> {
             let j = &m.jobs;
             j.cursor.checked_sub(j.first).and_then(|k| j.items.get(k)).map(|i| i.title.clone())
         }
+        // The media player (Phase V3b): its state in words.
+        TuiFocus::Preview => player_words(&m.preview.body),
+        TuiFocus::QuickLook => player_words(&m.quicklook.preview.body),
+        _ => None,
+    }
+}
+
+/// The player's status in words when `body` is its body ("Playing, 0:12 of 1:30, volume
+/// 80 %").
+fn player_words(body: &crate::view::preview::Body) -> Option<String> {
+    match body {
+        crate::view::preview::Body::Player { status, .. } => Some(status.words()),
         _ => None,
     }
 }

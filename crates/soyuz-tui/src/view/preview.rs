@@ -29,8 +29,17 @@
 //! section; when the picture cannot be drawn (`images = "off"`, no room, encoding, gone) a
 //! text line says so in its place.
 //!
+//! The media player (Phase V3b, [`Body::Player`], `crate::player`): an audio or video
+//! file whose details have loaded plays here when `[media] player` is on and the FFmpeg
+//! libraries are loaded. Its frames are pictures like any other (half-blocks or a
+//! graphics protocol; a text line when images are off, the sound still plays), the poster
+//! frame or cover shows until the first one, and a status row at the bottom of the body
+//! holds the play / pause mark, elapsed / total, a progress bar, the volume, `muted` and
+//! `loop` (words instead in screen-reader mode).
+//!
 //! Click targets: `PreviewScroll` over the pane (wheel scrolls, a click gives it the
-//! keyboard) and `ArchiveRow(i)` per listing row; `crate::input::preview` handles them.
+//! keyboard), `ArchiveRow(i)` per listing row, `PlayerPlay` / `PlayerSeek` on the
+//! player's status row; `crate::input::preview` handles them.
 
 use std::path::PathBuf;
 
@@ -59,6 +68,7 @@ use crate::dialog::safe;
 use crate::images::{self, Drawn, ImageState};
 use crate::input::InputState;
 use crate::layout::{HitTarget, Hits, Regions};
+use crate::player::{self, StatusVm, Want};
 use crate::theme::{Role, TuiTheme, to_color};
 use crate::view::text;
 use crate::widgets::SelectList;
@@ -151,6 +161,9 @@ pub enum Body {
     Message { title: String, body: String },
     /// Pictures stacked top to bottom, `lines` under them (title, summary).
     Picture { pics: Vec<Pic>, lines: Vec<PLine> },
+    /// The media player (Phase V3b): the latest frame (else the poster or cover) with
+    /// `lines` under it, and the status row at the bottom; `serial` counts the frames.
+    Player { status: StatusVm, pics: Vec<Pic>, lines: Vec<PLine>, serial: u64 },
 }
 
 /// The preview pane as drawn.
@@ -194,6 +207,9 @@ impl PreviewVm {
             Body::Message { title, body } => vec![title.clone(), body.clone()],
             Body::Picture { pics, lines } => {
                 pics.iter().filter_map(|p| p.caption.clone()).chain(lines.iter().map(PLine::text)).collect()
+            }
+            Body::Player { status, lines, .. } => {
+                lines.iter().map(PLine::text).chain(std::iter::once(status.words())).collect()
             }
             Body::Loading => vec![tr!("tui-preview-loading").to_string()],
             Body::Nothing => vec![tr!("views-preview-nothing-selected").to_string()],
@@ -345,7 +361,48 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     if !info_only {
         vm.info = info;
     }
-    st.vm = vm;
+    // The player (Phase V3b): asked for the file shown; its body while it is open.
+    let loader = input.preview.loader.as_ref().expect("loader");
+    let want = if info_only || pair.is_some() { None } else { Want::of(loader, longest_edge_px(p.body)) };
+    if let Some(want) = &want
+        && player::shows(core, &input.player, &want.key)
+    {
+        vm.body = player_body(core, &input.player, loader, want);
+    }
+    input.player.ask.preview = want;
+    input.preview.vm = vm;
+}
+
+/// The longest edge of `r` in pixels (the frames the player is asked for).
+pub(crate) fn longest_edge_px(r: Rect) -> u32 {
+    let (cw, ch) = images::cell_size();
+    (u32::from(r.width) * u32::from(cw)).max(u32::from(r.height) * u32::from(ch))
+}
+
+/// The body while the player is open (or opening, or failed) for `want`: the latest frame,
+/// else the poster frame or cover from the loaded preview; title lines for audio; the
+/// status row.
+pub(crate) fn player_body(core: &AppCore, st: &player::State, loader: &PreviewLoader, want: &Want) -> Body {
+    let (Some(entry), Some(loaded)) = (loader.entry.as_ref(), loader.loaded.as_ref()) else { return Body::Loading };
+    let (status, frame) = match core.ui.player.state() {
+        Some(s) => (StatusVm::from_state(&s, core.config.media.loop_), st.frame()),
+        None => match st.error(&want.key) {
+            Some(e) => (StatusVm::failed(e, want.video), None),
+            None => (StatusVm::opening(want.video), None),
+        },
+    };
+    let still = match &loaded.content {
+        Content::Rich(Rich::Video { poster, .. }) => poster.clone(),
+        Content::Rich(Rich::Audio { cover, .. }) => cover.clone(),
+        _ => None,
+    };
+    let (tex, serial) = match frame.filter(|_| want.video) {
+        Some(f) => (Some(f.tex), f.serial),
+        None => (still, 0),
+    };
+    let pics = tex.into_iter().map(|tex| Pic { tex, caption: None }).collect();
+    let lines = if want.video { Vec::new() } else { media_lines(loaded, entry) };
+    Body::Player { status, pics, lines, serial }
 }
 
 /// The lines of `all` in view from `*scroll` (clamped), `h` rows.
@@ -1007,7 +1064,8 @@ pub(crate) fn draw_body(buf: &mut Buffer, r: Rect, m: &PreviewVm, theme: &TuiThe
                 center(buf, y, l, Role::Muted);
             }
         }
-        Body::Picture { pics, lines } => draw_pictures(buf, r, pics, lines, theme),
+        Body::Picture { pics, lines } => draw_pictures(buf, r, pics, lines, theme, false),
+        Body::Player { status, pics, lines, .. } => draw_player(buf, r, status, pics, lines, theme, hits),
         Body::Lines { lines, top, gutter, .. } => {
             let gw = if *gutter > 0 && usize::from(r.width) > *gutter + 2 { *gutter as u16 + 1 } else { 0 };
             for (i, (l, y)) in lines.iter().zip(r.y..r.bottom()).enumerate() {
@@ -1076,7 +1134,9 @@ pub fn status_text(d: Drawn) -> Option<&'static str> {
 
 /// Pictures stacked in `r` (equal shares; a caption row above each when it has one and
 /// there is room), `lines` at the bottom (as many as leave the pictures two rows).
-fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme: &TuiTheme) {
+/// `stream`: the pictures are video frames replacing one another
+/// ([`ImageState::stream`]).
+fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme: &TuiTheme, stream: bool) {
     let n_lines = (lines.len() as u16).min(r.height.saturating_sub(2));
     let area = Rect { height: r.height - n_lines, ..r };
     for (l, y) in lines.iter().zip(area.bottom()..r.bottom()) {
@@ -1100,7 +1160,7 @@ fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme
             slot.y += 1;
             slot.height -= 1;
         }
-        let mut st = ImageState::default();
+        let mut st = ImageState { stream, ..ImageState::default() };
         // Screen-reader mode (T8): no graphics (no kitty / sixel requests), a line instead.
         let msg = if theme.screen_reader() {
             Some(tr!("tui-sr-picture"))
@@ -1120,6 +1180,52 @@ fn draw_pictures(buf: &mut Buffer, r: Rect, pics: &[Pic], lines: &[PLine], theme
         let s = text::truncate_end(msg, usize::from(slot.width));
         let x = slot.x + (slot.width - text::width(&s) as u16) / 2;
         put(buf, x, y, &s, slot.width, theme.style(Role::Faint));
+    }
+}
+
+/// The player's body: the pictures and lines above, the status row at the bottom (words
+/// only in screen-reader mode, which draws no pictures either). The mark and the bar are
+/// click targets (`PlayerPlay`, `PlayerSeek`).
+fn draw_player(
+    buf: &mut Buffer,
+    r: Rect,
+    status: &StatusVm,
+    pics: &[Pic],
+    lines: &[PLine],
+    theme: &TuiTheme,
+    hits: &mut Hits,
+) {
+    let row = Rect { y: r.bottom() - 1, height: 1, ..r };
+    let above = Rect { height: r.height - 1, ..r };
+    if theme.screen_reader() {
+        draw_pictures(buf, above, &[], lines, theme, false);
+        let s = text::truncate_end(&status.words(), usize::from(row.width));
+        put(buf, row.x, row.y, &s, row.width, theme.style(Role::Text));
+        hits.push(row, HitTarget::PlayerPlay);
+        return;
+    }
+    draw_pictures(buf, above, pics, lines, theme, true);
+    let icons = theme.icons();
+    let l = status.layout(usize::from(row.width), icons);
+    let mark_w = text::width(&l.mark) as u16;
+    let mark_role = match status.status {
+        player::Status::Error(_) => Role::Danger,
+        player::Status::Opening => Role::Muted,
+        _ => Role::Accent,
+    };
+    put(buf, row.x, row.y, &l.mark, mark_w, theme.style(mark_role).add_modifier(Modifier::BOLD));
+    hits.push(Rect { width: mark_w.min(row.width), ..row }, HitTarget::PlayerPlay);
+    let times_role = if matches!(status.status, player::Status::Error(_)) { Role::Danger } else { Role::Text };
+    put(buf, row.x + mark_w + 1, row.y, &l.times, row.width.saturating_sub(mark_w + 1), theme.style(times_role));
+    if let Some((bx, bw)) = l.bar {
+        let bar = player::bar(bw, status.fraction().unwrap_or(0.0), icons);
+        let rect = Rect::new(row.x + bx as u16, row.y, bw as u16, 1);
+        put(buf, rect.x, rect.y, &bar, rect.width, theme.style(Role::Accent));
+        hits.push(rect, HitTarget::PlayerSeek);
+    }
+    let fw = text::width(&l.flags) as u16;
+    if fw > 0 && fw <= row.width {
+        put(buf, row.right() - fw, row.y, &l.flags, fw, theme.style(Role::Muted));
     }
 }
 
@@ -1297,6 +1403,61 @@ mod tests {
             for h in 0..=6 {
                 draw(&m, w, h);
                 draw(&m2, w, h);
+            }
+        }
+    }
+
+    /// The player's body: the status row at the bottom with its click targets, the lines
+    /// above; words only in screen-reader mode.
+    #[test]
+    fn player_body_draws_the_status_row_with_targets() {
+        use crate::player::{Status, StatusVm};
+        let status = StatusVm {
+            status: Status::Playing,
+            pos_ds: 123,
+            duration_ds: Some(900),
+            volume: 80,
+            muted: true,
+            loop_: false,
+            video: false,
+        };
+        let body = Body::Player {
+            status: status.clone(),
+            pics: Vec::new(),
+            lines: vec![PLine::plain("Song title", Role::Title)],
+            serial: 1,
+        };
+        let m = PreviewVm { info: Vec::new(), ..vm(body) };
+        assert_eq!(m.body_text(), vec!["Song title".to_string(), status.words()]);
+        let (lines, hits) = draw(&m, 40, 12);
+        let y = lines.iter().position(|l| l.contains("0:12 / 1:30")).expect("the times") as u16;
+        assert_eq!(y, 10, "the row above the bottom border");
+        assert!(lines[y as usize].contains("│|| 0:12"), "the pause mark (ASCII): {lines:?}");
+        assert!(lines[y as usize].contains("==") && lines[y as usize].ends_with("80% muted│"), "{lines:?}");
+        assert!(lines[y as usize - 1].contains("Song title"), "{lines:?}");
+        assert_eq!(hits.at(1, y), Some(HitTarget::PlayerPlay));
+        let bar = hits.iter().find(|(_, t)| *t == HitTarget::PlayerSeek).map(|(r, _)| *r).expect("the bar");
+        assert!(bar.y == y && bar.width >= 4 && hits.at(bar.x + 1, y) == Some(HitTarget::PlayerSeek));
+        // Screen-reader mode: words, no bar.
+        let mut t = Terminal::new(TestBackend::new(60, 12)).unwrap();
+        let mut sr_hits = Hits::default();
+        let theme = TuiTheme::plain().with_screen_reader(true);
+        t.draw(|f| draw_preview(f, Rect::new(0, 0, 60, 12), &m, &theme, &mut sr_hits)).unwrap();
+        let buf = t.backend().buffer().clone();
+        let text: Vec<String> =
+            (0..12).map(|y| (0..60).map(|x| buf[(x, y)].symbol().to_string()).collect::<String>()).collect();
+        assert!(text.iter().any(|l| l.contains("Playing, 0:12 of 1:30, volume 80 %, muted")), "{text:?}");
+        assert!(!text.iter().any(|l| l.contains("==")), "{text:?}");
+        assert!(sr_hits.iter().all(|(_, t)| *t != HitTarget::PlayerSeek));
+        // Opening and failed states, tiny sizes.
+        for st in [StatusVm::opening(true), StatusVm::failed("no codec", true)] {
+            let m = vm(Body::Player { status: st, pics: Vec::new(), lines: Vec::new(), serial: 0 });
+            let (lines, _) = draw(&m, 40, 10);
+            assert!(lines.iter().any(|l| l.contains("Opening") || l.contains("no codec")), "{lines:?}");
+            for w in 0..=20 {
+                for h in 0..=6 {
+                    draw(&m, w, h);
+                }
             }
         }
     }

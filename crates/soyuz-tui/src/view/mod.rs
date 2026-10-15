@@ -194,6 +194,8 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
     preview::prepare(core, input, regions);
     editor::prepare(core, input, regions);
     quicklook::prepare(core, input, regions);
+    // The media player (Phase V3b): for the file Quick Look or the preview pane shows.
+    crate::player::prepare(core, input);
     search::prepare(core, input, regions);
     terminal::prepare(core, input, regions);
     ai::prepare(core, input, regions);
