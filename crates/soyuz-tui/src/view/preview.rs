@@ -385,7 +385,7 @@ pub(crate) fn longest_edge_px(r: Rect) -> u32 {
 pub(crate) fn player_body(core: &AppCore, st: &player::State, loader: &PreviewLoader, want: &Want) -> Body {
     let (Some(entry), Some(loaded)) = (loader.entry.as_ref(), loader.loaded.as_ref()) else { return Body::Loading };
     let (status, frame) = match core.ui.player.state() {
-        Some(s) => (StatusVm::from_state(&s, core.config.media.loop_), st.frame()),
+        Some(s) => (StatusVm::from_state(&s, core.ui.player.loop_enabled()), st.frame()),
         None => match st.error(&want.key) {
             Some(e) => (StatusVm::failed(e, want.video), None),
             None => (StatusVm::opening(want.video), None),

@@ -24,9 +24,10 @@
 //!   ([`StatusVm::words`]).
 //!
 //! `[media] player = false`: nothing opens (poster frame and details only); `autoplay`,
-//! `loop`, `volume`, `muted` and `seek_step_secs` are the engine's options through the
-//! model. The keys are the core's `KeyContext::Player` bindings (K / J / L, ← / →, - / =,
-//! M by default), active while Quick Look or the focused preview pane shows an open player
+//! `volume`, `muted` and `seek_step_secs` are the engine's options through the model;
+//! `loop` is the model's own toggle (`PlayerModel::loop_enabled`, seeded by the key), so
+//! the engine is opened without its own loop. The keys are the core's `KeyContext::Player`
+//! bindings (K / J / L, ← / →, - / =, M by default), active while Quick Look or the focused preview pane shows an open player
 //! (`crate::input::preview`, `crate::input::quicklook`); the mouse clicks the mark and
 //! the bar (`HitTarget::PlayerPlay` / `PlayerSeek`).
 
@@ -253,6 +254,9 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState) {
     };
     let mut opts = options(cfg);
     opts.fps_cap = f32::from(cfg.tui_fps.clamp(1, 30));
+    // The model loops (`PlayerModel::loop_enabled`, restarted by its `poll`), not the
+    // engine: the toggle in the model is the single source, as in the GUI.
+    opts.loop_ = false;
     let wake: Wake = core.wake.clone();
     let (tx, rx) = crossbeam_channel::bounded(1);
     let src = Source::File(want.path.clone());
