@@ -256,6 +256,7 @@ gpu_yuv = false                  # convert video frames on the GPU (wgpu rendere
 audio_backend = "auto"           # auto (FFmpeg when loaded, else Symphonia) | ffmpeg | symphonia
 player = true                    # play videos in the preview pane and Quick Look
 autoplay = false                 # start playing when a video is previewed
+quicklook_space_plays = false    # Quick Look: Space plays / pauses media (Esc closes); P / K always do
 loop = false                     # restart at the end
 volume = 80                      # 0-100, written back from the player
 muted = false                    # written back from the player

@@ -1,6 +1,7 @@
 //! Quick Look: Space opens a large centered overlay previewing the cursor
 //! item with the same renderers as the preview pane. Arrow keys move through the list
-//! (the overlay follows), Esc / Space close, images zoom with the wheel / pinch and pan
+//! (the overlay follows), Esc / Space close (Space plays / pauses a video or audio file
+//! instead with `[media] quicklook_space_plays`; P / K always do), images zoom with the wheel / pinch and pan
 //! by dragging (double-click toggles fit ↔ 100%). Open state and list movement are in
 //! [`crate::models::quicklook`]; this module keeps the renderer state and the keys.
 
@@ -80,7 +81,12 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
             i.consume_key(Modifiers::NONE, Key::End),
         )
     });
-    if esc || space {
+    // `[media] quicklook_space_plays`: Space plays / pauses the media shown, Esc closes.
+    let space_plays = space && media && app.core.config.media.quicklook_space_plays;
+    if space_plays {
+        let host = crate::host::EguiHost::new(ctx);
+        crate::actions::execute(&mut app.core, soyuz_core::config::Action::PlayerPlayPause, &host);
+    } else if esc || space {
         crate::models::quicklook::close(&mut app.core);
         return true;
     }
@@ -282,13 +288,29 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
                 .max_rect(footer.shrink2(vec2(14.0, 8.0)))
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
-        for (k, label) in [
-            ("Esc", tr!("views-quicklook-hint-close")),
-            ("↑↓", tr!("views-quicklook-hint-browse")),
-            ("Enter", tr!("views-quicklook-hint-open")),
-        ] {
+        // Right to left: Esc first; a video / audio adds its play / pause key.
+        let mut keys = vec![
+            ("Esc".to_owned(), tr!("views-quicklook-hint-close")),
+            ("↑↓".to_owned(), tr!("views-quicklook-hint-browse")),
+        ];
+        let audio = matches!(
+            st.loaded.as_ref().map(|l| &l.content),
+            Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+        );
+        if pair.is_none() && (settled_video || audio) {
+            let play = if app.core.config.media.quicklook_space_plays {
+                Some("Space".to_owned())
+            } else {
+                crate::keys::chord_label(&app.core.keymap, &soyuz_core::config::Action::PlayerPlayPause)
+            };
+            if let Some(k) = play {
+                keys.push((k, tr!("views-quicklook-hint-play")));
+            }
+        }
+        keys.push(("Enter".to_owned(), tr!("views-quicklook-hint-open")));
+        for (k, label) in keys {
             hints.label(egui::RichText::new(label).size(11.0).color(p.text_tertiary));
-            kbd(&mut hints, k);
+            kbd(&mut hints, &k);
             hints.add_space(8.0);
         }
 

@@ -102,6 +102,14 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.media.autoplay);
             },
         );
+        r.row_kw(
+            tr!("settings-media-ql-space"),
+            tr!("settings-media-ql-space-desc"),
+            "quick look space bar play pause keyboard",
+            |ui| {
+                switch(ui, &mut d.media.quicklook_space_plays);
+            },
+        );
         r.row_kw(tr!("settings-media-loop"), tr!("settings-media-loop-desc"), "repeat restart", |ui| {
             switch(ui, &mut d.media.loop_);
         });

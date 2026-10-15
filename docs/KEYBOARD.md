@@ -157,7 +157,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Editor: Toggle regular expression | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>R</kbd> *(editor)* | Find with a regular expression (terminal UI) |
 | Editor: Replace all | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>A</kbd> *(editor)* | Replace every match in the document (terminal UI) |
 | Editor: Resize image | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>S</kbd> *(editor)* | Scale the image to a new size in pixels (terminal UI) |
-| Player: Play / pause | <kbd>K</kbd> *(player)* | same | Start or pause the video or audio playing in the preview or Quick Look |
+| Player: Play / pause | <kbd>P</kbd> *(player)*, <kbd>K</kbd> *(player)* | same | Start or pause the video or audio playing in the preview or Quick Look |
 | Player: Back | <kbd>J</kbd> *(player)*, <kbd>←</kbd> *(player)* | same | Jump back by the seek step ([media] seek_step_secs) |
 | Player: Forward | <kbd>L</kbd> *(player)*, <kbd>→</kbd> *(player)* | same | Jump forward by the seek step ([media] seek_step_secs) |
 | Player: Louder | <kbd>=</kbd> *(player)* | same | Raise the player volume |

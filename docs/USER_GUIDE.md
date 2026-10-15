@@ -265,7 +265,7 @@ Media* (`[media]`, see [CONFIG.md](CONFIG.md#media)).
 
   | Key | Does |
   |---|---|
-  | `K` | play / pause |
+  | `P` / `K` | play / pause |
   | `J` / `←` | back by `[media] seek_step_secs` (5 s) |
   | `L` / `→` | forward by the same step |
   | `-` / `=` | volume down / up |
@@ -273,6 +273,10 @@ Media* (`[media]`, see [CONFIG.md](CONFIG.md#media)).
 
 - **Player settings:**
   - `[media] autoplay` starts playing as soon as a video is previewed.
+  - `[media] quicklook_space_plays` (Settings → Media, *Space plays in Quick Look*): Space
+    plays and pauses a video or audio file in Quick Look, and Esc closes it. Off (the
+    default), Space closes Quick Look as it does on any file; `P` / `K` play either way.
+    The Quick Look footer shows the play key.
   - `[media] loop` sets the loop toggle's starting state.
   - `[media] volume` and `muted` are saved when you change them in the player. They apply
     to audio previews too.
@@ -759,7 +763,7 @@ Commander preset) opens Quick Look over the list: ← / → (or ↑ / ↓) step 
 first / last item, PageUp / PageDown and Shift+Up / Down scroll, Enter opens the item,
 Esc or Space closes it; the preview scroll keys scroll Quick Look while it is open.
 Videos and audio play in the pane and in Quick Look, with the same *Player* keys as the
-window (K, J / L, ← / →, - / =, M) and frames drawn as terminal images at
+window (P / K, J / L, ← / →, - / =, M) and frames drawn as terminal images at
 `[media] tui_fps`; see [The video player](#the-video-player).
 
 ![The preview pane beside the file list, showing a README](../site/assets/shots/tui-preview.svg)

@@ -6,7 +6,7 @@
 //!
 //! | Key | Does |
 //! |---|---|
-//! | Esc / Space | close |
+//! | Esc / Space | close (Space plays / pauses an open player with `[media] quicklook_space_plays`) |
 //! | Left / Up, Right / Down | previous / next item (the pane's cursor moves) |
 //! | Home / End | first / last item |
 //! | Enter | close and open the item |
@@ -139,6 +139,9 @@ fn key(app: &mut App, k: KeyName, shift: bool, player: bool) -> bool {
     }
     match k {
         KeyName::ArrowLeft | KeyName::ArrowRight if player => return false,
+        KeyName::Space if player && app.core.config.media.quicklook_space_plays => {
+            soyuz_appcore::actions::execute(&mut app.core, soyuz_core::config::Action::PlayerPlayPause, &app.host)
+        }
         KeyName::Escape | KeyName::Space => ql::close(&mut app.core),
         KeyName::ArrowUp | KeyName::ArrowLeft => ql::step(&mut app.core, Step::Prev),
         KeyName::ArrowDown | KeyName::ArrowRight => ql::step(&mut app.core, Step::Next),

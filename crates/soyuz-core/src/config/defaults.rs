@@ -377,6 +377,7 @@ impl Default for Media {
             audio_backend: AudioBackend::Auto,
             player: true,
             autoplay: false,
+            quicklook_space_plays: false,
             loop_: false,
             volume: 80,
             muted: false,
@@ -578,7 +579,9 @@ fn common(km: &mut Keymap) {
     b(E, A::EditorPrevDocument, CTRL, KeyName::PageUp);
 
     // The media player while it has the keyboard (preview pane or Quick Look; it shadows
-    // the global and list chords there). K / J / L as in most video players.
+    // the global and list chords there). P plays / pauses (shown in hints); K / J / L as in
+    // most video players.
+    b(P, A::PlayerPlayPause, NONE, KeyName::P);
     b(P, A::PlayerPlayPause, NONE, KeyName::K);
     b(P, A::PlayerSeekBack, NONE, KeyName::J);
     b(P, A::PlayerSeekForward, NONE, KeyName::L);
@@ -713,6 +716,20 @@ mod tests {
             assert!(km.prefix_conflicts().is_empty(), "{p:?}: {:?}", km.prefix_conflicts());
             assert!(km.bindings.len() > 40);
         }
+    }
+
+    #[test]
+    fn player_plays_on_p_and_k_in_every_preset() {
+        for p in KeyPreset::ALL {
+            let km = preset(p);
+            for k in [KeyName::P, KeyName::K] {
+                let chord = KeyChord::new(Mods::empty(), k);
+                assert_eq!(km.lookup(KeyContext::Player, chord), Some(&Action::PlayerPlayPause), "{p:?} {k:?}");
+            }
+            // P is the key the hints show.
+            assert_eq!(km.chords_for(&Action::PlayerPlayPause).first().map(|c| c.key), Some(KeyName::P), "{p:?}");
+        }
+        assert!(!Media::default().quicklook_space_plays);
     }
 
     #[test]

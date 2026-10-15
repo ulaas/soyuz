@@ -825,6 +825,9 @@ pub struct Media {
     pub player: bool,
     /// Start playing as soon as a video is previewed.
     pub autoplay: bool,
+    /// In Quick Look, Space plays / pauses a video or audio file (Esc closes); off: Space
+    /// closes Quick Look as on every other file (P / K play and pause either way).
+    pub quicklook_space_plays: bool,
     /// Restart from the beginning at the end.
     #[serde(rename = "loop")]
     pub loop_: bool,

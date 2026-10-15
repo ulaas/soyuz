@@ -448,6 +448,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `audio_backend` | `"auto"` \| `"ffmpeg"` \| `"symphonia"` | `"auto"` | Which decoder plays and analyses audio: `auto` = FFmpeg when loaded, else Symphonia. (`auto`: FFmpeg when its libraries are loaded, Symphonia otherwise; `ffmpeg`: Always the FFmpeg libraries (no audio preview without them); `symphonia`: Always the pure-Rust decoder (mp3, flac, wav, ogg, aac, alac, …)) |
 | `player` | boolean | `true` | Play videos in the preview pane and Quick Look (off: poster frame only). |
 | `autoplay` | boolean | `false` | Start playing as soon as a video is previewed. |
+| `quicklook_space_plays` | boolean | `false` | In Quick Look, Space plays / pauses a video or audio file (Esc closes); off: Space closes Quick Look as on every other file (P / K play and pause either way). |
 | `loop` | boolean | `false` | Restart from the beginning at the end. |
 | `volume` | integer | `80` | Player volume, 0–100 (written back when changed in the player). |
 | `muted` | boolean | `false` | Player muted (written back when changed in the player). |

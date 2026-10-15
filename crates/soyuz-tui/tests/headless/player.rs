@@ -6,7 +6,7 @@
 //! decoding needs the FFmpeg libraries: those tests run only with `SOYUZ_MEDIA_TESTS=1`
 //! (and `SOYUZ_FFMPEG_DIR` pointing at a runtime, inherited by the sandboxed child) and
 //! skip otherwise. `TogglePreviewPane` is Alt+P, `QuickLook` Space; the player keys are
-//! the `Player` context's defaults (K, J / L, M, - / =, ← / →).
+//! the `Player` context's defaults (P / K, J / L, M, - / =, ← / →).
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -219,6 +219,17 @@ fn video_child(data: PathBuf) {
     frames_until(&mut app, &mut t, &mut io, &[common::key(KeyCode::Char('k'))], "paused in Quick Look", |a, _| {
         quicklook_player(a).is_some_and(|s| s.status == Status::Paused)
     });
+    // P plays too (the hinted key); Space still closes unless `quicklook_space_plays`.
+    frames_until(&mut app, &mut t, &mut io, &[common::key(KeyCode::Char('p'))], "playing on P", |a, _| {
+        quicklook_player(a).is_some_and(|s| s.status == Status::Playing)
+    });
+    app.core.config.media.quicklook_space_plays = true;
+    frames_until(&mut app, &mut t, &mut io, &[common::key(KeyCode::Char(' '))], "paused on Space", |a, _| {
+        a.focus() == TuiFocus::QuickLook
+            && quicklook_player(a).is_some_and(|s| s.status == Status::Paused)
+            && a.view().is_some_and(|v| v.quicklook.hints.contains("Space play / pause"))
+    });
+    app.core.config.media.quicklook_space_plays = false;
     let before = quicklook_player(&app).map(|s| s.pos_ds).unwrap();
     frames_until(&mut app, &mut t, &mut io, &[common::key(KeyCode::Right)], "a seek in Quick Look", |a, _| {
         quicklook_player(a).is_some_and(|s| s.pos_ds != before) && common::cursor(a).as_deref() == Some("clip.avi")

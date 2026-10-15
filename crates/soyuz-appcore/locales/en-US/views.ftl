@@ -415,6 +415,7 @@ views-quicklook-position = { $pos } of { $count }
 views-quicklook-hint-close = close
 views-quicklook-hint-browse = browse
 views-quicklook-hint-open = open
+views-quicklook-hint-play = play / pause
 
 ## Search bar (ui/search.rs)
 

@@ -206,7 +206,7 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
         position: tr!("tui-quicklook-position", pos = pos, count = count),
         size,
         summary: summary.join(" · "),
-        hints: hints(playing.then_some(&core.keymap)),
+        hints: hints(playing.then_some(&core.keymap), core.config.media.quicklook_space_plays),
         ..QuickLookVm::default()
     };
     vm.preview = PreviewVm {
@@ -233,14 +233,15 @@ pub fn prepare(core: &mut AppCore, input: &mut InputState, regions: &Regions) {
 }
 
 /// The footer's key hints; with `keymap`, the player's keys instead of the browse keys
-/// (←→ seek then; ↑↓ still step through the items).
-fn hints(keymap: Option<&soyuz_core::config::Keymap>) -> String {
+/// (←→ seek then; ↑↓ still step through the items); `space_plays`: Space is the play key.
+fn hints(keymap: Option<&soyuz_core::config::Keymap>, space_plays: bool) -> String {
     let mut parts = vec![format!("Esc {}", tr!("views-quicklook-hint-close"))];
     match keymap {
         Some(km) => {
             use soyuz_core::config::Action as A;
             let label = |a: A| soyuz_appcore::keys::chord_label(km, &a).unwrap_or_default();
-            parts.push(format!("{} {}", label(A::PlayerPlayPause), tr!("tui-player-hint-play")));
+            let play = if space_plays { "Space".to_owned() } else { label(A::PlayerPlayPause) };
+            parts.push(format!("{play} {}", tr!("tui-player-hint-play")));
             parts.push(format!(
                 "{} {} {}",
                 label(A::PlayerSeekBack),

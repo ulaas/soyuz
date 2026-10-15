@@ -369,6 +369,7 @@ views-quicklook-position = { $pos } / { $count }
 views-quicklook-hint-close = kapat
 views-quicklook-hint-browse = gezin
 views-quicklook-hint-open = aç
+views-quicklook-hint-play = oynat / duraklat
 
 ## Arama çubuğu (ui/search.rs)
 
