@@ -236,6 +236,7 @@ fn palette_actions(app: &AppCore) -> Vec<Action> {
                 && !(crate::actions::tui_only(a) && app.frontend_kind == crate::core::FrontendKind::Gui)
                 && !(crate::actions::gui_only(a) && app.frontend_kind == crate::core::FrontendKind::Tui)
                 && crate::models::workspaces::palette_shows(app, a)
+                && crate::models::media_tools::palette_shows(app, a)
         })
         .collect();
     v.extend(

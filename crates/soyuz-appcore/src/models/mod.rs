@@ -12,6 +12,7 @@ pub mod folder_stats;
 pub mod frontend;
 pub mod jobs_rows;
 pub mod link_dialog;
+pub mod media_tools;
 pub mod panels;
 pub mod player;
 pub mod portal;

@@ -18,6 +18,7 @@ use soyuz_jobs::{
 };
 
 use crate::host::Host;
+use crate::models::media_tools::MediaTool;
 use crate::state::pane::PaneId;
 
 /// What the user asked for (drives titles, icons and the completion toast).
@@ -40,10 +41,14 @@ pub enum OpKind {
     Undo,
     Redo,
     Retry,
+    /// A media tool (FFmpeg): convert, extract audio, trim, save a frame.
+    Media(MediaTool),
     Other,
 }
 
 impl OpKind {
+    /// The kind from a snapshot's brief. A media job's tool is not in the brief:
+    /// `models::panels::describe` knows it from the full `JobKind`.
     pub fn from_brief(b: JobKindBrief) -> OpKind {
         match b {
             JobKindBrief::Copy => OpKind::Copy,
@@ -56,6 +61,7 @@ impl OpKind {
             JobKindBrief::EmptyTrash => OpKind::EmptyTrash,
             JobKindBrief::Undo => OpKind::Undo,
             JobKindBrief::SetMeta => OpKind::SetMeta,
+            JobKindBrief::Media => OpKind::Media(MediaTool::Convert),
             _ => OpKind::Other,
         }
     }
@@ -74,6 +80,7 @@ impl OpKind {
                 | OpKind::Link
                 | OpKind::SetMeta
                 | OpKind::Redo
+                | OpKind::Media(_)
         )
     }
 }
@@ -288,6 +295,10 @@ impl JobsService {
             spec.options.extract_limits = self.extract_limits.clone();
             spec.options.preserve_special_bits = self.preserve_special_bits;
         }
+        // Media tools are CPU-bound: they yield to copies unless asked otherwise.
+        if matches!(spec.kind, JobKind::Media { .. }) && spec.options.priority == soyuz_jobs::Priority::Normal {
+            spec.options.priority = soyuz_jobs::Priority::Low;
+        }
         let kind = spec.kind.clone();
         let id = self.engine.submit(spec);
         self.affected.submitted(id, &kind);
@@ -432,8 +443,18 @@ pub fn engine_config(config: &Config) -> EngineConfig {
         history_limit: j.history_limit.max(1),
         history_path: Some(soyuz_core::config::config_dir().join("history.jsonl")),
         journal_path: crate::services::crash::journal_path(),
+        media_dirs: media_dirs(config),
         ..EngineConfig::default()
     }
+}
+
+/// Where a resumed `Media` job may load the FFmpeg libraries from (`[media] ffmpeg`,
+/// `ffmpeg_dir`); empty when the libraries are off.
+fn media_dirs(config: &Config) -> Vec<PathBuf> {
+    if !config.media.ffmpeg {
+        return Vec::new();
+    }
+    soyuz_media::search_dirs(&config.media.ffmpeg_dir, &soyuz_core::config::config_dir())
 }
 
 /// `[jobs]` → copy options.
@@ -504,6 +525,25 @@ mod tests {
         assert_eq!(e.default_queue, QueueMode::Parallel);
         assert_eq!(e.history_limit, 42);
         assert!(e.history_path.unwrap().ends_with("history.jsonl"));
+        assert!(!e.media_dirs.is_empty(), "the libraries' search folders reach resumed media jobs");
+        c.media.ffmpeg = false;
+        assert!(engine_config(&c).media_dirs.is_empty(), "[media] ffmpeg = false: never load");
+    }
+
+    #[test]
+    fn media_jobs_default_to_low_priority() {
+        let kind = JobKind::Media {
+            src: "/v/a.mp4".into(),
+            dest: "/v/a.mkv".into(),
+            op: soyuz_media::MediaOp::Remux { container: "matroska".into() },
+        };
+        assert_eq!(OpKind::from_brief(kind.brief()), OpKind::Media(MediaTool::Convert));
+        assert!(OpKind::Media(MediaTool::Trim).undoable());
+        let mut spec = JobSpec::new(kind);
+        assert_eq!(spec.options.priority, soyuz_jobs::Priority::Normal);
+        spec.options.priority = soyuz_jobs::Priority::High;
+        // (The injection itself runs in `submit`; an explicit priority is kept.)
+        assert_eq!(spec.options.priority, soyuz_jobs::Priority::High);
     }
 
     #[test]

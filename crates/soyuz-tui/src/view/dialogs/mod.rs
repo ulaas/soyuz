@@ -23,6 +23,7 @@ pub mod delete;
 pub mod keybind;
 pub mod link;
 pub mod list_edit;
+pub mod media_tools;
 pub mod open_with;
 pub mod pattern;
 pub mod plan_json;
@@ -131,6 +132,7 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
                 DialogModel::NewLink(_) => link::model_vm(m, ui),
                 DialogModel::McpApproval(_) => approval_mcp::vm(m, ui),
                 DialogModel::ScriptApproval(_) => approval_script::vm(m, ui),
+                DialogModel::MediaTools(_) => media_tools::vm(m, ui),
             })
         }
         Top::Tui => Some(match st.tui.top()? {

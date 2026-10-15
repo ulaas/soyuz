@@ -104,6 +104,14 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 number(ui, &mut d.media.seek_step_secs, 0.5..=60.0, " s");
             },
         );
+        r.row_kw(
+            tr!("settings-media-tools"),
+            tr!("settings-media-tools-desc"),
+            "convert extract audio trim frame ffmpeg menu",
+            |ui| {
+                switch(ui, &mut d.media.tools);
+            },
+        );
     });
     if retry {
         media::retry();

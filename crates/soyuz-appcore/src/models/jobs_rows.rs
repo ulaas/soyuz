@@ -16,6 +16,7 @@ use soyuz_jobs::{HistoryEntry, HistoryId, JobId, JobSnapshot, JobState, JobSumma
 use crate::cmd::Cmd;
 use crate::core::AppCore;
 use crate::icon::IconId;
+use crate::models::media_tools::MediaTool;
 use crate::models::panels::{describe, fraction, is_verified, verify_badge};
 use crate::ops::fileops::{FileOpCmd, HistoryAction, history_action, names};
 use crate::services::jobs::{JobMeta, OpKind};
@@ -81,6 +82,10 @@ pub fn op_icon(op: OpKind) -> IconId {
         OpKind::Undo => IconId::ArrowUUpLeft,
         OpKind::Redo => IconId::ArrowUUpRight,
         OpKind::Retry => IconId::ArrowClockwise,
+        OpKind::Media(MediaTool::Convert) => IconId::FilmStrip,
+        OpKind::Media(MediaTool::ExtractAudio) => IconId::MusicNotes,
+        OpKind::Media(MediaTool::Trim) => IconId::Scissors,
+        OpKind::Media(MediaTool::SaveFrame) => IconId::Image,
         OpKind::Other => IconId::GearSix,
     }
 }
@@ -88,9 +93,13 @@ pub fn op_icon(op: OpKind) -> IconId {
 /// Tone of an operation's icon (the GUI's `op_style` colours).
 pub fn op_tone(op: OpKind) -> Tone {
     match op {
-        OpKind::Copy | OpKind::Duplicate | OpKind::Rename | OpKind::NewFile | OpKind::SetMeta | OpKind::Retry => {
-            Tone::Accent
-        }
+        OpKind::Copy
+        | OpKind::Duplicate
+        | OpKind::Rename
+        | OpKind::NewFile
+        | OpKind::SetMeta
+        | OpKind::Retry
+        | OpKind::Media(_) => Tone::Accent,
         OpKind::Move | OpKind::Link => Tone::Info,
         OpKind::Trash => Tone::Warning,
         OpKind::Delete | OpKind::Wipe | OpKind::EmptyTrash => Tone::Danger,

@@ -10,6 +10,7 @@ pub mod delete;
 pub mod edit_archive;
 pub mod extract;
 pub mod hash;
+pub mod media;
 pub mod mv;
 pub mod remote;
 pub mod rename;
@@ -61,6 +62,7 @@ fn run_kind(ctx: &JobCtx, kind: &JobKind) -> FsResult<()> {
         JobKind::Sync { plan } => sync::run_sync(ctx, plan),
         JobKind::EditArchive { archive, edits, level } => edit_archive::run_edit_archive(ctx, archive, edits, *level),
         JobKind::Remote(op) => remote::run_remote(ctx, op),
+        JobKind::Media { src, dest, op } => media::run_media(ctx, src, dest, op),
     }
 }
 
@@ -107,7 +109,7 @@ pub(crate) fn retry_kind(job: &JobKind, summary: &JobSummary) -> Option<JobKind>
             }
             JobKind::PurgeTrash { items: it }
         }
-        // Create / Extract / Compress / EmptyTrash / Sync: re-run as a whole (the
+        // Create / Extract / Compress / EmptyTrash / Sync / Media: re-run as a whole (the
         // engine pre-answers conflicts with Skip for extract).
         other => other.clone(),
     })

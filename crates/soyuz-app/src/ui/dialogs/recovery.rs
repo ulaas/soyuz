@@ -34,6 +34,7 @@ fn kind_icon(b: JobKindBrief) -> &'static str {
         JobKindBrief::Rename => ph::PENCIL_SIMPLE,
         JobKindBrief::Extract | JobKindBrief::Compress => ph::FILE_ZIP,
         JobKindBrief::Sync => ph::ARROWS_CLOCKWISE,
+        JobKindBrief::Media => ph::FILM_STRIP,
         _ => ph::GEAR,
     }
 }

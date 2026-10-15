@@ -204,6 +204,14 @@ pub enum JobKind {
     },
     /// Remote locations (`soyuz-vfs` providers).
     Remote(RemoteOp),
+    /// A media tool (FFmpeg, Phase V): convert, extract audio, trim, remux or save a
+    /// frame of `src` into `dest` (`soyuz_media::transcode::run`). The output is written
+    /// through a `.part` temporary; undo trashes `dest` while its identity matches.
+    Media {
+        src: PathBuf,
+        dest: PathBuf,
+        op: soyuz_media::MediaOp,
+    },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
@@ -224,6 +232,7 @@ pub enum JobKindBrief {
     Sync,
     Undo,
     EditArchive,
+    Media,
 }
 
 impl JobKind {
@@ -248,6 +257,7 @@ impl JobKind {
             JobKind::Remote(RemoteOp::Delete { .. }) => JobKindBrief::Delete,
             JobKind::Remote(RemoteOp::Mkdir { .. }) => JobKindBrief::Create,
             JobKind::Remote(RemoteOp::Rename { .. }) => JobKindBrief::Rename,
+            JobKind::Media { .. } => JobKindBrief::Media,
         }
     }
 
@@ -285,6 +295,7 @@ impl JobKind {
                 }))
                 .collect(),
             JobKind::Remote(op) => op.paths(),
+            JobKind::Media { src, dest, .. } => vec![src.clone(), dest.clone()],
         }
     }
 }
@@ -455,6 +466,16 @@ pub(crate) fn default_label(kind: &JobKind) -> String {
         JobKind::Sync { plan } => format!("Sync {} with {}", name(&plan.left), name(&plan.right)),
         JobKind::EditArchive { archive, .. } => format!("Edit {}", name(archive)),
         JobKind::Remote(op) => remote_label(op),
+        JobKind::Media { src, dest, op } => {
+            use soyuz_media::MediaOp;
+            let verb = match op {
+                MediaOp::Convert { .. } | MediaOp::Remux { .. } => "Convert",
+                MediaOp::ExtractAudio { .. } => "Extract audio from",
+                MediaOp::Trim { .. } => "Trim",
+                MediaOp::Frame { .. } => "Save a frame of",
+            };
+            format!("{verb} {} to {}", name(src), name(dest))
+        }
     }
 }
 
@@ -526,6 +547,36 @@ mod tests {
         assert_eq!(default_label(&k), "Upload \u{201c}a.txt\u{201d} to \u{201c}u\u{201d}");
         let json = serde_json::to_string(&JobSpec::new(k.clone())).unwrap();
         assert_eq!(serde_json::from_str::<JobSpec>(&json).unwrap().kind, k);
+    }
+
+    #[test]
+    fn media_kind_brief_roots_label_and_serde() {
+        let k = JobKind::Media {
+            src: "/v/clip.mov".into(),
+            dest: "/v/clip.mp4".into(),
+            op: soyuz_media::MediaOp::Convert {
+                preset: soyuz_media::PresetId::Mp4H264Hw,
+                video_stream: None,
+                audio_stream: Some(1),
+            },
+        };
+        assert_eq!(k.brief(), JobKindBrief::Media);
+        assert_eq!(k.touched_roots(), vec![PathBuf::from("/v/clip.mov"), "/v/clip.mp4".into()]);
+        assert_eq!(default_label(&k), "Convert \u{201c}clip.mov\u{201d} to \u{201c}clip.mp4\u{201d}");
+        // The serde names are persisted (history, crash journal): keep them stable.
+        let json = serde_json::to_string(&k).unwrap();
+        assert!(json.contains("\"media\""), "{json}");
+        assert!(json.contains("\"convert\"") && json.contains("\"mp4-h264-hw\""), "{json}");
+        assert_eq!(serde_json::from_str::<JobKind>(&json).unwrap(), k);
+        let t = JobKind::Media {
+            src: "/v/a.mp4".into(),
+            dest: "/v/a.png".into(),
+            op: soyuz_media::MediaOp::Frame { at: 1.5, format: soyuz_media::ImageFormat::Png, max_px: None },
+        };
+        assert_eq!(default_label(&t), "Save a frame of \u{201c}a.mp4\u{201d} to \u{201c}a.png\u{201d}");
+        let json = serde_json::to_string(&t).unwrap();
+        assert!(json.contains("\"frame\"") && json.contains("\"png\""), "{json}");
+        assert_eq!(serde_json::from_str::<JobKind>(&json).unwrap(), t);
     }
 
     #[test]

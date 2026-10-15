@@ -30,6 +30,7 @@ use crate::ai::agent::Decision;
 use crate::ai::mcp::McpApprovals;
 use crate::automation::AutoCmd;
 use crate::cmd::Cmd;
+use crate::models::media_tools::MediaToolsModel;
 use crate::ops::fileops::FileOpCmd;
 use crate::ops::fileops::drop::DropEffect;
 
@@ -55,6 +56,8 @@ pub enum DialogModel {
     Quit(QuitModel),
     McpApproval(McpApprovalModel),
     ScriptApproval(ScriptApprovalModel),
+    /// Convert / Extract audio / Trim / Save frame (Phase V, `models::media_tools`).
+    MediaTools(Box<MediaToolsModel>),
 }
 
 impl DialogModel {
@@ -67,6 +70,7 @@ impl DialogModel {
             DialogModel::Quit(m) => &m.title,
             DialogModel::McpApproval(m) => &m.title,
             DialogModel::ScriptApproval(m) => &m.title,
+            DialogModel::MediaTools(m) => m.title(),
         }
     }
 
@@ -85,8 +89,15 @@ impl DialogModel {
             DialogModel::DeleteConfirm(_)
             | DialogModel::NewLink(_)
             | DialogModel::Transfer(_)
-            | DialogModel::Quit(_) => {}
+            | DialogModel::Quit(_)
+            | DialogModel::MediaTools(_) => {}
         }
+    }
+}
+
+impl From<MediaToolsModel> for DialogModel {
+    fn from(m: MediaToolsModel) -> Self {
+        DialogModel::MediaTools(Box::new(m))
     }
 }
 

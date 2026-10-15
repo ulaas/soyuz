@@ -301,7 +301,9 @@ pub fn pump(app: &mut AppCore) {
 pub fn submit_job(app: &mut AppCore, spec: soyuz_jobs::JobSpec) -> soyuz_jobs::JobId {
     use crate::services::jobs::{JobMeta, OpKind};
     let roots = spec.kind.touched_roots();
-    let meta = JobMeta::new(OpKind::Other, &roots, None);
+    // Media tools (Phase V) carry their own card facts (tool, output).
+    let meta =
+        crate::models::media_tools::job_meta(&spec.kind).unwrap_or_else(|| JobMeta::new(OpKind::Other, &roots, None));
     let edited = match &spec.kind {
         JobKind::EditArchive { archive, .. } => Some(archive.clone()),
         _ => None,

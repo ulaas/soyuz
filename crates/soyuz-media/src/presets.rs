@@ -6,7 +6,8 @@
 
 use crate::Runtime;
 
-/// The built-in presets.
+/// The built-in presets. Serialized by [`PresetId::name`] (`"mp4-h264-hw"`), so the names
+/// in job history and the crash journal stay readable and stable.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PresetId {
     /// Remux every stream into Matroska.
@@ -63,6 +64,19 @@ impl PresetId {
     /// The built-in table row.
     pub fn preset(self) -> &'static Preset {
         BUILTIN.iter().find(|p| p.id == self).expect("every id is in BUILTIN")
+    }
+}
+
+impl serde::Serialize for PresetId {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.name())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for PresetId {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(d)?;
+        PresetId::parse(&name).ok_or_else(|| serde::de::Error::custom(format!("unknown media preset {name:?}")))
     }
 }
 
@@ -281,6 +295,10 @@ mod tests {
         assert_eq!(names.len(), BUILTIN.len());
         assert_eq!(BUILTIN.len(), 14);
         assert_eq!(PresetId::parse("x264"), None);
+        // Serialized by name (job history, crash journal).
+        assert_eq!(serde_json::to_string(&PresetId::Mp4H264Hw).unwrap(), "\"mp4-h264-hw\"");
+        assert_eq!(serde_json::from_str::<PresetId>("\"audio-alac\"").unwrap(), PresetId::AudioAlac);
+        assert!(serde_json::from_str::<PresetId>("\"x264\"").is_err());
         for name in [
             "mkv-copy",
             "mp4-copy",

@@ -369,6 +369,7 @@ pub fn items_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     }
     let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
     archive_entries(&mut b, &pane.location, any_archive, !sel.is_empty());
+    media_entries(&mut b, &pane.location, &sel);
     let sel_paths: Vec<(PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
     tool_item_entries(&mut b, &pane.location, &sel_paths);
     ai_entries(&mut b, true, single && all_dirs);
@@ -543,6 +544,49 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
             if has_selection && matches!(location, Location::Dir(_)) {
                 b.bare_action(MenuIcon::Package, tr!("views-archive-compress-menu"), Action::CreateArchive);
             }
+        }
+    }
+}
+
+/// Media tool rows (Phase V) when every selected item is a video or audio file in a
+/// folder and `[media] tools` is on: Convert and Extract audio for any number of files,
+/// Trim and Save frame for one; Extract audio and Save frame only for videos. The rows
+/// are disabled with a hint while the FFmpeg libraries are not loaded.
+fn media_entries(b: &mut B<'_>, location: &Location, sel: &[&soyuz_core::EntryInfo]) {
+    use crate::models::media_tools::{is_media_ext, is_video_ext};
+    use IconId as I;
+    if sel.is_empty() || !b.cx.config.media.tools || !matches!(location, Location::Dir(_)) {
+        return;
+    }
+    let exts: Vec<String> =
+        sel.iter().filter(|e| !e.is_dir_like()).filter_map(|e| e.extension().map(|x| x.to_ascii_lowercase())).collect();
+    if exts.len() != sel.len() || !exts.iter().all(|x| is_media_ext(x)) {
+        return;
+    }
+    let video = exts.iter().all(|x| is_video_ext(x));
+    let single = sel.len() == 1;
+    let loaded = crate::services::media::runtime().is_some();
+    b.sep();
+    let mut row = |icon: IconId, a: Action| {
+        let label = crate::palette::catalog::title(&a);
+        if loaded {
+            b.plain_action(icon, label, a);
+        } else {
+            let mut e = item(icon.into(), label, chord_label(b.cx.keymap, &a), false, None);
+            if let Entry::Item(i) = &mut e {
+                i.tip = Some(tr!("dialogs-media-no-runtime"));
+            }
+            b.push(e);
+        }
+    };
+    row(I::FilmStrip, Action::MediaConvert);
+    if video {
+        row(I::MusicNotes, Action::MediaExtractAudio);
+    }
+    if single {
+        row(I::Scissors, Action::MediaTrim);
+        if video {
+            row(I::Image, Action::MediaSaveFrame);
         }
     }
 }
