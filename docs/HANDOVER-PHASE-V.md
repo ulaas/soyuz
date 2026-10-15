@@ -1,8 +1,8 @@
-# Phase V handover: FFmpeg media (status 2026-10-15)
+# Phase V handover: FFmpeg media (status 2026-10-15, after wave 3)
 
 Phase V moves every media task in Soyuz (thumbnails, previews, video playback, audio,
 media tools) to the FFmpeg shared libraries, loaded at run time and shipped with the app.
-**Waves 1 and 2 are done** (wave 1 on `main`, wave 2 on branch `phase-v`); **waves 3–4 are
+**Waves 1–3 are done** (wave 1 on `main`, waves 2 and 3 on branch `phase-v`); **wave 4 is
 not started.** The CI jobs that build FFmpeg run on every push to `main` / `phase-*`; check
 their results against [First CI run](#first-ci-run).
 
@@ -32,10 +32,18 @@ their results against [First CI run](#first-ci-run).
 | V2a | `fdba642` | `Player`: demux / video / audio threads, audio-clock master (wall clock without audio), coalesced accurate seeks, late frames dropped, loop, volume / mute, `SetOutputSize`; `Drop` waits ≤ `JOIN_TIMEOUT` (500 ms) and abandons (leaks) contexts of a stuck thread. |
 | V2b | `8ffe12f`, `7ccc275` | FFmpeg audio in previews (`[media] audio_backend`, Symphonia fallback), AudioReader-fed playback with live volume / mute, `services/media_player.rs` (`RodioOutput`, ring sink, device-side clock), `models/player.rs` (`PlayerModel`, `app.ui.player`), Settings rows for the player keys. |
 | V2c | `aa97e1d` | Transcoder (`transcode::run` / `plan`: remux, trim, convert, extract audio, save frame; `.part` + rename; cancel between packets), 14 presets incl. hardware H.264 / HEVC, VP8 / VP9 + Opus, ProRes, MPEG-4, FLAC / AAC / Opus / WAV / ALAC; `sys/encode.rs`, `sys/mux.rs` over our own write AVIO. |
+| Actions | `546c4da` | Shared `Player*` actions (play / pause, seek, volume, mute) in `KeyContext::Player` and `Media*` actions (convert, extract audio, trim, save frame) in FileOps; palette, locales, KEYBOARD.md. |
+| V3a | `fa268c7` | GUI player in the preview pane and Quick Look (`ui/preview/video.rs`): off-thread open (`PlayerModel::open_in_background` + `poll`), one reused texture per player, loop in the model, `KeyContext::Player` while the player has focus, `player_smoke` test; frame budget worst 2.9 ms. |
+| V3b | `aea41a0`, `b930f5b` | TUI player (`soyuz-tui/src/player.rs`): frames through the terminal image path at `[media] tui_fps`, status line with text progress bar, volume, mute, loop, mouse seek, screen-reader words; headless tests and snapshots; Settings row for `tui_fps`. |
+| V3c | `22963b3` | Media tools as jobs: `JobKind::Media` (serde `"media"`), `OpKind::Media`, overwrite through `<stem>.soyuz-new.<ext>` plus the trash, identity-stamped undo, journal resume; dialog model (`models/media_tools.rs`, off-thread probe, dry-run plan), GUI and TUI dialogs, context-menu entries, `[media] tools` row. |
+| Fix | `e91d83b` | `PlayerModel::sync_target(None)` closes the player (a missing pending key counted as "same key"); the TUI reads the model's loop toggle. |
 
-Gates after wave 2 on Windows: fmt, clippy (`-D warnings`, also for the Linux and macOS
-targets on `soyuz-media`), `cargo deny`, unsafe allowlist, 2,322 workspace tests, and 837
-`soyuz-media` / `soyuz-appcore` / `soyuz-jobs` tests against FFmpeg 9.0.
+Gates after wave 3 on Windows: fmt, clippy (`-D warnings`), `cargo deny`, unsafe allowlist,
+2,363 workspace tests, and 1,538 `soyuz-media` / `soyuz-appcore` / `soyuz-jobs` / `soyuz-tui`
+tests against FFmpeg 9.0.
+
+Wave 3 open points: `[media] threads` is not passed to the transcoder yet; a resumed trim
+job is labelled "Converting…"; the media-tools dialog has had no manual run in the app.
 
 ## How the pieces fit
 
@@ -90,10 +98,10 @@ Key properties of `soyuz-media`:
 `poster_secs` (0.0 = a fraction of the duration, as before), `tools` (true).
 
 Read today (with GUI rows in Settings → Preview → Media): `ffmpeg`, `ffmpeg_dir`, `threads`,
-`max_px`, `poster_secs`, and since wave 2 `audio_backend`, `player`, `autoplay`, `loop`,
-`volume`, `muted`, `seek_step_secs`. Still unread: `hw_decode` (V4b), `tui_fps` (V3b), `tools`
-(V3c); add their GUI rows in the step that starts reading them (no dead settings). `[preview] video` (was `video_ffmpeg`)
-turns video previews on or off.
+`max_px`, `poster_secs`, since wave 2 `audio_backend`, `player`, `autoplay`, `loop`,
+`volume`, `muted`, `seek_step_secs`, and since wave 3 `tui_fps` and `tools`. Still unread:
+`hw_decode` (V4b); add its GUI row in the step that starts reading it (no dead settings).
+`[preview] video` (was `video_ffmpeg`) turns video previews on or off.
 
 ## Working on it locally
 
@@ -102,7 +110,7 @@ turns video previews on or off.
   statically linked dependencies have no published sources). Its `include/` folder has the
   headers for checking struct offsets; its `ffmpeg.exe` can make test files.
 - **Run the media tests against real libraries**:
-  `SOYUZ_FFMPEG_DIR=<folder with the DLLs> SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs`.
+  `SOYUZ_FFMPEG_DIR=<folder with the DLLs> SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs -p soyuz-tui`.
   With `SOYUZ_MEDIA_TESTS=1` a missing runtime is a failure; without it the with-libs
   tests skip. Plain `cargo test --workspace` needs no libraries.
 - **Inspect a file**: `SOYUZ_FFMPEG_DIR=<folder> cargo run -p soyuz-media --example probe -- [--json] <file>...`.
@@ -137,11 +145,8 @@ Not verifiable locally (only in CI): the real FFmpeg builds, WiX harvesting of t
 
 ## Remaining waves
 
-V2a–V2c are done (see above); their rows stay for reference. Wave 3 notes from wave 2:
-`Player::open` reads the file, so the GUI / TUI open the player off the UI thread
-(`PlayerModel::open` on a worker, or a pending-open state); frames arrive as one stable
-texture name per player (`player:<n>`), so update that texture instead of allocating one per
-frame; the audio preview has no volume control of its own yet (V3a adds it).
+V2a–V3c are done (see above); their rows stay for reference. Wave 4 is next: V4a and V4c,
+with V4b only if needed.
 
 Up to three agents in parallel, one crate or module set each, one compile at a time.
 
