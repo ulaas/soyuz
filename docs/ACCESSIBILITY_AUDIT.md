@@ -115,7 +115,9 @@ settings 162, appearance 333, confirm 97, video 113, mediatools 118, progress 12
 - **Audit fix:** the preview pane's player bar has no volume slider at the pane's default
   width (it is left out below 330 px), so the `video` state uses Quick Look.
 
-**Real findings in the app, open:**
+**Re-run after the fixes (same day, `-Only video,mediatools`): 19 checks, 0 failed.** Finding 1 is fixed (the four media-tools text fields are named by their captions); the player's Mute and Loop now report "pressed" / "not pressed".
+
+**Real findings in the app (finding 1 fixed, see above):**
 
 | # | Where | Finding | Suggested fix |
 |---|---|---|---|

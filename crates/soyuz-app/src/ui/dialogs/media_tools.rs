@@ -70,9 +70,11 @@ fn text_segmented(ui: &mut Ui, id: &str, labels: &[&str], selected: usize, cell_
     clicked
 }
 
-/// A one-line text field with a hint; returns whether it changed.
-fn text_field(ui: &mut Ui, text: &mut String, hint: &str, width: f32, focus: &mut bool) -> bool {
+/// A one-line text field with a hint, named for screen readers by its caption `label`;
+/// returns whether it changed.
+fn text_field(ui: &mut Ui, label: &str, text: &mut String, hint: &str, width: f32, focus: &mut bool) -> bool {
     let r = ui.add(TextEdit::singleline(text).hint_text(hint).desired_width(width).margin(Margin::symmetric(10, 7)));
+    crate::ui::a11y::name(&r, label);
     if *focus {
         r.request_focus();
         *focus = false;
@@ -151,7 +153,14 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
                     caption(ui, tr!("dialogs-media-start"), &p);
                     let mut s = m.start.clone();
                     let mut no_focus = false;
-                    if text_field(ui, &mut s, tr!("dialogs-media-time-hint"), 120.0, &mut no_focus) {
+                    if text_field(
+                        ui,
+                        tr!("dialogs-media-start"),
+                        &mut s,
+                        tr!("dialogs-media-time-hint"),
+                        120.0,
+                        &mut no_focus,
+                    ) {
                         m.set_start(&s);
                     }
                 });
@@ -160,7 +169,14 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
                     caption(ui, tr!("dialogs-media-end"), &p);
                     let mut e = m.end.clone();
                     let mut no_focus = false;
-                    if text_field(ui, &mut e, tr!("dialogs-media-time-hint"), 120.0, &mut no_focus) {
+                    if text_field(
+                        ui,
+                        tr!("dialogs-media-end"),
+                        &mut e,
+                        tr!("dialogs-media-time-hint"),
+                        120.0,
+                        &mut no_focus,
+                    ) {
                         m.set_end(&e);
                     }
                 });
@@ -177,7 +193,14 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
                     caption(ui, tr!("dialogs-media-at"), &p);
                     let mut a = m.at.clone();
                     let mut no_focus = false;
-                    if text_field(ui, &mut a, tr!("dialogs-media-time-hint"), 120.0, &mut no_focus) {
+                    if text_field(
+                        ui,
+                        tr!("dialogs-media-at"),
+                        &mut a,
+                        tr!("dialogs-media-time-hint"),
+                        120.0,
+                        &mut no_focus,
+                    ) {
                         m.set_at(&a);
                     }
                 });
@@ -197,7 +220,8 @@ pub(crate) fn show(ui: &mut Ui, m: &mut MediaToolsModel, ctx: &mut DialogCtx<'_>
     caption(ui, tr!("dialogs-media-name"), &p);
     let mut name = m.name.clone();
     let mut focus = m.focus;
-    let changed = text_field(ui, &mut name, tr!("dialogs-media-name-hint"), f32::INFINITY, &mut focus);
+    let changed =
+        text_field(ui, tr!("dialogs-media-name"), &mut name, tr!("dialogs-media-name-hint"), f32::INFINITY, &mut focus);
     m.focus = focus;
     if changed {
         m.set_name(&name);

@@ -412,6 +412,8 @@ pub fn show(ui: &mut Ui, rect: Rect, core: &mut AppCore, m: Media<'_>, big: bool
         ids.push(i);
     }
     let loop_resp = icon_toggle(&mut bar, ph::REPEAT, tr!("views-player-loop"), true, loop_on);
+    // A real toggle: "not pressed" is announced too (plain icon buttons stay buttons).
+    crate::ui::a11y::toggle(&loop_resp, tr!("views-player-loop"), loop_on);
     ids.push(loop_resp.id);
     if loop_resp.clicked() {
         model.set_loop(!loop_on);
@@ -548,6 +550,7 @@ pub(super) fn volume_cluster(
     };
     let label = if muted { tr!("views-player-unmute") } else { tr!("views-player-mute") };
     let mute = icon_toggle(ui, glyph, label, true, muted);
+    crate::ui::a11y::toggle(&mute, tr!("views-player-mute"), muted);
     let mute_change = mute.clicked().then_some(!muted);
     let Some(width) = slider else { return (mute.id, None, mute_change, None) };
     let (rect, resp) = ui.allocate_exact_size(vec2(width, 20.0), Sense::click_and_drag());

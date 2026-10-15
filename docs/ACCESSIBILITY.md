@@ -286,13 +286,9 @@ runs.
 - **Terminal UI:** no human run of its checklist yet (see [Terminal UI](#terminal-ui)); the
   terminal's cursor marks the focus only in screen-reader mode (the default look keeps its
   drawn caret), and the mode is not turned on automatically when a screen reader runs.
-- **Media tools dialog (window):** the time fields (Trim start / end, Save frame time) and
-  the output name field have a visible caption but no accessible name; the UIA audit
-  flags the output name (state `mediatools`, G3 / T3). They need `a11y::name` with their
-  caption.
-- **Icon toggles that are off** (the player's Mute and Loop, and the other icon toggle
-  buttons) are exposed as plain buttons; only the "on" state is reported (pressed). A
-  screen reader therefore says nothing like "not pressed" for them.
+- **Icon toggles that are off** (other than the player's Mute and Loop, which report
+  "pressed" / "not pressed") are exposed as plain buttons; only the "on" state is
+  reported (pressed). The Quick Look hex toggle is one of them.
 - **Player volume in the preview pane:** at the pane's default width the player bar has no
   room for the volume slider, so it is not in the tree; the volume keys (`-` / `=`) and
   Quick Look's bar (which has the slider) still work.

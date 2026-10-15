@@ -343,9 +343,13 @@ With several files selected, Convert and Extract audio make one job per file. Tr
 Save frame use the first file. Without the libraries, the menu entries are disabled and say
 why.
 
-<!-- TODO(orchestrator): mention the transcoder fidelity work from vgaps (chapters, tags,
-cover art and rotation kept; MP4 output optimized for streaming; `[media] threads` used by
-the media tools) once it is merged. -->
+**What the output keeps.** Chapters, container and stream tags, and cover art are copied
+when the output format can store them (MP4 / M4A / MOV, MKV / WebM, FLAC, MP3; Ogg keeps
+chapters and tags but no cover). Rotation is kept in MP4 / MOV / M4A and MKV / WebM; AVI,
+MPEG-TS and Ogg have no rotation field, and the plan warns before the job starts. MP4,
+MOV and M4A outputs get their index at the start of the file, so they play while still
+downloading (Settings → Media → "Web-ready MP4", `[media] faststart`). `[media] threads`
+sets the decoder and encoder threads of the media tools too.
 
 ### Media tools for the assistant, MCP clients and scripts
 
