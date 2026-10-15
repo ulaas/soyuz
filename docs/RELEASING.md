@@ -459,4 +459,7 @@ it.
 binary, `SOYUZ_SCRIPT` sessions that save their own window with `shot:`, ImageMagick for
 the downscale into `site/assets/shots/`, and the same cleanup. It sends no input to the
 desktop. On Wayland the compositor places the window (`SOYUZ_WINDOW_POS` works only under
-X11 / XWayland).
+X11 / XWayland). The media shots (`video-player.png`, `media-tools.png`) and the demo
+video (`Videos/Launch replay.mp4`) are made only by the PowerShell scripts so far: they
+need `SOYUZ_FFMPEG_DIR` (the libraries, plus an `ffmpeg` program there or on the `PATH`)
+and are skipped without it, keeping the previous pictures.

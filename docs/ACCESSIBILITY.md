@@ -28,8 +28,10 @@ them so it gets a role, a name and its state.
 | Terminal | Terminal | "Terminal n" | visible screen text as value |
 | Text / hex editors | multiline text input (egui) | file name | — |
 | Treemap tiles | ListItem | file / folder name | size as description |
-| Video player (preview pane, Quick Look) | Button for the picture ("Video: *name*", play / pause) and the play, mute and loop buttons; Slider for the position ("Position", value *elapsed / total*) and the volume ("Volume", value in %) | translated labels | toggled (mute, loop); the position and volume sliders take ← / → |
+| Video player (preview pane, Quick Look) | Button for the picture ("Video: *name*", play / pause) and the Play / Pause, Mute / Unmute and Loop buttons; Slider for the position ("Position", value *elapsed / total*) and the volume ("Volume", value in %) | translated labels | pressed while mute / loop are on; the position and volume sliders take ← / →. A narrow bar (the preview pane at its default width) leaves the volume slider out; `-` / `=` still change the volume |
 | Audio card | Button (play / pause, mute), Slider (volume) | translated labels | toggled (mute) |
+| Media tools dialog (Convert, Extract audio, Trim, Save frame) | Dialog, modal; tool switcher, codec / format / conflict choices as toggle buttons; Preset as a ComboBox; text fields for the times and the output name | dialog title ("Convert media", …); the visible labels | selected tool / choice pressed; the Run button is named after the tool ("Convert", "Extract", "Trim", "Save") |
+| Settings → Media: FFmpeg status and download | status as a named label ("Loaded", "Not loaded", …); *Download FFmpeg runtime*, *Try again*, *Cancel* and *Dismiss* buttons; the download bar as a ProgressIndicator named after its progress line | translated labels | progress 0–100 % while the size is known, indeterminate before |
 | Settings controls | the matching egui role (CheckBox for switches, ComboBox, Slider, TextInput) | row label | value |
 
 All names are translated (Fluent). They follow the UI
@@ -53,7 +55,12 @@ Settings → Keys shows the full table, which you can change.
   Look with `Space`); then `K` plays / pauses, `J` / `L` and `←` / `→` seek, `-` / `=` change
   the volume, `M` mutes (the *Player* context in Settings → Keys). The scrubber and the
   volume slider are reachable with `Tab` and move with the arrow keys; every control is
-  named, and the sliders report their value.
+  named, and the sliders report their value. In the terminal UI the same keys work in Quick
+  Look and in the focused preview pane.
+- **Media tools:** right-click a video or audio file (or `Shift+F10`, or the palette's
+  *Convert media…*, *Extract audio…*, *Trim media…*, *Save video frame…*). `Tab` moves
+  through the tool switcher, the fields and the buttons; the output name has focus when
+  the dialog opens; `Enter` runs the tool (when the plan has no error) and `Esc` cancels.
 - **Settings:** `Ctrl+,`. Use `Tab` through the controls and `Esc` to close.
 - **Dialogs:** dialogs are modal, and focus is trapped inside (egui `Modal`). `Tab` /
   `Shift+Tab` cycle through the dialog's controls only. `Enter` triggers the primary button
@@ -116,6 +123,14 @@ build (an empty `portable` file next to `soyuz.exe`). Check it in both English a
 14. **Treemap:** tiles announce the name and size.
 15. **Language switch:** change to Türkçe in Settings. Names are spoken in Turkish at once, with
     no restart.
+16. **Video player:** select a video (needs the FFmpeg libraries) and press `Space`. Quick Look
+    announces the picture as "Video: *name*, button"; `K` starts and pauses it. `Tab` reaches
+    Play / Pause, Position (its value is "*elapsed* / *total*"), Mute, Volume ("80%") and Loop;
+    `←` / `→` on Position seek, and Mute / Loop announce "pressed" when on.
+17. **Media tools:** right-click the video → *Convert media…*. NVDA announces the dialog
+    "Convert media"; `Tab` reaches the tool switcher (the current tool pressed), the Preset
+    combo box, the output name and Cancel / Convert. The plan text is read in browse mode.
+    `Esc` closes the dialog.
 
 ### Narrator (Windows)
 
@@ -173,6 +188,7 @@ the user guide describes it in [Screen-reader mode](USER_GUIDE.md#screen-reader-
 | Toasts | boxes in a corner | text in the status line ("Warning: title. body"), at least their unscaled duration |
 | Dialogs, menus, palette | boxes over the panes | the rows they cover are cleared first; form labels end with a colon |
 | Job progress | live bar and numbers | the percentage only, updated per 10 % or every 2 s |
+| Media player (preview pane, Quick Look) | the frame as a terminal image, a status line with the play mark, times, a text progress bar, the volume and `muted` / `loop` | no picture; the status line as words: "Playing, 0:04 of 0:08, volume 80 %, muted, loop" ("Opening the player…", "Ended" or "Playback failed: …" when that applies) |
 | Miller columns, settings editor | several columns | one column |
 
 ### Automated checks
@@ -246,7 +262,12 @@ Steps (for each: what you hear should match the status line or the line under th
 12. **Menus.** `Shift+F10` on a file. The focused entry is read; the arrows move, `Esc`
     closes.
 13. **Language.** Switch to Turkish (settings): the sentences change language at once.
-14. **Quit.** `Ctrl+Q`. The terminal is restored and the reader is back at the shell prompt.
+14. **Media player.** With the FFmpeg libraries, select a video and press `Space`. The player
+    line is read ("Paused, 0:00 of 0:08, volume 80 %"); `K` plays and the line says
+    "Playing" (note how often the reader repeats the line while the time advances), `L` /
+    `J` seek, `M` adds "muted". The media tools dialog (`Shift+F10` → *Convert media…*) reads
+    its labels with a colon and its focused button.
+15. **Quit.** `Ctrl+Q`. The terminal is restored and the reader is back at the shell prompt.
 
 Known limits to note, not to fail: pictures are not drawn (the preview says "Picture (not
 shown in screen-reader mode)"); the editors, the AI composer and the embedded terminal place
@@ -260,11 +281,21 @@ runs.
 - **No screen-reader run has been recorded yet.** The checklist above is the certification
   script, and its results go into this file. The automated UIA audit
   (`scripts/uia-audit.ps1`, results in `ACCESSIBILITY_AUDIT.md`) checks what a screen reader
-  receives (names, roles, states) in six states, but not how NVDA / Narrator announce it or
+  receives (names, roles, states) in eight states, but not how NVDA / Narrator announce it or
   whether navigation feels right; it does not replace this run.
 - **Terminal UI:** no human run of its checklist yet (see [Terminal UI](#terminal-ui)); the
   terminal's cursor marks the focus only in screen-reader mode (the default look keeps its
   drawn caret), and the mode is not turned on automatically when a screen reader runs.
+- **Media tools dialog (window):** the time fields (Trim start / end, Save frame time) and
+  the output name field have a visible caption but no accessible name; the UIA audit
+  flags the output name (state `mediatools`, G3 / T3). They need `a11y::name` with their
+  caption.
+- **Icon toggles that are off** (the player's Mute and Loop, and the other icon toggle
+  buttons) are exposed as plain buttons; only the "on" state is reported (pressed). A
+  screen reader therefore says nothing like "not pressed" for them.
+- **Player volume in the preview pane:** at the pane's default width the player bar has no
+  room for the volume slider, so it is not in the tree; the volume keys (`-` / `=`) and
+  Quick Look's bar (which has the slider) still work.
 - Right-to-left layout is not supported yet; Arabic / Hebrew names render
   with a system fallback font but are laid out in logical order.
 - egui exposes text runs, not a rich document model. The text editor reads line by line,

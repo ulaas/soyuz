@@ -14,6 +14,7 @@
     Music\      synthesized WAV files (waveform preview)
     Downloads\  a zip of some photos, a CSV export, a large data file (for job demos)
     Archive\    an older copy of Documents\Reports (for the folder-compare screenshot)
+    Videos\     a short generated MP4 (only when an ffmpeg program is found, see -Ffmpeg)
 
 .PARAMETER Root
   Where to create the tree. Defaults to "<drive of this repo>:\SoyuzDemo" so that paths in
@@ -22,6 +23,11 @@
 .PARAMETER BigFileMB
   Size of Downloads\Telemetry dump.dat (used to show a running copy job). 0 skips it.
 
+.PARAMETER Ffmpeg
+  The ffmpeg program that renders Videos\Launch replay.mp4 (MPEG-4 Part 2 video and AAC
+  audio, which every LGPL build can encode). Defaults to ffmpeg(.exe) in the folder named by
+  SOYUZ_FFMPEG_DIR, then ffmpeg on the PATH; without one, Videos\ is skipped.
+
 .EXAMPLE
   ./scripts/demo-fixture.ps1                       # -> E:\SoyuzDemo (or C:\SoyuzDemo)
   ./scripts/demo-fixture.ps1 -Root D:\Demo -BigFileMB 0
@@ -29,7 +35,8 @@
 [CmdletBinding()]
 param(
     [string]$Root = (Join-Path ((Split-Path -Qualifier $PSScriptRoot) + '\') 'SoyuzDemo'),
-    [int]$BigFileMB = 192
+    [int]$BigFileMB = 192,
+    [string]$Ffmpeg
 )
 
 $ErrorActionPreference = 'Stop'
@@ -569,6 +576,36 @@ Add-Content -LiteralPath (Join-Path $arch 'Q3 mission report.md') -Value "`n_Dra
 Remove-Item -LiteralPath (Join-Path $arch 'Launch checklist.txt')
 Write-Text 'Archive\Reports\Q2 mission report.md' "# Q2 mission report`n`nFirst static fire completed.`n" 160 120
 Get-ChildItem -LiteralPath $arch -File | ForEach-Object { $_.LastWriteTime = $now.AddDays(-45) }
+
+# ---------------------------------------------------------------------------
+# Videos (optional: rendered by an ffmpeg program, not by Soyuz)
+# ---------------------------------------------------------------------------
+
+if (-not $Ffmpeg -and $env:SOYUZ_FFMPEG_DIR) {
+    $Ffmpeg = @('ffmpeg.exe', 'ffmpeg') | ForEach-Object { Join-Path $env:SOYUZ_FFMPEG_DIR $_ } |
+        Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+}
+if (-not $Ffmpeg) { $Ffmpeg = (Get-Command ffmpeg -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1).Source }
+if ($Ffmpeg) {
+    $videos = New-Dir 'Videos'
+    $clip = Join-Path $videos 'Launch replay.mp4'
+    # A dusk gradient with a rising rocket and its trail; a low hum as the sound track.
+    $sky = 'gradients=size=1280x720:rate=25:c0=0x0b132b:c1=0x1c2541:c2=0x3a506b:c3=0xf28f3b:nb_colors=4:type=linear:speed=0.03:seed=1957'
+    $rocket = "[0:v][2:v]overlay=x=957:y='600-70*t':eval=frame:shortest=1[a];" +
+        "[a][1:v]overlay=x=954:y='560-70*t':eval=frame:shortest=1[v]"
+    & $Ffmpeg -hide_banner -loglevel error -y -f lavfi -i $sky -f lavfi -i 'color=c=0xf6f1d1:size=12x40:rate=25' `
+        -f lavfi -i 'color=c=0xffb45c:size=6x120:rate=25' -f lavfi -i 'sine=frequency=110:sample_rate=48000' `
+        -filter_complex $rocket -map '[v]' -map '3:a' -t 8 -c:v mpeg4 -q:v 4 -pix_fmt yuv420p -c:a aac -b:a 64k `
+        -metadata title='Launch replay' -movflags +faststart $clip
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $clip)) {
+        Write-Warning "ffmpeg could not render $clip; skipping Videos\"
+        Remove-Item -LiteralPath $videos -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        Set-Age $clip 12 4
+    }
+} else {
+    Write-Host 'No ffmpeg program (-Ffmpeg, SOYUZ_FFMPEG_DIR or PATH): Videos\ skipped.'
+}
 
 # Folder times last, so creating children does not reset them.
 Get-ChildItem -LiteralPath $Root -Directory -Recurse | Sort-Object { $_.FullName.Length } -Descending | ForEach-Object {

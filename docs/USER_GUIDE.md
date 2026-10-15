@@ -9,6 +9,7 @@ of the *Explorer* preset; the command palette always shows the active ones.
 - [Selecting and acting on files](#selecting-and-acting-on-files)
 - [Background jobs, conflicts and undo](#background-jobs-conflicts-and-undo)
 - [Panels: preview, terminal, activity, shelf](#panels-preview-terminal-activity-shelf)
+- [Media](#media)
 - [Tools](#tools)
 - [Search](#search)
 - [Customizing](#customizing)
@@ -139,82 +140,9 @@ and *Retry failed*.
   - **3D models** (glTF / GLB, STL, OBJ): a shaded quick render; drag to rotate, scroll to
     zoom in Quick Look, double-click to reset. Models spin slowly unless reduced motion or
     `model_turntable = false`.
-  - **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause / seek
-    (click the waveform). Playback stops when the preview moves away. Two decoders
-    (`[media] audio_backend`): `auto` uses the FFmpeg libraries when they are loaded, which
-    adds Opus, WMA, APE, AC-3, DSD, Matroska audio and everything else FFmpeg reads, and
-    falls back to the built-in Symphonia decoder (mp3, flac, wav, ogg, aac, alac) without
-    them; `ffmpeg` and `symphonia` force one. The facts list names the decoder used. The
-    player follows `[media] volume` and `muted`, which the player writes back when changed.
-  - **Video** (`[preview] video`): container metadata, and with the FFmpeg libraries the
-    streams (codec and profile, size, frame rate, pixel format, HDR, rotation, audio
-    codec / channels / rate, bitrates, chapters, tags) plus a poster frame at
-    `[media] poster_secs` (0 = a tenth of the length, at most 5 s), sized by
-    `[media] max_px`. `Enter` opens the file in your player.
-  - **Video playback** (`[media] player`, on by default, with the FFmpeg libraries): the
-    poster shows first with a play button; click it (or the picture, or press `K`) and
-    the video plays right there, in the preview pane or in Quick Look, scaled to the
-    view. The bar under the picture has play / pause, a scrubber (hover shows the time
-    under the pointer; the lighter part is what is buffered ahead), elapsed / total
-    time, volume, mute and a loop toggle. Keys while the player has the keyboard
-    (Quick Look on a video or audio file, or the pane's player clicked or tabbed to):
-    `K` play / pause, `J` / `L` or `←` / `→` jump by `[media] seek_step_secs`, `-` / `=`
-    volume, `M` mute (the *Player* context in Settings → Keys). `[media] autoplay`
-    starts playing as soon as a video is previewed, `[media] loop` seeds the loop
-    toggle, and `[media] volume` / `muted` are written back when you change them in the
-    player (they apply to audio previews too). Playback stops when the preview moves
-    to another file, when the pane closes and when Quick Look closes. Decoding happens
-    on worker threads at the view's size, so the file list stays responsive; a file
-    the libraries cannot open says why in place of the picture. `[media] player = false`
-    keeps the poster only.
-  - **The FFmpeg libraries** (`[media]`, Settings → Preview & search → Media): Soyuz loads
-    `avcodec`, `avformat`, `avutil`, `swscale` and `swresample` at run time and never spawns
-    an `ffmpeg` program. The release packages ship them next to the program (an LGPL build,
-    FFmpeg 9.0; the distro's or Flatpak runtime's 8.x / 7.1 libraries are accepted on
-    Linux). The search order is `SOYUZ_FFMPEG_DIR` (for tests), `[media] ffmpeg_dir`, the
-    program's folder, the config folder's `ffmpeg/` sub-folder, then the system folders;
-    the Media page lists them with the loaded versions or the reason nothing loaded. To add
-    or replace the libraries, get the `ffmpeg-runtime-<version>` release from GitHub and
-    unpack it into `<config dir>/ffmpeg/`, or choose their folder on the Media page.
-    `[media] ffmpeg = false` turns them off (metadata-only video previews, Symphonia
-    audio). Without them videos show their metadata and a card that says where the
-    libraries come from.
-  - **Media tools** (`[media] tools`, context menu of a video or audio file, or the
-    palette): *Convert media…* (built-in presets: Matroska / MP4 stream copy, hardware
-    H.264 / HEVC when the machine has an encoder, VP8 / VP9 + Opus, ProRes, MPEG-4, FLAC /
-    AAC / Opus / WAV / ALAC; only the presets this FFmpeg build can encode are listed),
-    *Extract audio…* (keep the track as is or re-encode it), *Trim media…* (a window in
-    seconds or `m:ss`; cut on keyframes without re-encoding, or frame-exact) and *Save
-    video frame…* (PNG or JPEG at a time). The dialog reads the file off the UI thread,
-    shows what happens to every stream and an estimated size before anything runs, and
-    the output name defaults to the source's name with the new extension beside it (a
-    taken name offers Ask / Keep both / Replace / Skip). Each run is a job in the
-    activity panel: low priority, pausable, cancellable (nothing is left behind), and
-    undoable while the output is unchanged (undo moves it to the trash; a replaced file
-    comes back from the trash). With several files selected, Convert and Extract audio
-    make one job per file. Without the libraries the entries are disabled and say why.
-  - *Media tools for the assistant, MCP clients and scripts*: the AI tool `media_info`
-    (read) returns the container, duration, size, streams and codecs, rotation, tags,
-    chapters and the presets this build can encode; `media_convert` (a preset name such
-    as `mkv-copy` or `audio-flac`), `media_extract_audio` (`copy`, `flac`, `aac`, `opus`,
-    `wav`), `media_trim` (`start` / `end` in seconds) and `media_frame` (`at` seconds, PNG
-    or JPEG) are write tools: they return a dry-run plan (output name, what happens to
-    each stream, estimated size) that you approve before the same media job runs, named
-    and undoable like the dialog's. MCP clients get them with the other tools, under the
-    same client limits and approval cards. Scripts call `media_info(path)`,
-    `convert(src, preset)`, `extract_audio(src, codec)`, `trim(src, start, end)` and
-    `save_frame(src, secs)` from actions and rules; the changes are planned jobs like
-    `copy`. `[media] tools = false` refuses the write tools and the script functions,
-    `[media] ffmpeg = false` all of them; without the libraries they answer "FFmpeg
-    libraries not loaded".
-  - *Crash safety*: decoding runs inside Soyuz, so before a thumbnail or preview decodes a
-    file the file is noted in `<config dir>/media-inflight`. A file still noted at the
-    next start crashed the libraries; automatic previews skip it ("it crashed the media
-    library last time") until you open it in Quick Look, which tries again.
-  - *Codecs and patents*: Soyuz ships no patent licence. H.264, HEVC, AAC and other
-    formats may be patented in some jurisdictions; the libraries are distributed under
-    the LGPL-2.1 as FFmpeg's legal page describes, and the About dialog shows which build
-    is loaded.
+  - **Audio and video**: waveform and tags for audio; streams, chapters and a poster frame
+    for video; and a built-in player in the pane and in Quick Look. For the FFmpeg
+    libraries, the player, the media tools and their settings, see [Media](#media).
   - **Diff**: select exactly two text files and the preview compares them (older on the
     left; swap, unified or side by side).
 - **Terminal** (``Ctrl+` ``): your shell in the current folder. It follows navigation (and,
@@ -235,6 +163,257 @@ and *Retry failed*.
   - Saving puts the previous version in the trash as `<name>.bak` (`[editor]
     backup_to_trash`). Files changed on disk reload by themselves, or ask when you have
     unsaved changes. Closing a modified tab or the window asks first.
+
+## Media
+
+Soyuz previews, plays and converts video and audio with the **FFmpeg libraries**
+(`avcodec`, `avformat`, `avutil`, `swscale`, `swresample`), which it loads at run time.
+It never starts an `ffmpeg` program. The settings are under *Settings → Preview & search →
+Media* (`[media]`, see [CONFIG.md](CONFIG.md#media)).
+
+![A paused video in the preview pane, with the play / pause, scrubber, volume, mute and loop controls](../site/assets/shots/video-player.png)
+
+### The FFmpeg libraries
+
+- **Bundled.** The installers, zips and tarballs ship an LGPL build of FFmpeg 9.0 next to
+  the program (in `lib/soyuz/` in the Linux tarball). On Linux the distribution's
+  FFmpeg 8.x or 7.1 libraries also work, and the Flatpak uses the FFmpeg from its runtime.
+  You don't have to install anything.
+- **Where Soyuz looks**, in this order: the folder in `SOYUZ_FFMPEG_DIR` (for tests),
+  `[media] ffmpeg_dir`, the program's folder, the config folder's `ffmpeg/` sub-folder,
+  then the system's library folders.
+- **The status card** at the top of the Media page shows one of two states:
+  - *Loaded*, with the FFmpeg version, the folder, and the number of decoders and
+    encoders.
+  - *Not loaded*, with the reason and every folder that was searched. *Try again* looks
+    again, for example after you have copied the files in.
+
+  A GPL build still loads, but the card flags it, because Soyuz can't be redistributed
+  with a GPL build.
+- **Download FFmpeg runtime.** When the libraries don't load, the card offers this button.
+  The command palette has the same command.
+  - It downloads the libraries for your system from the `ffmpeg-runtime-<version>` release
+    of the update repository (`[updates] repo`, Settings → About & updates). Without a
+    repository, Soyuz doesn't go online.
+  - The download is checked against the release's SHA-256 list. Only the five libraries
+    and their licence files are unpacked, into `<config dir>/ffmpeg/`.
+  - The libraries load straight away, with no restart. A progress bar and *Cancel* are
+    shown while the download runs.
+  - Flatpak and MSIX packages don't offer it, because they bring their own libraries.
+- **Using your own build.** Any FFmpeg 9.0 shared build works (on Linux, 8.x and 7.1 too).
+  There are two ways to use one:
+  - Click *Choose…* and pick its `avcodec` file. Its folder becomes `[media] ffmpeg_dir`.
+  - Put the five libraries into `<config dir>/ffmpeg/`.
+
+  This is how you swap in another LGPL build, or a build with more codecs for your own use.
+  A new folder takes effect at the next load. Libraries that are already loaded stay
+  loaded until Soyuz restarts.
+- **Turning them off.** With `[media] ffmpeg = false`, videos show their container
+  metadata only, audio plays through the built-in Symphonia decoder, and the player and the
+  media tools are turned off.
+- **Other settings on the same page:** *Decoder threads* (`[media] threads`, 0 = one per
+  core), and the decode size (`[media] max_px`, the longest edge of frames decoded for
+  previews).
+
+### Previews and thumbnails
+
+- **Video** (`[preview] video`): the preview pane and Quick Look list the streams (codec
+  and profile, size, frame rate, pixel format, HDR, rotation, audio codec / channels /
+  rate, bitrates), chapters and tags. They also show a poster frame taken at
+  `[media] poster_secs` (0 = a tenth of the length, at most 5 s). The grid and gallery
+  views use a frame from the same point as the thumbnail. `Enter` opens the file in your
+  default player.
+- **Audio**: waveform, tags, cover art, duration and bitrate, with play / pause and seek
+  (click the waveform). `[media] audio_backend` picks the decoder:
+  - `auto` uses FFmpeg when it is loaded. FFmpeg plays Opus, WMA, APE, AC-3, DSD, Matroska
+    audio and everything else FFmpeg reads.
+  - Without FFmpeg, `auto` uses the built-in Symphonia decoder (mp3, flac, wav, ogg, aac,
+    alac).
+  - `ffmpeg` and `symphonia` force one decoder.
+
+  The facts list names the decoder in use.
+- Without the libraries, a video shows its metadata and a card that says where to get the
+  libraries.
+
+### The video player
+
+`[media] player` (on by default) plays videos in the preview pane and in Quick Look.
+
+- **In the window**: the poster shows first, with a play button. Click the button or the
+  picture, or press `K`, and the video plays in place, scaled to the view. The bar under
+  the picture has these controls:
+  - play / pause
+  - a scrubber: hovering shows the time under the pointer, and the lighter part is what is
+    buffered ahead
+  - elapsed and total time
+  - volume, mute and a loop toggle
+- **In the terminal UI** (`soyuz --tui`): the preview pane and Quick Look play videos too.
+  - Frames are drawn as terminal images (kitty, sixel, iTerm2 or half blocks) at
+    `[media] tui_fps` frames per second (8 by default). They are decoded no bigger than the
+    cells show.
+  - The status line under the picture shows play / pause, elapsed / total time, a text
+    progress bar, the volume, and `muted` / `loop`. Click the mark to play or pause, and
+    click the bar to seek.
+  - With `[tui] images = "off"`, a line of text replaces the picture and the sound still
+    plays.
+  - Screen-reader mode reads the status line as words ("Paused, 0:04 of 0:08, volume
+    80 %, muted").
+- **Keys** work while the player has the keyboard. In the window, that is Quick Look on a
+  video or audio file, or the pane's player after you click it or tab to it. In the
+  terminal UI, it is Quick Look or the focused preview pane while a player is open. The
+  keys are the *Player* context in Settings → Keys ([KEYBOARD.md](KEYBOARD.md)):
+
+  | Key | Does |
+  |---|---|
+  | `K` | play / pause |
+  | `J` / `←` | back by `[media] seek_step_secs` (5 s) |
+  | `L` / `→` | forward by the same step |
+  | `-` / `=` | volume down / up |
+  | `M` | mute / unmute |
+
+- **Player settings:**
+  - `[media] autoplay` starts playing as soon as a video is previewed.
+  - `[media] loop` sets the loop toggle's starting state.
+  - `[media] volume` and `muted` are saved when you change them in the player. They apply
+    to audio previews too.
+- **When playback stops:** when the preview moves to another file, when the pane closes,
+  and when Quick Look closes.
+- Decoding runs on worker threads at the view's size, so the file list stays responsive.
+  If the libraries can't open a file, the reason shows in place of the picture.
+  `[media] player = false` keeps the poster only.
+
+### Hardware decoding and GPU colour conversion
+
+- **Hardware decoding** (`[media] hw_decode`, default `auto`): the player decodes video on
+  the GPU when the codec allows it. It uses Direct3D 11 (D3D11VA) on Windows, VAAPI on
+  Linux and VideoToolbox on macOS.
+  - `off` decodes in software only. Naming the API forces it.
+  - Any failure, at the start or in the middle of a file, falls back to software decoding
+    without stopping playback.
+  - Thumbnails and posters always decode in software.
+- **GPU colour conversion** (`[media] gpu_yuv`, off by default): frames go to the GPU as
+  decoded (YUV). A shader converts them with the stream's own colour matrix
+  (BT.601 / 709 / 2020) and range, scales them, and tone-maps HDR (PQ / HLG) to SDR. It
+  needs the GPU renderer (the default, wgpu). With the OpenGL renderer, or with the
+  setting off, frames are converted to RGB on the CPU.
+- **When to change them:** turn hardware decoding off if a driver shows wrong colours or
+  corrupt frames. Turn GPU colour conversion on for HDR videos, or for large pictures on a
+  slow CPU.
+
+### Media tools
+
+There are four media tools: *Convert media…*, *Extract audio…*, *Trim media…* and *Save
+video frame…*. Find them in the context menu of a video or audio file, or in the command
+palette (`[media] tools`, on by default). All four open one dialog, with a switcher
+between the tools. The terminal UI has the same dialog.
+
+![The media tools dialog converting a video: the input summary, the preset, the output name and the plan](../site/assets/shots/media-tools.png)
+
+- **Convert** uses built-in presets:
+  - Matroska or MP4 with the streams copied (no re-encoding, fast)
+  - MP4 with H.264 or HEVC on the machine's hardware encoder, shown only when there is one
+  - WebM with VP9 or VP8 and Opus
+  - ProRes and MPEG-4
+  - audio as FLAC, AAC, Opus, WAV or ALAC
+
+  Only the presets this FFmpeg build can encode are listed.
+- **Extract audio** keeps the audio track as it is, or re-encodes it (FLAC, AAC, Opus,
+  WAV).
+- **Trim** takes a start and an end, in seconds (`12.5`) or `m:ss` (`1:05.5`). *Cut on
+  keyframes* is fast and doesn't re-encode. With it unticked, the cut is frame-exact.
+- **Save frame** saves the frame at a given time as a PNG or JPEG.
+
+**Before anything runs**, the dialog reads the file (off the UI thread) and shows a plan:
+- what happens to every stream: copied, encoded (and with which encoder), or dropped (and
+  why)
+- the estimated size
+
+The output goes beside the source, with the source's name and the new extension. If that
+name is taken, the dialog offers *Ask*, *Keep both*, *Replace* or *Skip*. `Enter` runs the
+tool and `Esc` cancels.
+
+**Each run is a job** in the activity panel:
+- It runs at low priority, and you can pause or cancel it.
+- Cancelling leaves nothing half-written: the output is written to a `.part` file and
+  renamed at the end.
+- You can undo it while the output is unchanged. Undo moves the output to the trash, and a
+  replaced file comes back from the trash.
+
+With several files selected, Convert and Extract audio make one job per file. Trim and
+Save frame use the first file. Without the libraries, the menu entries are disabled and say
+why.
+
+<!-- TODO(orchestrator): mention the transcoder fidelity work from vgaps (chapters, tags,
+cover art and rotation kept; MP4 output optimized for streaming; `[media] threads` used by
+the media tools) once it is merged. -->
+
+### Media tools for the assistant, MCP clients and scripts
+
+- **AI assistant and MCP clients** get one read tool and four write tools:
+  - `media_info` (read) returns the container, duration, size, streams and codecs,
+    rotation, tags, chapters, and the presets this build can encode.
+  - `media_convert` takes a preset name such as `mkv-copy` or `audio-flac`.
+  - `media_extract_audio` takes `copy`, `flac`, `aac`, `opus` or `wav`.
+  - `media_trim` takes `start` / `end` in seconds.
+  - `media_frame` takes `at` in seconds, and PNG or JPEG.
+
+  The write tools return a dry-run plan (output name, what happens to each stream,
+  estimated size). You approve the plan, then the same media job runs as from the dialog,
+  with the same naming and undo. MCP clients get these tools with the others, under the
+  same client limits and approval cards. That includes `soyuz --mcp --mcp-headless`,
+  which runs without a window.
+- **Scripts** call `media_info(path)`, `convert(src, preset)`, `extract_audio(src, codec)`,
+  `trim(src, start, end)` and `save_frame(src, secs)` from actions and rules. The changes
+  they make are planned jobs, like `copy`.
+- **Turning them off:** `[media] tools = false` refuses the write tools and the script
+  functions. `[media] ffmpeg = false` refuses all of them. Without the libraries, they
+  answer "FFmpeg libraries not loaded".
+
+### Codecs and patents
+
+- **The libraries Soyuz ships** are an **LGPL-2.1 build** of FFmpeg 9.0. It includes dav1d
+  for AV1, libvpx for VP8 / VP9 and libopus, and nothing GPL or "nonfree". Its sources,
+  build configuration and licence are published with the `ffmpeg-runtime-<version>`
+  release. The About dialog names the loaded build.
+- **There is no software H.264 or HEVC encoder**, because x264 and x265 are GPL.
+  - Converting to H.264 or HEVC uses your GPU's hardware encoder instead: NVIDIA NVENC,
+    AMD AMF or Intel Quick Sync on Windows, VideoToolbox on macOS, VAAPI on Linux.
+  - Without a hardware encoder, those presets are not listed.
+  - Decoding H.264, HEVC and the other common formats works everywhere.
+- **Soyuz ships no patent licence.** H.264, HEVC, AAC and other formats may be covered by
+  patents in some countries. Whether you need a licence to use them depends on where you
+  are and how you use them.
+- **Adding codecs:** the LGPL lets you replace the libraries with a build you compiled
+  yourself (see [Using your own build](#the-ffmpeg-libraries)). That is how you add codecs
+  Soyuz doesn't ship.
+
+### Troubleshooting media
+
+- **"FFmpeg libraries not loaded", or no video previews**: open Settings → Preview &
+  search → Media. The status card says why: a missing file, a wrong version, or a library
+  that failed its self-test. It also lists the folders searched. To fix it, do one of
+  these, then click *Try again*:
+  - Click *Download FFmpeg runtime*.
+  - Choose a folder with *Choose…*.
+  - Unpack the `ffmpeg-runtime-<version>` archive into `<config dir>/ffmpeg/`.
+
+  All five libraries must come from the same build and version (9.0, or 8.x / 7.1 on
+  Linux).
+- **The download fails with "cannot replace …"**: the libraries in `<config dir>/ffmpeg/`
+  are in use right now. Restart Soyuz and download again.
+- **A file shows "it crashed the media library last time"**: decoding runs inside Soyuz.
+  Before a thumbnail or preview decodes a file, Soyuz notes the file in
+  `<config dir>/media-inflight`. If a file is still noted at the next start, it crashed
+  the libraries, and thumbnails and the preview pane skip it from then on. To try it again
+  on purpose, open it in Quick Look (`Space`). If that works, the file is no longer
+  skipped.
+- **Wrong colours, or green or corrupt frames**: set *Hardware decoding* to *Off*. If only
+  HDR videos look washed out, turn *GPU colour conversion* on instead.
+- **Choppy playback in the terminal UI**: lower `[media] tui_fps`, or use a terminal with
+  kitty or sixel graphics. Half blocks are drawn as text and are the slowest.
+
+<!-- TODO(orchestrator): describe the player's audio start-up and memory limits from
+vplayer (audio pre-roll, byte-bounded queues) if they are user-visible. -->
 
 ## Tools
 
@@ -368,7 +547,7 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 
 ## Scripts, automations and the command line
 
-- **Scripts** (Settings → Scripts): Rhai files in the `scripts` folder next to `config.toml`, reloaded on save. A script registers actions (`register_action`, palette + key binding `run_script:<file>/<id>`), right-click entries with conditions (`register_menu_item`), columns (`register_column`, choose them in the column menu) and previewers (`register_previewer`). Scripts run sandboxed with time and operation limits; every change they ask for is shown for approval and runs as an undoable job. The media functions (`media_info`, `convert`, `extract_audio`, `trim`, `save_frame`) are listed under [Media tools](#panels-preview-terminal-activity-shelf). Start from a template on the Scripts page.
+- **Scripts** (Settings → Scripts): Rhai files in the `scripts` folder next to `config.toml`, reloaded on save. A script registers actions (`register_action`, palette + key binding `run_script:<file>/<id>`), right-click entries with conditions (`register_menu_item`), columns (`register_column`, choose them in the column menu) and previewers (`register_previewer`). Scripts run sandboxed with time and operation limits; every change they ask for is shown for approval and runs as an undoable job. The media functions (`media_info`, `convert`, `extract_audio`, `trim`, `save_frame`) are listed under [Media tools for the assistant, MCP clients and scripts](#media-tools-for-the-assistant-mcp-clients-and-scripts). Start from a template on the Scripts page.
 - **Automations** (Settings → Automations): rules that watch a folder and act on matching items (name globs / regex, kind, size, age) after they stop changing: move, copy, rename with a pattern, tag, trash or run a script. Each rule shows what it would match right now, has *Run now*, a dry-run switch and a run log. Every step is a job with a robot badge in the activity panel, so it can be undone.
 - **Command line**: `soyuz cp|mv|rm|trash|ls|open|reveal|jobs` (or `soyuz-cli`, which a shell waits for). With a Soyuz window open the jobs run there, with progress in the activity panel and conflict prompts in the window; otherwise they run in the terminal. `--queue` returns at once, `--json` prints machine-readable events, `--conflict skip|overwrite|rename|ask`. Exit codes: 0 ok, 1 failed, 2 usage, 3 cancelled, 4 unavailable, 5 not found.
 
@@ -574,6 +753,9 @@ keyboard (arrows, PageUp / PageDown, Home / End; Esc or Tab goes back). Space (F
 Commander preset) opens Quick Look over the list: ← / → (or ↑ / ↓) step through the folder, Home / End jump to the
 first / last item, PageUp / PageDown and Shift+Up / Down scroll, Enter opens the item,
 Esc or Space closes it; the preview scroll keys scroll Quick Look while it is open.
+Videos and audio play in the pane and in Quick Look, with the same *Player* keys as the
+window (K, J / L, ← / →, - / =, M) and frames drawn as terminal images at
+`[media] tui_fps`; see [The video player](#the-video-player).
 
 ![The preview pane beside the file list, showing a README](../site/assets/shots/tui-preview.svg)
 
@@ -1097,5 +1279,6 @@ Put an empty file named `portable` next to the executable and Soyuz keeps everyt
   the queue mode to *Per device*.
 - **A setting does not stick** — check for a parse error toast; the file may have been
   edited into an invalid state. *Settings → Config file → Reload from disk* re-reads it.
+- **Videos don't preview or play** — see [Troubleshooting media](#troubleshooting-media).
 - **Logs** — run from a terminal with `RUST_LOG=debug soyuz` (release builds on Windows
   have no console; use the debug build).

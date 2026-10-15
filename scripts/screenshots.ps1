@@ -18,7 +18,12 @@
   Maximum width of the committed PNGs (default 1600).
 
 .PARAMETER Only
-  Run only the sessions whose names match (main, activity, treemap).
+  Run only the sessions whose names match (main, activity, treemap, media).
+
+  The media session (video-player.png, media-tools.png) needs the FFmpeg libraries, from
+  SOYUZ_FFMPEG_DIR or next to the exe, and an ffmpeg program for the demo video (see
+  demo-fixture.ps1 -Ffmpeg); without them it is skipped with a message and the previous
+  media screenshots are kept.
 
 .EXAMPLE
   ./scripts/screenshots.ps1
@@ -198,9 +203,32 @@ try {
     Write-Session @(, @(''))
     Invoke-Session 'treemap' (@('size:1600x1000', 'wait:4000') + (Shot 'treemap.png') + @('quit')) @{ SOYUZ_OPEN_TOOL = "treemap=$Demo" }
 
+    # ---- Media: the video player in the preview pane (playing, muted so nothing is heard)
+    # and the media tools dialog on the same file. Needs the libraries and the demo video;
+    # otherwise skipped, keeping the previous pictures.
+    $mediaShots = @('video-player.png', 'media-tools.png')
+    $libs = [bool]$env:SOYUZ_FFMPEG_DIR -or [bool](Get-ChildItem -LiteralPath $exeDir -Filter 'avcodec-*.dll' -ErrorAction SilentlyContinue)
+    $clip = D 'Videos\Launch replay.mp4'
+    if ($libs -and (Test-Path -LiteralPath $clip)) {
+        Write-Config @"
+[media]
+muted = true
+"@
+        Write-Session @(, @('Videos'))
+        Invoke-Session 'media' (@(
+                'size:1600x1000', 'wait:2500', 'select:Launch replay.mp4', 'toggle_preview_pane', 'wait:2500'
+                'player_play_pause', 'wait:3000') + (Shot 'video-player.png') + @('player_play_pause', 'wait:500'
+                # Drawn inside the window, so the window capture includes the dialog.
+                'config:appearance.native_dialogs=false', 'media_convert', 'wait:2500') + (Shot 'media-tools.png') + @(
+                'keys:{Escape}', 'wait:400', 'quit')) @{}
+        $mediaShots = @()
+    } elseif ($Only.Count -eq 0 -or $Only -contains 'media') {
+        Write-Warning 'media session skipped: set SOYUZ_FFMPEG_DIR to a folder with the FFmpeg libraries (and ffmpeg for the demo video)'
+    }
+
     # ---- Downscale into the output folder (replacing the previous screenshots).
     if ((Get-ChildItem -LiteralPath $raw -Filter *.png).Count -gt 0 -and $Only.Count -eq 0) {
-        Get-ChildItem -LiteralPath $OutDir -Filter *.png | Remove-Item -Force
+        Get-ChildItem -LiteralPath $OutDir -Filter *.png | Where-Object { $mediaShots -notcontains $_.Name } | Remove-Item -Force
     }
     $total = 0
     Get-ChildItem -LiteralPath $raw -Filter *.png | Sort-Object Name | ForEach-Object {

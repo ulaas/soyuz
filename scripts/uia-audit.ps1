@@ -19,7 +19,16 @@
        settings  the settings window (General)
        appearance  the settings window (Appearance: dropdowns, sliders)
        confirm   the "delete permanently" confirmation (cancelled with Esc afterwards)
+       video     the video player in Quick Look (Videos\Launch replay.mp4, played for a
+                 moment, then paused; muted)
+       mediatools  the media tools dialog (Convert) on the same video, cancelled with Esc
        progress  a throttled copy job with the activity panel
+     The video and mediatools states need the FFmpeg libraries (SOYUZ_FFMPEG_DIR or next
+     to the exe) and the demo video (demo-fixture.ps1 renders it with an ffmpeg program
+     from SOYUZ_FFMPEG_DIR or the PATH); without them they are skipped with a warning.
+     With SOYUZ_WINDOW_POS set (an off-screen run), dialogs are drawn inside the main window
+     ([appearance] native_dialogs = false): a native dialog window that is never activated
+     does not deliver its AccessKit tree. The content and roles are the same.
   3. In each state it reads the whole UIA subtree of the Soyuz window in one cached call
      (System.Windows.Automation, UIAutomationClient) and checks:
        G1 the window has a name
@@ -42,6 +51,7 @@
 .EXAMPLE
   cargo build --release -p soyuz-app; ./scripts/uia-audit.ps1
   ./scripts/uia-audit.ps1 -Report $env:TEMP\uia.md -Only main,confirm
+  $env:SOYUZ_FFMPEG_DIR = '<folder with the FFmpeg DLLs>'; ./scripts/uia-audit.ps1 -Only video,mediatools
 #>
 [CmdletBinding()]
 param(
@@ -248,6 +258,28 @@ $phaseChecks = @{
         $btn = @($els | Where-Object { $_.Type -eq 'Button' -and $_.Name -match 'Delete|Cancel' })
         Check 'confirm' 'C2' "its buttons are named ($(($btn | ForEach-Object Name) -join ', '))" ($btn.Count -ge 2)
     }
+    video    = {
+        param($els)
+        $sliders = @($els | Where-Object Type -eq 'Slider')
+        foreach ($want in @('Position', 'Volume')) {
+            $s = @($sliders | Where-Object Name -eq $want)
+            Check 'video' 'V1' "the player's '$want' slider is named and has a value ($(($s | ForEach-Object { "$($_.Value)|$($_.RangeVal)" }) -join '; '))" ($s.Count -ge 1 -and ($s | Where-Object { $_.Value -or $null -ne $_.RangeVal }).Count -ge 1)
+        }
+        $buttons = @($els | Where-Object { $_.Type -eq 'Button' -and $_.Name })
+        foreach ($want in @('Video: Launch replay.mp4', 'Play|Pause', 'Mute|Unmute', 'Loop')) {
+            Check 'video' 'V2' "player button '$want' is present" (($buttons | Where-Object { $_.Name -match "^($want)$" }).Count -ge 1)
+        }
+    }
+    mediatools = {
+        param($els)
+        $dlg = @($els | Where-Object { $_.Type -eq 'Window' -and $_.Name -match 'Convert media' })
+        Check 'mediatools' 'T1' "the media tools dialog is a named window ($(($dlg | ForEach-Object { "$($_.Loc): $($_.Name)" }) -join '; '))" ($dlg.Count -ge 1)
+        $tools = @($els | Where-Object { $_.Name -in @('Convert', 'Extract audio', 'Trim', 'Save frame') })
+        Check 'mediatools' 'T2' "the tool switcher and the Run button are named ($(($tools | ForEach-Object Name) -join ', '))" ($tools.Count -ge 4)
+        $fields = @($els | Where-Object { @('Edit', 'ComboBox') -contains $_.Type })
+        $unnamed = @($fields | Where-Object { -not $_.Name.Trim() })
+        Check 'mediatools' 'T3' "the preset and the output name fields are named ($($fields.Count - $unnamed.Count)/$($fields.Count))" ($fields.Count -ge 1 -and $unnamed.Count -eq 0) @($unnamed | ForEach-Object { Describe $_ })
+    }
     progress = {
         param($els)
         $bars = @($els | Where-Object Type -eq 'ProgressBar')
@@ -261,7 +293,13 @@ $phaseChecks = @{
 # Run
 # ---------------------------------------------------------------------------
 
-$phases = @('main', 'palette', 'settings', 'appearance', 'confirm', 'progress') | Where-Object { $Only.Count -eq 0 -or $Only -contains $_ }
+$phases = @('main', 'palette', 'settings', 'appearance', 'confirm', 'video', 'mediatools', 'progress') | Where-Object { $Only.Count -eq 0 -or $Only -contains $_ }
+$clip = D 'Videos\Launch replay.mp4'
+$libs = [bool]$env:SOYUZ_FFMPEG_DIR -or [bool](Get-ChildItem -LiteralPath $exeDir -Filter 'avcodec-*.dll' -ErrorAction SilentlyContinue)
+if (-not ($libs -and (Test-Path -LiteralPath $clip)) -and ($phases -contains 'video' -or $phases -contains 'mediatools')) {
+    Write-Warning 'video / mediatools skipped: set SOYUZ_FFMPEG_DIR to a folder with the FFmpeg libraries (and ffmpeg for the demo video)'
+    $phases = @($phases | Where-Object { $_ -notin @('video', 'mediatools') })
+}
 function Hold([string]$name) { "mark:phase-$name"; "until:$(Join-Path $work "go-$name")" }
 
 $steps = @('size:1400x900', 'wait:2500', 'select:Q3 mission report.md', 'wait:800')
@@ -271,6 +309,15 @@ if ($phases -contains 'settings') { $steps += @('settings:general', 'wait:1200')
 if ($phases -contains 'appearance') { $steps += @('settings:appearance', 'wait:1200') + (Hold 'appearance') + @('settings:close', 'wait:400') }
 if ($phases -contains 'confirm') {
     $steps += @('focus_list', 'select:Launch checklist.txt', 'delete_permanent', 'wait:1000') + (Hold 'confirm') + @('keys:{Escape}', 'wait:600', "expect:exists=$(D 'Documents\Reports\Launch checklist.txt')")
+}
+if ($phases -contains 'video' -or $phases -contains 'mediatools') {
+    $steps += @("cd:$(D 'Videos')", 'wait:1000', 'select:Launch replay.mp4', 'wait:500')
+    # Quick Look: its player bar is wide enough for the volume slider (the pane's hides it
+    # when narrow).
+    if ($phases -contains 'video') {
+        $steps += @('quick_look', 'wait:2000', 'player_play_pause', 'wait:2000', 'player_play_pause', 'wait:800') + (Hold 'video') + @('keys:{Escape}', 'wait:500')
+    }
+    if ($phases -contains 'mediatools') { $steps += @('focus_list', 'media_convert', 'wait:2500') + (Hold 'mediatools') + @('keys:{Escape}', 'wait:500') }
 }
 if ($phases -contains 'progress') { $steps += @('select_tab:2', 'wait:1200', 'select:Telemetry dump.dat', 'copy_to_other_pane', 'wait:2500') + (Hold 'progress') + @('jobs_cancel_all', 'wait:1500') }
 $steps += 'quit'
@@ -288,12 +335,16 @@ language = "en-US"
 
 [appearance]
 theme = "dark"
+$(if ($env:SOYUZ_WINDOW_POS) { 'native_dialogs = false' })
 
 [behaviour]
 restore_session = true
 
 [jobs]
 auto_open_activity = true
+
+[media]
+muted = true
 
 [sidebar]
 mode = "both"
@@ -353,6 +404,12 @@ location = $(Q (D 'Archive'))
             if ($win) { $els = @(Get-Snapshot $win) }
             if ($els.Count -ge 20) { break }
             Start-Sleep -Milliseconds 300
+        }
+        # A dialog is its own native window: its AccessKit tree is built only after the first
+        # request reached it, so read the tree once more.
+        if (@('confirm', 'mediatools') -contains $ph) {
+            Start-Sleep -Milliseconds 1200
+            $els = @(Get-Snapshot $win)
         }
         if (-not $win) { throw 'no Soyuz window found through UI Automation' }
         Write-Host "   $($els.Count) elements: $(Count-Types $els)"
