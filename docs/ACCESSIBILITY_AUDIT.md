@@ -12,6 +12,11 @@ focus movement or whether a workflow makes sense by ear.
 ```powershell
 cargo build --release -p soyuz-app
 ./scripts/uia-audit.ps1 -Report $env:TEMP\uia.md      # -Only main,confirm  -Dump elements.jsonl
+
+# With the media states, off screen (nothing appears on the desktop):
+$env:SOYUZ_FFMPEG_DIR = '<folder with the FFmpeg 9.0 DLLs and ffmpeg.exe>'
+$env:SOYUZ_WINDOW_POS = '-4000,-4000'
+./scripts/uia-audit.ps1 -Report $env:TEMP\uia.md
 ```
 
 - It creates the demo tree (`scripts/demo-fixture.ps1`) and runs the release build in portable
@@ -23,6 +28,17 @@ cargo build --release -p soyuz-app
   - Dialog roles come from `LocalizedControlType`, because the managed client has no
     `AriaRole` constant.
 - The exit code is the number of failed checks.
+- **Media states.** `video` and `mediatools` need the FFmpeg libraries (`SOYUZ_FFMPEG_DIR`,
+  or the DLLs next to the exe) and the demo video `Videos\Launch replay.mp4`, which
+  `demo-fixture.ps1` renders with an `ffmpeg` program from `SOYUZ_FFMPEG_DIR` or the `PATH`
+  (any LGPL build: MPEG-4 Part 2 video, AAC audio). Without them the two states are
+  skipped with a warning. The player runs muted (`[media] muted = true`).
+- **Off screen.** With `SOYUZ_WINDOW_POS` set the app never activates its windows, and a
+  native dialog window that is never activated does not deliver its AccessKit tree (the
+  confirmation and media tools states then see only the dialog's title bar). The script
+  therefore sets `[appearance] native_dialogs = false` for off-screen runs, so dialogs are
+  drawn inside the main window with the same content and roles. On-screen runs keep native
+  dialogs.
 
 | State | What the script sets up |
 |---|---|
@@ -31,6 +47,8 @@ cargo build --release -p soyuz-app
 | settings | settings window, General |
 | appearance | settings window, Appearance (dropdowns, sliders, color swatches) |
 | confirm | the "delete permanently" confirmation, cancelled with Esc (the script checks the file still exists) |
+| video | Quick Look on `Videos\Launch replay.mp4`, played for two seconds and paused (Quick Look's bar is wide enough for the volume slider) |
+| mediatools | the media tools dialog (*Convert media…*) on the same video, with its probe and plan done, cancelled with Esc |
 | progress | a throttled copy job (`SOYUZ_THROTTLE_MBPS=2`) with the activity panel |
 
 Every state runs the generic checks below. Some states add their own checks.
@@ -47,6 +65,8 @@ Every state runs the generic checks below. Some states add their own checks.
 | S1–S2 (settings) | the settings window is a named window; switches are named |
 | A1 (appearance) | combo boxes, sliders, spinners and fields are named |
 | C1–C2 (confirm) | the confirmation is a named (alert) dialog; its Delete / Cancel buttons are named |
+| V1–V2 (video) | the Position and Volume sliders are named and have a value; the picture ("Video: *name*"), Play / Pause, Mute / Unmute and Loop buttons are present |
+| T1–T3 (mediatools) | the dialog is a named window ("Convert media"); the tool switcher (Convert, Extract audio, Trim, Save frame) and the Run button are named; the Preset combo box and the text fields are named |
 | R1–R2 (progress) | a job progress bar exists, with a name and a value from 0 to 100 |
 
 ## Results (2026-10-09, Windows 11, release build)
@@ -83,13 +103,40 @@ in the script:
 **Final run: 48 checks, 0 failed.** Element counts per state: main 105, palette 122, settings
 168, appearance 348, confirm 111, progress 122.
 
+## Results (2026-10-15, Windows 11, release build, Phase V media states)
+
+Off-screen run (`SOYUZ_WINDOW_POS=-4000,-4000`) with FFmpeg 9.0 (an LGPL shared build) from
+`SOYUZ_FFMPEG_DIR`: **67 checks, 2 failed.** Element counts per state: main 91, palette 108,
+settings 162, appearance 333, confirm 97, video 113, mediatools 118, progress 126.
+
+- **Audit fix:** the first off-screen run also failed C1 / C2 and T2 because native dialog
+  windows that are never activated expose only their title bar to UIA. The script now
+  draws dialogs inside the window when `SOYUZ_WINDOW_POS` is set (see above).
+- **Audit fix:** the preview pane's player bar has no volume slider at the pane's default
+  width (it is left out below 330 px), so the `video` state uses Quick Look.
+
+**Real findings in the app, open:**
+
+| # | Where | Finding | Suggested fix |
+|---|---|---|---|
+| 1 | Media tools dialog | The output name field is an unnamed edit (G3, T3); its "Output name" caption is a separate label. The Trim start / end and Save frame time fields use the same helper (`text_field` in `ui/dialogs/media_tools.rs`) and are unnamed too (not in an audited state) | `a11y::name` with the caption (`dialogs-media-name`, `-start`, `-end`, `-at`) |
+| 2 | Video player in the preview pane | At the default pane width the volume slider is not drawn, so it is missing from the tree; only `-` / `=` change the volume there | keep a compact volume control, or document it (done in ACCESSIBILITY.md) |
+
+Passed: the player's Position slider (value "0:02 / 0:08" plus a 0–100 range value), Volume
+("80%"), the picture button "Video: Launch replay.mp4", Play / Pause, Mute / Unmute and
+Loop; the media tools dialog as a named dialog with its tool switcher, Preset combo box
+and Cancel / Convert buttons named.
+
 ## Not covered
 
 - **Other states.** The audit does not visit:
   - the assistant panel and its plan cards
   - editors (text, hex, image)
   - tools (treemap, compare, duplicates, sync, versions)
-  - the properties dialog, Quick Look, the terminal and remote connections
+  - the properties dialog, Quick Look on anything but a video, the terminal and remote
+    connections
+  - the media tools' Extract audio, Trim and Save frame pages, the Settings → Media page
+    and the FFmpeg runtime download
   - the welcome card, toasts and context menus
 
   Add a state to the script before relying on any of these.
