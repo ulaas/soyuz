@@ -550,6 +550,10 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
 }
 
 fn meta_for(job: &JournalJob, op: OpKind) -> JobMeta {
+    // A resumed media job keeps its tool and output name ("Trimming “a.mp4” to “a.cut.mp4”").
+    if let (OpKind::Media(_), Some(meta)) = (op, crate::models::media_tools::job_meta(&job.kind)) {
+        return meta;
+    }
     let roots: Vec<PathBuf> = match &job.kind {
         JobKind::Copy { sources, .. } | JobKind::Move { sources, .. } | JobKind::Compress { sources, .. } => {
             sources.clone()
@@ -581,7 +585,7 @@ fn apply(app: &mut AppCore, host: &dyn Host, a: RecoveryAction) {
             let mut started = 0;
             for job in &jobs {
                 if let Some(id) = app.fileops.jobs.engine().resume_journaled(job) {
-                    app.fileops.jobs.track(id, meta_for(job, OpKind::from_brief(job.kind.brief())));
+                    app.fileops.jobs.track(id, meta_for(job, OpKind::of_kind(&job.kind)));
                     started += 1;
                 }
             }
@@ -677,6 +681,34 @@ mod tests {
             assert_eq!(safe_mode_args(FrontendKind::Tui, exe), vec!["--safe-mode"]);
             assert_eq!(safe_mode_args(FrontendKind::Gui, exe), vec!["--safe-mode"]);
         }
+    }
+
+    #[test]
+    fn resumed_media_jobs_keep_their_tool_in_the_title() {
+        let kind = JobKind::Media {
+            src: "/v/clip.mp4".into(),
+            dest: "/v/clip.cut.mp4".into(),
+            op: soyuz_media::MediaOp::Trim { start: 1.0, end: 2.0, stream_copy: true },
+        };
+        let job = JournalJob {
+            id: 3,
+            label: "Trim".into(),
+            kind,
+            options: soyuz_jobs::JobOptions::default(),
+            started: SystemTime::UNIX_EPOCH,
+            records: Vec::new(),
+            stamps: Vec::new(),
+            items_done: 0,
+            items_total: 1,
+            bytes_done: 0,
+            bytes_total: 0,
+        };
+        let meta = meta_for(&job, OpKind::of_kind(&job.kind));
+        assert_eq!(meta.op, OpKind::Media(crate::models::media_tools::MediaTool::Trim));
+        let title = crate::ops::fileops::names::job_title(&meta, true, None, "Resume: Trim");
+        assert_eq!(title, "Trimming \u{201c}clip.mp4\u{201d} to \u{201c}clip.cut.mp4\u{201d}");
+        // A roll back stays an undo.
+        assert_eq!(meta_for(&job, OpKind::Undo).op, OpKind::Undo);
     }
 
     #[test]

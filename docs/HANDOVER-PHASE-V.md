@@ -42,8 +42,40 @@ Gates after wave 3 on Windows: fmt, clippy (`-D warnings`), `cargo deny`, unsafe
 2,363 workspace tests, and 1,538 `soyuz-media` / `soyuz-appcore` / `soyuz-jobs` / `soyuz-tui`
 tests against FFmpeg 9.0.
 
-Wave 3 open points: `[media] threads` is not passed to the transcoder yet; a resumed trim
-job is labelled "Converting…"; the media-tools dialog has had no manual run in the app.
+Wave 3 open points: the media-tools dialog has had no manual run in the app. Closed in
+the converter gap pass (branch `vgaps`):
+
+- `[media] threads` reaches the transcoder: `JobOptions::media` (`soyuz_jobs::MediaOptions`,
+  serde default, kept by the crash journal) is filled from `[media]` on submit
+  (`JobsService::submit` / `reconfigure`) and handed to `soyuz_media::run_with` as
+  `RunOptions`; decoders and video encoders get `threads` (0 = `auto`).
+- A resumed media job keeps its tool in the title ("Trimming …", not "Converting …"):
+  `OpKind::of_kind` reads the tool from the `MediaOp`, and `services/crash.rs` tracks resumed
+  media jobs with `media_tools::job_meta` (tests: `a_resumed_trim_keeps_its_op_label_and_options`,
+  `resumed_media_jobs_keep_their_tool_in_the_title`). Script / CLI submissions in
+  `automation/mod.rs` and `ai/state.rs` still build their meta with `OpKind::from_brief`
+  (shown as Convert); `OpKind::of_kind` is the drop-in fix.
+- Transcoder fidelity (`tests/fidelity.rs`, on the committed fixtures):
+  - **Chapters** are written for MP4 / M4A / MOV, Matroska / WebM, Ogg, FLAC and MP3
+    (`mux::container_keeps_chapters`) with all their tags, moved to the output's time zero
+    and clipped to a trim window; other containers get a plan / run warning.
+  - **Tags**: container and stream tags are copied as before; Ogg (stream tags only) gets
+    the container tags merged into each audio stream.
+  - **Cover art** (attached pictures) is copied wherever the container has a slot
+    (`mux::container_holds_cover`: MP4 / M4A / MOV `covr`, MP3 `APIC`, FLAC `PICTURE`,
+    Matroska as an attachment, since its muxer would write a one-frame video track); its
+    one packet is written once at time 0, whatever the trim window. Ogg / Opus, WAV, WebM
+    and the rest drop it quietly (FFmpeg's Ogg muxer writes no `METADATA_BLOCK_PICTURE`).
+  - **Rotation** (display matrix) is kept by MP4 / M4A / MOV and Matroska / WebM, copied or
+    re-encoded (`mux::container_keeps_rotation`). AVI, MPEG-TS, Ogg and the rest have no
+    field for it: the picture stays as coded and the plan / run warn ("the rotation (270
+    degrees) is lost"). Rotating the pixels instead would need a filter graph (not bound).
+  - **Faststart** for MP4 / M4A / MOV: FFmpeg's `movflags=+faststart` re-opens the output
+    by URL, which our write AVIO cannot offer, so `faststart::relocate` (plain Rust) moves
+    the `moov` in front of the `mdat` after the trailer: in place, same file length, every
+    `stco` / `co64` offset patched; fragmented files, a `moov` over 256 MiB or a 32-bit
+    offset that would overflow leave the file as written. New key `[media] faststart`
+    (true), Settings row "Web-ready MP4".
 
 ## How the pieces fit
 
@@ -60,6 +92,7 @@ soyuz-media    lib.rs     Runtime::get(dirs) / loaded(), search_dirs(), lib_file
                audio.rs   AudioReader (f32 interleaved, seek), peaks()
                player.rs  Player (threads, clock, seek; frames → FrameSink, audio → AudioSink)
                transcode.rs, presets.rs, mux.rs   run / plan, 14 presets, container tables
+               faststart.rs  moov before mdat after the trailer (plain Rust)
                sys/       the only unsafe code: loader, symbols, layout, avio, demux, codec,
                           scale, resample, check (self-test)
         │
@@ -95,11 +128,12 @@ Key properties of `soyuz-media`:
 `ffmpeg` (true), `ffmpeg_dir` (""), `threads` (0 = auto), `hw_decode` ("auto"),
 `audio_backend` ("auto"), `player` (true), `autoplay` (false), `loop` (false), `volume`
 (80), `muted` (false), `seek_step_secs` (5.0), `max_px` (1280), `tui_fps` (8),
-`poster_secs` (0.0 = a fraction of the duration, as before), `tools` (true).
+`poster_secs` (0.0 = a fraction of the duration, as before), `tools` (true), `faststart` (true).
 
 Read today (with GUI rows in Settings → Preview → Media): `ffmpeg`, `ffmpeg_dir`, `threads`,
 `max_px`, `poster_secs`, since wave 2 `audio_backend`, `player`, `autoplay`, `loop`,
-`volume`, `muted`, `seek_step_secs`, and since wave 3 `tui_fps` and `tools`. Still unread:
+`volume`, `muted`, `seek_step_secs`, and since wave 3 `tui_fps` and `tools`, since the gap pass `faststart` (and `threads` also
+by the media tools). Still unread:
 `hw_decode` (V4b); add its GUI row in the step that starts reading it (no dead settings).
 `[preview] video` (was `video_ffmpeg`) turns video previews on or off.
 

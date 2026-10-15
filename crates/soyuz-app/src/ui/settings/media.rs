@@ -166,6 +166,14 @@ pub fn media(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.media.gpu_yuv);
             },
         );
+        r.row_kw(
+            tr!("settings-media-faststart"),
+            tr!("settings-media-faststart-desc"),
+            "faststart moov index mp4 mov m4a streaming web",
+            |ui| {
+                switch(ui, &mut d.media.faststart);
+            },
+        );
     });
     if retry {
         media::retry();

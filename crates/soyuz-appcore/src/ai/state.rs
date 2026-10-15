@@ -1302,8 +1302,11 @@ fn submit(app: &mut AppCore, host: &dyn Host, task: TaskId, plan: &Plan) -> Resu
     match &plan.action {
         PlanAction::Job(_) => {
             let mut spec = exec::task_spec(task, plan).ok_or("no job")?;
-            // Merge the configured copy options (preserve, reflink, buffers, verify).
-            spec.options.copy = app.fileops.jobs.spec(spec.kind.clone()).options.copy;
+            // Merge the configured copy options (preserve, reflink, buffers, verify) and the
+            // transcoder options (`[media] threads`, `faststart`).
+            let base = app.fileops.jobs.spec(spec.kind.clone()).options;
+            spec.options.copy = base.copy;
+            spec.options.media = base.media;
             let media = crate::models::media_tools::job_meta(&spec.kind);
             let op = media.as_ref().map_or_else(|| OpKind::from_brief(spec.kind.brief()), |m| m.op);
             let items: Vec<PathBuf> =

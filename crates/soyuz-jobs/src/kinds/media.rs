@@ -165,7 +165,8 @@ pub(crate) fn run_media(ctx: &JobCtx, src: &Path, dest: &Path, op: &MediaOp) -> 
             last = last.max(done);
         };
         let mut check = || ctx.checkpoint().map_err(|_| Cancelled);
-        let res = soyuz_media::run(&rt, src, &out, op, &mut progress, &mut check);
+        let opts = ctx.opts.media.run_options();
+        let res = soyuz_media::run_with(&rt, src, &out, op, &opts, &mut progress, &mut check);
         if res.is_err() {
             ctx.credit_bytes(-(last as i64));
         }

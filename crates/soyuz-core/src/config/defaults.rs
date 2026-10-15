@@ -385,6 +385,7 @@ impl Default for Media {
             tui_fps: 8,
             poster_secs: 0.0,
             tools: true,
+            faststart: true,
         }
     }
 }

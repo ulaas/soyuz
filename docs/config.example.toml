@@ -250,7 +250,7 @@ max_diff_kib = 1024              # each side of a diff is read up to this size
 [media]                          # FFmpeg libraries (loaded at run time), video player, media tools
 ffmpeg = true                    # use the libraries when found (bundled, ffmpeg_dir, <config>/ffmpeg, system)
 ffmpeg_dir = ""                  # folder searched first for avcodec-63.dll / libavcodec.so.63 / libavcodec.63.dylib
-threads = 0                      # decoder threads per file; 0 = one per core
+threads = 0                      # decoder (and media-tool encoder) threads per file; 0 = one per core
 hw_decode = "auto"               # auto | off | d3d11va | vaapi | videotoolbox (falls back to software)
 gpu_yuv = false                  # convert video frames on the GPU (wgpu renderer): own colour matrix, HDR tone mapping
 audio_backend = "auto"           # auto (FFmpeg when loaded, else Symphonia) | ffmpeg | symphonia
@@ -264,6 +264,7 @@ max_px = 1280                    # longest edge of decoded frames for the previe
 tui_fps = 8                      # frames per second drawn as terminal images (soyuz --tui)
 poster_secs = 0.0                # poster frame at this many seconds; 0 = a tenth of the duration, at most 5 s
 tools = true                     # Convert / Extract audio / Trim / Save frame in menus
+faststart = true                 # media tools: MP4 / MOV / M4A index in front of the samples
 
 [editor]                         # "Edit in Soyuz" (F4): text, hex and image editors
 dock = "right"                   # right | bottom

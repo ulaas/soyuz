@@ -42,6 +42,7 @@ pub(crate) mod sys;
 pub mod audio;
 pub(crate) mod clock;
 pub(crate) mod decode;
+pub(crate) mod faststart;
 pub mod fixtures;
 pub mod frame;
 pub mod hw;
@@ -61,7 +62,9 @@ pub use player::{
     AudioOutput, AudioSink, FramePixels, FrameSink, HwPref, Player, PlayerCmd, PlayerOptions, PlayerState,
 };
 pub use presets::{AudioEnc, Preset, PresetId, VideoEnc, presets};
-pub use transcode::{AudioCodecChoice, Cancelled, ImageFormat, MediaOp, Outcome, PlanInfo, Progress, plan, run};
+pub use transcode::{
+    AudioCodecChoice, Cancelled, ImageFormat, MediaOp, Outcome, PlanInfo, Progress, RunOptions, plan, run, run_with,
+};
 pub use yuv::{Transfer, YuvColor, YuvFrame, YuvImage, YuvLayout, YuvMatrix};
 
 /// Errors of the media functions.

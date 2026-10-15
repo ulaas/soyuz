@@ -354,6 +354,35 @@ pub struct JobOptions {
     /// Extract jobs: keep setuid / setgid / sticky bits (default: masked to `0o777`).
     #[serde(default)]
     pub preserve_special_bits: bool,
+    /// Media jobs: how the transcoder runs (`[media] threads`, `faststart`).
+    #[serde(default)]
+    pub media: MediaOptions,
+}
+
+/// How a `Media` job runs the transcoder (`soyuz_media::RunOptions`), taken from the
+/// `[media]` settings when the job is submitted and kept by its journal entry, so a
+/// resumed job runs the same way.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MediaOptions {
+    /// Decoder / video encoder threads per stream; 0 = one per core. (`u16`: the struct
+    /// sits in every `JobOptions` and fits its padding.)
+    pub threads: u16,
+    /// MP4 / MOV / M4A outputs get their index in front of the samples.
+    pub faststart: bool,
+}
+
+impl Default for MediaOptions {
+    fn default() -> Self {
+        let d = soyuz_media::RunOptions::default();
+        MediaOptions { threads: u16::try_from(d.threads).unwrap_or(u16::MAX), faststart: d.faststart }
+    }
+}
+
+impl MediaOptions {
+    pub fn run_options(self) -> soyuz_media::RunOptions {
+        soyuz_media::RunOptions { threads: u32::from(self.threads), faststart: self.faststart }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

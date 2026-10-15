@@ -6,7 +6,8 @@
 
 pub(crate) use crate::sys::encode::{AudioConv, EncSpec, Encoder, Got, OwnedPar, PixConv};
 pub(crate) use crate::sys::mux::{
-    Muxer, OutStream, output_format, pkt_clear_pos, pkt_rescale_ts, pkt_set_stream_index, pkt_set_ts, rescale,
+    Muxer, OutChapter, OutStream, input_chapters, output_format, pkt_clear_pos, pkt_rescale_ts, pkt_set_stream_index,
+    pkt_set_ts, rescale,
 };
 
 /// The muxer for a file extension (without the dot, any case), for the containers the
@@ -132,6 +133,32 @@ pub fn container_accepts(container: &str, codec: &str) -> bool {
     }
 }
 
+/// Whether `container` writes chapters (MP4 / MOV chapter lists, Matroska / WebM
+/// `Chapters`, Ogg / FLAC `CHAPTERxx` comments, MP3 ID3v2 `CHAP` frames). The others
+/// (AVI, WAV, MPEG-TS, raw audio, ASF, CAF) have no place for them.
+pub fn container_keeps_chapters(container: &str) -> bool {
+    matches!(container, "mp4" | "ipod" | "mov" | "matroska" | "webm" | "ogg" | "flac" | "mp3")
+}
+
+/// Whether `container` stores a video stream's rotation (the display matrix): the MP4 /
+/// MOV track matrix and the Matroska / WebM projection pose. AVI, MPEG-TS, Ogg and the
+/// rest have no field for it (the picture is kept as coded, unrotated).
+pub fn container_keeps_rotation(container: &str) -> bool {
+    matches!(container, "mp4" | "ipod" | "mov" | "matroska" | "webm")
+}
+
+/// Whether `container` can carry cover art (an attached picture) coded as `codec`:
+/// MP4 / M4A / MOV (`covr`), MP3 (ID3v2 `APIC`), FLAC (`PICTURE` blocks) and Matroska
+/// (attachments). Ogg / Opus, WAV, WebM and the rest cannot (FFmpeg's Ogg muxer writes
+/// no `METADATA_BLOCK_PICTURE`), so the picture is left out there.
+pub fn container_holds_cover(container: &str, codec: &str) -> bool {
+    match container {
+        "mp4" | "ipod" | "mov" => matches!(codec, "mjpeg" | "png" | "bmp"),
+        "mp3" | "flac" | "matroska" => matches!(codec, "mjpeg" | "png" | "bmp" | "gif"),
+        _ => false,
+    }
+}
+
 /// Where an audio stream of `codec` goes when it is copied without re-encoding:
 /// `(muxer, extension)`. Matroska (`.mka`) holds whatever has no native container.
 pub fn audio_copy_container(codec: &str) -> (&'static str, &'static str) {
@@ -233,6 +260,21 @@ mod tests {
             let (c, _) = audio_copy_container(codec);
             assert!(container_accepts(c, codec), "{codec} -> {c}");
         }
+    }
+
+    #[test]
+    fn chapters_rotation_and_cover_slots() {
+        for c in ["mp4", "ipod", "mov", "matroska", "webm", "ogg", "flac", "mp3"] {
+            assert!(container_keeps_chapters(c), "{c}");
+        }
+        for c in ["avi", "wav", "mpegts", "adts", "asf", "caf"] {
+            assert!(!container_keeps_chapters(c), "{c}");
+        }
+        assert!(container_keeps_rotation("webm") && container_keeps_rotation("mov"));
+        assert!(!container_keeps_rotation("avi") && !container_keeps_rotation("mpegts"));
+        assert!(container_holds_cover("ipod", "png") && container_holds_cover("flac", "mjpeg"));
+        assert!(container_holds_cover("matroska", "gif") && !container_holds_cover("mp4", "gif"));
+        assert!(!container_holds_cover("ogg", "png") && !container_holds_cover("wav", "png"));
     }
 
     #[test]

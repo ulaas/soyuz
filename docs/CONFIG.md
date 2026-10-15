@@ -442,7 +442,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `ffmpeg` | boolean | `true` | Use the FFmpeg libraries when they are found (bundled, `ffmpeg_dir`, the config dir's `ffmpeg/` folder, or the system's). Off: metadata-only video previews, Symphonia audio, no player or media tools. |
 | `ffmpeg_dir` | string | `""` | Folder searched first for the libraries (`avcodec-63.dll` / `libavcodec.so.63` / `libavcodec.63.dylib` and the other four); empty = next to the executable, then `<config dir>/ffmpeg`, then the system folders. A change applies to the next load (after a restart once libraries were loaded). |
-| `threads` | integer | `0` | Decoder threads per file; 0 = one per core. |
+| `threads` | integer | `0` | Decoder threads per file (the player, and the decoders and video encoders of the media tools); 0 = one per core. |
 | `hw_decode` | `"auto"` \| `"off"` \| `"d3d11va"` \| `"vaapi"` \| `"videotoolbox"` | `"auto"` | Hardware video decoding (`auto` picks the platform's decoder when the codec has one; any failure falls back to software decoding). (`auto`: The platform's decoder (D3D11VA, VAAPI, VideoToolbox) when the codec has one; `off`: Software decoding only; `d3d11va`: Windows; `vaapi`: Linux; `videotoolbox`: macOS) |
 | `gpu_yuv` | boolean | `false` | Convert video frames from YUV on the GPU (GPU renderer only): pictures up to 1.5 × `max_px` are uploaded as decoded and scaled by the GPU, with the stream's own colour matrix and range, and HDR (PQ / HLG) tone-mapped to SDR. Off: frames are converted to RGB on the CPU. |
 | `audio_backend` | `"auto"` \| `"ffmpeg"` \| `"symphonia"` | `"auto"` | Which decoder plays and analyses audio: `auto` = FFmpeg when loaded, else Symphonia. (`auto`: FFmpeg when its libraries are loaded, Symphonia otherwise; `ffmpeg`: Always the FFmpeg libraries (no audio preview without them); `symphonia`: Always the pure-Rust decoder (mp3, flac, wav, ogg, aac, alac, …)) |
@@ -456,6 +456,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `tui_fps` | integer | `8` | Frames per second drawn as terminal images by the terminal UI's player. |
 | `poster_secs` | float | `0.0` | The poster frame is taken this many seconds in (clamped to the duration); 0 = a tenth of the duration, at most 5 s. |
 | `tools` | boolean | `true` | Show the media tools (Convert…, Extract audio…, Trim…, Save frame…) in menus. |
+| `faststart` | boolean | `true` | MP4 / MOV / M4A files written by the media tools get their index in front of the samples ("faststart"), so they start playing before they are fully downloaded. |
 
 ## `[editor]`
 

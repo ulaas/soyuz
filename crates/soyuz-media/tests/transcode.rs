@@ -505,9 +505,11 @@ fn plan_lists_copy_versus_encode() {
     assert!((p.duration.expect("duration") - 1.0).abs() < 0.1);
     assert!(p.estimated_bytes.is_some_and(|b| b > 1000), "{:?}", p.estimated_bytes);
     assert!(p.warnings.is_empty(), "{:?}", p.warnings);
-    // Chapters are not carried over: the plan says so.
+    // Chapters go along into MP4; into a container without chapters the plan says so.
     let p = plan(&rt, &fixture("hdr-chapters.mkv"), &MediaOp::Remux { container: "mp4".into() }).expect("plan");
     assert_eq!(p.streams, vec![(0, "copy".to_string())]);
+    assert!(p.warnings.is_empty(), "{:?}", p.warnings);
+    let p = plan(&rt, &fixture("hdr-chapters.mkv"), &MediaOp::Remux { container: "avi".into() }).expect("plan");
     assert!(p.warnings.iter().any(|w| w.contains("chapters")), "{:?}", p.warnings);
     if rt.has_encoder("libvpx-vp9") && rt.has_encoder("libopus") {
         let p =
