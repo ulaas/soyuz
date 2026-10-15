@@ -170,7 +170,7 @@ runtime. `cargo deb` expects it unpacked in `ffmpeg-rt/` at the repository root.
 
 The `publish` job never attaches FFmpeg files to the app release (an older Soyuz's update
 check matches assets by OS / arch words, and `services::updates::pick_asset` only takes
-`soyuz-<version>-…` names since 0.3.3). Instead it creates or updates the release
+`soyuz-<version>-…` names since 0.4.0). Instead it creates or updates the release
 **`ffmpeg-runtime-<FFMPEG_VERSION>`** (`gh release create … --latest=false`, so
 `/releases/latest` keeps pointing at the app) with:
 

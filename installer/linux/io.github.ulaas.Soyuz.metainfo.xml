@@ -87,6 +87,15 @@
   </requires>
 
   <releases>
+    <release version="0.4.0" date="2026-10-15" type="development">
+      <description>
+        <p>Media through the FFmpeg libraries, loaded at run time and shipped with the app:
+          video playback in the preview pane, Quick Look and the terminal UI, thumbnails and
+          previews for more formats, media tools (convert, extract audio, trim, save frame)
+          as undoable jobs, the same tools for the AI assistant, MCP clients and scripts,
+          hardware video decoding, and an in-app download of the FFmpeg runtime.</p>
+      </description>
+    </release>
     <release version="0.3.2" date="2026-10-14" type="development">
       <description>
         <p>Fixes to the test suite on Linux and Windows; the app itself is unchanged from 0.3.1.</p>
