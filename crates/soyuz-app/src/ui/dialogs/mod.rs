@@ -18,6 +18,7 @@ pub mod error;
 pub mod keybind_record;
 pub mod links;
 pub mod mcp_approval;
+pub mod media_tools;
 pub mod new_item;
 pub mod open_with;
 pub mod properties;
@@ -89,6 +90,7 @@ fn model_kind(m: &DialogModel) -> &'static str {
         DialogModel::Quit(_) => "soyuz_app::ui::dialogs::quit::QuitDialog",
         DialogModel::McpApproval(_) => "soyuz_app::ui::dialogs::mcp_approval::McpApprovalDialog",
         DialogModel::ScriptApproval(_) => "soyuz_app::ui::automation::approval::ScriptApprovalDialog",
+        DialogModel::MediaTools(_) => "soyuz_app::ui::dialogs::media_tools::MediaToolsDialog",
     }
 }
 
@@ -101,6 +103,7 @@ fn model_icon(m: &DialogModel) -> Option<&'static str> {
         DialogModel::Quit(_) => ph::WARNING,
         DialogModel::McpApproval(m) => mcp_approval::icon(m),
         DialogModel::ScriptApproval(m) => crate::ui::automation::approval::icon(m),
+        DialogModel::MediaTools(m) => media_tools::icon(m),
     })
 }
 
@@ -112,6 +115,7 @@ fn model_width(m: &DialogModel) -> f32 {
         DialogModel::Quit(_) => 460.0,
         DialogModel::McpApproval(_) => 600.0,
         DialogModel::ScriptApproval(_) => 560.0,
+        DialogModel::MediaTools(_) => 560.0,
     }
 }
 
@@ -125,6 +129,7 @@ fn show_model(ui: &mut Ui, m: &mut DialogModel, ctx: &mut DialogCtx<'_>) -> bool
         DialogModel::Quit(m) => quit::show(ui, m, ctx),
         DialogModel::McpApproval(m) => mcp_approval::show(ui, m, ctx),
         DialogModel::ScriptApproval(m) => crate::ui::automation::approval::show(ui, m, ctx),
+        DialogModel::MediaTools(m) => media_tools::show(ui, m, ctx),
     }
 }
 

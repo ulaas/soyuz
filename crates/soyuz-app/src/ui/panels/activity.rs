@@ -16,6 +16,7 @@ use soyuz_jobs::{JobSnapshot, JobState};
 
 use crate::app::SoyuzApp;
 use crate::models::jobs_rows::{self, JobMenuCmd, JobMenuEntry, JobRow, RowButton, Tone, ToolbarButton};
+use crate::models::media_tools::MediaTool;
 use crate::services::jobs::{JobMeta, OpKind};
 use crate::theme::tokens::radius;
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
@@ -41,6 +42,10 @@ pub fn op_style(op: OpKind, p: &Palette) -> (&'static str, Color32) {
         OpKind::Undo => (ph::ARROW_U_UP_LEFT, p.text_secondary),
         OpKind::Redo => (ph::ARROW_U_UP_RIGHT, p.text_secondary),
         OpKind::Retry => (ph::ARROW_CLOCKWISE, p.accent),
+        OpKind::Media(MediaTool::Convert) => (ph::FILM_STRIP, p.accent),
+        OpKind::Media(MediaTool::ExtractAudio) => (ph::MUSIC_NOTES, p.accent),
+        OpKind::Media(MediaTool::Trim) => (ph::SCISSORS, p.accent),
+        OpKind::Media(MediaTool::SaveFrame) => (ph::IMAGE, p.accent),
         OpKind::Other => (ph::GEAR_SIX, p.text_secondary),
     }
 }

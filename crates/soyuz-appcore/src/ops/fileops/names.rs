@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use soyuz_core::naming::DEFAULT_UNIQUE_PATTERN;
 use soyuz_jobs::{JobState, JobSummary};
 
+use crate::models::media_tools::MediaTool;
 use crate::services::jobs::{JobMeta, OpKind};
 
 /// A name based on `base` that does not collide with `existing` (`New folder`,
@@ -59,6 +60,17 @@ pub fn job_title(meta: &JobMeta, active: bool, total_items: Option<u64>, label: 
             }
         }
         OpKind::EmptyTrash => tr!("ops-job-empty-trash", state = state),
+        OpKind::Media(tool) => {
+            // "Converting “clip.mov” to “clip.mp4”": the output name is the destination.
+            let what = items_phrase(meta.items as u64, meta.first.as_deref());
+            let dest = meta.dest.as_deref().map(quoted).unwrap_or_default();
+            match tool {
+                MediaTool::Convert => tr!("ops-job-media-convert", state = state, what = what, dest = dest),
+                MediaTool::ExtractAudio => tr!("ops-job-media-extract", state = state, what = what, dest = dest),
+                MediaTool::Trim => tr!("ops-job-media-trim", state = state, what = what, dest = dest),
+                MediaTool::SaveFrame => tr!("ops-job-media-frame", state = state, what = what, dest = dest),
+            }
+        }
         OpKind::NewFolder | OpKind::NewFile | OpKind::Link => {
             let name = meta.first.as_deref().map(quoted).unwrap_or_default();
             // The messages select on `has_name` (the name is unknown for some jobs).
@@ -189,6 +201,22 @@ mod tests {
         );
         let e = JobMeta::new(OpKind::EmptyTrash, &[], None);
         assert_eq!(job_title(&e, true, None, ""), "Emptying trash");
+        let m = JobMeta::new(
+            OpKind::Media(MediaTool::Convert),
+            &[PathBuf::from("/v/clip.mov")],
+            Some("/v/clip.mp4".into()),
+        );
+        assert_eq!(job_title(&m, true, None, ""), "Converting \u{201c}clip.mov\u{201d} to \u{201c}clip.mp4\u{201d}");
+        assert_eq!(job_title(&m, false, None, ""), "Converted \u{201c}clip.mov\u{201d} to \u{201c}clip.mp4\u{201d}");
+        let f = JobMeta::new(
+            OpKind::Media(MediaTool::SaveFrame),
+            &[PathBuf::from("/v/clip.mov")],
+            Some("/v/clip.png".into()),
+        );
+        assert_eq!(
+            job_title(&f, true, None, ""),
+            "Saving a frame of \u{201c}clip.mov\u{201d} to \u{201c}clip.png\u{201d}"
+        );
     }
 
     #[test]

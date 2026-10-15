@@ -179,6 +179,20 @@ and *Retry failed*.
     `[media] ffmpeg = false` turns them off (metadata-only video previews, Symphonia
     audio). Without them videos show their metadata and a card that says where the
     libraries come from.
+  - **Media tools** (`[media] tools`, context menu of a video or audio file, or the
+    palette): *Convert media…* (built-in presets: Matroska / MP4 stream copy, hardware
+    H.264 / HEVC when the machine has an encoder, VP8 / VP9 + Opus, ProRes, MPEG-4, FLAC /
+    AAC / Opus / WAV / ALAC; only the presets this FFmpeg build can encode are listed),
+    *Extract audio…* (keep the track as is or re-encode it), *Trim media…* (a window in
+    seconds or `m:ss`; cut on keyframes without re-encoding, or frame-exact) and *Save
+    video frame…* (PNG or JPEG at a time). The dialog reads the file off the UI thread,
+    shows what happens to every stream and an estimated size before anything runs, and
+    the output name defaults to the source's name with the new extension beside it (a
+    taken name offers Ask / Keep both / Replace / Skip). Each run is a job in the
+    activity panel: low priority, pausable, cancellable (nothing is left behind), and
+    undoable while the output is unchanged (undo moves it to the trash; a replaced file
+    comes back from the trash). With several files selected, Convert and Extract audio
+    make one job per file. Without the libraries the entries are disabled and say why.
   - *Crash safety*: decoding runs inside Soyuz, so before a thumbnail or preview decodes a
     file the file is noted in `<config dir>/media-inflight`. A file still noted at the
     next start crashed the libraries; automatic previews skip it ("it crashed the media

@@ -423,6 +423,7 @@ pub fn is_leftover_name(name: &str) -> bool {
         || (name.starts_with(".soyuz-extract-") && name.ends_with(".part"))
         || name.starts_with(".soyuz-rename-")
         || name.ends_with(".soyuz-join.part")
+        || name.contains(crate::kinds::media::NEW_MARKER)
 }
 
 /// Folders to scan for one job: directory roots recursively, the parents of file roots
@@ -446,7 +447,7 @@ fn scan_roots(kind: &JobKind) -> Vec<(PathBuf, bool)> {
 }
 
 /// Leftover temp files under the touched roots of `jobs` (at most `limit` entries visited,
-/// stops when `ctl` is cancelled). Also includes an interrupted archive's `<dest>.part`.
+/// stops when `ctl` is cancelled). Also includes an interrupted archive's or media job's `<dest>.part`.
 pub fn scan_leftovers(jobs: &[JournalJob], ctl: &OpControl, limit: usize) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> = Vec::new();
     let mut visited = 0usize;
@@ -456,7 +457,7 @@ pub fn scan_leftovers(jobs: &[JournalJob], ctl: &OpControl, limit: usize) -> Vec
         }
     };
     for job in jobs {
-        if let JobKind::Compress { dest, .. } = &job.kind {
+        if let JobKind::Compress { dest, .. } | JobKind::Media { dest, .. } = &job.kind {
             let mut part = dest.as_os_str().to_owned();
             part.push(".part");
             let part = PathBuf::from(part);

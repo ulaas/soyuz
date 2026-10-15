@@ -92,6 +92,10 @@ pub struct EngineConfig {
     pub log_lines_per_job: usize,
     /// Crash journal of in-flight jobs (`jobs.journal`, see [`crate::journal`]); `None` = off.
     pub journal_path: Option<PathBuf>,
+    /// Folders `Media` jobs may load the FFmpeg libraries from when none are loaded yet
+    /// (`soyuz_media::search_dirs`); empty = only an already loaded runtime is used
+    /// (`[media] ffmpeg = false`, or a resumed job before the app loaded them).
+    pub media_dirs: Vec<PathBuf>,
 }
 
 impl Default for EngineConfig {
@@ -105,6 +109,7 @@ impl Default for EngineConfig {
             history_path: None,
             log_lines_per_job: 1000,
             journal_path: None,
+            media_dirs: Vec::new(),
         }
     }
 }

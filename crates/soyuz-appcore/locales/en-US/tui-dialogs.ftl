@@ -15,3 +15,4 @@ tui-dialogs-hint-script = ↑/↓ scroll · Enter run · Esc cancel
 tui-dialogs-link-kind = Kind
 tui-dialogs-mcp-conflict = conflict
 tui-dialogs-hint-links = ↑/↓ pick a target · Tab / Enter use it · Tab next field · Enter create · Esc cancel
+tui-dialogs-hint-media = Tab next · ←/→ choose (presets too) · Enter run · Esc cancel

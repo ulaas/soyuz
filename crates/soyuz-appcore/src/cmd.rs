@@ -123,4 +123,6 @@ pub enum Cmd {
     Remote(crate::models::remote::RemoteCmd),
     /// Sidebar devices (unlock dialog, read-only mount offer, hide): `models::devices`.
     Device(crate::models::devices::DeviceCmd),
+    /// Several commands from one answer (a dialog submitting one job per file).
+    Batch(Vec<Cmd>),
 }

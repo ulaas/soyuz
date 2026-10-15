@@ -838,6 +838,11 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         Cmd::Portal(c) => crate::models::portal::apply(app, host, c),
         Cmd::SetSidebarMode(m) => crate::models::tree::set_mode(app, host, m),
         Cmd::Device(c) => crate::models::devices::apply(app, host, c),
+        Cmd::Batch(cmds) => {
+            for c in cmds {
+                apply(app, c, host);
+            }
+        }
         Cmd::MoveFavorite { from, to } => {
             let s = &mut app.ui.sidebar;
             if from < s.favorites.len() {

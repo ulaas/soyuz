@@ -477,6 +477,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         a if crate::editors::handles(&a) => crate::editors::execute(app, a),
         a if a.is_editor() => crate::editors::commands::execute(app, a, host),
         a if a.is_player() => crate::models::player::execute(app, a, host),
+        a if crate::models::media_tools::handles(&a) => crate::models::media_tools::execute(app, a),
         a if crate::ops::fileops::handles(&a) => crate::ops::fileops::execute(app, a, host),
         other => {
             if other.category() == ActionCategory::FileOps || other.category() == ActionCategory::Jobs {

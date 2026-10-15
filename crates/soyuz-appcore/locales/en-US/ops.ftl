@@ -79,6 +79,23 @@ ops-job-empty-trash = { $state ->
     [active] Emptying trash
    *[done] Emptied trash
 }
+# Media tools (Phase V): $what is the source, $dest the output file name.
+ops-job-media-convert = { $state ->
+    [active] Converting { $what } to { $dest }
+   *[done] Converted { $what } to { $dest }
+}
+ops-job-media-extract = { $state ->
+    [active] Extracting audio from { $what } to { $dest }
+   *[done] Extracted audio from { $what } to { $dest }
+}
+ops-job-media-trim = { $state ->
+    [active] Trimming { $what } to { $dest }
+   *[done] Trimmed { $what } to { $dest }
+}
+ops-job-media-frame = { $state ->
+    [active] Saving a frame of { $what } to { $dest }
+   *[done] Saved a frame of { $what } to { $dest }
+}
 # $has_name: "yes" | "no"; $name: the new item's name, quoted (empty when unknown).
 ops-job-new-folder = { $state ->
     [active] { $has_name ->

@@ -15,3 +15,4 @@ tui-dialogs-hint-script = ↑/↓ kaydır · Enter çalıştır · Esc vazgeç
 tui-dialogs-link-kind = Tür
 tui-dialogs-mcp-conflict = çakışma
 tui-dialogs-hint-links = ↑/↓ hedef seç · Tab / Enter kullan · Tab sonraki alan · Enter oluştur · Esc iptal
+tui-dialogs-hint-media = Tab sonraki · ←/→ seç (ön ayar da) · Enter çalıştır · Esc iptal

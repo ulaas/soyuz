@@ -231,6 +231,10 @@ pub fn describe(job: &JobKind) -> (OpKind, String) {
             (OpKind::Restore, JobMeta::new(OpKind::Restore, &paths, None))
         }
         JobKind::EmptyTrash => (OpKind::EmptyTrash, JobMeta::new(OpKind::EmptyTrash, &[], None)),
+        JobKind::Media { src, dest, op } => {
+            let op = OpKind::Media(crate::models::media_tools::MediaTool::of_op(op));
+            (op, JobMeta::new(op, std::slice::from_ref(src), Some(dest.clone())))
+        }
         other => (OpKind::Other, JobMeta::new(OpKind::Other, &other.touched_roots(), None)),
     };
     (op, names::job_title(&meta, false, None, ""))

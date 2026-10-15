@@ -20,6 +20,8 @@ use std::ffi::c_int;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
+
 use crate::decode::{ChLayout, Decoder, Demuxer, Frame, Limits, Packet, Recv, StreamRef};
 use crate::frame::{FrameRequest, grab_frame};
 use crate::info::{Chapter, MediaInfo, Source, StreamInfo, StreamKind, stream_info};
@@ -33,7 +35,8 @@ use crate::sys::{Av, codec, encode, types};
 use crate::{MediaError, Runtime};
 
 /// The audio codec of [`MediaOp::ExtractAudio`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AudioCodecChoice {
     /// Keep the stream as is; the container is chosen to fit (`.m4a`, `.opus`, `.mka`,
     /// …: [`plan`] reports the extension in [`PlanInfo::ext`]).
@@ -59,7 +62,8 @@ impl AudioCodecChoice {
 }
 
 /// Picture format of [`MediaOp::Frame`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ImageFormat {
     Png,
     Jpeg,
@@ -74,8 +78,10 @@ impl ImageFormat {
     }
 }
 
-/// What to do with the input.
-#[derive(Clone, Debug, PartialEq)]
+/// What to do with the input. Serialized inside `soyuz-jobs`' `JobKind::Media` (job
+/// history, crash journal): the names are stable once shipped.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MediaOp {
     /// Re-encode (or remux, for copy presets) with a built-in preset; `video_stream` /
     /// `audio_stream` pick streams by index (`None` = the defaults).

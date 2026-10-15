@@ -46,6 +46,7 @@ pub mod delete;
 pub mod keybind;
 pub mod link;
 pub mod list_edit;
+pub mod media_tools;
 pub mod open_with;
 pub mod pattern;
 pub mod plan_json;
@@ -374,6 +375,13 @@ pub fn prepare(core: &mut AppCore, st: &mut State) {
             transfer::prepare(&mut core.services, t, ui);
         }
     }
+    // The media tools prompt's worker results (probe, plan) land in the model here.
+    if top(core, st) == Some(Top::Model)
+        && let Some(DialogModel::MediaTools(t)) = core.dialogs.top_mut()
+        && let Some(ui) = st.model.as_mut()
+    {
+        media_tools::prepare(t, ui);
+    }
     // Extract to…'s destination completions (`archive::prepare`).
     if top(core, st) == Some(Top::Tui)
         && let Some(TuiDialog::Archive(s)) = st.tui.top_mut()
@@ -442,6 +450,7 @@ fn model_ui<'a>(slot: &'a mut Option<ModelUi>, seq: u64, m: &DialogModel) -> &'a
             DialogModel::NewLink(_) => link::ui(m),
             DialogModel::McpApproval(_) => approval_mcp::ui(m),
             DialogModel::ScriptApproval(_) => approval_script::ui(m),
+            DialogModel::MediaTools(_) => media_tools::ui(m),
         };
         ui.seq = seq;
         *slot = Some(ui);
@@ -481,6 +490,7 @@ pub fn route(app: &mut App, events: &[Event]) {
                     DialogModel::NewLink(_) => link::on_model_input(m, ui, &input),
                     DialogModel::McpApproval(_) => approval_mcp::on_input(m, ui, &input),
                     DialogModel::ScriptApproval(_) => approval_script::on_input(m, ui, &input),
+                    DialogModel::MediaTools(_) => media_tools::on_input(m, ui, &input),
                 }
             }
             Top::Tui => {
@@ -522,6 +532,7 @@ fn mouse_dispatch(app: &mut App, m: &DialogMouse) {
                 DialogModel::NewLink(_) => link::on_model_mouse(model, ui, &m),
                 DialogModel::McpApproval(_) => approval_mcp::on_mouse(model, ui, &m),
                 DialogModel::ScriptApproval(_) => approval_script::on_mouse(model, ui, &m),
+                DialogModel::MediaTools(_) => media_tools::on_mouse(model, ui, &m),
             }
         }
         Top::Tui => {
@@ -561,6 +572,7 @@ pub fn remove_stale(app: &mut App) {
             DialogModel::NewLink(_) => link::model_stale(m),
             DialogModel::McpApproval(_) => approval_mcp::stale(m),
             DialogModel::ScriptApproval(_) => approval_script::stale(m),
+            DialogModel::MediaTools(_) => media_tools::stale(m),
         };
         if !gone {
             break;

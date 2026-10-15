@@ -72,6 +72,23 @@ ops-job-empty-trash = { $state ->
     [active] Çöp Kutusu boşaltılıyor
    *[done] Çöp Kutusu boşaltıldı
 }
+# Medya araçları (Aşama V): $what kaynak, $dest çıktı dosyasının adı.
+ops-job-media-convert = { $state ->
+    [active] Dönüştürülüyor: { $what } → { $dest }
+   *[done] Dönüştürüldü: { $what } → { $dest }
+}
+ops-job-media-extract = { $state ->
+    [active] Ses çıkarılıyor: { $what } → { $dest }
+   *[done] Ses çıkarıldı: { $what } → { $dest }
+}
+ops-job-media-trim = { $state ->
+    [active] Kırpılıyor: { $what } → { $dest }
+   *[done] Kırpıldı: { $what } → { $dest }
+}
+ops-job-media-frame = { $state ->
+    [active] Kare kaydediliyor: { $what } → { $dest }
+   *[done] Kare kaydedildi: { $what } → { $dest }
+}
 ops-job-new-folder = { $state ->
     [active] { $has_name ->
         [yes] Klasör oluşturuluyor: { $name }
