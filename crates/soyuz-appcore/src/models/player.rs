@@ -314,7 +314,8 @@ impl PlayerModel {
     /// Close unless `key` is what is open or pending (the preview moved to another
     /// file); the open error of another key is forgotten too.
     pub fn sync_target(&mut self, key: Option<&str>) {
-        if (self.open.is_some() || self.pending.is_some()) && self.key() != key && self.pending_key() != key {
+        let keep = key.is_some() && (self.key() == key || self.pending_key() == key);
+        if (self.open.is_some() || self.pending.is_some()) && !keep {
             self.close();
         }
         if self.error.as_ref().is_some_and(|(k, _)| Some(k.as_str()) != key) {
@@ -654,6 +655,13 @@ mod tests {
         assert_eq!(cmds.lock().unwrap().clone(), vec![PlayerCmd::Stop]);
         m.sync_target(None);
         m.close();
+        // No target at all closes an open player (nothing pending: `pending_key()` is
+        // `None` too, which must not count as "the same key").
+        let (e, cmds) = fake(None);
+        m.open_with("w", e, &cfg);
+        m.sync_target(None);
+        assert!(!m.is_open(), "no target closes");
+        assert_eq!(cmds.lock().unwrap().clone(), vec![PlayerCmd::Stop]);
     }
 
     #[test]
