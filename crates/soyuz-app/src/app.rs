@@ -55,6 +55,7 @@ impl SoyuzApp {
         let transparent = crate::ui::native_chrome::backdrop_active();
         crate::ui::native_chrome::init(cc, &config, transparent);
         crate::ui::dnd::linux_dnd::init(cc);
+        crate::ui::preview::video_gpu::init(cc);
         soyuz_fs::register_ui_thread();
         Self::with_startup(&cc.egui_ctx, config, renderer, startup)
     }

@@ -26,7 +26,7 @@ opaque!(
     AVStreamGroup,
     AVIOContext
 );
-opaque!(SwsContext, SwsFilter, SwrContext, AVProfile, AVCodecHWConfig);
+opaque!(SwsContext, SwsFilter, SwrContext, AVProfile);
 
 /// `AVMediaType`.
 pub(crate) const AVMEDIA_TYPE_VIDEO: c_int = 0;
@@ -90,6 +90,13 @@ pub(crate) const AV_TIME_BASE: i64 = 1_000_000;
 /// `AVCodecConfig` of `avcodec_get_supported_config`.
 pub(crate) const AV_CODEC_CONFIG_PIX_FORMAT: c_int = 0;
 pub(crate) const AV_CODEC_CONFIG_SAMPLE_FORMAT: c_int = 3;
+
+/// `AVHWDeviceType` (hardware decoding, V4b).
+pub(crate) const AV_HWDEVICE_TYPE_VAAPI: c_int = 3;
+pub(crate) const AV_HWDEVICE_TYPE_VIDEOTOOLBOX: c_int = 6;
+pub(crate) const AV_HWDEVICE_TYPE_D3D11VA: c_int = 7;
+/// `AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX`: the decoder accepts `hw_device_ctx`.
+pub(crate) const AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX: c_int = 1;
 
 /// `SWS_*` scaler flags.
 pub(crate) const SWS_FAST_BILINEAR: c_int = 1;

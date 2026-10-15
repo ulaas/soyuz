@@ -12,7 +12,8 @@
 //! - [`frame::grab_frame`]: one RGBA frame (poster frames, thumbnails).
 //! - [`audio::AudioReader`] / [`audio::peaks`]: decoded f32 samples and waveform peaks.
 //! - [`player::Player`]: audio / video playback with an audio-clock master, frames handed
-//!   to a [`player::FrameSink`].
+//!   to a [`player::FrameSink`] as RGBA or as planes ([`yuv::YuvFrame`], for a GPU
+//!   colour conversion); hardware decoding through [`hw`] (`[media] hw_decode`).
 //! - [`transcode::run`] / [`transcode::plan`] with the built-in [`presets`]: convert,
 //!   extract audio, trim, remux, save a frame; driven by `soyuz-jobs` (`JobKind::Media`).
 //!
@@ -43,12 +44,14 @@ pub(crate) mod clock;
 pub(crate) mod decode;
 pub mod fixtures;
 pub mod frame;
+pub mod hw;
 pub mod info;
 pub mod mux;
 pub mod player;
 pub mod presets;
 pub(crate) mod queue;
 pub mod transcode;
+pub mod yuv;
 
 pub use audio::{AudioReader, peaks};
 pub use frame::{FrameRequest, grab_frame};
@@ -59,6 +62,7 @@ pub use player::{
 };
 pub use presets::{AudioEnc, Preset, PresetId, VideoEnc, presets};
 pub use transcode::{AudioCodecChoice, Cancelled, ImageFormat, MediaOp, Outcome, PlanInfo, Progress, plan, run};
+pub use yuv::{Transfer, YuvColor, YuvFrame, YuvImage, YuvLayout, YuvMatrix};
 
 /// Errors of the media functions.
 #[derive(Debug, thiserror::Error)]

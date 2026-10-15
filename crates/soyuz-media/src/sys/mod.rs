@@ -24,6 +24,9 @@
 //! - `demux.rs`, `codec.rs`, `scale.rs`, `resample.rs`: RAII wrappers (`Demuxer`,
 //!   `Packet`, `Decoder`, `Frame`, `Scaler`, `Resampler`) with safe methods; the safe
 //!   modules of the crate use only these.
+//! - `hwdec.rs`: hardware decoding (V4b): device contexts, the codec's hardware pixel
+//!   format, and the `hw_device_ctx` write (offset cross-checked against the option
+//!   table before first use).
 //! - `check.rs`: the load-time self-test (an in-memory WAV and a 2-frame rawvideo AVI
 //!   from `crate::fixtures`).
 //!
@@ -40,6 +43,7 @@ pub(crate) mod check;
 pub(crate) mod codec;
 pub(crate) mod demux;
 pub(crate) mod encode;
+pub(crate) mod hwdec;
 pub(crate) mod layout;
 pub(crate) mod loader;
 pub(crate) mod mux;

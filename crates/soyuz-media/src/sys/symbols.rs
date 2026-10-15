@@ -212,11 +212,25 @@ pub(crate) struct OptionalFns {
             out_num_configs: *mut c_int,
         ) -> c_int,
     >,
+    /// Every supported release has it; optional so hardware decoding (V4b, the only
+    /// user: it cross-checks the `hw_device_ctx` offset) can never break loading.
+    pub av_opt_find: Option<
+        unsafe extern "C" fn(
+            obj: *mut c_void,
+            name: *const c_char,
+            unit: *const c_char,
+            opt_flags: c_int,
+            search_flags: c_int,
+        ) -> *const AVOptionPrefix,
+    >,
 }
 
 impl OptionalFns {
     pub(crate) fn bind(libs: &Libs) -> OptionalFns {
-        OptionalFns { avcodec_get_supported_config: bind(&libs.avcodec, "avcodec_get_supported_config").ok() }
+        OptionalFns {
+            avcodec_get_supported_config: bind(&libs.avcodec, "avcodec_get_supported_config").ok(),
+            av_opt_find: bind(&libs.avutil, "av_opt_find").ok(),
+        }
     }
 }
 

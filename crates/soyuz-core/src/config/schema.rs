@@ -810,8 +810,14 @@ pub struct Media {
     pub ffmpeg_dir: String,
     /// Decoder threads per file; 0 = one per core.
     pub threads: u32,
-    /// Hardware video decoding (`auto` picks the platform's decoder when the codec has one).
+    /// Hardware video decoding (`auto` picks the platform's decoder when the codec has one;
+    /// any failure falls back to software decoding).
     pub hw_decode: HwDecode,
+    /// Convert video frames from YUV on the GPU (GPU renderer only): pictures up to 1.5 ×
+    /// `max_px` are uploaded as decoded and scaled by the GPU, with the stream's own colour
+    /// matrix and range, and HDR (PQ / HLG) tone-mapped to SDR. Off: frames are converted
+    /// to RGB on the CPU.
+    pub gpu_yuv: bool,
     /// Which decoder plays and analyses audio: `auto` = FFmpeg when loaded, else Symphonia.
     pub audio_backend: AudioBackend,
     /// Play videos in the preview pane and Quick Look (off: poster frame only).

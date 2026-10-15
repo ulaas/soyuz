@@ -1,4 +1,5 @@
-//! `SwsContext` ([`Scaler`]): one decoded picture to tightly packed RGBA.
+//! `SwsContext` ([`Scaler`]): one decoded picture to tightly packed RGBA, or to another
+//! frame in a planar format (the player's YUV path, V4b).
 
 use std::ffi::c_int;
 
@@ -15,6 +16,7 @@ pub(crate) struct Scaler {
     src: (c_int, c_int, c_int),
     pub dst_w: u32,
     pub dst_h: u32,
+    pub dst_fmt: c_int,
 }
 
 // SAFETY: used from one thread at a time (`&mut self`); swscale contexts have no
@@ -44,7 +46,22 @@ impl Scaler {
         quality: Quality,
     ) -> Result<Scaler, MediaError> {
         let rgba = pix_fmt(av, "rgba").ok_or_else(|| MediaError::Unsupported("no rgba pixel format".into()))?;
-        if src_w <= 0 || src_h <= 0 || src_fmt < 0 || dst_w == 0 || dst_h == 0 {
+        Scaler::new_fmt(av, src_w, src_h, src_fmt, dst_w, dst_h, rgba, quality)
+    }
+
+    /// A scaler to `dst_fmt` (any format swscale writes).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new_fmt(
+        av: &'static Av,
+        src_w: c_int,
+        src_h: c_int,
+        src_fmt: c_int,
+        dst_w: u32,
+        dst_h: u32,
+        dst_fmt: c_int,
+        quality: Quality,
+    ) -> Result<Scaler, MediaError> {
+        if dst_fmt < 0 || src_w <= 0 || src_h <= 0 || src_fmt < 0 || dst_w == 0 || dst_h == 0 {
             return Err(MediaError::Unsupported(format!("cannot scale {src_w}x{src_h} (format {src_fmt})")));
         }
         let flags = match quality {
@@ -61,7 +78,7 @@ impl Scaler {
                 src_fmt,
                 dw,
                 dh,
-                rgba,
+                dst_fmt,
                 flags,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
@@ -69,14 +86,46 @@ impl Scaler {
             )
         };
         if ctx.is_null() {
-            return Err(MediaError::Unsupported(format!("swscale refuses {src_w}x{src_h} format {src_fmt} to rgba")));
+            return Err(MediaError::Unsupported(format!(
+                "swscale refuses {src_w}x{src_h} format {src_fmt} to format {dst_fmt}"
+            )));
         }
-        Ok(Scaler { av, ctx, src: (src_w, src_h, src_fmt), dst_w, dst_h })
+        Ok(Scaler { av, ctx, src: (src_w, src_h, src_fmt), dst_w, dst_h, dst_fmt })
     }
 
     /// Whether this scaler was built for the frame's size and format.
     pub(crate) fn matches(&self, frame: &Frame) -> bool {
         self.src == (frame.width(), frame.height(), frame.format())
+    }
+
+    /// Scale `frame` into `dst`, which becomes a `dst_w × dst_h` picture in `dst_fmt`.
+    pub(crate) fn scale_frame(&mut self, frame: &Frame, dst: &mut Frame) -> Result<(), MediaError> {
+        if !self.matches(frame) {
+            return Err(MediaError::Unsupported("frame size changed".into()));
+        }
+        let (dw, dh) =
+            (c_int::try_from(self.dst_w).unwrap_or(c_int::MAX), c_int::try_from(self.dst_h).unwrap_or(c_int::MAX));
+        dst.alloc_video(dw, dh, self.dst_fmt)?;
+        let (data, linesize) = (frame.data(), frame.linesize());
+        let out: [*mut u8; 8] = dst.data().map(|p| p.cast_mut());
+        let out_stride = dst.linesize();
+        // SAFETY: `frame` matches the source description; `dst` was just allocated by
+        // FFmpeg for exactly the destination size and format.
+        let rows = unsafe {
+            (self.av.f.sws_scale)(
+                self.ctx,
+                data.as_ptr(),
+                linesize.as_ptr(),
+                0,
+                self.src.1,
+                out.as_ptr(),
+                out_stride.as_ptr(),
+            )
+        };
+        if rows <= 0 {
+            return Err(super::av_err(self.av, if rows < 0 { rows } else { AVERROR_INVALIDDATA }));
+        }
+        Ok(())
     }
 
     /// Scale `frame` into `out` (resized to `dst_w * dst_h * 4`, stride `dst_w * 4`).
