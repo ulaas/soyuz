@@ -7139,6 +7139,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "soyuz-media",
  "tempfile",
  "thiserror 2.0.21",
 ]

@@ -7,9 +7,11 @@
 //! inside [`RingSource::next`], the pull the device callback makes, never by the decoder.
 //! Nothing on that path blocks: samples travel as whole-frame chunks through a bounded
 //! channel (`try_send` / `try_recv` only), pause and volume are atomics. When the ring runs
-//! dry the source plays silence and the clock keeps counting, so lip sync does not drift;
-//! only before the first samples after an open or a [`flush`](RingSink::flush) (the
-//! pre-roll) does silence not count, so a slow decoder start does not put the video ahead.
+//! dry, the source plays silence and the clock keeps counting, so lip sync does not drift.
+//! The exception is the pre-roll after an open or a [`flush`](RingSink::flush): until
+//! [`soyuz_media::PREROLL`] of audio is queued (or the producer [finished](RingSink::finish))
+//! the source holds the data back and plays silence that does not count, so a slow decoder
+//! start neither stutters nor puts the video ahead.
 //!
 //! **The device** is owned by one thread (`soyuz-media-out`) that opens it on the first
 //! stream and releases it after [`DEVICE_IDLE`] without streams. When no device can be
@@ -22,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender, TryRecvError, bounded, unbounded};
 use parking_lot::Mutex;
-use soyuz_media::{AudioOutput, AudioSink};
+use soyuz_media::{AudioOutput, AudioSink, preroll_frames};
 
 /// Seconds of audio the ring holds ahead of the device.
 pub const RING_SECS: f64 = 0.5;
@@ -48,8 +50,11 @@ struct Shared {
     queued: AtomicU64,
     /// Bumped by `flush`: older chunks are dropped wherever they are.
     generation: AtomicU32,
-    /// Data arrived since the last flush: silence now counts as played.
+    /// The pre-roll is queued since the last flush (or the producer finished): the
+    /// source plays the data, and silence now counts as played.
     started: AtomicBool,
+    /// Frames to queue before `started`.
+    preroll: u64,
     paused: AtomicBool,
     /// `f32` bits.
     volume: AtomicU32,
@@ -128,10 +133,17 @@ impl RingClock {
     }
 }
 
-/// A ring of `secs` seconds of interleaved `f32` frames at `rate` Hz with `channels`.
+/// A ring of `secs` seconds of interleaved `f32` frames at `rate` Hz with `channels`,
+/// with the player's pre-roll ([`preroll_frames`], at most the whole ring).
 pub fn ring(rate: u32, channels: u32, secs: f64) -> (RingSink, RingSource) {
+    ring_with_preroll(rate, channels, secs, preroll_frames(rate))
+}
+
+/// [`ring`] that starts once `preroll` frames are queued (0: with the first push).
+pub fn ring_with_preroll(rate: u32, channels: u32, secs: f64, preroll: u64) -> (RingSink, RingSource) {
     let rate = rate.max(1);
     let channels = channels.clamp(1, u32::from(u16::MAX));
+    let cap_frames = ((secs.max(0.01) * f64::from(rate)).ceil() as u64).max(1);
     let shared = Arc::new(Shared {
         rate,
         channels,
@@ -139,6 +151,7 @@ pub fn ring(rate: u32, channels: u32, secs: f64) -> (RingSink, RingSource) {
         queued: AtomicU64::new(0),
         generation: AtomicU32::new(0),
         started: AtomicBool::new(false),
+        preroll: preroll.min(cap_frames),
         paused: AtomicBool::new(false),
         volume: AtomicU32::new(1.0f32.to_bits()),
         finished: AtomicBool::new(false),
@@ -148,7 +161,6 @@ pub fn ring(rate: u32, channels: u32, secs: f64) -> (RingSink, RingSource) {
         epoch_played: AtomicU64::new(0),
     });
     let (tx, rx) = bounded(CHUNKS);
-    let cap_frames = ((secs.max(0.01) * f64::from(rate)).ceil() as u64).max(1);
     let sink = RingSink { shared: Arc::clone(&shared), tx, rx: rx.clone(), cap_frames };
     let source = RingSource { shared, rx, cur: None, pos: 0, phase: 0, counting: false };
     (sink, source)
@@ -178,9 +190,11 @@ impl RingSink {
         self.shared.closed.load(Ordering::Relaxed)
     }
 
-    /// No more frames will come; the source ends once the ring is drained.
+    /// No more frames will come; the source ends once the ring is drained (a pre-roll
+    /// ends here: the tail plays even when it is shorter).
     pub fn finish(&mut self) {
         self.shared.finished.store(true, Ordering::Release);
+        self.shared.started.store(true, Ordering::Release);
     }
 
     /// Drop queued frames and restart the position at `secs` (a seek).
@@ -206,8 +220,10 @@ impl AudioSink for RingSink {
         };
         match self.tx.try_send(chunk) {
             Ok(()) => {
-                self.shared.queued.fetch_add(take as u64, Ordering::Relaxed);
-                self.shared.started.store(true, Ordering::Relaxed);
+                let queued = self.shared.queued.fetch_add(take as u64, Ordering::Relaxed) + take as u64;
+                if queued >= self.shared.preroll {
+                    self.shared.started.store(true, Ordering::Release);
+                }
                 take
             }
             // The channel is full of unconsumed chunks (the device stalled): offer again
@@ -222,6 +238,10 @@ impl AudioSink for RingSink {
 
     fn played_frames(&self) -> u64 {
         self.shared.played.load(Ordering::Relaxed)
+    }
+
+    fn queued_frames(&self) -> u64 {
+        self.shared.queued.load(Ordering::Relaxed)
     }
 
     fn pause(&mut self, on: bool) {
@@ -329,7 +349,11 @@ impl Iterator for RingSource {
                 return Some(0.0);
             }
             self.drop_stale();
-            if self.cur.is_none() {
+            if !self.shared.started.load(Ordering::Acquire) {
+                // Pre-roll: leave the data queued until there is enough; this frame is
+                // silence that does not count.
+                self.counting = false;
+            } else if self.cur.is_none() {
                 match self.refill() {
                     Ok(true) => {}
                     Ok(false) => {
@@ -340,8 +364,10 @@ impl Iterator for RingSource {
                     }
                     Err(()) => return None,
                 }
+                self.counting = true;
+            } else {
+                self.counting = true;
             }
-            self.counting = self.cur.is_some() || self.shared.started.load(Ordering::Relaxed);
         }
         match self.cur.as_ref() {
             Some(c) => {
@@ -355,7 +381,8 @@ impl Iterator for RingSource {
                 Some(s)
             }
             None => {
-                // Underrun (or pre-roll): silence, counted only once data has flowed.
+                // Underrun (or pre-roll): silence, counted only once the pre-roll is done.
+
                 self.step(false);
                 Some(0.0)
             }
@@ -512,12 +539,13 @@ mod tests {
 
     #[test]
     fn clock_counts_data_and_underruns_but_not_the_preroll() {
-        let (mut sink, mut src) = ring(1000, 2, 0.1);
+        let (mut sink, mut src) = ring_with_preroll(1000, 2, 0.1, 0);
         assert_eq!(sink.free_frames(), 100);
         // Pre-roll: silence, clock still at 0.
         assert_eq!(pull(&mut src, 10), vec![0.0; 20]);
         assert_eq!(sink.played_frames(), 0);
         assert_eq!(sink.push(&frames(30, 2, 0.5)), 30);
+        assert_eq!(sink.queued_frames(), 30);
         assert_eq!(sink.clock().buffered_secs(), 0.03);
         let out = pull(&mut src, 30);
         assert!(out.iter().all(|s| *s == 0.5));
@@ -528,6 +556,38 @@ mod tests {
         assert_eq!(sink.played_frames(), 35);
         assert_eq!(sink.clock().underrun_frames(), 5);
         assert!((sink.clock().secs() - 0.035).abs() < 1e-9);
+    }
+
+    #[test]
+    fn preroll_holds_the_data_back_until_enough_is_queued() {
+        // 8 kHz: the pre-roll is 1200 frames (150 ms).
+        let (mut sink, mut src) = ring(8000, 1, 0.5);
+        assert_eq!(soyuz_media::preroll_frames(8000), 1200);
+        assert_eq!(sink.push(&frames(1000, 1, 0.5)), 1000);
+        // Not enough yet: silence that does not count, and the data stays queued.
+        assert_eq!(pull(&mut src, 50), vec![0.0; 50]);
+        assert_eq!((sink.played_frames(), sink.queued_frames()), (0, 1000));
+        assert_eq!(sink.clock().underrun_frames(), 0);
+        sink.push(&frames(200, 1, 0.5));
+        assert_eq!(pull(&mut src, 1200), vec![0.5; 1200], "the whole pre-roll plays, from the start");
+        assert_eq!(sink.played_frames(), 1200);
+        // An underrun after the start counts.
+        pull(&mut src, 10);
+        assert_eq!(sink.played_frames(), 1210);
+        // A flush (seek) starts a new pre-roll …
+        sink.rebase(3.0);
+        sink.push(&frames(600, 1, 0.25));
+        assert_eq!(pull(&mut src, 20), vec![0.0; 20]);
+        assert_eq!(sink.played_frames(), 1210);
+        // … which a finished producer ends early: a short tail still plays.
+        sink.finish();
+        assert_eq!(pull(&mut src, 600), vec![0.25; 600]);
+        assert_eq!(src.next(), None);
+        assert!((sink.clock().secs() - 3.075).abs() < 1e-9, "{}", sink.clock().secs());
+        // A ring shorter than the pre-roll starts when it is full.
+        let (mut sink, mut src) = ring(8000, 1, 0.1);
+        assert_eq!(sink.push(&frames(2000, 1, 1.0)), 800);
+        assert_eq!(pull(&mut src, 1), vec![1.0]);
     }
 
     #[test]
@@ -542,7 +602,7 @@ mod tests {
 
     #[test]
     fn pause_and_volume_apply_on_the_pull_side() {
-        let (mut sink, mut src) = ring(1000, 2, 0.1);
+        let (mut sink, mut src) = ring_with_preroll(1000, 2, 0.1, 0);
         sink.push(&frames(20, 2, 1.0));
         sink.set_volume(0.25);
         assert_eq!(pull(&mut src, 1), vec![0.25, 0.25]);
@@ -558,7 +618,7 @@ mod tests {
 
     #[test]
     fn flush_drops_queued_frames_and_rebase_moves_the_position() {
-        let (mut sink, mut src) = ring(1000, 2, 0.5);
+        let (mut sink, mut src) = ring_with_preroll(1000, 2, 0.5, 0);
         sink.push(&frames(100, 2, 1.0));
         // The consumer holds a chunk and is mid-frame when the flush lands.
         let got = (0..3).map_while(|_| src.next()).collect::<Vec<_>>();
@@ -605,7 +665,8 @@ mod tests {
 
     #[test]
     fn silent_pull_runs_the_clock_at_the_rate() {
-        let (mut sink, src) = ring(8000, 2, 0.5);
+        let (mut sink, src) = ring_with_preroll(8000, 2, 0.5, 0);
+
         let clock = sink.clock();
         sink.push(&frames(400, 2, 0.1));
         let t = std::thread::spawn(move || pull_silently(src));

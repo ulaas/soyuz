@@ -29,6 +29,12 @@ pub(crate) struct ChLayout {
     pub l: AVChannelLayout,
 }
 
+// SAFETY: an owned `AVChannelLayout` is plain data plus, for custom orders, a heap map
+// (`u.map`) that only this handle frees (`av_channel_layout_uninit` in `drop`); `opaque`
+// is a user pointer FFmpeg never dereferences. Nothing has thread affinity, so moving
+// the handle is fine. Not `Sync`: no shared access is needed.
+unsafe impl Send for ChLayout {}
+
 #[allow(dead_code)] // `default_for` / `copy_of` serve the encoder set-up (V2c)
 impl ChLayout {
     pub(crate) fn zeroed(av: &'static Av) -> ChLayout {

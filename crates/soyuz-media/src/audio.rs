@@ -8,9 +8,21 @@ use crate::sys::layout::AVRational;
 use crate::{MediaError, Runtime};
 
 /// Demuxer + decoder + resampler to interleaved `f32` at a fixed rate.
+///
+/// `Send` (open it on one thread, read on another), not `Sync`. Every part is a handle
+/// from `sys/` that is `Send` because its FFmpeg context is only ever used by the thread
+/// that holds the handle (`&mut self` methods, no FFmpeg-internal threads touch the
+/// demuxer, the decoder runs with one thread). The demuxer's `stale` callback, the one
+/// borrowed piece that could be shared, is always `None` here.
 pub struct AudioReader {
     inner: Reader<'static>,
 }
+
+// The reader is moved to feeder threads; this stops compiling if a part loses `Send`.
+const _: fn() = || {
+    fn send<T: Send>() {}
+    send::<AudioReader>();
+};
 
 impl std::fmt::Debug for AudioReader {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

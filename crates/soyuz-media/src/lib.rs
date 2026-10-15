@@ -59,7 +59,8 @@ pub use frame::{FrameRequest, grab_frame};
 pub use info::{Chapter, ColorInfo, Hdr, MediaInfo, Source, StreamInfo, StreamKind, probe};
 pub use mux::{audio_copy_container, container_accepts, container_for_ext, ext_for_container};
 pub use player::{
-    AudioOutput, AudioSink, FramePixels, FrameSink, HwPref, Player, PlayerCmd, PlayerOptions, PlayerState,
+    AudioOutput, AudioSink, FramePixels, FrameSink, HwPref, PREROLL, Player, PlayerCmd, PlayerOptions, PlayerState,
+    preroll_frames,
 };
 pub use presets::{AudioEnc, Preset, PresetId, VideoEnc, presets};
 pub use transcode::{

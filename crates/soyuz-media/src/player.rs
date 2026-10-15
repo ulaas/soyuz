@@ -21,6 +21,13 @@
 //! [`PlayerCmd`]s and reads [`PlayerState`]; `Play` / `Pause` / volume take effect in
 //! [`Player::send`] itself, seeks are queued for the demux thread.
 //!
+//! Pre-roll: after the open, every seek, and a resume with an almost empty device, the
+//! device stays paused (so the audio clock stands still) until the audio thread has
+//! queued [`PREROLL`] of samples, the audio input ended, the demuxer is stuck behind a
+//! full video queue, or a timeout passed; only then does the clock run. Without an audio
+//! sink there is no pre-roll. The packet queues are bounded by count and by bytes
+//! (`VIDEO_QUEUE_BYTES`, `AUDIO_QUEUE_BYTES`).
+//!
 //! Hardware decoding (`[media] hw_decode`, V4b, [`crate::hw`]): the video decoder is
 //! opened with a device when one works for the codec; hardware frames are copied to
 //! system memory before scaling. A decoding error while the device is active reopens the
@@ -79,6 +86,8 @@ pub trait AudioSink: Send {
     /// Frames the device has played so far: the clock. Underruns play silence and still
     /// advance it (counted in the device callback, never blocked by the decoder).
     fn played_frames(&self) -> u64;
+    /// Frames pushed and not played yet (the pre-roll waits for [`preroll_frames`]).
+    fn queued_frames(&self) -> u64;
     fn pause(&mut self, on: bool);
     /// 0.0 … 1.0.
     fn set_volume(&mut self, v: f32);
@@ -214,9 +223,31 @@ const LATE_SECS: f64 = 0.05;
 const MAX_CONSECUTIVE_DROPS: u32 = 8;
 /// Tolerance when discarding output before a seek target.
 const SEEK_EPS: f64 = 1e-3;
-/// Packets queued ahead of each decoder.
+/// Packets queued ahead of each decoder, and the bytes they may hold together (whichever
+/// limit comes first). 64 packets of a 4K intra-only stream (ProRes, raw video) would be
+/// close to a gigabyte; 32 MiB is about a second of a 250 Mbit/s stream, while ordinary
+/// H.264 / HEVC streams stay under it and hit the count first.
 const VIDEO_QUEUE: usize = 64;
+const VIDEO_QUEUE_BYTES: usize = 32 << 20;
+/// Uncompressed 7.1 audio at 96 kHz / 32 bit is ~3 MB/s: 4 MiB is still more than the
+/// device ring holds.
 const AUDIO_QUEUE: usize = 256;
+const AUDIO_QUEUE_BYTES: usize = 4 << 20;
+
+/// Audio the device must hold before the clock starts after an open, a seek, or a resume
+/// with an almost empty device. Shared-mode devices pull 10–30 ms per callback and the
+/// system mixers (PulseAudio / PipeWire, CoreAudio) buffer up to ~100 ms more: 150 ms
+/// covers one device buffer plus decoder jitter, so the first frames do not stutter and
+/// the clock does not run on underrun silence, while a seek still answers at once.
+pub const PREROLL: Duration = Duration::from_millis(150);
+/// Start anyway after this long without enough audio (a stream whose audio packets lie
+/// far behind its video).
+const PREROLL_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// [`PREROLL`] in frames at `rate` Hz (the player and the rodio ring use the same count).
+pub fn preroll_frames(rate: u32) -> u64 {
+    (PREROLL.as_secs_f64() * f64::from(rate)).ceil() as u64
+}
 /// Idle poll of the threads (commands wake them earlier through the signal).
 const POLL: Duration = Duration::from_millis(20);
 /// Minimum gap between two `wake` calls caused by frames.
@@ -233,6 +264,14 @@ enum Item {
     },
     /// The demuxer reached the end: drain the decoder.
     Eof,
+}
+
+/// What an item weighs against a queue's byte budget.
+fn weigh(item: &Item) -> usize {
+    match item {
+        Item::Packet(p) => p.size(),
+        Item::Flush { .. } | Item::Eof => 0,
+    }
 }
 
 type SharedSink = Arc<Mutex<Box<dyn AudioSink>>>;
@@ -264,6 +303,13 @@ struct Shared {
     duration: Option<f64>,
     clock: Clock,
     sink: Option<SharedSink>,
+    /// The sink's rate (0 without a sink).
+    audio_rate: u32,
+    /// The device holds enough audio to run ([`PREROLL`]); always `true` without a sink.
+    /// The device plays only while `playing && primed`.
+    primed: AtomicBool,
+    /// When the current pre-roll began.
+    preroll_since: Mutex<Instant>,
     signal: Signal,
     live: Mutex<usize>,
     live_cv: Condvar,
@@ -329,12 +375,52 @@ impl Shared {
             }
         }
         self.playing.store(on, Ordering::Relaxed);
-        if on {
-            self.clock.resume();
-        } else {
-            self.clock.pause();
+        if on && self.primed.load(Ordering::Acquire) && self.queued_frames() < preroll_frames(self.audio_rate) {
+            // Resuming with an almost empty device (paused right after a seek, or near the
+            // end): pre-roll again; the audio thread primes at once when the input ended.
+            self.unprime();
         }
-        self.with_sink(|s| s.pause(!on));
+        self.apply_run();
+    }
+
+    /// Frames queued in the device (0 without a sink).
+    fn queued_frames(&self) -> u64 {
+        self.sink.as_ref().map_or(0, |s| s.lock().unwrap_or_else(|e| e.into_inner()).queued_frames())
+    }
+
+    /// Run or pause the device (the wall clock without a sink) as `playing` and `primed`
+    /// say. Decided under the sink's lock, so when the UI and the audio thread race the
+    /// last one to apply sees both flags as they finally are.
+    fn apply_run(&self) {
+        let run = || self.playing() && !self.stopping() && self.primed.load(Ordering::Acquire);
+        match &self.sink {
+            Some(s) => {
+                let mut s = s.lock().unwrap_or_else(|e| e.into_inner());
+                s.pause(!run());
+            }
+            None if run() => self.clock.resume(),
+            None => self.clock.pause(),
+        }
+    }
+
+    /// Start a pre-roll: the device stays paused until the audio thread has queued
+    /// [`PREROLL`] (see `AudioThread::check_preroll`). No-op without a sink.
+    fn unprime(&self) {
+        if self.sink.is_none() {
+            return;
+        }
+        *self.preroll_since.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+        self.primed.store(false, Ordering::Release);
+        self.apply_run();
+    }
+
+    /// The pre-roll is done: let the device (and so the clock) run.
+    fn prime(&self) {
+        if !self.primed.swap(true, Ordering::AcqRel) {
+            self.apply_run();
+            self.signal.notify();
+            self.wake();
+        }
     }
 
     fn request_seek(&self, at: f64) {
@@ -347,10 +433,16 @@ impl Shared {
         }
         self.lock_state().ended = false;
         self.end_handled.store(false, Ordering::Relaxed);
-        *self.pending_seek.lock().unwrap_or_else(|e| e.into_inner()) = Some(at);
         self.seek_serial.fetch_add(1, Ordering::AcqRel);
+        // After the serial: the audio thread primes only for its current serial, so it
+        // cannot end this pre-roll with audio from before the seek.
+        self.unprime();
+        // Interrupt before publishing the target: the demux thread clears the
+        // interruption when it takes the seek, and an interruption set after that would
+        // make it drop this seek's flush markers.
         self.vq.interrupt();
         self.aq.interrupt();
+        *self.pending_seek.lock().unwrap_or_else(|e| e.into_inner()) = Some(at);
         self.signal.notify();
     }
 
@@ -409,8 +501,7 @@ impl Shared {
             self.request_seek(0.0);
         } else {
             self.playing.store(false, Ordering::Relaxed);
-            self.clock.pause();
-            self.with_sink(|s| s.pause(true));
+            self.apply_run();
             self.lock_state().ended = true;
         }
         self.signal.notify();
@@ -476,6 +567,8 @@ impl Player {
         let d: Demuxer<'static> = Demuxer::open(av, &src, None, Limits::default())?;
         let threads = if opts.threads == 0 { "auto".to_string() } else { opts.threads.to_string() };
         let video = pick(av, &d, StreamKind::Video, &[("threads", threads.as_str())], Some(opts.hw))?;
+        #[cfg(feature = "test-seams")]
+        let (video, fault) = seams::arm(video);
         let audio_stream =
             if audio.is_some() { pick(av, &d, StreamKind::Audio, &[("threads", "1")], None)? } else { None };
         if video.is_none() && audio_stream.is_none() {
@@ -500,7 +593,8 @@ impl Player {
                 if audio_rate > 0 && channels > 0 {
                     let mut s = out.open(audio_rate, channels);
                     s.set_volume(if opts.muted { 0.0 } else { opts.volume.clamp(0.0, 1.0) });
-                    s.pause(!opts.autoplay);
+                    // Paused until the pre-roll is queued, autoplay or not.
+                    s.pause(true);
                     sink = Some(Arc::new(Mutex::new(s)));
                 }
                 Some(channels)
@@ -553,14 +647,17 @@ impl Player {
             fps_cap: opts.fps_cap,
             duration,
             clock,
+            primed: AtomicBool::new(sink.is_none()),
             sink,
+            audio_rate,
+            preroll_since: Mutex::new(Instant::now()),
             signal: Signal::new(),
             live: Mutex::new(threads_to_start),
             live_cv: Condvar::new(),
             wake,
             last_wake: Mutex::new(Instant::now() - WAKE_GAP),
-            vq: Bounded::new(VIDEO_QUEUE),
-            aq: Bounded::new(AUDIO_QUEUE),
+            vq: Bounded::with_budget(VIDEO_QUEUE, VIDEO_QUEUE_BYTES, weigh),
+            aq: Bounded::with_budget(AUDIO_QUEUE, AUDIO_QUEUE_BYTES, weigh),
         });
 
         let mut handles = Vec::with_capacity(threads_to_start);
@@ -605,6 +702,8 @@ impl Player {
                 consecutive_drops: 0,
                 last_present: None,
                 eof: false,
+                #[cfg(feature = "test-seams")]
+                fault,
             };
             handles.push(spawn("soyuz-media video", Arc::clone(&shared), worker)?);
         }
@@ -689,6 +788,9 @@ impl Player {
             duration,
             clock: Clock::wall(),
             sink: None,
+            audio_rate: 0,
+            primed: AtomicBool::new(true),
+            preroll_since: Mutex::new(Instant::now()),
             signal: Signal::new(),
             live: Mutex::new(0),
             live_cv: Condvar::new(),
@@ -960,6 +1062,9 @@ struct VideoThread {
     consecutive_drops: u32,
     last_present: Option<Instant>,
     eof: bool,
+    /// Test seam: packets left before one injected decoding error ([`seams`]).
+    #[cfg(feature = "test-seams")]
+    fault: Option<u32>,
 }
 
 /// What to do after a frame.
@@ -1275,6 +1380,79 @@ impl VideoThread {
         sh.request_seek(sh.clock.now());
         Ok(())
     }
+
+    /// The test seam's decoding error (`seams::inject_hw_fault`); nothing in a normal build.
+    #[cfg(not(feature = "test-seams"))]
+    #[inline(always)]
+    fn injected_fault(&mut self) -> Result<(), MediaError> {
+        Ok(())
+    }
+
+    #[cfg(feature = "test-seams")]
+    fn injected_fault(&mut self) -> Result<(), MediaError> {
+        match &mut self.fault {
+            Some(0) => {
+                self.fault = None;
+                Err(MediaError::Av { code: -5, what: "injected hardware decoding error".into() })
+            }
+            Some(n) => {
+                *n -= 1;
+                Ok(())
+            }
+            None => Ok(()),
+        }
+    }
+}
+
+/// Test seams: the hidden `test-seams` feature, enabled only for this crate's own tests
+/// (through its self dev-dependency), never in a normal build.
+#[cfg(feature = "test-seams")]
+#[doc(hidden)]
+pub mod seams {
+    use std::cell::Cell;
+
+    use super::{Picked, Player};
+    use crate::hw::{HwActive, HwApi};
+
+    thread_local! {
+        static ARMED: Cell<Option<u32>> = const { Cell::new(None) };
+    }
+
+    /// The video queue's byte budget.
+    pub const VIDEO_QUEUE_BYTES: usize = super::VIDEO_QUEUE_BYTES;
+
+    /// Arm the next [`Player::open`] on this thread: its video decoder fails once after
+    /// `after` packets, the way a hardware decoder does when the device is lost. On a
+    /// machine without a device the decoder is marked as a hardware one (with a pixel
+    /// format no frame has, so frames still take the software path) so the mid-stream
+    /// fallback runs all the same.
+    pub fn inject_hw_fault(after: u32) {
+        ARMED.with(|a| a.set(Some(after)));
+    }
+
+    impl Player {
+        /// `(packets, bytes, demuxer blocked)` of the video packet queue.
+        pub fn video_queue(&self) -> (usize, usize, bool) {
+            let q = &self.shared.vq;
+            (q.len(), q.bytes(), q.producer_waiting())
+        }
+
+        /// Seeks requested so far (by commands, loops and fallbacks).
+        pub fn seek_count(&self) -> u64 {
+            self.shared.serial()
+        }
+    }
+
+    pub(super) fn arm(video: Option<Picked>) -> (Option<Picked>, Option<u32>) {
+        let Some(after) = ARMED.with(Cell::take) else { return (video, None) };
+        let video = video.map(|mut v| {
+            if v.hw.is_none() && v.reopen.is_some() {
+                v.hw = Some(HwActive { api: HwApi::native().unwrap_or(HwApi::D3d11va), pix_fmt: -1 });
+            }
+            v
+        });
+        (video, Some(after))
+    }
 }
 
 impl Worker for VideoThread {
@@ -1302,7 +1480,10 @@ impl Worker for VideoThread {
                     if self.eof || self.resync {
                         continue;
                     }
-                    let r = self.dec.send(Some(&pkt)).and_then(|()| self.drain(sh, &mut frame).map(drop));
+                    let r = self
+                        .injected_fault()
+                        .and_then(|()| self.dec.send(Some(&pkt)))
+                        .and_then(|()| self.drain(sh, &mut frame).map(drop));
                     drop(pkt);
                     if let Err(e) = r {
                         self.fall_back(sh, e)?;
@@ -1433,6 +1614,23 @@ impl AudioThread {
             }
         }
     }
+
+    /// End the pre-roll once the device holds [`PREROLL`] of audio for the current seek,
+    /// or when no more is coming soon: the input ended (`input_done`), the demuxer is
+    /// blocked behind a full video queue (the audio packets it would read next wait
+    /// behind video that waits for the clock), or [`PREROLL_TIMEOUT`] passed.
+    fn check_preroll(&self, sh: &Shared, input_done: bool) {
+        if sh.primed.load(Ordering::Acquire) || sh.serial() != self.serial {
+            return;
+        }
+        let enough = sh.queued_frames() >= preroll_frames(self.rate);
+        if enough || input_done || sh.vq.producer_waiting() {
+            sh.prime();
+        } else if sh.preroll_since.lock().unwrap_or_else(|e| e.into_inner()).elapsed() >= PREROLL_TIMEOUT {
+            log::debug!("soyuz-media: pre-roll timed out with {} frames queued", sh.queued_frames());
+            sh.prime();
+        }
+    }
 }
 
 impl Worker for AudioThread {
@@ -1446,10 +1644,14 @@ impl Worker for AudioThread {
                 // A seek is on its way: whatever is pending belongs to the old position.
                 self.pending.clear();
                 self.pending_pos = 0;
-            } else if !self.push_pending(sh) {
-                // The device is full (or paused): try again shortly.
-                sh.signal.wait_timeout(Duration::from_millis(5));
-                continue;
+            } else {
+                let all = self.push_pending(sh);
+                self.check_preroll(sh, self.eof);
+                if !all {
+                    // The device is full (or paused): try again shortly.
+                    sh.signal.wait_timeout(Duration::from_millis(5));
+                    continue;
+                }
             }
             match sh.aq.pop_timeout(POLL) {
                 Pop::Closed => return Ok(()),
@@ -1491,11 +1693,14 @@ impl Worker for AudioThread {
                         sh.set_ahead(self.end);
                     }
                     // Hand the device the rest, then let it play out before `ended`.
+                    // Nothing more is coming, so a pre-roll ends with whatever is queued.
                     let serial = self.serial;
                     while !interrupted(sh, serial) && !self.push_pending(sh) {
+                        self.check_preroll(sh, true);
                         sh.signal.wait_timeout(Duration::from_millis(5));
                     }
                     while !interrupted(sh, serial) && sh.clock.now() + 0.005 < self.end {
+                        self.check_preroll(sh, true);
                         sh.signal.wait_timeout(POLL);
                     }
                     if interrupted(sh, serial) {
