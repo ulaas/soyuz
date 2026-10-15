@@ -1,9 +1,9 @@
-# Phase V handover: FFmpeg media (status 2026-10-15, after wave 3)
+# Phase V handover: FFmpeg media (status 2026-10-15, complete)
 
 Phase V moves every media task in Soyuz (thumbnails, previews, video playback, audio,
 media tools) to the FFmpeg shared libraries, loaded at run time and shipped with the app.
-**Waves 1–3 are done** (wave 1 on `main`, waves 2 and 3 on branch `phase-v`); **wave 4 is
-not started.** The CI jobs that build FFmpeg run on every push to `main` / `phase-*`; check
+**All four waves are done** (branch `phase-v`, merged into `main`). What is left is the first
+CI run and the checks on real Linux / macOS hardware (see [Open risks](#open-risks)). The CI jobs that build FFmpeg run on every push to `main` / `phase-*`; check
 their results against [First CI run](#first-ci-run).
 
 ## Decisions (owner, 2026-10-14)
@@ -37,13 +37,20 @@ their results against [First CI run](#first-ci-run).
 | V3b | `aea41a0`, `b930f5b` | TUI player (`soyuz-tui/src/player.rs`): frames through the terminal image path at `[media] tui_fps`, status line with text progress bar, volume, mute, loop, mouse seek, screen-reader words; headless tests and snapshots; Settings row for `tui_fps`. |
 | V3c | `22963b3` | Media tools as jobs: `JobKind::Media` (serde `"media"`), `OpKind::Media`, overwrite through `<stem>.soyuz-new.<ext>` plus the trash, identity-stamped undo, journal resume; dialog model (`models/media_tools.rs`, off-thread probe, dry-run plan), GUI and TUI dialogs, context-menu entries, `[media] tools` row. |
 | Fix | `e91d83b` | `PlayerModel::sync_target(None)` closes the player (a missing pending key counted as "same key"); the TUI reads the model's loop toggle. |
+| V4c code | `4fb86db` | In-app FFmpeg runtime download (`services/updates/ffmpeg_runtime.rs`: own matcher on the `ffmpeg-runtime-<ver>` tag, `SHA256SUMS.txt`, streamed hash, staged replace of `<config dir>/ffmpeg`, reload without restart; Settings button and palette action, hidden in Flatpak / MSIX and where no runtime is published); the app updater never picks runtime assets; the Linux in-place updater installs `lib/soyuz/*` and the FFmpeg licence texts and removes old-major libraries. |
+| V4a | `ac0e38e` | AI / MCP tools `media_info` (Read) and `media_convert` / `media_extract_audio` / `media_trim` / `media_frame` (Write: dry-run plans of `JobKind::Media` jobs with conflict policy and scope checks); Rhai `media_info` / `convert` / `extract_audio` / `trim` / `save_frame`; `[media] ffmpeg` / `tools` gates; crash sentinel on the app and MCP workers. |
+| V4b | `b8a230d` | Hardware decoding (`hw.rs`, `sys/hwdec.rs`: D3D11VA / VAAPI / VideoToolbox through `hw_device_ctx` (offset 560 in every major, checked at run time against the `hwaccel_flags` AVOption), transfer to NV12 / P010, software fallback also mid-stream) and the GPU YUV path (`yuv.rs`, `ui/preview/video_gpu.{rs,wgsl}`: BT.601 / 709 / 2020, range, PQ / HLG tone mapping; `[media] gpu_yuv`, off by default). |
+| Gaps | `e253cad` | `[media] threads` reaches the transcoder; resumed media jobs keep their tool label; chapters / tags / cover art / rotation kept where the container allows; pure-Rust faststart (`[media] faststart`). Details below. |
+| Docs | `c16f267`, `de57719` | USER_GUIDE "Media", ACCESSIBILITY, UIA audit states `video` / `mediatools`, demo video (`demo-fixture.ps1 -Ffmpeg`), shots `video-player.png` / `media-tools.png`; media-tools text fields named, player Mute / Loop report their toggle state (audit re-run: 19 checks, 0 failed). |
+| Player | `47f621f` | 150 ms audio pre-roll before the clock runs (engine and rodio ring), packet queues bounded by bytes (video 32 MiB, audio 4 MiB), `AudioReader` is `Send`, hidden `test-seams` feature with a mid-stream hardware-fallback test; `request_seek` race fixed (interrupts set before the target is published). |
 
-Gates after wave 3 on Windows: fmt, clippy (`-D warnings`), `cargo deny`, unsafe allowlist,
-2,363 workspace tests, and 1,538 `soyuz-media` / `soyuz-appcore` / `soyuz-jobs` / `soyuz-tui`
-tests against FFmpeg 9.0.
+Gates at the end of Phase V on Windows: fmt, clippy (`-D warnings`; `soyuz-media` also for
+the Linux and macOS targets), `cargo deny`, unsafe allowlist, 2,423 workspace tests, and
+1,693 `soyuz-media` / `soyuz-appcore` / `soyuz-jobs` / `soyuz-tui` / `soyuz-ai` / `soyuz-mcp` /
+`soyuz-script` tests against FFmpeg 9.0. UIA audit media states: 19 checks, 0 failed.
+Release frame-budget tour: worst 5.7 ms, p95 1.2 ms.
 
-Wave 3 open points: the media-tools dialog has had no manual run in the app. Closed in
-the converter gap pass (branch `vgaps`):
+Converter gap pass (branch `vgaps`) details:
 
 - `[media] threads` reaches the transcoder: `JobOptions::media` (`soyuz_jobs::MediaOptions`,
   serde default, kept by the crash journal) is filled from `[media]` on submit
@@ -52,9 +59,8 @@ the converter gap pass (branch `vgaps`):
 - A resumed media job keeps its tool in the title ("Trimming …", not "Converting …"):
   `OpKind::of_kind` reads the tool from the `MediaOp`, and `services/crash.rs` tracks resumed
   media jobs with `media_tools::job_meta` (tests: `a_resumed_trim_keeps_its_op_label_and_options`,
-  `resumed_media_jobs_keep_their_tool_in_the_title`). Script / CLI submissions in
-  `automation/mod.rs` and `ai/state.rs` still build their meta with `OpKind::from_brief`
-  (shown as Convert); `OpKind::of_kind` is the drop-in fix.
+  `resumed_media_jobs_keep_their_tool_in_the_title`). Script and AI submissions use
+  `media_tools::job_meta` too; AI jobs also take the configured `JobOptions::media`.
 - Transcoder fidelity (`tests/fidelity.rs`, on the committed fixtures):
   - **Chapters** are written for MP4 / M4A / MOV, Matroska / WebM, Ogg, FLAC and MP3
     (`mux::container_keeps_chapters`) with all their tags, moved to the output's time zero
@@ -83,6 +89,8 @@ the converter gap pass (branch `vgaps`):
 soyuz-app (egui) / soyuz-tui (ratatui)
         │  Settings media group, preview card, About
 soyuz-appcore  services/media.rs   runtime(), status(), configure(), retry(), crash sentinel
+               services/updates/ffmpeg_runtime.rs   in-app runtime download
+               models/player.rs, models/media_tools.rs, services/media_player.rs (rodio)
                services/thumb_video.rs, preview_video.rs, preview_rich.rs (video facts, posters)
                file_class.rs        one video / audio extension table (wider when a runtime is loaded)
         │
@@ -90,11 +98,12 @@ soyuz-media    lib.rs     Runtime::get(dirs) / loaded(), search_dirs(), lib_file
                info.rs    probe() → MediaInfo { streams, chapters, tags, cover }
                frame.rs   grab_frame() → RgbaImage (rotation applied, fitted into max_px)
                audio.rs   AudioReader (f32 interleaved, seek), peaks()
-               player.rs  Player (threads, clock, seek; frames → FrameSink, audio → AudioSink)
+               player.rs  Player (threads, clock, pre-roll, seek; frames → FrameSink, audio → AudioSink)
+               hw.rs, yuv.rs   hardware device choice / fallback; YUV frames and colour maths
                transcode.rs, presets.rs, mux.rs   run / plan, 14 presets, container tables
                faststart.rs  moov before mdat after the trailer (plain Rust)
                sys/       the only unsafe code: loader, symbols, layout, avio, demux, codec,
-                          scale, resample, check (self-test)
+                          hwdec, scale, resample, encode, mux, check (self-test)
         │
 avcodec-63 / avformat-63 / avutil-61 / swscale-10 / swresample-7   (or 8.x / 7.1 on Linux)
 ```
@@ -125,16 +134,13 @@ Key properties of `soyuz-media`:
 
 ## Config `[media]`
 
-`ffmpeg` (true), `ffmpeg_dir` (""), `threads` (0 = auto), `hw_decode` ("auto"),
+`ffmpeg` (true), `ffmpeg_dir` (""), `threads` (0 = auto), `hw_decode` ("auto"), `gpu_yuv` (false),
 `audio_backend` ("auto"), `player` (true), `autoplay` (false), `loop` (false), `volume`
 (80), `muted` (false), `seek_step_secs` (5.0), `max_px` (1280), `tui_fps` (8),
 `poster_secs` (0.0 = a fraction of the duration, as before), `tools` (true), `faststart` (true).
 
-Read today (with GUI rows in Settings → Preview → Media): `ffmpeg`, `ffmpeg_dir`, `threads`,
-`max_px`, `poster_secs`, since wave 2 `audio_backend`, `player`, `autoplay`, `loop`,
-`volume`, `muted`, `seek_step_secs`, and since wave 3 `tui_fps` and `tools`, since the gap pass `faststart` (and `threads` also
-by the media tools). Still unread:
-`hw_decode` (V4b); add its GUI row in the step that starts reading it (no dead settings).
+Every key is read and has a GUI row in Settings → Preview → Media (the TUI settings page is
+generated from the schema). `threads` is used by the player and the media tools.
 `[preview] video` (was `video_ffmpeg`) turns video previews on or off.
 
 ## Working on it locally
@@ -144,12 +150,14 @@ by the media tools). Still unread:
   statically linked dependencies have no published sources). Its `include/` folder has the
   headers for checking struct offsets; its `ffmpeg.exe` can make test files.
 - **Run the media tests against real libraries**:
-  `SOYUZ_FFMPEG_DIR=<folder with the DLLs> SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs -p soyuz-tui`.
+  `SOYUZ_FFMPEG_DIR=<folder with the DLLs> SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs -p soyuz-tui -p soyuz-ai -p soyuz-mcp -p soyuz-script`.
+  `SOYUZ_MEDIA_HW=1` makes `tests/hw_yuv.rs` fail when no hardware device opens (for runs on
+  a GPU machine).
   With `SOYUZ_MEDIA_TESTS=1` a missing runtime is a failure; without it the with-libs
   tests skip. Plain `cargo test --workspace` needs no libraries.
 - **Inspect a file**: `SOYUZ_FFMPEG_DIR=<folder> cargo run -p soyuz-media --example probe -- [--json] <file>...`.
-- **Test fixtures**: `crates/soyuz-media/tests/fixtures/` (three tiny files, commands in
-  its README) plus the writers in `soyuz_media::fixtures` (WAV, I420 / MJPEG AVI).
+- **Test fixtures**: `crates/soyuz-media/tests/fixtures/` (small files, commands in its
+  README) plus the writers in `soyuz_media::fixtures` (WAV, I420 / MJPEG AVI).
 - **Builds**: `scripts/ffmpeg-build.sh <linux64|win64|macos-arm64|macos-x86_64|macos-universal> <out-dir> [--dry-run]`
   reads `third_party/ffmpeg/pins.env`; it runs on Linux / macOS (Windows DLLs are
   cross-built with mingw on Linux). `docs/RELEASING.md` "FFmpeg runtime" covers pin updates
@@ -177,24 +185,16 @@ The workflows run on pushes to `main` and `phase-*`. Expected on the first run:
 Not verifiable locally (only in CI): the real FFmpeg builds, WiX harvesting of the DLLs,
 `gh release create --latest=false`, cargo-deb globs, the `actions/cache` paths.
 
-## Remaining waves
+## After Phase V
 
-V2a–V3c are done (see above); their rows stay for reference. Wave 4 is next: V4a and V4c,
-with V4b only if needed.
-
-Up to three agents in parallel, one crate or module set each, one compile at a time.
-
-| Step | Owns | Notes |
-|---|---|---|
-| **V2a** player engine | `soyuz-media/src/{player,clock,queue}.rs` | Demux thread → video / audio decode threads → bounded queues; audio clock master (wall clock without audio); accurate seek; frames through the `FrameSink` trait. If a decode thread does not stop within the bounded join, **leak** its contexts, never free them. Tests with a null audio output. |
-| **V2b** FFmpeg audio + player model | `services/preview_audio.rs`, `preview_rich.rs` (audio), `ui/preview/rich.rs::audio`, new `services/media_player.rs` (rodio `AudioOutput`), new `models/player.rs`, locales | `[media] audio_backend` picks FFmpeg or Symphonia. Count `played_frames` inside the rodio `Source` pull (the cpal callback); never block that thread; underruns play silence and advance the clock. Opus / WMA / APE / AC-3 start playing here. |
-| **V2c** transcoder + presets | `soyuz-media/src/{transcode,presets,mux}.rs` | Encoders set up through `AVCodecParameters` (there is no `sample_fmt` AVOption). `AVPacket.pos` is often -1: progress falls back to pts / duration. Hardware encoders: probe by opening once (`Runtime::has_encoder` already does). Output to `<dest>.part`, then rename. |
-| **V3a** GUI player | `ui/preview/video.rs`, `ui/quicklook.rs`, keymap defaults (`KeyContext::Player`), `actions.rs` (`Action::Media*`), palette, locales, frame-budget tour step | Update one texture per player (`TextureHandle::set`), not a new texture per frame. Controls get accessible names. |
-| **V3b** TUI player | `soyuz-tui` `view/preview.rs` (video), `view/quicklook.rs`, `input/preview.rs`, TUI locales, snapshots | Frames at `[media] tui_fps` through the terminal image path; audio-only and a text progress bar when images are off. |
-| **V3c** media tools as jobs | `soyuz-jobs/src/{kinds/media.rs, job.rs, kinds/mod.rs, history.rs}`, `models/media_tools.rs`, `models/dialogs.rs`, `ops/fileops.rs`, `services/jobs.rs`, GUI + TUI dialogs | New `JobKind::Media` (its serde name is persisted), `OpKind::Media`; every exhaustive match site (`job.rs` brief / touched_roots / default_label, `kinds/mod.rs` run_kind, `journal.rs`, `jobs_rows.rs`, `ui/panels/activity.rs`); undo via `UndoRecord::Copied { dst }` + identity stamp; priority Low by default. Regenerate KEYBOARD / CONFIG after merging V3a, then V3c. |
-| **V4a** AI / MCP / Rhai | `soyuz-ai` tool catalog, `soyuz-script` API, docs | `media_info` (Read) and `media_convert` / `media_extract_audio` / `media_trim` / `media_frame` (Write, dry-run plans → approval → job). |
-| **V4b** (optional) | `soyuz-media/src/hw.rs`, `hw_device_ctx` offset, `ui/preview/video_gpu.rs` | Only if the CPU path misses the frame budget. |
-| **V4c** polish | `services/updates.rs` (runtime download with its own matcher on the `ffmpeg-runtime-*` tag), Settings button, USER_GUIDE, ACCESSIBILITY, UIA audit state, screenshots | The Linux in-place updater must also extract `lib/soyuz/*`. |
+Not in scope, candidates for later: subtitles, audio-track switching, SVT-AV1 encoding,
+process isolation for decoding, reading HDR mastering metadata (PQ assumes a 1000-nit
+peak), a compact volume control in the narrow preview pane, toggle state for the other
+icon toggles (only the player's Mute / Loop report "not pressed"), hiding (not only
+refusing) the AI write tools when `[media] tools = false`, and the crash sentinel for
+Rhai's `media_info`. `sys::Demuxer<'a>` is `Send` even when it borrows a non-`Sync`
+`stale` closure: unused that way today, documented in `sys/mod.rs`; tighten the bound
+before a demuxer crosses threads.
 
 ## Open risks
 
@@ -202,6 +202,11 @@ Up to three agents in parallel, one crate or module set each, one compile at a t
   script.
 - The 7.1 and 8.x layout tables are verified against headers only until `media-v7` and the
   Ubuntu leg run.
+- Hardware decoding ran only on Windows (D3D11VA); VAAPI and VideoToolbox are untested on
+  real devices (CI exercises the software fallback). Untagged HD is treated as BT.709 by the
+  GPU path and as BT.601 by swscale, so mis-tagged clips differ slightly between the paths.
+- Linux and macOS cross-clippy of `soyuz-app` cannot run on the Windows dev machine
+  (`ring` needs a C toolchain); CI covers it.
 - In-process decoding has no process isolation: the limits, own AVIO and the crash sentinel
   reduce the risk; a malicious file that crashes FFmpeg still takes the app down once.
 - Patents: H.264 / HEVC / AAC decoders may be patent-encumbered in some countries; Soyuz

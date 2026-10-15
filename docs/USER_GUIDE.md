@@ -416,8 +416,9 @@ sets the decoder and encoder threads of the media tools too.
 - **Choppy playback in the terminal UI**: lower `[media] tui_fps`, or use a terminal with
   kitty or sixel graphics. Half blocks are drawn as text and are the slowest.
 
-<!-- TODO(orchestrator): describe the player's audio start-up and memory limits from
-vplayer (audio pre-roll, byte-bounded queues) if they are user-visible. -->
+- **A short pause before playback starts or resumes after a seek**: the player buffers
+  about 0.15 s of audio first, so sound and picture start together. Large videos (4K) use
+  a bounded amount of memory for read-ahead (about 32 MB of video), whatever the bit rate.
 
 ## Tools
 
