@@ -314,3 +314,49 @@ fn audit_log_records_the_task() {
     assert!(ev.iter().any(|e| e.event == "job" && e.job_id.is_some()));
     assert!(ev.iter().all(|e| e.via == "fake/fake-transcript" && e.source == "assistant" && e.session == "t1"));
 }
+
+/// The media tools through the assistant (Phase V): `media_info` answers with framed
+/// facts, `media_frame` is a plan that waits for approval and then runs as a media job.
+/// Needs the FFmpeg libraries (`SOYUZ_FFMPEG_DIR`; `SOYUZ_MEDIA_TESTS=1` makes a missing
+/// runtime a failure).
+#[test]
+fn media_tools_plan_and_run_jobs_after_approval() {
+    let strict = std::env::var("SOYUZ_MEDIA_TESTS").is_ok_and(|v| v == "1");
+    let dirs = match std::env::var_os(soyuz_media::DIR_ENV) {
+        Some(d) => vec![std::path::PathBuf::from(d)],
+        None => soyuz_media::search_dirs("", &std::env::temp_dir().join("soyuz-app-ai-media-tests-config")),
+    };
+    if let Err(e) = soyuz_media::Runtime::get(&dirs) {
+        assert!(!strict, "SOYUZ_MEDIA_TESTS=1 but no FFmpeg runtime loads: {e}");
+        eprintln!("skipped: no FFmpeg runtime ({e})");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("w");
+    std::fs::create_dir_all(&root).unwrap();
+    let frame = soyuz_media::fixtures::jpeg_solid(32, 24, [200, 200, 20]);
+    let frames: Vec<Vec<u8>> = (0..10).map(|_| frame.clone()).collect();
+    let clip = root.join("clip.avi");
+    std::fs::write(&clip, soyuz_media::fixtures::avi(32, 24, 5, soyuz_media::fixtures::AviCodec::Mjpeg, &frames))
+        .unwrap();
+    let turns = vec![
+        FakeTurn::text("Looking at the clip.").call("media_info", json!({"path": clip})),
+        FakeTurn::text("Saving a frame.").call("media_frame", json!({"path": clip, "at": 1})),
+        FakeTurn::text("Saved."),
+    ];
+    let h = Harness::new(&root);
+    let model = Arc::new(FakeModel::new(turns));
+    let requests = model.requests();
+    let (_, out) = h.chat(model, "save a still of the clip", Policy::ApproveAll);
+    assert_eq!(out.finish, Some(Finish::Done), "{out:?}");
+    assert_eq!(out.tree_at_first_plan.as_deref().unwrap(), ["clip.avi"], "nothing before approval");
+    assert_eq!(out.proposed.len(), 1);
+    assert!(out.executed.iter().all(|(_, ok, _)| *ok), "{:?}", out.executed);
+    assert_eq!(tree(&root), ["clip.avi", "clip.png"]);
+    let reqs = requests.lock();
+    let results = tool_results(&reqs[1].messages);
+    assert!(
+        results.iter().any(|r| r.contains("\"codec\":\"mjpeg\"") && r.contains("trust=\"untrusted\"")),
+        "{results:?}"
+    );
+}

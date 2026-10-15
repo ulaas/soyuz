@@ -11,6 +11,7 @@ use soyuz_core::{EntryInfo, EntryKind, EntryKindSet, HashAlgo, NamePatternSpec, 
 use soyuz_search::{DupeEvent, SearchEvent, SearchQuery, SizeEvent};
 
 use super::args::*;
+use super::media::{self, MediaAccess, MediaRequest};
 use super::plan::{self, Plan, PlanOp};
 use super::scope::Scope;
 use super::{CallContext, Risk, ToolError, ToolHost, ToolInput};
@@ -24,11 +25,18 @@ pub struct FsToolHost {
     pub max_read_bytes: u64,
     /// Search threads (0 = auto).
     pub search_threads: usize,
+    /// `[media]` settings of the media tools (FFmpeg libraries).
+    pub media: MediaAccess,
 }
 
 impl FsToolHost {
     pub fn new(scope: Scope) -> Self {
-        FsToolHost { scope, max_read_bytes: 256 * 1024, search_threads: 0 }
+        FsToolHost { scope, max_read_bytes: 256 * 1024, search_threads: 0, media: MediaAccess::default() }
+    }
+
+    /// The same host with `[media]` settings for the media tools.
+    pub fn with_media(self, media: MediaAccess) -> Self {
+        FsToolHost { media, ..self }
     }
 
     pub fn from_config(cfg: &AiScope) -> Self {
@@ -322,6 +330,7 @@ impl ToolHost for FsToolHost {
             }
             ToolInput::ArchiveList(a) => self.archive_list(a),
             ToolInput::TrashList(a) => self.trash_list(a),
+            ToolInput::MediaInfo(a) => media::info(&self.media, &a.path),
             other => Err(ToolError::Unsupported(other.name().to_string())),
         }
     }
@@ -329,6 +338,11 @@ impl ToolHost for FsToolHost {
     fn plan(&self, input: &ToolInput, ctx: &CallContext) -> Result<Plan, ToolError> {
         let s = &self.scope;
         let ctl = &ctx.ctl;
+        if let Some(req) = MediaRequest::of(input) {
+            let req = req?;
+            let rt = self.media.runtime_for_tools()?;
+            return media::plan(s, &rt, req);
+        }
         match input {
             ToolInput::Copy(a) => plan::transfer(s, false, &a.sources, &a.dest_dir, a.conflict, ctl),
             ToolInput::Move(a) => plan::transfer(s, true, &a.sources, &a.dest_dir, a.conflict, ctl),

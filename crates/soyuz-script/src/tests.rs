@@ -237,3 +237,116 @@ fn load_dir_respects_disabled_and_reports_errors() {
     let sig = crate::script::signature(dir.path());
     assert_eq!(sig.len(), 3);
 }
+
+#[test]
+fn media_arguments_are_validated_before_anything_runs() {
+    let s = set(r#"
+        register_action(#{ title: "preset", run: |c| convert(c.focused, "x264") });
+        register_action(#{ title: "codec", run: |c| extract_audio(c.focused, "mp3") });
+        register_action(#{ title: "window", run: |c| trim(c.focused, 5, 2) });
+        register_action(#{ title: "neg", run: |c| save_frame(c.focused, -1) });
+        register_action(#{ title: "fmt", run: |c| save_frame(c.focused, 1.5, "gif") });
+        register_column(#{ title: "Dur", value: |e| media_info(e.path).duration });
+    "#);
+    let c = ctx(&std::env::temp_dir(), &[std::env::temp_dir().join("clip.mkv")]);
+    let msg = |id: &str| s.run_action(id, &c).unwrap_err().message;
+    assert!(msg("t/preset").contains("unknown preset"), "{}", msg("t/preset"));
+    assert!(msg("t/codec").contains("unknown codec"));
+    assert!(msg("t/window").contains("end must be after start"));
+    assert!(msg("t/neg").contains("≥ 0"));
+    assert!(msg("t/fmt").contains("unknown format"));
+    // FFmpeg in a column cell is refused (columns are drawn, decoding is not cheap).
+    let e = s.column_value(0, &EntryInfo::minimal(std::env::temp_dir().join("a.mkv"), EntryKind::File)).unwrap_err();
+    assert!(e.message.contains("not allowed here"), "{e}");
+}
+
+#[test]
+fn media_functions_need_the_libraries() {
+    if soyuz_media::Runtime::loaded().is_some() {
+        eprintln!("skipped: a runtime is loaded in this process");
+        return;
+    }
+    let s = set(r#"
+        register_action(#{ title: "info", run: |c| media_info(c.focused) });
+        register_action(#{ title: "conv", run: |c| convert(c.focused, "mkv-copy") });
+    "#);
+    let c = ctx(&std::env::temp_dir(), &[std::env::temp_dir().join("clip.avi")]);
+    assert!(s.run_action("t/info", &c).unwrap_err().message.contains("FFmpeg libraries not loaded"));
+    assert!(s.run_action("t/conv", &c).unwrap_err().message.contains("FFmpeg libraries not loaded"));
+}
+
+/// The FFmpeg runtime for the with-libraries test (`SOYUZ_MEDIA_TESTS=1` makes a missing
+/// one a failure).
+fn media_runtime() -> bool {
+    let strict = std::env::var("SOYUZ_MEDIA_TESTS").is_ok_and(|v| v == "1");
+    let dirs = match std::env::var_os(soyuz_media::DIR_ENV) {
+        Some(d) => vec![PathBuf::from(d)],
+        None => soyuz_media::search_dirs("", &std::env::temp_dir().join("soyuz-script-media-tests-config")),
+    };
+    match soyuz_media::Runtime::get(&dirs) {
+        Ok(_) => true,
+        Err(e) => {
+            assert!(!strict, "SOYUZ_MEDIA_TESTS=1 but no FFmpeg runtime loads: {e}");
+            eprintln!("skipped: no FFmpeg runtime ({e})");
+            false
+        }
+    }
+}
+
+#[test]
+fn media_functions_plan_jobs_with_the_libraries() {
+    use soyuz_media::{AudioCodecChoice, MediaOp, fixtures};
+    if !media_runtime() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let clip = dir.path().join("clip.avi");
+    let frame = fixtures::jpeg_solid(32, 24, [10, 200, 10]);
+    let frames: Vec<Vec<u8>> = (0..10).map(|_| frame.clone()).collect();
+    std::fs::write(&clip, fixtures::avi(32, 24, 5, fixtures::AviCodec::Mjpeg, &frames)).unwrap();
+    let tone = dir.path().join("tone.wav");
+    std::fs::write(&tone, fixtures::wav(8000, 1, &fixtures::sine(8000, 440.0, 0.3, 8000))).unwrap();
+    std::fs::write(dir.path().join("clip.mkv"), b"taken").unwrap();
+    let src = format!(
+        r#"register_action(#{{ title: "media", run: |c| {{
+               let info = media_info(c.focused);
+               toast(info.container + " " + info.streams[0].kind + " " + info.streams[0].width);
+               convert(c.focused, "mkv-copy");
+               save_frame(c.focused, 0.5);
+               trim(c.focused, 0.2, 1);
+               extract_audio("{tone}", "flac");
+           }} }});
+           register_action(#{{ title: "no-audio", run: |c| extract_audio(c.focused) }});"#,
+        tone = p(&tone.to_string_lossy())
+    );
+    let s = set(&src);
+    assert!(s.scripts[0].is_ok(), "{:?}", s.scripts[0].error);
+    let c = ctx(dir.path(), std::slice::from_ref(&clip));
+    let out = s.run_action("t/media", &c).unwrap();
+    assert_eq!(out.ui[0], UiOp::Toast("avi video 32".into()));
+    let media: Vec<(PathBuf, PathBuf, MediaOp)> = out
+        .jobs
+        .iter()
+        .map(|j| match &j.kind {
+            JobKind::Media { src, dest, op } => (src.clone(), dest.clone(), op.clone()),
+            k => panic!("expected a media job, got {k:?}"),
+        })
+        .collect();
+    assert_eq!(media.len(), 4);
+    assert_eq!(media[0].1, dir.path().join("clip (2).mkv"), "a taken name gets the next free one");
+    assert_eq!(media[1].1, dir.path().join("clip.png"));
+    assert!(matches!(media[2].2, MediaOp::Trim { start, end, stream_copy: true } if start == 0.2 && end == 1.0));
+    assert_ne!(media[2].1, clip, "a trim never writes over its input");
+    assert_eq!(media[3].1, dir.path().join("tone.flac"));
+    assert_eq!(media[3].2, MediaOp::ExtractAudio { codec: AudioCodecChoice::Flac });
+    assert!(out.jobs[0].summary.starts_with("Convert “clip.avi” to “clip (2).mkv”"), "{}", out.jobs[0].summary);
+    // Nothing was written.
+    assert!(!dir.path().join("clip.png").exists());
+    // The dry run catches an input without audio.
+    assert!(s.run_action("t/no-audio", &c).unwrap_err().message.contains("audio"));
+    // `[media] tools = false` refuses the planned jobs (media_info still works).
+    crate::set_media_access(true, false);
+    let e = s.run_action("t/media", &c).unwrap_err();
+    crate::set_media_access(true, true);
+    assert!(e.message.contains("[media] tools = false"), "{e}");
+}

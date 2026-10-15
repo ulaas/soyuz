@@ -73,6 +73,46 @@ fn new_path(dest: &Path) -> PathBuf {
     dest.with_file_name(tmp)
 }
 
+/// The output extension `op` implies without opening `src` (the AI / script planners use
+/// [`soyuz_media::plan`]'s `ext` instead when the libraries are loaded): the preset's,
+/// the codec's (a copied audio stream goes into Matroska audio, which takes any codec),
+/// the picture format's, or the input's own for a trim.
+pub fn expected_ext(src: &Path, op: &MediaOp) -> String {
+    use soyuz_media::{AudioCodecChoice, PresetId};
+    match op {
+        MediaOp::Convert { preset, .. } => preset.preset().ext.to_string(),
+        MediaOp::Remux { container } => soyuz_media::ext_for_container(container).to_string(),
+        MediaOp::ExtractAudio { codec } => match codec {
+            AudioCodecChoice::Copy => "mka",
+            AudioCodecChoice::Flac => PresetId::AudioFlac.preset().ext,
+            AudioCodecChoice::Aac => PresetId::AudioAac.preset().ext,
+            AudioCodecChoice::Opus => PresetId::AudioOpus.preset().ext,
+            AudioCodecChoice::Wav => PresetId::AudioWav.preset().ext,
+        }
+        .to_string(),
+        MediaOp::Trim { .. } => src.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default(),
+        MediaOp::Frame { format, .. } => format.ext().to_string(),
+    }
+}
+
+/// Where a media tool writes when no output is named (the media-tools dialog's default
+/// name): `<stem>.<ext>` beside `src`, made unique (`clip (2).mp4`) against the folder,
+/// the source itself included.
+pub fn default_dest(src: &Path, ext: &str) -> PathBuf {
+    let dir = src.parent().unwrap_or(Path::new(""));
+    let name = soyuz_core::entry::display_name(src);
+    let stem = match name.rfind('.') {
+        Some(i) if i > 0 => &name[..i],
+        _ => name.as_str(),
+    };
+    let base = if ext.is_empty() { stem.to_string() } else { format!("{stem}.{ext}") };
+    let same = |p: &Path| {
+        let (a, b) = (p.to_string_lossy(), src.to_string_lossy());
+        if cfg!(any(windows, target_os = "macos")) { a.to_lowercase() == b.to_lowercase() } else { a == b }
+    };
+    soyuz_core::unique_name(dir, &base, "", &|p| same(p) || soyuz_fs::exists_nofollow(p))
+}
+
 pub(crate) fn run_media(ctx: &JobCtx, src: &Path, dest: &Path, op: &MediaOp) -> FsResult<()> {
     let rt = runtime(ctx, src)?;
     let input = soyuz_fs::stat(src, true)?;
@@ -226,6 +266,28 @@ mod tests {
         assert_eq!(new_path(Path::new("/v/noext")), PathBuf::from("/v/noext.soyuz-new.out"));
         assert!(crate::journal::is_leftover_name("clip.soyuz-new.mp4"));
         assert!(crate::journal::is_leftover_name("clip.soyuz-new.mp4.part"));
+    }
+
+    #[test]
+    fn default_names_follow_the_dialog() {
+        use soyuz_media::{AudioCodecChoice, ImageFormat, PresetId};
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("clip.mkv");
+        std::fs::write(&src, b"x").unwrap();
+        let convert = MediaOp::Convert { preset: PresetId::Mp4Mpeg4, video_stream: None, audio_stream: None };
+        assert_eq!(expected_ext(&src, &convert), "mp4");
+        assert_eq!(default_dest(&src, "mp4"), dir.path().join("clip.mp4"));
+        std::fs::write(dir.path().join("clip.mp4"), b"x").unwrap();
+        assert_eq!(default_dest(&src, "mp4"), dir.path().join("clip (2).mp4"));
+        // A trim keeps the container: the source's own name is taken.
+        let trim = MediaOp::Trim { start: 0.0, end: 1.0, stream_copy: true };
+        assert_eq!(expected_ext(&src, &trim), "mkv");
+        assert_eq!(default_dest(&src, "mkv"), dir.path().join("clip (2).mkv"));
+        assert_eq!(expected_ext(&src, &MediaOp::ExtractAudio { codec: AudioCodecChoice::Copy }), "mka");
+        assert_eq!(expected_ext(&src, &MediaOp::ExtractAudio { codec: AudioCodecChoice::Aac }), "m4a");
+        let frame = MediaOp::Frame { at: 1.0, format: ImageFormat::Jpeg, max_px: None };
+        assert_eq!(expected_ext(&src, &frame), "jpg");
+        assert_eq!(expected_ext(&src, &MediaOp::Remux { container: "matroska".into() }), "mkv");
     }
 
     #[test]

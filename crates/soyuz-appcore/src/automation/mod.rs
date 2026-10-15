@@ -188,6 +188,8 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
         st.loader = Some(scripts::Loader::start(soyuz_script::scripts_dir(), app.config.scripting.clone(), wake));
         st.scripting_sent = Some(app.config.scripting.clone());
     }
+    // The scripts' media functions follow `[media]` (cheap stores, every frame).
+    soyuz_script::set_media_access(app.config.media.ffmpeg, app.config.media.tools);
     if st.scripting_sent.as_ref() != Some(&app.config.scripting) {
         st.scripting_sent = Some(app.config.scripting.clone());
         if let Some(l) = &st.loader {
@@ -384,6 +386,7 @@ fn items_of(kind: &JobKind) -> (Vec<PathBuf>, Option<PathBuf>) {
         JobKind::Delete { paths, .. } => (paths.clone(), None),
         JobKind::Rename { pairs } => (pairs.iter().map(|(a, _)| a.clone()).collect(), None),
         JobKind::Create { path, .. } => (vec![path.clone()], None),
+        JobKind::Media { src, dest, .. } => (vec![src.clone()], Some(dest.clone())),
         _ => (Vec::new(), None),
     }
 }
@@ -394,7 +397,8 @@ pub fn submit_planned(app: &mut AppCore, title: &str, jobs: Vec<PlannedJob>) {
         let mut spec = app.fileops.jobs.spec(j.kind);
         spec.options.label = Some(format!("{} · {title}", j.summary));
         let (items, dest) = items_of(&spec.kind);
-        let op = OpKind::from_brief(spec.kind.brief());
+        let op = crate::models::media_tools::job_meta(&spec.kind)
+            .map_or_else(|| OpKind::from_brief(spec.kind.brief()), |m| m.op);
         let meta = JobMeta::new(op, &items, dest).origin(JobOrigin::Script);
         app.fileops.jobs.submit(spec, meta);
     }

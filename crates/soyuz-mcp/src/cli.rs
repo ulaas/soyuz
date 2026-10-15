@@ -22,11 +22,11 @@ pub struct CliOptions {
 /// Run until stdin closes; returns the process exit code.
 pub fn run(opts: CliOptions) -> i32 {
     let config_path = soyuz_core::config::default_path();
-    let ai = match soyuz_core::config::load_or_default(&config_path) {
-        Ok(l) => l.config.ai,
+    let (ai, media) = match soyuz_core::config::load_or_default(&config_path) {
+        Ok(l) => (l.config.ai, l.config.media),
         Err(e) => {
             log::warn!("{}: {e}; using default AI settings", config_path.display());
-            soyuz_core::config::Ai::default()
+            (soyuz_core::config::Ai::default(), soyuz_core::config::Media::default())
         }
     };
     if !ai.enabled {
@@ -45,7 +45,10 @@ pub fn run(opts: CliOptions) -> i32 {
         }
     }
     let history = soyuz_core::config::config_dir().join("history.jsonl");
-    let backend = HeadlessBackend::new(ai, Some(config_path), Some(history), soyuz_ai::audit::default_path());
+    // Nothing else loads the FFmpeg libraries here: the media tools may.
+    let media = soyuz_ai::tools::MediaAccess::from_config(&media, true);
+    let backend =
+        HeadlessBackend::with_media(ai, media, Some(config_path), Some(history), soyuz_ai::audit::default_path());
     let server = Server::new(backend.clone());
     let session = Session::new(Transport::Stdio, opts.client);
     let stdout: Box<dyn Write + Send> = Box::new(std::io::stdout());

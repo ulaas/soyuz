@@ -6868,6 +6868,7 @@ dependencies = [
  "soyuz-core",
  "soyuz-fs",
  "soyuz-jobs",
+ "soyuz-media",
  "soyuz-search",
  "tempfile",
  "thiserror 2.0.21",
@@ -7121,6 +7122,7 @@ dependencies = [
  "soyuz-core",
  "soyuz-fs",
  "soyuz-jobs",
+ "soyuz-media",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
@@ -7158,6 +7160,7 @@ dependencies = [
  "soyuz-fs",
  "soyuz-jobs",
  "soyuz-mcp",
+ "soyuz-media",
  "tempfile",
  "thiserror 2.0.21",
 ]

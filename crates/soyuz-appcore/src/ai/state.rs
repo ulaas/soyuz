@@ -924,7 +924,14 @@ fn launch(
     app.ai.sync_external(&ai);
     refresh_snapshot(app, true);
     let link = app.ai.link();
-    let host = AppToolHost::new(FsToolHost::from_config(&scope), app.ai.snapshot.clone(), Some(link.clone()));
+    // The app loads the FFmpeg libraries itself (`services::media`): no search folders here.
+    let media = soyuz_ai::tools::MediaAccess::from_config(&app.config.media, false);
+    let host = AppToolHost::new(
+        FsToolHost::from_config(&scope).with_media(media),
+        app.ai.snapshot.clone(),
+        Some(link.clone()),
+    )
+    .with_sentinel();
     let exec = AppExecutor { engine: app.fileops.jobs.engine_arc(), ui: link };
     let task = spec.id;
     let audit = Audit::new(
@@ -1297,14 +1304,15 @@ fn submit(app: &mut AppCore, host: &dyn Host, task: TaskId, plan: &Plan) -> Resu
             let mut spec = exec::task_spec(task, plan).ok_or("no job")?;
             // Merge the configured copy options (preserve, reflink, buffers, verify).
             spec.options.copy = app.fileops.jobs.spec(spec.kind.clone()).options.copy;
-            let op = OpKind::from_brief(spec.kind.brief());
+            let media = crate::models::media_tools::job_meta(&spec.kind);
+            let op = media.as_ref().map_or_else(|| OpKind::from_brief(spec.kind.brief()), |m| m.op);
             let items: Vec<PathBuf> =
                 plan.items.iter().filter_map(|i| i.src.clone().or_else(|| i.dst.clone())).collect();
             let dest = match &spec.kind {
                 soyuz_jobs::JobKind::Copy { dest_dir, .. } | soyuz_jobs::JobKind::Move { dest_dir, .. } => {
                     Some(dest_dir.clone())
                 }
-                _ => None,
+                _ => media.and_then(|m| m.dest),
             };
             // The chat reports the result; no completion toast on top of the panel.
             let meta = JobMeta::new(op, &items, dest).ai(task.0).quiet();

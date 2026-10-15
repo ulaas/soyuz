@@ -25,7 +25,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::{Mutex, RwLock};
 use serde_json::{Value, json};
 use soyuz_ai::Secret;
-use soyuz_ai::tools::{CallContext, FsToolHost, Plan, PlanAction, Scope, ToolError, ToolHost, ToolInput};
+use soyuz_ai::tools::{CallContext, FsToolHost, MediaAccess, Plan, PlanAction, Scope, ToolError, ToolHost, ToolInput};
 use soyuz_core::config::{Ai, AiMcpApprovalUi, AiMcpClient};
 use soyuz_core::{Location, OpControl};
 use soyuz_jobs::{HistoryId, JobEngine, JobId};
@@ -117,12 +117,12 @@ impl ToolHost for AppHost {
             | ToolInput::GetCurrentLocation(_)
             | ToolInput::ListTabs(_)
             | ToolInput::HistoryList(_) => self.ask(UiCall::Read(input.clone()), &ctx.ctl),
-            _ => self.fs.read(input, ctx),
+            _ => crate::ai::host::media_guarded(true, input, || self.fs.read(input, ctx)),
         }
     }
 
     fn plan(&self, input: &ToolInput, ctx: &CallContext) -> Result<Plan, ToolError> {
-        self.fs.plan(input, ctx)
+        crate::ai::host::media_guarded(true, input, || self.fs.plan(input, ctx))
     }
 
     fn ui(&self, input: &ToolInput, ctx: &CallContext) -> Result<Value, ToolError> {
@@ -142,6 +142,8 @@ fn call_key(ctl: &OpControl) -> usize {
 /// The [`Backend`] of the window.
 pub struct GuiBackend {
     ai: RwLock<Ai>,
+    /// `[media]` settings of the media tools.
+    media: RwLock<MediaAccess>,
     host: RwLock<Arc<AppHost>>,
     tx: Sender<BridgeMsg>,
     wake: Wake,
@@ -156,6 +158,7 @@ impl GuiBackend {
     pub fn new(ai: &Ai, engine: Arc<JobEngine>, tx: Sender<BridgeMsg>, wake: Wake, audit_path: PathBuf) -> Arc<Self> {
         Arc::new(GuiBackend {
             ai: RwLock::new(ai.clone()),
+            media: RwLock::new(MediaAccess::default()),
             host: RwLock::new(Arc::new(AppHost {
                 fs: FsToolHost::from_config(&ai.scope),
                 tx: tx.clone(),
@@ -172,12 +175,21 @@ impl GuiBackend {
         let scope_changed = self.ai.read().scope != ai.scope;
         *self.ai.write() = ai.clone();
         if scope_changed {
-            *self.host.write() = Arc::new(AppHost {
-                fs: FsToolHost::from_config(&ai.scope),
-                tx: self.tx.clone(),
-                wake: self.wake.clone(),
-            });
+            self.rebuild_host();
         }
+    }
+
+    /// `[media]` changed: the media tools follow it (the app loads the libraries itself).
+    pub fn set_media(&self, media: MediaAccess) {
+        if *self.media.read() != media {
+            *self.media.write() = media;
+            self.rebuild_host();
+        }
+    }
+
+    fn rebuild_host(&self) {
+        let fs = FsToolHost::from_config(&self.ai.read().scope).with_media(self.media.read().clone());
+        *self.host.write() = Arc::new(AppHost { fs, tx: self.tx.clone(), wake: self.wake.clone() });
     }
 }
 
@@ -396,6 +408,9 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
         let engine = app.fileops.jobs.engine_arc();
         app.services.mcp.reconfigure(&ai, engine, app.wake.clone());
         app.services.mcp.applied = Some(ai);
+    }
+    if let Some(b) = &app.services.mcp.backend {
+        b.set_media(MediaAccess::from_config(&app.config.media, false));
     }
     if let Some(rx) = &app.services.mcp.tokens_rx
         && let Ok(tokens) = rx.try_recv()
@@ -641,7 +656,9 @@ fn execute(app: &mut AppCore, plan: &Plan, caller: &str) -> Result<Value, ToolEr
             let items: Vec<PathBuf> =
                 plan.items.iter().filter_map(|i| i.src.clone().or_else(|| i.dst.clone())).collect();
             let dest = plan.items.iter().find_map(|i| i.dst.as_ref().and_then(|d| d.parent().map(|p| p.to_path_buf())));
-            let meta = JobMeta::new(OpKind::from_brief(full.kind.brief()), &items, dest).mcp(who);
+            let op = crate::models::media_tools::job_meta(&full.kind)
+                .map_or_else(|| OpKind::from_brief(full.kind.brief()), |m| m.op);
+            let meta = JobMeta::new(op, &items, dest).mcp(who);
             let id = app.fileops.jobs.submit(full, meta);
             Ok(json!({"job_id": id.0}))
         }

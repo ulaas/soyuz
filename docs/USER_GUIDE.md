@@ -193,6 +193,20 @@ and *Retry failed*.
     undoable while the output is unchanged (undo moves it to the trash; a replaced file
     comes back from the trash). With several files selected, Convert and Extract audio
     make one job per file. Without the libraries the entries are disabled and say why.
+  - *Media tools for the assistant, MCP clients and scripts*: the AI tool `media_info`
+    (read) returns the container, duration, size, streams and codecs, rotation, tags,
+    chapters and the presets this build can encode; `media_convert` (a preset name such
+    as `mkv-copy` or `audio-flac`), `media_extract_audio` (`copy`, `flac`, `aac`, `opus`,
+    `wav`), `media_trim` (`start` / `end` in seconds) and `media_frame` (`at` seconds, PNG
+    or JPEG) are write tools: they return a dry-run plan (output name, what happens to
+    each stream, estimated size) that you approve before the same media job runs, named
+    and undoable like the dialog's. MCP clients get them with the other tools, under the
+    same client limits and approval cards. Scripts call `media_info(path)`,
+    `convert(src, preset)`, `extract_audio(src, codec)`, `trim(src, start, end)` and
+    `save_frame(src, secs)` from actions and rules; the changes are planned jobs like
+    `copy`. `[media] tools = false` refuses the write tools and the script functions,
+    `[media] ffmpeg = false` all of them; without the libraries they answer "FFmpeg
+    libraries not loaded".
   - *Crash safety*: decoding runs inside Soyuz, so before a thumbnail or preview decodes a
     file the file is noted in `<config dir>/media-inflight`. A file still noted at the
     next start crashed the libraries; automatic previews skip it ("it crashed the media
@@ -354,7 +368,7 @@ The full reference with defaults is [`config.example.toml`](config.example.toml)
 
 ## Scripts, automations and the command line
 
-- **Scripts** (Settings → Scripts): Rhai files in the `scripts` folder next to `config.toml`, reloaded on save. A script registers actions (`register_action`, palette + key binding `run_script:<file>/<id>`), right-click entries with conditions (`register_menu_item`), columns (`register_column`, choose them in the column menu) and previewers (`register_previewer`). Scripts run sandboxed with time and operation limits; every change they ask for is shown for approval and runs as an undoable job. Start from a template on the Scripts page.
+- **Scripts** (Settings → Scripts): Rhai files in the `scripts` folder next to `config.toml`, reloaded on save. A script registers actions (`register_action`, palette + key binding `run_script:<file>/<id>`), right-click entries with conditions (`register_menu_item`), columns (`register_column`, choose them in the column menu) and previewers (`register_previewer`). Scripts run sandboxed with time and operation limits; every change they ask for is shown for approval and runs as an undoable job. The media functions (`media_info`, `convert`, `extract_audio`, `trim`, `save_frame`) are listed under [Media tools](#panels-preview-terminal-activity-shelf). Start from a template on the Scripts page.
 - **Automations** (Settings → Automations): rules that watch a folder and act on matching items (name globs / regex, kind, size, age) after they stop changing: move, copy, rename with a pattern, tag, trash or run a script. Each rule shows what it would match right now, has *Run now*, a dry-run switch and a run log. Every step is a job with a robot badge in the activity panel, so it can be undone.
 - **Command line**: `soyuz cp|mv|rm|trash|ls|open|reveal|jobs` (or `soyuz-cli`, which a shell waits for). With a Soyuz window open the jobs run there, with progress in the activity panel and conflict prompts in the window; otherwise they run in the terminal. `--queue` returns at once, `--json` prints machine-readable events, `--conflict skip|overwrite|rename|ask`. Exit codes: 0 ok, 1 failed, 2 usage, 3 cancelled, 4 unavailable, 5 not found.
 

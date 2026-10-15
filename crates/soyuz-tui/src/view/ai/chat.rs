@@ -54,6 +54,7 @@ pub fn tool_icon(tool: &str) -> (IconId, Role) {
         "trash" => (IconId::Trash, Role::Danger),
         "delete_permanent" | "empty_trash" => (IconId::XCircle, Role::Danger),
         "compress" | "extract" => (IconId::Archive, Role::Archive),
+        "media_convert" | "media_extract_audio" | "media_trim" | "media_frame" => (IconId::FilmStrip, Role::Accent),
         "set_attributes" => (IconId::Sliders, Role::Warning),
         "tag" => (IconId::Tag, Role::Accent),
         "sync_apply" => (IconId::ArrowsClockwise, Role::Warning),

@@ -4,6 +4,8 @@
 //! refreshes; UI-control tools (navigate, open_tab, select, reveal, preview, show_toast,
 //! open_terminal_at) are sent to the UI thread over a [`UiLink`] and answered there.
 //! `run_custom_command`, `undo` and `tag` are plans that need approval like file changes.
+//! The media tools open the file in process (FFmpeg): [`media_guarded`] runs them through
+//! the crash sentinel like the automatic previews.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -76,15 +78,42 @@ impl UiLink {
     }
 }
 
+/// Run a media tool's read or plan through the process's crash sentinel
+/// (`services::media::sentinel`, opened on this worker thread; `guard` is off in tests,
+/// which must not write into the config folder): the file is registered while FFmpeg
+/// reads it, and a file whose decode crashed the last run is refused until the user opens
+/// it in Quick Look. Other tools run as they are.
+pub fn media_guarded<T>(
+    guard: bool,
+    input: &ToolInput,
+    f: impl FnOnce() -> Result<T, ToolError>,
+) -> Result<T, ToolError> {
+    let Some(path) = soyuz_ai::tools::media::media_source(input).filter(|_| guard) else { return f() };
+    let Some(_inflight) = crate::services::media::sentinel().begin(path) else {
+        return Err(ToolError::Failed(format!(
+            "{} crashed the media libraries the last time it was read; it is skipped until the user opens it in Quick Look",
+            path.display()
+        )));
+    };
+    f()
+}
+
 pub struct AppToolHost {
     pub base: FsToolHost,
     pub snapshot: Arc<RwLock<AppSnapshot>>,
     pub ui: Option<UiLink>,
+    /// Media tools go through the crash sentinel ([`media_guarded`]); off in tests.
+    pub media_sentinel: bool,
 }
 
 impl AppToolHost {
     pub fn new(base: FsToolHost, snapshot: Arc<RwLock<AppSnapshot>>, ui: Option<UiLink>) -> Self {
-        AppToolHost { base, snapshot, ui }
+        AppToolHost { base, snapshot, ui, media_sentinel: false }
+    }
+
+    /// The same host with the media tools behind the process's crash sentinel.
+    pub fn with_sentinel(self) -> Self {
+        AppToolHost { media_sentinel: true, ..self }
     }
 
     fn limit(n: Option<u32>, default: usize) -> usize {
@@ -125,7 +154,7 @@ impl ToolHost for AppToolHost {
             }
             _ => {
                 drop(s);
-                self.base.read(input, ctx)
+                media_guarded(self.media_sentinel, input, || self.base.read(input, ctx))
             }
         }
     }
@@ -136,7 +165,7 @@ impl ToolHost for AppToolHost {
         {
             return Err(ToolError::Failed(format!("no custom command named “{}”", a.name)));
         }
-        self.base.plan(input, ctx)
+        media_guarded(self.media_sentinel, input, || self.base.plan(input, ctx))
     }
 
     fn ui(&self, input: &ToolInput, _ctx: &CallContext) -> Result<Value, ToolError> {

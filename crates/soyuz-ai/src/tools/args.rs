@@ -472,6 +472,204 @@ impl ToolArgs for RestoreArgs {
 }
 
 // ---------------------------------------------------------------------------------------
+// Media (FFmpeg libraries; jobs of `JobKind::Media`)
+// ---------------------------------------------------------------------------------------
+
+/// What to do when the output file exists (the media tools dialog's choices).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaConflictArg {
+    /// Ask the user when the job runs.
+    #[default]
+    Ask,
+    /// Keep both (the new file gets a free name).
+    KeepBoth,
+    /// Replace it (the old file goes to the trash, undoable).
+    Overwrite,
+    Skip,
+}
+
+/// Built-in conversion preset. Only the presets the loaded FFmpeg build can encode are
+/// accepted (`media_info` lists them).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum MediaPresetArg {
+    /// Remux every stream into Matroska (no re-encoding).
+    MkvCopy,
+    /// Remux into MP4 (no re-encoding).
+    Mp4Copy,
+    /// H.264 in MP4 with the hardware encoder.
+    Mp4H264Hw,
+    /// HEVC in MP4 with the hardware encoder.
+    Mp4HevcHw,
+    /// VP9 + Opus in WebM.
+    WebmVp9,
+    /// VP8 + Opus in WebM.
+    WebmVp8,
+    /// ProRes + PCM in MOV.
+    MovProres,
+    /// MPEG-4 part 2 + AAC in MP4.
+    Mp4Mpeg4,
+    /// MPEG-4 part 2 + MP2 in AVI.
+    AviMpeg4,
+    /// Audio only: FLAC.
+    AudioFlac,
+    /// Audio only: AAC (M4A).
+    AudioAac,
+    /// Audio only: Opus.
+    AudioOpus,
+    /// Audio only: WAV.
+    AudioWav,
+    /// Audio only: ALAC (M4A).
+    AudioAlac,
+}
+
+impl MediaPresetArg {
+    /// The `soyuz-media` preset name (`"mp4-h264-hw"`).
+    pub fn name(self) -> String {
+        serde_json::to_value(self).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default()
+    }
+}
+
+/// Codec of an extracted audio track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaAudioCodecArg {
+    /// Keep the stream as is (no quality loss); the container is chosen to fit.
+    #[default]
+    Copy,
+    Flac,
+    Aac,
+    Opus,
+    Wav,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum MediaImageFormatArg {
+    #[default]
+    Png,
+    Jpeg,
+}
+
+/// Paths of a media tool: the input is read, an explicit output is written (the default
+/// output's folder is checked by the planner).
+fn media_paths(dest: &Option<PathBuf>) -> Vec<PathBuf> {
+    dest.iter().cloned().collect()
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MediaConvertArgs {
+    /// Absolute path of the video or audio file.
+    pub path: PathBuf,
+    pub preset: MediaPresetArg,
+    /// Output file (absolute). Default: the input's name with the preset's extension,
+    /// beside the input, made unique.
+    #[serde(default)]
+    pub dest: Option<PathBuf>,
+    #[serde(default)]
+    pub conflict: MediaConflictArg,
+    /// Only return the plan, do not request execution.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+impl ToolArgs for MediaConvertArgs {
+    fn read_paths(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+    fn write_paths(&self) -> Vec<PathBuf> {
+        media_paths(&self.dest)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MediaExtractAudioArgs {
+    /// Absolute path of the video or audio file.
+    pub path: PathBuf,
+    #[serde(default)]
+    pub codec: MediaAudioCodecArg,
+    /// Output file (absolute). Default: beside the input with the codec's extension.
+    #[serde(default)]
+    pub dest: Option<PathBuf>,
+    #[serde(default)]
+    pub conflict: MediaConflictArg,
+    /// Only return the plan, do not request execution.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+impl ToolArgs for MediaExtractAudioArgs {
+    fn read_paths(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+    fn write_paths(&self) -> Vec<PathBuf> {
+        media_paths(&self.dest)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MediaTrimArgs {
+    /// Absolute path of the video or audio file.
+    pub path: PathBuf,
+    /// Start of the kept part, in seconds (≥ 0).
+    pub start: f64,
+    /// End of the kept part, in seconds (> start).
+    pub end: f64,
+    /// Keep the packets as they are (fast, cuts land on keyframes; default true); false
+    /// re-encodes for frame-exact cuts.
+    #[serde(default = "yes")]
+    pub stream_copy: bool,
+    /// Output file (absolute). Default: beside the input in the same container, made unique.
+    #[serde(default)]
+    pub dest: Option<PathBuf>,
+    #[serde(default)]
+    pub conflict: MediaConflictArg,
+    /// Only return the plan, do not request execution.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+impl ToolArgs for MediaTrimArgs {
+    fn read_paths(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+    fn write_paths(&self) -> Vec<PathBuf> {
+        media_paths(&self.dest)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MediaFrameArgs {
+    /// Absolute path of the video file.
+    pub path: PathBuf,
+    /// Time of the frame, in seconds (≥ 0).
+    pub at: f64,
+    #[serde(default)]
+    pub format: MediaImageFormatArg,
+    /// Scale the picture down to fit this many pixels on its longer edge.
+    #[serde(default)]
+    pub max_px: Option<u32>,
+    /// Output picture (absolute). Default: beside the video with the format's extension.
+    #[serde(default)]
+    pub dest: Option<PathBuf>,
+    #[serde(default)]
+    pub conflict: MediaConflictArg,
+    /// Only return the plan, do not request execution.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+impl ToolArgs for MediaFrameArgs {
+    fn read_paths(&self) -> Vec<PathBuf> {
+        vec![self.path.clone()]
+    }
+    fn write_paths(&self) -> Vec<PathBuf> {
+        media_paths(&self.dest)
+    }
+}
+
+// ---------------------------------------------------------------------------------------
 // Destructive
 // ---------------------------------------------------------------------------------------
 

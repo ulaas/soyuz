@@ -465,7 +465,7 @@ mod tests {
         a.set("risk", "read");
         assert_eq!(
             t_args_in("ai-tools-builtin", &a, Locale::EnUs),
-            "12 built-in tools (files, search, jobs, UI) \u{00b7} up to Read risk"
+            "12 built-in tools (files, search, media, jobs, UI) \u{00b7} up to Read risk"
         );
         assert!(t_args_in("ai-tools-builtin", &a, Locale::TrTr).ends_with("risk sınırı: okuma"));
         let mut a = FluentArgs::new();

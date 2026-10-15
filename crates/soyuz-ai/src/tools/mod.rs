@@ -18,6 +18,7 @@
 
 pub mod args;
 pub mod host;
+pub mod media;
 pub mod plan;
 pub mod scope;
 
@@ -31,6 +32,7 @@ use soyuz_core::config::AiPrivacy;
 
 pub use args::*;
 pub use host::FsToolHost;
+pub use media::MediaAccess;
 pub use plan::{Plan, PlanAction, PlanConflict, PlanItem, PlanOp};
 pub use scope::{Scope, ScopeError};
 
@@ -180,6 +182,8 @@ catalog! {
         "Checksum of a file (blake3, sha256, sha1, md5, crc32).";
     ArchiveList(ArchiveListArgs) = "archive_list", Read, Read, Paths, dry_run: false, content: false, approval: false,
         "List the entries of a zip / tar / 7z archive.";
+    MediaInfo(PathArg) = "media_info", Read, Read, Paths, dry_run: false, content: false, approval: false,
+        "Facts of a video / audio file read with the FFmpeg libraries: container, duration, size, streams and codecs, rotation, tags, chapters, and the conversion presets this build can encode.";
     GitStatus(PathArg) = "git_status", Read, Read, Paths, dry_run: false, content: false, approval: false,
         "Git branch and changed files of the repository containing a folder.";
     GetSelection(NoArgs) = "get_selection", Read, Read, None, dry_run: false, content: false, approval: false,
@@ -215,6 +219,15 @@ catalog! {
         "Create an archive from files / folders.";
     RestoreFromTrash(RestoreArgs) = "restore_from_trash", Write, Write, Paths, dry_run: true, content: false, approval: false,
         "Restore trash items (ids from trash_list) to their original place or a folder.";
+    // --- media (FFmpeg libraries) ---
+    MediaConvert(MediaConvertArgs) = "media_convert", Write, Write, Paths, dry_run: true, content: false, approval: false,
+        "Convert or remux a video / audio file with a built-in preset into a new file (background job, undoable).";
+    MediaExtractAudio(MediaExtractAudioArgs) = "media_extract_audio", Write, Write, Paths, dry_run: true, content: false, approval: false,
+        "Save the audio track of a video / audio file as a new file, copied or re-encoded (background job, undoable).";
+    MediaTrim(MediaTrimArgs) = "media_trim", Write, Write, Paths, dry_run: true, content: false, approval: false,
+        "Save the part between two times of a video / audio file as a new file (background job, undoable).";
+    MediaFrame(MediaFrameArgs) = "media_frame", Write, Write, Paths, dry_run: true, content: false, approval: false,
+        "Save one frame of a video as a PNG / JPEG picture (background job, undoable).";
     // --- destructive ---
     Trash(DeleteArgs) = "trash", Destructive, Destructive, Paths, dry_run: true, content: false, approval: true,
         "Move items to the trash / Recycle Bin (restorable).";
