@@ -176,6 +176,12 @@ pub struct Appearance {
     pub font_size: f32,
     /// Turn off animations (transitions and springs jump to their end state).
     pub reduced_motion: bool,
+    /// Lists keep coasting after a touch drag or a trackpad flick, slowing down
+    /// (off, or `reduced_motion`: they stop where the finger leaves).
+    pub kinetic_scrolling: bool,
+    /// Trackpad / touch scrolling stretches past the start and end of a list and springs
+    /// back (off, or `reduced_motion`: it stops hard at the edge). Mouse wheels never do.
+    pub rubber_band: bool,
     /// How long notifications stay up, as a multiple of their standard time (info 4 s,
     /// warning 6 s, error 8 s): 0.5 = half as long. Hovering one pauses its timer.
     pub toast_time_scale: f32,
@@ -201,6 +207,9 @@ pub struct Appearance {
     pub native_dialogs: bool,
     /// System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji, Arabic / Hebrew).
     pub fallback_fonts: FallbackFonts,
+    /// Emoji in colour (the system's colour emoji font: Segoe UI Emoji, Noto Color Emoji);
+    /// off = a monochrome symbol font (Segoe UI Symbol, Noto Emoji).
+    pub color_emoji: bool,
     /// Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`,
     /// `high-contrast`) or the file stem of a user theme in `themes/*.toml`. Each theme
     /// has a dark and a light variant; `theme` picks which one shows.
@@ -617,6 +626,9 @@ pub struct Behaviour {
     pub rename_selects: RenameSelects,
     /// Default answer when a pasted name already exists (`ask` shows the conflict dialog).
     pub paste_conflict: PasteConflict,
+    /// Paste with a picture on the system clipboard (a screenshot, a copied image) saves
+    /// it into the folder as a PNG file, selected for renaming. Copied files still win.
+    pub paste_images: bool,
     /// Drag and drop default operation.
     pub drag_default: DragDefault,
     /// Remember view, sort and columns per folder (`views.toml`).

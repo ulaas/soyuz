@@ -123,6 +123,8 @@ written as a list of quoted values is an enumeration: use one of them.
 | `mono_font` | string | — | Legacy (schema 1): moved into `[fonts.terminal]` / `code` / `hex` on load. |
 | `font_size` | float | `13.0` | Base UI text size in points. |
 | `reduced_motion` | boolean | `false` | Turn off animations (transitions and springs jump to their end state). |
+| `kinetic_scrolling` | boolean | `true` | Lists keep coasting after a touch drag or a trackpad flick, slowing down (off, or `reduced_motion`: they stop where the finger leaves). |
+| `rubber_band` | boolean | `true` | Trackpad / touch scrolling stretches past the start and end of a list and springs back (off, or `reduced_motion`: it stops hard at the edge). Mouse wheels never do. |
 | `toast_time_scale` | float | `0.5` | How long notifications stay up, as a multiple of their standard time (info 4 s, warning 6 s, error 8 s): 0.5 = half as long. Hovering one pauses its timer. |
 | `high_contrast` | boolean | `false` | High-contrast palette (stronger text, borders and focus rings). |
 | `icon_style` | `"colored"` \| `"mono"` | `"colored"` | `colored` file-type icons or `mono` (single color; folder colors stay). |
@@ -134,6 +136,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `snap_layouts` | boolean | `true` | Windows 11 Snap Layouts flyout when hovering the maximize button (custom title bar). |
 | `native_dialogs` | boolean | `true` | Dialogs, the settings window and menus that do not fit the window open as their own OS windows (movable outside the main window and onto other monitors); off = drawn inside the window (menus are then clipped to it). |
 | `fallback_fonts` | `"auto"` \| `"startup"` \| `"off"` | `"auto"` | System fallback fonts for scripts Inter lacks (CJK, Hangul, emoji, Arabic / Hebrew). (`auto`: When a file name needs them (loaded on a background thread); `startup`: All of them in the background right after startup (also covers terminal output); `off`: Never (missing glyphs render as boxes)) |
+| `color_emoji` | boolean | `true` | Emoji in colour (the system's colour emoji font: Segoe UI Emoji, Noto Color Emoji); off = a monochrome symbol font (Segoe UI Symbol, Noto Emoji). |
 | `color_theme` | string | `"orbit"` | Color theme family: a built-in id (`orbit`, `nord`, `solarized`, `rose-pine`, `high-contrast`) or the file stem of a user theme in `themes/*.toml`. Each theme has a dark and a light variant; `theme` picks which one shows. |
 | `accent` | string | `"theme"` | `"theme"` (the theme's own accent) \| `"system"` (the OS accent color, followed live) \| `"#RRGGBB"`. |
 | `extension_badges` | boolean | `true` | Extension label badges on file icons in the grid / gallery views. |
@@ -314,6 +317,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `rename_selects` | `"stem"` \| `"all"` | `"stem"` | Inline rename preselects the name `stem` (without extension) or `all`. |
 | `paste_conflict` | `"ask"` \| `"overwrite"` \| `"skip"` \| `"keep_both"` | `"ask"` | Default answer when a pasted name already exists (`ask` shows the conflict dialog). |
+| `paste_images` | boolean | `true` | Paste with a picture on the system clipboard (a screenshot, a copied image) saves it into the folder as a PNG file, selected for renaming. Copied files still win. |
 | `drag_default` | `"auto"` \| `"copy"` \| `"move"` \| `"ask"` | `"auto"` | Drag and drop default operation. (`auto`: Same device = move, otherwise copy) |
 | `remember_folder_views` | boolean | `true` | Remember view, sort and columns per folder (`views.toml`). |
 | `restore_session` | boolean | `true` | Reopen the tabs, panes and windows of the last session at startup. |

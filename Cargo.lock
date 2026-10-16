@@ -2723,6 +2723,7 @@ dependencies = [
  "hashbrown 0.17.1",
  "log",
  "peniko",
+ "png 0.18.1",
  "skrifa",
  "smallvec",
  "vello_common",
@@ -6875,6 +6876,7 @@ dependencies = [
  "egui",
  "egui-phosphor",
  "egui_extras",
+ "epaint",
  "image",
  "log",
  "parking_lot",
@@ -8309,6 +8311,7 @@ dependencies = [
  "guillotiere",
  "log",
  "peniko",
+ "png 0.18.1",
  "smallvec",
  "thiserror 2.0.21",
 ]
@@ -8322,6 +8325,7 @@ dependencies = [
  "bytemuck",
  "glifo",
  "hashbrown 0.17.1",
+ "png 0.18.1",
  "vello_common",
 ]
 

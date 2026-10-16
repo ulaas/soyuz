@@ -48,6 +48,7 @@ soyuz-vfs.workspace = true
 soyuz-tui = { workspace = true, optional = true }
 eframe.workspace = true
 egui.workspace = true
+epaint.workspace = true
 egui_extras.workspace = true
 egui-phosphor.workspace = true
 resvg.workspace = true

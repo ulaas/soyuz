@@ -601,6 +601,9 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
             app.ui.toasts.push(t);
         }
         UiMsg::Launch(p) => launch(app, &p),
+        UiMsg::CreateFrom { pane, path, template } => {
+            crate::ops::fileops::paste_image::create_from(app, pane, path, template);
+        }
         UiMsg::OpenDir(p) => {
             let id = app.ws.pane().id;
             navigate(app, id, Location::Dir(p), NavOpts::user());

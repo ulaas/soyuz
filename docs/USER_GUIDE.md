@@ -98,6 +98,13 @@ mode (status bar or palette) adds tick boxes for mouse and touch users.
 | `Space` | Quick Look; arrows move to the next item while it is open |
 | `Enter` / `Shift+Enter` | open with the default app / choose the app (*Open with…*) |
 
+**Pasting a picture.** With a picture on the clipboard (a screenshot, or an image copied
+in a browser or an editor), `Ctrl+V` in a folder saves it there as a PNG file named
+*Pasted image 2026-10-16 143012.png* and selects the name so you can type a better one.
+It is an ordinary job: `Ctrl+Z` removes the file again. Copied files are pasted first.
+Turn it off in *Settings → Behaviour → Paste pictures as files*
+(`[behaviour] paste_images`).
+
 Drag and drop works between panes, tabs, the sidebar, the shelf and other applications.
 The default drop effect follows the platform convention (move on the same drive, copy
 across drives); hold `Ctrl` to copy, `Shift` to move, or set *Behaviour → Drag and drop*
@@ -523,7 +530,10 @@ Search the settings with `Ctrl+F` inside the window.
 - *Appearance*: color theme (Orbit, Nord, Solarized, Rosé Pine, High Contrast or your own
   files in `themes/`, each with a dark and a light variant), mode (system follows the OS
   switch live / dark / light), accent color (the theme's, the Windows accent, or any color),
-  density, font size, interface scale, reduced motion, high contrast, icons and thumbnails
+  density, font size, interface scale, reduced motion, kinetic scrolling and rubber-banding
+  (trackpad and touch: lists coast after a flick and stretch at the ends; reduced motion
+  turns both off), high contrast, colour emoji (the system's colour emoji font, or a
+  monochrome symbol font when off), icons and thumbnails
   (icon pack, extension badges, folder mosaics, video keyframes through the FFmpeg
   libraries, PDF first pages through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
   share theme files.

@@ -32,6 +32,8 @@ density = "cozy"                 # compact | cozy | comfortable | touch (large t
 ui_scale = 1.0
 font_size = 13.0
 reduced_motion = false
+kinetic_scrolling = true         # lists coast after a touch drag / trackpad flick (off with reduced_motion)
+rubber_band = true               # trackpad / touch scrolling stretches past the ends and springs back (never the wheel)
 toast_time_scale = 0.5           # notification time × this (info 4 s, warning 6 s, error 8 s)
 high_contrast = false            # stronger text, borders and focus rings
 icon_style = "colored"           # colored | mono
@@ -43,6 +45,7 @@ backdrop = "none"                # none | mica | acrylic (Windows 11 only; appli
 snap_layouts = true              # Windows 11 Snap Layouts flyout on the maximize button
 native_dialogs = true            # dialogs and oversized menus as their own OS windows (false: inside the window)
 fallback_fonts = "auto"          # auto (CJK / emoji / Arabic / Hebrew system fonts when a name needs them) | startup | off
+color_emoji = true               # emoji in colour (Segoe UI Emoji / Noto Color Emoji); false: monochrome symbol font
 color_theme = "orbit"            # orbit | nord | solarized | rose-pine | high-contrast | "<file stem in themes/>"
 accent = "theme"                 # theme | system (OS accent color, live) | "#RRGGBB"
 extension_badges = true          # extension labels on file icons (grid / gallery)
@@ -146,6 +149,7 @@ widths = { name = 320, size = 90, kind = 120, modified = 150 }
 [behaviour]
 rename_selects = "stem"          # stem | all
 paste_conflict = "ask"           # ask | overwrite | skip | keep_both
+paste_images = true              # Paste with a picture on the clipboard (screenshot) saves it here as a PNG
 drag_default = "auto"            # auto (same device = move) | copy | move | ask
 remember_folder_views = true
 restore_session = true

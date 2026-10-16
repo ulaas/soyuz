@@ -778,6 +778,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 130.0,
             );
         });
+        r.row_kw(
+            tr!("settings-behaviour-paste-images"),
+            tr!("settings-behaviour-paste-images-desc"),
+            "paste image picture screenshot clipboard png",
+            |ui| {
+                switch(ui, &mut d.behaviour.paste_images);
+            },
+        );
     });
     any |= group(ui, q, ctx, tr!("settings-behaviour-drag-drop"), |r| {
         r.row_kw(

@@ -122,7 +122,8 @@ pub fn mods(m: Modifiers) -> Mods {
 }
 
 /// Map a raw input event to a chord (`Copy`/`Cut`/`Paste` come pre-translated from
-/// egui-winit and are mapped back to their chords).
+/// egui-winit and are mapped back to their chords; so is `PasteImage`, Ctrl+V with a
+/// picture and no text on the clipboard, see `ops::fileops::paste_image`).
 pub fn event_chord(ev: &Event, current: Modifiers, cmd_is_ctrl: bool) -> Option<KeyChord> {
     let chord = match ev {
         Event::Key { key, pressed: true, modifiers, .. } => KeyChord::new(mods(*modifiers), key_name(*key)?),
@@ -132,7 +133,7 @@ pub fn event_chord(ev: &Event, current: Modifiers, cmd_is_ctrl: bool) -> Option<
         Event::Cut => KeyChord::new(Mods::CTRL, KeyName::X),
         Event::Paste(_) if current.shift && !current.ctrl => KeyChord::new(Mods::SHIFT, KeyName::Insert),
         Event::Paste(_) if current.shift && current.command => KeyChord::new(Mods::CTRL | Mods::SHIFT, KeyName::V),
-        Event::Paste(_) => KeyChord::new(Mods::CTRL, KeyName::V),
+        Event::Paste(_) | Event::PasteImage(_) => KeyChord::new(Mods::CTRL, KeyName::V),
         _ => return None,
     };
     Some(chord.normalized(cmd_is_ctrl))
@@ -199,6 +200,8 @@ mod tests {
         assert_eq!(c.to_string(), "Ctrl+T");
         assert_eq!(event_chord(&Event::Copy, Modifiers::CTRL, true).unwrap().to_string(), "Ctrl+C");
         assert_eq!(event_chord(&Event::Cut, Modifiers::SHIFT, true).unwrap().to_string(), "Shift+Del");
+        let img = Event::PasteImage(std::sync::Arc::new(egui::ColorImage::filled([1, 1], egui::Color32::RED)));
+        assert_eq!(event_chord(&img, Modifiers::CTRL, true).unwrap().to_string(), "Ctrl+V");
         let released =
             Event::Key { key: Key::A, physical_key: None, pressed: false, repeat: false, modifiers: Modifiers::NONE };
         assert!(event_chord(&released, Modifiers::NONE, true).is_none());

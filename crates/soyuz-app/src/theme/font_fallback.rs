@@ -9,9 +9,13 @@
 //! for every probe not covered yet, the preferred families (Noto Sans CJK / Source Han,
 //! Noto Sans Arabic, …) are tried from the installed-font catalog, then faces whose
 //! name mentions the script, then (bounded) any face, checking the probe against each
-//! face's `cmap`. Color-only fonts (COLR / CBDT / sbix, e.g. Noto Color Emoji) are
-//! skipped: epaint draws outlines only, so their emoji would come out blank; a
-//! monochrome emoji / symbol font (Noto Emoji, Symbola, DejaVu Sans) is used instead.
+//! face's `cmap`.
+//!
+//! Emoji: epaint (`color_fonts`) draws COLR / sbix / CBDT glyphs, so with
+//! `[appearance] color_emoji` the colour emoji font is used (Segoe UI Emoji, Noto Color
+//! Emoji). Without it, colour fonts are skipped (they would draw in colour regardless) and
+//! a monochrome emoji / symbol font is used (Segoe UI Symbol, Noto Emoji, Symbola).
+//! macOS's Apple Color Emoji is not loaded: the file is ~200 MB, read whole into memory.
 //!
 //! Nothing is
 //! read on the UI thread: a background thread loads the file and re-installs the fonts
@@ -26,7 +30,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use egui::{Context, FontData, FontDefinitions};
 use parking_lot::Mutex;
@@ -67,8 +71,20 @@ impl Script {
     }
 
     /// Preferred families on Linux, best first (looked up in the installed-font catalog).
-    pub fn linux_families(self) -> &'static [&'static str] {
+    /// `color`: `[appearance] color_emoji`.
+    pub fn linux_families(self, color: bool) -> &'static [&'static str] {
         match self {
+            Script::Emoji if color => &[
+                "Noto Color Emoji",
+                "Twemoji",
+                "Twitter Color Emoji",
+                "JoyPixels",
+                "Noto Emoji",
+                "Symbola",
+                "Noto Sans Symbols 2",
+                "Noto Sans Symbols",
+                "DejaVu Sans",
+            ],
             Script::Cjk => &[
                 "Noto Sans CJK SC",
                 "Noto Sans CJK JP",
@@ -151,9 +167,12 @@ impl Script {
         }
     }
 
-    /// Font files to try, in order (file names inside the system font folders).
-    pub fn candidates(self) -> &'static [&'static str] {
+    /// Font files to try, in order (file names inside the system font folders). `color`:
+    /// `[appearance] color_emoji` (Segoe UI Emoji has colour glyphs, so it is skipped
+    /// without it).
+    pub fn candidates(self, color: bool) -> &'static [&'static str] {
         match self {
+            Script::Emoji if !color => &["seguisym.ttf", "NotoEmoji-Regular.ttf"],
             Script::Cjk => &[
                 "msyh.ttc",
                 "YuGothM.ttc",
@@ -165,7 +184,7 @@ impl Script {
                 "Hiragino Sans GB.ttc",
             ],
             Script::Hangul => &["malgun.ttf", "gulim.ttc", "NotoSansCJK-Regular.ttc", "AppleSDGothicNeo.ttc"],
-            Script::Emoji => &["seguiemj.ttf", "seguisym.ttf", "NotoEmoji-Regular.ttf"],
+            Script::Emoji => &["seguiemj.ttf", "NotoColorEmoji.ttf", "seguisym.ttf", "NotoEmoji-Regular.ttf"],
             Script::Rtl => &[
                 "segoeui.ttf",
                 "arial.ttf",
@@ -244,8 +263,8 @@ pub fn scripts_in(text: &str) -> Vec<Script> {
 }
 
 /// First candidate of `script` for which `exists(file name)` holds.
-pub fn pick(script: Script, exists: impl Fn(&str) -> bool) -> Option<&'static str> {
-    script.candidates().iter().copied().find(|n| exists(n))
+pub fn pick(script: Script, color: bool, exists: impl Fn(&str) -> bool) -> Option<&'static str> {
+    script.candidates(color).iter().copied().find(|n| exists(n))
 }
 
 /// Folders scanned for fallback fonts.
@@ -270,9 +289,9 @@ fn font_dirs() -> Vec<PathBuf> {
     v
 }
 
-fn locate(script: Script, dirs: &[PathBuf]) -> Option<PathBuf> {
+fn locate(script: Script, color: bool, dirs: &[PathBuf]) -> Option<PathBuf> {
     let found = |name: &str| dirs.iter().map(|d| d.join(name)).find(|p| p.is_file());
-    pick(script, |n| found(n).is_some()).and_then(found)
+    pick(script, color, |n| found(n).is_some()).and_then(found)
 }
 
 struct Loaded {
@@ -294,6 +313,8 @@ struct State {
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 /// 0 = auto, 1 = startup, 2 = off (fast path for [`note`]).
 static MODE: AtomicU8 = AtomicU8::new(2);
+/// `[appearance] color_emoji`.
+static COLOR: AtomicBool = AtomicBool::new(true);
 
 fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
     let mut g = STATE.lock();
@@ -301,8 +322,10 @@ fn with<R>(f: impl FnOnce(&mut State) -> R) -> R {
 }
 
 /// Remember the context, the configured fonts and the mode; `startup` starts loading
-/// every script now. Called by `theme::install` (startup and every config change).
-pub fn configure(ctx: &Context, mode: FallbackFonts, fonts: &Fonts) {
+/// every script now. A change of `color` (`[appearance] color_emoji`) drops the loaded
+/// emoji font and loads the other kind. Called by `theme::install` (startup and every
+/// config change).
+pub fn configure(ctx: &Context, mode: FallbackFonts, color: bool, fonts: &Fonts) {
     // The core reports file names about to be shown through this hook (`auto` mode).
     crate::host::set_text_shown_hook(note);
     MODE.store(
@@ -313,12 +336,20 @@ pub fn configure(ctx: &Context, mode: FallbackFonts, fonts: &Fonts) {
         },
         Ordering::SeqCst,
     );
-    with(|s| {
+    let recolor = COLOR.swap(color, Ordering::SeqCst) != color;
+    let reload = with(|s| {
         s.ctx = Some(ctx.clone());
         s.fonts = fonts.clone();
+        let had = recolor && s.requested.remove(&Script::Emoji);
+        if had {
+            s.loaded.retain(|l| l.script != Script::Emoji);
+        }
+        had
     });
     if mode == FallbackFonts::Startup {
         request(&Script::ALL);
+    } else if reload {
+        request(&[Script::Emoji]);
     }
 }
 
@@ -343,18 +374,19 @@ pub fn request(scripts: &[Script]) {
     if todo.is_empty() {
         return;
     }
+    let color = COLOR.load(Ordering::Relaxed);
     let spawned = std::thread::Builder::new().name("soyuz-fonts".into()).spawn(move || {
         let dirs = font_dirs();
         let mut any = false;
         for script in todo {
             // Linux: by coverage from the font catalog (built on this thread if needed).
             let found = if cfg!(target_os = "linux") {
-                by_coverage(script, super::sysfonts::catalog().faces())
+                by_coverage(script, color, super::sysfonts::catalog().faces())
             } else {
                 Vec::new()
             };
             let found: Vec<(PathBuf, Arc<FontData>)> = if found.is_empty() {
-                locate(script, &dirs).and_then(|p| Some((p.clone(), load(&p, 0)?))).into_iter().collect()
+                locate(script, color, &dirs).and_then(|p| Some((p.clone(), load(&p, 0)?))).into_iter().collect()
             } else {
                 found
             };
@@ -394,13 +426,17 @@ const SCAN_MAX_BYTES: u64 = 16 * 1024 * 1024;
 /// Most files the Linux search reads per script.
 const SCAN_MAX_FILES: usize = 300;
 
-/// Which of `chars` the face covers with drawable outlines (`None`: not a usable font:
-/// unreadable, or color-only, which epaint cannot draw).
-pub fn covered(bytes: &[u8], index: u32, chars: &[char]) -> Option<Vec<char>> {
+/// Which of `chars` the face covers with drawable glyphs (`None`: not a usable font:
+/// unreadable, without outlines, or a colour font while `color` (`[appearance]
+/// color_emoji`) is off; epaint draws colour glyphs in colour whenever a font has them).
+pub fn covered(bytes: &[u8], index: u32, chars: &[char], color: bool) -> Option<Vec<char>> {
     use skrifa::MetadataProvider as _;
     let font = skrifa::FontRef::from_index(bytes, index).ok()?;
     let has = |tag: &[u8; 4]| font.table_data(skrifa::Tag::new(tag)).is_some();
-    if has(b"COLR") || has(b"CBDT") || has(b"sbix") || !(has(b"glyf") || has(b"CFF ") || has(b"CFF2")) {
+    let colored = has(b"COLR") || has(b"CBDT") || has(b"sbix");
+    let outlines = has(b"glyf") || has(b"CFF ") || has(b"CFF2");
+    let usable = if color { colored || outlines } else { outlines && !colored };
+    if !usable {
         return None;
     }
     let cmap = font.charmap();
@@ -408,7 +444,7 @@ pub fn covered(bytes: &[u8], index: u32, chars: &[char]) -> Option<Vec<char>> {
 }
 
 /// Linux: fonts covering the probes of `script`, chosen by `cmap` (see the module docs).
-fn by_coverage(script: Script, faces: &[super::sysfonts::Face]) -> Vec<(PathBuf, Arc<FontData>)> {
+fn by_coverage(script: Script, color: bool, faces: &[super::sysfonts::Face]) -> Vec<(PathBuf, Arc<FontData>)> {
     use super::sysfonts::{Face, norm};
     let mut missing: Vec<char> = script.probes().to_vec();
     let mut out: Vec<(PathBuf, Arc<FontData>)> = Vec::new();
@@ -418,7 +454,7 @@ fn by_coverage(script: Script, faces: &[super::sysfonts::Face]) -> Vec<(PathBuf,
             return;
         }
         let Ok(bytes) = std::fs::read(&f.file) else { return };
-        let Some(cov) = covered(&bytes, f.index, missing) else { return };
+        let Some(cov) = covered(&bytes, f.index, missing, color) else { return };
         if cov.is_empty() {
             return;
         }
@@ -432,7 +468,7 @@ fn by_coverage(script: Script, faces: &[super::sysfonts::Face]) -> Vec<(PathBuf,
         !["bold", "italic", "oblique", "thin", "black", "mono", "serif", "condensed"].iter().any(|w| n.contains(w))
     };
     // 1. Preferred families, in order.
-    for fam in script.linux_families() {
+    for fam in script.linux_families(color) {
         if missing.is_empty() {
             return out;
         }
@@ -523,12 +559,13 @@ mod tests {
     fn first_available_candidate_wins() {
         let have = ["YuGothM.ttc", "simsun.ttc", "malgun.ttf"];
         let exists = |n: &str| have.contains(&n);
-        assert_eq!(pick(Script::Cjk, exists), Some("YuGothM.ttc"));
-        assert_eq!(pick(Script::Hangul, exists), Some("malgun.ttf"));
-        assert_eq!(pick(Script::Emoji, exists), None);
+        assert_eq!(pick(Script::Cjk, true, exists), Some("YuGothM.ttc"));
+        assert_eq!(pick(Script::Hangul, true, exists), Some("malgun.ttf"));
+        assert_eq!(pick(Script::Emoji, true, exists), None);
         let all = |_: &str| true;
-        assert_eq!(pick(Script::Cjk, all), Some("msyh.ttc"));
-        assert_eq!(pick(Script::Emoji, all), Some("seguiemj.ttf"));
+        assert_eq!(pick(Script::Cjk, true, all), Some("msyh.ttc"));
+        assert_eq!(pick(Script::Emoji, true, all), Some("seguiemj.ttf"), "colour emoji");
+        assert_eq!(pick(Script::Emoji, false, all), Some("seguisym.ttf"), "monochrome: no colour font");
     }
 
     #[test]
@@ -536,8 +573,8 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         std::fs::write(d.path().join("malgun.ttf"), b"not really a font").unwrap();
         let dirs = vec![d.path().join("missing"), d.path().to_path_buf()];
-        assert_eq!(locate(Script::Hangul, &dirs), Some(d.path().join("malgun.ttf")));
-        assert_eq!(locate(Script::Cjk, &dirs), None);
+        assert_eq!(locate(Script::Hangul, true, &dirs), Some(d.path().join("malgun.ttf")));
+        assert_eq!(locate(Script::Cjk, true, &dirs), None);
     }
 
     #[test]
@@ -557,9 +594,10 @@ mod tests {
     #[test]
     fn coverage_needs_drawable_outlines() {
         let inter = include_bytes!("../../assets/fonts/inter/Inter-Regular.ttf");
-        assert_eq!(covered(inter, 0, &['a', '中', 'Ж']), Some(vec!['a', 'Ж']));
-        assert_eq!(covered(b"not a font", 0, &['a']), None);
-        assert_eq!(covered(inter, 3, &['a']), None, "no such face");
+        assert_eq!(covered(inter, 0, &['a', '中', 'Ж'], false), Some(vec!['a', 'Ж']));
+        assert_eq!(covered(inter, 0, &['a'], true), Some(vec!['a']), "outline fonts are fine either way");
+        assert_eq!(covered(b"not a font", 0, &['a'], true), None);
+        assert_eq!(covered(inter, 3, &['a'], false), None, "no such face");
     }
 
     #[test]
@@ -576,26 +614,29 @@ mod tests {
         };
         let faces = vec![face("Noto Sans CJK SC", &junk), face("Inter", &inter)];
         // Neither the unreadable "preferred" face nor Inter covers CJK / Hebrew / Arabic.
-        assert!(by_coverage(Script::Cjk, &faces).is_empty());
-        assert!(by_coverage(Script::Rtl, &faces).is_empty());
+        assert!(by_coverage(Script::Cjk, true, &faces).is_empty());
+        assert!(by_coverage(Script::Rtl, true, &faces).is_empty());
     }
 
-    /// The fonts of this machine: every font found by coverage is drawable (never a color
-    /// emoji font) and covers a probe; CJK is found when Noto Sans CJK / Source Han is.
+    /// The fonts of this machine: every font found by coverage is drawable (a colour emoji
+    /// font only with `color`) and covers a probe; CJK is found when Noto Sans CJK / Source
+    /// Han is.
     #[cfg(target_os = "linux")]
     #[test]
     fn linux_fallbacks_by_coverage() {
         let cat = super::super::sysfonts::catalog();
-        for s in Script::ALL {
-            for (path, data) in by_coverage(s, cat.faces()) {
-                eprintln!("{s:?}: {} #{}", path.display(), data.index);
-                let bytes = std::fs::read(&path).unwrap();
-                let cov = covered(&bytes, data.index, s.probes());
-                assert!(cov.is_some_and(|c| !c.is_empty()), "{s:?}: {} is not usable", path.display());
+        for color in [true, false] {
+            for s in Script::ALL {
+                for (path, data) in by_coverage(s, color, cat.faces()) {
+                    eprintln!("{s:?} (color {color}): {} #{}", path.display(), data.index);
+                    let bytes = std::fs::read(&path).unwrap();
+                    let cov = covered(&bytes, data.index, s.probes(), color);
+                    assert!(cov.is_some_and(|c| !c.is_empty()), "{s:?}: {} is not usable", path.display());
+                }
             }
         }
         if cat.find("Noto Sans CJK SC").is_some() || cat.find("Source Han Sans SC").is_some() {
-            assert!(!by_coverage(Script::Cjk, cat.faces()).is_empty());
+            assert!(!by_coverage(Script::Cjk, true, cat.faces()).is_empty());
         }
     }
 
@@ -603,6 +644,20 @@ mod tests {
     #[test]
     fn windows_has_a_cjk_font() {
         // Every supported Windows edition ships at least one of the CJK candidates.
-        assert!(locate(Script::Cjk, &font_dirs()).is_some());
+        assert!(locate(Script::Cjk, true, &font_dirs()).is_some());
+    }
+
+    /// Segoe UI Emoji has colour (COLR) glyphs: drawable only while `color_emoji` is on.
+    #[cfg(windows)]
+    #[test]
+    fn windows_color_emoji_only_when_wanted() {
+        let Some(path) = locate(Script::Emoji, true, &font_dirs()) else { return };
+        let bytes = std::fs::read(&path).unwrap();
+        if path.file_name().is_some_and(|n| n == "seguiemj.ttf") {
+            assert_eq!(covered(&bytes, 0, &['\u{1F600}'], true), Some(vec!['\u{1F600}']));
+            assert_eq!(covered(&bytes, 0, &['\u{1F600}'], false), None);
+        }
+        let mono = locate(Script::Emoji, false, &font_dirs());
+        assert!(mono.is_none_or(|p| p.file_name().is_some_and(|n| n != "seguiemj.ttf")));
     }
 }

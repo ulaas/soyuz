@@ -134,6 +134,33 @@ fn run_core(data: PathBuf) {
         app.ws.pane().entries.iter().find(|e| e.is_dir_like() && e.name != "sub").expect("new folder").path.clone();
     assert!(Path::new(&new_dir).is_dir(), "{} exists on disk", new_dir.display());
 
+    // A pasted clipboard picture becomes a PNG file through a Create job (the clipboard
+    // itself is not touched: the image is offered and saved directly).
+    use soyuz_appcore::ops::fileops::paste_image;
+    let rgba = vec![255, 0, 0, 255, 0, 0, 255, 128];
+    paste_image::offer(&mut app, 2, 1, Box::new(move || rgba));
+    let img = paste_image::take(&mut app).expect("a fresh image");
+    assert!(paste_image::take(&mut app).is_none(), "taken once");
+    paste_image::save(&mut app, img, data.clone());
+    settle(&mut app, &host, "the pasted image", |a| {
+        a.fileops.jobs.pending().count() == 0 && names(a).iter().any(|n| n.ends_with(".png"))
+    });
+    let png = names(&app).into_iter().find(|n| n.ends_with(".png")).unwrap();
+    assert!(png.starts_with("Pasted image "), "{png}");
+    let decoded = image::open(data.join(&png)).expect("a PNG").to_rgba8();
+    assert_eq!(decoded.dimensions(), (2, 1));
+    assert_eq!(decoded.get_pixel(1, 0).0, [0, 0, 255, 128], "straight alpha kept");
+    settle(&mut app, &host, "the paste in the history", |a| {
+        a.fileops
+            .jobs
+            .history()
+            .iter()
+            .any(|h| h.undoable && matches!(&h.job, soyuz_jobs::JobKind::Create { path, .. } if path.ends_with(&png)))
+    });
+    app.config.behaviour.paste_images = false;
+    paste_image::offer(&mut app, 1, 1, Box::new(|| vec![0; 4]));
+    assert!(paste_image::take(&mut app).is_none(), "[behaviour] paste_images = false");
+
     // Core prompts and frontend requests stay queued for a frontend; none is needed here.
     assert!(!app.prompt_open());
     app.save_all();

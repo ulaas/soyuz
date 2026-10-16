@@ -133,6 +133,7 @@ impl SoyuzApp {
         }
         let (kctx, text_focused) = self.key_context(ctx);
         if kctx == KeyContext::FileList && !text_focused {
+            offer_pasted_image(&mut self.core, ctx);
             // Ctrl+V with only files on the OS clipboard produces no egui event: the
             // fallback reads raw key state. Feed it this frame's egui Ctrl+V so it can
             // de-duplicate, and drop the egui event when the fallback already pasted.
@@ -300,4 +301,21 @@ impl eframe::App for SoyuzApp {
             visuals.panel_fill.to_normalized_gamma_f32()
         }
     }
+}
+
+/// Hand a clipboard picture (egui's image paste, Ctrl+V with no text on the clipboard) to
+/// the core for this frame's Paste (`[behaviour] paste_images`). The pixels are converted
+/// to straight alpha on the encoder thread, not here.
+fn offer_pasted_image(core: &mut crate::core::AppCore, ctx: &egui::Context) {
+    let img = ctx.input(|i| {
+        i.events.iter().find_map(|e| match e {
+            egui::Event::PasteImage(img) => Some(img.clone()),
+            _ => None,
+        })
+    });
+    let Some(img) = img else { return };
+    let [w, h] = img.size;
+    let (Ok(w), Ok(h)) = (u32::try_from(w), u32::try_from(h)) else { return };
+    let pixels = Box::new(move || img.pixels.iter().flat_map(|c| c.to_srgba_unmultiplied()).collect());
+    crate::ops::fileops::paste_image::offer(core, w, h, pixels);
 }

@@ -116,6 +116,22 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
+            tr!("settings-appearance-kinetic"),
+            tr!("settings-appearance-kinetic-desc"),
+            "scroll momentum inertia coast flick touch trackpad",
+            |ui| {
+                switch(ui, &mut d.appearance.kinetic_scrolling);
+            },
+        );
+        r.row_kw(
+            tr!("settings-appearance-rubber-band"),
+            tr!("settings-appearance-rubber-band-desc"),
+            "scroll bounce overscroll elastic edge trackpad touch",
+            |ui| {
+                switch(ui, &mut d.appearance.rubber_band);
+            },
+        );
+        r.row_kw(
             tr!("settings-appearance-toast-time"),
             tr!("settings-appearance-toast-time-desc"),
             "notification toast duration timeout",
@@ -175,6 +191,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                         (FallbackFonts::Off, tr!("settings-off")),
                     ],
                 );
+            },
+        );
+        r.row_kw(
+            tr!("settings-appearance-color-emoji"),
+            tr!("settings-appearance-color-emoji-desc"),
+            "emoji colour color monochrome symbol segoe noto",
+            |ui| {
+                switch(ui, &mut d.appearance.color_emoji);
             },
         );
     });

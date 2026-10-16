@@ -38,7 +38,7 @@ pub fn install(
     font_roles: &Fonts,
     overrides: &std::collections::BTreeMap<String, String>,
 ) -> Vec<String> {
-    font_fallback::configure(ctx, appearance.fallback_fonts, font_roles);
+    font_fallback::configure(ctx, appearance.fallback_fonts, appearance.color_emoji, font_roles);
     library::start(ctx);
     let font_warnings = fonts::install(ctx, font_roles);
     let (mut dark, mut light, mut warnings) = resolve(appearance);
@@ -61,6 +61,8 @@ pub fn install(
         semibold_offset: font_roles.role(FontRoleKind::UiSemibold).offset(),
         code_offset: font_roles.role(FontRoleKind::Code).offset(),
         reduced_motion: appearance.reduced_motion,
+        kinetic_scrolling: appearance.kinetic_scrolling,
+        rubber_band: appearance.rubber_band,
         ui_scale: appearance.ui_scale,
         density: appearance.density,
         high_contrast: appearance.high_contrast,

@@ -31,6 +31,9 @@ pub struct ThemeOptions {
     /// `[fonts.code] size_offset`: points added to the monospace style.
     pub code_offset: f32,
     pub reduced_motion: bool,
+    /// `[appearance] kinetic_scrolling` / `rubber_band` (both off with `reduced_motion`).
+    pub kinetic_scrolling: bool,
+    pub rubber_band: bool,
     pub ui_scale: f32,
     /// Control sizes (touch mode enlarges every interactive target).
     pub density: Density,
@@ -46,6 +49,7 @@ pub fn apply(ctx: &Context, opts: &ThemeOptions) {
         let mut s = style(p, opts.font_size, opts.reduced_motion);
         offset_text(&mut s, opts.ui_offset, opts.semibold_offset, opts.code_offset);
         tune(&mut s, opts.density, opts.high_contrast);
+        scrolling(&mut s, opts.kinetic_scrolling && !opts.reduced_motion, opts.rubber_band && !opts.reduced_motion);
         // Coverage → opacity: a lower gamma draws grayscale-AA text heavier (egui's own
         // curves: `2c - c²` ≈ 0.5 on dark, linear on light backgrounds).
         if let Some(g) = opts.text_gamma[usize::from(theme == Theme::Light)] {
@@ -75,6 +79,15 @@ pub fn offset_text(s: &mut egui::Style, ui: f32, semibold: f32, code: f32) {
         };
         f.size = (f.size + add).max(4.0);
     }
+}
+
+/// Kinetic scrolling and rubber-banding (egui 0.37's `ScrollStyle::kinetic`).
+pub fn scrolling(s: &mut egui::Style, kinetic: bool, rubber_band: bool) {
+    let k = &mut s.spacing.scroll.kinetic;
+    if !kinetic {
+        k.decay_time = 0.0;
+    }
+    k.rubber_band = rubber_band;
 }
 
 /// Density / contrast adjustments on top of [`style`].
@@ -223,6 +236,17 @@ mod tests {
         assert!(!l.visuals.dark_mode);
         assert_eq!(l.animation_time, 0.0);
         assert!((l.text_styles[&TextStyle::Body].size - 15.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn kinetic_scrolling_and_rubber_band_follow_the_config() {
+        let mut s = style(&ORBIT_DARK, 13.0, false);
+        scrolling(&mut s, true, true);
+        assert!(s.spacing.scroll.kinetic.decay_time > 0.0, "egui's coasting stays");
+        assert!(s.spacing.scroll.kinetic.rubber_band);
+        scrolling(&mut s, false, false);
+        assert_eq!(s.spacing.scroll.kinetic.decay_time, 0.0);
+        assert!(!s.spacing.scroll.kinetic.rubber_band);
     }
 
     #[test]

@@ -9,6 +9,7 @@ pub mod clipboard;
 pub mod dragout;
 pub mod drop;
 pub mod names;
+pub mod paste_image;
 pub mod prompts;
 pub mod rename;
 
@@ -110,6 +111,8 @@ pub struct FileOps {
     auto_opened: HashSet<JobId>,
     /// History entries undone through Ctrl+Z (redo pops them).
     undo_stack: Vec<HistoryId>,
+    /// A clipboard image offered by the frontend for this frame's Paste ([`paste_image`]).
+    pub pasted_image: Option<paste_image::PastedImage>,
 }
 
 impl FileOps {
@@ -126,6 +129,7 @@ impl FileOps {
             pending_rename: None,
             auto_opened: HashSet::new(),
             undo_stack: Vec::new(),
+            pasted_image: None,
         }
     }
 
@@ -373,6 +377,13 @@ pub fn paste_into_with(app: &mut AppCore, dest: PathBuf, verify: bool) {
 }
 
 fn paste_files(app: &mut AppCore, os: crate::services::os_clipboard::Files, dest: PathBuf, verify: bool) {
+    // Files on the system clipboard win; otherwise a picture just pasted from it (the
+    // user's latest copy) goes before Soyuz's own clipboard.
+    let image = if os.is_none() { paste_image::take(app) } else { None };
+    if let Some(img) = image {
+        paste_image::save(app, img, dest);
+        return;
+    }
     let Some((mode, paths)) = os.or_else(|| app.fileops.clipboard.for_paste()) else {
         app.ui.toasts.push(Toast::info(tr!("ops-nothing-to-paste")).body(tr!("ops-nothing-to-paste-body")));
         return;
