@@ -337,7 +337,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `remember_choice` | boolean | `true` | Open with… preselects the application last chosen for the same file type. |
-| `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path). Written by Soyuz. |
+| `choose_when_unknown` | boolean | `true` | A file no application is registered for (an unknown type, or one without an extension) opens Open with… on Enter / double-click instead of an error; off = the error notification. |
+| `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path; `"."` for files without an extension). Written by Soyuz. |
 
 ## `[[open.default_apps]]`
 
@@ -347,7 +348,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 
 | Key | Type | Default | Description |
 |---|---|---|---|
-| `extensions` | array of strings | — | Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the end of the name. |
+| `extensions` | array of strings | — | Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the end of the name; `"."` matches files without an extension (`README`, `.bashrc`). |
 | `name` | string | — | The application's name (shown in Settings and Open with…). |
 | `program` | string | — | The program: an absolute path (macOS: the `.app` bundle). |
 | `args` | array of strings | — | Arguments; `%1` is replaced by the file (appended when no argument has a placeholder). On Windows, command-line fragments as the registry has them. |

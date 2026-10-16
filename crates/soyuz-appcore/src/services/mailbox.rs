@@ -36,6 +36,9 @@ pub enum UiMsg {
     OpenDir(PathBuf),
     /// A worker found a file to open with its default application.
     Launch(PathBuf),
+    /// No application is registered for this file's type: show Open with… for it
+    /// (`[open] choose_when_unknown`).
+    ChooseApp(PathBuf),
     /// A worker prepared `template` (a pasted image): create `path` as a copy of it
     /// through a job, then select and rename it in `pane`.
     CreateFrom { pane: PaneId, path: PathBuf, template: PathBuf },

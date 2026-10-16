@@ -537,11 +537,15 @@ pub enum MiddleClick {
 pub struct OpenSection {
     /// Open with… preselects the application last chosen for the same file type.
     pub remember_choice: bool,
+    /// A file no application is registered for (an unknown type, or one without an
+    /// extension) opens Open with… on Enter / double-click instead of an error; off = the
+    /// error notification.
+    pub choose_when_unknown: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,
     /// The application last chosen in Open with…, by extension (its `id`, else its program
-    /// path). Written by Soyuz.
+    /// path; `"."` for files without an extension). Written by Soyuz.
     pub last_used: BTreeMap<String, String>,
 }
 
@@ -550,7 +554,7 @@ pub struct OpenSection {
 #[serde(default)]
 pub struct DefaultApp {
     /// Extensions without the dot, any case (`["mp4", "mkv"]`); `"tar.gz"` matches the
-    /// end of the name.
+    /// end of the name; `"."` matches files without an extension (`README`, `.bashrc`).
     pub extensions: Vec<String>,
     /// The application's name (shown in Settings and Open with…).
     pub name: String,
@@ -565,12 +569,13 @@ pub struct DefaultApp {
 }
 
 impl DefaultApp {
-    /// Whether this rule names the file `name`'s extension.
+    /// Whether this rule names the file `name`'s extension (`"."`: `name` has none).
     pub fn matches(&self, name: &str) -> bool {
         let lower = name.to_lowercase();
-        self.extensions.iter().any(|e| {
-            let e = e.trim().trim_start_matches('.').to_lowercase();
-            !e.is_empty() && lower.len() > e.len() + 1 && lower.ends_with(&format!(".{e}"))
+        self.extensions.iter().any(|e| match OpenSection::norm_key(e).as_str() {
+            "" => false,
+            OpenSection::NO_EXTENSION => !name.is_empty() && OpenSection::ext_of(name).is_none(),
+            e => lower.len() > e.len() + 1 && lower.ends_with(&format!(".{e}")),
         })
     }
 
@@ -586,11 +591,26 @@ impl DefaultApp {
 }
 
 impl OpenSection {
-    /// The extension a file's choice is kept under: the last one, lowercase (`None` for
-    /// `README` or `.bashrc`).
+    /// The key (in `extensions` and `last_used`) of files without an extension.
+    pub const NO_EXTENSION: &'static str = ".";
+
+    /// The extension of `name`: the last one, lowercase (`None` for `README` or
+    /// `.bashrc`).
     pub fn ext_of(name: &str) -> Option<String> {
         let (stem, ext) = name.rsplit_once('.')?;
         (!stem.is_empty() && !ext.is_empty()).then(|| ext.to_lowercase())
+    }
+
+    /// The key a file's choice is kept under: its extension, else [`Self::NO_EXTENSION`].
+    pub fn key_of(name: &str) -> String {
+        Self::ext_of(name).unwrap_or_else(|| Self::NO_EXTENSION.to_string())
+    }
+
+    /// An extension as written in a rule (`".MP4"`, `" mp4"`) → its key (`"mp4"`); `"."`
+    /// stays [`Self::NO_EXTENSION`].
+    pub fn norm_key(ext: &str) -> String {
+        let e = ext.trim();
+        if e == Self::NO_EXTENSION { e.to_string() } else { e.trim_start_matches('.').to_lowercase() }
     }
 
     /// The default application for the file `name`, if a rule names its extension.
@@ -598,16 +618,23 @@ impl OpenSection {
         self.default_apps.iter().find(|r| r.matches(name))
     }
 
-    /// Make `app` the default for `ext` (`None`: no default, the system's applies). The
-    /// extension leaves every other rule (a rule left without extensions goes); `app` joins
-    /// a rule for the same application when there is one.
+    /// The rule naming the key `key` (an extension or [`Self::NO_EXTENSION`]).
+    pub fn rule_for(&self, key: &str) -> Option<&DefaultApp> {
+        let key = Self::norm_key(key);
+        self.default_apps.iter().find(|r| r.extensions.iter().any(|e| Self::norm_key(e) == key))
+    }
+
+    /// Make `app` the default for `ext` (an extension or [`Self::NO_EXTENSION`]; `None`:
+    /// no default, the system's applies). The extension leaves every other rule (a rule
+    /// left without extensions goes); `app` joins a rule for the same application when
+    /// there is one.
     pub fn set_default(&mut self, ext: &str, app: Option<DefaultApp>) {
-        let ext = ext.trim().trim_start_matches('.').to_lowercase();
+        let ext = Self::norm_key(ext);
         if ext.is_empty() {
             return;
         }
         for r in &mut self.default_apps {
-            r.extensions.retain(|e| e.trim().trim_start_matches('.').to_lowercase() != ext);
+            r.extensions.retain(|e| Self::norm_key(e) != ext);
         }
         self.default_apps.retain(|r| !r.extensions.is_empty());
         if let Some(app) = app {

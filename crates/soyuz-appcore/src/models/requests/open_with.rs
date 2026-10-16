@@ -6,6 +6,9 @@
 //! extension's default (`default_apps`, used by Enter / double-click, [`crate::ops::launch`]),
 //! and with `remember_choice` the dialog preselects the application last chosen for the
 //! extension ([`preselect`]). Both go through `Cmd::RememberOpenWith` ([`remember`]).
+//! Files without an extension (`README`, `Makefile`, `.bashrc`) are kept together under
+//! the key `"."` ([`OpenSection::NO_EXTENSION`]), and a file no application is registered
+//! for opens this dialog on Enter (`[open] choose_when_unknown`, [`crate::ops::launch`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -71,8 +74,8 @@ pub fn open_cmd(path: &Path, app: AppInfo) -> Cmd {
     Cmd::OpenWith { path: path.to_path_buf(), app }
 }
 
-/// The commands for a choice: keep it for the file's extension (`always`: as its default;
-/// off: no default), then open `path` with `app`. A file without an extension keeps nothing.
+/// The commands for a choice: keep it for the file's type (`always`: as its default;
+/// off: no default), then open `path` with `app`.
 pub fn choice_cmds(path: &Path, app: AppInfo, always: bool) -> Vec<Cmd> {
     let mut cmds = Vec::new();
     if let Some(ext) = ext_of(path) {
@@ -82,15 +85,19 @@ pub fn choice_cmds(path: &Path, app: AppInfo, always: bool) -> Vec<Cmd> {
     cmds
 }
 
-/// The extension a choice for `path` is kept under (`None`: no extension).
+/// The key a choice for `path` is kept under: its extension, or
+/// [`OpenSection::NO_EXTENSION`] for a file without one (`None`: no file name).
 pub fn ext_of(path: &Path) -> Option<String> {
-    path.file_name().and_then(|n| n.to_str()).and_then(OpenSection::ext_of)
+    path.file_name().and_then(|n| n.to_str()).map(OpenSection::key_of)
 }
 
-/// The "Always use this app" checkbox's label for `path` (`None`: no extension, no
-/// checkbox).
+/// The "Always use this app" checkbox's label for `path` ("… for .ext files", or "… for
+/// files without an extension").
 pub fn always_label(path: &Path) -> Option<String> {
-    ext_of(path).map(|ext| tr!("dialogs-openwith-always", ext = ext).to_string())
+    ext_of(path).map(|ext| match ext.as_str() {
+        OpenSection::NO_EXTENSION => tr!("dialogs-openwith-always-noext").to_string(),
+        _ => tr!("dialogs-openwith-always", ext = ext).to_string(),
+    })
 }
 
 /// The application of a `[[open.default_apps]]` rule.
@@ -170,7 +177,7 @@ pub fn remember(core: &mut AppCore, host: &dyn Host, ext: &str, app: &AppInfo, a
         if c.open.remember_choice {
             c.open.last_used.insert(ext.to_string(), rule.key());
         }
-        let current = c.open.app_for(&format!("x.{ext}")).cloned();
+        let current = c.open.rule_for(ext).cloned();
         match (always && can_be_default(app), current) {
             (true, Some(r)) if r.same_app(&rule) => {}
             (true, _) => c.open.set_default(ext, Some(rule.clone())),
@@ -271,6 +278,12 @@ mod tests {
         let p = preselect(&cfg, png, &apps);
         assert!(p.always && p.selected.is_none() && p.custom == tool_key, "{p:?}");
         assert!(!preselect(&cfg, Path::new("README"), &apps).always);
+        // Files without an extension share the "." key.
+        cfg.last_used.insert(".".into(), "gimp.desktop".into());
+        assert_eq!(preselect(&cfg, Path::new("Makefile"), &apps).selected, Some(1));
+        cfg.set_default(".", Some(rule_of(&custom_app(&tool))));
+        let p = preselect(&cfg, Path::new("README"), &[]);
+        assert!(p.always && p.custom == tool_key, "an unknown type with no listed apps: {p:?}");
     }
 
     #[test]
@@ -279,9 +292,11 @@ mod tests {
         let cmds = choice_cmds(Path::new("clip.MP4"), a.clone(), true);
         assert!(matches!(&cmds[0], Cmd::RememberOpenWith { ext, always: true, .. } if ext == "mp4"));
         assert!(matches!(&cmds[1], Cmd::OpenWith { .. }));
-        assert_eq!(choice_cmds(Path::new("Makefile"), a.clone(), true).len(), 1, "no extension: open only");
+        let cmds = choice_cmds(Path::new("Makefile"), a.clone(), true);
+        assert!(matches!(&cmds[0], Cmd::RememberOpenWith { ext, .. } if ext == "."), "no extension: the . key");
         assert_eq!(rule_app(&rule_of(&a)), a);
         assert!(always_label(Path::new("clip.mp4")).is_some_and(|l| l.contains("mp4")));
-        assert!(always_label(Path::new("Makefile")).is_none());
+        assert!(always_label(Path::new("Makefile")).is_some_and(|l| !l.contains(".{")));
+        assert_ne!(always_label(Path::new("Makefile")), always_label(Path::new("x.mk")));
     }
 }

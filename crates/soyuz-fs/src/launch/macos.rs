@@ -13,8 +13,11 @@ use crate::err;
 /// LaunchServices `OSStatus` → error. `-10814` (`kLSApplicationNotFoundErr`) and `-43`
 /// (`fnfErr`) mean nothing can open it.
 pub(crate) fn ls_error(op: &'static str, path: &Path, status: i32) -> FsError {
+    if matches!(status, -10814 | -43) {
+        let msg = "no application is associated with this item (use \u{201c}Open with\u{201d})";
+        return FsError::with_message(soyuz_core::FsErrorKind::NoApplication, op, Some(path), msg);
+    }
     let msg = match status {
-        -10814 | -43 => "no application is associated with this item".to_string(),
         -10826 => "the application may not be launched (no permission)".to_string(),
         _ => format!("LaunchServices error {status}"),
     };

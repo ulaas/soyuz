@@ -203,7 +203,12 @@ impl Default for Columns {
 
 impl Default for OpenSection {
     fn default() -> Self {
-        OpenSection { remember_choice: true, default_apps: Vec::new(), last_used: BTreeMap::new() }
+        OpenSection {
+            remember_choice: true,
+            choose_when_unknown: true,
+            default_apps: Vec::new(),
+            last_used: BTreeMap::new(),
+        }
     }
 }
 
@@ -758,6 +763,22 @@ mod tests {
         assert_eq!(OpenSection::ext_of("a.b.TXT").as_deref(), Some("txt"));
         assert_eq!(OpenSection::ext_of(".bashrc"), None);
         assert_eq!(OpenSection::ext_of("README"), None);
+
+        // Files without an extension: the "." key.
+        assert_eq!(OpenSection::key_of("README"), ".");
+        assert_eq!(OpenSection::key_of(".bashrc"), ".");
+        assert_eq!(OpenSection::key_of("a.Rs"), "rs");
+        assert!(o.choose_when_unknown);
+        let edit = DefaultApp { name: "Editor".into(), program: "/usr/bin/ed".into(), ..Default::default() };
+        o.set_default(".", Some(edit));
+        for name in ["README", "Makefile", ".bashrc"] {
+            assert_eq!(o.app_for(name).map(|a| a.name.as_str()), Some("Editor"), "{name}");
+        }
+        assert!(o.app_for("notes.txt").is_none(), "only files without an extension");
+        assert_eq!(o.rule_for(".").map(|a| a.name.as_str()), Some("Editor"));
+        assert!(o.rule_for("txt").is_none());
+        o.set_default(".", None);
+        assert!(o.app_for("README").is_none());
 
         #[derive(serde::Serialize, serde::Deserialize, PartialEq, Debug)]
         struct Wrap {

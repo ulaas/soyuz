@@ -161,6 +161,20 @@ fn run_core(data: PathBuf) {
     paste_image::offer(&mut app, 1, 1, Box::new(|| vec![0; 4]));
     assert!(paste_image::take(&mut app).is_none(), "[behaviour] paste_images = false");
 
+    // Opening a file no application is registered for asks with Open with… (Windows:
+    // the registry lookup finds nothing and nothing is started).
+    #[cfg(windows)]
+    {
+        use soyuz_appcore::models::frontend::FrontendCmd;
+        let unknown = data.join("data.soyuz-unregistered-type");
+        std::fs::write(&unknown, b"x").unwrap();
+        soyuz_appcore::ops::launch(&mut app, &unknown);
+        settle(&mut app, &host, "Open with… for an unknown type", |a| {
+            a.frontend.iter().any(|c| matches!(c, FrontendCmd::OpenWith(p) if *p == unknown))
+        });
+        app.frontend.clear();
+    }
+
     // Core prompts and frontend requests stay queued for a frontend; none is needed here.
     assert!(!app.prompt_open());
     app.save_all();

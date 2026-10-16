@@ -129,6 +129,14 @@ them. They are kept in `[[open.default_apps]]` in `config.toml`. Soyuz doesn't c
 the system's own default apps. Apps that open through the system, such as Store apps,
 can't be a Soyuz default.
 
+**Unrecognized files.** A file no app is registered for, an unknown type or a file
+without an extension, opens *Open with…* on `Enter` instead of an error
+(`[open] choose_when_unknown`, *Settings → Behaviour → Ask for unrecognized files*). The
+list is then usually empty: type or paste the program's full path, tick **Always use this
+app**, and that type opens with it from then on. Files without an extension (`README`,
+`Makefile`, `.bashrc`) share one default, shown as **Always use this app for files without
+an extension** and kept as the extension `.` in `[[open.default_apps]]`.
+
 ## Background jobs, conflicts and undo
 
 Every operation runs as a job; the window stays responsive. Small jobs finish quietly

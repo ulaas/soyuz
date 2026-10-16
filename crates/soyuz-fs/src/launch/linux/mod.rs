@@ -430,7 +430,7 @@ pub(crate) fn sandboxed() -> bool {
 
 fn no_handler(op: &'static str, path: &Path, what: &str) -> FsError {
     FsError::with_message(
-        FsErrorKind::Unsupported,
+        FsErrorKind::NoApplication,
         op,
         Some(path),
         format!("no application is associated with {what} (use \u{201c}Open with\u{201d})"),

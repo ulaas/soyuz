@@ -264,6 +264,7 @@ pub fn launch(app: &mut AppCore, path: &Path) {
     crate::services::recent::opened_file(path);
     let postman = app.services.mailbox.postman();
     let rule = default_app(&app.config, path);
+    let choose = app.config.open.choose_when_unknown;
     let path = path.to_path_buf();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Ok(Some(target)) = soyuz_fs::launch::shortcut_target(&path)
@@ -272,10 +273,16 @@ pub fn launch(app: &mut AppCore, path: &Path) {
             postman.send(UiMsg::OpenDir(target));
             return;
         }
-        if let Err(e) = open_file(&path, rule.as_ref()) {
-            postman.send(UiMsg::Notice(
-                Toast::error(tr!("ops-open-failed", name = soyuz_core::entry::display_name(&path))).body(e.to_string()),
-            ));
+        match open_file(&path, rule.as_ref()) {
+            Ok(()) => {}
+            // An unrecognized type (or one without an extension): let the user pick.
+            Err(e) if choose && e.kind == soyuz_core::FsErrorKind::NoApplication => {
+                postman.send(UiMsg::ChooseApp(path));
+            }
+            Err(e) => {
+                let title = tr!("ops-open-failed", name = soyuz_core::entry::display_name(&path));
+                postman.send(UiMsg::Notice(Toast::error(title).body(e.to_string())));
+            }
         }
     });
     if let Err(e) = spawned {
@@ -601,6 +608,7 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
             app.ui.toasts.push(t);
         }
         UiMsg::Launch(p) => launch(app, &p),
+        UiMsg::ChooseApp(p) => app.cmds.push(Cmd::ChooseOpenWith(p)),
         UiMsg::CreateFrom { pane, path, template } => {
             crate::ops::fileops::paste_image::create_from(app, pane, path, template);
         }

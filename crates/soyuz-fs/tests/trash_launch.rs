@@ -147,3 +147,17 @@ fn shortcut_and_apps_queries_do_not_spawn() {
     assert_eq!(launch::shortcut_target(&txt).unwrap(), None);
     assert_eq!(launch::open_default(&d.path().join("missing.txt")).unwrap_err().kind, FsErrorKind::NotFound);
 }
+
+/// A type nothing is registered for (and a file without an extension) reports
+/// `NoApplication`, so the app can offer "Open with…". Windows only: the lookup is the
+/// registry, and nothing is started when it finds no handler.
+#[cfg(windows)]
+#[test]
+fn unregistered_types_have_no_application() {
+    let d = tempfile::tempdir().unwrap();
+    for name in ["data.soyuz-unregistered-type", "Makefile"] {
+        let f = d.path().join(name);
+        write(&f, b"x");
+        assert_eq!(launch::open_default(&f).unwrap_err().kind, FsErrorKind::NoApplication, "{name}");
+    }
+}

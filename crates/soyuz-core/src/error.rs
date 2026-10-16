@@ -32,6 +32,9 @@ pub enum FsErrorKind {
     Corrupt,
     WrongPassword,
     PasswordRequired,
+    /// No application is registered for the file's type (or only one that needs the
+    /// system shell): "Open with…" is the way to open it.
+    NoApplication,
 }
 
 impl FsErrorKind {
@@ -57,6 +60,7 @@ impl FsErrorKind {
             FsErrorKind::Corrupt => "corrupt data",
             FsErrorKind::WrongPassword => "wrong password",
             FsErrorKind::PasswordRequired => "password required",
+            FsErrorKind::NoApplication => "no application is associated",
         }
     }
 }

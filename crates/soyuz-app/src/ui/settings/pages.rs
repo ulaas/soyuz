@@ -867,6 +867,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.open.remember_choice);
             },
         );
+        r.row_kw(
+            tr!("settings-open-unknown"),
+            tr!("settings-open-unknown-desc"),
+            "open with unknown unrecognized unregistered type no extension association",
+            |ui| {
+                switch(ui, &mut d.open.choose_when_unknown);
+            },
+        );
         r.block(tr!("settings-open-defaults"), tr!("settings-open-defaults-desc"), |ui| {
             default_apps_editor(ui, &mut d.open.default_apps);
         });
@@ -914,7 +922,7 @@ fn default_apps_editor(ui: &mut Ui, rules: &mut Vec<soyuz_core::config::DefaultA
             if resp.changed() {
                 r.extensions = exts
                     .split([' ', ',', ';'])
-                    .map(|e| e.trim().trim_start_matches('.').to_lowercase())
+                    .map(soyuz_core::config::OpenSection::norm_key)
                     .filter(|e| !e.is_empty())
                     .collect();
             }
