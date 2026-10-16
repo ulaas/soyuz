@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.4.2" date="2026-10-16" type="development">
+      <description>
+        <p>Built on egui 0.37: colour emoji, kinetic scrolling with rubber-banding, and pasting a
+          copied picture saves it as a PNG file. Files no application is registered for (and
+          files without an extension) open with Open with…, which can remember the choice.</p>
+      </description>
+    </release>
     <release version="0.4.1" date="2026-10-16" type="development">
       <description>
         <p>Default apps per file type inside Soyuz (Open with… remembers the last app and can
