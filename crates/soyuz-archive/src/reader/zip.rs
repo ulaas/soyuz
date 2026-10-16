@@ -25,6 +25,12 @@ pub(crate) struct ZipReader {
     listing: Option<Listing>,
 }
 
+/// An entry's name. zip 9 refuses a name flagged UTF-8 that isn't; it is then decoded
+/// lossily, as zip 8 did, so the entry can still be listed and extracted.
+pub(crate) fn entry_name<'f, R: Read + ?Sized>(f: &'f zip::read::ZipFile<'_, R>) -> std::borrow::Cow<'f, str> {
+    f.name().unwrap_or_else(|_| String::from_utf8_lossy(f.name_raw()))
+}
+
 pub(crate) fn zip_err(e: ZipError) -> ArchiveError {
     match e {
         ZipError::InvalidPassword => ArchiveError::WrongPassword,
@@ -53,7 +59,7 @@ impl ZipReader {
             let mut symlinks = Vec::new();
             for i in 0..n {
                 let f = self.zip.by_index_raw(i).map_err(zip_err)?;
-                let (path, raw) = normalize_name(f.name());
+                let (path, raw) = normalize_name(&entry_name(&f));
                 if path.is_empty() {
                     continue;
                 }

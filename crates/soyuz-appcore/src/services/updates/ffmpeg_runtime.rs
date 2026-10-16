@@ -353,7 +353,7 @@ pub fn install_archive(
                 if !entry.is_file() || entry.is_symlink() {
                     continue;
                 }
-                let (name, size) = (entry.name().to_string(), entry.size());
+                let (name, size) = (entry.name().map_err(|e| bad(&e))?.into_owned(), entry.size());
                 take(&name, size, &mut entry)?;
             }
         } else if lower.ends_with(".tar.xz") {

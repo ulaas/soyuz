@@ -33,7 +33,7 @@ rustls-platform-verifier = "0.7.1"
 # SMB2/3 off Windows (pure Rust: NTLMv2, signing, encryption, srvsvc share enumeration).
 # Windows opens `\\server\share` through the kernel redirector instead.
 [target.'cfg(not(windows))'.dependencies]
-smb2 = { version = "0.27.2", default-features = false, features = ["tokio"] }
+smb2 = { version = "0.31.0", default-features = false, features = ["tokio"] }
 
 [dev-dependencies]
 tempfile.workspace = true

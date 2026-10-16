@@ -18,7 +18,7 @@ use soyuz_core::{ByteProgress, FsError, FsErrorKind, OpControl, ProgressSink};
 use zip::ZipArchive;
 use zip::write::ZipWriter;
 
-use crate::reader::zip_err;
+use crate::reader::{entry_name, zip_err};
 use crate::util::fs_err;
 use crate::writer::{Item, collect};
 use crate::{ArchiveError, ArchiveFormat, CreateOptions, ZipMethod};
@@ -142,7 +142,7 @@ fn rewrite_inner(
     let mut sizes = Vec::with_capacity(zip.len());
     for i in 0..zip.len() {
         let f = zip.by_index_raw(i).map_err(zip_err)?;
-        let name = normalize_inner(f.name());
+        let name = normalize_inner(&entry_name(&f));
         sizes.push(f.compressed_size());
         let alive = !name.is_empty();
         slots.push(Slot { src: Src::Old(i), is_dir: f.is_dir(), name, alive });
@@ -266,7 +266,7 @@ fn rewrite_inner(
                     continue;
                 }
                 let f = zip.by_index_raw(i).map_err(zip_err)?;
-                let original = normalize_inner(f.name());
+                let original = normalize_inner(&entry_name(&f));
                 if original == s.name {
                     zw.raw_copy_file(f).map_err(zip_err)?;
                     summary.kept += 1;

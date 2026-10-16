@@ -74,15 +74,15 @@ the appendix below.
 Soyuz is built from the following crates. Each licence text is reproduced once, followed
 by the crates that use it.
 
-- MIT License (648)
-- Apache License 2.0 (33)
-- ISC License (21)
+- MIT License (640)
+- Apache License 2.0 (32)
+- ISC License (22)
 - Unicode License v3 (19)
 - Mozilla Public License 2.0 (17)
-- BSD 3-Clause "New" or "Revised" License (15)
+- BSD 3-Clause "New" or "Revised" License (14)
+- MIT No Attribution (3)
 - BSD 2-Clause "Simplified" License (2)
 - Creative Commons Zero v1.0 Universal (2)
-- MIT No Attribution (2)
 - zlib License (2)
 - SIL Open Font License 1.1 (1)
 - Ubuntu Font Licence v1.0 (1)
@@ -91,7 +91,7 @@ by the crates that use it.
 ### Apache License 2.0
 
 Used by:
-- [rars 0.10.0](https://github.com/bitplane/rars)
+- [rars 0.11.0](https://github.com/bitplane/rars)
 
 ````text
 
@@ -583,7 +583,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ### Apache License 2.0
 
 Used by:
-- [zopfli 0.8.3](https://github.com/zopfli-rs/zopfli)
+- [zopfli 0.8.4](https://github.com/zopfli-rs/zopfli)
 
 ````text
                                  Apache License
@@ -1004,10 +1004,9 @@ Used by:
 ### Apache License 2.0
 
 Used by:
-- [lzma-rust2 0.16.5](https://github.com/hasenbanck/lzma-rust2/)
-- [lzma-rust2 0.21.0](https://github.com/hasenbanck/lzma-rust2/)
-- [sevenz-rust2 0.23.0](https://github.com/hasenbanck/sevenz-rust)
-- [sevenz-rust2 0.23.0](https://github.com/hasenbanck/sevenz-rust)
+- [lzma-rust2 0.22.0](https://github.com/hasenbanck/lzma-rust2/)
+- [sevenz-rust2 0.24.0](https://github.com/hasenbanck/sevenz-rust)
+- [sevenz-rust2 0.24.0](https://github.com/hasenbanck/sevenz-rust)
 
 ````text
                                  Apache License
@@ -1217,7 +1216,7 @@ Used by:
 
 Used by:
 - [codespan-reporting 0.13.1](https://github.com/brendanzab/codespan)
-- [cpal 0.17.3](https://github.com/RustAudio/cpal)
+- [cpal 0.18.2](https://github.com/RustAudio/cpal)
 - [self_cell 1.3.0](https://github.com/Voultapher/self_cell)
 
 ````text
@@ -2916,7 +2915,6 @@ pub(crate) static GB18030_2022_OVERRIDE_BYTES: [[u8; 2]; 18] = [
 ### BSD 3-Clause "New" or "Revised" License
 
 Used by:
-- [zstd-safe 7.3.0](https://github.com/gyscos/zstd-rs)
 - [zstd-safe 8.1.0](https://github.com/gyscos/zstd-rs)
 - [zstd-sys 2.1.1+zstd.1.5.7](https://github.com/gyscos/zstd-rs)
 - [zstd 0.14.2](https://github.com/gyscos/zstd-rs)
@@ -4046,6 +4044,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 Used by:
 - [libloading 0.8.9](https://github.com/nagisa/rust_libloading/)
+- [libloading 0.9.0](https://github.com/nagisa/rust_libloading/)
 
 ````text
 Copyright © 2015, Simonas Kazlauskas
@@ -4190,7 +4189,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [schemars 1.2.2](https://github.com/GREsau/schemars)
+- [schemars 1.2.3](https://github.com/GREsau/schemars)
 
 ````text
 #![allow(clippy::all)]
@@ -4278,43 +4277,6 @@ limitations under the License.
 
 Copyright (c) 2016 Alex Crichton
 Copyright (c) 2017 The Tokio Authors
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-````
-
-### MIT License
-
-Used by:
-- [sha1 0.10.7](https://github.com/RustCrypto/hashes)
-- [sha2 0.10.9](https://github.com/RustCrypto/hashes)
-
-````text
-Copyright (c) 2006-2009 Graydon Hoare
-Copyright (c) 2009-2013 Mozilla Foundation
-Copyright (c) 2016 Artyom Pavlov
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -4796,7 +4758,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [uuid 1.27.0](https://github.com/uuid-rs/uuid)
+- [uuid 1.28.0](https://github.com/uuid-rs/uuid)
 
 ````text
 Copyright (c) 2014 The Rust Project Developers
@@ -5044,7 +5006,6 @@ THE SOFTWARE.
 Used by:
 - [coreaudio-rs 0.14.2](https://github.com/RustAudio/coreaudio-rs.git)
 - [either 1.19.0](https://github.com/rayon-rs/either)
-- [itertools 0.13.0](https://github.com/rust-itertools/itertools)
 - [itertools 0.14.0](https://github.com/rust-itertools/itertools)
 - [itertools 0.15.0](https://github.com/rust-itertools/itertools)
 
@@ -5691,7 +5652,7 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - [hyper-rustls 0.27.10](https://github.com/rustls/hyper-rustls)
-- [rustls-native-certs 0.8.4](https://github.com/rustls/rustls-native-certs)
+- [rustls-native-certs 0.8.5](https://github.com/rustls/rustls-native-certs)
 - [rustls 0.23.46](https://github.com/rustls/rustls)
 
 ````text
@@ -5858,7 +5819,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [equivalent 1.0.2](https://github.com/indexmap-rs/equivalent)
+- [equivalent 1.0.3](https://github.com/indexmap-rs/equivalent)
 
 ````text
 Copyright (c) 2016--2023
@@ -6025,7 +5986,7 @@ THE SOFTWARE.
 Used by:
 - [md-5 0.11.0](https://github.com/RustCrypto/hashes)
 - [sha1 0.11.0](https://github.com/RustCrypto/hashes)
-- [sha2 0.11.0](https://github.com/RustCrypto/hashes)
+- [sha2 0.11.1](https://github.com/RustCrypto/hashes)
 
 ````text
 Copyright (c) 2016-2026 The RustCrypto Project Developers
@@ -6098,7 +6059,6 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - [cmac 0.8.0](https://github.com/RustCrypto/MACs)
-- [digest 0.10.7](https://github.com/RustCrypto/traits)
 - [hmac 0.13.0](https://github.com/RustCrypto/MACs)
 
 ````text
@@ -6842,7 +6802,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [smallvec 1.16.2](https://github.com/servo/rust-smallvec)
+- [smallvec 1.16.3](https://github.com/servo/rust-smallvec)
 
 ````text
 Copyright (c) 2018 The Servo Project Developers
@@ -7046,40 +7006,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 
-
-````
-
-### MIT License
-
-Used by:
-- [block-buffer 0.10.4](https://github.com/RustCrypto/utils)
-
-````text
-Copyright (c) 2018-2019 The RustCrypto Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 
 ````
 
@@ -7599,7 +7525,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [font-types 0.12.6](https://github.com/googlefonts/fontations)
+- [font-types 0.12.7](https://github.com/googlefonts/fontations)
 - [read-fonts 0.41.0](https://github.com/googlefonts/fontations)
 - [skrifa 0.44.0](https://github.com/googlefonts/fontations)
 
@@ -7704,7 +7630,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [mach2 0.5.0](https://github.com/JohnTitor/mach2)
+- [mach2 0.6.0](https://github.com/JohnTitor/mach2)
 
 ````text
 Copyright (c) 2019 Nick Fitzgerald, 2021 Yuki Okushi
@@ -8180,7 +8106,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [litrs 1.0.0](https://github.com/LukasKalbertodt/litrs)
+- [litrs 1.0.1](https://github.com/LukasKalbertodt/litrs)
 
 ````text
 Copyright (c) 2020 Project Developers
@@ -8351,40 +8277,6 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [cpufeatures 0.2.17](https://github.com/RustCrypto/utils)
-
-````text
-Copyright (c) 2020-2025 The RustCrypto Project Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-````
-
-### MIT License
-
-Used by:
 - [elliptic-curve 0.14.1](https://github.com/RustCrypto/traits)
 - [p256 0.14.0](https://github.com/RustCrypto/elliptic-curves)
 - [p521 0.14.0](https://github.com/RustCrypto/elliptic-curves)
@@ -8468,40 +8360,6 @@ Copyright (c) 2016-2023 Artyom Pavlov, Marek Kotewicz
 Copyright (c) 2014 Sébastien Martini
 Copyright (c) 2009-2013 Mozilla Foundation
 Copyright (c) 2006-2009 Graydon Hoare
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-````
-
-### MIT License
-
-Used by:
-- [crypto-common 0.1.7](https://github.com/RustCrypto/traits)
-
-````text
-Copyright (c) 2021 RustCrypto Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -8777,7 +8635,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [inout 0.2.2](https://github.com/RustCrypto/utils)
+- [inout 0.2.3](https://github.com/RustCrypto/utils)
 
 ````text
 Copyright (c) 2022-2025 The RustCrypto Project Developers
@@ -9100,7 +8958,7 @@ DEALINGS IN THE SOFTWARE.
 ### MIT License
 
 Used by:
-- [deranged 0.5.8](https://github.com/jhpratt/deranged)
+- [deranged 0.5.9](https://github.com/jhpratt/deranged)
 
 ````text
 Copyright (c) 2024 Jacob Pratt et al.
@@ -9265,7 +9123,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [ctutils 0.4.3](https://github.com/RustCrypto/utils)
+- [ctutils 0.4.2](https://github.com/RustCrypto/utils)
 
 ````text
 Copyright (c) 2025-2026 The RustCrypto Project Developers
@@ -9480,12 +9338,12 @@ Used by:
 - [env_logger 0.11.11](https://github.com/rust-cli/env_logger)
 - [is_terminal_polyfill 1.70.2](https://github.com/polyfill-rs/is_terminal_polyfill)
 - [once_cell_polyfill 1.70.2](https://github.com/polyfill-rs/once_cell_polyfill)
-- [serde_spanned 1.1.1](https://github.com/toml-rs/toml)
-- [toml 1.1.6+spec-1.1.0](https://github.com/toml-rs/toml)
-- [toml_datetime 1.1.1+spec-1.1.0](https://github.com/toml-rs/toml)
-- [toml_edit 0.25.15+spec-1.1.0](https://github.com/toml-rs/toml)
-- [toml_parser 1.1.3+spec-1.1.0](https://github.com/toml-rs/toml)
-- [toml_writer 1.1.2+spec-1.1.0](https://github.com/toml-rs/toml)
+- [serde_spanned 1.1.2](https://github.com/toml-rs/toml)
+- [toml 1.1.8+spec-1.1.0](https://github.com/toml-rs/toml)
+- [toml_datetime 1.1.2+spec-1.1.0](https://github.com/toml-rs/toml)
+- [toml_edit 0.25.17+spec-1.1.0](https://github.com/toml-rs/toml)
+- [toml_parser 1.1.5+spec-1.1.0](https://github.com/toml-rs/toml)
+- [toml_writer 1.1.3+spec-1.1.0](https://github.com/toml-rs/toml)
 
 ````text
 Copyright (c) Individual contributors
@@ -9570,7 +9428,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [rodio 0.22.2](https://github.com/RustAudio/rodio)
+- [rodio 0.23.0](https://github.com/RustAudio/rodio)
 
 ````text
 Copyright (c) The Rodio Project Contributors
@@ -10050,8 +9908,8 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [zerocopy-derive 0.8.61](https://github.com/google/zerocopy)
-- [zerocopy 0.8.61](https://github.com/google/zerocopy)
+- [zerocopy-derive 0.8.63](https://github.com/google/zerocopy)
+- [zerocopy 0.8.63](https://github.com/google/zerocopy)
 
 ````text
 Copyright 2023 The Fuchsia Authors
@@ -10673,8 +10531,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### MIT License
 
 Used by:
-- [schemars 1.2.2](https://github.com/GREsau/schemars)
-- [schemars_derive 1.2.2](https://github.com/GREsau/schemars)
+- [schemars 1.2.3](https://github.com/GREsau/schemars)
+- [schemars_derive 1.2.3](https://github.com/GREsau/schemars)
 
 ````text
 MIT License
@@ -11337,7 +11195,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [smb2 0.27.2](https://github.com/vdavid/smb2)
+- [smb2 0.31.0](https://github.com/vdavid/smb2)
 
 ````text
 MIT License
@@ -11419,7 +11277,7 @@ Used by:
 - [profiling 1.0.18](https://github.com/aclysma/profiling)
 - [quantette 0.6.0](https://github.com/IanManske/quantette)
 - [rhai_codegen 3.2.0](https://github.com/rhaiscript/rhai)
-- [suppaftp 12.1.1](https://github.com/veeso/suppaftp)
+- [suppaftp 12.2.1](https://github.com/veeso/suppaftp)
 - [type-map 0.5.1](https://github.com/kardeiz/type-map)
 - [vsimd 0.8.0](https://github.com/Nugine/simd)
 - [windows-collections 0.3.2](https://github.com/microsoft/windows-rs)
@@ -11495,8 +11353,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 ### MIT License
 
 Used by:
-- [tokio-util 0.7.19](https://github.com/tokio-rs/tokio)
-- [tokio 1.53.2](https://github.com/tokio-rs/tokio)
+- [tokio-util 0.7.20](https://github.com/tokio-rs/tokio)
+- [tokio 1.53.3](https://github.com/tokio-rs/tokio)
 
 ````text
 MIT License
@@ -11924,11 +11782,11 @@ Used by:
 - [serde_derive 1.0.229](https://github.com/serde-rs/serde)
 - [serde_derive_internals 0.30.0](https://github.com/serde-rs/serde)
 - [serde_ignored 0.1.14](https://github.com/dtolnay/serde-ignored)
-- [serde_json 1.0.151](https://github.com/serde-rs/json)
+- [serde_json 1.0.154](https://github.com/serde-rs/json)
 - [serde_repr 0.1.21](https://github.com/dtolnay/serde-repr)
 - [smol_str 0.2.2](https://github.com/rust-analyzer/smol_str)
 - [syn 2.0.119](https://github.com/dtolnay/syn)
-- [syn 3.0.6](https://github.com/dtolnay/syn)
+- [syn 3.0.9](https://github.com/dtolnay/syn)
 - [thin-vec 0.2.21](https://github.com/mozilla/thin-vec)
 - [thiserror-impl 1.0.69](https://github.com/dtolnay/thiserror)
 - [thiserror-impl 2.0.21](https://github.com/dtolnay/thiserror)
@@ -11938,7 +11796,7 @@ Used by:
 - [typeid 1.0.3](https://github.com/dtolnay/typeid)
 - [unic-langid-impl 0.9.6](https://github.com/zbraniecki/unic-locale)
 - [unic-langid 0.9.6](https://github.com/zbraniecki/unic-locale)
-- [unicode-ident 1.0.26](https://github.com/dtolnay/unicode-ident)
+- [unicode-ident 1.0.27](https://github.com/dtolnay/unicode-ident)
 - [x11-dl 2.21.0](https://github.com/AltF02/x11-rs.git)
 - [zbus-lockstep-macros 0.5.2](https://github.com/luukvanderduim/zbus-lockstep)
 - [zbus-lockstep 0.5.2](https://github.com/luukvanderduim/zbus-lockstep)
@@ -12139,7 +11997,7 @@ THE SOFTWARE.
 
 Used by:
 - [tracing-core 0.1.36](https://github.com/tokio-rs/tracing)
-- [zip 8.6.0](https://github.com/zip-rs/zip2)
+- [zip 9.0.4](https://github.com/zip-rs/zip2)
 
 ````text
 The MIT License (MIT)
@@ -12666,7 +12524,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [kasuari 0.4.12](https://github.com/ratatui/kasuari)
+- [kasuari 0.4.13](https://github.com/ratatui/kasuari)
 
 ````text
 The MIT License (MIT)
@@ -13319,23 +13177,6 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [zstd 0.13.3](https://github.com/gyscos/zstd-rs)
-
-````text
-The MIT License (MIT)
-Copyright (c) 2016 Alexandre Bury
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-````
-
-### MIT License
-
-Used by:
 - [bincode 1.3.3](https://github.com/servo/bincode)
 
 ````text
@@ -13366,7 +13207,7 @@ SOFTWARE.
 ### MIT License
 
 Used by:
-- [generic-array 0.14.7](https://github.com/fizyk20/generic-array.git)
+- [generic-array 0.14.9](https://github.com/fizyk20/generic-array.git)
 - [generic-array 1.4.5](https://github.com/fizyk20/generic-array.git)
 
 ````text
@@ -13488,6 +13329,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 Used by:
 - [constant_time_eq 0.4.2](https://github.com/cesarb/constant_time_eq)
+- [constant_time_eq 0.6.1](https://codeberg.org/cesarb/constant_time_eq)
 
 ````text
 Permission is hereby granted, free of charge, to any person obtaining a
@@ -14858,7 +14700,7 @@ DEALINGS IN THE FONT SOFTWARE.
 ### Unicode License v3
 
 Used by:
-- [unicode-ident 1.0.26](https://github.com/dtolnay/unicode-ident)
+- [unicode-ident 1.0.27](https://github.com/dtolnay/unicode-ident)
 
 ````text
 UNICODE LICENSE V3

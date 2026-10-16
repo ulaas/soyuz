@@ -17,13 +17,11 @@ use super::types::*;
 /// Binds `name` from `lib` as a function pointer of type `T` (the one `unsafe` site of
 /// symbol binding; every bound function is called elsewhere through its typed pointer).
 fn bind<T: Copy>(lib: &Library, name: &'static str) -> Result<T, (&'static str, String)> {
-    let mut sym = Vec::with_capacity(name.len() + 1);
-    sym.extend_from_slice(name.as_bytes());
-    sym.push(0);
     // SAFETY: the signature `T` was transcribed from the FFmpeg headers of the supported
     // majors (symbols.rs doc comment); the library stays loaded for the life of the
     // process (the loader never drops it), so the copied pointer never dangles.
-    let s = unsafe { lib.get::<T>(&sym) };
+    // (libloading adds the terminating NUL to the name.)
+    let s = unsafe { lib.get::<T>(name) };
     match s {
         Ok(s) => Ok(*s),
         Err(e) => Err((name, e.to_string())),

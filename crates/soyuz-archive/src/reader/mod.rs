@@ -15,7 +15,7 @@ mod zip;
 pub(crate) mod zst;
 
 pub(crate) use sevenz::{S_IFLNK, UNIX_EXTENSION, sz_err};
-pub(crate) use zip::zip_err;
+pub(crate) use zip::{entry_name, zip_err};
 
 use std::fs::File;
 use std::io::{self, BufReader, Read};

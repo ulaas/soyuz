@@ -137,7 +137,8 @@ impl<R: Read + Seek> Container<R> {
     }
 
     pub fn names(&self) -> Vec<String> {
-        self.zip.file_names().map(str::to_string).collect()
+        // A name that isn't valid UTF-8 is never one of the document parts read here.
+        self.zip.file_names().filter_map(Result::ok).map(|n| n.into_owned()).collect()
     }
 }
 

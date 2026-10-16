@@ -91,19 +91,19 @@ directories = "6.0.0"
 bitflags = { version = "2.11.0", features = ["serde"] }
 
 # --- archives ---
-zip = { version = "8.6.0", default-features = false, features = ["deflate", "bzip2", "lzma", "xz", "time", "aes-crypto"] }
+zip = { version = "9.0.4", default-features = false, features = ["deflate", "bzip2", "lzma", "xz", "time", "aes-crypto"] }
 tar = "0.4.46"
 flate2 = "1.1.10"
 zstd = "0.14.0"
 ruzstd = "0.9.1"
-lzma-rust2 = { version = "0.21.0", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
+lzma-rust2 = { version = "0.22.0", default-features = false, features = ["std", "encoder", "optimization", "xz"] }
 bzip2 = "0.6.1"
-sevenz-rust2 = "0.23.0"
+sevenz-rust2 = "0.24.0"
 lzxd = "0.2.7"
 # Test fixtures only (CAB writer); reading uses our own CAB parser + `lzxd`.
 cab = "0.6.0"
 # Pure-Rust RAR decoder (Apache-2.0); reading only: no encoder, recovery or rayon.
-rars = { version = "0.10.0", default-features = false, features = ["encryption"] }
+rars = { version = "0.11.0", default-features = false, features = ["encryption"] }
 infer = "0.22.0"
 
 # --- media / preview ---
@@ -118,17 +118,17 @@ skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 ab_glyph = "0.2.32"
 gltf = { version = "1.4.1", default-features = false, features = ["utils"] }
 symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "flac", "wav", "pcm", "ogg", "vorbis", "isomp4", "aac", "aiff", "adpcm", "alac"] }
-rodio = { version = "0.22.2", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav", "symphonia-aiff", "symphonia-alac", "symphonia-adpcm"] }
+rodio = { version = "0.23.0", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav", "symphonia-aiff", "symphonia-alac", "symphonia-adpcm"] }
 similar = { version = "3.2.0", features = ["inline"] }
 base64 = "0.23.1"
 # FFmpeg shared libraries loaded at run time (soyuz-media); the version pdfium-render
-# already resolves to, so the lockfile carries one copy.
-libloading = "0.8.9"
+# resolves to (wgpu-hal and x11rb still bring 0.8).
+libloading = "0.9.0"
 
 # --- hashing ---
 blake3 = "1.8.7"
-sha2 = "0.10.9"
-sha1 = "0.10.6"
+sha2 = "0.11.1"
+sha1 = "0.11.0"
 md-5 = "0.11.0"
 crc32fast = "1.5.0"
 
@@ -144,7 +144,7 @@ tokio = { version = "1.50.0", default-features = false, features = ["rt-multi-th
 futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
 schemars = "1.2.2"
 # MCP (soyuz-mcp): token generation and the `=?base64?…?=` header encoding.
-getrandom = "0.3.4"
+getrandom = "0.4.3"
 
 # --- index: SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "functions", "cache"] }

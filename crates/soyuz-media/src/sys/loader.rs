@@ -138,10 +138,9 @@ fn versions(libs: &Libs) -> Result<Versions, LoadError> {
     type VersionFn = unsafe extern "C" fn() -> u32;
     type ConfFn = unsafe extern "C" fn() -> *const c_char;
     let get = |lib: &Library, name: &'static str| -> Result<u32, LoadError> {
-        let mut sym = name.as_bytes().to_vec();
-        sym.push(0);
         // SAFETY: every `*_version` function is `unsigned f(void)` in all supported majors.
-        let f = unsafe { lib.get::<VersionFn>(&sym) }
+        // (libloading adds the terminating NUL to the name.)
+        let f = unsafe { lib.get::<VersionFn>(name) }
             .map_err(|e| LoadError::Broken { lib: PathBuf::from(name), why: e.to_string() })?;
         // SAFETY: a pure function of the library's constants.
         Ok(unsafe { f() })

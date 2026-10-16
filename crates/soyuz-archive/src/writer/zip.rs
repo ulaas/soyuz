@@ -63,7 +63,7 @@ pub(crate) fn write_item<W: io::Write + io::Seek>(
 ) -> Result<(), ArchiveError> {
     {
         ctl.checkpoint()?;
-        let mut o: FullFileOptions<'_> =
+        let mut o: FullFileOptions<'_, '_> =
             FullFileOptions::default().compression_method(method).compression_level(zlevel);
         if let Some(t) = item.modified() {
             let (y, mo, d, h, mi, s) = system_to_local(t);
@@ -77,7 +77,7 @@ pub(crate) fn write_item<W: io::Write + io::Seek>(
             if let Ok(secs) = u32::try_from(secs) {
                 let mut data = vec![1u8];
                 data.extend_from_slice(&secs.to_le_bytes());
-                if let Err(e) = o.add_extra_data(0x5455, &data, false) {
+                if let Err(e) = o.add_extra_field(0x5455, &data, false) {
                     log::debug!("zip extended timestamp not added: {e}");
                 }
             }
