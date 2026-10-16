@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.4.1" date="2026-10-16" type="development">
+      <description>
+        <p>Default apps per file type inside Soyuz (Open with… remembers the last app and can
+          make it the default; Shift+Enter opens it), and a play / pause key (P) for Quick Look.</p>
+      </description>
+    </release>
     <release version="0.4.0" date="2026-10-15" type="development">
       <description>
         <p>Media through the FFmpeg libraries, loaded at run time and shipped with the app:
