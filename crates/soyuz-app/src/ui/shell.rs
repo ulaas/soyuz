@@ -226,7 +226,7 @@ fn panes(ui: &mut Ui, area: Rect, app: &mut SoyuzApp) {
             Rect::from_min_max(pos2(area.left(), y), pos2(area.right(), y + GAP)),
         )
     };
-    let sresp = ui.interact(splitter, Id::new("soyuz.splitter"), Sense::click_and_drag());
+    let sresp = ui.interact(splitter, Id::unique("soyuz.splitter"), Sense::click_and_drag());
     crate::ui::a11y::splitter(&sresp, tr!("app-a11y-resize-panes"));
     if sresp.hovered() || sresp.dragged() {
         ui.ctx().set_cursor_icon(if vertical { CursorIcon::ResizeHorizontal } else { CursorIcon::ResizeVertical });
@@ -293,7 +293,7 @@ fn quad(ui: &mut Ui, area: Rect, app: &mut SoyuzApp, ti: usize, focused: usize, 
     let (fx, fy) = (app.core.ws.tabs[ti].split, app.core.ws.tabs[ti].split2);
     let (cells, vsplit, hsplit) = quad_cells(area, fx, fy);
     for (id, rect, vertical) in [("soyuz.quad.v", vsplit, true), ("soyuz.quad.h", hsplit, false)] {
-        let sresp = ui.interact(rect, Id::new(id), Sense::click_and_drag());
+        let sresp = ui.interact(rect, Id::unique(id), Sense::click_and_drag());
         crate::ui::a11y::splitter(&sresp, tr!("app-a11y-resize-panes"));
         if sresp.hovered() || sresp.dragged() {
             ui.ctx().set_cursor_icon(if vertical { CursorIcon::ResizeHorizontal } else { CursorIcon::ResizeVertical });

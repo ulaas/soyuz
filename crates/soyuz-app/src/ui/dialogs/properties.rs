@@ -412,7 +412,7 @@ impl PropertiesDialog {
                 }
             });
         });
-        let id = ui.id().with("times");
+        let id = ui.scope_id().with("times");
         for (i, t) in self.times.iter_mut().enumerate() {
             kv_row_with(ui, t.label, |ui| {
                 ui.horizontal(|ui| {

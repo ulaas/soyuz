@@ -275,8 +275,8 @@ fn window_keys(ctx: &egui::Context, app: &mut SoyuzApp) -> bool {
 /// The settings window as its own OS window (`[appearance] native_dialogs`).
 fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
     let mut w = crate::ui::native::dialog::DialogWindow::new(
-        Id::new("soyuz.settings.native"),
-        Id::new("soyuz.settings"),
+        Id::unique("soyuz.settings.native"),
+        Id::unique("soyuz.settings"),
         tr!("settings-title"),
     );
     w.icon = Some(ph::GEAR_SIX);
@@ -289,7 +289,7 @@ fn show_native(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette) {
             return true;
         }
         let rect = ui.max_rect();
-        let close_now = body(ui, app, p, rect, Id::new("soyuz.settings"), false);
+        let close_now = body(ui, app, p, rect, Id::unique("soyuz.settings"), false);
         show_picker(&ctx, app);
         close_now
     });
@@ -359,7 +359,7 @@ fn body(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, rect: Rect, id: Id, own_cl
 fn in_window(ctx: &egui::Context, app: &mut SoyuzApp, p: &Palette, ease: f32) {
     let screen = ctx.content_rect();
     let size = vec2((screen.width() - 48.0).clamp(560.0, 1000.0), (screen.height() - 48.0).clamp(400.0, 700.0));
-    let id = Id::new("soyuz.settings");
+    let id = Id::unique("soyuz.settings");
     let frame = Frame::new()
         .fill(p.bg_surface1)
         .stroke(Stroke::new(1.0, p.border_strong))
@@ -432,7 +432,7 @@ fn sidebar(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) -> bool {
     });
     ui.add_space(12.0);
     let s = &mut app.gui.settings;
-    let search_id = Id::new("soyuz.settings.search");
+    let search_id = Id::unique("soyuz.settings.search");
     // Typing anywhere (with nothing focused) starts a search.
     let typing = ui.ctx().memory(|m| m.focused().is_none())
         && ui.input(|i| i.events.iter().any(|e| matches!(e, egui::Event::Text(t) if !t.trim().is_empty())));

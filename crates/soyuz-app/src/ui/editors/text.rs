@@ -290,7 +290,7 @@ fn status(doc: &mut TextDoc, ui: &mut Ui, r: Rect, p: &Palette, tab: usize) {
         FontId::proportional(11.5),
         p.text_secondary,
     );
-    let resp = ui.interact(eol_rect, ui.id().with("eol"), Sense::click());
+    let resp = ui.interact(eol_rect, ui.scope_id().with("eol"), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(eol_rect, CornerRadius::same(4), p.bg_surface2);
     }

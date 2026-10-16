@@ -86,11 +86,11 @@ pub fn resolve(appearance: &Appearance) -> (Tokens, Tokens, Vec<String>) {
 }
 
 fn palettes_id() -> egui::Id {
-    egui::Id::new("soyuz.theme.palettes")
+    egui::Id::unique("soyuz.theme.palettes")
 }
 
 fn motion_id() -> egui::Id {
-    egui::Id::new("soyuz.theme.reduced_motion")
+    egui::Id::unique("soyuz.theme.reduced_motion")
 }
 
 /// Remember `[appearance] reduced_motion` for [`anim`].

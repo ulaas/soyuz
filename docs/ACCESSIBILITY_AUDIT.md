@@ -209,6 +209,8 @@ registry, and the first audit stopped with "no Soyuz application found". Upstrea
 (`receive_screen_reader_enabled_changed` → `receive_is_enabled_changed` in `src/context.rs`),
 wired in through `[patch.crates-io]` in the workspace `Cargo.toml` (see
 `third_party/README.md`). The results below come from the normal release build with that patch.
+Since egui 0.37 (`accesskit_unix` 0.24, which has the upstream fix) the patch is no longer needed
+and was removed.
 
 #### Findings
 

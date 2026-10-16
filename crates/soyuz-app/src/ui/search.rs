@@ -116,7 +116,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     let close_r = Rect::from_center_size(pos2(rx - 13.0, cy), vec2(24.0, 24.0));
     rx = close_r.left() - 4.0;
     let cresp =
-        ui.interact(close_r, Id::new("soyuz.search.close"), Sense::click()).on_hover_text(tr!("views-search-close"));
+        ui.interact(close_r, Id::unique("soyuz.search.close"), Sense::click()).on_hover_text(tr!("views-search-close"));
     if cresp.hovered() {
         ui.painter().rect_filled(close_r, CornerRadius::same(5), p.bg_surface2);
     }
@@ -127,8 +127,9 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
     }
     let star_r = Rect::from_center_size(pos2(rx - 13.0, cy), vec2(24.0, 24.0));
     rx = star_r.left() - 6.0;
-    let sresp =
-        ui.interact(star_r, Id::new("soyuz.search.save"), Sense::click()).on_hover_text(tr!("views-search-save-tip"));
+    let sresp = ui
+        .interact(star_r, Id::unique("soyuz.search.save"), Sense::click())
+        .on_hover_text(tr!("views-search-save-tip"));
     if sresp.hovered() {
         ui.painter().rect_filled(star_r, CornerRadius::same(5), p.bg_surface2);
     }
@@ -164,8 +165,15 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         tr!("views-search-in-tip", path = scope.display().to_string())
     };
     let scope_icon = if everywhere { ph::DATABASE } else { ph::FOLDER_SIMPLE };
-    let sresp =
-        pill(ui, scope_r, Id::new("soyuz.search.scope"), Some(scope_icon), &trunc(&scope_label, 22), everywhere, &tip);
+    let sresp = pill(
+        ui,
+        scope_r,
+        Id::unique("soyuz.search.scope"),
+        Some(scope_icon),
+        &trunc(&scope_label, 22),
+        everywhere,
+        &tip,
+    );
     let here = model::current_dir(&app.core);
     let index_on = crate::services::index::is_enabled();
     let mut rerun = false;
@@ -253,7 +261,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         }
         let r = Rect::from_min_size(pos2(x - w, cy - 13.0), vec2(w, 26.0));
         x -= w + 5.0;
-        let resp = pill(ui, r, Id::new(("soyuz.search.pill", key)), icon, &label, active, tip);
+        let resp = pill(ui, r, Id::unique(("soyuz.search.pill", key)), icon, &label, active, tip);
         clicked.push((key, resp));
     }
     let mut changed = false;
@@ -372,7 +380,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
         pos2(scope_r.right() + 8.0, cy - 13.0),
         pos2(x.max(scope_r.right() + 8.0 + 60.0), cy + 13.0),
     );
-    let fid = Id::new("soyuz.search.text");
+    let fid = Id::unique("soyuz.search.text");
     let focused = ui.memory(|m| m.has_focus(fid));
     ui.painter().rect_filled(field, CornerRadius::same(radius::ROW), p.bg_surface2);
     if focused {
@@ -410,7 +418,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
             .hint_text(hint)
             .frame(Frame::NONE)
             .font(FontId::proportional(13.0))
-            .vertical_align(egui::Align::Center)
+            .align(egui::Align2::LEFT_CENTER)
             .desired_width(inner.width()),
     );
     if app.core.ui.search.focus {
@@ -430,7 +438,7 @@ fn controls(ui: &mut Ui, row: Rect, app: &mut SoyuzApp) {
                 .hint_text(tr!("views-search-hint-glob"))
                 .frame(Frame::NONE)
                 .font(FontId::proportional(12.0))
-                .vertical_align(egui::Align::Center)
+                .align(egui::Align2::LEFT_CENTER)
                 .desired_width(gr.width() - 8.0),
         );
         submit |= g.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
@@ -458,7 +466,7 @@ fn save_popup(ui: &mut Ui, anchor: &Response, app: &mut SoyuzApp) {
         return;
     }
     let p = palette(ui.ctx());
-    let id = Id::new("soyuz.search.save.popup");
+    let id = Id::unique("soyuz.search.save.popup");
     Popup::open_id(ui.ctx(), id);
     let mut done: Option<bool> = None;
     crate::ui::native::popup::Menu::new(id, ui.ctx().clone(), anchor.rect, ui.layer_id())
@@ -533,7 +541,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         if pill(
             ui,
             r,
-            Id::new("soyuz.search.cancel"),
+            Id::unique("soyuz.search.cancel"),
             Some(ph::X),
             tr!("common-cancel"),
             false,
@@ -552,7 +560,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         if pill(
             ui,
             r,
-            Id::new("soyuz.search.rank"),
+            Id::unique("soyuz.search.rank"),
             Some(ph::SPARKLE),
             tr!("views-search-relevance"),
             st.ranked,
@@ -570,7 +578,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         if pill(
             ui,
             r,
-            Id::new("soyuz.search.smart.edit"),
+            Id::unique("soyuz.search.smart.edit"),
             Some(ph::PENCIL_SIMPLE),
             tr!("views-search-edit"),
             false,
@@ -587,7 +595,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         if pill(
             ui,
             r,
-            Id::new("soyuz.search.smart.new"),
+            Id::unique("soyuz.search.smart.new"),
             Some(ph::FOLDER_SIMPLE_DOTTED),
             tr!("views-search-smart-folder"),
             false,
@@ -605,7 +613,7 @@ fn status(ui: &mut Ui, row: Rect, app: &mut SoyuzApp, id: SearchId) {
         if pill(
             ui,
             r,
-            Id::new("soyuz.search.refine"),
+            Id::unique("soyuz.search.refine"),
             Some(ph::SLIDERS_HORIZONTAL),
             tr!("views-search-refine"),
             false,

@@ -1,0 +1,17 @@
+# egui-phosphor 0.14.0 (crates.io), trimmed and moved to egui 0.37: see third_party/README.md.
+[package]
+name = "egui-phosphor"
+description = "Phosphor icons for egui"
+version = "0.14.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/amPerl/egui-phosphor"
+publish = false
+
+[dependencies]
+egui = { version = "0.37", default-features = false }
+
+[features]
+default = ["regular"]
+regular = []
+fill = []

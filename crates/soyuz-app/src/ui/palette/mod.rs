@@ -70,7 +70,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
     let screen = ctx.content_rect();
     let width = (screen.width() - 32.0).clamp(320.0, 660.0);
     let top = (screen.height() * 0.13).clamp(24.0, 120.0);
-    let id = Id::new("soyuz.palette");
+    let id = Id::unique("soyuz.palette");
     let area = Modal::default_area(id).anchor(Align2::CENTER_TOP, vec2(0.0, top));
     let frame = Frame::new()
         .fill(p.bg_surface3)
@@ -205,7 +205,7 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
     let mut child = ui
         .new_child(egui::UiBuilder::new().max_rect(edit_rect).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let te = TextEdit::singleline(&mut app.core.palette.input)
-        .id(Id::new("soyuz.palette.input"))
+        .id(Id::unique("soyuz.palette.input"))
         .frame(Frame::NONE)
         .font(FontId::proportional(16.5))
         .text_color(p.text_primary)
@@ -326,7 +326,7 @@ fn list(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) -> Option<(Exe
                     continue;
                 }
                 let sel_t = ui.ctx().animate_bool_with_time(
-                    Id::new(("soyuz.palette.row", i)),
+                    Id::unique(("soyuz.palette.row", i)),
                     is_sel,
                     crate::theme::anim(ui.ctx(), 0.08),
                 );
@@ -410,7 +410,7 @@ fn footer(ui: &mut Ui, app: &SoyuzApp, p: &Palette, width: f32, clicked: &mut Op
         if r.left() < x {
             break;
         }
-        let resp = ui.interact(r, Id::new(("soyuz.palette.prefix", c)), Sense::click());
+        let resp = ui.interact(r, Id::unique(("soyuz.palette.prefix", c)), Sense::click());
         let active = app.core.palette.mode() == *m;
         crate::ui::a11y::toggle(&resp, &format!("{c} {}", m.legend()), active);
         let fill = if active {
@@ -442,7 +442,7 @@ fn sequence_hint(ctx: &egui::Context, app: &SoyuzApp) {
     let g = ctx.fonts_mut(|f| f.layout_no_wrap(label, font, p.text_primary));
     let size = vec2(g.size().x + 46.0, 30.0);
     let rect = Rect::from_center_size(pos2(screen.center().x, screen.bottom() - 60.0), size);
-    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("soyuz.keyseq")));
+    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.keyseq")));
     painter.add(
         egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(80) }
             .as_shape(rect, CornerRadius::same(15)),

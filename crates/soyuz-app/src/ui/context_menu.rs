@@ -168,7 +168,7 @@ pub fn column_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
 pub fn apps_for_cached(ctx: &egui::Context, path: &std::path::Path) -> Option<Vec<soyuz_fs::AppInfo>> {
     type Slot = std::sync::Arc<parking_lot::Mutex<Option<Vec<soyuz_fs::AppInfo>>>>;
     let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    let id = egui::Id::new(("soyuz.openwith", ext));
+    let id = egui::Id::unique(("soyuz.openwith", ext));
     if let Some(slot) = ctx.data(|d| d.get_temp::<Slot>(id)) {
         return slot.lock().clone();
     }

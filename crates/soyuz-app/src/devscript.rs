@@ -58,11 +58,16 @@ pub fn startup_mark(what: &str) {
     }
 }
 
+/// Where the screenshot callback leaves the image for [`pump`].
+type ShotSlot = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<egui::ColorImage>>>>;
+
 #[derive(Default)]
 pub struct DevScript {
     /// The script (`None` without `SOYUZ_SCRIPT`); taken out of the app while it runs.
     runner: Option<Runner>,
-    pending_shot: Option<PathBuf>,
+    /// The `shot:` being taken: where it goes, and the image once egui hands it over
+    /// (`Context::request_screenshot` calls back after the frame is read).
+    pending_shot: Option<(PathBuf, ShotSlot)>,
     frame_log: bool,
     frames: u64,
     frame_start: Option<Instant>,
@@ -177,16 +182,11 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
         let ms = app.gui.devscript.frame_start.map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
         log::info!("frame {} ui {ms:.2} ms", app.gui.devscript.frames);
     }
-    if let Some(path) = app.gui.devscript.pending_shot.clone() {
-        let image = ctx.input(|i| {
-            i.raw.events.iter().find_map(|e| match e {
-                egui::Event::Screenshot { image, .. } => Some(image.clone()),
-                _ => None,
-            })
-        });
+    if let Some((path, slot)) = &app.gui.devscript.pending_shot {
+        let image = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
         match image {
             Some(img) => {
-                save_png(&path, &img);
+                save_png(path, &img);
                 app.gui.devscript.pending_shot = None;
             }
             None => {
@@ -215,8 +215,13 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
 fn handle(app: &mut SoyuzApp, runner: &mut Runner, ctx: &egui::Context, step: FrontStep) {
     match step {
         FrontStep::Shot(path) => {
-            app.gui.devscript.pending_shot = Some(path);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+            let slot = ShotSlot::default();
+            let (out, wake) = (slot.clone(), ctx.clone());
+            ctx.request_screenshot(move |img| {
+                *out.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(img);
+                wake.request_repaint();
+            });
+            app.gui.devscript.pending_shot = Some((path, slot));
         }
         FrontStep::Keys(keys) => {
             // An open native dialog / popup window has the keyboard.

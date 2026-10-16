@@ -381,7 +381,7 @@ FLATPAK_CARGO_GENERATOR=~/src/flatpak-builder-tools/cargo/flatpak-cargo-generato
 
 The crates are unpacked to `cargo/vendor` with a source-replacement config, and the manifest
 points `CARGO_HOME` at `/run/build/soyuz/cargo` and runs
-`cargo --offline build --release --locked -p soyuz-app -p soyuz-tui`. The vendored `accesskit_unix`
+`cargo --offline build --release --locked -p soyuz-app -p soyuz-tui`. The vendored `egui-phosphor`
 (`third_party/`) comes with the checkout. `rust-toolchain.toml` is not used (no rustup in
 the SDK); the extension's cargo must be at least the workspace `rust-version`.
 

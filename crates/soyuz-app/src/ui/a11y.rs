@@ -6,7 +6,7 @@
 //! AccessKit on (egui then builds the tree each frame).
 
 use egui::accesskit::{Node, Role};
-use egui::{Context, Id, Rect, Response, Ui, WidgetInfo, WidgetType};
+use egui::{Context, Id, Rect, Response, Ui, WidgetInfo};
 
 /// Whether AccessKit tree building is active this frame.
 pub fn active(ctx: &Context) -> bool {
@@ -17,19 +17,19 @@ pub fn active(ctx: &Context) -> bool {
 /// A push button with an accessible name (icon buttons use their tooltip text).
 pub fn button(resp: &Response, label: &str) {
     let enabled = resp.enabled();
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, label));
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
 }
 
 /// A toggle button (pressed / not pressed).
 pub fn toggle(resp: &Response, label: &str, on: bool) {
     let enabled = resp.enabled();
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::Button, enabled, on, label));
+    resp.widget_info(|| WidgetInfo::selected(Role::Button, enabled, on, label));
 }
 
 /// A tab in a tab strip (selected = the active tab).
 pub fn tab(resp: &Response, label: &str, selected: bool) {
     let enabled = resp.enabled();
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, enabled, selected, label));
+    resp.widget_info(|| WidgetInfo::selected(Role::Button, enabled, selected, label));
     with(&resp.ctx, resp.id, |n| {
         n.set_role(Role::Tab);
         n.set_selected(selected);
@@ -39,7 +39,7 @@ pub fn tab(resp: &Response, label: &str, selected: bool) {
 /// A menu item.
 pub fn menu_item(resp: &Response, label: &str) {
     let enabled = resp.enabled();
-    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, label));
+    resp.widget_info(|| WidgetInfo::labeled(Role::Button, enabled, label));
     with(&resp.ctx, resp.id, |n| n.set_role(Role::MenuItem));
 }
 
@@ -67,17 +67,21 @@ pub fn window_name(ctx: &Context, title: &str) {
     with(ctx, egui::accesskit_root_id(), |n| n.set_label(title));
 }
 
-/// Name the resize handle of a resizable [`egui::Panel`] (egui gives it no role or
-/// name). Call right after the panel's `show`, with the same id the panel was built
-/// with, so the handle exists this frame.
-pub fn panel_splitter(ctx: &Context, panel_id: impl Into<Id>, label: &str) {
-    if !active(ctx) {
+/// The [`Id`] of the [`egui::Panel`] built with `salt` and shown in `parent` (egui 0.37
+/// salts a panel's id with its parent's scope).
+pub fn panel_id(parent: &Ui, salt: &str) -> Id {
+    parent.scope_id().with(salt)
+}
+
+/// Name the resize handle of a resizable [`egui::Panel`] (egui gives it the splitter
+/// role, its value and orientation, but only the generic name "Resize panel"). Call
+/// right after the panel's `show`, with the `Ui` it was shown in and the salt it was
+/// built with, so the handle exists this frame.
+pub fn panel_splitter(parent: &Ui, salt: &str, label: &str) {
+    if !active(parent.ctx()) {
         return;
     }
-    with(ctx, panel_id.into().with("__resize"), |n| {
-        n.set_role(Role::Splitter);
-        n.set_label(label);
-    });
+    with(parent.ctx(), panel_id(parent, salt).with("__resize"), |n| n.set_label(label));
 }
 
 /// A drag handle between two areas (pane splitters).
@@ -229,11 +233,11 @@ mod tests {
             let tb = ui.selectable_label(true, "Belgeler");
             tab(&tb, "Belgeler", true);
             let rect = egui::Rect::from_min_size(ui.cursor().min, egui::vec2(100.0, 20.0));
-            list_item(ui, Id::new("row-1"), rect, "rapor.pdf", true, 0, 3);
-            tree_item(ui, Id::new("tree-1"), rect, "Projeler", false, Some(true), 1, 0, 2);
-            item(ui, Id::new("tile-1"), rect, Role::ListItem, "video.mp4", Some("1,2 GB"));
-            terminal(ui, Id::new("term"), rect, "Terminal 1", r"PS C:\> dir");
-            progress(ui, Id::new("prog"), rect, "Kopyalanıyor", Some(0.25));
+            list_item(ui, Id::unique("row-1"), rect, "rapor.pdf", true, 0, 3);
+            tree_item(ui, Id::unique("tree-1"), rect, "Projeler", false, Some(true), 1, 0, 2);
+            item(ui, Id::unique("tile-1"), rect, Role::ListItem, "video.mp4", Some("1,2 GB"));
+            terminal(ui, Id::unique("term"), rect, "Terminal 1", r"PS C:\> dir");
+            progress(ui, Id::unique("prog"), rect, "Kopyalanıyor", Some(0.25));
         });
         assert!(find(&nodes, Role::Button, "Geri").role() == Role::Button);
         assert!(find(&nodes, Role::Button, "Gizli dosyalar").toggled().is_some());
@@ -263,8 +267,8 @@ mod tests {
     #[test]
     fn dialogs_are_named_and_modal() {
         let nodes = tree(|ui| {
-            egui::Window::new("conflict").id(Id::new("dlg")).show(&ui.ctx().clone(), |ui| {
-                dialog(ui.ctx(), ui.id(), "Dosya zaten var", true, true);
+            egui::Window::new("conflict").id(Id::unique("dlg")).show(&ui.ctx().clone(), |ui| {
+                dialog(ui.ctx(), ui.scope_id(), "Dosya zaten var", true, true);
                 ui.label("…");
             });
         });

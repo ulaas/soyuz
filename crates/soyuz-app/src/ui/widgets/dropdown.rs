@@ -342,15 +342,15 @@ struct PopupState {
 }
 
 fn any_open_id() -> Id {
-    Id::new("soyuz.dropdown.any_open")
+    Id::unique("soyuz.dropdown.any_open")
 }
 
 fn active_id() -> Id {
-    Id::new("soyuz.dropdown.active")
+    Id::unique("soyuz.dropdown.active")
 }
 
 fn open_request_id() -> Id {
-    Id::new("soyuz.dropdown.open_request")
+    Id::unique("soyuz.dropdown.open_request")
 }
 
 /// Whether a dropdown popup was open last frame. Window-level key handlers (Esc closes
@@ -444,7 +444,7 @@ impl Dropdown {
     }
 
     fn id(&self) -> Id {
-        Id::new(("soyuz.dropdown", self.key.as_str()))
+        Id::unique(("soyuz.dropdown", self.key.as_str()))
     }
 
     pub fn show<T: PartialEq + Clone>(self, ui: &mut Ui, value: &mut T, items: &[Item<T>]) -> Output {
@@ -466,7 +466,7 @@ impl Dropdown {
         {
             let (name, value_text, open) = (self.name.clone(), current_label.clone(), st.open);
             let enabled = self.enabled;
-            resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, enabled, &name));
+            resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::ComboBox, enabled, &name));
             crate::ui::a11y::with(&ctx, resp.id, |n| {
                 n.set_role(Role::ComboBox);
                 if !name.is_empty() {
@@ -868,7 +868,7 @@ fn popup<T: PartialEq>(
         let inner_w = w - pad * 2.0;
         ui.set_width(inner_w);
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        crate::ui::a11y::container(&ctx, ui.id(), Role::ListBox, &dd.name);
+        crate::ui::a11y::container(&ctx, ui.scope_id(), Role::ListBox, &dd.name);
         if search {
             search_box(ui, st, search_id, inner_w);
             ui.add_space(4.0);
@@ -1122,7 +1122,7 @@ pub fn text_choice(
     custom_label: &str,
     hint: &str,
 ) -> bool {
-    let flag = Id::new(("soyuz.dropdown.custom_edit", key));
+    let flag = Id::unique(("soyuz.dropdown.custom_edit", key));
     let mut editing: bool = ui.ctx().data(|d| d.get_temp(flag)).unwrap_or(false);
     let known = items.iter().any(|it| it.value == *value);
     let is_custom = !known && !value.trim().is_empty();
@@ -1145,7 +1145,7 @@ pub fn text_choice(
         }
     }
     if editing || is_custom {
-        let fid = Id::new(("soyuz.dropdown.custom_field", key));
+        let fid = Id::unique(("soyuz.dropdown.custom_field", key));
         let r = ui.add(
             TextEdit::singleline(value)
                 .id(fid)

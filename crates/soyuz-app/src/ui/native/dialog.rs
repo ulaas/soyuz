@@ -134,7 +134,7 @@ impl<'a> DialogWindow<'a> {
             let close_r = Rect::from_min_max(pos2(bar.right() - crate::ui::titlebar::CONTROL_W, bar.top()), bar.max);
             let drag = ui.interact(
                 Rect::from_min_max(bar.min, pos2(close_r.left(), bar.bottom())),
-                Id::new("soyuz.dialog.drag"),
+                Id::unique("soyuz.dialog.drag"),
                 Sense::click_and_drag(),
             );
             if drag.drag_started_by(egui::PointerButton::Primary) {
@@ -155,7 +155,8 @@ impl<'a> DialogWindow<'a> {
             );
             ui.painter().galley(pos2(x, bar.center().y - galley.size().y / 2.0), galley, fg);
             let mut close =
-                crate::ui::titlebar::caption_close(ui, close_r, Id::new("soyuz.dialog.close"), focused, true).clicked();
+                crate::ui::titlebar::caption_close(ui, close_r, Id::unique("soyuz.dialog.close"), focused, true)
+                    .clicked();
 
             // Body.
             let body_rect = if resizable {

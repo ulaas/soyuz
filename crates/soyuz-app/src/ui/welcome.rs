@@ -41,7 +41,7 @@ pub fn show(ctx: &egui::Context, app: &mut SoyuzApp, bottom: f32) {
     let p = palette(ctx);
     let mut dismiss = false;
     let mut settings = false;
-    Area::new(Id::new("soyuz.welcome"))
+    Area::new(Id::unique("soyuz.welcome"))
         .order(Order::Foreground)
         .anchor(Align2::RIGHT_BOTTOM, vec2(-16.0, -(bottom + 12.0)))
         .show(ctx, |ui| {

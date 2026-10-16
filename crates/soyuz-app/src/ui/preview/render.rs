@@ -182,7 +182,7 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             let fit = (avail.width() / natural.x).min(avail.height() / natural.y).clamp(0.0001, 1.0);
             let mut scale = fit;
             if interactive {
-                let resp = ui.interact(rect, ui.id().with("ql.image"), Sense::click_and_drag());
+                let resp = ui.interact(rect, ui.scope_id().with("ql.image"), Sense::click_and_drag());
                 if resp.hovered() {
                     let scroll = ui.input(|i| i.smooth_scroll_delta.y + i.zoom_delta().ln() * 200.0);
                     if scroll != 0.0 {

@@ -129,7 +129,7 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
     let width = 460.0_f32.min(screen.width() - 32.0);
     let mut answer: Option<ClipDecision> = None;
     let mut always = false;
-    egui::Area::new(Id::new("soyuz-osc52-prompt"))
+    egui::Area::new(Id::unique("soyuz-osc52-prompt"))
         .order(egui::Order::Foreground)
         .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -bottom))
         .show(ctx, |ui| {
@@ -235,7 +235,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let w = if renaming.is_some() { 160.0 } else { text_w + 52.0 };
         let r = Rect::from_min_size(pos2(x, strip.top() + 3.0), vec2(w, STRIP_H - 6.0));
         x += w + 4.0;
-        let resp = ui.interact(r, Id::new(("soyuz.term.tab", *id)), Sense::click());
+        let resp = ui.interact(r, Id::unique(("soyuz.term.tab", *id)), Sense::click());
         let hovered = resp.hovered();
         let fill = if is_active {
             p.bg_surface2
@@ -279,7 +279,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let galley = crate::ui::widgets::trunc_galley(ui.painter(), &label, font, c, 180.0);
         ui.painter().galley(pos2(r.left() + 22.0, r.center().y - galley.size().y / 2.0), galley, c);
         let close_r = Rect::from_center_size(pos2(r.right() - 13.0, r.center().y), vec2(16.0, 16.0));
-        let close = ui.interact(close_r, Id::new(("soyuz.term.close", *id)), Sense::click());
+        let close = ui.interact(close_r, Id::unique(("soyuz.term.close", *id)), Sense::click());
         if hovered || close.hovered() || is_active {
             if close.hovered() {
                 ui.painter().rect_filled(close_r, CornerRadius::same(4), p.bg_surface3);
@@ -319,7 +319,8 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
     }
     let plus = Rect::from_min_size(pos2(x + 2.0, strip.top() + 4.0), vec2(22.0, 22.0));
-    let presp = ui.interact(plus, Id::new("soyuz.term.new"), Sense::click()).on_hover_text(tr!("panels-terminal-new"));
+    let presp =
+        ui.interact(plus, Id::unique("soyuz.term.new"), Sense::click()).on_hover_text(tr!("panels-terminal-new"));
     if presp.hovered() {
         ui.painter().rect_filled(plus, CornerRadius::same(5), p.bg_surface2);
     }
@@ -328,7 +329,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     // Right side: busy hint + external terminal button.
     let ext = Rect::from_min_size(pos2(strip.right() - 26.0, strip.top() + 4.0), vec2(22.0, 22.0));
     let eresp = ui
-        .interact(ext, Id::new("soyuz.term.external"), Sense::click())
+        .interact(ext, Id::unique("soyuz.term.external"), Sense::click())
         .on_hover_text(tr!("panels-terminal-open-external"));
     if eresp.hovered() {
         ui.painter().rect_filled(ext, CornerRadius::same(5), p.bg_surface2);
@@ -377,7 +378,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                 if crate::ui::a11y::active(ui.ctx()) {
                     // Screen readers: a terminal node named after the session, its visible
                     // text as the value. Added before the view so it never covers it.
-                    let node = ui.interact(inner, Id::new(("soyuz.term.a11y", s.id)), Sense::hover());
+                    let node = ui.interact(inner, Id::unique(("soyuz.term.a11y", s.id)), Sense::hover());
                     let name = tr!("panels-terminal-a11y", name = s.label());
                     let text = term.screen_text();
                     crate::ui::a11y::with(ui.ctx(), node.id, |n| {

@@ -177,7 +177,7 @@ pub fn show(ui: &mut Ui, body: Rect, app: &mut SoyuzApp) {
     ] {
         let g = ui.painter().layout_no_wrap(label, FontId::proportional(12.0), p.text_primary);
         let r = Rect::from_min_size(pos2(x, bar.top() + 3.0), vec2(g.size().x + 20.0, 24.0));
-        let resp = ui.interact(r, Id::new(("soyuz.activity.tab", tab as u8)), Sense::click());
+        let resp = ui.interact(r, Id::unique(("soyuz.activity.tab", tab as u8)), Sense::click());
         let active = app.core.fileops.activity.tab == tab;
         crate::ui::a11y::tab(&resp, g.text(), active);
         if active {
@@ -324,7 +324,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         painter.circle_filled(b, 7.0, p.info);
         painter.text(b, Align2::CENTER_CENTER, glyph, ticons::font_fill(8.5), Color32::WHITE);
         let hit = egui::Rect::from_center_size(b, vec2(18.0, 18.0));
-        ui.interact(hit, ui.id().with(("origin", s.id)), egui::Sense::hover())
+        ui.interact(hit, ui.scope_id().with(("origin", s.id)), egui::Sense::hover())
             .on_hover_text(crate::automation::origin_label(origin));
     }
 
@@ -363,7 +363,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
         let w = crate::ui::dialogs::conflict::tag(ui, at, b, c);
         ui.interact(
             Rect::from_min_size(pos2(at.x, at.y - 8.0), vec2(w, 16.0)),
-            Id::new(("soyuz.activity.verified", s.id.0)),
+            Id::unique(("soyuz.activity.verified", s.id.0)),
             Sense::hover(),
         )
         .on_hover_text(tr!("panels-verified-tip"));
@@ -403,7 +403,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
 
     crate::ui::a11y::progress(
         ui,
-        Id::new(("soyuz.activity.progress", s.id.0)),
+        Id::unique(("soyuz.activity.progress", s.id.0)),
         card,
         &format!("{title}: {line}"),
         frac.or(if matches!(s.state, JobState::Done(_)) { Some(1.0) } else { None }),
@@ -509,7 +509,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             // On the stats row (free while waiting: no speed / ETA), so the title and the
             // state line keep their full width in narrow panels and longer translations.
             let r = Rect::from_min_size(pos2(card.right() - 14.0 - w, card.top() + 60.0), vec2(w, 20.0));
-            let resp = ui.interact(r, Id::new(("soyuz.activity.resolve", engine_id.0)), Sense::click());
+            let resp = ui.interact(r, Id::unique(("soyuz.activity.resolve", engine_id.0)), Sense::click());
             crate::ui::a11y::button(&resp, tr!("panels-resolve-conflict"));
             if resp.has_focus() {
                 crate::ui::widgets::focus_ring(ui, r);
@@ -536,7 +536,7 @@ fn job_card(ui: &mut Ui, app: &mut SoyuzApp, s: &JobSnapshot, p: &Palette) {
             // On the stats row (free while waiting: no speed / ETA), so the title and the
             // state line keep their full width in narrow panels and longer translations.
             let r = Rect::from_min_size(pos2(card.right() - 14.0 - w, card.top() + 60.0), vec2(w, 20.0));
-            let resp = ui.interact(r, Id::new(("soyuz.activity.retry", engine_id.0)), Sense::click());
+            let resp = ui.interact(r, Id::unique(("soyuz.activity.retry", engine_id.0)), Sense::click());
             crate::ui::a11y::button(&resp, tr!("panels-retry-failed-items"));
             if resp.has_focus() {
                 crate::ui::widgets::focus_ring(ui, r);

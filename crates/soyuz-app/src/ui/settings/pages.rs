@@ -894,7 +894,7 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
 /// extensions field keeps its text while focused, so separators can be typed.
 fn default_apps_editor(ui: &mut Ui, rules: &mut Vec<soyuz_core::config::DefaultApp>) {
     let p = palette(ui.ctx());
-    let ext_id = |i: usize| egui::Id::new(("settings.open.ext", i));
+    let ext_id = |i: usize| egui::Id::unique(("settings.open.ext", i));
     if rules.is_empty() {
         ui.label(RichText::new(tr!("settings-open-defaults-empty")).size(11.5).color(p.text_tertiary));
     }

@@ -555,7 +555,7 @@ fn parent_key(ui: &Ui) -> Option<(Id, bool)> {
     {
         return Some((top, true));
     }
-    egui::containers::menu::is_in_menu(ui).then(|| (MenuState::from_ui(ui, |_, stack| stack.id), false))
+    egui::containers::menu::is_in_menu(ui).then(|| (MenuState::from_ui(ui, |_, stack| stack.unique_id), false))
 }
 
 /// A submenu for the menu row `row` (see [`crate::ui::widgets::submenu`]): native inside
@@ -668,12 +668,12 @@ pub fn submenu<R>(ui: &mut Ui, row: &Response, content: impl FnOnce(&mut Ui) -> 
         |ui| {
             // ← closes the submenu from the keyboard.
             if ui.input(|i| i.key_pressed(Key::ArrowLeft)) {
-                ui.data_mut(|d| d.insert_temp(Id::new("soyuz.submenu.left"), true));
+                ui.data_mut(|d| d.insert_temp(Id::unique("soyuz.submenu.left"), true));
             }
             content(ui)
         },
     );
-    let left = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.submenu.left"))).unwrap_or(false);
+    let left = ctx.data_mut(|d| d.remove_temp::<bool>(Id::unique("soyuz.submenu.left"))).unwrap_or(false);
     if r.close_all {
         // An item was chosen: close the whole menu.
         close_sub(&ctx, parent, key);

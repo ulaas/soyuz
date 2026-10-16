@@ -169,7 +169,7 @@ impl Dialog for AttributesDialog {
                 }
             });
         });
-        let id = ui.id().with("bulk_times");
+        let id = ui.scope_id().with("bulk_times");
         for (i, t) in self.times.iter_mut().enumerate() {
             kv_row_with(ui, t.label, |ui| {
                 ui.horizontal(|ui| {

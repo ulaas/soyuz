@@ -35,7 +35,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
     if placement == ActivityPlacement::Floating {
         let mut open = true;
         egui::Window::new(tr!("panels-tab-activity"))
-            .id(egui::Id::new("soyuz.activity.window"))
+            .id(egui::Id::unique("soyuz.activity.window"))
             .open(&mut open)
             .default_size([440.0, 340.0])
             .min_size([320.0, 200.0])
@@ -89,7 +89,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 p.text_primary,
             );
             let x = egui::Rect::from_center_size(pos2(card.right() - 20.0, card.top() + 19.0), vec2(24.0, 24.0));
-            let xr = ui.interact(x, ui.id().with("activity.close"), Sense::click());
+            let xr = ui.interact(x, ui.scope_id().with("activity.close"), Sense::click());
             crate::ui::a11y::button(&xr, tr!("panels-close-activity"));
             if xr.hovered() {
                 ui.painter().rect_filled(x, CornerRadius::same(radius::CONTROL), p.bg_surface2);
@@ -100,7 +100,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             ui.allocate_rect(card, Sense::hover());
             activity::show(ui, body, app);
         });
-    crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.activity", tr!("app-a11y-resize-activity"));
+    crate::ui::a11y::panel_splitter(root, "soyuz.activity", tr!("app-a11y-resize-activity"));
     if close {
         app.core.ui.bottom.activity_open = false;
     }
@@ -141,7 +141,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                     .x;
                 let tab_w = (label_w + 44.0).max(108.0);
                 let r = egui::Rect::from_min_size(pos2(x, card.top() + 6.0), vec2(tab_w, 26.0));
-                let resp = ui.interact(r, ui.id().with(("bottom.tab", tab as u8)), Sense::click());
+                let resp = ui.interact(r, ui.scope_id().with(("bottom.tab", tab as u8)), Sense::click());
                 let active = app.core.ui.bottom.tab == tab;
                 crate::ui::a11y::tab(&resp, tab.label(), active);
                 if active {
@@ -170,7 +170,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
                 x += tab_w + 4.0;
             }
             let close = egui::Rect::from_center_size(pos2(card.right() - 20.0, card.top() + 19.0), vec2(24.0, 24.0));
-            let cresp = ui.interact(close, ui.id().with("bottom.close"), Sense::click());
+            let cresp = ui.interact(close, ui.scope_id().with("bottom.close"), Sense::click());
             crate::ui::a11y::button(&cresp, tr!("panels-close-panel"));
             if cresp.hovered() {
                 ui.painter().rect_filled(close, CornerRadius::same(radius::CONTROL), p.bg_surface2);

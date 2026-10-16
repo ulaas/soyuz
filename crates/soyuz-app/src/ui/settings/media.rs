@@ -342,7 +342,7 @@ fn progress_bar(ui: &mut Ui, width: f32, frac: Option<f32>, label: &str) {
     if fill.width() > 0.0 {
         ui.painter().rect_filled(fill, egui::CornerRadius::same(2), p.accent);
     }
-    crate::ui::a11y::progress(ui, ui.id().with("ffmpeg-download"), r, label, frac);
+    crate::ui::a11y::progress(ui, ui.scope_id().with("ffmpeg-download"), r, label, frac);
 }
 
 fn mib(b: u64) -> String {

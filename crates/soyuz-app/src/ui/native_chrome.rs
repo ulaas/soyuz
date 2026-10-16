@@ -123,7 +123,7 @@ pub fn sync_theme(ctx: &Context) {
         return;
     }
     let dark = ctx.theme() == egui::Theme::Dark;
-    let key = egui::Id::new("soyuz.native.dark");
+    let key = egui::Id::unique("soyuz.native.dark");
     if ctx.data(|d| d.get_temp::<bool>(key)) != Some(dark) {
         ctx.data_mut(|d| d.insert_temp(key, dark));
         let ok = soyuz_fs::chrome::set_dark_mode(hwnd, dark);

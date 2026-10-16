@@ -171,7 +171,7 @@ pub fn dispatch(
 /// fed from egui: its state lives in the context's temp data.
 pub fn paste_key_fallback(ctx: &egui::Context, keymap: &Keymap, dispatched: &mut Vec<Dispatched>) {
     use crate::services::os_clipboard::{PasteKeyInput, PasteKeyState};
-    let id = egui::Id::new("soyuz.os_clipboard.paste_key");
+    let id = egui::Id::unique("soyuz.os_clipboard.paste_key");
     let mut st: PasteKeyState = ctx.data(|d| d.get_temp(id)).unwrap_or_default();
     let input = ctx.input(|i| PasteKeyInput {
         now: i.time,

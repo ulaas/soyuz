@@ -244,7 +244,7 @@ impl TreemapWindow {
     fn treemap(&mut self, ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let p = palette(ui.ctx());
         ui.painter().rect_filled(rect, CornerRadius::same(8), p.bg_sunken);
-        let resp = ui.interact(rect, ui.id().with("treemap.area"), Sense::click());
+        let resp = ui.interact(rect, ui.scope_id().with("treemap.area"), Sense::click());
         let inner = rect.shrink(4.0);
         let mut hits: Vec<(Rect, usize)> = Vec::new();
         let mut mesh = Mesh::default();
@@ -274,7 +274,7 @@ impl TreemapWindow {
             for (pos, (r, id)) in hits.iter().enumerate() {
                 let n = &self.model.tree.nodes[*id];
                 let label = tr!("tools-treemap-tile-a11y", name = n.label(), size = format_size(n.bytes, style));
-                let aid = ui.id().with(("treemap.tile", *id));
+                let aid = ui.scope_id().with(("treemap.tile", *id));
                 crate::ui::a11y::list_item(ui, aid, *r, &label, self.model.selected == Some(*id), pos, total);
             }
         }

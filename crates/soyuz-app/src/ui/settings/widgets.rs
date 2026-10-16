@@ -56,7 +56,7 @@ impl Rows<'_> {
         let p = palette(ui.ctx());
         // The label column takes what the control leaves (measured last frame), so long
         // labels (translations) wrap less next to narrow controls such as switches.
-        let width_id = egui::Id::new(("soyuz.settings.row_ctrl_w", label));
+        let width_id = egui::Id::unique(("soyuz.settings.row_ctrl_w", label));
         let ctrl_w: Option<f32> = ui.ctx().data(|d| d.get_temp(width_id));
         ui.horizontal_top(|ui| {
             let w = ui.available_width();
@@ -112,7 +112,7 @@ impl Rows<'_> {
 }
 
 fn row_label_id() -> egui::Id {
-    egui::Id::new("soyuz.settings.row_label")
+    egui::Id::unique("soyuz.settings.row_label")
 }
 
 /// Accessible name for a control: the label of the settings row being drawn.
@@ -173,7 +173,7 @@ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
         resp.mark_changed();
     }
     let (label, state) = (row_label(ui), *on);
-    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, state, &label));
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::CheckBox, true, state, &label));
     let t = ui.ctx().animate_bool_with_time(resp.id, *on, crate::theme::anim(ui.ctx(), 0.12));
     let bg = lerp_color(p.border_strong, p.accent, t);
     let r = CornerRadius::same(10);
@@ -209,7 +209,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
     painter.rect_filled(rect, CornerRadius::same(7), p.bg_surface1.gamma_multiply(if p.dark { 0.8 } else { 1.0 }));
     painter.rect_stroke(rect, CornerRadius::same(7), Stroke::new(1.0, p.border_subtle), StrokeKind::Inside);
     let sel = options.iter().position(|(v, _)| v == value).unwrap_or(0);
-    let id = ui.id().with(("seg", rect.min.x as i32, rect.min.y as i32));
+    let id = ui.scope_id().with(("seg", rect.min.x as i32, rect.min.y as i32));
     let target_x: f32 = widths[..sel].iter().sum();
     let x = ui.ctx().animate_value_with_time(id, target_x, crate::theme::anim(ui.ctx(), 0.14));
     let w = ui.ctx().animate_value_with_time(id.with("w"), widths[sel], crate::theme::anim(ui.ctx(), 0.14));
@@ -222,7 +222,7 @@ pub fn segmented<T: PartialEq + Copy>(ui: &mut Ui, value: &mut T, options: &[(T,
         cx += w;
         let resp = ui.interact(r, id.with(i), Sense::click());
         let name = format!("{}: {label}", row_label(ui));
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, i == sel, &name));
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::RadioButton, true, i == sel, &name));
         if resp.has_focus() {
             crate::ui::widgets::focus_ring(ui, r);
         }

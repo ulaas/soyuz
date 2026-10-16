@@ -17,7 +17,7 @@ use crate::editors::{EditInput, KeyMods};
 
 /// Where the focusable widget ids of the editor drawn last frame are kept (temp data).
 fn focus_ids_key() -> Id {
-    Id::new("soyuz.editor.focus_ids")
+    Id::unique("soyuz.editor.focus_ids")
 }
 
 fn set_focus_ids(ctx: &egui::Context, ids: Vec<Id>) {

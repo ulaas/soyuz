@@ -112,7 +112,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
     // Icon sizes glide between zoom levels; the layout follows the animated size.
     let zoom = if matches!(style, Style::Grid | Style::Gallery) {
         ui.ctx().animate_value_with_time(
-            Id::new(("soyuz.flow.zoom", pane.id.0)),
+            Id::unique(("soyuz.flow.zoom", pane.id.0)),
             f32::from(pane.view.zoom),
             crate::theme::anim(ui.ctx(), 0.16),
         )
@@ -150,7 +150,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, style
     let out = scroll.show_viewport(&mut child, |ui, viewport| {
         body(ui, viewport, pane, v, style, &g, &layout, zoom);
     });
-    pane.scroll_y = out.state.offset.y;
+    pane.scroll_y = out.state.clamped_offset().y;
     pane.viewport_h = (out.inner_rect.height() - g.header_h).max(1.0);
     pane.page_rows = layout.rows_per_page(pane.viewport_h);
     pane.layout = Some(layout);
@@ -174,7 +174,7 @@ fn body(
     let list_top = origin.y + g.header_h;
     let to_layout = |pos: Pos2| crate::geom::pt(pos.x - origin.x, pos.y - list_top);
     let to_screen = |r: crate::geom::Rect| crate::ui::geom::rect(r).translate(vec2(origin.x, list_top));
-    let id = Id::new(("soyuz.flow.bg", pane.id.0));
+    let id = Id::unique(("soyuz.flow.bg", pane.id.0));
     let bg = ui.interact(vis, id, Sense::click_and_drag());
     let list_area = Rect::from_min_max(pos2(vis.left(), vis.top() + g.header_h), vis.max);
 
@@ -207,7 +207,7 @@ fn body(
             &tr!("views-a11y-files-in", title = title),
         );
         let total = pane.visible.len();
-        let cursor_id = cursor_pos.map(|c| Id::new(("soyuz.flow.row", pane.id.0, c)));
+        let cursor_id = cursor_pos.map(|c| Id::unique(("soyuz.flow.row", pane.id.0, c)));
         crate::ui::a11y::with(ui.ctx(), bg.id, |n| {
             n.set_size_of_set(total);
             n.set_multiselectable();
@@ -247,7 +247,7 @@ fn body(
                     if a11y_on {
                         crate::ui::a11y::list_item(
                             ui,
-                            Id::new(("soyuz.flow.row", pane.id.0, i)),
+                            Id::unique(("soyuz.flow.row", pane.id.0, i)),
                             r.intersect(list_area),
                             &tr!(
                                 "views-a11y-row",
@@ -884,7 +884,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
         if r.right() < hr.left() || r.left() > hr.right() {
             continue;
         }
-        let resp = ui.interact(r, Id::new(("soyuz.hdr", pane.id.0, ci)), Sense::click_and_drag());
+        let resp = ui.interact(r, Id::unique(("soyuz.hdr", pane.id.0, ci)), Sense::click_and_drag());
         let active = sort.column == c.column;
         if resp.hovered() && pane.col_drag.is_none() {
             painter.rect_filled(r.shrink2(vec2(2.0, 4.0)), CornerRadius::same(radius::CONTROL), p.bg_surface2);
@@ -951,7 +951,7 @@ fn header(ui: &mut Ui, p: &Palette, vis: Rect, pane: &mut Pane, v: &mut ViewCtx<
             continue;
         }
         let handle = Rect::from_center_size(pos2(r.right(), r.center().y), vec2(8.0, HEADER_H));
-        let hresp = ui.interact(handle, Id::new(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
+        let hresp = ui.interact(handle, Id::unique(("soyuz.hdr.resize", pane.id.0, ci)), Sense::drag());
         crate::ui::a11y::with(ui.ctx(), hresp.id, |n| {
             n.set_role(egui::accesskit::Role::Splitter);
             n.set_label(tr!("views-col-resize", column = columns::header_label(c.column)));

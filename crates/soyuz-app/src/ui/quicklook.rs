@@ -169,7 +169,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
     }
 
     let t = ctx.animate_bool_with_time(
-        Id::new("soyuz.ql.anim"),
+        Id::unique("soyuz.ql.anim"),
         true,
         crate::theme::anim(ctx, crate::theme::tokens::motion::MODAL),
     );
@@ -181,7 +181,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
     let card = Rect::from_center_size(screen.center(), size * scale);
     let mut close = false;
     let mut action = None;
-    egui::Area::new(Id::new("soyuz.quicklook")).order(Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
+    egui::Area::new(Id::unique("soyuz.quicklook")).order(Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
         ui.set_opacity(t);
         // Full-screen catcher: clicking outside the card closes. Allocated (not just
         // interacted) so the overlay layer covers the whole window and the panes beneath get
@@ -210,7 +210,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
             Stroke::new(1.0, p.border_strong),
             egui::StrokeKind::Inside,
         );
-        let card_resp = ui.interact(card, Id::new("soyuz.ql.card"), Sense::click());
+        let card_resp = ui.interact(card, Id::unique("soyuz.ql.card"), Sense::click());
         let _ = card_resp;
 
         // Header.

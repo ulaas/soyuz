@@ -141,7 +141,7 @@ pub fn show_panels(ui: &mut Ui, app: &mut SoyuzApp) {
 }
 
 fn window_layer(id: &str) -> LayerId {
-    LayerId::new(Order::Middle, Id::new(("soyuz.tool", id)))
+    LayerId::new(Order::Middle, Id::unique(("soyuz.tool", id)))
 }
 
 const WINDOW_IDS: [&str; 6] = ["treemap", "compare", "dupes", "split", "sync_profiles", "versions"];
@@ -154,7 +154,7 @@ fn backdrop(ctx: &egui::Context) {
     let p = palette(ctx);
     let screen = ctx.content_rect();
     let dragging = dnd::payload(ctx).is_some() || ctx.input(|i| !i.raw.hovered_files.is_empty());
-    let layer = egui::Area::new(Id::new("soyuz.tools.backdrop"))
+    let layer = egui::Area::new(Id::unique("soyuz.tools.backdrop"))
         .order(Order::Middle)
         .fixed_pos(screen.min)
         .interactable(!dragging)
@@ -302,7 +302,7 @@ pub fn tool_window(
         keep = false;
     }
     egui::Window::new(title)
-        .id(Id::new(("soyuz.tool", id)))
+        .id(Id::unique(("soyuz.tool", id)))
         .title_bar(false)
         .resizable(true)
         .collapsible(false)

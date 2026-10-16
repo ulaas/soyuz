@@ -26,7 +26,7 @@ use crate::ops::fileops::dragout::{AfterDrop, after_drop};
 use crate::ui::geom;
 
 fn reset_id() -> Id {
-    Id::new("soyuz.dragout.reset")
+    Id::unique("soyuz.dragout.reset")
 }
 
 /// Whether dragging items out of the window into other apps works here (Windows: OLE;

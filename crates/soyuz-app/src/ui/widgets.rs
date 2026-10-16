@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Galley, Painter, Pos2, Rect, Response, RichText, Sense, Stroke, StrokeKind,
-    TextStyle, Ui, WidgetInfo, WidgetType, pos2, vec2,
+    Align2, Color32, CornerRadius, FontId, Galley, Painter, Pos2, Rect, Response, RichText, Role, Sense, Stroke,
+    StrokeKind, TextStyle, Ui, WidgetInfo, pos2, vec2,
 };
 
 use crate::theme::apply::CAPTION;
@@ -65,7 +65,9 @@ pub fn collapsible_header(ui: &mut Ui, text: &str, open: &mut bool) -> Response 
         *open = !*open;
     }
     let is_open = *open;
-    resp.widget_info(|| WidgetInfo::selected(WidgetType::CollapsingHeader, true, is_open, text));
+    // Like egui's own collapsing header: a disclosure triangle that reports expanded.
+    resp.widget_info(|| WidgetInfo::labeled(Role::DisclosureTriangle, true, text));
+    ui.ctx().accesskit_node_builder(resp.id, |node| node.set_expanded(is_open));
     if resp.has_focus() {
         focus_ring(ui, rect.shrink2(vec2(4.0, 0.0)));
     }
@@ -458,7 +460,7 @@ pub fn segmented(ui: &mut Ui, items: &[(&str, &str)], selected: usize, cell: egu
     let mut clicked = None;
     // Animated selection thumb.
     let target = selected as f32;
-    let id = ui.id().with(("segmented", rect.min.x as i32, rect.min.y as i32));
+    let id = ui.scope_id().with(("segmented", rect.min.x as i32, rect.min.y as i32));
     let pos = ui.ctx().animate_value_with_time(id, target, crate::theme::anim(ui.ctx(), 0.14));
     let thumb = Rect::from_min_size(pos2(rect.left() + 2.0 + pos * cell.x, rect.top() + 2.0), cell);
     ui.painter().rect_filled(thumb, CornerRadius::same(radius::CONTROL + 1), p.bg_surface1);

@@ -111,7 +111,7 @@ fn rows(ui: &mut Ui, st: &mut PortalState, c: &mut PortalCtx<'_>) -> Rect {
         {
             let resp = ui.add(
                 TextEdit::singleline(text)
-                    .id(Id::new(("soyuz.portal.rename", i)))
+                    .id(Id::unique(("soyuz.portal.rename", i)))
                     .hint_text(soyuz_core::entry::display_name(&pin.path))
                     .desired_width(f32::INFINITY),
             );

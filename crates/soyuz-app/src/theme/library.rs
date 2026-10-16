@@ -222,7 +222,7 @@ struct Seen(u64);
 /// Per-frame: reinstall the palettes when user themes or the OS accent changed, and
 /// follow the OS dark / light switch for `theme = "system"`.
 pub fn sync(ctx: &Context, config: &soyuz_core::config::Config, preference: ThemePreference) {
-    let id = egui::Id::new("soyuz.theme.library.seen");
+    let id = egui::Id::unique("soyuz.theme.library.seen");
     let v = version();
     let seen: Option<Seen> = ctx.data(|d| d.get_temp(id));
     if seen != Some(Seen(v)) {

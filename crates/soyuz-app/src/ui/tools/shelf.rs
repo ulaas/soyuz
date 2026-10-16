@@ -99,7 +99,7 @@ impl Shelf {
                 card
             });
         self.width = resp.response.rect.width();
-        crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.shelf", tr!("app-a11y-resize-shelf"));
+        crate::ui::a11y::panel_splitter(root, "soyuz.shelf", tr!("app-a11y-resize-shelf"));
         self.last_rect = Some(resp.inner);
         let _ = ctx;
     }
@@ -168,7 +168,7 @@ impl Shelf {
             && let Some(pos) = ctx.input(|i| i.pointer.latest_pos())
             && card.contains(pos)
         {
-            let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.shelf.hl")));
+            let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.shelf.hl")));
             painter.rect_filled(card, CornerRadius::same(radius::MODAL), p.accent.gamma_multiply(0.08));
             painter.rect_stroke(
                 card,
@@ -393,9 +393,11 @@ impl Shelf {
             pos2(screen.right() - 6.0, screen.bottom() - 120.0),
         );
         let hot = pos.is_some_and(|q| strip.expand(8.0).contains(q));
-        Area::new(Id::new("soyuz.shelf.strip")).order(Order::Foreground).fixed_pos(strip.min).interactable(false).show(
-            ctx,
-            |ui| {
+        Area::new(Id::unique("soyuz.shelf.strip"))
+            .order(Order::Foreground)
+            .fixed_pos(strip.min)
+            .interactable(false)
+            .show(ctx, |ui| {
                 let painter = ui.painter();
                 painter.rect_filled(
                     strip,
@@ -422,8 +424,7 @@ impl Shelf {
                     FontId::proportional(10.5),
                     p.text_secondary,
                 );
-            },
-        );
+            });
         if hot
             && ctx.input(|i| i.pointer.any_released())
             && let Some(pl) = DragAndDrop::take_payload::<DragPayload>(ctx)

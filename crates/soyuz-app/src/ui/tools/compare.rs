@@ -451,7 +451,7 @@ impl CompareWindow {
                     painter.galley(tag_rect.min, tag, tag_color);
                     let conflict = row.conflict;
                     if let Some(k) = conflict {
-                        ui.interact(tag_rect, ui.id().with(("compare.conflict", i)), Sense::hover())
+                        ui.interact(tag_rect, ui.scope_id().with(("compare.conflict", i)), Sense::hover())
                             .on_hover_text(k.label());
                     }
                     // Actions.
@@ -680,7 +680,7 @@ impl CompareWindow {
                         let cr = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
                         x += w + 4.0;
                         let ok = resolution_allowed(row, res);
-                        let id = ui.id().with(("compare.res", i, res as u8));
+                        let id = ui.scope_id().with(("compare.res", i, res as u8));
                         let resp = ui.interact(cr, id, if ok { Sense::click() } else { Sense::hover() });
                         let on = current == res;
                         let accent = match res {
@@ -758,7 +758,7 @@ fn action_buttons(
     for (k, (a, glyph, label)) in items.iter().enumerate() {
         let r = Rect::from_min_size(pos2(rect.left() + k as f32 * w, rect.top()), vec2(w, rect.height())).shrink(1.0);
         let ok = cat.is_none_or(|c| allowed(c, *a));
-        let id = ui.id().with(("compare.act", rect.min.x as i32, rect.min.y as i32, k));
+        let id = ui.scope_id().with(("compare.act", rect.min.x as i32, rect.min.y as i32, k));
         let resp = ui.interact(r, id, if ok { Sense::click() } else { Sense::hover() });
         let on = current == Some(*a);
         let color = match a {

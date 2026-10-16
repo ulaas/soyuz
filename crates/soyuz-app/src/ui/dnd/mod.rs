@@ -71,7 +71,7 @@ struct HoverInfo {
 }
 
 fn hover_id() -> Id {
-    Id::new("soyuz.dnd.hover")
+    Id::unique("soyuz.dnd.hover")
 }
 
 fn set_hover(ctx: &egui::Context, label: String, effect: Option<DropEffect>) {
@@ -85,7 +85,7 @@ pub fn highlight(ui: &Ui, rect: Rect, rounding: u8) {
         return;
     }
     let p = palette(ui.ctx());
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.dnd.hl")));
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.dnd.hl")));
     painter.rect_filled(rect, CornerRadius::same(rounding), p.accent.gamma_multiply(0.08));
     painter.rect_stroke(rect, CornerRadius::same(rounding), Stroke::new(2.0, p.accent), StrokeKind::Inside);
 }
@@ -97,7 +97,7 @@ pub fn target_rect(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, cmds: &mut Ve
 }
 
 fn spring_id() -> Id {
-    Id::new("soyuz.dnd.spring")
+    Id::unique("soyuz.dnd.spring")
 }
 
 /// Spring-loading: run `open` once the pointer rested on `dest` long enough; paints a
@@ -125,7 +125,7 @@ fn spring(ui: &Ui, rect: Rect, dest: &Path, rounding: u8, open: Cmd, cmds: &mut 
             let r = rect.intersect(ui.clip_rect());
             let w = r.width() * crate::ui::motion::ease_out((progress - 0.15) / 0.85);
             let fill = Rect::from_min_size(r.min, vec2(w, r.height()));
-            let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.dnd.hl")));
+            let painter = ctx.layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.dnd.hl")));
             painter.rect_filled(fill, CornerRadius::same(rounding), p.accent.gamma_multiply(0.10));
         }
     }
@@ -149,7 +149,7 @@ pub fn target_rect_spring(
     let released = ctx.input(|i| i.pointer.any_released());
     // Modifiers are latched while hovering: a modifier key let go in the release frame
     // must not change the effect the badge promised.
-    let key = Id::new(("soyuz.dnd.effect", dest));
+    let key = Id::unique(("soyuz.dnd.effect", dest));
     let effect = match ctx.data(|d| d.get_temp::<Option<DropEffect>>(key)) {
         Some(e) if released => e,
         _ => effect_for(ctx, &payload, dest),
@@ -197,7 +197,7 @@ pub fn trash_target(ui: &Ui, resp: &Response, cmds: &mut Vec<Cmd>) -> bool {
     }
     highlight(ui, resp.rect, radius::ROW);
     set_hover(ctx, tr!("ops-dnd-trash").into(), None);
-    ctx.data_mut(|d| d.insert_temp(Id::new("soyuz.dnd.trash"), true));
+    ctx.data_mut(|d| d.insert_temp(Id::unique("soyuz.dnd.trash"), true));
     if ctx.input(|i| i.pointer.any_released())
         && let Some(p) = DragAndDrop::take_payload::<DragPayload>(ctx)
     {
@@ -210,7 +210,7 @@ pub fn trash_target(ui: &Ui, resp: &Response, cmds: &mut Vec<Cmd>) -> bool {
 /// (the sidebar Portal): `label` is what the badge says.
 pub fn set_pin_hover(ctx: &egui::Context, label: String) {
     set_hover(ctx, label, None);
-    ctx.data_mut(|d| d.insert_temp(Id::new("soyuz.dnd.pin"), true));
+    ctx.data_mut(|d| d.insert_temp(Id::unique("soyuz.dnd.pin"), true));
 }
 
 /// Pane-level target: drop into the pane's folder (background, empty folder state),
@@ -258,8 +258,8 @@ pub fn paint_badge(ctx: &egui::Context) {
     if ctx.data(|d| d.get_temp::<u64>(spring_id().with("pass"))) != Some(pass) {
         ctx.data_mut(|d| d.remove::<crate::ui::motion::HoverTimer>(spring_id()));
     }
-    let to_trash: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.dnd.trash"))).unwrap_or(false);
-    let to_pin: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::new("soyuz.dnd.pin"))).unwrap_or(false);
+    let to_trash: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::unique("soyuz.dnd.trash"))).unwrap_or(false);
+    let to_pin: bool = ctx.data_mut(|d| d.remove_temp::<bool>(Id::unique("soyuz.dnd.pin"))).unwrap_or(false);
     let Some(payload) = payload(ctx) else { return };
     let Some(pos) = ctx.input(|i| i.pointer.latest_pos()) else { return };
     if !ctx.input(|i| i.pointer.primary_down()) {
@@ -291,7 +291,7 @@ pub fn paint_badge(ctx: &egui::Context) {
         Some(DropEffect::Link) => CursorIcon::Alias,
         _ => CursorIcon::Grabbing,
     });
-    let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::new("soyuz.dnd.badge")));
+    let painter = ctx.layer_painter(egui::LayerId::new(Order::Tooltip, Id::unique("soyuz.dnd.badge")));
     let title = crate::ui::widgets::trunc_galley(
         &painter,
         &what,
@@ -367,7 +367,7 @@ fn ask_menu(app: &mut SoyuzApp, ctx: &egui::Context) {
     let Some(menu) = app.core.fileops.dnd.ask.clone() else { return };
     let mut close = false;
     let mut chosen = None;
-    let resp = egui::Area::new(Id::new("soyuz.dnd.ask"))
+    let resp = egui::Area::new(Id::unique("soyuz.dnd.ask"))
         .order(egui::Order::Foreground)
         .fixed_pos(geom::pos(menu.pos))
         .show(ctx, |ui| {

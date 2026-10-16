@@ -172,7 +172,7 @@ impl Dialog for CreateDialog {
         ui.painter().rect_filled(rect, CornerRadius::same(6), p.bg_surface2);
         for (i, f) in formats.iter().enumerate() {
             let r = egui::Rect::from_min_size(pos2(rect.left() + 2.0 + i as f32 * cell.x, rect.top() + 2.0), cell);
-            let resp = ui.interact(r, ui.id().with(("fmt", i)), Sense::click());
+            let resp = ui.interact(r, ui.scope_id().with(("fmt", i)), Sense::click());
             let sel = *f == self.form.format;
             if sel {
                 ui.painter().rect_filled(r, CornerRadius::same(5), p.bg_surface1);

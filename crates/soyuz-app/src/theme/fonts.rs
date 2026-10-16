@@ -617,7 +617,7 @@ pub fn status() -> Vec<Resolved> {
 }
 
 fn offsets_id() -> egui::Id {
-    egui::Id::new("soyuz.fonts.offsets")
+    egui::Id::unique("soyuz.fonts.offsets")
 }
 
 /// Resolve `[fonts]`, install the fonts and remember the per-role size offsets.

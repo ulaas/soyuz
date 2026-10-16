@@ -86,7 +86,7 @@ struct View {
 }
 
 fn view_id(big: bool) -> Id {
-    Id::new(("soyuz.player.view", big))
+    Id::unique(("soyuz.player.view", big))
 }
 
 /// Settle time of a view-size change before the engine is asked for that size.
@@ -503,7 +503,7 @@ fn scrubber(ui: &mut Ui, width: f32, pos: f64, dur: Option<f64>, buffered: f64, 
                 g.size() + vec2(12.0, 6.0),
             );
             let painter =
-                ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::new("soyuz.player.hover")));
+                ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Tooltip, Id::unique("soyuz.player.hover")));
             painter.rect_filled(pill, CornerRadius::same(radius::CONTROL), p.bg_surface3);
             painter.rect_stroke(
                 pill,

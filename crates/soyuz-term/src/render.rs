@@ -227,7 +227,7 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
     let cell_w = cell_w.max(1.0);
     let cell_h = cell_h.max(1.0);
 
-    let id = Id::new(("soyuz-term", backend.id));
+    let id = Id::unique(("soyuz-term", backend.id));
     let rect = ui.available_rect_before_wrap();
     let response = ui.interact(rect, id, Sense::click_and_drag());
     ui.advance_cursor_after_rect(rect);
@@ -1001,6 +1001,7 @@ mod tests {
             delta: vec2(0.0, 2.0),
             phase: egui::TouchPhase::Move,
             modifiers: Modifiers::NONE,
+            source: egui::MouseWheelSource::Wheel,
         };
         h.frame(vec![Event::PointerMoved(h.pos(3, 3)), wheel]);
         let offset = h.term.backend.term.lock().grid().display_offset();

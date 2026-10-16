@@ -209,7 +209,7 @@ fn status(ui: &mut Ui, app: &mut SoyuzApp, phase: &Phase, reveal: &mut Option<Pa
             }
             let is_installer =
                 path.extension().is_some_and(|e| e.eq_ignore_ascii_case("msi") || e.eq_ignore_ascii_case("exe"));
-            let confirm_id = egui::Id::new("soyuz.settings.update.confirm_run");
+            let confirm_id = egui::Id::unique("soyuz.settings.update.confirm_run");
             let mut confirming = ui.ctx().data(|d| d.get_temp::<bool>(confirm_id)).unwrap_or(false);
             ui.horizontal(|ui| {
                 if is_installer
@@ -265,7 +265,7 @@ fn linux_install(ui: &mut Ui, path: &std::path::Path, sha256: &str) -> bool {
         return false;
     }
     // Set by the click so a result left over from an earlier install never restarts.
-    let started_id = egui::Id::new("soyuz.settings.update.install_started");
+    let started_id = egui::Id::unique("soyuz.settings.update.install_started");
     let started = ui.ctx().data(|d| d.get_temp::<bool>(started_id)).unwrap_or(false);
     let (installing, result) = updates::install_status();
     ui.horizontal(|ui| {

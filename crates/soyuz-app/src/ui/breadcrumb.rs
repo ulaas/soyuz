@@ -56,7 +56,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     let p = palette(ui.ctx());
     let editing = c.address.editing;
     let field = rect;
-    let bg = ui.interact(field, Id::new("soyuz.omnibar.bg"), Sense::click());
+    let bg = ui.interact(field, Id::unique("soyuz.omnibar.bg"), Sense::click());
     crate::ui::a11y::container(ui.ctx(), bg.id, egui::accesskit::Role::Navigation, tr!("app-crumb-address"));
     let hover = bg.hovered() && !editing;
     // Borderless field: hover and editing change the fill (high contrast keeps outlines).
@@ -148,7 +148,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
             if hidden.first() == Some(&i) {
                 // Overflow dropdown with the collapsed ancestors.
                 let r = Rect::from_min_size(pos2(x, cy - h / 2.0), vec2(28.0, h));
-                let resp = ui.interact(r, Id::new("soyuz.crumb.more"), Sense::click());
+                let resp = ui.interact(r, Id::unique("soyuz.crumb.more"), Sense::click());
                 crate::ui::a11y::button(&resp, tr!("app-crumb-hidden-parents"));
                 if resp.hovered() {
                     ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), seg_hover(&p));
@@ -188,7 +188,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
         if r.width() <= 4.0 {
             break;
         }
-        let resp = ui.interact(r, Id::new(("soyuz.crumb", i)), Sense::click());
+        let resp = ui.interact(r, Id::unique(("soyuz.crumb", i)), Sense::click());
         crate::ui::a11y::button(
             &resp,
             &if last {
@@ -241,7 +241,7 @@ pub fn show(ui: &mut Ui, rect: Rect, c: &mut OmnibarCtx<'_>) {
     }
     // Refresh button at the right end.
     let rr = Rect::from_center_size(pos2(field.right() - 18.0, cy), vec2(26.0, 26.0));
-    let rresp = ui.interact(rr, Id::new("soyuz.omnibar.refresh"), Sense::click());
+    let rresp = ui.interact(rr, Id::unique("soyuz.omnibar.refresh"), Sense::click());
     crate::ui::a11y::button(&rresp, tr!("app-crumb-refresh"));
     if rresp.hovered() {
         ui.painter().rect_filled(rr, CornerRadius::same(radius::ROW), seg_hover(&p));
@@ -287,7 +287,7 @@ fn sep(
         ui.painter().text(r.center(), Align2::CENTER_CENTER, ph::CARET_RIGHT, icons::font(11.0), p.text_tertiary);
         return;
     };
-    let id = Id::new(("soyuz.crumb.sep", &dir));
+    let id = Id::unique(("soyuz.crumb.sep", &dir));
     let resp = ui.interact(r, id, Sense::click());
     crate::ui::a11y::button(&resp, tr!("app-crumb-subfolders"));
     let open = Popup::is_id_open(ui.ctx(), Popup::default_response_id(&resp));
@@ -365,7 +365,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     let p = palette(ui.ctx());
     // Full field height: the text edit centers its row (see the filter in toolbar.rs).
     let inner = field.shrink2(vec2(12.0, 0.0));
-    let id = Id::new("soyuz.omnibar.edit");
+    let id = Id::unique("soyuz.omnibar.edit");
     // Completion candidates for the typed parent folder.
     let comp = crumbs::completion(c.services, &c.address.text);
     let names = &comp.names;
@@ -396,7 +396,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
         .font(FontId::proportional(13.0))
         .desired_width(inner.width())
         .min_size(vec2(0.0, inner.height()))
-        .vertical_align(egui::Align::Center);
+        .align(egui::Align2::LEFT_CENTER);
     let out = te.show(&mut child);
     let resp = out.response;
     if c.address.request_focus {
@@ -428,7 +428,7 @@ fn editor(ui: &mut Ui, field: Rect, c: &mut OmnibarCtx<'_>) {
     if !names.is_empty() && resp.has_focus() {
         let popup_rect =
             Rect::from_min_size(pos2(field.left(), field.bottom() + 4.0), vec2(field.width().min(520.0), 0.0));
-        egui::Area::new(Id::new("soyuz.omnibar.complete"))
+        egui::Area::new(Id::unique("soyuz.omnibar.complete"))
             .order(egui::Order::Foreground)
             .fixed_pos(popup_rect.min)
             .show(ui.ctx(), |ui| {

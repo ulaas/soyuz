@@ -110,7 +110,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         }
         let w = (natural[i] * shrink).max(60.0).min(tabs_right - x);
         let r = Rect::from_min_size(pos2(x, header.top() + 6.0), vec2(w, 26.0));
-        let resp = ui.interact(r, ui.id().with(("editor.tab", d.id)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("editor.tab", d.id)), Sense::click());
         let active = i == app.core.editors.active;
         crate::ui::a11y::tab(&resp, &d.name, active);
         if active {
@@ -138,7 +138,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         let g = crate::ui::widgets::trunc_galley(ui.painter(), &d.name, FontId::proportional(12.5), fg, name_w);
         ui.painter().galley(pos2(r.left() + 26.0, r.center().y - g.size().y / 2.0), g, fg);
         let xr = Rect::from_center_size(pos2(r.right() - 13.0, r.center().y), vec2(18.0, 18.0));
-        let xresp = ui.interact(xr, ui.id().with(("editor.tab.x", d.id)), Sense::click());
+        let xresp = ui.interact(xr, ui.scope_id().with(("editor.tab.x", d.id)), Sense::click());
         crate::ui::a11y::button(&xresp, tr!("common-close"));
         let dirty = d.is_dirty();
         if xresp.hovered() || (resp.hovered() && !dirty) || (active && !dirty) {
@@ -198,7 +198,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let maximized = app.core.editors.maximized;
     let br =
         |i: f32| Rect::from_center_size(pos2(header.right() - 20.0 - i * 28.0, header.top() + 19.0), vec2(24.0, 24.0));
-    let id = ui.id().with("editor.panel");
+    let id = ui.scope_id().with("editor.panel");
     if super::widgets::icon_at(ui, br(0.0), id.with("close"), ph::X, tr!("editors-panel-hide"), true, &p) {
         app.core.editors.open = false;
         app.core.editors.maximized = false;
@@ -252,7 +252,7 @@ pub fn card(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
             }
             body.min.y += 42.0;
         }
-        let doc_id = egui::Id::new(("soyuz.editor.doc", d.id));
+        let doc_id = egui::Id::unique(("soyuz.editor.doc", d.id));
         match &mut d.kind {
             DocKind::Loading => {
                 crate::ui::widgets::spinner(ui, body.center(), 12.0, p.accent);

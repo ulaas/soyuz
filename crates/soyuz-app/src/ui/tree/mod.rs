@@ -34,7 +34,7 @@ use model::{Nav, RootKind};
 
 /// The filter box's widget id.
 fn filter_id() -> Id {
-    Id::new("soyuz.tree.filter")
+    Id::unique("soyuz.tree.filter")
 }
 
 /// Indentation per tree level (compressed down to `INDENT_MIN` for deep trees so
@@ -119,7 +119,7 @@ pub fn show(ui: &mut Ui, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>) {
     let n = s.rows().len();
     let width = ui.available_width();
     let (all, _) = ui.allocate_exact_size(vec2(width, (n as f32 * h).max(h)), Sense::hover());
-    let container = Id::new("soyuz.tree");
+    let container = Id::unique("soyuz.tree");
     crate::ui::a11y::container(&ctx, container, Role::Tree, tr!("views-tree-a11y"));
     if n == 0 {
         let p = palette(&ctx);
@@ -266,7 +266,7 @@ fn row_ui(
 ) -> Response {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
-    let id = Id::new(("soyuz.tree.row", row.key.root, &row.key.path));
+    let id = Id::unique(("soyuz.tree.row", row.key.root, &row.key.path));
     let resp = ui.interact(rect, id, Sense::click_and_drag());
     crate::ui::a11y::with(&ctx, resp.id, |n| {
         n.set_role(Role::TreeItem);

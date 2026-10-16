@@ -15,7 +15,7 @@ use crate::ui::views::ViewCtx;
 
 /// The text field's id for `r`.
 fn editor_id(r: &InlineRename) -> Id {
-    Id::new(("soyuz.rename", r.pane.0, r.key.as_str()))
+    Id::unique(("soyuz.rename", r.pane.0, r.key.as_str()))
 }
 
 /// Draw the editor over `rect` (the item's name area). Called by the views for the
@@ -98,7 +98,7 @@ pub fn editor(ui: &mut Ui, rect: Rect, font: FontId, pane: &mut Pane, v: &mut Vi
 }
 
 fn error_bubble(ui: &Ui, rect: Rect, msg: &str, p: &crate::theme::Palette) {
-    let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::new("soyuz.rename.err")));
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(Order::Foreground, Id::unique("soyuz.rename.err")));
     let galley = painter.layout(msg.to_string(), FontId::proportional(11.5), Color32::WHITE, 280.0);
     let size = galley.size() + vec2(16.0, 10.0);
     let r = Rect::from_min_size(rect.left_bottom() + vec2(0.0, 5.0), size);

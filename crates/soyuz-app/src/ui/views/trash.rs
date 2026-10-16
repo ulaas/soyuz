@@ -27,7 +27,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     if let Some(t) = v.fileops.trash.take_notice() {
         v.cmds.push(Cmd::Toast(t));
     }
-    let bg = ui.interact(rect, Id::new(("soyuz.trash.bg", pane.id.0)), Sense::click());
+    let bg = ui.interact(rect, Id::unique(("soyuz.trash.bg", pane.id.0)), Sense::click());
     if bg.clicked() || bg.secondary_clicked() {
         v.cmds.push(Cmd::FocusPane(pane.id));
         if bg.clicked() {

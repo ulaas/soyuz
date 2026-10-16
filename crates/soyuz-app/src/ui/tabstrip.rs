@@ -125,7 +125,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let n = app.core.ws.tabs.len();
     let window = app.core.workspaces.current;
     let plus_w = 32.0;
-    let drag_id = Id::new("soyuz.tabdrag");
+    let drag_id = Id::unique("soyuz.tabdrag");
     let mut drag: Option<Drag> = ctx
         .data(|d| d.get_temp(drag_id))
         .filter(|d: &Drag| d.window == window && d.from < n && app.core.ws.tabs[d.from].id == d.tab);
@@ -136,7 +136,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
 
     // Background: double-click empty space → new tab.
     if !in_titlebar {
-        let bg = ui.interact(full, Id::new("soyuz.tabstrip.bg"), Sense::click());
+        let bg = ui.interact(full, Id::unique("soyuz.tabstrip.bg"), Sense::click());
         crate::ui::a11y::container(&ctx, bg.id, egui::accesskit::Role::TabList, tr!("app-tabs-list"));
         if bg.double_clicked() {
             app.core.cmds.push(Cmd::Action(Action::NewTab));
@@ -238,11 +238,11 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     for &(g, left) in &live.chips {
         let Some(group) = app.core.ws.group(g).cloned() else { continue };
         let cw = chip_w(g);
-        let spring = Id::new(("soyuz.chip.x", g.0));
+        let spring = Id::unique(("soyuz.chip.x", g.0));
         let x = crate::ui::motion::spring_to(&ctx, spring, left);
         let r = Rect::from_min_size(pos2(x, full.center().y - CHIP_H / 2.0 - 2.0), vec2(cw, CHIP_H));
         let color = p.tags[(group.color as usize).min(7)];
-        let resp = ui.interact(r, Id::new(("soyuz.chip", g.0)), Sense::click());
+        let resp = ui.interact(r, Id::unique(("soyuz.chip", g.0)), Sense::click());
         let editing = renaming.as_ref().is_some_and(|(x, _, _)| *x == g);
         let fill = if group.collapsed { color.gamma_multiply(0.35) } else { color };
         if !editing {
@@ -265,7 +265,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
             let last = (span.start..span.end).rfind(|&i| !hidden[i]).unwrap_or(span.start);
             let tx = crate::ui::motion::spring_to(
                 &ctx,
-                Id::new(("soyuz.tab.x", app.core.ws.tabs[last].id.0)),
+                Id::unique(("soyuz.tab.x", app.core.ws.tabs[last].id.0)),
                 live.lefts[last],
             );
             let right = tx + widths[last];
@@ -323,9 +323,9 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let tab = &app.core.ws.tabs[i];
         let tab_id = tab.id;
         let active = i == app.core.ws.active;
-        let resp = ui.interact(r, Id::new(("soyuz.tab", tab.id.0)), Sense::click_and_drag());
+        let resp = ui.interact(r, Id::unique(("soyuz.tab", tab.id.0)), Sense::click_and_drag());
         let dragging = drag.is_some_and(|d| d.from == i);
-        let spring_id = Id::new(("soyuz.tab.x", tab.id.0));
+        let spring_id = Id::unique(("soyuz.tab.x", tab.id.0));
         let r = if dragging && !far {
             let px = d_left(drag, r.left());
             let x = px.clamp(full.left(), clip.right() - r.width());
@@ -347,7 +347,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
         let show_close = (active || hovered) && !app.core.ws.tabs[i].pinned;
         if show_close && n > 1 && !ghosted {
             let cr = Rect::from_center_size(pos2(r.right() - 16.0, r.center().y), vec2(20.0, 20.0));
-            let cresp = ui.interact(cr, Id::new(("soyuz.tab.close", tab_id.0)), Sense::click());
+            let cresp = ui.interact(cr, Id::unique(("soyuz.tab.close", tab_id.0)), Sense::click());
             crate::ui::a11y::button(&cresp, &tr!("app-tabs-close-named", title = &title));
             if cresp.hovered() {
                 painter.rect_filled(cr, CornerRadius::same(radius::CONTROL), p.bg_surface3);
@@ -426,7 +426,7 @@ pub fn strip(ui: &mut Ui, full: Rect, app: &mut SoyuzApp, in_titlebar: bool) {
     let chip_right = live.chips.last().map_or(full.left(), |(g, l)| l + chip_w(*g));
     let plus_x = (last_right.max(chip_right) + 4.0).min(full.right() - plus_w);
     let pr = Rect::from_min_size(pos2(plus_x, full.top() + 2.0), vec2(28.0, 28.0));
-    let presp = ui.interact(pr, Id::new("soyuz.tab.new"), Sense::click());
+    let presp = ui.interact(pr, Id::unique("soyuz.tab.new"), Sense::click());
     crate::ui::a11y::button(&presp, tr!("app-tabs-new"));
     if presp.hovered() {
         ui.painter().rect_filled(pr, CornerRadius::same(radius::ROW), p.bg_surface2);
@@ -579,7 +579,7 @@ fn paint_ghost(ctx: &egui::Context, app: &SoyuzApp, d: Drag, target: Option<&Dro
         return; // outside the window: the OS cursor is all we can show
     }
     let p = palette(ctx);
-    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("soyuz.tab.ghost")));
+    let painter = ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.tab.ghost")));
     let r = Rect::from_min_size(d.last - d.grab, vec2(200.0, 30.0));
     let shadow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: Color32::from_black_alpha(90) };
     painter.add(shadow.as_shape(r, CornerRadius::same(radius::CARD)));

@@ -1,12 +1,12 @@
 # Vendored crates
 
-## accesskit_unix 0.21.1 (MIT OR Apache-2.0, https://github.com/AccessKit/accesskit)
+## egui-phosphor 0.14.0 (MIT OR Apache-2.0, https://github.com/amPerl/egui-phosphor)
 
-Unmodified crates.io source except one line in `src/context.rs`: it watches the AT-SPI
-`IsEnabled` status flag instead of `ScreenReaderEnabled`. at-spi2-core 2.62 (Fedora 45 and
-newer distros) removed `ScreenReaderEnabled`, so the stock 0.21.1 never activates and Orca
-sees nothing (see docs/ACCESSIBILITY.md). Upstream fixed this in accesskit_unix 0.23, which
-needs accesskit 0.25; egui-winit 0.36 pins accesskit_winit 0.32 / accesskit 0.24.
+The crates.io source, trimmed to what Soyuz uses, with its `egui` dependency moved from 0.36 to
+0.37 (no egui-phosphor release supports egui 0.37 yet). Kept: `src/lib.rs`, the `regular` and
+`fill` variants (`src/variants/`, `res/Phosphor.ttf`, `res/Phosphor-Fill.ttf`) and the licenses.
+Dropped: the thin / light / bold fonts, the `subset!` macro, examples and tests. The code is
+otherwise unchanged.
 
 Wired in through `[patch.crates-io]` in the workspace `Cargo.toml`. Delete this directory and
-the patch entry once egui moves to accesskit 0.25 or newer.
+the patch entry once a crates.io egui-phosphor depends on egui 0.37.

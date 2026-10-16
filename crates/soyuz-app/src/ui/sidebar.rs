@@ -152,7 +152,7 @@ pub fn show(root: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
                 ui.add_space(8.0);
             });
         });
-    crate::ui::a11y::panel_splitter(root.ctx(), "soyuz.sidebar", tr!("app-a11y-resize-sidebar"));
+    crate::ui::a11y::panel_splitter(root, "soyuz.sidebar", tr!("app-a11y-resize-sidebar"));
 }
 
 /// The mini icon bar above the sections: Places (sections) | Disk tree (full height).

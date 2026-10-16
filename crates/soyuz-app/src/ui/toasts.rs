@@ -65,7 +65,7 @@ pub fn show(toasts: &mut Toasts, ctx: &egui::Context, area: Rect, reduced_motion
             any_animating = true;
         }
 
-        let id = Id::new("soyuz.toast").with(l.id);
+        let id = Id::unique("soyuz.toast").with(l.id);
         // Stack slot: a closing toast hands its slot back as it fades.
         let target_top = bottom - HEIGHT;
         bottom -= (HEIGHT + GAP) * vanish;

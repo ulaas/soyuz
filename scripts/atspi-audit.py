@@ -264,7 +264,7 @@ def generic(phase, frames, els):
         bad.append(f"{len(tabs)} tabs, none selected")
     check(phase, "G7", f"check boxes, radio buttons and tabs expose their state ({len(bad)} problems)", not bad, bad)
     # G7e: combo boxes / tree items expose expandable. accesskit_atspi_common 0.18 (egui 0.36)
-    # does not map AccessKit's `expanded` to AT-SPI states yet, so this is a warning only.
+    # did not map AccessKit's `expanded` to AT-SPI states yet, so this is a warning only.
     noexp = [e for e in els if e["role"] == "combo box" and not ({"expandable", "expanded"} & set(e["states"]))]
     check(phase, "G7e", f"combo boxes expose expandable / expanded ({len(noexp)} without)", not noexp,
           map(describe, noexp), warn=True)
@@ -478,8 +478,7 @@ location = {toml_str(D('Archive'))}
             if not els:
                 raise RuntimeError(
                     "no Soyuz application found in the AT-SPI registry (AccessKit did not activate; "
-                    "accesskit_unix 0.21 waits for org.a11y.Status.ScreenReaderEnabled, which "
-                    "at-spi2-core 2.62+ no longer has; see docs/ACCESSIBILITY_AUDIT.md)")
+                    "is the session's accessibility flag on? see docs/ACCESSIBILITY.md, Linux notes)")
             counts = {}
             for e in els:
                 counts[e["role"]] = counts.get(e["role"], 0) + 1

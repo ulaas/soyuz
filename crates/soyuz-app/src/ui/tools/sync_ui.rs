@@ -187,7 +187,7 @@ impl SyncProfilesWindow {
                 );
                 let (r, _) = ui.allocate_exact_size(g.size(), Sense::hover());
                 ui.painter().galley(r.min, g, p.text_secondary);
-                ui.interact(r, ui.id().with(("sync.paths", &pr.name)), Sense::hover()).on_hover_text(tr!(
+                ui.interact(r, ui.scope_id().with(("sync.paths", &pr.name)), Sense::hover()).on_hover_text(tr!(
                     "tools-profiles-card-paths-tip",
                     left = pr.left.display().to_string(),
                     right = pr.right.display().to_string()

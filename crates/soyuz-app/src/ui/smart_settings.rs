@@ -15,7 +15,7 @@ const CTX: &str = "Preview search index smart folders";
 /// Multi-line / list text field bound to a `Vec<String>`: the raw text lives in egui
 /// memory while editing, so typing separators doesn't fight the parsing.
 fn list_field(ui: &mut Ui, id: &str, list: &mut Vec<String>, sep: &str, multiline: bool, hint: &str) {
-    let id = Id::new(("soyuz.settings.index", id));
+    let id = Id::unique(("soyuz.settings.index", id));
     let joined = list.join(sep);
     let parse = |t: &str| -> Vec<String> {
         t.split(|c: char| if multiline { c == '\n' } else { c == ',' || c == ';' || c.is_whitespace() })
@@ -162,7 +162,7 @@ pub fn index_group(ui: &mut Ui, q: &str, d: &mut Config) -> bool {
             if let Some(i) = remove {
                 ix.roots.remove(i);
             }
-            let id = Id::new("soyuz.settings.index.newroot");
+            let id = Id::unique("soyuz.settings.index.newroot");
             let mut new_root: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
             let mut add = false;
             ui.horizontal(|ui| {

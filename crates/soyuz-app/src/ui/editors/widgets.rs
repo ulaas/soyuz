@@ -101,7 +101,7 @@ pub fn banner(
         let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(12.0), p.text_primary);
         let w = g.size().x + 18.0;
         let r = Rect::from_min_max(pos2(x - w, rect.top() + 4.0), pos2(x, rect.bottom() - 4.0));
-        let resp = ui.interact(r, ui.id().with(("banner", text, i)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("banner", text, i)), Sense::click());
         crate::ui::a11y::button(&resp, label);
         let fill = if resp.hovered() { p.bg_surface3 } else { p.bg_surface2 };
         ui.painter().rect_filled(r, CornerRadius::same(radius::CONTROL), fill);

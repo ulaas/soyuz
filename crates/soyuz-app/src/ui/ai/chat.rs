@@ -443,7 +443,7 @@ fn footer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>
 }
 
 fn composer(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<PanelAct>) {
-    let id = Id::new(COMPOSER_ID);
+    let id = Id::unique(COMPOSER_ID);
     // Mentions.
     if !app.core.ai.panel.mentions.is_empty() {
         let mut remove = None;
@@ -621,7 +621,7 @@ fn tools_chip(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, acts: &mut Vec<Panel
     let max_risk = crate::ai::agent::Limits::from_config(&app.core.config.ai.agent).max_risk;
     let connecting = app.core.ai.external_connecting();
     let mut insert: Option<String> = None;
-    crate::ui::native::popup::Menu::menu(&r).id(Id::new("soyuz.ai.tools")).show(|ui| {
+    crate::ui::native::popup::Menu::menu(&r).id(Id::unique("soyuz.ai.tools")).show(|ui| {
         ui.set_width(330.0);
         let builtin = soyuz_ai::tools::catalog().iter().filter(|d| d.risk <= max_risk).count();
         crate::ui::widgets::menu_caption(ui, "Soyuz");

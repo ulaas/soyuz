@@ -106,7 +106,7 @@ fn aux_column(
     // Same rhythm as the active column (flow `Column` style): 4 px top pad, no row gap.
     let mut child = ui.new_child(UiBuilder::new().max_rect(Rect::from_min_max(rect.min + vec2(0.0, 4.0), rect.max)));
     child.spacing_mut().item_spacing.y = 0.0;
-    let id = Id::new(("soyuz.miller.col", pane.0, dir));
+    let id = Id::unique(("soyuz.miller.col", pane.0, dir));
     let target_row = highlight.and_then(|h| shown.iter().position(|e| e.name == h));
     let mut area = ScrollArea::vertical().id_salt(id).auto_shrink([false, false]);
     // Bring the highlighted child into view the first time this column appears.

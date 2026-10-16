@@ -34,7 +34,7 @@ pub fn tab_strip(ui: &mut Ui, tabs: &[(&str, &str)], selected: &mut usize) -> bo
         let g = ui.painter().layout_no_wrap(label.to_string(), font.clone(), p.text_primary);
         let w = g.size().x + 20.0 + 18.0;
         let r = Rect::from_min_size(pos2(x, full.top()), vec2(w, full.height()));
-        let resp = ui.interact(r, ui.id().with(("tab", i)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("tab", i)), Sense::click());
         let on = *selected == i;
         let color = if on {
             p.text_primary
@@ -354,7 +354,7 @@ fn calendar(ui: &mut Ui, st: &mut PickerState, value: &mut Option<SystemTime>) -
         let slot = offset + day as usize - 1;
         let (row, col) = (slot / 7 + 1, slot % 7);
         let r = Rect::from_min_size(pos2(grid.left() + cell.x * col as f32, grid.top() + cell.y * row as f32), cell);
-        let resp = ui.interact(r, ui.id().with(("day", month, day)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with(("day", month, day)), Sense::click());
         let date = month.with_day(day).unwrap_or(month);
         let selected = date == cur.date() && value.is_some();
         let today = date == now.date();

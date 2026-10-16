@@ -77,7 +77,7 @@ impl Recorder {
         let mut outcome =
             if opened.elapsed().as_millis() > 120 { self.capture(ctx, cmd_is_ctrl) } else { RecordOutcome::Pending };
         let p = palette(ctx);
-        let id = Id::new("soyuz.keybind.record");
+        let id = Id::unique("soyuz.keybind.record");
         let frame = Frame::new()
             .fill(p.bg_surface3)
             .stroke(Stroke::new(1.0, p.border_strong))

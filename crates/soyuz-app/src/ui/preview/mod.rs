@@ -245,7 +245,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             }
         });
     app.core.ui.preview.width = resp.response.rect.width();
-    crate::ui::a11y::panel_splitter(&resp.response.ctx, "soyuz.preview", tr!("app-a11y-resize-preview"));
+    crate::ui::a11y::panel_splitter(root, "soyuz.preview", tr!("app-a11y-resize-preview"));
     video::apply_audio_cmds(&mut app.core, &crate::host::EguiHost::new(&ctx));
     if close {
         app.core.ui.preview.toggle();

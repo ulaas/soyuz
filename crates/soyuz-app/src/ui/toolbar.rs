@@ -172,7 +172,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
 }
 
 fn history_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp, back: bool) {
-    let id = Id::new(("soyuz.history", back));
+    let id = Id::unique(("soyuz.history", back));
     if button.secondary_clicked() {
         Popup::open_id(ui.ctx(), id);
     }
@@ -293,7 +293,7 @@ fn sort_menu(_ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
 }
 
 fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
-    let id = Id::new("soyuz.dual.menu");
+    let id = Id::unique("soyuz.dual.menu");
     if button.secondary_clicked() {
         Popup::open_id(ui.ctx(), id);
     }
@@ -347,7 +347,7 @@ fn dual_menu(ui: &mut Ui, button: &egui::Response, app: &mut SoyuzApp) {
 /// Live filter for the focused pane.
 fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
     let p = palette(ui.ctx());
-    let id = Id::new("soyuz.filter");
+    let id = Id::unique("soyuz.filter");
     let focused = ui.memory(|m| m.has_focus(id));
     let pane = app.core.ws.pane_mut();
     let active = pane.filter_active();
@@ -391,7 +391,7 @@ fn filter(ui: &mut Ui, r: Rect, app: &mut SoyuzApp) {
             .hint_text(tr!("app-toolbar-filter"))
             .frame(Frame::NONE)
             .font(FontId::proportional(13.0))
-            .vertical_align(egui::Align::Center)
+            .align(egui::Align2::LEFT_CENTER)
             .min_size(vec2(0.0, inner.height()))
             .desired_width(inner.width()),
     );

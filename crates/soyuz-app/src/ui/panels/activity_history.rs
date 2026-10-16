@@ -125,7 +125,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                     let w = crate::ui::dialogs::conflict::tag(ui, at, tr!("panels-verified"), p.success);
                     ui.interact(
                         Rect::from_min_size(pos2(at.x, at.y - 8.0), vec2(w, 16.0)),
-                        Id::new(("soyuz.hist.verified", h.id.0)),
+                        Id::unique(("soyuz.hist.verified", h.id.0)),
                         Sense::hover(),
                     )
                     .on_hover_text(tr!("panels-history-verified-tip"));
@@ -144,25 +144,31 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
                 if h.undone {
                     let label = tr!("common-redo");
                     let rr = place(button_width(ui, label, 64.0));
-                    if small_button(ui, rr, Id::new(("soyuz.hist.redo", h.id.0)), label, true, p) {
+                    if small_button(ui, rr, Id::unique(("soyuz.hist.redo", h.id.0)), label, true, p) {
                         todo = Some((h.id, RowButton::Redo));
                     }
                 } else {
                     let label = tr!("common-undo");
                     let rr = place(button_width(ui, label, 64.0));
-                    if small_button(ui, rr, Id::new(("soyuz.hist.undo", h.id.0)), label, h.enabled(RowButton::Undo), p)
-                    {
+                    if small_button(
+                        ui,
+                        rr,
+                        Id::unique(("soyuz.hist.undo", h.id.0)),
+                        label,
+                        h.enabled(RowButton::Undo),
+                        p,
+                    ) {
                         todo = Some((h.id, RowButton::Undo));
                     }
                     if !h.undoable {
-                        ui.interact(rr, Id::new(("soyuz.hist.undo.tip", h.id.0)), Sense::hover())
+                        ui.interact(rr, Id::unique(("soyuz.hist.undo.tip", h.id.0)), Sense::hover())
                             .on_hover_text(tr!("panels-history-not-undoable-tip"));
                     }
                 }
                 if h.enabled(RowButton::RetryFailed) {
                     let label = tr!("panels-retry-failed");
                     let rr = place(button_width(ui, label, 92.0));
-                    if small_button(ui, rr, Id::new(("soyuz.hist.retry", h.id.0)), label, true, p) {
+                    if small_button(ui, rr, Id::unique(("soyuz.hist.retry", h.id.0)), label, true, p) {
                         todo = Some((h.id, RowButton::RetryFailed));
                     }
                 }

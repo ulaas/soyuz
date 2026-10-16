@@ -270,7 +270,7 @@ const ENTER_SECS: f64 = 0.2;
 /// Folder-enter transition: `(x offset, opacity)` for the pane's content. Entering
 /// a subfolder slides in from the right, going up from the left, other jumps only fade.
 pub fn enter_transition(ctx: &egui::Context, pane: u64, location: &soyuz_core::Location) -> (f32, f32) {
-    let id = egui::Id::new(("soyuz.looks.enter", pane));
+    let id = egui::Id::unique(("soyuz.looks.enter", pane));
     let loc = location.display();
     let now = ctx.input(|i| i.time);
     let prev: Option<Enter> = ctx.data(|d| d.get_temp(id));

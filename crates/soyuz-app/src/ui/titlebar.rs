@@ -213,10 +213,10 @@ fn window_state(ctx: &Context) -> WindowState {
 }
 
 /// Width of the sidebar panel last frame (the title bar is laid out before it).
-fn sidebar_column(ctx: &Context) -> Option<f32> {
-    let w = egui::containers::panel::PanelState::load(ctx, Id::new("soyuz.sidebar"))?.outer_rect.width();
+fn sidebar_column(ctx: &Context, sidebar: Id) -> Option<f32> {
+    let w = egui::containers::panel::PanelState::load(ctx, sidebar)?.outer_rect.width();
     // Re-layout once more when the sidebar width settles after a resize.
-    let key = Id::new("soyuz.titlebar.column");
+    let key = Id::unique("soyuz.titlebar.column");
     let last = ctx.data(|d| d.get_temp::<f32>(key));
     if last != Some(w) {
         ctx.data_mut(|d| d.insert_temp(key, w));
@@ -231,6 +231,8 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     let p = palette(&ctx);
     let chrome = app.gui.chrome;
     let ws = window_state(&ctx);
+    // The sidebar is shown in the same root `Ui`, after the title bar.
+    let sidebar = crate::ui::a11y::panel_id(root, "soyuz.sidebar");
     let lay = Panel::top("soyuz.titlebar")
         .exact_size(HEIGHT)
         .resizable(false)
@@ -238,13 +240,13 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window))
         .show(root, |ui| {
             let bar = ui.max_rect();
-            let column = if app.core.ui.sidebar_visible { sidebar_column(&ctx) } else { None };
+            let column = if app.core.ui.sidebar_visible { sidebar_column(&ctx, sidebar) } else { None };
             let leading = if chrome == Chrome::MacOverlay && !ws.fullscreen { MAC_TRAFFIC_LIGHTS } else { 0.0 };
             let lay = layout(bar, column, leading, chrome.own_frame());
 
             // Empty space: drag to move, double-click to maximize, right-click for the
             // window menu. Registered first so everything drawn on top takes precedence.
-            let bg = ui.interact(bar, Id::new("soyuz.titlebar.bg"), Sense::click_and_drag());
+            let bg = ui.interact(bar, Id::unique("soyuz.titlebar.bg"), Sense::click_and_drag());
             crate::ui::a11y::container(&ctx, bg.id, Role::TitleBar, "Soyuz");
             if bg.double_clicked() {
                 ctx.send_viewport_cmd(ViewportCommand::Maximized(!ws.maximized));
@@ -299,7 +301,7 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
     if btn.right() > col.right() {
         return; // no room (tiny window): leave the space to dragging
     }
-    let resp = ui.interact(btn, Id::new("soyuz.titlebar.brand"), Sense::click());
+    let resp = ui.interact(btn, Id::unique("soyuz.titlebar.brand"), Sense::click());
     crate::ui::a11y::button(&resp, tr!("app-titlebar-menu"));
     let hover = ctx.animate_bool_with_time(resp.id.with("h"), resp.hovered(), crate::theme::anim(&ctx, 0.10));
     let open = Popup::is_id_open(&ctx, Popup::default_response_id(&resp));
@@ -326,7 +328,7 @@ fn brand(ui: &mut Ui, col: Rect, compact_pad: bool, focused: bool, app: &mut Soy
 
 /// The app icon rendered at exactly `px` pixels (crisp at any scale), cached per size.
 fn logo_texture(ctx: &Context, px: u32) -> TextureHandle {
-    let id = Id::new(("soyuz.titlebar.logo", px));
+    let id = Id::unique(("soyuz.titlebar.logo", px));
     if let Some(t) = ctx.data(|d| d.get_temp::<TextureHandle>(id)) {
         return t;
     }
@@ -391,7 +393,7 @@ enum Glyph {
 /// above modal dialogs (like native caption buttons).
 fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
     let p = palette(ctx);
-    Area::new(Id::new("soyuz.titlebar.controls"))
+    Area::new(Id::unique("soyuz.titlebar.controls"))
         .order(Order::Tooltip)
         .fixed_pos(rect.min)
         .constrain(false)
@@ -422,7 +424,7 @@ fn controls(ctx: &Context, rect: Rect, ws: WindowState) {
                 (rclose, Glyph::Close, "close", tr!("app-titlebar-close")),
             ];
             for (r, glyph, key, label) in buttons {
-                let resp = ui.interact(r, Id::new(("soyuz.titlebar.ctl", key)), Sense::click());
+                let resp = ui.interact(r, Id::unique(("soyuz.titlebar.ctl", key)), Sense::click());
                 crate::ui::a11y::button(&resp, label);
                 let is_max = matches!(glyph, Glyph::Maximize | Glyph::Restore);
                 let hovered = resp.hovered() || (is_max && os_hover);
@@ -552,7 +554,7 @@ pub fn border_and_resize(ctx: &Context, focused: bool, resizable: bool) {
     } else {
         CornerRadius::ZERO
     };
-    ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("soyuz.window.border"))).rect_stroke(
+    ctx.layer_painter(LayerId::new(Order::Tooltip, Id::unique("soyuz.window.border"))).rect_stroke(
         screen,
         corner,
         Stroke::new(1.0, if ws.focused { p.border_strong } else { p.border_subtle }),
@@ -577,7 +579,7 @@ pub fn border_and_resize(ctx: &Context, focused: bool, resizable: bool) {
     ];
     let pressed = ctx.input(|i| i.pointer.primary_pressed());
     for (name, strip) in strips {
-        Area::new(Id::new(("soyuz.window.resize", name)))
+        Area::new(Id::unique(("soyuz.window.resize", name)))
             .order(Order::Tooltip)
             .fixed_pos(strip.min)
             .constrain(false)

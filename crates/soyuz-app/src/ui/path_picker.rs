@@ -74,7 +74,7 @@ impl PathPicker {
             .map(|(_, p)| (p.label, crate::ui::sidebar::place_glyph(p.role), p.path))
             .collect();
         let mut picker = PathPicker {
-            id: Id::new(("soyuz.picker", title.to_string())),
+            id: Id::unique(("soyuz.picker", title.to_string())),
             title: title.into(),
             mode,
             exts: exts.iter().map(|e| e.to_ascii_lowercase()).collect(),
@@ -269,7 +269,7 @@ impl PathPicker {
         let close = if crate::ui::native::active(ctx) {
             let mut w = crate::ui::native::dialog::DialogWindow::new(
                 picker_id.with("native"),
-                Id::new("soyuz.path_picker"),
+                Id::unique("soyuz.path_picker"),
                 &title,
             );
             w.icon = Some(glyph);

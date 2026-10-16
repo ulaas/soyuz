@@ -34,7 +34,7 @@ const DOC_PARAS: usize = 1_500;
 
 pub fn show(ui: &mut Ui, rect: Rect, rich: &Rich, entry: &EntryInfo, interactive: bool) -> Option<PreviewAction> {
     let p = palette(ui.ctx());
-    let id = Id::new(("soyuz.rich", interactive, entry.path.clone()));
+    let id = Id::unique(("soyuz.rich", interactive, entry.path.clone()));
     match rich {
         Rich::Office(o) => match o.as_ref() {
             Office::Doc(d) => doc(ui, rect, d, id, &p, interactive),
@@ -621,7 +621,7 @@ fn audio(
         ui.painter()
             .line_segment([pos2(x, wave.top() + 3.0), pos2(x, wave.bottom() - 3.0)], Stroke::new(1.5, p.accent));
     }
-    let wresp = ui.interact(wave, Id::new(("soyuz.audio.wave", &key, big)), Sense::click_and_drag());
+    let wresp = ui.interact(wave, Id::unique(("soyuz.audio.wave", &key, big)), Sense::click_and_drag());
     let wave_id = wresp.id;
     if playback
         && dur > 0.0
@@ -644,7 +644,7 @@ fn audio(
     let btn_x = if playback { inner.left() + 18.0 } else { inner.center().x };
     let btn = Rect::from_center_size(pos2(btn_x, y + 18.0), vec2(36.0, 36.0));
     if playback {
-        let bresp = ui.interact(btn, Id::new(("soyuz.audio.play", &key, big)), Sense::click());
+        let bresp = ui.interact(btn, Id::unique(("soyuz.audio.play", &key, big)), Sense::click());
         let fill = if bresp.hovered() { p.accent_hover } else { p.accent };
         ui.painter().circle_filled(btn.center(), 18.0, fill);
         let glyph = if playing { ph::PAUSE } else { ph::PLAY };
@@ -671,7 +671,7 @@ fn audio(
         let mut c =
             ui.new_child(UiBuilder::new().max_rect(cr).layout(egui::Layout::left_to_right(egui::Align::Center)));
         c.spacing_mut().item_spacing.x = 8.0;
-        let drag_id = Id::new(("soyuz.audio.vol", &key, big));
+        let drag_id = Id::unique(("soyuz.audio.vol", &key, big));
         let mut drag = ui.data(|d| d.get_temp::<Option<u8>>(drag_id)).flatten();
         let (mute_id, vol_change, mute_change, slider_id) =
             super::video::volume_cluster(&mut c, vol, muted, with_slider.then_some(slider_w), &mut drag);

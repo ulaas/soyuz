@@ -49,7 +49,7 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>, with_
 
 fn header(ui: &mut Ui, r: Rect, pane: &Pane, v: &mut ViewCtx<'_>) {
     let p = palette(ui.ctx());
-    let resp = ui.interact(r, Id::new(("soyuz.pane.header", pane.id.0)), Sense::click());
+    let resp = ui.interact(r, Id::unique(("soyuz.pane.header", pane.id.0)), Sense::click());
     if resp.clicked() {
         v.cmds.push(Cmd::FocusPane(pane.id));
     }
@@ -225,7 +225,7 @@ fn empty(
     subtitle: &str,
     hints: &[(&str, &str)],
 ) {
-    let bg = ui.interact(rect, Id::new(("soyuz.pane.empty", pane.id.0)), Sense::click());
+    let bg = ui.interact(rect, Id::unique(("soyuz.pane.empty", pane.id.0)), Sense::click());
     if bg.clicked() || bg.secondary_clicked() {
         v.cmds.push(Cmd::FocusPane(pane.id));
         pane.context = ContextTarget::Background;

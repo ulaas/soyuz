@@ -43,7 +43,7 @@ fn text_segmented(ui: &mut Ui, id: &str, labels: &[&str], selected: usize, cell_
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
         let r = egui::Rect::from_min_size(pos2(rect.left() + 2.0 + i as f32 * cell.x, rect.top() + 2.0), cell);
-        let resp = ui.interact(r, ui.id().with((id, i)), Sense::click());
+        let resp = ui.interact(r, ui.scope_id().with((id, i)), Sense::click());
         crate::ui::a11y::toggle(&resp, label, i == selected);
         let sel = i == selected;
         if sel {

@@ -52,7 +52,7 @@ pub fn begin_rename(tag: u8) {
 fn rename_editor(ui: &mut Ui, rect: egui::Rect, tag: u8) {
     let Some(mut r) = RENAMING.with_borrow_mut(Option::take) else { return };
     let p = palette(ui.ctx());
-    let id = egui::Id::new(("soyuz.tag_rename", tag));
+    let id = egui::Id::unique(("soyuz.tag_rename", tag));
     let has_focus = ui.memory(|m| m.has_focus(id));
     let (esc, enter) = if has_focus || r.select_all {
         ui.input(|i| (i.key_pressed(Key::Escape), i.key_pressed(Key::Enter)))
@@ -75,7 +75,7 @@ fn rename_editor(ui: &mut Ui, rect: egui::Rect, tag: u8) {
         .hint_text(tags::default_name(tag))
         .char_limit(TAG_NAME_MAX_CHARS)
         .frame(egui::Frame::NONE)
-        .vertical_align(egui::Align::Center)
+        .align(egui::Align2::LEFT_CENTER)
         .margin(Margin::symmetric(8, 2))
         .desired_width(rect.width() - 16.0);
     let out = ui.put(rect, te);

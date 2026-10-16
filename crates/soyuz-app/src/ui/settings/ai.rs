@@ -698,7 +698,7 @@ fn model_choice(ui: &mut Ui, st: &mut AiPageState, prof: &mut AiProfile, ai: &Ai
         }
     }
     // A custom id: edit it inline.
-    let flag = egui::Id::new(("soyuz.ai.model_custom", i));
+    let flag = egui::Id::unique(("soyuz.ai.model_custom", i));
     let mut editing = ui.ctx().data(|d| d.get_temp::<bool>(flag)).unwrap_or(false);
     if out.changed {
         editing = false;
@@ -899,7 +899,7 @@ fn headers_editor(ui: &mut Ui, prof: &mut AiProfile, i: usize) {
     if let Some(j) = remove {
         prof.headers.remove(&keys[j]);
     }
-    let id = egui::Id::new(("ai_new_header", i));
+    let id = egui::Id::unique(("ai_new_header", i));
     let mut new_key: String = ui.data(|d| d.get_temp(id)).unwrap_or_default();
     ui.horizontal(|ui| {
         code(ui, &mut new_key, "Header-Name", 160.0);
