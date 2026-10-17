@@ -525,6 +525,39 @@ pub(crate) fn open_default(path: &Path) -> FsResult<()> {
     launch_entry(app, &[Target::Path(path.to_path_buf())], "open", path)
 }
 
+/// A program to run rather than a document to open: a regular file with an execute bit
+/// whose content is an ELF executable (`ET_EXEC`, or `ET_DYN` for PIE binaries and
+/// AppImages). `*.so` / `*.so.N` libraries are `ET_DYN` too and are left out by name.
+pub(crate) fn is_runnable_binary(path: &Path) -> bool {
+    use std::io::Read;
+    use std::os::unix::fs::PermissionsExt;
+    let Ok(md) = std::fs::metadata(path) else { return false };
+    if !md.is_file() || md.permissions().mode() & 0o111 == 0 {
+        return false;
+    }
+    let name = path.file_name().map(|n| n.to_string_lossy()).unwrap_or_default();
+    if name.ends_with(".so") || name.contains(".so.") {
+        return false;
+    }
+    let mut head = [0u8; 18];
+    if std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_err() || head[..4] != *b"\x7fELF" {
+        return false;
+    }
+    // e_type at offset 16, in the byte order EI_DATA (offset 5) names: 2 = big endian.
+    let e_type =
+        if head[5] == 2 { u16::from_be_bytes([head[16], head[17]]) } else { u16::from_le_bytes([head[16], head[17]]) };
+    matches!(e_type, 2 | 3)
+}
+
+/// Run a program found by [`is_runnable_binary`], detached, in its own folder (on the
+/// host inside Flatpak).
+pub(crate) fn run_binary(path: &Path) -> FsResult<()> {
+    let token = take_activation_token();
+    let cwd = path.parent().filter(|d| d.is_dir());
+    let cmd = host_command(&[path.as_os_str().to_owned()], cwd, token.as_deref());
+    super::spawn_detached(cmd, "run", path)
+}
+
 /// Open `paths` with `app` (a desktop entry when `app.id` names one, else the generic
 /// `exec` + `args` launcher).
 pub(crate) fn open_with_many(paths: &[PathBuf], app: &AppInfo) -> FsResult<()> {
@@ -873,6 +906,31 @@ mod tests {
         let p = d.path().join("l.desktop");
         std::fs::write(&p, "[Desktop Entry]\nType=Link\nURL=file:///home/u/My%20Docs\n").unwrap();
         assert_eq!(desktop_target(&p).unwrap(), Some(PathBuf::from("/home/u/My Docs")));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn runnable_binaries() {
+        use std::os::unix::fs::PermissionsExt;
+        let d = tempfile::tempdir().unwrap();
+        let put = |name: &str, from: &Path, mode: u32| {
+            let p = d.path().join(name);
+            std::fs::copy(from, &p).unwrap();
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(mode)).unwrap();
+            p
+        };
+        // The test binary itself is an ELF executable.
+        let exe = std::env::current_exe().unwrap();
+        assert!(is_runnable_binary(&put("tool", &exe, 0o755)));
+        assert!(is_runnable_binary(&put("Tool-1.0-x86_64.AppImage", &exe, 0o755)));
+        assert!(!is_runnable_binary(&put("no-x-bit", &exe, 0o644)));
+        assert!(!is_runnable_binary(&put("libfoo.so", &exe, 0o755)));
+        assert!(!is_runnable_binary(&put("libfoo.so.1.2", &exe, 0o755)));
+        let script = d.path().join("src.sh");
+        std::fs::write(&script, "#!/bin/sh\necho hi\n").unwrap();
+        assert!(!is_runnable_binary(&put("run.sh", &script, 0o755)));
+        assert!(!is_runnable_binary(d.path()));
+        assert!(!is_runnable_binary(&d.path().join("missing")));
     }
 
     #[test]

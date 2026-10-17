@@ -338,6 +338,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 |---|---|---|---|
 | `remember_choice` | boolean | `true` | Open with… preselects the application last chosen for the same file type. |
 | `choose_when_unknown` | boolean | `true` | A file no application is registered for (an unknown type, or one without an extension) opens Open with… on Enter / double-click instead of an error; off = the error notification. |
+| `run_binaries` | boolean | `true` | Enter / double-click on a native program (Linux: an executable ELF binary or AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like any other file. Executable scripts and shared libraries are never run. |
 | `last_used` | table: name → string | `{}` | The application last chosen in Open with…, by extension (its `id`, else its program path; `"."` for files without an extension). Written by Soyuz. |
 
 ## `[[open.default_apps]]`

@@ -875,6 +875,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.open.choose_when_unknown);
             },
         );
+        r.row_kw(
+            tr!("settings-open-run-binaries"),
+            tr!("settings-open-run-binaries-desc"),
+            "run execute launch program binary executable appimage elf",
+            |ui| {
+                switch(ui, &mut d.open.run_binaries);
+            },
+        );
         r.block(tr!("settings-open-defaults"), tr!("settings-open-defaults-desc"), |ui| {
             default_apps_editor(ui, &mut d.open.default_apps);
         });

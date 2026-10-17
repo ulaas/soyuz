@@ -265,6 +265,7 @@ pub fn launch(app: &mut AppCore, path: &Path) {
     let postman = app.services.mailbox.postman();
     let rule = default_app(&app.config, path);
     let choose = app.config.open.choose_when_unknown;
+    let run = app.config.open.run_binaries;
     let path = path.to_path_buf();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Ok(Some(target)) = soyuz_fs::launch::shortcut_target(&path)
@@ -273,7 +274,12 @@ pub fn launch(app: &mut AppCore, path: &Path) {
             postman.send(UiMsg::OpenDir(target));
             return;
         }
-        match open_file(&path, rule.as_ref()) {
+        let opened = if run && soyuz_fs::launch::is_runnable_binary(&path) {
+            soyuz_fs::launch::run_binary(&path)
+        } else {
+            open_file(&path, rule.as_ref())
+        };
+        match opened {
             Ok(()) => {}
             // An unrecognized type (or one without an extension): let the user pick.
             Err(e) if choose && e.kind == soyuz_core::FsErrorKind::NoApplication => {

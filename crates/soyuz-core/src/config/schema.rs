@@ -541,6 +541,10 @@ pub struct OpenSection {
     /// extension) opens Open with… on Enter / double-click instead of an error; off = the
     /// error notification.
     pub choose_when_unknown: bool,
+    /// Enter / double-click on a native program (Linux: an executable ELF binary or
+    /// AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like
+    /// any other file. Executable scripts and shared libraries are never run.
+    pub run_binaries: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,

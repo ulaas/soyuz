@@ -55,6 +55,39 @@ pub fn open_default(path: &Path) -> FsResult<()> {
     }
 }
 
+/// Whether `path` is a native program to run instead of a document to open: on Linux /
+/// BSD an executable ELF binary or AppImage (scripts and shared libraries are not).
+/// Reads the file's header, so call it off the UI thread. Always `false` on Windows and
+/// macOS, where programs already start through [`open_default`].
+pub fn is_runnable_binary(path: &Path) -> bool {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::is_runnable_binary(path)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        let _ = path;
+        false
+    }
+}
+
+/// Run a program found by [`is_runnable_binary`] as a detached process, in its own folder.
+pub fn run_binary(path: &Path) -> FsResult<()> {
+    #[cfg(not(any(windows, target_os = "macos")))]
+    {
+        linux::run_binary(path)
+    }
+    #[cfg(any(windows, target_os = "macos"))]
+    {
+        Err(FsError::with_message(
+            soyuz_core::FsErrorKind::Unsupported,
+            "run",
+            Some(path),
+            "programs start through open_default on this platform",
+        ))
+    }
+}
+
 /// Open a URL (`https:`, `mailto:`, `file:` …) with the application registered for its
 /// scheme. Linux / BSD: `x-scheme-handler/<scheme>` (the OpenURI portal when sandboxed);
 /// macOS: LaunchServices; Windows: `file:` URLs only (other schemes go through the app's
