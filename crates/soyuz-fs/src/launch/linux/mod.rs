@@ -528,6 +528,7 @@ pub(crate) fn open_default(path: &Path) -> FsResult<()> {
 /// A program to run rather than a document to open: a regular file with an execute bit
 /// whose content is an ELF executable (`ET_EXEC`, or `ET_DYN` for PIE binaries and
 /// AppImages). `*.so` / `*.so.N` libraries are `ET_DYN` too and are left out by name.
+#[cfg(unix)]
 pub(crate) fn is_runnable_binary(path: &Path) -> bool {
     use std::io::Read;
     use std::os::unix::fs::PermissionsExt;
