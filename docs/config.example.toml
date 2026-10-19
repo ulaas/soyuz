@@ -39,6 +39,7 @@ high_contrast = false            # stronger text, borders and focus rings
 icon_style = "colored"           # colored | mono
 show_thumbnails = true
 thumbnail_size = 96
+list_end_space = 64              # blank space below the last item (points): room to right-click a full folder
 sidebar_width = 220
 custom_titlebar = true           # own title bar with the tabs in it (false: system title bar)
 backdrop = "none"                # none | mica | acrylic (Windows 11 only; applies at next start)

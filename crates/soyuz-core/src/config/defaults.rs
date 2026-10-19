@@ -100,6 +100,7 @@ impl Default for Appearance {
             icon_style: IconStyle::Colored,
             show_thumbnails: true,
             thumbnail_size: 96,
+            list_end_space: 64,
             sidebar_width: 220.0,
             custom_titlebar: true,
             backdrop: Backdrop::None,

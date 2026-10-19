@@ -130,6 +130,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `icon_style` | `"colored"` \| `"mono"` | `"colored"` | `colored` file-type icons or `mono` (single color; folder colors stay). |
 | `show_thumbnails` | boolean | `true` | Picture and video thumbnails in the grid and gallery views. |
 | `thumbnail_size` | integer | `96` | Default thumbnail edge in the grid view (points). |
+| `list_end_space` | integer | `64` | Blank space below the last item of a folder listing (points), so a full folder still has empty room to right-click for the folder menu (New folder, Paste, …). |
 | `sidebar_width` | float | `220.0` | Sidebar width in points (dragging its edge updates it). |
 | `custom_titlebar` | boolean | `true` | Soyuz draws its own title bar with the tabs in it; off = the system title bar. |
 | `backdrop` | `"none"` \| `"mica"` \| `"acrylic"` | `"none"` | Windows 11 window backdrop behind translucent surfaces (no-op elsewhere; read at start). (`none`: Opaque theme colors; `mica`: Mica: the desktop wallpaper, heavily blurred and tinted; `acrylic`: Acrylic: a blur of whatever is behind the window) |

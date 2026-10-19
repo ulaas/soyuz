@@ -193,6 +193,9 @@ pub struct Appearance {
     pub show_thumbnails: bool,
     /// Default thumbnail edge in the grid view (points).
     pub thumbnail_size: u32,
+    /// Blank space below the last item of a folder listing (points), so a full folder
+    /// still has empty room to right-click for the folder menu (New folder, Paste, …).
+    pub list_end_space: u32,
     /// Sidebar width in points (dragging its edge updates it).
     pub sidebar_width: f32,
     /// Soyuz draws its own title bar with the tabs in it; off = the system title bar.

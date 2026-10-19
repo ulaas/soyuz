@@ -152,6 +152,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.block(tr!("settings-appearance-density"), tr!("settings-appearance-density-desc"), |ui| {
             super::density_gallery::gallery(ui, &mut d.appearance.density);
         });
+        r.row_kw(
+            tr!("settings-appearance-list-end-space"),
+            tr!("settings-appearance-list-end-space-desc"),
+            "blank empty padding bottom right-click context menu new folder",
+            |ui| {
+                number(ui, &mut d.appearance.list_end_space, 0..=400, " px");
+            },
+        );
         r.row_kw(tr!("settings-terminal-font-size"), tr!("settings-appearance-font-size-desc"), "text scale", |ui| {
             number(ui, &mut d.appearance.font_size, 11.0..=17.0, " pt");
         });

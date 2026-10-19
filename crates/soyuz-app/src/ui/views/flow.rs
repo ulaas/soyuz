@@ -169,7 +169,9 @@ fn body(
 ) {
     let p = palette(ui.ctx());
     let origin = ui.min_rect().min;
-    ui.set_min_size(vec2(g.content_w, g.header_h + layout.total_h));
+    // Room below the last item, so a full folder still has empty space to right-click.
+    let end_space = v.config.appearance.list_end_space.min(400) as f32;
+    ui.set_min_size(vec2(g.content_w, g.header_h + layout.total_h + end_space));
     let vis = Rect::from_min_size(origin + viewport.min.to_vec2(), viewport.size());
     let list_top = origin.y + g.header_h;
     let to_layout = |pos: Pos2| crate::geom::pt(pos.x - origin.x, pos.y - list_top);
