@@ -156,6 +156,16 @@ action-preview-page-down = Preview page down
 action-preview-page-down-desc = Scroll the preview pane down one page (terminal UI)
 action-context-menu = Open context menu
 action-context-menu-desc = Show the menu of the focused item, like a right click (terminal UI)
+action-new-smart-folder = New smart folder
+action-new-smart-folder-desc = Save an index query as a folder in the sidebar that stays up to date
+action-save-search-as-smart-folder = Save search as smart folder
+action-save-search-as-smart-folder-desc = Keep the search shown in this pane as a smart folder in the sidebar
+action-index-settings = Index settings
+action-index-settings-desc = Index status, indexed folders and smart folder options
+action-rebuild-index = Rebuild index
+action-rebuild-index-desc = Forget the file index and crawl the indexed folders again
+action-toggle-index = Turn file indexing on or off
+action-toggle-index-desc = A local index of the indexed folders makes searches instant and keeps smart folders live
 action-toggle-ai-panel = Toggle AI assistant
 action-toggle-ai-panel-desc = Show or hide the AI assistant panel
 action-toggle-status-bar = Toggle status bar
@@ -558,6 +568,8 @@ actions-high-contrast-off = High contrast off
 actions-screen-reader-on = Screen-reader mode on
 actions-screen-reader-off = Screen-reader mode off
 actions-config-create-failed = Couldn't create the config file
+actions-index-on = File indexing is on
+actions-index-off = File indexing is off
 # $action: an action title.
 actions-coming-soon = { $action } is coming soon
 

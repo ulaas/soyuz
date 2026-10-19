@@ -451,6 +451,16 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         }
         A::ReloadConfig => crate::services::config_watch::reload_now(app, host),
         A::ContextMenu => app.frontend.push(FrontendCmd::View(ViewRequest::ContextMenu)),
+        A::NewSmartFolder => app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::Edit(None))),
+        A::SaveSearchAsSmartFolder => app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::FromSearch)),
+        A::IndexSettings => app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::OpenSettings)),
+        A::RebuildIndex => app.cmds.push(Cmd::Smart(crate::models::smart::SmartCmd::RebuildIndex)),
+        A::ToggleIndex => {
+            let on = !app.config.search.index.enabled;
+            crate::models::settings::update_config(app, host, |c| c.search.index.enabled = on);
+            let msg = if on { tr!("actions-index-on") } else { tr!("actions-index-off") };
+            app.ui.toasts.push(Toast::info(msg));
+        }
         A::FocusActivityPanel => app.frontend.push(FrontendCmd::View(ViewRequest::FocusActivity)),
         A::PreviewScrollUp | A::PreviewScrollDown | A::PreviewPageUp | A::PreviewPageDown => {
             let step = match action {

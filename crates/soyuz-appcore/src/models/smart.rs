@@ -233,6 +233,17 @@ pub fn apply(app: &mut AppCore, cmd: SmartCmd) {
     }
 }
 
+/// Hide index actions that can't do anything right now: Rebuild while indexing is off,
+/// Save search when the focused pane shows no search.
+pub fn palette_shows(app: &AppCore, a: &soyuz_core::config::Action) -> bool {
+    use soyuz_core::config::Action as A;
+    match a {
+        A::RebuildIndex => ix::is_enabled(),
+        A::SaveSearchAsSmartFolder => matches!(app.ws.pane().location, Location::Search(_)),
+        _ => true,
+    }
+}
+
 /// Register the search behind smart folder `i` and show it.
 fn open(app: &mut AppCore, i: usize, new_tab: bool) {
     let Some(f) = folders().get(i).cloned() else { return };

@@ -238,6 +238,7 @@ fn palette_actions(app: &AppCore) -> Vec<Action> {
                 && crate::models::workspaces::palette_shows(app, a)
                 && crate::models::media_tools::palette_shows(app, a)
                 && crate::services::updates::ffmpeg_runtime::palette_shows(a)
+                && crate::models::smart::palette_shows(app, a)
         })
         .collect();
     v.extend(

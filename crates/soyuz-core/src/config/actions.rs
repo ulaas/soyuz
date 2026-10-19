@@ -114,6 +114,8 @@ define_actions! {
         AiOrganize, AiSuggestNames, AiSummarize, AiExplainFolder, AiFindRelated, AiSmartSearch,
         AiAuditLog, AiRecipes, AiStop,
         OpenScripts, ReloadScripts, OpenAutomations, ContextMenu,
+        // The file index and smart folders (`models::smart`).
+        NewSmartFolder, SaveSearchAsSmartFolder, IndexSettings, RebuildIndex, ToggleIndex,
         // Fetch the FFmpeg libraries (`services::updates::ffmpeg_runtime`, Phase V4c).
         DownloadFfmpegRuntime,
         // The built-in editors (`KeyContext::Editor`, see [`Action::is_editor`]).

@@ -155,6 +155,16 @@ action-preview-page-down = Önizlemede sayfa aşağı
 action-preview-page-down-desc = Önizleme bölmesini bir sayfa aşağı kaydır (terminal arayüzü)
 action-context-menu = Bağlam menüsünü aç
 action-context-menu-desc = Odaktaki öğenin menüsünü sağ tıklama gibi göster (terminal arayüzü)
+action-new-smart-folder = Yeni akıllı klasör
+action-new-smart-folder-desc = Bir dizin sorgusunu kenar çubuğunda güncel kalan bir klasör olarak kaydet
+action-save-search-as-smart-folder = Aramayı akıllı klasör olarak kaydet
+action-save-search-as-smart-folder-desc = Bu bölmede gösterilen aramayı kenar çubuğunda akıllı klasör olarak sakla
+action-index-settings = Dizin ayarları
+action-index-settings-desc = Dizin durumu, dizinlenen klasörler ve akıllı klasör seçenekleri
+action-rebuild-index = Dizini yeniden oluştur
+action-rebuild-index-desc = Dosya dizinini unut ve dizinlenen klasörleri yeniden tara
+action-toggle-index = Dosya dizinlemeyi aç veya kapat
+action-toggle-index-desc = Dizinlenen klasörlerin yerel dizini aramaları anında yapar ve akıllı klasörleri canlı tutar
 action-toggle-ai-panel = AI asistanını göster/gizle
 action-toggle-ai-panel-desc = AI asistanı panelini göster veya gizle
 action-toggle-status-bar = Durum çubuğunu göster/gizle
@@ -557,6 +567,8 @@ actions-high-contrast-off = Yüksek karşıtlık kapalı
 actions-screen-reader-on = Ekran okuyucu kipi açık
 actions-screen-reader-off = Ekran okuyucu kipi kapalı
 actions-config-create-failed = Yapılandırma dosyası oluşturulamadı
+actions-index-on = Dosya dizinleme açık
+actions-index-off = Dosya dizinleme kapalı
 # $action: eylem başlığı.
 actions-coming-soon = “{ $action }” yakında kullanıma sunulacak
 
