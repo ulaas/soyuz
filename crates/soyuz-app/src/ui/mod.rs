@@ -38,6 +38,7 @@ pub mod smart;
 pub mod smart_settings;
 pub mod statusbar;
 pub mod tabstrip;
+pub mod text_clipboard;
 pub mod titlebar;
 pub mod toasts;
 pub mod toolbar;

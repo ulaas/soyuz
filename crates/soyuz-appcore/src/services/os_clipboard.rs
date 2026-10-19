@@ -115,12 +115,35 @@ pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> bool {
     }
 }
 
-/// Put plain text on the system clipboard directly (Windows: `CF_UNICODETEXT` through
-/// raw user32 calls). Returns `false` where this module has no direct text path (other
-/// OSes) or the write failed; the frontend then relies on its own mechanism (the GUI
-/// toolkit's clipboard, OSC 52 in the terminal UI).
-pub fn set_text(text: &str) -> bool {
+/// Whether [`set_text`] / [`get_text`] reach the system clipboard right now (never
+/// blocks): Windows always; Linux once the native backend (Wayland `ext-data-control-v1`
+/// or X11) has been probed and works; never on other OSes or while the system clipboard
+/// is off.
+pub fn text_available() -> bool {
     if !system() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        true
+    }
+    #[cfg(target_os = "linux")]
+    {
+        imp::native_ready()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        false
+    }
+}
+
+/// Put plain text on the system clipboard directly (Windows: `CF_UNICODETEXT` through
+/// raw user32 calls; Linux: the native selection, written on a background thread).
+/// Returns `false` where this module has no direct text path ([`text_available`]) or the
+/// write failed; the frontend then relies on its own mechanism (the GUI toolkit's
+/// in-process clipboard, OSC 52 in the terminal UI).
+pub fn set_text(text: &str) -> bool {
+    if !text_available() {
         return false;
     }
     #[cfg(windows)]
@@ -131,7 +154,17 @@ pub fn set_text(text: &str) -> bool {
             false
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let text = text.to_owned();
+        imp::write_async(move || {
+            if let Err(e) = imp::native::set_text(&text) {
+                log::debug!("os clipboard: cannot set text: {e}");
+            }
+        });
+        true
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = text;
         false
@@ -139,19 +172,23 @@ pub fn set_text(text: &str) -> bool {
 }
 
 /// The system clipboard's plain text, read directly (Windows: `CF_UNICODETEXT` through raw
-/// user32 calls, for the terminal UI's Ctrl+Shift+V in the terminal pane). `None` where
-/// this module has no direct text path (other OSes: the terminal emulator pastes there),
-/// when the clipboard holds no text, or while the system clipboard is off
+/// user32 calls; Linux: the native selection, one bounded round trip unless the text is
+/// our own). `None` where this module has no direct text path ([`text_available`]), when
+/// the clipboard holds no text, or while the system clipboard is off
 /// ([`set_system_clipboard`], the headless tests).
 pub fn get_text() -> Option<String> {
-    if !system() {
+    if !text_available() {
         return None;
     }
     #[cfg(windows)]
     {
         imp::get_text()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        imp::get_text()
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         None
     }

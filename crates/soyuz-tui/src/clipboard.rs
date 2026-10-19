@@ -2,9 +2,9 @@
 //!
 //! `TuiHost::copy_text` calls [`copy`]:
 //! * the **local** clipboard is written directly where the core has a text path for it
-//!   (Windows: `CF_UNICODETEXT` through `services::os_clipboard::set_text`, raw user32).
-//!   Elsewhere there is none (the GUI uses its toolkit's clipboard), so OSC 52 carries
-//!   the text. Over SSH the local clipboard belongs to the remote machine and is skipped.
+//!   (`services::os_clipboard::set_text`: Windows `CF_UNICODETEXT` through raw user32,
+//!   Linux the native Wayland / X11 selection when the desktop offers one).
+//!   Elsewhere there is none, so OSC 52 carries the text. Over SSH the local clipboard belongs to the remote machine and is skipped.
 //! * **OSC 52** asks the terminal to set the clipboard of the machine it runs on
 //!   (Windows Terminal, kitty, WezTerm, iTerm2, foot, Alacritty, xterm with
 //!   `allowWindowOps`, tmux with `set-clipboard`): `always`, `never`, or `auto` = over SSH
@@ -63,7 +63,7 @@ pub fn copy(text: &str, policy: TuiOsc52, env: &Env, local: bool) -> Option<Vec<
     if send_osc52(policy, env, local_ok) { osc52(text, env) } else { None }
 }
 
-/// The local clipboard (Windows only; `false` elsewhere).
+/// The local clipboard (Windows; Linux with a native Wayland / X11 backend; `false` elsewhere).
 fn set_local(text: &str) -> bool {
     soyuz_appcore::services::os_clipboard::set_text(text)
 }

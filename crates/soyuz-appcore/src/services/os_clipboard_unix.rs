@@ -291,6 +291,29 @@ pub(super) fn paste_keys_down() -> Option<(bool, bool, bool)> {
     None
 }
 
+/// The native backend has been probed and works (never blocks; starts the probe when it
+/// has not run yet).
+#[cfg(target_os = "linux")]
+pub(super) fn native_ready() -> bool {
+    match native::probed() {
+        Some(b) => b.is_some(),
+        None => {
+            probe_in_background();
+            false
+        }
+    }
+}
+
+/// The clipboard's text, after pending background writes have landed.
+#[cfg(target_os = "linux")]
+pub(super) fn get_text() -> Option<String> {
+    wait_writes();
+    native::get_text().unwrap_or_else(|e| {
+        log::debug!("clipboard: {e}");
+        None
+    })
+}
+
 /// Probe the native clipboard on a helper thread (once).
 #[cfg(target_os = "linux")]
 pub(super) fn probe_in_background() {
@@ -311,7 +334,7 @@ pub(super) mod native {
 
     use parking_lot::Mutex;
 
-    use super::super::{SelectionOwner, files_from_selection, selection_formats, wayland, x11};
+    use super::super::{SelectionOwner, TEXT_TYPES, files_from_selection, selection_formats, wayland, x11};
     use crate::ops::fileops::clipboard::ClipMode;
 
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -344,32 +367,73 @@ pub(super) mod native {
         })
     }
 
+    /// What this process put on the clipboard.
+    enum Content {
+        Files(ClipMode, Vec<PathBuf>),
+        Text(String),
+    }
+
     /// What this process currently holds on the clipboard (until another app takes it).
     struct Owned {
-        mode: ClipMode,
-        paths: Vec<PathBuf>,
+        content: Content,
         owner: SelectionOwner,
     }
 
     static OWNED: Mutex<Option<Owned>> = Mutex::new(None);
 
-    fn owned() -> Option<(ClipMode, Vec<PathBuf>)> {
+    /// Our selection's content, while it is still ours.
+    fn owned<R>(f: impl FnOnce(&Content) -> R) -> Option<R> {
         let g = OWNED.lock();
-        g.as_ref().filter(|o| o.owner.alive.load(Ordering::SeqCst)).map(|o| (o.mode, o.paths.clone()))
+        g.as_ref().filter(|o| o.owner.alive.load(Ordering::SeqCst)).map(|o| f(&o.content))
     }
 
-    pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
-        let formats = selection_formats(mode, paths);
+    fn files_of(c: &Content) -> Option<(ClipMode, Vec<PathBuf>)> {
+        match c {
+            Content::Files(mode, paths) => Some((*mode, paths.clone())),
+            Content::Text(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    fn owned_files() -> Option<(ClipMode, Vec<PathBuf>)> {
+        owned(files_of).flatten()
+    }
+
+    fn set(content: Content, formats: Vec<(String, Vec<u8>)>) -> Result<(), String> {
         let owner = match backend() {
             Some(Backend::Wayland) => wayland::set(formats)?,
             Some(Backend::X11) => x11::set(formats)?,
             None => return Err(tr!("services-clipboard-unavailable").into()),
         };
         // The new selection replaces the previous one; make sure its thread ends.
-        if let Some(old) = OWNED.lock().replace(Owned { mode, paths: paths.to_vec(), owner }) {
+        if let Some(old) = OWNED.lock().replace(Owned { content, owner }) {
             old.owner.release.store(true, Ordering::SeqCst);
         }
         Ok(())
+    }
+
+    pub fn set_files(mode: ClipMode, paths: &[PathBuf]) -> Result<(), String> {
+        set(Content::Files(mode, paths.to_vec()), selection_formats(mode, paths))
+    }
+
+    pub fn set_text(text: &str) -> Result<(), String> {
+        let formats = TEXT_TYPES.iter().map(|t| (t.to_string(), text.as_bytes().to_vec())).collect();
+        set(Content::Text(text.to_owned()), formats)
+    }
+
+    /// `Ok(None)`: the clipboard holds no text.
+    pub fn get_text() -> Result<Option<String>, String> {
+        // Our own selection: no round trip through the display server.
+        if let Some(r) = owned(|c| match c {
+            Content::Text(t) => Some(t.clone()),
+            Content::Files(_, paths) => Some(super::super::paths_text(paths)),
+        }) {
+            return Ok(r);
+        }
+        read(|types, rd| {
+            let t = TEXT_TYPES.iter().find(|t| types.iter().any(|x| x == *t))?;
+            Some(String::from_utf8_lossy(&rd(t)?).into_owned())
+        })
     }
 
     /// Run `f` with the selection's types and a reader (see the backends' `read`).
@@ -384,8 +448,8 @@ pub(super) mod native {
     /// `Ok(None)`: the clipboard holds no files.
     pub fn read_files() -> Result<Option<(ClipMode, Vec<PathBuf>)>, String> {
         // Our own selection: no round trip through the display server.
-        if let Some(r) = owned() {
-            return Ok(Some(r));
+        if let Some(r) = owned(files_of) {
+            return Ok(r);
         }
         read(|types, rd| files_from_selection(types, rd))
     }
@@ -397,7 +461,7 @@ pub(super) mod native {
         {
             let mut g = OWNED.lock();
             if let Some(o) = g.as_ref().filter(|o| o.owner.alive.load(Ordering::SeqCst)) {
-                if o.mode == ClipMode::Cut {
+                if matches!(o.content, Content::Files(ClipMode::Cut, _)) {
                     o.owner.release.store(true, Ordering::SeqCst);
                     *g = None;
                 }
@@ -449,7 +513,7 @@ pub(super) mod native {
             assert_eq!(through_server(), Some((ClipMode::Copy, vec![a.clone()])), "a copy stays");
             set_files(ClipMode::Cut, std::slice::from_ref(&a)).unwrap();
             clear_if_cut().unwrap();
-            assert_eq!(owned(), None);
+            assert_eq!(owned_files(), None);
             let start = std::time::Instant::now();
             while through_server().is_some() && start.elapsed() < std::time::Duration::from_secs(2) {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -480,7 +544,7 @@ pub(super) mod native {
             let paths = vec![a.clone(), c.clone()];
 
             set_files(ClipMode::Cut, &paths).unwrap();
-            assert_eq!(owned(), Some((ClipMode::Cut, paths.clone())));
+            assert_eq!(owned_files(), Some((ClipMode::Cut, paths.clone())));
             // Through the display server (not the in-process shortcut).
             let got = read(|types, rd| files_from_selection(types, rd)).unwrap();
             assert_eq!(got, Some((ClipMode::Cut, paths.clone())));

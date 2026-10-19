@@ -284,8 +284,9 @@ fn key(app: &mut App, ev: &Event, k: &KeyEvent) {
 }
 
 /// Ctrl+Shift+V (Alt+Shift+V on terminals that drop Shift with Ctrl): paste the local
-/// clipboard's text (`os_clipboard::get_text`, Windows; elsewhere the key goes on to the
-/// shell and the terminal emulator's own paste arrives as `Event::Paste`).
+/// clipboard's text (`os_clipboard::get_text`: Windows, Linux with a native backend; else
+/// the key goes on to the shell and the terminal emulator's own paste arrives as
+/// `Event::Paste`).
 pub fn is_paste_chord(k: &KeyEvent) -> bool {
     let m = k.modifiers;
     matches!(k.code, KeyCode::Char('v' | 'V'))
