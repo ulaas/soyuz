@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.4.3" date="2026-10-19" type="development">
+      <description>
+        <p>Ctrl+C and Ctrl+V in the address bar, rename fields and other text now use the system
+          clipboard, pasting a copied picture saves it as a PNG file again, and every folder
+          listing ends with blank space to right-click for New folder and Paste. Executable
+          programs and AppImages start on Enter or double-click.</p>
+      </description>
+    </release>
     <release version="0.4.2" date="2026-10-16" type="development">
       <description>
         <p>Built on egui 0.37: colour emoji, kinetic scrolling with rubber-banding, and pasting a
