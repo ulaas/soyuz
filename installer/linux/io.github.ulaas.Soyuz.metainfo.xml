@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.4.4" date="2026-10-20" type="development">
+      <description>
+        <p>System folders such as AppData, ProgramData and Temp on Windows, and ~/.config,
+          ~/.local/share, ~/.cache and /tmp on Linux, appear below the favorites after a System
+          divider that hides them; Settings picks which ones show.</p>
+      </description>
+    </release>
     <release version="0.4.3" date="2026-10-19" type="development">
       <description>
         <p>Ctrl+C and Ctrl+V in the address bar, rename fields and other text now use the system
