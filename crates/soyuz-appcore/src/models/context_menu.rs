@@ -160,10 +160,11 @@ pub struct MenuCtx<'a> {
     pub checkbox_mode: bool,
 }
 
-/// Whether Paste has something to paste: Soyuz's own clipboard or files on the system
-/// clipboard.
+/// Whether Paste has something to paste: Soyuz's own clipboard, or files or a picture on
+/// the system clipboard.
 pub fn has_clip(fileops: &FileOps) -> bool {
-    !fileops.clipboard.is_empty() || crate::services::os_clipboard::has_files()
+    use crate::services::os_clipboard as os;
+    !fileops.clipboard.is_empty() || os::has_files() || os::has_image()
 }
 
 /// Carry out an activated entry.

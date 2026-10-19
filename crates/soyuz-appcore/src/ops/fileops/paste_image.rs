@@ -1,11 +1,13 @@
 //! Paste a picture from the system clipboard (a screenshot, an image copied in a browser
 //! or an editor) into a folder as a PNG file (`[behaviour] paste_images`).
 //!
-//! The frontend hands the clipboard image over with [`offer`] in the frame its Ctrl+V
-//! arrives (the GUI gets it from egui's image-paste event), then the Paste action runs as
-//! usual. [`take`] gives the image to the paste only when the system clipboard holds no
-//! files and the image is fresh, so an image never wins over copied files, and an image
-//! that came with a key press handled elsewhere does not turn up on a later paste.
+//! The paste reads the picture itself when the system clipboard holds no files
+//! (`services::os_clipboard::with_paste`: Windows `PNG` / `CF_DIBV5` / `CF_DIB` through
+//! raw user32, Linux an `image/*` type of the native selection; [`from_clipboard`]), so an
+//! image never wins over copied files. A frontend whose toolkit already delivers image
+//! pastes can hand one over with [`offer`] in the frame its Ctrl+V arrives; [`take`] gives
+//! it to the paste only while fresh, so an image that came with a key press handled
+//! elsewhere does not turn up on a later paste.
 //!
 //! Encoding runs on a worker thread into a temporary file; the file then goes into the
 //! folder through a `Create` job copying it (`CreateKind::File { template }`), so the
@@ -59,6 +61,17 @@ pub fn offer(app: &mut AppCore, width: u32, height: u32, pixels: Pixels) {
 pub fn take(app: &mut AppCore) -> Option<PastedImage> {
     let img = app.fileops.pasted_image.take()?;
     (app.config.behaviour.paste_images && img.at.elapsed() < FRESH).then_some(img)
+}
+
+/// The picture read from the system clipboard by the paste itself (decoded on the
+/// encoder thread), when `[behaviour] paste_images` is on.
+pub fn from_clipboard(app: &AppCore, img: crate::services::os_clipboard::ClipImage) -> Option<PastedImage> {
+    app.config.behaviour.paste_images.then(|| PastedImage {
+        width: img.width,
+        height: img.height,
+        pixels: Box::new(move || img.decode()),
+        at: Instant::now(),
+    })
 }
 
 /// The file name for an image pasted at `now` (`Pasted image 2026-10-16 143012.png`).

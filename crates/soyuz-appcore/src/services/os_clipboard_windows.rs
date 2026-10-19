@@ -18,7 +18,9 @@ use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetActiveWindow, GetAsyncK
 use super::{build_dropfiles, drop_effect, mode_from_effect, parse_dropfiles, paths_text};
 use crate::ops::fileops::clipboard::ClipMode;
 
+const CF_DIB: u32 = 8;
 const CF_UNICODETEXT: u32 = 13;
+const CF_DIBV5: u32 = 17;
 const CF_HDROP: u32 = 15;
 const VK_SHIFT: i32 = 0x10;
 const VK_CONTROL: i32 = 0x11;
@@ -189,6 +191,41 @@ pub(super) fn get_text() -> Option<String> {
     let units: Vec<u16> =
         bytes.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes(*c)).take_while(|&u| u != 0).collect();
     Some(String::from_utf16_lossy(&units))
+}
+
+/// The picture formats we read, preferred first: `"PNG"` (browsers, Office, Snipping
+/// Tool; keeps alpha), then `CF_DIBV5` / `CF_DIB` (everyone; Windows synthesizes one
+/// from the other).
+fn image_formats() -> [u32; 3] {
+    [register("PNG"), CF_DIBV5, CF_DIB]
+}
+
+pub(super) fn has_image() -> bool {
+    // SAFETY: plain queries, no clipboard session needed.
+    image_formats().into_iter().any(|f| f != 0 && unsafe { IsClipboardFormatAvailable(f) } != 0)
+}
+
+/// The clipboard's picture, still encoded: PNG bytes, or a DIB turned into a BMP file.
+pub(super) fn get_image() -> Option<(Vec<u8>, image::ImageFormat)> {
+    if !has_image() {
+        return None;
+    }
+    let [png, ..] = image_formats();
+    let s = Session::open().ok()?;
+    for f in image_formats() {
+        // SAFETY: plain query (session open).
+        if f == 0 || unsafe { IsClipboardFormatAvailable(f) } == 0 {
+            continue;
+        }
+        let Some(bytes) = get_bytes(&s, f) else { continue };
+        if f == png {
+            return Some((bytes, image::ImageFormat::Png));
+        }
+        if let Some(bmp) = super::dib_to_bmp(&bytes) {
+            return Some((bmp, image::ImageFormat::Bmp));
+        }
+    }
+    None
 }
 
 pub(super) fn has_files() -> bool {

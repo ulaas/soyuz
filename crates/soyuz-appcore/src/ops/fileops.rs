@@ -373,13 +373,25 @@ pub fn paste_into(app: &mut AppCore, dest: PathBuf) {
 /// lives in another process on Linux, so the paste may run a few frames later
 /// ([`crate::services::os_clipboard::with_files`]).
 pub fn paste_into_with(app: &mut AppCore, dest: PathBuf, verify: bool) {
-    crate::services::os_clipboard::with_files(app, Box::new(move |app, os| paste_files(app, os, dest, verify)));
+    let images = app.config.behaviour.paste_images;
+    crate::services::os_clipboard::with_paste(
+        app,
+        images,
+        Box::new(move |app, os, img| paste_files(app, os, img, dest, verify)),
+    );
 }
 
-fn paste_files(app: &mut AppCore, os: crate::services::os_clipboard::Files, dest: PathBuf, verify: bool) {
-    // Files on the system clipboard win; otherwise a picture just pasted from it (the
-    // user's latest copy) goes before Soyuz's own clipboard.
-    let image = if os.is_none() { paste_image::take(app) } else { None };
+fn paste_files(
+    app: &mut AppCore,
+    os: crate::services::os_clipboard::Files,
+    img: Option<crate::services::os_clipboard::ClipImage>,
+    dest: PathBuf,
+    verify: bool,
+) {
+    // Files on the system clipboard win; otherwise a picture on it (the user's latest
+    // copy) goes before Soyuz's own clipboard.
+    let image =
+        if os.is_none() { paste_image::take(app).or_else(|| paste_image::from_clipboard(app, img?)) } else { None };
     if let Some(img) = image {
         paste_image::save(app, img, dest);
         return;

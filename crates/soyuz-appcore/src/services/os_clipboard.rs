@@ -215,21 +215,38 @@ pub fn get_files() -> Files {
 /// waits for the clipboard owner (another process), so it runs on a worker thread and
 /// `then` runs from [`pump`] once it lands, at most a few frames later.
 pub fn with_files(app: &mut crate::core::AppCore, then: Then) {
+    with_paste(app, false, Box::new(move |app, files, _| then(app, files)));
+}
+
+/// What a paste does with the clipboard's files, or its picture when it holds no files.
+pub type PasteThen = Box<dyn FnOnce(&mut crate::core::AppCore, Files, Option<ClipImage>) + Send>;
+
+/// [`with_files`], also reading the clipboard's picture when it holds no files and
+/// `image` is set (the paste's `[behaviour] paste_images`).
+pub fn with_paste(app: &mut crate::core::AppCore, image: bool, then: PasteThen) {
+    let read = move || {
+        let files = get_files();
+        let img = if files.is_none() && image { get_image() } else { None };
+        (files, img)
+    };
     #[cfg(windows)]
-    then(app, get_files());
+    {
+        let (files, img) = read();
+        then(app, files, img);
+    }
     #[cfg(not(windows))]
     {
         let (tx, rx) = crossbeam_channel::bounded(1);
         let wake = app.services.mailbox.postman().wake();
         let spawned = std::thread::Builder::new().name("soyuz-clip-read".into()).spawn(move || {
-            let _ = tx.send(get_files());
+            let _ = tx.send(read());
             wake();
         });
         match spawned {
             Ok(_) => PENDING.lock().push(rx, then),
             Err(e) => {
                 log::debug!("os clipboard: cannot start the reader: {e}");
-                then(app, None);
+                then(app, None, None);
             }
         }
     }
@@ -240,8 +257,8 @@ pub fn pump(app: &mut crate::core::AppCore) {
     #[cfg(not(windows))]
     {
         let ready = PENDING.lock().take_ready();
-        for (then, files) in ready {
-            then(app, files);
+        for (then, (files, img)) in ready {
+            then(app, files, img);
         }
     }
     #[cfg(windows)]
@@ -250,40 +267,152 @@ pub fn pump(app: &mut crate::core::AppCore) {
 
 /// Clipboard reads in flight, in request order.
 #[cfg_attr(windows, allow(dead_code))]
-struct Pending<T> {
-    reads: Vec<(crossbeam_channel::Receiver<Files>, T)>,
+struct Pending<T, R = Files> {
+    reads: Vec<(crossbeam_channel::Receiver<R>, T)>,
 }
 
 #[cfg_attr(windows, allow(dead_code))]
-impl<T> Pending<T> {
+impl<T, R: Default> Pending<T, R> {
     const fn new() -> Self {
         Pending { reads: Vec::new() }
     }
 
-    fn push(&mut self, rx: crossbeam_channel::Receiver<Files>, then: T) {
+    fn push(&mut self, rx: crossbeam_channel::Receiver<R>, then: T) {
         self.reads.push((rx, then));
     }
 
     /// The finished reads at the front of the queue (later ones wait for earlier ones, so
     /// two pastes run in the order they were asked for). A reader that died counts as
-    /// "no files".
-    fn take_ready(&mut self) -> Vec<(T, Files)> {
+    /// "nothing on the clipboard".
+    fn take_ready(&mut self) -> Vec<(T, R)> {
         let mut out = Vec::new();
         while let Some((rx, _)) = self.reads.first() {
-            let files = match rx.try_recv() {
+            let got = match rx.try_recv() {
                 Ok(f) => f,
                 Err(crossbeam_channel::TryRecvError::Empty) => break,
-                Err(crossbeam_channel::TryRecvError::Disconnected) => None,
+                Err(crossbeam_channel::TryRecvError::Disconnected) => R::default(),
             };
             let (_, then) = self.reads.remove(0);
-            out.push((then, files));
+            out.push((then, got));
         }
         out
     }
 }
 
 #[cfg(not(windows))]
-static PENDING: parking_lot::Mutex<Pending<Then>> = parking_lot::Mutex::new(Pending::new());
+static PENDING: parking_lot::Mutex<Pending<PasteThen, (Files, Option<ClipImage>)>> =
+    parking_lot::Mutex::new(Pending::new());
+
+// ---------------------------------------------------------------------------------------
+// Pictures
+// ---------------------------------------------------------------------------------------
+
+/// A picture on the system clipboard, still encoded: reading it is a copy, decoding runs
+/// later on the paste's encoder thread ([`ClipImage::decode`]).
+pub struct ClipImage {
+    pub width: u32,
+    pub height: u32,
+    data: Vec<u8>,
+    format: image::ImageFormat,
+}
+
+impl std::fmt::Debug for ClipImage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ClipImage").field("width", &self.width).field("height", &self.height).finish()
+    }
+}
+
+impl ClipImage {
+    /// `data` encoded as `format`; `None` unless its header names a non-empty size.
+    pub fn new(data: Vec<u8>, format: image::ImageFormat) -> Option<ClipImage> {
+        let reader = image::ImageReader::with_format(std::io::Cursor::new(&data), format);
+        let (width, height) = reader.into_dimensions().ok()?;
+        (width > 0 && height > 0).then_some(ClipImage { width, height, data, format })
+    }
+
+    /// Straight-alpha RGBA rows (empty when the data does not decode). A bitmap whose
+    /// alpha bytes are all zero (32-bit DIBs without alpha) is made opaque.
+    pub fn decode(self) -> Vec<u8> {
+        let img = match image::load_from_memory_with_format(&self.data, self.format) {
+            Ok(i) => i,
+            Err(e) => {
+                log::warn!("clipboard picture: {e}");
+                return Vec::new();
+            }
+        };
+        let mut px = img.into_rgba8().into_raw();
+        if self.format == image::ImageFormat::Bmp && px.as_chunks::<4>().0.iter().all(|p| p[3] == 0) {
+            px.as_chunks_mut::<4>().0.iter_mut().for_each(|p| p[3] = 255);
+        }
+        px
+    }
+}
+
+/// Cheap check for a picture on the clipboard (Windows only; elsewhere `false`, the paste
+/// finds out).
+pub fn has_image() -> bool {
+    if !system() {
+        return false;
+    }
+    #[cfg(windows)]
+    {
+        imp::has_image()
+    }
+    #[cfg(not(windows))]
+    {
+        false
+    }
+}
+
+/// The picture on the system clipboard (Windows: `PNG`, `CF_DIBV5` or `CF_DIB`; Linux:
+/// an `image/*` type of the native selection). Blocking outside Windows: use
+/// [`with_paste`] on the UI thread.
+pub fn get_image() -> Option<ClipImage> {
+    if !system() {
+        return None;
+    }
+    let (data, format) = imp::get_image()?;
+    ClipImage::new(data, format)
+}
+
+/// A packed DIB (`CF_DIB` / `CF_DIBV5`: header, masks, palette, pixels) as a BMP file:
+/// the 14-byte file header in front, with the offset of the pixels.
+pub fn dib_to_bmp(dib: &[u8]) -> Option<Vec<u8>> {
+    let u32_at = |o: usize| Some(u32::from_le_bytes(dib.get(o..o + 4)?.try_into().ok()?));
+    let header = u32_at(0)? as usize;
+    if header < 40 || header > dib.len() {
+        return None;
+    }
+    let bpp = u16::from_le_bytes(dib.get(14..16)?.try_into().ok()?);
+    let compression = u32_at(16)?;
+    let used = u32_at(32)? as usize;
+    // BI_BITFIELDS / BI_ALPHABITFIELDS masks follow a plain BITMAPINFOHEADER; the V4 / V5
+    // headers hold them inside.
+    let masks = match (header, compression) {
+        (40, 3) => 12,
+        (40, 6) => 16,
+        _ => 0,
+    };
+    let palette = if used > 0 {
+        used
+    } else if bpp <= 8 {
+        1 << bpp
+    } else {
+        0
+    };
+    let pixels = 14 + header + masks + palette.min(256) * 4;
+    if pixels - 14 > dib.len() {
+        return None;
+    }
+    let total = u32::try_from(14 + dib.len()).ok()?;
+    let mut out = Vec::with_capacity(14 + dib.len());
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&total.to_le_bytes());
+    out.extend_from_slice(&[0; 4]);
+    out.extend_from_slice(&u32::try_from(pixels).ok()?.to_le_bytes());
+    out.extend_from_slice(dib);
+    Some(out)
+}
 
 /// Cheap check used to enable "Paste" in menus (Windows only; elsewhere `false`, the
 /// internal clipboard decides).
@@ -682,7 +811,7 @@ mod tests {
 
     #[test]
     fn pending_reads_complete_in_request_order() {
-        let mut p: Pending<u32> = Pending::new();
+        let mut p: Pending<u32, Files> = Pending::new();
         let (tx1, rx1) = crossbeam_channel::bounded(1);
         let (tx2, rx2) = crossbeam_channel::bounded(1);
         let (tx3, rx3) = crossbeam_channel::bounded::<Files>(1);
@@ -701,6 +830,60 @@ mod tests {
         let got = p.take_ready();
         assert_eq!((got[0].0, got[0].1.clone()), (3, None));
         assert!(p.reads.is_empty());
+    }
+
+    /// A packed DIB: BITMAPINFOHEADER (+ `extra`, e.g. masks) and bottom-up `rows`.
+    fn dib(w: i32, h: i32, bpp: u16, compression: u32, extra: &[u8], rows: &[u8]) -> Vec<u8> {
+        let mut d = Vec::new();
+        d.extend(40u32.to_le_bytes());
+        d.extend(w.to_le_bytes());
+        d.extend(h.to_le_bytes());
+        d.extend(1u16.to_le_bytes());
+        d.extend(bpp.to_le_bytes());
+        d.extend(compression.to_le_bytes());
+        d.extend(0u32.to_le_bytes()); // image size (may be 0 for BI_RGB)
+        d.extend([0; 16]); // resolution, colours used / important
+        d.extend(extra);
+        d.extend(rows);
+        d
+    }
+
+    fn decode_dib(d: &[u8]) -> (u32, u32, Vec<u8>) {
+        let img = ClipImage::new(dib_to_bmp(d).unwrap(), image::ImageFormat::Bmp).unwrap();
+        (img.width, img.height, img.decode())
+    }
+
+    #[test]
+    fn dib_24_bit_decodes_bottom_up() {
+        // 2×2, BGR, rows padded to 4 bytes, bottom row first: bottom = red, blue; top = green, white.
+        let rows = [0, 0, 255, 255, 0, 0, 0, 0, 0, 255, 0, 255, 255, 255, 0, 0];
+        let (w, h, px) = decode_dib(&dib(2, 2, 24, 0, &[], &rows));
+        assert_eq!((w, h), (2, 2));
+        assert_eq!(px, [0, 255, 0, 255, 255, 255, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn dib_32_bit_without_alpha_is_opaque() {
+        let rows = [10, 20, 30, 0];
+        let (_, _, px) = decode_dib(&dib(1, 1, 32, 0, &[], &rows));
+        assert_eq!(px, [30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn dib_bitfields_masks_are_skipped() {
+        let masks: Vec<u8> = [0x00FF_0000u32, 0x0000_FF00, 0x0000_00FF].iter().flat_map(|m| m.to_le_bytes()).collect();
+        let rows = [10, 20, 30, 0];
+        let (_, _, px) = decode_dib(&dib(1, 1, 32, 3, &masks, &rows));
+        assert_eq!(px, [30, 20, 10, 255]);
+    }
+
+    #[test]
+    fn bad_dibs_are_rejected() {
+        assert!(dib_to_bmp(&[1, 2, 3]).is_none());
+        assert!(dib_to_bmp(&20u32.to_le_bytes()).is_none(), "header too small");
+        let mut huge = 40u32.to_le_bytes().to_vec();
+        huge.resize(39, 0);
+        assert!(dib_to_bmp(&huge).is_none(), "header longer than the data");
     }
 
     #[test]

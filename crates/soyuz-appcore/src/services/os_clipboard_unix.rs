@@ -314,6 +314,37 @@ pub(super) fn get_text() -> Option<String> {
     })
 }
 
+/// The clipboard's picture, still encoded, from the first `image/*` type we can decode
+/// (screenshot tools and browsers offer `image/png`). Blocking: call off the UI thread.
+#[cfg(target_os = "linux")]
+pub(super) fn get_image() -> Option<(Vec<u8>, image::ImageFormat)> {
+    use image::ImageFormat as F;
+    const TYPES: [(&str, F); 6] = [
+        ("image/png", F::Png),
+        ("image/webp", F::WebP),
+        ("image/jpeg", F::Jpeg),
+        ("image/bmp", F::Bmp),
+        ("image/gif", F::Gif),
+        ("image/tiff", F::Tiff),
+    ];
+    if !native_ready() {
+        return None;
+    }
+    wait_writes();
+    native::read(|types, rd| {
+        TYPES.iter().find(|(mime, _)| types.iter().any(|t| t == mime)).and_then(|(mime, f)| Some((rd(mime)?, *f)))
+    })
+    .unwrap_or_else(|e| {
+        log::debug!("clipboard: {e}");
+        None
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(super) fn get_image() -> Option<(Vec<u8>, image::ImageFormat)> {
+    None
+}
+
 /// Probe the native clipboard on a helper thread (once).
 #[cfg(target_os = "linux")]
 pub(super) fn probe_in_background() {
