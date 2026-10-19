@@ -77,6 +77,7 @@ struct KeyCache {
     keys: config::Keys,
     bookmarks: Vec<config::Bookmark>,
     commands: Vec<config::CustomCommand>,
+    scripts: u64,
     keymap: Keymap,
     warnings: Vec<String>,
     conflicts: Vec<crate::keys::conflicts::Conflict>,
@@ -170,16 +171,25 @@ fn flush_save(app: &mut SoyuzApp) {
 
 fn key_cache(s: &mut SettingsState) -> &KeyCache {
     let stale = match &s.key_cache {
-        Some(k) => k.keys != s.draft.keys || k.bookmarks != s.draft.bookmarks || k.commands != s.draft.custom_commands,
+        Some(k) => {
+            k.keys != s.draft.keys
+                || k.bookmarks != s.draft.bookmarks
+                || k.commands != s.draft.custom_commands
+                || k.scripts != crate::automation::scripts::generation()
+        }
         None => true,
     };
     if stale {
-        let (keymap, warnings) = config::keymap(&s.draft);
+        let (mut keymap, warnings) = config::keymap(&s.draft);
+        if let Some(set) = crate::automation::scripts::current() {
+            crate::automation::bind_hotkeys_into(&mut keymap, &s.draft.keys, &set, |_, _, _| {});
+        }
         let conflicts = crate::keys::conflicts::analyze(&keymap);
         s.key_cache = Some(KeyCache {
             keys: s.draft.keys.clone(),
             bookmarks: s.draft.bookmarks.clone(),
             commands: s.draft.custom_commands.clone(),
+            scripts: crate::automation::scripts::generation(),
             keymap,
             warnings,
             conflicts,

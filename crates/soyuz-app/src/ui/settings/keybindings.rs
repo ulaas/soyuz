@@ -74,6 +74,7 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             .filter(|c| !c.name.trim().is_empty())
             .map(|c| Action::CustomCommand(c.name.clone())),
     );
+    actions.extend(crate::automation::all_actions());
     let rows: Vec<(Action, catalog::Entry, Vec<String>)> = actions
         .into_iter()
         .map(|a| {

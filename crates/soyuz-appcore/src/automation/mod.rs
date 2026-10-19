@@ -242,32 +242,49 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
 /// action. Re-applied after the key map is rebuilt (config reload).
 fn bind_hotkeys(app: &mut AppCore) {
     let Some(set) = app.automation.set.clone() else { return };
-    let cmd_is_ctrl = app.config.keys.cmd_is_ctrl;
+    let warned = &mut app.automation.warned_hotkeys;
+    bind_hotkeys_into(&mut app.keymap, &app.config.keys, &set, |id, hotkey, e| {
+        if warned.insert(id.to_string()) {
+            log::warn!("script action {id}: hotkey “{hotkey}”: {e}");
+        }
+    });
+}
+
+/// [`bind_hotkeys`] into any key map (the Keyboard settings page shows them too);
+/// `on_error(id, hotkey, error)` for a hotkey that doesn't parse.
+pub fn bind_hotkeys_into(
+    keymap: &mut soyuz_core::config::Keymap,
+    keys: &soyuz_core::config::Keys,
+    set: &soyuz_script::ScriptSet,
+    mut on_error: impl FnMut(&str, &str, String),
+) {
     for (id, _, a) in set.actions() {
         if a.hotkey.trim().is_empty() {
             continue;
         }
         let action = Action::RunScript(id.clone());
-        if app.config.keys.bindings.contains_key(&action.to_string()) || !app.keymap.sequences_for(&action).is_empty() {
+        if keys.bindings.contains_key(&action.to_string()) || !keymap.sequences_for(&action).is_empty() {
             continue;
         }
         match soyuz_core::config::parse_sequence(&a.hotkey) {
             Ok(seq) if seq.len() == 1 => {
-                app.keymap.bind_stealing(KeyContext::Global, action, seq[0].normalized(cmd_is_ctrl))
+                keymap.bind_stealing(KeyContext::Global, action, seq[0].normalized(keys.cmd_is_ctrl))
             }
-            Ok(seq) if !seq.is_empty() => app.keymap.bind_sequence(
+            Ok(seq) if !seq.is_empty() => keymap.bind_sequence(
                 KeyContext::Global,
                 action,
-                seq.into_iter().map(|c| c.normalized(cmd_is_ctrl)).collect(),
+                seq.into_iter().map(|c| c.normalized(keys.cmd_is_ctrl)).collect(),
             ),
             Ok(_) => {}
-            Err(e) => {
-                if app.automation.warned_hotkeys.insert(id.clone()) {
-                    log::warn!("script action {id}: hotkey “{}”: {e}", a.hotkey);
-                }
-            }
+            Err(e) => on_error(&id, &a.hotkey, e.to_string()),
         }
     }
+}
+
+/// Every script action (the Keyboard settings page lists them, palette or not).
+pub fn all_actions() -> Vec<Action> {
+    let Some(set) = scripts::current() else { return Vec::new() };
+    set.actions().map(|(id, ..)| Action::RunScript(id)).collect()
 }
 
 /// Run the script action `id` against the focused pane (off the UI thread).
@@ -708,6 +725,28 @@ fn default_label(kind: &JobKind) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_hotkeys_bind_unless_overridden() {
+        let src = r#"
+            register_action(#{ title: "Tidy", hotkey: "Ctrl+Alt+T", run: |ctx| {} });
+            register_action(#{ title: "Bad", hotkey: "Ctrl+Nope", run: |ctx| {} });
+        "#;
+        let set = ScriptSet::from_sources(&[("s.rhai", src)], soyuz_script::Limits::default());
+        let mut keys = soyuz_core::config::Keys::default();
+        let tidy = Action::RunScript("s/tidy".into());
+        let chord = soyuz_core::config::parse_sequence("Ctrl+Alt+T").unwrap()[0].normalized(keys.cmd_is_ctrl);
+        let mut km = soyuz_core::config::Keymap::default();
+        let mut errors = Vec::new();
+        bind_hotkeys_into(&mut km, &keys, &set, |id, _, _| errors.push(id.to_string()));
+        assert_eq!(km.lookup(KeyContext::Global, chord), Some(&tidy));
+        assert_eq!(errors, ["s/bad"]);
+        // `[keys.bindings]` names the action: its own bindings win, the hotkey is skipped.
+        keys.bindings.insert(tidy.to_string(), vec![]);
+        let mut km = soyuz_core::config::Keymap::default();
+        bind_hotkeys_into(&mut km, &keys, &set, |_, _, _| {});
+        assert_eq!(km.lookup(KeyContext::Global, chord), None);
+    }
 
     #[test]
     fn templates_load_and_run() {

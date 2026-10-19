@@ -30,6 +30,11 @@ pub fn current() -> Option<Arc<ScriptSet>> {
     CURRENT.read().clone()
 }
 
+/// Bumped on every (re)load; caches of script data compare it.
+pub fn generation() -> u64 {
+    GENERATION.load(Ordering::SeqCst)
+}
+
 pub(crate) fn set_current(s: Arc<ScriptSet>) {
     *CURRENT.write() = Some(s);
     GENERATION.fetch_add(1, Ordering::SeqCst);

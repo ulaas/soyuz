@@ -39,6 +39,8 @@ pub struct KeyCache {
     keys: Keys,
     bookmarks: Vec<Bookmark>,
     commands: Vec<CustomCommand>,
+    /// [`crate::automation::scripts::generation`] the script hotkeys came from.
+    scripts: u64,
     /// `soyuz_core::config::keymap`: the config's own bindings (what `config.toml` says).
     pub base: Keymap,
     /// [`crate::keys::build_keymap`]: plus the frontend's overlay (the terminal UI's
@@ -51,8 +53,13 @@ pub struct KeyCache {
 
 impl KeyCache {
     pub fn build(c: &Config) -> KeyCache {
-        let (base, _) = config::keymap(c);
-        let (keymap, warnings) = crate::keys::build_keymap(c);
+        let (mut base, _) = config::keymap(c);
+        let (mut keymap, warnings) = crate::keys::build_keymap(c);
+        // Script hotkeys, as the app binds them (they come from the scripts, not the config).
+        if let Some(set) = crate::automation::scripts::current() {
+            crate::automation::bind_hotkeys_into(&mut base, &c.keys, &set, |_, _, _| {});
+            crate::automation::bind_hotkeys_into(&mut keymap, &c.keys, &set, |_, _, _| {});
+        }
         Self::with_keymaps(c, base, keymap, warnings)
     }
 
@@ -63,6 +70,7 @@ impl KeyCache {
             keys: c.keys.clone(),
             bookmarks: c.bookmarks.clone(),
             commands: c.custom_commands.clone(),
+            scripts: crate::automation::scripts::generation(),
             base,
             keymap,
             warnings,
@@ -72,7 +80,10 @@ impl KeyCache {
 
     /// Whether `c` changed anything the key maps depend on.
     pub fn is_stale(&self, c: &Config) -> bool {
-        self.keys != c.keys || self.bookmarks != c.bookmarks || self.commands != c.custom_commands
+        self.keys != c.keys
+            || self.bookmarks != c.bookmarks
+            || self.commands != c.custom_commands
+            || self.scripts != crate::automation::scripts::generation()
     }
 
     /// The cache in `slot`, rebuilt first when missing or stale.
@@ -117,6 +128,7 @@ pub fn rows_with(cache: &KeyCache, c: &Config, filter: &str, conflicts_only: boo
     actions.extend(
         c.custom_commands.iter().filter(|c| !c.name.trim().is_empty()).map(|c| Action::CustomCommand(c.name.clone())),
     );
+    actions.extend(crate::automation::all_actions());
     actions
         .into_iter()
         .filter_map(|a| {
