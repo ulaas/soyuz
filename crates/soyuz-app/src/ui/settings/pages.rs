@@ -483,6 +483,22 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
         }
     });
+    any |= group(ui, q, ctx, tr!("settings-views-sysfolders"), |r| {
+        r.row_kw(
+            tr!("settings-views-sysfolders-show"),
+            tr!("settings-views-sysfolders-show-desc"),
+            "system folders appdata programdata temp program files config cache etc",
+            |ui| {
+                switch(ui, &mut d.sidebar.system_folders);
+            },
+        );
+        if !crate::models::system_folders::ids().is_empty() {
+            let on = d.sidebar.system_folders;
+            r.block(tr!("settings-views-sysfolders-list"), tr!("settings-views-sysfolders-list-desc"), |ui| {
+                ui.add_enabled_ui(on, |ui| system_folder_list(ui, &mut d.sidebar.system_folder_list));
+            });
+        }
+    });
     any |= group(ui, q, ctx, tr!("settings-views-portal"), |r| {
         r.block("", tr!("settings-views-portal-desc"), |ui| {
             portal_pins(ui, &mut d.sidebar.portal);
@@ -591,6 +607,29 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
                     details.push(c);
                 }
             }
+        });
+    }
+}
+
+/// One switch per system folder of this OS, with its path (ids of other OSes in the list
+/// are kept).
+fn system_folder_list(ui: &mut Ui, list: &mut Vec<String>) {
+    use crate::models::system_folders as sf;
+    let p = palette(ui.ctx());
+    for &id in sf::ids() {
+        let mut on = list.iter().any(|x| x == id);
+        ui.horizontal(|ui| {
+            if switch(ui, &mut on).changed() {
+                if on {
+                    list.push(id.to_string());
+                } else {
+                    list.retain(|x| x != id);
+                }
+            }
+            ui.label(RichText::new(sf::label(id)).color(p.text_primary));
+            let path = sf::available().iter().find(|f| f.id == id).map(|f| f.path.display().to_string());
+            let note = path.unwrap_or_else(|| tr!("settings-views-sysfolders-missing").to_string());
+            ui.label(RichText::new(note).size(11.5).color(p.text_tertiary));
         });
     }
 }

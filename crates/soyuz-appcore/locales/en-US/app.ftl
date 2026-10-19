@@ -193,6 +193,38 @@ app-place-downloads = Downloads
 app-place-pictures = Pictures
 app-place-music = Music
 app-place-videos = Videos
+# System folders below the favorites ([sidebar] system_folders).
+app-sysfolders-section = System
+app-sysfolders-hide = Hide system folders…
+app-sysfolders-hide-tip = Hide the system folders
+app-sysfolders-hide-title = Hide system folders?
+app-sysfolders-hide-message = The system folders below your favorites leave the sidebar. You can show them again any time in Settings → Views & layout → System folders, where you can also choose which ones appear.
+app-sysfolders-hide-confirm = Hide
+app-sysfolder-appdata = AppData (Roaming)
+app-sysfolder-local-appdata = AppData (Local)
+app-sysfolder-locallow = AppData (LocalLow)
+app-sysfolder-programdata = ProgramData
+app-sysfolder-program-files = Program Files
+app-sysfolder-program-files-x86 = Program Files (x86)
+app-sysfolder-temp = Temp
+app-sysfolder-public = Public
+app-sysfolder-start-menu = Start menu programs
+app-sysfolder-startup = Startup
+app-sysfolder-fonts = Fonts
+app-sysfolder-hosts = drivers\etc (hosts)
+app-sysfolder-windows = Windows
+app-sysfolder-soyuz-config = Soyuz settings
+app-sysfolder-xdg-config = .config
+app-sysfolder-xdg-data = .local/share
+app-sysfolder-xdg-cache = .cache
+app-sysfolder-xdg-state = .local/state
+app-sysfolder-local-bin = .local/bin
+app-sysfolder-applications = Applications
+app-sysfolder-autostart = Autostart
+app-sysfolder-flatpak-apps = Flatpak apps
+app-sysfolder-etc = /etc
+app-sysfolder-opt = /opt
+app-sysfolder-var-log = Logs (/var/log)
 
 ## Address bar (ui/breadcrumb.rs)
 

@@ -141,6 +141,8 @@ pub fn test_config() -> Config {
     // the core's test seam.
     c.sidebar.unmounted_devices = soyuz_core::config::UnmountedDevices::Off;
     c.sidebar.gtk_bookmarks = false;
+    // System folders (AppData, ~/.config, …) are the user's own: never rows in tests.
+    c.sidebar.system_folders = false;
     c
 }
 

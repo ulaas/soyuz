@@ -224,7 +224,12 @@ pub fn menu(core: &AppCore, i: usize) -> Vec<catalogue::Entry> {
     match list.get(i) {
         Some(Entry::Place { target: Target::Go(Location::Dir(path)), mark, label, .. }) => {
             let removable = core.ui.sidebar.favorites.iter().any(|f| &f.path == path);
-            let mut out = catalogue::place_menu(path, removable);
+            let system = !removable
+                && soyuz_appcore::models::system_folders::shown(&core.config.sidebar, &core.ui.sidebar.favorites)
+                    .iter()
+                    .any(|f| &f.path == path);
+            let mut out =
+                if system { catalogue::system_folder_menu(path) } else { catalogue::place_menu(path, removable) };
             // A mounted volume: its device's entries (unmount, lock, eject).
             let all = devices::block_devices();
             if *mark == Mark::Volume

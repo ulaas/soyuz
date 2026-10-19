@@ -811,6 +811,20 @@ pub fn place_menu(path: &std::path::Path, removable: bool) -> Vec<Entry> {
     out
 }
 
+/// The menu of a system folder below the favorites: the place entries, then hiding the
+/// system folders.
+pub fn system_folder_menu(path: &std::path::Path) -> Vec<Entry> {
+    let mut out = place_menu(path, false);
+    out.push(Entry::Separator);
+    out.push(hide_system_folders_item());
+    out
+}
+
+/// "Hide system folders…" (asks first).
+pub fn hide_system_folders_item() -> Entry {
+    cmd_item(IconId::EyeSlash, tr!("app-sysfolders-hide"), Cmd::AskHideSystemFolders)
+}
+
 /// The menu of tab `i`: new / duplicate / pin, close (others, to the right), reopen
 /// closed; tab groups, move to a window, the tab's history.
 pub fn tab_menu(core: &crate::core::AppCore, i: usize) -> Vec<Entry> {

@@ -456,6 +456,16 @@ pub struct Sidebar {
     /// Linux: show the GTK bookmarks (`~/.config/gtk-3.0/bookmarks`, shared with Nautilus
     /// and other GTK file managers) under Favorites.
     pub gtk_bookmarks: bool,
+    /// System folders (AppData, ProgramData, `~/.config`, …) below the favorites, after
+    /// a divider (its hide button turns this off).
+    pub system_folders: bool,
+    /// Which system folders show (those that exist on this OS, in a fixed order). Windows:
+    /// `appdata`, `local_appdata`, `locallow`, `programdata`, `program_files`,
+    /// `program_files_x86`, `temp`, `public`, `start_menu`, `startup`, `fonts`, `hosts`,
+    /// `windows`, `soyuz_config`. Linux: `xdg_config`, `xdg_data`, `xdg_cache`, `xdg_state`,
+    /// `local_bin`, `applications`, `autostart`, `flatpak_apps`, `temp`, `etc`, `opt`,
+    /// `var_log`, `soyuz_config`.
+    pub system_folder_list: Vec<String>,
     /// Linux: unmounted disks and partitions listed under Devices (click to mount, or to
     /// unlock BitLocker / LUKS): `all` | `removable` | `off`.
     pub unmounted_devices: UnmountedDevices,

@@ -187,6 +187,38 @@ app-place-downloads = İndirilenler
 app-place-pictures = Resimler
 app-place-music = Müzik
 app-place-videos = Videolar
+# Sık kullanılanların altındaki sistem klasörleri ([sidebar] system_folders).
+app-sysfolders-section = Sistem
+app-sysfolders-hide = Sistem klasörlerini gizle…
+app-sysfolders-hide-tip = Sistem klasörlerini gizle
+app-sysfolders-hide-title = Sistem klasörleri gizlensin mi?
+app-sysfolders-hide-message = Sık kullanılanlarınızın altındaki sistem klasörleri kenar çubuğundan kalkar. İstediğiniz zaman Ayarlar → Görünümler ve düzen → Sistem klasörleri bölümünden yeniden gösterebilir, hangilerinin görüneceğini de oradan seçebilirsiniz.
+app-sysfolders-hide-confirm = Gizle
+app-sysfolder-appdata = AppData (Roaming)
+app-sysfolder-local-appdata = AppData (Local)
+app-sysfolder-locallow = AppData (LocalLow)
+app-sysfolder-programdata = ProgramData
+app-sysfolder-program-files = Program Files
+app-sysfolder-program-files-x86 = Program Files (x86)
+app-sysfolder-temp = Geçici
+app-sysfolder-public = Ortak (Public)
+app-sysfolder-start-menu = Başlat menüsü programları
+app-sysfolder-startup = Başlangıç
+app-sysfolder-fonts = Yazı tipleri
+app-sysfolder-hosts = drivers\etc (hosts)
+app-sysfolder-windows = Windows
+app-sysfolder-soyuz-config = Soyuz ayarları
+app-sysfolder-xdg-config = .config
+app-sysfolder-xdg-data = .local/share
+app-sysfolder-xdg-cache = .cache
+app-sysfolder-xdg-state = .local/state
+app-sysfolder-local-bin = .local/bin
+app-sysfolder-applications = Uygulamalar
+app-sysfolder-autostart = Otomatik başlatma
+app-sysfolder-flatpak-apps = Flatpak uygulamaları
+app-sysfolder-etc = /etc
+app-sysfolder-opt = /opt
+app-sysfolder-var-log = Günlükler (/var/log)
 
 ## Adres çubuğu (ui/breadcrumb.rs)
 

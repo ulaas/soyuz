@@ -384,6 +384,96 @@ fn favorites(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {
         crate::ui::native::popup::context_menu(&r, |ui| place_menu(ui, cmds, &b.path, false));
     }
     gtk_bookmarks(ui, s, c);
+    system_folders(ui, s, c);
+}
+
+/// The system folders below the favorites (`[sidebar] system_folders`), after a divider.
+fn system_folders(ui: &mut Ui, s: &SidebarState, c: &mut SidebarCtx<'_>) {
+    let list = crate::models::system_folders::shown(c.config, &s.favorites);
+    if list.is_empty() {
+        return;
+    }
+    system_divider(ui, c.cmds);
+    let p = palette(ui.ctx());
+    for f in &list {
+        let label = f.label();
+        let r = NavRow {
+            icon: glyph(f.icon),
+            label: &label,
+            active: is_current(c, &f.path),
+            icon_color: Some(p.text_tertiary),
+            usage: None,
+        }
+        .show(ui);
+        let r = r.on_hover_text(soyuz_fs::strip_verbatim(&f.path).display().to_string());
+        row_clicks(&r, c, &f.path);
+        crate::ui::dnd::target_open(ui, &r, &f.path, c.pane, c.cmds);
+        let cmds = &mut *c.cmds;
+        crate::ui::native::popup::context_menu(&r, |ui| {
+            ui.set_width(220.0);
+            crate::ui::context_menu::draw_entries(ui, crate::models::context_menu::system_folder_menu(&f.path), cmds);
+        });
+    }
+}
+
+/// The divider above the system folders: a small caption and a hairline. Hovering it
+/// slides in a hide button (it asks first and says where to show them again); a right
+/// click offers the same.
+fn system_divider(ui: &mut Ui, cmds: &mut Vec<Cmd>) {
+    let p = palette(ui.ctx());
+    ui.add_space(6.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+    let id = egui::Id::unique("soyuz.sidebar.system_divider");
+    // The row first, the button on top of it (the later interaction wins the pointer).
+    let row = ui.interact(rect, id, Sense::click());
+    let btn_rect = Rect::from_center_size(pos2(rect.right() - 13.0, rect.center().y), vec2(20.0, 18.0));
+    let btn = ui.interact(btn_rect, id.with("hide"), Sense::click());
+    let tip = tr!("app-sysfolders-hide-tip");
+    crate::ui::a11y::button(&btn, tip);
+    let hot = row.hovered() || btn.hovered() || btn.has_focus();
+    let a = ui.ctx().animate_value_with_time(
+        id.with("hover"),
+        if hot { 1.0 } else { 0.0 },
+        crate::theme::anim(ui.ctx(), 0.12),
+    );
+    if ui.is_rect_visible(rect) {
+        let painter = ui.painter();
+        let y = rect.center().y;
+        let caption = crate::ui::widgets::caption_upper(tr!("app-sysfolders-section"));
+        let color = if hot { p.text_secondary } else { p.text_tertiary };
+        let g = painter.layout_no_wrap(caption, FontId::proportional(10.0), color);
+        let x0 = rect.left() + 10.0;
+        let line_left = x0 + g.size().x + 8.0;
+        painter.galley(pos2(x0, y - g.size().y / 2.0), g, color);
+        // The hairline gives way to the button as it fades in.
+        let line_right = rect.right() - 6.0 - a * 22.0;
+        if line_right > line_left {
+            painter.line_segment([pos2(line_left, y), pos2(line_right, y)], Stroke::new(1.0, p.border_subtle));
+        }
+        if a > 0.01 {
+            if btn.hovered() {
+                painter.rect_filled(btn_rect.shrink(1.0), 4.0, p.bg_surface2);
+            }
+            let ic = if btn.hovered() { p.text_primary } else { p.text_tertiary };
+            painter.text(
+                btn_rect.center(),
+                Align2::CENTER_CENTER,
+                ph::EYE_SLASH,
+                crate::theme::icons::font(12.0),
+                ic.gamma_multiply(a),
+            );
+        }
+        if btn.has_focus() {
+            crate::ui::widgets::focus_ring(ui, btn_rect);
+        }
+    }
+    if btn.on_hover_text(tip).clicked() {
+        cmds.push(Cmd::AskHideSystemFolders);
+    }
+    crate::ui::native::popup::context_menu(&row, |ui| {
+        ui.set_width(220.0);
+        crate::ui::context_menu::draw_entries(ui, vec![crate::models::context_menu::hide_system_folders_item()], cmds);
+    });
 }
 
 fn devices(ui: &mut Ui, s: &mut SidebarState, c: &mut SidebarCtx<'_>) {

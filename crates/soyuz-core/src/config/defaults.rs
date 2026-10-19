@@ -188,6 +188,18 @@ impl Default for Sidebar {
             tree_drag_expand_ms: 700,
             portal: Vec::new(),
             gtk_bookmarks: true,
+            system_folders: true,
+            system_folder_list: [
+                "appdata",
+                "local_appdata",
+                "programdata",
+                "temp",
+                "xdg_config",
+                "xdg_data",
+                "xdg_cache",
+            ]
+            .map(String::from)
+            .to_vec(),
             unmounted_devices: UnmountedDevices::All,
             hidden_devices: Vec::new(),
         }

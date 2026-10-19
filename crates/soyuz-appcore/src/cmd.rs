@@ -59,6 +59,10 @@ pub enum Cmd {
         from: usize,
         to: usize,
     },
+    /// The system folders' hide button: confirm, saying where to show them again.
+    AskHideSystemFolders,
+    /// Show or hide the system folders below the favorites (`[sidebar] system_folders`).
+    ShowSystemFolders(bool),
     /// Sidebar Portal: pin / unpin / reorder / relabel folders (`[[sidebar.portal]]`).
     Portal(crate::models::portal::PortalCmd),
     /// Sidebar icon bar: show the places sections or the disk tree (`[sidebar] mode`).

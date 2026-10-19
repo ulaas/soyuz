@@ -216,8 +216,8 @@ impl SidebarState {
     }
 
     /// Per frame while the sidebar shows: default favorites follow the places probe and
-    /// the UI language (customized ones are kept). Returns `true` while the probe is
-    /// still running (ask for another frame soon).
+    /// the UI language (customized ones are kept). Returns `true` while the probe (or the
+    /// system folders' check) is still running (ask for another frame soon).
     pub fn refresh_favorites(&mut self) -> bool {
         let mut waiting = false;
         if !self.places_applied {
@@ -229,6 +229,10 @@ impl SidebarState {
             } else {
                 waiting = true;
             }
+        }
+        // The system folders' existence check (started by the first call).
+        if crate::models::system_folders::available().is_empty() && !crate::models::system_folders::probed() {
+            waiting = true;
         }
         // Language switched: relabel the default favorites (customized ones keep their names).
         let gen_now = crate::i18n::generation();

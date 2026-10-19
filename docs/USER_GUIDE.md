@@ -54,6 +54,14 @@ toggles too):
   sidebar (with a filter box on top). *Settings → Views → Sidebar content → Both* shows the
   tree as a section below the places instead.
 
+Below the favorites, after a **System** divider, sit system folders: AppData (Roaming and
+Local), ProgramData and Temp on Windows; `~/.config`, `~/.local/share`, `~/.cache` and
+`/tmp` on Linux. Hover the divider and click its eye button (or right-click one of them →
+*Hide system folders…*) to hide them; Soyuz asks first and tells you where to bring them
+back. *Settings → Views → System folders* turns them on again and picks which ones show,
+with more to choose from (Program Files, Start menu, Startup, Fonts, `drivers\etc`, Soyuz's
+own settings folder; `/etc`, `/opt`, `/var/log`, `~/.local/bin`, Flatpak app data, …).
+
 **Portal** is a drop zone for the folders you are working with: drag one or more folders
 onto the Portal section (from the file list, the disk tree, the shelf, or from Explorer)
 and they are pinned there. Dropping only pins (nothing is copied or moved); files,

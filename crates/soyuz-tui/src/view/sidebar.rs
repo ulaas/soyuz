@@ -267,6 +267,14 @@ fn favorites(core: &AppCore, out: &mut Vec<Entry>) {
         };
         place(core, out, b.display_name(), loc);
     }
+    // System folders after their caption (`[sidebar] system_folders`; their menu hides them).
+    let system = soyuz_appcore::models::system_folders::shown(&core.config.sidebar, &s.favorites);
+    if !system.is_empty() {
+        out.push(Entry::Message(tr!("app-sysfolders-section").to_string()));
+        for f in system {
+            place(core, out, f.label(), Location::Dir(f.path));
+        }
+    }
 }
 
 fn devices(core: &AppCore, out: &mut Vec<Entry>) {

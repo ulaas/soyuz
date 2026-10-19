@@ -31,6 +31,7 @@ pub mod settings_keys;
 pub mod settings_schema;
 pub mod sidebar;
 pub mod smart;
+pub mod system_folders;
 pub mod terminal;
 pub mod toasts;
 pub mod tools;

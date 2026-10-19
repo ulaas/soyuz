@@ -871,6 +871,10 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
             s.favorites.retain(|f| f.path != path);
             s.favorites_customized = true;
         }
+        Cmd::AskHideSystemFolders => app.frontend.push(crate::models::system_folders::ask_hide()),
+        Cmd::ShowSystemFolders(on) => {
+            crate::models::settings::update_config(app, host, |c| c.sidebar.system_folders = on);
+        }
         Cmd::Portal(c) => crate::models::portal::apply(app, host, c),
         Cmd::SetSidebarMode(m) => crate::models::tree::set_mode(app, host, m),
         Cmd::Device(c) => crate::models::devices::apply(app, host, c),
