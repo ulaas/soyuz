@@ -1212,6 +1212,9 @@ pub struct RemoteSection {
     /// Typing `\\server` or `smb://server` lists its shares (Windows `NetShareEnum`;
     /// elsewhere srvsvc over SMB).
     pub share_enumeration: bool,
+    /// Connect to server lists SFTP / WebDAV / FTP (and SMB off Windows) servers that
+    /// announce themselves on the local network (mDNS / DNS-SD), while the dialog is open.
+    pub discover: bool,
 }
 
 /// `[linux]`: Linux desktop integration. Ignored on Windows and macOS.

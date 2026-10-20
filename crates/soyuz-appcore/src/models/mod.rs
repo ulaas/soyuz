@@ -24,6 +24,7 @@ pub mod preview_load;
 pub mod properties;
 pub mod quicklook;
 pub mod remote;
+pub mod remote_discovery;
 pub mod requests;
 pub mod search;
 pub mod settings;

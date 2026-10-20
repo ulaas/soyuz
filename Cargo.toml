@@ -132,6 +132,9 @@ blake3 = "1.8.7"
 sha2 = "0.11.1"
 sha1 = "0.11.0"
 md-5 = "0.11.0"
+# LAN discovery (mDNS): local interface addresses and per-interface multicast sends.
+if-addrs = "0.15.0"
+socket2 = "0.6.5"
 crc32fast = "1.5.0"
 
 # --- terminal ---

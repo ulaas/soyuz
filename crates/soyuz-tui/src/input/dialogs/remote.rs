@@ -9,6 +9,8 @@
 //!   (`ConnectForm::build`; the error stays in the form) and runs
 //!   `ConnectForm::connect`: the secret goes to this session and, when saved, to the OS
 //!   credential store (never to `config.toml`);
+//!   Servers announced on the local network (`models::remote_discovery`, `[remote]
+//!   discover`) are a choice above the form once found; picking one fills it;
 //! - **Trust this server?** for an SSH host key (`HostKeyAsk`): host, algorithm,
 //!   fingerprint and, for a changed key, the key trusted before. Trust answers `true`;
 //!   Cancel, Esc and any other way the dialog goes answer `false` (the state's `Drop`);
@@ -19,6 +21,7 @@ use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::remote::{
     ConnectForm, HostKeyAsk, NameTarget, PROTOCOLS, RemotePrompt, Scheme, delete_cmd, name_submit,
 };
+use soyuz_appcore::models::remote_discovery::Discovery;
 use soyuz_appcore::services::remote::AuthKind;
 use soyuz_appcore::tr;
 
@@ -29,6 +32,8 @@ use crate::widgets::{Button, Field, FieldKind, Form, FormOutcome, LineEdit};
 /// A field of the connect form (the form's fields follow [`layout`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FieldId {
+    /// Servers found on the network (first choice: none, typed in).
+    Lan,
     Proto,
     Tls,
     Host,
@@ -52,6 +57,8 @@ pub struct Connect {
     pub ui: Form,
     /// What each field of `ui` is.
     pub layout: Vec<FieldId>,
+    /// Servers on the local network (`[remote] discover`; not when editing).
+    pub lan: Option<Discovery>,
 }
 
 /// The host-key question; dropping it unanswered answers "don't trust".
@@ -78,7 +85,12 @@ pub enum State {
 /// Open the dialog for the core's request (`crate::frontend`).
 pub fn open(app: &mut App, prompt: RemotePrompt) {
     match prompt {
-        RemotePrompt::Connect(form) => app.push_dialog(TuiDialog::Remote(State::Connect(connect_state(*form)))),
+        RemotePrompt::Connect(form) => {
+            let lan = Discovery::start(app.core.config.remote.discover && form.edit.is_none(), &app.core.wake);
+            let mut c = connect_state(*form);
+            c.lan = lan;
+            app.push_dialog(TuiDialog::Remote(State::Connect(c)));
+        }
         RemotePrompt::HostKey(ask) => app.push_dialog(TuiDialog::Remote(State::HostKey(host_key_state(ask)))),
         RemotePrompt::ConfirmDelete { message, paths } => super::confirm::open(
             app,
@@ -101,7 +113,7 @@ pub fn open(app: &mut App, prompt: RemotePrompt) {
 
 /// The connect dialog for `form`.
 pub fn connect_state(form: ConnectForm) -> Connect {
-    let mut c = Connect { form: Box::new(form), ui: Form::default(), layout: Vec::new() };
+    let mut c = Connect { form: Box::new(form), ui: Form::default(), layout: Vec::new(), lan: None };
     rebuild(&mut c, None);
     // The server field first (the GUI focuses it).
     if let Some(i) = c.layout.iter().position(|f| *f == FieldId::Host) {
@@ -168,6 +180,7 @@ fn text_field(label: &str, text: &str, secret: bool) -> Field {
 fn field(f: &ConnectForm, id: FieldId) -> Field {
     let s3 = f.proto == Scheme::S3;
     match id {
+        FieldId::Lan => unreachable!("built by lan_field"),
         FieldId::Proto => {
             let picked = PROTOCOLS.iter().position(|(p, _)| *p == f.proto).unwrap_or(0);
             Field::radio(tr!("remote-protocol"), PROTOCOLS.iter().map(|(_, l)| l.to_string()).collect(), picked)
@@ -214,13 +227,36 @@ fn field(f: &ConnectForm, id: FieldId) -> Field {
     }
 }
 
+/// The servers found on the network as a choice (the first one: none, typed in).
+fn lan_field(form: &ConnectForm, lan: &Discovery) -> Field {
+    let mut options = vec![tr!("remote-lan-manual").to_string()];
+    options.extend(lan.servers.iter().map(|s| s.found.name.chars().take(28).collect::<String>()));
+    let picked = lan.servers.iter().position(|s| s.host == form.host && s.proto() == form.proto).map_or(0, |i| i + 1);
+    let label = if lan.searching() {
+        format!("{} ({})", tr!("remote-lan-title"), tr!("remote-lan-looking"))
+    } else {
+        tr!("remote-lan-title").to_string()
+    };
+    Field::radio(label, options, picked)
+}
+
 /// Rebuild the form from the `ConnectForm`, keeping the focus on `keep` (a field) when it
 /// is still shown, else on the same stop number.
 fn rebuild(c: &mut Connect, keep: Option<FieldId>) {
     let old_focus = c.ui.focus;
     let error = c.ui.error.take();
     c.layout = layout(&c.form);
-    let fields = c.layout.iter().map(|id| field(&c.form, *id)).collect();
+    if c.lan.as_ref().is_some_and(|l| l.searching() || !l.servers.is_empty()) {
+        c.layout.insert(0, FieldId::Lan);
+    }
+    let fields = c
+        .layout
+        .iter()
+        .map(|id| match (id, &c.lan) {
+            (FieldId::Lan, Some(lan)) => lan_field(&c.form, lan),
+            _ => field(&c.form, *id),
+        })
+        .collect();
     c.ui = Form::new(fields, vec![Button::new(tr!("remote-connect-button")), Button::new(tr!("common-cancel"))]);
     c.ui.error = error;
     let stops = c.ui.fields.len() + c.ui.buttons.len();
@@ -237,6 +273,8 @@ fn sync(c: &mut Connect) {
         let Some(fld) = c.ui.fields.get(i) else { continue };
         let text = || fld.value().unwrap_or_default().to_string();
         match id {
+            // Applied by `connect_outcome` once the typed fields are in.
+            FieldId::Lan => {}
             FieldId::Proto => {
                 if let Some(p) = fld.selected().and_then(|s| PROTOCOLS.get(s)).map(|(p, _)| *p)
                     && p != f.proto
@@ -268,7 +306,7 @@ fn sync(c: &mut Connect) {
 
 /// Fields whose change shows or hides others (or relabels them): the form is rebuilt.
 fn reshapes(id: FieldId) -> bool {
-    matches!(id, FieldId::Proto | FieldId::Tls | FieldId::Auth | FieldId::Save)
+    matches!(id, FieldId::Lan | FieldId::Proto | FieldId::Tls | FieldId::Auth | FieldId::Save)
 }
 
 fn connect_outcome(c: &mut Connect, o: FormOutcome) -> Option<Outcome> {
@@ -288,12 +326,29 @@ fn connect_outcome(c: &mut Connect, o: FormOutcome) -> Option<Outcome> {
             let id = c.layout.get(i).copied();
             c.ui.error = None;
             sync(c);
+            if id == Some(FieldId::Lan)
+                && let Some(pick) = c.ui.fields.get(i).and_then(|f| f.selected()).and_then(|s| s.checked_sub(1))
+                && let Some(server) = c.lan.as_ref().and_then(|l| l.servers.get(pick)).cloned()
+            {
+                c.form.fill_lan(&server);
+            }
             if let Some(id) = id.filter(|id| reshapes(*id)) {
                 rebuild(c, Some(id));
             }
             None
         }
         _ => None,
+    }
+}
+
+/// Every frame while it is open (`input::dialogs::tick`): servers found on the network
+/// appear as a choice above the form.
+pub fn tick(_core: &mut AppCore, s: &mut State) {
+    let State::Connect(c) = s else { return };
+    if c.lan.as_mut().is_some_and(|l| l.poll()) {
+        sync(c);
+        let keep = c.layout.get(c.ui.focus).copied();
+        rebuild(c, keep);
     }
 }
 
@@ -419,6 +474,40 @@ mod tests {
         assert_eq!(c.form.proto, Scheme::WebDav);
         // A host is enough for WebDAV (Connect would open it; not run here: it saves).
         assert_eq!(c.form.build().map(|u| u.display()).ok().as_deref(), Some("webdavs://example.org/"));
+    }
+
+    #[test]
+    fn a_server_found_on_the_network_fills_the_form() {
+        use soyuz_appcore::models::remote_discovery::{Found, LanServer};
+        let server = LanServer {
+            found: Found {
+                scheme: Scheme::WebDav,
+                name: "Shared Files".into(),
+                host: "nas.local".into(),
+                addrs: vec![],
+                port: 8080,
+                path: Some("/dav".into()),
+                user: None,
+            },
+            host: "nas.local".into(),
+        };
+        let mut c = connect_state(ConnectForm::new());
+        c.lan = Some(Discovery::fixed(vec![server]));
+        rebuild(&mut c, Some(FieldId::Host));
+        assert_eq!(c.layout[0], FieldId::Lan);
+        assert_eq!(c.ui.fields[0].selected(), Some(0), "typed in");
+        // Something typed first is kept in the form until a server is picked.
+        c.ui.focus = at(&c, FieldId::User);
+        c.ui.apply(&InputEvent::Text("ann".into()));
+        c.ui.focus = 0;
+        let o = c.ui.apply(&chord("Right"));
+        connect_outcome(&mut c, o);
+        assert_eq!((c.form.proto, c.form.host.as_str(), c.form.port.as_str()), (Scheme::WebDav, "nas.local", "8080"));
+        assert_eq!((c.form.path.as_str(), c.form.user.as_str()), ("/dav", "ann"));
+        assert!(c.layout.contains(&FieldId::Tls), "rebuilt for WebDAV");
+        assert_eq!(c.ui.fields[at(&c, FieldId::Host)].value(), Some("nas.local"));
+        assert_eq!(c.ui.fields[0].selected(), Some(1));
+        assert_eq!(c.ui.focus, 0, "the focus stays on the choice");
     }
 
     #[test]

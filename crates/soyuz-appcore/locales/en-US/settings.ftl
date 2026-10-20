@@ -317,6 +317,8 @@ settings-remote-hosts-desc = { $count ->
    *[other] { $count } host keys trusted. Forget one to be asked again.
 }
 settings-remote-shares = List shares for \\server
+settings-remote-discover = Find servers on this network
+settings-remote-discover-desc = Connect to server lists SFTP, WebDAV and FTP servers that announce themselves on the local network (mDNS / Bonjour).
 
 settings-jobs-queue = Queue
 settings-jobs-parallel = Parallel jobs

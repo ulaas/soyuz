@@ -3276,6 +3276,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "if-addrs"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
+dependencies = [
+ "libc",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "ignore"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7141,6 +7151,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "futures-util",
+ "if-addrs",
  "log",
  "md-5",
  "parking_lot",
@@ -7155,6 +7166,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "smb2",
+ "socket2",
  "soyuz-core",
  "suppaftp",
  "tempfile",

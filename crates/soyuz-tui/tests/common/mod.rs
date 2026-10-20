@@ -129,6 +129,8 @@ pub fn test_config() -> Config {
     c.general.show_hidden = false;
     c.general.confirm_delete = true;
     c.updates.weekly_check = false;
+    // Connect to server would ask the real local network for servers (mDNS).
+    c.remote.discover = false;
     c.cli.server_enabled = false;
     c.search.index.enabled = false;
     // Fixed screen coordinates in the tests assume no sidebar; the sidebar tests turn it on.

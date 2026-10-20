@@ -475,6 +475,7 @@ impl Default for RemoteSection {
             preview_cache_mb: 512,
             preview_max_mb: 64,
             share_enumeration: true,
+            discover: true,
         }
     }
 }

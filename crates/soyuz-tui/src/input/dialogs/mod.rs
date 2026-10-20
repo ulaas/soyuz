@@ -402,6 +402,7 @@ pub fn tick(core: &mut AppCore, st: &mut State) {
             TuiDialog::UnlockDevice(s) => unlock_device::tick(core, s),
             TuiDialog::Versions(s) => versions::tick(core, s),
             TuiDialog::OpenWith(s) => open_with::tick(core, s),
+            TuiDialog::Remote(s) => remote::tick(core, s),
             _ => {}
         }
     }

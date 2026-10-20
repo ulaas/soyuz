@@ -17,6 +17,7 @@ use crate::models::remote::{
     ConnectForm, HostKeyAsk, NameTarget, PROTOCOLS, RemotePrompt, delete_cmd, name_submit, state_text,
 };
 pub use crate::models::remote::{RemoteCmd, apply, execute, handles, open_entry, preview_target, pump, transfer};
+use crate::models::remote_discovery::Discovery;
 use crate::services::remote::{self as svc, AuthKind};
 use crate::state::pane::PaneId;
 use crate::theme::{icons::ph, palette};
@@ -26,7 +27,11 @@ use crate::ui::widgets::{NavRow, collapsible_header};
 /// Show a dialog the core asked for ([`crate::models::frontend::FrontendCmd::Remote`]).
 pub fn prompt(app: &mut SoyuzApp, p: RemotePrompt) {
     match p {
-        RemotePrompt::Connect(form) => app.gui.dialogs.push(ConnectDialog { form: *form, focus: true }),
+        RemotePrompt::Connect(form) => {
+            let wake = app.core.wake.clone();
+            let lan = Discovery::start(app.core.config.remote.discover && form.edit.is_none(), &wake);
+            app.gui.dialogs.push(ConnectDialog { form: *form, focus: true, lan, wake })
+        }
         RemotePrompt::HostKey(ask) => app.gui.dialogs.push(HostKeyDialog { ask }),
         RemotePrompt::ConfirmDelete { message, paths } => app.gui.dialogs.push(ConfirmDialog::new(
             tr!("remote-delete-title"),
@@ -131,6 +136,43 @@ fn text_field(ui: &mut Ui, value: &mut String, hint: &str, password: bool) -> eg
 pub struct ConnectDialog {
     form: ConnectForm,
     focus: bool,
+    /// Servers on the local network (`[remote] discover`; not when editing).
+    lan: Option<Discovery>,
+    wake: crate::host::Wake,
+}
+
+/// "On this network": the servers found so far; picking one fills the form.
+fn lan_servers(ui: &mut Ui, lan: &mut Discovery, wake: &crate::host::Wake, form: &mut ConnectForm) {
+    let p = palette(ui.ctx());
+    lan.poll();
+    if lan.servers.is_empty() && !lan.searching() {
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(tr!("remote-lan-none")).size(11.5).color(p.text_tertiary));
+            if ui.link(RichText::new(tr!("remote-lan-again")).size(11.5)).clicked() {
+                lan.again(wake);
+            }
+        });
+        ui.add_space(4.0);
+        return;
+    }
+    ui.horizontal(|ui| {
+        field_label(ui, tr!("remote-lan-title"));
+        if lan.searching() {
+            ui.add(egui::Spinner::new().size(11.0));
+            ui.label(RichText::new(tr!("remote-lan-looking")).size(11.5).color(p.text_tertiary));
+        } else if ui.link(RichText::new(tr!("remote-lan-again")).size(11.5)).clicked() {
+            lan.again(wake);
+        }
+    });
+    for s in &lan.servers {
+        let picked = form.host == s.host && form.proto == s.proto();
+        let label = format!("{}  ·  {}", s.found.name, s.detail());
+        let r = NavRow { icon: ph::HARD_DRIVES, label: &label, active: picked, icon_color: None, usage: None }.show(ui);
+        if r.clicked() {
+            form.fill_lan(s);
+        }
+    }
+    ui.add_space(6.0);
 }
 
 impl Dialog for ConnectDialog {
@@ -151,6 +193,9 @@ impl Dialog for ConnectDialog {
         if let Some(n) = &f.note {
             ui.label(RichText::new(n).color(p.warning));
             ui.add_space(4.0);
+        }
+        if let Some(lan) = &mut self.lan {
+            lan_servers(ui, lan, &self.wake, f);
         }
         // Protocol.
         field_label(ui, tr!("remote-protocol"));

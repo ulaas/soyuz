@@ -18,6 +18,7 @@
 
 pub mod dav_server;
 pub mod digest;
+pub mod discover;
 pub mod fake;
 pub mod ftp;
 mod http;

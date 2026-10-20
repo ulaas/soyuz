@@ -308,6 +308,8 @@ settings-behaviour-watch-poll-desc = Sistemin dosya izleme sınırı (fs.inotify
 
 settings-remote-hosts-desc = { $count } ana makine anahtarına güveniliyor. Yeniden sorulması için birini unutun.
 settings-remote-shares = \\sunucu için paylaşımları listele
+settings-remote-discover = Bu ağdaki sunucuları bul
+settings-remote-discover-desc = Sunucuya bağlan, yerel ağda kendini duyuran SFTP, WebDAV ve FTP sunucularını listeler (mDNS / Bonjour).
 
 settings-jobs-queue = Kuyruk
 settings-jobs-parallel = Paralel işler

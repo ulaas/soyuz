@@ -1250,6 +1250,14 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.remote.share_enumeration);
             },
         );
+        r.row_kw(
+            tr!("settings-remote-discover"),
+            tr!("settings-remote-discover-desc"),
+            "mdns bonjour zeroconf lan",
+            |ui| {
+                switch(ui, &mut d.remote.discover);
+            },
+        );
         let hosts = soyuz_vfs::registry::known_hosts().entries();
         r.row_kw(
             tr!("settings-remote-trusted"),

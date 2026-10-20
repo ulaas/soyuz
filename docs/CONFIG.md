@@ -565,6 +565,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `preview_cache_mb` | integer | `512` | Remote files are downloaded for preview / open into a per-user temp cache of at most this size (oldest files are evicted). |
 | `preview_max_mb` | integer | `64` | Larger remote files are not downloaded just for a preview. |
 | `share_enumeration` | boolean | `true` | Typing `\\server` or `smb://server` lists its shares (Windows `NetShareEnum`; elsewhere srvsvc over SMB). |
+| `discover` | boolean | `true` | Connect to server lists SFTP / WebDAV / FTP (and SMB off Windows) servers that announce themselves on the local network (mDNS / DNS-SD), while the dialog is open. |
 
 ## `[linux]`
 
