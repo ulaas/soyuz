@@ -921,6 +921,7 @@ mod tests {
             fg: crate::services::preview_gfx::WHITE,
             pixels_per_point: 1.0,
             rich: RichLimits::default(),
+            folder_notes: Vec::new(),
         }
     }
 

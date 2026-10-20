@@ -237,6 +237,8 @@ views-preview-folder-direct = { $size } in direct files
 views-preview-folder-hidden = { $count } hidden
 # $name: newest item; $when: relative time ("5 minutes ago").
 views-preview-folder-newest = Newest: { $name } · { $when }
+views-preview-folder-notes = Notes
+views-preview-folder-notes-edit = Edit
 
 views-preview-kind-folder = Folder
 views-preview-kind-image = Image

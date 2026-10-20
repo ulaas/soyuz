@@ -180,6 +180,9 @@ and *Retry failed*.
     An encrypted PDF shows a lock card: *Enter password…* there, or *PDF password…* in the
     item menu or the palette (terminal UI too), opens it. The password is kept until Soyuz
     closes, never written to disk.
+  - **Folders**: counts, sizes and the most common types; a folder with a README or notes
+    file (`[preview] folder_notes_files`) shows it below, Markdown rendered, with *Edit* to
+    change it in the built-in editor.
   - **Office / OpenDocument**: docx / odt text with headings, bold, italic and lists;
     xlsx / ods first sheet as a table (`sheet_rows`); pptx / odp slide titles and bullets.
   - **EPUB**: cover, title, authors, description and the table of contents.

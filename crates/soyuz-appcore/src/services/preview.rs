@@ -306,6 +306,8 @@ pub struct Limits {
     pub pixels_per_point: f32,
     /// Rich previewer switches and caps (`preview_rich`).
     pub rich: super::preview_rich::RichLimits,
+    /// `[preview] folder_notes_files` (empty when `folder_notes` is off).
+    pub folder_notes: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -349,6 +351,35 @@ pub struct FolderSummary {
     pub top_ext: Vec<(String, u64)>,
     pub newest: Option<(String, SystemTime)>,
     pub error: Option<String>,
+    /// The folder's notes file (`[preview] folder_notes`).
+    pub notes: Option<FolderNotes>,
+}
+
+/// A folder's README / notes file, read and parsed on the worker.
+#[derive(Clone, Debug)]
+pub struct FolderNotes {
+    pub path: PathBuf,
+    /// Markdown blocks (plain text files become paragraphs).
+    pub blocks: Arc<Vec<super::preview_text::Block>>,
+    /// Only the start of a long file is shown.
+    pub truncated: bool,
+}
+
+/// Notes files are read up to this size.
+const NOTES_CAP: u64 = 64 * 1024;
+
+/// The first of `names` (case-insensitive) among `entries`, read and parsed.
+fn folder_notes(entries: &[EntryInfo], names: &[String]) -> Option<FolderNotes> {
+    let e = names.iter().find_map(|n| entries.iter().find(|e| !e.is_dir_like() && e.name.eq_ignore_ascii_case(n)))?;
+    let mut buf = Vec::new();
+    std::fs::File::open(&e.path).ok()?.take(NOTES_CAP).read_to_end(&mut buf).ok()?;
+    let (text, _) = super::preview_text::decode_text(&buf);
+    let md = e.extension().is_some_and(|x| matches!(x.to_ascii_lowercase().as_str(), "md" | "markdown"));
+    // Plain text: one paragraph per blank-line-separated block, line breaks kept.
+    let source =
+        if md { text } else { text.split("\n\n").map(|p| p.replace('\n', "  \n")).collect::<Vec<_>>().join("\n\n") };
+    let blocks = super::preview_text::parse_markdown(&source);
+    Some(FolderNotes { path: e.path.clone(), blocks: Arc::new(blocks), truncated: e.size > NOTES_CAP })
 }
 
 /// Initial state of a hex document.
@@ -638,7 +669,7 @@ fn load(job: &LoadJob, stale: &dyn Fn() -> bool) -> Loaded {
     use crate::icon::IconId;
     let name = job.source.name();
     if job.is_dir {
-        return folder(&job.source);
+        return folder(&job.source, &job.limits.folder_notes);
     }
     // Script previewers take precedence for their file types.
     if let Source::File(p) = &job.source
@@ -1080,7 +1111,7 @@ pub fn summarize(entries: &[EntryInfo]) -> FolderSummary {
     s
 }
 
-fn folder(source: &Source) -> Loaded {
+fn folder(source: &Source, notes: &[String]) -> Loaded {
     let result: Result<Vec<EntryInfo>, String> = match source {
         Source::File(p) => {
             let opts = ListOptions { include_hidden: true, ..Default::default() };
@@ -1098,7 +1129,14 @@ fn folder(source: &Source) -> Loaded {
         Source::Entry { .. } => None,
     };
     let summary = match result {
-        Ok(entries) => summarize(&entries),
+        Ok(entries) => {
+            let mut s = summarize(&entries);
+            // Notes of real folders only (an archive's README is just an entry).
+            if matches!(source, Source::File(_)) {
+                s.notes = folder_notes(&entries, notes);
+            }
+            s
+        }
         Err(e) => FolderSummary { error: Some(e), ..Default::default() },
     };
     Loaded { kind: Kind::Folder, content: Content::Folder(summary), facts: Vec::new(), meta }
@@ -1158,6 +1196,23 @@ mod tests {
         assert_eq!(s.newest.as_ref().unwrap().0, "b.rs");
     }
 
+    #[test]
+    fn folder_preview_reads_the_first_notes_file() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("NOTES.md"), "second choice").unwrap();
+        std::fs::write(d.path().join("readme.MD"), "# Project\n\nSome **notes**.").unwrap();
+        let names = soyuz_core::config::Config::default().preview.folder_notes_files;
+        let Content::Folder(s) = folder(&Source::File(d.path().to_path_buf()), &names).content else {
+            panic!("a folder summary")
+        };
+        let n = s.notes.expect("notes");
+        assert_eq!(n.path, d.path().join("readme.MD"), "README first, any case");
+        assert!(matches!(n.blocks.first(), Some(super::super::preview_text::Block::Heading { .. })), "{:?}", n.blocks);
+        assert!(!n.truncated);
+        let Content::Folder(s) = folder(&Source::File(d.path().to_path_buf()), &[]).content else { panic!() };
+        assert!(s.notes.is_none(), "off: no notes");
+    }
+
     fn limits() -> Limits {
         Limits {
             max_image_px: 256,
@@ -1168,6 +1223,7 @@ mod tests {
             fg: crate::services::preview_gfx::WHITE,
             pixels_per_point: 1.0,
             rich: Default::default(),
+            folder_notes: soyuz_core::config::Config::default().preview.folder_notes_files,
         }
     }
 

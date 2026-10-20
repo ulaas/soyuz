@@ -468,6 +468,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_model_mib` | integer | `128` | 3D model files larger than this are not loaded (MiB). |
 | `max_audio_mib` | integer | `512` | Audio files larger than this get no waveform (MiB). |
 | `max_diff_kib` | integer | `1024` | Each side of a diff is read up to this size (KiB). |
+| `folder_notes` | boolean | `true` | A folder's preview shows its notes file (the first of `folder_notes_files` it holds, Markdown rendered) with an Edit button. |
+| `folder_notes_files` | array of strings | `["README.md", "README.markdown", "README.txt", "README", "NOTES.md", ".notes.md"]` | File names looked for, in order (case-insensitive). |
 
 ## `[media]`
 

@@ -324,9 +324,15 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
             );
         }
         Content::Folder(s) => {
-            let c = rect.center() - vec2(0.0, rect.height() * 0.12);
-            ui.painter().text(c, Align2::CENTER_CENTER, ph::FOLDER_SIMPLE, icons::font_fill(54.0), p.glyph_folder);
-            let mut y = c.y + 48.0;
+            // With notes the summary sits at the top and the notes fill the rest.
+            let c = if s.notes.is_some() {
+                pos2(rect.center().x, rect.top() + 44.0)
+            } else {
+                rect.center() - vec2(0.0, rect.height() * 0.12)
+            };
+            let glyph = if s.notes.is_some() { 36.0 } else { 54.0 };
+            ui.painter().text(c, Align2::CENTER_CENTER, ph::FOLDER_SIMPLE, icons::font_fill(glyph), p.glyph_folder);
+            let mut y = c.y + glyph * 0.9;
             let line = |ui: &Ui, y: &mut f32, text: String, font: FontId, color: Color32| {
                 ui.painter().text(pos2(rect.center().x, *y), Align2::CENTER_CENTER, text, font, color);
                 *y += 20.0;
@@ -413,7 +419,11 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
                     );
                 }
             }
-            let _ = y;
+            if let Some(n) = &s.notes
+                && let Some(a) = folder_notes(ui, rect, y + 6.0, n, &p)
+            {
+                action = Some(a);
+            }
         }
         Content::Media { video } => {
             let c = rect.center() - vec2(0.0, rect.height() * 0.18);
@@ -472,6 +482,43 @@ pub fn content(ui: &mut Ui, rect: Rect, st: &mut PreviewState, interactive: bool
 }
 
 /// Virtualized, highlighted text with a line-number gutter.
+/// A folder's notes file below its summary, from `top` down: a caption with the file
+/// name and Edit (opens it in the built-in editor), then the Markdown.
+fn folder_notes(
+    ui: &mut Ui,
+    rect: Rect,
+    top: f32,
+    n: &crate::services::preview::FolderNotes,
+    p: &Palette,
+) -> Option<PreviewAction> {
+    let area = Rect::from_min_max(pos2(rect.left() + 12.0, top), pos2(rect.right() - 12.0, rect.bottom() - 6.0));
+    if area.height() < 60.0 {
+        return None;
+    }
+    let mut action = None;
+    let bar = Rect::from_min_size(area.min, vec2(area.width(), 26.0));
+    ui.painter().line_segment([bar.left_top(), bar.right_top()], Stroke::new(1.0, p.border_subtle));
+    let name = soyuz_core::entry::display_name(&n.path);
+    let caption = format!("{}  ·  {name}", tr!("views-preview-folder-notes").to_uppercase());
+    let g = trunc_galley(ui.painter(), &caption, FontId::proportional(10.5), p.text_tertiary, bar.width() - 80.0);
+    ui.painter().galley(pos2(bar.left(), bar.center().y - g.size().y / 2.0 + 2.0), g, p.text_tertiary);
+    let br = Rect::from_min_max(pos2(bar.right() - 70.0, bar.top() + 4.0), pos2(bar.right(), bar.bottom()));
+    let mut bc = ui.new_child(UiBuilder::new().max_rect(br).layout(egui::Layout::right_to_left(egui::Align::Center)));
+    if pill_button(&mut bc, Some(ph::PENCIL_SIMPLE), tr!("views-preview-folder-notes-edit"), false).clicked() {
+        action = Some(PreviewAction::EditFile(n.path.clone()));
+    }
+    let body = Rect::from_min_max(pos2(area.left(), bar.bottom() + 4.0), area.max);
+    let mut c = ui.new_child(UiBuilder::new().max_rect(body));
+    c.set_clip_rect(body.intersect(ui.clip_rect()));
+    ScrollArea::vertical().id_salt(("folder-notes", &n.path)).auto_shrink([false, false]).show(&mut c, |ui| {
+        markdown::show(ui, &n.blocks, p);
+        if n.truncated {
+            ui.label(egui::RichText::new(tr!("views-preview-truncated")).size(11.0).color(p.text_tertiary));
+        }
+    });
+    action
+}
+
 fn text_view(ui: &mut Ui, rect: Rect, lines: &Arc<Vec<StyledLine>>, widest: usize, truncated: bool) {
     let p = palette(ui.ctx());
     let font = FontId::monospace(12.0);

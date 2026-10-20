@@ -272,6 +272,8 @@ sheet_rows = 200                 # spreadsheet rows read from the first sheet
 max_model_mib = 128
 max_audio_mib = 512              # no waveform above this size
 max_diff_kib = 1024              # each side of a diff is read up to this size
+folder_notes = true              # a folder's preview shows its README / notes file, with Edit
+folder_notes_files = ["README.md", "README.markdown", "README.txt", "README", "NOTES.md", ".notes.md"]
 
 [media]                          # FFmpeg libraries (loaded at run time), video player, media tools
 ffmpeg = true                    # use the libraries when found (bundled, ffmpeg_dir, <config>/ffmpeg, system)

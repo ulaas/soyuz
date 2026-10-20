@@ -1741,6 +1741,20 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-preview-diff-limit"), tr!("settings-preview-diff-limit-desc"), "max size", |ui| {
             number(ui, &mut d.preview.max_diff_kib, 16..=65_536, " KiB");
         });
+        r.row_kw(
+            tr!("settings-preview-folder-notes"),
+            tr!("settings-preview-folder-notes-desc"),
+            "readme notes folder markdown",
+            |ui| {
+                switch(ui, &mut d.preview.folder_notes);
+            },
+        );
+        let notes_on = d.preview.folder_notes;
+        r.block(tr!("settings-preview-folder-notes-files"), tr!("settings-preview-folder-notes-files-desc"), |ui| {
+            ui.add_enabled_ui(notes_on, |ui| {
+                lines_editor(ui, "folder_notes_files", &mut d.preview.folder_notes_files, 3)
+            });
+        });
         r.row_kw(tr!("settings-preview-thumb-mem"), tr!("settings-preview-thumb-mem-desc"), "cache ram budget", |ui| {
             number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
         });

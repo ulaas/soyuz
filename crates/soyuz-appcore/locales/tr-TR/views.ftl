@@ -206,6 +206,8 @@ views-preview-folder-size-running = { $files } dosyada { $size } …
 views-preview-folder-direct = Doğrudan içerdiği dosyalarda { $size }
 views-preview-folder-hidden = { $count } gizli
 views-preview-folder-newest = En yeni: { $name } · { $when }
+views-preview-folder-notes = Notlar
+views-preview-folder-notes-edit = Düzenle
 
 views-preview-kind-folder = Klasör
 views-preview-kind-image = Resim

@@ -26,6 +26,8 @@ pub enum PreviewAction {
     Open(PathBuf),
     /// Ask for the password of this encrypted PDF (`models::archive::ask_pdf_password`).
     UnlockPdf(PathBuf),
+    /// Open this file in the built-in editor (a folder's notes).
+    EditFile(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -133,6 +135,7 @@ impl PreviewLoader {
                 terminal: self.terminal,
                 ..crate::services::preview_rich::RichLimits::from_config(&cfg.preview, &cfg.media, self.big)
             },
+            folder_notes: if cfg.preview.folder_notes { cfg.preview.folder_notes_files.clone() } else { Vec::new() },
         }
     }
 

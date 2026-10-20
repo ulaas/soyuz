@@ -943,6 +943,11 @@ pub struct Preview {
     pub max_audio_mib: u64,
     /// Each side of a diff is read up to this size (KiB).
     pub max_diff_kib: u64,
+    /// A folder's preview shows its notes file (the first of `folder_notes_files` it
+    /// holds, Markdown rendered) with an Edit button.
+    pub folder_notes: bool,
+    /// File names looked for, in order (case-insensitive).
+    pub folder_notes_files: Vec<String>,
 }
 
 /// `[media]`: the FFmpeg libraries (loaded at run time, never linked), the in-app video

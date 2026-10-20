@@ -395,6 +395,10 @@ impl Default for Preview {
             max_model_mib: 128,
             max_audio_mib: 512,
             max_diff_kib: 1024,
+            folder_notes: true,
+            folder_notes_files: ["README.md", "README.markdown", "README.txt", "README", "NOTES.md", ".notes.md"]
+                .map(String::from)
+                .to_vec(),
         }
     }
 }

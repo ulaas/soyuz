@@ -543,7 +543,7 @@ pub(crate) fn content_body(
                 total,
             }
         }
-        Content::Folder(s) => window(folder_lines(s, folder_size), scroll, h, 0),
+        Content::Folder(s) => window(folder_lines(s, folder_size, w.max(1)), scroll, h, 0),
         Content::Media { .. } => window(media_lines(loaded, entry), scroll, h, 0),
         Content::Image(img) => {
             let summary = summary(loaded, &["Dimensions", "Format", "Triangles"]);
@@ -699,6 +699,7 @@ impl Body {
 fn folder_lines(
     s: &soyuz_appcore::services::preview::FolderSummary,
     size: Option<(u64, u64, u64, bool)>,
+    w: usize,
 ) -> Vec<PLine> {
     let mut out = Vec::new();
     if let Some(err) = &s.error {
@@ -732,6 +733,16 @@ fn folder_lines(
     if let Some((name, t)) = &s.newest {
         let rel = format_time(*t, &soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Relative));
         out.push(PLine::plain(tr!("views-preview-folder-newest", name = safe(name), when = rel), Role::Faint));
+    }
+    // The folder's notes file (`[preview] folder_notes`), under a caption.
+    if let Some(n) = &s.notes {
+        out.push(PLine::default());
+        let name = soyuz_core::entry::display_name(&n.path);
+        out.push(PLine::plain(format!("{} · {}", tr!("views-preview-folder-notes"), safe(&name)), Role::Accent));
+        out.extend(markdown(&n.blocks, w));
+        if n.truncated {
+            out.push(PLine::plain(tr!("views-preview-truncated"), Role::Faint));
+        }
     }
     out
 }
