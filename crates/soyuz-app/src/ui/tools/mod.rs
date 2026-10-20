@@ -98,8 +98,15 @@ pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
 fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
     match c {
         ToolCmd::Treemap(path) => match &mut t.treemap {
-            Some(w) if w.root_path() == path.as_path() => w.open = true,
+            Some(w) if w.root_path() == path.as_path() && w.diff_other().is_none() => w.open = true,
             _ => t.treemap = Some(treemap::TreemapWindow::new(path)),
+        },
+        ToolCmd::TreemapDiff(path, other) => match &mut t.treemap {
+            Some(w) if w.root_path() == path.as_path() && w.diff_other() == Some(other.as_path()) => w.open = true,
+            _ => {
+                let by_content = app.core.config.sync.treemap_diff_content;
+                t.treemap = Some(treemap::TreemapWindow::new_diff(path, other, by_content));
+            }
         },
         ToolCmd::Compare(l, r) => {
             let profiles = sync_sched::profiles();

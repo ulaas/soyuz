@@ -93,11 +93,27 @@ fn reveal(app: &mut App) {
 pub fn open_treemap(app: &mut App, root: PathBuf) {
     if let Some(Screen::Treemap(t)) = &app.input.screens.screen
         && t.model.root_path() == root.as_path()
+        && t.model.diff_other().is_none()
     {
         reveal(app);
         return;
     }
     let st = treemap::State::new(root, app.host.wake());
+    install(app, Screen::Treemap(Box::new(st)));
+}
+
+/// Compare as treemap (`ToolCmd::TreemapDiff`): `root`'s treemap coloured by its
+/// differences from `other`; the same compare, hidden, shows again.
+pub fn open_treemap_diff(app: &mut App, root: PathBuf, other: PathBuf) {
+    if let Some(Screen::Treemap(t)) = &app.input.screens.screen
+        && t.model.root_path() == root.as_path()
+        && t.model.diff_other() == Some(other.as_path())
+    {
+        reveal(app);
+        return;
+    }
+    let by_content = app.core.config.sync.treemap_diff_content;
+    let st = treemap::State::new_diff(root, other, by_content, app.host.wake());
     install(app, Screen::Treemap(Box::new(st)));
 }
 

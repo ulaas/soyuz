@@ -493,6 +493,15 @@ sets the decoder and encoder threads of the media tools too.
 All from the palette or the context menu:
 
 - **Disk usage treemap** — where the space went; click to zoom in, sidebar lists the largest items.
+- **Compare as treemap** — a visual folder diff: the treemap of a folder with every tile
+  coloured by how it differs from the other pane's folder (or the second of two selected
+  folders): *only here*, *newer here*, *newer there*, *different* or *same*. The legend
+  adds up the bytes of each in the level shown, and the line above the map counts the
+  differences and the items only in the other folder (they have no tile). *Differences /
+  Kinds* switches between this and the usual colours. It compares dates and sizes;
+  **Settings → Jobs → Compare as treemap by content** compares the bytes instead
+  (`[sync] treemap_diff_content`). Open it from the palette, or from the menu of two
+  selected folders or of a folder's background with two panes.
 - **Compare folders / Synchronize** — by date & size, size or content; review the plan before syncing.
   **Two-way sync** remembers the last sync, so a file deleted on one side is deleted on the
   other and edits on both sides become *conflicts* (keep left, keep right, keep both, skip,
@@ -1008,6 +1017,9 @@ the same tool on the same folder shows it again.
     closes the view.
   - With the mouse on, a click on a tile zooms into its folder, a double click opens a
     file, and the breadcrumb, tabs, buttons and side rows are clickable.
+  - *Compare as treemap* opens the same view coloured by differences (each difference
+    gets its own fill character without colours); D switches between differences and
+    kinds.
 - *Find duplicate files* (palette, or *Find duplicates* in a folder's menu) searches the
   selected folders, or the current one.
   - The setup at the top has the folders, a field that adds one (with folder completion;

@@ -6,7 +6,7 @@
 //! | `ToolCmd` | Opens |
 //! |---|---|
 //! | `Compare` / `CompareProfile` / `SyncProfiles` | the compare screen (`crate::input::compare`) |
-//! | `Treemap` / `Duplicates` | a full-screen tool (`crate::input::screens::{open_treemap, open_dupes}`) |
+//! | `Treemap` / `TreemapDiff` / `Duplicates` | a full-screen tool (`crate::input::screens::{open_treemap, open_treemap_diff, open_dupes}`) |
 //! | `Split` / `Join` | `crate::input::dialogs::split::{open_split, open_join}` |
 //! | `Versions` | `crate::input::dialogs::versions::open` |
 //! | `QuickShare` | `crate::input::dialogs::share::open` |
@@ -36,6 +36,7 @@ pub fn drain(app: &mut App) {
             ToolCmd::CompareProfile(name) => crate::input::compare::open_profile(app, name),
             ToolCmd::SyncProfiles => crate::input::compare::open_profiles(app),
             ToolCmd::Treemap(root) => crate::input::screens::open_treemap(app, root),
+            ToolCmd::TreemapDiff(root, other) => crate::input::screens::open_treemap_diff(app, root, other),
             ToolCmd::Duplicates(roots) => crate::input::screens::open_dupes(app, roots),
             ToolCmd::Split(path) => dialogs::split::open_split(app, path),
             ToolCmd::Join(path) => dialogs::split::open_join(app, path),

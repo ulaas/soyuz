@@ -6,6 +6,10 @@
 //!
 //! The scan, the tree, the layout and what the toolbar, side list and menu do live in the
 //! core (`models::treemap::TreemapModel`, Phase T7); this window draws them.
+//!
+//! Compare as treemap: the same window with a compare running beside the scan; tiles,
+//! folder headers and the legend show what differs (`models::treemap::diff::Mark`), and
+//! a switch goes back to the kind colours.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -16,6 +20,7 @@ use soyuz_core::{SizeStyle, format_size};
 
 use super::{button, progress_bar, tool_window};
 use crate::app::SoyuzApp;
+use crate::models::treemap::diff::Mark;
 use crate::models::treemap::layout::{Tile, squarify};
 use crate::models::treemap::scan::Tree;
 use crate::models::treemap::{Bucket, SideTab, Status, TreemapItem, TreemapModel, percent, share};
@@ -46,6 +51,24 @@ pub fn bucket_color(b: Bucket, p: &Palette) -> Color32 {
         Bucket::Docs => Color32::from_rgb(0x3C, 0xC6, 0xB4),
         Bucket::Exe => p.glyph_exe,
         Bucket::Other => Color32::from_rgb(0x8A, 0x91, 0xA0),
+    }
+}
+
+/// Tile color for a diff mark.
+pub fn mark_color(m: Mark, p: &Palette) -> Color32 {
+    match m {
+        Mark::OnlyHere => p.success,
+        Mark::NewerHere => p.info,
+        Mark::NewerThere => p.warning,
+        Mark::Differ => p.danger,
+        Mark::Changed => p.accent,
+        Mark::Same => {
+            if p.dark {
+                Color32::from_rgb(0x5C, 0x63, 0x70)
+            } else {
+                Color32::from_rgb(0xB4, 0xBA, 0xC4)
+            }
+        }
     }
 }
 
@@ -95,17 +118,33 @@ pub struct TreemapWindow {
 
 impl TreemapWindow {
     pub fn new(root: PathBuf) -> Self {
-        TreemapWindow {
-            open: true,
-            model: TreemapModel::new(root, super::wake()),
-            hover: None,
-            side_hover: None,
-            menu_target: None,
-        }
+        Self::with_model(TreemapModel::new(root, super::wake()))
+    }
+
+    /// Compare as treemap: `root` coloured by its differences from `other`.
+    pub fn new_diff(root: PathBuf, other: PathBuf, by_content: bool) -> Self {
+        Self::with_model(TreemapModel::new(root, super::wake()).with_diff(other, by_content))
+    }
+
+    fn with_model(model: TreemapModel) -> Self {
+        TreemapWindow { open: true, model, hover: None, side_hover: None, menu_target: None }
     }
 
     pub fn root_path(&self) -> &Path {
         self.model.root_path()
+    }
+
+    /// The folder compared with (Compare as treemap).
+    pub fn diff_other(&self) -> Option<&Path> {
+        self.model.diff_other()
+    }
+
+    /// A tile's colour: its diff mark, else its kind.
+    fn tile_color(&self, id: usize, p: &Palette) -> Color32 {
+        match self.model.mark(id) {
+            Some(m) => mark_color(m, p),
+            None => class_color(self.model.tree.nodes[id].class, p),
+        }
     }
 
     pub fn show(&mut self, ctx: &egui::Context, app: &mut SoyuzApp) {
@@ -190,6 +229,30 @@ impl TreemapWindow {
             }
             Status::Idle => {}
         }
+        if let Some(d) = &self.model.diff {
+            let (text, comparing, show) = (d.status(), d.is_comparing(), d.show);
+            let full = super::tags_ui::show_path(&d.other);
+            ui.horizontal(|ui| {
+                if comparing {
+                    ui.add(egui::Spinner::new().size(12.0));
+                    ui.ctx().request_repaint_after(std::time::Duration::from_millis(120));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    for (on, label) in
+                        [(false, tr!("tools-treemap-diff-by-kind")), (true, tr!("tools-treemap-diff-by-changes"))]
+                    {
+                        let mut sel = show == on;
+                        if super::toggle_chip(ui, label, &mut sel, p.accent).clicked() && show != on {
+                            self.model.toggle_diff();
+                        }
+                    }
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        let text = egui::RichText::new(text).font(FontId::proportional(11.5)).color(p.text_secondary);
+                        ui.add(egui::Label::new(text).truncate()).on_hover_text(full);
+                    });
+                });
+            });
+        }
         ui.add_space(4.0);
 
         let area = ui.available_rect_before_wrap();
@@ -201,18 +264,25 @@ impl TreemapWindow {
         ui.allocate_rect(area, Sense::hover());
         self.treemap(ui, map, app);
         self.side(ui, side, style);
-        // Legend.
+        // Legend: the kinds, or the diff marks with their bytes in this level.
         let lr = Rect::from_min_max(pos2(area.left(), map.bottom() + 6.0), pos2(area.right(), map.bottom() + legend_h));
         let mut x = lr.left() + 2.0;
-        for b in Bucket::LEGEND {
-            let label = b.label();
-            let c = bucket_color(b, &p);
+        let marks = self.model.diff_totals();
+        let entries: Vec<(String, Color32)> = if marks.is_empty() {
+            Bucket::LEGEND.iter().map(|b| (b.label().to_string(), bucket_color(*b, &p))).collect()
+        } else {
+            marks
+                .iter()
+                .map(|(m, b)| (format!("{}  {}", m.label(), format_size(*b, style)), mark_color(*m, &p)))
+                .collect()
+        };
+        for (label, c) in entries {
             ui.painter().rect_filled(
                 Rect::from_center_size(pos2(x + 5.0, lr.center().y), vec2(10.0, 10.0)),
                 CornerRadius::same(3),
                 c,
             );
-            let g = ui.painter().layout_no_wrap(label.to_string(), FontId::proportional(11.5), p.text_secondary);
+            let g = ui.painter().layout_no_wrap(label, FontId::proportional(11.5), p.text_secondary);
             let w = g.size().x;
             ui.painter().galley(pos2(x + 14.0, lr.center().y - g.size().y / 2.0), g, p.text_secondary);
             x += w + 30.0;
@@ -340,7 +410,17 @@ impl TreemapWindow {
             let cur_bytes = self.model.tree.nodes[self.model.current].bytes;
             let tree = &self.model.tree;
             let style = app.core.config.general.size_style;
-            resp.clone().on_hover_ui_at_pointer(|ui| tooltip(ui, tree, id, parent_bytes, cur_bytes, style));
+            let (mark, color) = (self.model.mark(id), self.tile_color(id, &p));
+            resp.clone().on_hover_ui_at_pointer(|ui| {
+                tooltip(ui, tree, id, parent_bytes, cur_bytes, style, color);
+                if let Some(m) = mark {
+                    ui.label(
+                        egui::RichText::new(tr!("tools-treemap-diff-tile", mark = m.label()))
+                            .font(crate::ui::views::flow::semibold(11.5))
+                            .color(mark_color(m, &p)),
+                    );
+                }
+            });
         }
         if resp.clicked()
             && let Some(id) = self.hover
@@ -390,7 +470,7 @@ impl TreemapWindow {
                 n.is_dir && !n.children.is_empty() && depth < MAX_NEST && r.width() > 44.0 && r.height() > 34.0;
             out.hits.push((r, *k));
             if nested {
-                let fc = p.glyph_folder;
+                let fc = self.model.mark(*k).map_or(p.glyph_folder, |m| mark_color(m, p));
                 let bg = if p.dark {
                     scale(p.bg_surface2, 1.0 + 0.08 * depth as f32)
                 } else {
@@ -422,7 +502,7 @@ impl TreemapWindow {
                 );
                 self.layout_level(ui, p, inner, *k, depth + 1, out);
             } else {
-                let base = class_color(n.class, p);
+                let base = self.tile_color(*k, p);
                 cushion(out.mesh, r, base, p.dark);
                 if r.width() > 54.0 && r.height() > 30.0 {
                     let tc = if luminance(base) > 0.55 {
@@ -498,7 +578,7 @@ impl TreemapWindow {
                     if resp.hovered() {
                         hover = Some(id);
                     }
-                    let c = class_color(n.class, &p);
+                    let c = self.tile_color(id, &p);
                     let glyph = if n.is_dir {
                         ph::FOLDER_SIMPLE
                     } else if n.other {
@@ -609,14 +689,12 @@ fn trunc_galley_shape(ui: &Ui, text: &str, size: f32, color: Color32, max_w: f32
     trunc_galley(ui.painter(), text, FontId::proportional(size), color, max_w)
 }
 
-fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u64, style: SizeStyle) {
+fn tooltip(ui: &mut Ui, tree: &Tree, id: usize, parent_bytes: u64, cur_bytes: u64, style: SizeStyle, color: Color32) {
     let p = palette(ui.ctx());
     let n = &tree.nodes[id];
     ui.set_max_width(360.0);
     ui.horizontal(|ui| {
-        ui.label(
-            icons::icon(if n.is_dir { ph::FOLDER_SIMPLE } else { ph::FILE }, 14.0).color(class_color(n.class, &p)),
-        );
+        ui.label(icons::icon(if n.is_dir { ph::FOLDER_SIMPLE } else { ph::FILE }, 14.0).color(color));
         ui.label(egui::RichText::new(n.label()).font(crate::ui::views::flow::semibold(13.0)).color(p.text_primary));
     });
     if !n.other {

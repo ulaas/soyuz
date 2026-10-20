@@ -535,6 +535,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `scheduled_dry_run` | boolean | `false` | Scheduled runs only report what they would change (nothing is copied or deleted). |
 | `previous_versions` | boolean | `true` | Previous versions: list Windows Volume Shadow Copies. |
 | `shadow_probe_max` | integer | `64` | Previous versions: probe `HarddiskVolumeShadowCopy1..=N` when the kernel device directory can't be listed. |
+| `treemap_diff_content` | boolean | `false` | "Compare as treemap" compares file contents byte for byte (slower) instead of dates and sizes. |
 
 ## `[updates]`
 

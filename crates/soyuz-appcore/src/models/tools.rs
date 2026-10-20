@@ -25,6 +25,9 @@ use crate::services::jobs::{JobMeta, OpKind};
 pub enum ToolCmd {
     ShelfAdd(Vec<PathBuf>),
     Treemap(PathBuf),
+    /// The treemap of the first folder coloured by its differences from the second
+    /// (`models::treemap::diff`).
+    TreemapDiff(PathBuf, PathBuf),
     Compare(PathBuf, Option<PathBuf>),
     Duplicates(Vec<PathBuf>),
     Split(PathBuf),
@@ -102,7 +105,10 @@ pub fn debug_open_once() {
         let paths: Vec<PathBuf> = arg.split('|').filter(|s| !s.is_empty()).map(PathBuf::from).collect();
         let first = paths.first().cloned();
         let c = match (tool.trim(), first) {
-            ("treemap", Some(p)) => ToolCmd::Treemap(p),
+            ("treemap", Some(p)) => match paths.get(1) {
+                Some(o) => ToolCmd::TreemapDiff(p, o.clone()),
+                None => ToolCmd::Treemap(p),
+            },
             ("compare", Some(p)) => ToolCmd::Compare(p, paths.get(1).cloned()),
             ("dupes", Some(_)) => ToolCmd::Duplicates(paths),
             ("shelf", Some(_)) => ToolCmd::ShelfAdd(paths),
@@ -283,6 +289,7 @@ pub fn handles(a: &Action) -> bool {
         A::DiskUsageTreemap
             | A::FindDuplicates
             | A::CompareFolders
+            | A::CompareTreemap
             | A::SyncFolders
             | A::SplitFile
             | A::JoinFiles
@@ -361,6 +368,16 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
                 Some(l) => queue(ToolCmd::Compare(l, r)),
                 None => {
                     app.ui.toasts.push(Toast::info(tr!("tools-toast-open-folder-compare")));
+                }
+            }
+        }
+        A::CompareTreemap => {
+            let dirs: Vec<PathBuf> = sel.iter().filter(|(_, d)| *d).map(|(p, _)| p.clone()).collect();
+            let (l, r) = if dirs.len() == 2 { (Some(dirs[0].clone()), Some(dirs[1].clone())) } else { (here, other) };
+            match (l, r) {
+                (Some(l), Some(r)) => queue(ToolCmd::TreemapDiff(l, r)),
+                _ => {
+                    app.ui.toasts.push(Toast::info(tr!("tools-toast-compare-treemap")));
                 }
             }
         }

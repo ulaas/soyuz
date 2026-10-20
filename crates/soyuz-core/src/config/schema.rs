@@ -1196,6 +1196,9 @@ pub struct SyncSection {
     /// Previous versions: probe `HarddiskVolumeShadowCopy1..=N` when the kernel device
     /// directory can't be listed.
     pub shadow_probe_max: u32,
+    /// "Compare as treemap" compares file contents byte for byte (slower) instead of
+    /// dates and sizes.
+    pub treemap_diff_content: bool,
 }
 
 /// `[remote]`: remote locations. Saved connections live in

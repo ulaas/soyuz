@@ -33,6 +33,9 @@ tools-menu-find-duplicates = Yinelenen dosyaları bul
 tools-menu-compare-folders = Klasörleri karşılaştır
 tools-menu-compare-folders-dialog = Klasörleri karşılaştır…
 tools-menu-compare-other-pane = Diğer bölmeyle karşılaştır
+tools-menu-compare-treemap = Ağaç haritası olarak karşılaştır
+tools-menu-compare-treemap-other-pane = Diğer bölmeyle ağaç haritası olarak karşılaştır
+tools-toast-compare-treemap = Ağaç haritası olarak karşılaştırmak için diğer klasörü ikinci bölmede açın (ya da iki klasör seçin)
 tools-menu-join-parts = Parçaları birleştir…
 tools-menu-split-file = Dosyayı böl…
 tools-menu-clear-recent = Son kullanılanları temizle
@@ -110,6 +113,25 @@ tools-treemap-legend-code = Kod
 tools-treemap-legend-documents = Belgeler
 tools-treemap-legend-programs = Programlar
 tools-treemap-legend-other = Diğer
+## Ağaç haritası olarak karşılaştır (`models::treemap::diff`): "burada" haritanın klasörü, "orada" diğeri.
+tools-treemap-diff-only-here = Yalnızca burada
+tools-treemap-diff-newer-here = Burada daha yeni
+tools-treemap-diff-newer-there = Orada daha yeni
+tools-treemap-diff-different = Farklı
+tools-treemap-diff-changed = İçinde farklar var
+tools-treemap-diff-same = Aynı
+tools-treemap-diff-comparing = { $other } ile karşılaştırılıyor…
+tools-treemap-diff-failed = { $other } ile karşılaştırılamadı: { $error }
+tools-treemap-diff-compared = { $count ->
+    [0] { $other } ile aynı
+   *[other] { $other } ile { $count } fark
+}{ $there ->
+    [0] {""}
+   *[other] {" "}· { $there } öge yalnızca orada
+}
+tools-treemap-diff-by-changes = Farklar
+tools-treemap-diff-by-kind = Türler
+tools-treemap-diff-tile = Karşılaştırma: { $mark }
 tools-treemap-confirm-trash = “{ $name }” ({ $size }) Çöp Kutusu'na taşınsın mı?
 tools-treemap-measuring = Ölçülüyor…
 tools-treemap-empty-folder = Bu klasör boş

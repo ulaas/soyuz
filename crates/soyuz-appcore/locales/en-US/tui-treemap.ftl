@@ -6,5 +6,6 @@ tui-treemap-hints-map = ←↑↓→ select · Enter zoom in / open · Backspace
 tui-treemap-hints-list = ↑↓ move · Enter open · Backspace up · C contents · L largest · Tab map · { $del }/X trash · Shift+F10 menu · Esc close
 tui-treemap-hints-confirm = Enter move to trash · Esc cancel
 tui-treemap-hint-switch = M map / list
+tui-treemap-hint-diff = D differences / kinds
 tui-treemap-map = Map
 tui-treemap-list = List

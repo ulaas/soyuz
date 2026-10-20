@@ -30,6 +30,7 @@ use std::time::Instant;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::host::Wake;
 use soyuz_appcore::keys::input::InputEvent;
+use soyuz_appcore::models::treemap::diff::Mark;
 use soyuz_appcore::models::treemap::{SideTab, TreemapItem, TreemapModel};
 use soyuz_core::config::{KeyName, Mods};
 
@@ -61,6 +62,8 @@ pub struct State {
     pub menu: Option<(usize, Vec<TreemapItem>)>,
     /// The model built by `view::screens::prepare`.
     pub vm: TreemapVm,
+    /// The diff legend's totals (Compare as treemap), taken in `prepare`.
+    pub marks: Vec<(Mark, u64)>,
 }
 
 impl std::fmt::Debug for State {
@@ -76,8 +79,17 @@ impl std::fmt::Debug for State {
 impl State {
     /// The treemap of `root`; its scan starts now.
     pub fn new(root: PathBuf, wake: Wake) -> State {
+        State::with_model(TreemapModel::new(root, wake))
+    }
+
+    /// Compare as treemap: `root` coloured by its differences from `other`.
+    pub fn new_diff(root: PathBuf, other: PathBuf, by_content: bool, wake: Wake) -> State {
+        State::with_model(TreemapModel::new(root, wake).with_diff(other, by_content))
+    }
+
+    fn with_model(model: TreemapModel) -> State {
         State {
-            model: TreemapModel::new(root, wake),
+            model,
             focus_list: false,
             list: false,
             side: SelectList::default(),
@@ -87,6 +99,7 @@ impl State {
             cache: None,
             menu: None,
             vm: TreemapVm::default(),
+            marks: Vec::new(),
         }
     }
 
@@ -206,6 +219,7 @@ pub fn key(app: &mut App, ev: &InputEvent) -> bool {
         KeyName::M => toggle_view(st),
         KeyName::C => set_tab(st, SideTab::Contents),
         KeyName::L => set_tab(st, SideTab::Largest),
+        KeyName::D => st.model.toggle_diff(),
         KeyName::O => {
             let id = st.model.selected.filter(|&i| st.model.tree.nodes[i].is_dir).unwrap_or(st.model.current);
             run_item(app, id, TreemapItem::OpenInPane);

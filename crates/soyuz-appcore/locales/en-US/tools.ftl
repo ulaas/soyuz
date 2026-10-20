@@ -42,6 +42,9 @@ tools-menu-find-duplicates = Find duplicates
 tools-menu-compare-folders = Compare folders
 tools-menu-compare-folders-dialog = Compare folders…
 tools-menu-compare-other-pane = Compare with other pane
+tools-menu-compare-treemap = Compare as treemap
+tools-menu-compare-treemap-other-pane = Compare with other pane as treemap
+tools-toast-compare-treemap = Open the other folder in the second pane (or select two folders) to compare them as a treemap
 tools-menu-join-parts = Join parts…
 tools-menu-split-file = Split file…
 tools-menu-clear-recent = Clear recent items
@@ -133,6 +136,27 @@ tools-treemap-legend-code = Code
 tools-treemap-legend-documents = Documents
 tools-treemap-legend-programs = Programs
 tools-treemap-legend-other = Other
+## Compare as treemap (`models::treemap::diff`): "here" is the treemap's folder, "there" the other one.
+tools-treemap-diff-only-here = Only here
+tools-treemap-diff-newer-here = Newer here
+tools-treemap-diff-newer-there = Newer there
+tools-treemap-diff-different = Different
+tools-treemap-diff-changed = Differences inside
+tools-treemap-diff-same = Same
+tools-treemap-diff-comparing = Comparing with { $other }…
+tools-treemap-diff-failed = Could not compare with { $other }: { $error }
+tools-treemap-diff-compared = { $count ->
+    [0] Same as { $other }
+    [one] 1 difference from { $other }
+   *[other] { $count } differences from { $other }
+}{ $there ->
+    [0] {""}
+    [one] {" "}· 1 item only there
+   *[other] {" "}· { $there } items only there
+}
+tools-treemap-diff-by-changes = Differences
+tools-treemap-diff-by-kind = Kinds
+tools-treemap-diff-tile = Compared: { $mark }
 tools-treemap-confirm-trash = Move “{ $name }” ({ $size }) to the trash?
 tools-treemap-measuring = Measuring…
 tools-treemap-empty-folder = This folder is empty

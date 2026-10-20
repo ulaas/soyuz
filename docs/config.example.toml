@@ -321,6 +321,7 @@ change_debounce_secs = 10        # "on change" schedules wait this long after th
 scheduled_dry_run = false        # scheduled runs only write a report of what would change
 previous_versions = true         # list Windows Volume Shadow Copies in "Previous versions"
 shadow_probe_max = 64            # probe HarddiskVolumeShadowCopy1..N if \Device can't be listed
+treemap_diff_content = false     # "Compare as treemap" compares contents byte for byte, not dates and sizes
 
 [updates]                        # update check (manual; nothing installs without a click, no telemetry)
 repo = "ulaas/soyuz"             # GitHub "owner/name" or URL; empty = update check disabled

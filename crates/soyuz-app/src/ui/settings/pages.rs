@@ -1198,6 +1198,14 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             r.row_kw(tr!("settings-jobs-reports"), tr!("settings-jobs-reports-desc"), "history log", |ui| {
                 number(ui, &mut d.sync.reports_kept, 1..=200, "");
             });
+            r.row_kw(
+                tr!("settings-jobs-treemap-diff-content"),
+                tr!("settings-jobs-treemap-diff-content-desc"),
+                "compare treemap diff content bytes",
+                |ui| {
+                    switch(ui, &mut d.sync.treemap_diff_content);
+                },
+            );
             if crate::ui::tools::versions::supported() {
                 r.row_kw(
                     tr!("settings-jobs-previous-versions"),

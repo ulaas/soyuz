@@ -656,6 +656,7 @@ fn tool_item_entries(b: &mut B<'_>, location: &Location, sel: &[(PathBuf, bool)]
     }
     if dirs == 2 && sel.len() == 2 {
         b.plain_action(I::GitDiff, tr!("tools-menu-compare-folders"), Action::CompareFolders);
+        b.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-compare-treemap"), Action::CompareTreemap);
     }
     if let [(p, false)] = sel {
         if crate::models::tools::is_part(p) {
@@ -678,6 +679,13 @@ fn tool_background_entries(b: &mut B<'_>, location: &Location, dual: bool) {
                 if dual { tr!("tools-menu-compare-other-pane") } else { tr!("tools-menu-compare-folders-dialog") },
                 Action::CompareFolders,
             );
+            if dual {
+                b.plain_action(
+                    MenuIcon::ChartPieSlice,
+                    tr!("tools-menu-compare-treemap-other-pane"),
+                    Action::CompareTreemap,
+                );
+            }
             b.sep();
         }
         Location::Recent => {

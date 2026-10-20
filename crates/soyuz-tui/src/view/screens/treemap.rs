@@ -16,6 +16,9 @@
 //! - The side list: Contents / Largest files, rows with size and share (a share bar on a
 //!   second line from [`BAR_MIN_COLS`] columns).
 //! - The legend, the trash confirm bar and the key hints at the bottom.
+//! - Compare as treemap: leaves, side-list bars and the legend use the diff marks
+//!   (`models::treemap::diff::Mark`: colour roles, or a fill character each), the compare
+//!   line joins the scan line, D switches back to the kinds.
 //!
 //! Sizes: map and list side by side from [`BOTH_MIN_COLS`] × [`BOTH_MIN_ROWS`]; one of
 //! them (M switches) from [`ONE_MIN_COLS`] × [`ONE_MIN_ROWS`]; the list alone below; the
@@ -28,6 +31,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::widgets::Clear;
 use soyuz_appcore::core::AppCore;
+use soyuz_appcore::models::treemap::diff::Mark;
 use soyuz_appcore::models::treemap::layout::{Tile, squarify};
 use soyuz_appcore::models::treemap::scan::Tree;
 use soyuz_appcore::models::treemap::{Bucket, SideTab, Status, percent, share};
@@ -249,6 +253,8 @@ pub struct TileVm {
     pub h: u16,
     pub frame: bool,
     pub bucket: Bucket,
+    /// The diff colouring's mark (Compare as treemap), over the bucket.
+    pub mark: Option<Mark>,
     pub label: String,
     pub size: String,
     pub selected: bool,
@@ -267,6 +273,7 @@ pub struct SideRowVm {
     /// The share of the level, in thousandths.
     pub permille: u16,
     pub bucket: Bucket,
+    pub mark: Option<Mark>,
     pub dir: bool,
     pub cursor: bool,
 }
@@ -306,6 +313,8 @@ pub struct TreemapVm {
     /// The side list has the keyboard.
     pub list_focused: bool,
     pub legend: Vec<(Bucket, String)>,
+    /// The diff legend (marks with their bytes in this level), shown instead of `legend`.
+    pub marks: Vec<(Mark, String)>,
     /// The trash question.
     pub confirm: Option<String>,
     pub labels: Labels,
@@ -346,20 +355,40 @@ pub fn fill_char(b: Bucket, ascii: bool) -> &'static str {
     if ascii { ASCII[i] } else { UNICODE[i] }
 }
 
+/// A diff mark's colour role.
+pub fn mark_role(m: Mark) -> Role {
+    match m {
+        Mark::OnlyHere => Role::Success,
+        Mark::NewerHere => Role::Info,
+        Mark::NewerThere => Role::Warning,
+        Mark::Differ => Role::Danger,
+        Mark::Changed => Role::Accent,
+        Mark::Same => Role::Faint,
+    }
+}
+
+/// A diff mark's fill character (`ascii`: ASCII only).
+pub fn mark_char(m: Mark, ascii: bool) -> &'static str {
+    const UNICODE: [&str; 6] = ["█", "▓", "▒", "▞", "░", "·"];
+    const ASCII: [&str; 6] = ["#", "%", "@", "!", "+", "."];
+    let i = Mark::LEGEND.iter().position(|x| *x == m).unwrap_or(5);
+    if ascii { ASCII[i] } else { UNICODE[i] }
+}
+
 /// Tiles fill with colours (truecolor, 256 colours) or with characters (16 colours, mono).
 pub fn colour_fill(theme: &TuiTheme) -> bool {
     matches!(theme.mode(), ColorMode::Truecolor | ColorMode::Ansi256)
 }
 
-/// The style and character a leaf of bucket `b` fills with.
-fn fill(theme: &TuiTheme, b: Bucket) -> (Style, &'static str) {
-    let role = theme.style(bucket_role(b));
+/// The style and character a leaf of bucket `b` (or diff mark `m`) fills with.
+fn fill(theme: &TuiTheme, b: Bucket, m: Option<Mark>) -> (Style, &'static str) {
+    let role = theme.style(m.map_or(bucket_role(b), mark_role));
     if colour_fill(theme) {
         let bg = role.fg.unwrap_or(Color::Reset);
         let fg = theme.base().bg.unwrap_or(Color::Reset);
         (Style::new().bg(bg).fg(fg), " ")
     } else {
-        (role, fill_char(b, theme.ascii_only()))
+        (role, m.map_or_else(|| fill_char(b, theme.ascii_only()), |m| mark_char(m, theme.ascii_only())))
     }
 }
 
@@ -367,6 +396,7 @@ fn fill(theme: &TuiTheme, b: Bucket) -> (Style, &'static str) {
 /// for `area` (cached) and build the view model into `st.vm`.
 pub fn prepare(core: &AppCore, st: &mut State, area: Rect) {
     st.model.poll();
+    st.marks = st.model.diff_totals();
     st.geo = geometry(area, st.list, st.model.confirm_delete.is_some());
     if st.level != st.model.current {
         st.level = st.model.current;
@@ -395,6 +425,12 @@ fn build(core: &AppCore, st: &State, items: &[usize]) -> TreemapVm {
         Status::Failed(t) => StatusVm::Failed(t),
         Status::Done(t) => StatusVm::Done(t),
     };
+    // The compare line joins the scan line once the scan is through.
+    let status = match (status, model.diff.as_ref().map(|d| d.status())) {
+        (StatusVm::None, Some(d)) => StatusVm::Done(d),
+        (StatusVm::Done(t), Some(d)) => StatusVm::Done(format!("{t} · {d}")),
+        (s, _) => s,
+    };
     let tiles = st
         .tiles
         .iter()
@@ -408,6 +444,7 @@ fn build(core: &AppCore, st: &State, items: &[usize]) -> TreemapVm {
                 h: t.h,
                 frame: t.frame,
                 bucket: model.bucket(t.id),
+                mark: model.mark(t.id),
                 label: n.label().to_string(),
                 size: format_size(n.bytes, style),
                 selected: model.selected == Some(t.id),
@@ -432,6 +469,7 @@ fn build(core: &AppCore, st: &State, items: &[usize]) -> TreemapVm {
                 pct: percent(pct),
                 permille: (pct * 10.0).round().clamp(0.0, 1000.0) as u16,
                 bucket: model.bucket(id),
+                mark: model.mark(id),
                 dir: n.is_dir && !n.other,
                 cursor: i == st.side.cursor,
             }
@@ -448,6 +486,9 @@ fn build(core: &AppCore, st: &State, items: &[usize]) -> TreemapVm {
     };
     if confirm.is_none() && st.geo.view != View::Both {
         hints = format!("{} · {hints}", tr!("tui-treemap-hint-switch"));
+    }
+    if confirm.is_none() && model.diff.is_some() {
+        hints = format!("{} · {hints}", tr!("tui-treemap-hint-diff"));
     }
     TreemapVm {
         title: tr!("tools-treemap-title").into(),
@@ -466,6 +507,7 @@ fn build(core: &AppCore, st: &State, items: &[usize]) -> TreemapVm {
         side_empty: items.is_empty().then(|| model.side_empty().to_string()),
         list_focused,
         legend: Bucket::LEGEND.iter().map(|b| (*b, b.label().to_string())).collect(),
+        marks: st.marks.iter().map(|(m, b)| (*m, format!("{} {}", m.label(), format_size(*b, style)))).collect(),
         confirm,
         labels: Labels {
             rescan: tr!("tools-rescan").into(),
@@ -628,7 +670,7 @@ fn frame(buf: &mut Buffer, r: Rect, t: &TileVm, lines: Option<&ratatui::symbols:
         buf[(r.x, y1)].set_symbol(set.bottom_left).set_style(style);
         buf[(x1, y1)].set_symbol(set.bottom_right).set_style(style);
     }
-    let mut head = theme.style(Role::Folder).add_modifier(Modifier::BOLD);
+    let mut head = theme.style(t.mark.map_or(Role::Folder, mark_role)).add_modifier(Modifier::BOLD);
     if t.selected {
         head = head.add_modifier(Modifier::REVERSED);
     }
@@ -642,7 +684,7 @@ fn frame(buf: &mut Buffer, r: Rect, t: &TileVm, lines: Option<&ratatui::symbols:
 
 /// A leaf: filled, its name (and size) centred.
 fn leaf(buf: &mut Buffer, r: Rect, t: &TileVm, theme: &TuiTheme) {
-    let (mut style, ch) = fill(theme, t.bucket);
+    let (mut style, ch) = fill(theme, t.bucket, t.mark);
     if t.loading {
         style = style.add_modifier(Modifier::DIM);
     }
@@ -738,7 +780,14 @@ fn side_row(buf: &mut Buffer, r: Rect, row: &SideRowVm, focused: bool, theme: &T
         let fill = ((u32::from(bw) * u32::from(row.permille)).div_ceil(1000) as u16).min(bw);
         let (full, empty) = if theme.ascii_only() { ("#", ".") } else { ("▆", "─") };
         let y = r.y + 1;
-        put(buf, r.x + 2, y, r.x + 2 + fill, &full.repeat(usize::from(fill)), st(bucket_role(row.bucket)));
+        put(
+            buf,
+            r.x + 2,
+            y,
+            r.x + 2 + fill,
+            &full.repeat(usize::from(fill)),
+            st(row.mark.map_or(bucket_role(row.bucket), mark_role)),
+        );
         put(buf, r.x + 2 + fill, y, r.x + 2 + bw, &empty.repeat(usize::from(bw - fill)), st(Role::Faint));
         put(buf, r.right().saturating_sub(pw - 1), y, r.right(), &row.pct, st(Role::Muted));
     }
@@ -749,8 +798,16 @@ fn legend(buf: &mut Buffer, r: Rect, m: &TreemapVm, theme: &TuiTheme) {
         return;
     }
     let mut x = r.x;
-    for (b, label) in &m.legend {
-        let (style, ch) = fill(theme, *b);
+    let entries: Vec<(Style, &str, &str)> = if m.marks.is_empty() {
+        m.legend.iter().map(|(b, label)| (fill(theme, *b, None), label.as_str())).map(|((s, c), l)| (s, c, l)).collect()
+    } else {
+        m.marks
+            .iter()
+            .map(|(k, label)| (fill(theme, Bucket::Other, Some(*k)), label.as_str()))
+            .map(|((s, c), l)| (s, c, l))
+            .collect()
+    };
+    for (style, ch, label) in entries {
         let sw = text::width(label) as u16 + 3;
         if x + sw > r.right() {
             break;
@@ -781,6 +838,7 @@ pub(crate) mod tests {
                 h: 10,
                 frame: true,
                 bucket: Bucket::Folder,
+                mark: None,
                 label: "deps".into(),
                 size: "5 GiB".into(),
                 selected: false,
@@ -794,6 +852,7 @@ pub(crate) mod tests {
                 h: 8,
                 frame: false,
                 bucket: Bucket::Code,
+                mark: None,
                 label: "lib.rs".into(),
                 size: "4 GiB".into(),
                 selected: true,
@@ -807,6 +866,7 @@ pub(crate) mod tests {
                 h: 10,
                 frame: false,
                 bucket: Bucket::Image,
+                mark: None,
                 label: "日本語.png".into(),
                 size: "1 GiB".into(),
                 selected: false,
@@ -822,6 +882,7 @@ pub(crate) mod tests {
                 pct: "12.5%".into(),
                 permille: 125,
                 bucket: Bucket::LEGEND[i % 9],
+                mark: None,
                 dir: i % 2 == 0,
                 cursor: i == 1,
             })
@@ -922,6 +983,26 @@ pub(crate) mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn diff_marks_fill_tiles_and_the_legend() {
+        let mut m = vm();
+        m.confirm = None;
+        m.tiles[2].mark = Some(Mark::OnlyHere);
+        m.marks = vec![(Mark::OnlyHere, "Only here 1 GiB".into()), (Mark::Same, "Same 4 GiB".into())];
+        let g = geometry(Rect::new(0, 0, 120, 30), false, false);
+        let (lines, _) = draw_with(&m, 120, 30, &TuiTheme::plain());
+        let legend = &lines[usize::from(g.legend.y)];
+        assert!(legend.contains("Only here 1 GiB") && !legend.contains("Folder"), "{legend}");
+        assert!(legend.contains(mark_char(Mark::OnlyHere, false)));
+        assert!(lines[usize::from(g.map.y + 1)].contains(mark_char(Mark::OnlyHere, false)), "{lines:?}");
+        let ascii: Vec<&str> = Mark::LEGEND.iter().map(|k| mark_char(*k, true)).collect();
+        let mut uniq = ascii.clone();
+        uniq.sort();
+        uniq.dedup();
+        assert_eq!(uniq.len(), Mark::LEGEND.len());
+        assert!(ascii.iter().all(|c| c.is_ascii()));
     }
 
     #[test]

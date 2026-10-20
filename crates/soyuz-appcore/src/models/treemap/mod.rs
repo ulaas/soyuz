@@ -8,7 +8,11 @@
 //! drill-in), the current level, the selection, the side list's tab, the trash
 //! confirmation and the tile menu ([`TreemapItem`], applied with the same `Cmd`s in both
 //! frontends). Dropping it stops the scan.
+//!
+//! With a [`diff::Diff`] (Compare as treemap) the folder is also compared with another
+//! one and the frontends colour tiles by [`TreemapModel::mark`] instead of their bucket.
 
+pub mod diff;
 pub mod layout;
 pub mod scan;
 
@@ -27,6 +31,7 @@ use crate::host::Wake;
 use crate::models::tools::{ToolCmd, queue};
 use crate::ops::fileops::FileOpCmd;
 use crate::ops::fileops::names::show_path;
+use diff::{Diff, Mark};
 use scan::{ScanMsg, Tree};
 
 /// The legend's colour buckets: the GUI's `class_color` groups (documents, PDFs, sheets,
@@ -195,6 +200,8 @@ pub struct TreemapModel {
     pub confirm_delete: Option<usize>,
     pub side: SideTab,
     finished_in: Option<f32>,
+    /// The compare with another folder (Compare as treemap).
+    pub diff: Option<Diff>,
     wake: Wake,
 }
 
@@ -234,10 +241,49 @@ impl TreemapModel {
             confirm_delete: None,
             side: SideTab::Contents,
             finished_in: None,
+            diff: None,
             wake,
         };
         m.rescan();
         m
+    }
+
+    /// Also compare the folder with `other` and colour the tiles by what differs
+    /// (`by_content`: bytes, else dates and sizes).
+    pub fn with_diff(mut self, other: PathBuf, by_content: bool) -> Self {
+        self.diff = Some(Diff::start(&self.root, other, by_content, self.wake.clone()));
+        self
+    }
+
+    /// The folder compared with, while the treemap is a diff.
+    pub fn diff_other(&self) -> Option<&Path> {
+        self.diff.as_ref().map(|d| d.other.as_path())
+    }
+
+    /// The diff colour of node `id` (`None`: colour by kind; no diff, not ready or
+    /// switched off).
+    pub fn mark(&self, id: usize) -> Option<Mark> {
+        let d = self.diff.as_ref().filter(|d| d.show)?;
+        let marks = d.marks()?;
+        let n = &self.tree.nodes[id];
+        let rel = n.path.strip_prefix(&self.root).unwrap_or(&n.path);
+        Some(if n.other { marks.mark(rel.parent().unwrap_or(rel), false) } else { marks.mark(rel, n.is_dir) })
+    }
+
+    /// The diff legend: bytes per mark in the current level (empty while colouring by kind).
+    pub fn diff_totals(&mut self) -> Vec<(Mark, u64)> {
+        let (root, tree, current) = (&self.root, &self.tree, self.current);
+        match self.diff.as_mut().filter(|d| d.show) {
+            Some(d) => d.totals(root, tree, current),
+            None => Vec::new(),
+        }
+    }
+
+    /// Switch between the diff colouring and the kind colouring.
+    pub fn toggle_diff(&mut self) {
+        if let Some(d) = &mut self.diff {
+            d.show = !d.show;
+        }
     }
 
     pub fn root_path(&self) -> &Path {
@@ -251,7 +297,9 @@ impl TreemapModel {
 
     /// The root scan or a drill-in is running (redraw while busy).
     pub fn is_busy(&self) -> bool {
-        self.scanning.is_some() || self.tree.nodes.iter().any(|n| n.loading)
+        self.scanning.is_some()
+            || self.tree.nodes.iter().any(|n| n.loading)
+            || self.diff.as_ref().is_some_and(Diff::is_comparing)
     }
 
     /// Scan again from scratch.
@@ -268,6 +316,12 @@ impl TreemapModel {
         self.failed = None;
         self.finished_in = None;
         self.sub_ctl = OpControl::new();
+        if let Some(d) = self.diff.take() {
+            let show = d.show;
+            let mut fresh = Diff::start(&self.root, d.other.clone(), d.by_content, self.wake.clone());
+            fresh.show = show;
+            self.diff = Some(fresh);
+        }
         let ctl = OpControl::new();
         scan::start_scan(self.root.clone(), self.tx.clone(), ctl.clone(), self.wake.clone());
         self.scanning = Some(Scanning { ctl, started: Instant::now(), total: 0, done: 0, current: PathBuf::new() });
@@ -284,6 +338,9 @@ impl TreemapModel {
 
     /// Take the worker's results.
     pub fn poll(&mut self) {
+        if let Some(d) = &mut self.diff {
+            d.poll();
+        }
         for msg in self.rx.try_iter() {
             match msg {
                 ScanMsg::Begin { files, dirs } => {
@@ -656,5 +713,45 @@ mod tests {
         assert_eq!(m.tree.nodes[0].bytes, 2000);
         assert!(m.tree.find(&root.join("a.bin")).is_none());
         assert!(m.take_trash().is_none(), "asked once, taken once");
+    }
+
+    #[test]
+    fn diff_marks_tiles_and_totals() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a"), dir.path().join("b"));
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        let write = |p: &Path, len: usize, newer: bool| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, vec![1u8; len]).unwrap();
+            if !newer {
+                std::fs::File::options().write(true).open(p).unwrap().set_modified(old).unwrap();
+            }
+        };
+        write(&a.join("same.bin"), 1000, false);
+        write(&b.join("same.bin"), 1000, false);
+        write(&a.join("sub").join("edited.bin"), 2000, true);
+        write(&b.join("sub").join("edited.bin"), 1500, false);
+        write(&a.join("new").join("x.bin"), 500, false);
+        write(&b.join("gone.bin"), 10, false);
+        let mut m = TreemapModel::new(a.clone(), crate::host::no_wake()).with_diff(b.clone(), false);
+        assert_eq!(m.diff_other(), Some(b.as_path()));
+        wait(&mut m);
+        let id = |m: &TreemapModel, p: &Path| m.tree.find(p).unwrap();
+        assert_eq!(m.mark(id(&m, &a.join("same.bin"))), Some(Mark::Same));
+        assert_eq!(m.mark(id(&m, &a.join("sub"))), Some(Mark::Changed));
+        assert_eq!(m.mark(id(&m, &a.join("sub").join("edited.bin"))), Some(Mark::NewerHere));
+        assert_eq!(m.mark(id(&m, &a.join("new"))), Some(Mark::OnlyHere));
+        let totals = m.diff_totals();
+        assert_eq!(totals, vec![(Mark::OnlyHere, 500), (Mark::NewerHere, 2000), (Mark::Same, 1000)]);
+        let status = m.diff.as_ref().unwrap().status();
+        assert!(status.contains('3') && status.contains('1'), "two here, one only there: {status}");
+        // Back to the kind colours, and the compare runs again with a rescan.
+        m.toggle_diff();
+        assert_eq!(m.mark(0), None);
+        assert!(m.diff_totals().is_empty());
+        m.toggle_diff();
+        m.rescan();
+        wait(&mut m);
+        assert_eq!(m.mark(0), Some(Mark::Changed));
     }
 }

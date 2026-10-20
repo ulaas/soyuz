@@ -332,6 +332,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::DiskUsageTreemap => (IconId::SquaresFour, "space"),
         A::FindDuplicates => (IconId::Copy, "dupes"),
         A::CompareFolders => (IconId::GitDiff, "diff"),
+        A::CompareTreemap => (IconId::SquaresFour, "diff visual changes differences disk usage map"),
         A::SyncFolders => (IconId::ArrowsClockwise, "mirror backup"),
         A::SyncProfiles => (IconId::CalendarCheck, "backup scheduled two-way"),
         A::Settings => (IconId::GearSix, "preferences options"),

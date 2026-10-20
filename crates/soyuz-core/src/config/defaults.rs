@@ -463,6 +463,7 @@ impl Default for SyncSection {
             scheduled_dry_run: false,
             previous_versions: true,
             shadow_probe_max: 64,
+            treemap_diff_content: false,
         }
     }
 }
