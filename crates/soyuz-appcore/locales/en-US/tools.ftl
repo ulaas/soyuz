@@ -513,6 +513,9 @@ tools-versions-deleted = deleted
 tools-versions-modified = Modified { $date }
 tools-versions-comparing = Comparing contents…
 tools-versions-same = Same contents as the current file.
+tools-versions-diffing = Finding the changed lines…
+tools-versions-diff-stats = Changes from this version to the current file: +{ $added } −{ $removed } lines
+tools-versions-diff-more = … { $count } more lines (open the version to see everything)
 # $note: tools-versions-size-diff / -different-bytes, or empty.
 tools-versions-differ = Contents differ. { $note }
 tools-versions-admin-needed = Administrator rights needed

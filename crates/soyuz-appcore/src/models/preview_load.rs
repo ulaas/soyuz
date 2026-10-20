@@ -307,10 +307,13 @@ pub fn diff_pair(core: &AppCore) -> Option<(EntryInfo, EntryInfo)> {
         (Some(ta), Some(tb)) if tb < ta => (b, a),
         _ => (a, b),
     };
-    let texty = |e: &EntryInfo| {
-        !e.is_dir_like() && matches!(kind_by_name(&e.name), None | Some(Kind::Text | Kind::Markdown | Kind::Svg))
-    };
-    (texty(a) && texty(b)).then(|| ((*a).clone(), (*b).clone()))
+    (diffable(a) && diffable(b)).then(|| ((*a).clone(), (*b).clone()))
+}
+
+/// A file the text diff can show (text, Markdown, SVG or an unknown type, which the diff
+/// sniffs and reports as binary when it isn't text).
+pub fn diffable(e: &EntryInfo) -> bool {
+    !e.is_dir_like() && matches!(kind_by_name(&e.name), None | Some(Kind::Text | Kind::Markdown | Kind::Svg))
 }
 
 type DiffKey = (PathBuf, Option<SystemTime>, u64, PathBuf, Option<SystemTime>, u64);

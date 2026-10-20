@@ -9,6 +9,7 @@ use soyuz_appcore::core::AppCore;
 use soyuz_appcore::models::versions::{
     Comparison, denied_more_text, elevate_hint, empty_text, intro_text, looking_text, snapshot_label, version_detail,
 };
+use soyuz_appcore::services::preview_diff::{DiffModel, Row as DiffRow, Tag};
 use soyuz_appcore::tr;
 use soyuz_core::config::Config;
 use soyuz_core::{format_size, format_time};
@@ -90,8 +91,42 @@ fn view(config: &Config, s: &State) -> DialogVm {
             side(tr!("tools-versions-this"), Some(v.size), v.modified),
             Comparison::text(c.result.as_ref()),
         ];
+        if m.diff_sides().is_some() {
+            d.text.extend(diff_lines(m.diff.result.as_ref()));
+        }
     }
     d
+}
+
+/// Changed lines shown under the compare (version → current).
+const DIFF_LINES: usize = 12;
+
+/// The start of the unified diff: `+a −r`, then up to [`DIFF_LINES`] rows.
+fn diff_lines(r: Option<&Result<std::sync::Arc<DiffModel>, String>>) -> Vec<String> {
+    let m = match r {
+        None => return vec![tr!("tools-versions-diffing").to_string()],
+        Some(Err(e)) => return vec![format!("{}: {}", tr!("views-diff-failed"), safe(e))],
+        Some(Ok(m)) if m.binary || m.identical => return Vec::new(),
+        Some(Ok(m)) => m,
+    };
+    let mut out = vec![String::new(), tr!("tools-versions-diff-stats", added = m.added, removed = m.removed)];
+    for row in m.unified.iter().take(DIFF_LINES) {
+        out.push(match row {
+            DiffRow::Hunk(h) => safe(h),
+            DiffRow::Line(l) => {
+                let mark = match l.tag {
+                    Tag::Equal => ' ',
+                    Tag::Delete => '-',
+                    Tag::Insert => '+',
+                };
+                format!("{mark} {}", safe(&l.text()))
+            }
+        });
+    }
+    if m.unified.len() > DIFF_LINES {
+        out.push(tr!("tools-versions-diff-more", count = m.unified.len() - DIFF_LINES).to_string());
+    }
+    out
 }
 
 #[cfg(test)]
@@ -160,6 +195,21 @@ mod tests {
         assert_eq!(d.body[1], empty_text(&report(0, 0), false).0);
         let d = view(&Config::default(), &state(Err("boom".into())));
         assert!(d.body[1].ends_with("boom"));
+    }
+
+    #[test]
+    fn diff_lines_mark_changes_and_cut_long_diffs() {
+        use soyuz_appcore::services::preview_diff::diff_texts;
+        assert_eq!(diff_lines(None), [tr!("tools-versions-diffing")]);
+        let m = std::sync::Arc::new(diff_texts("a\nb\nc\n", "a\nB\nc\n"));
+        let l = diff_lines(Some(&Ok(m)));
+        assert!(l[1].contains("+1") && l[1].contains("−1"), "{l:?}");
+        assert!(l.iter().any(|s| s == "- b") && l.iter().any(|s| s == "+ B"), "{l:?}");
+        let old: String = (0..40).map(|i| format!("{i}\n")).collect();
+        let new: String = (0..40).map(|i| format!("x{i}\n")).collect();
+        let l = diff_lines(Some(&Ok(std::sync::Arc::new(diff_texts(&old, &new)))));
+        assert_eq!(l.len(), 2 + DIFF_LINES + 1, "cut with a “more” line");
+        assert!(diff_lines(Some(&Ok(std::sync::Arc::new(diff_texts("same", "same"))))).is_empty());
     }
 
     #[test]

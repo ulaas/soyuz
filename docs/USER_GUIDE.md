@@ -480,7 +480,8 @@ All from the palette or the context menu:
 - **Previous versions** — Properties › Previous versions, or *Restore previous version…*
   in the context menu, lists earlier copies of a file or folder from Windows shadow copies
   (restore points, Windows Backup). Open, compare, copy out or restore one (an undoable copy
-  job that asks before replacing). Reading shadow copies needs administrator rights; the
+  job that asks before replacing). Comparing a text file that changed shows the lines
+  that changed since that version, like the two-file diff preview (`[preview] diff`). Reading shadow copies needs administrator rights; the
   panel says so and can start an elevated Soyuz.
 - **Paste and verify** — like Paste, then every copy is read back and hash-compared; jobs
   that verified their copies show a *Verified* badge in the activity panel and history
@@ -775,7 +776,7 @@ there is one.
 **Previous versions.** *Restore previous version…* (palette or the item's menu, and
 *Previous versions…*, Alt+V, in Properties) lists the earlier copies of a file or folder:
 Up / Down pick one, Enter or O opens it (a folder in the pane), C compares it with the
-current file, T copies it elsewhere, R restores it over the original (an undoable copy job
+current file (for a changed text file, with the first changed lines), T copies it elsewhere, R restores it over the original (an undoable copy job
 that asks before replacing), F5 or L looks again, Esc closes. When there are none, the
 dialog says why. On Windows, shadow copies can only be read with administrator rights: the
 terminal UI does not restart itself as administrator. The dialog says so and explains how

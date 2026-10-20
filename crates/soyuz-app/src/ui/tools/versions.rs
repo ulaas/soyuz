@@ -204,6 +204,13 @@ impl VersionsPanel {
             ui.add_space(8.0);
             self.compare_view(ui, v, cmp.result.as_ref(), &c);
         }
+        // A changed text file: the lines that changed (version → current).
+        if let Some((old, cur, cap)) = self.model.diff_sides() {
+            ui.add_space(6.0);
+            let (r, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), ui.available_height().max(160.0)), Sense::hover());
+            crate::ui::preview::diff::show(ui, r, &mut self.model.diff, &old, &cur, cap / 1024);
+        }
         out
     }
 
@@ -306,7 +313,7 @@ impl VersionsWindow {
             tr!("tools-versions-title"),
             &self.title,
             ph::CLOCK_COUNTER_CLOCKWISE,
-            vec2(620.0, 480.0),
+            vec2(680.0, 600.0),
             |ui| {
                 cmd = self.panel.show(ui);
             },

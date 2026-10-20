@@ -14,7 +14,10 @@ use soyuz_core::config::Config;
 use soyuz_core::{DateFormat, SizeStyle, format_size, format_time};
 use soyuz_fs::snapshots::{PathVersion, VersionOptions, VersionsReport};
 
+use soyuz_core::{EntryInfo, EntryKind};
+
 use crate::host::Wake;
+use crate::models::preview_load::{DiffState, diffable};
 use crate::models::tools::VersionCmd;
 
 /// Settings the model needs (`[sync] previous_versions`, `shadow_probe_max`, `[general]
@@ -25,11 +28,20 @@ pub struct VersionsCfg {
     pub probe_max: u32,
     pub date: DateFormat,
     pub size: SizeStyle,
+    /// `[preview] diff` / `max_diff_kib`: a compare of a changed text file shows the
+    /// lines that changed, each side read up to this many bytes (`None` = no diff).
+    pub diff_cap: Option<u64>,
 }
 
 impl Default for VersionsCfg {
     fn default() -> Self {
-        VersionsCfg { enabled: true, probe_max: 64, date: DateFormat::default(), size: SizeStyle::Binary }
+        VersionsCfg {
+            enabled: true,
+            probe_max: 64,
+            date: DateFormat::default(),
+            size: SizeStyle::Binary,
+            diff_cap: Some(1024 * 1024),
+        }
     }
 }
 
@@ -40,6 +52,7 @@ impl VersionsCfg {
             probe_max: c.sync.shadow_probe_max,
             date: c.general.date_format.clone(),
             size: c.general.size_style,
+            diff_cap: c.preview.diff.then(|| c.preview.max_diff_kib.max(4) * 1024),
         }
     }
 
@@ -256,23 +269,49 @@ pub struct VersionsModel {
     pub report: Option<Result<VersionsReport, String>>,
     pub selected: Option<usize>,
     pub compare: Option<CompareState>,
+    /// The lines that changed between the compared version and the current file (a
+    /// changed text file, `[preview] diff` on).
+    pub diff: DiffState,
+    diff_cap: Option<u64>,
 }
 
 impl VersionsModel {
     /// A model for `path`, its scan started (or the "turned off" error when `cfg` says so).
     pub fn new(path: PathBuf, is_dir: bool, current: Option<(u64, Option<SystemTime>)>, cfg: &VersionsCfg) -> Self {
-        let mut m = VersionsModel { path, is_dir, current, rx: None, report: None, selected: None, compare: None };
+        let mut m = VersionsModel {
+            path,
+            is_dir,
+            current,
+            rx: None,
+            report: None,
+            selected: None,
+            compare: None,
+            diff: DiffState::default(),
+            diff_cap: None,
+        };
         m.refresh(cfg);
         m
     }
 
     /// A model showing `report` (tests, previews): no scan runs.
     pub fn with_report(path: PathBuf, is_dir: bool, report: Result<VersionsReport, String>) -> Self {
-        VersionsModel { path, is_dir, current: None, rx: None, report: Some(report), selected: None, compare: None }
+        VersionsModel {
+            path,
+            is_dir,
+            current: None,
+            rx: None,
+            report: Some(report),
+            selected: None,
+            compare: None,
+            diff: DiffState::default(),
+            diff_cap: None,
+        }
     }
 
     /// Look again: a new scan on a worker (it wakes the frontend when done).
     pub fn refresh(&mut self, cfg: &VersionsCfg) {
+        self.diff_cap = cfg.diff_cap;
+        self.diff.clear();
         if !cfg.enabled {
             self.report = Some(Err(tr!("tools-versions-off").into()));
             return;
@@ -319,6 +358,18 @@ impl VersionsModel {
             c.rx = None;
             changed = true;
         }
+        match self.diff_sides() {
+            Some((a, b, cap)) => {
+                let had = self.diff.result.is_some();
+                self.diff.sync(&a, &b, cap, &crate::models::tools::wake());
+                changed |= had != self.diff.result.is_some();
+            }
+            None if self.diff.is_active() => {
+                self.diff.clear();
+                changed = true;
+            }
+            None => {}
+        }
         changed
     }
 
@@ -356,6 +407,28 @@ impl VersionsModel {
             wake();
         });
         self.compare = Some(CompareState { index: i, rx: Some(rx), result: None });
+    }
+
+    /// The diff to show: the compared version → the current file, once the compare found
+    /// different content in a text file (and `[preview] diff` is on); with the size cap.
+    pub fn diff_sides(&self) -> Option<(EntryInfo, EntryInfo, u64)> {
+        let cap = self.diff_cap?;
+        let c = self.compare.as_ref()?;
+        if c.result.as_ref()?.same_content != Some(false) {
+            return None;
+        }
+        let v = self.versions().get(c.index)?;
+        let mut old = EntryInfo::minimal(v.path.clone(), EntryKind::File);
+        // The snapshot copy's name is the file's own; named like the original either way.
+        old.name = soyuz_core::entry::display_name(&self.path);
+        old.size = v.size;
+        old.modified = v.modified;
+        let mut cur = EntryInfo::minimal(self.path.clone(), EntryKind::File);
+        if let Some((size, modified)) = self.current {
+            cur.size = size;
+            cur.modified = modified;
+        }
+        (diffable(&old) && diffable(&cur)).then_some((old, cur, cap))
     }
 
     /// Open the selected version (a folder is browsed, a file opens from a temp copy).
@@ -479,6 +552,40 @@ mod tests {
         assert!(r.note.contains("larger"), "{}", r.note);
         assert!(Comparison::text(Some(&r)).starts_with("Contents differ."));
         assert_eq!(Comparison::text(None), "Comparing contents…");
+    }
+
+    #[test]
+    fn compare_of_a_changed_text_file_shows_the_changed_lines() {
+        let d = tempfile::tempdir().unwrap();
+        let (cur, old) = (d.path().join("notes.txt"), d.path().join("old.txt"));
+        std::fs::write(&cur, "one\ntwo\nthree\n").unwrap();
+        std::fs::write(&old, "one\n2\nthree\n").unwrap();
+        let mut v = version(1, None);
+        v.path = old;
+        v.size = 12;
+        let report = VersionsReport { versions: vec![v], ..Default::default() };
+        let mut m = VersionsModel::with_report(cur, false, Ok(report));
+        m.current = Some((14, None));
+        m.select(0);
+        m.start_compare();
+        let wait = |m: &mut VersionsModel, done: &dyn Fn(&VersionsModel) -> bool| {
+            let t = std::time::Instant::now();
+            while !done(m) && t.elapsed() < Duration::from_secs(10) {
+                m.poll();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        };
+        wait(&mut m, &|m| m.compare.as_ref().is_some_and(|c| c.result.is_some()));
+        assert!(m.diff_sides().is_none(), "no diff while [preview] diff is off");
+        m.diff_cap = VersionsCfg::default().diff_cap;
+        let (a, b, _) = m.diff_sides().expect("a changed text file");
+        assert_eq!((a.name.as_str(), b.name.as_str()), ("notes.txt", "notes.txt"));
+        wait(&mut m, &|m| m.diff.result.is_some());
+        let diff = m.diff.result.clone().unwrap().unwrap();
+        assert_eq!((diff.added, diff.removed), (1, 1));
+        // A binary type gets no diff.
+        m.path = d.path().join("photo.png");
+        assert!(m.diff_sides().is_none());
     }
 
     #[test]
