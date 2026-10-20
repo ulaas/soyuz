@@ -1034,7 +1034,7 @@ settings-fm-restore = Restore Explorer
 ## Index group (Preview & search page)
 
 settings-index-usn-active = NTFS change journal in use: changes made while Soyuz was closed are applied within seconds of starting.
-settings-index-usn-admin = Reading the NTFS change journal needs administrator rights, so after each start Soyuz re-checks the indexed folders in the background instead (searches keep using the index meanwhile). Run Soyuz as administrator to use the journal.
+settings-index-usn-admin = Reading the NTFS change journal without administrator rights needs Windows 11, so after each start Soyuz re-checks the indexed folders in the background instead (searches keep using the index meanwhile). Run Soyuz as administrator, or update Windows, to use the journal.
 # $reason = technical reason from the index service.
 settings-index-usn-unsupported = Change journal not available ({ $reason }); folders are re-checked after each start.
 settings-index-usn-off = Change journal not used; folders are re-checked after each start.
@@ -1052,7 +1052,7 @@ settings-index-journal-changes = { $count ->
 settings-index-last-write = Last change written { $seconds } s ago
 settings-index-database = Database: { $path }
 settings-index-root-hint = Folder to index, e.g. D:\Photos
-settings-index-usn-desc = Apply changes made while Soyuz was closed straight from the volume's change journal (Windows, NTFS). Needs administrator rights; otherwise folders are re-checked after each start.
+settings-index-usn-desc = Apply changes made while Soyuz was closed straight from the volume's change journal (Windows, NTFS). Works without administrator rights on Windows 11; otherwise folders are re-checked after each start.
 
 settings-index = Index
 settings-index-enabled = Background index

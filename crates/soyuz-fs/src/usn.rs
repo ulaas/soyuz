@@ -1,8 +1,10 @@
 //! NTFS change journal (USN journal) access for the background index.
 //!
 //! [`UsnVolume::open`] opens the volume device (`\\.\C:`), which Windows only allows for
-//! administrators on most systems: callers get `FsErrorKind::PermissionDenied` and should
-//! fall back to crawling + watching. Journal and MFT reads return raw kernel buffers (an
+//! administrators on most systems. Without the rights it opens the volume's root folder
+//! instead ([`UsnVolume::is_privileged`] is `false`): the journal can be queried and read
+//! (Windows 11), the MFT enumeration answers `FsErrorKind::PermissionDenied` (crawl
+//! instead), and on older systems the read fails the same way. Journal and MFT reads return raw kernel buffers (an
 //! 8-byte cursor followed by `USN_RECORD_V2` records); `soyuz-index::usn` parses them.
 //! Every other platform returns `Unsupported`.
 
@@ -48,6 +50,20 @@ impl UsnVolume {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    /// Opened with administrator rights: [`UsnVolume::enum_mft`] works. Without them the
+    /// journal can still be queried and read (Windows 11's unprivileged read: records of
+    /// files the user can't see are left out); the MFT enumeration is refused.
+    pub fn is_privileged(&self) -> bool {
+        #[cfg(windows)]
+        {
+            self.h.privileged()
+        }
+        #[cfg(not(windows))]
+        {
+            false
+        }
     }
 
     /// `FSCTL_QUERY_USN_JOURNAL`. Fails when the volume has no journal (not NTFS/ReFS,

@@ -75,7 +75,7 @@ Read first: `docs/PLAN.md` (architecture, APIs, design tokens), `docs/INTEGRATIO
   - RSA SSH keys are disabled (the `rsa` crate fails `cargo deny` with advisory RUSTSEC-2023-0071); ed25519 / ECDSA keys work.
   - Push watching for remotes (polling only) and mDNS discovery are missing. WebDAV signs in with Basic or Digest (RFC 7616, MD5 / SHA-256).
   - Windows `thumbcache_*.db` is read (read-only, cache ids derived without the shell); Vista / 7 formats, ReFS and network volumes fall back to Soyuz's own disk cache.
-  - Previous versions (Volume Shadow Copies) are untested on real shadow copies; the NTFS USN catch-up path is untested without admin rights.
+  - Previous versions (Volume Shadow Copies) are untested on real shadow copies. The NTFS journal catch-up works without admin rights on Windows 11 (`FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`, tested); the MFT import still needs admin.
   - No screen-reader certification run yet (NVDA / Narrator). The keyboard-only GUI test has a Windows CI job (`gui-keyboard`, WARP adapter) that has not run on a hosted runner yet; it skips with a warning when no window can start. The UIA audit (`scripts/uia-audit.ps1`, `docs/ACCESSIBILITY_AUDIT.md`) covers six states, not the whole app. No right-to-left layout (deferred).
   - The MSIX is unsigned; Authenticode signing of the exe / MSI needs a certificate (pipeline validated with a temporary self-signed one, `docs/RELEASING.md`). Linux and macOS ship as unsigned tarballs only (no .deb / .rpm / AppImage / .dmg, no notarization yet).
   - RAR volume sets and PKWARE spanned zips (`.z01`) are unsupported (single RAR archives read via pure-Rust `rars`).

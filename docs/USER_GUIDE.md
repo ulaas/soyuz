@@ -545,9 +545,9 @@ caches and `node_modules`-style folders) in a local SQLite database, so searches
 answer in milliseconds; the scope chip of the search bar can then search **all indexed
 folders** at once. The status bar shows what the indexer is doing (click it for the
 settings, right-click to rebuild). File contents can be indexed too (`content:`). On NTFS,
-running Soyuz as administrator lets it read the change journal, so changes made while it
-was closed are applied in seconds; otherwise it re-checks the folders in the background
-after each start.
+Soyuz reads the change journal (on Windows 10 and older only as administrator), so changes
+made while it was closed are applied in seconds; otherwise it re-checks the folders in the
+background after each start.
 
 **Smart folders** are saved queries in the sidebar that stay up to date: create one with
 **Smart folder** in the search status strip or **New smart folder…** in the sidebar;

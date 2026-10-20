@@ -234,6 +234,32 @@ fn unwatchable_roots_are_polled() {
     crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
 }
 
+/// Windows: changes made while the index was stopped come back from the NTFS journal at
+/// the next start, with or without administrator rights (Windows 11 reads it
+/// unprivileged). Only journal metadata is read; files change in the temp tree only.
+#[cfg(windows)]
+#[test]
+fn journal_catches_up_after_a_restart() {
+    let (root, db) = tree();
+    let c = IndexConfig { usn: true, ..cfg(root.path(), db.path()) };
+    let ix = Index::start(c.clone(), Arc::new(|| {}));
+    wait_idle(&ix);
+    let usn = ix.status().usn;
+    if !matches!(usn, UsnState::Active) {
+        eprintln!("journal not available here ({usn:?}); nothing to check");
+        return;
+    }
+    drop(ix); // stops the worker and stores the checkpoint
+    std::fs::write(root.path().join("docs/while-closed.txt"), "x").unwrap();
+    let ix = Index::start(c, Arc::new(|| {}));
+    wait_idle(&ix);
+    assert_eq!(names(&ix, "while-closed"), ["while-closed.txt"]);
+    let st = ix.status();
+    if st.usn == UsnState::Active {
+        assert!(st.journal_changes > 0, "applied from the journal, not crawled: {st:?}");
+    }
+}
+
 #[cfg(not(windows))]
 #[test]
 fn journal_reads_as_unavailable_off_windows() {
@@ -258,9 +284,20 @@ fn journal_probe() {
     let t0 = Instant::now();
     match soyuz_fs::usn::UsnVolume::open(&root) {
         Ok(v) => {
-            println!("open ok in {:?}", t0.elapsed());
+            println!("open ok in {:?} (privileged: {})", t0.elapsed(), v.is_privileged());
             let t0 = Instant::now();
-            println!("query {:?} in {:?}", v.query(), t0.elapsed());
+            let q = v.query();
+            println!("query {q:?} in {:?}", t0.elapsed());
+            if let Ok(info) = q {
+                let mut buf = vec![0u8; 64 * 1024];
+                for from in [info.next_usn, info.first_usn] {
+                    let r = v.read_journal(info.journal_id, from, &mut buf);
+                    println!(
+                        "read_journal from {from}: {:?}",
+                        r.as_ref().map(|n| usn::parse_buffer(&buf[..*n]).map(|(_, v)| v.len()))
+                    );
+                }
+            }
             let mut buf = vec![0u8; 64 * 1024];
             let t0 = Instant::now();
             let r = v.enum_mft(0, &mut buf);

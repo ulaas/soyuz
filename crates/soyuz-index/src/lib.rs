@@ -106,7 +106,7 @@ pub enum UsnState {
     Off,
     /// Reading the journal (changes since the last run are applied without a crawl).
     Active,
-    /// Opening the volume needs administrator rights.
+    /// Reading the journal needs administrator rights (Windows before 11).
     NeedsAdmin,
     /// Not an NTFS volume, no journal, or not Windows (reason [`USN_NOT_WINDOWS`]).
     Unsupported(String),

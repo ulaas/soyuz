@@ -10,7 +10,7 @@ use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::ptr::{null, null_mut};
 
-use windows_sys::Win32::Foundation::{ERROR_HANDLE_EOF, GENERIC_READ};
+use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_HANDLE_EOF, GENERIC_READ};
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_DESCRIPTOR, FILE_ID_DESCRIPTOR_0, FILE_NAME_NORMALIZED,
     FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FileIdType, GetFinalPathNameByHandleW,
@@ -18,8 +18,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::DeviceIoControl;
 use windows_sys::Win32::System::Ioctl::{
-    FSCTL_ENUM_USN_DATA, FSCTL_QUERY_USN_JOURNAL, FSCTL_READ_USN_JOURNAL, MFT_ENUM_DATA_V0, READ_USN_JOURNAL_DATA_V0,
-    USN_JOURNAL_DATA_V0,
+    FSCTL_ENUM_USN_DATA, FSCTL_QUERY_USN_JOURNAL, FSCTL_READ_UNPRIVILEGED_USN_JOURNAL, FSCTL_READ_USN_JOURNAL,
+    MFT_ENUM_DATA_V0, READ_USN_JOURNAL_DATA_V0, USN_JOURNAL_DATA_V0,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST};
 
@@ -35,10 +35,14 @@ pub(crate) struct RawJournal {
     pub max_usn: i64,
 }
 
-/// An open volume (`\\.\C:`); needs administrator rights on most systems.
+/// An open volume: the device (`\\.\C:`, administrator rights on most systems) or, without
+/// them, the volume's root folder, which still answers `FSCTL_QUERY_USN_JOURNAL` and
+/// `FSCTL_READ_UNPRIVILEGED_USN_JOURNAL` (Windows 11; records of files the user can't
+/// see are left out) but not the MFT enumeration.
 #[derive(Debug)]
 pub(crate) struct VolumeHandle {
     h: Handle,
+    privileged: bool,
 }
 
 /// `\\.\C:` for a drive root, else the `\\?\Volume{…}` name of a mount point (without
@@ -83,7 +87,39 @@ impl VolumeHandle {
                 null_mut(),
             )
         };
-        Ok(VolumeHandle { h: Handle::new(h)? })
+        match Handle::new(h) {
+            Ok(h) => Ok(VolumeHandle { h, privileged: true }),
+            Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) => Self::open_unprivileged(root),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// The volume's root folder (no administrator rights needed).
+    fn open_unprivileged(root: &Path) -> io::Result<VolumeHandle> {
+        let mut dir = crate::path::strip_verbatim(root).to_string_lossy().into_owned();
+        if !dir.ends_with('\\') {
+            dir.push('\\');
+        }
+        let w = wide_str(&dir);
+        // SAFETY: `w` is NUL-terminated; a directory handle (backup semantics) with
+        // attribute access only.
+        let h = unsafe {
+            CreateFileW(
+                w.as_ptr(),
+                FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                null_mut(),
+            )
+        };
+        Ok(VolumeHandle { h: Handle::new(h)?, privileged: false })
+    }
+
+    /// Opened as the device (administrator): the MFT can be enumerated.
+    pub(crate) fn privileged(&self) -> bool {
+        self.privileged
     }
 
     /// `DeviceIoControl` with typed input and a byte output buffer; returns bytes written.
@@ -137,12 +173,16 @@ impl VolumeHandle {
             BytesToWaitFor: 0,
             UsnJournalID: journal_id,
         };
-        self.ioctl(FSCTL_READ_USN_JOURNAL, Some(&input), out)
+        let code = if self.privileged { FSCTL_READ_USN_JOURNAL } else { FSCTL_READ_UNPRIVILEGED_USN_JOURNAL };
+        self.ioctl(code, Some(&input), out)
     }
 
     /// Enumerate the MFT from `start_frn`; `Ok(None)` at the end. Output: 8-byte next
     /// file reference number followed by `USN_RECORD_V2`s.
     pub(crate) fn enum_mft(&self, start_frn: u64, out: &mut [u8]) -> io::Result<Option<usize>> {
+        if !self.privileged {
+            return Err(io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32));
+        }
         let input = MFT_ENUM_DATA_V0 { StartFileReferenceNumber: start_frn, LowUsn: 0, HighUsn: i64::MAX };
         match self.ioctl(FSCTL_ENUM_USN_DATA, Some(&input), out) {
             Ok(n) => Ok(Some(n)),

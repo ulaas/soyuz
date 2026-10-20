@@ -1001,7 +1001,7 @@ settings-fm-restore = Gezgin'i geri yükle
 ## Index group (Preview & search page)
 
 settings-index-usn-active = NTFS değişiklik günlüğü kullanılıyor: Soyuz kapalıyken yapılan değişiklikler başlatıldıktan sonra saniyeler içinde uygulanır.
-settings-index-usn-admin = NTFS değişiklik günlüğünü okumak yönetici hakları gerektirir; bu yüzden Soyuz her başlangıçtan sonra dizinlenmiş klasörleri arka planda yeniden denetler (bu sırada aramalar dizini kullanmaya devam eder). Günlüğü kullanmak için Soyuz'u yönetici olarak çalıştırın.
+settings-index-usn-admin = NTFS değişiklik günlüğünü yönetici hakları olmadan okumak Windows 11 gerektirir; bu yüzden Soyuz her başlangıçtan sonra dizinlenmiş klasörleri arka planda yeniden denetler (bu sırada aramalar dizini kullanmaya devam eder). Günlüğü kullanmak için Soyuz'u yönetici olarak çalıştırın veya Windows'u güncelleyin.
 settings-index-usn-unsupported = Değişiklik günlüğü kullanılamıyor ({ $reason }); klasörler her başlangıçtan sonra yeniden denetlenir.
 settings-index-usn-off = Değişiklik günlüğü kullanılmıyor; klasörler her başlangıçtan sonra yeniden denetlenir.
 # $root: indexed folder; $minutes: re-check interval in minutes.
@@ -1012,7 +1012,7 @@ settings-index-journal-changes = Başlangıçta günlükten { $count } değişik
 settings-index-last-write = Son değişiklik { $seconds } sn önce yazıldı
 settings-index-database = Veritabanı: { $path }
 settings-index-root-hint = Dizinlenecek klasör, ör. D:\Fotoğraflar
-settings-index-usn-desc = Soyuz kapalıyken yapılan değişiklikleri doğrudan birimin değişiklik günlüğünden uygular (Windows, NTFS). Yönetici hakları gerektirir; aksi hâlde klasörler her başlangıçtan sonra yeniden denetlenir.
+settings-index-usn-desc = Soyuz kapalıyken yapılan değişiklikleri doğrudan birimin değişiklik günlüğünden uygular (Windows, NTFS). Windows 11'de yönetici hakları olmadan çalışır; aksi hâlde klasörler her başlangıçtan sonra yeniden denetlenir.
 
 settings-index = Dizin
 settings-index-enabled = Arka plan dizini

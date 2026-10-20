@@ -442,6 +442,11 @@ impl Worker {
                 Ok(n) => n,
                 Err(e) => {
                     log::warn!("index: journal read failed: {e}; crawling");
+                    // Opened without administrator rights on a Windows older than 11:
+                    // only the privileged read works there.
+                    if !self.volumes[vi].handle.is_privileged() {
+                        *state = Some(UsnState::NeedsAdmin);
+                    }
                     return false;
                 }
             };
