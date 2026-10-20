@@ -322,6 +322,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `rename_selects` | `"stem"` \| `"all"` | `"stem"` | Inline rename preselects the name `stem` (without extension) or `all`. |
 | `paste_conflict` | `"ask"` \| `"overwrite"` \| `"skip"` \| `"keep_both"` | `"ask"` | Default answer when a pasted name already exists (`ask` shows the conflict dialog). |
 | `paste_images` | boolean | `true` | Paste with a picture on the system clipboard (a screenshot, a copied image) saves it into the folder as a PNG file, selected for renaming. Copied files still win. |
+| `clipboard_history` | integer | `10` | File sets copied or cut in Soyuz kept for *Clipboard history* (0 = off). |
 | `drag_default` | `"auto"` \| `"copy"` \| `"move"` \| `"ask"` | `"auto"` | Drag and drop default operation. (`auto`: Same device = move, otherwise copy) |
 | `remember_folder_views` | boolean | `true` | Remember view, sort and columns per folder (`views.toml`). |
 | `restore_session` | boolean | `true` | Reopen the tabs, panes and windows of the last session at startup. |

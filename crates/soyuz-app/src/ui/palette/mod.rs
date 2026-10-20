@@ -186,6 +186,7 @@ fn input_row(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette, width: f32) {
         Mode::Search => ph::MAGNIFYING_GLASS,
         Mode::Shell => ph::TERMINAL,
         Mode::Tabs => ph::BROWSERS,
+        Mode::Clipboard => ph::CLIPBOARD,
     };
     painter.text(pos2(x + 9.0, rect.center().y), Align2::CENTER_CENTER, glyph, icons::font(19.0), p.accent);
     x += 30.0;

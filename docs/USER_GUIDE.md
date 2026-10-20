@@ -117,6 +117,11 @@ It is an ordinary job: `Ctrl+Z` removes the file again. Copied files are pasted 
 Turn it off in *Settings → Behaviour → Paste pictures as files*
 (`[behaviour] paste_images`).
 
+`Ctrl+Alt+V` (*Clipboard history* in the palette) lists the file sets you copied or cut
+earlier this session, newest first; Enter copies the picked set again, ready for `Ctrl+V`
+(a cut set comes back as a copy). It keeps the last 10 sets
+(`[behaviour] clipboard_history`, 0 turns it off).
+
 Drag and drop works between panes, tabs, the sidebar, the shelf and other applications.
 The default drop effect follows the platform convention (move on the same drive, copy
 across drives); hold `Ctrl` to copy, `Shift` to move, or set *Behaviour → Drag and drop*

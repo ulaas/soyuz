@@ -51,6 +51,8 @@ pub enum Exec {
     },
     Shell(String),
     Tab(usize),
+    /// Put clipboard history set `n` back on the clipboard.
+    ClipSet(usize),
     /// Insert a mode prefix.
     Prefix(char),
     Nothing,
@@ -722,6 +724,47 @@ fn rank_tabs(app: &AppCore, q: &str) -> Vec<Item> {
     out
 }
 
+/// Clipboard history: the sets copied or cut earlier, newest first. A set's title names
+/// its first items; the detail is its folder and when.
+fn rank_clipboard(app: &AppCore, q: &str) -> Vec<Item> {
+    let mut f = Fuzzy::new(q);
+    let mut out = Vec::new();
+    let relative = soyuz_core::DateFormat::Named(soyuz_core::DateFormatName::Relative);
+    for (i, set) in app.fileops.clip_history.sets().enumerate() {
+        let names: Vec<String> = set.paths.iter().map(|p| soyuz_core::entry::display_name(p)).collect();
+        let shown = names.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
+        let title = match names.len() {
+            0..=3 => shown,
+            n => tr!("actions-clipboard-more", names = shown, count = n - 3),
+        };
+        let all = names.join(" ");
+        let (score, hl) = match (f.indices(&title), f.score(&all)) {
+            (Some((s, hl)), _) => (s as i64 * 2, hl),
+            (None, Some(s)) => (s as i64, Vec::new()),
+            _ => continue,
+        };
+        let folder = set.paths.first().and_then(|p| p.parent()).map(|p| p.display().to_string()).unwrap_or_default();
+        let mut it = Item::new(Exec::ClipSet(i), title, IconId::Clipboard, tr!("actions-section-clipboard"));
+        it.detail = format!("{folder} · {}", soyuz_core::format_time(set.at, &relative));
+        it.hl = hl;
+        it.score = score - i as i64;
+        it.tint = Tint::Neutral;
+        it.tag = Some(
+            if set.mode == crate::ops::fileops::clipboard::ClipMode::Cut {
+                tr!("actions-tag-cut")
+            } else {
+                tr!("actions-tag-copied")
+            }
+            .into(),
+        );
+        out.push(it);
+    }
+    if !q.trim().is_empty() {
+        out.sort_by_key(|a| std::cmp::Reverse(a.score));
+    }
+    out
+}
+
 fn build(app: &mut AppCore) -> Vec<Item> {
     let input = app.palette.input.clone();
     let (mode, q) = query::parse(&input, app.palette.base);
@@ -747,6 +790,7 @@ fn build(app: &mut AppCore) -> Vec<Item> {
         Mode::Search => rank_search(app, q),
         Mode::Shell => rank_shell(app, q),
         Mode::Tabs => rank_tabs(app, q),
+        Mode::Clipboard => rank_clipboard(app, q),
     };
     items.truncate(MAX_RESULTS);
     items
@@ -807,6 +851,10 @@ pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
         Exec::Tab(i) => {
             close(app);
             app.cmds.push(Cmd::SelectTab(i));
+        }
+        Exec::ClipSet(i) => {
+            close(app);
+            crate::ops::fileops::recopy(app, i, host);
         }
         Exec::Prefix(c) => {
             app.palette.input = c.to_string();

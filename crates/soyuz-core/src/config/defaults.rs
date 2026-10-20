@@ -235,6 +235,7 @@ impl Default for Behaviour {
             rename_selects: RenameSelects::Stem,
             paste_conflict: PasteConflict::Ask,
             paste_images: true,
+            clipboard_history: 10,
             drag_default: DragDefault::Auto,
             remember_folder_views: true,
             restore_session: true,
@@ -579,6 +580,7 @@ fn common(km: &mut Keymap) {
     b(L, A::Cut, CTRL, KeyName::X);
     b(L, A::Paste, CTRL, KeyName::V);
     b(L, A::PasteAsLink, CTRL_SHIFT, KeyName::V);
+    b(L, A::ClipboardHistory, CTRL_ALT, KeyName::V);
     b(L, A::SelectAll, CTRL, KeyName::A);
     b(L, A::InvertSelection, CTRL_SHIFT, KeyName::I);
     b(L, A::SelectNone, NONE, KeyName::Escape);

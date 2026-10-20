@@ -482,6 +482,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         A::ExtractToFolder => crate::models::archive::extract_to_folder(app),
         A::ExtractTo => crate::models::archive::extract_to_dialog(app),
         A::TestArchive => crate::models::archive::test_archive(app),
+        A::ClipboardHistory => crate::palette::open(app, crate::palette::query::Mode::Clipboard, ""),
         A::PdfPassword => match crate::models::archive::focused_pdf(app) {
             Some(path) => crate::models::archive::ask_pdf_password(app, path),
             None => {

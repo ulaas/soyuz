@@ -144,3 +144,45 @@ fn hides_gui_only(data: PathBuf) {
     app.finish();
     common::ok();
 }
+
+#[test]
+fn clipboard_history_copies_an_earlier_set_again() {
+    match common::relaunch(module_path!(), "clipboard_history_copies_an_earlier_set_again", |data| {
+        std::fs::write(data.join("a.txt"), b"a").unwrap();
+        std::fs::write(data.join("b.txt"), b"b").unwrap();
+    }) {
+        Run::Child(data) => clipboard_history(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn clipboard_history(data: PathBuf) {
+    // Copies stay inside the app: the system clipboard is never touched.
+    soyuz_appcore::services::os_clipboard::set_system_clipboard(false);
+    let mut app = common::new_app(common::test_config(), &data);
+    app.host.set_local_clipboard(false);
+    let (a, b) = (data.join("a.txt"), data.join("b.txt"));
+    let clip = |app: &App| app.core.fileops.clipboard.for_paste().map(|(_, p)| p);
+    let (a1, b1, a2) = (a.clone(), b.clone(), a.clone());
+    let d = data.clone();
+    let alt_ctrl_v = common::key_mods(
+        KeyCode::Char('v'),
+        crossterm::event::KeyModifiers::CONTROL | crossterm::event::KeyModifiers::ALT,
+    );
+    let steps = vec![
+        Step::new("the listing", move |a| at(a, &d) && common::labels(a).len() == 2, key(KeyCode::Home)),
+        Step::new("a.txt under the cursor", |a| common::cursor(a).as_deref() == Some("a.txt"), ctrl('c')),
+        Step::new("a.txt copied", move |x| clip(x) == Some(vec![a1.clone()]), key(KeyCode::Down)),
+        Step::new("b.txt under the cursor", |a| common::cursor(a).as_deref() == Some("b.txt"), ctrl('c')),
+        Step::new("b.txt copied", move |x| clip(x) == Some(vec![b1.clone()]), alt_ctrl_v),
+        Step::new(
+            "the history, newest first",
+            |a| open(a) && a.core.palette.results.len() == 2 && matches!(selected(a), Some(Exec::ClipSet(0))),
+            key(KeyCode::Down),
+        ),
+        Step::new("the older set picked", |a| matches!(selected(a), Some(Exec::ClipSet(1))), key(KeyCode::Enter)),
+        Step::new("a.txt on the clipboard again", move |x| !open(x) && clip(x) == Some(vec![a2.clone()]), ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 100, 30);
+    common::ok();
+}

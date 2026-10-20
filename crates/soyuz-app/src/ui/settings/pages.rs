@@ -847,6 +847,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.behaviour.paste_images);
             },
         );
+        r.row_kw(
+            tr!("settings-behaviour-clipboard-history"),
+            tr!("settings-behaviour-clipboard-history-desc"),
+            "clipboard history copy cut paste recent",
+            |ui| {
+                number(ui, &mut d.behaviour.clipboard_history, 0..=50, "");
+            },
+        );
     });
     any |= group(ui, q, ctx, tr!("settings-behaviour-drag-drop"), |r| {
         r.row_kw(

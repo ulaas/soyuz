@@ -101,6 +101,8 @@ pub enum FileOpCmd {
 pub struct FileOps {
     pub jobs: JobsService,
     pub clipboard: Clipboard,
+    /// Earlier copied / cut sets (`[behaviour] clipboard_history`).
+    pub clip_history: clipboard::ClipHistory,
     pub rename: Option<InlineRename>,
     pub prompts: PromptQueue,
     pub dnd: DndFrame,
@@ -120,6 +122,7 @@ impl FileOps {
         FileOps {
             jobs: JobsService::new(wake.clone(), config),
             clipboard: Clipboard::default(),
+            clip_history: Default::default(),
             rename: None,
             prompts: PromptQueue::default(),
             dnd: DndFrame::default(),
@@ -194,6 +197,22 @@ fn other_pane_dir(app: &AppCore) -> Option<PathBuf> {
     })
 }
 
+/// Put history set `i` back on the clipboard, as a copy (a cut set's files may have
+/// moved since; copying is the safe way to reuse it). Ctrl+V then pastes it.
+pub fn recopy(app: &mut AppCore, i: usize, host: &dyn Host) {
+    let Some(set) = app.fileops.clip_history.get(i).cloned() else { return };
+    if !crate::services::os_clipboard::set_files(ClipMode::Copy, &set.paths) {
+        host.copy_text(Clipboard::os_text(&set.paths));
+    }
+    let cap = app.config.behaviour.clipboard_history as usize;
+    app.fileops.clip_history.remember(ClipMode::Copy, &set.paths, cap);
+    let n = set.paths.len();
+    app.fileops.clipboard.set(ClipMode::Copy, set.paths);
+    let mut t = Toast::info(tr!("ops-clip-copied", count = n)).body(tr!("ops-clip-paste-hint"));
+    t.duration = Some(2.0);
+    app.ui.toasts.push(t);
+}
+
 pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
     use Action as A;
     let (pane_id, dir, sel) = focused(app);
@@ -211,6 +230,8 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
                 host.copy_text(Clipboard::os_text(&sel));
             }
             let n = sel.len();
+            let cap = app.config.behaviour.clipboard_history as usize;
+            app.fileops.clip_history.remember(mode, &sel, cap);
             app.fileops.clipboard.set(mode, sel);
             let title =
                 if mode == ClipMode::Cut { tr!("ops-clip-cut", count = n) } else { tr!("ops-clip-copied", count = n) };

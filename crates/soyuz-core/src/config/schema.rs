@@ -676,6 +676,8 @@ pub struct Behaviour {
     /// Paste with a picture on the system clipboard (a screenshot, a copied image) saves
     /// it into the folder as a PNG file, selected for renaming. Copied files still win.
     pub paste_images: bool,
+    /// File sets copied or cut in Soyuz kept for *Clipboard history* (0 = off).
+    pub clipboard_history: u32,
     /// Drag and drop default operation.
     pub drag_default: DragDefault,
     /// Remember view, sort and columns per folder (`views.toml`).

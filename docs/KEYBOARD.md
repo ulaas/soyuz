@@ -128,6 +128,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Copy path | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd> *(file list)* | same | Copy the full path to the clipboard |
 | Undo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> | same | Undo the last file operation |
 | Redo | <kbd>Ctrl</kbd>+<kbd>Y</kbd>, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> | same | Redo the last undone operation |
+| Clipboard history | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>V</kbd> *(file list)* | same | Copy a file set you copied or cut earlier again, then paste it |
 
 ### Tools
 

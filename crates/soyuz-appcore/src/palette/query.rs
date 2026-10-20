@@ -20,13 +20,15 @@ pub enum Mode {
     Search,
     Shell,
     Tabs,
+    /// Ctrl+Alt+V: file sets copied or cut earlier (`[behaviour] clipboard_history`).
+    Clipboard,
 }
 
 impl Mode {
     /// Prefix character that selects the mode (`None` for the base modes).
     pub fn prefix(self) -> Option<char> {
         match self {
-            Mode::Commands | Mode::Folders => None,
+            Mode::Commands | Mode::Folders | Mode::Clipboard => None,
             Mode::Path => Some(':'),
             Mode::Bookmarks => Some('@'),
             Mode::Search => Some('/'),
@@ -45,6 +47,7 @@ impl Mode {
             Mode::Search => tr!("actions-mode-search"),
             Mode::Shell => tr!("actions-mode-shell"),
             Mode::Tabs => tr!("actions-mode-tabs"),
+            Mode::Clipboard => tr!("actions-mode-clipboard"),
         }
     }
 
@@ -58,6 +61,7 @@ impl Mode {
             Mode::Search => tr!("actions-legend-search"),
             Mode::Shell => tr!("actions-legend-shell"),
             Mode::Tabs => tr!("actions-legend-tabs"),
+            Mode::Clipboard => tr!("actions-mode-clipboard"),
         }
     }
 
@@ -70,6 +74,7 @@ impl Mode {
             Mode::Search => tr!("actions-placeholder-search"),
             Mode::Shell => tr!("actions-placeholder-shell"),
             Mode::Tabs => tr!("actions-placeholder-tabs"),
+            Mode::Clipboard => tr!("actions-placeholder-clipboard"),
         }
     }
 

@@ -11,6 +11,43 @@ pub enum ClipMode {
     Cut,
 }
 
+/// A file set copied or cut earlier ([`ClipHistory`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClipSet {
+    pub mode: ClipMode,
+    pub paths: Vec<PathBuf>,
+    pub at: std::time::SystemTime,
+}
+
+/// The file sets copied or cut in Soyuz, newest first (`[behaviour] clipboard_history`),
+/// for the palette's *Clipboard history*. Only for this session.
+#[derive(Clone, Debug, Default)]
+pub struct ClipHistory {
+    sets: std::collections::VecDeque<ClipSet>,
+}
+
+impl ClipHistory {
+    /// Remember a copied / cut set (an equal set moves to the front), keeping `cap`.
+    pub fn remember(&mut self, mode: ClipMode, paths: &[PathBuf], cap: usize) {
+        self.sets.retain(|s| s.paths != paths);
+        if cap == 0 || paths.is_empty() {
+            self.sets.truncate(cap);
+            return;
+        }
+        self.sets.push_front(ClipSet { mode, paths: paths.to_vec(), at: std::time::SystemTime::now() });
+        self.sets.truncate(cap);
+    }
+
+    /// Newest first.
+    pub fn sets(&self) -> impl Iterator<Item = &ClipSet> {
+        self.sets.iter()
+    }
+
+    pub fn get(&self, i: usize) -> Option<&ClipSet> {
+        self.sets.get(i)
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct Clipboard {
     mode: Option<ClipMode>,
@@ -116,5 +153,26 @@ mod tests {
     #[test]
     fn os_text_lists_paths() {
         assert_eq!(Clipboard::os_text(&[p("/a/b"), p("/c")]), "/a/b\n/c");
+    }
+}
+
+#[cfg(test)]
+mod history_tests {
+    use super::*;
+
+    #[test]
+    fn history_keeps_newest_first_without_duplicates() {
+        let p = |s: &str| vec![PathBuf::from(s)];
+        let mut h = ClipHistory::default();
+        h.remember(ClipMode::Copy, &p("a"), 2);
+        h.remember(ClipMode::Cut, &p("b"), 2);
+        h.remember(ClipMode::Copy, &p("a"), 2);
+        let order: Vec<_> = h.sets().map(|s| s.paths[0].clone()).collect();
+        assert_eq!(order, [PathBuf::from("a"), PathBuf::from("b")], "a moved to the front");
+        h.remember(ClipMode::Copy, &p("c"), 2);
+        assert_eq!(h.sets().count(), 2, "capped");
+        assert_eq!(h.get(0).unwrap().paths, p("c"));
+        h.remember(ClipMode::Copy, &p("d"), 0);
+        assert_eq!(h.sets().count(), 0, "off forgets everything");
     }
 }

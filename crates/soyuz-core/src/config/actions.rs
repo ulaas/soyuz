@@ -107,6 +107,8 @@ define_actions! {
         MediaConvert, MediaExtractAudio, MediaTrim, MediaSaveFrame,
         // A password for an encrypted PDF's preview (`models::archive::ask_pdf_password`).
         PdfPassword,
+        // File sets copied or cut earlier (the palette's clipboard mode).
+        ClipboardHistory,
     ],
     Tools: [
         CommandPalette, Search, SearchContent, FolderSize, DiskUsageTreemap, FindDuplicates,

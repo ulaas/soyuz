@@ -152,6 +152,7 @@ fn mode_icon(mode: Mode) -> soyuz_appcore::icon::IconId {
         Mode::Search => IconId::MagnifyingGlass,
         Mode::Shell => IconId::Terminal,
         Mode::Tabs => IconId::Browsers,
+        Mode::Clipboard => IconId::Clipboard,
     }
 }
 
