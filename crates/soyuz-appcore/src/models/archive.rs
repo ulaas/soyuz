@@ -139,8 +139,7 @@ pub fn extract_to_folder(app: &mut AppCore) {
     };
     for a in archives {
         let parent = a.parent().map(Path::to_path_buf).unwrap_or_default();
-        let dest = unique_dir(&parent, &archive_stem(&soyuz_core::entry::display_name(&a)));
-        app.cmds.push(Cmd::SubmitJob(Box::new(extract_spec(&a, None, dest, 0))));
+        app.cmds.push(Cmd::ExtractNewFolder { archive: a, parent, selection: None });
     }
 }
 
@@ -320,6 +319,28 @@ pub fn extract_entries(app: &mut AppCore, archive: PathBuf, items: Vec<(String, 
     submit_entries(app, archive, items, strip, dest);
 }
 
+/// `Cmd::ExtractNewFolder` handler: the free folder name is found on a worker (it can
+/// take many checks on a slow drive), then the extract is submitted.
+pub fn extract_new_folder(
+    app: &mut AppCore,
+    archive: PathBuf,
+    parent: PathBuf,
+    selection: Option<(Vec<(String, bool)>, usize)>,
+) {
+    let postman = app.services.mailbox.postman();
+    let spawned = std::thread::Builder::new().name("soyuz-extract-dest".into()).spawn(move || {
+        let dest = unique_dir(&parent, &archive_stem(&soyuz_core::entry::display_name(&archive)));
+        let cmd = match selection {
+            Some((items, strip)) => Cmd::ExtractEntries { archive, items, strip, dest },
+            None => Cmd::SubmitJob(Box::new(extract_spec(&archive, None, dest, 0))),
+        };
+        postman.send(crate::services::mailbox::UiMsg::Cmds(vec![cmd]));
+    });
+    if let Err(e) = spawned {
+        app.ui.toasts.push(Toast::error(tr!("views-archive-extract-failed")).body(e.to_string()));
+    }
+}
+
 // ---- prompts --------------------------------------------------------------------------
 
 /// A dialog the frontend should show.
@@ -379,11 +400,12 @@ impl ExtractForm {
         }
         let mut cmds = Vec::new();
         for a in &self.archives {
-            let dest = if self.subfolder {
-                unique_dir(&base, &archive_stem(&soyuz_core::entry::display_name(a)))
-            } else {
-                base.clone()
-            };
+            if self.subfolder {
+                let (archive, parent, selection) = (a.clone(), base.clone(), self.selection.clone());
+                cmds.push(Cmd::ExtractNewFolder { archive, parent, selection });
+                continue;
+            }
+            let dest = base.clone();
             match &self.selection {
                 Some((items, strip)) => {
                     cmds.push(Cmd::ExtractEntries { archive: a.clone(), items: items.clone(), strip: *strip, dest })

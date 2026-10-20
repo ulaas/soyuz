@@ -530,6 +530,7 @@ views-index-rebuild = Dizini yeniden oluştur
 
 views-archive-opening = { $name } açılıyor…
 views-archive-job-extract = Ayıkla: { $name }
+views-archive-extract-failed = Ayıklama başlatılamadı
 views-archive-job-compress = Sıkıştır: { $name }
 views-archive-job-delete = { $archive } arşivinden { $count } öğe sil
 views-archive-job-add = { $archive } arşivine { $count } öğe ekle

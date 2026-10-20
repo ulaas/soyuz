@@ -72,6 +72,8 @@ signal-hook = "0.4.5"
 tempfile.workspace = true
 # MCP approval requests and script plans in the dialog tests (`input/dialogs/approval_*.rs`).
 soyuz-script.workspace = true
+# Archives made for the extract tests (`tests/headless/archive.rs`).
+soyuz-archive.workspace = true
 
 [build-dependencies]
 # Embeds the icon + version info into soyuz-tui.exe (Windows hosts with rc.exe only; no-op elsewhere).

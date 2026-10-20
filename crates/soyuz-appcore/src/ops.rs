@@ -615,6 +615,7 @@ pub fn handle_msg(app: &mut AppCore, msg: UiMsg) {
         }
         UiMsg::Launch(p) => launch(app, &p),
         UiMsg::ChooseApp(p) => app.cmds.push(Cmd::ChooseOpenWith(p)),
+        UiMsg::Cmds(c) => app.cmds.extend(c),
         UiMsg::CreateFrom { pane, path, template } => {
             crate::ops::fileops::paste_image::create_from(app, pane, path, template);
         }
@@ -960,6 +961,9 @@ pub fn apply(app: &mut AppCore, cmd: Cmd, host: &dyn Host) {
         }
         Cmd::ExtractEntries { archive, items, strip, dest } => {
             crate::models::archive::extract_entries(app, archive, items, strip, dest)
+        }
+        Cmd::ExtractNewFolder { archive, parent, selection } => {
+            crate::models::archive::extract_new_folder(app, archive, parent, selection)
         }
         Cmd::Remote(c) => crate::models::remote::apply(app, c),
         Cmd::RunSavedSearch(i) => crate::models::search::run_saved(app, i),

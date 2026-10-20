@@ -82,5 +82,5 @@ Read first: `docs/PLAN.md` (architecture, APIs, design tokens), `docs/INTEGRATIO
   - PDF page rendering and PDF thumbnails need `pdfium.dll` next to the exe or in the config dir (text-only preview and the PDF icon otherwise).
   - Queue settings (`max_parallel`, `per_device_serial`, apply-to-all, history limit) need a restart.
   - Hand-built `$Recycle.Bin` entries not yet checked against Explorer's Recycle Bin window.
-  - A few one-off disk checks still run on the UI thread on button clicks (debug builds log every `soyuz_fs` call made on the UI thread).
+  - Two single checks on a click still run on the UI thread: Create archive's "name taken" check and Open with's typed program path (debug builds log every `soyuz_fs` call made on the UI thread). Extract to folder picks its free name on a worker.
 - **License:** MIT OR Apache-2.0.

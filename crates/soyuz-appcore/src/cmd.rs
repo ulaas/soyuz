@@ -95,6 +95,13 @@ pub enum Cmd {
         strip: usize,
         dest: PathBuf,
     },
+    /// Extract `archive` (or its `selection`: entries and strip) into a new folder in
+    /// `parent` named after it (`name`, `name (2)`, … — picked on a worker).
+    ExtractNewFolder {
+        archive: PathBuf,
+        parent: PathBuf,
+        selection: Option<(Vec<(String, bool)>, usize)>,
+    },
     /// Run / remove a saved search (index into the sidebar list).
     RunSavedSearch(usize),
     RemoveSavedSearch(usize),

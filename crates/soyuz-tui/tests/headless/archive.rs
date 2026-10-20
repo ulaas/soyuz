@@ -208,3 +208,54 @@ fn password(data: PathBuf) {
     assert!(asked, "the listing asked for the password");
     common::ok();
 }
+
+#[test]
+fn extract_to_folder_picks_a_free_name() {
+    let run = common::relaunch(module_path!(), "extract_to_folder_picks_a_free_name", |data| {
+        let src = data.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("a.txt"), b"a").unwrap();
+        let opts = soyuz_archive::CreateOptions {
+            format: soyuz_archive::ArchiveFormat::Zip,
+            level: 1,
+            password: None,
+            base_dir: src.clone(),
+            store_symlinks: false,
+            follow_symlinks: false,
+        };
+        let ctl = soyuz_core::OpControl::new();
+        soyuz_archive::create(&data.join("pics.zip"), &[src.join("a.txt")], &opts, &ctl, &mut ()).unwrap();
+        std::fs::remove_dir_all(&src).unwrap();
+        // "pics" is taken: the extract goes to "pics (2)".
+        std::fs::create_dir_all(data.join("pics")).unwrap();
+    });
+    if let Run::Child(data) = run {
+        extract_to_folder(data);
+    }
+}
+
+fn extract_to_folder(data: PathBuf) {
+    let mut c = config();
+    c.keys.bindings.insert("extract_to_folder".into(), vec!["F8".into()]);
+    let mut app = common::new_app(c, &data);
+    let dest = data.join("pics (2)").join("a.txt");
+    let mut stage = 0;
+    drive(&mut app, |a| match stage {
+        0 => {
+            let e = on(a, "pics.zip", key(KeyCode::F(8)));
+            if e.as_ref().is_some_and(|e| *e == key(KeyCode::F(8))) {
+                stage = 1;
+            }
+            e
+        }
+        1 if wait_jobs_idle(a) && dest.is_file() => {
+            stage = 2;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    assert_eq!(stage, 2);
+    assert_eq!(std::fs::read(&dest).unwrap(), b"a");
+    assert!(std::fs::read_dir(data.join("pics")).unwrap().next().is_none(), "the taken folder is untouched");
+    common::ok();
+}

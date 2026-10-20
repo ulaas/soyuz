@@ -42,6 +42,8 @@ pub enum UiMsg {
     /// A worker prepared `template` (a pasted image): create `path` as a copy of it
     /// through a job, then select and rename it in `pane`.
     CreateFrom { pane: PaneId, path: PathBuf, template: PathBuf },
+    /// A worker finished a disk check: run these commands.
+    Cmds(Vec<crate::cmd::Cmd>),
 }
 
 /// Cloneable sending half handed to worker threads.

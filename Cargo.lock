@@ -7105,6 +7105,7 @@ dependencies = [
  "signal-hook 0.4.5",
  "soyuz-ai",
  "soyuz-appcore",
+ "soyuz-archive",
  "soyuz-core",
  "soyuz-fs",
  "soyuz-jobs",

@@ -602,6 +602,7 @@ views-index-rebuild = Rebuild index
 views-archive-opening = Opening { $name }…
 # Job labels (jobs panel); $name: archive or archive file name.
 views-archive-job-extract = Extract { $name }
+views-archive-extract-failed = Couldn't start the extraction
 views-archive-job-compress = Compress { $name }
 # $archive: the zip's file name.
 views-archive-job-delete = { $count ->
