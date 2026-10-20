@@ -53,7 +53,7 @@ libc = "0.2.190"
 # Linux desktop integration (all already in the lockfile via eframe/accesskit/winit).
 zbus = { version = "5.19.0", default-features = false, features = ["async-io", "blocking-api"] }
 zeroize = "1.8"
-x11rb = "0.13.2"
+x11rb = "0.14.0"
 wayland-client = "0.31.15"
 wayland-backend = { version = "0.3.17", features = ["client_system"] }
 wayland-protocols = { version = "0.32.13", features = ["client", "staging"] }
