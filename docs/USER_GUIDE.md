@@ -503,7 +503,7 @@ All from the palette or the context menu:
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
 - **Split / join files**, **checksums** (BLAKE3, SHA-256, SHA-1, MD5, CRC32), **archives**
   (create, extract here / to folder, test; browse zip / 7z / tar / RAR / ISO / CAB / .deb /
-  .rpm like folders, including split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, paste to
+  .rpm like folders, including cabinet sets (open any `.cab` of the set), split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, paste to
   add files, Rename and Delete edit the archive, and the original goes to the trash so it
   can be undone).
 - Tool windows (treemap, compare, duplicates, previous versions, split / join, sync
