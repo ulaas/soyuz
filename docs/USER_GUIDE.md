@@ -928,6 +928,7 @@ the status line shows the index state while one is open. Enter on an archive (zi
 dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network
 section) opens the connection form for SFTP, WebDAV, FTP(S), S3 and, off Windows, SMB, with the
 fields of the chosen protocol and sign-in method; a new SSH host key asks before it is trusted.
+WebDAV signs in with Basic or Digest authentication, whichever the server asks for.
 Saved connections show a state dot in the sidebar and have a menu (open in a new tab,
 edit, disconnect, copy the address, remove). Passwords and keys go to the OS credential
 store, never to `config.toml`.

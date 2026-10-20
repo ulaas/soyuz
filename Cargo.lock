@@ -7129,6 +7129,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "log",
+ "md-5",
  "parking_lot",
  "quick-xml 0.42.0",
  "reqwest",

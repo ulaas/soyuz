@@ -2,7 +2,7 @@
 //!
 //! Only for tests and the `SOYUZ_TEST_DAV` debug hook (try remote browsing and
 //! transfers without a real server): PROPFIND (Depth 0/1), GET (with `Range`), PUT
-//! (Content-Length or chunked), MKCOL, MOVE, DELETE, optional Basic auth. One thread per
+//! (Content-Length or chunked), MKCOL, MOVE, DELETE, optional Basic or Digest auth. One thread per
 //! connection, keep-alive, no TLS, no locking.
 
 use std::io::{BufRead, BufReader, Read, Write};
@@ -26,14 +26,23 @@ impl DavServer {
         Self::start_on(root, auth, 0)
     }
 
+    /// Serve `root` requiring Digest authentication (RFC 7616, SHA-256, `qop=auth`).
+    pub fn start_digest(root: &Path, user: &str, password: &str) -> std::io::Result<DavServer> {
+        Self::serve_with(root, Some(Auth::Digest { user: user.into(), password: password.into() }), 0)
+    }
+
     /// [`DavServer::start`] on a fixed port (`0` = random).
     pub fn start_on(root: &Path, auth: Option<(String, String)>, port: u16) -> std::io::Result<DavServer> {
+        let auth = auth.map(|(u, p)| Auth::Basic(base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}"))));
+        Self::serve_with(root, auth, port)
+    }
+
+    fn serve_with(root: &Path, auth: Option<Auth>, port: u16) -> std::io::Result<DavServer> {
         let listener = TcpListener::bind(("127.0.0.1", port))?;
         let port = listener.local_addr()?.port();
         let stop = Arc::new(AtomicBool::new(false));
         let root = root.to_path_buf();
         let stop2 = stop.clone();
-        let auth = auth.map(|(u, p)| base64::engine::general_purpose::STANDARD.encode(format!("{u}:{p}")));
         std::thread::Builder::new().name("soyuz-dav-server".into()).spawn(move || {
             for conn in listener.incoming() {
                 if stop2.load(Ordering::Relaxed) {
@@ -43,7 +52,7 @@ impl DavServer {
                 let root = root.clone();
                 let auth = auth.clone();
                 let _ = std::thread::Builder::new().name("soyuz-dav-conn".into()).spawn(move || {
-                    let _ = serve(conn, &root, auth.as_deref());
+                    let _ = serve(conn, &root, auth.as_ref());
                 });
             }
         })?;
@@ -157,17 +166,51 @@ fn prop_xml(href: &str, md: &std::fs::Metadata) -> String {
     )
 }
 
-fn serve(conn: TcpStream, root: &Path, auth: Option<&str>) -> std::io::Result<()> {
+/// What the server asks of clients.
+#[derive(Clone)]
+enum Auth {
+    /// `Basic` with this base64 `user:password`.
+    Basic(String),
+    Digest {
+        user: String,
+        password: String,
+    },
+}
+
+/// The test server's Digest challenge (one fixed nonce: it is only for tests).
+fn digest_challenge() -> crate::digest::Challenge {
+    crate::digest::Challenge {
+        realm: "soyuz".into(),
+        nonce: "soyuz-test-nonce".into(),
+        opaque: None,
+        algorithm: crate::digest::Algorithm::Sha256,
+        qop_auth: true,
+        stale: false,
+    }
+}
+
+fn serve(conn: TcpStream, root: &Path, auth: Option<&Auth>) -> std::io::Result<()> {
     let mut w = conn.try_clone()?;
     let mut r = BufReader::new(conn);
     while let Some(req) = read_req(&mut r)? {
-        if let Some(expected) = auth {
-            let ok = req
-                .header("authorization")
-                .and_then(|v| v.strip_prefix("Basic "))
-                .is_some_and(|v| v.trim() == expected);
+        if let Some(auth) = auth {
+            let given = req.header("authorization");
+            let (ok, challenge) = match auth {
+                Auth::Basic(expected) => (
+                    given.and_then(|v| v.strip_prefix("Basic ")).is_some_and(|v| v.trim() == expected),
+                    "Basic realm=\"soyuz\"".to_string(),
+                ),
+                Auth::Digest { user, password } => {
+                    let c = digest_challenge();
+                    let ok = given.is_some_and(|v| crate::digest::verify(&c, v, user, password, &req.method));
+                    (
+                        ok,
+                        format!("Digest realm=\"{}\", qop=\"auth\", algorithm=SHA-256, nonce=\"{}\"", c.realm, c.nonce),
+                    )
+                }
+            };
             if !ok {
-                respond(&mut w, "401 Unauthorized", &[("WWW-Authenticate", "Basic realm=\"soyuz\"".into())], b"")?;
+                respond(&mut w, "401 Unauthorized", &[("WWW-Authenticate", challenge)], b"")?;
                 continue;
             }
         }

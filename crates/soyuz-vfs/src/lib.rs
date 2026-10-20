@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod dav_server;
+pub mod digest;
 pub mod fake;
 pub mod ftp;
 mod http;

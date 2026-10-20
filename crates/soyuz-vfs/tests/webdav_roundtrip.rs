@@ -106,3 +106,28 @@ fn webdav_provider_against_local_server() {
     dav.delete("/up", true).unwrap();
     assert!(!root.path().join("up").exists());
 }
+
+#[test]
+fn webdav_digest_authentication() {
+    registry::set_hooks(Arc::new(TestHooks));
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("note.txt"), b"digest ok").unwrap();
+    let server = DavServer::start_digest(root.path(), "alice", "wonder").unwrap();
+
+    let bad = RemoteUri::parse(&format!("webdav://mallory@127.0.0.1:{}/", server.port)).unwrap();
+    let p = registry::provider_for(&bad).unwrap();
+    assert_eq!(p.list("/").unwrap_err().kind, FsErrorKind::PermissionDenied);
+
+    let uri = RemoteUri::parse(&format!("webdav://alice@127.0.0.1:{}/", server.port)).unwrap();
+    let dav = registry::provider_for(&uri).unwrap();
+    let top = dav.list("/").unwrap();
+    assert_eq!(top.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(), ["note.txt"]);
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut dav.open_read("/note.txt", 0).unwrap(), &mut text).unwrap();
+    assert_eq!(text, "digest ok");
+    dav.mkdir("/made").unwrap();
+    dav.rename("/made", "/moved").unwrap();
+    assert!(root.path().join("moved").is_dir());
+    dav.delete("/moved", true).unwrap();
+    assert!(!root.path().join("moved").exists());
+}

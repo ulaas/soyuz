@@ -1,5 +1,6 @@
 //! WebDAV (RFC 4918) over reqwest: PROPFIND (Depth 0/1) listings, GET with `Range`,
-//! streaming PUT, MKCOL, MOVE and DELETE. Basic authentication.
+//! streaming PUT, MKCOL, MOVE and DELETE. Basic or Digest authentication (RFC 7616,
+//! `crate::digest`; a probe on the first request finds out which the server wants).
 
 use std::io::Read;
 use std::time::{Duration, SystemTime};
@@ -23,7 +24,18 @@ pub struct WebDavProvider {
     base: String,
     client: reqwest::Client,
     auth: Option<(String, Option<String>)>,
+    /// Digest authentication, once a probe found the server asks for it.
+    digest: std::sync::Arc<parking_lot::Mutex<DigestState>>,
     timeout: Duration,
+}
+
+/// What the probe learned: Basic works, or the Digest challenge to answer.
+#[derive(Default)]
+struct DigestState {
+    probed: bool,
+    challenge: Option<crate::digest::Challenge>,
+    /// Nonce count of the last request answered with `challenge`.
+    nc: u32,
 }
 
 impl WebDavProvider {
@@ -37,7 +49,65 @@ impl WebDavProvider {
         };
         let user = creds.user.clone().or_else(|| uri.user.clone());
         let auth = user.map(|u| (u, creds.secret.clone()));
-        Ok(WebDavProvider { uri, base, client: client(net.connect_timeout)?, auth, timeout: net.io_timeout })
+        Ok(WebDavProvider {
+            uri,
+            base,
+            client: client(net.connect_timeout)?,
+            auth,
+            digest: Default::default(),
+            timeout: net.io_timeout,
+        })
+    }
+
+    /// Once per connection (and again after a failed sign-in): ask the server with Basic
+    /// credentials; a `401` with a Digest challenge switches the requests to Digest.
+    fn probe(&self) {
+        let Some((u, p)) = &self.auth else { return };
+        if self.digest.lock().probed {
+            return;
+        }
+        let path = normalize_path(&self.uri.path);
+        let rb = self.client.request(Method::OPTIONS, self.url(&path)).basic_auth(u, p.as_deref());
+        let challenge = match send(rb, self.timeout, "connect", &path) {
+            Ok(resp) if resp.status().as_u16() == 401 => {
+                let values: Vec<String> = resp
+                    .headers()
+                    .get_all(reqwest::header::WWW_AUTHENTICATE)
+                    .iter()
+                    .filter_map(|v| v.to_str().ok().map(str::to_string))
+                    .collect();
+                crate::digest::parse_challenges(values.iter().map(String::as_str))
+            }
+            _ => None,
+        };
+        if challenge.is_some() {
+            log::info!("webdav {}: Digest authentication", self.base);
+        }
+        *self.digest.lock() = DigestState { probed: true, challenge, nc: 0 };
+    }
+
+    /// Forget what the probe learned (a sign-in failed: the nonce may be stale).
+    fn reprobe(&self) -> bool {
+        let mut d = self.digest.lock();
+        let had = d.probed;
+        *d = DigestState::default();
+        had && self.auth.is_some()
+    }
+
+    /// `send_text` for a request `make` builds, sent again once after a refused sign-in
+    /// (a Digest nonce goes stale; the probe gets a new one).
+    fn send_text_retry(
+        &self,
+        make: impl Fn() -> reqwest::RequestBuilder,
+        op: &'static str,
+        path: &str,
+    ) -> FsResult<String> {
+        match send_text(make(), self.timeout, op, path) {
+            Err(e) if e.kind == FsErrorKind::PermissionDenied && self.reprobe() => {
+                send_text(make(), self.timeout, op, path)
+            }
+            r => r,
+        }
     }
 
     fn url(&self, path: &str) -> String {
@@ -45,21 +115,35 @@ impl WebDavProvider {
     }
 
     fn req(&self, method: Method, path: &str) -> reqwest::RequestBuilder {
-        let rb = self.client.request(method, self.url(path));
-        match &self.auth {
-            Some((u, p)) => rb.basic_auth(u, p.as_deref()),
-            None => rb,
+        self.probe();
+        let target = url_encode_path(&normalize_path(path));
+        let rb = self.client.request(method.clone(), format!("{}{target}", self.base));
+        let Some((u, p)) = &self.auth else { return rb };
+        let mut d = self.digest.lock();
+        let digest = d.challenge.clone();
+        match digest {
+            Some(c) => {
+                d.nc += 1;
+                let nc = d.nc;
+                drop(d);
+                let pw = p.as_deref().unwrap_or_default();
+                let value =
+                    crate::digest::authorization(&c, u, pw, method.as_str(), &target, nc, &crate::digest::cnonce(nc));
+                rb.header(reqwest::header::AUTHORIZATION, value)
+            }
+            None => rb.basic_auth(u, p.as_deref()),
         }
     }
 
     fn propfind(&self, path: &str, depth: &str) -> FsResult<Vec<DavEntry>> {
         let method = Method::from_bytes(b"PROPFIND").expect("valid method");
-        let rb = self
-            .req(method, path)
-            .header("Depth", depth)
-            .header("Content-Type", "application/xml; charset=utf-8")
-            .body(PROPFIND_BODY);
-        let text = send_text(rb, self.timeout, "list", path)?;
+        let make = || {
+            self.req(method.clone(), path)
+                .header("Depth", depth)
+                .header("Content-Type", "application/xml; charset=utf-8")
+                .body(PROPFIND_BODY)
+        };
+        let text = self.send_text_retry(make, "list", path)?;
         parse_multistatus(&text).map_err(|m| err(FsErrorKind::Io, "list", path, format!("bad server reply: {m}")))
     }
 }
@@ -299,17 +383,17 @@ impl Provider for WebDavProvider {
 
     fn mkdir(&self, path: &str) -> FsResult<()> {
         let method = Method::from_bytes(b"MKCOL").expect("valid method");
-        send_text(self.req(method, path), self.timeout, "mkdir", path).map(|_| ())
+        self.send_text_retry(|| self.req(method.clone(), path), "mkdir", path).map(|_| ())
     }
 
     fn rename(&self, from: &str, to: &str) -> FsResult<()> {
         let method = Method::from_bytes(b"MOVE").expect("valid method");
-        let rb = self.req(method, from).header("Destination", self.url(to)).header("Overwrite", "F");
-        send_text(rb, self.timeout, "rename", from).map(|_| ())
+        let make = || self.req(method.clone(), from).header("Destination", self.url(to)).header("Overwrite", "F");
+        self.send_text_retry(make, "rename", from).map(|_| ())
     }
 
     fn delete(&self, path: &str, _is_dir: bool) -> FsResult<()> {
-        send_text(self.req(Method::DELETE, path), self.timeout, "delete", path).map(|_| ())
+        self.send_text_retry(|| self.req(Method::DELETE, path), "delete", path).map(|_| ())
     }
 
     fn uri_of(&self, path: &str) -> Option<RemoteUri> {
@@ -325,6 +409,7 @@ impl WebDavProvider {
             base: self.base.clone(),
             client: self.client.clone(),
             auth: self.auth.clone(),
+            digest: self.digest.clone(),
             timeout: self.timeout,
         }
     }
