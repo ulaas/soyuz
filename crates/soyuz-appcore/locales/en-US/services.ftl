@@ -127,7 +127,6 @@ services-config-error-body =
     { $error }
     The previous settings stay active.
 services-config-edit = Edit config
-services-config-queue-restart = Queue settings apply after restart
 
 ## Office documents, e-books and PDF
 

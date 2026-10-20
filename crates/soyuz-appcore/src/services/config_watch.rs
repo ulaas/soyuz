@@ -184,14 +184,8 @@ pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
     }
     if old.jobs != c.jobs {
         // Copy options (buffer, verify, reflink, preserve) apply to the next job; the
-        // engine's queue settings are fixed at startup (the settings page says so).
+        // queue settings (parallel jobs, lanes, apply-to-all, history) right away.
         app.fileops.jobs.reconfigure(c);
-        let engine = |j: &soyuz_core::config::Jobs| {
-            (j.max_parallel, j.per_device_serial, j.reset_apply_all_between_jobs, j.history_limit)
-        };
-        if engine(&old.jobs) != engine(&c.jobs) && !app.ui.settings_open {
-            app.ui.toasts.push(Toast::info(tr!("services-config-queue-restart")));
-        }
     }
     let (km, warnings) = crate::keys::build_keymap(c);
     for w in warnings {

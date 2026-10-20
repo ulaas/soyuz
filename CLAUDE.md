@@ -80,7 +80,6 @@ Read first: `docs/PLAN.md` (architecture, APIs, design tokens), `docs/INTEGRATIO
   - The MSIX is unsigned; Authenticode signing of the exe / MSI needs a certificate (pipeline validated with a temporary self-signed one, `docs/RELEASING.md`). Linux and macOS ship as unsigned tarballs only (no .deb / .rpm / AppImage / .dmg, no notarization yet).
   - RAR volume sets and PKWARE spanned zips (`.z01`) are unsupported (single RAR archives read via pure-Rust `rars`).
   - PDF page rendering and PDF thumbnails need `pdfium.dll` next to the exe or in the config dir (text-only preview and the PDF icon otherwise).
-  - Queue settings (`max_parallel`, `per_device_serial`, apply-to-all, history limit) need a restart.
   - Hand-built `$Recycle.Bin` entries not yet checked against Explorer's Recycle Bin window.
   - Two single checks on a click still run on the UI thread: Create archive's "name taken" check and Open with's typed program path (debug builds log every `soyuz_fs` call made on the UI thread). Extract to folder picks its free name on a worker.
 - **License:** MIT OR Apache-2.0.

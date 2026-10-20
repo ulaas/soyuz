@@ -217,10 +217,6 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("appearance.backdrop", Hint::Restart),
     ("appearance.snap_layouts", Hint::Restart),
     ("appearance.custom_titlebar", Hint::Restart),
-    ("jobs.max_parallel", Hint::Restart),
-    ("jobs.per_device_serial", Hint::Restart),
-    ("jobs.reset_apply_all_between_jobs", Hint::Restart),
-    ("jobs.history_limit", Hint::Restart),
 ];
 
 /// Keys the editor does not show: the schema version and legacy keys that are only read

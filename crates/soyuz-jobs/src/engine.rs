@@ -114,6 +114,26 @@ impl Default for EngineConfig {
     }
 }
 
+/// The part of [`EngineConfig`] that [`JobEngine::set_queue`] changes on a running engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QueueSettings {
+    pub max_parallel: usize,
+    pub default_queue: QueueMode,
+    pub reset_apply_all_between_jobs: bool,
+    pub history_limit: usize,
+}
+
+impl From<&EngineConfig> for QueueSettings {
+    fn from(c: &EngineConfig) -> Self {
+        QueueSettings {
+            max_parallel: c.max_parallel,
+            default_queue: c.default_queue,
+            reset_apply_all_between_jobs: c.reset_apply_all_between_jobs,
+            history_limit: c.history_limit,
+        }
+    }
+}
+
 /// Number of speed samples kept for the graph.
 pub(crate) const SAMPLE_RING: usize = 120;
 /// EMA smoothing factor for `speed_bps`.
@@ -244,6 +264,9 @@ pub(crate) struct EngineState {
 
 pub(crate) struct Inner {
     pub cfg: EngineConfig,
+    /// The queue settings that apply without a restart ([`JobEngine::set_queue`]); they
+    /// start as `cfg`'s and win over it. A leaf lock: nothing else is taken while held.
+    pub(crate) live: Mutex<QueueSettings>,
     pub probe: Arc<dyn FsProbe>,
     wake: Arc<dyn Fn() + Send + Sync>,
     events_tx: Sender<JobEvent>,
@@ -306,7 +329,7 @@ impl Inner {
         undo_of: Option<HistoryId>,
         redo_of: Option<HistoryId>,
     ) -> JobId {
-        let mode = if options.queue == QueueMode::PerDevice { self.cfg.default_queue } else { options.queue };
+        let mode = if options.queue == QueueMode::PerDevice { self.live.lock().default_queue } else { options.queue };
         let lane = match mode {
             QueueMode::Serial => LaneState::Known(Some(Lane::Global)),
             QueueMode::Parallel => LaneState::Known(None),
@@ -510,7 +533,7 @@ impl Inner {
                         this_session: true,
                     };
                     st.history.push(entry);
-                    let limit = self.cfg.history_limit;
+                    let limit = self.live.lock().history_limit;
                     if st.history.len() > limit {
                         let drop_n = st.history.len() - limit;
                         st.history.drain(..drop_n);
@@ -584,6 +607,7 @@ impl Inner {
 
     /// One admission pass; returns the jobs that must get a worker thread.
     fn admit(&self) -> Vec<JobId> {
+        let max_parallel = self.live.lock().max_parallel.max(1);
         self.update(|st, ev| {
             if st.shutting_down {
                 return Vec::new();
@@ -619,7 +643,7 @@ impl Inner {
                         (e.force || (!busy_lanes.contains(&l) && !blocked_lanes.contains(&l)), Some(l))
                     }
                 };
-                let cap_ok = e.force || active < self.cfg.max_parallel.max(1);
+                let cap_ok = e.force || active < max_parallel;
                 if roots_ok && lane_ok && cap_ok {
                     e.force = false;
                     e.started = true;
@@ -866,6 +890,7 @@ impl JobEngine {
         let journal = cfg.journal_path.clone().map(crate::journal::JournalWriter::new);
         let inner = Arc::new(Inner {
             journal,
+            live: Mutex::new(QueueSettings::from(&cfg)),
             cfg,
             probe,
             wake,
@@ -975,6 +1000,33 @@ impl JobEngine {
             let id = st.queue.remove(pos);
             st.queue.insert(new, id);
         });
+        (self.inner.wake)();
+        self.inner.kick();
+    }
+
+    /// The queue settings in force.
+    pub fn queue(&self) -> QueueSettings {
+        *self.inner.live.lock()
+    }
+
+    /// Change the queue settings of the running engine: a higher `max_parallel` starts
+    /// waiting jobs right away, a lower one lets running jobs finish; `default_queue`
+    /// applies to jobs submitted from now on; a lower `history_limit` drops the oldest
+    /// entries now (the file follows on the next history write). No disk access.
+    pub fn set_queue(&self, q: QueueSettings) {
+        let old = std::mem::replace(&mut *self.inner.live.lock(), q);
+        if old == q {
+            return;
+        }
+        if q.history_limit < old.history_limit {
+            self.inner.update(|st, _| {
+                let limit = q.history_limit.max(1);
+                if st.history.len() > limit {
+                    let drop_n = st.history.len() - limit;
+                    st.history.drain(..drop_n);
+                }
+            });
+        }
         (self.inner.wake)();
         self.inner.kick();
     }

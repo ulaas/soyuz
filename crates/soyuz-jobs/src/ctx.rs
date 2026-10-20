@@ -217,7 +217,7 @@ impl JobCtx {
     // ----- prompts --------------------------------------------------------------
 
     fn memory<R>(&self, f: impl FnOnce(&mut PolicyMemory) -> R) -> R {
-        if self.inner.cfg.reset_apply_all_between_jobs {
+        if self.inner.live.lock().reset_apply_all_between_jobs {
             f(&mut self.own_memory.lock())
         } else {
             f(&mut self.inner.shared_policy.lock())

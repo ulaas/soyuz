@@ -118,7 +118,6 @@ services-config-error-body =
     { $error }
     Önceki ayarlar etkin kalır.
 services-config-edit = Yapılandırmayı düzenle
-services-config-queue-restart = Kuyruk ayarları yeniden başlatıldıktan sonra geçerli olur
 
 ## Office documents, e-books and PDF
 

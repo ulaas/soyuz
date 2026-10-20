@@ -143,3 +143,34 @@ fn queued_job_pause_resume_cancel() {
     h.ok(id);
     assert!(h.p("y").is_dir());
 }
+
+#[test]
+fn raising_max_parallel_live_starts_waiting_jobs() {
+    let h = H::with(|c| c.max_parallel = 1);
+    write(&h.p("big"), &[0u8; 300_000]);
+    let mut slow = throttled(copy_kind(&[&h.p("big")], &h.p("out")), 300_000);
+    slow.options.queue = QueueMode::Parallel;
+    let slow = h.engine.submit(slow);
+    h.wait_state(slow, |s| *s == JobState::Running);
+    let mut quick = JobSpec::new(JobKind::Create { path: h.p("q"), kind: CreateKind::Dir });
+    quick.options.queue = QueueMode::Parallel;
+    let quick = h.engine.submit(quick);
+    std::thread::sleep(Duration::from_millis(150));
+    assert_eq!(h.snap(quick).state, JobState::Queued, "max_parallel = 1 holds it back");
+    let q = crate::QueueSettings { max_parallel: 2, ..h.engine.queue() };
+    h.engine.set_queue(q);
+    h.ok(quick);
+    assert!(!h.snap(slow).state.is_terminal(), "started while the slow job still runs");
+    h.ok(slow);
+}
+
+#[test]
+fn lowering_history_limit_live_drops_the_oldest() {
+    let h = H::with(|c| c.history_limit = 10);
+    for n in ["a", "b", "c"] {
+        let id = h.submit(JobKind::Create { path: h.p(n), kind: CreateKind::Dir });
+        h.ok(id);
+    }
+    h.engine.set_queue(crate::QueueSettings { history_limit: 1, ..h.engine.queue() });
+    assert_eq!(h.engine.history().iter().map(|e| e.id.0).collect::<Vec<_>>(), vec![3]);
+}

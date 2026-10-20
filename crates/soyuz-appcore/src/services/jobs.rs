@@ -285,6 +285,7 @@ impl JobsService {
         self.media = media_options(config);
         self.extract_limits = extract_limits(config);
         self.preserve_special_bits = config.archive.preserve_special_bits;
+        self.engine.set_queue(queue_settings(config));
     }
 
     pub fn engine(&self) -> &JobEngine {
@@ -450,14 +451,25 @@ pub fn path_moves(records: &[UndoRecord], forward: bool) -> Vec<(PathBuf, PathBu
     if forward { pairs.collect() } else { pairs.rev().map(|(a, b)| (b, a)).collect() }
 }
 
-/// `[jobs]` → engine configuration (history next to the config file).
-pub fn engine_config(config: &Config) -> EngineConfig {
+/// `[jobs]` → the queue settings a running engine takes without a restart.
+pub fn queue_settings(config: &Config) -> soyuz_jobs::QueueSettings {
     let j = &config.jobs;
-    EngineConfig {
+    soyuz_jobs::QueueSettings {
         max_parallel: j.max_parallel.max(1),
         default_queue: if j.per_device_serial { QueueMode::PerDevice } else { QueueMode::Parallel },
         reset_apply_all_between_jobs: j.reset_apply_all_between_jobs,
         history_limit: j.history_limit.max(1),
+    }
+}
+
+/// `[jobs]` → engine configuration (history next to the config file).
+pub fn engine_config(config: &Config) -> EngineConfig {
+    let q = queue_settings(config);
+    EngineConfig {
+        max_parallel: q.max_parallel,
+        default_queue: q.default_queue,
+        reset_apply_all_between_jobs: q.reset_apply_all_between_jobs,
+        history_limit: q.history_limit,
         history_path: Some(soyuz_core::config::config_dir().join("history.jsonl")),
         journal_path: crate::services::crash::journal_path(),
         media_dirs: media_dirs(config),

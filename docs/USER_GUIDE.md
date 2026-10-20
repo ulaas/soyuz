@@ -598,8 +598,8 @@ Search the settings with `Ctrl+F` inside the window.
 `config.toml` is hot-reloaded: save it in any editor and Soyuz applies it within a second.
 A typo is reported with line and column, and the last good settings stay active. When the
 settings window saves, it merges into your file and keeps comments and ordering. Most
-settings apply instantly; the job queue settings (parallel jobs, queue mode, "apply to all"
-reset, history size) apply after a restart, which the settings page notes.
+settings apply instantly (the few that need a restart say so), the job queue too: more parallel jobs start waiting ones at once, fewer let
+the running ones finish, and a smaller history drops the oldest entries.
 
 The full reference with defaults is [`config.example.toml`](config.example.toml).
 
