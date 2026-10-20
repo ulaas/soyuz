@@ -145,6 +145,7 @@ services-pdf-renderer-stopped = PDF işleyici durdu
 services-pdf-renderer-failed = PDF işleyici bu dosyada başarısız oldu
 services-pdf-too-large = Bu PDF çok büyük
 services-pdf-password = Bu PDF parola korumalı
+services-pdf-password-wrong = Bu parola bu PDF'i açmadı
 services-pdf-cant-open = Bu PDF açılamıyor ({ $error })
 services-pdf-no-page = { $page }. sayfa yok ({ $error })
 services-pdf-cant-render-page = Bu sayfa işlenemiyor ({ $error })

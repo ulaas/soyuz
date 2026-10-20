@@ -406,6 +406,9 @@ views-rich-text = Text
 views-rich-pdf-no-text = No extractable text on the first pages.
 views-rich-pdf-text-caption = TEXT (FIRST PAGES)
 views-rich-pdfium-needed = PDF page preview needs pdfium
+views-rich-pdf-locked = This PDF is password protected
+views-rich-pdf-locked-body = Enter its password to see the pages and the text. Soyuz keeps it until it closes, never on disk.
+views-rich-pdf-unlock = Enter password…
 
 ## Quick Look (ui/quicklook.rs)
 
@@ -633,6 +636,9 @@ views-archive-test = Test archive
 views-archive-compress-menu = Compress…
 views-archive-password-title = Password required
 views-archive-password-body = “{ $name }” is encrypted. Enter its password to browse it.
+views-archive-password-body-pdf = “{ $name }” is encrypted. Enter its password to preview it (kept until Soyuz closes).
+views-archive-pdf-password-menu = PDF password…
+views-archive-pdf-password-select = Select one PDF file first
 views-archive-password-wrong = That password didn't work.
 views-archive-unlock = Unlock
 views-archive-extract-what = { $count ->

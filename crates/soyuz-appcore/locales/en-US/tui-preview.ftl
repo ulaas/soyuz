@@ -13,6 +13,7 @@ tui-preview-pages = { $count ->
    *[other] { $count } pages
 }
 tui-preview-pdf-text-only = Text only: { $reason }
+tui-preview-pdf-locked = Password protected: run “PDF password…” (the item menu or the palette) to preview it.
 tui-preview-rich = No terminal view for this { $kind } yet; the details are below.
 tui-preview-hex-hint = See the bytes with “{ $action }” in the command palette.
 

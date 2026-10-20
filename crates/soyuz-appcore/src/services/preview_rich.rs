@@ -121,6 +121,9 @@ pub struct PdfView {
     pub dirs: Vec<PathBuf>,
     pub cap: u64,
     pub width_px: u32,
+    /// The file is encrypted and no (right) password was typed: Enter PDF password…
+    /// unlocks it ([`preview_pdf::set_password`]).
+    pub locked: Option<PathBuf>,
 }
 
 #[derive(Clone)]
@@ -782,6 +785,11 @@ fn pdf(
         }
         match preview_pdf::info_lopdf(&src, lim.max_document) {
             Ok(i) => info = Some(i),
+            // Locked: the view asks for the password (whatever pdfium said).
+            Err(e) if preview_pdf::is_password_error(&e) => {
+                info = Some(PdfInfo { encrypted: true, ..Default::default() });
+                no_render = Some(e);
+            }
             Err(e) => {
                 let mut body = e;
                 if let Some(why) = &no_render {
@@ -815,8 +823,12 @@ fn pdf(
     if let Some(why) = &mut no_render {
         *why = why.trim_start_matches("pdfium: ").to_string();
     }
-    let view =
-        PdfView { src, info: Arc::new(info), first, no_render, dirs, cap: lim.max_document.max(1 << 30), width_px };
+    let locked = match &src {
+        PdfSrc::File(p) => no_render.as_deref().is_some_and(preview_pdf::is_password_error).then(|| p.clone()),
+        PdfSrc::Mem(_) => None,
+    };
+    let cap = lim.max_document.max(1 << 30);
+    let view = PdfView { src, info: Arc::new(info), first, no_render, dirs, cap, width_px, locked };
     loaded(Kind::Pdf, Rich::Pdf(view), facts)
 }
 

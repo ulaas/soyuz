@@ -356,10 +356,47 @@ pub enum ArchivePrompt {
     Rename { archive: PathBuf, from: String, is_dir: bool },
 }
 
-/// Remember the password for `archive` and re-list the pane that asked.
+/// Remember the password for `archive` and re-list the pane that asked. For a PDF (the
+/// same prompt unlocks its preview) the previews reload instead.
 pub fn unlock(pane: PaneId, archive: &Path, password: String) -> Cmd {
-    svc::set_password(archive, password);
+    if is_pdf(archive) {
+        crate::services::preview_pdf::set_password(archive, password);
+    } else {
+        svc::set_password(archive, password);
+    }
     Cmd::PaneAction(pane, soyuz_core::config::Action::Refresh)
+}
+
+/// `path` names a PDF file.
+pub fn is_pdf(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+}
+
+/// The password prompt's text for `archive` (an archive to browse, or a PDF to preview).
+pub fn password_body(archive: &Path) -> String {
+    let name = soyuz_core::entry::display_name(archive);
+    if is_pdf(archive) {
+        tr!("views-archive-password-body-pdf", name = &name)
+    } else {
+        tr!("views-archive-password-body", name = &name)
+    }
+}
+
+/// The one PDF file selected (or under the cursor) in the focused pane.
+pub fn focused_pdf(app: &AppCore) -> Option<PathBuf> {
+    let pane = app.ws.pane();
+    let sel = pane.selected_entries();
+    let [e] = sel.as_slice() else { return None };
+    (!e.is_dir_like() && is_pdf(&e.path) && matches!(pane.location, Location::Dir(_) | Location::Search(_)))
+        .then(|| e.path.clone())
+}
+
+/// Ask for the password of the PDF at `path` (its preview is locked): the archive
+/// password prompt, "wrong" when a password was already typed for it.
+pub fn ask_pdf_password(app: &mut AppCore, path: PathBuf) {
+    let wrong = crate::services::preview_pdf::password_for(&path).is_some();
+    let pane = app.ws.pane().id;
+    app.frontend.push(FrontendCmd::Archive(ArchivePrompt::Password { pane, archive: path, wrong }));
 }
 
 /// The "Extract to…" form: the archives (or the selected entries of one) and where to.

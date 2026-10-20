@@ -10,6 +10,7 @@ tui-preview-image-pending = Resim çiziliyor…
 tui-preview-image-no-room = Resim için yer yok.
 tui-preview-pages = { $count } sayfa
 tui-preview-pdf-text-only = Yalnızca metin: { $reason }
+tui-preview-pdf-locked = Parola korumalı: önizlemek için “PDF parolası…” komutunu çalıştırın (öğe menüsü veya palet).
 tui-preview-rich = Bu { $kind } için henüz terminal görünümü yok; ayrıntılar aşağıda.
 tui-preview-hex-hint = Baytları görmek için komut paletinde “{ $action }” komutunu çalıştırın.
 

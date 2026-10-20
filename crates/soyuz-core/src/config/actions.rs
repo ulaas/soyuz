@@ -105,6 +105,8 @@ define_actions! {
         TouchTimestamps, SplitFile, JoinFiles, ClearTags, Undo, Redo, PreviousVersions,
         // Media tools (FFmpeg, Phase V): jobs with a dry-run plan.
         MediaConvert, MediaExtractAudio, MediaTrim, MediaSaveFrame,
+        // A password for an encrypted PDF's preview (`models::archive::ask_pdf_password`).
+        PdfPassword,
     ],
     Tools: [
         CommandPalette, Search, SearchContent, FolderSize, DiskUsageTreemap, FindDuplicates,

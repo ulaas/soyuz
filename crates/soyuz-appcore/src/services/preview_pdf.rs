@@ -195,9 +195,24 @@ fn clean_text(s: &str) -> String {
 /// Pure-Rust info + text (no page rendering).
 pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
     let bytes = src.bytes(cap)?;
+    let password = match src {
+        PdfSrc::File(p) => password_for(p),
+        PdfSrc::Mem(_) => None,
+    };
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| -> Result<PdfInfo, String> {
-        let doc =
-            lopdf::Document::load_mem(&bytes).map_err(|e| tr!("services-pdf-cant-read", error = e.to_string()))?;
+        let doc = match &password {
+            Some(pw) => lopdf::Document::load_mem_with_options(&bytes, lopdf::LoadOptions::with_password(pw)),
+            None => lopdf::Document::load_mem(&bytes),
+        };
+        let doc = doc.map_err(|e| match e {
+            lopdf::Error::InvalidPassword => tr!("services-pdf-password-wrong").to_string(),
+            e => tr!("services-pdf-cant-read", error = e.to_string()),
+        })?;
+        // Encrypted with a user password nobody typed: nothing can be read.
+        if doc.is_encrypted() && password.is_none() && doc.authenticate_password("").is_err() {
+            return Err(tr!("services-pdf-password").into());
+        }
+        let readable = !doc.is_encrypted() || doc.encryption_state.is_some();
         let mut info =
             PdfInfo { version: Some(doc.version.clone()), encrypted: doc.is_encrypted(), ..Default::default() };
         let pages = doc.get_pages();
@@ -230,7 +245,7 @@ pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
                 info.page_size = Some(((c - a).abs(), (d - b).abs()));
             }
         }
-        if !info.encrypted {
+        if readable {
             let nums: Vec<u32> = pages.keys().copied().take(TEXT_PAGES as usize).collect();
             if let Ok(t) = doc.extract_text_with_limit(&nums, 32 << 20) {
                 info.text = clean_text(&t);
@@ -239,6 +254,34 @@ pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
         Ok(info)
     }));
     r.unwrap_or_else(|_| Err(tr!("services-pdf-parser-failed").into()))
+}
+
+/// Passwords typed for encrypted PDFs this session (never saved), by file.
+static PASSWORDS: parking_lot::Mutex<Option<std::collections::HashMap<PathBuf, String>>> =
+    parking_lot::Mutex::new(None);
+/// Bumped by [`set_password`]: previews of PDFs reload when it changes.
+static PASSWORD_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Remember `password` for the PDF at `path` (this session only) and reload its previews.
+pub fn set_password(path: &Path, password: String) {
+    PASSWORDS.lock().get_or_insert_with(Default::default).insert(path.to_path_buf(), password);
+    PASSWORD_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// The password typed for the PDF at `path`, if any.
+pub fn password_for(path: &Path) -> Option<String> {
+    PASSWORDS.lock().as_ref()?.get(path).cloned()
+}
+
+/// Changes whenever a password is typed (part of the preview's reload key).
+pub fn password_generation() -> u64 {
+    PASSWORD_GEN.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// `msg` says the PDF needs a password (none typed, or a wrong one).
+pub fn is_password_error(msg: &str) -> bool {
+    let msg = msg.trim_start_matches("pdfium: ");
+    msg == tr!("services-pdf-password") || msg == tr!("services-pdf-password-wrong")
 }
 
 /// Text of the first pages through whichever backend is available (pdfium first).
@@ -351,13 +394,17 @@ pub mod pdfium {
     }
 
     fn open<'a>(p: &'a Pdfium, src: &PdfSrc, buf: &'a mut Vec<u8>, cap: u64) -> Result<PdfDocument<'a>, String> {
+        let password = match src {
+            PdfSrc::File(path) => super::password_for(path),
+            PdfSrc::Mem(_) => None,
+        };
         let r = match src {
             PdfSrc::File(path) => {
                 let len = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
                 if len > cap.max(1 << 30) {
                     return Err(tr!("services-pdf-too-large").into());
                 }
-                p.load_pdf_from_file(path, None)
+                p.load_pdf_from_file(path, password.as_deref())
             }
             PdfSrc::Mem(b) => {
                 *buf = b.to_vec();
@@ -365,6 +412,9 @@ pub mod pdfium {
             }
         };
         r.map_err(|e| match e {
+            PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) if password.is_some() => {
+                tr!("services-pdf-password-wrong").to_string()
+            }
             PdfiumError::PdfiumLibraryInternalError(PdfiumInternalError::PasswordError) => {
                 tr!("services-pdf-password").to_string()
             }
@@ -514,6 +564,37 @@ mod tests {
         assert!(info.text.contains("Hello from page one"), "{:?}", info.text);
         assert!(info.text.contains("Second page"));
         assert!(info_lopdf(&PdfSrc::Mem(b"%PDF-1.4 garbage".to_vec().into()), 1 << 20).is_err());
+    }
+
+    #[test]
+    fn encrypted_pdf_asks_for_its_password() {
+        let mut doc = lopdf::Document::load_mem(&sample_pdf()).unwrap();
+        let id = || lopdf::Object::String(b"0123456789abcdef".to_vec(), lopdf::StringFormat::Hexadecimal);
+        doc.trailer.set("ID", lopdf::Object::Array(vec![id(), id()]));
+        let version = lopdf::EncryptionVersion::V2 {
+            document: &doc,
+            owner_password: "owner",
+            user_password: "secret",
+            key_length: 128,
+            permissions: lopdf::Permissions::all(),
+        };
+        let state = lopdf::EncryptionState::try_from(version).unwrap();
+        doc.encrypt(&state).unwrap();
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("locked.pdf");
+        doc.save(&path).unwrap();
+        let src = PdfSrc::File(path.clone());
+        let e = info_lopdf(&src, 1 << 20).unwrap_err();
+        assert!(is_password_error(&e), "{e}");
+        let gen0 = password_generation();
+        set_password(&path, "nope".into());
+        assert!(password_generation() > gen0, "previews reload");
+        let e = info_lopdf(&src, 1 << 20).unwrap_err();
+        assert_eq!(e, tr!("services-pdf-password-wrong"));
+        set_password(&path, "secret".into());
+        let info = info_lopdf(&src, 1 << 20).unwrap();
+        assert_eq!(info.pages, 2);
+        assert!(info.text.contains("Hello from page one"), "{:?}", info.text);
     }
 
     #[test]

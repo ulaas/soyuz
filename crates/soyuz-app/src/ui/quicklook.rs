@@ -337,6 +337,7 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
         app.core.ui.quicklook.close();
     }
     match action {
+        Some(PreviewAction::UnlockPdf(path)) => crate::models::archive::ask_pdf_password(&mut app.core, path),
         Some(PreviewAction::ToggleHex) => {
             if let Some(s) = &mut v.state {
                 s.force_hex = !s.force_hex;

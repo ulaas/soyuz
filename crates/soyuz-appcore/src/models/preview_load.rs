@@ -24,6 +24,8 @@ pub enum PreviewAction {
     ToggleHex,
     /// Open this path (archive / folder) in the pane.
     Open(PathBuf),
+    /// Ask for the password of this encrypted PDF (`models::archive::ask_pdf_password`).
+    UnlockPdf(PathBuf),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,6 +34,8 @@ struct TargetKey {
     modified: Option<SystemTime>,
     size: u64,
     force_hex: bool,
+    /// [`crate::services::preview_pdf::password_generation`]: a typed PDF password reloads.
+    passwords: u64,
 }
 
 /// Recursive folder size being computed for a folder preview.
@@ -140,6 +144,7 @@ impl PreviewLoader {
             modified: e.modified,
             size: e.size,
             force_hex: self.force_hex,
+            passwords: crate::services::preview_pdf::password_generation(),
         });
         if key == self.key {
             return false;

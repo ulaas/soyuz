@@ -306,6 +306,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::ExtractToFolder => (IconId::Archive, "unzip"),
         A::ExtractTo => (IconId::Archive, "unzip"),
         A::TestArchive => (IconId::SealCheck, "check"),
+        A::PdfPassword => (IconId::LockSimple, "pdf encrypted locked unlock protected"),
         A::Checksum(_) => (IconId::Fingerprint, "hash"),
         A::CompareChecksum => (IconId::Fingerprint, "verify hash"),
         A::SetAttributes => (IconId::Sliders, "chmod"),

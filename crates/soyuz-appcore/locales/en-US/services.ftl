@@ -157,6 +157,7 @@ services-pdf-renderer-stopped = The PDF renderer stopped
 services-pdf-renderer-failed = The PDF renderer failed on this file
 services-pdf-too-large = This PDF is too large
 services-pdf-password = This PDF is password protected
+services-pdf-password-wrong = That password did not open this PDF
 services-pdf-cant-open = Can't open this PDF ({ $error })
 services-pdf-no-page = No page { $page } ({ $error })
 services-pdf-cant-render-page = Can't render this page ({ $error })

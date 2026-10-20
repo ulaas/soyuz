@@ -56,8 +56,8 @@ impl Dialog for PasswordDialog {
     }
     fn show(&mut self, ui: &mut Ui, ctx: &mut DialogCtx<'_>) -> bool {
         let p = palette(ui.ctx());
-        let name = soyuz_core::entry::display_name(&self.archive);
-        ui.label(RichText::new(tr!("views-archive-password-body", name = &name)).color(p.text_secondary));
+        let body = crate::models::archive::password_body(&self.archive);
+        ui.label(RichText::new(body).color(p.text_secondary));
         if self.wrong {
             ui.add_space(4.0);
             ui.label(RichText::new(tr!("views-archive-password-wrong")).color(p.danger));

@@ -361,6 +361,9 @@ views-rich-text = Metin
 views-rich-pdf-no-text = İlk sayfalarda ayıklanabilir metin yok.
 views-rich-pdf-text-caption = METİN (İLK SAYFALAR)
 views-rich-pdfium-needed = PDF sayfa önizlemesi için pdfium gerekli
+views-rich-pdf-locked = Bu PDF parola korumalı
+views-rich-pdf-locked-body = Sayfaları ve metni görmek için parolasını girin. Soyuz onu kapanana kadar saklar, asla diske yazmaz.
+views-rich-pdf-unlock = Parola gir…
 
 ## Hızlı Bakış (ui/quicklook.rs)
 
@@ -554,6 +557,9 @@ views-archive-test = Arşivi sına
 views-archive-compress-menu = Sıkıştır…
 views-archive-password-title = Parola gerekli
 views-archive-password-body = “{ $name }” şifreli. Göz atmak için parolasını girin.
+views-archive-password-body-pdf = “{ $name }” şifreli. Önizlemek için parolasını girin (Soyuz kapanana kadar saklanır).
+views-archive-pdf-password-menu = PDF parolası…
+views-archive-pdf-password-select = Önce bir PDF dosyası seçin
 views-archive-password-wrong = Bu parola işe yaramadı.
 views-archive-unlock = Kilidi aç
 views-archive-extract-what = { $name } arşivinden { $count } seçili öğe

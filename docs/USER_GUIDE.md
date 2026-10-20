@@ -177,6 +177,9 @@ and *Retry failed*.
     With pdfium present the grid and gallery views also show the first page as the PDF's
     thumbnail (`[appearance] pdf_thumbnails`).
     Without it, PDFs show their page count, document info and text (pure-Rust fallback).
+    An encrypted PDF shows a lock card: *Enter password…* there, or *PDF password…* in the
+    item menu or the palette (terminal UI too), opens it. The password is kept until Soyuz
+    closes, never written to disk.
   - **Office / OpenDocument**: docx / odt text with headings, bold, italic and lists;
     xlsx / ods first sheet as a table (`sheet_rows`); pptx / odp slide titles and bullets.
   - **EPUB**: cover, title, authors, description and the table of contents.

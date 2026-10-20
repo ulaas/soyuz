@@ -12,14 +12,11 @@ use crate::widgets::ListRow;
 /// What the dialog shows.
 pub fn vm(_core: &AppCore, s: &State) -> DialogVm {
     let (title, body, hints) = match &s.kind {
-        Kind::Password { archive, .. } => {
-            let name = soyuz_core::entry::display_name(archive);
-            (
-                tr!("views-archive-password-title"),
-                vec![tr!("views-archive-password-body", name = &name)],
-                tr!("tui-locations-password-hints"),
-            )
-        }
+        Kind::Password { archive, .. } => (
+            tr!("views-archive-password-title"),
+            vec![soyuz_appcore::models::archive::password_body(archive)],
+            tr!("tui-locations-password-hints"),
+        ),
         Kind::Extract(f) => (tr!("views-archive-extract"), vec![f.summary()], tr!("tui-locations-extract-hints")),
         Kind::Create(f) => {
             let n = f.sources.len();

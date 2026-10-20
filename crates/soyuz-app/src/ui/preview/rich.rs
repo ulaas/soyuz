@@ -920,11 +920,18 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
         ui.painter().rect_filled(body, 0.0, p.bg_surface1);
         let mut c = child(ui, body.shrink2(vec2(16.0, 10.0)));
         ScrollArea::vertical().id_salt(id.with("pdftext")).auto_shrink([false, false]).show(&mut c, |ui| {
-            if let Some(why) = &v.no_render {
+            if let Some(path) = &v.locked {
+                if locked_card(ui, p) {
+                    action = Some(PreviewAction::UnlockPdf(path.clone()));
+                }
+                ui.add_space(10.0);
+            } else if let Some(why) = &v.no_render {
                 pdfium_card(ui, why, &v.dirs, p);
                 ui.add_space(10.0);
             }
-            if v.info.text.is_empty() {
+            if v.locked.is_some() {
+                // Nothing to read until it is unlocked; the card says so.
+            } else if v.info.text.is_empty() {
                 ui.label(egui::RichText::new(tr!("views-rich-pdf-no-text")).color(p.text_tertiary));
             } else {
                 caption(ui, tr!("views-rich-pdf-text-caption"), p);
@@ -980,6 +987,34 @@ fn pdf(ui: &mut Ui, rect: Rect, v: &PdfView, id: Id, p: &Palette, interactive: b
     }
     ui.data_mut(|d| d.insert_temp(id, nav));
     action
+}
+
+/// An encrypted PDF: what it needs and the button that asks for the password (`true`
+/// when clicked).
+fn locked_card(ui: &mut Ui, p: &Palette) -> bool {
+    let mut clicked = false;
+    egui::Frame::new()
+        .fill(p.accent_subtle)
+        .stroke(Stroke::new(1.0, p.accent.gamma_multiply(0.4)))
+        .corner_radius(CornerRadius::same(8))
+        .inner_margin(egui::Margin::symmetric(12, 10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(ph::LOCK_SIMPLE).font(icons::font_fill(16.0)).color(p.accent));
+                ui.label(egui::RichText::new(tr!("views-rich-pdf-locked")).font(semibold(13.0)).color(p.text_primary));
+            });
+            ui.add_space(4.0);
+            ui.add(
+                egui::Label::new(
+                    egui::RichText::new(tr!("views-rich-pdf-locked-body")).size(11.5).color(p.text_secondary),
+                )
+                .wrap(),
+            );
+            ui.add_space(8.0);
+            clicked = pill_button(ui, Some(ph::KEY), tr!("views-rich-pdf-unlock"), true).clicked();
+        });
+    clicked
 }
 
 fn pdfium_card(ui: &mut Ui, why: &str, dirs: &[std::path::PathBuf], p: &Palette) {

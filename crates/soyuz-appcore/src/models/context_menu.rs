@@ -369,7 +369,8 @@ pub fn items_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
         b.push(cmd_item(I::Star, tr!("app-ctx-add-to-favorites"), Cmd::AddFavorite(path.clone())));
     }
     let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
-    archive_entries(&mut b, &pane.location, any_archive, !sel.is_empty());
+    let one_pdf = single && sel.first().is_some_and(|e| !e.is_dir_like() && crate::models::archive::is_pdf(&e.path));
+    archive_entries(&mut b, &pane.location, any_archive, !sel.is_empty(), one_pdf);
     media_entries(&mut b, &pane.location, &sel);
     let sel_paths: Vec<(PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
     tool_item_entries(&mut b, &pane.location, &sel_paths);
@@ -424,7 +425,7 @@ pub fn background_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
         b.sep();
     }
     if matches!(pane.location, Location::Archive { .. }) {
-        archive_entries(&mut b, &pane.location, false, false);
+        archive_entries(&mut b, &pane.location, false, false, false);
         b.sep();
     }
     tool_background_entries(&mut b, &pane.location, cx.dual);
@@ -510,8 +511,9 @@ pub fn group_entries(pane: &Pane) -> Vec<Entry> {
         .collect()
 }
 
-/// Archive rows: extract / compress (items), or extract / edit inside a browsed archive.
-fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_selection: bool) {
+/// Archive rows: extract / compress (items), or extract / edit inside a browsed archive;
+/// "PDF password…" for one PDF.
+fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_selection: bool, one_pdf: bool) {
     use IconId as I;
     match location {
         Location::Archive { archive, .. } => {
@@ -544,6 +546,9 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
             }
             if has_selection && matches!(location, Location::Dir(_)) {
                 b.bare_action(MenuIcon::Package, tr!("views-archive-compress-menu"), Action::CreateArchive);
+            }
+            if one_pdf {
+                b.bare_action(I::LockSimple, tr!("views-archive-pdf-password-menu"), Action::PdfPassword);
             }
         }
     }

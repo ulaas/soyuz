@@ -596,6 +596,9 @@ fn rich_body(r: &Rich, loaded: &Loaded, entry: &EntryInfo, scroll: &mut usize, w
         body: tr!("tui-preview-rich", kind = kind_label(loaded.kind)),
     };
     match r {
+        Rich::Pdf(v) if v.locked.is_some() => {
+            Body::Message { title: tr!("views-rich-pdf-locked").into(), body: tr!("tui-preview-pdf-locked").into() }
+        }
         Rich::Pdf(v) => {
             let pages = PLine::plain(tr!("tui-preview-pages", count = v.info.pages), Role::Faint);
             if let Some(first) = &v.first {
