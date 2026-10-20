@@ -609,7 +609,7 @@ views-archive-opening = Opening { $name }…
 views-archive-job-extract = Extract { $name }
 views-archive-extract-failed = Couldn't start the extraction
 views-archive-job-compress = Compress { $name }
-# $archive: the zip's file name.
+# $archive: the archive's file name.
 views-archive-job-delete = { $count ->
     [one] Delete { $count } item from { $archive }
    *[other] Delete { $count } items from { $archive }

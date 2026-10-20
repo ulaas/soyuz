@@ -375,8 +375,8 @@ settings-jobs-max-entry = Largest entry
 settings-jobs-max-entry-desc = Pause on a single entry larger than this (0 = no limit).
 settings-jobs-nested-max = Archives in archives and on servers
 settings-jobs-nested-max-desc = An archive inside another archive or on a server opens like a folder after it is fetched to a private temp copy, up to this size (0 = never).
-settings-jobs-zip-level = Compression when adding to a zip
-settings-jobs-zip-level-desc = Deflate level for files pasted into a zip you are browsing (0 = store, 9 = smallest).
+settings-jobs-zip-level = Compression when editing an archive
+settings-jobs-zip-level-desc = Level for files pasted into a zip, tar or 7z you are browsing (0 = store, 9 = smallest); a tar or 7z is recompressed whole at this level.
 settings-jobs-special-bits = Keep setuid / setgid / sticky bits
 settings-jobs-special-bits-desc = Off strips these special permission bits from extracted files (Linux / macOS).
 settings-jobs-trash-unsupported = When the trash isn't available

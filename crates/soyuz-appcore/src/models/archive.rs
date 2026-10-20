@@ -603,21 +603,34 @@ pub fn rename_cmd(archive: &Path, from: &str, name: &str) -> Option<Cmd> {
     Some(Cmd::SubmitJob(Box::new(edit_spec(archive, edits, label, 0))))
 }
 
-// ---- editing inside a zip --------------------------------------------------------
+// ---- editing inside an archive -----------------------------------------------------
 
-/// Whether `archive` (by name) is a zip that can be edited (not a split `.001` set).
-pub fn is_editable_zip_name(archive: &Path) -> bool {
+/// Whether `archive` (by name) can be edited: zip, tar.* (tar.zst only with native zstd)
+/// or 7z, not a split `.001` set (`soyuz_archive::can_edit` decides by content).
+pub fn is_editable_name(archive: &Path) -> bool {
     archive.file_name().and_then(|n| n.to_str()).is_some_and(|name| {
-        svc::format_by_name(name) == Some(ArchiveFormat::Zip) && !name.to_ascii_lowercase().ends_with(".001")
+        let format = svc::format_by_name(name);
+        let editable = matches!(
+            format,
+            Some(
+                ArchiveFormat::Zip
+                    | ArchiveFormat::Tar
+                    | ArchiveFormat::TarGz
+                    | ArchiveFormat::TarBz2
+                    | ArchiveFormat::TarXz
+                    | ArchiveFormat::SevenZ
+            )
+        ) || (format == Some(ArchiveFormat::TarZst) && ArchiveFormat::TarZst.can_write());
+        editable && !name.to_ascii_lowercase().ends_with(".001")
     })
 }
 
-/// The zip browsed in the focused pane, when it can be edited: `(archive, inner dir)`.
+/// The archive browsed in the focused pane, when it can be edited: `(archive, inner dir)`.
 fn editable_zip(app: &AppCore) -> Option<(PathBuf, String)> {
-    browsed(app).filter(|(archive, _)| is_editable_zip_name(archive) && soyuz_vfs::archive::is_local(archive))
+    browsed(app).filter(|(archive, _)| is_editable_name(archive) && soyuz_vfs::archive::is_local(archive))
 }
 
-/// Whether `a` edits the browsed zip (Delete / Rename / Paste inside a zip).
+/// Whether `a` edits the browsed archive (Delete / Rename / Paste inside a zip, tar.* or 7z).
 pub fn handles_edit(app: &AppCore, a: &soyuz_core::config::Action) -> bool {
     use soyuz_core::config::Action as A;
     matches!(a, A::Delete | A::DeletePermanent | A::Rename | A::Paste) && editable_zip(app).is_some()
@@ -791,9 +804,13 @@ mod edit_tests {
 
     #[test]
     fn editable_names() {
-        assert!(is_editable_zip_name(Path::new("C:/x/a.zip")));
-        assert!(!is_editable_zip_name(Path::new("C:/x/a.zip.001")));
-        assert!(!is_editable_zip_name(Path::new("C:/x/a.7z")));
+        assert!(is_editable_name(Path::new("C:/x/a.zip")));
+        assert!(!is_editable_name(Path::new("C:/x/a.zip.001")));
+        assert!(is_editable_name(Path::new("C:/x/a.7z")));
+        assert!(is_editable_name(Path::new("C:/x/a.tar.gz")));
+        assert!(!is_editable_name(Path::new("C:/x/a.7z.001")));
+        assert!(!is_editable_name(Path::new("C:/x/a.iso")));
+        assert!(!is_editable_name(Path::new("C:/x/a.rar")));
         assert!(valid_entry_name("new name.txt"));
         assert!(!valid_entry_name("a/b") && !valid_entry_name("..") && !valid_entry_name(""));
     }

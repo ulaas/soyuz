@@ -840,7 +840,8 @@ pub struct Archive {
     pub max_entries: u64,
     /// Largest single entry in MiB (0 = unlimited).
     pub max_entry_mib: u64,
-    /// Deflate level (0 = store, 1-9) for files added while editing inside a zip.
+    /// Compression level (0 = store, 1-9) for files added while editing inside an archive
+    /// (zip, tar.*, 7z; a tar.* or 7z is recompressed whole at this level).
     pub edit_level: u8,
     /// Archives inside archives or on servers are fetched to a private temp copy to
     /// browse, preview and extract them, up to this many MiB (0 = never).

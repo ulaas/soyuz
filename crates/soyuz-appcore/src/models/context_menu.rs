@@ -524,7 +524,7 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
                 Action::ExtractTo,
             );
             b.bare_action(I::ArrowLineDown, tr!("views-archive-extract-here"), Action::ExtractHere);
-            if crate::models::archive::is_editable_zip_name(archive) {
+            if crate::models::archive::is_editable_name(archive) && soyuz_vfs::archive::is_local(archive) {
                 b.sep();
                 b.bare_action(I::FilePlus, tr!("views-archive-add-here"), Action::Paste);
                 if has_selection {

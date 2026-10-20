@@ -551,9 +551,12 @@ All from the palette or the context menu:
   background) and C copies the address.
 - **Split / join files**, **checksums** (BLAKE3, SHA-256, SHA-1, MD5, CRC32), **archives**
   (create, extract here / to folder, test; browse zip / 7z / tar / RAR / ISO / CAB / .deb /
-  .rpm like folders, including cabinet sets (open any `.cab` of the set), split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, paste to
-  add files, Rename and Delete edit the archive, and the original goes to the trash so it
-  can be undone).
+  .rpm like folders, including cabinet sets (open any `.cab` of the set), split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, tar
+  (.tar, .tar.gz, .tar.bz2, .tar.xz) or 7z, paste to add files, Rename and Delete edit the
+  archive, and the original goes to the trash so it can be undone. A zip keeps its other
+  entries as they are; a tar or 7z is written again, recompressed at the editing level
+  (Settings › Jobs › *Compression when editing an archive*), and an encrypted 7z can't be
+  edited).
 - **Archives work like remote locations.** In an archive, *Copy* (Ctrl+C) and *Copy to
   other pane* take files and folders out: paste them into any folder or onto a server, as
   one job with progress, conflicts and undo. Archives are read-only this way (*Cut* and
@@ -988,7 +991,7 @@ the status line shows the index state while one is open. Enter on an archive (zi
 Archives inside archives and on servers browse too, and Ctrl+C / *Copy to other pane*
 copy files out of any archive (see "Archives work like remote locations" above).
 *Extract to…* (destination with folder completion, "each archive into its own folder"),
-*Compress…* (name, format, level, password) and renaming an entry inside a zip are
+*Compress…* (name, format, level, password) and renaming an entry inside a zip, tar or 7z are
 dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network
 section) opens the connection form for SFTP, WebDAV, FTP(S), S3 and, off Windows, SMB, with the
 fields of the chosen protocol and sign-in method; a new SSH host key asks before it is trusted.

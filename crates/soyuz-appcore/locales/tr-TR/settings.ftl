@@ -366,8 +366,8 @@ settings-jobs-max-entry = En büyük girdi
 settings-jobs-max-entry-desc = Bundan büyük tek bir girdide duraklatır (0 = sınırsız).
 settings-jobs-nested-max = Arşivlerdeki ve sunuculardaki arşivler
 settings-jobs-nested-max-desc = Başka bir arşivin içindeki ya da bir sunucudaki arşiv, özel bir geçici kopyaya alındıktan sonra klasör gibi açılır; en çok bu boyuta kadar (0 = hiçbir zaman).
-settings-jobs-zip-level = Zip'e eklerken sıkıştırma
-settings-jobs-zip-level-desc = Gezindiğiniz bir zip'e yapıştırılan dosyalar için Deflate düzeyi (0 = sıkıştırmadan sakla, 9 = en küçük).
+settings-jobs-zip-level = Arşiv düzenlerken sıkıştırma
+settings-jobs-zip-level-desc = Gezindiğiniz bir zip, tar ya da 7z arşivine yapıştırılan dosyalar için düzey (0 = sıkıştırmadan sakla, 9 = en küçük); tar ve 7z arşivleri bu düzeyde baştan sıkıştırılır.
 settings-jobs-special-bits = setuid / setgid / sticky bitlerini koru
 settings-jobs-special-bits-desc = Kapalıyken ayıklanan dosyalardan bu özel izin bitleri kaldırılır (Linux / macOS).
 settings-jobs-trash-unsupported = Çöp Kutusu kullanılamadığında

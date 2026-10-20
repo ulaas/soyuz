@@ -39,7 +39,7 @@ use std::time::SystemTime;
 use serde::{Deserialize, Serialize};
 use soyuz_core::{ConflictResolution, Control, ErrorAction, FsError, FsErrorKind, OpControl, Overwrite, ProgressSink};
 
-pub use edit::{ZipEdit, ZipEditSummary, can_edit, edit_temp_path, rewrite_zip};
+pub use edit::{ZipEdit, ZipEditSummary, can_edit, edit_temp_path, rewrite_archive, rewrite_zip};
 pub use format::{ArchiveFormat, detect};
 pub use vpath::{DirChild, DirIndex, find_entry, list_dir};
 

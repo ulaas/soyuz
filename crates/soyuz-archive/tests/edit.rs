@@ -1,11 +1,13 @@
-//! Editing inside a zip (`rewrite_zip`).
+//! Editing inside a zip (`rewrite_zip`), tar.* and 7z (`rewrite_archive`).
 
 mod common;
 
 use std::io::Read;
 
 use common::*;
-use soyuz_archive::{ArchiveError, ArchiveFormat, ZipEdit, can_edit, create, edit_temp_path, open, rewrite_zip};
+use soyuz_archive::{
+    ArchiveError, ArchiveFormat, ZipEdit, can_edit, create, edit_temp_path, open, rewrite_archive, rewrite_zip,
+};
 use soyuz_core::OpControl;
 
 fn read(r: &mut dyn soyuz_archive::ArchiveReader, path: &str) -> Vec<u8> {
@@ -125,4 +127,68 @@ fn encrypted_entries_stay_encrypted() {
     let mut r = soyuz_archive::open_with_format(&out, ArchiveFormat::Zip, None).unwrap();
     let idx = r.entries().unwrap().iter().position(|e| e.path == "hi.txt").unwrap();
     assert_eq!(r.open_entry(idx).err(), Some(ArchiveError::PasswordRequired));
+}
+
+#[test]
+fn tar_and_7z_add_delete_rename() {
+    for format in [ArchiveFormat::Tar, ArchiveFormat::TarGz, ArchiveFormat::TarXz, ArchiveFormat::SevenZ] {
+        let d = tempfile::tempdir().unwrap();
+        let tree = make_tree(d.path());
+        let arc = d.path().join(format!("a.{}", format.extensions()[0]));
+        create(&arc, std::slice::from_ref(&tree), &opts(format, d.path()), &OpControl::new(), &mut ()).unwrap();
+        assert!(can_edit(&arc), "{format:?}");
+        std::fs::write(d.path().join("new.txt"), b"brand new").unwrap();
+        std::fs::write(d.path().join("hello.txt"), b"replaced hello").unwrap();
+        let edits = vec![
+            ZipEdit::Delete { path: "tree/empty.bin".into() },
+            ZipEdit::Rename { from: "tree/sub".into(), to: "tree/moved".into() },
+            ZipEdit::Add { sources: vec![d.path().join("new.txt")], dest_dir: "tree/moved".into() },
+            ZipEdit::Add { sources: vec![d.path().join("hello.txt")], dest_dir: "tree".into() },
+        ];
+        let out = edit_temp_path(&arc);
+        let mut progress = 0u64;
+        let sum = rewrite_archive(&arc, &out, &edits, 6, &OpControl::new(), &mut |p: soyuz_core::ByteProgress| {
+            progress += p.delta
+        })
+        .unwrap_or_else(|e| panic!("{format:?}: {e}"));
+        assert!(progress > 0, "{format:?}");
+        assert_eq!((sum.removed, sum.added), (2, 2), "{format:?} {sum:?}");
+        assert!(sum.renamed >= 2 && sum.kept >= 1, "{format:?} {sum:?}");
+        let mut r = soyuz_archive::open_with_format(&out, format, None).unwrap();
+        let names: Vec<String> = r.entries().unwrap().iter().map(|e| e.path.clone()).collect();
+        assert!(!names.iter().any(|n| n.starts_with("tree/sub")), "{format:?} {names:?}");
+        assert!(!names.contains(&"tree/empty.bin".to_string()), "{format:?}");
+        assert_eq!(names.iter().filter(|n| *n == "tree/hello.txt").count(), 1, "{format:?} {names:?}");
+        assert_eq!(read(r.as_mut(), "tree/moved/big.bin"), noise(1_500_000, 7), "{format:?}");
+        assert_eq!(read(r.as_mut(), "tree/moved/new.txt"), b"brand new", "{format:?}");
+        assert_eq!(read(r.as_mut(), "tree/hello.txt"), b"replaced hello", "{format:?}");
+        let rep = r.test(&OpControl::new(), &mut ()).unwrap();
+        assert!(rep.bad.is_empty(), "{format:?} {:?}", rep.bad);
+        // The original is untouched; a bad edit leaves no output.
+        assert!(open(&arc, None).unwrap().entries().unwrap().iter().any(|e| e.path == "tree/empty.bin"));
+        std::fs::remove_file(&out).unwrap();
+        let missing =
+            rewrite_archive(&arc, &out, &[ZipEdit::Delete { path: "nope".into() }], 6, &OpControl::new(), &mut ());
+        assert!(missing.is_err() && !out.exists(), "{format:?}");
+    }
+}
+
+#[test]
+fn encrypted_7z_is_refused() {
+    let d = tempfile::tempdir().unwrap();
+    let tree = make_tree(d.path());
+    let arc = d.path().join("s.7z");
+    let mut o = opts(ArchiveFormat::SevenZ, d.path());
+    o.password = Some("pw".into());
+    create(&arc, std::slice::from_ref(&tree), &o, &OpControl::new(), &mut ()).unwrap();
+    let out = edit_temp_path(&arc);
+    let r = rewrite_archive(
+        &arc,
+        &out,
+        &[ZipEdit::Delete { path: "tree/hello.txt".into() }],
+        6,
+        &OpControl::new(),
+        &mut (),
+    );
+    assert!(r.is_err() && !out.exists(), "{r:?}");
 }

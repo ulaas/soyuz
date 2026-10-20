@@ -26,9 +26,26 @@ pub(crate) fn write(
     ctl: &OpControl,
     sink: &mut dyn ProgressSink,
 ) -> Result<(), ArchiveError> {
+    let mut w = new_writer(part, level, password, encrypt_headers, ctl)?;
+    for item in items {
+        ctl.checkpoint()?;
+        push_item(&mut w, item, &item.name, ctl, sink)?;
+    }
+    finish(w, part, ctl)
+}
+
+pub(crate) type Writer = ArchiveWriter<BufWriter<File>>;
+
+/// A 7z writer into `part`: LZMA2 at `level` (0 = stored), AES with `password`.
+pub(crate) fn new_writer(
+    part: &Path,
+    level: u8,
+    password: Option<&str>,
+    encrypt_headers: bool,
+    ctl: &OpControl,
+) -> Result<Writer, ArchiveError> {
     let f = File::create(part).map_err(|e| fs_err("create", part, &e))?;
-    let map = |e: sevenz_rust2::Error| if ctl.is_cancelled() { ArchiveError::Cancelled } else { sz_err(e, false) };
-    let mut w = ArchiveWriter::new(BufWriter::with_capacity(CHUNK, f)).map_err(map)?;
+    let mut w = ArchiveWriter::new(BufWriter::with_capacity(CHUNK, f)).map_err(|e| map(e, ctl))?;
     let codec: EncoderConfiguration =
         if level == 0 { EncoderMethod::COPY.into() } else { Lzma2Options::from_level(u32::from(level)).into() };
     match password {
@@ -41,51 +58,68 @@ pub(crate) fn write(
             w.set_encrypt_header(false);
         }
     }
-    for item in items {
-        ctl.checkpoint()?;
-        let mut e = ArchiveEntry::new();
-        e.name = item.name.clone();
-        if let Some(t) = item.modified().and_then(|t| NtTime::try_from(t).ok()) {
-            e.last_modified_date = t;
-            e.has_last_modified_date = true;
+    Ok(w)
+}
+
+pub(crate) fn map(e: sevenz_rust2::Error, ctl: &OpControl) -> ArchiveError {
+    if ctl.is_cancelled() { ArchiveError::Cancelled } else { sz_err(e, false) }
+}
+
+/// Write the header and close the file.
+pub(crate) fn finish(w: Writer, part: &Path, ctl: &OpControl) -> Result<(), ArchiveError> {
+    let mut out = w.finish().map_err(|e| super::zip::copy_err(e, ctl, part))?;
+    io::Write::flush(&mut out).map_err(|e| fs_err("write", part, &e))?;
+    Ok(())
+}
+
+/// Add one filesystem item as `name`.
+pub(crate) fn push_item(
+    w: &mut Writer,
+    item: &Item,
+    name: &str,
+    ctl: &OpControl,
+    sink: &mut dyn ProgressSink,
+) -> Result<(), ArchiveError> {
+    let mut e = ArchiveEntry::new();
+    e.name = name.to_string();
+    if let Some(t) = item.modified().and_then(|t| NtTime::try_from(t).ok()) {
+        e.last_modified_date = t;
+        e.has_last_modified_date = true;
+    }
+    if let Some(t) = item.md.created().ok().and_then(|t| NtTime::try_from(t).ok()) {
+        e.creation_date = t;
+        e.has_creation_date = true;
+    }
+    let mut attrs = attributes(item);
+    match &item.kind {
+        ItemKind::Dir => {
+            e.is_directory = true;
+            attrs |= FILE_ATTRIBUTE_DIRECTORY;
+            e.windows_attributes = attrs;
+            e.has_windows_attributes = true;
+            w.push_archive_entry::<&[u8]>(e, None).map_err(|e| map(e, ctl))?;
         }
-        if let Some(t) = item.md.created().ok().and_then(|t| NtTime::try_from(t).ok()) {
-            e.creation_date = t;
-            e.has_creation_date = true;
+        ItemKind::Symlink { target } => {
+            // p7zip convention: a file whose unix mode is S_IFLNK and whose data is the target.
+            let mode = item.mode().unwrap_or(0o777) & 0o7777;
+            e.windows_attributes = FILE_ATTRIBUTE_ARCHIVE | UNIX_EXTENSION | ((S_IFLNK | mode) << 16);
+            e.has_windows_attributes = true;
+            e.has_stream = true;
+            w.push_archive_entry(e, Some(target.as_bytes())).map_err(|e| map(e, ctl))?;
         }
-        let mut attrs = attributes(item);
-        match &item.kind {
-            ItemKind::Dir => {
-                e.is_directory = true;
-                attrs |= FILE_ATTRIBUTE_DIRECTORY;
-                e.windows_attributes = attrs;
-                e.has_windows_attributes = true;
-                w.push_archive_entry::<&[u8]>(e, None).map_err(map)?;
-            }
-            ItemKind::Symlink { target } => {
-                // p7zip convention: a file whose unix mode is S_IFLNK and whose data is the target.
-                let mode = item.mode().unwrap_or(0o777) & 0o7777;
-                e.windows_attributes = FILE_ATTRIBUTE_ARCHIVE | UNIX_EXTENSION | ((S_IFLNK | mode) << 16);
-                e.has_windows_attributes = true;
-                e.has_stream = true;
-                w.push_archive_entry(e, Some(target.as_bytes())).map_err(map)?;
-            }
-            ItemKind::File { len } => {
-                e.windows_attributes = attrs | FILE_ATTRIBUTE_ARCHIVE;
-                e.has_windows_attributes = true;
-                let src = File::open(&item.src).map_err(|err| fs_err("open", &item.src, &err))?;
-                if *len == 0 {
-                    // 7z "empty stream" file.
-                    w.push_archive_entry::<File>(e, None).map_err(map)?;
-                } else {
-                    let r = ProgressReader::new(io::Read::take(src, *len), *len, ctl, sink);
-                    w.push_archive_entry(e, Some(r)).map_err(map)?;
-                }
+        ItemKind::File { len } => {
+            e.windows_attributes = attrs | FILE_ATTRIBUTE_ARCHIVE;
+            e.has_windows_attributes = true;
+            let src = File::open(&item.src).map_err(|err| fs_err("open", &item.src, &err))?;
+            if *len == 0 {
+                // 7z "empty stream" file.
+                w.push_archive_entry::<File>(e, None).map_err(|e| map(e, ctl))?;
+            } else {
+                let r = ProgressReader::new(io::Read::take(src, *len), *len, ctl, sink);
+                w.push_archive_entry(e, Some(r)).map_err(|e| map(e, ctl))?;
             }
         }
     }
-    let mut out = w.finish().map_err(|e| super::zip::copy_err(e, ctl, part))?;
-    io::Write::flush(&mut out).map_err(|e| fs_err("write", part, &e))?;
     Ok(())
 }
 

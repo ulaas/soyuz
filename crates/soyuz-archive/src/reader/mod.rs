@@ -16,6 +16,7 @@ mod zip;
 pub(crate) mod zst;
 
 pub(crate) use sevenz::{S_IFLNK, UNIX_EXTENSION, sz_err};
+pub(crate) use tar::decoder as tar_decoder;
 pub(crate) use zip::{entry_name, zip_err};
 
 use std::fs::File;

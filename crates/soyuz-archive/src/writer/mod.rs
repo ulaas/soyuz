@@ -1,7 +1,7 @@
 //! Archive writers (zip, tar.*, 7z).
 
-mod sevenz;
-mod tar;
+pub(crate) mod sevenz;
+pub(crate) mod tar;
 pub(crate) mod zip;
 
 use std::collections::HashSet;

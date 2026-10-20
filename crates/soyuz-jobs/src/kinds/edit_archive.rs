@@ -1,8 +1,8 @@
-//! `edit_archive` job executor: add / delete / rename entries inside a zip.
+//! `edit_archive` job executor: add / delete / rename entries inside a zip, tar.* or 7z.
 //!
-//! Steps: rewrite into a hidden sibling (`soyuz_archive::rewrite_zip`: unchanged entries
-//! are copied raw), move the original to the trash (the undo backup), then rename the new
-//! file into place. When the volume has no trash the `TrashUnsupported` prompt decides:
+//! Steps: rewrite into a hidden sibling (`soyuz_archive::rewrite_archive`: zip entries are
+//! copied raw, tar entries stream through, 7z entries are encoded again), move the
+//! original to the trash (the undo backup), then rename the new file into place. When the volume has no trash the `TrashUnsupported` prompt decides:
 //! "permanent" replaces the archive in one atomic rename without a backup (not undoable),
 //! "skip" leaves it untouched.
 
@@ -16,7 +16,7 @@ use super::extract::fs_error;
 use crate::ctx::JobCtx;
 use crate::undo::UndoRecord;
 
-/// Default deflate level for added files.
+/// Default compression level for added files (and recompressed tar.* / 7z archives).
 pub const DEFAULT_EDIT_LEVEL: u8 = 6;
 
 pub(crate) fn run_edit_archive(ctx: &JobCtx, archive: &Path, edits: &[ZipEdit], level: Option<u8>) -> FsResult<()> {
@@ -25,7 +25,7 @@ pub(crate) fn run_edit_archive(ctx: &JobCtx, archive: &Path, edits: &[ZipEdit], 
             FsErrorKind::Unsupported,
             "edit_archive",
             Some(archive),
-            "only zip archives can be edited",
+            "only zip, tar and 7z archives can be edited",
         ));
     }
     let size = soyuz_fs::stat(archive, false)?.size;
@@ -55,7 +55,14 @@ pub(crate) fn run_edit_archive(ctx: &JobCtx, archive: &Path, edits: &[ZipEdit], 
                 reported += bp.delta;
                 ctx.on_bytes(bp);
             };
-            soyuz_archive::rewrite_zip(archive, &tmp, edits, level.unwrap_or(DEFAULT_EDIT_LEVEL), ctx.ctl(), &mut sink)
+            soyuz_archive::rewrite_archive(
+                archive,
+                &tmp,
+                edits,
+                level.unwrap_or(DEFAULT_EDIT_LEVEL),
+                ctx.ctl(),
+                &mut sink,
+            )
         };
         if res.is_err() {
             ctx.credit_bytes(-(reported as i64));
