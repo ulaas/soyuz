@@ -50,6 +50,8 @@ pub enum Exec {
         content: bool,
     },
     Shell(String),
+    /// Ask the assistant (the `?` mode): its plans open for review.
+    Ask(String),
     Tab(usize),
     /// Put clipboard history set `n` back on the clipboard.
     ClipSet(usize),
@@ -765,6 +767,60 @@ fn rank_clipboard(app: &AppCore, q: &str) -> Vec<Item> {
     out
 }
 
+/// The `?` mode: the request, then earlier ones.
+fn rank_ask(app: &AppCore, q: &str) -> Vec<Item> {
+    if !app.config.ai.enabled || !app.config.ai.palette {
+        let mut it =
+            Item::new(Exec::Nothing, tr!("actions-palette-ask-off"), IconId::Sparkle, tr!("actions-section-ask"));
+        it.detail = tr!("actions-palette-ask-off-detail").into();
+        it.tint = Tint::Neutral;
+        return vec![it];
+    }
+    let mut out = Vec::new();
+    let q = q.trim();
+    if !q.is_empty() {
+        let mut it = Item::new(
+            Exec::Ask(q.to_string()),
+            tr!("actions-palette-ask", request = q),
+            IconId::Sparkle,
+            tr!("actions-section-ask"),
+        );
+        it.detail = tr!("actions-palette-ask-detail").into();
+        out.push(it);
+    }
+    let mut f = Fuzzy::new(q);
+    for line in &app.palette.memory.asks {
+        if line == q {
+            continue;
+        }
+        let Some((s, hl)) = f.indices(line) else { continue };
+        let mut it = Item::new(
+            Exec::Ask(line.clone()),
+            line.clone(),
+            IconId::ClockCounterClockwise,
+            tr!("actions-section-recent-asks"),
+        );
+        it.detail = tr!("actions-palette-ask-recent-hint").into();
+        it.tint = Tint::Neutral;
+        it.hl = hl;
+        it.score = s as i64;
+        it.tag = Some(tr!("actions-tag-recent").into());
+        out.push(it);
+    }
+    if out.is_empty() {
+        let mut it =
+            Item::new(Exec::Nothing, tr!("actions-palette-ask-empty"), IconId::Sparkle, tr!("actions-section-ask"));
+        it.detail = tr!("actions-palette-ask-empty-detail").into();
+        it.tint = Tint::Neutral;
+        out.push(it);
+    }
+    if !q.is_empty() {
+        // The request itself first, then the closest earlier ones.
+        out[1..].sort_by_key(|a| std::cmp::Reverse(a.score));
+    }
+    out
+}
+
 fn build(app: &mut AppCore) -> Vec<Item> {
     let input = app.palette.input.clone();
     let (mode, q) = query::parse(&input, app.palette.base);
@@ -791,6 +847,7 @@ fn build(app: &mut AppCore) -> Vec<Item> {
         Mode::Shell => rank_shell(app, q),
         Mode::Tabs => rank_tabs(app, q),
         Mode::Clipboard => rank_clipboard(app, q),
+        Mode::Ask => rank_ask(app, q),
     };
     items.truncate(MAX_RESULTS);
     items
@@ -847,6 +904,12 @@ pub fn run(app: &mut AppCore, host: &dyn Host, exec: Exec, mods: RunMods) {
             close(app);
             let dir = app.ws.pane().location.as_fs_path().map(soyuz_fs::strip_verbatim).unwrap_or_else(soyuz_fs::home);
             crate::models::terminal::run_command(app, host, dir, &line);
+        }
+        Exec::Ask(text) => {
+            app.palette.memory.used_ask(&text);
+            app.palette.dirty = true;
+            close(app);
+            crate::ai::state::ask_from_palette(app, host, text);
         }
         Exec::Tab(i) => {
             close(app);

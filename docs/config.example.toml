@@ -367,6 +367,7 @@ screen_reader = false            # screen-reader mode: no box drawing, one pane,
 
 [ai]                             # AI providers; keys live in the OS credential store
 enabled = true
+palette = true                   # "?" in the command palette asks the assistant; its plans open for review first
 default_profile = "claude"       # used when a task names no profile (empty = first profile)
 privacy = "metadata_only"        # none | metadata_only | contents (file contents never leave the machine by default)
 request_timeout_secs = 60        # wait for response headers

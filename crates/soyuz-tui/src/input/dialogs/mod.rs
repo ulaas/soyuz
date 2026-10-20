@@ -49,6 +49,7 @@ pub mod list_edit;
 pub mod media_tools;
 pub mod open_with;
 pub mod pattern;
+pub mod plan_form;
 pub mod plan_json;
 pub mod plan_names;
 pub mod prompt;
@@ -147,6 +148,7 @@ pub enum TuiDialog {
     Archive(archive::State),
     CompareConflict(compare_conflict::State),
     PlanNames(plan_names::State),
+    PlanForm(plan_form::State),
     RecipeName(recipe_name::State),
     Keybind(keybind::State),
     ListEdit(list_edit::State),
@@ -188,6 +190,7 @@ impl TuiDialog {
             TuiDialog::Archive(s) => archive::on_input(core, s, i),
             TuiDialog::CompareConflict(s) => compare_conflict::on_input(core, s, i),
             TuiDialog::PlanNames(s) => plan_names::on_input(core, s, i),
+            TuiDialog::PlanForm(s) => plan_form::on_input(core, s, i),
             TuiDialog::RecipeName(s) => recipe_name::on_input(core, s, i),
             TuiDialog::Keybind(s) => keybind::on_input(core, s, i),
             TuiDialog::ListEdit(s) => list_edit::on_input(core, s, i),
@@ -228,6 +231,7 @@ impl TuiDialog {
             TuiDialog::Archive(s) => archive::on_mouse(core, s, m),
             TuiDialog::CompareConflict(s) => compare_conflict::on_mouse(core, s, m),
             TuiDialog::PlanNames(s) => plan_names::on_mouse(core, s, m),
+            TuiDialog::PlanForm(s) => plan_form::on_mouse(core, s, m),
             TuiDialog::RecipeName(s) => recipe_name::on_mouse(core, s, m),
             TuiDialog::Keybind(s) => keybind::on_mouse(core, s, m),
             TuiDialog::ListEdit(s) => list_edit::on_mouse(core, s, m),
@@ -268,6 +272,7 @@ impl TuiDialog {
             TuiDialog::Archive(s) => archive::stale(core, s),
             TuiDialog::CompareConflict(s) => compare_conflict::stale(core, s),
             TuiDialog::PlanNames(s) => plan_names::stale(core, s),
+            TuiDialog::PlanForm(s) => plan_form::stale(core, s),
             TuiDialog::RecipeName(s) => recipe_name::stale(core, s),
             TuiDialog::Keybind(s) => keybind::stale(core, s),
             TuiDialog::ListEdit(s) => list_edit::stale(core, s),

@@ -5,7 +5,7 @@
 ## Key hints (bottom row of the panel while it has the keyboard)
 
 tui-ai-hints-composer = Enter gönder · Alt+Enter / Ctrl+J yeni satır · / komutlar · @ anma · Tab kartlar · Alt+M model · Alt+F erişim · Alt+O araçlar · Alt+S akıllı arama · Esc geri
-tui-ai-hints-cards = A onayla · R reddet · K bu türün tümü · E düzenle · Shift+E { "$" }EDITOR ile düzenle · Enter ayrıntı · U geri al · S kaydet · Tab yaz · Esc geri
+tui-ai-hints-cards = A onayla · R reddet · K bu türün tümü · E düzenle · J JSON olarak düzenle · Shift+E { "$" }EDITOR ile düzenle · Enter ayrıntı · U geri al · S kaydet · Tab yaz · Esc geri
 tui-ai-hints-recipes = Enter burada çalıştır · Del sil · F1-F3 sekmeler · Esc geri
 tui-ai-hints-audit = / süz · R yenile · F1-F3 sekmeler · Esc geri
 tui-ai-hints-filter = Enter / Esc bitti
@@ -24,6 +24,9 @@ tui-ai-edit-json = Düzenle
 ## The name table of a rename plan (dialog)
 
 tui-ai-names-title = Yeni adları düzenle
+tui-ai-form-title = Planı düzenle
+tui-ai-form-hints = Yukarı/Aşağı öge · Insert ya da tıklama: dahil / hariç · Enter bu değişiklikleri kullan · Esc vazgeç
+tui-ai-form-hints-space = Yukarı/Aşağı öge · Boşluk, Insert ya da tıklama: dahil / hariç · Enter bu değişiklikleri kullan · Esc vazgeç
 tui-ai-names-hints = Yukarı/Aşağı öğe · Enter bu adları kullan · Esc iptal
 
 ## Save as recipe (dialog)

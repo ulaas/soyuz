@@ -5,7 +5,7 @@
 ## Key hints (bottom row of the panel while it has the keyboard)
 
 tui-ai-hints-composer = Enter send · Alt+Enter / Ctrl+J new line · / commands · @ mention · Tab cards · Alt+M model · Alt+F access · Alt+O tools · Alt+S smart search · Esc back
-tui-ai-hints-cards = A approve · R reject · K all of kind · E edit · Shift+E edit in { "$" }EDITOR · Enter details · U undo · S save · Tab compose · Esc back
+tui-ai-hints-cards = A approve · R reject · K all of kind · E edit · J edit as JSON · Shift+E edit in { "$" }EDITOR · Enter details · U undo · S save · Tab compose · Esc back
 tui-ai-hints-recipes = Enter run here · Del delete · F1-F3 tabs · Esc back
 tui-ai-hints-audit = / filter · R reload · F1-F3 tabs · Esc back
 tui-ai-hints-filter = Enter / Esc done
@@ -24,6 +24,9 @@ tui-ai-edit-json = Edit
 ## The name table of a rename plan (dialog)
 
 tui-ai-names-title = Edit the new names
+tui-ai-form-title = Edit the plan
+tui-ai-form-hints = Up/Down item · Insert or click: in / out · Enter use these changes · Esc cancel
+tui-ai-form-hints-space = Up/Down item · Space, Insert or click: in / out · Enter use these changes · Esc cancel
 tui-ai-names-hints = Up/Down item · Enter use these names · Esc cancel
 
 ## Save as recipe (dialog)

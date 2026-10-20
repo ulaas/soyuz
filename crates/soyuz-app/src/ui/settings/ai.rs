@@ -300,6 +300,14 @@ fn general(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             switch(ui, &mut d.enabled);
         });
         r.row_kw(
+            tr!("settings-ai-palette"),
+            tr!("settings-ai-palette-desc"),
+            "palette ask question natural language",
+            |ui| {
+                switch(ui, &mut d.palette);
+            },
+        );
+        r.row_kw(
             tr!("settings-ai-privacy"),
             tr!("settings-ai-privacy-desc"),
             "privacy contents metadata upload",

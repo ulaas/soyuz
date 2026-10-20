@@ -84,7 +84,7 @@ Pins are kept in `config.toml` (`[[sidebar.portal]]`) and can also be edited in
 | `Backspace`, `Alt+↑` | parent folder |
 | `Alt+←` / `Alt+→`, mouse back / forward | history (right-click the arrows for the list) |
 | `Ctrl+P` | **Go to folder**: fuzzy jump to any folder you visited, ranked by frecency |
-| `Ctrl+K` | **Command palette**: every action; prefixes `:` path, `@` bookmark, `/` search, `>` shell, `#` tab |
+| `Ctrl+K` | **Command palette**: every action; prefixes `:` path, `@` bookmark, `/` search, `>` shell, `#` tab, `?` ask the assistant |
 | typing letters | type-ahead jumps to the first matching name (or filters, see *Behaviour*) |
 | `Ctrl+F` | live filter of the current folder |
 | `Alt+1…9` | bookmarks |
@@ -493,6 +493,15 @@ sets the decoder and encoder threads of the media tools too.
 All from the palette or the context menu:
 
 - **Disk usage treemap** — where the space went; click to zoom in, sidebar lists the largest items.
+- **Ask in plain words** — type `?` in the command palette and say what to do with files
+  ("? move the PDFs here into Documents", "? zip last month's screenshots"). The assistant
+  looks around and proposes each operation as a plan card in its panel: nothing runs until
+  you approve. *Edit* on a copy, move, compress, extract, trash or tag card opens a form: a
+  check box per item (unchecked ones are left out), the destination, and *Edit as JSON*
+  for anything else (rename cards edit the new names). *Use these changes* plans the
+  edited call again as a new card to approve. Earlier requests come back as suggestions
+  after `?`. Needs an AI provider (Settings › AI); *Ask from the command palette*
+  (`[ai] palette`) turns the `?` mode off.
 - **Compare as treemap** — a visual folder diff: the treemap of a folder with every tile
   coloured by how it differs from the other pane's folder (or the second of two selected
   folders): *only here*, *newer here*, *newer there*, *different* or *same*. The legend
@@ -958,8 +967,12 @@ profile menu, Alt+R switches between fast and strong, Alt+F opens the folder-acc
 Alt+O the tools / MCP-servers menu and Alt+S the smart search card (Enter searches,
 Alt+Enter asks the assistant, Esc closes it). The chips under the header show Stop, the
 model, the route, folder access, tools, smart search and the token meter with the monthly
-budget warning. E edits a pending card (the names table for rename plans, a JSON dialog
-with the arguments for other tools; also the card's *[Edit]* button): in the JSON dialog
+budget warning. E edits a pending card (the names table for rename plans; for copy, move,
+compress, extract, trash and tag plans a form with the items, Insert or a click leaving
+one in or out, Space too without a destination field, and the destination; a JSON dialog
+with the arguments for other tools; also the card's *[Edit]* button), J opens the JSON
+dialog for any card. `?` in the command palette (Ctrl+K) asks the assistant in plain
+words and moves the keyboard to its panel, where Tab reaches the plan cards. In the JSON dialog
 Enter starts a new indented line, Ctrl+S or Alt+S applies (an invalid edit shows why and
 stays open), Ctrl+E, Alt+E or F4 edits the arguments in `$EDITOR`, Tab reaches the buttons
 and Esc cancels. Shift+E sends any tool's arguments straight to `$EDITOR`. Esc stops a

@@ -287,6 +287,34 @@ fn editor(ui: &mut Ui, p: &Palette, tool: &str, plan: &Plan, edit: &mut PlanEdit
                 ui.add(TextEdit::singleline(name).desired_width(f32::INFINITY).font(FontId::proportional(12.0)));
             });
         }
+    } else if let Some(form) = &mut edit.form {
+        // Items to keep and where they go; "Edit as JSON" for everything else.
+        let mut to_json = false;
+        if let Some((_, items)) = &mut form.list {
+            ui.label(RichText::new(tr!("ai-card-form-items")).size(11.0).color(p.text_tertiary));
+            egui::ScrollArea::vertical().max_height(180.0).id_salt("ai.card.form.items").show(ui, |ui| {
+                for (path, keep) in items.iter_mut() {
+                    // The name; the whole path on hover.
+                    let full = soyuz_fs::strip_verbatim(path).to_string_lossy().into_owned();
+                    let name = soyuz_core::entry::display_name(path);
+                    ui.checkbox(keep, RichText::new(name).size(12.0).color(p.text_secondary)).on_hover_text(full);
+                }
+            });
+        }
+        if let Some((_, dest)) = &mut form.dest {
+            ui.add_space(4.0);
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(tr!("ai-card-form-dest")).size(12.0).color(p.text_secondary));
+                ui.add(TextEdit::singleline(dest).desired_width(f32::INFINITY).font(FontId::proportional(12.0)));
+            });
+        }
+        ui.add_space(2.0);
+        if ui.link(RichText::new(tr!("ai-card-form-json")).size(11.0)).clicked() {
+            to_json = true;
+        }
+        if to_json {
+            edit.form = None;
+        }
     } else {
         ui.label(RichText::new(tr!("ai-card-edit-json-hint")).size(11.0).color(p.text_tertiary));
         ui.add(

@@ -623,6 +623,7 @@ AI providers; keys live in the OS credential store
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | boolean | `true` | Turn on the AI assistant and AI actions (nothing is sent anywhere while off). |
+| `palette` | boolean | `true` | The command palette's `?` mode: a request in plain words becomes a task whose plans you review and edit before anything runs. |
 | `default_profile` | string | `""` | Profile name used when a task names none. |
 | `privacy` | `"none"` \| `"metadata_only"` \| `"contents"` | `"metadata_only"` | none \| metadata_only \| contents (file contents never leave the machine by default) (`none`: No file information at all; `metadata_only`: Names, sizes, dates and types only; file contents never leave the machine; `contents`: File contents may be sent (still subject to scopes and size caps)) |
 | `request_timeout_secs` | integer | `60` | Seconds to wait for the response headers. |

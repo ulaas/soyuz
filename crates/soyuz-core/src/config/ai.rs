@@ -219,6 +219,9 @@ impl Default for AiScope {
 pub struct Ai {
     /// Turn on the AI assistant and AI actions (nothing is sent anywhere while off).
     pub enabled: bool,
+    /// The command palette's `?` mode: a request in plain words becomes a task whose
+    /// plans you review and edit before anything runs.
+    pub palette: bool,
     /// Profile name used when a task names none.
     pub default_profile: String,
     pub profiles: Vec<AiProfile>,
@@ -252,6 +255,7 @@ impl Default for Ai {
     fn default() -> Self {
         Ai {
             enabled: true,
+            palette: true,
             default_profile: String::new(),
             profiles: Vec::new(),
             tasks: AiTasks::default(),

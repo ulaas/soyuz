@@ -49,6 +49,8 @@ pub struct Memory {
     pub commands: Vec<String>,
     /// Shell commands run from the palette, most recent first.
     pub shell: Vec<String>,
+    /// Requests asked from the palette's `?` mode, most recent first.
+    pub asks: Vec<String>,
     /// Mark key → folder.
     pub marks: BTreeMap<String, PathBuf>,
 }
@@ -103,6 +105,10 @@ impl Memory {
 
     pub fn used_shell(&mut self, line: &str) {
         push_front(&mut self.shell, line, MAX_RECENT_SHELL);
+    }
+
+    pub fn used_ask(&mut self, text: &str) {
+        push_front(&mut self.asks, text, MAX_RECENT_SHELL);
     }
 
     /// A broken file is backed up and protected from being overwritten (`store_file`).

@@ -210,19 +210,82 @@ pub fn plan_totals(plan: &Plan) -> String {
     parts.join(" \u{00b7} ")
 }
 
-/// Editing a plan card's arguments before approving it: a name table for renames, the
-/// full arguments as JSON otherwise. The result goes back as `Decision::Edit(args)`; the
-/// agent dry-runs the edited call and proposes a new card.
+/// Editing a plan card's arguments before approving it: a name table for renames, an
+/// item / destination form for copy, move, trash, tag, extract and compress ([`form`]),
+/// the full arguments as JSON otherwise (and on request). The result goes back as
+/// `Decision::Edit(args)`; the agent dry-runs the edited call and proposes a new card.
 pub mod edit {
+    use std::path::PathBuf;
+
     use serde_json::{Value, json};
 
     use super::is_rename;
-    use crate::ai::state::{PlanCard, PlanEdit};
+    use crate::ai::state::{PlanCard, PlanEdit, PlanForm};
 
     /// Start editing `card` (fills [`PlanCard::edit`] and expands the card).
     pub fn begin(card: &mut PlanCard) {
-        card.edit = Some(PlanEdit { json: card_args_json(card), names: names(card), error: None });
+        card.edit = Some(PlanEdit { json: card_args_json(card), names: names(card), form: form(card), error: None });
         card.expanded = true;
+    }
+
+    /// The arguments [`form`] edits for `tool`: its item list and its destination.
+    fn form_keys(tool: &str) -> (Option<&'static str>, Option<&'static str>) {
+        match tool {
+            "copy" | "move" => (Some("sources"), Some("dest_dir")),
+            "compress" => (Some("sources"), Some("dest")),
+            "trash" | "delete_permanent" | "tag" => (Some("paths"), None),
+            "extract" => (None, Some("dest_dir")),
+            _ => (None, None),
+        }
+    }
+
+    /// The item / destination form of `card` (`None` for tools without one, or when the
+    /// arguments don't have the expected shape).
+    pub fn form(card: &PlanCard) -> Option<PlanForm> {
+        let (list_key, dest_key) = form_keys(&card.tool);
+        let list = match list_key {
+            Some(k) => {
+                let items: Vec<(PathBuf, bool)> = card
+                    .args
+                    .get(k)?
+                    .as_array()?
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| (PathBuf::from(s), true))
+                    .collect();
+                Some((k, items))
+            }
+            None => None,
+        };
+        let dest = match dest_key {
+            Some(k) => Some((k, card.args.get(k)?.as_str()?.to_string())),
+            None => None,
+        };
+        (list.is_some() || dest.is_some()).then_some(PlanForm { list, dest })
+    }
+
+    /// The card's arguments with the form applied: unchecked items left out, the
+    /// destination replaced.
+    pub fn form_args(card: &PlanCard, f: &PlanForm) -> Result<Value, String> {
+        let mut args = card.args.clone();
+        let obj =
+            args.as_object_mut().ok_or_else(|| tr!("ai-card-invalid-json", error = "not an object").to_string())?;
+        if let Some((k, items)) = &f.list {
+            let kept: Vec<Value> = items.iter().filter(|(_, on)| *on).map(|(p, _)| json!(p)).collect();
+            if kept.is_empty() {
+                return Err(tr!("ai-card-form-none").into());
+            }
+            obj.insert((*k).into(), Value::Array(kept));
+        }
+        if let Some((k, d)) = &f.dest {
+            let d = d.trim();
+            if d.is_empty() {
+                return Err(tr!("ai-card-form-dest-empty").into());
+            }
+            obj.insert((*k).into(), json!(d));
+        }
+        validate(&card.tool, &args)?;
+        Ok(args)
     }
 
     /// The current new names of a rename plan (one per item); empty for other tools.
@@ -243,6 +306,9 @@ pub mod edit {
     pub fn args(card: &PlanCard, e: &PlanEdit) -> Result<Value, String> {
         if is_rename(&card.tool) && !e.names.is_empty() {
             return rename_args(card, &e.names);
+        }
+        if let Some(f) = &e.form {
+            return form_args(card, f);
         }
         parse(&e.json)
     }
@@ -493,6 +559,40 @@ mod tests {
     }
 
     #[test]
+    fn form_edits_drop_items_and_change_the_destination() {
+        let args = json!({"sources": [root().join("a.pdf"), root().join("b.pdf")], "dest_dir": root().join("Docs"), "conflict": "keep_both"});
+        let mut c = card(1, 1, "move", args.clone(), vec![]);
+        edit::begin(&mut c);
+        let mut e = c.edit.clone().unwrap();
+        let f = e.form.as_mut().expect("a form for move");
+        assert_eq!(f.list.as_ref().unwrap().1.len(), 2);
+        assert_eq!(edit::args(&c, &e).unwrap(), args, "untouched form: same call");
+        let f = e.form.as_mut().unwrap();
+        f.list.as_mut().unwrap().1[0].1 = false;
+        f.dest.as_mut().unwrap().1 = format!("  {}  ", root().join("Papers").display());
+        let out = edit::args(&c, &e).unwrap();
+        assert_eq!(out["sources"], json!([root().join("b.pdf")]));
+        assert_eq!(out["dest_dir"], json!(root().join("Papers")));
+        assert_eq!(out["conflict"], "keep_both", "other arguments stay");
+        // Nothing kept, or no destination: refused.
+        e.form.as_mut().unwrap().list.as_mut().unwrap().1[1].1 = false;
+        assert!(edit::args(&c, &e).is_err());
+        let f = e.form.as_mut().unwrap();
+        f.list.as_mut().unwrap().1[1].1 = true;
+        f.dest.as_mut().unwrap().1 = " ".into();
+        assert!(edit::args(&c, &e).is_err());
+        // Trash has items only; extract a destination only; other tools none.
+        let t = card(2, 1, "trash", json!({"paths": [root().join("x")]}), vec![]);
+        assert!(edit::form(&t).is_some_and(|f| f.list.is_some() && f.dest.is_none()));
+        let x = card(3, 1, "extract", json!({"archive": root().join("a.zip"), "dest_dir": root().join("a")}), vec![]);
+        assert!(edit::form(&x).is_some_and(|f| f.list.is_none() && f.dest.is_some()));
+        assert!(edit::form(&card(4, 1, "set_attributes", json!({}), vec![])).is_none());
+        // "Edit as JSON": without the form the JSON text is used.
+        e.form = None;
+        assert_eq!(edit::args(&c, &e).unwrap(), args);
+    }
+
+    #[test]
     fn json_edits_parse_and_report_invalid_json() {
         let args = json!({"sources": [root().join("a.jpg")], "dest_dir": root().join("Images")});
         let mut c = card(1, 1, "move", args.clone(), vec![]);
@@ -500,7 +600,7 @@ mod tests {
         let e = c.edit.clone().unwrap();
         assert!(e.names.is_empty(), "no name table for move");
         assert_eq!(edit::args(&c, &e).unwrap(), args);
-        let bad = PlanEdit { json: "{ not json".into(), names: Vec::new(), error: None };
+        let bad = PlanEdit { json: "{ not json".into(), names: Vec::new(), form: None, error: None };
         let err = edit::args(&c, &bad).unwrap_err();
         assert!(!err.is_empty());
         // A rename card whose name table was cleared falls back to the JSON text.

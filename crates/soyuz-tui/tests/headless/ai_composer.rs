@@ -222,7 +222,7 @@ fn json_edit(data: PathBuf) {
     let mut steps = Vec::new();
     ask_dyn(&mut steps, &data, "move it");
     steps.push(DynStep::when("a plan card waits", card_waits, key(KeyCode::Tab)));
-    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('e'))));
+    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('j'))));
     to_moved(&mut steps);
     for _ in 0..5 {
         steps.push(DynStep::when("erasing Moved", json_open, key(KeyCode::Backspace)));
@@ -247,6 +247,98 @@ fn json_edit(data: PathBuf) {
     common::ok();
 }
 
+/// The plan form (E on a move card) is open.
+fn form_open(a: &App) -> bool {
+    dialog(a).is_some_and(|d| d.title == soyuz_appcore::tr!("tui-ai-form-title"))
+}
+
+#[test]
+fn form_edit_changes_the_destination() {
+    match relaunch_fake(module_path!(), "form_edit_changes_the_destination", "move.toml", files) {
+        Run::Child(data) => form_edit(data),
+        Run::Parent(r) => {
+            assert!(r.data.join("Other").join("a.txt").exists(), "moved where the form said");
+            assert!(!r.data.join("Moved").join("a.txt").exists());
+        }
+    }
+}
+
+fn form_edit(data: PathBuf) {
+    let mut app = common::new_app(ai_config(&data), &data);
+    let mut steps = Vec::new();
+    ask_dyn(&mut steps, &data, "move it");
+    steps.push(DynStep::when("a plan card waits", card_waits, key(KeyCode::Tab)));
+    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('e'))));
+    // The destination field ends in "Moved": erase it, type "Other".
+    steps.push(DynStep::when("the form", form_open, key(KeyCode::End)));
+    for _ in 0..5 {
+        steps.push(DynStep::when("erasing Moved", form_open, key(KeyCode::Backspace)));
+    }
+    for c in "Other".chars() {
+        steps.push(DynStep::when("typing", |_| true, key(KeyCode::Char(c))));
+    }
+    steps.push(DynStep::when("typed", form_open, key(KeyCode::Enter)));
+    steps.push(DynStep::when(
+        "a new card with the edited destination waits",
+        |a| dialog(a).is_none() && edited(a) && card_waits(a) && panel_text(a).contains("Other"),
+        key(KeyCode::Char('a')),
+    ));
+    let d = data.clone();
+    steps.push(DynStep::when(
+        "moved",
+        move |a| d.join("Other").join("a.txt").exists() && ended(a) && common::wait_jobs_idle(a),
+        ctrl('q'),
+    ));
+    run_dyn(&mut app, steps, 120, 30);
+    app.finish();
+    common::ok();
+}
+
+#[test]
+fn palette_question_mark_asks_and_shows_the_plan() {
+    match relaunch_fake(module_path!(), "palette_question_mark_asks_and_shows_the_plan", "move.toml", files) {
+        Run::Child(data) => palette_ask(data),
+        Run::Parent(r) => assert!(r.data.join("Moved").join("a.txt").exists(), "the approved plan ran"),
+    }
+}
+
+fn palette_ask(data: PathBuf) {
+    let mut app = common::new_app(ai_config(&data), &data);
+    let mut steps = Vec::new();
+    let d = data.clone();
+    steps.push(DynStep::when("the listing", move |a| at(a, &d) && !common::labels(a).is_empty(), ctrl('k')));
+    steps.push(DynStep::when("the palette", |a| a.core.palette.open, key(KeyCode::Char('?'))));
+    for c in " move it".chars() {
+        steps.push(DynStep::when("typing", |_| true, key(KeyCode::Char(c))));
+    }
+    steps.push(DynStep::when(
+        "the request is the first row",
+        |a| {
+            matches!(
+                a.core.palette.results.first().map(|i| &i.exec),
+                Some(soyuz_appcore::palette::Exec::Ask(t)) if t == "move it"
+            )
+        },
+        key(KeyCode::Enter),
+    ));
+    steps.push(DynStep::when(
+        "the panel shows the request and its plan",
+        |a| !a.core.palette.open && user_texts(a) == ["move it"] && card_waits(a),
+        key(KeyCode::Tab),
+    ));
+    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('a'))));
+    let d = data.clone();
+    steps.push(DynStep::when(
+        "moved",
+        move |a| d.join("Moved").join("a.txt").exists() && ended(a) && common::wait_jobs_idle(a),
+        ctrl('q'),
+    ));
+    run_dyn(&mut app, steps, 120, 30);
+    assert_eq!(app.core.palette.memory.asks, ["move it"], "remembered for the next time");
+    app.finish();
+    common::ok();
+}
+
 #[test]
 fn invalid_json_stays_in_the_dialog() {
     match relaunch_fake(module_path!(), "invalid_json_stays_in_the_dialog", "move.toml", files) {
@@ -260,7 +352,7 @@ fn invalid_json(data: PathBuf) {
     let mut steps = Vec::new();
     ask_dyn(&mut steps, &data, "move it");
     steps.push(DynStep::when("a plan card waits", card_waits, key(KeyCode::Tab)));
-    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('e'))));
+    steps.push(DynStep::when("the cards", |_| true, key(KeyCode::Char('j'))));
     steps.push(DynStep::when("the JSON editor", json_open, key_mods(KeyCode::End, KeyModifiers::CONTROL)));
     steps.push(DynStep::when("at the end", |_| true, key(KeyCode::Char('x'))));
     steps.push(DynStep::when("broken", |_| true, ctrl('s')));

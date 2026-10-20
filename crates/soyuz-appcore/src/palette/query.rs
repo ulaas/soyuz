@@ -8,6 +8,7 @@
 //! | `/` | recursive search in the current folder |
 //! | `>` | run a shell command in the current folder (terminal panel) |
 //! | `#` | switch tab |
+//! | `?` | ask the assistant in plain words (`[ai] palette`); its plans open for review |
 
 /// What the palette lists.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -22,6 +23,8 @@ pub enum Mode {
     Tabs,
     /// Ctrl+Alt+V: file sets copied or cut earlier (`[behaviour] clipboard_history`).
     Clipboard,
+    /// A request for the assistant (`ai::state::ask_from_palette`).
+    Ask,
 }
 
 impl Mode {
@@ -34,6 +37,7 @@ impl Mode {
             Mode::Search => Some('/'),
             Mode::Shell => Some('>'),
             Mode::Tabs => Some('#'),
+            Mode::Ask => Some('?'),
         }
     }
 
@@ -48,6 +52,7 @@ impl Mode {
             Mode::Shell => tr!("actions-mode-shell"),
             Mode::Tabs => tr!("actions-mode-tabs"),
             Mode::Clipboard => tr!("actions-mode-clipboard"),
+            Mode::Ask => tr!("actions-mode-ask"),
         }
     }
 
@@ -62,6 +67,7 @@ impl Mode {
             Mode::Shell => tr!("actions-legend-shell"),
             Mode::Tabs => tr!("actions-legend-tabs"),
             Mode::Clipboard => tr!("actions-mode-clipboard"),
+            Mode::Ask => tr!("actions-legend-ask"),
         }
     }
 
@@ -75,11 +81,12 @@ impl Mode {
             Mode::Shell => tr!("actions-placeholder-shell"),
             Mode::Tabs => tr!("actions-placeholder-tabs"),
             Mode::Clipboard => tr!("actions-placeholder-clipboard"),
+            Mode::Ask => tr!("actions-placeholder-ask"),
         }
     }
 
     /// The prefixed modes, for the footer legend.
-    pub const PREFIXED: [Mode; 5] = [Mode::Path, Mode::Bookmarks, Mode::Search, Mode::Shell, Mode::Tabs];
+    pub const PREFIXED: [Mode; 6] = [Mode::Path, Mode::Bookmarks, Mode::Search, Mode::Shell, Mode::Tabs, Mode::Ask];
 }
 
 /// Split raw input into a mode and the remaining text. `base` is the mode without a
@@ -97,6 +104,7 @@ pub fn parse(input: &str, base: Mode) -> (Mode, &str) {
         Some('/') => Mode::Search,
         Some('>') => Mode::Shell,
         Some('#') => Mode::Tabs,
+        Some('?') => Mode::Ask,
         _ => return (base, trimmed),
     };
     let rest = chars.as_str();
@@ -132,6 +140,7 @@ mod tests {
         assert_eq!(parse("", Mode::Commands), (Mode::Commands, ""));
         assert_eq!(parse("  new tab", Mode::Commands), (Mode::Commands, "new tab"));
         assert_eq!(parse(">", Mode::Commands), (Mode::Shell, ""));
+        assert_eq!(parse("? move the pdfs", Mode::Commands), (Mode::Ask, "move the pdfs"));
     }
 
     #[test]

@@ -108,7 +108,21 @@ pub struct PlanEdit {
     pub json: String,
     /// New names for rename plans (one per item).
     pub names: Vec<String>,
+    /// The item / destination form of copy, move, trash, tag, extract and compress plans
+    /// (`None`: edit as JSON).
+    pub form: Option<PlanForm>,
     pub error: Option<String>,
+}
+
+/// The structured editor of a plan card (`ai::panel::edit::form`): which of the items the
+/// call should act on, and where they go.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PlanForm {
+    /// The argument holding the items (`sources` / `paths`) and each item with whether it
+    /// stays in the call.
+    pub list: Option<(&'static str, Vec<(PathBuf, bool)>)>,
+    /// The argument holding the destination (`dest_dir` / `dest`) and its text.
+    pub dest: Option<(&'static str, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -411,7 +425,12 @@ impl AiState {
                     let paths = c.paths();
                     touch::unmark(&paths);
                 }
-                Decision::Edit(_) => c.state = CardState::Edited,
+                Decision::Edit(_) => {
+                    // Replaced by the re-planned card: its editor closes (as for MCP cards).
+                    c.state = CardState::Edited;
+                    c.edit = None;
+                    c.expanded = false;
+                }
             }
         }
     }
@@ -592,6 +611,21 @@ pub fn undo_mcp_client(app: &mut AppCore, client: String) {
     if spawned.is_ok() {
         app.ai.mcp_undo_rx.push((client, rx));
     }
+}
+
+/// What the palette's `?` mode asks the model for (the user's words follow).
+const PALETTE_ASK: &str = "The user typed this request in the command palette. Carry it out as file operations: look around with the read tools as needed, then propose the changes with the write tools (one call per kind of operation, with every item it applies to). Nothing runs before the user has reviewed, possibly edited, and approved each plan. Reply with at most one short sentence. If the request is not about files, answer it briefly instead.\n\nRequest: ";
+
+/// The command palette's `?` mode (`[ai] palette`): `text` becomes a task that proposes
+/// plans; the panel opens on them, to review, edit (items, destination, names) and run.
+pub fn ask_from_palette(app: &mut AppCore, host: &dyn Host, text: String) {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    // The panel takes the keyboard: Tab reaches the plan cards.
+    open_panel(app);
+    start_chat_shown(app, host, text.clone(), format!("{PALETTE_ASK}{text}"), Route::Strong, Vec::new());
 }
 
 fn open_panel(app: &mut AppCore) {

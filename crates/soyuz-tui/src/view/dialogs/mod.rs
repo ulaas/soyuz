@@ -26,6 +26,7 @@ pub mod list_edit;
 pub mod media_tools;
 pub mod open_with;
 pub mod pattern;
+pub mod plan_form;
 pub mod plan_json;
 pub mod plan_names;
 pub mod prompt;
@@ -153,6 +154,7 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
             TuiDialog::Archive(s) => archive::vm(core, s),
             TuiDialog::CompareConflict(s) => compare_conflict::vm(core, s),
             TuiDialog::PlanNames(s) => plan_names::vm(core, s),
+            TuiDialog::PlanForm(s) => plan_form::vm(core, s),
             TuiDialog::RecipeName(s) => recipe_name::vm(core, s),
             TuiDialog::Keybind(s) => keybind::vm(core, s),
             TuiDialog::ListEdit(s) => list_edit::vm(core, s),

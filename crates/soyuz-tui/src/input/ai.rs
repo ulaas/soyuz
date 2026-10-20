@@ -1009,6 +1009,7 @@ pub fn card_key_of(ev: &InputEvent) -> Option<CardKey> {
         (KeyName::K, false) => CardKey::ApproveKind,
         (KeyName::E, false) => CardKey::Edit,
         (KeyName::E, true) => CardKey::EditExternal,
+        (KeyName::J, false) => CardKey::EditJson,
         (KeyName::Enter, false) => CardKey::Enter,
         (KeyName::U, false) => CardKey::Undo,
         (KeyName::S, false) => CardKey::SaveRecipe,
@@ -1122,6 +1123,8 @@ fn edit_card(app: &mut App, sel: Sel, card: &PlanCard, k: CardKey) {
         CardKey::Edit if is_rename(&card.tool) && !card.plan.items.is_empty() => {
             super::dialogs::plan_names::open(app, sel, card);
         }
+        // Items and destination; tools without that form edit as JSON.
+        CardKey::Edit if super::dialogs::plan_form::open(app, sel, card) => {}
         CardKey::Edit | CardKey::EditJson => plan_json::open(app, sel, card),
         CardKey::EditExternal => start_external(app, sel, panel::edit::card_args_json(card), false),
         _ => {}
@@ -1646,6 +1649,7 @@ mod tests {
         assert_eq!(card_key_of(&chord("R")), Some(CardKey::Reject));
         assert_eq!(card_key_of(&chord("K")), Some(CardKey::ApproveKind));
         assert_eq!(card_key_of(&chord("E")), Some(CardKey::Edit));
+        assert_eq!(card_key_of(&chord("J")), Some(CardKey::EditJson));
         assert_eq!(card_key_of(&chord("Shift+E")), Some(CardKey::EditExternal));
         assert_eq!(card_key_of(&chord("Enter")), Some(CardKey::Enter));
         assert_eq!(card_key_of(&chord("U")), Some(CardKey::Undo));
