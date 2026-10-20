@@ -2,13 +2,14 @@
 //! as written by 7-Zip's "split to volumes"): the parts are concatenated into one seekable
 //! stream, so the zip / 7z readers work unchanged.
 //!
-//! Not covered: PKWARE spanned / split zip (`.z01` … `.zip`), whose central directory
-//! offsets are per disk (the `zip` crate has no multi-disk support), and RAR volume sets.
+//! PKWARE spanned / split zips (`.z01` … `.zip`) are joined the same way, with their
+//! per-disk central directory rebuilt (see `spanned.rs`). Not covered: RAR volume sets.
 
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use super::spanned::{SpannedReader, spanned_parts};
 use crate::ArchiveError;
 use crate::util::fs_err;
 
@@ -39,16 +40,27 @@ pub(crate) fn split_parts(path: &Path) -> Option<Vec<PathBuf>> {
 pub(crate) enum Source {
     File(BufReader<File>),
     Split(SplitReader),
+    Spanned(Box<SpannedReader>),
 }
 
 impl Source {
-    /// Open `path` (split volumes when it is a `*.001` part).
+    /// Open `path` (split volumes when it is a `*.001` part, the whole set when it is the
+    /// `.zip` or `.z01` of a spanned zip).
     pub fn open(path: &Path) -> Result<Source, ArchiveError> {
-        match split_parts(path) {
-            Some(parts) => Ok(Source::Split(SplitReader::open(&parts)?)),
-            None => Ok(Source::File(super::open_file(path)?)),
+        if let Some(parts) = split_parts(path) {
+            return Ok(Source::Split(SplitReader::open(&parts)?));
         }
+        if let Some(parts) = spanned_parts(path) {
+            return Ok(Source::Spanned(Box::new(SpannedReader::open(&parts)?)));
+        }
+        Ok(Source::File(super::open_file(path)?))
     }
+}
+
+/// `path` is one part of a multi-volume set (byte-split or a spanned zip); such sets are
+/// read-only.
+pub(crate) fn is_multi_volume(path: &Path) -> bool {
+    split_parts(path).is_some() || spanned_parts(path).is_some()
 }
 
 impl Read for Source {
@@ -56,6 +68,7 @@ impl Read for Source {
         match self {
             Source::File(f) => f.read(buf),
             Source::Split(s) => s.read(buf),
+            Source::Spanned(s) => s.read(buf),
         }
     }
 }
@@ -65,13 +78,14 @@ impl Seek for Source {
         match self {
             Source::File(f) => f.seek(pos),
             Source::Split(s) => s.seek(pos),
+            Source::Spanned(s) => s.seek(pos),
         }
     }
 }
 
-/// Total size of `path`, or of all its split volumes.
+/// Total size of `path`, or of all its volumes.
 pub(crate) fn source_len(path: &Path) -> u64 {
-    match split_parts(path) {
+    match split_parts(path).or_else(|| spanned_parts(path)) {
         Some(parts) => parts.iter().filter_map(|p| std::fs::metadata(p).ok()).map(|m| m.len()).sum(),
         None => std::fs::metadata(path).map_or(0, |m| m.len()),
     }
@@ -101,6 +115,21 @@ impl SplitReader {
             parts.push((BufReader::with_capacity(4 * 1024, f), len));
         }
         Ok(SplitReader { parts, starts, total, pos: 0, cur: None })
+    }
+
+    /// Length of the joined stream.
+    pub fn total(&self) -> u64 {
+        self.total
+    }
+
+    /// Number of parts.
+    pub fn parts(&self) -> usize {
+        self.parts.len()
+    }
+
+    /// Offset of part `i` in the joined stream.
+    pub fn start(&self, i: usize) -> u64 {
+        self.starts[i]
     }
 
     fn part_at(&self, pos: u64) -> usize {

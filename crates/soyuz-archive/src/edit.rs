@@ -51,9 +51,10 @@ pub struct ZipEditSummary {
     pub added: u64,
 }
 
-/// Formats [`rewrite_zip`] can edit (zip only; split `.zip.001` sets are read-only).
+/// Formats [`rewrite_zip`] can edit (zip only; split `.zip.001` sets and spanned
+/// `.z01` … `.zip` sets are read-only).
 pub fn can_edit(path: &Path) -> bool {
-    crate::detect(path) == Some(ArchiveFormat::Zip) && crate::reader::volumes::split_parts(path).is_none()
+    crate::detect(path) == Some(ArchiveFormat::Zip) && !crate::reader::volumes::is_multi_volume(path)
 }
 
 /// Hidden sibling used as the rewrite target for `archive`.
@@ -133,7 +134,7 @@ fn rewrite_inner(
     ctl: &OpControl,
     sink: &mut dyn ProgressSink,
 ) -> Result<ZipEditSummary, ArchiveError> {
-    if crate::reader::volumes::split_parts(src).is_some() {
+    if crate::reader::volumes::is_multi_volume(src) {
         return Err(ArchiveError::Unsupported(ArchiveFormat::Zip));
     }
     let f = File::open(src).map_err(|e| fs_err("open_archive", src, &e))?;

@@ -78,7 +78,7 @@ Read first: `docs/PLAN.md` (architecture, APIs, design tokens), `docs/INTEGRATIO
   - Previous versions (Volume Shadow Copies) are untested on real shadow copies. The NTFS journal catch-up works without admin rights on Windows 11 (`FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`, tested); the MFT import still needs admin.
   - No screen-reader certification run yet (NVDA / Narrator). The keyboard-only GUI test has a Windows CI job (`gui-keyboard`, WARP adapter) that has not run on a hosted runner yet; it skips with a warning when no window can start. The UIA audit (`scripts/uia-audit.ps1`, `docs/ACCESSIBILITY_AUDIT.md`) covers six states, not the whole app. No right-to-left layout (deferred).
   - The MSIX is unsigned; Authenticode signing of the exe / MSI needs a certificate (pipeline validated with a temporary self-signed one, `docs/RELEASING.md`). Linux and macOS ship as unsigned tarballs only (no .deb / .rpm / AppImage / .dmg, no notarization yet).
-  - RAR volume sets and PKWARE spanned zips (`.z01`) are unsupported (single RAR archives read via pure-Rust `rars`).
+  - RAR volume sets are unsupported (single RAR archives read via pure-Rust `rars`). PKWARE spanned zips (`.z01` … `.zip`) are read (read-only), like byte-split `.001` sets.
   - PDF page rendering and PDF thumbnails need `pdfium.dll` next to the exe or in the config dir (text-only preview and the PDF icon otherwise).
   - Hand-built `$Recycle.Bin` entries not yet checked against Explorer's Recycle Bin window.
   - Two single checks on a click still run on the UI thread: Create archive's "name taken" check and Open with's typed program path (debug builds log every `soyuz_fs` call made on the UI thread). Extract to folder picks its free name on a worker.

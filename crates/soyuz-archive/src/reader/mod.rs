@@ -8,6 +8,7 @@ mod random;
 mod rar;
 mod seq;
 mod sevenz;
+mod spanned;
 mod tar;
 mod udf;
 pub(crate) mod volumes;

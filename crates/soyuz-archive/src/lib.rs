@@ -4,8 +4,8 @@
 //! Formats: zip (stored / deflate / bzip2 / lzma / xz read; store / deflate
 //! write; ZipCrypto + AES read, AES-256 write; add / delete / rename entries through
 //! [`rewrite_zip`]), tar, tar.gz, tar.bz2, tar.xz, tar.zst, 7z (read + write, AES-256 with
-//! header encryption). Byte-split volumes (`x.7z.001`, `x.zip.001`, …) are read as one
-//! archive. Read-only: RAR 1.3 – 7 (feature `rar`, on by default, pure-Rust `rars`
+//! header encryption). Byte-split volumes (`x.7z.001`, `x.zip.001`, …) and PKWARE
+//! spanned zips (`x.z01` … `x.zip`) are read as one archive. Read-only: RAR 1.3 – 7 (feature `rar`, on by default, pure-Rust `rars`
 //! decoder), ISO 9660 / Joliet / Rock Ridge / UDF disc images, Microsoft CAB (stored /
 //! MSZIP / LZX), `.deb` (the `data.tar.*` tree) and `.rpm` (the cpio payload). The default
 //! build is pure Rust (tar.zst is read with `ruzstd`). The opt-in `zstd` feature links

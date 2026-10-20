@@ -50,8 +50,9 @@ impl ArchiveFormat {
     /// File extensions (lower-case, no leading dot), preferred first.
     pub fn extensions(&self) -> &'static [&'static str] {
         match self {
-            // `.zip.001` / `.7z.001`: byte-split volumes (7-Zip "split to volumes").
-            ArchiveFormat::Zip => &["zip", "zip.001"],
+            // `.zip.001` / `.7z.001`: byte-split volumes (7-Zip "split to volumes"); `.z01`:
+            // the first disk of a PKWARE spanned zip (`.z01` … `.zip`).
+            ArchiveFormat::Zip => &["zip", "zip.001", "z01"],
             ArchiveFormat::Tar => &["tar"],
             ArchiveFormat::TarGz => &["tar.gz", "tgz"],
             ArchiveFormat::TarBz2 => &["tar.bz2", "tbz2", "tbz"],
