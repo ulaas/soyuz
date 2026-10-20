@@ -14,6 +14,7 @@
 pub mod compare;
 pub mod decor;
 pub mod dupes;
+pub mod share;
 pub mod shelf;
 pub mod split;
 pub mod sync_ui;
@@ -56,6 +57,7 @@ pub struct Tools {
     pub shelf: shelf::Shelf,
     pub sync_profiles: Option<sync_ui::SyncProfilesWindow>,
     pub versions: Option<versions::VersionsWindow>,
+    pub share: Option<share::ShareWindow>,
 }
 
 impl Tools {
@@ -66,6 +68,7 @@ impl Tools {
             || self.split.is_some()
             || self.sync_profiles.is_some()
             || self.versions.is_some()
+            || self.share.is_some()
     }
 }
 
@@ -118,6 +121,7 @@ fn apply(t: &mut Tools, app: &mut SoyuzApp, c: ToolCmd) {
         ToolCmd::Versions(path, is_dir, current) => {
             t.versions = Some(versions::VersionsWindow::new(path, is_dir, current));
         }
+        ToolCmd::QuickShare(paths) => t.share = Some(share::ShareWindow::new(paths, &app.core.config.remote)),
         ToolCmd::Duplicates(roots) => t.dupes = Some(dupes::DupesWindow::new(roots)),
         ToolCmd::Split(p) => t.split = Some(split::SplitWindow::split(p)),
         ToolCmd::Join(p) => t.split = Some(split::SplitWindow::join(p)),
@@ -144,7 +148,7 @@ fn window_layer(id: &str) -> LayerId {
     LayerId::new(Order::Middle, Id::unique(("soyuz.tool", id)))
 }
 
-const WINDOW_IDS: [&str; 6] = ["treemap", "compare", "dupes", "split", "sync_profiles", "versions"];
+const WINDOW_IDS: [&str; 7] = ["treemap", "compare", "dupes", "split", "sync_profiles", "versions", "share"];
 
 /// A dimmed, full-screen layer right under the tool windows: it takes every click, hover
 /// and wheel event aimed at the panes, so they stay untouched while a tool is open.
@@ -216,6 +220,12 @@ pub fn show_windows(ctx: &egui::Context, app: &mut SoyuzApp) {
             t.versions = None;
         }
     }
+    if let Some(w) = &mut t.share {
+        w.show(ctx, app);
+        if !w.open {
+            t.share = None;
+        }
+    }
     crate::models::tools::with_shelf(|d| t.shelf.drag_strip(ctx, d));
     TOOLS.with_borrow_mut(|slot| {
         restore(slot, t);
@@ -244,6 +254,9 @@ fn restore(slot: &mut Tools, t: Tools) {
     }
     if fresh.versions.is_some() {
         slot.versions = fresh.versions;
+    }
+    if fresh.share.is_some() {
+        slot.share = fresh.share;
     }
 }
 

@@ -644,6 +644,9 @@ fn tool_item_entries(b: &mut B<'_>, location: &Location, sel: &[(PathBuf, bool)]
         true,
         Some(Run::Tool(ToolCmd::ShelfAdd(paths.clone()))),
     ));
+    if !matches!(location, Location::Remote(_)) {
+        b.action(I::QrCode, tr!("tools-menu-quick-share"), Action::QuickShare);
+    }
     let dirs = sel.iter().filter(|(_, d)| *d).count();
     if dirs == 1 && sel.len() == 1 {
         b.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);

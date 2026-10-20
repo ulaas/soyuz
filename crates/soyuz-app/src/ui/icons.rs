@@ -129,6 +129,7 @@ pub fn glyph(id: IconId) -> &'static str {
         IconId::Pulse => ph::PULSE,
         IconId::PushPin => ph::PUSH_PIN,
         IconId::PuzzlePiece => ph::PUZZLE_PIECE,
+        IconId::QrCode => ph::QR_CODE,
         IconId::Question => ph::QUESTION,
         IconId::Rectangle => ph::RECTANGLE,
         IconId::RectangleDashed => ph::RECTANGLE_DASHED,

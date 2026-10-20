@@ -141,6 +141,7 @@ icon_ids! {
     Pulse,
     PushPin,
     PuzzlePiece,
+    QrCode,
     Question,
     Rectangle,
     RectangleDashed,

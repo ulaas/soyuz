@@ -159,6 +159,8 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("remote.io_timeout_secs", Hint::Range(5.0, 3600.0)),
     ("remote.preview_cache_mb", Hint::Range(16.0, 65_536.0)),
     ("remote.preview_max_mb", Hint::Range(1.0, 4096.0)),
+    ("remote.share_minutes", Hint::Range(0.0, 1440.0)),
+    ("remote.share_port", Hint::Range(0.0, 65_535.0)),
     ("terminal.scrollback", Hint::Range(1000.0, 100_000.0)),
     ("terminal.font_size", Hint::Range(8.0, 24.0)),
     ("preview.max_text_kib", Hint::Range(16.0, 16_384.0)),

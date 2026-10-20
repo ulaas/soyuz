@@ -601,3 +601,35 @@ tools-versions-none-body-macos = None of the { $count ->
     }.
 tools-versions-no-copies-macos = No Time Machine backups found
 tools-versions-no-copies-body-macos = Soyuz reads Time Machine backups that are mounted: an attached backup disk (Backups.backupdb) or APFS backups macOS has mounted under /Volumes/.timemachine (for example while you browse them in Time Machine). Local snapshots that aren't mounted need root and aren't listed.
+
+## Quick share (`models::quick_share`).
+tools-menu-quick-share = Quick share…
+tools-share-title = Quick share
+tools-share-intro = Scan the code with a phone, or open the address on a computer on the same network. Anyone with the address can open and download what's shared, until it stops.
+tools-share-items = { $count ->
+    [one] 1 item
+   *[other] { $count } items
+}
+tools-share-address = Address
+tools-share-copy = Copy address
+tools-share-stop = Stop sharing
+tools-share-stopped = Sharing stopped.
+tools-share-expired = Sharing ended after { $minutes } min.
+tools-share-waiting = Nobody has opened it yet
+tools-share-devices = { $count ->
+    [one] 1 device
+   *[other] { $count } devices
+}
+tools-share-downloads = { $count ->
+    [one] 1 download
+   *[other] { $count } downloads
+}
+tools-share-sent = { $size } sent
+tools-share-ends = stops in { $time }
+tools-share-until-closed = stops when you close this
+tools-share-no-network = No network connection: other devices can't reach this computer.
+tools-share-nothing = The selected items can no longer be found.
+tools-share-failed = Sharing could not start: { $error }
+tools-share-remote = Quick share works with files on this computer
+tools-share-select = Select files or folders to share
+tools-share-shared = Shared

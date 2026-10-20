@@ -103,6 +103,8 @@ define_actions! {
         CopyPath, CopyPathPosix, CopyPathQuoted, CopyName, CopyAsFileList, CreateArchive,
         ExtractHere, ExtractToFolder, ExtractTo, TestArchive, CompareChecksum, SetAttributes,
         TouchTimestamps, SplitFile, JoinFiles, ClearTags, Undo, Redo, PreviousVersions,
+        // Serve the selection over HTTP on the local network (`models::quick_share`).
+        QuickShare,
         // Media tools (FFmpeg, Phase V): jobs with a dry-run plan.
         MediaConvert, MediaExtractAudio, MediaTrim, MediaSaveFrame,
         // A password for an encrypted PDF's preview (`models::archive::ask_pdf_password`).

@@ -47,6 +47,7 @@ pub mod unsaved;
 pub mod about;
 pub mod manage_workspaces;
 pub mod save_workspace;
+pub mod share;
 pub mod shelf;
 pub mod split;
 pub mod tab_history;
@@ -167,6 +168,7 @@ pub fn from_core(core: &AppCore, input: &InputState) -> Option<DialogVm> {
             TuiDialog::SaveWorkspace(s) => save_workspace::vm(core, s),
             TuiDialog::Shelf(s) => shelf::vm(core, s),
             TuiDialog::Split(s) => split::vm(core, s),
+            TuiDialog::Share(s) => share::vm(core, s),
             TuiDialog::TabHistory(s) => tab_history::vm(core, s),
             TuiDialog::UnlockDevice(s) => unlock_device::vm(core, s),
             TuiDialog::Versions(s) => versions::vm(core, s),

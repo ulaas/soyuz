@@ -70,6 +70,7 @@ pub mod unsaved;
 pub mod about;
 pub mod manage_workspaces;
 pub mod save_workspace;
+pub mod share;
 pub mod shelf;
 pub mod split;
 pub mod tab_history;
@@ -165,6 +166,7 @@ pub enum TuiDialog {
     TabHistory(tab_history::State),
     UnlockDevice(unlock_device::State),
     Versions(versions::State),
+    Share(share::State),
 }
 
 impl TuiDialog {
@@ -201,6 +203,7 @@ impl TuiDialog {
             TuiDialog::SaveWorkspace(s) => save_workspace::on_input(core, s, i),
             TuiDialog::Shelf(s) => shelf::on_input(core, s, i),
             TuiDialog::Split(s) => split::on_input(core, s, i),
+            TuiDialog::Share(s) => share::on_input(core, s, i),
             TuiDialog::TabHistory(s) => tab_history::on_input(core, s, i),
             TuiDialog::UnlockDevice(s) => unlock_device::on_input(core, s, i),
             TuiDialog::Versions(s) => versions::on_input(core, s, i),
@@ -240,6 +243,7 @@ impl TuiDialog {
             TuiDialog::SaveWorkspace(s) => save_workspace::on_mouse(core, s, m),
             TuiDialog::Shelf(s) => shelf::on_mouse(core, s, m),
             TuiDialog::Split(s) => split::on_mouse(core, s, m),
+            TuiDialog::Share(s) => share::on_mouse(core, s, m),
             TuiDialog::TabHistory(s) => tab_history::on_mouse(core, s, m),
             TuiDialog::UnlockDevice(s) => unlock_device::on_mouse(core, s, m),
             TuiDialog::Versions(s) => versions::on_mouse(core, s, m),
@@ -279,6 +283,7 @@ impl TuiDialog {
             TuiDialog::SaveWorkspace(s) => save_workspace::stale(core, s),
             TuiDialog::Shelf(s) => shelf::stale(core, s),
             TuiDialog::Split(s) => split::stale(core, s),
+            TuiDialog::Share(s) => share::stale(core, s),
             TuiDialog::TabHistory(s) => tab_history::stale(core, s),
             TuiDialog::UnlockDevice(s) => unlock_device::stale(core, s),
             TuiDialog::Versions(s) => versions::stale(core, s),
@@ -398,6 +403,7 @@ pub fn tick(core: &mut AppCore, st: &mut State) {
         match d {
             TuiDialog::TabHistory(s) => tab_history::tick(core, s),
             TuiDialog::Split(s) => split::tick(core, s),
+            TuiDialog::Share(s) => share::tick(core, s),
             TuiDialog::Shelf(s) => shelf::tick(core, s),
             TuiDialog::UnlockDevice(s) => unlock_device::tick(core, s),
             TuiDialog::Versions(s) => versions::tick(core, s),

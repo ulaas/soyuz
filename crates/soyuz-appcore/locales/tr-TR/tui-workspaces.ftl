@@ -20,4 +20,5 @@ tui-workspaces-history-hints = Yukarı/Aşağı yer · Enter oraya git · Esc ka
 
 ## Hakkında
 
+tui-share-hints = C adresi kopyala · Yukarı / Aşağı başka bir adres · Enter / Esc paylaşımı durdur
 tui-workspaces-about-hints = C bilgiyi kopyala · Enter / Esc kapat

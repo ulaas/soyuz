@@ -22,6 +22,7 @@ pub mod preview_hex;
 pub mod preview_info;
 pub mod preview_load;
 pub mod properties;
+pub mod quick_share;
 pub mod quicklook;
 pub mod remote;
 pub mod remote_discovery;

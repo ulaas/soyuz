@@ -308,6 +308,10 @@ settings-behaviour-watch-poll-desc = Sistemin dosya izleme sınırı (fs.inotify
 
 settings-remote-hosts-desc = { $count } ana makine anahtarına güveniliyor. Yeniden sorulması için birini unutun.
 settings-remote-shares = \\sunucu için paylaşımları listele
+settings-remote-share-minutes = Hızlı paylaşımın bitişi
+settings-remote-share-minutes-desc = Paylaşım bu kadar dakika sonra kendiliğinden biter (0: penceresini kapattığınızda).
+settings-remote-share-port = Hızlı paylaşım bağlantı noktası
+settings-remote-share-port-desc = Diğer aygıtların bağlandığı bağlantı noktası (0: boş herhangi biri). Güvenlik duvarında izin vermek için sabitleyin.
 settings-remote-discover = Bu ağdaki sunucuları bul
 settings-remote-discover-desc = Sunucuya bağlan, yerel ağda kendini duyuran SFTP, WebDAV ve FTP sunucularını listeler (mDNS / Bonjour).
 

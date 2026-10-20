@@ -63,6 +63,7 @@ gltf.workspace = true
 symphonia.workspace = true
 rodio.workspace = true
 similar.workspace = true
+qrcode.workspace = true
 # SVG previews rasterized for the terminal UI (`services::preview_raster`); the version
 # egui_extras' `svg` feature uses, no GUI crate.
 resvg.workspace = true

@@ -1219,6 +1219,11 @@ pub struct RemoteSection {
     /// Connect to server lists SFTP / WebDAV / FTP (and SMB off Windows) servers that
     /// announce themselves on the local network (mDNS / DNS-SD), while the dialog is open.
     pub discover: bool,
+    /// Quick share stops by itself after this many minutes (0 = when its window closes).
+    pub share_minutes: u64,
+    /// Quick share listens on this port (0 = any free port; fix it to allow it in a
+    /// firewall).
+    pub share_port: u16,
 }
 
 /// `[linux]`: Linux desktop integration. Ignored on Windows and macOS.

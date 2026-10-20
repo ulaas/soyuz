@@ -1261,6 +1261,22 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.remote.discover);
             },
         );
+        r.row_kw(
+            tr!("settings-remote-share-minutes"),
+            tr!("settings-remote-share-minutes-desc"),
+            "quick share qr",
+            |ui| {
+                number(ui, &mut d.remote.share_minutes, 0..=1440, " min");
+            },
+        );
+        r.row_kw(
+            tr!("settings-remote-share-port"),
+            tr!("settings-remote-share-port-desc"),
+            "quick share firewall",
+            |ui| {
+                number(ui, &mut d.remote.share_port, 0..=65535, "");
+            },
+        );
         let hosts = soyuz_vfs::registry::known_hosts().entries();
         r.row_kw(
             tr!("settings-remote-trusted"),

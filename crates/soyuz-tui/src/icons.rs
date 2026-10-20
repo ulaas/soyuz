@@ -175,6 +175,7 @@ fn table(id: IconId) -> (&'static str, &'static str, &'static str) {
         I::Tray => ("\u{f01c}", "⎕", "[]"),
         I::Cube => ("\u{f1b2}", "◈", "#"),
         I::PuzzlePiece => ("\u{f12e}", "✣", "+"),
+        I::QrCode => ("\u{f029}", "▦", "qr"),
         // Marks.
         I::BookmarkSimple => ("\u{f02e}", "⚑", "B"),
         I::Heart => ("\u{f004}", "♥", "<3"),
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn every_glyph_is_narrow_and_safe() {
-        assert_eq!(IconId::ALL.len(), 165);
+        assert_eq!(IconId::ALL.len(), 166);
         for set in SETS {
             for &id in IconId::ALL {
                 let g = glyph(id, set);

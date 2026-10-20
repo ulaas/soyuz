@@ -5395,6 +5395,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
+name = "qrcode"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d68782463e408eb1e668cf6152704bd856c78c5b6417adaee3203d8f4c1fc9ec"
+
+[[package]]
 name = "quantette"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6852,6 +6858,7 @@ dependencies = [
  "nucleo-matcher",
  "parking_lot",
  "pdfium-render",
+ "qrcode",
  "quick-xml 0.42.0",
  "regex",
  "reqwest",
@@ -7151,6 +7158,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "futures-util",
+ "getrandom 0.4.3",
  "if-addrs",
  "log",
  "md-5",

@@ -477,6 +477,8 @@ impl Default for RemoteSection {
             preview_max_mb: 64,
             share_enumeration: true,
             discover: true,
+            share_minutes: 30,
+            share_port: 0,
         }
     }
 }

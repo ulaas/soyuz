@@ -20,4 +20,5 @@ tui-workspaces-history-hints = Up/Down place · Enter go there · Esc close
 
 ## About
 
+tui-share-hints = C copy address · Up / Down another address · Enter / Esc stop sharing
 tui-workspaces-about-hints = C copy info · Enter / Esc close

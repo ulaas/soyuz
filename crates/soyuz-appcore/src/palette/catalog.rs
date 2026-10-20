@@ -319,6 +319,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::Undo => (IconId::ArrowUUpLeft, "revert"),
         A::Redo => (IconId::ArrowUUpRight, ""),
         A::PreviousVersions => (IconId::ClockCounterClockwise, "snapshot vss backup"),
+        A::QuickShare => (IconId::QrCode, "share phone qr http lan send link wifi transfer"),
         A::MediaConvert => (IconId::FilmStrip, "ffmpeg video audio transcode encode mp4 webm"),
         A::MediaExtractAudio => (IconId::MusicNotes, "ffmpeg sound track soundtrack mp3 flac"),
         A::MediaTrim => (IconId::Scissors, "ffmpeg cut clip video audio"),

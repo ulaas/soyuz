@@ -11,6 +11,7 @@
 //!   [`registry::Hooks`] for credentials and host-key confirmation.
 //! * [`transfer`]: streaming copies between any two providers with progress, cancel and
 //!   resume of partial transfers.
+//! * [`share`]: Quick share, a temporary read-only HTTP server for local files.
 //!
 //! Everything is synchronous for callers (worker threads); network providers run on a
 //! small internal tokio runtime.
@@ -29,6 +30,7 @@ pub mod registry;
 mod rt;
 pub mod s3;
 pub mod sftp;
+pub mod share;
 #[cfg(not(windows))]
 pub mod smb;
 pub mod transfer;

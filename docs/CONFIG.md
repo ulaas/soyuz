@@ -567,6 +567,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `preview_max_mb` | integer | `64` | Larger remote files are not downloaded just for a preview. |
 | `share_enumeration` | boolean | `true` | Typing `\\server` or `smb://server` lists its shares (Windows `NetShareEnum`; elsewhere srvsvc over SMB). |
 | `discover` | boolean | `true` | Connect to server lists SFTP / WebDAV / FTP (and SMB off Windows) servers that announce themselves on the local network (mDNS / DNS-SD), while the dialog is open. |
+| `share_minutes` | integer | `30` | Quick share stops by itself after this many minutes (0 = when its window closes). |
+| `share_port` | integer | `0` | Quick share listens on this port (0 = any free port; fix it to allow it in a firewall). |
 
 ## `[linux]`
 

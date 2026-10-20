@@ -48,6 +48,8 @@ pub enum ToolCmd {
     Versions(PathBuf, bool, Option<(u64, Option<std::time::SystemTime>)>),
     /// A previous-versions action from a panel without app access (Properties tab).
     VersionAction(VersionCmd),
+    /// Quick share these local files / folders (`models::quick_share`).
+    QuickShare(Vec<PathBuf>),
 }
 
 /// What the user asked for in a previous-versions panel (applied by [`apply_version`]).
@@ -87,7 +89,7 @@ pub fn take_queue() -> Vec<ToolCmd> {
 
 /// Debug / automation hook (like `SOYUZ_THROTTLE_MBPS`): `SOYUZ_OPEN_TOOL` opens tools at
 /// startup, e.g. `treemap=C:\data`, `compare=C:\a|C:\b`, `dupes=C:\a`, `shelf=C:\x|C:\y`,
-/// `split=C:\f.bin`, several separated by `;;`. Queued once per process; both frontends call it
+/// `split=C:\f.bin`, `share=C:\a|C:\b.jpg`, several separated by `;;`. Queued once per process; both frontends call it
 /// before draining the queue ([`take_queue`]).
 pub fn debug_open_once() {
     thread_local!(static DONE: Cell<bool> = const { Cell::new(false) });
@@ -108,6 +110,7 @@ pub fn debug_open_once() {
             ("join", Some(p)) => ToolCmd::Join(p),
             ("profiles", _) => ToolCmd::SyncProfiles,
             ("profile", _) if !arg.is_empty() => ToolCmd::CompareProfile(arg.to_string()),
+            ("share", Some(_)) => ToolCmd::QuickShare(paths),
             ("versions", Some(p)) => {
                 let dir = p.is_dir();
                 ToolCmd::Versions(p, dir, None)
@@ -289,6 +292,7 @@ pub fn handles(a: &Action) -> bool {
             | A::ToggleShelf
             | A::SyncProfiles
             | A::PreviousVersions
+            | A::QuickShare
     )
 }
 
@@ -388,6 +392,18 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
         }
         A::ToggleShelf => SHELF.with_borrow_mut(|s| s.open = !s.open),
         A::SyncProfiles => queue(ToolCmd::SyncProfiles),
+        A::QuickShare => {
+            if matches!(app.ws.pane().location, Location::Remote(_)) {
+                app.ui.toasts.push(Toast::info(tr!("tools-share-remote")));
+            } else if !sel_paths.is_empty() {
+                queue(ToolCmd::QuickShare(sel_paths));
+            } else if let Some(here) = here {
+                // Nothing selected: the folder shown.
+                queue(ToolCmd::QuickShare(vec![here]));
+            } else {
+                app.ui.toasts.push(Toast::info(tr!("tools-share-select")));
+            }
+        }
         A::PreviousVersions => {
             let pane = app.ws.pane();
             match pane.selected_entries().as_slice() {

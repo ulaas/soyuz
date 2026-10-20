@@ -488,3 +488,35 @@ tools-versions-none-body-macos = { $count } Time Machine yedeğinin hiçbirinde 
     } farklı bir sürümü yok.
 tools-versions-no-copies-macos = Time Machine yedeği bulunamadı
 tools-versions-no-copies-body-macos = Soyuz bağlı Time Machine yedeklerini okur: takılı bir yedekleme diski (Backups.backupdb) ya da macOS'un /Volumes/.timemachine altına bağladığı APFS yedekleri (örneğin Time Machine'de gezinirken). Bağlı olmayan yerel anlık görüntüler root gerektirir ve listelenmez.
+
+## Hızlı paylaşım (`models::quick_share`).
+tools-menu-quick-share = Hızlı paylaş…
+tools-share-title = Hızlı paylaşım
+tools-share-intro = Kodu bir telefonla tarayın ya da adresi aynı ağdaki bir bilgisayarda açın. Adresi bilen herkes, paylaşım bitene kadar paylaşılanları açıp indirebilir.
+tools-share-items = { $count ->
+    [one] 1 öge
+   *[other] { $count } öge
+}
+tools-share-address = Adres
+tools-share-copy = Adresi kopyala
+tools-share-stop = Paylaşımı durdur
+tools-share-stopped = Paylaşım durduruldu.
+tools-share-expired = Paylaşım { $minutes } dakika sonra bitti.
+tools-share-waiting = Henüz kimse açmadı
+tools-share-devices = { $count ->
+    [one] 1 aygıt
+   *[other] { $count } aygıt
+}
+tools-share-downloads = { $count ->
+    [one] 1 indirme
+   *[other] { $count } indirme
+}
+tools-share-sent = { $size } gönderildi
+tools-share-ends = { $time } sonra biter
+tools-share-until-closed = bunu kapatınca biter
+tools-share-no-network = Ağ bağlantısı yok: diğer aygıtlar bu bilgisayara ulaşamaz.
+tools-share-nothing = Seçilen ögeler artık bulunamıyor.
+tools-share-failed = Paylaşım başlatılamadı: { $error }
+tools-share-remote = Hızlı paylaşım bu bilgisayardaki dosyalarla çalışır
+tools-share-select = Paylaşmak için dosya ya da klasör seçin
+tools-share-shared = Paylaşılan

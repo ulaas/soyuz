@@ -317,6 +317,10 @@ settings-remote-hosts-desc = { $count ->
    *[other] { $count } host keys trusted. Forget one to be asked again.
 }
 settings-remote-shares = List shares for \\server
+settings-remote-share-minutes = Quick share stops after
+settings-remote-share-minutes-desc = Sharing ends by itself after this many minutes (0: when you close its window).
+settings-remote-share-port = Quick share port
+settings-remote-share-port-desc = The port other devices connect to (0: any free port). Fix it to allow it in a firewall.
 settings-remote-discover = Find servers on this network
 settings-remote-discover-desc = Connect to server lists SFTP, WebDAV and FTP servers that announce themselves on the local network (mDNS / Bonjour).
 

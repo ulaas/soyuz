@@ -9,6 +9,7 @@
 //! | `Treemap` / `Duplicates` | a full-screen tool (`crate::input::screens::{open_treemap, open_dupes}`) |
 //! | `Split` / `Join` | `crate::input::dialogs::split::{open_split, open_join}` |
 //! | `Versions` | `crate::input::dialogs::versions::open` |
+//! | `QuickShare` | `crate::input::dialogs::share::open` |
 //!
 //! The `SOYUZ_OPEN_TOOL` debug hook (`models::tools::debug_open_once`) queues its tools
 //! on the first drain; the drop shelf dialog follows the core's shelf flag
@@ -39,6 +40,7 @@ pub fn drain(app: &mut App) {
             ToolCmd::Split(path) => dialogs::split::open_split(app, path),
             ToolCmd::Join(path) => dialogs::split::open_join(app, path),
             ToolCmd::Versions(path, is_dir, current) => dialogs::versions::open(app, path, is_dir, current),
+            ToolCmd::QuickShare(paths) => dialogs::share::open(app, paths),
             // Applied by `models::tools::apply_model_cmds`.
             ToolCmd::ShelfAdd(_)
             | ToolCmd::ToggleTag { .. }

@@ -150,6 +150,8 @@ futures-util = { version = "0.3.31", default-features = false, features = ["std"
 schemars = "1.2.2"
 # MCP (soyuz-mcp): token generation and the `=?base64?…?=` header encoding.
 getrandom = "0.4.3"
+# Quick share: the address as a QR code (no image / SVG output).
+qrcode = { version = "0.14.1", default-features = false }
 
 # --- index: SQLite + FTS5, bundled C amalgamation (public domain; rusqlite MIT) ---
 rusqlite = { version = "0.40.2", default-features = false, features = ["bundled", "functions", "cache"] }

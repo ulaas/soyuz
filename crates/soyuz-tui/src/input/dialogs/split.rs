@@ -52,11 +52,16 @@ pub struct Ticker {
 
 impl Ticker {
     fn start(wake: Wake) -> Ticker {
+        Ticker::every(wake, TICK)
+    }
+
+    /// Wakes the frame loop every `period` until dropped (also Quick share's status).
+    pub fn every(wake: Wake, period: Duration) -> Ticker {
         let stop = Arc::new(AtomicBool::new(false));
         let s = stop.clone();
-        let _ = std::thread::Builder::new().name("soyuz-split-tick".into()).spawn(move || {
+        let _ = std::thread::Builder::new().name("soyuz-dialog-tick".into()).spawn(move || {
             while !s.load(Ordering::Relaxed) {
-                std::thread::sleep(TICK);
+                std::thread::sleep(period);
                 wake();
             }
         });

@@ -510,13 +510,25 @@ All from the palette or the context menu:
   that verified their copies show a *Verified* badge in the activity panel and history
   (or turn verification on for every copy in Settings › Jobs).
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
+- **Quick share** — *Quick share…* (palette, or a selection's menu) shares the selected
+  files and folders (nothing selected: the folder shown) with a phone or another computer on
+  the same network: the window shows an address and its QR code. Open it in any browser to
+  see the items, open them, browse shared folders and download (videos can seek). Sharing
+  is read-only, lives under a random address that can't be guessed, and stops when you
+  close the window, press *Stop sharing*, or after `[remote] share_minutes` (30 by
+  default). With several networks (Wi-Fi, a cable, a VPN) pick the address of the one the
+  other device is on. There is no encryption (plain HTTP), so use it on networks you trust.
+  The first time, Windows may ask whether Soyuz may accept connections; allow private
+  networks. To allow it in a firewall by hand, fix the port (`[remote] share_port`). In
+  the terminal UI the code is drawn with block characters (it reads best on a dark
+  background) and C copies the address.
 - **Split / join files**, **checksums** (BLAKE3, SHA-256, SHA-1, MD5, CRC32), **archives**
   (create, extract here / to folder, test; browse zip / 7z / tar / RAR / ISO / CAB / .deb /
   .rpm like folders, including cabinet sets (open any `.cab` of the set), split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, paste to
   add files, Rename and Delete edit the archive, and the original goes to the trash so it
   can be undone).
 - Tool windows (treemap, compare, duplicates, previous versions, split / join, sync
-  profiles) sit over a dimmed main window that ignores clicks and shortcuts until you close
+  profiles, quick share) sit over a dimmed main window that ignores clicks and shortcuts until you close
   them (Esc closes the frontmost one). Result rows in **Compare** (left / right column =
   that side's copy), **Find duplicates** and **Previous versions** can be dragged onto a
   pane, folder, tab or sidebar entry behind the tool, or out to the desktop / other apps;
