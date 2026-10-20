@@ -1180,8 +1180,18 @@ impl Worker {
         if !self.cfg.content || !self.content_dirty {
             return false;
         }
-        let todo = db::content_todo(&self.conn, &self.cfg.content_extensions, self.cfg.content_max_bytes, 256)
+        let mut todo = db::content_todo(&self.conn, &self.cfg.content_extensions, self.cfg.content_max_bytes, 256)
             .unwrap_or_default();
+        if todo.len() < 256 {
+            let docs = db::content_todo(
+                &self.conn,
+                &self.cfg.document_extensions,
+                self.cfg.document_max_bytes,
+                256 - todo.len(),
+            )
+            .unwrap_or_default();
+            todo.extend(docs);
+        }
         if todo.is_empty() {
             self.content_dirty = false;
             self.refresh_counts(true);
@@ -1197,7 +1207,7 @@ impl Worker {
             let handles: Vec<_> = todo
                 .chunks(chunk)
                 .map(|part| {
-                    s.spawn(move || part.iter().map(|t| crate::content::read_text(&t.path, max)).collect::<Vec<_>>())
+                    s.spawn(move || part.iter().map(|t| crate::content::read_body(&t.path, max)).collect::<Vec<_>>())
                 })
                 .collect();
             handles.into_iter().flat_map(|h| h.join().unwrap_or_default()).collect()

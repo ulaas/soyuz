@@ -422,3 +422,27 @@ fn unreadable_roots_keep_their_index() {
     wait_until("back", || ix.status().unavailable_roots.is_empty() && names(&ix, "new") == ["new.txt"]);
     crate::worker::FORCE_POLL.lock().retain(|r| r != &croot);
 }
+
+#[test]
+fn document_text_is_indexed_through_the_extractor() {
+    let root = tempfile::tempdir().unwrap();
+    let db = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("scan.idxdoc"), b"\0\0\0binary").unwrap();
+    std::fs::write(root.path().join("locked.idxdoc"), b"\0").unwrap();
+    soyuz_core::doc_text::set_extractor(
+        &["idxdoc"],
+        1 << 20,
+        Arc::new(|p| match p.file_name().and_then(|n| n.to_str()) {
+            Some("locked.idxdoc") => Err("encrypted".into()),
+            _ => Ok("quarterly revenue table".into()),
+        }),
+    );
+    let mut c = cfg(root.path(), db.path());
+    c.document_extensions = vec!["idxdoc".into()];
+    c.document_max_bytes = 1 << 20;
+    let ix = Index::start(c, Arc::new(|| {}));
+    wait_idle(&ix);
+    wait_until("document contents", || names(&ix, "content:revenue") == ["scan.idxdoc"]);
+    soyuz_core::doc_text::clear_extractor();
+    assert!(names(&ix, "content:binary").is_empty(), "the bytes on disk are not indexed");
+}

@@ -303,3 +303,28 @@ fn missing_root_reports_error_and_finishes() {
     }
     assert_eq!(errors, 1);
 }
+
+#[test]
+fn documents_are_searched_in_their_text() {
+    let t = tempfile::tempdir().unwrap();
+    let r = t.path();
+    // Binary on disk (NUL bytes): only the registered extractor's text can match.
+    write(r, "a.fakedoc", b"\0\0binary needle\0");
+    write(r, "locked.fakedoc", b"\0");
+    write(r, "huge.fakedoc", &vec![0u8; 4096]);
+    write(r, "plain.txt", b"no match here\n");
+    soyuz_core::doc_text::set_extractor(
+        &["fakedoc"],
+        1024,
+        Arc::new(|p| match p.file_name().and_then(|n| n.to_str()) {
+            Some("locked.fakedoc") => Err("encrypted".into()),
+            _ => Ok("first page\n\nthe Needle is on page two\n".into()),
+        }),
+    );
+    let content = Some(ContentPatternSpec { regex: false, text: "needle".into(), case_sensitive: false });
+    let out = run(SearchQuery { content, ..q(r) });
+    soyuz_core::doc_text::clear_extractor();
+    assert_eq!(out.rels(r), set(&["a.fakedoc"]), "the locked one is skipped, the huge one is over the cap");
+    let (_, m) = &out.hits[0];
+    assert_eq!((m[0].line, m[0].col, m[0].text.as_str()), (3, 4, "the Needle is on page two"));
+}

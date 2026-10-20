@@ -224,6 +224,7 @@ edit_level = 6                   # deflate level (0 = store, 1-9) for files adde
 threads = 0                      # 0 = auto
 respect_gitignore = false
 content_max_mib = 8
+document_text = true             # content search and the index also read PDF text (files up to [preview] max_document_mib)
 
 [search.index]                   # background index (SQLite + FTS5): instant search + smart folders
 enabled = false

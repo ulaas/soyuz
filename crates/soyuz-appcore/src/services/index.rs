@@ -76,6 +76,9 @@ pub fn index_config(c: &SearchIndex, debounce: Duration) -> IndexConfig {
             .map(|e| e.trim().trim_start_matches('.').to_lowercase())
             .filter(|e| !e.is_empty())
             .collect(),
+        // Filled in from `[search] document_text` by `pump`.
+        document_extensions: Vec::new(),
+        document_max_bytes: 0,
         usn: c.usn_journal,
         throttle_ms: c.throttle_ms,
         watch_debounce: debounce,
@@ -86,7 +89,11 @@ pub fn index_config(c: &SearchIndex, debounce: Duration) -> IndexConfig {
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
     let c = &app.config.search.index;
     let debounce = Duration::from_millis(app.config.behaviour.watch_debounce_ms.clamp(100, 5000));
-    let desired = c.enabled.then(|| index_config(c, debounce));
+    let desired = c.enabled.then(|| {
+        let mut ic = index_config(c, debounce);
+        (ic.document_extensions, ic.document_max_bytes) = crate::services::search::index_documents(&app.config);
+        ic
+    });
     let refresh_every = Duration::from_secs(c.smart_refresh_secs.max(1));
     let use_for_search = c.use_for_search;
     let rescan_secs = c.rescan_interval_secs.max(1);

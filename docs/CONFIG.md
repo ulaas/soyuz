@@ -413,6 +413,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `threads` | integer | `0` | 0 = auto. |
 | `respect_gitignore` | boolean | `false` | Skip files ignored by `.gitignore` / `.ignore` when searching. |
 | `content_max_mib` | integer | `8` | Content search skips files larger than this (MiB). |
+| `document_text` | boolean | `true` | Content search and the index's content words also read the text of PDFs (through pdfium when it is installed, else the built-in reader), for files up to `[preview] max_document_mib`. |
 
 ## `[[search.saved]]`
 

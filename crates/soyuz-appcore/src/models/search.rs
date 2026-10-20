@@ -317,6 +317,7 @@ fn expand_home(p: &Path) -> PathBuf {
 /// Per frame: stream search hits / folder sizes into panes, surface errors.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
     svc::init(&app.wake, app.config.search.threads);
+    svc::sync_document_text(&app.config);
     crate::models::smart::pump(app, host);
     for n in svc::pump(&mut app.ws) {
         app.ui.toasts.push(Toast::error(tr!("views-search-failed")).body(n));

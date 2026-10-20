@@ -526,6 +526,12 @@ name patterns (substring, glob, regex, fuzzy), content search, size / date / kin
 `.gitignore` awareness. Results stream into a normal file view, so every action works on
 them. Save a search to keep it in the sidebar.
 
+Content search also looks inside PDFs, in their text (through pdfium when it is installed,
+else the built-in reader), and the index's `content:` words include PDF text when content
+indexing is on. Turn it off with *Search inside PDFs* in Settings → Search (`[search]
+document_text`); PDFs larger than the document limit under Preview are skipped, and an
+encrypted PDF is only searched after its password was typed this session.
+
 In the default **Contains** mode the text is a small query language:
 
 | Example | Meaning |

@@ -1,5 +1,6 @@
-//! Text extraction for content indexing: small text files only (UTF-8, or UTF-16 with a
-//! BOM); anything with NUL bytes in its first 8 KiB counts as binary and is skipped.
+//! Text extraction for content indexing: small text files (UTF-8, or UTF-16 with a BOM;
+//! anything with NUL bytes in its first 8 KiB counts as binary and is skipped), plus the
+//! text of documents (PDF) when the app registered an extractor.
 
 use std::io::Read;
 use std::path::Path;
@@ -10,6 +11,19 @@ pub const DEFAULT_EXTENSIONS: &[&str] = &[
     "conf", "xml", "html", "htm", "css", "scss", "js", "mjs", "ts", "tsx", "jsx", "rs", "py", "go", "java", "kt", "c",
     "h", "cc", "cpp", "hpp", "cs", "rb", "php", "swift", "sh", "ps1", "bat", "cmd", "sql", "lua", "tex", "srt",
 ];
+
+/// The indexed body of `path`: a document's text through the app's extractor
+/// (`soyuz_core::doc_text`), else the file read as text; at most `max` bytes either way.
+pub fn read_body(path: &Path, max: u64) -> Option<String> {
+    match soyuz_core::doc_text::extract(path) {
+        Some(Ok(text)) => Some(soyuz_core::doc_text::truncate(text, usize::try_from(max).unwrap_or(usize::MAX))),
+        Some(Err(e)) => {
+            log::debug!("index: {}: {e}", path.display());
+            None
+        }
+        None => read_text(path, max),
+    }
+}
 
 /// Read `path` (at most `max` bytes) as text; `None` for binary or unreadable files.
 pub fn read_text(path: &Path, max: u64) -> Option<String> {

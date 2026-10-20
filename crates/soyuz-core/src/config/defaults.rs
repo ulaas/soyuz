@@ -307,6 +307,7 @@ impl Default for Search {
             threads: 0,
             respect_gitignore: false,
             content_max_mib: 8,
+            document_text: true,
             saved: Vec::new(),
             index: SearchIndex::default(),
         }

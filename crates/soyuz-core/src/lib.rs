@@ -11,6 +11,7 @@
 pub mod columns;
 pub mod config;
 pub mod control;
+pub mod doc_text;
 pub mod entry;
 pub mod error;
 pub mod filter;

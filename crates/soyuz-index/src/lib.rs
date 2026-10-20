@@ -52,6 +52,12 @@ pub struct IndexConfig {
     pub content_max_bytes: u64,
     /// Extensions whose contents are indexed (lower-case, no dot).
     pub content_extensions: Vec<String>,
+    /// Document extensions (PDF) whose text is indexed through the extractor the app
+    /// registered in `soyuz_core::doc_text` (empty = none). Their text is cut to
+    /// `content_max_bytes`.
+    pub document_extensions: Vec<String>,
+    /// Largest document read (bytes on disk).
+    pub document_max_bytes: u64,
     /// Use the NTFS change journal when possible.
     pub usn: bool,
     /// Pause (ms) after every [`THROTTLE_BATCH`] crawled entries.
@@ -71,6 +77,8 @@ impl Default for IndexConfig {
             content: false,
             content_max_bytes: 1 << 20,
             content_extensions: content::DEFAULT_EXTENSIONS.iter().map(|s| s.to_string()).collect(),
+            document_extensions: Vec::new(),
+            document_max_bytes: 0,
             usn: true,
             throttle_ms: 2,
             watch_debounce: Duration::from_millis(500),

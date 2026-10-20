@@ -843,6 +843,10 @@ pub struct Search {
     pub respect_gitignore: bool,
     /// Content search skips files larger than this (MiB).
     pub content_max_mib: u64,
+    /// Content search and the index's content words also read the text of PDFs (through
+    /// pdfium when it is installed, else the built-in reader), for files up to
+    /// `[preview] max_document_mib`.
+    pub document_text: bool,
     /// Saved searches.
     pub saved: Vec<SavedSearchEntry>,
     /// Background index: `[search.index]`.

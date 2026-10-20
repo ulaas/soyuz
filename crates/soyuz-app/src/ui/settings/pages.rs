@@ -1789,6 +1789,9 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-search-content-limit"), tr!("settings-search-content-limit-desc"), "grep", |ui| {
             number(ui, &mut d.search.content_max_mib, 1..=1024, " MiB");
         });
+        r.row_kw(tr!("settings-search-document-text"), tr!("settings-search-document-text-desc"), "pdf", |ui| {
+            switch(ui, &mut d.search.document_text);
+        });
         if !d.search.saved.is_empty() {
             r.block(tr!("settings-search-saved"), "", |ui| {
                 let mut remove = None;

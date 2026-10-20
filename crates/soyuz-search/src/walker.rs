@@ -323,24 +323,39 @@ fn run_walk(q: &SearchQuery, threads: usize, shared: &Arc<Shared>, itx: &Sender<
                 } else {
                     entry.size
                 };
-                if size > shared.compiled.content_max_size {
-                    return WalkState::Continue;
-                }
-                match search_file(cm, dent.path(), shared.compiled.content_max_size, &mut buf) {
-                    Ok(Some(m)) if !m.is_empty() => matches = m,
-                    Ok(_) => return WalkState::Continue,
-                    Err(e) => {
-                        let p = dent.path().to_path_buf();
-                        let fe = FsError::from_io("search", Some(&p), &e);
-                        return if send_cancellable(&itx, Internal::Error(p, fe), &shared.ctl) {
-                            WalkState::Continue
-                        } else {
-                            WalkState::Quit
-                        };
+                // Documents (PDF) are searched in their text when the app registered a reader;
+                // one that can't be read (encrypted, damaged) is simply not a hit.
+                if soyuz_core::doc_text::handles(dent.path()) {
+                    if size > soyuz_core::doc_text::max_bytes() {
+                        return WalkState::Continue;
                     }
-                }
-                if buf.capacity() > 1 << 20 {
-                    buf = Vec::new();
+                    match soyuz_core::doc_text::extract(dent.path()) {
+                        Some(Ok(text)) => matches = cm.search(text.as_bytes()),
+                        Some(Err(e)) => log::debug!("search: {}: {e}", dent.path().display()),
+                        None => {}
+                    }
+                    if matches.is_empty() {
+                        return WalkState::Continue;
+                    }
+                } else if size > shared.compiled.content_max_size {
+                    return WalkState::Continue;
+                } else {
+                    match search_file(cm, dent.path(), shared.compiled.content_max_size, &mut buf) {
+                        Ok(Some(m)) if !m.is_empty() => matches = m,
+                        Ok(_) => return WalkState::Continue,
+                        Err(e) => {
+                            let p = dent.path().to_path_buf();
+                            let fe = FsError::from_io("search", Some(&p), &e);
+                            return if send_cancellable(&itx, Internal::Error(p, fe), &shared.ctl) {
+                                WalkState::Continue
+                            } else {
+                                WalkState::Quit
+                            };
+                        }
+                    }
+                    if buf.capacity() > 1 << 20 {
+                        buf = Vec::new();
+                    }
                 }
             }
             let n = shared.hits.fetch_add(1, Ordering::Relaxed) + 1;

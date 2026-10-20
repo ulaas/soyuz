@@ -8,8 +8,8 @@
 //!   reads the page count, document info and the text of the first pages, and the UI
 //!   explains how to get page rendering.
 //!
-//! [`extract_text`] is the shared text entry point (preview "Text" view, and a hook for
-//! search snippets).
+//! [`extract_text`] is the shared text entry point (preview "Text" view); [`search_text`]
+//! reads the whole document for content search and the index (`soyuz_core::doc_text`).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,6 +18,10 @@ use std::sync::Arc;
 const TEXT_PAGES: u32 = 8;
 /// Characters of extracted text kept.
 pub const TEXT_CHARS: usize = 24_000;
+/// Pages read for content search and the index.
+const SEARCH_PAGES: u32 = 5_000;
+/// Characters of a document's text searched / indexed.
+const SEARCH_CHARS: usize = 4_000_000;
 
 /// Where the PDF bytes come from.
 #[derive(Clone, Debug)]
@@ -170,8 +174,10 @@ pub fn pdf_date(s: &str) -> String {
     }
 }
 
-fn clean_text(s: &str) -> String {
-    let mut out = String::with_capacity(s.len().min(TEXT_CHARS * 4));
+/// Trailing spaces and runs of blank lines removed; at most `max` characters.
+fn clean_text_max(s: &str, max: usize) -> String {
+    let mut out = String::with_capacity(s.len().min(max.saturating_mul(4)));
+    let mut chars = 0usize;
     let mut blank = 0usize;
     for line in s.lines() {
         let l = line.trim_end();
@@ -185,15 +191,21 @@ fn clean_text(s: &str) -> String {
         }
         out.push_str(l);
         out.push('\n');
-        if out.chars().count() > TEXT_CHARS {
+        chars += l.chars().count() + 1;
+        if chars > max {
             break;
         }
     }
-    out.chars().take(TEXT_CHARS).collect::<String>().trim().to_string()
+    out.chars().take(max).collect::<String>().trim().to_string()
 }
 
 /// Pure-Rust info + text (no page rendering).
 pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
+    lopdf_text(src, cap, TEXT_PAGES, TEXT_CHARS)
+}
+
+/// [`info_lopdf`] with the text of the first `page_limit` pages, at most `chars` characters.
+fn lopdf_text(src: &PdfSrc, cap: u64, page_limit: u32, chars: usize) -> Result<PdfInfo, String> {
     let bytes = src.bytes(cap)?;
     let password = match src {
         PdfSrc::File(p) => password_for(p),
@@ -246,9 +258,9 @@ pub fn info_lopdf(src: &PdfSrc, cap: u64) -> Result<PdfInfo, String> {
             }
         }
         if readable {
-            let nums: Vec<u32> = pages.keys().copied().take(TEXT_PAGES as usize).collect();
+            let nums: Vec<u32> = pages.keys().copied().take(page_limit as usize).collect();
             if let Ok(t) = doc.extract_text_with_limit(&nums, 32 << 20) {
-                info.text = clean_text(&t);
+                info.text = clean_text_max(&t, chars);
             }
         }
         Ok(info)
@@ -294,6 +306,19 @@ pub fn extract_text(src: &PdfSrc, pdfium_dir: &str, cap: u64) -> Result<String, 
     info_lopdf(src, cap).map(|i| i.text)
 }
 
+/// Text of the whole document (up to [`SEARCH_PAGES`] pages / [`SEARCH_CHARS`]
+/// characters) for content search and the index, pdfium first. An encrypted PDF opens
+/// with the password typed this session, else it is an error.
+pub fn search_text(path: &Path, pdfium_dir: &str, cap: u64) -> Result<String, String> {
+    let src = PdfSrc::File(path.to_path_buf());
+    #[cfg(feature = "pdf")]
+    if let Ok(info) = pdfium::info_pages(&src, &pdfium_dirs(pdfium_dir), cap, &|| false, SEARCH_PAGES, SEARCH_CHARS) {
+        return Ok(info.text);
+    }
+    let _ = pdfium_dir;
+    lopdf_text(&src, cap, SEARCH_PAGES, SEARCH_CHARS).map(|i| i.text)
+}
+
 #[cfg(feature = "pdf")]
 pub mod pdfium {
     //! The pdfium thread.
@@ -304,7 +329,7 @@ pub mod pdfium {
     use crossbeam_channel::{Sender, bounded, unbounded};
     use pdfium_render::prelude::*;
 
-    use super::{PageImage, PdfInfo, PdfSrc, TEXT_PAGES, clean_text, find_pdfium, pdf_date};
+    use super::{PageImage, PdfInfo, PdfSrc, TEXT_CHARS, TEXT_PAGES, clean_text_max, find_pdfium, pdf_date};
 
     type Job = Box<dyn FnOnce(Result<&Pdfium, &str>) + Send>;
 
@@ -424,6 +449,18 @@ pub mod pdfium {
 
     /// Page count, document info and the text of the first pages.
     pub fn info(src: &PdfSrc, dirs: &[PathBuf], cap: u64, stale: &dyn Fn() -> bool) -> Result<PdfInfo, String> {
+        info_pages(src, dirs, cap, stale, TEXT_PAGES, TEXT_CHARS)
+    }
+
+    /// [`info`] with the text of the first `max_pages` pages, at most `chars` characters.
+    pub fn info_pages(
+        src: &PdfSrc,
+        dirs: &[PathBuf],
+        cap: u64,
+        stale: &dyn Fn() -> bool,
+        max_pages: u32,
+        chars: usize,
+    ) -> Result<PdfInfo, String> {
         let src = src.clone();
         run(dirs, stale, move |p| {
             let mut buf = Vec::new();
@@ -447,18 +484,18 @@ pub mod pdfium {
                 info.page_size = Some((r.width().value, r.height().value));
             }
             let mut text = String::new();
-            for i in 0..(pages.len() as u32).min(TEXT_PAGES) {
+            for i in 0..(pages.len() as u32).min(max_pages) {
                 if let Ok(page) = pages.get(i as PdfPageIndex)
                     && let Ok(t) = page.text()
                 {
                     text.push_str(&t.all());
                     text.push_str("\n\n");
                 }
-                if text.len() > super::TEXT_CHARS * 2 {
+                if text.len() > chars.saturating_mul(2) {
                     break;
                 }
             }
-            info.text = clean_text(&text);
+            info.text = clean_text_max(&text, chars);
             Ok(info)
         })
     }
@@ -567,6 +604,45 @@ mod tests {
     }
 
     #[test]
+    fn content_search_finds_pdf_text() {
+        let d = tempfile::tempdir().unwrap();
+        std::fs::write(d.path().join("doc.pdf"), sample_pdf()).unwrap();
+        std::fs::write(d.path().join("notes.txt"), "nothing here").unwrap();
+        let text = search_text(&d.path().join("doc.pdf"), "Z:/no/pdfium", 1 << 20).unwrap();
+        assert!(text.contains("Hello from page one") && text.contains("Second page"), "{text:?}");
+
+        // Through the hook the app registers: the walker matches the PDF's text.
+        let mut config = soyuz_core::config::Config::default();
+        config.preview.pdfium_dir = "Z:/no/pdfium".into();
+        crate::services::search::sync_document_text(&config);
+        let q = soyuz_search::SearchQuery {
+            roots: vec![d.path().to_path_buf()],
+            content: Some(soyuz_search::ContentPatternSpec {
+                regex: false,
+                text: "second PAGE".into(),
+                case_sensitive: false,
+            }),
+            ..Default::default()
+        };
+        let h = soyuz_search::start(q, 1, std::sync::Arc::new(|| {})).unwrap();
+        let mut hits = Vec::new();
+        loop {
+            match h.rx.recv_timeout(std::time::Duration::from_secs(20)).unwrap() {
+                soyuz_search::SearchEvent::Hits(v) => hits.extend(v),
+                soyuz_search::SearchEvent::Done(_) => break,
+                _ => {}
+            }
+        }
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].0.path.ends_with("doc.pdf"));
+        assert!(hits[0].1[0].text.contains("Second page"), "{:?}", hits[0].1);
+
+        config.search.document_text = false;
+        crate::services::search::sync_document_text(&config);
+        assert!(!soyuz_core::doc_text::handles(Path::new("a.pdf")));
+    }
+
+    #[test]
     fn encrypted_pdf_asks_for_its_password() {
         let mut doc = lopdf::Document::load_mem(&sample_pdf()).unwrap();
         let id = || lopdf::Object::String(b"0123456789abcdef".to_vec(), lopdf::StringFormat::Hexadecimal);
@@ -605,7 +681,8 @@ mod tests {
         assert!(missing_message(&[PathBuf::from("C:/x")]).contains("pdfium"));
         assert!(missing_message(&[PathBuf::from("C:/x")]).contains(":\n\nC:/x\n\nOr set"), "paragraphs kept");
         assert_eq!(find_pdfium(&[PathBuf::from("Z:/definitely/missing")]), None);
-        assert_eq!(clean_text("a\n\n\n\nb  \n"), "a\n\nb");
+        assert_eq!(clean_text_max("a\n\n\n\nb  \n", TEXT_CHARS), "a\n\nb");
+        assert_eq!(clean_text_max("abc\ndef\n", 5), "abc\nd");
     }
 
     #[test]
