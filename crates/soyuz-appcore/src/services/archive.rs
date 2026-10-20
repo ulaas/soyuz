@@ -30,12 +30,22 @@ pub fn password_for(archive: &Path) -> Option<String> {
 }
 
 pub fn set_password(archive: &Path, password: String) {
+    soyuz_vfs::archive::set_password(archive, &password);
     if let Ok(mut m) = passwords().lock() {
         m.insert(archive.to_path_buf(), password);
     }
     if let Ok(mut c) = cache().lock() {
         c.retain(|k, _| k.0 != archive);
     }
+}
+
+/// `[archive] nested_max_mib`: archives inside archives or on servers are fetched to
+/// `<session temp>/nested` to browse them (`soyuz_vfs::archive`).
+pub fn configure_nested(a: &soyuz_core::config::Archive) {
+    soyuz_vfs::archive::configure(
+        a.nested_max_mib.saturating_mul(1024 * 1024),
+        Some(|| temp_root().map(|r| r.join("nested"))),
+    );
 }
 
 /// Listing that needs a password: `(pane, archive, wrong_password)`. The UI polls it
@@ -153,13 +163,15 @@ fn with_reader<T>(
     f: impl FnOnce(&mut dyn ArchiveReader) -> Result<T, ArchiveError>,
 ) -> Result<T, ArchiveError> {
     static TICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-    let mtime = std::fs::metadata(archive).and_then(|m| m.modified()).ok();
+    // Nested / remote archives: their fetched copy (the same one while unchanged).
+    let local = soyuz_vfs::archive::local_file(archive).map_err(ArchiveError::Io)?;
+    let mtime = std::fs::metadata(&local).and_then(|m| m.modified()).ok();
     let key: Key = (archive.to_path_buf(), mtime);
     let tick = TICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut cache = cache().lock().map_err(|_| ArchiveError::Cancelled)?;
     if !cache.contains_key(&key) {
         let pw = password_for(archive);
-        let reader = soyuz_archive::open(archive, pw.as_deref())?;
+        let reader = soyuz_archive::open(&local, pw.as_deref())?;
         cache.retain(|k, _| k.0 != archive);
         while cache.len() >= 4 {
             let oldest = cache.iter().min_by_key(|(_, (t, _))| *t).map(|(k, _)| k.clone());
@@ -287,7 +299,8 @@ fn open_entry(archive: &Path, inner: &str, limits: &ExtractLimits) -> Result<Pat
     let copied = with_reader(archive, |r| {
         let idx = soyuz_archive::find_entry(r, inner)
             .ok_or(ArchiveError::Corrupt(tr!("services-preview-entry-not-found").into()))?;
-        let archive_size = std::fs::metadata(archive).map_or(0, |m| m.len());
+        let archive_size =
+            soyuz_vfs::archive::local_file(archive).ok().and_then(|l| std::fs::metadata(l).ok()).map_or(0, |m| m.len());
         let mut rd = match limits.read_cap(archive_size) {
             Some(cap) => soyuz_archive::open_entry_capped(r, idx, cap)?,
             None => r.open_entry(idx)?,

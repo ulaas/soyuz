@@ -842,6 +842,9 @@ pub struct Archive {
     pub max_entry_mib: u64,
     /// Deflate level (0 = store, 1-9) for files added while editing inside a zip.
     pub edit_level: u8,
+    /// Archives inside archives or on servers are fetched to a private temp copy to
+    /// browse, preview and extract them, up to this many MiB (0 = never).
+    pub nested_max_mib: u64,
 }
 
 /// A `[[search.saved]]` entry. `query` is kept as a raw TOML table and deserialized into

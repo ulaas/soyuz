@@ -323,3 +323,51 @@ fn hostile_names_never_escape_an_upload_between_servers() {
     paths.retain(|p| !p.starts_with("/share/in/dir") && !p.starts_with("/Other"));
     assert_eq!(paths, ["/", "/share", "/share/in"]);
 }
+
+#[test]
+fn copy_out_of_an_archive_and_one_inside_it() {
+    use soyuz_archive::{ArchiveFormat, CreateOptions};
+    use soyuz_vfs::Provider as _;
+    let h = H::new();
+    let pack = |format, dest: &Path, base: &Path, inputs: &[PathBuf]| {
+        let opts = CreateOptions {
+            format,
+            level: 6,
+            password: None,
+            base_dir: base.to_path_buf(),
+            store_symlinks: true,
+            follow_symlinks: false,
+        };
+        soyuz_archive::create(dest, inputs, &opts, &soyuz_core::OpControl::new(), &mut ()).unwrap();
+    };
+    write(&h.p("t/x.txt"), b"deep");
+    write(&h.p("z/docs/a.txt"), b"alpha");
+    write(&h.p("z/docs/sub/b.bin"), &data(200_000));
+    write(&h.p("z/top.txt"), b"top");
+    pack(ArchiveFormat::Tar, &h.p("z/inner.tar"), &h.p("t"), &[h.p("t/x.txt")]);
+    let zip = h.p("arc.zip");
+    pack(ArchiveFormat::Zip, &zip, &h.p("z"), &[h.p("z/docs"), h.p("z/top.txt"), h.p("z/inner.tar")]);
+    let v = |inner: &str| soyuz_core::join_vpath(&zip, inner);
+    let dest = h.p("out");
+    std::fs::create_dir(&dest).unwrap();
+    let id = h.submit(transfer(
+        vec![v("docs"), v("top.txt"), soyuz_core::join_vpath(&v("inner.tar"), "x.txt")],
+        dest.clone(),
+        false,
+    ));
+    let sum = h.ok(id);
+    assert_eq!(sum.items_failed, 0, "{sum:?}");
+    assert_eq!(std::fs::read(dest.join("docs/a.txt")).unwrap(), b"alpha");
+    assert_eq!(std::fs::read(dest.join("docs/sub/b.bin")).unwrap(), data(200_000));
+    assert_eq!(std::fs::read(dest.join("top.txt")).unwrap(), b"top");
+    assert_eq!(std::fs::read(dest.join("x.txt")).unwrap(), b"deep");
+    // A move out of an archive copies; removing the source fails (archives are read-only
+    // here) and is skipped, so it stays.
+    std::fs::create_dir(h.p("out2")).unwrap();
+    let mut spec = JobSpec::new(transfer(vec![v("top.txt")], h.p("out2"), true));
+    spec.options.errors = Some(ErrorAction::Skip);
+    let sum = h.ok(h.engine.submit(spec));
+    assert_eq!(std::fs::read(h.p("out2/top.txt")).unwrap(), b"top");
+    assert_eq!(sum.items_failed, 1, "{sum:?}");
+    assert!(soyuz_vfs::archive::provider(&zip).unwrap().stat("top.txt").is_ok());
+}

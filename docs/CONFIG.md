@@ -408,6 +408,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_entries` | integer | `1000000` | Most entries one extraction may write (0 = unlimited). |
 | `max_entry_mib` | integer | `32768` | Largest single entry in MiB (0 = unlimited). |
 | `edit_level` | integer | `6` | Deflate level (0 = store, 1-9) for files added while editing inside a zip. |
+| `nested_max_mib` | integer | `2048` | Archives inside archives or on servers are fetched to a private temp copy to browse, preview and extract them, up to this many MiB (0 = never). |
 
 ## `[search]`
 

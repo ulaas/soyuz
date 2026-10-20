@@ -25,6 +25,14 @@ pub fn open_entry(app: &mut AppCore, pane: PaneId, path: &Path, is_dir: bool) ->
     if in_archive && let Some((archive, inner)) = split_vpath(path) {
         if is_dir {
             ops::navigate(app, pane, Location::Archive { archive, inner }, NavOpts::user());
+        } else if svc::is_browsable(path) && app.config.archive.nested_max_mib > 0 {
+            // An archive inside the archive: browse it too (fetched to a temp copy).
+            ops::navigate(
+                app,
+                pane,
+                Location::Archive { archive: path.to_path_buf(), inner: String::new() },
+                NavOpts::user(),
+            );
         } else {
             svc::open_in_app(
                 &archive,
@@ -36,7 +44,10 @@ pub fn open_entry(app: &mut AppCore, pane: PaneId, path: &Path, is_dir: bool) ->
         }
         return true;
     }
-    if !is_dir && svc::is_browsable(path) {
+    if !is_dir
+        && svc::is_browsable(path)
+        && (soyuz_vfs::archive::is_local(path) || app.config.archive.nested_max_mib > 0)
+    {
         ops::navigate(
             app,
             pane,
@@ -120,10 +131,21 @@ fn browsed(app: &AppCore) -> Option<(PathBuf, String)> {
     }
 }
 
+/// The folder next to `archive` for Extract here / to folder; `None` (with a note) for
+/// an archive inside another archive or on a server.
+fn local_parent(app: &mut AppCore, archive: &Path) -> Option<PathBuf> {
+    if soyuz_vfs::archive::is_local(archive) {
+        return archive.parent().map(Path::to_path_buf);
+    }
+    app.ui.toasts.push(Toast::info(tr!("views-archive-extract-here-nested")));
+    None
+}
+
 pub fn extract_here(app: &mut AppCore) {
     if let Some((archive, _)) = browsed(app) {
-        let dest = archive.parent().map(Path::to_path_buf).unwrap_or_default();
-        extract_selected_to(app, dest);
+        if let Some(dest) = local_parent(app, &archive) {
+            extract_selected_to(app, dest);
+        }
         return;
     }
     for a in selected_archives(app) {
@@ -138,7 +160,7 @@ pub fn extract_to_folder(app: &mut AppCore) {
         None => selected_archives(app),
     };
     for a in archives {
-        let parent = a.parent().map(Path::to_path_buf).unwrap_or_default();
+        let Some(parent) = local_parent(app, &a) else { continue };
         app.cmds.push(Cmd::ExtractNewFolder { archive: a, parent, selection: None });
     }
 }
@@ -147,7 +169,9 @@ pub fn extract_to_folder(app: &mut AppCore) {
 pub fn extract_to_dialog(app: &mut AppCore) {
     let other = other_pane_dir(app);
     if let Some((archive, _)) = browsed(app) {
-        let dest = other.or_else(|| archive.parent().map(Path::to_path_buf)).unwrap_or_default();
+        let dest = other
+            .or_else(|| archive.parent().filter(|_| soyuz_vfs::archive::is_local(&archive)).map(Path::to_path_buf))
+            .unwrap_or_default();
         let selection = selected_inner(app);
         app.frontend.push(FrontendCmd::Archive(ArchivePrompt::Extract(ExtractForm::new(
             vec![archive],
@@ -200,7 +224,7 @@ fn submit_entries(app: &mut AppCore, archive: PathBuf, items: Vec<(String, bool)
     let postman = app.services.mailbox.postman();
     let _ = std::thread::Builder::new().name("soyuz-archive-select".into()).spawn(move || {
         let pw = svc::password_for(&archive);
-        let result = soyuz_archive::open(&archive, pw.as_deref()).and_then(|mut r| {
+        let result = soyuz_vfs::archive::open(&archive, pw.as_deref()).and_then(|mut r| {
             let entries = r.entries()?;
             Ok(indices_for(entries.iter().map(|e| e.path.as_str()), &items))
         });
@@ -270,7 +294,7 @@ pub fn test_archive(app: &mut AppCore) {
             let name = soyuz_core::entry::display_name(&a);
             let pw = svc::password_for(&a);
             let ctl = soyuz_core::OpControl::new();
-            let t = soyuz_archive::open(&a, pw.as_deref()).and_then(|mut r| r.test(&ctl, &mut ()));
+            let t = soyuz_vfs::archive::open(&a, pw.as_deref()).and_then(|mut r| r.test(&ctl, &mut ()));
             let toast = match t {
                 Ok(rep) if rep.bad.is_empty() => Toast::success(tr!("views-archive-test-ok", name = &name))
                     .body(tr!("views-archive-test-ok-body", count = rep.entries)),
@@ -590,7 +614,7 @@ pub fn is_editable_zip_name(archive: &Path) -> bool {
 
 /// The zip browsed in the focused pane, when it can be edited: `(archive, inner dir)`.
 fn editable_zip(app: &AppCore) -> Option<(PathBuf, String)> {
-    browsed(app).filter(|(archive, _)| is_editable_zip_name(archive))
+    browsed(app).filter(|(archive, _)| is_editable_zip_name(archive) && soyuz_vfs::archive::is_local(archive))
 }
 
 /// Whether `a` edits the browsed zip (Delete / Rename / Paste inside a zip).

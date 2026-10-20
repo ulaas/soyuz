@@ -17,6 +17,7 @@
 //! small internal tokio runtime.
 #![forbid(unsafe_code)]
 
+pub mod archive;
 pub mod dav_server;
 pub mod digest;
 pub mod discover;

@@ -554,6 +554,14 @@ All from the palette or the context menu:
   .rpm like folders, including cabinet sets (open any `.cab` of the set), split `.7z.001` / `.zip.001` sets and spanned zips (`.z01` … `.zip`, read-only; open either the `.zip` or the `.z01`); inside a zip, paste to
   add files, Rename and Delete edit the archive, and the original goes to the trash so it
   can be undone).
+- **Archives work like remote locations.** In an archive, *Copy* (Ctrl+C) and *Copy to
+  other pane* take files and folders out: paste them into any folder or onto a server, as
+  one job with progress, conflicts and undo. Archives are read-only this way (*Cut* and
+  *Move* say so). An archive inside an archive (a `.tar` in a `.zip`) and an archive on a
+  server open like folders too: Enter browses it after it is fetched to a private temp
+  copy (up to **Settings › Jobs › Archives in archives and on servers**, `[archive]
+  nested_max_mib`, 2048 MiB; 0 turns it off), and preview, *Extract to…* and *Test* work
+  on it. *Extract here* / *to folder* need an archive on disk (use *Extract to…* or copy).
 - Tool windows (treemap, compare, duplicates, previous versions, split / join, sync
   profiles, quick share) sit over a dimmed main window that ignores clicks and shortcuts until you close
   them (Esc closes the frontmost one). Result rows in **Compare** (left / right column =
@@ -977,6 +985,8 @@ the query, "include hidden", how the query will be answered and a cheat sheet of
 language; a smart folder's menu opens it, opens it in a new tab, edits or deletes it, and
 the status line shows the index state while one is open. Enter on an archive (zip, tar.*,
 7z, single RAR) browses it like a folder; an encrypted one asks for its password first.
+Archives inside archives and on servers browse too, and Ctrl+C / *Copy to other pane*
+copy files out of any archive (see "Archives work like remote locations" above).
 *Extract to…* (destination with folder completion, "each archive into its own folder"),
 *Compress…* (name, format, level, password) and renaming an entry inside a zip are
 dialogs, and every one of them runs as a job. *Connect to server…* (the sidebar's network

@@ -1153,6 +1153,14 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             number(ui, &mut d.archive.max_entry_mib, 0..=1_048_576, " MiB");
         });
         r.row_kw(
+            tr!("settings-jobs-nested-max"),
+            tr!("settings-jobs-nested-max-desc"),
+            "nested archive inside server remote sftp fetch temp",
+            |ui| {
+                number(ui, &mut d.archive.nested_max_mib, 0..=1_048_576, " MiB");
+            },
+        );
+        r.row_kw(
             tr!("settings-jobs-zip-level"),
             tr!("settings-jobs-zip-level-desc"),
             "edit zip add level compress",

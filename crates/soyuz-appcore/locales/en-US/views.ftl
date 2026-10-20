@@ -620,6 +620,7 @@ views-archive-job-add = { $count ->
 }
 views-archive-job-rename = Rename { $name } in { $archive }
 views-archive-select-to-extract = Select an archive to extract
+views-archive-extract-here-nested = This archive is inside another archive or on a server: use Extract to… or copy its files out
 views-archive-nothing-to-extract = Nothing to extract
 views-archive-read-failed = Couldn't read the archive
 views-archive-compress-needs-folder = Compress works on files in a folder

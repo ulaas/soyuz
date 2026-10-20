@@ -373,6 +373,8 @@ settings-jobs-max-entries = Most entries
 settings-jobs-max-entries-desc = Pause extraction past this many entries (0 = no limit).
 settings-jobs-max-entry = Largest entry
 settings-jobs-max-entry-desc = Pause on a single entry larger than this (0 = no limit).
+settings-jobs-nested-max = Archives in archives and on servers
+settings-jobs-nested-max-desc = An archive inside another archive or on a server opens like a folder after it is fetched to a private temp copy, up to this size (0 = never).
 settings-jobs-zip-level = Compression when adding to a zip
 settings-jobs-zip-level-desc = Deflate level for files pasted into a zip you are browsing (0 = store, 9 = smallest).
 settings-jobs-special-bits = Keep setuid / setgid / sticky bits

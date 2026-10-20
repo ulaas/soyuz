@@ -319,7 +319,8 @@ impl Runner {
                 let pane = core.ws.pane().id;
                 core.cmds.push(Cmd::Navigate {
                     pane,
-                    location: Location::Dir(PathBuf::from(arg.trim())),
+                    // Like the address bar: archives (`a.zip!/x`) and servers too.
+                    location: Location::parse(arg.trim()).unwrap_or_else(|| Location::Dir(PathBuf::from(arg.trim()))),
                     select: None,
                 });
             }

@@ -61,6 +61,10 @@ impl Location {
             return id.trim().parse().ok().map(|n| Location::Search(SearchId(n)));
         }
         if looks_remote(s) {
+            // An archive on a server (`sftp://h/a.zip!/x`).
+            if let Some((archive, inner)) = split_vpath(Path::new(s)) {
+                return Some(Location::Archive { archive, inner });
+            }
             return Some(Location::Remote(s.to_string()));
         }
         let expanded = expand_tilde(s);
@@ -97,6 +101,15 @@ impl Location {
             },
             Location::Archive { archive, inner } => {
                 if inner.is_empty() {
+                    // The folder holding the archive: inside an outer archive, on a
+                    // server, or on disk.
+                    if let Some((outer, oi)) = split_vpath(archive) {
+                        let up = oi.rsplit_once('/').map(|(d, _)| d.to_string()).unwrap_or_default();
+                        return Some(Location::Archive { archive: outer, inner: up });
+                    }
+                    if let Some(u) = archive.to_str().filter(|s| looks_remote(s)) {
+                        return remote_parent(u).map(Location::Remote);
+                    }
                     archive.parent().map(|p| Location::Dir(p.to_path_buf()))
                 } else {
                     let parent = match inner.rfind('/') {
@@ -193,9 +206,10 @@ pub fn join_vpath(archive: &Path, inner: &str) -> PathBuf {
 
 /// Split a virtual path produced by [`join_vpath`] into `(archive, inner)`.
 ///
-/// The separator is the first `!/` or `!\` whose preceding path component has an
-/// extension (so folders with `!` in their name are not mistaken for archives); a
-/// trailing `!` (`"a.zip!"`) also denotes the archive root.
+/// The separator is the last `!/` or `!\` whose preceding path component has an
+/// extension (so folders with `!` in their name are not mistaken for archives, and
+/// `a.zip!/b.tar!/c` is `c` inside the archive `a.zip!/b.tar`, itself inside `a.zip`);
+/// a trailing `!` (`"a.zip!"`) also denotes the archive root.
 pub fn split_vpath(p: &Path) -> Option<(PathBuf, String)> {
     let s = p.to_string_lossy();
     let bytes = s.as_bytes();
@@ -213,7 +227,7 @@ pub fn split_vpath(p: &Path) -> Option<(PathBuf, String)> {
         let last = prefix.rsplit(['/', '\\']).next().unwrap_or("");
         crate::entry::name_extension(last).is_some()
     };
-    let idx = candidates.iter().copied().find(|&i| i > 0 && looks_like_archive(i))?;
+    let idx = candidates.iter().copied().rev().find(|&i| i > 0 && looks_like_archive(i))?;
     let archive = PathBuf::from(&s[..idx]);
     if archive.components().all(|c| matches!(c, Component::RootDir | Component::Prefix(_))) {
         return None;
@@ -238,6 +252,18 @@ mod tests {
         assert_eq!(split_vpath(Path::new("/tmp/b.tar.gz!")), Some((PathBuf::from("/tmp/b.tar.gz"), String::new())));
         // Messy inner paths are normalized.
         assert_eq!(join_vpath(a, "/x//y/"), PathBuf::from("C:/data/a.zip!/x/y"));
+        // An archive inside an archive: the last separator splits.
+        let nested = join_vpath(&join_vpath(a, "in/b.tar"), "c/d.txt");
+        assert_eq!(split_vpath(&nested), Some((PathBuf::from("C:/data/a.zip!/in/b.tar"), "c/d.txt".to_string())));
+        assert_eq!(
+            Location::Archive { archive: PathBuf::from("C:/data/a.zip!/in/b.tar"), inner: String::new() }.parent(),
+            Some(Location::Archive { archive: a.to_path_buf(), inner: "in".into() })
+        );
+        // On a server.
+        assert_eq!(
+            Location::parse("sftp://h/a.zip!/x"),
+            Some(Location::Archive { archive: PathBuf::from("sftp://h/a.zip"), inner: "x".into() })
+        );
         assert_eq!(
             split_vpath(Path::new(r"C:\data\a.zip!\x\y")),
             Some((PathBuf::from(r"C:\data\a.zip"), "x/y".to_string()))

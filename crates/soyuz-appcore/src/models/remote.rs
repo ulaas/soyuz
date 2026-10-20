@@ -261,8 +261,18 @@ fn other_pane_location(app: &AppCore) -> Option<Location> {
     app.ws.tab().other().map(|p| p.location.clone())
 }
 
+/// A server path or a path inside an archive: transfers go through `JobKind::Remote`.
+fn is_remote_like(p: &Path) -> bool {
+    svc::is_remote_path(p) || soyuz_core::location::split_vpath(p).is_some()
+}
+
 fn clipboard_has_remote(app: &AppCore) -> bool {
-    app.fileops.clipboard.for_paste().is_some_and(|(_, p)| p.iter().any(|p| svc::is_remote_path(p)))
+    app.fileops.clipboard.for_paste().is_some_and(|(_, p)| p.iter().any(|p| is_remote_like(p)))
+}
+
+/// The focused pane browses an archive (read-only here: copy out, never move out).
+fn in_archive(app: &AppCore) -> bool {
+    matches!(app.ws.pane().location, Location::Archive { .. })
 }
 
 /// Actions this module handles in the current state (routed by `actions::execute`).
@@ -273,6 +283,12 @@ pub fn handles(app: &AppCore, a: &Action) -> bool {
     }
     let here_remote = focused_remote(app).is_some();
     let other_remote = matches!(other_pane_location(app), Some(Location::Remote(_)));
+    if in_archive(app) {
+        // Copy out of an archive like out of a server (zip editing stays with
+        // `models::archive`).
+        return matches!(a, A::Copy | A::Cut | A::CopyToOtherPane | A::MoveToOtherPane)
+            || (matches!(a, A::Paste | A::PasteAndVerify) && clipboard_has_remote(app));
+    }
     match a {
         A::Copy | A::Cut | A::Delete | A::DeletePermanent | A::SecureWipe | A::Rename | A::NewFolder | A::NewFile => {
             here_remote
@@ -295,6 +311,10 @@ pub fn execute(app: &mut AppCore, a: Action, host: &dyn Host) {
         Location::Dir(d) => Some(d.clone()),
         _ => None,
     };
+    if in_archive(app) && matches!(a, A::Cut | A::MoveToOtherPane) {
+        app.ui.toasts.push(Toast::info(tr!("remote-archive-read-only")).body(tr!("remote-archive-read-only-body")));
+        return;
+    }
     match a {
         A::ConnectToServer => app.frontend.push(FrontendCmd::Remote(RemotePrompt::Connect(Box::default()))),
         A::Copy | A::Cut => {
@@ -312,7 +332,10 @@ pub fn execute(app: &mut AppCore, a: Action, host: &dyn Host) {
             app.ui.toasts.push(t);
         }
         A::Paste | A::PasteAndVerify => {
-            let Some(dest) = here_path else { return };
+            let Some(dest) = here_path else {
+                app.ui.toasts.push(Toast::info(tr!("remote-archive-paste-here")));
+                return;
+            };
             let paste = move |app: &mut AppCore, clip: Option<(ClipMode, Vec<PathBuf>)>| {
                 let Some((mode, paths)) = clip else {
                     app.ui
@@ -411,7 +434,7 @@ pub fn transfer(app: &mut AppCore, paths: Vec<PathBuf>, dest: PathBuf, mv: bool,
     if paths.is_empty() {
         return None;
     }
-    let any_remote = svc::is_remote_path(&dest) || paths.iter().any(|p| svc::is_remote_path(p));
+    let any_remote = is_remote_like(&dest) || paths.iter().any(|p| is_remote_like(p));
     if !any_remote {
         let effect =
             if mv { crate::ops::fileops::drop::DropEffect::Move } else { crate::ops::fileops::drop::DropEffect::Copy };

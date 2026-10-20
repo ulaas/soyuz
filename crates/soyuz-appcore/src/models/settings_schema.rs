@@ -149,6 +149,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("archive.bomb_floor_mib", Hint::Range(16.0, 65_536.0)),
     ("archive.max_entries", Hint::Range(0.0, 10_000_000.0)),
     ("archive.max_entry_mib", Hint::Range(0.0, 1_048_576.0)),
+    ("archive.nested_max_mib", Hint::Range(0.0, 1_048_576.0)),
     ("archive.edit_level", Hint::Range(0.0, 9.0)),
     ("sync.change_debounce_secs", Hint::Range(1.0, 600.0)),
     ("sync.reports_kept", Hint::Range(1.0, 200.0)),

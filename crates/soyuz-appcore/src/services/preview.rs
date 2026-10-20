@@ -654,7 +654,7 @@ fn open_source(source: &Source) -> Result<Opened, String> {
 /// Read an archive entry (up to `cap` bytes); `(bytes, truncated)`.
 pub fn read_archive_entry(archive: &Path, inner: &str, cap: u64) -> Result<(Vec<u8>, bool), String> {
     let password = super::archive::password_for(archive);
-    let mut reader = soyuz_archive::open(archive, password.as_deref()).map_err(|e| e.to_string())?;
+    let mut reader = soyuz_vfs::archive::open(archive, password.as_deref()).map_err(|e| e.to_string())?;
     let idx = soyuz_archive::find_entry(reader.as_mut(), inner)
         .ok_or_else(|| tr!("services-preview-entry-not-found").to_string())?;
     let mut r = reader.open_entry(idx).map_err(|e| e.to_string())?;
@@ -1119,7 +1119,7 @@ fn folder(source: &Source, notes: &[String]) -> Loaded {
         }
         Source::Entry { archive, inner } => {
             let password = super::archive::password_for(archive);
-            soyuz_archive::open(archive, password.as_deref())
+            soyuz_vfs::archive::open(archive, password.as_deref())
                 .and_then(|mut r| soyuz_archive::list_dir(r.as_mut(), inner))
                 .map_err(|e| e.to_string())
         }

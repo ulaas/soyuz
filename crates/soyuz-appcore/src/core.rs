@@ -682,6 +682,7 @@ pub fn load_config() -> Config {
 /// GUI's `app::apply_live_settings` adds its own).
 pub fn apply_core_settings(c: &Config) {
     crate::i18n::apply_setting(&c.general.language);
+    crate::services::archive::configure_nested(&c.archive);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
     crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
     crate::services::thumb_video::set_poster_secs(c.media.poster_secs);

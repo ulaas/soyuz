@@ -17,6 +17,9 @@ remote-cut = { $count ->
     [one] Cut { $count } remote item
    *[other] Cut { $count } remote items
 }
+remote-archive-read-only = Files can only be copied out of an archive
+remote-archive-read-only-body = Copy them out, then delete them inside the archive (zip archives) if needed.
+remote-archive-paste-here = Files from an archive can be pasted into a folder or onto a server
 remote-clipboard-body = Paste into any folder or server with Ctrl+V.
 remote-nothing-to-paste = Nothing to paste
 remote-nothing-to-paste-body = Copy or cut files first (Ctrl+C / Ctrl+X).

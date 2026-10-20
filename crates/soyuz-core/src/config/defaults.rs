@@ -300,6 +300,7 @@ impl Default for Archive {
             max_entries: 1_000_000,
             max_entry_mib: 32 * 1024,
             edit_level: 6,
+            nested_max_mib: 2048,
         }
     }
 }

@@ -541,6 +541,7 @@ views-archive-job-delete = { $archive } arşivinden { $count } öğe sil
 views-archive-job-add = { $archive } arşivine { $count } öğe ekle
 views-archive-job-rename = { $archive } içinde { $name } öğesini yeniden adlandır
 views-archive-select-to-extract = Ayıklamak için bir arşiv seçin
+views-archive-extract-here-nested = Bu arşiv başka bir arşivin içinde ya da bir sunucuda: Şuraya ayıkla… seçeneğini kullanın ya da dosyalarını kopyalayarak çıkarın
 views-archive-nothing-to-extract = Ayıklanacak bir şey yok
 views-archive-read-failed = Arşiv okunamadı
 views-archive-compress-needs-folder = Sıkıştırma yalnızca bir klasördeki dosyalarda çalışır

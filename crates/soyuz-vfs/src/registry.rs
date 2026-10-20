@@ -229,9 +229,13 @@ pub fn local() -> Arc<dyn Provider> {
     reg().local.clone()
 }
 
-/// Resolve a job / pane path: a remote URI (its provider + provider path) or a native
-/// path (the local provider + the path as a string).
+/// Resolve a job / pane path: inside an archive (`a.zip!/x`: the archive's provider +
+/// the inner path), a remote URI (its provider + provider path) or a native path (the
+/// local provider + the path as a string).
 pub fn resolve(path: &Path) -> FsResult<(Arc<dyn Provider>, String)> {
+    if let Some((archive, inner)) = soyuz_core::location::split_vpath(path) {
+        return Ok((crate::archive::provider(&archive)?, inner));
+    }
     match RemoteUri::from_path(path) {
         Some(u) => Ok((provider_for(&u)?, u.path.clone())),
         None => Ok((local(), path.to_string_lossy().into_owned())),

@@ -125,7 +125,7 @@ pub(crate) fn run_extract(
     let mut wrong = false;
     let mut reader = loop {
         ctx.checkpoint()?;
-        let opened = soyuz_archive::open(archive, password.as_deref()).and_then(|mut r| {
+        let opened = soyuz_vfs::archive::open(archive, password.as_deref()).and_then(|mut r| {
             r.entries()?;
             Ok(r)
         });

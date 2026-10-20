@@ -31,24 +31,31 @@ struct End {
     path: String,
     /// `Some` for remote locations.
     uri: Option<RemoteUri>,
+    /// `Some` inside an archive (read-only, `soyuz_vfs::archive`): the archive's path.
+    archive: Option<PathBuf>,
 }
 
 impl End {
     fn resolve(p: &Path) -> FsResult<End> {
-        let uri = RemoteUri::from_path(p);
         let (prov, path) = soyuz_vfs::registry::resolve(p)?;
-        Ok(End { prov, path, uri })
+        if let Some((archive, _)) = soyuz_core::location::split_vpath(p) {
+            return Ok(End { prov, path, uri: None, archive: Some(archive) });
+        }
+        Ok(End { prov, path, uri: RemoteUri::from_path(p), archive: None })
     }
 
+    /// Not the local filesystem: a server or an archive (`/`-separated provider paths).
     fn is_remote(&self) -> bool {
-        self.uri.is_some()
+        self.uri.is_some() || self.archive.is_some()
     }
 
-    /// The job-level path (URI or native path) for logs, progress and undo records.
+    /// The job-level path (URI, archive path or native path) for logs, progress and undo
+    /// records.
     fn display(&self) -> PathBuf {
-        match &self.uri {
-            Some(u) => u.with_path(&self.path).to_path_buf(),
-            None => PathBuf::from(&self.path),
+        match (&self.archive, &self.uri) {
+            (Some(a), _) => soyuz_core::join_vpath(a, &self.path),
+            (None, Some(u)) => u.with_path(&self.path).to_path_buf(),
+            (None, None) => PathBuf::from(&self.path),
         }
     }
 
@@ -57,25 +64,28 @@ impl End {
     /// instead of being joined into a path outside this folder.
     fn child(&self, name: &str) -> FsResult<End> {
         soyuz_vfs::provider::check_child_name("copy", &self.path, name, self.is_remote())?;
-        let path = match &self.uri {
-            Some(_) => soyuz_vfs::uri::join_path(&self.path, name),
-            None => Path::new(&self.path).join(name).to_string_lossy().into_owned(),
+        let path = if self.is_remote() {
+            soyuz_vfs::uri::join_path(&self.path, name)
+        } else {
+            Path::new(&self.path).join(name).to_string_lossy().into_owned()
         };
-        Ok(End { prov: self.prov.clone(), path, uri: self.uri.clone() })
+        Ok(End { prov: self.prov.clone(), path, uri: self.uri.clone(), archive: self.archive.clone() })
     }
 
     /// `name` next to this entry (checked like [`End::child`]).
     fn sibling(&self, name: &str) -> FsResult<End> {
         soyuz_vfs::provider::check_child_name("rename", &self.path, name, self.is_remote())?;
-        Ok(match &self.uri {
-            Some(_) => {
-                let parent = soyuz_vfs::uri::parent_path(&self.path).unwrap_or_else(|| "/".into());
-                End { prov: self.prov.clone(), path: soyuz_vfs::uri::join_path(&parent, name), uri: self.uri.clone() }
+        Ok(if self.is_remote() {
+            let parent = soyuz_vfs::uri::parent_path(&self.path).unwrap_or_else(|| "/".into());
+            End {
+                prov: self.prov.clone(),
+                path: soyuz_vfs::uri::join_path(&parent, name),
+                uri: self.uri.clone(),
+                archive: self.archive.clone(),
             }
-            None => {
-                let p = Path::new(&self.path).with_file_name(name);
-                End { prov: self.prov.clone(), path: p.to_string_lossy().into_owned(), uri: None }
-            }
+        } else {
+            let p = Path::new(&self.path).with_file_name(name);
+            End { prov: self.prov.clone(), path: p.to_string_lossy().into_owned(), uri: None, archive: None }
         })
     }
 

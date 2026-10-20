@@ -7175,6 +7175,7 @@ dependencies = [
  "sha2",
  "smb2",
  "socket2",
+ "soyuz-archive",
  "soyuz-core",
  "suppaftp",
  "tempfile",
