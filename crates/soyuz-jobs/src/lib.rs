@@ -29,6 +29,6 @@ pub use job::{
     MediaOptions, Priority, QueueMode, RemoteOp, SyncAction, SyncPlan,
 };
 pub use journal::{JournalJob, JournalSlot, Recovered};
-pub use progress::{JobSnapshot, Progress};
+pub use progress::{Blocked, IoStats, JobSnapshot, Progress};
 pub use prompt::{ConflictInfo, ConflictKind, JobPrompt, PromptResponse};
 pub use undo::UndoRecord;

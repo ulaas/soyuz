@@ -44,7 +44,7 @@
 //! The only blocking waits are a worker on its private prompt channel (holding no
 //! lock) and `OpControl::checkpoint` (holding no engine lock).
 
-use std::collections::{BTreeMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -188,6 +188,13 @@ struct Speed {
     last_items: u64,
     ring: VecDeque<(f32, f64)>,
     arc: Option<Arc<[(f32, f64)]>>,
+    peak: f64,
+    /// Time buckets for `IoStats` (charged by `sample`).
+    planning: Duration,
+    moving: Duration,
+    stalled: Duration,
+    paused: Duration,
+    waiting_for_user: Duration,
 }
 
 pub(crate) struct JobEntry {
@@ -208,7 +215,10 @@ pub(crate) struct JobEntry {
     priority: Priority,
     rt: Arc<JobRt>,
     pending_prompt: Option<JobPrompt>,
+    submitted_at: Instant,
     started_at: Option<Instant>,
+    /// Why it has not started (set by `admit`).
+    blocked: Option<crate::progress::Blocked>,
     paused_since: Option<Instant>,
     paused_total: Duration,
     finished_elapsed: Option<Duration>,
@@ -365,7 +375,9 @@ impl Inner {
                 force: false,
                 rt,
                 pending_prompt: None,
+                submitted_at: Instant::now(),
                 started_at: None,
+                blocked: None,
                 paused_since: None,
                 paused_total: Duration::ZERO,
                 finished_elapsed: None,
@@ -614,33 +626,41 @@ impl Inner {
             }
             let now = Instant::now();
             let mut active = st.jobs.values().filter(|e| e.state.is_active()).count();
-            let mut held_roots: Vec<PathBuf> =
-                st.jobs.values().filter(|e| e.holds_roots()).flat_map(|e| e.roots.iter().cloned()).collect();
-            let mut busy_lanes: HashSet<Lane> = st
+            // Each held root / lane with the job holding it (for `Blocked`).
+            let mut held_roots: Vec<(PathBuf, JobId)> = st
+                .jobs
+                .values()
+                .filter(|e| e.holds_roots())
+                .flat_map(|e| e.roots.iter().map(|r| (r.clone(), e.id)))
+                .collect();
+            let mut busy_lanes: HashMap<Lane, JobId> = st
                 .jobs
                 .values()
                 .filter(|e| e.state.is_active())
                 .filter_map(|e| match e.lane {
-                    LaneState::Known(Some(l)) => Some(l),
+                    LaneState::Known(Some(l)) => Some((l, e.id)),
                     _ => None,
                 })
                 .collect();
-            let mut blocked_lanes: HashSet<Lane> = HashSet::new();
-            let mut blocked_roots: Vec<PathBuf> = Vec::new();
+            let mut blocked_lanes: HashMap<Lane, JobId> = HashMap::new();
+            let mut blocked_roots: Vec<(PathBuf, JobId)> = Vec::new();
             let mut start = Vec::new();
             for id in st.queue.clone() {
                 let Some(e) = st.jobs.get_mut(&id) else { continue };
                 if e.state != JobState::Queued {
                     continue; // paused before start: user-held, blocks nothing
                 }
-                let overlaps =
-                    |set: &[PathBuf]| e.roots.iter().any(|r| set.iter().any(|h| crate::job::roots_overlap(r, h)));
-                let roots_ok = !overlaps(&held_roots) && !overlaps(&blocked_roots);
-                let (lane_ok, lane) = match e.lane {
-                    LaneState::Unknown => (false, None),
-                    LaneState::Known(None) => (true, None),
+                let overlap = |set: &[(PathBuf, JobId)]| {
+                    set.iter().find(|(h, _)| e.roots.iter().any(|r| crate::job::roots_overlap(r, h))).map(|(_, j)| *j)
+                };
+                let root_holder = overlap(&held_roots).or_else(|| overlap(&blocked_roots));
+                let roots_ok = root_holder.is_none();
+                let (lane_ok, lane, lane_holder) = match e.lane {
+                    LaneState::Unknown => (false, None, None),
+                    LaneState::Known(None) => (true, None, None),
                     LaneState::Known(Some(l)) => {
-                        (e.force || (!busy_lanes.contains(&l) && !blocked_lanes.contains(&l)), Some(l))
+                        let holder = busy_lanes.get(&l).or_else(|| blocked_lanes.get(&l)).copied();
+                        (e.force || holder.is_none(), Some(l), holder)
                     }
                 };
                 let cap_ok = e.force || active < max_parallel;
@@ -649,17 +669,28 @@ impl Inner {
                     e.started = true;
                     e.state = JobState::Planning;
                     e.started_at = Some(now);
+                    e.blocked = None;
                     active += 1;
                     if let Some(l) = lane {
-                        busy_lanes.insert(l);
+                        busy_lanes.insert(l, id);
                     }
-                    held_roots.extend(e.roots.iter().cloned());
+                    held_roots.extend(e.roots.iter().map(|r| (r.clone(), id)));
                     ev.push(JobEvent::StateChanged(id, JobState::Planning));
                     start.push(id);
                 } else {
-                    blocked_roots.extend(e.roots.iter().cloned());
+                    use crate::progress::Blocked;
+                    e.blocked = Some(if !roots_ok {
+                        Blocked::SameFolders(root_holder)
+                    } else if e.lane == LaneState::Unknown {
+                        Blocked::Probing
+                    } else if !lane_ok {
+                        Blocked::SameDevice(lane_holder)
+                    } else {
+                        Blocked::Parallel(max_parallel)
+                    });
+                    blocked_roots.extend(e.roots.iter().map(|r| (r.clone(), id)));
                     if let Some(l) = lane {
-                        blocked_lanes.insert(l);
+                        blocked_lanes.entry(l).or_insert(id);
                     }
                 }
             }
@@ -729,6 +760,19 @@ impl Inner {
             let running = matches!(e.state, JobState::Running | JobState::Planning | JobState::Finishing);
             let bps = if running { bytes.saturating_sub(sp.last_bytes) as f64 / dt } else { 0.0 };
             let ips = if running { items.saturating_sub(sp.last_items) as f64 / dt } else { 0.0 };
+            let span = now.saturating_duration_since(last);
+            let moved = bytes != sp.last_bytes || items != sp.last_items;
+            match e.state {
+                JobState::Planning if !moved => sp.planning += span,
+                JobState::Running | JobState::Planning | JobState::Finishing if moved => sp.moving += span,
+                JobState::Running | JobState::Finishing => sp.stalled += span,
+                JobState::Paused => sp.paused += span,
+                JobState::WaitingForUser => sp.waiting_for_user += span,
+                _ => {}
+            }
+            if running {
+                sp.peak = sp.peak.max(bps);
+            }
             if running {
                 sp.ema = if sp.ring.is_empty() { bps } else { EMA_ALPHA * bps + (1.0 - EMA_ALPHA) * sp.ema };
                 sp.item_ema = if sp.ring.is_empty() { ips } else { EMA_ALPHA * ips + (1.0 - EMA_ALPHA) * sp.item_ema };
@@ -1401,6 +1445,24 @@ fn make_snapshot(e: &mut JobEntry, queue_pos: Option<usize>, now: Instant) -> Jo
         None
     };
     let samples = e.speed.arc.get_or_insert_with(|| e.speed.ring.iter().copied().collect::<Vec<_>>().into()).clone();
+    let sp = &e.speed;
+    let ran = (sp.moving + sp.stalled).as_secs_f64();
+    let io = crate::progress::IoStats {
+        queued: e.started_at.unwrap_or(now).saturating_duration_since(e.submitted_at),
+        planning: sp.planning,
+        moving: sp.moving,
+        stalled: sp.stalled,
+        paused: sp.paused,
+        waiting_for_user: sp.waiting_for_user,
+        files_per_sec: if running { sp.item_ema } else { 0.0 },
+        avg_bps: if ran > 0.0 { progress.bytes_done as f64 / ran } else { 0.0 },
+        peak_bps: sp.peak,
+        blocked: if e.state == JobState::Queued { e.blocked } else { None },
+        same_device: match e.lane {
+            LaneState::Known(Some(Lane::Devices(a, b))) => Some(a == b),
+            _ => None,
+        },
+    };
     JobSnapshot {
         id: e.id,
         kind: e.brief,
@@ -1418,6 +1480,7 @@ fn make_snapshot(e: &mut JobEntry, queue_pos: Option<usize>, now: Instant) -> Jo
         warnings: e.warnings,
         log_len: e.log_base + e.log.len(),
         verify: e.options.copy.verify,
+        io,
     }
 }
 

@@ -42,4 +42,48 @@ pub struct JobSnapshot {
     pub log_len: usize,
     /// Copies of this job are verified by hashing (`JobOptions::copy.verify`).
     pub verify: Option<soyuz_core::HashAlgo>,
+    /// Where the time went and why a queued job waits ("Why is this slow?").
+    pub io: IoStats,
+}
+
+/// Why a queued job has not started yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Blocked {
+    /// Another job uses the same disk(s) (per-device queue); the job, when known.
+    SameDevice(Option<JobId>),
+    /// Another job works in the same folders.
+    SameFolders(Option<JobId>),
+    /// `max_parallel` jobs already run.
+    Parallel(usize),
+    /// The disks of its paths are still being looked up.
+    Probing,
+}
+
+/// Live I/O statistics of a job. The time buckets are charged by the engine's sampler
+/// (every `sample_interval`), so they are accurate to about one interval.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct IoStats {
+    /// Submitted → started (or until now while it waits).
+    pub queued: Duration,
+    /// Counting / planning before the first byte.
+    pub planning: Duration,
+    /// Running with bytes or items moving.
+    pub moving: Duration,
+    /// Running while nothing moved (a slow or busy disk, the network, a file held by
+    /// another program or an antivirus scan).
+    pub stalled: Duration,
+    pub paused: Duration,
+    /// Waiting for an answer to a question (conflict, error).
+    pub waiting_for_user: Duration,
+    /// Items per second (moving average).
+    pub files_per_sec: f64,
+    /// Bytes per second over the time spent running (moving + stalled).
+    pub avg_bps: f64,
+    /// Fastest sample.
+    pub peak_bps: f64,
+    /// Set while the job is queued.
+    pub blocked: Option<Blocked>,
+    /// Per-device queue: whether it reads and writes the same disk (`None` = not known
+    /// or not a per-device job).
+    pub same_device: Option<bool>,
 }

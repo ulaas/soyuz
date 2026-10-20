@@ -197,6 +197,7 @@ reflink = "auto"                 # auto | never | always
 history_limit = 500
 trash_unsupported = "ask"        # ask | permanent | skip
 auto_open_activity = true        # open the activity panel when a job runs longer than 1 s
+io_stats = true                  # job details start with "Why is this slow?" (speeds, where the time went, what holds it back)
 
 [terminal]
 shell = ""                       # "" = auto

@@ -161,6 +161,15 @@ with a toast (with **Undo**); longer ones open the **activity panel** (`Ctrl+Shi
 automatically. Each job card shows progress, speed graph and ETA, and can be paused,
 resumed, cancelled, reprioritized or started immediately.
 
+A job's details (expand its card) start with **Why is this slow?**:
+- **Speeds:** now, average and peak, files per second and the average file size.
+- **Where the time went:** moving, stalled, counting, queued, paused, or waiting for your answer.
+- **What holds it back:**
+  - a queued job says which job it waits for (same disk, same folders) or that the parallel limit is reached;
+  - a running one points out stalls (a busy disk or network, or files held by another program), many small files, reading and writing the same disk, verify after copy, and long counting.
+
+Turn it off with *Explain slow jobs* in Settings → Jobs (`[jobs] io_stats`).
+
 When a destination already exists, the **conflict dialog** compares both files (size,
 date, which is newer / larger) and offers *Replace*, *Keep both*, *Skip* and more, with
 *Do this for all remaining conflicts*. Errors offer *Retry*, *Skip* and *Skip all*.

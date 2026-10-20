@@ -579,11 +579,133 @@ pub fn toggle_expanded(core: &mut AppCore, id: JobId) {
     }
 }
 
-/// The details of job `id`, newest log line first: the failed items and notes of its
-/// summary, the failure, then up to 300 log lines (`panels-log-empty` when there is
-/// nothing). Reads the job's log (cached by the jobs service).
+/// Small files: below this average size per-file costs dominate.
+const SMALL_FILE: u64 = 256 * 1024;
+
+/// "Why is this slow?" for a job that started: its speeds, where the time went, and
+/// what holds it back (a queued job: what it waits for). Empty for a job that never ran
+/// and isn't queued.
+pub fn io_lines(s: &JobSnapshot) -> Vec<(Tone, String)> {
+    let io = &s.io;
+    let pr = &s.progress;
+    let mut out: Vec<(Tone, String)> = Vec::new();
+    let mut hints: Vec<(Tone, String)> = Vec::new();
+    match io.blocked {
+        Some(soyuz_jobs::Blocked::SameDevice(by)) => hints.push((
+            Tone::Warning,
+            match by {
+                Some(j) => tr!("panels-io-blocked-device", job = j.0),
+                None => tr!("panels-io-blocked-device-any").to_string(),
+            },
+        )),
+        Some(soyuz_jobs::Blocked::SameFolders(by)) => hints.push((
+            Tone::Warning,
+            match by {
+                Some(j) => tr!("panels-io-blocked-folders", job = j.0),
+                None => tr!("panels-io-blocked-folders-any").to_string(),
+            },
+        )),
+        Some(soyuz_jobs::Blocked::Parallel(n)) => {
+            hints.push((Tone::Warning, tr!("panels-io-blocked-parallel", count = n)))
+        }
+        Some(soyuz_jobs::Blocked::Probing) => hints.push((Tone::Muted, tr!("panels-io-blocked-probing").to_string())),
+        None => {}
+    }
+    let ran = io.moving + io.stalled;
+    if s.started.is_none() {
+        if !hints.is_empty() {
+            out.push((Tone::Muted, tr!("panels-io-title").to_string()));
+            out.push((Tone::Faint, tr!("panels-io-queued-for", time = format_eta(io.queued.as_secs_f64()))));
+            out.extend(hints);
+        }
+        return out;
+    }
+    out.push((Tone::Muted, tr!("panels-io-title").to_string()));
+    // Speeds.
+    let mut speeds = Vec::new();
+    if matches!(s.state, JobState::Running) {
+        speeds.push(tr!("panels-io-now", speed = format_speed(s.speed_bps)));
+    }
+    if io.avg_bps > 0.0 {
+        speeds.push(tr!("panels-io-avg", speed = format_speed(io.avg_bps)));
+    }
+    if io.peak_bps > 0.0 {
+        speeds.push(tr!("panels-io-peak", speed = format_speed(io.peak_bps)));
+    }
+    if io.files_per_sec >= 0.1 {
+        speeds.push(tr!("panels-io-files-per-sec", rate = format!("{:.1}", io.files_per_sec)));
+    }
+    let avg_file = (pr.items_done > 0 && pr.bytes_done > 0).then(|| pr.bytes_done / pr.items_done);
+    if let Some(a) = avg_file {
+        speeds.push(tr!("panels-io-avg-file", size = format_size(a, SizeStyle::Binary)));
+    }
+    if !speeds.is_empty() {
+        out.push((Tone::Faint, speeds.join(" \u{b7} ")));
+    }
+    // Where the time went.
+    let mut parts: Vec<String> = Vec::new();
+    let mut part = |d: std::time::Duration, f: &dyn Fn(String) -> String| {
+        if d.as_secs_f64() >= 0.5 {
+            parts.push(f(format_eta(d.as_secs_f64())));
+        }
+    };
+    part(io.moving, &|t| tr!("panels-io-time-moving", time = t));
+    part(io.stalled, &|t| tr!("panels-io-time-stalled", time = t));
+    part(io.planning, &|t| tr!("panels-io-time-counting", time = t));
+    part(io.queued, &|t| tr!("panels-io-time-queued", time = t));
+    part(io.paused, &|t| tr!("panels-io-time-paused", time = t));
+    part(io.waiting_for_user, &|t| tr!("panels-io-time-waiting", time = t));
+    if !parts.is_empty() {
+        out.push((Tone::Faint, parts.join(" \u{b7} ")));
+    }
+    // What holds it back.
+    if matches!(s.state, JobState::WaitingForUser) {
+        hints.push((Tone::Warning, tr!("panels-io-hint-answer").to_string()));
+    }
+    if ran.as_secs_f64() >= 3.0 && io.stalled.as_secs_f64() > 0.25 * ran.as_secs_f64() {
+        hints.push((
+            Tone::Warning,
+            tr!(
+                "panels-io-hint-stalled",
+                stalled = format_eta(io.stalled.as_secs_f64()),
+                total = format_eta(ran.as_secs_f64())
+            ),
+        ));
+    }
+    if let Some(a) = avg_file.filter(|a| *a < SMALL_FILE && pr.items_done >= 50) {
+        hints.push((Tone::Muted, tr!("panels-io-hint-small-files", size = format_size(a, SizeStyle::Binary))));
+    }
+    if io.same_device == Some(true)
+        && pr.bytes_done > 0
+        && matches!(s.kind, soyuz_jobs::JobKindBrief::Copy | soyuz_jobs::JobKindBrief::Move)
+    {
+        hints.push((Tone::Muted, tr!("panels-io-hint-same-disk").to_string()));
+    }
+    if s.verify.is_some() {
+        hints.push((Tone::Muted, tr!("panels-io-hint-verify").to_string()));
+    }
+    let elapsed = s.elapsed.as_secs_f64();
+    if elapsed >= 3.0 && io.planning.as_secs_f64() > 0.3 * elapsed {
+        hints.push((Tone::Muted, tr!("panels-io-hint-counting", time = format_eta(io.planning.as_secs_f64()))));
+    }
+    if hints.is_empty() && matches!(s.state, JobState::Running) {
+        hints.push((Tone::Faint, tr!("panels-io-hint-none").to_string()));
+    }
+    out.extend(hints);
+    out
+}
+
+/// The details of job `id`, newest log line first: "Why is this slow?" ([`io_lines`],
+/// `[jobs] io_stats`), the failed items and notes of its summary, the failure, then up
+/// to 300 log lines (`panels-log-empty` when there is nothing). Reads the job's log
+/// (cached by the jobs service).
 pub fn detail_lines(core: &mut AppCore, id: JobId) -> Vec<(Tone, String)> {
     let mut lines: Vec<(Tone, String)> = Vec::new();
+    if core.config.jobs.io_stats
+        && let Some(s) = core.fileops.jobs.snapshot(id)
+    {
+        lines.extend(io_lines(s));
+    }
     let state = core.fileops.jobs.snapshot(id).map(|s| s.state.clone());
     if let Some(JobState::Done(sum)) = &state {
         for (path, e) in sum.errors.iter().take(200) {
@@ -637,6 +759,7 @@ mod tests {
             warnings: 0,
             log_len: 0,
             verify: None,
+            io: Default::default(),
         }
     }
 
@@ -703,5 +826,47 @@ mod tests {
         assert!(r.failed && r.sub.ends_with("can't be undone"), "{}", r.sub);
         h.undone = true;
         assert_eq!(HistoryRow::new(&h, SystemTime::now()).buttons[1], (RowButton::Redo, true));
+    }
+
+    #[test]
+    fn why_is_this_slow() {
+        let texts = |l: Vec<(Tone, String)>| l.into_iter().map(|(_, t)| t).collect::<Vec<_>>();
+        // Never ran and isn't held back: nothing to say.
+        assert!(io_lines(&snap(JobState::Cancelled)).is_empty());
+
+        let mut q = snap(JobState::Queued);
+        q.io.blocked = Some(soyuz_jobs::Blocked::SameDevice(Some(JobId(2))));
+        q.io.queued = Duration::from_secs(4);
+        let l = texts(io_lines(&q));
+        assert_eq!(l[0], tr!("panels-io-title"));
+        assert_eq!(l[2], tr!("panels-io-blocked-device", job = 2));
+
+        let mut r = snap(JobState::Running);
+        r.started = Some(std::time::Instant::now());
+        r.elapsed = Duration::from_secs(10);
+        r.speed_bps = 1e6;
+        r.progress.items_done = 400;
+        r.progress.bytes_done = 400 * 8 * 1024;
+        r.io.moving = Duration::from_secs(6);
+        r.io.stalled = Duration::from_secs(4);
+        r.io.avg_bps = 0.3e6;
+        r.io.peak_bps = 2e6;
+        r.io.files_per_sec = 40.0;
+        r.io.same_device = Some(true);
+        let l = texts(io_lines(&r));
+        assert!(l[1].contains(&tr!("panels-io-files-per-sec", rate = "40.0")), "{l:?}");
+        assert!(l[2].contains(&tr!("panels-io-time-stalled", time = format_eta(4.0))), "{l:?}");
+        let stalled = tr!("panels-io-hint-stalled", stalled = format_eta(4.0), total = format_eta(10.0));
+        assert!(l.contains(&stalled), "{l:?}");
+        assert!(l.contains(&tr!("panels-io-hint-small-files", size = format_size(8 * 1024, SizeStyle::Binary))));
+        assert!(l.contains(&tr!("panels-io-hint-same-disk").to_string()));
+        assert!(!l.contains(&tr!("panels-io-hint-none").to_string()));
+
+        // A plain, fast copy: nothing in the way.
+        let mut f = snap(JobState::Running);
+        f.started = Some(std::time::Instant::now());
+        f.io.moving = Duration::from_secs(5);
+        let l = texts(io_lines(&f));
+        assert_eq!(l.last(), Some(&tr!("panels-io-hint-none").to_string()));
     }
 }

@@ -265,6 +265,7 @@ impl Default for Jobs {
             history_limit: 500,
             trash_unsupported: TrashUnsupportedPolicy::Ask,
             auto_open_activity: true,
+            io_stats: true,
         }
     }
 }

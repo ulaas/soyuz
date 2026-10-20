@@ -760,6 +760,10 @@ pub struct Jobs {
     pub trash_unsupported: TrashUnsupportedPolicy,
     /// Open the activity panel when a job runs for more than a second.
     pub auto_open_activity: bool,
+    /// A job's details start with "Why is this slow?": its speeds, where the time went
+    /// (moving, stalled, counting, queued, paused, waiting for an answer) and what holds
+    /// it back.
+    pub io_stats: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

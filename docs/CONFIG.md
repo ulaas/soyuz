@@ -375,6 +375,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `history_limit` | integer | `500` | Finished jobs kept in the history (for undo / redo). |
 | `trash_unsupported` | `"ask"` \| `"permanent"` \| `"skip"` | `"ask"` | When a volume has no trash: `ask`, delete `permanent`ly or `skip`. |
 | `auto_open_activity` | boolean | `true` | Open the activity panel when a job runs for more than a second. |
+| `io_stats` | boolean | `true` | A job's details start with "Why is this slow?": its speeds, where the time went (moving, stalled, counting, queued, paused, waiting for an answer) and what holds it back. |
 
 ## `[terminal]`
 

@@ -174,3 +174,32 @@ fn lowering_history_limit_live_drops_the_oldest() {
     h.engine.set_queue(crate::QueueSettings { history_limit: 1, ..h.engine.queue() });
     assert_eq!(h.engine.history().iter().map(|e| e.id.0).collect::<Vec<_>>(), vec![3]);
 }
+
+#[test]
+fn io_stats_say_where_the_time_went_and_who_blocks() {
+    let h = H::with(|c| c.max_parallel = 1);
+    let d1 = h.p("dev1");
+    h.probe.devices.lock().push((d1.clone(), 11));
+    write(&d1.join("a"), &[1u8; 400_000]);
+    write(&d1.join("b"), &[2u8; 1000]);
+    let slow = h.engine.submit(throttled(copy_kind(&[&d1.join("a")], &d1.join("o1")), 400_000));
+    h.wait_state(slow, |s| *s == JobState::Running);
+    let next = h.engine.submit(JobSpec::new(copy_kind(&[&d1.join("b")], &d1.join("o2"))));
+    let blocked = wait_for(Duration::from_secs(5), || h.snap(next).io.blocked);
+    assert_eq!(blocked, crate::Blocked::SameDevice(Some(slow)), "queued behind the job on the same disk");
+    let mut quick = JobSpec::new(JobKind::Create { path: h.p("q"), kind: CreateKind::Dir });
+    quick.options.queue = QueueMode::Parallel;
+    let quick = h.engine.submit(quick);
+    let blocked = wait_for(Duration::from_secs(5), || h.snap(quick).io.blocked);
+    assert_eq!(blocked, crate::Blocked::Parallel(1));
+    h.ok(slow);
+    let s = h.snap(slow);
+    assert_eq!(s.io.same_device, Some(true));
+    assert!(s.io.moving > Duration::ZERO, "{:?}", s.io);
+    assert!(s.io.avg_bps > 0.0 && s.io.peak_bps >= s.io.avg_bps * 0.5, "{:?}", s.io);
+    assert_eq!(s.io.blocked, None);
+    h.ok(next);
+    let n = h.snap(next);
+    assert!(n.io.queued >= Duration::from_millis(100), "{:?}", n.io);
+    h.ok(quick);
+}

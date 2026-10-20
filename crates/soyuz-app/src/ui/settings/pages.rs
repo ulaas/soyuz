@@ -1053,6 +1053,9 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row(tr!("settings-jobs-auto-activity"), tr!("settings-jobs-auto-activity-desc"), |ui| {
             switch(ui, &mut d.jobs.auto_open_activity);
         });
+        r.row_kw(tr!("settings-jobs-io-stats"), tr!("settings-jobs-io-stats-desc"), "slow speed throughput", |ui| {
+            switch(ui, &mut d.jobs.io_stats);
+        });
         r.row_kw(tr!("settings-jobs-reset-apply-all"), tr!("settings-jobs-reset-apply-all-desc"), "conflict", |ui| {
             switch(ui, &mut d.jobs.reset_apply_all_between_jobs);
         });
