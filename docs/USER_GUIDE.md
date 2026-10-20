@@ -191,8 +191,7 @@ and *Retry failed*.
   - **Office / OpenDocument**: docx / odt text with headings, bold, italic and lists;
     xlsx / ods first sheet as a table (`sheet_rows`); pptx / odp slide titles and bullets.
   - **EPUB**: cover, title, authors, description and the table of contents.
-  - **Fonts** (ttf, otf, ttc, woff): a specimen, the character set and a glyph grid. WOFF 2
-    is not decoded.
+  - **Fonts** (ttf, otf, ttc, woff, woff2): a specimen, the character set and a glyph grid.
   - **3D models** (glTF / GLB, STL, OBJ): a shaded quick render; drag to rotate, scroll to
     zoom in Quick Look, double-click to reset. Models spin slowly unless reduced motion or
     `model_turntable = false`.

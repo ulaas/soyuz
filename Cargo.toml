@@ -116,6 +116,8 @@ lopdf = { version = "0.45.0", default-features = false }
 quick-xml = "0.42.0"
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 ab_glyph = "0.2.32"
+# WOFF 2 fonts (Brotli + glyph transforms, pure Rust) for the font preview.
+wuff = { version = "0.2.9", default-features = false, features = ["brotli"] }
 gltf = { version = "1.4.1", default-features = false, features = ["utils"] }
 symphonia = { version = "0.5.5", default-features = false, features = ["mp3", "flac", "wav", "pcm", "ogg", "vorbis", "isomp4", "aac", "aiff", "adpcm", "alac"] }
 rodio = { version = "0.23.0", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav", "symphonia-aiff", "symphonia-alac", "symphonia-adpcm"] }

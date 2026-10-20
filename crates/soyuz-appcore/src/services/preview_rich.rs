@@ -385,9 +385,10 @@ fn font(reader: &mut dyn ReadSeek, len: u64, lim: &RichLimits, up: &Uploader, id
             Ok(d) => d,
             Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-read-font"), e),
         },
-        Some("WOFF 2") => {
-            return card(Kind::Font, IconId::TextAa, tr!("services-preview-woff2"), tr!("services-preview-woff2-body"));
-        }
+        Some("WOFF 2") => match preview_font::woff2_to_sfnt(&data, lim.max_document as usize) {
+            Ok(d) => d,
+            Err(e) => return card(Kind::Font, IconId::WarningCircle, tr!("services-preview-cant-read-font"), e),
+        },
         _ => data,
     };
     let meta = match preview_font::meta(&data) {

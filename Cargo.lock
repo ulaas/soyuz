@@ -805,6 +805,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "brotli"
+version = "8.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5cc91aac060a7a1e25823bdccbfb6af1875b88f17c6daac97894eed8207166b3"
+dependencies = [
+ "alloc-no-stdlib",
+ "alloc-stdlib",
+ "brotli-decompressor",
+]
+
+[[package]]
 name = "brotli-decompressor"
 version = "5.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6813,6 +6824,7 @@ dependencies = [
  "ab_glyph",
  "base64 0.23.1",
  "blake3",
+ "brotli",
  "chrono",
  "criterion",
  "crossbeam-channel",
@@ -6862,6 +6874,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "windows-sys 0.61.2",
+ "wuff",
  "x11rb",
  "xattr",
  "zbus",
@@ -9192,6 +9205,16 @@ name = "writeable"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
+
+[[package]]
+name = "wuff"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "200a7b806377b65f1ff9a985874332f15357c87e5dd7855f35f06dade95b8b3d"
+dependencies = [
+ "brotli-decompressor",
+ "bytes",
+]
 
 [[package]]
 name = "wyz"

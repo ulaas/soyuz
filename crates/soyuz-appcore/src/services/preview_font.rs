@@ -3,9 +3,8 @@
 //! sizes, the alphabet and a glyph grid. Specimens are rendered as white coverage masks
 //! so the UI can tint them with the theme's text colour.
 //!
-//! Supports TrueType / OpenType (`ttf`, `otf`), collections (`ttc`, first face) and WOFF 1
-//! (zlib tables, unpacked here). WOFF 2 needs a Brotli + glyph-transform decoder and only
-//! gets a notice.
+//! Supports TrueType / OpenType (`ttf`, `otf`), collections (`ttc`, first face), WOFF 1
+//! (zlib tables, unpacked here) and WOFF 2 (`wuff`: Brotli and the glyph transforms).
 
 use std::io::Read;
 
@@ -57,6 +56,27 @@ pub fn format_of(data: &[u8]) -> Option<&'static str> {
         b"OTTO" => Some("OpenType (CFF)"),
         [0, 1, 0, 0] | b"true" => Some("TrueType"),
         _ => None,
+    }
+}
+
+/// Unpack a WOFF 2 file into a plain sfnt (`wuff`: Brotli plus the glyf / loca / hmtx
+/// transforms). The header's `totalSfntSize` must fit `cap`, and a malformed file is an
+/// error, never a panic.
+pub fn woff2_to_sfnt(data: &[u8], cap: usize) -> Result<Vec<u8>, String> {
+    let bad = || tr!("services-font-bad-woff").to_string();
+    let total = data.get(16..20).map(|b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize).ok_or_else(bad)?;
+    if data.get(..4) != Some(b"wOF2") || total == 0 {
+        return Err(bad());
+    }
+    if total > cap {
+        return Err(tr!("services-font-woff-table").into());
+    }
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| wuff::decompress_woff2(data)));
+    match r {
+        Ok(Ok(sfnt)) if sfnt.len() <= cap.max(total) => Ok(sfnt),
+        Ok(Ok(_)) => Err(tr!("services-font-woff-table").into()),
+        Ok(Err(e)) => Err(format!("{}: {e:?}", bad())),
+        Err(_) => Err(bad()),
     }
 }
 
@@ -392,6 +412,59 @@ mod tests {
         assert_eq!(format_of(&woff), Some("WOFF"));
         let back = woff_to_sfnt(&woff, 64 << 20).unwrap();
         assert_eq!(meta(&back).unwrap().family, meta(&sfnt).unwrap().family);
+    }
+
+    /// UIntBase128 (WOFF 2 §4.1).
+    fn base128(mut v: u32, out: &mut Vec<u8>) {
+        let mut bytes = vec![(v & 0x7f) as u8];
+        v >>= 7;
+        while v > 0 {
+            bytes.push((v & 0x7f) as u8 | 0x80);
+            v >>= 7;
+        }
+        bytes.reverse();
+        out.extend_from_slice(&bytes);
+    }
+
+    #[test]
+    fn woff2_of_a_real_font() {
+        let Some(sfnt) = system_font() else { return };
+        // A WOFF 2 with every table untransformed (glyf / loca: the null transform, 3),
+        // the tables Brotli-compressed as one stream.
+        let num = u16::from_be_bytes([sfnt[4], sfnt[5]]) as usize;
+        let mut dir = Vec::new();
+        let mut stream = Vec::new();
+        for i in 0..num {
+            let e = &sfnt[12 + i * 16..28 + i * 16];
+            let o = u32::from_be_bytes([e[8], e[9], e[10], e[11]]) as usize;
+            let l = u32::from_be_bytes([e[12], e[13], e[14], e[15]]) as usize;
+            let null = if &e[0..4] == b"glyf" || &e[0..4] == b"loca" { 3 << 6 } else { 0 };
+            dir.push(63 | null);
+            dir.extend_from_slice(&e[0..4]);
+            base128(l as u32, &mut dir);
+            stream.extend_from_slice(&sfnt[o..o + l]);
+        }
+        let mut comp = Vec::new();
+        let params = brotli::enc::BrotliEncoderParams { quality: 4, ..Default::default() };
+        brotli::BrotliCompress(&mut &stream[..], &mut comp, &params).unwrap();
+        let mut woff2 = b"wOF2".to_vec();
+        woff2.extend_from_slice(&sfnt[0..4]);
+        let total_len = (48 + dir.len() + comp.len()).div_ceil(4) * 4;
+        woff2.extend_from_slice(&(total_len as u32).to_be_bytes());
+        woff2.extend_from_slice(&(num as u16).to_be_bytes());
+        woff2.extend_from_slice(&[0, 0]);
+        woff2.extend_from_slice(&((sfnt.len() + 64) as u32).to_be_bytes());
+        woff2.extend_from_slice(&(comp.len() as u32).to_be_bytes());
+        woff2.extend_from_slice(&[0, 1, 0, 0]);
+        woff2.extend_from_slice(&[0; 20]);
+        woff2.extend_from_slice(&dir);
+        woff2.extend_from_slice(&comp);
+        woff2.resize(total_len, 0);
+        assert_eq!(format_of(&woff2), Some("WOFF 2"));
+        let back = woff2_to_sfnt(&woff2, 64 << 20).unwrap();
+        assert_eq!(meta(&back).unwrap().family, meta(&sfnt).unwrap().family);
+        assert!(woff2_to_sfnt(&woff2, 1024).is_err(), "over the cap");
+        assert!(woff2_to_sfnt(&woff2[..60], 64 << 20).is_err(), "cut short");
     }
 
     #[test]

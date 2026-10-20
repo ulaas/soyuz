@@ -58,6 +58,7 @@ lopdf.workspace = true
 quick-xml.workspace = true
 skrifa.workspace = true
 ab_glyph.workspace = true
+wuff.workspace = true
 gltf.workspace = true
 symphonia.workspace = true
 rodio.workspace = true
@@ -106,6 +107,8 @@ xattr.workspace = true
 [dev-dependencies]
 tempfile.workspace = true
 criterion.workspace = true
+# WOFF 2 test fonts (`services::preview_font` tests).
+brotli = { version = "8.0.2", default-features = false, features = ["std"] }
 
 [[bench]]
 name = "thumbs"
