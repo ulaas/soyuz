@@ -8,6 +8,7 @@ pub mod checksums;
 pub mod context_menu;
 pub mod devices;
 pub mod dialogs;
+pub mod focus_mode;
 pub mod folder_stats;
 pub mod frontend;
 pub mod jobs_rows;

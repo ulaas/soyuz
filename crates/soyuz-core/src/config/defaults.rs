@@ -133,6 +133,9 @@ impl Default for Layout {
             tab_strip: TabStripMode::Always,
             terminal_height: 260.0,
             activity_panel: ActivityPlacement::Right,
+            focus_mode_hides: ["sidebar", "status_bar", "preview", "bottom_panel", "activity", "ai_panel", "tabs"]
+                .map(String::from)
+                .to_vec(),
         }
     }
 }
@@ -536,6 +539,7 @@ fn common(km: &mut Keymap) {
     b(G, A::Quit, CTRL, KeyName::Q);
     b(G, A::ToggleHidden, CTRL, KeyName::H);
     b(G, A::ToggleSidebar, CTRL, KeyName::B);
+    b(G, A::ToggleFocusMode, CTRL_SHIFT, KeyName::B);
     b(G, A::ToggleTreeSidebar, CTRL_SHIFT, KeyName::E);
     b(G, A::TogglePreviewPane, ALT, KeyName::P);
     b(G, A::ToggleActivityPanel, CTRL_SHIFT, KeyName::J);

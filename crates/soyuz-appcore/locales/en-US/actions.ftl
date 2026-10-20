@@ -156,6 +156,8 @@ action-preview-page-down = Preview page down
 action-preview-page-down-desc = Scroll the preview pane down one page (terminal UI)
 action-context-menu = Open context menu
 action-context-menu-desc = Show the menu of the focused item, like a right click (terminal UI)
+action-toggle-focus-mode = Focus mode
+action-toggle-focus-mode-desc = Hide the sidebar, panels and bars around the listing; toggle again to bring them back
 action-new-smart-folder = New smart folder
 action-new-smart-folder-desc = Save an index query as a folder in the sidebar that stays up to date
 action-save-search-as-smart-folder = Save search as smart folder
@@ -570,6 +572,9 @@ actions-screen-reader-off = Screen-reader mode off
 actions-config-create-failed = Couldn't create the config file
 actions-index-on = File indexing is on
 actions-index-off = File indexing is off
+actions-focus-mode-on = Focus mode
+actions-focus-mode-on-key = Press { $key } to bring the panels back.
+actions-focus-mode-on-body = Run Focus mode again from the command palette to bring the panels back.
 # $action: an action title.
 actions-coming-soon = { $action } is coming soon
 

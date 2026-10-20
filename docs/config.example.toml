@@ -105,6 +105,8 @@ status_bar = true
 tab_strip = "always"             # always | multiple
 terminal_height = 260
 activity_panel = "right"         # right | bottom | floating
+# What focus mode hides (the toolbar and the listing always stay):
+focus_mode_hides = ["sidebar", "status_bar", "preview", "bottom_panel", "activity", "ai_panel", "tabs"]
 
 [workspace]                      # windows, tab groups, saved workspaces (workspaces.toml), timeline
 new_window = "in_process"        # in_process (Ctrl+N opens a window of this Soyuz) | process

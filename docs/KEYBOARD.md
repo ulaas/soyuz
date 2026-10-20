@@ -84,6 +84,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Scroll preview down | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↓</kbd> | Scroll the preview pane down one line (terminal UI) |
 | Preview page up | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>PageUp</kbd> | Scroll the preview pane up one page (terminal UI) |
 | Preview page down | — *(terminal UI only)* | <kbd>Alt</kbd>+<kbd>PageDown</kbd> | Scroll the preview pane down one page (terminal UI) |
+| Focus mode | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd> | same | Hide the sidebar, panels and bars around the listing; toggle again to bring them back |
 
 ### Selection
 

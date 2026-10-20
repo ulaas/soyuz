@@ -239,6 +239,7 @@ One role's font.
 | `tab_strip` | `"always"` \| `"multiple"` | `"always"` | Show the tab strip `always` or only with `multiple` tabs. |
 | `terminal_height` | float | `260.0` | Height of the terminal / bottom panel in points (120-720). |
 | `activity_panel` | `"right"` \| `"bottom"` \| `"floating"` | `"right"` | Where the activity (jobs) panel docks. |
+| `focus_mode_hides` | array of strings | `["sidebar", "status_bar", "preview", "bottom_panel", "activity", "ai_panel", "tabs"]` | What focus mode (`toggle_focus_mode`) hides: `sidebar`, `status_bar`, `preview`, `bottom_panel`, `activity`, `ai_panel`, `tabs`. The toolbar and the listing stay. |
 
 ## `[workspace]`
 

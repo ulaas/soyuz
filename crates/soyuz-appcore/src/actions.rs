@@ -223,6 +223,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             });
         }
         A::ToggleStatusBar => app.ui.status_visible = !app.ui.status_visible,
+        A::ToggleFocusMode => crate::models::focus_mode::toggle(app),
         A::ToggleCheckboxes => app.ui.checkbox_mode = !app.ui.checkbox_mode,
         A::ToggleTerminal => crate::models::terminal::toggle(app, host),
         A::FocusTerminal => crate::models::terminal::focus(app, host),

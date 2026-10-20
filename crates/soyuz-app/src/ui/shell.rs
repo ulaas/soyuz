@@ -88,7 +88,10 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     if main {
         crate::ui::ai::show(ui, app);
     }
-    if !titlebar && (app.core.config.layout.tab_strip == TabStripMode::Always || app.core.ws.tabs.len() > 1) {
+    if !titlebar
+        && (app.core.config.layout.tab_strip == TabStripMode::Always || app.core.ws.tabs.len() > 1)
+        && !crate::models::focus_mode::hides(&app.core, "tabs")
+    {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);

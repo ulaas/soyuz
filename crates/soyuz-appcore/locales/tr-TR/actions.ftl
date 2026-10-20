@@ -155,6 +155,8 @@ action-preview-page-down = Önizlemede sayfa aşağı
 action-preview-page-down-desc = Önizleme bölmesini bir sayfa aşağı kaydır (terminal arayüzü)
 action-context-menu = Bağlam menüsünü aç
 action-context-menu-desc = Odaktaki öğenin menüsünü sağ tıklama gibi göster (terminal arayüzü)
+action-toggle-focus-mode = Odak modu
+action-toggle-focus-mode-desc = Listenin çevresindeki kenar çubuğunu, panelleri ve çubukları gizle; geri getirmek için yeniden aç/kapat
 action-new-smart-folder = Yeni akıllı klasör
 action-new-smart-folder-desc = Bir dizin sorgusunu kenar çubuğunda güncel kalan bir klasör olarak kaydet
 action-save-search-as-smart-folder = Aramayı akıllı klasör olarak kaydet
@@ -569,6 +571,9 @@ actions-screen-reader-off = Ekran okuyucu kipi kapalı
 actions-config-create-failed = Yapılandırma dosyası oluşturulamadı
 actions-index-on = Dosya dizinleme açık
 actions-index-off = Dosya dizinleme kapalı
+actions-focus-mode-on = Odak modu
+actions-focus-mode-on-key = Panelleri geri getirmek için { $key } tuşuna basın.
+actions-focus-mode-on-body = Panelleri geri getirmek için komut paletinden Odak modunu yeniden çalıştırın.
 # $action: eylem başlığı.
 actions-coming-soon = “{ $action }” yakında kullanıma sunulacak
 

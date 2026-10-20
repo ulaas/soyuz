@@ -321,6 +321,9 @@ pub struct Layout {
     pub terminal_height: f32,
     /// Where the activity (jobs) panel docks.
     pub activity_panel: ActivityPlacement,
+    /// What focus mode (`toggle_focus_mode`) hides: `sidebar`, `status_bar`, `preview`,
+    /// `bottom_panel`, `activity`, `ai_panel`, `tabs`. The toolbar and the listing stay.
+    pub focus_mode_hides: Vec<String>,
 }
 
 /// What "New window" (Ctrl+N) opens.

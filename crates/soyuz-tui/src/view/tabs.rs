@@ -175,9 +175,10 @@ fn chip_label(name: &str, collapsed: bool, count: usize) -> String {
     }
 }
 
-/// Whether the tab strip takes a row (`layout::Facts::tab_strip`): more than one tab.
+/// Whether the tab strip takes a row (`layout::Facts::tab_strip`): more than one tab,
+/// unless focus mode hides it.
 pub fn shown(core: &AppCore) -> bool {
-    core.ws.tabs.len() > 1
+    core.ws.tabs.len() > 1 && !soyuz_appcore::models::focus_mode::hides(core, "tabs")
 }
 
 /// A run of text in the strip.

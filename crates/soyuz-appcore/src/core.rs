@@ -75,6 +75,8 @@ pub struct UiState {
     pub checkbox_mode: bool,
     pub sidebar_visible: bool,
     pub status_visible: bool,
+    /// Focus mode is on: what it hid, to show again (`models::focus_mode`).
+    pub focus_mode: Option<crate::models::focus_mode::Saved>,
     pub focus: Focus,
     pub address: AddressState,
     /// Focus the filter box on the next frame.
@@ -278,6 +280,7 @@ impl AppCore {
             checkbox_mode: session.as_ref().is_some_and(|s| s.checkbox_mode),
             sidebar_visible: session.as_ref().and_then(|s| s.sidebar_visible).unwrap_or(config.layout.sidebar),
             status_visible: config.layout.status_bar,
+            focus_mode: None,
             focus: Focus::List,
             address: AddressState::default(),
             filter_focus: false,
@@ -417,7 +420,7 @@ impl AppCore {
             show_hidden: Some(self.ui.show_hidden),
             theme: Some(theme_name(self.ui.theme).to_string()),
             collapsed_sections: self.ui.sidebar.collapsed.iter().cloned().collect(),
-            sidebar_visible: Some(self.ui.sidebar_visible),
+            sidebar_visible: Some(crate::models::focus_mode::sidebar_visible(self)),
             checkbox_mode: self.ui.checkbox_mode,
             welcome_seen: self.ui.welcome_seen,
             shelf: crate::models::tools::shelf_paths(),

@@ -87,7 +87,7 @@ define_actions! {
         ApplyViewToAll, TogglePreviewPane, ToggleInfoPane, ToggleTerminal, ToggleActivityPanel,
         ToggleAiPanel, ToggleStatusBar, ToggleTreeSidebar, ToggleCheckboxes,
         ToggleShelf, ToggleEditorPanel, PreviewScrollUp, PreviewScrollDown, PreviewPageUp,
-        PreviewPageDown, ToggleScreenReader,
+        PreviewPageDown, ToggleScreenReader, ToggleFocusMode,
     ],
     Selection: [
         SelectAll, SelectNone, InvertSelection, SelectByPattern, SelectSameExtension,

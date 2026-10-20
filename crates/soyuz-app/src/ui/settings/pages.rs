@@ -348,6 +348,9 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.block(tr!("settings-views-focus-mode"), tr!("settings-views-focus-mode-desc"), |ui| {
+            focus_mode_parts(ui, &mut d.layout.focus_mode_hides);
+        });
         r.row(tr!("settings-views-terminal-height"), tr!("settings-views-terminal-height-desc"), |ui| {
             number(ui, &mut d.layout.terminal_height, 120.0..=800.0, " px");
         });
@@ -607,6 +610,25 @@ fn columns_editor(ui: &mut Ui, details: &mut Vec<Column>, widths: &mut std::coll
                     details.push(c);
                 }
             }
+        });
+    }
+}
+
+/// One switch per part focus mode can hide (`[layout] focus_mode_hides`).
+fn focus_mode_parts(ui: &mut Ui, list: &mut Vec<String>) {
+    use crate::models::focus_mode as fm;
+    let p = palette(ui.ctx());
+    for &id in fm::PARTS {
+        let mut on = list.iter().any(|x| x == id);
+        ui.horizontal(|ui| {
+            if switch(ui, &mut on).changed() {
+                if on {
+                    list.push(id.to_string());
+                } else {
+                    list.retain(|x| x != id);
+                }
+            }
+            ui.label(RichText::new(fm::label(id)).color(p.text_primary));
         });
     }
 }

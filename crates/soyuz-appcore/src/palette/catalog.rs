@@ -239,6 +239,7 @@ fn meta(a: &Action) -> (IconId, &'static str) {
         A::ToggleTerminal => (IconId::TerminalWindow, "shell console"),
         A::ToggleActivityPanel => (IconId::Pulse, "progress operations"),
         A::ToggleStatusBar => (IconId::Rectangle, ""),
+        A::ToggleFocusMode => (IconId::RectangleDashed, "zen distraction free hide chrome panels minimal"),
         A::ToggleTreeSidebar => (IconId::TreeView, ""),
         A::ToggleCheckboxes => (IconId::CheckSquare, "touch"),
         A::SortBy(c) => (column_icon(*c), "order"),

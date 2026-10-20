@@ -124,3 +124,31 @@ fn type_ahead_filter(data: PathBuf) {
     assert!(app.hits().iter().any(|(_, t)| *t == HitTarget::Status));
     common::ok();
 }
+
+#[test]
+fn focus_mode_hides_the_chrome_and_brings_it_back() {
+    match common::relaunch(module_path!(), "focus_mode_hides_the_chrome_and_brings_it_back", |data| {
+        files(data, &["a.txt"]);
+    }) {
+        Run::Child(data) => focus_mode(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn focus_mode(data: PathBuf) {
+    use crossterm::event::KeyModifiers;
+    let mut app = common::new_app(common::test_config(), &data);
+    let d = data.clone();
+    let shift_ctrl_b = || common::key_mods(KeyCode::Char('B'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    let steps = vec![
+        Step::new("the listing with the status line", move |a| at(a, &d) && a.core.ui.status_visible, shift_ctrl_b()),
+        Step::new(
+            "focus mode: no sidebar, no status line",
+            |a| a.core.ui.focus_mode.is_some() && !a.core.ui.sidebar_visible && !a.core.ui.status_visible,
+            shift_ctrl_b(),
+        ),
+        Step::new("the status line back", |a| a.core.ui.focus_mode.is_none() && a.core.ui.status_visible, ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 80, 24);
+    common::ok();
+}

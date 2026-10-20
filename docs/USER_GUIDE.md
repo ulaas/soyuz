@@ -41,6 +41,10 @@ of the *Explorer* preset; the command palette always shows the active ones.
   folders. Click the empty area or press `Ctrl+L` to type a path (with completion).
 - The **status bar** shows counts, selection size, free space, an icon-size slider, view
   and theme switches, and a ring when jobs are running.
+- **Focus mode** (`Ctrl+Shift+B`, or *Focus mode* in the palette) hides the sidebar, the
+  panels, the status bar and the tab strip, leaving the toolbar and the listing; press it
+  again to bring back what was shown. *Settings → Views → Focus mode hides* picks the parts
+  (`[layout] focus_mode_hides`).
 
 ### The sidebar
 
