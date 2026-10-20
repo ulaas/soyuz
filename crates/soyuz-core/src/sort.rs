@@ -83,6 +83,34 @@ pub fn compare_entries(a: &EntryInfo, b: &EntryInfo, spec: &SortSpec) -> Orderin
     primary.then_with(|| name(a, b)).then_with(|| a.path.cmp(&b.path))
 }
 
+/// Sort `v` by `spec` with the primary key from outside [`EntryInfo`] (script columns):
+/// `key` gives each entry's text (`None` or empty: no value yet), compared like names
+/// (numbers in natural order). Entries without a value come last in both directions;
+/// folders-first and the name / path tie-breaks are as in [`compare_entries`].
+pub fn sort_entries_keyed(v: &mut Vec<EntryInfo>, spec: &SortSpec, key: impl Fn(&EntryInfo) -> Option<String>) {
+    let mut keyed: Vec<(Option<String>, EntryInfo)> =
+        v.drain(..).map(|e| (key(&e).filter(|k| !k.is_empty()), e)).collect();
+    keyed.sort_unstable_by(|(ka, a), (kb, b)| {
+        if spec.folders_first {
+            let ord = b.is_dir_like().cmp(&a.is_dir_like());
+            if ord != Ordering::Equal {
+                return ord;
+            }
+        }
+        let primary = match (ka, kb) {
+            (Some(x), Some(y)) => match spec.dir {
+                SortDir::Asc => cmp_names(x, y, spec),
+                SortDir::Desc => cmp_names(x, y, spec).reverse(),
+            },
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        };
+        primary.then_with(|| cmp_names(&a.name, &b.name, spec)).then_with(|| a.path.cmp(&b.path))
+    });
+    v.extend(keyed.into_iter().map(|(_, e)| e));
+}
+
 fn cmp_names(a: &str, b: &str, spec: &SortSpec) -> Ordering {
     if spec.natural {
         natural_cmp(a, b, spec.case_insensitive)
@@ -157,5 +185,27 @@ mod tests {
         let spec = SortSpec { column: Column::Kind, folders_first: false, ..SortSpec::default() };
         sort_entries(&mut v, &spec);
         assert_eq!(names(&v), ["d", "a.txt", "y.TXT", "x.zip"]);
+    }
+
+    #[test]
+    fn keyed_sort_puts_missing_values_last() {
+        let mut v = vec![
+            e("a", EntryKind::File, 0),
+            e("b", EntryKind::File, 0),
+            e("c", EntryKind::File, 0),
+            e("d", EntryKind::File, 0),
+        ];
+        let key = |x: &EntryInfo| match x.name.as_str() {
+            "a" => Some("10".to_string()),
+            "b" => Some("9".to_string()),
+            "c" => Some(String::new()),
+            _ => None,
+        };
+        let spec = SortSpec { column: Column::Script1, ..SortSpec::default() };
+        sort_entries_keyed(&mut v, &spec, key);
+        assert_eq!(names(&v), ["b", "a", "c", "d"], "natural order, no value last");
+        let spec = SortSpec { dir: SortDir::Desc, ..spec };
+        sort_entries_keyed(&mut v, &spec, key);
+        assert_eq!(names(&v), ["a", "b", "c", "d"], "still last when descending");
     }
 }

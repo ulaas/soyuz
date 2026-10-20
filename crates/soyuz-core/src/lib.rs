@@ -34,7 +34,7 @@ pub use naming::{NameError, fs_needs_windows_names, natural_cmp, unique_name, va
 pub use policy::{ConflictResolution, ErrorAction, Overwrite};
 pub use progress::{ByteProgress, HashAlgo, ProgressSink};
 pub use size::{SizeStyle, format_eta, format_size, format_speed};
-pub use sort::{SortDir, SortSpec, compare_entries, sort_entries};
+pub use sort::{SortDir, SortSpec, compare_entries, sort_entries, sort_entries_keyed};
 pub use time::{DateFormat, DateFormatName, format_time};
 
 /// Generic `Display`/`FromStr` helpers for unit-only enums that use

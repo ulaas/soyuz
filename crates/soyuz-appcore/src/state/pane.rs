@@ -356,6 +356,14 @@ impl Pane {
         self.recompute_visible();
     }
 
+    /// Re-sort by a key the entries don't carry (a script column's text; see
+    /// `soyuz_core::sort_entries_keyed`).
+    pub fn resort_keyed(&mut self, key: impl Fn(&EntryInfo) -> Option<String>) {
+        soyuz_core::sort_entries_keyed(&mut self.entries, &self.view.sort, key);
+        self.rebuild_index();
+        self.recompute_visible();
+    }
+
     /// Recompute the visible order if needed.
     /// Merge streamed chunks received since the last frame.
     pub fn flush_incoming(&mut self) {

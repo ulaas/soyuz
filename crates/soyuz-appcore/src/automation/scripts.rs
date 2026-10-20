@@ -38,6 +38,7 @@ pub fn generation() -> u64 {
 pub(crate) fn set_current(s: Arc<ScriptSet>) {
     *CURRENT.write() = Some(s);
     GENERATION.fetch_add(1, Ordering::SeqCst);
+    CELLS_VERSION.fetch_add(1, Ordering::SeqCst);
 }
 
 pub(crate) fn set_wake(w: Wake) {
@@ -186,6 +187,34 @@ thread_local! {
     static CELLS: RefCell<Option<Cells>> = const { RefCell::new(None) };
 }
 
+/// Bumped whenever script column values arrive (panes sorted by one re-sort then).
+static CELLS_VERSION: AtomicU64 = AtomicU64::new(0);
+
+/// Take the finished values off the worker's channel.
+fn drain(cells: &mut Cells, generation: u64) {
+    let mut any = false;
+    for d in cells.rx.try_iter() {
+        cells.pending.remove(&d.key);
+        if d.generation == generation {
+            cells.values.insert(d.key, d.value);
+            any = true;
+        }
+    }
+    if any {
+        CELLS_VERSION.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+/// Changes whenever new script column values are known (it collects them first).
+pub fn cells_version() -> u64 {
+    CELLS.with_borrow_mut(|c| {
+        if let Some(cells) = c {
+            drain(cells, GENERATION.load(Ordering::SeqCst));
+        }
+    });
+    CELLS_VERSION.load(Ordering::SeqCst)
+}
+
 /// Value of a script column for `e` (empty while it is being computed).
 pub fn cell_text(col: Column, e: &EntryInfo) -> String {
     let Some(slot) = col.script_slot() else { return String::new() };
@@ -200,12 +229,7 @@ pub fn cell_text(col: Column, e: &EntryInfo) -> String {
             cells.values.clear();
             cells.pending.clear();
         }
-        for d in cells.rx.try_iter() {
-            cells.pending.remove(&d.key);
-            if d.generation == generation {
-                cells.values.insert(d.key, d.value);
-            }
-        }
+        drain(cells, generation);
         if cells.values.len() > MAX_CELLS {
             cells.values.clear();
         }

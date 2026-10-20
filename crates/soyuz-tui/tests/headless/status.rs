@@ -152,3 +152,40 @@ fn focus_mode(data: PathBuf) {
     common::run_script(&mut app, steps, 80, 24);
     common::ok();
 }
+
+#[test]
+fn sorting_by_a_script_column_uses_its_values() {
+    match common::relaunch(module_path!(), "sorting_by_a_script_column_uses_its_values", |data| {
+        // The script column reads each file's number; by name the order would differ.
+        for (name, n) in [("a.txt", "30"), ("b.txt", "4"), ("c.txt", "100")] {
+            std::fs::write(data.join(name), n).unwrap();
+        }
+    }) {
+        Run::Child(data) => script_sort(data),
+        Run::Parent(_) => {}
+    }
+}
+
+fn script_sort(data: PathBuf) {
+    let scripts = soyuz_core::config::config_dir().join("scripts");
+    std::fs::create_dir_all(&scripts).unwrap();
+    std::fs::write(
+        scripts.join("number.rhai"),
+        r#"register_column(#{ title: "Number", value: |entry| { let t = read_text(entry.path, 64); t.trim(); t } });"#,
+    )
+    .unwrap();
+    let mut c = common::test_config();
+    c.keys.bindings.insert("sort_by:script1".into(), vec!["F8".into()]);
+    let mut app = common::new_app(c, &data);
+    let d = data.clone();
+    let steps = vec![
+        Step::new(
+            "the listing by name",
+            move |a| at(a, &d) && labels(a) == ["a.txt", "b.txt", "c.txt"],
+            key(KeyCode::F(8)),
+        ),
+        Step::new("sorted by the script's numbers", |a| labels(a) == ["b.txt", "a.txt", "c.txt"], ctrl('q')),
+    ];
+    common::run_script(&mut app, steps, 80, 24);
+    common::ok();
+}

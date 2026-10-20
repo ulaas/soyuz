@@ -14,6 +14,7 @@ pub mod cli_server;
 pub mod menu;
 pub mod scripts;
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -214,6 +215,7 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
         }
     }
     bind_hotkeys(app);
+    sort_script_columns(app);
     let done: Vec<ActionDone> = app.automation.action_rx.try_iter().collect();
     for d in done {
         if d.counted {
@@ -236,6 +238,42 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
     }
     pump_rules(app, host);
     pump_cli(app, host);
+}
+
+/// What a pane sorted by a script column was last sorted with: listing generation, entry
+/// count, [`scripts::cells_version`] and the sort.
+type SortSig = (u64, usize, u64, soyuz_core::SortSpec);
+
+thread_local! {
+    static SCRIPT_SORTED: RefCell<HashMap<crate::state::pane::PaneId, SortSig>> = RefCell::new(HashMap::new());
+}
+
+/// Panes sorted by a script column: ask for every row's value (computed on the script
+/// worker) and re-sort as they arrive; rows without a value yet come last.
+fn sort_script_columns(app: &mut AppCore) {
+    let version = scripts::cells_version();
+    let mut live = Vec::new();
+    for pane in app.ws.tabs.iter_mut().flat_map(|t| t.panes.iter_mut()) {
+        let col = pane.view.sort.column;
+        if col.script_slot().is_none()
+            || pane.refreshing
+            || !matches!(pane.status, crate::state::pane::ListingStatus::Ready)
+        {
+            continue;
+        }
+        live.push(pane.id);
+        let sig = (pane.generation, pane.entries.len(), version, pane.view.sort.clone());
+        if SCRIPT_SORTED.with_borrow(|s| s.get(&pane.id) == Some(&sig)) {
+            continue;
+        }
+        let keys: HashMap<PathBuf, String> =
+            pane.entries.iter().map(|e| (e.path.clone(), scripts::cell_text(col, e))).collect();
+        pane.resort_keyed(|e| keys.get(&e.path).cloned());
+        // Values that arrived while asking count as seen (they are in `keys`).
+        let sig = (pane.generation, pane.entries.len(), scripts::cells_version(), pane.view.sort.clone());
+        SCRIPT_SORTED.with_borrow_mut(|s| s.insert(pane.id, sig));
+    }
+    SCRIPT_SORTED.with_borrow_mut(|s| s.retain(|id, _| live.contains(id)));
 }
 
 /// Script hotkeys (`hotkey` in `register_action`) unless `[keys.bindings]` names the
