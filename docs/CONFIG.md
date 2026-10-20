@@ -287,6 +287,7 @@ Editable toolbar: action names plus `"|"` (separator), `"spacer"`, `"breadcrumb"
 | `system_folder_list` | array of strings | `["appdata", "local_appdata", "programdata", "temp", "xdg_config", "xdg_data", "xdg_cache"]` | Which system folders show (those that exist on this OS, in a fixed order). Windows: `appdata`, `local_appdata`, `locallow`, `programdata`, `program_files`, `program_files_x86`, `temp`, `public`, `start_menu`, `startup`, `fonts`, `hosts`, `windows`, `soyuz_config`. Linux: `xdg_config`, `xdg_data`, `xdg_cache`, `xdg_state`, `local_bin`, `applications`, `autostart`, `flatpak_apps`, `temp`, `etc`, `opt`, `var_log`, `soyuz_config`. |
 | `unmounted_devices` | `"all"` \| `"removable"` \| `"off"` | `"all"` | Linux: unmounted disks and partitions listed under Devices (click to mount, or to unlock BitLocker / LUKS): `all` \| `removable` \| `off`. (`all`: Every mountable or unlockable disk and partition, internal ones included; `removable`: Only removable media (USB, SD cards); `off`: None: only mounted volumes are listed) |
 | `hidden_devices` | array of strings | `[]` | Linux: devices hidden from the Devices section ("Hide from sidebar"): filesystem UUIDs or device paths (`/dev/sdb1`). |
+| `disk_health` | boolean | `true` | This PC's drive cards show each drive's health (SMART / NVMe: temperature, wear, bad sectors), and a drive that reports failing raises a warning. |
 
 ## `[[sidebar.portal]]`
 

@@ -8,6 +8,7 @@ pub(crate) mod chrome;
 pub(crate) mod console;
 pub(crate) mod dragdrop;
 pub(crate) mod fs;
+pub(crate) mod health;
 pub(crate) mod locale;
 pub(crate) mod ntdir;
 pub(crate) mod owned;

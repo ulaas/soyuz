@@ -588,6 +588,108 @@ mod imp {
         call::<_, String>(object, "Filesystem", "Mount", &(opts(o),)).map(PathBuf::from)
     }
 
+    /// Any number property as `f64` (UDisks mixes `y`, `q`, `i`, `x`, `t` and `d`).
+    fn num_of(v: &Value<'_>) -> Option<f64> {
+        Some(match v {
+            Value::U8(n) => f64::from(*n),
+            Value::U16(n) => f64::from(*n),
+            Value::I16(n) => f64::from(*n),
+            Value::U32(n) => f64::from(*n),
+            Value::I32(n) => f64::from(*n),
+            Value::U64(n) => *n as f64,
+            Value::I64(n) => *n as f64,
+            Value::F64(n) => *n,
+            Value::Value(v) => return num_of(v),
+            _ => return None,
+        })
+    }
+
+    fn num(p: &Props, k: &str) -> Option<f64> {
+        p.get(k).and_then(|v| num_of(v))
+    }
+
+    /// The health of the drive holding the filesystem mounted at `mount` (through an
+    /// unlocked LUKS volume too): `Drive.Ata` SMART (cached by udisksd, read as root) or
+    /// `NVMe.Controller` plus its `SmartGetAttributes`.
+    pub fn drive_health(mount: &std::path::Path) -> Option<crate::health::DiskHealth> {
+        use crate::health::{Concern, DiskHealth};
+        let c = conn().ok()?;
+        let objs = objects(&c).ok()?;
+        let iface =
+            |o: &str, i: &str| objs.iter().find(|(k, _)| k.as_str() == o).and_then(|(_, m)| m.get(&format!("{P}{i}")));
+        let (mut block, _) = objs.iter().find(|(_, i)| {
+            i.get(&format!("{P}Filesystem")).is_some_and(|f| paths(f, "MountPoints").iter().any(|m| m == mount))
+        })?;
+        // An unlocked volume: its drive is the encrypted block's.
+        let mut blk = iface(block.as_str(), "Block")?;
+        if obj(blk, "Drive").is_none()
+            && let Some(backing) = obj(blk, "CryptoBackingDevice")
+            && let Some((k, _)) = objs.iter().find(|(k, _)| k.as_str() == backing)
+        {
+            block = k;
+            blk = iface(block.as_str(), "Block")?;
+        }
+        let drive = obj(blk, "Drive")?;
+        let d = iface(&drive, "Drive")?;
+        let vendor = s(d, "Vendor");
+        let model = s(d, "Model");
+        let mut h = DiskHealth {
+            model: if vendor.is_empty() || model.starts_with(&vendor) { model } else { format!("{vendor} {model}") },
+            ..DiskHealth::default()
+        };
+        let kelvin = |k: f64| (k > 0.0).then(|| (k - 273.15).round() as i32);
+        if let Some(a) = iface(&drive, "Drive.Ata").filter(|a| b(a, "SmartSupported") && b(a, "SmartEnabled")) {
+            h.temperature_c = num(a, "SmartTemperature").and_then(kelvin);
+            h.power_on_hours = num(a, "SmartPowerOnSeconds").filter(|s| *s > 0.0).map(|s| (s / 3600.0) as u64);
+            if b(a, "SmartFailing") {
+                h.concerns.push(Concern::PredictsFailure);
+            }
+            if let Some(bad) = num(a, "SmartNumBadSectors").filter(|n| *n > 0.0) {
+                h.concerns.push(Concern::BadSectors(bad as u64));
+            }
+        } else if let Some(n) = iface(&drive, "NVMe.Controller") {
+            h.nvme = true;
+            h.temperature_c = num(n, "SmartTemperature").and_then(kelvin);
+            h.power_on_hours = num(n, "SmartPowerOnHours").map(|v| v as u64);
+            if let Some(Value::Array(w)) = n.get("SmartCriticalWarning").map(|v| &**v) {
+                for x in w.iter() {
+                    if let Value::Str(x) = x {
+                        match x.as_str() {
+                            "spare" => h.concerns.push(Concern::SpareLow),
+                            "degraded" => h.concerns.push(Concern::Degraded),
+                            "readonly" => h.concerns.push(Concern::ReadOnly),
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            // The full log (no authorization needed to read it).
+            let m = c.call_method(
+                Some(DEST),
+                drive.as_str(),
+                Some(format!("{P}NVMe.Controller").as_str()),
+                "SmartGetAttributes",
+                &(HashMap::<&str, Value<'_>>::new(),),
+            );
+            if let Ok(attrs) = m.and_then(|m| m.body().deserialize::<Props>()) {
+                let at = |k: &str| num(&attrs, k);
+                h.percent_used = at("percent_used").map(|v| v as u8);
+                h.available_spare = at("avail_spare").map(|v| v as u8);
+                h.bytes_written = at("total_data_written").map(|v| v as u64);
+                h.bytes_read = at("total_data_read").map(|v| v as u64);
+                h.power_cycles = at("power_cycles").map(|v| v as u64);
+                h.unsafe_shutdowns = at("unsafe_shutdowns").map(|v| v as u64);
+                if let Some(u) = h.percent_used.filter(|u| *u >= 90) {
+                    h.concerns.push(Concern::WornOut(u));
+                }
+                if let Some(e) = at("media_errors").filter(|e| *e > 0.0) {
+                    h.concerns.push(Concern::MediaErrors(e as u64));
+                }
+            }
+        }
+        h.known().then_some(h)
+    }
+
     pub fn unmount(object: &str, force: bool, interactive: bool) -> io::Result<()> {
         let mut m = opts(&MountOptions { interactive, ..Default::default() });
         if force {
@@ -650,6 +752,12 @@ mod imp {
 }
 
 /// Whether UDisks2 is reachable (running or D-Bus activatable).
+/// The health of the drive under a mount point (`crate::health::volume_health`).
+#[cfg(target_os = "linux")]
+pub fn drive_health(mount: &std::path::Path) -> Option<crate::health::DiskHealth> {
+    imp::drive_health(mount)
+}
+
 pub fn available() -> bool {
     imp::available()
 }

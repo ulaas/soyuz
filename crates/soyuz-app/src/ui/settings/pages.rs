@@ -486,6 +486,16 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             });
         }
     });
+    any |= group(ui, q, ctx, tr!("settings-views-drives"), |r| {
+        r.row_kw(
+            tr!("settings-views-disk-health"),
+            tr!("settings-views-disk-health-desc"),
+            "disk health smart nvme ssd wear temperature this pc drives",
+            |ui| {
+                switch(ui, &mut d.sidebar.disk_health);
+            },
+        );
+    });
     any |= group(ui, q, ctx, tr!("settings-views-sysfolders"), |r| {
         r.row_kw(
             tr!("settings-views-sysfolders-show"),

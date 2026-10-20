@@ -313,8 +313,11 @@ pub fn trash_vm(ts: &TrashState, config: &Config, n: Nav, focused: bool, icons: 
     }
 }
 
-/// The Computer page of `drives`.
+/// The Computer page of `drives`; a Health column once a drive's health is known
+/// (`models::disk_health`).
 pub fn computer_vm(drives: &[VolumeInfo], n: Nav, focused: bool, icons: IconSet) -> PlacesVm {
+    use soyuz_appcore::models::disk_health;
+    let health_on = drives.iter().any(|v| disk_health::get(&v.mount).is_some());
     let rows = visible(drives, n)
         .iter()
         .enumerate()
@@ -330,12 +333,16 @@ pub fn computer_vm(drives: &[VolumeInfo], n: Nav, focused: bool, icons: IconSet)
                 String::new()
             };
             let fs = if v.fs.is_empty() { tr!("views-computer-drive").to_string() } else { safe(&v.fs) };
+            let mut cells = vec![String::new(), free, fs];
+            if health_on {
+                cells.push(disk_health::get(&v.mount).map(|d| safe(&disk_health::summary(&d))).unwrap_or_default());
+            }
             PlaceRow {
                 index,
                 icon: volume_icon(v),
                 name: safe(&volume_label(v)),
                 kind: RowKind::Dir,
-                cells: vec![String::new(), free, fs],
+                cells,
                 usage: used_share(v).map(|u| ((u.clamp(0.0, 1.0) * 1000.0).round() as u16, usage_level(u))),
                 cursor: index == n.cursor,
                 selected: false,
@@ -348,11 +355,17 @@ pub fn computer_vm(drives: &[VolumeInfo], n: Nav, focused: bool, icons: IconSet)
         summary: String::new(),
         buttons: vec![ButtonVm { id: button::REFRESH, label: tr!("views-trash-refresh").into(), danger: false }],
         name_label: soyuz_appcore::i18n::labels::column(soyuz_core::Column::Name).into(),
-        columns: vec![
-            ColVm { label: tr!("tui-places-usage").into(), share: 22, right: false, min_width: 48 },
-            ColVm { label: tr!("tui-places-free").into(), share: 28, right: false, min_width: 30 },
-            ColVm { label: tr!("tui-places-filesystem").into(), share: 12, right: false, min_width: 64 },
-        ],
+        columns: {
+            let mut c = vec![
+                ColVm { label: tr!("tui-places-usage").into(), share: 22, right: false, min_width: 48 },
+                ColVm { label: tr!("tui-places-free").into(), share: 28, right: false, min_width: 30 },
+                ColVm { label: tr!("tui-places-filesystem").into(), share: 12, right: false, min_width: 64 },
+            ];
+            if health_on {
+                c.push(ColVm { label: tr!("views-health-column").into(), share: 30, right: false, min_width: 90 });
+            }
+            c
+        },
         rows,
         top: n.top,
         total: drives.len(),

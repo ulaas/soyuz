@@ -593,3 +593,34 @@ views-archive-rename-body = { $kind ->
    *[other] { $archive } içindeki “{ $name }” dosyası için yeni ad
 }
 views-archive-no-slashes = Ad eğik çizgi içeremez.
+
+## Sürücü kartlarında disk sağlığı (`models::disk_health`).
+views-health-good = Sağlıklı
+views-health-warning = İlgi gerekiyor
+views-health-failing = Arızalanıyor
+views-health-temp = { $celsius } °C
+views-health-worn = %{ $percent } aşınmış
+views-health-predicts-failure = Sürücü kendi arızasını öngörüyor: dosyalarınızı hemen başka yere kopyalayın
+views-health-spare-low = Yedek kapasite neredeyse bitti
+views-health-degraded = Güvenilirlik düştü (ortam ya da iç hatalar)
+views-health-read-only = Sürücü kendini salt okunur yaptı
+views-health-worn-out = Belirtilen dayanıklılığın %{ $percent } kadarı kullanıldı
+views-health-bad-sectors = { $count ->
+    [one] 1 bozuk ya da yeniden eşlenmiş kesim
+   *[other] { $count } bozuk ya da yeniden eşlenmiş kesim
+}
+views-health-media-errors = { $count ->
+    [one] 1 ortam hatası
+   *[other] { $count } ortam hatası
+}
+views-health-hot = Fazla ısınıyor: { $celsius } °C
+views-health-temp-line = Sıcaklık: { $celsius } °C
+views-health-worn-line = Aşınma: belirtilen dayanıklılığın %{ $percent } kadarı
+views-health-spare-line = Yedek kapasite: %{ $percent }
+views-health-hours-line = Açık kalma: { $hours } saat ({ $days } gün)
+views-health-cycles-line = Açılıp kapanma: { $count }
+views-health-unsafe-line = Güvenli olmayan kapanma: { $count }
+views-health-written-line = Yazılan: { $size }
+views-health-read-line = Okunan: { $size }
+views-health-toast = { $drive } arızalandığını bildiriyor
+views-health-column = Sağlık

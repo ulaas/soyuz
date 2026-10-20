@@ -32,6 +32,7 @@ pub mod fdwait;
 pub mod fuzzing;
 pub mod guard;
 pub mod hash;
+pub mod health;
 pub mod integration;
 pub mod launch;
 pub mod links;

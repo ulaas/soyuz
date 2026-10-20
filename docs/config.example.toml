@@ -142,6 +142,7 @@ system_folders = true            # system folders below the favorites, after a d
 system_folder_list = ["appdata", "local_appdata", "programdata", "temp", "xdg_config", "xdg_data", "xdg_cache"]
 unmounted_devices = "all"        # Linux: unmounted disks under Devices (click to mount / unlock): all | removable | off
 hidden_devices = []              # Linux: devices hidden via "Hide from sidebar" (filesystem UUIDs or /dev paths)
+disk_health = true               # This PC's drive cards show SMART / NVMe health; a failing drive raises a warning
 
 [[sidebar.portal]]               # folders pinned to the Portal section (drop folders on it); in order
 path = 'C:\Work\Projects'

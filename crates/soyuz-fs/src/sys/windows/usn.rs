@@ -47,7 +47,7 @@ pub(crate) struct VolumeHandle {
 
 /// `\\.\C:` for a drive root, else the `\\?\Volume{…}` name of a mount point (without
 /// the trailing backslash, which would open the root directory instead of the volume).
-fn device_path(root: &Path) -> io::Result<Vec<u16>> {
+pub(crate) fn device_path(root: &Path) -> io::Result<Vec<u16>> {
     let plain = crate::path::strip_verbatim(root);
     let s = plain.to_string_lossy();
     let b = s.as_bytes();

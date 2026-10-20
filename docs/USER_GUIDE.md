@@ -510,6 +510,16 @@ All from the palette or the context menu:
   that verified their copies show a *Verified* badge in the activity panel and history
   (or turn verification on for every copy in Settings › Jobs).
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
+- **Disk health** — This PC's drive cards show each drive's health with a coloured dot:
+  *Healthy*, *Needs attention* (worn-out flash, bad or remapped sectors, media errors, running
+  hotter than the drive's own warning level) or *Failing* (the drive predicts its failure,
+  ran out of spare capacity, degraded or went read-only), with the temperature and wear;
+  hover a card for every figure (power-on hours, power cycles, unsafe shutdowns, data
+  written and read). Read from SMART and the NVMe health log without administrator or root
+  rights (on Linux through UDisks2), again every five minutes while This PC is shown. A
+  failing drive raises a warning once per session. Network drives, and USB enclosures
+  that don't pass SMART through, show nothing. Turn it off with Settings → Views → Drives
+  (`[sidebar] disk_health`).
 - **Quick share** — *Quick share…* (palette, or a selection's menu) shares the selected
   files and folders (nothing selected: the folder shown) with a phone or another computer on
   the same network: the window shows an address and its QR code. Open it in any browser to
@@ -835,7 +845,8 @@ PC* under Devices).
   and F5 reads the trash again.
 - The This PC page lists the drives with a usage bar (yellow below 15 % free, red below 5 %),
   free and total space and the file system. Enter or a click opens a drive; Shift+F10 or a
-  right click opens its menu.
+  right click opens its menu. A Health column appears once the drives' health is read (see
+  *Disk health* under Tools).
 
 ### Panels
 

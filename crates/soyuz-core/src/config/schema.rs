@@ -475,6 +475,9 @@ pub struct Sidebar {
     /// Linux: devices hidden from the Devices section ("Hide from sidebar"): filesystem
     /// UUIDs or device paths (`/dev/sdb1`).
     pub hidden_devices: Vec<String>,
+    /// This PC's drive cards show each drive's health (SMART / NVMe: temperature, wear,
+    /// bad sectors), and a drive that reports failing raises a warning.
+    pub disk_health: bool,
 }
 
 /// Which unmounted devices the sidebar's Devices section lists (Linux, UDisks2).

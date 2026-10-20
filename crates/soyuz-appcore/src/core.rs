@@ -456,6 +456,7 @@ impl AppCore {
         ops::drain_mailbox(self, host);
         crate::services::crash::pump(self, host);
         crate::models::devices::pump(self);
+        crate::models::disk_health::pump(self);
         crate::models::properties::pump(self, host);
         ops::drain_watcher(self);
         crate::palette::begin_frame(self, host);

@@ -1,4 +1,5 @@
-//! "This PC": volume cards with free-space bars.
+//! "This PC": volume cards with free-space bars and, when known, the drive's health
+//! (`models::disk_health`: a coloured dot and a line; every figure in the tooltip).
 
 use egui::{Align2, CornerRadius, FontId, Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, UiBuilder, pos2, vec2};
 use soyuz_core::{Location, SizeStyle, format_size};
@@ -7,6 +8,7 @@ use soyuz_fs::{VolumeInfo, VolumeKind};
 use super::ViewCtx;
 use super::flow::semibold;
 use crate::cmd::Cmd;
+use crate::models::disk_health;
 use crate::state::pane::Pane;
 use crate::theme::tokens::radius;
 use crate::theme::{icons as ticons, icons::ph, palette};
@@ -29,7 +31,9 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
     ScrollArea::vertical().id_salt(("soyuz.computer", pane.id.0)).auto_shrink([false, false]).show(&mut child, |ui| {
         ui.label(egui::RichText::new(tr!("views-computer-title")).font(semibold(15.0)).color(p.text_primary));
         ui.add_space(12.0);
-        let card = vec2(280.0, 78.0);
+        // Cards grow a line once a drive's health is known.
+        let health_on = v.volumes.iter().any(|vol| disk_health::get(&vol.mount).is_some());
+        let card = vec2(280.0, if health_on { 96.0 } else { 78.0 });
         let cols = ((ui.available_width() + 12.0) / (card.x + 12.0)).floor().max(1.0) as usize;
         for row in v.volumes.chunks(cols) {
             ui.horizontal(|ui| {
@@ -89,6 +93,25 @@ pub fn show(ui: &mut Ui, rect: Rect, pane: &mut Pane, v: &mut ViewCtx<'_>) {
                             FontId::proportional(11.5),
                             p.text_secondary,
                         );
+                    }
+                    let mut resp = resp;
+                    if let Some(drives) = disk_health::get(&vol.mount) {
+                        let color = match disk_health::verdict(&drives) {
+                            soyuz_fs::health::Verdict::Good => p.success,
+                            soyuz_fs::health::Verdict::Warning => p.warning,
+                            soyuz_fs::health::Verdict::Failing => p.danger,
+                        };
+                        let y = r.top() + 76.0;
+                        ui.painter().circle_filled(pos2(tx + 3.5, y), 3.5, color);
+                        let line = trunc_galley(
+                            ui.painter(),
+                            &disk_health::summary(&drives),
+                            FontId::proportional(11.5),
+                            p.text_secondary,
+                            r.right() - tx - 26.0,
+                        );
+                        ui.painter().galley(pos2(tx + 12.0, y - line.size().y / 2.0), line, p.text_secondary);
+                        resp = resp.on_hover_text(disk_health::details(&drives).join("\n"));
                     }
                     if resp.clicked() {
                         v.cmds.push(Cmd::FocusPane(pane.id));

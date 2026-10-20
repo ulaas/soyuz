@@ -676,3 +676,34 @@ views-archive-rename-body = { $kind ->
    *[other] New name for the file “{ $name }” in { $archive }
 }
 views-archive-no-slashes = A name can't contain slashes.
+
+## Disk health on the drive cards (`models::disk_health`).
+views-health-good = Healthy
+views-health-warning = Needs attention
+views-health-failing = Failing
+views-health-temp = { $celsius } °C
+views-health-worn = { $percent } % worn
+views-health-predicts-failure = The drive predicts its own failure: copy your files off it now
+views-health-spare-low = Spare capacity is almost used up
+views-health-degraded = Reliability degraded (media or internal errors)
+views-health-read-only = The drive switched itself to read-only
+views-health-worn-out = { $percent } % of its rated endurance used
+views-health-bad-sectors = { $count ->
+    [one] 1 bad or remapped sector
+   *[other] { $count } bad or remapped sectors
+}
+views-health-media-errors = { $count ->
+    [one] 1 media error
+   *[other] { $count } media errors
+}
+views-health-hot = Running hot: { $celsius } °C
+views-health-temp-line = Temperature: { $celsius } °C
+views-health-worn-line = Wear: { $percent } % of rated endurance
+views-health-spare-line = Spare capacity: { $percent } %
+views-health-hours-line = Powered on: { $hours } hours ({ $days } days)
+views-health-cycles-line = Power cycles: { $count }
+views-health-unsafe-line = Unsafe shutdowns: { $count }
+views-health-written-line = Written: { $size }
+views-health-read-line = Read: { $size }
+views-health-toast = { $drive } reports it is failing
+views-health-column = Health

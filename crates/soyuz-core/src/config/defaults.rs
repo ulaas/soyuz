@@ -205,6 +205,7 @@ impl Default for Sidebar {
             .to_vec(),
             unmounted_devices: UnmountedDevices::All,
             hidden_devices: Vec::new(),
+            disk_health: true,
         }
     }
 }
