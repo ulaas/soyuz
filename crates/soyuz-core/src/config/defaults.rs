@@ -263,6 +263,7 @@ impl Default for Jobs {
             unbuffered_threshold_mib: 256,
             preserve: vec![PreserveItem::Times, PreserveItem::Attrs, PreserveItem::Xattr],
             reflink: ReflinkPref::Auto,
+            copy_duplicates: DuplicatesPref::Clone,
             history_limit: 500,
             trash_unsupported: TrashUnsupportedPolicy::Ask,
             auto_open_activity: true,

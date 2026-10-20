@@ -161,7 +161,7 @@ fn cross_device_move(
         ctx.grow_totals(bytes, items.saturating_sub(1));
         ctx.check_space(bytes, dst.parent().unwrap_or(&dst))?;
     }
-    let tree = copy::transfer_tree(ctx, &src.path, dst, TransferMode::Move, root_resolution)?;
+    let tree = copy::transfer_tree(ctx, &src.path, dst, TransferMode::Move, root_resolution, None)?;
     ctx.checkpoint()?;
     ctx.set_finishing();
     for f in &tree.copied {

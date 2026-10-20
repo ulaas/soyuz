@@ -65,8 +65,8 @@ mod sys;
 
 pub use attrs::{AttrSet, set_attributes};
 pub use copy::{
-    CopyMethod, CopyOptions, CopyOutcome, FileIdentity, Preserve, Reflink, SkipReason, copy_dir_metadata, copy_file,
-    copy_symlink, device_of, file_identity, same_file,
+    CopyMethod, CopyOptions, CopyOutcome, Duplicates, FileIdentity, Preserve, Reflink, SkipReason, copy_dir_metadata,
+    copy_file, copy_symlink, device_of, file_identity, same_file,
 };
 pub use create::{create_dir, create_dir_all, create_file, write_atomic};
 pub use delete::{DeleteOptions, DeleteStats, delete_empty_dir, delete_file, delete_link, remove_tree, secure_wipe};

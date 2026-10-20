@@ -5,8 +5,9 @@ use std::time::SystemTime;
 
 use egui::{RichText, Ui};
 use soyuz_core::config::{
-    ActivityPlacement, DragDefault, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy, PasteConflict, PreserveItem,
-    ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode, TrashUnsupportedPolicy, TypeAhead,
+    ActivityPlacement, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy,
+    PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
+    TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
 
@@ -1088,6 +1089,22 @@ pub fn jobs(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.row_kw(
+            tr!("settings-jobs-duplicates"),
+            tr!("settings-jobs-duplicates-desc"),
+            "duplicate dedupe hard link clone same content space",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.jobs.copy_duplicates,
+                    &[
+                        (DuplicatesPref::Clone, tr!("settings-jobs-duplicates-clone")),
+                        (DuplicatesPref::Link, tr!("settings-jobs-duplicates-link")),
+                        (DuplicatesPref::Copy, tr!("settings-jobs-duplicates-copy")),
+                    ],
+                );
+            },
+        );
         r.row(tr!("settings-jobs-buffer"), "", |ui| {
             number(ui, &mut d.jobs.copy_buffer_mib, 1..=128, " MiB");
         });

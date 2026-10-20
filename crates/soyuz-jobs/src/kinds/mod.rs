@@ -7,6 +7,7 @@ pub mod compress;
 pub mod copy;
 pub mod create;
 pub mod delete;
+pub mod dupes;
 pub mod edit_archive;
 pub mod extract;
 pub mod hash;

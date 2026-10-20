@@ -729,6 +729,16 @@ pub enum ReflinkPref {
     Always,
 }
 
+/// Mirrors `soyuz_fs::Duplicates`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DuplicatesPref {
+    Copy,
+    #[default]
+    Clone,
+    Link,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum TrashUnsupportedPolicy {
@@ -757,6 +767,10 @@ pub struct Jobs {
     pub preserve: Vec<PreserveItem>,
     /// Copy-on-write clones (ReFS block cloning, btrfs / APFS reflinks): `auto`, `never` or `always`.
     pub reflink: ReflinkPref,
+    /// Files a copy job copies more than once (same content): `clone` them from the first
+    /// copy where the destination can (ReFS / Dev Drive, btrfs, XFS, APFS), hard-`link` them
+    /// to it (the copies then change together), or `copy` each.
+    pub copy_duplicates: DuplicatesPref,
     /// Finished jobs kept in the history (for undo / redo).
     pub history_limit: usize,
     /// When a volume has no trash: `ask`, delete `permanent`ly or `skip`.

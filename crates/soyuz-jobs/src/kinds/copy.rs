@@ -8,6 +8,7 @@ use soyuz_core::{
 };
 use soyuz_fs::{CopyOutcome, WalkItem, WalkOptions};
 
+use super::dupes::DupeIndex;
 use crate::ctx::JobCtx;
 use crate::planner::{self, has_bytes};
 use crate::policy::resolution_to_overwrite;
@@ -36,10 +37,16 @@ pub(crate) fn run_copy(ctx: &JobCtx, sources: &[PathBuf], dest_dir: &Path, renam
     if !ensure_dir(ctx, dest_dir)? {
         return Ok(());
     }
+    let roots: Vec<PathBuf> = plans.iter().map(|p| p.path.clone()).collect();
+    let dupes = DupeIndex::build(ctx, &roots, dest_dir)?;
     for p in plans {
         ctx.checkpoint()?;
         let name = rename_to.map(str::to_string).unwrap_or_else(|| p.entry.name.clone());
-        transfer_tree(ctx, &p.path, dest_dir.join(name), TransferMode::Copy, None)?;
+        transfer_tree(ctx, &p.path, dest_dir.join(name), TransferMode::Copy, None, dupes.as_ref())?;
+    }
+    if let Some((files, bytes)) = dupes.as_ref().map(DupeIndex::saved).filter(|(n, _)| *n > 0) {
+        let how = if ctx.opts.copy.duplicates == soyuz_fs::Duplicates::Link { "hard-linked" } else { "cloned" };
+        ctx.note(format!("{files} duplicate files {how} instead of copied ({bytes} bytes)"));
     }
     Ok(())
 }
@@ -104,12 +111,15 @@ pub(crate) fn conflict_info(src: &EntryInfo, dst: &Path) -> ConflictInfo {
 /// Copy `src_root` (file, link or directory tree) to `dst_root` with conflict handling,
 /// progress, error policy and journaling. `root_resolution` pre-answers a conflict at the
 /// root (used when the caller already asked, e.g. a move that fell back to copying).
+/// With `dupes`, files whose content was copied before become clones of / links to that
+/// copy (`kinds::dupes`).
 pub(crate) fn transfer_tree(
     ctx: &JobCtx,
     src_root: &Path,
     dst_root: PathBuf,
     mode: TransferMode,
     root_resolution: Option<ConflictResolution>,
+    dupes: Option<&DupeIndex>,
 ) -> FsResult<TreeResult> {
     let mut result = TreeResult::default();
     let mut fatal: Option<FsError> = None;
@@ -154,7 +164,7 @@ pub(crate) fn transfer_tree(
                         Err(e) => Err(e),
                     }
                 } else {
-                    transfer_file(ctx, &entry, dst, parent_new, mode, pre, &mut result)
+                    transfer_file(ctx, &entry, dst, parent_new, mode, pre, &mut result, dupes)
                 }
             }
             WalkItem::DirDone { path, depth } => {
@@ -278,6 +288,7 @@ fn transfer_dir(
 }
 
 /// Copy one non-directory entry (file, symlink, junction, special).
+#[allow(clippy::too_many_arguments)]
 fn transfer_file(
     ctx: &JobCtx,
     entry: &EntryInfo,
@@ -286,6 +297,7 @@ fn transfer_file(
     mode: TransferMode,
     mut pre: Option<ConflictResolution>,
     result: &mut TreeResult,
+    dupes: Option<&DupeIndex>,
 ) -> FsResult<()> {
     let src = &entry.path;
     let size = if has_bytes(entry.kind) { entry.size } else { 0 };
@@ -333,6 +345,20 @@ fn transfer_file(
             }
         }
     }
+    // Same content as a file copied earlier in this job: a clone of / link to that copy.
+    if overwrite == Overwrite::Never
+        && entry.kind == EntryKind::File
+        && let Some(d) = dupes
+        && d.place(ctx, entry, &dst)
+    {
+        ctx.credit_bytes(size as i64);
+        if !parent_new {
+            ctx.record(new_root_record(mode, src, &dst));
+        }
+        ctx.item_ok(size);
+        result.copied.push(src.clone());
+        return Ok(());
+    }
     let mut copy_opts = ctx.opts.copy.clone();
     copy_opts.overwrite = overwrite;
     if mode == TransferMode::Move {
@@ -366,6 +392,9 @@ fn transfer_file(
             }
             ctx.item_ok(bytes);
             result.copied.push(src.clone());
+            if let Some(d) = dupes {
+                d.copied(src, &dst);
+            }
         }
         Ok(CopyOutcome::Skipped(reason)) => {
             ctx.item_skipped(src, size, &format!("{reason:?}").to_lowercase());

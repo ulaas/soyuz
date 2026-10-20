@@ -514,3 +514,51 @@ fn sync_copy_as_keeps_both_versions_and_snapshot_reports_verify() {
     let last = hist.last().expect("history entry");
     assert!(last.options.as_ref().is_some_and(|o| o.copy.verify.is_some()), "verify recorded in history");
 }
+
+#[test]
+fn copy_links_duplicates_to_the_first_copy() {
+    let h = H::new();
+    let src = h.p("src");
+    let big = vec![5u8; 100 * 1024];
+    let mut other = big.clone();
+    other[0] = 6;
+    write(&src.join("a.bin"), &big);
+    write(&src.join("sub").join("b.bin"), &big);
+    write(&src.join("c.bin"), &other);
+    write(&src.join("s1.txt"), b"small");
+    write(&src.join("s2.txt"), b"small");
+    let dst = h.p("dst");
+    std::fs::create_dir(&dst).unwrap();
+    let mut spec = JobSpec::new(copy_kind(&[&src], &dst));
+    spec.options.copy.duplicates = soyuz_fs::Duplicates::Link;
+    let s = h.ok(h.engine.submit(spec));
+    let out = dst.join("src");
+    assert_eq!((s.items_ok, s.items_failed, s.bytes), (7, 0, 3 * 100 * 1024 + 10));
+    assert_eq!(read(&out.join("sub").join("b.bin")), big);
+    assert_eq!(read(&out.join("c.bin")), other);
+    let linked = |a: &str, b: &str| soyuz_fs::same_file(&out.join(a), &out.join(b)).unwrap();
+    assert!(linked("a.bin", "sub/b.bin"), "same content: one file, two names");
+    assert!(!linked("a.bin", "c.bin"), "same size, other content");
+    assert!(!linked("s1.txt", "s2.txt"), "small files are copied");
+    assert!(s.notes.iter().any(|n| n.contains("1 duplicate files hard-linked")), "{:?}", s.notes);
+    // Undo removes the copy, links included.
+    let hid = h.engine.history()[0].id;
+    let u = h.engine.undo(hid).expect("undoable");
+    assert_eq!(settle(&h, u, true).items_failed, 0);
+    assert!(!out.exists());
+    // Clone on a volume that can't clone (NTFS, ext4): plain copies, nothing hashed.
+    let dst2 = h.p("dst2");
+    std::fs::create_dir(&dst2).unwrap();
+    let mut spec = JobSpec::new(copy_kind(&[&src], &dst2));
+    spec.options.copy.duplicates = soyuz_fs::Duplicates::Clone;
+    let s = h.ok(h.engine.submit(spec));
+    let out = dst2.join("src");
+    assert_eq!(read(&out.join("sub").join("b.bin")), big);
+    let reflinks = soyuz_fs::volumes()
+        .iter()
+        .any(|v| v.supports.contains(soyuz_fs::FsCaps::REFLINK) && dst2.starts_with(&v.mount));
+    if !reflinks {
+        assert!(!soyuz_fs::same_file(&out.join("a.bin"), &out.join("sub").join("b.bin")).unwrap());
+        assert!(s.notes.iter().all(|n| !n.contains("duplicate")), "{:?}", s.notes);
+    }
+}

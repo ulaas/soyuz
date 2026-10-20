@@ -195,6 +195,7 @@ copy_buffer_mib = 8
 unbuffered_threshold_mib = 256
 preserve = ["times", "attrs", "xattr"]   # times | attrs | xattr | acl | owner | sparse
 reflink = "auto"                 # auto | never | always
+copy_duplicates = "clone"        # files copied twice in one job: clone (ReFS / btrfs / XFS / APFS) | link (hard link) | copy
 history_limit = 500
 trash_unsupported = "ask"        # ask | permanent | skip
 auto_open_activity = true        # open the activity panel when a job runs longer than 1 s

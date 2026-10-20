@@ -48,7 +48,7 @@ fn copy_one(ctx: &JobCtx, src: &Path, dst: &Path) -> FsResult<()> {
     {
         return Ok(());
     }
-    copy::transfer_tree(ctx, src, dst.to_path_buf(), TransferMode::Copy, Some(ConflictResolution::Overwrite))?;
+    copy::transfer_tree(ctx, src, dst.to_path_buf(), TransferMode::Copy, Some(ConflictResolution::Overwrite), None)?;
     Ok(())
 }
 

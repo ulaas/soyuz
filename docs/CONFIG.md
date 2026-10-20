@@ -373,6 +373,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `unbuffered_threshold_mib` | integer | `256` | Files larger than this are copied with unbuffered I/O, bypassing the OS cache (MiB). |
 | `preserve` | array of `"times"` \| `"attrs"` \| `"xattr"` \| `"acl"` \| `"owner"` \| `"sparse"` | `["times", "attrs", "xattr"]` | Metadata copied along with file data. |
 | `reflink` | `"auto"` \| `"never"` \| `"always"` | `"auto"` | Copy-on-write clones (ReFS block cloning, btrfs / APFS reflinks): `auto`, `never` or `always`. |
+| `copy_duplicates` | `"copy"` \| `"clone"` \| `"link"` | `"clone"` | Files a copy job copies more than once (same content): `clone` them from the first copy where the destination can (ReFS / Dev Drive, btrfs, XFS, APFS), hard-`link` them to it (the copies then change together), or `copy` each. |
 | `history_limit` | integer | `500` | Finished jobs kept in the history (for undo / redo). |
 | `trash_unsupported` | `"ask"` \| `"permanent"` \| `"skip"` | `"ask"` | When a volume has no trash: `ask`, delete `permanent`ly or `skip`. |
 | `auto_open_activity` | boolean | `true` | Open the activity panel when a job runs for more than a second. |

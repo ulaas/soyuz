@@ -518,6 +518,14 @@ All from the palette or the context menu:
 - **Paste and verify** — like Paste, then every copy is read back and hash-compared; jobs
   that verified their copies show a *Verified* badge in the activity panel and history
   (or turn verification on for every copy in Settings › Jobs).
+- **Duplicates in a copy** — when a copy job copies the same content more than once (equal
+  files of 64 KiB or more, found by size then BLAKE3 hash before any data moves), only the
+  first is copied; the others become copy-on-write clones of it on volumes that can clone
+  (ReFS / Dev Drive, Btrfs, XFS, APFS), taking no extra space. Elsewhere nothing is hashed
+  and every file is copied. Settings › Jobs › *Duplicates in a copy* can make them hard
+  links instead (any NTFS / ext4 volume; the copies then change together) or turn it off
+  (`[jobs] copy_duplicates = "clone" | "link" | "copy"`). The job's summary says how many
+  were cloned or linked, and undo removes them with the rest of the copy.
 - **Find duplicates** — by size then hash; select keepers and trash the rest.
 - **Disk health** — This PC's drive cards show each drive's health with a coloured dot:
   *Healthy*, *Needs attention* (worn-out flash, bad or remapped sectors, media errors, running

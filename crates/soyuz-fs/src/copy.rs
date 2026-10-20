@@ -56,6 +56,20 @@ pub enum Reflink {
     Always,
 }
 
+/// What a copy job does with files whose content it already copied earlier in the same
+/// job (`soyuz-jobs`' duplicate-aware copy; [`copy_file`] itself ignores it).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Duplicates {
+    /// Copy every file.
+    #[default]
+    Copy,
+    /// A copy-on-write clone of the earlier copy, where the destination can clone.
+    Clone,
+    /// A hard link to the earlier copy (the copies then change together).
+    Link,
+}
+
 /// Options for [`copy_file`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CopyOptions {
@@ -72,6 +86,9 @@ pub struct CopyOptions {
     pub merge_dirs: bool,
     /// Test hook: sleep to cap throughput (honoured by baseline and raw implementations).
     pub throttle_bps: Option<u64>,
+    /// Copy jobs: duplicates within the copied files.
+    #[serde(default)]
+    pub duplicates: Duplicates,
 }
 
 impl Default for CopyOptions {
@@ -87,6 +104,7 @@ impl Default for CopyOptions {
             follow_symlinks: false,
             merge_dirs: true,
             throttle_bps: None,
+            duplicates: Duplicates::Copy,
         }
     }
 }

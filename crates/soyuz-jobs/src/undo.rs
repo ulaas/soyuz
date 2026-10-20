@@ -212,7 +212,7 @@ fn move_prim(ctx: &JobCtx, a: &Path, b: &Path, replace: bool) -> FsResult<()> {
         MoveFast::NeedsCopy => {
             let pre = if replace { Some(ConflictResolution::Overwrite) } else { None };
             let (failed_before, skipped_before) = ctx.summary_counts();
-            copy::transfer_tree(ctx, a, b.to_path_buf(), copy::TransferMode::Copy, pre)?;
+            copy::transfer_tree(ctx, a, b.to_path_buf(), copy::TransferMode::Copy, pre, None)?;
             ctx.checkpoint()?;
             if ctx.summary_counts() != (failed_before, skipped_before) {
                 return Err(FsError::with_message(

@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use soyuz_archive::ExtractLimits;
-use soyuz_core::config::{Config, PreserveItem, ReflinkPref};
+use soyuz_core::config::{Config, DuplicatesPref, PreserveItem, ReflinkPref};
 use soyuz_core::{HashAlgo, Location};
-use soyuz_fs::{CopyOptions, Preserve, RealProbe, Reflink};
+use soyuz_fs::{CopyOptions, Duplicates, Preserve, RealProbe, Reflink};
 use soyuz_jobs::{
     EngineConfig, HistoryEntry, HistoryId, JobEngine, JobEvent, JobId, JobKind, JobKindBrief, JobOptions, JobSnapshot,
     JobSpec, LogLine, MediaOptions, QueueMode, UndoRecord,
@@ -516,6 +516,11 @@ pub fn copy_options(config: &Config) -> CopyOptions {
         unbuffered_threshold: j.unbuffered_threshold_mib.max(1) * 1024 * 1024,
         chunk: (j.copy_buffer_mib.clamp(1, 256) * 1024 * 1024) as usize,
         verify: j.verify_after_copy.then_some(HashAlgo::Blake3),
+        duplicates: match j.copy_duplicates {
+            DuplicatesPref::Copy => Duplicates::Copy,
+            DuplicatesPref::Clone => Duplicates::Clone,
+            DuplicatesPref::Link => Duplicates::Link,
+        },
         ..CopyOptions::default()
     }
 }
