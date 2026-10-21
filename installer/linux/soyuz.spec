@@ -3,13 +3,13 @@
 #
 #   scripts/package.sh --rpm                       # builds the tarball, then this spec
 #   rpmbuild -bb installer/linux/soyuz.spec \
-#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.4.4"
+#       --define "_sourcedir $PWD/dist" --define "soyuz_version 0.5.0"
 #
 # The org.freedesktop.FileManager1 D-Bus activation file is deliberately NOT installed:
 # Soyuz writes it to the user's ~/.local/share/dbus-1/services/ only on opt-in
 # (docs/RELEASING.md, "Linux").
 
-%{!?soyuz_version: %global soyuz_version 0.4.4}
+%{!?soyuz_version: %global soyuz_version 0.5.0}
 %{!?soyuz_arch: %global soyuz_arch %{_arch}}
 # 1 when the tarball carries the FFmpeg runtime (scripts/package.sh --ffmpeg-dir sets it):
 # lib/soyuz/lib*.so.* go to %{_libdir}/soyuz/ (private; the exe looks in
@@ -114,6 +114,13 @@ fi
 %endif
 
 %changelog
+* Thu Oct 22 2026 The Soyuz contributors - 0.5.0-1
+- Version 0.5.0: tar and 7z archive editing, copying out of archives (also
+  nested ones), Quick share over the local network, disk health on drive
+  cards, Compare as treemap, duplicate-aware copies, PDF content search,
+  server discovery, clipboard history, folder notes, focus mode and
+  plain-language assistant requests with editable plans.
+
 * Tue Oct 20 2026 The Soyuz contributors - 0.4.4-1
 - Version 0.4.4: system folders (AppData, ProgramData, Temp; ~/.config,
   ~/.local/share, ~/.cache, /tmp) below the favorites, with a System divider

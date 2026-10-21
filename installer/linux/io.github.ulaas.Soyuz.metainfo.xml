@@ -87,6 +87,18 @@
   </requires>
 
   <releases>
+    <release version="0.5.0" date="2026-10-22" type="development">
+      <description>
+        <p>Tar and 7z archives can be edited like zip archives, and files can be copied out of
+          any archive, including archives inside archives. Quick share serves files over the local
+          network with a QR code. Drive cards show disk health (SMART / NVMe). Compare as treemap
+          shows how two folders differ. Copies clone or link duplicate files where the volume
+          allows. Content search looks inside PDFs. Also: "Why is this slow?" in job details,
+          servers found on the local network, CAB sets and spanned zips, WebDAV Digest sign-in,
+          clipboard history, folder notes, focus mode, plain-language requests to the assistant
+          with editable plans, and journal catch-up without administrator rights.</p>
+      </description>
+    </release>
     <release version="0.4.4" date="2026-10-20" type="development">
       <description>
         <p>System folders such as AppData, ProgramData and Temp on Windows, and ~/.config,
