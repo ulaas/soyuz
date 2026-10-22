@@ -12,3 +12,8 @@ paths = ['''crates/soyuz-vfs/tests/sftp_roundtrip\.rs''']
 [[allowlists]]
 description = "Fake credentials in the AI redaction tests"
 regexes = ['''AKIAABCDEFGHIJKLMNOP''', '''sk-ant-(abcdefghijklmnop1234|REALLYSECRETKEY123456)''']
+
+[[allowlists]]
+description = "Public FFmpeg release-signing key fingerprint (not a secret)"
+paths = ['''scripts/ffmpeg-build\.sh''']
+regexes = ['''FCF986EA15E6E293A5644F10B4322F04D67658D8''']
