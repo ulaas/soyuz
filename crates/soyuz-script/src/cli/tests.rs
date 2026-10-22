@@ -211,13 +211,11 @@ fn pipe_round_trip() {
     assert!(String::from_utf8_lossy(&out).contains("CLI job"), "history lists the jobs");
     // No server under this name: falls back to headless.
     let other = format!("{name}-none");
-    std::fs::write(&a, b"third").unwrap();
-    let c = Command {
-        op: Op::Copy { sources: vec![a.clone()], dest: d.path().join("d.bin") },
-        json: false,
-        queue: false,
-        ..cmd
-    };
+    // Not `a`: the --queue copy above may still be reading it, and Windows refuses the write.
+    let b = d.path().join("b.bin");
+    std::fs::write(&b, b"third").unwrap();
+    let c =
+        Command { op: Op::Copy { sources: vec![b], dest: d.path().join("d.bin") }, json: false, queue: false, ..cmd };
     let mut out = Vec::new();
     assert_eq!(run_with(&c, Some(&other), None, &mut out, false), exit::OK);
     assert!(d.path().join("d.bin").exists());
