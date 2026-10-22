@@ -444,11 +444,15 @@ EOF
 
         log "[$slice] libvpl $LIBVPL_VERSION (dispatcher, static)"
         extract "$vpl_tar" "$src/libvpl"
+        # The dispatcher is C++ and FFmpeg's configure links it with the C driver, so vpl.pc
+        # must name libstdc++; libvpl puts ${CXX_LIB} there but (2.17) never sets it.
         local vpl_args=(-S "$src/libvpl" -B "$src/libvpl/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
             -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTS=OFF
-            -DBUILD_TOOLS=OFF -DBUILD_EXAMPLES=OFF -DINSTALL_EXAMPLE_CODE=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON ${cmake_cross[@]+"${cmake_cross[@]}"})
+            -DBUILD_TOOLS=OFF -DBUILD_EXAMPLES=OFF -DINSTALL_EXAMPLE_CODE=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+            -DCXX_LIB=-lstdc++ ${cmake_cross[@]+"${cmake_cross[@]}"})
         (cmake "${vpl_args[@]}" >"$work/$slice-libvpl.log" 2>&1 && cmake --build "$src/libvpl/build" -j "$jobs" >>"$work/$slice-libvpl.log" 2>&1 \
             && cmake --install "$src/libvpl/build" >>"$work/$slice-libvpl.log" 2>&1) || { tail -n 50 "$work/$slice-libvpl.log"; die "libvpl failed (log: $work/$slice-libvpl.log)"; }
+        grep -q -- '-lstdc++' "$prefix/lib/pkgconfig/vpl.pc" || die "libvpl's vpl.pc does not link libstdc++: $(grep '^Libs' "$prefix/lib/pkgconfig/vpl.pc" | tr '\n' ' ')"
         build_lines+=("[$slice] libvpl: cmake ${vpl_args[*]} && cmake --build && cmake --install")
     fi
 
