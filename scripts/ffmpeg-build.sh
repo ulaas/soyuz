@@ -23,8 +23,8 @@
 #   --downloads where the input archives are kept between runs (default: <work>/downloads)
 #   --jobs     parallel make jobs (default: all cores)
 #
-# Tools: curl, tar, sha256sum (or shasum), make, nasm, meson + ninja (dav1d), cmake (libvpl,
-# win64 only), pkg-config, a C/C++ compiler; patchelf + readelf (linux64),
+# Tools: bash 4 or later (macOS: brew install bash), curl, tar, sha256sum (or shasum), make,
+# nasm, meson + ninja (dav1d), cmake (libvpl, win64 only), pkg-config, a C/C++ compiler; patchelf + readelf (linux64),
 # x86_64-w64-mingw32-gcc + objdump (win64), clang + lipo + install_name_tool + codesign (macOS).
 # gpg is optional: when present, the FFmpeg tarball's .asc signature is checked against the
 # FFmpeg release key; the SHA-256 is checked always.
@@ -34,6 +34,13 @@
 # but Windows system DLLs and the four sibling libraries (no libwinpthread-1.dll, no
 # libgcc_s_seh-1.dll, no libstdc++-6.dll: those are linked statically).
 set -euo pipefail
+
+# bash 3.2 (macOS's /bin/bash) reads nothing from `source <(...)` and treats empty arrays as
+# unset under set -u.
+if (( BASH_VERSINFO[0] < 4 )); then
+    echo "ffmpeg-build.sh: needs bash 4 or later, this is $BASH_VERSION (macOS: brew install bash)" >&2
+    exit 1
+fi
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 pins="$root/third_party/ffmpeg/pins.env"
@@ -467,7 +474,10 @@ EOF
         || { tail -n 60 "$work/$slice-ffmpeg.log"; [[ -f "$src/ffmpeg/ffbuild/config.log" ]] && tail -n 40 "$src/ffmpeg/ffbuild/config.log"; die "FFmpeg failed (log: $work/$slice-ffmpeg.log)"; }
     build_lines+=("[$slice] ffmpeg: ./configure ${ff_args[*]} && make && make install")
     # shellcheck disable=SC2086 # $cc may carry "-arch x86_64"
-    build_lines+=("[$slice] toolchain: $(tool_version $cc) | nasm: $(tool_version nasm) | meson: $(tool_version meson) | ninja: $(tool_version ninja) | make: $(tool_version make)$([[ "$slice" == win64 ]] && echo " | cmake: $(tool_version cmake)")")
+    local toolchain="toolchain: $(tool_version $cc) | nasm: $(tool_version nasm) | meson: $(tool_version meson) | ninja: $(tool_version ninja) | make: $(tool_version make)"
+    # Not `$([[ win64 ]] && echo …)` inside the line: its status 1 on the other slices ends the script under set -e.
+    if [[ "$slice" == win64 ]]; then toolchain+=" | cmake: $(tool_version cmake)"; fi
+    build_lines+=("[$slice] $toolchain")
 
     # Collect the five libraries (real files, soname names; the versioned files and the
     # unversioned development symlinks stay behind) into <prefix>/out.
