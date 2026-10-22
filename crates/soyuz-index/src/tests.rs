@@ -75,9 +75,11 @@ fn crawls_queries_and_follows_changes() {
     wait_idle(&ix);
     let st = ix.status();
     assert_eq!(st.usn, UsnState::Off);
-    assert!(ix.covers(root.path()));
-    assert!(ix.covers(&root.path().join("docs")));
-    assert!(!ix.covers(root.path().parent().unwrap()));
+    // Roots are stored canonical; CI's TEMP is an 8.3 path (C:\Users\RUNNER~1\…).
+    let croot = canonical(root.path());
+    assert!(ix.covers(&croot));
+    assert!(ix.covers(&croot.join("docs")));
+    assert!(!ix.covers(croot.parent().unwrap()));
 
     assert_eq!(names(&ix, "report"), ["Annual Report.pdf"]);
     assert_eq!(names(&ix, "kind:image"), ["photo.jpg"]);
@@ -100,7 +102,7 @@ fn crawls_queries_and_follows_changes() {
     let scoped = SearchRequest {
         expr: parse("").unwrap(),
         include_hidden: false,
-        scope: vec![root.path().join("docs/2026")],
+        scope: vec![croot.join("docs/2026")],
         limit: 0,
         now: SystemTime::now(),
     };

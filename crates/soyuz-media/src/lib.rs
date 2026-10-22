@@ -501,7 +501,12 @@ mod tests {
         let dirs = search_dirs_in("", Path::new(r"C:\Users\u\AppData\Roaming\soyuz"), &e);
         assert_eq!(
             dirs,
-            [r"C:\Soyuz", r"C:\Users\u\AppData\Roaming\soyuz\ffmpeg", LOADER_PATH].map(PathBuf::from).to_vec()
+            // Joined like the code joins it: off Windows, `\` is no separator.
+            [
+                PathBuf::from(r"C:\Soyuz"),
+                Path::new(r"C:\Users\u\AppData\Roaming\soyuz").join("ffmpeg"),
+                LOADER_PATH.into()
+            ]
         );
         let e = SearchEnv { exe_dir: Some(PathBuf::from("/Applications/Soyuz.app/Contents/MacOS")), ..env("macos") };
         let dirs = search_dirs_in("", Path::new("/Users/u/Library/Application Support/soyuz"), &e);

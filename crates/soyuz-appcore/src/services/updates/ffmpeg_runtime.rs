@@ -122,8 +122,9 @@ pub fn offer_for(os: &str, arch: &str, exe: &Path, env: impl Fn(&str) -> Option<
     if install_kind_for(os, exe, env) == InstallKind::Flatpak {
         return Offer::Flatpak;
     }
-    // MSIX packages are installed under `…\WindowsApps\<package>\`.
-    if os == "windows" && exe.components().any(|c| c.as_os_str().eq_ignore_ascii_case("WindowsApps")) {
+    // MSIX packages are installed under `…\WindowsApps\<package>\`. Split by hand:
+    // `Path::components` only knows the host's separators.
+    if os == "windows" && exe.to_string_lossy().split(['\\', '/']).any(|c| c.eq_ignore_ascii_case("WindowsApps")) {
         return Offer::Msix;
     }
     Offer::Offered

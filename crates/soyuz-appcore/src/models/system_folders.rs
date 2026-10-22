@@ -221,6 +221,7 @@ pub fn ask_hide() -> FrontendCmd {
 mod tests {
     use super::*;
 
+    #[cfg(any(windows, target_os = "linux"))]
     fn env_of(vars: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<PathBuf> {
         move |k| vars.iter().find(|(n, _)| *n == k).map(|(_, v)| PathBuf::from(v))
     }
