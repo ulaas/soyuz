@@ -312,8 +312,13 @@ amf_tar="$(fetch_amf)"
 signature_note="not checked (gpg not installed)"
 if command -v gpg >/dev/null 2>&1; then
     export GNUPGHOME="$work/gnupg"; rm -rf "$GNUPGHOME"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
-    if gpg --batch --quiet --keyserver hkps://keys.openpgp.org --recv-keys "$ffmpeg_key_fpr" 2>/dev/null \
-        || gpg --batch --quiet --keyserver hkps://keyserver.ubuntu.com --recv-keys "$ffmpeg_key_fpr" 2>/dev/null; then
+    # keys.openpgp.org serves this key without its user ID, which gpg skips while still
+    # exiting 0, so a fetch only counts when the key is in the keyring afterwards.
+    recv_ffmpeg_key() {
+        gpg --batch --quiet --keyserver "$1" --recv-keys "$ffmpeg_key_fpr" 2>/dev/null \
+            && gpg --batch --quiet --list-keys "$ffmpeg_key_fpr" >/dev/null 2>&1
+    }
+    if recv_ffmpeg_key hkps://keyserver.ubuntu.com || recv_ffmpeg_key hkps://keys.openpgp.org; then
         # GNUPGHOME is empty and only the full pinned fingerprint was imported above; rely on
         # gpg's verification result rather than parsing version-dependent status output.
         if gpg --batch --quiet --verify "$ffmpeg_asc" "$ffmpeg_tar" 2>/dev/null; then
