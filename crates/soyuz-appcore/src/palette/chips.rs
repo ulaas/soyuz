@@ -50,10 +50,13 @@ mod tests {
 
     #[test]
     fn key_splitting() {
-        assert_eq!(split_keys("Ctrl+Shift+P"), vec![vec!["Ctrl", "Shift", "P"]]);
+        // Modifiers are symbols on macOS.
+        let (ctrl, shift, alt) =
+            if cfg!(target_os = "macos") { ("⌃", "⇧", "⌥") } else { ("Ctrl", "Shift", "Alt") };
+        assert_eq!(split_keys("Ctrl+Shift+P"), vec![vec![ctrl, shift, "P"]]);
         assert_eq!(split_keys("G G"), vec![vec!["G"], vec!["G"]]);
-        assert_eq!(split_keys("Ctrl++"), vec![vec!["Ctrl", "+"]]);
-        assert_eq!(split_keys("Alt+Up"), vec![vec!["Alt".to_string(), "↑".to_string()]]);
+        assert_eq!(split_keys("Ctrl++"), vec![vec![ctrl, "+"]]);
+        assert_eq!(split_keys("Alt+Up"), vec![vec![alt, "↑"]]);
         assert!(split_keys("").is_empty());
     }
 }

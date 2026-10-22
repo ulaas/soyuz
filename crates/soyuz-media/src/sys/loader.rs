@@ -52,6 +52,15 @@ pub(crate) fn stamp(dirs: &[PathBuf]) -> Option<(PathBuf, SystemTime)> {
 
 /// Load one library by absolute path, or by bare file name when `dir` is the loader's
 /// own path.
+/// libloading's message with its cause: libloading 0.9 shows only "dlopen failed" and keeps
+/// the loader's reason (`dlerror`, the Windows error) in `source()`.
+fn with_cause(e: &libloading::Error) -> String {
+    match std::error::Error::source(e) {
+        Some(cause) => format!("{e}: {cause}"),
+        None => e.to_string(),
+    }
+}
+
 fn load_one(dir: &Path, name: &str) -> Result<Library, String> {
     #[cfg(windows)]
     {
@@ -61,7 +70,7 @@ fn load_one(dir: &Path, name: &str) -> Result<Library, String> {
         if dir.as_os_str().is_empty() {
             // SAFETY: loading a library runs its initialisers; the FFmpeg libraries have no
             // constructors with side effects beyond their own static state.
-            return unsafe { Win::new(name) }.map(Library::from).map_err(|e| e.to_string());
+            return unsafe { Win::new(name) }.map(Library::from).map_err(|e| with_cause(&e));
         }
         let path = std::path::absolute(dir.join(name)).map_err(|e| e.to_string())?;
         // SAFETY: as above; the flags make the library's own imports (`avcodec-63.dll`
@@ -69,7 +78,7 @@ fn load_one(dir: &Path, name: &str) -> Result<Library, String> {
         // from the current directory or `PATH` (review must-fix 11).
         unsafe { Win::load_with_flags(&path, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) }
             .map(Library::from)
-            .map_err(|e| e.to_string())
+            .map_err(|e| with_cause(&e))
     }
     #[cfg(not(windows))]
     {
@@ -79,7 +88,7 @@ fn load_one(dir: &Path, name: &str) -> Result<Library, String> {
         // constructors with side effects beyond their own static state. RTLD_LOCAL keeps
         // their symbols out of the global namespace (no clash with another FFmpeg copy
         // the process may carry), RTLD_NOW surfaces unresolved imports here.
-        unsafe { Unix::open(Some(&path), RTLD_NOW | RTLD_LOCAL) }.map(Library::from).map_err(|e| e.to_string())
+        unsafe { Unix::open(Some(&path), RTLD_NOW | RTLD_LOCAL) }.map(Library::from).map_err(|e| with_cause(&e))
     }
 }
 
@@ -141,7 +150,7 @@ fn versions(libs: &Libs) -> Result<Versions, LoadError> {
         // SAFETY: every `*_version` function is `unsigned f(void)` in all supported majors.
         // (libloading adds the terminating NUL to the name.)
         let f = unsafe { lib.get::<VersionFn>(name) }
-            .map_err(|e| LoadError::Broken { lib: PathBuf::from(name), why: e.to_string() })?;
+            .map_err(|e| LoadError::Broken { lib: PathBuf::from(name), why: with_cause(&e) })?;
         // SAFETY: a pure function of the library's constants.
         Ok(unsafe { f() })
     };
@@ -152,7 +161,7 @@ fn versions(libs: &Libs) -> Result<Versions, LoadError> {
     let avformat = get(&libs.avformat, "avformat_version")?;
     // SAFETY: `const char *avcodec_configuration(void)` in every supported major.
     let conf = unsafe { libs.avcodec.get::<ConfFn>(b"avcodec_configuration\0") }
-        .map_err(|e| LoadError::Broken { lib: PathBuf::from("avcodec_configuration"), why: e.to_string() })?;
+        .map_err(|e| LoadError::Broken { lib: PathBuf::from("avcodec_configuration"), why: with_cause(&e) })?;
     // SAFETY: returns a static string.
     let configuration = cstr(unsafe { conf() }).unwrap_or_default();
     let gpl = configuration.contains("--enable-gpl") || configuration.contains("--enable-nonfree");
