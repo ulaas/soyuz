@@ -314,7 +314,9 @@ if command -v gpg >/dev/null 2>&1; then
     export GNUPGHOME="$work/gnupg"; rm -rf "$GNUPGHOME"; mkdir -p "$GNUPGHOME"; chmod 700 "$GNUPGHOME"
     if gpg --batch --quiet --keyserver hkps://keys.openpgp.org --recv-keys "$ffmpeg_key_fpr" 2>/dev/null \
         || gpg --batch --quiet --keyserver hkps://keyserver.ubuntu.com --recv-keys "$ffmpeg_key_fpr" 2>/dev/null; then
-        if gpg --batch --status-fd 1 --verify "$ffmpeg_asc" "$ffmpeg_tar" 2>/dev/null | grep -q "VALIDSIG $ffmpeg_key_fpr"; then
+        if signature_status="$(gpg --batch --status-fd 1 --verify "$ffmpeg_asc" "$ffmpeg_tar" 2>/dev/null)" \
+            && printf '%s\n' "$signature_status" | awk -v key="$ffmpeg_key_fpr" \
+                '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == key || $NF == key) { valid = 1 } END { exit !valid }'; then
             signature_note="valid, signed by $ffmpeg_key_fpr"
         else
             die "the signature of $(basename "$ffmpeg_tar") does not verify against the FFmpeg release key $ffmpeg_key_fpr"
