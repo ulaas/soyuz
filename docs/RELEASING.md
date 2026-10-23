@@ -111,7 +111,11 @@ Linux in-place updater (`services/updates.rs`) replaces both from the tarball.
   them from the run's *Artifacts*.
 - **Tags `v*`** (*Release*): Windows zip / portable zip / MSI (Authenticode-signed when the
   secrets exist), a Linux x86_64 PREFIX tarball and `.rpm` (see "Linux" below), and either the signed + notarized macOS universal
-  app (Apple secrets) or an unsigned macOS arm64 tarball.
+  app (Apple secrets) or an unsigned macOS arm64 tarball. The first job, `ci-gate`, waits
+  until *CI* has passed on the tagged commit (polling once a minute), so the commit and the tag
+  can be pushed together. It fails when that CI run fails or is cancelled (re-run CI, then the
+  release), or when no CI run appears within 10 minutes (a tag on a commit that never reached
+  `main` / `phase-*`). A manual *Release* run can tick `skip_ci_gate` in an emergency.
 - Linux and macOS builds are supported and verified on real machines. In CI the Linux tests
   are a gate; the macOS test step is still `continue-on-error` (reported as warnings) until it
   has been confirmed green on hosted runners. Linux runners
