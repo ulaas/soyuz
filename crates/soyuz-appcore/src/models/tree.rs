@@ -194,7 +194,11 @@ fn roots(volumes: &[VolumeInfo], label: fn(&VolumeInfo) -> String) -> Vec<Root> 
 pub fn pump(host: &dyn Host, a: &mut TreeArgs<'_>, io: &mut TreeIo<'_>, volume_label: fn(&VolumeInfo) -> String) {
     let debounce = a.debounce;
     let s = &mut *a.state;
-    s.model.set_roots(roots(io.volumes, volume_label));
+    if s.model.set_roots(roots(io.volumes, volume_label)) {
+        // Follow the pane again: its folder may lie under a root that only just arrived (the
+        // volume list comes in after the first frames; until then only the home folder is a root).
+        s.synced = None;
+    }
     let msgs = s.service.as_ref().map(TreeService::drain).unwrap_or_default();
     for m in msgs {
         match m {

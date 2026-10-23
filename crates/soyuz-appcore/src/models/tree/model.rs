@@ -194,14 +194,17 @@ impl TreeModel {
     }
 
     /// Replace the roots (volumes changed). Nodes are kept: they are keyed by path.
-    pub fn set_roots(&mut self, roots: Vec<Root>) {
-        if roots != self.roots {
-            for r in &roots {
-                self.nodes.entry(r.path.clone()).or_insert_with(|| Node { name: r.label.clone(), ..Node::default() });
-            }
-            self.roots = roots;
-            self.bump();
+    /// `true` when the roots changed.
+    pub fn set_roots(&mut self, roots: Vec<Root>) -> bool {
+        if roots == self.roots {
+            return false;
         }
+        for r in &roots {
+            self.nodes.entry(r.path.clone()).or_insert_with(|| Node { name: r.label.clone(), ..Node::default() });
+        }
+        self.roots = roots;
+        self.bump();
+        true
     }
 
     /// Keep `path` and its ancestors visible (the folder the active pane shows).

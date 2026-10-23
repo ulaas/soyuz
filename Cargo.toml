@@ -200,6 +200,11 @@ debug = false
 strip = true
 panic = "unwind"
 
+# Rust 1.99.1 (LLVM 23.1): the inliner crashes rustc (SIGSEGV / SIGILL) on soyuz-appcore with LTO and
+# one codegen unit. Remove once a toolchain bump builds it with the workspace setting again.
+[profile.release.package.soyuz-appcore]
+codegen-units = 16
+
 # egui-phosphor 0.14.0 moved to egui 0.37 (no release for it yet; third_party/README.md).
 # Remove once a crates.io egui-phosphor depends on egui 0.37.
 [patch.crates-io]
