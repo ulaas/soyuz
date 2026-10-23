@@ -266,6 +266,7 @@ pub fn launch(app: &mut AppCore, path: &Path) {
     let rule = default_app(&app.config, path);
     let choose = app.config.open.choose_when_unknown;
     let run = app.config.open.run_binaries;
+    let opts = open_options(&app.config);
     let path = path.to_path_buf();
     let spawned = std::thread::Builder::new().name("soyuz-launch".into()).spawn(move || {
         if let Ok(Some(target)) = soyuz_fs::launch::shortcut_target(&path)
@@ -277,7 +278,7 @@ pub fn launch(app: &mut AppCore, path: &Path) {
         let opened = if run && soyuz_fs::launch::is_runnable_binary(&path) {
             soyuz_fs::launch::run_binary(&path)
         } else {
-            open_file(&path, rule.as_ref())
+            open_file(&path, rule.as_ref(), &opts)
         };
         match opened {
             Ok(()) => {}
@@ -302,12 +303,21 @@ pub fn default_app(cfg: &soyuz_core::config::Config, path: &Path) -> Option<soyu
     cfg.open.app_for(name).map(crate::models::requests::open_with::rule_app)
 }
 
+/// How the system's default application is used (`[open] store_apps_via_explorer`).
+pub fn open_options(cfg: &soyuz_core::config::Config) -> soyuz_fs::launch::OpenOptions {
+    soyuz_fs::launch::OpenOptions { store_apps_via_explorer: cfg.open.store_apps_via_explorer }
+}
+
 /// Open a file with `rule` (from [`default_app`]), else the system's default application.
 /// Blocks (call it off the UI thread).
-pub fn open_file(path: &Path, rule: Option<&soyuz_fs::AppInfo>) -> soyuz_core::FsResult<()> {
+pub fn open_file(
+    path: &Path,
+    rule: Option<&soyuz_fs::AppInfo>,
+    opts: &soyuz_fs::launch::OpenOptions,
+) -> soyuz_core::FsResult<()> {
     match rule {
         Some(app) => soyuz_fs::launch::open_with(path, app),
-        None => soyuz_fs::launch::open_default(path),
+        None => soyuz_fs::launch::open_default_with(path, opts),
     }
 }
 

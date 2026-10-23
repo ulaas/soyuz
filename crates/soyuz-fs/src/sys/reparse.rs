@@ -66,8 +66,10 @@ pub(crate) enum Reparse {
         substitute: Vec<u16>,
         print: Vec<u16>,
     },
-    /// App execution alias (`WindowsApps\python.exe`); `target` is the real executable.
+    /// App execution alias (`WindowsApps\python.exe`); `target` is the real executable,
+    /// `app_id` the packaged app's user model id (`Microsoft.Paint_8wekyb3d8bbwe!App`).
     AppExecLink {
+        app_id: Vec<u16>,
         target: Vec<u16>,
     },
     Other(u32),
@@ -132,11 +134,13 @@ pub(crate) fn parse(buf: &[u8]) -> io::Result<Reparse> {
             }
             let words = utf16_slice(data, 4, (data.len() - 4) & !1)?;
             // package id, app user model id, target executable, ...
-            let target = words.split(|&c| c == 0).nth(2).map(<[u16]>::to_vec).unwrap_or_default();
+            let mut parts = words.split(|&c| c == 0).skip(1);
+            let app_id = parts.next().map(<[u16]>::to_vec).unwrap_or_default();
+            let target = parts.next().map(<[u16]>::to_vec).unwrap_or_default();
             if target.is_empty() {
                 return Err(corrupt("app execution alias without target"));
             }
-            Ok(Reparse::AppExecLink { target })
+            Ok(Reparse::AppExecLink { app_id, target })
         }
         other => Ok(Reparse::Other(other)),
     }
@@ -288,7 +292,8 @@ mod tests {
         push_u16(&mut v, 0);
         v.extend_from_slice(&data);
         match parse(&v).unwrap() {
-            Reparse::AppExecLink { target } => {
+            Reparse::AppExecLink { app_id, target } => {
+                assert_eq!(String::from_utf16(&app_id).unwrap(), "Pkg!App");
                 assert_eq!(String::from_utf16(&target).unwrap(), r"C:\Program Files\WindowsApps\Pkg\app.exe")
             }
             other => panic!("{other:?}"),

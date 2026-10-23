@@ -3,8 +3,9 @@
 //! `creation_flags` where needed). No shell execution APIs are used in this process.
 //!
 //! * Windows: registry association chain → `CreateProcessW` (also for `.url` schemes);
-//!   UWP / `DelegateExecute` (COM-only) associations and unresolvable shortcuts fail with
-//!   a "no application is associated" error — nothing is handed to a shell helper.
+//!   Store apps start through their app execution alias. A Store / `DelegateExecute`
+//!   (COM-only) default is handed to `explorer.exe` (its own process; [`OpenOptions`]),
+//!   else to the first registered program; unresolvable shortcuts fail with an error.
 //! * Linux/BSD: no `xdg-open` / `gio`: shared-mime-info type detection, `mimeapps.list`
 //!   and `.desktop` resolution, then the entry is launched directly (D-Bus activation,
 //!   `Exec=`, terminal wrapping); the OpenURI portal inside Flatpak / Snap;
@@ -39,12 +40,34 @@ pub struct AppInfo {
     pub launchable: bool,
 }
 
+/// How [`open_default_with`] opens a file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpenOptions {
+    /// Windows: a file whose default app is a Store (UWP / COM-only) app that cannot be
+    /// started directly is handed to `explorer.exe`, which opens it in that app; off = the
+    /// first registered program that can be started. Ignored elsewhere.
+    pub store_apps_via_explorer: bool,
+}
+
+impl Default for OpenOptions {
+    fn default() -> Self {
+        OpenOptions { store_apps_via_explorer: true }
+    }
+}
+
 /// Open with the default application.
 pub fn open_default(path: &Path) -> FsResult<()> {
+    open_default_with(path, &OpenOptions::default())
+}
+
+/// [`open_default`] with explicit [`OpenOptions`].
+pub fn open_default_with(path: &Path, opts: &OpenOptions) -> FsResult<()> {
     #[cfg(windows)]
     {
-        windows::open_default(path)
+        windows::open_default(path, opts)
     }
+    #[cfg(not(windows))]
+    let _ = opts;
     #[cfg(target_os = "macos")]
     {
         macos::open_default(path)

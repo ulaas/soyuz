@@ -2,12 +2,17 @@
 //! `HKEY_CLASSES_ROOT` merged view) and process creation through `std::process::Command`
 //! (`CreateProcessW`). No shell execution API is used.
 //!
-//! Chain: `HKCU\...\FileExts\<ext>\UserChoice\ProgId` → `HKCR\<ext>` default →
-//! `HKCR\SystemFileAssociations\<ext>` → `HKCR\SystemFileAssociations\<PerceivedType>`; for
-//! each ProgId the verb is `shell\(Default)` else `open` else the first verb, and the command
-//! is `shell\<verb>\command`. `DelegateExecute` verbs and `AppX*` ProgIds are COM/UWP-only
-//! (not launchable): opening such a file fails with "no application is associated" instead
-//! of handing it to a shell-execute helper. URLs (`.url` files) resolve their scheme through
+//! Chain: `HKCU\...\FileExts\<ext>\UserChoiceLatest\ProgId` → `…\UserChoice\ProgId` →
+//! `HKCR\<ext>` default → `HKCR\SystemFileAssociations\<ext>` →
+//! `HKCR\SystemFileAssociations\<PerceivedType>`; for each ProgId the verb is
+//! `shell\(Default)` else `open` else (not for `SystemFileAssociations`, whose verbs only add
+//! to a type's menu) the first verb that is not `print` / `printto`, and the command is
+//! `shell\<verb>\command`. `AppX*` ProgIds (Store apps) start through their app execution
+//! alias when the package declares one; other `AppX*` ProgIds and `DelegateExecute` verbs
+//! are COM/UWP-only (not launchable). Opening such a file hands it to `explorer.exe` (a
+//! separate process that opens it in its default app; `[open] store_apps_via_explorer`),
+//! else to the first registered program Soyuz can start, else fails with "no application
+//! is associated". URLs (`.url` files) resolve their scheme through
 //! `HKCU\...\Shell\Associations\UrlAssociations\<scheme>\UserChoice` and `HKCR\<scheme>`
 //! (`URL Protocol`) the same way.
 //!
@@ -36,6 +41,12 @@ pub(crate) trait Registry {
     fn display(&self, hive: Hive, key: &str, value: &str) -> Option<String> {
         self.get(hive, key, Some(value)).filter(|s| !s.starts_with('@'))
     }
+    /// The app execution alias (`%LOCALAPPDATA%\Microsoft\WindowsApps\<family>\<alias>.exe`)
+    /// that starts packaged app `app_id` (`Microsoft.Paint_8wekyb3d8bbwe!App`), if any.
+    fn app_alias(&self, app_id: &str) -> Option<PathBuf> {
+        let _ = app_id;
+        None
+    }
 }
 
 const FILE_EXTS: &str = r"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts";
@@ -49,8 +60,14 @@ pub(crate) struct Verb {
     pub delegate: bool,
 }
 
-/// The command of `progid`'s default verb (`shell\(Default)`, then `open`, then the first).
+/// The command of `progid`'s default verb (`shell\(Default)`, then `open`, then the first
+/// verb that does not print: a type whose only verb is `printto` has no way to open).
 pub(crate) fn verb_command(reg: &dyn Registry, progid: &str) -> Option<Verb> {
+    verb_command_in(reg, progid, true)
+}
+
+/// [`verb_command`]; `any_verb` off = only `shell\(Default)` and `open` count.
+fn verb_command_in(reg: &dyn Registry, progid: &str, any_verb: bool) -> Option<Verb> {
     let shell = format!(r"{progid}\shell");
     let mut verbs: Vec<String> = Vec::new();
     if let Some(def) = reg.get(Hive::ClassesRoot, &shell, None) {
@@ -58,7 +75,10 @@ pub(crate) fn verb_command(reg: &dyn Registry, progid: &str) -> Option<Verb> {
         verbs.extend(def.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()));
     }
     verbs.push("open".into());
-    verbs.extend(reg.subkeys(Hive::ClassesRoot, &shell).into_iter().take(1));
+    if any_verb {
+        let opens = |v: &String| !v.eq_ignore_ascii_case("print") && !v.eq_ignore_ascii_case("printto");
+        verbs.extend(reg.subkeys(Hive::ClassesRoot, &shell).into_iter().filter(opens).take(1));
+    }
     for verb in verbs {
         let key = format!(r"{shell}\{verb}\command");
         let command = reg.get(Hive::ClassesRoot, &key, None).filter(|c| !c.trim().is_empty());
@@ -78,23 +98,71 @@ pub(crate) struct Assoc {
     pub launchable: bool,
 }
 
+fn is_appx(progid: &str) -> bool {
+    progid.len() >= 4 && progid[..4].eq_ignore_ascii_case("appx")
+}
+
+/// The app user model id of a Store app's ProgId (`AppX…\Application\AppUserModelID`).
+fn appx_app_id(reg: &dyn Registry, progid: &str) -> Option<String> {
+    reg.get(Hive::ClassesRoot, &format!(r"{progid}\Application"), Some("AppUserModelID")).filter(|s| !s.is_empty())
+}
+
+/// A Store app's name: its registered display name when it is a plain or `@dll,-id`
+/// string, else the package name of its app id. Package resource strings
+/// (`@{…?ms-resource://…}`) are not resolved.
+fn appx_name(reg: &dyn Registry, progid: &str) -> String {
+    if let Some(n) = reg.display(Hive::ClassesRoot, &format!(r"{progid}\Application"), "ApplicationName") {
+        return n;
+    }
+    appx_app_id(reg, progid).and_then(|id| app_id_name(&id)).unwrap_or_else(|| progid.to_string())
+}
+
+/// `Microsoft.Windows.Photos_8wekyb3d8bbwe!App` → `Photos`, `Microsoft.WindowsNotepad_…`
+/// → `Notepad`.
+fn app_id_name(app_id: &str) -> Option<String> {
+    let package = app_id.split(['!', '_']).next()?;
+    let last = package.rsplit('.').next().filter(|s| !s.is_empty())?;
+    let name = last.strip_prefix("Windows").filter(|r| r.starts_with(|c: char| c.is_ascii_uppercase())).unwrap_or(last);
+    Some(name.to_string())
+}
+
+/// The Store app of `progid` as an Open-with entry: launchable when it has an alias.
+fn appx_app(reg: &dyn Registry, progid: &str) -> AppInfo {
+    let alias = appx_app_id(reg, progid).and_then(|id| reg.app_alias(&id));
+    AppInfo {
+        id: progid.to_string(),
+        name: appx_name(reg, progid),
+        launchable: alias.is_some(),
+        args: if alias.is_some() { vec!["\"%1\"".into()] } else { Vec::new() },
+        exec: alias.unwrap_or_default(),
+        icon: None,
+    }
+}
+
 pub(crate) fn default_assoc(reg: &dyn Registry, ext: &str) -> Option<Assoc> {
     let ext = ext.to_ascii_lowercase();
-    let mut candidates: Vec<String> = Vec::new();
-    if let Some(p) = reg.get(Hive::CurrentUser, &format!(r"{FILE_EXTS}\{ext}\UserChoice"), Some("ProgId")) {
-        candidates.push(p);
+    // (ProgId, whether its first verb may open the file)
+    let mut candidates: Vec<(String, bool)> = Vec::new();
+    for key in [r"UserChoiceLatest\ProgId", "UserChoice"] {
+        if let Some(p) = reg.get(Hive::CurrentUser, &format!(r"{FILE_EXTS}\{ext}\{key}"), Some("ProgId")) {
+            candidates.push((p, true));
+        }
     }
     if let Some(p) = reg.get(Hive::ClassesRoot, &ext, None) {
-        candidates.push(p);
+        candidates.push((p, true));
     }
-    candidates.push(format!(r"SystemFileAssociations\{ext}"));
+    candidates.push((format!(r"SystemFileAssociations\{ext}"), false));
     if let Some(pt) = reg.get(Hive::ClassesRoot, &ext, Some("PerceivedType")) {
-        candidates.push(format!(r"SystemFileAssociations\{pt}"));
+        candidates.push((format!(r"SystemFileAssociations\{pt}"), false));
     }
     let mut fallback: Option<Assoc> = None;
-    for progid in candidates.into_iter().filter(|p| !p.is_empty()) {
-        let appx = progid.len() >= 4 && progid[..4].eq_ignore_ascii_case("appx");
-        match verb_command(reg, &progid) {
+    for (progid, any_verb) in candidates.into_iter().filter(|(p, _)| !p.is_empty()) {
+        let appx = is_appx(&progid);
+        if appx && let Some(exe) = appx_app_id(reg, &progid).and_then(|id| reg.app_alias(&id)) {
+            let command = format!("\"{}\" \"%1\"", exe.display());
+            return Some(Assoc { progid, command: Some(command), launchable: true });
+        }
+        match verb_command_in(reg, &progid, any_verb) {
             Some(Verb { command: Some(cmd), delegate: false }) if !appx => {
                 return Some(Assoc { progid, command: Some(cmd), launchable: true });
             }
@@ -132,12 +200,10 @@ pub(crate) fn url_command(reg: &dyn Registry, scheme: &str) -> Option<String> {
     if reg.has(Hive::ClassesRoot, scheme, "URL Protocol") {
         progids.push(scheme.to_string());
     }
-    progids.into_iter().filter(|p| !p.is_empty() && !(p.len() >= 4 && p[..4].eq_ignore_ascii_case("appx"))).find_map(
-        |p| match verb_command(reg, &p) {
-            Some(Verb { command: Some(cmd), delegate: false }) => Some(cmd),
-            _ => None,
-        },
-    )
+    progids.into_iter().filter(|p| !p.is_empty() && !is_appx(p)).find_map(|p| match verb_command(reg, &p) {
+        Some(Verb { command: Some(cmd), delegate: false }) => Some(cmd),
+        _ => None,
+    })
 }
 
 /// Split a registry command line into the executable and the raw rest.
@@ -252,18 +318,26 @@ fn app_from_command(reg: &dyn Registry, id: &str, command: &str, launchable: boo
 }
 
 /// Applications registered for `ext`: the default first, then OpenWithProgids /
-/// OpenWithList entries (UWP-only ProgIds hidden), deduplicated by executable.
+/// OpenWithList entries, deduplicated by executable. Store apps are listed when they have
+/// an execution alias; one without (COM-only) only as the default, not launchable (it
+/// opens through `open_default`'s hand-off). A package's executable (`…\WindowsApps\
+/// <package>\app.exe`) and its alias (`…\WindowsApps\<family>\app.exe`) count as one.
 pub(crate) fn apps_for_ext(reg: &dyn Registry, ext: &str) -> Vec<AppInfo> {
     let ext = ext.to_ascii_lowercase();
     let mut out: Vec<AppInfo> = Vec::new();
+    let key_of = |a: &AppInfo| {
+        let path = a.exec.to_string_lossy().to_ascii_lowercase();
+        if path.contains(r"\windowsapps\") { path.rsplit('\\').next().unwrap_or_default().to_string() } else { path }
+    };
     let push = |out: &mut Vec<AppInfo>, app: AppInfo| {
-        let key = app.exec.to_string_lossy().to_ascii_lowercase();
-        if !out.iter().any(|a| a.exec.to_string_lossy().to_ascii_lowercase() == key && a.launchable == app.launchable) {
+        let key = key_of(&app);
+        if !out.iter().any(|a| key_of(a) == key && a.launchable == app.launchable) {
             out.push(app);
         }
     };
     if let Some(a) = default_assoc(reg, &ext) {
         match &a.command {
+            _ if is_appx(&a.progid) => push(&mut out, appx_app(reg, &a.progid)),
             Some(cmd) => push(&mut out, app_from_command(reg, &a.progid, cmd, a.launchable, Some(&a.progid))),
             None => push(
                 &mut out,
@@ -281,7 +355,11 @@ pub(crate) fn apps_for_ext(reg: &dyn Registry, ext: &str) -> Vec<AppInfo> {
     let mut progids = reg.values(Hive::ClassesRoot, &format!(r"{ext}\OpenWithProgids"));
     progids.extend(reg.values(Hive::CurrentUser, &format!(r"{FILE_EXTS}\{ext}\OpenWithProgids")));
     for p in progids {
-        if p.len() >= 4 && p[..4].eq_ignore_ascii_case("appx") {
+        if is_appx(&p) {
+            let app = appx_app(reg, &p);
+            if app.launchable {
+                push(&mut out, app);
+            }
             continue;
         }
         if let Some(Verb { command: Some(cmd), delegate: false }) = verb_command(reg, &p) {
@@ -299,6 +377,16 @@ pub(crate) fn apps_for_ext(reg: &dyn Registry, ext: &str) -> Vec<AppInfo> {
         }
     }
     for exe in exes {
+        // The most-recently-used list also names Store apps by app id.
+        if exe.contains('!') {
+            if let Some(alias) = reg.app_alias(&exe) {
+                let name = app_id_name(&exe).unwrap_or_else(|| exe.clone());
+                let app =
+                    AppInfo { id: exe, name, exec: alias, args: vec!["\"%1\"".into()], icon: None, launchable: true };
+                push(&mut out, app);
+            }
+            continue;
+        }
         let key = format!(r"Applications\{exe}");
         if reg.has(Hive::ClassesRoot, &key, "NoOpenWith") {
             continue;
@@ -348,7 +436,10 @@ mod imp {
 
     use soyuz_core::{FsError, FsErrorKind, FsResult};
 
-    use super::{AppInfo, Hive, Registry, default_assoc, expand_args, pe_subsystem, split_command};
+    use super::{AppInfo, Hive, Registry, apps_for_ext, default_assoc, expand_args, pe_subsystem, split_command};
+    use crate::launch::OpenOptions;
+    use crate::sys::reparse::{self, Reparse};
+    use crate::sys::windows::fs as wfs;
     use crate::sys::windows::registry::{self as wr, Hive as WHive};
 
     const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
@@ -380,6 +471,26 @@ mod imp {
         fn display(&self, hive: Hive, key: &str, value: &str) -> Option<String> {
             wr::mui_string(h(hive), key, value)
                 .or_else(|| self.get(hive, key, Some(value)).filter(|s| !s.starts_with('@')))
+        }
+        fn app_alias(&self, app_id: &str) -> Option<PathBuf> {
+            let (family, _) = app_id.split_once('!')?;
+            if family.is_empty() || family.contains(['\\', '/']) || family.starts_with('.') {
+                return None;
+            }
+            let dir = PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join(r"Microsoft\WindowsApps").join(family);
+            let mut aliases: Vec<PathBuf> = std::fs::read_dir(&dir)
+                .ok()?
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("exe")))
+                .collect();
+            aliases.sort();
+            // An alias names the app it starts; a package may hold several apps.
+            aliases.into_iter().find(|p| {
+                wfs::get_reparse_data(p).ok().and_then(|b| reparse::parse(&b).ok()).is_some_and(
+                    |r| matches!(r, Reparse::AppExecLink { app_id: id, .. } if String::from_utf16_lossy(&id).eq_ignore_ascii_case(app_id)),
+                )
+            })
         }
     }
 
@@ -445,11 +556,11 @@ mod imp {
         p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
     }
 
-    pub(crate) fn open_default(path: &Path) -> FsResult<()> {
-        open_default_depth(path, 0)
+    pub(crate) fn open_default(path: &Path, opts: &OpenOptions) -> FsResult<()> {
+        open_default_depth(path, opts, 0)
     }
 
-    fn open_default_depth(path: &Path, depth: u8) -> FsResult<()> {
+    fn open_default_depth(path: &Path, opts: &OpenOptions, depth: u8) -> FsResult<()> {
         let e = crate::list::stat(path, true).map_err(|e| FsError { op: "open".into(), ..e })?;
         let p = plain(path);
         let dir = p.parent().map(Path::to_path_buf);
@@ -478,7 +589,7 @@ mod imp {
                             .or_else(|| target.parent().map(Path::to_path_buf));
                         spawn_raw(&target, &args, cwd.as_deref(), "open", path)
                     } else {
-                        open_default_depth(&target, depth + 1)
+                        open_default_depth(&target, opts, depth + 1)
                     }
                 }
                 _ => Err(FsError::with_message(
@@ -507,8 +618,16 @@ mod imp {
                         let args = expand_args(&rest, &p);
                         spawn_raw(Path::new(&exe), &args, dir.as_deref(), "open", path)
                     }
-                    // UWP / DelegateExecute (COM-only) / unknown: nothing we can start
-                    // without a shell API.
+                    // A Store / COM-only default: Explorer (its own process) opens the file
+                    // in it, as a double-click there would.
+                    Some(_) if opts.store_apps_via_explorer => {
+                        spawn_raw(Path::new("explorer.exe"), &format!("\"{}\"", p.display()), None, "open", path)
+                    }
+                    // Else the first registered program we can start ourselves.
+                    Some(_) => match apps_for_ext(&reg, &format!(".{ext}")).into_iter().find(|a| a.launchable) {
+                        Some(app) => open_with(path, &app),
+                        None => Err(no_association(path, &format!("\u{201c}.{ext}\u{201d} files"))),
+                    },
                     _ if ext.is_empty() => Err(no_association(path, "files without an extension")),
                     _ => Err(no_association(path, &format!("\u{201c}.{ext}\u{201d} files"))),
                 }
@@ -518,7 +637,7 @@ mod imp {
 
     pub(crate) fn open_with(path: &Path, app: &AppInfo) -> FsResult<()> {
         if !app.launchable || app.exec.as_os_str().is_empty() {
-            return open_default(path);
+            return open_default(path, &OpenOptions::default());
         }
         crate::list::stat(path, true).map_err(|e| FsError { op: "open_with".into(), ..e })?;
         let p = plain(path);
@@ -559,6 +678,7 @@ mod tests {
     struct FakeReg {
         values: HashMap<(Hive, String, String), String>,
         keys: HashMap<(Hive, String), Vec<String>>,
+        aliases: HashMap<String, PathBuf>,
     }
 
     impl FakeReg {
@@ -594,6 +714,9 @@ mod tests {
                 .filter(|(h, kk, v)| *h == hive && *kk == k && !v.is_empty())
                 .map(|(_, _, v)| v.clone())
                 .collect()
+        }
+        fn app_alias(&self, app_id: &str) -> Option<PathBuf> {
+            self.aliases.get(app_id).cloned()
         }
     }
 
@@ -647,6 +770,78 @@ mod tests {
         let mut r2 = sample();
         r2.values.retain(|(h, _, v), _| !(*h == CurrentUser && v == "progid"));
         assert_eq!(default_assoc(&r2, ".txt").unwrap().progid, "txtfile");
+    }
+
+    /// `.jpg` as a Windows 11 machine has it: Photos (a COM-only Store app) as the user's
+    /// choice, `jpegfile` with only a `printto` verb, menu verbs under
+    /// `SystemFileAssociations`, GIMP and Paint (with an alias) as other programs.
+    fn photos_machine() -> FakeReg {
+        let mut r = FakeReg::default();
+        let photos = "AppX4mntx4h978m1v9gtzv0ewksfd6pmwsre";
+        let paint = "AppXcesbfs704v2mjbts9dkr42s9vmrhxbkj";
+        r.set(CurrentUser, &format!(r"{FILE_EXTS}\.jpg\UserChoice"), "ProgId", "AppX43hnxtbyyps62jhe9sqpdzxn1790zetc");
+        r.set(CurrentUser, &format!(r"{FILE_EXTS}\.jpg\UserChoiceLatest\ProgId"), "ProgId", photos);
+        for p in [photos, paint] {
+            r.set(ClassesRoot, &format!(r"{p}\Shell\open\command"), "DelegateExecute", "{BFEC0C93}");
+            r.set(
+                ClassesRoot,
+                &format!(r"{p}\Application"),
+                "ApplicationName",
+                "@{Pkg?ms-resource://x/AppDisplayName}",
+            );
+        }
+        r.set(
+            ClassesRoot,
+            &format!(r"{photos}\Application"),
+            "AppUserModelID",
+            "Microsoft.Windows.Photos_8wekyb3d8bbwe!App",
+        );
+        r.set(ClassesRoot, &format!(r"{paint}\Application"), "AppUserModelID", "Microsoft.Paint_8wekyb3d8bbwe!App");
+        r.aliases.insert("Microsoft.Paint_8wekyb3d8bbwe!App".into(), PathBuf::from(r"C:\WindowsApps\mspaint.exe"));
+        r.set(ClassesRoot, ".jpg", "", "jpegfile");
+        r.set(ClassesRoot, ".jpg", "PerceivedType", "image");
+        r.set(ClassesRoot, r"jpegfile\shell\printto\command", "", r#""C:\print.exe" /pt "%1" "%2""#);
+        r.set(ClassesRoot, r"SystemFileAssociations\.jpg\Shell\PdfCraft.CreatePdf\command", "", r#""C:\pdf.exe" "%1""#);
+        r.set(ClassesRoot, r"SystemFileAssociations\image\shell\print\command", "", r#""C:\print.exe" %1"#);
+        for p in [photos, paint, "GIMP3.jpg", "jpegfile"] {
+            r.set(ClassesRoot, r".jpg\OpenWithProgids", p, "");
+        }
+        r.set(ClassesRoot, r"GIMP3.jpg\shell\open\command", "", r#""C:\GIMP 3\bin\gimp-3.exe" "%1""#);
+        r
+    }
+
+    #[test]
+    fn store_app_defaults() {
+        let mut r = photos_machine();
+        // Photos (UserChoiceLatest) is the default; printing and menu verbs never are.
+        let a = default_assoc(&r, ".jpg").unwrap();
+        assert_eq!(a.progid, "AppX4mntx4h978m1v9gtzv0ewksfd6pmwsre");
+        assert!(!a.launchable);
+        let apps = apps_for_ext(&r, ".jpg");
+        let mut names: Vec<(&str, bool)> = apps.iter().map(|a| (a.name.as_str(), a.launchable)).collect();
+        assert_eq!(names[0], ("Photos", false), "the default first");
+        names.sort();
+        assert_eq!(names, [("Paint", true), ("Photos", false), ("gimp-3", true)]);
+        assert!(!apps.iter().any(|a| a.exec.to_string_lossy().contains("print")), "{apps:?}");
+        let paint = apps.iter().find(|a| a.name == "Paint").unwrap();
+        assert_eq!(paint.exec, PathBuf::from(r"C:\WindowsApps\mspaint.exe"));
+        // A Store default with an alias starts directly.
+        r.set(
+            CurrentUser,
+            &format!(r"{FILE_EXTS}\.jpg\UserChoiceLatest\ProgId"),
+            "ProgId",
+            "AppXcesbfs704v2mjbts9dkr42s9vmrhxbkj",
+        );
+        let a = default_assoc(&r, ".jpg").unwrap();
+        assert!(a.launchable);
+        assert_eq!(a.command.as_deref(), Some(r#""C:\WindowsApps\mspaint.exe" "%1""#));
+        // Without Store apps, a printing-only ProgId and menu verbs leave no default.
+        let mut r = photos_machine();
+        r.values.retain(|(h, _, v), _| !(*h == CurrentUser && v == "progid"));
+        assert!(default_assoc(&r, ".jpg").is_none());
+        assert_eq!(app_id_name("Microsoft.WindowsNotepad_8wekyb3d8bbwe!App").as_deref(), Some("Notepad"));
+        assert_eq!(app_id_name("Microsoft.WindowsAlarms_8wekyb3d8bbwe!App").as_deref(), Some("Alarms"));
+        assert_eq!(app_id_name("Contoso.Windowsill_abc!App").as_deref(), Some("Windowsill"));
     }
 
     #[test]

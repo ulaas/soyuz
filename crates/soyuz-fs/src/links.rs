@@ -134,7 +134,7 @@ mod imp {
                 let sub = reparse::nt_to_dos(&s(&substitute));
                 if sub.is_empty() { s(&print) } else { sub }
             }
-            Reparse::AppExecLink { target } => s(&target),
+            Reparse::AppExecLink { target, .. } => s(&target),
             Reparse::Other(tag) => {
                 return Err(FsError::with_message(
                     FsErrorKind::Unsupported,

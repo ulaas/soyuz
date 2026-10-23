@@ -963,6 +963,16 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.open.run_binaries);
             },
         );
+        if cfg!(windows) {
+            r.row_kw(
+                tr!("settings-open-store-apps"),
+                tr!("settings-open-store-apps-desc"),
+                "store uwp microsoft app photos explorer default open",
+                |ui| {
+                    switch(ui, &mut d.open.store_apps_via_explorer);
+                },
+            );
+        }
         r.block(tr!("settings-open-defaults"), tr!("settings-open-defaults-desc"), |ui| {
             default_apps_editor(ui, &mut d.open.default_apps);
         });

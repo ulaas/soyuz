@@ -146,6 +146,13 @@ them. They are kept in `[[open.default_apps]]` in `config.toml`. Soyuz doesn't c
 the system's own default apps. Apps that open through the system, such as Store apps,
 can't be a Soyuz default.
 
+**Store apps (Windows).** Store apps that ship a command alias (Paint, Notepad, Media
+Player, Snipping Tool) are started directly and listed in *Open with…*. When a type's
+default is a Store app Soyuz can't start itself, such as Photos, Explorer opens the file
+in it, as a double-click there would (`[open] store_apps_via_explorer`, *Settings →
+Behaviour → Open Store apps through Explorer*). Turn it off to open such files with the
+first other program registered for their type instead.
+
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
 without an extension, opens *Open with…* on `Enter` instead of an error
 (`[open] choose_when_unknown`, *Settings → Behaviour → Ask for unrecognized files*). The

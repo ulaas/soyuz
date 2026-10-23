@@ -564,6 +564,10 @@ pub struct OpenSection {
     /// AppImage) runs it, in its own folder, ahead of `default_apps`; off = it opens like
     /// any other file. Executable scripts and shared libraries are never run.
     pub run_binaries: bool,
+    /// Windows: a file whose default app is a Store app Soyuz cannot start itself (Photos,
+    /// …) is handed to Explorer, which opens it in that app; off = it opens with the first
+    /// registered program Soyuz can start (or Open with… when there is none).
+    pub store_apps_via_explorer: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,
