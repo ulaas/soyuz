@@ -114,7 +114,7 @@ syntect = { version = "5.3.0", default-features = false, features = ["default-sy
 pdfium-render = { version = "0.9.4", default-features = false, features = ["thread_safe", "pdfium_latest"] }
 lopdf = { version = "0.45.0", default-features = false }
 quick-xml = "0.42.0"
-skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+skrifa = { version = "0.48.0", default-features = false, features = ["std"] }
 ab_glyph = "0.2.32"
 # WOFF 2 fonts (Brotli + glyph transforms, pure Rust) for the font preview.
 wuff = { version = "0.2.9", default-features = false, features = ["brotli"] }
