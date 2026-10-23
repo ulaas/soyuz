@@ -4694,7 +4694,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-ai"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4723,7 +4723,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-appcore"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "ab_glyph",
  "base64 0.23.1",
@@ -4785,7 +4785,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-archive"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bzip2",
  "chrono",
@@ -4806,7 +4806,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-core"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bitflags 2.13.2",
  "chrono",
@@ -4824,7 +4824,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-fs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "bitflags 2.13.2",
  "blake3",
@@ -4872,7 +4872,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-index"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4890,7 +4890,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-jobs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -4906,7 +4906,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-mcp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -4932,7 +4932,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-media"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "image",
  "libloading 0.9.0",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-script"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4965,7 +4965,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-search"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "blake3",
  "crossbeam-channel",
@@ -4984,7 +4984,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-term"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "alacritty_terminal",
  "crossbeam-channel",
@@ -4997,7 +4997,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-vfs"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "base64 0.23.1",
  "chrono",

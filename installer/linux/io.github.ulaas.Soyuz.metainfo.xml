@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.5.1" date="2026-10-23" type="development">
+      <description>
+        <p>Files whose default app is a Microsoft Store app, such as photos opening in Photos,
+          open on double-click again on Windows, and Store apps with a command alias (Paint,
+          Notepad, Media Player) appear in Open with. FFmpeg load errors say why the libraries
+          could not be loaded.</p>
+      </description>
+    </release>
     <release version="0.5.0" date="2026-10-22" type="development">
       <description>
         <p>Tar and 7z archives can be edited like zip archives, and files can be copied out of
