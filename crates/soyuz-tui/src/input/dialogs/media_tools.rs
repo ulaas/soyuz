@@ -141,10 +141,9 @@ fn pick_preset(t: &mut MediaToolsModel, ui: &mut ModelUi, i: usize) {
         ui.form.fields[k] = preset_field(t);
     }
     ui.list.select(t.preset, t.presets.len());
-    for (slot, text) in [(Slot::Name, t.name.clone())] {
-        if let Some(i) = slot_index(t.tool, slot) {
-            set_text(&mut ui.form, i, &text);
-        }
+    if let Some(i) = slot_index(t.tool, Slot::Name) {
+        let name = t.name.clone();
+        set_text(&mut ui.form, i, &name);
     }
     ui.form.error = t.error();
 }
