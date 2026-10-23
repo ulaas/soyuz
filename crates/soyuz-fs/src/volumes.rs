@@ -470,6 +470,9 @@ pub(crate) fn caps_for(fstype: &str) -> FsCaps {
         "hfs" => FsCaps::HARDLINK | FsCaps::SYMLINK,
         "ntfs" | "ntfs3" | "fuseblk" => FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::ADS,
         "nfs" | "nfs4" => FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE,
+        // /tmp on Fedora / Arch / systemd: links and sparse files work like on ext4.
+        "tmpfs" => FsCaps::SPARSE | FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE,
+        "ramfs" => FsCaps::HARDLINK | FsCaps::SYMLINK | FsCaps::CASE_SENSITIVE,
         _ => FsCaps::empty(),
     }
 }
@@ -1055,6 +1058,7 @@ mod tests {
         );
         assert!(caps_for("btrfs").contains(FsCaps::REFLINK));
         assert!(!caps_for("vfat").contains(FsCaps::HARDLINK));
+        assert!(caps_for("tmpfs").contains(FsCaps::HARDLINK) && !caps_for("tmpfs").contains(FsCaps::REFLINK));
         assert_eq!(unescape_octal(r"a\040b\134c"), "a b\\c");
         // Out of byte range (would overflow a u8): kept as written.
         assert_eq!(unescape_octal(r"x\777y\400"), r"x\777y\400");

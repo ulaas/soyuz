@@ -290,8 +290,15 @@ pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
     s
 }
 
+/// The file name of `exe` without its extension. Split by hand on both separators: registry
+/// commands are Windows paths, and `Path` only knows `\` on Windows (the tests run everywhere).
 fn exe_stem(exe: &str) -> String {
-    Path::new(exe).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| exe.to_string())
+    let name = exe.rsplit(['\\', '/']).next().unwrap_or(exe);
+    let stem = match name.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem,
+        _ => name,
+    };
+    if stem.is_empty() { exe.to_string() } else { stem.to_string() }
 }
 
 fn app_from_command(reg: &dyn Registry, id: &str, command: &str, launchable: bool, name_key: Option<&str>) -> AppInfo {
