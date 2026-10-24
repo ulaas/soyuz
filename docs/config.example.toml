@@ -110,6 +110,7 @@ focus_mode_hides = ["sidebar", "status_bar", "preview", "bottom_panel", "activit
 
 [workspace]                      # windows, tab groups, saved workspaces (workspaces.toml), timeline
 new_window = "in_process"        # in_process (Ctrl+N opens a window of this Soyuz) | process
+launch = "new_window"            # starting soyuz while it runs: new_window | new_tab (hand over to it) | new_process (next start)
 tear_off = true                  # drag a tab out of the strip to open it in its own window
 tear_off_distance = 48           # points away from the strip before a tab tears off
 close_window_tabs = "ask"        # closing a window with tabs: ask | merge (move them) | close

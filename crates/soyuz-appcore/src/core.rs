@@ -490,6 +490,7 @@ impl AppCore {
         crate::automation::pump(self, host);
         crate::services::updates::pump(self);
         crate::services::filemanager1::pump(self, host);
+        crate::services::instance::pump(self, host);
         crate::models::remote::pump(self, host);
         crate::services::os_clipboard::pump(self);
     }
@@ -574,7 +575,12 @@ impl AppCore {
         if self.quit.when_idle {
             host.redraw_after(Duration::from_millis(250));
         }
-        if !close_requested || self.quit.allowed || pending == 0 {
+        if !close_requested {
+            return;
+        }
+        if self.quit.allowed || pending == 0 {
+            // The close goes through: later launches start their own process.
+            crate::services::instance::shutdown();
             return;
         }
         host.window(crate::host::WindowId::Current, crate::host::WindowCmd::CancelClose);
@@ -626,6 +632,7 @@ impl AppCore {
 
     /// The process is exiting (the close went through).
     pub fn on_exit(&mut self) {
+        crate::services::instance::shutdown();
         // An "Install & restart" now restarts.
         crate::services::updates::arm_restart();
     }
@@ -733,7 +740,7 @@ pub fn startup_target(path: &std::path::Path) -> Option<(Location, Option<String
 }
 
 /// `[general] start_location`: `home` | `last` (session handles it) | a path.
-fn start_location(c: &Config) -> Location {
+pub(crate) fn start_location(c: &Config) -> Location {
     let s = c.general.start_location.trim();
     match s.to_ascii_lowercase().as_str() {
         "" | "home" | "last" => Location::Dir(soyuz_fs::home()),

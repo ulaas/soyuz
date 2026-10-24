@@ -21,6 +21,7 @@
 pub mod dialog;
 pub mod geometry;
 pub mod popup;
+pub mod raise;
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -127,7 +128,7 @@ pub fn end_frame(ctx: &Context) {
     }
     // A modal owner whose dialog vanished without a sweep (e.g. setting turned off).
     with_reg(|r| r.known.retain(|_, h| owned::is_window(*h)));
-    let _ = ctx;
+    raise::poll(ctx);
 }
 
 fn any_modal_on(owner: isize) -> bool {

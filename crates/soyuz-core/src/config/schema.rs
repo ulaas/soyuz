@@ -337,6 +337,20 @@ pub enum NewWindowMode {
     Process,
 }
 
+/// What starting `soyuz` does while a Soyuz window already runs (Start menu, taskbar,
+/// `soyuz <path>`, "Open with").
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LaunchMode {
+    /// The running Soyuz opens a new window (one process; no second copy in memory).
+    #[default]
+    NewWindow,
+    /// The running Soyuz opens a tab in its focused window.
+    NewTab,
+    /// Start a separate Soyuz process every time.
+    NewProcess,
+}
+
 /// Closing a window that still has tabs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -357,6 +371,9 @@ pub enum CloseWindowTabs {
 pub struct WorkspaceConfig {
     /// What "New window" (Ctrl+N) opens.
     pub new_window: NewWindowMode,
+    /// Starting `soyuz` while a window already runs: `new_window` / `new_tab` hand the
+    /// request to the running Soyuz, `new_process` starts another process (next start).
+    pub launch: LaunchMode,
     /// Drag a tab out of the tab strip to open it in its own window.
     pub tear_off: bool,
     /// How far (points) a tab has to be dragged away from the strip to tear off.

@@ -10,6 +10,7 @@ pub mod filemanager1;
 pub mod folder_colors;
 pub mod git;
 pub mod index;
+pub mod instance;
 pub mod jobs;
 pub mod lister;
 pub mod mailbox;

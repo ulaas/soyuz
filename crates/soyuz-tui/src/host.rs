@@ -212,6 +212,7 @@ impl Host for TuiHost {
                 self.close_cancelled.store(true, Ordering::Release);
             }
             WindowCmd::Focus
+            | WindowCmd::Raise
             | WindowCmd::Minimized(_)
             | WindowCmd::Maximized(_)
             | WindowCmd::OuterPosition(_)

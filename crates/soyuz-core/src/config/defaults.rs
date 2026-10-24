@@ -144,6 +144,7 @@ impl Default for WorkspaceConfig {
     fn default() -> Self {
         WorkspaceConfig {
             new_window: NewWindowMode::InProcess,
+            launch: LaunchMode::NewWindow,
             tear_off: true,
             tear_off_distance: 48.0,
             close_window_tabs: CloseWindowTabs::Ask,

@@ -373,6 +373,23 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
             },
         );
+        r.row_kw(
+            tr!("settings-views-launch"),
+            tr!("settings-views-launch-desc"),
+            "single instance process start launch",
+            |ui| {
+                use soyuz_core::config::LaunchMode;
+                segmented(
+                    ui,
+                    &mut d.workspace.launch,
+                    &[
+                        (LaunchMode::NewWindow, tr!("settings-views-launch-window")),
+                        (LaunchMode::NewTab, tr!("settings-views-launch-tab")),
+                        (LaunchMode::NewProcess, tr!("settings-views-launch-process")),
+                    ],
+                );
+            },
+        );
         r.row_kw(tr!("settings-views-tear-off"), tr!("settings-views-tear-off-desc"), "detach drag", |ui| {
             switch(ui, &mut d.workspace.tear_off);
         });
