@@ -45,6 +45,15 @@ of the *Explorer* preset; the command palette always shows the active ones.
   panels, the status bar and the tab strip, leaving the toolbar and the listing; press it
   again to bring back what was shown. *Settings → Views → Focus mode hides* picks the parts
   (`[layout] focus_mode_hides`).
+- **One Soyuz at a time.** Starting Soyuz while it already runs (Start menu, taskbar,
+  "Open with", `soyuz <folder>`) opens a new window of the running Soyuz rather than a
+  second copy in memory, then the new launch exits. A file argument opens its folder with
+  the file selected. *Settings → Views → Starting Soyuz again* (`[workspace] launch`) picks
+  `new_window` (default), `new_tab` (a tab in the focused window) or `new_process` (a
+  separate process every time); it takes effect at the next start. `soyuz --new-window`
+  always starts a separate process that leaves the saved session alone, as do
+  `--safe-mode` and `--renderer`. A portable copy, an elevated (administrator) Soyuz and
+  each Remote Desktop session have their own running instance.
 
 ### The sidebar
 

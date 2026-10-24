@@ -208,6 +208,19 @@ pub fn connect(name: &str) -> std::io::Result<Option<ClientStream>> {
     windows::connect(name)
 }
 
+/// Process id of the server a client is connected to (Windows; `None` elsewhere).
+pub fn server_pid(stream: &ClientStream) -> Option<u32> {
+    #[cfg(windows)]
+    {
+        stream.server_pid()
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = stream;
+        None
+    }
+}
+
 /// A connected client end.
 #[cfg(unix)]
 pub type ClientStream = unix::PipeStream;

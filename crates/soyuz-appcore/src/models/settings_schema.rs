@@ -221,6 +221,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("appearance.backdrop", Hint::Restart),
     ("appearance.snap_layouts", Hint::Restart),
     ("appearance.custom_titlebar", Hint::Restart),
+    ("workspace.launch", Hint::Restart),
 ];
 
 /// Keys the editor does not show: the schema version and legacy keys that are only read

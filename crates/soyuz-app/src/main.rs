@@ -64,7 +64,8 @@ Options:
                           the terminal); opens at most one PATH
   --screen-reader         With --tui: screen-reader mode for this run (the setting stays)
   --renderer <wgpu|glow>  Rendering backend (default: wgpu; glow needs the `glow` cargo feature)
-  --new-window            Secondary window: don't restore or overwrite the saved session
+  --new-window            A separate Soyuz process, even when one already runs (`[workspace]
+                          launch`); it doesn't restore or overwrite the saved session
   --safe-mode             Default settings; no session restore, folder watching, thumbnails or git
   --dbus-file-manager     Linux: serve org.freedesktop.FileManager1 (\"show in folder\" from other apps)
   --mcp                   Run as an MCP server on stdin/stdout (attaches to the running window)
@@ -81,6 +82,43 @@ fn arg_path(arg: String) -> std::path::PathBuf {
         return p;
     }
     std::path::PathBuf::from(arg)
+}
+
+/// Why this GUI start must not hand over to a running window (`None`: try the handoff).
+/// `has_env` tells whether an environment variable is set; `mode` reads `[workspace] launch`
+/// (only when nothing else decided).
+fn handoff_bypass(
+    args: &[String],
+    startup: &soyuz_app::app::Startup,
+    dbus_file_manager: bool,
+    has_env: impl Fn(&str) -> bool,
+    mode: impl FnOnce() -> soyuz_core::config::LaunchMode,
+) -> Option<&'static str> {
+    let opts: Vec<&str> = args.iter().map(String::as_str).take_while(|a| *a != "--").collect();
+    if startup.secondary {
+        return Some("--new-window");
+    }
+    if startup.safe_mode {
+        return Some("--safe-mode");
+    }
+    if opts.iter().any(|a| *a == "--renderer" || a.starts_with("--renderer=")) {
+        return Some("--renderer");
+    }
+    if dbus_file_manager {
+        return Some("--dbus-file-manager");
+    }
+    if !has_env(soyuz_app::services::instance::TEST_ENV) {
+        if has_env("SOYUZ_SCRIPT") {
+            return Some("scripted run (SOYUZ_SCRIPT)");
+        }
+        if has_env("SOYUZ_WINDOW_POS") {
+            return Some("scripted run (SOYUZ_WINDOW_POS)");
+        }
+    }
+    if mode() == soyuz_core::config::LaunchMode::NewProcess {
+        return Some("[workspace] launch = \"new_process\"");
+    }
+    None
 }
 
 /// `--tui` is on the command line (before a `--`): decided before logging starts, so
@@ -340,6 +378,7 @@ Run `soyuz <command> --help` for usage."
             return ExitCode::from(2);
         }
     }
+    let args_for_bypass = args.clone();
     let cli = match parse_args(args) {
         Ok(c) => c,
         Err(e) => {
@@ -361,7 +400,33 @@ Run `soyuz <command> --help` for usage."
         Cli::Tui { startup, screen_reader } => return run_tui(startup, screen_reader),
         Cli::Run { renderer, startup, extra, dbus_file_manager } => (renderer, startup, extra, dbus_file_manager),
     };
-    let (renderer, startup, extra, dbus_file_manager) = renderer;
+    let (renderer, mut startup, extra, dbus_file_manager) = renderer;
+    // Single instance: hand the launch to a running window, before anything here starts
+    // threads, claims a crash-journal slot or writes the config.
+    let has_env = |k: &str| std::env::var_os(k).is_some();
+    let mode = soyuz_app::services::instance::configured_mode;
+    match handoff_bypass(&args_for_bypass, &startup, dbus_file_manager, has_env, mode) {
+        Some(why) => log::info!("instance: {why}; not handing over"),
+        None => {
+            use soyuz_app::services::instance;
+            let req = instance::LaunchRequest::from_args(startup.open.as_deref(), &extra);
+            let name = instance::endpoint_name();
+            match instance::claim_or_hand_off(&name, &req) {
+                instance::Handoff::Handed => {
+                    log::info!("instance: handed the launch to the running window");
+                    return ExitCode::SUCCESS;
+                }
+                instance::Handoff::Primary(l) => {
+                    log::info!("instance: serving {name}");
+                    instance::install(l);
+                }
+                instance::Handoff::Own(why) => {
+                    log::warn!("instance: {why}; starting a separate window that leaves the session alone");
+                    startup.secondary = true;
+                }
+            }
+        }
+    }
     soyuz_app::services::filemanager1::set_forced(dbus_file_manager);
     // Further command-line paths open as tabs once the window runs.
     soyuz_app::services::filemanager1::open_paths_later(extra);
@@ -463,6 +528,8 @@ Run `soyuz <command> --help` for usage."
             Ok(Box::new(app))
         }),
     );
+    // Normally gone already (quitting closes it): never hand a launch to a dying process.
+    soyuz_app::services::instance::shutdown();
     // "Install & restart" after an in-place update: start the new binary.
     if let Some(exe) = soyuz_app::services::updates::take_restart() {
         let e = soyuz_app::services::updates::exec_restart(&exe);
@@ -556,6 +623,33 @@ mod tests {
         assert!(parse(&["--tui", "--renderer", "glow"]).is_err());
         assert!(parse(&["--tui", "--dbus-file-manager"]).is_err());
         assert_eq!(parse(&["--tui", "--help"]), Ok(Cli::Help));
+    }
+
+    #[test]
+    fn handoff_bypass_flags() {
+        let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        use soyuz_core::config::LaunchMode;
+        let no_env = |_: &str| false;
+        let window = || LaunchMode::NewWindow;
+        let plain = soyuz_app::app::Startup::default();
+        let secondary = soyuz_app::app::Startup { secondary: true, ..Default::default() };
+        let safe = soyuz_app::app::Startup { safe_mode: true, ..Default::default() };
+        assert_eq!(handoff_bypass(&a(&["--new-window"]), &secondary, false, no_env, window), Some("--new-window"));
+        assert_eq!(handoff_bypass(&a(&["--safe-mode"]), &safe, false, no_env, window), Some("--safe-mode"));
+        assert_eq!(handoff_bypass(&a(&["--renderer", "glow"]), &plain, false, no_env, window), Some("--renderer"));
+        assert_eq!(handoff_bypass(&a(&["--renderer=wgpu"]), &plain, false, no_env, window), Some("--renderer"));
+        assert_eq!(handoff_bypass(&a(&[]), &plain, true, no_env, window), Some("--dbus-file-manager"));
+        let script = |k: &str| k == "SOYUZ_SCRIPT";
+        assert_eq!(handoff_bypass(&a(&[]), &plain, false, script, window), Some("scripted run (SOYUZ_SCRIPT)"));
+        let pos = |k: &str| k == "SOYUZ_WINDOW_POS";
+        assert_eq!(handoff_bypass(&a(&[]), &plain, false, pos, window), Some("scripted run (SOYUZ_WINDOW_POS)"));
+        // The dev hook allows the handoff in scripted runs.
+        let test = |k: &str| k == "SOYUZ_WINDOW_POS" || k == soyuz_app::services::instance::TEST_ENV;
+        assert_eq!(handoff_bypass(&a(&[]), &plain, false, test, window), None);
+        assert_eq!(handoff_bypass(&a(&["dir"]), &plain, false, no_env, || LaunchMode::NewTab), None);
+        assert!(handoff_bypass(&a(&[]), &plain, false, no_env, || LaunchMode::NewProcess).is_some());
+        // A folder named `--renderer` after `--` is a path, not the flag.
+        assert_eq!(handoff_bypass(&a(&["--", "--renderer"]), &plain, false, no_env, window), None);
     }
 
     #[test]

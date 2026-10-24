@@ -64,7 +64,13 @@ impl Host for EguiHost {
         self.0.set_theme(to_egui_theme(pref));
     }
     fn window(&self, id: WindowId, cmd: WindowCmd) {
+        let vp = match id {
+            WindowId::Current => self.0.viewport_id(),
+            WindowId::Root => egui::ViewportId::ROOT,
+            WindowId::Window(w) => crate::ui::workspaces::windows::viewport_id(w),
+        };
         let cmd = match cmd {
+            WindowCmd::Raise => return crate::ui::native::raise::request(&self.0, vp),
             WindowCmd::Close => egui::ViewportCommand::Close,
             WindowCmd::CancelClose => egui::ViewportCommand::CancelClose,
             WindowCmd::Focus => egui::ViewportCommand::Focus,
@@ -74,11 +80,7 @@ impl Host for EguiHost {
             WindowCmd::OuterPosition(p) => egui::ViewportCommand::OuterPosition(crate::ui::geom::pos(p)),
             WindowCmd::InnerSize(s) => egui::ViewportCommand::InnerSize(crate::ui::geom::vec(s)),
         };
-        match id {
-            WindowId::Current => self.0.send_viewport_cmd(cmd),
-            WindowId::Root => self.0.send_viewport_cmd_to(egui::ViewportId::ROOT, cmd),
-            WindowId::Window(w) => self.0.send_viewport_cmd_to(crate::ui::workspaces::windows::viewport_id(w), cmd),
-        }
+        self.0.send_viewport_cmd_to(vp, cmd);
     }
     fn config_changed(&self, old: &soyuz_core::config::Config, c: &soyuz_core::config::Config) {
         let ctx = &self.0;

@@ -248,6 +248,7 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `new_window` | `"in_process"` \| `"process"` | `"in_process"` | What "New window" (Ctrl+N) opens. (`in_process`: Another window of this Soyuz (shares jobs, services and settings); `process`: A separate Soyuz process (`soyuz --new-window`)) |
+| `launch` | `"new_window"` \| `"new_tab"` \| `"new_process"` | `"new_window"` | Starting `soyuz` while a window already runs: `new_window` / `new_tab` hand the request to the running Soyuz, `new_process` starts another process (next start). (`new_window`: The running Soyuz opens a new window (one process; no second copy in memory); `new_tab`: The running Soyuz opens a tab in its focused window; `new_process`: Start a separate Soyuz process every time) |
 | `tear_off` | boolean | `true` | Drag a tab out of the tab strip to open it in its own window. |
 | `tear_off_distance` | float | `48.0` | How far (points) a tab has to be dragged away from the strip to tear off. |
 | `close_window_tabs` | `"ask"` \| `"merge"` \| `"close"` | `"ask"` | Closing a window that still has tabs. (`ask`: Ask whether to move the tabs to another window or close them; `merge`: Move them to another window; `close`: Close them) |
