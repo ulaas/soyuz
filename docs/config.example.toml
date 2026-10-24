@@ -332,6 +332,7 @@ weekly_check = false             # also check once a week at startup (notificati
 include_prereleases = false      # offer release candidates / betas too
 [performance]                    # startup and rendering
 gpu_backend = "auto"             # auto | dx12 | vulkan | gl (next start; WGPU_BACKEND wins)
+gpu_memory = "low"               # low (small up-front GPU reservations) | performance (next start)
 [remote]                         # SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
 cache_ttl_secs = 30              # reuse a remote folder listing this long (Refresh always re-lists)
 poll_secs = 0                    # re-list visible remote folders this often (0 = never)

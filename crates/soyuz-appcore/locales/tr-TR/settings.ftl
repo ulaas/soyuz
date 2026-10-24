@@ -1324,6 +1324,10 @@ settings-appearance-gpu-backend = Grafik arka ucu
 settings-appearance-gpu-backend-desc = Soyuz’un çizimde kullandığı grafik API’si. Pencere titriyor ya da grafik sürücünüzle boş kalıyorsa başka birini deneyin. Bir sonraki başlangıçta uygulanır; Soyuz sonra açılmazsa --safe-mode ile başlatın.
 settings-appearance-gpu-windows-only = Yalnızca Windows’ta kullanılabilir
 settings-appearance-gpu-compat = uyumluluk
+settings-appearance-gpu-memory = Grafik belleği
+settings-appearance-gpu-memory-desc = Grafik sürücüsünün baştan ayırdığı bellek miktarı. Düşük yaklaşık 200 MB tasarruf sağlar; Performans büyük bloklar ayırır, bu da çok sayıda küçük resmin aynı anda yüklenmesini biraz daha akıcı yapabilir. Bir sonraki başlangıçta uygulanır.
+settings-appearance-gpu-memory-low = Düşük
+settings-appearance-gpu-memory-performance = Performans
 settings-bookmarks-icon = Yer imi simgesi
 
 ## Linux (glue)

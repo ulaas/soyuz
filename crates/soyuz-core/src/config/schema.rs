@@ -1180,12 +1180,28 @@ pub struct Performance {
     /// default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11
     /// backdrop (Direct3D 12 only) take precedence. Applies at the next start.
     pub gpu_backend: GpuBackend,
+    /// How much GPU memory the renderer reserves up front. `low` lets the graphics
+    /// allocator start with small blocks and caps the Direct3D 12 descriptor heap (an
+    /// idle window commits ~140 MB instead of ~350 MB); `performance` reserves large
+    /// blocks (fewer allocations while many thumbnails load). Applies at the next start.
+    pub gpu_memory: GpuMemory,
 }
 
 impl Default for Performance {
     fn default() -> Self {
-        Performance { gpu_backend: GpuBackend::Auto }
+        Performance { gpu_backend: GpuBackend::Auto, gpu_memory: GpuMemory::Low }
     }
+}
+
+/// `[performance] gpu_memory`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GpuMemory {
+    /// Small allocator blocks, a smaller descriptor heap.
+    #[default]
+    Low,
+    /// wgpu's defaults: 128 MB device / 64 MB host blocks.
+    Performance,
 }
 
 /// `[performance] gpu_backend`.

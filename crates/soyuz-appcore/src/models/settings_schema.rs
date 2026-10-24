@@ -216,6 +216,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("custom_commands[].hotkey", Hint::Chord),
     // Read once at startup (the GUI's descriptions say "after a restart").
     ("performance.gpu_backend", Hint::Restart),
+    ("performance.gpu_memory", Hint::Restart),
     ("linux.window_backend", Hint::Restart),
     ("appearance.backdrop", Hint::Restart),
     ("appearance.snap_layouts", Hint::Restart),

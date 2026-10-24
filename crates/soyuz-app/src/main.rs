@@ -184,6 +184,23 @@ fn adapter_rank(t: eframe::wgpu::DeviceType, power: eframe::wgpu::PowerPreferenc
     }
 }
 
+/// Shader-visible CBV / SRV / UAV descriptors under `[performance] gpu_memory = "low"`
+/// (Direct3D 12 sizes that heap from this limit: wgpu's default of 1 000 000 commits
+/// ~30 MB; 131 072 is ~4 MB, far above the one bind group per egui texture we use).
+const LOW_MEMORY_BINDINGS: u32 = 131_072;
+
+/// `[performance] gpu_memory = "low"`: start the allocator with small blocks instead of
+/// egui-wgpu's `MemoryHints::Performance` (128 MB device + 64 MB host reserved up front,
+/// ~3 MB of it used by an idle window) and cap the descriptor heap. Lowering a required
+/// limit never exceeds what the adapter supports.
+fn low_gpu_memory(d: &mut eframe::wgpu::DeviceDescriptor<'static>, mode: soyuz_core::config::GpuMemory) {
+    if mode == soyuz_core::config::GpuMemory::Low {
+        d.memory_hints = eframe::wgpu::MemoryHints::MemoryUsage;
+        d.required_limits.max_non_sampler_bindings =
+            d.required_limits.max_non_sampler_bindings.min(LOW_MEMORY_BINDINGS);
+    }
+}
+
 /// The adapter to render with: the one named by `WGPU_ADAPTER_NAME` (substring, any case),
 /// else the best type for `power` that can present to the window.
 fn pick_adapter(
@@ -388,9 +405,12 @@ Run `soyuz <command> --help` for usage."
             pick_adapter(adapters, surface, power)
         }));
         let device_descriptor = setup.device_descriptor.clone();
+        let gpu_memory = config.performance.gpu_memory;
         setup.device_descriptor = std::sync::Arc::new(move |adapter| {
             soyuz_app::devscript::startup_mark("adapter chosen");
-            device_descriptor(adapter)
+            let mut d = device_descriptor(adapter);
+            low_gpu_memory(&mut d, gpu_memory);
+            d
         });
     }
     // Debug hook (screenshot sessions): `SOYUZ_WINDOW_POS=x,y` opens the window at that

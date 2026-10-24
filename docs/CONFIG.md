@@ -557,6 +557,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `gpu_backend` | `"auto"` \| `"dx12"` \| `"vulkan"` \| `"gl"` | `"auto"` | Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11 backdrop (Direct3D 12 only) take precedence. Applies at the next start. (`dx12`: Direct3D 12 (Windows); `gl`: OpenGL / ANGLE through wgpu (compatibility)) |
+| `gpu_memory` | `"low"` \| `"performance"` | `"low"` | How much GPU memory the renderer reserves up front. `low` lets the graphics allocator start with small blocks and caps the Direct3D 12 descriptor heap (an idle window commits ~140 MB instead of ~350 MB); `performance` reserves large blocks (fewer allocations while many thumbnails load). Applies at the next start. (`low`: Small allocator blocks, a smaller descriptor heap; `performance`: wgpu's defaults: 128 MB device / 64 MB host blocks) |
 
 ## `[remote]`
 

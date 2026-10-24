@@ -1382,6 +1382,10 @@ settings-appearance-gpu-backend = Graphics backend
 settings-appearance-gpu-backend-desc = The graphics API Soyuz draws with. Try another one if the window flickers or stays blank with your graphics driver. Applies at the next start; if Soyuz then fails to start, run it with --safe-mode.
 settings-appearance-gpu-windows-only = Only available on Windows
 settings-appearance-gpu-compat = compatibility
+settings-appearance-gpu-memory = Graphics memory
+settings-appearance-gpu-memory-desc = How much memory the graphics driver reserves up front. Low saves about 200 MB; Performance reserves large blocks, which can make loading many thumbnails at once a little smoother. Applies at the next start.
+settings-appearance-gpu-memory-low = Low
+settings-appearance-gpu-memory-performance = Performance
 settings-bookmarks-icon = Bookmark icon
 
 ## Linux (glue)
