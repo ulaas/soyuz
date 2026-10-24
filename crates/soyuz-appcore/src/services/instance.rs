@@ -455,7 +455,7 @@ fn apply(
         LaunchMode::NewTab => {
             let owner = app.workspaces.owner;
             let id = if crate::models::windows::index(app, owner).is_some() { owner } else { WindowId::MAIN };
-            with_window(app, id, |app| open_tabs(app, &targets));
+            crate::models::windows::with_window(app, id, |app| open_tabs(app, &targets));
             host.window(HostWindow::Window(id), WindowCmd::Raise);
             st.recent = None;
             log::info!("instance: launch opened {} tab(s) in window {}", targets.len(), id.0);
@@ -495,18 +495,6 @@ fn open_tabs(app: &mut AppCore, targets: &[(Location, Option<String>)]) {
 }
 
 /// Run `f` with window `id`'s workspace swapped into `app.ws`.
-// TODO(S3): use the shared "run with a window swapped in" helper once it lands.
-fn with_window(app: &mut AppCore, id: WindowId, f: impl FnOnce(&mut AppCore)) {
-    match crate::models::windows::index(app, id) {
-        Some(k) if !id.is_main() => {
-            crate::models::windows::swap(app, k);
-            f(app);
-            crate::models::windows::swap(app, k);
-        }
-        _ => f(app),
-    }
-}
-
 /// The window that shows tab `tab`.
 fn window_of_tab(app: &AppCore, tab: TabId) -> Option<WindowId> {
     if app.ws.tab_index(tab).is_some() {
@@ -519,7 +507,7 @@ fn window_of_tab(app: &AppCore, tab: TabId) -> Option<WindowId> {
 /// with). `false` when that window is gone.
 fn add_to_window_of(app: &mut AppCore, tab: TabId, targets: &[(Location, Option<String>)]) -> bool {
     if let Some(id) = window_of_tab(app, tab) {
-        with_window(app, id, |app| {
+        crate::models::windows::with_window(app, id, |app| {
             let keep = app.ws.active;
             open_tabs(app, targets);
             app.ws.active = keep.min(app.ws.tabs.len().saturating_sub(1));
