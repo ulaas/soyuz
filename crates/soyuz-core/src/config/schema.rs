@@ -942,8 +942,12 @@ pub struct Preview {
     pub syntax_theme: String,
     /// Needs cargo feature `pdf`.
     pub pdf: bool,
-    /// Memory budget of decoded thumbnails (MiB).
+    /// Memory budget of decoded thumbnails (MiB of graphics memory, counting each
+    /// texture's alignment and per-texture overhead).
     pub thumb_cache_mib: u64,
+    /// Free thumbnails not drawn for this many seconds, even while the app is idle
+    /// (0 = keep them until the memory budget needs the room).
+    pub thumb_idle_trim_secs: u64,
     /// Memory budget of decoded previews (images, text, media) (MiB).
     pub preview_cache_mib: u64,
     /// Folder holding `pdfium.dll` / `libpdfium.so` / `libpdfium.dylib`; empty = next to

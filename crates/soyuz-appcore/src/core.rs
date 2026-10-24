@@ -699,6 +699,7 @@ pub fn apply_core_settings(c: &Config) {
         log::warn!("{w}");
     }
     crate::services::thumbs::set_budget_bytes(c.preview.thumb_cache_mib.saturating_mul(1024 * 1024));
+    crate::services::thumbs::set_idle_trim_secs(c.preview.thumb_idle_trim_secs);
     crate::services::preview_cache::set_budget_bytes(c.preview.preview_cache_mib.saturating_mul(1024 * 1024));
     crate::services::timeline::set_options(crate::services::timeline::TimelineOpts::from_config(c));
 }

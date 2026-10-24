@@ -7,7 +7,7 @@
 //! combining sequences and glyphs from fallback fonts get their own galley placed at their
 //! column so the grid never drifts. Rows are cached by a hash of their resolved content.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -44,6 +44,8 @@ const CWD_POLL: Duration = Duration::from_secs(2);
 pub(crate) struct ViewState {
     rows: Vec<Option<(u64, RowPaint)>>,
     glyph_ok: HashMap<char, bool>,
+    /// Characters from U+0590 up already reported in [`TermResponse::new_chars`].
+    noted: HashSet<char>,
     metrics_key: u64,
     atlas_fill: f32,
     click: ClickTracker,
@@ -64,6 +66,7 @@ impl Default for ViewState {
         ViewState {
             rows: Vec::new(),
             glyph_ok: HashMap::new(),
+            noted: HashSet::new(),
             metrics_key: 0,
             atlas_fill: 0.0,
             click: ClickTracker::default(),
@@ -289,6 +292,7 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
         wants_focus: false,
         link_clicked: None,
         escape_on_empty_line: false,
+        new_chars: String::new(),
     };
 
     // ---- input -------------------------------------------------------------------------
@@ -632,6 +636,7 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
         if !cached {
             let paint = build_row(&mut vs.glyph_ok, &ctx, &painter, &font, cell_w, cells, &styles, pal.default_bg);
             vs.rows[r] = Some((key, paint));
+            note_new_chars(&mut vs.noted, cells, &mut out.new_chars);
         }
         let Some((_, paint)) = &vs.rows[r] else { continue };
         let y = geo.grid.min.y + r as f32 * cell_h;
@@ -771,6 +776,26 @@ pub(crate) fn show(ui: &mut Ui, view: TerminalView<'_>) -> TermResponse {
         ctx.request_repaint();
     }
     out
+}
+
+/// Most characters remembered by [`note_new_chars`] (then it starts over).
+const NOTED_MAX: usize = 4096;
+
+/// Append the characters of `cells` from U+0590 up (scripts the bundled fonts lack)
+/// not reported before to `out`.
+fn note_new_chars(noted: &mut HashSet<char>, cells: &[Cell], out: &mut String) {
+    for cell in cells {
+        let c = cell.c;
+        if (c as u32) < 0x0590 || cell.flags.contains(Flags::HIDDEN) {
+            continue;
+        }
+        if noted.len() >= NOTED_MAX {
+            noted.clear();
+        }
+        if noted.insert(c) {
+            out.push(c);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1010,6 +1035,23 @@ mod tests {
         h.frame(vec![Event::Text(" ".into())]);
         assert_eq!(h.term.backend.term.lock().grid().display_offset(), 0);
         h.term.kill();
+    }
+
+    #[test]
+    fn new_chars_are_reported_once() {
+        let cells = |s: &str| s.chars().map(|c| Cell { c, ..Cell::default() }).collect::<Vec<_>>();
+        let mut noted = HashSet::new();
+        let mut out = String::new();
+        note_new_chars(&mut noted, &cells("ls ÄÖ 한글 文書 한"), &mut out);
+        assert_eq!(out, "한글文書", "Latin-1 needs no fallback; each character once");
+        out.clear();
+        note_new_chars(&mut noted, &cells("文 שלום"), &mut out);
+        assert_eq!(out, "שלום");
+        let mut hidden = cells("中");
+        hidden[0].flags.insert(Flags::HIDDEN);
+        out.clear();
+        note_new_chars(&mut noted, &hidden, &mut out);
+        assert!(out.is_empty(), "hidden text is not drawn");
     }
 
     #[test]

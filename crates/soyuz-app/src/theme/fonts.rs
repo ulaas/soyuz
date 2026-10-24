@@ -17,11 +17,13 @@
 //! fonts hinted for ClearType (Segoe UI, Consolas) look thin and soft at 100 % scaling.
 //! The defaults are therefore embedded fonts drawn well by this renderer, with
 //! `[fonts] hinting_strength` (skrifa hinting target) and `text_gamma_*` (coverage →
-//! opacity curve, see `apply.rs`) tuning the result. System font bytes are read once
-//! and cached for the process lifetime.
+//! opacity curve, see `apply.rs`) tuning the result. System font files are mapped
+//! read-only once (`soyuz_fs::mapped`; read whole where mapping isn't safe) and kept for
+//! the process lifetime.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use egui::epaint::text::{FontTweak, HintingTarget, SmoothHinting, VariationCoords};
 use egui::{Context, FontData, FontDefinitions, FontFamily, FontId};
@@ -389,24 +391,26 @@ fn semibold_of(ui: &Resolved, locate: Locate<'_>, is_variable: IsVariable<'_>) -
     }
 }
 
-/// Font bytes of system files, read once per process.
-static LOADED: Mutex<Option<HashMap<PathBuf, &'static [u8]>>> = Mutex::new(None);
+/// Font file bytes shared with egui (`FontData::from_blob`).
+pub type Blob = Arc<dyn AsRef<[u8]> + Send + Sync>;
 
-/// The file's bytes (leaked once per distinct file: fonts live as long as the app).
-fn load_static(path: &Path) -> Option<&'static [u8]> {
+/// Font bytes of system files, mapped (or read) once per process.
+static LOADED: Mutex<Option<HashMap<PathBuf, Blob>>> = Mutex::new(None);
+
+/// The file's bytes (once per distinct file: fonts live as long as the app). Mapped
+/// read-only where safe, so a system font costs file-backed pages, not private memory.
+fn load_file(path: &Path) -> Option<Blob> {
     if let Some(b) = LOADED.lock().get_or_insert_with(HashMap::new).get(path) {
-        return Some(b);
+        return Some(b.clone());
     }
-    let bytes = std::fs::read(path).ok()?;
-    let leaked: &'static [u8] = Box::leak(bytes.into_boxed_slice());
-    LOADED.lock().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), leaked);
-    Some(leaked)
+    let bytes: Blob = Arc::new(soyuz_fs::mapped::map_or_read(path).ok()?);
+    LOADED.lock().get_or_insert_with(HashMap::new).insert(path.to_path_buf(), bytes.clone());
+    Some(bytes)
 }
 
 fn is_variable_file(path: &Path, index: u32) -> bool {
-    let Some(bytes) = load_static(path) else { return false };
-    let mut data = FontData::from_static(bytes);
-    data.index = index;
+    let Some(bytes) = load_file(path) else { return false };
+    let data = FontData::from_blob(bytes, index);
     data.variation_axes().iter().any(|a| a.tag.to_be_bytes() == *b"wght")
 }
 
@@ -447,7 +451,7 @@ pub fn family(role: FontRoleKind) -> FontFamily {
 
 /// Build the font definitions for resolved roles. `load` returns a file's bytes
 /// (`None`: the role silently uses its embedded fallback).
-pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&'static [u8]>) -> FontDefinitions {
+pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<Blob>) -> FontDefinitions {
     let defaults = FontDefinitions::default();
     let prop_defaults = defaults.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     let mono_defaults = defaults.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
@@ -497,8 +501,7 @@ pub fn build(fonts: &Fonts, roles: &[Resolved], load: &dyn Fn(&Path) -> Option<&
                 if let Some(w) = weight {
                     t.coords = VariationCoords::new([(b"wght", *w)]);
                 }
-                let mut data = FontData::from_static(bytes).tweak(t);
-                data.index = *index;
+                let data = FontData::from_blob(bytes, *index).tweak(t);
                 defs.font_data.insert(key.clone(), data.into());
             }
             list.push(key);
@@ -640,7 +643,7 @@ pub fn install(ctx: &Context, fonts: &Fonts) -> Vec<String> {
             ctx.request_repaint();
         });
     }
-    let defs = build(fonts, &roles, &load_static);
+    let defs = build(fonts, &roles, &load_file);
     ctx.set_fonts(defs);
     if PREVIEWS_WANTED.load(std::sync::atomic::Ordering::Relaxed)
         && PREVIEWS_FROM.load(std::sync::atomic::Ordering::Relaxed) == u64::MAX
@@ -925,7 +928,7 @@ mod tests {
         let loc = fake_locate(&["Segoe UI", "Segoe UI Semibold", "Consolas"]);
         let fonts = system_fonts();
         let roles = resolve(&fonts, &loc, &|_, _| false);
-        let defs = build(&fonts, &roles, &|_| Some(BYTES));
+        let defs = build(&fonts, &roles, &|_| Some(Arc::new(BYTES) as Blob));
         let prop = &defs.families[&FontFamily::Proportional];
         assert!(prop[0].starts_with("sys:") && prop[0].contains("segoeui"));
         assert_eq!(prop[1], "Inter");

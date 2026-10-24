@@ -15,7 +15,11 @@
 //! `[appearance] color_emoji` the colour emoji font is used (Segoe UI Emoji, Noto Color
 //! Emoji). Without it, colour fonts are skipped (they would draw in colour regardless) and
 //! a monochrome emoji / symbol font is used (Segoe UI Symbol, Noto Emoji, Symbola).
-//! macOS's Apple Color Emoji is not loaded: the file is ~200 MB, read whole into memory.
+//! macOS's Apple Color Emoji is not loaded: the file is ~200 MB.
+//!
+//! Font files are mapped read-only where that is safe (`soyuz_fs::mapped`: always on
+//! Windows, files this user can't write on unix), so they cost file-backed pages, not
+//! private memory; other files are read whole.
 //!
 //! Nothing is
 //! read on the UI thread: a background thread loads the file and re-installs the fonts
@@ -414,11 +418,15 @@ pub fn request(scripts: &[Script]) {
 }
 
 fn load(path: &Path, index: u32) -> Option<Arc<FontData>> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = soyuz_fs::mapped::map_or_read(path).ok()?;
     // Collections (.ttc): face 0 is the regular face of every Windows / macOS candidate.
-    let mut data = FontData::from_owned(bytes);
-    data.index = index;
-    Some(Arc::new(data))
+    Some(Arc::new(blob_font(bytes, index)))
+}
+
+/// A font over file bytes: mapped system fonts stay file-backed pages (a CJK font is
+/// 10–20 MB; only the glyphs drawn are ever paged in), read ones live on the heap.
+fn blob_font(bytes: soyuz_fs::mapped::FileBytes, index: u32) -> FontData {
+    FontData::from_blob(Arc::new(bytes), index)
 }
 
 /// Largest file the last-resort pass reads just to look at its `cmap`.
@@ -453,15 +461,15 @@ fn by_coverage(script: Script, color: bool, faces: &[super::sysfonts::Face]) -> 
         if tried.len() >= SCAN_MAX_FILES || !tried.insert((f.file.clone(), f.index)) {
             return;
         }
-        let Ok(bytes) = std::fs::read(&f.file) else { return };
-        let Some(cov) = covered(&bytes, f.index, missing, color) else { return };
+        // Mapped (system fonts): only the pages holding the table directory and `cmap`
+        // are read, not the whole file.
+        let Ok(bytes) = soyuz_fs::mapped::map_or_read(&f.file) else { return };
+        let Some(cov) = covered(bytes.as_ref(), f.index, missing, color) else { return };
         if cov.is_empty() {
             return;
         }
         missing.retain(|c| !cov.contains(c));
-        let mut data = FontData::from_owned(bytes);
-        data.index = f.index;
-        out.push((f.file.clone(), Arc::new(data)));
+        out.push((f.file.clone(), Arc::new(blob_font(bytes, f.index))));
     };
     let upright = |f: &&Face| {
         let n = f.name.to_lowercase();
@@ -598,6 +606,28 @@ mod tests {
         assert_eq!(covered(inter, 0, &['a'], true), Some(vec!['a']), "outline fonts are fine either way");
         assert_eq!(covered(b"not a font", 0, &['a'], true), None);
         assert_eq!(covered(inter, 3, &['a'], false), None, "no such face");
+    }
+
+    /// A font file loaded through `load` (mapped on Windows, read on unix for a file we own)
+    /// keeps its bytes, face index and coverage, and egui lays text out with it.
+    #[test]
+    fn fonts_load_from_file_blobs() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("Inter.ttf");
+        let inter = include_bytes!("../../assets/fonts/inter/Inter-Regular.ttf");
+        std::fs::write(&p, inter).unwrap();
+        let data = load(&p, 0).unwrap();
+        assert_eq!(data.bytes(), &inter[..]);
+        assert_eq!(covered(data.bytes(), data.index, &['a', '中'], false), Some(vec!['a']));
+        let mut defs = FontDefinitions::default();
+        defs.font_data.insert("mapped".into(), data);
+        defs.families.insert(egui::FontFamily::Name("mapped".into()), vec!["mapped".into()]);
+        let ctx = Context::default();
+        ctx.set_fonts(defs);
+        ctx.run_ui(egui::RawInput::default(), |_| {}).textures_delta.clear();
+        let font = egui::FontId::new(14.0, egui::FontFamily::Name("mapped".into()));
+        assert!(ctx.fonts_mut(|f| f.glyph_width(&font, 'a')) > 0.0);
+        assert!(load(&d.path().join("missing.ttf"), 0).is_none());
     }
 
     #[test]

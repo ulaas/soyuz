@@ -2,10 +2,14 @@
 //!
 //! * `windows/*` — kernel32 / advapi32 via `windows-sys` (never a shell or COM API).
 //! * `unix.rs` / `linux.rs` / `macos.rs` — the few libc calls rustix does not wrap.
+//! * `mmap.rs` — read-only file views for [`crate::mapped`] (both OS families).
 //! * `reparse.rs` — the hand-written `REPARSE_DATA_BUFFER` layout (pure, compiled on every
 //!   OS so its parser/builder are unit-tested everywhere).
 
 pub(crate) mod reparse;
+
+/// Read-only file views (`MapViewOfFile` / `mmap`) behind [`crate::mapped`].
+pub(crate) mod mmap;
 
 #[cfg(target_os = "linux")]
 pub(crate) mod linux;

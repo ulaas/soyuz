@@ -482,6 +482,9 @@ pub struct TermResponse {
     pub link_clicked: Option<String>,
     /// Esc pressed on an empty prompt line (app may return focus to the file list).
     pub escape_on_empty_line: bool,
+    /// Characters from U+0590 up (CJK, Hangul, emoji, right-to-left, …) this view drew
+    /// for the first time this frame: the app loads fallback fonts for them on demand.
+    pub new_chars: String,
 }
 
 #[cfg(feature = "egui")]
