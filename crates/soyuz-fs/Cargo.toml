@@ -75,7 +75,8 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [target.'cfg(unix)'.dependencies]
-rustix.workspace = true
+# `mm`: read-only font mappings (`sys/mmap.rs`).
+rustix = { workspace = true, features = ["mm"] }
 libc.workspace = true
 xattr.workspace = true
 filetime.workspace = true

@@ -107,16 +107,6 @@ thread_local! {
     static THEME: std::cell::RefCell<ThemeCache> = const { std::cell::RefCell::new(None) };
 }
 
-/// CJK / Hangul fallbacks join every font family (incl. the terminal's), once a terminal
-/// is shown.
-fn request_cjk_fonts() {
-    static DONE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if !DONE.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        use crate::theme::font_fallback::{Script, request};
-        request(&[Script::Cjk, Script::Hangul]);
-    }
-}
-
 /// Non-blocking prompt for a pending OSC 52 write (drawn over everything, bottom
 /// centre, every frame while a request waits): Allow once / Always for this session /
 /// Deny.
@@ -210,7 +200,6 @@ pub fn clipboard_prompt(ctx: &egui::Context, app: &mut SoyuzApp) {
 pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
     let p = palette(&ctx);
-    request_cjk_fonts();
     ensure_session(&mut app.core, &crate::host::EguiHost::new(&ctx));
     let owner = current_owner(&app.core);
     let ids = app.core.ui.terminal.visible_ids(owner);
@@ -395,6 +384,11 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
                     .font(crate::theme::fonts::terminal(ui.ctx(), font_size))
                     .show(&mut child);
                 wants = r.wants_focus;
+                // CJK / Hangul / emoji / … fallbacks load once the terminal shows such
+                // text (`[appearance] fallback_fonts = "auto"`), not just because it opened.
+                if !r.new_chars.is_empty() {
+                    crate::theme::font_fallback::note(&r.new_chars);
+                }
                 link = r.link_clicked;
                 if link.is_some() {
                     link_base = term.cwd().or_else(|| s.last_dir.clone());

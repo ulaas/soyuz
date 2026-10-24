@@ -37,6 +37,7 @@ pub mod integration;
 pub mod launch;
 pub mod links;
 pub mod list;
+pub mod mapped;
 pub mod meta;
 pub mod mv;
 pub mod os_fonts;

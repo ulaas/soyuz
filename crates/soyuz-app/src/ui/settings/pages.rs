@@ -1847,6 +1847,14 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
         });
         r.row_kw(
+            tr!("settings-preview-thumb-idle"),
+            tr!("settings-preview-thumb-idle-desc"),
+            "cache ram memory free idle trim",
+            |ui| {
+                number(ui, &mut d.preview.thumb_idle_trim_secs, 0..=86_400, " s");
+            },
+        );
+        r.row_kw(
             tr!("settings-preview-preview-mem"),
             tr!("settings-preview-preview-mem-desc"),
             "cache ram budget",

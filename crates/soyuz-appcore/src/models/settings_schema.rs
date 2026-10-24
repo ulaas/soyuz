@@ -172,6 +172,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("preview.max_audio_mib", Hint::Range(1.0, 16_384.0)),
     ("preview.max_diff_kib", Hint::Range(16.0, 65_536.0)),
     ("preview.thumb_cache_mib", Hint::Range(8.0, 4096.0)),
+    ("preview.thumb_idle_trim_secs", Hint::Range(0.0, 86_400.0)),
     ("preview.preview_cache_mib", Hint::Range(0.0, 4096.0)),
     ("search.threads", Hint::Range(0.0, 64.0)),
     ("search.content_max_mib", Hint::Range(1.0, 1024.0)),

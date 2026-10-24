@@ -458,7 +458,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_image_mp` | integer | `40` | Largest image the preview decodes (megapixels). |
 | `syntax_theme` | string | `"auto"` | Syntax highlighting theme for code previews (`auto` follows the app theme). |
 | `pdf` | boolean | `true` | Needs cargo feature `pdf`. |
-| `thumb_cache_mib` | integer | `128` | Memory budget of decoded thumbnails (MiB). |
+| `thumb_cache_mib` | integer | `64` | Memory budget of decoded thumbnails (MiB of graphics memory, counting each texture's alignment and per-texture overhead). |
+| `thumb_idle_trim_secs` | integer | `60` | Free thumbnails not drawn for this many seconds, even while the app is idle (0 = keep them until the memory budget needs the room). |
 | `preview_cache_mib` | integer | `96` | Memory budget of decoded previews (images, text, media) (MiB). |
 | `pdfium_dir` | string | `""` | Folder holding `pdfium.dll` / `libpdfium.so` / `libpdfium.dylib`; empty = next to the executable, then the config dir. Never downloaded. |
 | `office` | boolean | `true` | docx / xlsx / pptx / odt / ods / odp structure and text. |

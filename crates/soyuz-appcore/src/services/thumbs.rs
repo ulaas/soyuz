@@ -3,7 +3,10 @@
 //! textures up. Requests are served newest-first and dropped once their rows have been
 //! scrolled away for a while, so fast scrolling never builds a backlog. An LRU keeps the
 //! decoded textures within a byte budget (`[preview] thumb_cache_mib`, see
-//! [`set_budget_bytes`]); [`memory`] reports the current use for the About dialog.
+//! [`set_budget_bytes`]) counted as GPU memory ([`gpu_bytes`]: pixels plus the per-texture
+//! overhead) and under [`MAX_TEXTURES`]; textures not drawn for `[preview]
+//! thumb_idle_trim_secs` are freed by a timer even while no frames run
+//! ([`set_idle_trim_secs`]). [`memory`] reports the current use for the About dialog.
 //!
 //! Besides pictures, workers make video thumbnails (the FFmpeg libraries, `thumb_video`;
 //! without them a duration label only), PDF first pages (pdfium, when the library is found; otherwise PDFs
@@ -17,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, Instant, SystemTime};
 
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
@@ -26,23 +29,61 @@ use super::preview_gfx::{Tex, Uploader};
 use crate::host::Wake;
 
 /// Default texture budget (bytes) until the config is applied.
-pub const DEFAULT_BUDGET: u64 = 128 * 1024 * 1024;
-/// Textures used within this many frames are never evicted (a budget smaller than one
-/// screen of thumbnails must not thrash).
+pub const DEFAULT_BUDGET: u64 = 64 * 1024 * 1024;
+/// Textures used within this many frames are never evicted for the byte budget (a
+/// budget smaller than one screen of thumbnails must not thrash).
 const KEEP_FRAMES: u64 = 2;
+/// GPU allocation granularity of a texture: Direct3D 12 places every texture at a 64 KiB
+/// aligned offset, so even a 64 px thumbnail (16 KiB of pixels) takes 64 KiB.
+const TEXTURE_ALIGN: u64 = 64 * 1024;
+/// Fixed GPU cost per texture besides its pixels: on Direct3D 12 every egui texture has
+/// its own bind group, and wgpu gives each bind group a 64 KiB "internal sampler index"
+/// buffer. Measured: ~300 thumbnails held 20 MB of pixels but 42 MB of GPU memory.
+/// Other backends need less; the same estimate is used everywhere (budget, About).
+const TEXTURE_OVERHEAD: u64 = 64 * 1024;
+/// Most ready textures at once, whatever their size. Each takes descriptors from the
+/// Direct3D 12 heap (capped at 131072 by `[performance] gpu_memory = "low"`); running it
+/// out makes bind-group creation fail, which wgpu turns into a panic. Kept well under
+/// half the heap so the rest of the UI always has room.
+pub const MAX_TEXTURES: usize = 16_384;
+const _: () = assert!(MAX_TEXTURES * 4 <= 131_072, "well under half the capped descriptor heap");
+/// Most remembered failures (no picture; maybe a video duration label). They cost no
+/// GPU memory but would otherwise pile up while browsing.
+const MAX_FAILED: usize = 4096;
 
 static BUDGET: AtomicU64 = AtomicU64::new(DEFAULT_BUDGET);
 static USED_BYTES: AtomicU64 = AtomicU64::new(0);
 static READY: AtomicU64 = AtomicU64::new(0);
+/// `[preview] thumb_idle_trim_secs` (0 = off).
+static IDLE_TRIM_SECS: AtomicU64 = AtomicU64::new(60);
 
 /// Set the texture memory budget (`[preview] thumb_cache_mib`).
 pub fn set_budget_bytes(bytes: u64) {
     BUDGET.store(bytes.max(1024 * 1024), Ordering::Relaxed);
 }
 
-/// `(bytes, textures)` of decoded thumbnails currently cached.
+/// Free thumbnails not drawn for `secs` seconds (`[preview] thumb_idle_trim_secs`; 0 =
+/// keep them until the byte budget needs the room).
+pub fn set_idle_trim_secs(secs: u64) {
+    IDLE_TRIM_SECS.store(secs, Ordering::Relaxed);
+}
+
+/// `(bytes, textures)` of decoded thumbnails currently cached (bytes: the GPU estimate
+/// of [`gpu_bytes`]).
 pub fn memory() -> (u64, u64) {
     (USED_BYTES.load(Ordering::Relaxed), READY.load(Ordering::Relaxed))
+}
+
+/// Estimated GPU memory of a texture with `pixel_bytes` of RGBA8 pixels: rounded up to
+/// [`TEXTURE_ALIGN`], plus [`TEXTURE_OVERHEAD`].
+pub fn gpu_bytes(pixel_bytes: u64) -> u64 {
+    pixel_bytes.div_ceil(TEXTURE_ALIGN).max(1) * TEXTURE_ALIGN + TEXTURE_OVERHEAD
+}
+
+/// Seconds since the first call (the idle-trim clock).
+fn now_secs() -> u64 {
+    static START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_secs()
 }
 /// Requests not re-requested within this many frames are dropped.
 const STALE_FRAMES: u64 = 20;
@@ -65,16 +106,31 @@ enum Slot {
     Pending {
         wanted: u64,
     },
+    /// `used`: frame last drawn; `used_at`: [`now_secs`] of that frame; `bytes`: the
+    /// [`gpu_bytes`] estimate.
     Ready {
         tex: Tex,
         used: u64,
+        used_at: u64,
         bytes: u64,
         label: Option<String>,
     },
     /// No picture; videos may still have a duration label for the placeholder.
     Failed {
+        used: u64,
+        used_at: u64,
         label: Option<String>,
     },
+}
+
+impl Slot {
+    /// `(frame, seconds)` last drawn (`None`: pending).
+    fn last_use(&self) -> Option<(u64, u64)> {
+        match self {
+            Slot::Ready { used, used_at, .. } | Slot::Failed { used, used_at, .. } => Some((*used, *used_at)),
+            Slot::Pending { .. } => None,
+        }
+    }
 }
 
 /// `[appearance] video_thumbnails` (read by the workers).
@@ -133,6 +189,8 @@ struct Shared {
     cv: Condvar,
     slots: Mutex<HashMap<ThumbKey, Slot>>,
     frame: AtomicU64,
+    /// [`now_secs`] at the latest [`Thumbs::begin_frame`].
+    frame_secs: AtomicU64,
 }
 
 pub struct Thumbs {
@@ -169,6 +227,7 @@ impl Thumbs {
             cv: Condvar::new(),
             slots: Mutex::new(HashMap::new()),
             frame: AtomicU64::new(0),
+            frame_secs: AtomicU64::new(now_secs()),
         });
         for i in 0..threads.max(1) {
             let shared = shared.clone();
@@ -179,12 +238,20 @@ impl Thumbs {
                 log::error!("cannot spawn thumbnail thread: {e}");
             }
         }
+        let (trim_shared, trim_wake) = (shared.clone(), wake.clone());
+        let spawned = thread::Builder::new()
+            .name("soyuz-thumbs-trim".into())
+            .spawn(move || idle_trimmer(&trim_shared, &trim_wake));
+        if let Err(e) = spawned {
+            log::error!("cannot spawn the thumbnail trim thread: {e}");
+        }
         Thumbs { shared, enabled: true }
     }
 
     /// Call once per frame before any [`Thumbs::get`].
     pub fn begin_frame(&self) {
         self.shared.frame.fetch_add(1, Ordering::Relaxed);
+        self.shared.frame_secs.store(now_secs(), Ordering::Relaxed);
     }
 
     /// The texture for `key` if ready; otherwise requests it (newest requests first).
@@ -217,13 +284,17 @@ impl Thumbs {
             return (None, None);
         }
         let frame = self.shared.frame.load(Ordering::Relaxed);
+        let now = self.shared.frame_secs.load(Ordering::Relaxed);
         let mut slots = self.shared.slots.lock();
         match slots.get_mut(key) {
-            Some(Slot::Ready { tex, used, label, .. }) => {
-                *used = frame;
+            Some(Slot::Ready { tex, used, used_at, label, .. }) => {
+                (*used, *used_at) = (frame, now);
                 return (Some(tex.clone()), label.clone());
             }
-            Some(Slot::Failed { label }) => return (None, label.clone()),
+            Some(Slot::Failed { used, used_at, label }) => {
+                (*used, *used_at) = (frame, now);
+                return (None, label.clone());
+            }
             Some(Slot::Pending { wanted }) => {
                 *wanted = frame;
                 return (None, None);
@@ -275,14 +346,15 @@ fn worker(shared: &Shared, wake: &Wake, upload: &Uploader) {
             Tex::upload_rgba(upload, name, &img)
         });
         let frame = shared.frame.load(Ordering::Relaxed);
+        let used_at = shared.frame_secs.load(Ordering::Relaxed);
         {
             let mut slots = shared.slots.lock();
             let slot = match result {
                 Some(tex) => {
-                    let bytes = tex.bytes();
-                    Slot::Ready { tex, used: frame, bytes, label }
+                    let bytes = gpu_bytes(tex.bytes());
+                    Slot::Ready { tex, used: frame, used_at, bytes, label }
                 }
-                None => Slot::Failed { label },
+                None => Slot::Failed { used: frame, used_at, label },
             };
             slots.insert(key, slot);
             evict(&mut slots, frame, BUDGET.load(Ordering::Relaxed));
@@ -291,9 +363,71 @@ fn worker(shared: &Shared, wake: &Wake, upload: &Uploader) {
     }
 }
 
+/// Frees thumbnails not drawn for `[preview] thumb_idle_trim_secs`, checking a few times
+/// per idle period (so one lives at most ~1.25 × it), then runs a frame: egui releases
+/// dropped textures only at the end of one, and an idle app runs none by itself.
+fn idle_trimmer(shared: &Shared, wake: &Wake) {
+    loop {
+        let idle = IDLE_TRIM_SECS.load(Ordering::Relaxed);
+        thread::sleep(Duration::from_secs(if idle == 0 { 15 } else { (idle / 4).clamp(1, 15) }));
+        if idle == 0 {
+            continue;
+        }
+        let frame = shared.frame.load(Ordering::Relaxed);
+        let removed = {
+            let mut slots = shared.slots.lock();
+            let n = trim_idle(&mut slots, frame, now_secs(), idle);
+            if n > 0 {
+                publish(&slots);
+            }
+            n
+        };
+        if removed > 0 {
+            wake();
+        }
+    }
+}
+
 /// Drop least-recently-used ready textures while the total exceeds `budget` bytes
-/// (textures used in the last [`KEEP_FRAMES`] frames stay), then publish the totals.
+/// (textures used in the last [`KEEP_FRAMES`] frames stay) or their number exceeds
+/// [`MAX_TEXTURES`] (a hard limit: recent ones go too), and the oldest failures beyond
+/// [`MAX_FAILED`]; then publish the totals.
 fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
+    evict_with(slots, frame, budget, MAX_TEXTURES, MAX_FAILED);
+}
+
+fn evict_with(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64, max_ready: usize, max_failed: usize) {
+    let ready = slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count();
+    if ready > max_ready {
+        let mut by_age: Vec<(u64, ThumbKey)> = slots
+            .iter()
+            .filter_map(|(k, s)| match s {
+                Slot::Ready { used, .. } => Some((*used, k.clone())),
+                _ => None,
+            })
+            .collect();
+        by_age.sort_by_key(|(u, _)| *u);
+        // Down to 7/8 of the cap, so this doesn't run on every decode either.
+        let excess = ready - (max_ready - max_ready / 8);
+        for (_, k) in by_age.into_iter().take(excess) {
+            slots.remove(&k);
+        }
+    }
+    let failed = slots.values().filter(|s| matches!(s, Slot::Failed { .. })).count();
+    if failed > max_failed {
+        let mut by_age: Vec<(u64, ThumbKey)> = slots
+            .iter()
+            .filter_map(|(k, s)| match s {
+                Slot::Failed { used, .. } if frame.saturating_sub(*used) > KEEP_FRAMES => Some((*used, k.clone())),
+                _ => None,
+            })
+            .collect();
+        by_age.sort_by_key(|(u, _)| *u);
+        let excess = failed - (max_failed - max_failed / 8);
+        for (_, k) in by_age.into_iter().take(excess) {
+            slots.remove(&k);
+        }
+    }
     let mut total: u64 = slots.values().map(|s| if let Slot::Ready { bytes, .. } = s { *bytes } else { 0 }).sum();
     if total > budget {
         let mut by_age: Vec<(u64, u64, ThumbKey)> = slots
@@ -316,8 +450,36 @@ fn evict(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, budget: u64) {
             total -= bytes;
         }
     }
-    USED_BYTES.store(total, Ordering::Relaxed);
-    READY.store(slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count() as u64, Ordering::Relaxed);
+    publish(slots);
+}
+
+/// Publish the totals [`memory`] reports.
+fn publish(slots: &HashMap<ThumbKey, Slot>) {
+    let (mut bytes, mut count) = (0, 0);
+    for s in slots.values() {
+        if let Slot::Ready { bytes: b, .. } = s {
+            bytes += b;
+            count += 1;
+        }
+    }
+    USED_BYTES.store(bytes, Ordering::Relaxed);
+    READY.store(count, Ordering::Relaxed);
+}
+
+/// Drop the textures and failures not drawn for `idle` seconds at `now` ([`now_secs`]).
+/// Those drawn in the latest frame (`frame`) stay however old: an idle app runs no
+/// frames, but what it showed last is still on screen. Returns how many went.
+///
+/// Nothing more is freed while every window is minimized: eframe runs no egui pass then,
+/// so dropped textures would only be released on restore, just when the visible ones
+/// are needed again.
+fn trim_idle(slots: &mut HashMap<ThumbKey, Slot>, frame: u64, now: u64, idle: u64) -> usize {
+    let before = slots.len();
+    slots.retain(|_, s| match s.last_use() {
+        Some((used, used_at)) => used >= frame || now.saturating_sub(used_at) < idle,
+        None => true,
+    });
+    before - slots.len()
 }
 
 /// Make one thumbnail (disk cache first): `(picture, label)`.
@@ -502,16 +664,89 @@ mod tests {
         // 10 textures of 1 KiB each, used in frames 0..10.
         for i in 0..10u64 {
             let key = ThumbKey { path: format!("/t{i}").into(), mtime: None, size: 1, px: 64 };
-            slots.insert(key, Slot::Ready { tex: tex(i as usize), used: i, bytes: 1024, label: None });
+            slots.insert(key, Slot::Ready { tex: tex(i as usize), used: i, used_at: 0, bytes: 1024, label: None });
         }
         evict(&mut slots, 10, 4 * 1024);
         let left: Vec<u64> =
             slots.values().filter_map(|s| if let Slot::Ready { used, .. } = s { Some(*used) } else { None }).collect();
         assert!(left.iter().all(|u| *u >= 7), "oldest evicted first: {left:?}");
-        assert!(memory().0 <= 4 * 1024);
+        // (Summed here: `memory()` is process-wide, and other tests evict concurrently.)
+        let total: u64 = slots.values().map(|s| if let Slot::Ready { bytes, .. } = s { *bytes } else { 0 }).sum();
+        assert!(total <= 4 * 1024);
         // Everything recent: nothing can go even over budget.
         evict(&mut slots, 9, 1024);
         assert_eq!(slots.len(), left.len());
+    }
+
+    fn key(i: usize) -> ThumbKey {
+        ThumbKey { path: format!("/k{i}").into(), mtime: None, size: 1, px: 64 }
+    }
+
+    fn ready(used: u64, used_at: u64, px: u32) -> Slot {
+        let up = super::super::preview_gfx::no_upload();
+        let tex = Tex::upload_rgba(&up, "t".into(), &RgbaImage::new(px, px));
+        Slot::Ready { bytes: gpu_bytes(tex.bytes()), tex, used, used_at, label: None }
+    }
+
+    #[test]
+    fn gpu_cost_counts_alignment_and_bind_group() {
+        // 64 px: 16 KiB of pixels in one 64 KiB block, plus the 64 KiB sampler buffer.
+        assert_eq!(gpu_bytes(64 * 64 * 4), 128 * 1024);
+        // 256 px: exactly 256 KiB of pixels.
+        assert_eq!(gpu_bytes(256 * 256 * 4), 320 * 1024);
+        assert_eq!(gpu_bytes(256 * 256 * 4 + 1), 384 * 1024);
+        assert_eq!(gpu_bytes(0), 128 * 1024, "even an empty texture takes a block");
+        // 300 thumbnails of 128 px (64 KiB of pixels): about what Direct3D 12 showed (42 MB).
+        let est = 300 * gpu_bytes(128 * 128 * 4);
+        assert!((38_000_000..46_000_000).contains(&est), "{est}");
+        // The budget sees the estimate: ten 64 px textures take 1.25 MiB, not 160 KiB.
+        let mut slots: HashMap<ThumbKey, Slot> = (0..10).map(|i| (key(i), ready(i as u64, 0, 64))).collect();
+        evict(&mut slots, 100, 640 * 1024);
+        assert_eq!(slots.len(), 4, "7/8 of 640 KiB holds four 128 KiB textures");
+    }
+
+    #[test]
+    fn texture_count_is_capped_even_for_recent_textures() {
+        let mut slots: HashMap<ThumbKey, Slot> = (0..20).map(|i| (key(i), ready(i as u64, 0, 1))).collect();
+        // All drawn within KEEP_FRAMES and far under the byte budget: only the cap applies.
+        evict_with(&mut slots, 19, u64::MAX, 16, 100);
+        let left: Vec<u64> = slots.values().filter_map(|s| s.last_use().map(|u| u.0)).collect();
+        assert_eq!(left.len(), 14, "down to 7/8 of the cap");
+        assert!(left.iter().all(|u| *u >= 6), "oldest first: {left:?}");
+    }
+
+    #[test]
+    fn failures_are_evicted_too() {
+        let mut slots: HashMap<ThumbKey, Slot> =
+            (0..20).map(|i| (key(i), Slot::Failed { used: i as u64, used_at: 0, label: None })).collect();
+        slots.insert(key(100), ready(0, 0, 1));
+        evict_with(&mut slots, 20, u64::MAX, 100, 8);
+        let failed: Vec<u64> =
+            slots.values().filter_map(|s| if let Slot::Failed { used, .. } = s { Some(*used) } else { None }).collect();
+        assert_eq!(failed.len(), 7);
+        assert!(failed.iter().all(|u| *u >= 13), "oldest failures first: {failed:?}");
+        assert_eq!(slots.values().filter(|s| matches!(s, Slot::Ready { .. })).count(), 1, "textures untouched");
+    }
+
+    #[test]
+    fn idle_trim_frees_what_was_not_drawn_lately() {
+        let mut slots: HashMap<ThumbKey, Slot> = HashMap::new();
+        slots.insert(key(0), ready(5, 100, 64)); // drawn in frame 5 at t=100
+        slots.insert(key(1), ready(9, 100, 64)); // drawn in the latest frame (9), also at t=100
+        slots.insert(key(2), ready(8, 150, 64)); // drawn recently
+        slots.insert(key(3), Slot::Failed { used: 3, used_at: 90, label: None });
+        slots.insert(key(4), Slot::Pending { wanted: 1 });
+        // t=155 with 60 s: only the failure from t=90 is that old.
+        assert_eq!(trim_idle(&mut slots, 9, 155, 60), 1);
+        assert!(!slots.contains_key(&key(3)));
+        // t=200: the frame-5 texture goes; the latest frame's stays though just as old
+        // (an idle app still shows it); pending requests are the workers' business.
+        assert_eq!(trim_idle(&mut slots, 9, 200, 60), 1);
+        assert!(!slots.contains_key(&key(0)));
+        assert!(slots.contains_key(&key(1)) && slots.contains_key(&key(2)) && slots.contains_key(&key(4)));
+        // t=300 after another frame (10) that drew nothing: the rest goes too.
+        assert_eq!(trim_idle(&mut slots, 10, 300, 60), 2);
+        assert_eq!(slots.len(), 1);
     }
 
     #[test]
