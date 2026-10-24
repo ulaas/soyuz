@@ -89,6 +89,19 @@ pub struct WindowSession {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<[f32; 2]>,
     pub maximized: bool,
+    /// Secondary windows: the preview pane and the bottom panel (`None` = defaults).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<PanelSession>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<PanelSession>,
+}
+
+/// A side / bottom panel of a secondary window: shown, and its width or height.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PanelSession {
+    pub open: bool,
+    pub size: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -230,6 +243,8 @@ mod tests {
                 pos: Some([100.0, 80.0]),
                 size: Some([900.0, 600.0]),
                 maximized: false,
+                preview: Some(PanelSession { open: true, size: 410.0 }),
+                bottom: Some(PanelSession { open: false, size: 300.0 }),
             }],
             ..Default::default()
         }
@@ -242,6 +257,9 @@ mod tests {
         assert_eq!(back, s);
         let empty: Session = toml::from_str("").unwrap();
         assert_eq!(empty, Session::default());
+        // Sessions written before the per-window panels were saved still load.
+        let old: Session = toml::from_str("[[windows]]\nactive_tab = 0\nmaximized = true\n").unwrap();
+        assert_eq!((old.windows[0].preview, old.windows[0].bottom), (None, None));
     }
 
     #[test]

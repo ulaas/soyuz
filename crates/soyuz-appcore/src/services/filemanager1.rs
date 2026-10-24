@@ -155,7 +155,12 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
     }
 }
 
-fn handle(app: &mut AppCore, host: &dyn Host, req: Request) {
+/// Requests open in the focused window (another in-process window when it has focus).
+pub(crate) fn handle(app: &mut AppCore, host: &dyn Host, req: Request) {
+    crate::models::windows::with_focused_window(app, |app| handle_here(app, host, req));
+}
+
+fn handle_here(app: &mut AppCore, host: &dyn Host, req: Request) {
     match req {
         Request::Open { targets, focus } => {
             // Command-line extras keep the first path's tab in front.
@@ -165,7 +170,7 @@ fn handle(app: &mut AppCore, host: &dyn Host, req: Request) {
                 app.ws.pane_mut().pending_cursor = select;
             }
             if focus {
-                raise(host);
+                raise(app, host);
             } else if let Some(i) = front.and_then(|id| app.ws.tab_index(id)) {
                 app.ws.active = i;
             }
@@ -183,16 +188,16 @@ fn handle(app: &mut AppCore, host: &dyn Host, req: Request) {
                 tab: crate::models::properties::Tab::General,
                 start: None,
             });
-            raise(host);
+            raise(app, host);
         }
     }
 }
 
-/// Bring the window to the front (un-minimize + focus). Wayland compositors may only
-/// flash it: activation needs a token the window itself cannot take from the caller.
-fn raise(host: &dyn Host) {
-    host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
-    host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
+/// Bring the window handling the request to the front (un-minimize + focus). Wayland
+/// compositors may only flash it: activation needs a token the window itself cannot take
+/// from the caller.
+fn raise(app: &AppCore, host: &dyn Host) {
+    crate::models::windows::raise(host, app.workspaces.current);
 }
 
 /// State of the `org.freedesktop.FileManager1` service: `None` = off (or not Linux),

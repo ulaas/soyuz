@@ -20,6 +20,7 @@ use soyuz_jobs::{
 use crate::host::Host;
 use crate::models::media_tools::MediaTool;
 use crate::state::pane::PaneId;
+use crate::state::workspace_windows::WindowId;
 
 /// What the user asked for (drives titles, icons and the completion toast).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,6 +138,9 @@ pub struct JobMeta {
     pub mcp_client: Option<String>,
     /// Started by an automation rule, a script or the CLI.
     pub origin: Option<JobOrigin>,
+    /// The in-process window the job was started from (its activity panel opens there;
+    /// stamped by [`JobsService::submit`] / [`JobsService::track`]).
+    pub window: WindowId,
 }
 
 impl JobMeta {
@@ -152,6 +156,7 @@ impl JobMeta {
             ai_task: None,
             mcp_client: None,
             origin: None,
+            window: WindowId::MAIN,
         }
     }
 
@@ -208,6 +213,9 @@ pub struct JobsService {
     moves: Vec<(PathBuf, PathBuf)>,
     /// Paths changed by finished jobs, for relisting the panes that show them.
     affected: AffectedPaths,
+    /// The window being handled right now (`models::windows` keeps it up to date): new
+    /// jobs are stamped with it.
+    pub window: WindowId,
 }
 
 /// Collects the paths finished jobs changed: the touched roots of jobs submitted through
@@ -273,6 +281,7 @@ impl JobsService {
             seen: None,
             moves: Vec::new(),
             affected: AffectedPaths::default(),
+            window: WindowId::MAIN,
         };
         s.refresh_history();
         s
@@ -305,7 +314,8 @@ impl JobsService {
         spec
     }
 
-    pub fn submit(&mut self, mut spec: JobSpec, meta: JobMeta) -> JobId {
+    pub fn submit(&mut self, mut spec: JobSpec, mut meta: JobMeta) -> JobId {
+        meta.window = self.window;
         if matches!(spec.kind, JobKind::Extract { .. }) {
             spec.options.extract_limits = self.extract_limits.clone();
             spec.options.preserve_special_bits = self.preserve_special_bits;
@@ -326,7 +336,8 @@ impl JobsService {
     }
 
     /// Register metadata for a job the engine created itself (undo / redo / retry).
-    pub fn track(&mut self, id: JobId, meta: JobMeta) {
+    pub fn track(&mut self, id: JobId, mut meta: JobMeta) {
+        meta.window = self.window;
         self.meta.insert(id, meta);
         self.refresh_snapshots();
     }

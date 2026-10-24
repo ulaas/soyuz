@@ -859,24 +859,32 @@ fn auto_open_activity(app: &mut AppCore) {
     if !app.config.jobs.auto_open_activity {
         return;
     }
-    let mut open = false;
+    // The activity panel opens in the window each job was started from.
+    let mut open: Vec<crate::state::workspace_windows::WindowId> = Vec::new();
     for s in app.fileops.jobs.snapshots() {
         if !s.state.is_active() || app.fileops.auto_opened.contains(&s.id) {
             continue;
         }
-        let quick = app
-            .fileops
-            .jobs
-            .meta(s.id)
-            .is_some_and(|m| matches!(m.op, OpKind::Rename | OpKind::NewFolder | OpKind::NewFile | OpKind::Link));
+        let meta = app.fileops.jobs.meta(s.id);
+        let quick =
+            meta.is_some_and(|m| matches!(m.op, OpKind::Rename | OpKind::NewFolder | OpKind::NewFile | OpKind::Link));
         if !quick && s.elapsed > Duration::from_secs(1) {
             app.fileops.auto_opened.insert(s.id);
-            open = true;
+            let w = meta.map_or(crate::state::workspace_windows::WindowId::MAIN, |m| m.window);
+            if !open.contains(&w) {
+                open.push(w);
+            }
         }
     }
-    if open && !app.ui.bottom.activity_shown() {
-        app.ui.bottom.open_activity();
-        app.fileops.activity.tab = ActivityTab::Jobs;
+    for w in open {
+        let w =
+            if crate::models::windows::exists(app, w) { w } else { crate::state::workspace_windows::WindowId::MAIN };
+        crate::models::windows::with_window(app, w, |app| {
+            if !app.ui.bottom.activity_shown() {
+                app.ui.bottom.open_activity();
+                app.fileops.activity.tab = ActivityTab::Jobs;
+            }
+        });
     }
 }
 
