@@ -500,6 +500,9 @@ Run `soyuz <command> --help` for usage."
         renderer,
         wgpu_options,
         centered: dev_pos.is_none(),
+        // Scripted / off-screen runs neither restore nor save the window geometry: a run
+        // at -4000,-4000 would save a clamped on-screen position the next run restores.
+        persist_window: dev_pos.is_none(),
         // eframe's own state (window geometry, egui memory) lives with the rest of the
         // configuration, so portable mode keeps it next to the executable as well.
         persistence_path: Some(soyuz_core::config::config_dir().join("app.ron")),
