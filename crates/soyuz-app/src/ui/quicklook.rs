@@ -4,8 +4,11 @@
 //! instead with `[media] quicklook_space_plays`; P / K always do), images zoom with the wheel / pinch and pan
 //! by dragging (double-click toggles fit ↔ 100%). Open state and list movement are in
 //! [`crate::models::quicklook`]; this module keeps the renderer state and the keys.
+//! Every in-process window has its own Quick Look, drawn in that window; the media
+//! player plays in one window only (`models::windows::player_here`).
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 
 use egui::{
     Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Order, Rect, Sense, Stroke, UiBuilder, pos2, vec2,
@@ -16,6 +19,7 @@ use crate::app::SoyuzApp;
 use crate::cmd::Cmd;
 use crate::models::quicklook::Step;
 use crate::services::preview::Content;
+use crate::state::workspace_windows::WindowId;
 use crate::theme::icons::{self, ph};
 use crate::theme::palette;
 use crate::theme::tokens::radius;
@@ -38,7 +42,27 @@ struct View {
 }
 
 thread_local! {
-    static VIEW: RefCell<View> = RefCell::new(View::default());
+    /// Per in-process window (each window has its own Quick Look).
+    static VIEWS: RefCell<HashMap<WindowId, View>> = RefCell::new(HashMap::new());
+}
+
+/// Run `f` on the overlay state of window `id`.
+fn with_view<R>(id: WindowId, f: impl FnOnce(&mut View) -> R) -> R {
+    VIEWS.with_borrow_mut(|m| f(m.entry(id).or_default()))
+}
+
+/// The main window took over window `id` (its Quick Look comes along).
+pub fn window_promoted(id: WindowId) {
+    VIEWS.with_borrow_mut(|m| {
+        if let Some(v) = m.remove(&id) {
+            m.insert(WindowId::MAIN, v);
+        }
+    });
+}
+
+/// Drop the overlay state of windows that closed.
+pub fn retain_windows(open: impl Fn(WindowId) -> bool) {
+    VIEWS.with_borrow_mut(|m| m.retain(|id, _| open(*id)));
 }
 
 /// Drop what the overlay rendered (it closed).
@@ -51,14 +75,17 @@ fn clear_view(v: &mut View) {
 }
 
 /// The overlay shows a video (through the player) or an audio file: the player's keys
-/// (`KeyContext::Player`) are live, and ← / → seek instead of browsing.
-fn showing_media(cfg: &soyuz_core::config::Config) -> bool {
-    VIEW.with_borrow(|v| {
-        v.state.as_ref().and_then(|s| s.loaded.as_ref()).is_some_and(|l| {
-            video::takes(l, cfg)
-                || matches!(&l.content, Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+/// (`KeyContext::Player`) are live, and ← / → seek instead of browsing. Only in the
+/// window that has the player (others show posters).
+fn showing_media(app: &SoyuzApp) -> bool {
+    let cfg = &app.core.config;
+    crate::models::windows::player_here(&app.core)
+        && with_view(app.core.workspaces.current, |v| {
+            v.state.as_ref().and_then(|s| s.loaded.as_ref()).is_some_and(|l| {
+                video::takes(l, cfg)
+                    || matches!(&l.content, Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+            })
         })
-    })
 }
 
 /// Keyboard while open: consumes Esc / Space / arrows / Enter so the file list doesn't
@@ -67,7 +94,7 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
     if !app.core.ui.quicklook.open {
         return false;
     }
-    let media = showing_media(&app.core.config);
+    let media = showing_media(app);
     let (esc, space, up, down, left, right, enter, home, end) = ctx.input_mut(|i| {
         (
             i.consume_key(Modifiers::NONE, Key::Escape),
@@ -115,21 +142,27 @@ pub fn handle_keys(app: &mut SoyuzApp, ctx: &egui::Context) -> bool {
 
 /// The overlay (drawn over everything while open).
 pub fn show(ctx: &egui::Context, app: &mut SoyuzApp) {
-    VIEW.with_borrow_mut(|v| {
+    let player = crate::models::windows::player_here(&app.core);
+    with_view(app.core.workspaces.current, |v| {
         if app.core.ui.quicklook.open {
             v.shown = true;
-            show_open(ctx, app, v);
+            show_open(ctx, app, v, player);
         }
         if !app.core.ui.quicklook.open && v.shown {
             clear_view(v);
             // Playback stops with the overlay (the pane shows its poster again).
-            app.core.ui.player.close();
+            if player {
+                app.core.ui.player.close();
+            }
         }
     });
-    video::apply_audio_cmds(&mut app.core, &crate::host::EguiHost::new(ctx));
+    if player {
+        video::apply_audio_cmds(&mut app.core, &crate::host::EguiHost::new(ctx));
+    }
 }
 
-fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
+/// `player`: this window has the media player (else a video shows its poster).
+fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View, player: bool) {
     if !app.core.ui.quicklook.open {
         return;
     }
@@ -155,16 +188,19 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
     st.poll(ctx);
     // The player follows the overlay's item: a settled video plays here; anything else
     // that finished loading closes it (a load in progress leaves the pane's player be).
-    let settled_video = pair.is_none()
+    let settled_video = player
+        && pair.is_none()
         && st.loading_since.is_none()
         && st.loaded.as_ref().is_some_and(|l| video::takes(l, &app.core.config));
-    if !settled_video && st.loaded.is_some() && st.loading_since.is_none() {
+    if player && !settled_video && st.loaded.is_some() && st.loading_since.is_none() {
         app.core.ui.player.sync_target(None);
     }
-    if matches!(
-        st.loaded.as_ref().map(|l| &l.content),
-        Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
-    ) {
+    if player
+        && matches!(
+            st.loaded.as_ref().map(|l| &l.content),
+            Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+        )
+    {
         video::set_audio_play_request(app.core.ui.player.take_play_request());
     }
 
@@ -293,10 +329,11 @@ fn show_open(ctx: &egui::Context, app: &mut SoyuzApp, v: &mut View) {
             ("Esc".to_owned(), tr!("views-quicklook-hint-close")),
             ("↑↓".to_owned(), tr!("views-quicklook-hint-browse")),
         ];
-        let audio = matches!(
-            st.loaded.as_ref().map(|l| &l.content),
-            Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
-        );
+        let audio = player
+            && matches!(
+                st.loaded.as_ref().map(|l| &l.content),
+                Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
+            );
         if pair.is_none() && (settled_video || audio) {
             let play = if app.core.config.media.quicklook_space_plays {
                 Some("Space".to_owned())

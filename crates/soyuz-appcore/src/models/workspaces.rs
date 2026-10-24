@@ -96,6 +96,13 @@ pub struct WorkspacesState {
     pub renaming: Option<(GroupId, String, bool)>,
     /// Windows to reopen on the first frame (session restore).
     pub restore: Vec<WindowSession>,
+    /// The window that shows the media player (one decoder per process): the one with
+    /// Quick Look open, else the focused one when its preview pane is open
+    /// (`models::windows::update_player_window`). Other windows show posters.
+    pub player_window: WindowId,
+    /// The main window took over this window (`WinOp::Close` of the main window): the
+    /// frontend moves what it keeps per window (the rendered preview) to the main window.
+    pub promoted: Option<WindowId>,
 }
 
 impl WorkspacesState {
@@ -115,6 +122,8 @@ impl WorkspacesState {
             quitting: false,
             renaming: None,
             restore: Vec::new(),
+            player_window: WindowId::MAIN,
+            promoted: None,
         }
     }
 

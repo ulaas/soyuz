@@ -554,6 +554,11 @@ pub fn drain_mailbox(app: &mut AppCore, host: &dyn Host) {
             Some(p) if app.ws.find_pane(p).is_none() => {
                 crate::models::windows::with_pane_window(app, p, move |app| handle_msg(app, msg));
             }
+            // A folder opened from outside a pane (`soyuz open`, a shortcut) goes to the
+            // focused window.
+            None if matches!(msg, UiMsg::OpenDir(_)) => {
+                crate::models::windows::with_focused_window(app, move |app| handle_msg(app, msg));
+            }
             _ => handle_msg(app, msg),
         }
         handled += 1;

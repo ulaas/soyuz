@@ -51,7 +51,41 @@ pub struct SearchState {
     flat: BTreeSet<SearchId>,
 }
 
+/// The per-window part of the search bar. Every in-process window keeps its own, and
+/// `models::windows` swaps it into [`SearchState`] while the window is handled. Saved
+/// searches and flat views stay shared, so saving in one window never overwrites what
+/// another window saved.
+pub struct SearchUi {
+    pub open: bool,
+    pub form: SearchForm,
+    pub focus: bool,
+    pub saving: Option<String>,
+    pub error: Option<String>,
+}
+
+impl SearchUi {
+    /// A closed bar with the form's defaults from the config.
+    pub fn new(config: &Config) -> Self {
+        SearchUi {
+            open: false,
+            form: SearchForm { respect_gitignore: config.search.respect_gitignore, ..Default::default() },
+            focus: false,
+            saving: None,
+            error: None,
+        }
+    }
+}
+
 impl SearchState {
+    /// Exchange the per-window fields with `w` (its own inverse).
+    pub fn swap_window(&mut self, w: &mut SearchUi) {
+        std::mem::swap(&mut self.open, &mut w.open);
+        std::mem::swap(&mut self.form, &mut w.form);
+        std::mem::swap(&mut self.focus, &mut w.focus);
+        std::mem::swap(&mut self.saving, &mut w.saving);
+        std::mem::swap(&mut self.error, &mut w.error);
+    }
+
     pub fn new(config: &Config) -> Self {
         let path = soyuz_core::config::config_dir().join("searches.toml");
         // A broken file is backed up and protected from being overwritten (store_file).
@@ -319,7 +353,9 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
     svc::init(&app.wake, app.config.search.threads);
     svc::sync_document_text(&app.config);
     crate::models::smart::pump(app, host);
-    for n in svc::pump(&mut app.ws) {
+    // Searches and folder sizes stream into the panes of every window.
+    let notices = svc::pump(&mut crate::models::windows::all_workspaces_mut(app));
+    for n in notices {
         app.ui.toasts.push(Toast::error(tr!("views-search-failed")).body(n));
     }
     crate::models::archive::pump(app);

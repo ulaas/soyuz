@@ -26,8 +26,12 @@ pub use crate::core::{
 pub struct GuiState {
     /// GUI-only dialogs (core prompts live on `AppCore::dialogs`; both draw as one stack).
     pub dialogs: Dialogs,
-    /// What the preview pane renders (open / width / mode are on `core.ui.preview`).
+    /// What the preview pane renders (open / width / mode are on `core.ui.preview`), for
+    /// the window being drawn: the other in-process windows keep theirs in
+    /// `window_previews`, swapped in for their frame (`ui::workspaces::windows`).
     pub preview: crate::ui::preview::PreviewPane,
+    pub window_previews:
+        std::collections::HashMap<crate::state::workspace_windows::WindowId, crate::ui::preview::PreviewPane>,
     /// Settings window.
     pub settings: crate::ui::settings::SettingsState,
     /// Window frame currently in effect (`[appearance] custom_titlebar`).
@@ -81,6 +85,7 @@ impl SoyuzApp {
         let gui = GuiState {
             dialogs: Dialogs::default(),
             preview: Default::default(),
+            window_previews: Default::default(),
             settings: Default::default(),
             chrome: crate::ui::titlebar::Chrome::for_config(core.config.appearance.custom_titlebar),
             devscript: crate::devscript::DevScript::from_env(),

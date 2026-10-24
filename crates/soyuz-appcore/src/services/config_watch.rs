@@ -194,12 +194,27 @@ pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
     app.keymap = km;
     crate::models::workspaces::bind_hotkeys_into(&mut app.keymap, &app.workspaces.store);
     app.keyseq.reset();
-    if old.layout.terminal_height != c.layout.terminal_height {
-        // The panel remembers a size the user dragged; the setting is the default height.
-        app.ui.bottom.height = c.layout.terminal_height.clamp(120.0, 720.0);
-        app.ui.bottom.reset_height = true;
-    }
-    app.ui.bottom.set_activity_placement(c.layout.activity_panel);
+    // The bottom panel and the preview pane are per window: apply to every window.
+    let height =
+        (old.layout.terminal_height != c.layout.terminal_height).then(|| c.layout.terminal_height.clamp(120.0, 720.0));
+    let placement = (app.ui.bottom.activity_placement, c.layout.activity_panel);
+    let preview = (old.layout.preview_pane != c.layout.preview_pane).then_some(c.layout.preview_pane);
+    crate::models::windows::for_each_window(app, |app| {
+        if let Some(h) = height {
+            // The panel remembers a size the user dragged; the setting is the default height.
+            app.ui.bottom.height = h;
+            app.ui.bottom.reset_height = true;
+        }
+        // The placement is shared: move each window's panel from the old place.
+        app.ui.bottom.activity_placement = placement.0;
+        app.ui.bottom.set_activity_placement(placement.1);
+        if let Some(open) = preview
+            && app.ui.preview.open != open
+        {
+            app.ui.preview.toggle();
+        }
+    });
+    let c = &app.config;
     if old.general != c.general
         || old.columns != c.columns
         || old.appearance.thumbnail_size != c.appearance.thumbnail_size
@@ -221,13 +236,12 @@ pub fn apply_config(app: &mut AppCore, host: &dyn Host, new: Config) {
     if old.layout.status_bar != c.layout.status_bar {
         app.ui.status_visible = c.layout.status_bar;
     }
-    if old.layout.preview_pane != c.layout.preview_pane && app.ui.preview.open != c.layout.preview_pane {
-        app.ui.preview.toggle();
-    }
     if relist || old.general.folders_first != c.general.folders_first {
-        for t in &mut app.ws.tabs {
-            for p in &mut t.panes {
-                p.dirty = true;
+        for ws in crate::models::windows::all_workspaces_mut(app) {
+            for t in &mut ws.tabs {
+                for p in &mut t.panes {
+                    p.dirty = true;
+                }
             }
         }
     }

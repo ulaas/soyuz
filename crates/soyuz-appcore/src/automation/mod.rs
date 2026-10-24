@@ -698,28 +698,34 @@ fn pump_cli(app: &mut AppCore, host: &dyn Host) {
                 let _ = reply.send(Ok(id));
             }
             cli_server::UiReq::Open { path, reveal, reply } => {
-                let pane = app.ws.pane().id;
-                // The client checked that the path exists; a folder opens in a new tab, a
-                // file launches (open) or is selected in its folder (reveal).
-                if reveal {
-                    if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
-                        let name = name.to_string_lossy().into_owned();
-                        ops::navigate(
-                            app,
-                            pane,
-                            Location::Dir(dir.to_path_buf()),
-                            NavOpts { select: Some(name), ..NavOpts::user() },
-                        );
-                    }
-                } else {
-                    open_path(app, path);
-                }
-                host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Minimized(false));
-                host.window(crate::host::WindowId::Current, crate::host::WindowCmd::Focus);
+                cli_open(app, host, path, reveal);
                 let _ = reply.send(Ok(()));
             }
         }
     }
+}
+
+/// `soyuz open [--reveal] <path>` in the focused window, which comes to the front. The
+/// client checked that the path exists; a folder opens in a new tab, a file launches
+/// (open) or is selected in its folder (reveal).
+pub(crate) fn cli_open(app: &mut AppCore, host: &dyn Host, path: PathBuf, reveal: bool) {
+    crate::models::windows::with_focused_window(app, |app| {
+        let pane = app.ws.pane().id;
+        if reveal {
+            if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
+                let name = name.to_string_lossy().into_owned();
+                ops::navigate(
+                    app,
+                    pane,
+                    Location::Dir(dir.to_path_buf()),
+                    NavOpts { select: Some(name), ..NavOpts::user() },
+                );
+            }
+        } else {
+            open_path(app, path);
+        }
+        crate::models::windows::raise(host, app.workspaces.current);
+    });
 }
 
 /// `soyuz open <path>`: folders open in a new tab, files launch (decided off-thread).

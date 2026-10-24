@@ -1,9 +1,9 @@
 //! Root layout: custom title bar (logo + tabs + window controls, when enabled) →
 //! status bar → bottom panel → sidebar → tab strip (native title bar only) → toolbar →
 //! pane cards (single, dual with a draggable splitter, or a 2×2 quad grid), then dialogs
-//! and toasts on top. Secondary in-process windows draw the same shell without the
-//! main-only panels (terminal / activity, assistant, preview, editors, tool panels); the
-//! overlays go to the focused window.
+//! and toasts on top. Secondary in-process windows draw the same shell (search bar,
+//! preview, activity / bottom panel, Quick Look) without the main-only panels (terminal,
+//! assistant, editors, tool panels); the overlays go to the focused window.
 
 use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
@@ -41,8 +41,9 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.core.cmds.push(Cmd::ViewChanged(id));
         }
     }
+    // The bottom panel in every window (its terminal tab only in the main window).
+    panels::show(ui, app);
     if main {
-        panels::show(ui, app);
         panels::terminal::apply_requests(&mut app.core);
     }
     if app.core.ui.sidebar_visible {
@@ -95,10 +96,10 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);
+    crate::ui::search::bar(ui, app);
+    crate::ui::preview::show(ui, app);
+    panels::show_activity(ui, app);
     if main {
-        crate::ui::search::bar(ui, app);
-        crate::ui::preview::show(ui, app);
-        panels::show_activity(ui, app);
         crate::ui::editors::show(ui, app);
         crate::ui::tools::show_panels(ui, app);
     }
@@ -115,8 +116,10 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             ui.allocate_rect(area, Sense::hover());
         });
 
-    // Overlays (in the focused window only).
+    // Overlays (in the focused window only). Quick Look shows in the window it was
+    // opened in (every window has its own), above the dialogs.
     if !crate::models::workspaces::overlays_here(&app.core) {
+        crate::ui::quicklook::show(&ctx, app);
         return;
     }
     crate::ui::tools::show_windows(&ctx, app);

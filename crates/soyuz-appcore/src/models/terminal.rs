@@ -196,8 +196,23 @@ pub fn spawn_session(app: &mut AppCore, host: &dyn Host, cwd: PathBuf) -> u64 {
     id
 }
 
+/// The terminal panel lives in the main window: from another window, run `f` with the
+/// main window swapped in and bring it to the front. `false` in the main window.
+fn in_main(app: &mut AppCore, host: &dyn Host, f: impl FnOnce(&mut AppCore)) -> bool {
+    if crate::models::workspaces::main_frame(app) {
+        return false;
+    }
+    let main = crate::state::workspace_windows::WindowId::MAIN;
+    crate::models::windows::with_window(app, main, f);
+    crate::models::windows::raise(host, main);
+    true
+}
+
 /// A new session in the focused pane's folder (the "+" button), focused.
 pub fn new_session(app: &mut AppCore, host: &dyn Host) {
+    if in_main(app, host, |app| new_session(app, host)) {
+        return;
+    }
     let cwd = pane_dir(app).unwrap_or_else(soyuz_fs::home);
     spawn_session(app, host, cwd);
     app.ui.terminal.focused = true;
@@ -205,6 +220,10 @@ pub fn new_session(app: &mut AppCore, host: &dyn Host) {
 
 /// Ctrl+`: open (spawning lazily) and focus; focus when open but unfocused; else close.
 pub fn toggle(app: &mut AppCore, host: &dyn Host) {
+    // From another window: show the terminal (in the main window) instead of closing it.
+    if in_main(app, host, |app| focus(app, host)) {
+        return;
+    }
     if suspend_mode(app) {
         let dir = pane_dir(app).unwrap_or_else(soyuz_fs::home);
         app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
@@ -220,6 +239,9 @@ pub fn toggle(app: &mut AppCore, host: &dyn Host) {
 
 /// Focus the terminal (FocusTerminal action), opening it when needed.
 pub fn focus(app: &mut AppCore, host: &dyn Host) {
+    if in_main(app, host, |app| focus(app, host)) {
+        return;
+    }
     if suspend_mode(app) {
         let dir = pane_dir(app).unwrap_or_else(soyuz_fs::home);
         app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
@@ -255,6 +277,10 @@ pub fn suspend_mode(app: &AppCore) -> bool {
 
 /// "Open terminal here": a new integrated session in `dir`.
 pub fn open_at(app: &mut AppCore, host: &dyn Host, dir: PathBuf) {
+    if !crate::models::workspaces::main_frame(app) {
+        in_main(app, host, |app| open_at(app, host, dir));
+        return;
+    }
     if suspend_mode(app) {
         app.frontend.push(FrontendCmd::Suspend(SuspendRequest::Shell { dir }));
         return;
@@ -267,6 +293,10 @@ pub fn open_at(app: &mut AppCore, host: &dyn Host, dir: PathBuf) {
 /// Run a shell command line in `dir` with its output in the terminal panel: typed into
 /// the active session when it is idle (after a `cd`), otherwise into a new session.
 pub fn run_command(app: &mut AppCore, host: &dyn Host, dir: PathBuf, line: &str) {
+    if !crate::models::workspaces::main_frame(app) {
+        in_main(app, host, |app| run_command(app, host, dir, line));
+        return;
+    }
     // Typed text goes through the shell's line editor: a newline/escape in a (crafted)
     // file name would run extra commands no matter how it is quoted.
     if soyuz_term::has_control_chars(line) || soyuz_term::has_control_chars(&dir.to_string_lossy()) {
@@ -617,8 +647,9 @@ pub fn looks_executable(path: &Path) -> bool {
 }
 
 /// Whether a modifier-less key event targets the terminal (used to keep type-ahead off).
+/// The terminal is in the main window: other windows keep their keyboard.
 pub fn owns_keyboard(app: &AppCore) -> bool {
-    app.ui.terminal.focused && app.ui.bottom.terminal_shown()
+    crate::models::workspaces::main_frame(app) && app.ui.terminal.focused && app.ui.bottom.terminal_shown()
 }
 
 #[cfg(test)]

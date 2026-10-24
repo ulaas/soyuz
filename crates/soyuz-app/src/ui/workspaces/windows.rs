@@ -1,8 +1,11 @@
 //! In-process windows, GUI side. Every extra window is an egui *immediate* viewport drawn
 //! right after the main window's frame. For its frame the window's workspace and UI state
-//! are swapped into `app` (`models::windows::swap`), so the whole shell (tab strip,
-//! toolbar, sidebar, panes, dialogs) runs unchanged. Main-only panels (terminal,
-//! assistant, editors, preview, tool panels) stay in the main window.
+//! are swapped into `app` (`models::windows::with_window`), plus the preview pane it
+//! renders (`GuiState::window_previews`), so the whole shell (tab strip, toolbar,
+//! sidebar, search bar, preview, activity / bottom panel, Quick Look, panes, dialogs)
+//! runs unchanged. Main-only panels (terminal, assistant, editors, tool panels) stay in
+//! the main window. The media player shows in one window at a time
+//! (`models::windows::update_player_window`); the others show posters.
 //!
 //! The bookkeeping (window list, queued `WinOp`s, closing, merging, session) is in
 //! `models::windows`; this module creates the viewports, reads their per-frame input
@@ -63,9 +66,10 @@ pub fn close_cmd(id: WindowId, merge: bool) -> crate::cmd::Cmd {
 // Frames
 // ---------------------------------------------------------------------------
 
-/// Start of the main window's frame: overlay owner and geometry.
+/// Start of the main window's frame: overlay owner, geometry and the player's window.
 pub fn begin_main_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     begin_frame(app, ctx, WindowId::MAIN);
+    model::update_player_window(&mut app.core);
 }
 
 fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
@@ -97,31 +101,65 @@ fn builder(app: &SoyuzApp, w: &SecondaryWindow) -> ViewportBuilder {
     if w.start_maximized {
         b = b.with_maximized(true);
     }
+    // Scripted runs (`SOYUZ_SCRIPT`, `SOYUZ_WINDOW_POS`): never take the focus from the
+    // user's session, and open where the main window does (e.g. off-screen).
+    if crate::ui::native::quiet() || std::env::var_os("SOYUZ_SCRIPT").is_some() {
+        b = b.with_active(false);
+        if let Some(p) = dev_pos() {
+            b = b.with_position(p);
+        }
+    }
     crate::ui::titlebar::configure_viewport(b, app.gui.chrome)
+}
+
+/// `SOYUZ_WINDOW_POS=x,y` (debug hook, see `main.rs`).
+fn dev_pos() -> Option<egui::Pos2> {
+    let s = std::env::var("SOYUZ_WINDOW_POS").ok()?;
+    let (x, y) = s.split_once(',')?;
+    Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
 }
 
 /// Draw every secondary window (end of the main frame) and apply window operations.
 pub fn show(app: &mut SoyuzApp, ctx: &egui::Context) {
     let screen = screen(ctx);
     model::restore_windows(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
-    model::apply_ops(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
+    apply_ops(app, ctx, &screen);
     let ids: Vec<WindowId> = app.core.workspaces.windows.iter().map(|w| w.id).collect();
     for id in ids {
         let Some(k) = model::index(&app.core, id) else { continue };
         let b = builder(app, &app.core.workspaces.windows[k]);
         ctx.show_viewport_immediate(viewport_id(id), b, |ui, _class| run_window(ui, app, id));
     }
-    model::apply_ops(&mut app.core, &crate::host::EguiHost::new(ctx), &screen);
+    apply_ops(app, ctx, &screen);
+}
+
+/// Apply window operations, then follow them with what the GUI keeps per window.
+fn apply_ops(app: &mut SoyuzApp, ctx: &egui::Context, screen: &Screen) {
+    model::apply_ops(&mut app.core, &crate::host::EguiHost::new(ctx), screen);
+    if let Some(id) = app.core.workspaces.promoted.take() {
+        // The main window took over window `id`: its rendered preview comes along.
+        if let Some(p) = app.gui.window_previews.remove(&id) {
+            app.gui.preview = p;
+        }
+        crate::ui::quicklook::window_promoted(id);
+    }
+    let open = &app.core.workspaces.windows;
+    app.gui.window_previews.retain(|id, _| open.iter().any(|w| w.id == *id));
+    crate::ui::quicklook::retain_windows(|id| id.is_main() || open.iter().any(|w| w.id == id));
 }
 
 fn run_window(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
-    let Some(k) = model::index(&app.core, id) else { return };
-    model::swap(&mut app.core, k);
-    app.core.workspaces.current = id;
+    if model::index(&app.core, id).is_none() {
+        return;
+    }
+    // Window structure only changes in `apply_ops`, so the window stays put meanwhile.
+    let swapped = model::swap_to(&mut app.core, id);
+    let mut preview = app.gui.window_previews.remove(&id).unwrap_or_default();
+    std::mem::swap(&mut app.gui.preview, &mut preview);
     window_frame(ui, app, id);
-    app.core.workspaces.current = WindowId::MAIN;
-    // Window structure only changes in `apply_ops`, so `k` still names this window.
-    model::swap(&mut app.core, k);
+    std::mem::swap(&mut app.gui.preview, &mut preview);
+    app.gui.window_previews.insert(id, preview);
+    model::swap_back(&mut app.core, swapped);
 }
 
 fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {

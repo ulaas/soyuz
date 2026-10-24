@@ -65,14 +65,15 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
     if std::mem::take(&mut app.core.ui.preview.hex_toggle) {
         app.gui.preview.toggle_hex();
     }
-    // Quick Look drives the media player while it is open; the pane shows posters.
-    let ql_open = app.core.ui.quicklook.open;
+    // The pane drives the media player unless Quick Look is open (it plays there) or the
+    // player is in another window; then it shows posters.
+    let drives = !app.core.ui.quicklook.open && crate::models::windows::player_here(&app.core);
     if !app.core.ui.preview.open {
         if !app.gui.preview.cleared {
             app.gui.preview.clear();
             app.gui.preview.cleared = true;
         }
-        if !ql_open {
+        if drives {
             app.core.ui.player.sync_target(None);
         }
         return;
@@ -97,10 +98,10 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
         && pair.is_none()
         && st.loading_since.is_none()
         && st.loaded.as_ref().is_some_and(|l| video::takes(l, &app.core.config));
-    if !ql_open && !settled_video {
+    if drives && !settled_video {
         app.core.ui.player.sync_target(None);
     }
-    if !ql_open
+    if drives
         && matches!(
             st.loaded.as_ref().map(|l| &l.content),
             Some(Content::Rich(crate::services::preview_rich::Rich::Audio { .. }))
@@ -210,7 +211,7 @@ pub fn show(root: &mut Ui, app: &mut SoyuzApp) {
             if !info_only {
                 let mut child = ui.new_child(UiBuilder::new().max_rect(content_r));
                 child.set_clip_rect(content_r);
-                let media = if settled_video && !ql_open {
+                let media = if settled_video && drives {
                     st.entry.as_ref().zip(st.loaded.as_ref()).and_then(|(e, l)| video::Media::of(e, l))
                 } else {
                     None

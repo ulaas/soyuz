@@ -56,7 +56,33 @@ impl Default for BottomPanel {
     }
 }
 
+/// The per-window part of [`BottomPanel`] (everything but `activity_placement`, which
+/// follows the config). `models::windows` swaps it in while a window is handled.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BottomUi {
+    pub open: bool,
+    pub tab: BottomTab,
+    pub height: f32,
+    pub reset_height: bool,
+    pub activity_open: bool,
+}
+
+impl BottomUi {
+    /// A closed panel of `height` (a new window keeps the size the others use).
+    pub fn closed(height: f32) -> Self {
+        BottomUi { open: false, tab: BottomTab::Activity, height, reset_height: false, activity_open: false }
+    }
+}
+
 impl BottomPanel {
+    /// Exchange the per-window fields with `w` (its own inverse).
+    pub fn swap_window(&mut self, w: &mut BottomUi) {
+        std::mem::swap(&mut self.open, &mut w.open);
+        std::mem::swap(&mut self.tab, &mut w.tab);
+        std::mem::swap(&mut self.height, &mut w.height);
+        std::mem::swap(&mut self.reset_height, &mut w.reset_height);
+        std::mem::swap(&mut self.activity_open, &mut w.activity_open);
+    }
     /// Toggle `tab`: opens the panel on it, switches to it, or closes when already shown.
     pub fn toggle(&mut self, tab: BottomTab) {
         if tab == BottomTab::Activity && self.activity_placement != ActivityPlacement::Bottom {

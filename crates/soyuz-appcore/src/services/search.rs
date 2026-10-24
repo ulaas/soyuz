@@ -402,12 +402,18 @@ fn rank_interval(n: usize) -> Duration {
     Duration::from_millis((300 + n as u64 / 50).min(3_000))
 }
 
-/// Drain running searches and folder-size jobs into their panes. Returns notices.
-pub fn pump(ws: &mut Workspace) -> Vec<String> {
+/// Pane `id` in any of `wss` (the workspaces of every window).
+fn find_pane_in<'a>(wss: &'a mut [&mut Workspace], id: PaneId) -> Option<&'a mut Pane> {
+    wss.iter_mut().find_map(|ws| ws.find_pane_mut(id))
+}
+
+/// Drain running searches and folder-size jobs into their panes, in any window's
+/// workspace (a pane in none of them navigated away). Returns notices.
+pub fn pump(ws: &mut [&mut Workspace]) -> Vec<String> {
     REG.with_borrow_mut(|r| {
         let mut finished = Vec::new();
         for (id, a) in r.active.iter_mut() {
-            let pane = ws.find_pane_mut(a.pane).filter(|p| p.generation == a.generation);
+            let pane = find_pane_in(ws, a.pane).filter(|p| p.generation == a.generation);
             let Some(pane) = pane else {
                 // The pane navigated away: stop the walk.
                 a.handle.cancel();
@@ -502,7 +508,7 @@ pub fn pump(ws: &mut Workspace) -> Vec<String> {
     })
 }
 
-fn pump_sizes(r: &mut Registry, ws: &mut Workspace) {
+fn pump_sizes(r: &mut Registry, ws: &mut [&mut Workspace]) {
     let mut keep = Vec::new();
     for mut job in std::mem::take(&mut r.sizes) {
         let mut disconnected = false;
@@ -522,7 +528,7 @@ fn pump_sizes(r: &mut Registry, ws: &mut Workspace) {
             }
         }
         if !updates.is_empty() {
-            let pane = ws.find_pane_mut(job.pane);
+            let pane = find_pane_in(ws, job.pane);
             let mut resort = false;
             if let Some(pane) = pane {
                 for (path, bytes, done) in &updates {
@@ -1001,7 +1007,7 @@ mod tests {
         }
         let start = Instant::now();
         while start.elapsed() < Duration::from_secs(10) {
-            pump(&mut ws);
+            pump(&mut [&mut ws]);
             if progress(id).is_some_and(|p| p.done) {
                 break;
             }
