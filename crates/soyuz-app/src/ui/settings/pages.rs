@@ -416,6 +416,14 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             switch(ui, &mut d.workspace.restore_windows);
         });
         r.row_kw(
+            tr!("settings-views-panels-follow"),
+            tr!("settings-views-panels-follow-desc"),
+            "editor assistant ai shelf tools window",
+            |ui| {
+                switch(ui, &mut d.workspace.panels_follow_window);
+            },
+        );
+        r.row_kw(
             tr!("settings-views-sync-relative"),
             tr!("settings-views-sync-relative-desc"),
             "sync navigation follow",

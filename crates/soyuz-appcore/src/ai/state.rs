@@ -581,6 +581,9 @@ pub fn expand_slash(text: &str, has_selection: bool) -> Option<(String, Route)> 
 
 /// An MCP request arrived (`approval_ui = "panel"`): show the approvals area.
 pub fn show_mcp_requests(app: &mut AppCore) {
+    // Not asked from a window: a closed panel opens in the focused one.
+    let open = app.ai.panel.open;
+    crate::models::owners::summon(app, crate::models::owners::Panel::Assistant, open);
     app.ai.panel.open = true;
     app.ai.panel.tab = PanelTab::Chat;
     app.ai.panel.mcp_flash = Some(Instant::now());
@@ -628,7 +631,9 @@ pub fn ask_from_palette(app: &mut AppCore, host: &dyn Host, text: String) {
     start_chat_shown(app, host, text.clone(), format!("{PALETTE_ASK}{text}"), Route::Strong, Vec::new());
 }
 
+/// Open the panel in the current window (moving it here from another window).
 fn open_panel(app: &mut AppCore) {
+    crate::models::owners::claim(app, crate::models::owners::Panel::Assistant);
     app.ai.panel.open = true;
     app.ai.panel.tab = PanelTab::Chat;
     app.ai.panel.focus_composer = true;
@@ -640,7 +645,9 @@ pub fn execute_action(app: &mut AppCore, action: Action, host: &dyn Host) {
     let prompt = |p: &str| p.to_string();
     match action {
         Action::ToggleAiPanel => {
-            if app.ai.panel.open {
+            // From a window that doesn't show the panel: it comes over (`models::owners`).
+            let open = app.ai.panel.open;
+            if crate::models::owners::toggle_closes(app, crate::models::owners::Panel::Assistant, open) {
                 app.ai.panel.open = false;
             } else {
                 open_panel(app);
@@ -694,11 +701,13 @@ pub fn execute_action(app: &mut AppCore, action: Action, host: &dyn Host) {
             app.ai.smart.focus = true;
         }
         Action::AiAuditLog => {
+            crate::models::owners::claim(app, crate::models::owners::Panel::Assistant);
             app.ai.panel.open = true;
             app.ai.panel.tab = PanelTab::Audit;
             app.ai.audit.loaded = false;
         }
         Action::AiRecipes => {
+            crate::models::owners::claim(app, crate::models::owners::Panel::Assistant);
             app.ai.panel.open = true;
             app.ai.panel.tab = PanelTab::Recipes;
             app.ai.recipes.loaded = false;
@@ -1748,6 +1757,7 @@ pub fn script(app: &mut AppCore, host: &dyn Host, arg: &str) {
         app.frontend
             .push(crate::models::frontend::FrontendCmd::OpenSettings(Some(crate::models::settings::Section::Ai)));
     } else if let Some(tab) = arg.strip_prefix("!tab") {
+        crate::models::owners::claim(app, crate::models::owners::Panel::Assistant);
         app.ai.panel.open = true;
         app.ai.panel.tab = match tab.trim() {
             "recipes" => PanelTab::Recipes,

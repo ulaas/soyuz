@@ -115,6 +115,7 @@ tear_off = true                  # drag a tab out of the strip to open it in its
 tear_off_distance = 48           # points away from the strip before a tab tears off
 close_window_tabs = "ask"        # closing a window with tabs: ask | merge (move them) | close
 restore_windows = true           # reopen the other windows (and their positions) with the session
+panels_follow_window = true      # editors, assistant, shelf and tool windows open in the window that asks (false: main window)
 sync_relative = true             # synchronized browsing follows sibling / multi-level moves too
 history_graph_limit = 200        # places kept per tab in the "where was I" history graph
 timeline_days = 7                # timeline: files changed in the last N days

@@ -3,10 +3,10 @@
 //! are swapped into `app` (`models::windows::with_window`), plus the preview pane it
 //! renders (`GuiState::window_previews`), so the whole shell (tab strip, toolbar,
 //! sidebar, search bar, preview, activity / bottom panel with the window's terminal,
-//! Quick Look, panes, dialogs) runs unchanged. Main-only panels (assistant, editors, tool
-//! panels) stay in the main window. The media player (video and the audio card) plays in
-//! one window at a time (`models::windows::update_player_window`); the others show
-//! posters.
+//! Quick Look, panes, dialogs) runs unchanged. The shared panels (assistant, editors,
+//! shelf, tool windows) draw in the window that owns them (`models::owners`). The media
+//! player (video and the audio card) plays in one window at a time
+//! (`models::windows::update_player_window`); the others show posters.
 //!
 //! The bookkeeping (window list, queued `WinOp`s, closing, merging, session) is in
 //! `models::windows`; this module creates the viewports, reads their per-frame input
@@ -190,6 +190,7 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
     if close {
         model::request_close(&mut app.core, id);
     }
+    crate::ui::ai::escape_stops_task(app, &ctx);
     app.handle_input(&ctx);
     app.apply_cmds(&crate::host::EguiHost::new(&ctx));
     crate::ui::shell::show(ui, app);

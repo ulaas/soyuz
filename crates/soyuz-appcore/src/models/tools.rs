@@ -19,6 +19,7 @@ use crate::core::AppCore;
 use crate::host::{Host, Wake};
 use crate::models::toasts::Toast;
 use crate::services::jobs::{JobMeta, OpKind};
+use crate::state::workspace_windows::WindowId;
 
 /// Deferred tool commands from shared widgets (context menu, sidebar, status bar).
 #[derive(Clone, Debug)]
@@ -69,15 +70,18 @@ pub enum VersionCmd {
 }
 
 thread_local! {
-    static QUEUE: RefCell<Vec<ToolCmd>> = const { RefCell::new(Vec::new()) };
+    /// With the window each command was queued from (`models::owners::current_window`).
+    static QUEUE: RefCell<Vec<(ToolCmd, WindowId)>> = const { RefCell::new(Vec::new()) };
     static WAKE: RefCell<Option<Wake>> = const { RefCell::new(None) };
     static SHELF: RefCell<ShelfData> = RefCell::new(ShelfData::default());
     static WINDOW_OPEN: Cell<bool> = const { Cell::new(false) };
 }
 
-/// Queue a tool command (applied at the start of the next frame).
+/// Queue a tool command (applied at the start of the next frame; a tool window it opens
+/// shows in the window it was queued from).
 pub fn queue(c: ToolCmd) {
-    QUEUE.with_borrow_mut(|q| q.push(c));
+    let from = crate::models::owners::current_window();
+    QUEUE.with_borrow_mut(|q| q.push((c, from)));
     WAKE.with_borrow(|w| {
         if let Some(w) = w {
             w();
@@ -87,7 +91,42 @@ pub fn queue(c: ToolCmd) {
 
 /// The queued commands (emptied).
 pub fn take_queue() -> Vec<ToolCmd> {
-    QUEUE.with_borrow_mut(std::mem::take)
+    QUEUE.with_borrow_mut(std::mem::take).into_iter().map(|(c, _)| c).collect()
+}
+
+/// The queued commands (emptied), with the shared panels they open given to the window
+/// they were queued from (`models::owners`): the tool windows, and the shelf when a drop
+/// opens it.
+pub fn take_queue_for(app: &mut AppCore) -> Vec<ToolCmd> {
+    use crate::models::owners::{self, Panel};
+    let q = QUEUE.with_borrow_mut(std::mem::take);
+    for (c, from) in &q {
+        let from =
+            if crate::models::windows::exists(app, *from) { *from } else { crate::models::windows::focused(app) };
+        match c {
+            ToolCmd::ShelfAdd(_) if !shelf_open() => {
+                owners::move_to(app, Panel::Shelf, from);
+            }
+            c if opens_window(c) => {
+                owners::move_to(app, Panel::Tools, from);
+            }
+            _ => {}
+        }
+    }
+    q.into_iter().map(|(c, _)| c).collect()
+}
+
+/// `c` opens a tool window (the rest is applied by [`apply_model_cmds`]).
+pub fn opens_window(c: &ToolCmd) -> bool {
+    !matches!(
+        c,
+        ToolCmd::ShelfAdd(_)
+            | ToolCmd::ToggleTag { .. }
+            | ToolCmd::ClearTags(_)
+            | ToolCmd::RenameTag { .. }
+            | ToolCmd::ForgetRecent(_)
+            | ToolCmd::VersionAction(_)
+    )
 }
 
 /// Debug / automation hook (like `SOYUZ_THROTTLE_MBPS`): `SOYUZ_OPEN_TOOL` opens tools at
@@ -407,7 +446,11 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
             let id = app.ws.pane().id;
             crate::ops::navigate(app, id, Location::Recent, crate::ops::NavOpts::user());
         }
-        A::ToggleShelf => SHELF.with_borrow_mut(|s| s.open = !s.open),
+        A::ToggleShelf => {
+            // From a window that doesn't show the shelf: it comes over (`models::owners`).
+            let closes = crate::models::owners::toggle_closes(app, crate::models::owners::Panel::Shelf, shelf_open());
+            SHELF.with_borrow_mut(|s| s.open = !closes);
+        }
         A::SyncProfiles => queue(ToolCmd::SyncProfiles),
         A::QuickShare => {
             if matches!(app.ws.pane().location, Location::Remote(_)) {

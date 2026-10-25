@@ -133,6 +133,10 @@ fn notice_action(app: &mut AppCore, idx: usize) {
 
 /// `FocusEditor`: give the keyboard back to the active document (showing the panel).
 pub fn focus(app: &mut AppCore) {
+    if !app.editors.docs.is_empty() {
+        // Into the window asking for it.
+        crate::models::owners::claim(app, crate::models::owners::Panel::Editors);
+    }
     if let Some(d) = app.editors.active_doc_mut() {
         d.request_focus();
         app.editors.open = true;

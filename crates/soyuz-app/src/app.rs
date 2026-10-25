@@ -119,8 +119,9 @@ impl SoyuzApp {
             || crate::palette::owns_keyboard(&self.core)
             || crate::ui::widgets::dropdown::any_open(ctx)
             || crate::models::tools::any_window_open()
+                && crate::models::owners::here(&self.core, crate::models::owners::Panel::Tools)
         {
-            return; // the modal (or an open dropdown / tool window) owns the keyboard
+            return; // the modal (or an open dropdown / this window's tool window) owns the keyboard
         }
         if crate::ui::quicklook::handle_keys(self, ctx) {
             return;

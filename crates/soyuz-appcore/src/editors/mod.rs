@@ -8,7 +8,9 @@
 //!   version in the trash first (`[editor] backup_to_trash`) and then writes atomically.
 //! * Open files are watched: a clean document reloads by itself, a modified one shows a
 //!   prompt. Closing a modified document (or the window) asks first.
-//! * The open paths are part of the session.
+//! * The open paths are part of the session (and the window showing the panel).
+//! * The panel is shared by every window and shows in one of them (`models::owners`):
+//!   the one that opened a file or last toggled / focused the panel.
 //!
 //! This module is the toolkit-free model (documents, I/O, commands, key routing);
 //! `ui::editors` draws the panel and the views and feeds them input.
@@ -30,6 +32,7 @@ use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::keys::input::{InputEvent, InputFrame};
 use crate::models::frontend::FrontendCmd;
+use crate::models::owners::{self, Panel};
 use crate::models::toasts::Toast;
 use crate::services::mailbox::Wake;
 use crate::services::preview_gfx::{Uploader, no_upload};
@@ -205,8 +208,10 @@ pub fn execute(app: &mut AppCore, a: Action) {
             }
         }
         Action::ToggleEditorPanel => {
+            // From a window that doesn't show the panel: it comes over (`models::owners`).
+            let closes = owners::toggle_closes(app, Panel::Editors, app.editors.open);
             let e = &mut app.editors;
-            e.open = !e.open;
+            e.open = !closes;
             if e.open {
                 if let Some(d) = e.active_doc_mut() {
                     d.request_focus();
@@ -223,6 +228,8 @@ pub fn execute(app: &mut AppCore, a: Action) {
 
 /// Open (or switch to) `path` in the editor panel.
 pub fn open_path(app: &mut AppCore, path: &Path, want: Want) {
+    // The panel shows in the window that opened the file.
+    owners::claim(app, Panel::Editors);
     let wake = app.wake.clone();
     let e = &mut app.editors;
     e.open = true;

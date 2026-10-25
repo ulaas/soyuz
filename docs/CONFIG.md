@@ -253,6 +253,7 @@ One role's font.
 | `tear_off_distance` | float | `48.0` | How far (points) a tab has to be dragged away from the strip to tear off. |
 | `close_window_tabs` | `"ask"` \| `"merge"` \| `"close"` | `"ask"` | Closing a window that still has tabs. (`ask`: Ask whether to move the tabs to another window or close them; `merge`: Move them to another window; `close`: Close them) |
 | `restore_windows` | boolean | `true` | Reopen the other windows (with their positions) when the session is restored. |
+| `panels_follow_window` | boolean | `true` | The editors, the assistant panel, the drop shelf and the tool windows open in the window that asks for them (and move to another window that invokes them); `false`: always in the main window. |
 | `sync_relative` | boolean | `true` | Synchronized browsing follows any relative move (sibling folders, several levels), not only "into a child" / "up one level". |
 | `history_graph_limit` | integer | `200` | Places remembered per tab in the "where was I" history graph. |
 | `timeline_days` | integer | `7` | The timeline covers this many days (today, yesterday, this week, …). |

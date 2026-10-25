@@ -382,6 +382,10 @@ pub struct WorkspaceConfig {
     pub close_window_tabs: CloseWindowTabs,
     /// Reopen the other windows (with their positions) when the session is restored.
     pub restore_windows: bool,
+    /// The editors, the assistant panel, the drop shelf and the tool windows open in the
+    /// window that asks for them (and move to another window that invokes them); `false`:
+    /// always in the main window.
+    pub panels_follow_window: bool,
     /// Synchronized browsing follows any relative move (sibling folders, several levels),
     /// not only "into a child" / "up one level".
     pub sync_relative: bool,
