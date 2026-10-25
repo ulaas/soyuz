@@ -2,8 +2,8 @@
 //! status bar → bottom panel → sidebar → tab strip (native title bar only) → toolbar →
 //! pane cards (single, dual with a draggable splitter, or a 2×2 quad grid), then dialogs
 //! and toasts on top. Secondary in-process windows draw the same shell (search bar,
-//! preview, activity / bottom panel, Quick Look) without the main-only panels (terminal,
-//! assistant, editors, tool panels); the overlays go to the focused window.
+//! preview, activity / bottom panel with its terminal, Quick Look) without the main-only
+//! panels (assistant, editors, tool panels); the overlays go to the focused window.
 
 use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
@@ -41,11 +41,9 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.core.cmds.push(Cmd::ViewChanged(id));
         }
     }
-    // The bottom panel in every window (its terminal tab only in the main window).
+    // The bottom panel in every window, each with its own terminal sessions.
     panels::show(ui, app);
-    if main {
-        panels::terminal::apply_requests(&mut app.core);
-    }
+    panels::terminal::apply_requests(&mut app.core);
     if app.core.ui.sidebar_visible {
         let current = app.core.ws.pane().location.clone();
         let pane = app.core.ws.pane().id;

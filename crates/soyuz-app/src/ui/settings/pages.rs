@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use egui::{RichText, Ui};
 use soyuz_core::config::{
-    ActivityPlacement, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy,
-    PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
+    ActivityPlacement, CloseWindowSessions, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation,
+    Osc52Policy, PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
     TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
@@ -1450,6 +1450,21 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.row_kw(
+            tr!("settings-terminal-close-window"),
+            tr!("settings-terminal-close-window-desc"),
+            "kill sessions shells window close",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.terminal.close_window_with_sessions,
+                    &[
+                        (CloseWindowSessions::Ask, tr!("settings-ask")),
+                        (CloseWindowSessions::Kill, tr!("settings-terminal-close-window-kill")),
+                    ],
+                );
+            },
+        );
     });
     any
 }

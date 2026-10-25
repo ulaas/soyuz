@@ -111,10 +111,8 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
     if !app.core.ui.bottom.open {
         return;
     }
-    // The terminal is in the main window only: other windows show the activity tab.
-    let main = crate::models::workspaces::main_frame(&app.core);
-    let tabs: Vec<BottomTab> =
-        app.core.ui.bottom.tabs().iter().copied().filter(|t| main || *t != BottomTab::Terminal).collect();
+    // Every window has its own terminal sessions (`models::terminal::Owner`).
+    let tabs: Vec<BottomTab> = app.core.ui.bottom.tabs().to_vec();
     let Some(&first) = tabs.first() else {
         app.core.ui.bottom.open = false;
         return;

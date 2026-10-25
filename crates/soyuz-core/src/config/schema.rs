@@ -832,6 +832,19 @@ pub struct Terminal {
     /// What to do when a program asks to set the clipboard (OSC 52). Clipboard reads
     /// are always denied.
     pub osc52: Osc52Policy,
+    /// Closing a window (and its tabs) that still has terminals with running shells.
+    pub close_window_with_sessions: CloseWindowSessions,
+}
+
+/// `terminal.close_window_with_sessions`: closing a window whose terminals still run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseWindowSessions {
+    /// Ask before closing the terminals.
+    #[default]
+    Ask,
+    /// Close them (their shells and programs end).
+    Kill,
 }
 
 /// `terminal.osc52`: clipboard writes requested by terminal output.

@@ -227,7 +227,11 @@ and *Retry failed*.
     left; swap, unified or side by side).
 - **Terminal** (``Ctrl+` ``): your shell in the current folder. It follows navigation (and,
   optionally, navigates the pane when you `cd`). `Esc` on an empty line returns to the
-  file list; `Ctrl`+click opens links and paths.
+  file list; `Ctrl`+click opens links and paths. Every window has its own terminals (one
+  set per window, or per tab with `[terminal] per_tab`); a tab moved to another window
+  takes its terminals along, and merging windows keeps them. Closing a window whose
+  terminals still run asks first (`[terminal] close_window_with_sessions = "kill"` closes
+  them without asking).
 - **Shelf** (palette: *Toggle shelf*): drop files from anywhere, keep browsing, then drag
   them out or copy / move them all at once. Its contents survive restarts.
 - **Editor** (`F4`, right-click → *Edit in Soyuz*, palette *Toggle editor panel*): files

@@ -2,10 +2,11 @@
 //! right after the main window's frame. For its frame the window's workspace and UI state
 //! are swapped into `app` (`models::windows::with_window`), plus the preview pane it
 //! renders (`GuiState::window_previews`), so the whole shell (tab strip, toolbar,
-//! sidebar, search bar, preview, activity / bottom panel, Quick Look, panes, dialogs)
-//! runs unchanged. Main-only panels (terminal, assistant, editors, tool panels) stay in
-//! the main window. The media player shows in one window at a time
-//! (`models::windows::update_player_window`); the others show posters.
+//! sidebar, search bar, preview, activity / bottom panel with the window's terminal,
+//! Quick Look, panes, dialogs) runs unchanged. Main-only panels (assistant, editors, tool
+//! panels) stay in the main window. The media player (video and the audio card) plays in
+//! one window at a time (`models::windows::update_player_window`); the others show
+//! posters.
 //!
 //! The bookkeeping (window list, queued `WinOp`s, closing, merging, session) is in
 //! `models::windows`; this module creates the viewports, reads their per-frame input
@@ -70,6 +71,7 @@ pub fn close_cmd(id: WindowId, merge: bool) -> crate::cmd::Cmd {
 pub fn begin_main_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     begin_frame(app, ctx, WindowId::MAIN);
     model::update_player_window(&mut app.core);
+    crate::ui::preview::video::set_player_here(model::player_here(&app.core));
 }
 
 fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
@@ -149,22 +151,30 @@ fn apply_ops(app: &mut SoyuzApp, ctx: &egui::Context, screen: &Screen) {
 }
 
 fn run_window(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
-    if model::index(&app.core, id).is_none() {
-        return;
-    }
+    with_window(app, id, |app| window_frame(ui, app, id));
+}
+
+/// Run `f` with secondary window `id` swapped in, the GUI's per-window state (its rendered
+/// preview) included (`models::windows::with_window` plus the GUI side). `None` when the
+/// window is gone.
+pub fn with_window<R>(app: &mut SoyuzApp, id: WindowId, f: impl FnOnce(&mut SoyuzApp) -> R) -> Option<R> {
+    model::index(&app.core, id)?;
     // Window structure only changes in `apply_ops`, so the window stays put meanwhile.
     let swapped = model::swap_to(&mut app.core, id);
     let mut preview = app.gui.window_previews.remove(&id).unwrap_or_default();
     std::mem::swap(&mut app.gui.preview, &mut preview);
-    window_frame(ui, app, id);
+    let r = f(app);
     std::mem::swap(&mut app.gui.preview, &mut preview);
     app.gui.window_previews.insert(id, preview);
     model::swap_back(&mut app.core, swapped);
+    Some(r)
 }
 
 fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
     let ctx = ui.ctx().clone();
     begin_frame(app, &ctx, id);
+    crate::ui::preview::video::set_player_here(model::player_here(&app.core));
+    crate::devscript::inject_window(app, &ctx, id);
     let (outer, inner, maximized, close) = ctx.input(|i| {
         let v = i.viewport();
         (v.outer_rect, v.inner_rect, v.maximized, v.close_requested())

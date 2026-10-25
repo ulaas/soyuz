@@ -91,6 +91,15 @@ panels-terminal-clip-deny = Deny
 panels-terminal-clip-allow-once = Allow once
 panels-terminal-clip-always = Always for this session
 panels-terminal-clip-always-tip = Allow clipboard writes from the terminal until Soyuz restarts
+panels-terminal-close-window-title = { $count ->
+    [one] Close the window and its terminal?
+   *[other] Close the window and its { $count } terminals?
+}
+panels-terminal-close-window-body = { $count ->
+    [one] A terminal of this window (or of its tabs) still runs a shell. Closing the window ends it and any program running in it.
+   *[other] { $count } terminals of this window (or of its tabs) still run a shell. Closing the window ends them and any program running in them.
+}
+panels-terminal-close-window-confirm = Close window
 panels-terminal-new = New terminal
 panels-terminal-open-here = Open terminal here
 panels-terminal-open-external = Open external terminal here
