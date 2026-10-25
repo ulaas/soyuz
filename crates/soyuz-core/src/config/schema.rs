@@ -319,6 +319,9 @@ pub struct Layout {
     pub tab_strip: TabStripMode,
     /// Height of the terminal / bottom panel in points (120-720).
     pub terminal_height: f32,
+    /// Width in points the file list keeps when panels docked on the right (editor,
+    /// assistant, preview, activity, shelf) are open; they stop growing there. 0 = no limit.
+    pub min_file_list_width: f32,
     /// Where the activity (jobs) panel docks.
     pub activity_panel: ActivityPlacement,
     /// What focus mode (`toggle_focus_mode`) hides: `sidebar`, `status_bar`, `preview`,

@@ -10,6 +10,7 @@ pub mod breadcrumb;
 pub mod context_menu;
 pub mod dialogs;
 pub mod dnd;
+pub mod dock;
 pub mod editors;
 pub mod empty_state;
 pub mod frontend;

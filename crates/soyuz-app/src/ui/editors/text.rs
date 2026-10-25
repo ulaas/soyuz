@@ -261,20 +261,14 @@ fn goto_bar(doc: &mut TextDoc, ui: &mut Ui, r: Rect, env: &mut TextEnv<'_>) {
 fn status(doc: &mut TextDoc, ui: &mut Ui, r: Rect, p: &Palette, tab: usize) {
     ui.painter().hline(r.x_range(), r.top() + 0.5, Stroke::new(1.0, p.border_subtle));
     let head = doc.sel.head;
-    let mut left = tr!("editors-text-status-pos", line = head.line + 1, col = doc.caret_col());
+    let pos = tr!("editors-text-status-pos", line = head.line + 1, col = doc.caret_col());
+    let mut left = pos.clone();
     if !doc.sel.is_empty() {
         left.push_str("  ·  ");
         left.push_str(&tr!("editors-text-status-selected", count = doc.selected_chars()));
     }
     left.push_str("  ·  ");
     left.push_str(&tr!("editors-text-status-lines", count = doc.buf.line_count()));
-    ui.painter().text(
-        pos2(r.left() + 10.0, r.center().y),
-        Align2::LEFT_CENTER,
-        left,
-        FontId::proportional(11.5),
-        p.text_secondary,
-    );
     let lang = doc.language().unwrap_or(tr!("editors-text-plain"));
     let indent = if doc.uses_tabs {
         tr!("editors-text-indent-tabs").to_string()
@@ -283,13 +277,24 @@ fn status(doc: &mut TextDoc, ui: &mut Ui, r: Rect, p: &Palette, tab: usize) {
     };
     let right = format!("{lang}  ·  {indent}  ·  {}", doc.encoding.label());
     let eol_rect = Rect::from_min_max(pos2(r.right() - 50.0, r.top() + 2.0), pos2(r.right() - 6.0, r.bottom() - 2.0));
-    ui.painter().text(
-        pos2(eol_rect.left() - 8.0, r.center().y),
-        Align2::RIGHT_CENTER,
-        right,
-        FontId::proportional(11.5),
-        p.text_secondary,
-    );
+    // A narrow panel drops the line count / selection first, then the right-hand block.
+    let font = FontId::proportional(11.5);
+    let galley = |t: String| ui.painter().layout_no_wrap(t, font.clone(), p.text_secondary);
+    let room = eol_rect.left() - 8.0 - (r.left() + 10.0);
+    let mut right_g = Some(galley(right));
+    let mut left_g = galley(left);
+    let fits = |l: f32, r: Option<f32>| l + r.map_or(0.0, |r| r + 16.0) <= room;
+    if !fits(left_g.size().x, right_g.as_ref().map(|g| g.size().x)) {
+        left_g = galley(pos);
+        if !fits(left_g.size().x, right_g.as_ref().map(|g| g.size().x)) {
+            right_g = None;
+        }
+    }
+    let y = r.center().y;
+    ui.painter().galley(pos2(r.left() + 10.0, y - left_g.size().y / 2.0), left_g, p.text_secondary);
+    if let Some(g) = right_g {
+        ui.painter().galley(pos2(eol_rect.left() - 8.0 - g.size().x, y - g.size().y / 2.0), g, p.text_secondary);
+    }
     let resp = ui.interact(eol_rect, ui.scope_id().with("eol"), Sense::click());
     if resp.hovered() {
         ui.painter().rect_filled(eol_rect, CornerRadius::same(4), p.bg_surface2);

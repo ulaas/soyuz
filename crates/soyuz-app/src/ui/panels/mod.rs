@@ -62,7 +62,7 @@ pub fn show_activity(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
     Panel::right("soyuz.activity")
         .resizable(true)
         .default_size(360.0)
-        .size_range(280.0..=720.0)
+        .size_range(crate::ui::dock::right_range(root, 280.0, 720.0, app.core.config.layout.min_file_list_width))
         .show_separator_line(false)
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 6 }))
         .show(root, |ui| {

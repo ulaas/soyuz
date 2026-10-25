@@ -185,6 +185,8 @@ settings-views-activity-bottom = Altta
 settings-views-activity-floating = Yüzen
 settings-views-terminal-height = Terminal yüksekliği
 settings-views-terminal-height-desc = Alt panelin varsayılan yüksekliği.
+settings-views-min-file-list-width = Dosya listesinin en küçük genişliği
+settings-views-min-file-list-width-desc = Sağdaki paneller (düzenleyici, asistan, önizleme, etkinlik, raf) dosya listesi bundan daha dar kalacaksa büyümeyi durdurur. 0 = sınır yok.
 settings-views-windows = Pencereler ve çalışma alanları
 settings-views-new-window = Yeni pencere açma biçimi
 settings-views-new-window-desc = Ctrl+N: bu Soyuz'un başka bir penceresi (işleri ve ayarları paylaşır) ya da ayrı bir işlem.

@@ -27,7 +27,12 @@ pub fn docked(ui: &mut Ui, app: &mut SoyuzApp) {
             Panel::right("soyuz.editor")
                 .resizable(true)
                 .default_size((screen.width() * 0.46).max(420.0))
-                .size_range(360.0..=(screen.width() * 0.8).max(400.0))
+                .size_range(crate::ui::dock::right_range(
+                    ui,
+                    360.0,
+                    (screen.width() * 0.8).max(400.0),
+                    app.core.config.layout.min_file_list_width,
+                ))
                 .show_separator_line(false)
                 .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 2, right: 8, top: 2, bottom: 6 }))
                 .show(ui, |ui| {

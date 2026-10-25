@@ -133,6 +133,7 @@ pub const HINTS: &[(&str, Hint)] = &[
     ("fonts.numbers.size_offset", Hint::Range(-4.0, 8.0)),
     ("sidebar.tree_drag_expand_ms", Hint::Range(0.0, 3000.0)),
     ("layout.terminal_height", Hint::Range(120.0, 800.0)),
+    ("layout.min_file_list_width", Hint::Range(0.0, 1200.0)),
     ("workspace.tear_off_distance", Hint::Range(16.0, 200.0)),
     ("workspace.history_graph_limit", Hint::Range(20.0, 2000.0)),
     ("workspace.timeline_days", Hint::Range(1.0, 60.0)),

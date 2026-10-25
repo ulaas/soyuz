@@ -132,6 +132,7 @@ impl Default for Layout {
             status_bar: true,
             tab_strip: TabStripMode::Always,
             terminal_height: 260.0,
+            min_file_list_width: 320.0,
             activity_panel: ActivityPlacement::Right,
             focus_mode_hides: ["sidebar", "status_bar", "preview", "bottom_panel", "activity", "ai_panel", "tabs"]
                 .map(String::from)

@@ -355,6 +355,9 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row(tr!("settings-views-terminal-height"), tr!("settings-views-terminal-height-desc"), |ui| {
             number(ui, &mut d.layout.terminal_height, 120.0..=800.0, " px");
         });
+        r.row(tr!("settings-views-min-file-list-width"), tr!("settings-views-min-file-list-width-desc"), |ui| {
+            number(ui, &mut d.layout.min_file_list_width, 0.0..=1200.0, " px");
+        });
     });
     any |= group(ui, q, ctx, tr!("settings-views-windows"), |r| {
         use soyuz_core::config::{CloseWindowTabs, NewWindowMode};

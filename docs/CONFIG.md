@@ -238,6 +238,7 @@ One role's font.
 | `status_bar` | boolean | `true` | Show the status bar. |
 | `tab_strip` | `"always"` \| `"multiple"` | `"always"` | Show the tab strip `always` or only with `multiple` tabs. |
 | `terminal_height` | float | `260.0` | Height of the terminal / bottom panel in points (120-720). |
+| `min_file_list_width` | float | `320.0` | Width in points the file list keeps when panels docked on the right (editor, assistant, preview, activity, shelf) are open; they stop growing there. 0 = no limit. |
 | `activity_panel` | `"right"` \| `"bottom"` \| `"floating"` | `"right"` | Where the activity (jobs) panel docks. |
 | `focus_mode_hides` | array of strings | `["sidebar", "status_bar", "preview", "bottom_panel", "activity", "ai_panel", "tabs"]` | What focus mode (`toggle_focus_mode`) hides: `sidebar`, `status_bar`, `preview`, `bottom_panel`, `activity`, `ai_panel`, `tabs`. The toolbar and the listing stay. |
 

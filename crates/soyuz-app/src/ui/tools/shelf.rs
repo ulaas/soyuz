@@ -82,7 +82,7 @@ impl Shelf {
         let resp = Panel::right("soyuz.shelf")
             .resizable(true)
             .default_size(self.width)
-            .size_range(200.0..=420.0)
+            .size_range(crate::ui::dock::right_range(root, 200.0, 420.0, app.core.config.layout.min_file_list_width))
             .show_separator_line(false)
             .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
             .show(root, |ui| {

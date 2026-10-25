@@ -191,6 +191,8 @@ settings-views-activity-bottom = Bottom
 settings-views-activity-floating = Floating
 settings-views-terminal-height = Terminal height
 settings-views-terminal-height-desc = Default height of the bottom panel.
+settings-views-min-file-list-width = File list minimum width
+settings-views-min-file-list-width-desc = Panels on the right (editor, assistant, preview, activity, shelf) stop growing where the file list would get narrower than this. 0 = no limit.
 settings-views-windows = Windows & workspaces
 settings-views-new-window = New window opens
 settings-views-new-window-desc = Ctrl+N: another window of this Soyuz (shares jobs and settings), or a separate process.
