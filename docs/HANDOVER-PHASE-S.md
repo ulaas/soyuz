@@ -2,7 +2,7 @@
 
 Phase S makes a second start of Soyuz hand the launch to the running window, gives every
 in-process window the full feature set, and cuts the memory an idle and a busy window
-use. Work runs on branch `phase-s` (not merged into `main` yet). All packages (S1, S2,
+use. Work ran on branch `phase-s`, merged into `main` on 2026-10-25. All packages (S1, S2,
 S3-0/S3a/S3b/S3c, S4/S5, S6a, S6b) are done; see [Open issues](#open-issues) for what is left.
 
 ## What is done
