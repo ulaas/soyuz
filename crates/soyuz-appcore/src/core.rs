@@ -692,6 +692,7 @@ pub fn apply_core_settings(c: &Config) {
     crate::services::archive::configure_nested(&c.archive);
     crate::services::thumbs::set_pdf(c.appearance.pdf_thumbnails, &c.preview.pdfium_dir);
     crate::services::thumbs::set_video_frames(c.appearance.video_thumbnails);
+    crate::services::thumbs::set_program_icons(c.appearance.program_icons);
     crate::services::thumb_video::set_poster_secs(c.media.poster_secs);
     crate::services::media::configure(&c.media);
     crate::services::preview_audio::configure(&c.media);

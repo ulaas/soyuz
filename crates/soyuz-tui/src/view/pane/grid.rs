@@ -23,7 +23,8 @@
 //! # Thumbnails
 //! [`request_thumbs`] asks the core's thumbnail service (whose workers upload through the
 //! terminal UI's `Uploader`, see `crate::images`) for the cells in view only, like the GUI:
-//! pictures, videos, PDFs and (with `[appearance] folder_thumbnails`) folder mosaics, when
+//! pictures, videos, PDFs, program icons (`[appearance] program_icons`) and (with
+//! `[appearance] folder_thumbnails`) folder mosaics, when
 //! `[appearance] show_thumbnails` is on and `[tui] images` is not `off`. [`draw_lines`]
 //! draws them with `images::draw_in`; pending, failed, non-image items and compact cells
 //! show the item's icon glyph (in the icon set of `[tui] icons`) instead.
@@ -194,6 +195,8 @@ pub fn request_thumbs(core: &AppCore, pane: &Pane, vm: &mut PaneVm) {
             || thumbs::is_pdf_thumbnailable(&e.path)
         {
             thumbs.get_labeled(&key())
+        } else if thumbs::has_program_icon(&e.path) {
+            (thumbs.get_program_icon(&key()), None)
         } else {
             (None, None)
         };

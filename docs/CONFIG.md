@@ -144,6 +144,7 @@ written as a list of quoted values is an enumeration: use one of them.
 | `folder_thumbnails` | boolean | `true` | 2×2 mosaic of the first images inside folders (grid / gallery views). |
 | `video_thumbnails` | boolean | `true` | First-frame video thumbnails through the FFmpeg libraries (`[media]`). |
 | `pdf_thumbnails` | boolean | `true` | First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see `[preview] pdfium_dir`); without it PDFs keep their icon. |
+| `program_icons` | boolean | `true` | Programs (`.exe`, `.scr`) show the icon stored in their own resources instead of the generic program glyph, in every file view. |
 | `os_thumbnail_cache` | boolean | `true` | Reuse the thumbnails the system already made (Windows: Explorer's `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`; read-only) before decoding a file ourselves. |
 | `write_os_thumbnails` | boolean | `true` | Linux / BSD: write the thumbnails Soyuz makes itself into the shared freedesktop cache (`~/.cache/thumbnails`), so file managers and file choosers reuse them. Ignored on Windows and macOS. |
 | `icon_pack` | string | `""` | File icon pack: `""` = the built-in Phosphor glyphs, `"flat"` = the built-in generated pack, else the folder name of a user pack in `icons/<name>/pack.toml`. |

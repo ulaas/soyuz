@@ -25,6 +25,7 @@ pub mod create;
 pub mod delete;
 pub mod dragout;
 mod err;
+pub mod exe_icon;
 pub mod fault;
 #[cfg(target_os = "linux")]
 pub mod fdwait;

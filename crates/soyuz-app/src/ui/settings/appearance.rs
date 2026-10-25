@@ -273,6 +273,14 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 switch(ui, &mut d.appearance.pdf_thumbnails);
             },
         );
+        r.row_kw(
+            tr!("settings-appearance-program-icons"),
+            tr!("settings-appearance-program-icons-desc"),
+            "exe program application icon executable",
+            |ui| {
+                switch(ui, &mut d.appearance.program_icons);
+            },
+        );
         if cfg!(windows) {
             r.row_kw(
                 tr!("settings-appearance-os-thumbs"),

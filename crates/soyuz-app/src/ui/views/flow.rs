@@ -264,10 +264,23 @@ fn body(
                     if v.fileops.renaming(pane.id, key) {
                         rename_at = Some(name_rect(style, r, &g.cols, origin.x, v.checkbox_mode, zoom));
                     }
+                    let grid_px = thumbs::bucket(f32::from(pane.view.zoom), ppp);
+                    let program_icon = if painter.clip_rect().intersects(r) && thumbs::has_program_icon(&e.path) {
+                        let px = if matches!(style, Style::Grid | Style::Gallery) {
+                            grid_px
+                        } else {
+                            thumbs::icon_px(ROW_ICON, ppp)
+                        };
+                        let key = ThumbKey { path: e.path.clone(), mtime: e.modified, size: e.size, px };
+                        v.services.thumbs.get_program_icon(&key)
+                    } else {
+                        None
+                    };
+                    let icon = program_icon.as_ref();
                     match style {
-                        Style::Details => paint_details_row(&painter, &p, r, e, &st, &g.cols, origin.x, v),
+                        Style::Details => paint_details_row(&painter, &p, r, e, &st, &g.cols, origin.x, v, icon),
                         Style::Grid | Style::Gallery => {
-                            let px = thumbs::bucket(f32::from(pane.view.zoom), ppp);
+                            let px = grid_px;
                             let key = || ThumbKey { path: e.path.clone(), mtime: e.modified, size: e.size, px };
                             let visual = if !thumbs_on || !painter.clip_rect().intersects(r) {
                                 CellVisual::default()
@@ -283,10 +296,11 @@ fn body(
                             } else {
                                 CellVisual::default()
                             };
+                            let visual = CellVisual { icon: program_icon.clone(), ..visual };
                             paint_grid_cell(ui, &painter, &p, r, e, &st, zoom, visual, style == Style::Gallery);
                         }
-                        Style::List => paint_list_cell(&painter, &p, r, e, &st, false),
-                        Style::Column => paint_list_cell(&painter, &p, r, e, &st, true),
+                        Style::List => paint_list_cell(&painter, &p, r, e, &st, false, icon),
+                        Style::Column => paint_list_cell(&painter, &p, r, e, &st, true, icon),
                     }
                     crate::ui::ai::touch::paint(&painter, &p, r, &e.path, v.config.appearance.reduced_motion);
                 }
@@ -593,6 +607,7 @@ fn paint_details_row(
     cols: &[ColGeom],
     origin_x: f32,
     v: &ViewCtx<'_>,
+    program_icon: Option<&Tex>,
 ) {
     if !painter.clip_rect().intersects(r) {
         return;
@@ -622,7 +637,9 @@ fn paint_details_row(
                 }
                 x = x0 + 8.0 + CHECK + 10.0;
             }
-            if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
+            if let Some(t) = program_icon {
+                paint_program_icon(painter, pos2(x + 8.0, cy), ROW_ICON, t, a);
+            } else if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
                 let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
                 painter.text(
                     pos2(x + 8.0, cy),
@@ -677,6 +694,8 @@ struct CellVisual {
     mosaic: Option<Tex>,
     /// Video duration.
     label: Option<String>,
+    /// The program's own icon, drawn instead of the glyph.
+    icon: Option<Tex>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -719,14 +738,17 @@ fn paint_grid_cell(
             let font = ticons::font_fill(zoom * if e.is_dir_like() { 0.86 } else { 0.8 });
             let color = icons::color(e, p);
             let size = zoom * if e.is_dir_like() { 0.92 } else { 0.86 };
-            if !super::icon_pack::paint(painter, icon_box.center(), size, e, p, a) {
+            if let Some(t) = &visual.icon {
+                paint_program_icon(painter, icon_box.center(), size, t, a);
+            } else if !super::icon_pack::paint(painter, icon_box.center(), size, e, p, a) {
                 painter.text(icon_box.center(), Align2::CENTER_CENTER, g, font, color.gamma_multiply(a));
             }
             if let Some(m) = &visual.mosaic {
                 paint_folder_mosaic(ui, painter, p, icon_box, m, color, a);
             } else if e.is_dir_like() {
                 crate::ui::looks::paint_emblem(painter, &e.path, icon_box.center(), zoom * 0.86, color, a);
-            } else if crate::ui::looks::extension_badges()
+            } else if visual.icon.is_none()
+                && crate::ui::looks::extension_badges()
                 && let Some(label) = icons::badge_label(e)
             {
                 let tint = if icons::classify(e) == icons::FileClass::Other { p.text_tertiary } else { color };
@@ -756,6 +778,23 @@ fn paint_grid_cell(
     paint_hidden_badge(painter, p, pos2(icon_box.left() + 2.0, icon_box.top() + 8.0), &e.name);
 }
 
+/// Edge of the file icon in the details / list / column rows (points).
+pub(crate) const ROW_ICON: f32 = 18.0;
+
+/// A program's own icon (`thumbs::get_program_icon`) fitted into a `size` square centered
+/// on `center`. Drawn pixel for pixel (snapped to the pixel grid) when its texture was
+/// made for this size, so small icons stay crisp.
+pub(crate) fn paint_program_icon(painter: &Painter, center: Pos2, size: f32, tex: &Tex, a: f32) {
+    let ppp = painter.ctx().pixels_per_point();
+    let px = tex.size_vec2();
+    let scale = (size * ppp / px.x).min(size * ppp / px.y).min(1.0);
+    let wh = px * scale / ppp;
+    let min = ((center.to_vec2() - wh / 2.0) * ppp).round() / ppp;
+    let rect = Rect::from_min_size(min.to_pos2(), wh);
+    let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+    painter.image(tex.id(), rect, uv, Color32::WHITE.gamma_multiply(a));
+}
+
 /// A folder mosaic set into the body of the folder glyph drawn in `icon_box`.
 fn paint_folder_mosaic(ui: &Ui, painter: &Painter, p: &Palette, icon_box: Rect, tex: &Tex, folder: Color32, a: f32) {
     let z = icon_box.width();
@@ -773,7 +812,15 @@ fn paint_folder_mosaic(ui: &Ui, painter: &Painter, p: &Palette, icon_box: Rect, 
     painter.rect_stroke(body, rounding, Stroke::new(1.0, p.border_subtle.gamma_multiply(0.6)), StrokeKind::Outside);
 }
 
-fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &ItemState, miller: bool) {
+fn paint_list_cell(
+    painter: &Painter,
+    p: &Palette,
+    r: Rect,
+    e: &EntryInfo,
+    st: &ItemState,
+    miller: bool,
+    program_icon: Option<&Tex>,
+) {
     if !painter.clip_rect().intersects(r) {
         return;
     }
@@ -788,7 +835,9 @@ fn paint_list_cell(painter: &Painter, p: &Palette, r: Rect, e: &EntryInfo, st: &
             x = cb.right() + 6.0;
         }
     }
-    if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
+    if let Some(t) = program_icon {
+        paint_program_icon(painter, pos2(x + 8.0, cy), ROW_ICON, t, a);
+    } else if !super::icon_pack::paint(painter, pos2(x + 8.0, cy), 18.0, e, p, a) {
         let glyph_font = if e.is_dir_like() { ticons::font_fill(16.0) } else { ticons::font(16.0) };
         painter.text(
             pos2(x + 8.0, cy),

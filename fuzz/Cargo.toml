@@ -34,6 +34,13 @@ soyuz-appcore = { path = "../crates/soyuz-appcore", default-features = false }
 debug = 1
 
 [[bin]]
+name = "exe_icon"
+path = "fuzz_targets/exe_icon.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "lnk"
 path = "fuzz_targets/lnk.rs"
 test = false

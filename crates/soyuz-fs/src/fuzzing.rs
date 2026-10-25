@@ -8,6 +8,16 @@ pub fn lnk(data: &[u8]) {
     }
 }
 
+/// PE resource parser for program icons, at a small and a large size; a returned icon
+/// is a one-image `.ico` file.
+pub fn exe_icon(data: &[u8]) {
+    for px in [16, 256] {
+        if let Some(ico) = crate::exe_icon::icon_from(&mut std::io::Cursor::new(data), px) {
+            assert_eq!(&ico[..6], &[0, 0, 1, 0, 1, 0], "one-image ICO header");
+        }
+    }
+}
+
 /// `$Recycle.Bin` `$I` record parser (v1 / v2); a parsed record re-encodes to a record
 /// that parses to the same fields.
 pub fn recycle_i(data: &[u8]) {

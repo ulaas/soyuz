@@ -425,12 +425,14 @@ pub fn safe_mode() -> bool {
 }
 
 /// The configuration used in safe mode: the defaults, with session restore, folder
-/// watching, thumbnails, git status, the preview pane and the custom title bar off.
+/// watching, thumbnails, program icons, git status, the preview pane and the custom
+/// title bar off.
 pub fn safe_config() -> Config {
     let mut c = Config::default();
     c.behaviour.restore_session = false;
     c.behaviour.auto_refresh = false;
     c.appearance.show_thumbnails = false;
+    c.appearance.program_icons = false;
     c.git.status_column = false;
     c.layout.preview_pane = false;
     c.appearance.custom_titlebar = false;
@@ -767,7 +769,7 @@ mod tests {
     fn safe_config_turns_things_off() {
         let c = safe_config();
         assert!(!c.behaviour.restore_session && !c.behaviour.auto_refresh);
-        assert!(!c.appearance.show_thumbnails && !c.git.status_column);
+        assert!(!c.appearance.show_thumbnails && !c.appearance.program_icons && !c.git.status_column);
         assert_eq!(c.general, Config::default().general);
     }
 }

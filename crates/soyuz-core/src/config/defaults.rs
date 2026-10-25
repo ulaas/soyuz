@@ -114,6 +114,7 @@ impl Default for Appearance {
             folder_thumbnails: true,
             video_thumbnails: true,
             pdf_thumbnails: true,
+            program_icons: true,
             os_thumbnail_cache: true,
             write_os_thumbnails: true,
             icon_pack: String::new(),

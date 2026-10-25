@@ -301,6 +301,9 @@ Media* (`[media]`, see [CONFIG.md](CONFIG.md#media)).
 
 ### Previews and thumbnails
 
+- **Program icons** (`[appearance] program_icons`): programs (`.exe`, `.scr`) show their
+  own icon in every file view, read straight from the program file (nothing in it runs).
+  Programs without an icon keep the generic one.
 - **Video** (`[preview] video`): the preview pane and Quick Look list the streams (codec
   and profile, size, frame rate, pixel format, HDR, rotation, audio codec / channels /
   rate, bitrates), chapters and tags. They also show a poster frame taken at
@@ -659,7 +662,7 @@ Search the settings with `Ctrl+F` inside the window.
   (trackpad and touch: lists coast after a flick and stretch at the ends; reduced motion
   turns both off), high contrast, colour emoji (the system's colour emoji font, or a
   monochrome symbol font when off), icons and thumbnails
-  (icon pack, extension badges, folder mosaics, video keyframes through the FFmpeg
+  (icon pack, extension badges, program icons, folder mosaics, video keyframes through the FFmpeg
   libraries, PDF first pages through pdfium, the on-disk thumbnail cache). **Import theme…** / **Export current…**
   share theme files.
 - *Icon packs*: *Appearance → Icon pack* switches between the built-in glyphs, the built-in

@@ -12,6 +12,7 @@ use super::flow::{self, Style};
 use super::icons;
 use crate::cmd::Cmd;
 use crate::services::AuxState;
+use crate::services::thumbs;
 use crate::state::pane::Pane;
 use crate::theme::{icons as ticons, icons::ph, palette};
 use crate::ui::widgets::{spinner, trunc_galley};
@@ -130,7 +131,16 @@ fn aux_column(
                 ui.painter().rect_filled(r, CornerRadius::same(6), p.bg_surface2);
             }
             let a = if dim { 0.75 } else { 1.0 } * if e.is_hidden() { 0.6 } else { 1.0 };
-            if !super::icon_pack::paint(ui.painter(), pos2(r.left() + 14.0, r.center().y), 17.0, e, &p, a) {
+            let program_icon = if thumbs::has_program_icon(&e.path) {
+                let px = thumbs::icon_px(17.0, ui.ctx().pixels_per_point());
+                let key = thumbs::ThumbKey { path: e.path.clone(), mtime: e.modified, size: e.size, px };
+                v.services.thumbs.get_program_icon(&key)
+            } else {
+                None
+            };
+            if let Some(t) = &program_icon {
+                flow::paint_program_icon(ui.painter(), pos2(r.left() + 14.0, r.center().y), 17.0, t, a);
+            } else if !super::icon_pack::paint(ui.painter(), pos2(r.left() + 14.0, r.center().y), 17.0, e, &p, a) {
                 let gf = if e.is_dir_like() { ticons::font_fill(15.0) } else { ticons::font(15.0) };
                 ui.painter().text(
                     pos2(r.left() + 14.0, r.center().y),

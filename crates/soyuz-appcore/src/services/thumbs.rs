@@ -10,7 +10,8 @@
 //!
 //! Besides pictures, workers make video thumbnails (the FFmpeg libraries, `thumb_video`;
 //! without them a duration label only), PDF first pages (pdfium, when the library is found; otherwise PDFs
-//! keep their icon) and folder mosaics (`thumb_folder`); every decoded result also goes
+//! keep their icon), folder mosaics (`thumb_folder`) and program icons (the icon in an
+//! `.exe`'s resources, `soyuz_fs::exe_icon`); every decoded result also goes
 //! through the on-disk cache (`thumb_disk`) so it survives restarts. On Linux / BSD,
 //! pictures, video frames and PDF pages Soyuz makes itself are also written to the shared
 //! freedesktop cache (`[appearance] write_os_thumbnails`, [`set_write_os_cache`]).
@@ -155,6 +156,27 @@ pub fn set_pdf(on: bool, pdfium_dir: &str) {
     }
 }
 
+/// `[appearance] program_icons` (read by the views and the workers).
+static PROGRAM_ICONS: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+
+/// Programs show the icon from their own resources (`[appearance] program_icons`).
+pub fn set_program_icons(on: bool) {
+    PROGRAM_ICONS.store(on, Ordering::Relaxed);
+}
+
+/// A file whose own icon is drawn instead of its glyph (when it has one): `.exe` / `.scr`
+/// with `[appearance] program_icons` on.
+pub fn has_program_icon(path: &Path) -> bool {
+    PROGRAM_ICONS.load(Ordering::Relaxed) && soyuz_fs::exe_icon::has_icon_ext(path)
+}
+
+/// Pixel size of a program icon drawn `points` wide: exact (not bucketed) up to 64 px,
+/// so the image made for that size is picked and the list rows stay crisp.
+pub fn icon_px(points: f32, pixels_per_point: f32) -> u32 {
+    let px = (points * pixels_per_point).ceil() as u32;
+    if px <= 64 { px.max(16) } else { bucket(points, pixels_per_point) }
+}
+
 /// `[appearance] os_thumbnail_cache` (read by the workers).
 static OS_CACHE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
@@ -277,6 +299,12 @@ impl Thumbs {
     /// folder's mtime, so adding files refreshes it).
     pub fn get_folder(&self, key: &ThumbKey) -> Option<Tex> {
         self.request(key, Kind::Folder).0
+    }
+
+    /// The icon in the program `key.path` (see [`has_program_icon`]); `None` while it
+    /// loads or when the program has none (its glyph stays).
+    pub fn get_program_icon(&self, key: &ThumbKey) -> Option<Tex> {
+        self.request(key, Kind::ProgramIcon).0
     }
 
     fn request(&self, key: &ThumbKey, kind: Kind) -> (Option<Tex>, Option<String>) {
@@ -494,7 +522,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
     }
     // The OS cache (Explorer's / freedesktop, read-only): no decode, and videos / PDFs
     // get a picture even without the FFmpeg libraries / pdfium.
-    if kind != Kind::Folder
+    if !matches!(kind, Kind::Folder | Kind::ProgramIcon)
         && OS_CACHE.load(Ordering::Relaxed)
         && let Some(img) = os_cached(key)
     {
@@ -512,6 +540,7 @@ fn produce(key: &ThumbKey, kind: Kind) -> (Option<RgbaImage>, Option<String>) {
         Kind::Image => decode(key),
         Kind::Video => super::thumb_video::frame(&key.path, key.px),
         Kind::Pdf => pdf_first_page(key),
+        Kind::ProgramIcon => program_icon(key),
         Kind::Folder => super::thumb_folder::mosaic(&key.path, key.px, |p, px| {
             let size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(u64::MAX);
             decode(&ThumbKey { path: p.to_path_buf(), mtime: None, size, px })
@@ -541,7 +570,7 @@ fn make_shared(key: &ThumbKey, kind: Kind) -> Option<RgbaImage> {
         }
         Kind::Video => super::thumb_video::frame(&key.path, class_px)?,
         Kind::Pdf => pdf_first_page(&class_key)?,
-        Kind::Folder => return None,
+        Kind::Folder | Kind::ProgramIcon => return None,
     };
     if before.is_some() {
         share_thumb(&key.path, &rgba, class_px, before);
@@ -626,6 +655,19 @@ fn pdf_first_page(key: &ThumbKey) -> Option<RgbaImage> {
 #[cfg(not(feature = "pdf"))]
 fn pdf_first_page(_key: &ThumbKey) -> Option<RgbaImage> {
     None
+}
+
+/// The program's icon image closest to `key.px`, scaled to fit it (Lanczos, so small
+/// icons stay sharp).
+fn program_icon(key: &ThumbKey) -> Option<RgbaImage> {
+    let ico = soyuz_fs::exe_icon::icon(&key.path, key.px)?;
+    let img = image::load_from_memory_with_format(&ico, image::ImageFormat::Ico).ok()?;
+    let img = if img.width() == key.px && img.height() == key.px {
+        img
+    } else {
+        img.resize(key.px, key.px, image::imageops::FilterType::Lanczos3)
+    };
+    Some(img.to_rgba8())
 }
 
 fn decode(key: &ThumbKey) -> Option<RgbaImage> {
@@ -859,6 +901,30 @@ mod tests {
         assert_eq!(label.as_deref(), Some("0:01"));
         set_video_frames(true);
         set_os_cache(true);
+    }
+
+    #[test]
+    fn program_icon_px() {
+        assert_eq!(icon_px(18.0, 1.0), 18);
+        assert_eq!(icon_px(18.0, 1.5), 27);
+        assert_eq!(icon_px(10.0, 1.0), 16);
+        assert_eq!(icon_px(96.0, 1.0), 128);
+        set_program_icons(true);
+        assert!(has_program_icon(Path::new("C:/a/setup.exe")));
+        assert!(!has_program_icon(Path::new("C:/a/notes.txt")));
+    }
+
+    /// A real program of the running system (read-only), decoded at a list-row size.
+    #[cfg(windows)]
+    #[test]
+    fn decodes_a_windows_program_icon() {
+        let Some(root) = std::env::var_os("SystemRoot") else { return };
+        let path = Path::new(&root).join("System32").join("cmd.exe");
+        let Ok(meta) = std::fs::metadata(&path) else { return };
+        let key = ThumbKey { path, mtime: meta.modified().ok(), size: meta.len(), px: 27 };
+        let img = program_icon(&key).expect("cmd.exe icon decodes");
+        assert_eq!((img.width(), img.height()), (27, 27));
+        assert!(img.pixels().any(|p| p.0[3] > 0), "not fully transparent");
     }
 
     #[test]

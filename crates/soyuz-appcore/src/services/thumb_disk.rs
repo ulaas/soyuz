@@ -46,6 +46,8 @@ pub enum Kind {
     Folder,
     /// First page of a PDF (pdfium).
     Pdf,
+    /// The icon in a program's resources (`soyuz_fs::exe_icon`).
+    ProgramIcon,
 }
 
 /// Stable 64-bit FNV-1a (the std hasher is not stable across Rust releases).

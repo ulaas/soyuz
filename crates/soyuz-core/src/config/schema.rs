@@ -229,6 +229,9 @@ pub struct Appearance {
     /// First-page PDF thumbnails through pdfium (when `pdfium.dll` is found, see
     /// `[preview] pdfium_dir`); without it PDFs keep their icon.
     pub pdf_thumbnails: bool,
+    /// Programs (`.exe`, `.scr`) show the icon stored in their own resources instead of
+    /// the generic program glyph, in every file view.
+    pub program_icons: bool,
     /// Reuse the thumbnails the system already made (Windows: Explorer's
     /// `thumbcache_*.db`; Linux: the shared freedesktop cache in `~/.cache/thumbnails`;
     /// read-only) before decoding a file ourselves.
