@@ -29,8 +29,8 @@
 //! program turned mouse reporting on (and Shift is not held) presses, releases, drags and
 //! the wheel go to it (`Terminal::report_mouse`); otherwise left press / drag selects (1, 2,
 //! 3 clicks: characters, words, lines; Shift+click extends), Ctrl+click opens a link (web
-//! links in the browser through `soyuz_fs::launch::open_url`, copied with a toast where no
-//! opener exists — Windows, SSH —; paths in a pane: `models::terminal::open_path_link`), the
+//! links in the browser through `models::terminal::open_web_link`, copied with a toast over
+//! SSH; paths in a pane: `models::terminal::open_path_link`), the
 //! wheel scrolls the scrollback (arrow keys in the alternate screen with alternate scroll).
 //! While the pane has the keyboard (or a selection drag runs) it captures the mouse: a
 //! press anywhere else gives the keyboard back and goes on to its target.
@@ -493,25 +493,13 @@ fn open_link(app: &mut App, url: &str, base: Option<&std::path::Path>) {
         term::open_path_link(&mut app.core, url, base);
         return;
     }
-    // Windows: `open_url` handles file: URLs only; over SSH the browser would open on
-    // the remote machine.
-    if cfg!(windows) || crate::clipboard::Env::detect().ssh {
+    // Over SSH the browser would open on the remote machine.
+    if crate::clipboard::Env::detect().ssh {
         app.host.copy_text(url.to_string());
         app.core.ui.toasts.push(Toast::info(tr!("tui-terminal-link-copied")).body(crate::dialog::safe(url)));
         return;
     }
-    let postman = app.core.services.mailbox.postman();
-    let url = url.to_string();
-    let spawned = std::thread::Builder::new().name("soyuz-tui-link".into()).spawn(move || {
-        if let Err(e) = soyuz_fs::launch::open_url(&url) {
-            postman.send(soyuz_appcore::services::mailbox::UiMsg::Notice(
-                Toast::error(tr!("panels-terminal-link-failed")).body(format!("{url}\n{e}")),
-            ));
-        }
-    });
-    if let Err(e) = spawned {
-        app.core.ui.toasts.push(Toast::error(tr!("panels-terminal-link-failed")).body(e.to_string()));
-    }
+    term::open_web_link(&mut app.core, url);
 }
 
 /// While `true`, every mouse event goes to [`on_mouse`] wherever it is (a drag that

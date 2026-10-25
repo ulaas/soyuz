@@ -614,6 +614,24 @@ pub fn is_web_link(url: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://") || lower.starts_with("mailto:")
 }
 
+/// Ctrl+click on a web link ([`is_web_link`]): the browser / mail program registered for
+/// its scheme, started on a worker thread (`soyuz_fs::launch::open_url`; registry or MIME
+/// lookups and a process spawn stay off the UI thread). Failures come back as a toast.
+pub fn open_web_link(app: &mut AppCore, url: &str) {
+    let postman = app.services.mailbox.postman();
+    let url = url.to_string();
+    let spawned = std::thread::Builder::new().name("soyuz-link".into()).spawn(move || {
+        if let Err(e) = soyuz_fs::launch::open_url(&url) {
+            postman.send(crate::services::mailbox::UiMsg::Notice(
+                Toast::error(tr!("panels-terminal-link-failed")).body(format!("{url}\n{e}")),
+            ));
+        }
+    });
+    if let Err(e) = spawned {
+        app.ui.toasts.push(Toast::error(tr!("panels-terminal-link-failed")).body(e.to_string()));
+    }
+}
+
 /// Ctrl+click on a path link: folders open in the pane, files with the default app.
 /// Relative paths resolve against the session's working directory (not the app's), and
 /// executables are revealed rather than run: terminal output is untrusted text.

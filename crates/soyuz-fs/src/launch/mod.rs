@@ -113,8 +113,8 @@ pub fn run_binary(path: &Path) -> FsResult<()> {
 
 /// Open a URL (`https:`, `mailto:`, `file:` …) with the application registered for its
 /// scheme. Linux / BSD: `x-scheme-handler/<scheme>` (the OpenURI portal when sandboxed);
-/// macOS: LaunchServices; Windows: `file:` URLs only (other schemes go through the app's
-/// own URL opener there).
+/// macOS: LaunchServices; Windows: `file:` URLs open the file with its default app, other
+/// schemes start the program registered for them (the user's choice, then `HKCR\<scheme>`).
 pub fn open_url(url: &str) -> FsResult<()> {
     #[cfg(not(any(windows, target_os = "macos")))]
     {
@@ -128,7 +128,7 @@ pub fn open_url(url: &str) -> FsResult<()> {
     {
         match url.strip_prefix("file:///") {
             Some(rest) => open_default(&linux::uri::path_from_bytes(linux::uri::percent_decode(rest))),
-            None => Err(err::unsupported("open", Path::new(url), "only file: URLs are opened here")),
+            None => windows::open_url(url, Path::new(url)),
         }
     }
 }

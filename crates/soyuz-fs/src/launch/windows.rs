@@ -236,8 +236,11 @@ pub(crate) fn split_command(cmd: &str) -> (String, String) {
 }
 
 /// Expand `%1 %L %0 %V` (file), `%W` (its directory), drop `%* %I %D %H` and other `%n`;
-/// `%%` → `%`. The file is quoted unless the placeholder already sits inside quotes. When no
-/// file placeholder occurs, ` "file"` is appended.
+/// `%%` → `%`. The file is quoted unless the placeholder already sits inside quotes, or
+/// follows Chromium's `--single-argument` (Chrome / Edge register
+/// `chrome.exe --single-argument %1`: everything after the switch is one verbatim argument,
+/// so quotes would become part of the address, `http://"c/Users/…"`). When no file
+/// placeholder occurs, ` "file"` is appended.
 pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
     let f = file.to_string_lossy();
     let dir = file.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
@@ -259,7 +262,8 @@ pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
             out.push('%');
             break;
         };
-        let quoted = |s: &str| if in_quotes { s.to_string() } else { format!("\"{s}\"") };
+        let verbatim = in_quotes || out.to_ascii_lowercase().contains(SINGLE_ARGUMENT);
+        let quoted = |s: &str| if verbatim { s.to_string() } else { format!("\"{s}\"") };
         match n {
             '1' | 'L' | 'l' | '0' | 'V' | 'v' => {
                 it.next();
@@ -288,6 +292,15 @@ pub(crate) fn expand_args(rest: &str, file: &Path) -> String {
         s.push_str(&format!("\"{f}\""));
     }
     s
+}
+
+/// Chromium's switch that takes the rest of the command line as one verbatim argument.
+const SINGLE_ARGUMENT: &str = "--single-argument";
+
+/// A URL that can go into a registry command line as is: quotes, controls and line
+/// breaks could end the argument and smuggle in others.
+pub(crate) fn url_is_safe(url: &str) -> bool {
+    !url.is_empty() && !url.chars().any(|c| c == '"' || c.is_control())
 }
 
 /// The file name of `exe` without its extension. Split by hand on both separators: registry
@@ -547,7 +560,10 @@ mod imp {
     }
 
     /// Open `url` with the handler registered for its scheme.
-    fn open_url(url: &str, path: &Path) -> FsResult<()> {
+    pub(crate) fn open_url(url: &str, path: &Path) -> FsResult<()> {
+        if !super::url_is_safe(url) {
+            return Err(FsError::with_message(FsErrorKind::InvalidName, "open", Some(path), "not a valid URL"));
+        }
         let Some(scheme) = super::url_scheme(url) else {
             return Err(FsError::with_message(FsErrorKind::InvalidName, "open", Some(path), "not a valid URL"));
         };
@@ -609,7 +625,7 @@ mod imp {
             "url" => {
                 let text = std::fs::read_to_string(&p).unwrap_or_default();
                 match text.lines().find_map(|l| l.trim().strip_prefix("URL=")) {
-                    Some(url) if !url.contains(['"', '\r', '\n']) => open_url(url.trim(), path),
+                    Some(url) if super::url_is_safe(url.trim()) => open_url(url.trim(), path),
                     _ => {
                         Err(FsError::with_message(FsErrorKind::Corrupt, "open", Some(path), "no URL in this shortcut"))
                     }
@@ -854,6 +870,13 @@ mod tests {
     #[test]
     fn url_scheme_association() {
         assert_eq!(url_scheme("https://example.com/a").as_deref(), Some("https"));
+        let url = Path::new("https://example.com/a?b=c&d=e");
+        assert_eq!(expand_args("--single-argument %1", url), "--single-argument https://example.com/a?b=c&d=e");
+        assert_eq!(expand_args(r#"-osint -url "%1""#, url), r#"-osint -url "https://example.com/a?b=c&d=e""#);
+        assert!(url_is_safe("https://example.com/a b"));
+        assert!(!url_is_safe("https://x\" --evil"));
+        assert!(!url_is_safe("https://x\r\ny"));
+        assert!(!url_is_safe(""));
         assert_eq!(url_scheme("MAILTO:x@y").as_deref(), Some("mailto"));
         assert_eq!(url_scheme(r"C:\dir\file.txt"), None, "a drive letter is not a scheme");
         assert_eq!(url_scheme("no scheme"), None);
@@ -894,6 +917,9 @@ mod tests {
         assert_eq!(expand_args("-x", f), r#"-x "C:\My Docs\a b.txt""#);
         assert_eq!(expand_args("", f), r#""C:\My Docs\a b.txt""#);
         assert_eq!(expand_args("100%% %1", f), r#"100% "C:\My Docs\a b.txt""#);
+        // Chrome / Edge: `--single-argument %1` takes the rest verbatim, so no quotes.
+        assert_eq!(expand_args("--single-argument %1", f), r"--single-argument C:\My Docs\a b.txt");
+        assert_eq!(expand_args("--Single-Argument %1", f), r"--Single-Argument C:\My Docs\a b.txt");
     }
 
     // Windows paths (`C:\…` parents, drive-absolute) only parse as such on Windows.

@@ -431,7 +431,7 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
         unfocus(&mut app.core);
     }
     if let Some(url) = link {
-        open_link(app, &ctx, &url, link_base.as_deref());
+        open_link(app, &url, link_base.as_deref());
     }
 
     if let Some(id) = to_activate {
@@ -451,9 +451,9 @@ pub fn body(ui: &mut Ui, rect: Rect, app: &mut SoyuzApp) {
 
 /// Ctrl+click on a link: URLs go to the browser, paths open in the pane / default app
 /// (see [`open_path_link`]).
-fn open_link(app: &mut SoyuzApp, ctx: &egui::Context, url: &str, base: Option<&Path>) {
+fn open_link(app: &mut SoyuzApp, url: &str, base: Option<&Path>) {
     if is_web_link(url) {
-        ctx.open_url(egui::OpenUrl::new_tab(url));
+        crate::models::terminal::open_web_link(&mut app.core, url);
         return;
     }
     open_path_link(&mut app.core, url, base);
