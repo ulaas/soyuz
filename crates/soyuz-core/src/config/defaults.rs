@@ -149,6 +149,7 @@ impl Default for WorkspaceConfig {
             tear_off_distance: 48.0,
             close_window_tabs: CloseWindowTabs::Ask,
             restore_windows: true,
+            panels_follow_window: true,
             sync_relative: true,
             history_graph_limit: 200,
             timeline_days: 7,

@@ -9,7 +9,9 @@
 //!
 //! Frame hooks: [`begin_frame`] (services, queued commands, OS drops onto the shelf) runs
 //! before the file-ops frame; [`show_panels`] draws the shelf before the central panel;
-//! [`show_windows`] draws the tool windows over everything.
+//! [`show_windows`] draws the tool windows over everything. The shelf and the tool
+//! windows are shared by every window and draw in the one that owns them
+//! (`models::owners`: the window they were opened from).
 
 pub mod compare;
 pub mod decor;
@@ -81,8 +83,11 @@ thread_local! {
 pub fn begin_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     versions::begin_frame(app);
     crate::models::tools::debug_open_once();
-    let cmds = crate::models::tools::take_queue();
-    TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
+    let cmds = crate::models::tools::take_queue_for(&mut app.core);
+    // OS drops reach the main window only (its viewport is this frame's input).
+    if crate::models::owners::owner(&app.core, crate::models::owners::Panel::Shelf).is_main() {
+        TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.external_drops(ctx, d)));
+    }
     // Config edits, tags and version actions run outside the tools borrow (they touch
     // many modules); the rest open tool windows.
     let cmds = crate::models::tools::apply_model_cmds(&mut app.core, &crate::host::EguiHost::new(ctx), cmds);
@@ -233,11 +238,20 @@ pub fn show_windows(ctx: &egui::Context, app: &mut SoyuzApp) {
             t.share = None;
         }
     }
-    crate::models::tools::with_shelf(|d| t.shelf.drag_strip(ctx, d));
     TOOLS.with_borrow_mut(|slot| {
         restore(slot, t);
         crate::models::tools::set_window_open(slot.window_open());
     });
+}
+
+/// The strip to drop a drag onto the closed shelf (in the focused window, where the drag
+/// is); a drop opens the shelf in this window.
+pub fn drag_strip(ctx: &egui::Context, app: &mut SoyuzApp) {
+    let was = shelf_open();
+    TOOLS.with_borrow_mut(|t| crate::models::tools::with_shelf(|d| t.shelf.drag_strip(ctx, d)));
+    if !was && shelf_open() {
+        crate::models::owners::claim(&mut app.core, crate::models::owners::Panel::Shelf);
+    }
 }
 
 /// Put the taken state back, keeping anything created meanwhile (defensive: nothing

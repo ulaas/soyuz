@@ -107,6 +107,9 @@ pub struct WorkspacesState {
     /// The main window took over this window (`WinOp::Close` of the main window): the
     /// frontend moves what it keeps per window (the rendered preview) to the main window.
     pub promoted: Option<WindowId>,
+    /// The windows of the shared panels (editors, assistant, shelf, tool windows):
+    /// `models::owners`.
+    pub panels: super::owners::Owners,
 }
 
 impl WorkspacesState {
@@ -128,6 +131,7 @@ impl WorkspacesState {
             restore: Vec::new(),
             player_window: WindowId::MAIN,
             promoted: None,
+            panels: Default::default(),
         }
     }
 
@@ -182,7 +186,8 @@ pub fn overlays_here(app: &AppCore) -> bool {
         || !app.workspaces.windows.iter().any(|w| w.id == app.workspaces.owner) && app.workspaces.current.is_main()
 }
 
-/// This frame draws the main window (main-only panels: assistant, editors, tool panels).
+/// This frame draws the main window (the shared panels draw in their own window,
+/// `models::owners`; per-process pumps run in the main window's frame).
 pub fn main_frame(app: &AppCore) -> bool {
     app.workspaces.current.is_main()
 }

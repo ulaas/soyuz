@@ -24,10 +24,17 @@ fn set_focus_ids(ctx: &egui::Context, ids: Vec<Id>) {
     ctx.data_mut(|d| d.insert_temp(focus_ids_key(), ids));
 }
 
-/// The docked panel (call from the shell before the central panel).
+/// The docked panel (call from the shell before the central panel, in every window): the
+/// documents' I/O results are applied in the main window's frame, the panel draws in the
+/// window that owns it (`models::owners`).
 pub fn show(ui: &mut egui::Ui, app: &mut SoyuzApp) {
     let ctx = ui.ctx().clone();
-    crate::editors::pump(&mut app.core, &crate::host::EguiHost::new(&ctx));
+    if crate::models::workspaces::main_frame(&app.core) {
+        crate::editors::pump(&mut app.core, &crate::host::EguiHost::new(&ctx));
+    }
+    if !crate::models::owners::here(&app.core, crate::models::owners::Panel::Editors) {
+        return;
+    }
     if !app.core.editors.open || app.core.editors.maximized {
         if !app.core.editors.open {
             set_focus_ids(&ctx, Vec::new());
@@ -42,9 +49,11 @@ pub fn show_central(ui: &mut egui::Ui, rect: egui::Rect, app: &mut SoyuzApp) {
     panel::card(ui, rect, app);
 }
 
-/// A widget of the editor has keyboard focus.
+/// A widget of the editor has keyboard focus (in the window showing the editor: one that
+/// showed it before never keeps its keys).
 pub fn owns_keyboard(app: &SoyuzApp, ctx: &egui::Context) -> bool {
     app.core.editors.open
+        && crate::models::owners::here(&app.core, crate::models::owners::Panel::Editors)
         && ctx
             .memory(|m| m.focused())
             .is_some_and(|f| ctx.data(|d| d.get_temp::<Vec<Id>>(focus_ids_key())).is_some_and(|ids| ids.contains(&f)))

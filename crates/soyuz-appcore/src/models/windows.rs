@@ -5,8 +5,9 @@
 //! ([`with_window`]), so the whole app logic runs unchanged. Jobs, services, settings,
 //! the configuration, the terminal sessions and the media player are shared (terminal
 //! sessions belong to a tab or a window, `models::terminal::Owner`; the player shows in
-//! one window, [`player_here`]). The GUI draws each extra window as a viewport
-//! (`ui::workspaces::windows`).
+//! one window, [`player_here`]; the editors, the assistant, the shelf and the tool windows
+//! show in the window that owns them, `models::owners`). The GUI draws each extra window
+//! as a viewport (`ui::workspaces::windows`).
 //!
 //! Routing: mailbox / watcher messages for a pane run in the window holding it
 //! ([`with_pane_window`]); requests from outside (FileManager1, `soyuz open`, a second
@@ -181,6 +182,7 @@ pub fn swap(app: &mut AppCore, k: usize) {
 fn set_current(app: &mut AppCore, id: WindowId) {
     app.workspaces.current = id;
     app.fileops.jobs.window = id;
+    super::owners::note_current(id);
 }
 
 /// What [`swap_to`] did, for [`swap_back`] (frontends that need more than `&mut AppCore`
@@ -465,6 +467,8 @@ fn promote(app: &mut AppCore, host: &dyn Host, k: usize) {
     // Its shared terminal sessions are the main window's now.
     app.ui.terminal.rekey_window(w.id, WindowId::MAIN);
     app.workspaces.promoted = Some(w.id);
+    // Its shared panels (editors, assistant…) stay in it: it is the main window now.
+    app.workspaces.panels.hand_over(w.id, WindowId::MAIN);
     if app.workspaces.player_window == w.id {
         app.workspaces.player_window = WindowId::MAIN;
     }
@@ -508,6 +512,8 @@ fn close_window(app: &mut AppCore, host: &dyn Host, id: WindowId, merge: bool) {
             dispose_workspace(app, &mut w.ws);
             app.ui.terminal.drop_window(id);
         }
+        // Its shared panels go to the main window (unsaved documents move along).
+        app.workspaces.panels.hand_over(id, WindowId::MAIN);
     }
     app.workspaces.geoms.retain(|g| g.id.is_main() || g.id != id);
     if app.workspaces.owner == id || index(app, app.workspaces.owner).is_none() {
@@ -564,6 +570,7 @@ pub fn apply_ops(app: &mut AppCore, host: &dyn Host, screen: &Screen) {
                 }
                 // The window's shared terminal sessions go with its last tab.
                 app.ui.terminal.rekey_window(from, to);
+                app.workspaces.panels.hand_over(from, to);
                 if app.workspaces.owner == from {
                     app.workspaces.owner = WindowId::MAIN;
                 }
@@ -597,6 +604,7 @@ fn merge_into(app: &mut AppCore, host: &dyn Host, into: WindowId) {
     for mut w in others {
         move_all(&mut w.ws, &mut app.ws);
         app.ui.terminal.rekey_window(w.id, WindowId::MAIN);
+        app.workspaces.panels.hand_over(w.id, WindowId::MAIN);
     }
     app.workspaces.owner = WindowId::MAIN;
     app.workspaces.geoms.retain(|g| g.id.is_main());
@@ -704,6 +712,7 @@ pub fn session_windows(app: &AppCore) -> Vec<WindowSession> {
             s.maximized = w.maximized;
             s.preview = Some(PanelSession { open: w.ui.preview.open, size: w.ui.preview.width });
             s.bottom = Some(PanelSession { open: w.ui.bottom.open, size: w.ui.bottom.height });
+            s.editors = app.workspaces.panels.editors == w.id && !app.editors.docs.is_empty();
             s
         })
         .collect()
@@ -727,6 +736,9 @@ fn restore_window(app: &mut AppCore, host: &dyn Host, screen: &Screen, s: &Windo
     let id = create_window(app, host, screen, ws, pos, size, s.maximized);
     if let Some(k) = index(app, id) {
         restore_panels(&mut app.workspaces.windows[k].ui, s);
+    }
+    if s.editors && app.config.workspace.panels_follow_window {
+        app.workspaces.panels.editors = id;
     }
 }
 
@@ -834,6 +846,7 @@ mod tests {
         app.pump_services(host);
         app.pump_jobs(host);
         app.pump_background(host);
+        crate::editors::pump(app, host);
         app.apply_cmds(host);
         // Every window draws its panes (the GUI does this in each window's frame).
         for_each_window(app, |app| app.prepare_visible_panes());
@@ -967,6 +980,102 @@ mod tests {
         assert_eq!(app.ui.terminal.visible_ids(Owner::Window(w)).len(), 1, "`w` keeps its session");
     }
 
+    /// The shared panels (S3c): editors, assistant, shelf and tool windows show in the
+    /// window they were opened from, move to a window that invokes them, take keys only
+    /// there, and go to the main window when theirs closes (unsaved documents move along).
+    fn shared_panels_per_window(app: &mut AppCore, host: &crate::host::NullHost, w: WindowId, sub: &std::path::Path) {
+        use soyuz_core::config::Action;
+
+        use crate::models::owners::{self, Panel};
+        let here_in =
+            |app: &mut AppCore, id: WindowId, p: Panel| with_window(app, id, |app| owners::here(app, p)).unwrap();
+        // Editors: opened in `w`, shown (and keyed) there only.
+        with_window(app, w, |app| crate::editors::open_path(app, &sub.join("c.txt"), crate::editors::io::Want::Auto));
+        assert_eq!(owners::owner(app, Panel::Editors), w);
+        assert!(here_in(app, w, Panel::Editors) && !owners::here(app, Panel::Editors));
+        settle(app, host, "the document", |a| {
+            matches!(a.editors.docs.first().map(|d| &d.kind), Some(crate::editors::DocKind::Text(_)))
+        });
+        // Toggling in the main window brings it over instead of closing it; again closes it.
+        crate::editors::execute(app, Action::ToggleEditorPanel);
+        assert!(app.editors.open && owners::here(app, Panel::Editors) && !here_in(app, w, Panel::Editors));
+        crate::editors::execute(app, Action::ToggleEditorPanel);
+        assert!(!app.editors.open);
+        with_window(app, w, |app| crate::editors::execute(app, Action::FocusEditor));
+        assert!(app.editors.open && owners::owner(app, Panel::Editors) == w);
+
+        // The assistant: toggled in `w`; focus mode in the main window leaves it alone,
+        // focus mode in `w` hides it and brings it back there.
+        let toggle_ai = |app: &mut AppCore| crate::ai::state::execute_action(app, Action::ToggleAiPanel, host);
+        with_window(app, w, toggle_ai);
+        assert!(app.ai.panel.open && owners::owner(app, Panel::Assistant) == w);
+        app.config.layout.focus_mode_hides.push("ai_panel".into());
+        crate::models::focus_mode::toggle(app);
+        assert!(app.ai.panel.open, "not hidden by another window's focus mode");
+        crate::models::focus_mode::toggle(app);
+        with_window(app, w, |app| {
+            crate::models::focus_mode::toggle(app);
+            assert!(!app.ai.panel.open);
+            crate::models::focus_mode::toggle(app);
+            assert!(app.ai.panel.open && owners::here(app, Panel::Assistant));
+        });
+        // From outside a window (an MCP request), an open panel stays where it is.
+        crate::ai::state::show_mcp_requests(app);
+        assert_eq!(owners::owner(app, Panel::Assistant), w);
+        with_window(app, w, toggle_ai);
+        assert!(!app.ai.panel.open);
+        // `[workspace] panels_follow_window = false`: always the main window, and a toggle
+        // anywhere closes it.
+        app.config.workspace.panels_follow_window = false;
+        with_window(app, w, toggle_ai);
+        assert!(app.ai.panel.open && owners::owner(app, Panel::Assistant) == WindowId::MAIN);
+        with_window(app, w, toggle_ai);
+        assert!(!app.ai.panel.open);
+        app.config.workspace.panels_follow_window = true;
+
+        // The shelf and the tool windows open in the window they were asked from.
+        with_window(app, w, |app| crate::models::tools::execute(app, Action::ToggleShelf, host));
+        assert!(crate::models::tools::shelf_open() && owners::owner(app, Panel::Shelf) == w);
+        with_window(app, w, |_| crate::models::tools::queue(crate::models::tools::ToolCmd::Treemap(sub.to_path_buf())));
+        let cmds = crate::models::tools::take_queue_for(app);
+        assert!(matches!(cmds.as_slice(), [crate::models::tools::ToolCmd::Treemap(_)]));
+        assert_eq!(owners::owner(app, Panel::Tools), w);
+        crate::models::tools::execute(app, Action::ToggleShelf, host);
+        assert!(crate::models::tools::shelf_open() && owners::owner(app, Panel::Shelf) == WindowId::MAIN, "moved");
+        crate::models::tools::execute(app, Action::ToggleShelf, host);
+        assert!(!crate::models::tools::shelf_open());
+
+        // A third window with an unsaved document closes: the editors go to the main
+        // window, the document stays (and stays unsaved), nothing is asked.
+        open_location(app, Location::Dir(sub.to_path_buf()));
+        apply_ops(app, host, &Screen::default());
+        let w3 = app.workspaces.windows.last().unwrap().id;
+        with_window(app, w3, |app| crate::editors::execute(app, Action::FocusEditor));
+        with_window(app, w3, toggle_ai);
+        assert_eq!(owners::owner(app, Panel::Editors), w3);
+        match &mut app.editors.docs[0].kind {
+            crate::editors::DocKind::Text(t) => t.devscript_type("x"),
+            _ => unreachable!(),
+        }
+        assert_eq!(app.editors.dirty_count(), 1);
+        app.frontend.clear();
+        close(app, w3, false);
+        apply_ops(app, host, &Screen::default());
+        assert!(!exists(app, w3) && app.frontend.is_empty());
+        assert_eq!(app.workspaces.panels.editors, WindowId::MAIN);
+        assert_eq!(app.workspaces.panels.assistant, WindowId::MAIN);
+        assert!(app.editors.open && app.editors.dirty_count() == 1, "the unsaved document moved along");
+        crate::editors::close(app, 0, true);
+        crate::ai::state::execute_action(app, Action::ToggleAiPanel, host);
+        assert!(!app.ai.panel.open);
+
+        // The editors back in `w` for the session / promote checks.
+        with_window(app, w, |app| crate::editors::open_path(app, &sub.join("c.txt"), crate::editors::io::Want::Auto));
+        assert_eq!(owners::owner(app, Panel::Editors), w);
+        app.frontend.clear();
+        app.workspaces.owner = w;
+    }
+
     #[test]
     fn terminal_sessions_follow_their_window() {
         use crate::models::terminal::{Owner, Session, TerminalPanel, TerminalWindowUi};
@@ -1071,6 +1180,7 @@ mod tests {
         });
 
         terminal_per_window(&mut app, &host, w, &sub);
+        shared_panels_per_window(&mut app, &host, w, &sub);
 
         // A search in the secondary window streams there (the pump sees every window).
         with_window(&mut app, w, |app| {
@@ -1124,6 +1234,7 @@ mod tests {
         let s = session_windows(&app);
         assert_eq!(s[0].preview, Some(PanelSession { open: true, size: 500.0 }));
         assert_eq!(s[0].bottom, Some(PanelSession { open: true, size: 333.0 }));
+        assert!(s[0].editors, "the editors' window");
         let back: WindowSession = toml::from_str(&toml::to_string(&s[0]).unwrap()).unwrap();
         assert_eq!(back, s[0]);
         app.workspaces.restore = vec![back];
@@ -1132,6 +1243,8 @@ mod tests {
         let ui = &win(&app, w2).ui;
         assert!(ui.preview.open && ui.preview.width == 500.0);
         assert!(ui.bottom.open && ui.bottom.height == 333.0 && !ui.search.open);
+        assert_eq!(app.workspaces.panels.editors, w2, "the editors reopen in their window");
+        app.workspaces.panels.editors = w;
 
         // Closing the main window: `w` takes over, with its per-window state and its
         // terminal sessions (the main window's own shared sessions end).
@@ -1150,6 +1263,9 @@ mod tests {
         assert!(app.ui.bottom.open && app.ui.bottom.height == 333.0);
         assert!(app.ui.search.open && app.ui.search.form.text == "c.txt" && app.ui.quicklook.open);
         assert_eq!(app.workspaces.player_window, WindowId::MAIN);
+        // `w`'s editors are the (new) main window's.
+        assert_eq!(app.workspaces.panels.editors, WindowId::MAIN);
+        assert!(crate::models::owners::here(&app, crate::models::owners::Panel::Editors));
         println!("windows child: ok");
     }
 }
