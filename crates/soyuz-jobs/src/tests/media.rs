@@ -242,8 +242,11 @@ fn pause_holds_the_transcoder_between_packets() {
         eprintln!("note: the encode finished before it could be paused");
         return;
     }
-    let done_at_pause = paused.progress.bytes_done;
-    std::thread::sleep(Duration::from_millis(150));
+    // The state turns Paused at once; the worker stops after the packet in flight, whose
+    // progress may still land (slow runners), so measure from after it.
+    std::thread::sleep(Duration::from_millis(300));
+    let done_at_pause = h.snap(id).progress.bytes_done;
+    std::thread::sleep(Duration::from_millis(300));
     assert_eq!(h.snap(id).progress.bytes_done, done_at_pause, "no progress while paused");
     h.engine.resume(id);
     let s = h.ok(id);

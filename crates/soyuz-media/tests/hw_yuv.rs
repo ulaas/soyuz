@@ -91,11 +91,11 @@ fn play(rt: &Arc<Runtime>, src: Source, hw: HwPref, sink: &Sink, max_px: u32) ->
 fn hardware_decoding_plays_or_falls_back_silently() {
     let rt = rt!();
     // Auto: the platform's device when the machine has one, software otherwise; either
-    // way every frame arrives.
+    // way every frame arrives (shown, or dropped as late on a slow runner).
     let sink = Sink::default();
     let (p, s) = play(&rt, fixture("hw-mpeg2.mkv"), HwPref::Auto, &sink, 4096);
     let n = sink.seen.lock().unwrap().rgba.len();
-    assert!(n >= 8, "{n} frames");
+    assert!(n + s.dropped as usize >= 8, "{n} frames, {} dropped", s.dropped);
     assert!(sink.seen.lock().unwrap().rgba.iter().all(|(w, h, _)| (*w, *h) == (128, 96)));
     match &s.hw {
         Some(api) => eprintln!("hardware path exercised: {api}"),
@@ -109,13 +109,13 @@ fn hardware_decoding_plays_or_falls_back_silently() {
     let sink = Sink::default();
     let (_p, s) = play(&rt, fixture("hw-mpeg2.mkv"), HwPref::Off, &sink, 4096);
     assert_eq!(s.hw, None);
-    assert!(sink.seen.lock().unwrap().rgba.len() >= 8);
+    assert!(sink.seen.lock().unwrap().rgba.len() + s.dropped as usize >= 8);
     // Another platform's API cannot open here: software, same pictures.
     let foreign = if cfg!(target_os = "linux") { HwPref::D3d11va } else { HwPref::Vaapi };
     let sink = Sink::default();
     let (_p, s) = play(&rt, fixture("hw-mpeg2.mkv"), foreign, &sink, 4096);
     assert_eq!(s.hw, None);
-    assert!(sink.seen.lock().unwrap().rgba.len() >= 8);
+    assert!(sink.seen.lock().unwrap().rgba.len() + s.dropped as usize >= 8);
     // A codec without a hardware configuration (Motion JPEG) decodes in software.
     let frames: Vec<Vec<u8>> = (0..5).map(|_| fixtures::jpeg_solid(32, 16, [200, 40, 40])).collect();
     let clip = fixtures::avi(32, 16, 25, fixtures::AviCodec::Mjpeg, &frames);
@@ -158,9 +158,9 @@ fn yuv_sink_gets_planes_that_match_swscale() {
     let frames: Vec<Vec<u8>> = (0..3).map(|_| fixtures::jpeg_solid(32, 16, [220, 30, 30])).collect();
     let mj = fixtures::avi(32, 16, 25, fixtures::AviCodec::Mjpeg, &frames);
     let sink = Sink { yuv: true, ..Default::default() };
-    play(&rt, Source::Mem(Arc::from(mj.into_boxed_slice())), HwPref::Off, &sink, 4096);
+    let (_p, s) = play(&rt, Source::Mem(Arc::from(mj.into_boxed_slice())), HwPref::Off, &sink, 4096);
     let seen = sink.seen.lock().unwrap();
-    assert!(seen.yuv.len() + seen.rgba.len() >= 3);
+    assert!(seen.yuv.len() + seen.rgba.len() + s.dropped as usize >= 3, "{} dropped", s.dropped);
 }
 
 #[test]

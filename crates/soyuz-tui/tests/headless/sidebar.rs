@@ -192,6 +192,9 @@ fn tree_row(app: &App, path: &Path) -> Option<(usize, bool)> {
 fn tree(data: PathBuf) {
     let mut c = config();
     c.sidebar.mode = SidebarMode::Tree;
+    // The tree walks down from the drive by listed names; CI's TEMP is an 8.3 path
+    // (C:\Users\RUNNER~1\…) whose short segment no listing contains.
+    let data = soyuz_fs::path::strip_verbatim(&data.canonicalize().expect("canonical data folder"));
     let sub = data.join("sub");
     let mut app = common::new_app(c, &sub);
     let inner = sub.join("inner");
