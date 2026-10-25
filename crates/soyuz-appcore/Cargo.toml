@@ -39,6 +39,7 @@ soyuz-vfs.workspace = true
 soyuz-media.workspace = true
 crossbeam-channel.workspace = true
 parking_lot.workspace = true
+hashbrown.workspace = true
 zeroize.workspace = true
 log.workspace = true
 env_logger.workspace = true

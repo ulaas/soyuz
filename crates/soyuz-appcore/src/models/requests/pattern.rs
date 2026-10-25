@@ -25,7 +25,7 @@ pub fn select_matching(pane: &mut Pane, text: &str, add: bool) -> Option<usize> 
         pane.selection.clear();
     }
     let keys: Vec<_> =
-        pane.visible.iter().filter(|&&i| pat.is_match(&pane.entries[i].name)).map(|&i| pane.keys[i].clone()).collect();
+        pane.visible.iter().filter(|&&i| pat.is_match(&pane.entries[i].name)).map(|&i| pane.key_of(i)).collect();
     let n = keys.len();
     for k in keys {
         pane.selection.insert(k);

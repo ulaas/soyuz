@@ -34,10 +34,15 @@ dialogs-about-platform = Platform
 dialogs-about-renderer = Renderer
 dialogs-about-config = Config
 dialogs-about-memory = Memory
+dialogs-about-process = Process
 dialogs-about-ffmpeg = FFmpeg
 dialogs-about-ffmpeg-license = This software uses libraries from the FFmpeg project under the LGPLv2.1 (loaded at run time; see THIRD-PARTY-NOTICES.md).
 # $thumbs / $previews: sizes like "12.5 MiB"; $thumb_count / $preview_count: cached entries.
 dialogs-about-memory-line = thumbnails { $thumbs } ({ $thumb_count }) · previews { $previews } ({ $preview_count })
+# This process's memory (Windows: private bytes / working set; Linux: anonymous / resident).
+dialogs-about-process-windows = private { $private } · working set { $working_set }
+dialogs-about-process-unix = anonymous { $anonymous } · resident { $resident }
+dialogs-about-process-unknown = not available
 dialogs-about-license = Licensed under the MIT License. Fonts: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Icons: Phosphor (MIT).
 dialogs-about-copy-info = Copy info
 

@@ -6849,6 +6849,7 @@ dependencies = [
  "fluent-bundle",
  "fluent-langneg",
  "gltf",
+ "hashbrown 0.17.1",
  "image",
  "intl-memoizer",
  "log",

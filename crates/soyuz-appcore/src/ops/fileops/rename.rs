@@ -13,6 +13,7 @@ use soyuz_core::config::RenameSelects;
 use super::FileOpCmd;
 use crate::cmd::Cmd;
 use crate::state::pane::{Pane, PaneId};
+use crate::state::selection::EntryKey;
 
 /// Which part of the name is selected.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -201,7 +202,7 @@ pub fn finish(
             if let Outcome::CommitAndMove(d) = outcome {
                 let pos = pane.visible_pos(&key).map(|p| p as i64 + d as i64).filter(|p| *p >= 0).map(|p| p as usize);
                 if let Some(pos) = pos
-                    && let (Some(next), Some(k)) = (pane.entry_at(pos).cloned(), pane.key_at(pos).cloned())
+                    && let (Some(next), Some(k)) = (pane.entry_at(pos).cloned(), pane.key_at(pos).map(EntryKey::from))
                 {
                     pane.selection.select_only(k.clone());
                     pane.cursor = Some(k);

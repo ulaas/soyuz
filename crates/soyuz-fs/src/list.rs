@@ -126,6 +126,17 @@ pub fn stat(path: &Path, follow: bool) -> FsResult<EntryInfo> {
     imp::stat(path, follow).map_err(err::map("stat", path))
 }
 
+/// `dir.join(name)` in a buffer of the exact size: `join` grows its copy of `dir` by
+/// doubling, and a listing keeps every entry's path for as long as it is shown.
+#[cfg_attr(not(any(windows, unix)), allow(dead_code))]
+fn join_exact(dir: &Path, name: impl AsRef<Path>) -> PathBuf {
+    let name = name.as_ref();
+    let mut p = PathBuf::with_capacity(dir.as_os_str().len() + 1 + name.as_os_str().len());
+    p.push(dir);
+    p.push(name);
+    p
+}
+
 /// True if something (including a dangling symlink) exists at `path`.
 #[track_caller]
 pub fn exists_nofollow(path: &Path) -> bool {
@@ -487,7 +498,7 @@ pub(crate) mod imp {
                 Ok(fe) => fe,
                 Err(e) => return Some(Err(e)),
             };
-            let path = self.dir.join(&fe.name);
+            let path = super::join_exact(&self.dir, &fe.name);
             let e = entry_from_raw(path, &fe.stat, self.opts.stat_links);
             Some(Ok(finish(e, &fe.stat, &self.opts)))
         }
@@ -698,7 +709,7 @@ pub(crate) mod imp {
                 if name == "." || name == ".." {
                     continue;
                 }
-                let path = self.base.join(name);
+                let path = super::join_exact(&self.base, name);
                 let mut res = build(self.fd.as_fd(), name, path, &self.opts, self.cached);
                 if let Ok(e) = &mut res
                     && !self.hidden.is_empty()

@@ -267,7 +267,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
                         e.stem().eq_ignore_ascii_case(cur.stem())
                     }
                 })
-                .map(|&i| pane.keys[i].clone())
+                .map(|&i| pane.key_of(i))
                 .collect();
             for k in keys {
                 pane.selection.insert(k);
