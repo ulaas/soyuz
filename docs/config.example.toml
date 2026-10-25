@@ -110,10 +110,12 @@ focus_mode_hides = ["sidebar", "status_bar", "preview", "bottom_panel", "activit
 
 [workspace]                      # windows, tab groups, saved workspaces (workspaces.toml), timeline
 new_window = "in_process"        # in_process (Ctrl+N opens a window of this Soyuz) | process
+launch = "new_window"            # starting soyuz while it runs: new_window | new_tab (hand over to it) | new_process (next start)
 tear_off = true                  # drag a tab out of the strip to open it in its own window
 tear_off_distance = 48           # points away from the strip before a tab tears off
 close_window_tabs = "ask"        # closing a window with tabs: ask | merge (move them) | close
 restore_windows = true           # reopen the other windows (and their positions) with the session
+panels_follow_window = true      # editors, assistant, shelf and tool windows open in the window that asks (false: main window)
 sync_relative = true             # synchronized browsing follows sibling / multi-level moves too
 history_graph_limit = 200        # places kept per tab in the "where was I" history graph
 timeline_days = 7                # timeline: files changed in the last N days
@@ -215,6 +217,7 @@ theme = "auto"                   # auto (derive from app theme) | dark | light
 per_tab = false                  # one terminal set per tab instead of one shared set
 follow_shell = false             # navigate the focused pane when the shell changes directory
 osc52 = "ask"                    # programs setting the clipboard (OSC 52): ask | allow | deny; reads are always denied
+close_window_with_sessions = "ask" # closing a window whose terminals still run: ask | kill
 
 [archive]
 preserve_special_bits = false    # keep setuid/setgid/sticky bits from archives (unix); off = mask to 0o777
@@ -262,7 +265,8 @@ max_text_kib = 512
 max_image_mp = 40
 syntax_theme = "auto"
 pdf = true                       # needs cargo feature `pdf`; greyed out otherwise
-thumb_cache_mib = 128            # memory budget for decoded thumbnails
+thumb_cache_mib = 64             # graphics memory budget for decoded thumbnails
+thumb_idle_trim_secs = 60        # free thumbnails not drawn for this long; 0 = keep until the budget is full
 preview_cache_mib = 96           # memory budget for decoded previews
 pdfium_dir = ""                  # folder with pdfium.dll; "" = next to soyuz.exe, then the config dir
 office = true                    # docx / xlsx / pptx / odt / ods / odp
@@ -332,6 +336,7 @@ weekly_check = false             # also check once a week at startup (notificati
 include_prereleases = false      # offer release candidates / betas too
 [performance]                    # startup and rendering
 gpu_backend = "auto"             # auto | dx12 | vulkan | gl (next start; WGPU_BACKEND wins)
+gpu_memory = "low"               # low (small up-front GPU reservations) | performance (next start)
 [remote]                         # SFTP / WebDAV / FTP(S) / S3 locations; passwords live in the OS credential store
 cache_ttl_secs = 30              # reuse a remote folder listing this long (Refresh always re-lists)
 poll_secs = 0                    # re-list visible remote folders this often (0 = never)

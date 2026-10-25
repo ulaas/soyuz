@@ -1,9 +1,10 @@
 //! Root layout: custom title bar (logo + tabs + window controls, when enabled) →
 //! status bar → bottom panel → sidebar → tab strip (native title bar only) → toolbar →
 //! pane cards (single, dual with a draggable splitter, or a 2×2 quad grid), then dialogs
-//! and toasts on top. Secondary in-process windows draw the same shell without the
-//! main-only panels (terminal / activity, assistant, preview, editors, tool panels); the
-//! overlays go to the focused window.
+//! and toasts on top. Secondary in-process windows draw the same shell (search bar,
+//! preview, activity / bottom panel with its terminal, Quick Look); the shared panels
+//! (assistant, editors, shelf, tool windows) draw in the window that owns them
+//! (`models::owners`); the overlays go to the focused window.
 
 use egui::{CentralPanel, CornerRadius, CursorIcon, Frame, Id, Margin, Rect, Sense, Ui, pos2, vec2};
 use soyuz_core::Location;
@@ -11,6 +12,7 @@ use soyuz_core::config::{Orientation, TabStripMode};
 
 use crate::app::{Focus, SoyuzApp};
 use crate::cmd::Cmd;
+use crate::models::owners::Panel;
 use crate::theme::palette;
 use crate::ui::dialogs::DialogCtx;
 use crate::ui::sidebar::{self, SidebarCtx};
@@ -27,7 +29,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     app.core.prepare_visible_panes();
 
     let titlebar = app.gui.chrome.has_titlebar();
-    let main = crate::models::workspaces::main_frame(&app.core);
+    let here = |app: &SoyuzApp, p| crate::models::owners::here(&app.core, p);
     if titlebar {
         crate::ui::titlebar::show(ui, app);
     }
@@ -41,10 +43,9 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             app.core.cmds.push(Cmd::ViewChanged(id));
         }
     }
-    if main {
-        panels::show(ui, app);
-        panels::terminal::apply_requests(&mut app.core);
-    }
+    // The bottom panel in every window, each with its own terminal sessions.
+    panels::show(ui, app);
+    panels::terminal::apply_requests(&mut app.core);
     if app.core.ui.sidebar_visible {
         let current = app.core.ws.pane().location.clone();
         let pane = app.core.ws.pane().id;
@@ -85,7 +86,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         };
         sidebar::show(ui, &mut app.core.ui.sidebar, &mut sctx);
     }
-    if main {
+    if here(app, Panel::Assistant) {
         crate::ui::ai::show(ui, app);
     }
     if !titlebar
@@ -95,11 +96,11 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         tabstrip::show(ui, app);
     }
     toolbar::show(ui, app);
-    if main {
-        crate::ui::search::bar(ui, app);
-        crate::ui::preview::show(ui, app);
-        panels::show_activity(ui, app);
-        crate::ui::editors::show(ui, app);
+    crate::ui::search::bar(ui, app);
+    crate::ui::preview::show(ui, app);
+    panels::show_activity(ui, app);
+    crate::ui::editors::show(ui, app);
+    if here(app, Panel::Shelf) {
         crate::ui::tools::show_panels(ui, app);
     }
 
@@ -107,7 +108,7 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
         .frame(Frame::new().fill(p.bg_window).inner_margin(Margin { left: 0, right: 8, top: 2, bottom: 2 }))
         .show(ui, |ui| {
             let area = ui.available_rect_before_wrap();
-            if main && crate::editors::maximized(&app.core) {
+            if here(app, Panel::Editors) && crate::editors::maximized(&app.core) {
                 crate::ui::editors::show_central(ui, area, app);
             } else {
                 panes(ui, area, app);
@@ -115,11 +116,17 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
             ui.allocate_rect(area, Sense::hover());
         });
 
-    // Overlays (in the focused window only).
+    // The tool windows, in their own window (over the panes, under the dialogs).
+    if here(app, Panel::Tools) {
+        crate::ui::tools::show_windows(&ctx, app);
+    }
+    // Overlays (in the focused window only). Quick Look shows in the window it was
+    // opened in (every window has its own), above the dialogs.
     if !crate::models::workspaces::overlays_here(&app.core) {
+        crate::ui::quicklook::show(&ctx, app);
         return;
     }
-    crate::ui::tools::show_windows(&ctx, app);
+    crate::ui::tools::drag_strip(&ctx, app);
     crate::ui::welcome::show(&ctx, app, if app.core.ui.status_visible { 24.0 } else { 0.0 });
     let mut dctx = DialogCtx { cmds: &mut app.core.cmds, ws: &mut app.core.ws };
     app.gui.dialogs.show(&ctx, &mut app.core.dialogs, &mut dctx);
@@ -128,7 +135,8 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp) {
     let screen = ctx.content_rect();
     let bottom_offset = if app.core.ui.status_visible { 30.0 } else { 6.0 };
     // Toasts stay clear of the assistant panel.
-    let right = screen.right() - if app.core.ai.panel.open { app.core.ai.panel.width } else { 0.0 };
+    let ai = app.core.ai.panel.open && here(app, Panel::Assistant);
+    let right = screen.right() - if ai { app.core.ai.panel.width } else { 0.0 };
     let anchor = Rect::from_min_max(screen.min, pos2(right, screen.bottom() - bottom_offset));
     for action in crate::ui::toasts::show(&mut app.core.ui.toasts, &ctx, anchor, app.core.ui.reduced_motion) {
         app.core.cmds.push(Cmd::Action(action));

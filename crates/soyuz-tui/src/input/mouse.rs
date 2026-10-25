@@ -480,7 +480,7 @@ pub enum RowEffect {
 /// A press on visible item `index` of `p`: the GUI's selection and cursor semantics
 /// (`views/flow.rs`). Returns what the core still has to do.
 pub fn row_press(p: &mut Pane, index: usize, ctx: RowCtx) -> Option<RowEffect> {
-    let key = p.key_at(index)?.clone();
+    let key = EntryKey::from(p.key_at(index)?);
     let any_mod = ctx.mods.toggle || ctx.mods.range;
     match ctx.button {
         MouseButton::Left if ctx.double && !ctx.checkbox => Some(RowEffect::Open(key)),
@@ -660,7 +660,7 @@ mod tests {
     }
 
     fn key(p: &Pane, i: usize) -> EntryKey {
-        p.key_at(i).cloned().unwrap()
+        EntryKey::from(p.key_at(i).unwrap())
     }
 
     fn selected(p: &Pane) -> Vec<usize> {

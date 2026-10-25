@@ -58,9 +58,15 @@ pub fn toggle(app: &mut AppCore) {
         ui.preview.open |= preview && s.preview;
         ui.bottom.open |= bottom && s.bottom;
         ui.bottom.activity_open |= activity && s.activity;
-        app.ai.panel.open |= ai && s.ai;
+        if ai && s.ai && !app.ai.panel.open {
+            // It was hidden in this window: it comes back here.
+            super::owners::claim(app, super::owners::Panel::Assistant);
+            app.ai.panel.open = true;
+        }
         return;
     }
+    // The assistant is shared: only hidden when it shows in this window.
+    let ai_here = app.ai.panel.open && super::owners::here(app, super::owners::Panel::Assistant);
     let ui = &mut app.ui;
     let saved = Saved {
         sidebar: ui.sidebar_visible,
@@ -68,7 +74,7 @@ pub fn toggle(app: &mut AppCore) {
         preview: ui.preview.open,
         bottom: ui.bottom.open,
         activity: ui.bottom.activity_open,
-        ai: app.ai.panel.open,
+        ai: ai_here,
     };
     if sidebar {
         ui.sidebar_visible = false;
@@ -88,7 +94,7 @@ pub fn toggle(app: &mut AppCore) {
     if activity {
         ui.bottom.activity_open = false;
     }
-    if ai {
+    if ai && ai_here {
         app.ai.panel.open = false;
     }
     app.ui.focus_mode = Some(saved);

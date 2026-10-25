@@ -48,6 +48,8 @@ windows-sys = { workspace = true, features = [
     "Win32_Security_Cryptography",
     "Win32_Security_WinTrust",
     "Win32_System_Threading",
+    # K32GetProcessMemoryInfo (kernel32): memory use in About.
+    "Win32_System_ProcessStatus",
     "Win32_System_Registry",
     "Win32_System_Environment",
     "Win32_System_LibraryLoader",
@@ -75,7 +77,8 @@ windows-sys = { workspace = true, features = [
 ] }
 
 [target.'cfg(unix)'.dependencies]
-rustix.workspace = true
+# `mm`: read-only font mappings (`sys/mmap.rs`).
+rustix = { workspace = true, features = ["mm"] }
 libc.workspace = true
 xattr.workspace = true
 filetime.workspace = true

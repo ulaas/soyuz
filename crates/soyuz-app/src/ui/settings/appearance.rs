@@ -327,6 +327,24 @@ pub fn page(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
             },
         );
         r.row_kw(
+            tr!("settings-appearance-gpu-memory"),
+            tr!("settings-appearance-gpu-memory-desc"),
+            "ram memory vram gpu graphics allocator low performance",
+            |ui| {
+                use soyuz_core::config::GpuMemory;
+                let items = [
+                    super::widgets::dd::Item::new(GpuMemory::Low, tr!("settings-appearance-gpu-memory-low"))
+                        .icon(ph::FEATHER),
+                    super::widgets::dd::Item::new(
+                        GpuMemory::Performance,
+                        tr!("settings-appearance-gpu-memory-performance"),
+                    )
+                    .icon(ph::LIGHTNING),
+                ];
+                super::widgets::choice(ui, "gpu_memory", &mut d.performance.gpu_memory, &items, 190.0);
+            },
+        );
+        r.row_kw(
             tr!("settings-appearance-thumb-cache"),
             tr!("settings-appearance-thumb-cache-desc"),
             "cache thumbs disk storage",

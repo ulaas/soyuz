@@ -337,6 +337,20 @@ pub enum NewWindowMode {
     Process,
 }
 
+/// What starting `soyuz` does while a Soyuz window already runs (Start menu, taskbar,
+/// `soyuz <path>`, "Open with").
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum LaunchMode {
+    /// The running Soyuz opens a new window (one process; no second copy in memory).
+    #[default]
+    NewWindow,
+    /// The running Soyuz opens a tab in its focused window.
+    NewTab,
+    /// Start a separate Soyuz process every time.
+    NewProcess,
+}
+
 /// Closing a window that still has tabs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -357,6 +371,9 @@ pub enum CloseWindowTabs {
 pub struct WorkspaceConfig {
     /// What "New window" (Ctrl+N) opens.
     pub new_window: NewWindowMode,
+    /// Starting `soyuz` while a window already runs: `new_window` / `new_tab` hand the
+    /// request to the running Soyuz, `new_process` starts another process (next start).
+    pub launch: LaunchMode,
     /// Drag a tab out of the tab strip to open it in its own window.
     pub tear_off: bool,
     /// How far (points) a tab has to be dragged away from the strip to tear off.
@@ -365,6 +382,10 @@ pub struct WorkspaceConfig {
     pub close_window_tabs: CloseWindowTabs,
     /// Reopen the other windows (with their positions) when the session is restored.
     pub restore_windows: bool,
+    /// The editors, the assistant panel, the drop shelf and the tool windows open in the
+    /// window that asks for them (and move to another window that invokes them); `false`:
+    /// always in the main window.
+    pub panels_follow_window: bool,
     /// Synchronized browsing follows any relative move (sibling folders, several levels),
     /// not only "into a child" / "up one level".
     pub sync_relative: bool,
@@ -815,6 +836,19 @@ pub struct Terminal {
     /// What to do when a program asks to set the clipboard (OSC 52). Clipboard reads
     /// are always denied.
     pub osc52: Osc52Policy,
+    /// Closing a window (and its tabs) that still has terminals with running shells.
+    pub close_window_with_sessions: CloseWindowSessions,
+}
+
+/// `terminal.close_window_with_sessions`: closing a window whose terminals still run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseWindowSessions {
+    /// Ask before closing the terminals.
+    #[default]
+    Ask,
+    /// Close them (their shells and programs end).
+    Kill,
 }
 
 /// `terminal.osc52`: clipboard writes requested by terminal output.
@@ -942,8 +976,12 @@ pub struct Preview {
     pub syntax_theme: String,
     /// Needs cargo feature `pdf`.
     pub pdf: bool,
-    /// Memory budget of decoded thumbnails (MiB).
+    /// Memory budget of decoded thumbnails (MiB of graphics memory, counting each
+    /// texture's alignment and per-texture overhead).
     pub thumb_cache_mib: u64,
+    /// Free thumbnails not drawn for this many seconds, even while the app is idle
+    /// (0 = keep them until the memory budget needs the room).
+    pub thumb_idle_trim_secs: u64,
     /// Memory budget of decoded previews (images, text, media) (MiB).
     pub preview_cache_mib: u64,
     /// Folder holding `pdfium.dll` / `libpdfium.so` / `libpdfium.dylib`; empty = next to
@@ -1180,12 +1218,28 @@ pub struct Performance {
     /// default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11
     /// backdrop (Direct3D 12 only) take precedence. Applies at the next start.
     pub gpu_backend: GpuBackend,
+    /// How much GPU memory the renderer reserves up front. `low` lets the graphics
+    /// allocator start with small blocks and caps the Direct3D 12 descriptor heap (an
+    /// idle window commits ~140 MB instead of ~350 MB); `performance` reserves large
+    /// blocks (fewer allocations while many thumbnails load). Applies at the next start.
+    pub gpu_memory: GpuMemory,
 }
 
 impl Default for Performance {
     fn default() -> Self {
-        Performance { gpu_backend: GpuBackend::Auto }
+        Performance { gpu_backend: GpuBackend::Auto, gpu_memory: GpuMemory::Low }
     }
+}
+
+/// `[performance] gpu_memory`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GpuMemory {
+    /// Small allocator blocks, a smaller descriptor heap.
+    #[default]
+    Low,
+    /// wgpu's defaults: 128 MB device / 64 MB host blocks.
+    Performance,
 }
 
 /// `[performance] gpu_backend`.

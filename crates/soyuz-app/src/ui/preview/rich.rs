@@ -522,6 +522,9 @@ fn audio(
     big: bool,
 ) {
     let ppp = ui.ctx().pixels_per_point();
+    // Only the window with the media player plays (the others show the card, like a
+    // video poster).
+    let playback = playback && super::video::player_here();
     let key = src.key();
     let ps = preview_audio::state();
     let mine = ps.key.as_deref() == Some(key.as_str());

@@ -492,6 +492,8 @@ impl Dialog for AboutDialog {
         });
         ui.add_space(12.0);
         let facts = self.facts();
+        // Keeps the process memory line current while the dialog is open.
+        ui.ctx().request_repaint_after(crate::models::about::PROCESS_REFRESH);
         egui::Grid::new("soyuz.about.facts").num_columns(2).striped(false).spacing([16.0, 6.0]).show(ui, |ui| {
             // The version is already in the header.
             for (k, v) in facts.iter().skip(1) {

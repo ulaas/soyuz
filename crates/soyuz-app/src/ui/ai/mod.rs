@@ -183,9 +183,11 @@ pub fn properties_row(ui: &mut Ui, path: &std::path::Path, cmds: &mut Vec<Cmd>) 
     });
 }
 
-/// Esc stops a running task while the panel is open (after the core's pumps each frame).
+/// Esc stops a running task while the panel is open (after the core's pumps each frame),
+/// in the window showing the panel.
 pub fn escape_stops_task(app: &mut SoyuzApp, ctx: &egui::Context) {
     if panel::escape_stops_task(&app.core)
+        && crate::models::owners::here(&app.core, crate::models::owners::Panel::Assistant)
         && !app.gui.dialogs.is_open()
         && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
     {

@@ -32,8 +32,8 @@ use windows_sys::Win32::Storage::FileSystem::{
 };
 use windows_sys::Win32::System::IO::{GetOverlappedResult, OVERLAPPED};
 use windows_sys::Win32::System::Pipes::{
-    ConnectNamedPipe, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES,
-    PIPE_WAIT, WaitNamedPipeW,
+    ConnectNamedPipe, GetNamedPipeServerProcessId, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE,
+    PIPE_UNLIMITED_INSTANCES, PIPE_WAIT, WaitNamedPipeW,
 };
 use windows_sys::Win32::System::Threading::{CreateEventW, GetCurrentProcess, OpenProcessToken};
 
@@ -132,6 +132,15 @@ impl io::Write for PipeStream {
 
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
+    }
+}
+
+impl PipeStream {
+    /// Process id of the server end (a client asks before granting it the foreground).
+    pub fn server_pid(&self) -> Option<u32> {
+        let mut pid = 0u32;
+        // SAFETY: valid pipe handle and out pointer.
+        (unsafe { GetNamedPipeServerProcessId(self.0.0, &mut pid) } != 0 && pid != 0).then_some(pid)
     }
 }
 
@@ -246,6 +255,12 @@ impl PipeListener {
     }
 
     /// Wait for the next client.
+    ///
+    /// The next instance is created before the connected one is handed out (and after a
+    /// failed connect), so the name always has an instance while the listener lives: a
+    /// client arriving in between gets `ERROR_PIPE_BUSY` (and waits) or connects at once,
+    /// never `ERROR_FILE_NOT_FOUND`, which would read as "nobody serves this name" (and
+    /// let a second launcher bind it as the first instance).
     pub fn accept(&mut self) -> io::Result<PipeStream> {
         let h = match self.next.take() {
             Some(h) => h,
@@ -254,6 +269,10 @@ impl PipeListener {
         let raw = h.0;
         // SAFETY: `raw` is a pipe server handle opened for overlapped I/O.
         let res = overlapped(raw, |ov| unsafe { ConnectNamedPipe(raw, ov) });
+        match create_instance(&self.name, false) {
+            Ok(next) => self.next = Some(next),
+            Err(e) => log::warn!("{}: cannot create the next pipe instance: {e}", self.name),
+        }
         match res {
             Ok(_) => {}
             Err(e) if e.raw_os_error() == Some(ERROR_PIPE_CONNECTED as i32) => {}
@@ -328,5 +347,63 @@ fn check_owner(h: HANDLE) -> io::Result<()> {
             io::ErrorKind::PermissionDenied,
             format!("the Soyuz pipe is owned by another account ({owner})"),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Write};
+
+    fn unique(tag: &str) -> String {
+        let t = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        format!(r"\\.\pipe\soyuz-test-{tag}-{}-{t:x}", std::process::id())
+    }
+
+    /// A client arriving while the server is busy with the previous connection (between
+    /// two `accept` calls) still finds the name served, and a second `bind` fails.
+    #[test]
+    fn name_stays_served_between_accepts() {
+        let name = unique("accept");
+        let mut l = PipeListener::bind(&name).unwrap();
+        assert!(PipeListener::bind(&name).is_err(), "a second first instance is refused");
+        let n = 6;
+        let server = std::thread::spawn(move || {
+            for i in 0..n {
+                let mut s = l.accept().unwrap();
+                s.write_all(
+                    format!(
+                        "{i}
+"
+                    )
+                    .as_bytes(),
+                )
+                .unwrap();
+                // A slow accept loop: the next clients connect meanwhile.
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
+            l
+        });
+        let clients: Vec<_> = (0..n)
+            .map(|_| {
+                let name = name.clone();
+                std::thread::spawn(move || {
+                    let c = connect(&name).unwrap().expect("the name is served");
+                    assert_eq!(c.server_pid(), Some(std::process::id()));
+                    let mut line = String::new();
+                    BufReader::new(c).read_line(&mut line).unwrap();
+                    line
+                })
+            })
+            .collect();
+        let mut got: Vec<String> = clients.into_iter().map(|t| t.join().unwrap()).collect();
+        got.sort();
+        assert_eq!(got.len(), n);
+        let l = server.join().unwrap();
+        // Still served after the last accept returned (the next instance exists).
+        assert!(PipeListener::bind(&name).is_err());
+        drop(l);
+        assert!(connect(&name).unwrap().is_none(), "dropping the listener frees the name");
+        assert!(PipeListener::bind(&name).is_ok());
     }
 }

@@ -144,10 +144,12 @@ impl Default for WorkspaceConfig {
     fn default() -> Self {
         WorkspaceConfig {
             new_window: NewWindowMode::InProcess,
+            launch: LaunchMode::NewWindow,
             tear_off: true,
             tear_off_distance: 48.0,
             close_window_tabs: CloseWindowTabs::Ask,
             restore_windows: true,
+            panels_follow_window: true,
             sync_relative: true,
             history_graph_limit: 200,
             timeline_days: 7,
@@ -288,6 +290,7 @@ impl Default for Terminal {
             per_tab: false,
             follow_shell: false,
             osc52: Osc52Policy::Ask,
+            close_window_with_sessions: CloseWindowSessions::Ask,
         }
     }
 }
@@ -385,7 +388,8 @@ impl Default for Preview {
             max_image_mp: 40,
             syntax_theme: "auto".into(),
             pdf: true,
-            thumb_cache_mib: 128,
+            thumb_cache_mib: 64,
+            thumb_idle_trim_secs: 60,
             preview_cache_mib: 96,
             pdfium_dir: String::new(),
             office: true,

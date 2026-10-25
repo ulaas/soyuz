@@ -248,10 +248,12 @@ One role's font.
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `new_window` | `"in_process"` \| `"process"` | `"in_process"` | What "New window" (Ctrl+N) opens. (`in_process`: Another window of this Soyuz (shares jobs, services and settings); `process`: A separate Soyuz process (`soyuz --new-window`)) |
+| `launch` | `"new_window"` \| `"new_tab"` \| `"new_process"` | `"new_window"` | Starting `soyuz` while a window already runs: `new_window` / `new_tab` hand the request to the running Soyuz, `new_process` starts another process (next start). (`new_window`: The running Soyuz opens a new window (one process; no second copy in memory); `new_tab`: The running Soyuz opens a tab in its focused window; `new_process`: Start a separate Soyuz process every time) |
 | `tear_off` | boolean | `true` | Drag a tab out of the tab strip to open it in its own window. |
 | `tear_off_distance` | float | `48.0` | How far (points) a tab has to be dragged away from the strip to tear off. |
 | `close_window_tabs` | `"ask"` \| `"merge"` \| `"close"` | `"ask"` | Closing a window that still has tabs. (`ask`: Ask whether to move the tabs to another window or close them; `merge`: Move them to another window; `close`: Close them) |
 | `restore_windows` | boolean | `true` | Reopen the other windows (with their positions) when the session is restored. |
+| `panels_follow_window` | boolean | `true` | The editors, the assistant panel, the drop shelf and the tool windows open in the window that asks for them (and move to another window that invokes them); `false`: always in the main window. |
 | `sync_relative` | boolean | `true` | Synchronized browsing follows any relative move (sibling folders, several levels), not only "into a child" / "up one level". |
 | `history_graph_limit` | integer | `200` | Places remembered per tab in the "where was I" history graph. |
 | `timeline_days` | integer | `7` | The timeline covers this many days (today, yesterday, this week, …). |
@@ -396,6 +398,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `per_tab` | boolean | `false` | One terminal set per tab (`true`) or one shared by all tabs (`false`). |
 | `follow_shell` | boolean | `false` | Reverse sync: when the shell reports a new cwd, navigate the focused pane there. |
 | `osc52` | `"ask"` \| `"allow"` \| `"deny"` | `"ask"` | What to do when a program asks to set the clipboard (OSC 52). Clipboard reads are always denied. (`ask`: Show a prompt (Allow once / Always for this session / Deny)) |
+| `close_window_with_sessions` | `"ask"` \| `"kill"` | `"ask"` | Closing a window (and its tabs) that still has terminals with running shells. (`ask`: Ask before closing the terminals; `kill`: Close them (their shells and programs end)) |
 
 ## `[archive]`
 
@@ -458,7 +461,8 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `max_image_mp` | integer | `40` | Largest image the preview decodes (megapixels). |
 | `syntax_theme` | string | `"auto"` | Syntax highlighting theme for code previews (`auto` follows the app theme). |
 | `pdf` | boolean | `true` | Needs cargo feature `pdf`. |
-| `thumb_cache_mib` | integer | `128` | Memory budget of decoded thumbnails (MiB). |
+| `thumb_cache_mib` | integer | `64` | Memory budget of decoded thumbnails (MiB of graphics memory, counting each texture's alignment and per-texture overhead). |
+| `thumb_idle_trim_secs` | integer | `60` | Free thumbnails not drawn for this many seconds, even while the app is idle (0 = keep them until the memory budget needs the room). |
 | `preview_cache_mib` | integer | `96` | Memory budget of decoded previews (images, text, media) (MiB). |
 | `pdfium_dir` | string | `""` | Folder holding `pdfium.dll` / `libpdfium.so` / `libpdfium.dylib`; empty = next to the executable, then the config dir. Never downloaded. |
 | `office` | boolean | `true` | docx / xlsx / pptx / odt / ods / odp structure and text. |
@@ -557,6 +561,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `gpu_backend` | `"auto"` \| `"dx12"` \| `"vulkan"` \| `"gl"` | `"auto"` | Graphics API the GPU renderer uses (`auto` = Direct3D 12 on Windows, the platform default elsewhere). The `WGPU_BACKEND` environment variable and the Windows 11 backdrop (Direct3D 12 only) take precedence. Applies at the next start. (`dx12`: Direct3D 12 (Windows); `gl`: OpenGL / ANGLE through wgpu (compatibility)) |
+| `gpu_memory` | `"low"` \| `"performance"` | `"low"` | How much GPU memory the renderer reserves up front. `low` lets the graphics allocator start with small blocks and caps the Direct3D 12 descriptor heap (an idle window commits ~140 MB instead of ~350 MB); `performance` reserves large blocks (fewer allocations while many thumbnails load). Applies at the next start. (`low`: Small allocator blocks, a smaller descriptor heap; `performance`: wgpu's defaults: 128 MB device / 64 MB host blocks) |
 
 ## `[remote]`
 

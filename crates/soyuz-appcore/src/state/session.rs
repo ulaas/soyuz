@@ -89,6 +89,23 @@ pub struct WindowSession {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size: Option<[f32; 2]>,
     pub maximized: bool,
+    /// Secondary windows: the preview pane and the bottom panel (`None` = defaults).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<PanelSession>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bottom: Option<PanelSession>,
+    /// Secondary windows: this window shows the editors (`models::owners`; `false` = the
+    /// main window does).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub editors: bool,
+}
+
+/// A side / bottom panel of a secondary window: shown, and its width or height.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct PanelSession {
+    pub open: bool,
+    pub size: f32,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -230,9 +247,29 @@ mod tests {
                 pos: Some([100.0, 80.0]),
                 size: Some([900.0, 600.0]),
                 maximized: false,
+                preview: Some(PanelSession { open: true, size: 410.0 }),
+                editors: true,
+                bottom: Some(PanelSession { open: false, size: 300.0 }),
             }],
             ..Default::default()
         }
+    }
+
+    /// Sessions written before a field existed still load (`#[serde(default)]`).
+    #[test]
+    fn old_window_sessions_load() {
+        let s: WindowSession = toml::from_str(
+            "active_tab = 1
+maximized = true
+",
+        )
+        .unwrap();
+        assert!(s.maximized && !s.editors && s.preview.is_none());
+        let s = WindowSession { editors: true, ..Default::default() };
+        let text = toml::to_string(&s).unwrap();
+        assert!(text.contains("editors = true"));
+        assert_eq!(toml::from_str::<WindowSession>(&text).unwrap(), s);
+        assert!(!toml::to_string(&WindowSession::default()).unwrap().contains("editors"), "not written when false");
     }
 
     #[test]
@@ -242,6 +279,9 @@ mod tests {
         assert_eq!(back, s);
         let empty: Session = toml::from_str("").unwrap();
         assert_eq!(empty, Session::default());
+        // Sessions written before the per-window panels were saved still load.
+        let old: Session = toml::from_str("[[windows]]\nactive_tab = 0\nmaximized = true\n").unwrap();
+        assert_eq!((old.windows[0].preview, old.windows[0].bottom), (None, None));
     }
 
     #[test]

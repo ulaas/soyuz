@@ -31,9 +31,13 @@ dialogs-about-platform = Platform
 dialogs-about-renderer = Oluşturucu
 dialogs-about-config = Yapılandırma
 dialogs-about-memory = Bellek
+dialogs-about-process = İşlem
 dialogs-about-ffmpeg = FFmpeg
 dialogs-about-ffmpeg-license = Bu yazılım FFmpeg projesinin kitaplıklarını LGPLv2.1 altında kullanır (çalışma zamanında yüklenir; bkz. THIRD-PARTY-NOTICES.md).
 dialogs-about-memory-line = küçük resimler { $thumbs } ({ $thumb_count }) · önizlemeler { $previews } ({ $preview_count })
+dialogs-about-process-windows = özel { $private } · çalışma kümesi { $working_set }
+dialogs-about-process-unix = anonim { $anonymous } · yerleşik { $resident }
+dialogs-about-process-unknown = kullanılamıyor
 dialogs-about-license = MIT Lisansı ile dağıtılır. Yazı tipleri: Inter, Cascadia Mono, IBM Plex, Noto Sans, JetBrains Mono, Source Code Pro (OFL). Simgeler: Phosphor (MIT).
 dialogs-about-copy-info = Bilgileri kopyala
 

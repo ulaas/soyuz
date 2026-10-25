@@ -17,7 +17,7 @@
 //!   number / size / date formatting and collation); [`apply_setting`] switches it live.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::types::FluentNumber;
@@ -152,14 +152,37 @@ num_arg!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 
 type Bundle = FluentBundle<FluentResource>;
 
-struct Catalog {
-    en: Bundle,
-    tr: Bundle,
+/// Parsed bundles, built on first use: with English active only en-US is ever parsed;
+/// with Turkish active tr-TR is parsed at the first lookup and en-US only when a lookup
+/// misses (or [`has`] asks the source bundle). A language switch drops every bundle but
+/// the new language's, so a lookup made before the configured language was applied
+/// doesn't keep en-US alive; a later miss parses it again. Each bundle is ~3.9 MB of
+/// heap: an owned copy of its ~350 KB of `.ftl` source (`FluentResource` needs a
+/// `String`) plus the AST and the bundle's id map.
+static BUNDLES: Mutex<[Option<Arc<Bundle>>; 2]> = Mutex::new([None, None]);
+
+fn bundle(l: Locale) -> Arc<Bundle> {
+    // Built under the lock so two threads asking at once don't parse twice.
+    BUNDLES.lock()[slot(l)].get_or_insert_with(|| Arc::new(build(l))).clone()
 }
 
-fn catalog() -> &'static Catalog {
-    static CAT: OnceLock<Catalog> = OnceLock::new();
-    CAT.get_or_init(|| Catalog { en: build(Locale::EnUs), tr: build(Locale::TrTr) })
+/// Drop every parsed bundle except the current language's (called on a language
+/// switch; a bundle still borrowed by a running lookup goes when the lookup ends).
+fn drop_unused_bundles() {
+    let keep = current();
+    let mut b = BUNDLES.lock();
+    for l in Locale::ALL {
+        if l != keep {
+            b[slot(l)] = None;
+        }
+    }
+}
+
+/// Locales whose bundle is parsed right now (tests / diagnostics).
+#[doc(hidden)]
+pub fn loaded_locales() -> Vec<Locale> {
+    let b = BUNDLES.lock();
+    Locale::ALL.into_iter().filter(|l| b[slot(*l)].is_some()).collect()
 }
 
 fn langid(l: Locale) -> LanguageIdentifier {
@@ -169,6 +192,7 @@ fn langid(l: Locale) -> LanguageIdentifier {
 /// Build the bundle for `l` from every embedded file (parse errors are logged; the
 /// tests require the files to be clean).
 fn build(l: Locale) -> Bundle {
+    let started = std::time::Instant::now();
     let mut b = FluentBundle::new_concurrent(vec![langid(l)]);
     // egui renders the Unicode bidi isolation marks Fluent adds around placeables as
     // boxes; layout direction is handled by the UI instead.
@@ -193,6 +217,7 @@ fn build(l: Locale) -> Bundle {
             log::error!("i18n: duplicate keys in {}/{area}.ftl: {errs:?}", l.tag());
         }
     }
+    log::debug!("i18n: parsed {} in {:?}", l.tag(), started.elapsed());
     b
 }
 
@@ -294,14 +319,6 @@ pub fn has(key: &str) -> bool {
     has_in(key, Locale::EnUs)
 }
 
-fn bundle(l: Locale) -> &'static Bundle {
-    let c = catalog();
-    match l {
-        Locale::EnUs => &c.en,
-        Locale::TrTr => &c.tr,
-    }
-}
-
 fn format(key: &str, args: Option<&FluentArgs<'_>>, l: Locale) -> String {
     let try_bundle = |b: &Bundle| -> Option<String> {
         let msg = b.get_message(key)?;
@@ -316,12 +333,12 @@ fn format(key: &str, args: Option<&FluentArgs<'_>>, l: Locale) -> String {
         }
         Some(s)
     };
-    if let Some(s) = try_bundle(bundle(l)) {
+    if let Some(s) = try_bundle(&bundle(l)) {
         return s;
     }
     if l != Locale::EnUs {
         warn_once(&format!("{}:{key}", l.tag()), &format!("i18n: {key} missing in {}, using en-US", l.tag()));
-        if let Some(s) = try_bundle(bundle(Locale::EnUs)) {
+        if let Some(s) = try_bundle(&bundle(Locale::EnUs)) {
             return s;
         }
     }
@@ -373,6 +390,7 @@ pub fn apply_setting(setting: &str) -> Locale {
     if l != soyuz_core::locale::current() {
         log::info!("i18n: language {}", l.tag());
         soyuz_core::locale::set_current(l);
+        drop_unused_bundles();
         GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     l

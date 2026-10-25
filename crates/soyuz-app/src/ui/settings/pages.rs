@@ -5,8 +5,8 @@ use std::time::SystemTime;
 
 use egui::{RichText, Ui};
 use soyuz_core::config::{
-    ActivityPlacement, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation, Osc52Policy,
-    PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
+    ActivityPlacement, CloseWindowSessions, DragDefault, DuplicatesPref, MiddleClick, OpenFoldersIn, Orientation,
+    Osc52Policy, PasteConflict, PreserveItem, ReflinkPref, RenameSelects, SidebarMode, SidebarSection, TabStripMode,
     TrashUnsupportedPolicy, TypeAhead,
 };
 use soyuz_core::{Column, DateFormat, DateFormatName, SizeStyle, ViewMode, format_size, format_time};
@@ -373,6 +373,23 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 );
             },
         );
+        r.row_kw(
+            tr!("settings-views-launch"),
+            tr!("settings-views-launch-desc"),
+            "single instance process start launch",
+            |ui| {
+                use soyuz_core::config::LaunchMode;
+                segmented(
+                    ui,
+                    &mut d.workspace.launch,
+                    &[
+                        (LaunchMode::NewWindow, tr!("settings-views-launch-window")),
+                        (LaunchMode::NewTab, tr!("settings-views-launch-tab")),
+                        (LaunchMode::NewProcess, tr!("settings-views-launch-process")),
+                    ],
+                );
+            },
+        );
         r.row_kw(tr!("settings-views-tear-off"), tr!("settings-views-tear-off-desc"), "detach drag", |ui| {
             switch(ui, &mut d.workspace.tear_off);
         });
@@ -398,6 +415,14 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-views-restore-windows"), tr!("settings-views-restore-windows-desc"), "session", |ui| {
             switch(ui, &mut d.workspace.restore_windows);
         });
+        r.row_kw(
+            tr!("settings-views-panels-follow"),
+            tr!("settings-views-panels-follow-desc"),
+            "editor assistant ai shelf tools window",
+            |ui| {
+                switch(ui, &mut d.workspace.panels_follow_window);
+            },
+        );
         r.row_kw(
             tr!("settings-views-sync-relative"),
             tr!("settings-views-sync-relative-desc"),
@@ -1433,6 +1458,21 @@ pub fn terminal(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                 ],
             );
         });
+        r.row_kw(
+            tr!("settings-terminal-close-window"),
+            tr!("settings-terminal-close-window-desc"),
+            "kill sessions shells window close",
+            |ui| {
+                segmented(
+                    ui,
+                    &mut d.terminal.close_window_with_sessions,
+                    &[
+                        (CloseWindowSessions::Ask, tr!("settings-ask")),
+                        (CloseWindowSessions::Kill, tr!("settings-terminal-close-window-kill")),
+                    ],
+                );
+            },
+        );
     });
     any
 }
@@ -1846,6 +1886,14 @@ pub fn preview(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.row_kw(tr!("settings-preview-thumb-mem"), tr!("settings-preview-thumb-mem-desc"), "cache ram budget", |ui| {
             number(ui, &mut d.preview.thumb_cache_mib, 8..=4096, " MiB");
         });
+        r.row_kw(
+            tr!("settings-preview-thumb-idle"),
+            tr!("settings-preview-thumb-idle-desc"),
+            "cache ram memory free idle trim",
+            |ui| {
+                number(ui, &mut d.preview.thumb_idle_trim_secs, 0..=86_400, " s");
+            },
+        );
         r.row_kw(
             tr!("settings-preview-preview-mem"),
             tr!("settings-preview-preview-mem-desc"),

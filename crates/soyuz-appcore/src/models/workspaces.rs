@@ -67,6 +67,10 @@ pub enum WsCmd {
         id: WindowId,
         merge: bool,
     },
+    /// Close window `id` and its tabs, killing their terminal shells (confirmed).
+    CloseWindowKill {
+        id: WindowId,
+    },
     /// Open the "Manage workspaces" dialog.
     Manage,
     /// Go to `location` in `pane` from the history graph (revisits the node).
@@ -96,6 +100,16 @@ pub struct WorkspacesState {
     pub renaming: Option<(GroupId, String, bool)>,
     /// Windows to reopen on the first frame (session restore).
     pub restore: Vec<WindowSession>,
+    /// The window that shows the media player (one decoder per process): the one with
+    /// Quick Look open, else the focused one when its preview pane is open
+    /// (`models::windows::update_player_window`). Other windows show posters.
+    pub player_window: WindowId,
+    /// The main window took over this window (`WinOp::Close` of the main window): the
+    /// frontend moves what it keeps per window (the rendered preview) to the main window.
+    pub promoted: Option<WindowId>,
+    /// The windows of the shared panels (editors, assistant, shelf, tool windows):
+    /// `models::owners`.
+    pub panels: super::owners::Owners,
 }
 
 impl WorkspacesState {
@@ -115,6 +129,9 @@ impl WorkspacesState {
             quitting: false,
             renaming: None,
             restore: Vec::new(),
+            player_window: WindowId::MAIN,
+            promoted: None,
+            panels: Default::default(),
         }
     }
 
@@ -169,7 +186,8 @@ pub fn overlays_here(app: &AppCore) -> bool {
         || !app.workspaces.windows.iter().any(|w| w.id == app.workspaces.owner) && app.workspaces.current.is_main()
 }
 
-/// This frame draws the main window (main-only panels: terminal, assistant, editors…).
+/// This frame draws the main window (the shared panels draw in their own window,
+/// `models::owners`; per-process pumps run in the main window's frame).
 pub fn main_frame(app: &AppCore) -> bool {
     app.workspaces.current.is_main()
 }
@@ -575,7 +593,8 @@ pub fn apply(app: &mut AppCore, cmd: WsCmd) {
             app.workspaces.persist();
             rebind(app);
         }
-        WsCmd::CloseWindow { id, merge } => app.workspaces.ops.push(WinOp::Close { id, merge }),
+        WsCmd::CloseWindow { id, merge } => windows::close(app, id, merge),
+        WsCmd::CloseWindowKill { id } => app.workspaces.ops.push(WinOp::Close { id, merge: false }),
         WsCmd::Manage => app.frontend.push(FrontendCmd::ManageWorkspaces),
         WsCmd::Visit { pane, location } => {
             ops::navigate(app, pane, location, ops::NavOpts { revisit: true, ..ops::NavOpts::user() });

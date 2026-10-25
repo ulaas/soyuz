@@ -111,8 +111,14 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
     if !app.core.ui.bottom.open {
         return;
     }
-    if !app.core.ui.bottom.tabs().contains(&app.core.ui.bottom.tab) {
-        app.core.ui.bottom.tab = BottomTab::Terminal;
+    // Every window has its own terminal sessions (`models::terminal::Owner`).
+    let tabs: Vec<BottomTab> = app.core.ui.bottom.tabs().to_vec();
+    let Some(&first) = tabs.first() else {
+        app.core.ui.bottom.open = false;
+        return;
+    };
+    if !tabs.contains(&app.core.ui.bottom.tab) {
+        app.core.ui.bottom.tab = first;
     }
     let p = palette(root.ctx());
     let mut panel = Panel::bottom("soyuz.bottom").resizable(true).default_size(app.core.ui.bottom.height);
@@ -133,7 +139,7 @@ pub fn show(root: &mut Ui, app: &mut crate::app::SoyuzApp) {
             );
             // Tab header.
             let mut x = card.left() + 8.0;
-            for &tab in app.core.ui.bottom.tabs() {
+            for &tab in &tabs {
                 let label_w = ui
                     .painter()
                     .layout_no_wrap(tab.label().to_string(), FontId::proportional(12.5), p.text_primary)

@@ -1,11 +1,14 @@
 //! One file pane: location, listing, visible order, selection, cursor and view state.
 //! Pure state — the background requests are issued by `crate::ops`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+use std::hash::{BuildHasher, RandomState};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Instant, SystemTime};
 
+use hashbrown::HashTable;
+use hashbrown::hash_table::Entry;
 use soyuz_core::{EntryInfo, FsError, Location, NamePattern, NamePatternSpec, OpControl, PatternKind, sort_entries};
 
 use super::history::{HistoryEntry, NavHistory};
@@ -75,9 +78,8 @@ pub struct Pane {
     pub entries: Vec<EntryInfo>,
     /// Streamed entries not merged yet.
     incoming: Vec<EntryInfo>,
-    /// Parallel to `entries`.
-    pub keys: Vec<EntryKey>,
-    index: HashMap<EntryKey, usize>,
+    /// Name → index into `entries`.
+    index: NameIndex,
     /// Indices into `entries` in display order (filtered, grouped).
     pub visible: Vec<usize>,
     pub groups: Vec<GroupSpan>,
@@ -159,8 +161,7 @@ impl Pane {
             location,
             entries: Vec::new(),
             incoming: Vec::new(),
-            keys: Vec::new(),
-            index: HashMap::new(),
+            index: NameIndex::default(),
             visible: Vec::new(),
             groups: Vec::new(),
             collapsed_groups: HashSet::new(),
@@ -210,8 +211,7 @@ impl Pane {
     pub fn clear_listing(&mut self) {
         self.entries.clear();
         self.incoming.clear();
-        self.keys.clear();
-        self.index.clear();
+        self.index = NameIndex::default();
         self.visible.clear();
         self.groups.clear();
         self.selection.clear();
@@ -262,8 +262,17 @@ impl Pane {
     }
 
     fn rebuild_index(&mut self) {
-        self.keys = self.entries.iter().map(|e| EntryKey::from(e.name.as_str())).collect();
-        self.index = self.keys.iter().enumerate().map(|(i, k)| (k.clone(), i)).collect();
+        self.index.rebuild(&self.entries);
+    }
+
+    /// Index into `entries` of the entry named `key`.
+    pub fn index_of(&self, key: &str) -> Option<usize> {
+        self.index.get(&self.entries, key)
+    }
+
+    /// Selection key of `entries[i]`.
+    pub fn key_of(&self, i: usize) -> EntryKey {
+        EntryKey::from(self.entries[i].name.as_str())
     }
 
     /// Apply one listing message. Returns `true` when the listing finished.
@@ -308,32 +317,37 @@ impl Pane {
 
     /// Apply a watcher patch.
     pub fn on_patch(&mut self, updated: Vec<EntryInfo>, removed: &[String]) {
+        // Exact growth: a doubled buffer would be shrunk right back in `after_change`.
+        self.entries.reserve_exact(updated.len());
         listing::apply_patch(&mut self.entries, updated, removed, &self.view.sort);
         self.after_change();
     }
 
     fn after_change(&mut self) {
+        if !self.is_loading() {
+            // A finished listing stops growing: give back the doubling slack (up to half
+            // of the buffer).
+            self.entries.shrink_to_fit();
+        }
         self.rebuild_index();
         if !self.is_loading() {
-            let index = &self.index;
-            self.selection.retain(|k| index.contains_key(k));
-            if self.cursor.as_deref().is_some_and(|c| !self.index.contains_key(c)) {
+            let (index, entries) = (&self.index, &self.entries);
+            self.selection.retain(|k| index.get(entries, k).is_some());
+            if self.cursor.as_deref().is_some_and(|c| self.index_of(c).is_none()) {
                 self.cursor = None;
             }
         }
-        if let Some(name) = self.pending_cursor.clone()
-            && let Some(&i) = self.index.get(name.as_str())
-        {
-            let key = self.keys[i].clone();
+        let (index, entries) = (&self.index, &self.entries);
+        if let Some(name) = self.pending_cursor.take_if(|n| index.get(entries, n).is_some()) {
+            let key = EntryKey::from(name);
             self.selection.select_only(key.clone());
             self.cursor = Some(key);
             self.scroll_to_cursor = self.restore_scroll.is_none();
-            self.pending_cursor = None;
         }
         if !self.is_loading() && !self.pending_selection.is_empty() {
             for name in std::mem::take(&mut self.pending_selection) {
-                if let Some(&i) = self.index.get(name.as_str()) {
-                    self.selection.insert(self.keys[i].clone());
+                if self.index_of(&name).is_some() {
+                    self.selection.insert(EntryKey::from(name));
                 }
             }
         }
@@ -445,11 +459,12 @@ impl Pane {
     }
 
     pub fn entry(&self, key: &str) -> Option<&EntryInfo> {
-        self.index.get(key).map(|&i| &self.entries[i])
+        self.index_of(key).map(|i| &self.entries[i])
     }
 
-    pub fn key_at(&self, visible_pos: usize) -> Option<&EntryKey> {
-        self.visible.get(visible_pos).map(|&i| &self.keys[i])
+    /// Key (name) of the entry at visible position `visible_pos`.
+    pub fn key_at(&self, visible_pos: usize) -> Option<&str> {
+        self.visible.get(visible_pos).map(|&i| self.entries[i].name.as_str())
     }
 
     pub fn entry_at(&self, visible_pos: usize) -> Option<&EntryInfo> {
@@ -458,7 +473,7 @@ impl Pane {
 
     /// Visible position of `key`.
     pub fn visible_pos(&self, key: &str) -> Option<usize> {
-        let idx = *self.index.get(key)?;
+        let idx = self.index_of(key)?;
         self.visible.iter().position(|&i| i == idx)
     }
 
@@ -468,7 +483,7 @@ impl Pane {
 
     /// Keys in visible order.
     pub fn visible_keys(&self) -> Vec<EntryKey> {
-        self.visible.iter().map(|&i| self.keys[i].clone()).collect()
+        self.visible.iter().map(|&i| self.key_of(i)).collect()
     }
 
     /// Selected entries in visible order (falls back to the cursor entry when nothing
@@ -477,7 +492,7 @@ impl Pane {
         let mut v: Vec<&EntryInfo> = self
             .visible
             .iter()
-            .filter(|&&i| self.selection.contains(&self.keys[i]))
+            .filter(|&&i| self.selection.contains(&self.entries[i].name))
             .map(|&i| &self.entries[i])
             .collect();
         if v.is_empty()
@@ -507,7 +522,7 @@ impl Pane {
     /// anchor, `keep` leaves the selection alone (Ctrl+arrows), otherwise the cursor item
     /// becomes the selection.
     pub fn move_cursor(&mut self, pos: usize, extend: bool, keep: bool) {
-        let Some(key) = self.key_at(pos).cloned() else { return };
+        let Some(key) = self.key_at(pos).map(EntryKey::from) else { return };
         if extend {
             let anchor = self.selection.anchor().cloned().or_else(|| self.cursor.clone()).unwrap_or(key.clone());
             let order = self.visible_keys();
@@ -535,6 +550,37 @@ impl Pane {
         (0..n)
             .map(|k| (start + k) % n)
             .find(|&p| self.entry_at(p).is_some_and(|e| soyuz_core::fold_for_match(&e.name).starts_with(&needle)))
+    }
+}
+
+/// Name → index into a pane's `entries`. The table holds only indices (4 bytes a slot);
+/// names are read from the entries, so a listing keeps no second copy of each name.
+#[derive(Default)]
+struct NameIndex {
+    table: HashTable<u32>,
+    hasher: RandomState,
+}
+
+impl NameIndex {
+    /// Index every entry by name; a repeated name (search results) maps to its last entry.
+    fn rebuild(&mut self, entries: &[EntryInfo]) {
+        let NameIndex { table, hasher } = self;
+        let rehash = |&j: &u32| hasher.hash_one(entries[j as usize].name.as_str());
+        *table = HashTable::with_capacity(entries.len());
+        for (i, e) in entries.iter().enumerate() {
+            let i = u32::try_from(i).expect("fewer than 2^32 entries");
+            let eq = |&j: &u32| entries[j as usize].name == e.name;
+            match table.entry(hasher.hash_one(e.name.as_str()), eq, rehash) {
+                Entry::Occupied(mut o) => *o.get_mut() = i,
+                Entry::Vacant(v) => {
+                    v.insert(i);
+                }
+            }
+        }
+    }
+
+    fn get(&self, entries: &[EntryInfo], key: &str) -> Option<usize> {
+        self.table.find(self.hasher.hash_one(key), |&j| entries[j as usize].name == key).map(|&j| j as usize)
     }
 }
 
@@ -670,6 +716,29 @@ mod tests {
         p.relist_pending = true;
         p.clear_listing();
         assert!(p.deferred_paths.is_empty() && !p.relist_pending);
+    }
+
+    /// A finished listing holds no growth slack, and lookups go through the name index.
+    #[test]
+    fn finished_listing_is_compact_and_indexed() {
+        let mut p = Pane::new(Location::Dir("/d".into()), ViewState::default());
+        for c in 0..10 {
+            p.on_listing((0..100).map(|i| file(&format!("f{c}_{i:03}"))).collect(), false, None);
+            p.flush_incoming();
+        }
+        assert!(p.entries.capacity() > p.entries.len(), "streaming grows by doubling");
+        p.on_listing(Vec::new(), true, None);
+        assert_eq!(p.entries.capacity(), p.entries.len());
+        assert_eq!(p.entry("f3_042").map(|e| e.name.as_str()), Some("f3_042"));
+        assert_eq!(p.index_of("nope"), None);
+        p.on_patch(vec![file("zz")], &["f0_000".to_string()]);
+        assert_eq!(p.entries.capacity(), p.entries.len());
+        assert!(p.entry("zz").is_some() && p.entry("f0_000").is_none());
+        // Search results can repeat a name: the last one wins, as with a map.
+        let mut dup = file("same");
+        dup.size = 7;
+        p.set_entries_ordered(vec![file("same"), dup]);
+        assert_eq!(p.entry("same").map(|e| e.size), Some(7));
     }
 
     #[test]

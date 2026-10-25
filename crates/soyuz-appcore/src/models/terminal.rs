@@ -1,8 +1,16 @@
-//! Integrated terminal sessions (frontend-agnostic): the session list per owner (shared
-//! or per tab), which session is active, keyboard ownership, following the pane's folder
-//! (`send_cd`, refused while the shell is busy) and the reverse sync from the shell's
-//! reported cwd, OSC 52 clipboard requests and terminal links. `ui::panels::terminal`
-//! draws the session strip and the terminal view.
+//! Integrated terminal sessions (frontend-agnostic): the session list per owner (a tab
+//! in per-tab mode, else a window: every window has its own shared set), which session
+//! is active, keyboard ownership, following the pane's folder (`send_cd`, refused while
+//! the shell is busy) and the reverse sync from the shell's reported cwd, OSC 52
+//! clipboard requests and terminal links. `ui::panels::terminal` draws the session strip
+//! and the terminal view.
+//!
+//! The sessions are shared by the whole process; what a window shows of them (keyboard
+//! focus, the rename field, the last pane folder seen) is per window
+//! ([`TerminalWindowUi`], swapped by `models::windows::swap_ui`). Terminal actions run in
+//! the window they come from; [`pump`] follows each window's focused pane. Sessions
+//! follow their tab when it moves to another window, and a window's shared sessions
+//! follow its tabs when the window is merged into another ([`TerminalPanel::rekey_window`]).
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -16,6 +24,7 @@ use crate::core::{AppCore, Focus};
 use crate::host::Host;
 use crate::models::frontend::{FrontendCmd, SuspendRequest};
 use crate::models::toasts::Toast;
+use crate::state::workspace_windows::WindowId;
 
 /// How long a refused `cd` keeps being retried.
 const CD_RETRY: Duration = Duration::from_secs(3);
@@ -27,8 +36,8 @@ pub struct Session {
     /// Title reported by the shell (often the cwd with shell integration).
     pub title: String,
     pub custom: Option<String>,
-    /// Owning tab in per-tab mode.
-    pub tab: Option<u64>,
+    /// The tab (per-tab mode) or the window (shared mode) the session belongs to.
+    pub owner: Owner,
     /// Directory we last told the shell to enter (or it reported).
     pub last_dir: Option<PathBuf>,
     pub pending_cd: Option<(PathBuf, Instant)>,
@@ -73,19 +82,37 @@ pub fn title_label(title: &str) -> Option<String> {
     Some(if t.chars().count() > 28 { t.chars().take(27).collect::<String>() + "…" } else { t.to_string() })
 }
 
+/// Who a session belongs to: a tab (`[terminal] per_tab`) or a window (one shared set
+/// per window).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Owner {
+    Tab(u64),
+    Window(WindowId),
+}
+
+/// The per-window part of [`TerminalPanel`] (keyboard focus, rename field, last pane
+/// folder seen, close request), held by a window while another one is swapped in.
+#[derive(Default)]
+pub struct TerminalWindowUi {
+    focused: bool,
+    renaming: Option<(u64, String)>,
+    last_pane_dir: Option<(u64, PathBuf)>,
+    request_close: bool,
+}
+
 #[derive(Default)]
 pub struct TerminalPanel {
     pub sessions: Vec<Session>,
-    /// Active session id per owner (tab id, or 0 when shared).
-    active: Vec<(u64, u64)>,
-    /// The terminal owns keyboard input.
+    /// Active session id per owner.
+    active: Vec<(Owner, u64)>,
+    /// The terminal owns keyboard input (this window).
     pub focused: bool,
-    /// Session being renamed and the edited text.
+    /// Session being renamed and the edited text (this window).
     pub renaming: Option<(u64, String)>,
-    /// Last focused-pane folder seen (to detect navigation).
+    /// Last focused-pane folder seen in this window (to detect navigation).
     last_pane_dir: Option<(u64, PathBuf)>,
     next_id: u64,
-    /// Ask the host to close the bottom panel (the last session went away).
+    /// Ask the host to close this window's bottom panel (the last session went away).
     request_close: bool,
     /// OSC 52 clipboard write waiting for an answer (`terminal.osc52 = "ask"`); a newer
     /// request replaces an unanswered one.
@@ -95,29 +122,35 @@ pub struct TerminalPanel {
 }
 
 impl TerminalPanel {
-    pub fn owner(per_tab: bool, tab: u64) -> Option<u64> {
-        per_tab.then_some(tab)
+    pub fn owner(per_tab: bool, tab: u64, window: WindowId) -> Owner {
+        if per_tab { Owner::Tab(tab) } else { Owner::Window(window) }
     }
 
-    pub fn visible_ids(&self, owner: Option<u64>) -> Vec<u64> {
-        self.sessions.iter().filter(|s| s.tab == owner).map(|s| s.id).collect()
+    /// Exchange the per-window part with `w` (its own inverse; `models::windows::swap_ui`).
+    pub fn swap_window(&mut self, w: &mut TerminalWindowUi) {
+        std::mem::swap(&mut self.focused, &mut w.focused);
+        std::mem::swap(&mut self.renaming, &mut w.renaming);
+        std::mem::swap(&mut self.last_pane_dir, &mut w.last_pane_dir);
+        std::mem::swap(&mut self.request_close, &mut w.request_close);
     }
 
-    pub fn active_id(&self, owner: Option<u64>) -> Option<u64> {
-        let key = owner.unwrap_or(0);
+    pub fn visible_ids(&self, owner: Owner) -> Vec<u64> {
+        self.sessions.iter().filter(|s| s.owner == owner).map(|s| s.id).collect()
+    }
+
+    pub fn active_id(&self, owner: Owner) -> Option<u64> {
         let ids = self.visible_ids(owner);
         self.active
             .iter()
-            .find(|(o, _)| *o == key)
+            .find(|(o, _)| *o == owner)
             .map(|(_, id)| *id)
             .filter(|id| ids.contains(id))
             .or(ids.last().copied())
     }
 
-    pub fn set_active(&mut self, owner: Option<u64>, id: u64) {
-        let key = owner.unwrap_or(0);
-        self.active.retain(|(o, _)| *o != key);
-        self.active.push((key, id));
+    pub fn set_active(&mut self, owner: Owner, id: u64) {
+        self.active.retain(|(o, _)| *o != owner);
+        self.active.push((owner, id));
     }
 
     pub fn session(&self, id: u64) -> Option<&Session> {
@@ -129,19 +162,65 @@ impl TerminalPanel {
     }
 
     /// A tab was closed: drop (and thereby kill) the shells it owned in per-tab mode.
-    /// Shared sessions (`tab == None`) are untouched.
+    /// Shared sessions (`Owner::Window`) are untouched.
     pub fn drop_tab(&mut self, tab: u64) {
-        self.sessions.retain(|s| s.tab != Some(tab));
-        self.active.retain(|(o, _)| *o != tab);
+        self.sessions.retain(|s| s.owner != Owner::Tab(tab));
+        self.active.retain(|(o, _)| *o != Owner::Tab(tab));
         if self.last_pane_dir.as_ref().is_some_and(|(t, _)| *t == tab) {
             self.last_pane_dir = None;
         }
     }
+
+    /// Window `id` closed without handing its tabs over: drop (and kill) its shared
+    /// sessions. Per-tab sessions go with their tabs ([`drop_tab`](Self::drop_tab)).
+    pub fn drop_window(&mut self, id: WindowId) {
+        self.sessions.retain(|s| s.owner != Owner::Window(id));
+        self.active.retain(|(o, _)| *o != Owner::Window(id));
+    }
+
+    /// Window `from`'s shared sessions now belong to window `to` (its tabs merged into
+    /// `to`, or `from` took over as the main window). `to`'s active session stays.
+    pub fn rekey_window(&mut self, from: WindowId, to: WindowId) {
+        if from == to {
+            return;
+        }
+        for s in &mut self.sessions {
+            if s.owner == Owner::Window(from) {
+                s.owner = Owner::Window(to);
+            }
+        }
+        if self.active.iter().any(|(o, _)| *o == Owner::Window(to)) {
+            self.active.retain(|(o, _)| *o != Owner::Window(from));
+        } else {
+            for (o, _) in &mut self.active {
+                if *o == Owner::Window(from) {
+                    *o = Owner::Window(to);
+                }
+            }
+        }
+    }
+
+    /// Running shells among the sessions whose owner `owned` accepts.
+    pub fn live(&self, owned: impl Fn(Owner) -> bool) -> usize {
+        self.sessions.iter().filter(|s| owned(s.owner) && s.is_alive()).count()
+    }
 }
 
-/// The session owner of the focused tab (`None` = shared).
-pub fn current_owner(app: &AppCore) -> Option<u64> {
-    TerminalPanel::owner(app.config.terminal.per_tab, app.ws.tab().id.0)
+/// The session owner of this window's focused tab.
+pub fn current_owner(app: &AppCore) -> Owner {
+    TerminalPanel::owner(app.config.terminal.per_tab, app.ws.tab().id.0, app.workspaces.current)
+}
+
+/// Running shells that die with window `id` when it closes without moving its tabs: its
+/// shared sessions and those of its tabs.
+pub fn live_in_window(app: &mut AppCore, id: WindowId) -> usize {
+    let tabs: Vec<u64> =
+        crate::models::windows::with_window(app, id, |app| app.ws.tabs.iter().map(|t| t.id.0).collect())
+            .unwrap_or_default();
+    app.ui.terminal.live(|o| match o {
+        Owner::Window(w) => w == id,
+        Owner::Tab(t) => tabs.contains(&t),
+    })
 }
 
 fn settings_for(app: &AppCore, cwd: &Path) -> TermSettings {
@@ -187,7 +266,7 @@ pub fn spawn_session(app: &mut AppCore, host: &dyn Host, cwd: PathBuf) -> u64 {
         error,
         title: String::new(),
         custom: None,
-        tab: owner,
+        owner,
         last_dir: Some(cwd),
         pending_cd: None,
         busy_since: None,
@@ -302,11 +381,14 @@ pub fn run_command(app: &mut AppCore, host: &dyn Host, dir: PathBuf, line: &str)
 /// Close (and kill) session `id`; the panel closes with the last session of the tab.
 pub fn close_session(app: &mut AppCore, id: u64) {
     let t = &mut app.ui.terminal;
+    let mut owner = None;
     if let Some(i) = t.sessions.iter().position(|s| s.id == id) {
         let s = t.sessions.remove(i);
+        owner = Some(s.owner);
         drop(s); // kills the shell
     }
-    if app.ui.terminal.visible_ids(current_owner(app)).is_empty() {
+    let cur = current_owner(app);
+    if owner.is_none_or(|o| o == cur) && app.ui.terminal.visible_ids(cur).is_empty() {
         app.ui.terminal.request_close = true;
         unfocus(app);
     }
@@ -359,14 +441,15 @@ pub fn terminal_passthrough(chord: KeyChord) -> bool {
         || (alt && !ctrl && matches!(chord.key, KeyName::P))
 }
 
-/// Per frame (even while hidden): drain shell events, follow pane navigation, apply
-/// reverse sync.
+/// Per frame (even while hidden): drain shell events, then in every window follow its
+/// pane's navigation and apply the reverse sync.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
     if app.ui.terminal.sessions.is_empty() {
         return;
     }
     let mut exited = Vec::new();
-    let mut navigate: Option<PathBuf> = None;
+    // `(session, folder)` a shell moved to.
+    let mut moved: Vec<(u64, PathBuf)> = Vec::new();
     let follow_shell = app.config.terminal.follow_shell;
     let mut clip_writes = Vec::new();
     for s in &mut app.ui.terminal.sessions {
@@ -374,12 +457,13 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
         for ev in term.events().try_iter() {
             match ev {
                 TermEvent::Title(t) => s.title = t,
-                TermEvent::Exited(_) => exited.push(s.id),
+                TermEvent::Exited(_) => exited.push((s.id, s.owner)),
                 TermEvent::CwdChanged(dir) => {
                     let changed = s.last_dir.as_deref() != Some(dir.as_path());
                     s.last_dir = Some(dir.clone());
                     if follow_shell && changed {
-                        navigate = Some(dir);
+                        moved.retain(|(id, _)| *id != s.id);
+                        moved.push((s.id, dir));
                     }
                 }
                 // Untrusted (any program's output can ask): see `terminal.osc52`.
@@ -398,23 +482,59 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
             }
         }
     }
-    for id in exited {
-        close_session(app, id);
+    // An exited shell closes in the window that holds its owner.
+    for (id, owner) in exited {
+        let closed = window_of_owner(app, owner).and_then(|w| {
+            crate::models::windows::with_window(app, w, |app| {
+                close_session(app, id);
+                apply_requests(app);
+            })
+        });
+        if closed.is_none() {
+            app.ui.terminal.sessions.retain(|s| s.id != id);
+        }
     }
-    apply_requests(app);
+    crate::models::windows::for_each_window(app, |app| follow_window(app, &moved));
+    for s in &mut app.ui.terminal.sessions {
+        let Some((dir, since)) = s.pending_cd.clone() else { continue };
+        let Some(term) = &s.term else { continue };
+        if term.send_cd(&soyuz_fs::strip_verbatim(&dir)) {
+            s.last_dir = Some(dir);
+            s.pending_cd = None;
+            s.busy_since = None;
+        } else if since.elapsed() > CD_RETRY {
+            s.pending_cd = None;
+            s.busy_since = Some(Instant::now());
+        } else {
+            host.redraw_after(Duration::from_millis(150));
+        }
+    }
+}
+
+/// The window holding `owner` (its tab's window, or the window itself).
+pub fn window_of_owner(app: &AppCore, owner: Owner) -> Option<WindowId> {
+    match owner {
+        Owner::Window(w) => crate::models::windows::exists(app, w).then_some(w),
+        Owner::Tab(t) => crate::models::windows::window_of_tab(app, crate::state::workspace::TabId(t)),
+    }
+}
+
+/// One window's share of [`pump`] (swapped in): the reverse sync from its active
+/// session (`moved`: folders shells moved to) and following its focused pane.
+fn follow_window(app: &mut AppCore, moved: &[(u64, PathBuf)]) {
     let per_tab = app.config.terminal.per_tab;
     let tab = app.ws.tab().id.0;
-    let owner = TerminalPanel::owner(per_tab, tab);
-    let active = app.ui.terminal.active_id(owner);
+    let active = app.ui.terminal.active_id(current_owner(app));
     // Reverse sync: shell cd → pane (only from the active session).
-    if let (Some(dir), Some(_)) = (navigate, active)
+    if let Some(id) = active
+        && let Some((_, dir)) = moved.iter().find(|(s, _)| *s == id)
         && let Location::Dir(cur) = &app.ws.pane().location
-        && !same_dir(cur, &dir)
+        && !same_dir(cur, dir)
     {
         // The existence check runs on the lister thread; it navigates when `dir` is a folder.
         let pane = app.ws.pane().id;
         app.ui.terminal.last_pane_dir = Some((tab, dir.clone()));
-        app.services.lister.probe(pane, &dir);
+        app.services.lister.probe(pane, dir);
     }
     // Follow navigation: pane → shell.
     if app.config.terminal.follow_navigation
@@ -435,20 +555,6 @@ pub fn pump(app: &mut AppCore, host: &dyn Host) {
             {
                 s.pending_cd = Some((dir, Instant::now()));
             }
-        }
-    }
-    for s in &mut app.ui.terminal.sessions {
-        let Some((dir, since)) = s.pending_cd.clone() else { continue };
-        let Some(term) = &s.term else { continue };
-        if term.send_cd(&soyuz_fs::strip_verbatim(&dir)) {
-            s.last_dir = Some(dir);
-            s.pending_cd = None;
-            s.busy_since = None;
-        } else if since.elapsed() > CD_RETRY {
-            s.pending_cd = None;
-            s.busy_since = Some(Instant::now());
-        } else {
-            host.redraw_after(Duration::from_millis(150));
         }
     }
 }
@@ -616,7 +722,9 @@ pub fn looks_executable(path: &Path) -> bool {
     ext_hit
 }
 
-/// Whether a modifier-less key event targets the terminal (used to keep type-ahead off).
+/// Whether a modifier-less key event targets the terminal (used to keep type-ahead off):
+/// this window's terminal is shown and focused (each window has its own focus, so a
+/// terminal focused in one window never takes another window's keys).
 pub fn owns_keyboard(app: &AppCore) -> bool {
     app.ui.terminal.focused && app.ui.bottom.terminal_shown()
 }

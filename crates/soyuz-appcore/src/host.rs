@@ -64,6 +64,10 @@ pub enum WindowCmd {
     /// Veto the close request of this frame.
     CancelClose,
     Focus,
+    /// Un-minimize and bring to the front for a launch another process handed over
+    /// (`services::instance`): the launcher granted us the foreground, so no synthetic
+    /// input is needed (winit's `Focus` presses Alt on Windows).
+    Raise,
     Minimized(bool),
     Maximized(bool),
     Title(String),
