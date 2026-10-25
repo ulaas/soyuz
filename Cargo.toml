@@ -72,6 +72,9 @@ notify = "8.2.0"
 notify-debouncer-full = { version = "0.7.0", features = ["crossbeam-channel"] }
 crossbeam-channel = "0.5.17"
 parking_lot = "0.12.5"
+# `HashTable` only (a pane's name index stores entry indices, not key copies); the version
+# indexmap already pulls in.
+hashbrown = { version = "0.17.1", default-features = false }
 rayon = "1.12.0"
 ignore = "0.4.33"
 globset = "0.4.20"

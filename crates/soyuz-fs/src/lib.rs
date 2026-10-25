@@ -48,6 +48,7 @@ pub mod os_theme;
 pub mod pasteboard;
 pub mod path;
 pub mod perms;
+pub mod process;
 pub mod shares;
 pub mod snapshots;
 pub mod sparse;

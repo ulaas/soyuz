@@ -13,6 +13,7 @@ pub(crate) mod instance;
 pub(crate) mod locale;
 pub(crate) mod ntdir;
 pub(crate) mod owned;
+pub(crate) mod process;
 pub(crate) mod registry;
 pub(crate) mod security;
 pub(crate) mod shadow;

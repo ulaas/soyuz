@@ -18,7 +18,7 @@ use crate::cmd::Cmd;
 use crate::services::preview_gfx::Tex;
 use crate::services::thumbs::{self, ThumbKey};
 use crate::state::pane::{Band, ContextTarget, LayoutSig, Pane};
-use crate::state::selection::{BandMode, ClickMods, Selection};
+use crate::state::selection::{BandMode, ClickMods, EntryKey, Selection};
 use crate::theme::fonts::SEMIBOLD;
 use crate::theme::tokens::{alpha, radius};
 use crate::theme::{Palette, icons as ticons, icons::ph, palette};
@@ -237,7 +237,7 @@ fn body(
                     let r = to_screen(cell);
                     let idx = pane.visible[i];
                     let e = &pane.entries[idx];
-                    let key = &pane.keys[idx];
+                    let key = e.name.as_str();
                     let st = ItemState {
                         selected: pane.selection.contains(key),
                         cursor: cursor_pos == Some(i) && v.list_focus && v.focused,
@@ -322,7 +322,7 @@ fn body(
                 pane.dirty = true;
             }
         } else if let Some(i) = item_at(pos) {
-            let key = pane.key_at(i).cloned();
+            let key = pane.key_at(i).map(EntryKey::from);
             if let Some(key) = key {
                 let on_checkbox = v.checkbox_mode
                     && pos.is_some_and(|pp| {
@@ -354,7 +354,7 @@ fn body(
     }
     if bg.double_clicked()
         && let Some(i) = item_at(press)
-        && let Some(key) = pane.key_at(i).cloned()
+        && let Some(key) = pane.key_at(i).map(EntryKey::from)
     {
         v.cmds.push(Cmd::Open { pane: pane.id, key });
     }
@@ -371,7 +371,7 @@ fn body(
         }
     }
     if bg.secondary_clicked() {
-        match item_at(press).and_then(|i| pane.key_at(i).cloned()) {
+        match item_at(press).and_then(|i| pane.key_at(i).map(EntryKey::from)) {
             Some(key) => {
                 if !pane.selection.contains(&key) {
                     pane.selection.select_only(key.clone());
@@ -401,7 +401,7 @@ fn body(
             if on_item {
                 // Press-and-drag on an item selects it (drag-and-drop arrives with the
                 // jobs integration).
-                if let Some(key) = item_at(Some(op)).and_then(|i| pane.key_at(i).cloned()) {
+                if let Some(key) = item_at(Some(op)).and_then(|i| pane.key_at(i).map(EntryKey::from)) {
                     if !pane.selection.contains(&key) && !click_mods.toggle {
                         pane.selection.select_only(key.clone());
                     }
@@ -441,8 +441,8 @@ fn body(
         }
         let band_rect = crate::geom::Rect::from_two_pos(band.start, band.current);
         let hits: Vec<_> =
-            layout.items_in_rect(band_rect).into_iter().filter_map(|i| pane.key_at(i).cloned()).collect();
-        let under = layout.hit(band.current).and_then(|i| pane.key_at(i).cloned());
+            layout.items_in_rect(band_rect).into_iter().filter_map(|i| pane.key_at(i).map(EntryKey::from)).collect();
+        let under = layout.hit(band.current).and_then(|i| pane.key_at(i).map(EntryKey::from));
         pane.selection = Selection::from_band(&band.base, &hits, band.mode);
         if let Some(k) = under.or_else(|| hits.last().cloned()) {
             pane.cursor = Some(k);
