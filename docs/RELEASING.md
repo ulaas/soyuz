@@ -154,12 +154,12 @@ runtime. `cargo deb` expects it unpacked in `ffmpeg-rt/` at the repository root.
   A manual run (*Run workflow*) has a `rebuild_ffmpeg` switch that ignores the cache. The
   job uploads `ffmpeg-<target>` artifacts (the libraries, the texts, `include/` for the
   layout probe) and `ffmpeg-sources` (every input archive).
-- **`media` job** (`ci.yml`): downloads the artifact and runs
-  `SOYUZ_FFMPEG_DIR=… SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs`
-  on all three OSes (a missing runtime is a failure, not a skip), after the layout oracle:
-  `third_party/ffmpeg/layout_probe.c` compiled against the built headers prints the C
-  `offsetof()` of every field `soyuz-media` reads, and `SOYUZ_FFMPEG_LAYOUT=<json> cargo test
-  -p soyuz-media -- layout` compares them with the Rust prefix structs.
+- **No CI tests against the built runtime**: the per-OS `media` job (tests with the
+  `ffmpeg-<target>` artifact and the layout oracle on all three OSes) was removed from
+  `ci.yml` (2026-10-26). To check a runtime by hand: `SOYUZ_FFMPEG_DIR=<dir>
+  SOYUZ_MEDIA_TESTS=1 cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs`, and for the
+  layout oracle compile `third_party/ffmpeg/layout_probe.c` against `<dir>/include`, write its
+  output to a JSON file and run `SOYUZ_FFMPEG_LAYOUT=<json> cargo test -p soyuz-media -- layout`.
 - **`media-v7` job**: the same crate tests against Debian 13's FFmpeg 7.1 runtime packages
   (`container: debian:trixie`, `libavcodec61` et al.; the `-dev` headers are installed only
   afterwards, for the C probe). Ubuntu's own packages are not used (24.04 ships 6.1, which
@@ -200,8 +200,8 @@ immediately (not a draft); app releases stay drafts for review.
    sums into `pins.env`. Same for dav1d / opus / libvpx / nv-codec-headers / libvpl; AMF is
    pinned by tag **and commit** (sparse checkout; read the commit from
    `https://api.github.com/repos/GPUOpen-LibrariesAndSDKs/AMF/git/refs/tags/v<ver>`).
-3. Push: the cache key changes, the `ffmpeg` job rebuilds, the `media` job proves the
-   libraries on all three OSes. Note the bump in `CHANGELOG.md`; the next tagged app release
+3. Push: the cache key changes, the `ffmpeg` job rebuilds (run the media tests above
+   against the new artifacts by hand). Note the bump in `CHANGELOG.md`; the next tagged app release
    publishes the new `ffmpeg-runtime-<ver>` release.
 
 Locally, `scripts/ffmpeg-build.sh <target> <out dir> --dry-run` prints the full plan

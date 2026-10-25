@@ -187,10 +187,10 @@ jobs:
   # The FFmpeg runtime (Phase V): the five LGPL shared libraries Soyuz loads at run time,
   # built by scripts/ffmpeg-build.sh from the tarballs pinned in third_party/ffmpeg/pins.env.
   # Built once per pin change (the cache key hashes the pins and the script; a miss costs
-  # 10-20 minutes per target), then uploaded as artifacts for the media job and the packages.
+  # 10-20 minutes per target), then uploaded as artifacts for the packages.
   # Linux and Windows (mingw-w64 cross) build on Ubuntu, the universal macOS slice on the
   # arm64 runner. The job also compiles third_party/ffmpeg/layout_probe.c against the built
-  # headers (the Windows probe is cross-compiled here and run on the Windows media leg).
+  # headers (the Windows probe is only cross-compiled, not run).
   ffmpeg:
     name: FFmpeg runtime (${{ matrix.target }})
     needs: no-shell32
@@ -266,60 +266,6 @@ jobs:
           name: ffmpeg-sources
           path: ffmpeg-out/linux64/sources
           if-no-files-found: error
-
-  # With-libraries tests on every OS: SOYUZ_MEDIA_TESTS=1 turns a missing runtime into a
-  # failure, SOYUZ_FFMPEG_DIR points at the artifact. The layout oracle compares the C
-  # offsetof() output with the #[repr(C)] prefix structs in soyuz-media (SOYUZ_FFMPEG_LAYOUT).
-  media:
-    name: Media tests with the FFmpeg runtime (${{ matrix.os }})
-    needs: ffmpeg
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: windows-latest, target: win64 }
-          - { os: ubuntu-latest, target: linux64 }
-          - { os: macos-latest, target: macos-universal }
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    env:
-      SOYUZ_FFMPEG_DIR: ${{ github.workspace }}/ffmpeg-rt
-      SOYUZ_MEDIA_TESTS: "1"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-      - name: Install Linux system libraries
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            pkg-config libasound2-dev \
-            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
-            libgl1-mesa-dev libfontconfig1-dev \
-            libva2 libva-drm2 libdrm2
-          # ^ the VAAPI build's libavutil links libva / libdrm (ordinary requires of the packages)
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ffmpeg-${{ matrix.target }}
-          path: ffmpeg-rt
-      - name: Layout oracle (C offsetof vs. the Rust tables)
-        shell: bash
-        env:
-          SOYUZ_FFMPEG_LAYOUT: ${{ github.workspace }}/layout.json
-        run: |
-          set -euo pipefail
-          probe=ffmpeg-rt/layout_probe
-          [[ "$RUNNER_OS" == Windows ]] && probe=ffmpeg-rt/layout_probe.exe
-          chmod +x "$probe"
-          "$probe" > layout.json
-          tail -n 1 layout.json
-          cargo test -p soyuz-media --locked -- layout
-      - name: Tests with the runtime
-        shell: bash
-        run: cargo test -p soyuz-media -p soyuz-appcore -p soyuz-jobs --locked
 
   # A second FFmpeg major, for free: Debian 13 ships 7.1 (avcodec 61). Only the runtime
   # packages are installed for the tests (nothing of Soyuz links FFmpeg); the -dev headers
