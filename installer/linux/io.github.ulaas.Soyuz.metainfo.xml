@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.5.3" date="2026-10-26" type="development">
+      <description>
+        <p>Security fix: the SMB client and the SSH key code use updated cryptography crates
+          that close timing side channels (RUSTSEC-2026-0385, RUSTSEC-2026-0387).</p>
+      </description>
+    </release>
     <release version="0.5.2" date="2026-10-25" type="development">
       <description>
         <p>Every Soyuz window runs in one process and uses much less memory. Panels docked on

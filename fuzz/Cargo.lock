@@ -966,9 +966,9 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
+checksum = "38d28fb6aa7dd680b3ffd1a3e64e115c177bdba63c0ae7f9cd48129ff05c4fa0"
 dependencies = [
  "cmov",
  "subtle",
@@ -4656,9 +4656,9 @@ dependencies = [
 
 [[package]]
 name = "smb2"
-version = "0.31.0"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1b7bd6d9a8ea181f9eede06acff4b620c22f9c41d5eb9c8db6fe212aa935f987"
+checksum = "191e0bf6d61480771778dd0fb7c34ca0dbec2c2f66eb8f06aa2bafddfd1b5374"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -4694,7 +4694,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-ai"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4723,7 +4723,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-appcore"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "ab_glyph",
  "base64 0.23.1",
@@ -4786,7 +4786,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-archive"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "bzip2",
  "chrono",
@@ -4807,7 +4807,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-core"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "bitflags 2.13.2",
  "chrono",
@@ -4825,7 +4825,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-fs"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "bitflags 2.13.2",
  "blake3",
@@ -4873,7 +4873,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-index"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4891,7 +4891,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-jobs"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "crossbeam-channel",
  "log",
@@ -4907,7 +4907,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-mcp"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "base64 0.23.1",
  "blake3",
@@ -4933,7 +4933,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-media"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "image",
  "libloading 0.9.0",
@@ -4944,7 +4944,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-script"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "chrono",
  "crossbeam-channel",
@@ -4966,7 +4966,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-search"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "blake3",
  "crossbeam-channel",
@@ -4985,7 +4985,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-term"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "alacritty_terminal",
  "crossbeam-channel",
@@ -4998,7 +4998,7 @@ dependencies = [
 
 [[package]]
 name = "soyuz-vfs"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "base64 0.23.1",
  "chrono",
