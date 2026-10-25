@@ -87,6 +87,14 @@
   </requires>
 
   <releases>
+    <release version="0.5.2" date="2026-10-25" type="development">
+      <description>
+        <p>Every Soyuz window runs in one process and uses much less memory. Panels docked on
+          the right no longer squeeze the file list below a configurable width. HTML files and
+          web links open correctly in Chrome and Edge on Windows, and Ctrl+click on a web link
+          in the terminal opens the browser.</p>
+      </description>
+    </release>
     <release version="0.5.1" date="2026-10-23" type="development">
       <description>
         <p>Files whose default app is a Microsoft Store app, such as photos opening in Photos,
