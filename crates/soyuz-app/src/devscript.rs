@@ -22,7 +22,15 @@
 //!   synthetic drag (`press:300,140;move:320,150;move:900,400;release:900,400`);
 //! * `native:list` / `native:move <x>,<y>` / `native:moveby <dx>,<dy>` / `native:hover <x>,<y>[,<n>]` — native dialog / popup
 //!   windows (`ui::native`): log their handles and rects, move the dialog (physical pixels);
-//!   `keys:` goes to the newest native window while one is open.
+//!   `keys:` goes to the newest native window while one is open;
+//! * `win:<k> <step>` — run one step inside secondary window `k` (0-based, in the order
+//!   the windows opened: `app.core.workspaces.windows`) with that window swapped in: an
+//!   action or another core step (`win:0 focus_terminal`, `win:0 expect:cwd=sub`),
+//!   or `keys:` (typed into that window on its next frame), e.g. `win:0 focus_terminal;
+//!   win:0 keys:echo hi{Enter}`. Other GUI steps are not supported inside a window, `shot:`
+//!   included: eframe takes screenshots of the main viewport only, so capture a secondary
+//!   window from outside while `until:<file>` holds the script (its own process's window,
+//!   e.g. with `PrintWindow`).
 //!
 //! `SOYUZ_WINDOW_POS=x,y` (read in `main.rs`) opens the window at that position without
 //! activating it, e.g. `-4000,-4000` keeps scripted screenshot sessions off-screen.
@@ -37,6 +45,7 @@ use soyuz_appcore::devscript::{FrontStep, KeyTok, Runner, ScriptFacts};
 use soyuz_core::config::Mods;
 
 use crate::app::SoyuzApp;
+use crate::state::workspace_windows::WindowId;
 
 static PROCESS_START: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static STARTUP_FRAMES: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -78,6 +87,8 @@ pub struct DevScript {
     pointer_sent: Option<egui::Pos2>,
     /// Synthetic pointer input, fed before the next frame (`click:`).
     raw: Vec<egui::Event>,
+    /// Synthetic keyboard input for a secondary window's next frame (`win:<k> keys:`).
+    window_events: Vec<(WindowId, Vec<egui::Event>)>,
 }
 
 impl DevScript {
@@ -95,6 +106,22 @@ pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
     if !app.gui.devscript.events.is_empty() {
         let events = std::mem::take(&mut app.gui.devscript.events);
         ctx.input_mut(|i| i.events.extend(events));
+    }
+}
+
+/// Start of secondary window `id`'s frame: its queued synthetic input (`win:<k> keys:`).
+pub fn inject_window(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
+    let queued = &mut app.gui.devscript.window_events;
+    if queued.iter().any(|(w, _)| *w == id) {
+        let mut events = Vec::new();
+        queued.retain_mut(|(w, e)| {
+            if *w == id {
+                events.append(e);
+            }
+            *w != id
+        });
+        ctx.input_mut(|i| i.events.extend(events));
+        ctx.request_repaint();
     }
 }
 
@@ -263,6 +290,7 @@ fn handle(app: &mut SoyuzApp, runner: &mut Runner, ctx: &egui::Context, step: Fr
                 crate::ui::widgets::dropdown::request_open(ctx, key.trim(), query);
             }
             "native" => crate::ui::native::devscript(ctx, &arg),
+            "win" => in_window(app, runner, ctx, &arg),
             "click" | "press" | "move" | "release" => {
                 // `click:<x>,<y>[,right]` — synthetic egui pointer click (points), spread
                 // over three frames (move, press, release) like a real one.
@@ -289,6 +317,38 @@ fn handle(app: &mut SoyuzApp, runner: &mut Runner, ctx: &egui::Context, step: Fr
             }
             other => log::warn!("SOYUZ_SCRIPT: {other} is not a GUI step"),
         },
+    }
+}
+
+/// `win:<k> <step>`: one step inside secondary window `k`.
+fn in_window(app: &mut SoyuzApp, runner: &mut Runner, ctx: &egui::Context, arg: &str) {
+    let arg = arg.trim();
+    let (k, step) = arg.split_once(char::is_whitespace).unwrap_or((arg, ""));
+    let Some(id) = k.parse::<usize>().ok().and_then(|k| app.core.workspaces.windows.get(k)).map(|w| w.id) else {
+        log::warn!("SOYUZ_SCRIPT: win:{arg}: no secondary window {k}");
+        return;
+    };
+    let facts = facts(app);
+    let host = crate::host::EguiHost::new(ctx);
+    // The step's commands run in the window too (a `cd` navigates its pane).
+    let front = crate::ui::workspaces::windows::with_window(app, id, |app| {
+        let front = runner.run_step(&mut app.core, &host, &facts, step.trim());
+        app.apply_cmds(&host);
+        front
+    })
+    .flatten();
+    match front {
+        None => {}
+        Some(FrontStep::Keys(keys)) => {
+            app.gui.devscript.window_events.push((id, key_events(&keys)));
+            ctx.request_repaint_of(crate::ui::workspaces::windows::viewport_id(id));
+        }
+        // eframe captures the root viewport only (an immediate viewport's paint takes no
+        // screenshot request): an external driver captures the window (`until:`).
+        Some(FrontStep::Shot(path)) => {
+            log::warn!("SOYUZ_SCRIPT: win:{k} shot:{}: secondary windows cannot be captured in-app", path.display())
+        }
+        Some(other) => log::warn!("SOYUZ_SCRIPT: win:{arg}: {other:?} is not supported inside a window"),
     }
 }
 

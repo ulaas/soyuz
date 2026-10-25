@@ -216,6 +216,7 @@ theme = "auto"                   # auto (derive from app theme) | dark | light
 per_tab = false                  # one terminal set per tab instead of one shared set
 follow_shell = false             # navigate the focused pane when the shell changes directory
 osc52 = "ask"                    # programs setting the clipboard (OSC 52): ask | allow | deny; reads are always denied
+close_window_with_sessions = "ask" # closing a window whose terminals still run: ask | kill
 
 [archive]
 preserve_special_bits = false    # keep setuid/setgid/sticky bits from archives (unix); off = mask to 0o777

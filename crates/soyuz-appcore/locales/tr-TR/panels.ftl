@@ -80,6 +80,15 @@ panels-terminal-clip-deny = Reddet
 panels-terminal-clip-allow-once = Bir kez izin ver
 panels-terminal-clip-always = Bu oturumda hep izin ver
 panels-terminal-clip-always-tip = Soyuz yeniden başlatılana kadar terminalin panoya yazmasına izin ver
+panels-terminal-close-window-title = { $count ->
+    [one] Pencere ve terminali kapatılsın mı?
+   *[other] Pencere ve { $count } terminali kapatılsın mı?
+}
+panels-terminal-close-window-body = { $count ->
+    [one] Bu pencerenin (ya da sekmelerinin) bir terminalinde hâlâ bir kabuk çalışıyor. Pencereyi kapatmak onu ve içinde çalışan programı sonlandırır.
+   *[other] Bu pencerenin (ya da sekmelerinin) { $count } terminalinde hâlâ bir kabuk çalışıyor. Pencereyi kapatmak onları ve içlerinde çalışan programları sonlandırır.
+}
+panels-terminal-close-window-confirm = Pencereyi kapat
 panels-terminal-new = Yeni terminal
 panels-terminal-open-here = Terminali burada aç
 panels-terminal-open-external = Harici terminali burada aç

@@ -397,6 +397,7 @@ A list of tables; empty by default. Defaults below are for a new entry's omitted
 | `per_tab` | boolean | `false` | One terminal set per tab (`true`) or one shared by all tabs (`false`). |
 | `follow_shell` | boolean | `false` | Reverse sync: when the shell reports a new cwd, navigate the focused pane there. |
 | `osc52` | `"ask"` \| `"allow"` \| `"deny"` | `"ask"` | What to do when a program asks to set the clipboard (OSC 52). Clipboard reads are always denied. (`ask`: Show a prompt (Allow once / Always for this session / Deny)) |
+| `close_window_with_sessions` | `"ask"` \| `"kill"` | `"ask"` | Closing a window (and its tabs) that still has terminals with running shells. (`ask`: Ask before closing the terminals; `kill`: Close them (their shells and programs end)) |
 
 ## `[archive]`
 

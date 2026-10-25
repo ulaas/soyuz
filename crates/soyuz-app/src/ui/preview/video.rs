@@ -103,6 +103,19 @@ thread_local! {
     static AUDIO_CMDS: RefCell<Vec<AudioCmd>> = const { RefCell::new(Vec::new()) };
     /// A play action with nothing open, handed to the audio card.
     static AUDIO_PLAY_REQUEST: Cell<bool> = const { Cell::new(false) };
+    /// The window drawn now has the media player (`models::windows::player_here`, set at
+    /// the start of each window's frame): audio cards elsewhere show without controls.
+    static PLAYER_HERE: Cell<bool> = const { Cell::new(true) };
+}
+
+/// Start of a window's frame: whether that window has the media player.
+pub fn set_player_here(here: bool) {
+    PLAYER_HERE.set(here);
+}
+
+/// The window drawn now has the media player (the audio card may start playback).
+pub fn player_here() -> bool {
+    PLAYER_HERE.get()
 }
 
 /// What the audio card (no core access) asks for.

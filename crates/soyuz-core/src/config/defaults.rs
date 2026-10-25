@@ -289,6 +289,7 @@ impl Default for Terminal {
             per_tab: false,
             follow_shell: false,
             osc52: Osc52Policy::Ask,
+            close_window_with_sessions: CloseWindowSessions::Ask,
         }
     }
 }

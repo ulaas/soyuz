@@ -36,7 +36,8 @@
 //!
 //! Frontend steps ([`FRONT_VERBS`]): `shot:<file>`, `keys:<spec>` (see [`parse_keys`]),
 //! `size:<w>x<h>`, and the GUI's `hover`, `click`, `press`, `move`, `release`, `native`,
-//! `dropdown`, `settings`, `appearance`, `export_picker`.
+//! `dropdown`, `settings`, `appearance`, `export_picker`, `win` (`win:<k> <step>`: one
+//! step inside the GUI's secondary window `k`, run through [`Runner::run_step`]).
 //!
 //! The frontend loop, once per frame:
 //! ```ignore
@@ -83,6 +84,7 @@ pub const FRONT_VERBS: &[&str] = &[
     "settings",
     "appearance",
     "export_picker",
+    "win",
 ];
 
 /// How long `until:` waits for its file.
@@ -176,7 +178,7 @@ impl FrontStep {
         match self {
             FrontStep::Shot(_) | FrontStep::Keys(_) => true,
             FrontStep::Size { .. } => false,
-            FrontStep::Other { verb, .. } => matches!(verb.as_str(), "click" | "press" | "move" | "release"),
+            FrontStep::Other { verb, .. } => matches!(verb.as_str(), "click" | "press" | "move" | "release" | "win"),
         }
     }
 
@@ -283,6 +285,24 @@ impl Runner {
             }
             host.redraw();
         }
+    }
+
+    /// Run `step` now (out of order): a core step here, or the frontend step it is,
+    /// returned. The GUI's `win:<k> <step>` runs it with that window swapped in.
+    pub fn run_step(
+        &mut self,
+        core: &mut AppCore,
+        host: &dyn Host,
+        facts: &ScriptFacts,
+        step: &str,
+    ) -> Option<FrontStep> {
+        let (verb, arg) = step.split_once(':').unwrap_or((step, ""));
+        if FRONT_VERBS.contains(&verb) {
+            return FrontStep::parse(verb, arg);
+        }
+        self.core_step(core, host, facts, step);
+        host.redraw();
+        None
     }
 
     /// One core step.
