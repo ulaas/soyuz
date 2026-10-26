@@ -87,6 +87,13 @@
   </requires>
 
   <releases>
+    <release version="0.5.5" date="2026-10-26" type="development">
+      <description>
+        <p>Folders opened from the file manager while Soyuz is minimized open at once, files
+          can be dragged out of every Soyuz window into other apps again, and a minimized
+          main window no longer keeps redrawing.</p>
+      </description>
+    </release>
     <release version="0.5.4" date="2026-10-26" type="development">
       <description>
         <p>Programs show their own icons in every file view, read directly from the program
