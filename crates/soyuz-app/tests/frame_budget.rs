@@ -34,7 +34,7 @@ fn frame_times_until(log: &str, mark: &str, until: Option<&str>) -> Vec<f64> {
             continue;
         }
         if let Some(rest) = line.split("frame ").nth(1)
-            && let Some(ms) = rest.split(" ui ").nth(1).and_then(|s| s.trim().strip_suffix("ms"))
+            && let Some(ms) = rest.split(" ui ").nth(1).and_then(|s| s.split(" ms").next())
             && let Ok(v) = ms.trim().parse::<f64>()
         {
             out.push(v);
@@ -45,7 +45,7 @@ fn frame_times_until(log: &str, mark: &str, until: Option<&str>) -> Vec<f64> {
 
 #[test]
 fn parses_frame_log() {
-    let log = "frame 1 ui 40.00 ms\nINFO SOYUZ_SCRIPT: mark tour\nINFO frame 2 ui 3.25 ms\nx frame 3 ui 12.00 ms\n";
+    let log = "frame 1 ui 40.00 ms\nINFO SOYUZ_SCRIPT: mark tour\nINFO frame 2 ui 3.25 ms; repaint: \nx frame 3 ui 12.00 ms; repaint: a.rs:1 x\n";
     assert_eq!(frame_times(log, "tour"), vec![3.25, 12.0]);
     let log = "INFO SOYUZ_SCRIPT: mark a\nframe 1 ui 1.00 ms\nINFO SOYUZ_SCRIPT: mark b\nframe 2 ui 2.00 ms\n";
     assert_eq!(frame_times_until(log, "a", Some("b")), vec![1.0]);

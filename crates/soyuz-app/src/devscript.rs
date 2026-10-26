@@ -111,6 +111,10 @@ pub fn inject(app: &mut SoyuzApp, ctx: &egui::Context) {
 
 /// Start of secondary window `id`'s frame: its queued synthetic input (`win:<k> keys:`).
 pub fn inject_window(app: &mut SoyuzApp, ctx: &egui::Context, id: WindowId) {
+    if app.gui.devscript.frame_log {
+        let causes: Vec<String> = ctx.repaint_causes().iter().map(ToString::to_string).collect();
+        log::info!("window {} frame; repaint: {}", id.0, causes.join(", "));
+    }
     let queued = &mut app.gui.devscript.window_events;
     if queued.iter().any(|(w, _)| *w == id) {
         let mut events = Vec::new();
@@ -207,7 +211,9 @@ pub fn pump(app: &mut SoyuzApp, ctx: &egui::Context) {
     if app.gui.devscript.frame_log {
         app.gui.devscript.frames += 1;
         let ms = app.gui.devscript.frame_start.map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
-        log::info!("frame {} ui {ms:.2} ms", app.gui.devscript.frames);
+        // What asked for this frame (egui records the caller of each repaint request).
+        let causes: Vec<String> = ctx.repaint_causes().iter().map(ToString::to_string).collect();
+        log::info!("frame {} ui {ms:.2} ms; repaint: {}", app.gui.devscript.frames, causes.join(", "));
     }
     if let Some((path, slot)) = &app.gui.devscript.pending_shot {
         let image = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();

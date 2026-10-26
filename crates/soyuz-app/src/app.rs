@@ -270,6 +270,17 @@ impl eframe::App for SoyuzApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let close_requested = ctx.input(|i| i.viewport().close_requested());
         self.core.handle_close_request(&crate::host::EguiHost::new(ctx), close_requested);
+        // While the main window is minimized (and no other window is shown) eframe runs
+        // only `logic`, but launches are applied in `ui`: without this, a folder opened
+        // from Explorer waited until the launch expired and then started a process of
+        // its own. That pass cannot create a window, so the launch becomes a tab of a
+        // restored window then (`instance::set_none_shown`).
+        let none_shown = ctx.input(|i| i.raw.viewports.values().all(|v| v.visible() == Some(false)));
+        crate::services::instance::set_none_shown(none_shown);
+        if self.core.needs_ui_pass() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
+            ctx.request_repaint();
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {

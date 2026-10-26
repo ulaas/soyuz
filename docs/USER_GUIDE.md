@@ -50,7 +50,9 @@ of the *Explorer* preset; the command palette always shows the active ones.
   second copy in memory, then the new launch exits. A file argument opens its folder with
   the file selected. *Settings → Views → Starting Soyuz again* (`[workspace] launch`) picks
   `new_window` (default), `new_tab` (a tab in the focused window) or `new_process` (a
-  separate process every time); it takes effect at the next start. `soyuz --new-window`
+  separate process every time); it takes effect at the next start. While every Soyuz
+  window is minimized, a launch opens as a tab of the last-used window, which comes back
+  to the front. `soyuz --new-window`
   always starts a separate process that leaves the saved session alone, as do
   `--safe-mode` and `--renderer`. A portable copy, an elevated (administrator) Soyuz and
   each Remote Desktop session have their own running instance.

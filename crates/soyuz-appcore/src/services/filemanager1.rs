@@ -36,6 +36,11 @@ static QUEUE: Mutex<Vec<Request>> = Mutex::new(Vec::new());
 static WAKE: Mutex<Option<Wake>> = Mutex::new(None);
 static FORCED: AtomicBool = AtomicBool::new(false);
 
+/// Requests are waiting for [`pump`] (see `AppCore::needs_ui_pass`).
+pub fn pending() -> bool {
+    !QUEUE.lock().is_empty()
+}
+
 /// `--dbus-file-manager`: own the bus name even when `[linux] own_file_manager1` is off.
 pub fn set_forced(on: bool) {
     FORCED.store(on, Ordering::Relaxed);

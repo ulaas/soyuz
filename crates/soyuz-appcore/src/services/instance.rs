@@ -381,6 +381,11 @@ pub fn shutdown() {
     drop(l);
 }
 
+/// Launches are waiting for [`pump`] (see `AppCore::needs_ui_pass`).
+pub fn pending() -> bool {
+    active().is_some_and(|s| !s.queue.lock().is_empty())
+}
+
 fn active() -> Option<Arc<Shared>> {
     LISTENER.lock().as_ref().map(|l| l.shared.clone())
 }
@@ -398,6 +403,16 @@ struct PumpState {
 }
 
 static PUMP: Mutex<PumpState> = Mutex::new(PumpState { recent: None, raise: None });
+
+/// Every window of this process is minimized (set by the frontend each frame).
+static NONE_SHOWN: AtomicBool = AtomicBool::new(false);
+
+/// The frontend shows no window right now (all minimized). A launch then opens as a tab
+/// of an existing window, which is restored: eframe can run a UI pass for a hidden
+/// window but cannot create a new one from it.
+pub fn set_none_shown(none: bool) {
+    NONE_SHOWN.store(none, Ordering::Relaxed);
+}
 
 /// Per-frame pump (UI thread, no secondary window swapped in): apply queued launches.
 pub fn pump(app: &mut AppCore, host: &dyn Host) {
@@ -451,7 +466,12 @@ fn apply(
         log::info!("instance: launch merged into the previous launch's window");
         return;
     }
-    match app.config.workspace.launch {
+    let none_shown = NONE_SHOWN.load(Ordering::Relaxed);
+    let mode = effective_mode(app.config.workspace.launch, none_shown);
+    if mode != app.config.workspace.launch {
+        log::info!("instance: every window is minimized; the launch opens as a tab");
+    }
+    match mode {
         LaunchMode::NewTab => {
             let owner = app.workspaces.owner;
             let id = if crate::models::windows::index(app, owner).is_some() { owner } else { WindowId::MAIN };
@@ -470,6 +490,15 @@ fn apply(
             st.raise = Some((first, now + Duration::from_secs(3)));
             host.redraw();
         }
+    }
+}
+
+/// How a launch opens: as `[workspace] launch` says, except that a new window becomes a
+/// tab (of a window that is then restored) while no window is shown.
+fn effective_mode(configured: LaunchMode, none_shown: bool) -> LaunchMode {
+    match configured {
+        LaunchMode::NewWindow | LaunchMode::NewProcess if none_shown => LaunchMode::NewTab,
+        mode => mode,
     }
 }
 
@@ -860,6 +889,15 @@ mod tests {
         assert!(open.is_absolute(), "{}", open.display());
         assert!(open.ends_with(Path::new("rel").join("dir")));
         assert_eq!(r.extra, vec![PathBuf::from("sftp://host/x")], "remote URLs stay as they are");
+    }
+
+    #[test]
+    fn minimized_windows_take_launches_as_tabs() {
+        assert_eq!(effective_mode(LaunchMode::NewWindow, false), LaunchMode::NewWindow);
+        assert_eq!(effective_mode(LaunchMode::NewWindow, true), LaunchMode::NewTab);
+        assert_eq!(effective_mode(LaunchMode::NewProcess, true), LaunchMode::NewTab);
+        assert_eq!(effective_mode(LaunchMode::NewTab, true), LaunchMode::NewTab);
+        assert_eq!(effective_mode(LaunchMode::NewTab, false), LaunchMode::NewTab);
     }
 
     #[test]

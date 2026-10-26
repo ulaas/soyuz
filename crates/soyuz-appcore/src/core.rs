@@ -482,6 +482,14 @@ impl AppCore {
         ops::fileops::begin_frame(self, host);
     }
 
+    /// Requests that only [`Self::pump_background`] applies are waiting: launches handed
+    /// over by another process (a folder double-clicked in Explorer) and FileManager1
+    /// calls. A frontend whose UI pass stops while its window is minimized (eframe) runs
+    /// one anyway, or the launch would wait until the window is restored.
+    pub fn needs_ui_pass(&self) -> bool {
+        crate::services::instance::pending() || crate::services::filemanager1::pending()
+    }
+
     /// Phase 7: integrations (MCP, assistant, automation, updates, D-Bus, remotes, OS
     /// clipboard).
     pub fn pump_background(&mut self, host: &dyn Host) {

@@ -85,7 +85,9 @@ fn push_line(line: String) {
 
 /// Install the logger (`RUST_LOG` overrides [`DEFAULT_FILTER`]). Idempotent.
 pub fn init_logging() {
-    let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER)).build();
+    let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER))
+        .format_timestamp_millis()
+        .build();
     let max = inner.filter();
     if log::set_boxed_logger(Box::new(RingLogger { inner, to_file: false })).is_ok() {
         log::set_max_level(max);
@@ -106,6 +108,7 @@ pub fn init_file_logging(path: &Path, cap: u64) {
         Err(_) => return init_logging(),
     };
     let inner = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(DEFAULT_FILTER))
+        .format_timestamp_millis()
         .target(env_logger::Target::Pipe(Box::new(file)))
         .write_style(env_logger::WriteStyle::Never)
         .build();
