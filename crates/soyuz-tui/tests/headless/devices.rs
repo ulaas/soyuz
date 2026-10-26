@@ -184,7 +184,15 @@ fn unlock_and_mount(data: &Path) {
             |a| menu_labels(a) == ["Unlock…", "-", "Hide from sidebar", "Copy device path"],
             key(KeyCode::Esc),
         ),
-        Step::new("the menu closed", |a| menu_labels(a).is_empty(), key(KeyCode::Enter)),
+        Step::new(
+            "the menu closed, the cursor back on the locked device",
+            |a| {
+                menu_labels(a).is_empty()
+                    && a.key_context() == KeyContext::Sidebar
+                    && sidebar_cursor(a).as_deref() == Some("Vault")
+            },
+            key(KeyCode::Enter),
+        ),
     ];
     let t = title.clone();
     steps.push(Step::new(
