@@ -143,6 +143,16 @@ pub fn primary_button_down() -> bool {
     }
 }
 
+/// Windows: tell our own window `hwnd` the primary button went up (the real release went
+/// to the OLE loop) for windows whose input the app cannot amend before a frame. A no-op
+/// elsewhere.
+pub fn release_button(hwnd: isize) {
+    #[cfg(windows)]
+    crate::sys::windows::dragdrop::post_button_up(hwnd);
+    #[cfg(not(windows))]
+    let _ = hwnd;
+}
+
 /// Diagnostics / tests: build the data object and read every offered format back through
 /// its COM vtable (`EnumFormatEtc`, `QueryGetData`, `GetData`). Block sizes may be rounded
 /// up by the allocator, so returned bytes can carry trailing padding.

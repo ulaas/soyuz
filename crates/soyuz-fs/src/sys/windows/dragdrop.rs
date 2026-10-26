@@ -19,9 +19,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use windows_sys::Win32::Foundation::{
     DATA_S_SAMEFORMATETC, DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC, DV_E_TYMED,
-    E_INVALIDARG, E_NOINTERFACE, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, GlobalFree, HGLOBAL, OLE_E_ADVISENOTSUPPORTED,
-    POINT, S_FALSE, S_OK,
+    E_INVALIDARG, E_NOINTERFACE, E_NOTIMPL, E_OUTOFMEMORY, E_POINTER, GlobalFree, HGLOBAL, HWND,
+    OLE_E_ADVISENOTSUPPORTED, POINT, S_FALSE, S_OK,
 };
+use windows_sys::Win32::Graphics::Gdi::ScreenToClient;
 use windows_sys::Win32::System::Com::{DATADIR_GET, DVASPECT_CONTENT, FORMATETC, STGMEDIUM, TYMED_HGLOBAL};
 use windows_sys::Win32::System::DataExchange::RegisterClipboardFormatW;
 use windows_sys::Win32::System::Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock};
@@ -29,7 +30,7 @@ use windows_sys::Win32::System::Ole::{DoDragDrop, OleInitialize, OleUninitialize
 use windows_sys::Win32::System::SystemServices::MK_LBUTTON;
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    GA_ROOT, GetAncestor, GetCursorPos, GetSystemMetrics, SM_SWAPBUTTON, WindowFromPoint,
+    GA_ROOT, GetAncestor, GetCursorPos, GetSystemMetrics, PostMessageW, SM_SWAPBUTTON, WM_LBUTTONUP, WindowFromPoint,
 };
 use windows_sys::core::{BOOL, GUID, HRESULT};
 
@@ -646,6 +647,24 @@ unsafe extern "system" fn src_release(this: *mut c_void) -> u32 {
             drop(Box::from_raw(this as *mut DropSource));
         }
         left
+    }
+}
+
+/// Post a left-button release at the cursor to our own window `hwnd` (a message to that
+/// window only, no input injection): the real one went to the OLE loop.
+pub(crate) fn post_button_up(hwnd: isize) {
+    if hwnd == 0 {
+        return;
+    }
+    let mut pt = POINT { x: 0, y: 0 };
+    // SAFETY: plain user32 calls with a valid out pointer; a stale handle only fails.
+    unsafe {
+        let h = hwnd as HWND;
+        if GetCursorPos(&mut pt) == 0 || ScreenToClient(h, &mut pt) == 0 {
+            return;
+        }
+        let lparam = (pt.x as u16 as u32 | (pt.y as u16 as u32) << 16) as isize;
+        PostMessageW(h, WM_LBUTTONUP, 0, lparam);
     }
 }
 

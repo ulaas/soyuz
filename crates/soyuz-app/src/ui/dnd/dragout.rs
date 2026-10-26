@@ -29,6 +29,20 @@ fn reset_id() -> Id {
     Id::unique("soyuz.dragout.reset")
 }
 
+/// After an OS drag: have egui see the primary button go up in the window the drag started
+/// in ([`raw_input`] for the main window). eframe runs no raw-input hook for the other
+/// windows, so on Windows they get the release as a window message instead.
+fn release_after_drag(ctx: &egui::Context) {
+    #[cfg(windows)]
+    if ctx.viewport_id() != egui::ViewportId::ROOT {
+        if let Some(hwnd) = crate::ui::native::hwnd_of(ctx, ctx.viewport_id()) {
+            soyuz_fs::dragout::release_button(hwnd);
+        }
+        return;
+    }
+    ctx.data_mut(|d| d.insert_temp(reset_id(), true));
+}
+
 /// Whether dragging items out of the window into other apps works here (Windows: OLE;
 /// Linux: X11 / XWayland via XDND, Wayland via `wl_data_source` once the data device is
 /// up). The Settings UI gates `[behaviour] drag_out` on this.
@@ -71,7 +85,7 @@ pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
     // The button may have been released outside the window without us seeing it
     // (capture lost): never start an OS drag then, it would drop at once.
     if !soyuz_fs::dragout::primary_button_down() {
-        ctx.data_mut(|d| d.insert_temp(reset_id(), true));
+        release_after_drag(ctx);
         return;
     }
     #[cfg(windows)]
@@ -87,7 +101,7 @@ pub fn end_frame(app: &mut SoyuzApp, ctx: &egui::Context) {
             Ok(r) => r,
             Err(e) => {
                 log::warn!("drag-out failed: {e}");
-                ctx.data_mut(|d| d.insert_temp(reset_id(), true));
+                release_after_drag(ctx);
                 return;
             }
         };
@@ -107,7 +121,7 @@ fn finish(app: &mut SoyuzApp, ctx: &egui::Context, report: &DragReport, payload:
     let paths = &payload.paths;
     let action = after_drop(report, paths, |p| p.symlink_metadata().is_ok());
     if action != AfterDrop::Resume && reset {
-        ctx.data_mut(|d| d.insert_temp(reset_id(), true));
+        release_after_drag(ctx);
     }
     match action {
         AfterDrop::Resume => egui::DragAndDrop::set_payload(ctx, DragPayload::clone(payload)),
@@ -153,7 +167,7 @@ fn start_session(ctx: &egui::Context, payload: &DragPayload) {
         }
         Err(e) => {
             log::warn!("drag-out failed: {e}");
-            ctx.data_mut(|d| d.insert_temp(reset_id(), true));
+            release_after_drag(ctx);
         }
     }
 }

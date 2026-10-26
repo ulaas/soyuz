@@ -197,8 +197,12 @@ fn window_frame(ui: &mut Ui, app: &mut SoyuzApp, id: WindowId) {
     if super::overlays_here(&app.core) {
         crate::ui::palette::show(&ctx, app);
         crate::ui::settings::show(&ctx, app);
-        crate::ops::fileops::end_frame(&mut app.core, &crate::host::EguiHost::new(&ctx));
     }
     crate::ui::titlebar::frame(&ctx, app);
+    if super::overlays_here(&app.core) {
+        // Like the main window: drag-out to other apps, the drag badge, the "ask" menu.
+        crate::ui::dnd::end_frame(app, &ctx);
+        crate::ops::fileops::end_frame(&mut app.core, &crate::host::EguiHost::new(&ctx));
+    }
     app.apply_cmds(&crate::host::EguiHost::new(&ctx));
 }
