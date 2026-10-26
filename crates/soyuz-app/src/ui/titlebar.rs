@@ -215,8 +215,10 @@ fn window_state(ctx: &Context) -> WindowState {
 /// Width of the sidebar panel last frame (the title bar is laid out before it).
 fn sidebar_column(ctx: &Context, sidebar: Id) -> Option<f32> {
     let w = egui::containers::panel::PanelState::load(ctx, sidebar)?.outer_rect.width();
-    // Re-layout once more when the sidebar width settles after a resize.
-    let key = Id::unique("soyuz.titlebar.column");
+    // Re-layout once more when the sidebar width settles after a resize. Per window: the
+    // data is shared by every viewport, and two windows with different sidebar widths
+    // would keep invalidating each other (a repaint loop at the display's refresh rate).
+    let key = Id::unique(("soyuz.titlebar.column", ctx.viewport_id()));
     let last = ctx.data(|d| d.get_temp::<f32>(key));
     if last != Some(w) {
         ctx.data_mut(|d| d.insert_temp(key, w));
