@@ -1,6 +1,6 @@
 //! The icon a Windows program carries in its own resources (`.exe`, `.scr`), read from
-//! the PE file directly: no `ExtractIcon`, `SHGetFileInfo` or `LoadLibraryEx`, so it
-//! works on every OS and never runs code from the file.
+//! the PE file directly: no Win32 icon-extraction or shell file-info calls and no
+//! `LoadLibraryEx`, so it works on every OS and never runs code from the file.
 //!
 //! **Format** (Microsoft "PE Format" and "Resource File Formats"): the DOS header's
 //! `e_lfanew` (at 0x3C) points at `PE\0\0`, the COFF header and the optional header,
