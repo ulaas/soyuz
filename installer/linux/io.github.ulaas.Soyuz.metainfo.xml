@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.5.6" date="2026-10-28" type="development">
+      <description>
+        <p>Build fix: a source comment no longer trips the check that keeps Windows shell
+          APIs out of Soyuz. No functional changes.</p>
+      </description>
+    </release>
     <release version="0.5.5" date="2026-10-26" type="development">
       <description>
         <p>Folders opened from the file manager while Soyuz is minimized open at once, files
