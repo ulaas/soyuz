@@ -7,7 +7,7 @@ Soyuz is a cross-platform (Windows / Linux / macOS) file explorer written in Rus
 ### Hard constraints
 - **No Windows shell backend.** Never use shell32, `Win32_UI_Shell`, `IFileOperation`, `SHFileOperation`, `ShellExecute(Ex)`, Shell COM, `url.dll`/`rundll32 …FileProtocolHandler`, or crates that wrap them (e.g. `trash`, `rfd`, `open` with `shellexecute-on-windows`).
   - Implement every operation at the kernel/filesystem level: raw `windows-sys` (kernel32/ntdll/advapi32/user32) on Windows, and `rustix`/`libc` syscalls on unix.
-  - CI greps for violations (`.github/workflows/ci.yml`, job `no-shell32`).
+  - CI greps for violations (`.github/workflows/ci.yml`, job `no-shell32`). The grep is plain text and case-insensitive over all of `crates/`, comments included: never write a banned name (`shell32`, `SHGetFileInfo`, `ShellExecute`, `IShellItem`, `CoInitialize`, …) even to say it is *not* used. Describe it instead ("no shell file-info calls"). Run the job's grep locally before committing.
 - **Fully configurable.** New behaviour gets a config key in `soyuz-core` (`config/schema.rs` + defaults + `docs/config.example.toml`). It must be editable in the Settings UI, and it must actually be read by the app; no dead settings.
 - **AI features (roadmap Phase A).** AI models and MCP clients never get raw fs access.
   - Every change goes through the jobs engine as a dry-run plan, then approval, then a job, so it is visible, follows conflict policies and can be undone.
