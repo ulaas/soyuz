@@ -1484,8 +1484,8 @@ mod tests {
         cm.collapse_commands = 0;
     }
 
-    /// A pane in the temp dir listing `names` (a trailing `/`: a folder), `selected`
-    /// selected, its menu on the items.
+    /// A pane in the temp dir listing `names` (a trailing `/`: a folder; `.exe` files are
+    /// executable), `selected` selected, its menu on the items.
     fn pane_with(config: &Config, names: &[&str], selected: &[&str]) -> Pane {
         let dir = std::env::temp_dir();
         let mut pane = Pane::new(Location::Dir(dir.clone()), ViewState::from_config(config));
@@ -1494,7 +1494,9 @@ mod tests {
             .map(|n| {
                 let kind = if n.ends_with('/') { soyuz_core::EntryKind::Dir } else { soyuz_core::EntryKind::File };
                 let mut e = soyuz_core::EntryInfo::minimal(dir.join(n.trim_end_matches('/')), kind);
-                e.mode = Some(0o755);
+                // Programs are `.exe` here: executable on unix too (elevation goes by the
+                // mode bits there, by the extension on Windows).
+                e.mode = Some(if n.ends_with(".exe") || n.ends_with('/') { 0o755 } else { 0o644 });
                 e
             })
             .collect();
