@@ -516,8 +516,7 @@ pub fn execute(app: &mut AppCore, action: Action, host: &dyn Host) {
 pub fn tui_only(a: &Action) -> bool {
     matches!(
         a,
-        Action::ContextMenu
-            | Action::FocusActivityPanel
+        Action::FocusActivityPanel
             | Action::PreviewScrollUp
             | Action::PreviewScrollDown
             | Action::PreviewPageUp

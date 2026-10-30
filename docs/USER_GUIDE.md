@@ -129,7 +129,10 @@ a program, *Extract* for an archive, the media tools, *PDF password*, *Join part
 entries sit in submenus (*Copy as*, *Send to*, *Terminal*, *Tools*, *Paste special*,
 *Media*). Colour tags are one row of dots: click one to tag or untag the selection. Rarely
 used entries (*Delete permanently*, *Create link*, *Previous versions*, *Reveal in system
-file manager*) are under *More* at the end; **Shift+right-click** shows them in place. All
+file manager*) are under *More* at the end; **Shift+right-click** shows them in place.
+**Shift+F10** opens the menu from the keyboard, below the cursor item (or for the folder
+when nothing is selected): the arrow keys move through it, Enter runs an entry and Esc
+closes it. All
 of it is configurable in *Settings → Views & layout → Context menu* (`[context_menu]`): turn the bar,
 the submenus, the compact menu, the type entries first or the tag dots off, group custom
 commands into *Commands*, and choose per action whether it shows always, only in the full

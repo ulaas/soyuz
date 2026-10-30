@@ -69,6 +69,9 @@ pub fn drain(app: &mut SoyuzApp, host: &EguiHost) {
                 app.gui.dialogs.push(dialogs::recovery::RecoveryDialog::new(host.ctx(), recovered))
             }
             FrontendCmd::EditorUnsaved(p) => app.gui.dialogs.push(crate::ui::editors::UnsavedDialog::new(p)),
+            FrontendCmd::View(crate::models::frontend::ViewRequest::ContextMenu) => {
+                crate::ui::context_menu::request_keyboard_open(host.ctx(), app.core.ws.pane().id);
+            }
             // Terminal-UI-only actions (`actions::tui_only`): nothing to do in the GUI.
             FrontendCmd::View(_) => {}
             // Leaving the screen for a shell / editor is a terminal UI request.

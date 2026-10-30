@@ -118,6 +118,7 @@ impl SoyuzApp {
         if self.dialog_open()
             || crate::palette::owns_keyboard(&self.core)
             || crate::ui::widgets::dropdown::any_open(ctx)
+            || crate::ui::context_menu::owns_keyboard(ctx)
             || crate::models::tools::any_window_open()
                 && crate::models::owners::here(&self.core, crate::models::owners::Panel::Tools)
         {

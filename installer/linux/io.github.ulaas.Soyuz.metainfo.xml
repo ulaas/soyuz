@@ -94,7 +94,8 @@
           (Run as root on Linux). The right-click menu is much shorter: a row of quick
           action buttons, related entries in submenus, entries for the file's type first,
           colour tags as a row of dots, and rarely used entries under More
-          (Shift+right-click shows everything). All of it is configurable.</p>
+          (Shift+right-click shows everything). All of it is configurable. Shift+F10 opens
+          the menu from the keyboard.</p>
       </description>
     </release>
     <release version="0.5.6" date="2026-10-28" type="development">

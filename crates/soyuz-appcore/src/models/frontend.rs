@@ -95,7 +95,7 @@ pub enum EditPurpose {
 /// [`FrontendCmd::View`]: what a terminal-UI-only action asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewRequest {
-    /// `ContextMenu` (Shift+F10): the menu of the focused item.
+    /// `ContextMenu` (Shift+F10): the menu of the focused item (both frontends).
     ContextMenu,
     /// `PreviewScroll*` / `PreviewPage*`: scroll the preview pane.
     PreviewScroll(ScrollStep),

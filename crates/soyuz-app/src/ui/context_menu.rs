@@ -12,7 +12,7 @@ use crate::cmd::Cmd;
 use crate::models::context_menu::{
     self as catalogue, Entry, Item, ItemStyle, MenuCtx, MenuIcon, StripKind, SubmenuKind,
 };
-use crate::state::pane::Pane;
+use crate::state::pane::{ContextTarget, Pane, PaneId};
 use crate::theme::icons::ph;
 use crate::theme::tokens::radius;
 use crate::theme::{icons, palette};
@@ -34,6 +34,63 @@ pub fn note_open(ui: &Ui, resp: &Response, pane: &mut Pane) {
     if resp.secondary_clicked() {
         pane.context_full = ui.input(|i| i.modifiers.shift);
     }
+}
+
+fn keyboard_key() -> egui::Id {
+    egui::Id::unique("soyuz.ctx_menu.keyboard")
+}
+
+fn focus_first_key() -> egui::Id {
+    egui::Id::unique("soyuz.ctx_menu.focus_first")
+}
+
+/// `ContextMenu` (Shift+F10, the palette): open `pane`'s context menu at its cursor on the
+/// next frame it is drawn.
+pub fn request_keyboard_open(ctx: &egui::Context, pane: PaneId) {
+    ctx.data_mut(|d| d.insert_temp(keyboard_key(), pane.0));
+}
+
+/// Draw `pane`'s context menu on `bg`: opened by a right click there (at the pointer), or
+/// by the keyboard ([`request_keyboard_open`]) at `anchor(pane)`, a point of the window
+/// near the cursor item. A keyboard open targets the selection, else the cursor item
+/// (selected first, as in the terminal UI), else the folder; its first row takes the
+/// keyboard focus so the arrows, Enter and Esc work at once.
+pub fn show_pane_menu(
+    ui: &mut Ui,
+    bg: &Response,
+    pane: &mut Pane,
+    v: &mut ViewCtx<'_>,
+    anchor: impl FnOnce(&Pane) -> egui::Pos2,
+) {
+    note_open(ui, bg, pane);
+    let ctx = ui.ctx().clone();
+    let keyboard = ctx.data(|d| d.get_temp::<u64>(keyboard_key())) == Some(pane.id.0);
+    let open_at = keyboard.then(|| {
+        ctx.data_mut(|d| d.remove::<u64>(keyboard_key()));
+        if pane.selection.is_empty()
+            && let Some(key) = pane.cursor.clone()
+        {
+            pane.selection.select_only(key);
+        }
+        pane.context = if pane.selection.is_empty() { ContextTarget::Background } else { ContextTarget::Items };
+        pane.context_full = false;
+        ctx.data_mut(|d| d.insert_temp(focus_first_key(), true));
+        anchor(pane)
+    });
+    if crate::ui::native::popup::context_menu_at(bg, open_at, |ui| pane_menu(ui, pane, v)).is_some() {
+        let pass = ctx.cumulative_pass_nr();
+        ctx.data_mut(|d| d.insert_temp(open_key(), pass));
+    }
+}
+
+fn open_key() -> egui::Id {
+    egui::Id::unique("soyuz.ctx_menu.open")
+}
+
+/// A pane's context menu was shown this pass or the last: it owns the keyboard (arrows,
+/// Enter and Esc go to the menu, not the file list).
+pub fn owns_keyboard(ctx: &egui::Context) -> bool {
+    ctx.data(|d| d.get_temp::<u64>(open_key())).is_some_and(|pass| ctx.cumulative_pass_nr().saturating_sub(pass) <= 1)
 }
 
 /// The Phosphor glyph of a catalogue icon (`None`: no icon).
@@ -81,6 +138,14 @@ pub fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
                     (ItemStyle::Plain, MenuIcon::Dot(color)) => crate::ui::workspaces::dot_item(ui, color, &it.label),
                     (ItemStyle::Plain, icon) => menu_item(ui, glyph(icon), &it.label, chord, it.enabled),
                 };
+                // A keyboard-opened menu: the first row takes the focus (not during egui's
+                // invisible sizing pass).
+                if it.enabled
+                    && !ui.is_sizing_pass()
+                    && ui.ctx().data_mut(|d| d.remove_temp::<bool>(focus_first_key())).is_some()
+                {
+                    resp.request_focus();
+                }
                 let resp = match it.tip {
                     Some(tip) => resp.on_hover_text(tip),
                     None => resp,

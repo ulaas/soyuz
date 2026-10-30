@@ -512,8 +512,16 @@ fn body(
         header(ui, &p, vis, pane, v, &g.cols, origin.x);
     }
 
-    context_menu::note_open(ui, &bg, pane);
-    crate::ui::native::popup::context_menu(&bg, |ui| context_menu::pane_menu(ui, pane, v));
+    // Shift+F10 opens the menu below the cursor item (when it is in view), else at the
+    // list's top left.
+    let fallback = list_area.left_top() + vec2(16.0, 8.0);
+    context_menu::show_pane_menu(ui, &bg, pane, v, |pane| {
+        pane.cursor_pos()
+            .and_then(|c| layout.item_rect(c))
+            .map(|r| to_screen(r).left_bottom() + vec2(24.0, 0.0))
+            .filter(|p| list_area.contains(*p))
+            .unwrap_or(fallback)
+    });
 }
 
 struct ItemState {

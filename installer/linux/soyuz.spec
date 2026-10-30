@@ -117,7 +117,8 @@ fi
 * Fri Oct 30 2026 The Soyuz contributors - 0.5.7-1
 - Version 0.5.7: Run as root in the context menu; a shorter, configurable
   right-click menu (quick action buttons, submenus, entries for the file type
-  first, tag dots, rarely used entries under More).
+  first, tag dots, rarely used entries under More); Shift+F10 opens it from the
+  keyboard.
 
 * Wed Oct 28 2026 The Soyuz contributors - 0.5.6-1
 - Version 0.5.6: build fix (a source comment tripped the no-shell-API check);

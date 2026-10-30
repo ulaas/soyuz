@@ -745,6 +745,27 @@ pub fn context_menu<R>(resp: &Response, content: impl FnOnce(&mut Ui) -> R) -> O
     Menu::context_menu(resp).show(content)
 }
 
+/// [`context_menu`] that the keyboard can also open: `open_at` (a point of this window)
+/// opens it there and keeps it there until a right click reopens it at the pointer.
+pub fn context_menu_at<R>(
+    resp: &Response,
+    open_at: Option<Pos2>,
+    content: impl FnOnce(&mut Ui) -> R,
+) -> Option<InnerResponse<R>> {
+    let mut m = Menu::context_menu(resp);
+    let key = m.id.with("soyuz.keyboard_anchor");
+    if let Some(p) = open_at {
+        m.set = Some(SetOpenCommand::Bool(true));
+        resp.ctx.data_mut(|d| d.insert_temp(key, p));
+    } else if resp.secondary_clicked() {
+        resp.ctx.data_mut(|d| d.remove::<Pos2>(key));
+    }
+    if let Some(p) = resp.ctx.data(|d| d.get_temp::<Pos2>(key)) {
+        m.anchor = Anchor::Position(p);
+    }
+    m.show(content)
+}
+
 /// Result of [`native_area`].
 pub struct AreaOut<R> {
     pub inner: Option<R>,

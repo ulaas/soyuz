@@ -140,7 +140,7 @@ extra ones, see [Terminal UI on legacy terminals and in Windows Terminal](#termi
 | Keyboard shortcuts | <kbd>Ctrl</kbd>+<kbd>/</kbd> | same | Browse and edit keyboard shortcuts |
 | Quit | <kbd>Ctrl</kbd>+<kbd>Q</kbd> | same | Quit Soyuz |
 | Quick Look | <kbd>Space</kbd> *(file list)* | same | Preview the item in a popup |
-| Open context menu | — *(terminal UI only)* | <kbd>Shift</kbd>+<kbd>F10</kbd> | Show the menu of the focused item, like a right click (terminal UI) |
+| Open context menu | <kbd>Shift</kbd>+<kbd>F10</kbd> | same | Show the menu of the focused item, like a right click (terminal UI) |
 | Editor: Save | <kbd>Ctrl</kbd>+<kbd>S</kbd> *(editor)* | same | Save the document in the editor |
 | Editor: Save as | — *(terminal UI only)* | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> *(editor)*, <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> *(editor)* | Save a copy of the document under a new name and edit the copy (terminal UI) |
 | Editor: Find | <kbd>Ctrl</kbd>+<kbd>F</kbd> *(editor)* | same | Find text in the document |
