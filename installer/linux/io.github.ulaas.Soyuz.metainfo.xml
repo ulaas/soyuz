@@ -87,6 +87,12 @@
   </requires>
 
   <releases>
+    <release version="0.5.8" date="2026-10-31" type="development">
+      <description>
+        <p>The 0.5.7 changes, built: that release's build stopped on a test that only failed
+          on Linux. Also updates the zstd compression library for two security advisories.</p>
+      </description>
+    </release>
     <release version="0.5.7" date="2026-10-30" type="development">
       <description>
         <p>Programs that need administrator rights (most installers) open again, with the
