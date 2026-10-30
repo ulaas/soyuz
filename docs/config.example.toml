@@ -182,6 +182,7 @@ remember_choice = true           # Open with… (Shift+Enter) starts on the app 
 choose_when_unknown = true       # a file no app is registered for (or without an extension) opens Open with… on Enter
 run_binaries = true              # Enter on an executable binary / AppImage runs it (Linux); scripts still open in their editor
 store_apps_via_explorer = true   # Windows: a Store-app default (Photos, ...) opens through Explorer; off = first registered program
+elevate_when_required = true     # Windows: a program that needs admin rights (installers, ...) opens with the UAC prompt; off = an error
 # last_used = { png = "..." }    # written by Soyuz: last Open with… choice per extension ("." = no extension)
 
 # [[open.default_apps]]          # set from Open with… -> "Always use this app"; first matching rule wins

@@ -134,6 +134,7 @@ pub fn pane_menu(ui: &mut Ui, pane: &mut Pane, v: &mut ViewCtx<'_>) {
         dual: v.dual,
         show_hidden: v.show_hidden,
         checkbox_mode: v.checkbox_mode,
+        can_elevate: cfg!(any(windows, target_os = "linux")),
     };
     let entries = catalogue::pane_menu(&cx, pane);
     draw_entries(ui, entries, v.cmds);

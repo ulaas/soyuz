@@ -303,9 +303,13 @@ pub fn default_app(cfg: &soyuz_core::config::Config, path: &Path) -> Option<soyu
     cfg.open.app_for(name).map(crate::models::requests::open_with::rule_app)
 }
 
-/// How the system's default application is used (`[open] store_apps_via_explorer`).
+/// How the system's default application is used (`[open] store_apps_via_explorer`,
+/// `elevate_when_required`).
 pub fn open_options(cfg: &soyuz_core::config::Config) -> soyuz_fs::launch::OpenOptions {
-    soyuz_fs::launch::OpenOptions { store_apps_via_explorer: cfg.open.store_apps_via_explorer }
+    soyuz_fs::launch::OpenOptions {
+        store_apps_via_explorer: cfg.open.store_apps_via_explorer,
+        elevate_when_required: cfg.open.elevate_when_required,
+    }
 }
 
 /// Open a file with `rule` (from [`default_app`]), else the system's default application.

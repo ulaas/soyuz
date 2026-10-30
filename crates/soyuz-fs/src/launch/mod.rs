@@ -47,11 +47,15 @@ pub struct OpenOptions {
     /// started directly is handed to `explorer.exe`, which opens it in that app; off = the
     /// first registered program that can be started. Ignored elsewhere.
     pub store_apps_via_explorer: bool,
+    /// Windows: a program whose manifest asks for administrator rights starts through the
+    /// UAC prompt (as [`run_elevated`]) instead of failing with "requires elevation".
+    /// Ignored elsewhere.
+    pub elevate_when_required: bool,
 }
 
 impl Default for OpenOptions {
     fn default() -> Self {
-        OpenOptions { store_apps_via_explorer: true }
+        OpenOptions { store_apps_via_explorer: true, elevate_when_required: true }
     }
 }
 
@@ -482,10 +486,20 @@ pub fn windows_quote_arg(arg: &str) -> String {
 /// would split arguments containing spaces).
 #[cfg_attr(not(windows), allow(dead_code))]
 fn elevate_script(exe: &str, args: &[String]) -> String {
+    let line: Vec<String> = args.iter().map(|a| windows_quote_arg(a)).collect();
+    elevate_script_raw(exe, &line.join(" "), None)
+}
+
+/// [`elevate_script`] with an already quoted command-line string (registry commands,
+/// shortcut arguments) and the working folder of the elevated process.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn elevate_script_raw(exe: &str, raw_args: &str, cwd: Option<&str>) -> String {
     let mut script = format!("Start-Process -Verb RunAs -FilePath {}", powershell_quote(exe));
-    if !args.is_empty() {
-        let line: Vec<String> = args.iter().map(|a| windows_quote_arg(a)).collect();
-        script.push_str(&format!(" -ArgumentList {}", powershell_quote(&line.join(" "))));
+    if !raw_args.is_empty() {
+        script.push_str(&format!(" -ArgumentList {}", powershell_quote(raw_args)));
+    }
+    if let Some(dir) = cwd {
+        script.push_str(&format!(" -WorkingDirectory {}", powershell_quote(dir)));
     }
     script
 }
@@ -498,10 +512,7 @@ pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
     #[cfg(windows)]
     {
         let script = elevate_script(&crate::path::strip_verbatim(exe).to_string_lossy(), args);
-        let mut c = Command::new("powershell.exe");
-        c.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"])
-            .arg(powershell_encoded_command(&script));
-        spawn_detached(c, "run_elevated", exe)
+        spawn_elevate_script(&script, exe)
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {
@@ -515,6 +526,24 @@ pub fn run_elevated(exe: &Path, args: &[String]) -> FsResult<()> {
         let _ = args;
         Err(err::unsupported("run_elevated", exe, "elevation is not supported on this platform"))
     }
+}
+
+/// [`run_elevated`] with a raw (already quoted) argument string, in `cwd`: the fallback
+/// for programs whose manifest asks for administrator rights (`CreateProcessW` fails with
+/// `ERROR_ELEVATION_REQUIRED`; `[open] elevate_when_required`).
+#[cfg(windows)]
+pub(crate) fn run_elevated_raw(exe: &Path, raw_args: &str, cwd: Option<&Path>) -> FsResult<()> {
+    let cwd = cwd.filter(|d| d.is_dir()).map(|d| crate::path::strip_verbatim(d).to_string_lossy().into_owned());
+    let script = elevate_script_raw(&crate::path::strip_verbatim(exe).to_string_lossy(), raw_args, cwd.as_deref());
+    spawn_elevate_script(&script, exe)
+}
+
+#[cfg(windows)]
+fn spawn_elevate_script(script: &str, exe: &Path) -> FsResult<()> {
+    let mut c = Command::new("powershell.exe");
+    c.args(["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-EncodedCommand"])
+        .arg(powershell_encoded_command(script));
+    spawn_detached(c, "run_elevated", exe)
 }
 
 /// `explorer.exe /select,`; macOS: `NSWorkspace activateFileViewerSelectingURLs`; Linux / BSD: `org.freedesktop.FileManager1`
@@ -604,6 +633,16 @@ mod tests {
             s,
             "Start-Process -Verb RunAs -FilePath 'C:\\it’’s; calc ‘‘.exe' -ArgumentList '\"a b\" x’’;calc;’’'"
         );
+    }
+
+    #[test]
+    fn elevate_script_keeps_raw_arguments_and_folder() {
+        let s = elevate_script_raw(r"C:\Tools\setup.exe", r#"/S "C:\it’s here""#, Some(r"C:\Tools"));
+        assert_eq!(
+            s,
+            r#"Start-Process -Verb RunAs -FilePath 'C:\Tools\setup.exe' -ArgumentList '/S "C:\it’’s here"' -WorkingDirectory 'C:\Tools'"#
+        );
+        assert_eq!(elevate_script_raw("a.exe", "", None), "Start-Process -Verb RunAs -FilePath 'a.exe'");
     }
 
     #[test]

@@ -549,6 +549,20 @@ mod imp {
         super::super::spawn_detached(c, op, path)
     }
 
+    /// `CreateProcessW` refuses a program whose manifest asks for administrator rights.
+    const ERROR_ELEVATION_REQUIRED: i32 = 740;
+
+    /// [`spawn_raw`] for a program the user opens; one that needs administrator rights
+    /// starts through the UAC prompt (`[open] elevate_when_required`).
+    fn spawn_program(exe: &Path, raw_args: &str, cwd: Option<&Path>, opts: &OpenOptions, path: &Path) -> FsResult<()> {
+        match spawn_raw(exe, raw_args, cwd, "open", path) {
+            Err(e) if e.code == Some(ERROR_ELEVATION_REQUIRED) && opts.elevate_when_required => {
+                super::super::run_elevated_raw(exe, raw_args, cwd)
+            }
+            r => r,
+        }
+    }
+
     /// Error for a file type / link whose only handler would need the shell.
     fn no_association(path: &Path, what: &str) -> FsError {
         FsError::with_message(
@@ -591,7 +605,7 @@ mod imp {
             return spawn_raw(Path::new("explorer.exe"), &format!("\"{}\"", p.display()), None, "open", path);
         }
         match ext_of(&p).as_str() {
-            "exe" | "com" | "scr" => spawn_raw(&p, "", dir.as_deref(), "open", path),
+            "exe" | "com" | "scr" => spawn_program(&p, "", dir.as_deref(), opts, path),
             "bat" | "cmd" => {
                 let mut c = Command::new("cmd.exe");
                 c.raw_arg(format!("/c \"\"{}\"\"", p.display()));
@@ -610,7 +624,11 @@ mod imp {
                             .working_dir
                             .map(|w| PathBuf::from(crate::path::expand_env(&w)))
                             .or_else(|| target.parent().map(Path::to_path_buf));
-                        spawn_raw(&target, &args, cwd.as_deref(), "open", path)
+                        if sc.run_as_admin && opts.elevate_when_required {
+                            super::super::run_elevated_raw(&target, &args, cwd.as_deref())
+                        } else {
+                            spawn_program(&target, &args, cwd.as_deref(), opts, path)
+                        }
                     } else {
                         open_default_depth(&target, opts, depth + 1)
                     }
@@ -639,7 +657,7 @@ mod imp {
                         let cmd = a.command.unwrap_or_default();
                         let (exe, rest) = split_command(&crate::path::expand_env(&cmd));
                         let args = expand_args(&rest, &p);
-                        spawn_raw(Path::new(&exe), &args, dir.as_deref(), "open", path)
+                        spawn_program(Path::new(&exe), &args, dir.as_deref(), opts, path)
                     }
                     // A Store / COM-only default: Explorer (its own process) opens the file
                     // in it, as a double-click there would.

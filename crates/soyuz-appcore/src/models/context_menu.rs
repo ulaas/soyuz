@@ -158,6 +158,9 @@ pub struct MenuCtx<'a> {
     pub dual: bool,
     pub show_hidden: bool,
     pub checkbox_mode: bool,
+    /// The frontend can start programs elevated ("Run as administrator"; not the terminal
+    /// UI, whose screen the elevation prompt would fight for).
+    pub can_elevate: bool,
 }
 
 /// Whether Paste has something to paste: Soyuz's own clipboard, or files or a picture on
@@ -309,6 +312,16 @@ pub fn items_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     let first = sel.first().map(|e| (e.path.clone(), e.is_dir_like()));
 
     b.action(if all_dirs { I::FolderOpen } else { I::ArrowSquareOut }, tr!("app-ctx-open"), Action::Open);
+    if single
+        && cx.can_elevate
+        && matches!(pane.location, Location::Dir(_))
+        && let Some(e) = sel.first()
+        && !e.is_dir_like()
+        && crate::ops::window::is_elevatable(&e.path, e.mode)
+    {
+        let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
+        b.action(I::ShieldCheck, label, Action::RunElevated);
+    }
     if all_dirs {
         b.action(I::Browsers, tr!("app-ctx-open-in-new-tab"), Action::OpenInNewTab);
         if single && let Some((path, _)) = &first {
@@ -1192,7 +1205,15 @@ mod tests {
     }
 
     fn ctx<'a>(config: &'a Config, km: &'a Keymap, has_clip: bool) -> MenuCtx<'a> {
-        MenuCtx { config, keymap: km, has_clip, dual: false, show_hidden: false, checkbox_mode: false }
+        MenuCtx {
+            config,
+            keymap: km,
+            has_clip,
+            dual: false,
+            show_hidden: false,
+            checkbox_mode: false,
+            can_elevate: true,
+        }
     }
 
     #[test]
@@ -1219,6 +1240,30 @@ mod tests {
         assert!(!hidden.iter().any(|s| s == tr!("app-ctx-refresh")));
         assert!(l.iter().any(|s| s == tr!("app-ctx-refresh")));
         assert_eq!(hide_warnings(&["refresh".into(), "nope".into()]).len(), 1);
+    }
+
+    #[test]
+    fn run_as_admin_follows_the_selection_and_frontend() {
+        let config = Config::default();
+        let km = Keymap::default();
+        let dir = std::env::temp_dir();
+        let mut pane = Pane::new(Location::Dir(dir.clone()), ViewState::from_config(&config));
+        let mut setup = soyuz_core::EntryInfo::minimal(dir.join("setup.exe"), soyuz_core::EntryKind::File);
+        setup.mode = Some(0o755);
+        let notes = soyuz_core::EntryInfo::minimal(dir.join("notes.txt"), soyuz_core::EntryKind::File);
+        pane.set_entries_ordered(vec![setup, notes]);
+        let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
+        let shows = |pane: &Pane, can_elevate: bool| {
+            let cx = MenuCtx { can_elevate, ..ctx(&config, &km, false) };
+            labels(&items_menu(&cx, pane)).iter().any(|s| s == label)
+        };
+        pane.selection.select_only("setup.exe".into());
+        assert!(shows(&pane, true));
+        assert!(!shows(&pane, false), "not in the terminal UI");
+        pane.selection.select_only("notes.txt".into());
+        assert!(!shows(&pane, true), "not for documents");
+        pane.selection.insert("setup.exe".into());
+        assert!(!shows(&pane, true), "one program at a time");
     }
 
     #[test]

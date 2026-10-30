@@ -36,6 +36,11 @@ fn refine(fe: &mut FsError, code: i32) {
             "a required privilege is not held: enable Developer Mode or run Soyuz elevated",
         ),
         1235 => set(fe, FsErrorKind::Interrupted, "the operation was cancelled"),
+        740 => set(
+            fe,
+            FsErrorKind::PermissionDenied,
+            "this program needs administrator rights (use \u{201c}Run as administrator\u{201d})",
+        ),
         21 => set(fe, FsErrorKind::Io, "the device is not ready (no media inserted?)"),
         32 | 33 => set(fe, FsErrorKind::InUse, "the file is open in another program; close it and retry"),
         4390 => set(fe, FsErrorKind::Unsupported, "not a symbolic link or junction"),

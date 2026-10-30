@@ -595,6 +595,10 @@ pub struct OpenSection {
     /// …) is handed to Explorer, which opens it in that app; off = it opens with the first
     /// registered program Soyuz can start (or Open with… when there is none).
     pub store_apps_via_explorer: bool,
+    /// Windows: Enter / double-click on a program that needs administrator rights (its
+    /// manifest asks for them, e.g. most installers) starts it through the UAC prompt; off =
+    /// it fails with an error and only "Run as administrator" starts it.
+    pub elevate_when_required: bool,
     /// Default applications by file type: the first rule naming the file's extension wins;
     /// files without a rule open with the system's default application.
     pub default_apps: Vec<DefaultApp>,

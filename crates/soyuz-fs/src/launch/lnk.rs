@@ -17,6 +17,8 @@ const HAS_WORKING_DIR: u32 = 0x10;
 const HAS_ARGUMENTS: u32 = 0x20;
 const HAS_ICON_LOCATION: u32 = 0x40;
 const IS_UNICODE: u32 = 0x80;
+/// "Run as administrator" in the shortcut's advanced properties.
+const RUN_AS_USER: u32 = 0x2000;
 
 const ENVIRONMENT_VARIABLE_DATA_BLOCK: u32 = 0xA000_0001;
 
@@ -32,6 +34,8 @@ pub(crate) struct Shortcut {
     pub icon: Option<String>,
     /// `%VAR%`-style target from the EnvironmentVariableDataBlock (unexpanded).
     pub env_target: Option<String>,
+    /// The target is to run elevated ("Run as administrator" is ticked).
+    pub run_as_admin: bool,
 }
 
 fn bad(msg: &str) -> io::Error {
@@ -67,7 +71,7 @@ pub(crate) fn parse(b: &[u8]) -> io::Result<Shortcut> {
     }
     let flags = u32_at(b, 0x14)?;
     let mut pos = HEADER_SIZE as usize;
-    let mut out = Shortcut::default();
+    let mut out = Shortcut { run_as_admin: flags & RUN_AS_USER != 0, ..Shortcut::default() };
 
     if flags & HAS_LINK_TARGET_ID_LIST != 0 {
         pos += 2 + u16_at(b, pos)? as usize;
@@ -303,5 +307,10 @@ pub(crate) mod tests {
         let (target, sc) = resolve(&p).unwrap();
         assert_eq!(target, Some(PathBuf::from(r"C:\Windows\notepad.exe")));
         assert!(sc.arguments.is_some());
+        assert!(!sc.run_as_admin);
+        // "Run as administrator" ticked: the RunAsUser link flag.
+        let mut admin = sample_lnk(r"C:\Tools\setup.exe", "");
+        admin[0x15] |= (RUN_AS_USER >> 8) as u8;
+        assert!(parse(&admin).unwrap().run_as_admin);
     }
 }

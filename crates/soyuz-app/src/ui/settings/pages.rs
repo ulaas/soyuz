@@ -1000,6 +1000,14 @@ pub fn behaviour(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
                     switch(ui, &mut d.open.store_apps_via_explorer);
                 },
             );
+            r.row_kw(
+                tr!("settings-open-elevate"),
+                tr!("settings-open-elevate-desc"),
+                "admin administrator elevate elevation uac installer setup runas",
+                |ui| {
+                    switch(ui, &mut d.open.elevate_when_required);
+                },
+            );
         }
         r.block(tr!("settings-open-defaults"), tr!("settings-open-defaults-desc"), |ui| {
             default_apps_editor(ui, &mut d.open.default_apps);

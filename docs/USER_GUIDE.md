@@ -164,6 +164,13 @@ in it, as a double-click there would (`[open] store_apps_via_explorer`, *Setting
 Behaviour → Open Store apps through Explorer*). Turn it off to open such files with the
 first other program registered for their type instead.
 
+**Programs that need administrator rights.** A program whose manifest asks for
+administrator rights (most installers and setup tools), or a shortcut with *Run as
+administrator* ticked, opens with the Windows permission prompt (`[open]
+elevate_when_required`, *Settings → Behaviour → Ask for administrator rights when a
+program needs them*). Any program can also be started elevated from its context menu:
+**Run as administrator** (Windows; **Run as root** through `pkexec` on Linux).
+
 **Unrecognized files.** A file no app is registered for, an unknown type or a file
 without an extension, opens *Open with…* on `Enter` instead of an error
 (`[open] choose_when_unknown`, *Settings → Behaviour → Ask for unrecognized files*). The

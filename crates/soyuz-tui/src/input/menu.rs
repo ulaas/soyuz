@@ -151,6 +151,7 @@ pub fn open_for(app: &mut App, pane: PaneId, target: ContextTarget, anchor: (u16
         dual,
         show_hidden: app.core.ui.show_hidden,
         checkbox_mode: app.core.ui.checkbox_mode,
+        can_elevate: false,
     };
     let entries = catalogue::pane_menu(&cx, p);
     open_entries(app, entries, anchor);

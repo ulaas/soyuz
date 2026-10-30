@@ -229,6 +229,7 @@ impl Default for OpenSection {
             choose_when_unknown: true,
             run_binaries: true,
             store_apps_via_explorer: true,
+            elevate_when_required: true,
             default_apps: Vec::new(),
             last_used: BTreeMap::new(),
         }
@@ -811,6 +812,7 @@ mod tests {
         assert!(o.choose_when_unknown);
         assert!(o.run_binaries);
         assert!(o.store_apps_via_explorer);
+        assert!(o.elevate_when_required);
         let edit = DefaultApp { name: "Editor".into(), program: "/usr/bin/ed".into(), ..Default::default() };
         o.set_default(".", Some(edit));
         for name in ["README", "Makefile", ".bashrc"] {
