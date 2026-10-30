@@ -87,6 +87,16 @@
   </requires>
 
   <releases>
+    <release version="0.5.7" date="2026-10-30" type="development">
+      <description>
+        <p>Programs that need administrator rights (most installers) open again, with the
+          system's permission prompt, and the context menu offers Run as administrator
+          (Run as root on Linux). The right-click menu is much shorter: a row of quick
+          action buttons, related entries in submenus, entries for the file's type first,
+          colour tags as a row of dots, and rarely used entries under More
+          (Shift+right-click shows everything). All of it is configurable.</p>
+      </description>
+    </release>
     <release version="0.5.6" date="2026-10-28" type="development">
       <description>
         <p>Build fix: a source comment no longer trips the check that keeps Windows shell
