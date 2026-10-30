@@ -135,6 +135,11 @@ pub fn test_config() -> Config {
     c.search.index.enabled = false;
     // Fixed screen coordinates in the tests assume no sidebar; the sidebar tests turn it on.
     c.layout.sidebar = false;
+    // Menu tests pick rows from the top level: the flat, full context menu (one row per
+    // action, no submenus or "More"); `headless::menu` covers the grouped default.
+    c.context_menu.grouped = false;
+    c.context_menu.compact = false;
+    c.context_menu.collapse_commands = 0;
     // Screen text in the tests is ASCII (`/` folders, `>` separators, `v` / `>` chevrons);
     // `headless::theme` covers the Unicode default.
     c.tui.icons = soyuz_core::config::TuiIcons::Ascii;

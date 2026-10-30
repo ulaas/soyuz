@@ -565,13 +565,112 @@ pub fn views(ui: &mut Ui, app: &mut SoyuzApp, q: &str) -> bool {
         r.block(tr!("settings-views-toolbar-items"), tr!("settings-views-toolbar-items-desc"), |ui| {
             lines_editor(ui, "toolbar", &mut d.toolbar.items, 5);
         });
-        r.block(tr!("settings-views-ctx-hide"), tr!("settings-views-ctx-hide-desc"), |ui| {
-            lines_editor(ui, "ctx_hide", &mut d.context_menu.hide, 3);
+    });
+    any |= group(ui, q, ctx, tr!("settings-views-ctx"), |r| {
+        let cm = &mut d.context_menu;
+        r.row_kw(
+            tr!("settings-views-ctx-quick-bar"),
+            tr!("settings-views-ctx-quick-bar-desc"),
+            "context menu right click quick bar icons buttons cut copy paste rename trash",
+            |ui| {
+                switch(ui, &mut cm.quick_bar);
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-ctx-grouped"),
+            tr!("settings-views-ctx-grouped-desc"),
+            "context menu right click submenus group copy as send to tools tall long",
+            |ui| {
+                switch(ui, &mut cm.grouped);
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-ctx-compact"),
+            tr!("settings-views-ctx-compact-desc"),
+            "context menu right click compact shift extended more",
+            |ui| {
+                switch(ui, &mut cm.compact);
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-ctx-contextual"),
+            tr!("settings-views-ctx-contextual-desc"),
+            "context menu right click type extract administrator media first",
+            |ui| {
+                switch(ui, &mut cm.contextual_first);
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-ctx-inline-tags"),
+            tr!("settings-views-ctx-inline-tags-desc"),
+            "context menu right click tags colors dots",
+            |ui| {
+                switch(ui, &mut cm.inline_tags);
+            },
+        );
+        r.row_kw(
+            tr!("settings-views-ctx-collapse"),
+            tr!("settings-views-ctx-collapse-desc"),
+            "context menu right click custom commands scripts submenu collapse",
+            |ui| {
+                number(ui, &mut cm.collapse_commands, 0..=20, "");
+            },
+        );
+        r.block(tr!("settings-views-ctx-rows"), tr!("settings-views-ctx-rows-desc"), |ui| {
+            context_menu_rows(ui, cm);
         });
         // `[context_menu] order` is not offered: the menus have a fixed, grouped layout
         // and don't read it yet (the key stays accepted in config.toml).
     });
     any
+}
+
+/// `[context_menu] hide` / `extended` as one choice per menu action: always shown, only
+/// in the full menu (Shift+right-click, else "More"), never. Names this table doesn't
+/// list are kept as they are.
+fn context_menu_rows(ui: &mut Ui, cm: &mut soyuz_core::config::ContextMenu) {
+    use crate::models::context_menu::MENU_ACTIONS;
+    use soyuz_core::config::Action;
+    #[derive(Clone, Copy, PartialEq)]
+    enum Show {
+        Always,
+        Full,
+        Never,
+    }
+    let opts = dd::items(&[
+        (Show::Always, tr!("settings-views-ctx-show-always")),
+        (Show::Full, tr!("settings-views-ctx-show-full")),
+        (Show::Never, tr!("settings-views-ctx-show-never")),
+    ]);
+    fn names(n: &str, a: &Action) -> bool {
+        n.trim().parse::<Action>().is_ok_and(|h| &h == a)
+    }
+    egui::Grid::new("settings.ctx_rows").num_columns(2).spacing([16.0, 4.0]).show(ui, |ui| {
+        for a in MENU_ACTIONS {
+            let label = crate::palette::catalog::title(a);
+            let was = if cm.hide.iter().any(|n| names(n, a)) {
+                Show::Never
+            } else if cm.extended.iter().any(|n| names(n, a)) {
+                Show::Full
+            } else {
+                Show::Always
+            };
+            let mut show = was;
+            ui.label(&label);
+            let id = format!("settings.ctx_rows.{a}");
+            dd::Dropdown::new(id).width(190.0).name(label).show(ui, &mut show, &opts);
+            ui.end_row();
+            if show != was {
+                cm.hide.retain(|n| !names(n, a));
+                cm.extended.retain(|n| !names(n, a));
+                match show {
+                    Show::Never => cm.hide.push(a.to_string()),
+                    Show::Full => cm.extended.push(a.to_string()),
+                    Show::Always => {}
+                }
+            }
+        }
+    });
 }
 
 /// `[tags] names`: one row per color (dot + name field, the color name as placeholder).

@@ -222,6 +222,24 @@ impl Default for Columns {
     }
 }
 
+impl Default for ContextMenu {
+    fn default() -> Self {
+        ContextMenu {
+            hide: Vec::new(),
+            order: Vec::new(),
+            quick_bar: true,
+            grouped: true,
+            compact: true,
+            extended: ["delete_permanent", "new_symlink", "previous_versions", "reveal_in_system"]
+                .map(String::from)
+                .to_vec(),
+            contextual_first: true,
+            inline_tags: true,
+            collapse_commands: 3,
+        }
+    }
+}
+
 impl Default for OpenSection {
     fn default() -> Self {
         OpenSection {

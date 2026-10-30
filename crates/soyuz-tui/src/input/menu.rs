@@ -11,7 +11,9 @@
 //! background menu otherwise. They become `widgets::Menu` rows; an activated row closes the
 //! menu and runs its catalogue [`Run`] (kept in [`State::runs`], the rows carry its
 //! index). Two GUI-only rows get a plain form: "Open with" opens the core's Open-with
-//! chooser, "Folder color" is a submenu of colour names.
+//! chooser, "Folder color" is a submenu of colour names. The pane menus are built with
+//! `[context_menu] quick_bar` and `inline_tags` off ([`list_config`]): a list has no room
+//! for a row of buttons, so those actions stay rows and the tags a submenu.
 //!
 //! While a menu is open it owns the keyboard and the mouse: keys go to
 //! `widgets::Menu::apply`, a press on a `MenuItem` target to `Menu::click`, a press
@@ -19,7 +21,7 @@
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, MouseButton, MouseEvent, MouseEventKind};
 use soyuz_appcore::cmd::Cmd;
-use soyuz_appcore::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, Run};
+use soyuz_appcore::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, Run, StripKind};
 use soyuz_appcore::state::pane::{ContextTarget, PaneId};
 use soyuz_appcore::tr;
 use soyuz_core::config::Action;
@@ -115,7 +117,7 @@ pub fn open_context(app: &mut App) {
         ContextTarget::Background
     };
     let anchor = anchor_for(app, id, cursor_row);
-    open_for(app, id, target, anchor);
+    open_for(app, id, target, anchor, false);
 }
 
 /// Where the keyboard-opened menu goes: below the cursor row of `pane` if it is on screen,
@@ -137,15 +139,18 @@ fn anchor_for(app: &App, pane: PaneId, row: Option<usize>) -> (u16, u16) {
 }
 
 /// Open the context menu of `pane` for `target` at `anchor` (a screen cell; the menu
-/// opens below-right of it). A right click passes the clicked cell.
-pub fn open_for(app: &mut App, pane: PaneId, target: ContextTarget, anchor: (u16, u16)) {
+/// opens below-right of it). A right click passes the clicked cell; `full` (a
+/// Shift+right-click) shows the `[context_menu] extended` rows inline.
+pub fn open_for(app: &mut App, pane: PaneId, target: ContextTarget, anchor: (u16, u16), full: bool) {
     let dual = app.core.ws.tab().shown() >= 2;
     let has_clip = catalogue::has_clip(&app.core.fileops);
     let Some(p) = app.core.ws.find_pane_mut(pane) else { return };
     p.context = target;
+    p.context_full = full;
     let Some(p) = app.core.ws.find_pane(pane) else { return };
+    let config = list_config(&app.core.config);
     let cx = MenuCtx {
-        config: &app.core.config,
+        config: &config,
         keymap: &app.core.keymap,
         has_clip,
         dual,
@@ -192,6 +197,14 @@ fn open_entries(app: &mut App, entries: Vec<Entry>, anchor: (u16, u16)) {
     open(app, Menu::new(items, anchor));
 }
 
+/// `config` for menus drawn as a plain list: no quick bar, tags as a submenu.
+fn list_config(config: &soyuz_core::config::Config) -> soyuz_core::config::Config {
+    let mut c = config.clone();
+    c.context_menu.quick_bar = false;
+    c.context_menu.inline_tags = false;
+    c
+}
+
 /// Catalogue entries as menu rows; their runs go to `runs`. Separators never lead, trail
 /// or repeat; empty submenus are left out; a caption is a disabled row.
 pub fn rows(entries: Vec<Entry>, runs: &mut Runs) -> Vec<MenuItem<MenuCmd>> {
@@ -229,6 +242,17 @@ pub fn rows(entries: Vec<Entry>, runs: &mut Runs) -> Vec<MenuItem<MenuCmd>> {
             Entry::FolderColor(dirs) => {
                 let items = rows(catalogue::folder_color_entries(&dirs), runs);
                 out.push(MenuItem::submenu(tr!("app-looks-folder-color"), items));
+            }
+            // Strips are off here (`list_config`); other menus' strips become rows.
+            Entry::Strip(kind, items) => {
+                let items = rows(items.into_iter().map(Entry::Item).collect(), runs);
+                match kind {
+                    StripKind::QuickBar => {
+                        out.extend(items);
+                        out.push(MenuItem::Separator);
+                    }
+                    StripKind::Tags => out.push(MenuItem::submenu(tr!("tools-tags-menu"), items)),
+                }
             }
         }
     }

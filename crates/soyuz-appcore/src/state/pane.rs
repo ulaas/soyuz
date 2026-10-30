@@ -133,6 +133,9 @@ pub struct Pane {
     vis_flags: (bool, bool),
     /// What the open context menu applies to.
     pub context: ContextTarget,
+    /// The open context menu shows `[context_menu] extended` rows inline (opened with
+    /// Shift+right-click).
+    pub context_full: bool,
     /// Column header drag (details view): `(visible column index, pointer x)`.
     pub col_drag: Option<(usize, f32)>,
 }
@@ -194,6 +197,7 @@ impl Pane {
             vis_version: 0,
             vis_flags: (false, false),
             context: ContextTarget::Background,
+            context_full: false,
             col_drag: None,
         }
     }

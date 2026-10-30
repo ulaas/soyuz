@@ -12,7 +12,13 @@
 //! "Open with" submenu: the app lookup is slow and cached per frontend) and
 //! [`Entry::FolderColor`] (colour swatches and emblems).
 //!
-//! `[context_menu] hide` (action names) leaves the matching action entries out.
+//! `[context_menu] hide` (action names, [`MENU_ACTIONS`]) leaves the matching action
+//! entries out. The rest of `[context_menu]` shapes the pane menus: `quick_bar` (an
+//! [`Entry::Strip`] of icon buttons on top), `grouped` (Copy as / Send to / Terminal /
+//! Tools / Paste special / Media submenus), `compact` + `extended` (those actions go to a
+//! "More" submenu unless the menu was opened with Shift+right-click:
+//! `Pane::context_full`), `contextual_first`, `inline_tags` (a strip of tag dots) and
+//! `collapse_commands`.
 
 use std::path::PathBuf;
 
@@ -123,6 +129,31 @@ pub enum SubmenuKind {
     TabGroups,
     /// "Move to window" (tab menu).
     Windows,
+    /// Copy path / name.
+    CopyAs,
+    /// Other pane, shelf, quick share, favourites.
+    SendTo,
+    /// Terminal here / external terminal.
+    Terminal,
+    /// Disk usage, duplicates, compare, split, attributes, checksums.
+    Tools,
+    /// The media tools (Phase V).
+    Media,
+    /// Paste as link / paste and verify.
+    PasteSpecial,
+    /// Custom commands and script actions (`[context_menu] collapse_commands`).
+    Commands,
+    /// The `[context_menu] extended` rows of a compact menu.
+    More,
+}
+
+/// What a [`Entry::Strip`] holds.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StripKind {
+    /// Icon buttons for the common actions (`[context_menu] quick_bar`).
+    QuickBar,
+    /// Colour tag dots, then "Clear tags" (`[context_menu] inline_tags`).
+    Tags,
 }
 
 /// A submenu row.
@@ -146,6 +177,9 @@ pub enum Entry {
     OpenWith(PathBuf),
     /// "Folder color" for these folders (swatches, emblems).
     FolderColor(Vec<PathBuf>),
+    /// A row of icon items side by side (a frontend that only draws lists shows them as
+    /// rows: the terminal UI).
+    Strip(StripKind, Vec<Item>),
 }
 
 /// What the menus depend on besides the pane.
@@ -189,26 +223,73 @@ fn is_hidden(config: &Config, a: &Action) -> bool {
     config.context_menu.hide.iter().any(|n| n.trim().parse::<Action>().is_ok_and(|h| &h == a))
 }
 
+/// `[context_menu] extended`: whether `a` only shows in the full menu.
+fn is_extended(config: &Config, a: &Action) -> bool {
+    config.context_menu.extended.iter().any(|n| n.trim().parse::<Action>().is_ok_and(|h| &h == a))
+}
+
 /// Parse `[context_menu] hide`; returns warnings for unknown names.
 pub fn hide_warnings(names: &[String]) -> Vec<String> {
+    names_warnings("hide", names)
+}
+
+/// Parse `[context_menu] hide` and `extended`; returns warnings for unknown names.
+pub fn config_warnings(cm: &soyuz_core::config::ContextMenu) -> Vec<String> {
+    let mut w = names_warnings("hide", &cm.hide);
+    w.extend(names_warnings("extended", &cm.extended));
+    w
+}
+
+fn names_warnings(key: &str, names: &[String]) -> Vec<String> {
     names
         .iter()
         .filter(|n| n.trim().parse::<Action>().is_err())
-        .map(|n| format!("[context_menu] hide: unknown action '{n}'"))
+        .map(|n| format!("[context_menu] {key}: unknown action '{n}'"))
         .collect()
 }
 
+/// The actions the pane menus can show as rows `[context_menu] hide` and `extended`
+/// apply to (the Settings table lists them). Other rows (tools, AI, media, checksums,
+/// favourites, the shelf, …) always show.
+pub const MENU_ACTIONS: &[Action] = &[
+    Action::Open,
+    Action::OpenInNewTab,
+    Action::OpenWith,
+    Action::OpenInEditor,
+    Action::RunElevated,
+    Action::Cut,
+    Action::Copy,
+    Action::Paste,
+    Action::PasteAsLink,
+    Action::PasteAndVerify,
+    Action::PreviousVersions,
+    Action::Rename,
+    Action::Duplicate,
+    Action::NewSymlink,
+    Action::Delete,
+    Action::DeletePermanent,
+    Action::CopyPath,
+    Action::CopyName,
+    Action::CopyToOtherPane,
+    Action::MoveToOtherPane,
+    Action::QuickShare,
+    Action::OpenInTerminal,
+    Action::OpenTerminalHere,
+    Action::RevealInSystem,
+    Action::NewFolder,
+    Action::NewFile,
+    Action::Refresh,
+    Action::SelectAll,
+    Action::FolderSize,
+    Action::Properties,
+];
+
+fn plain(icon: MenuIcon, label: impl Into<String>, chord: Option<String>, enabled: bool, run: Option<Run>) -> Item {
+    Item { icon, label: label.into(), chord, enabled, style: ItemStyle::Plain, run, keep_open: false, tip: None }
+}
+
 fn item(icon: MenuIcon, label: impl Into<String>, chord: Option<String>, enabled: bool, run: Option<Run>) -> Entry {
-    Entry::Item(Item {
-        icon,
-        label: label.into(),
-        chord,
-        enabled,
-        style: ItemStyle::Plain,
-        run,
-        keep_open: false,
-        tip: None,
-    })
+    Entry::Item(plain(icon, label, chord, enabled, run))
 }
 
 fn check(on: bool, label: impl Into<String>, chord: Option<String>, run: Option<Run>) -> Entry {
@@ -238,16 +319,23 @@ impl From<IconId> for MenuIcon {
 struct B<'a> {
     cx: &'a MenuCtx<'a>,
     pane: PaneId,
+    /// `[context_menu] extended` actions stay inline (`compact` off, or Shift+right-click).
+    full: bool,
     out: Vec<Entry>,
+    /// The quick bar's buttons (`[context_menu] quick_bar`).
+    bar: Vec<Item>,
+    /// The `extended` rows a compact menu leaves out: its "More" submenu.
+    more: Vec<Entry>,
 }
 
 impl<'a> B<'a> {
-    fn new(cx: &'a MenuCtx<'a>, pane: PaneId) -> B<'a> {
-        B { cx, pane, out: Vec::new() }
+    fn new(cx: &'a MenuCtx<'a>, pane: &Pane) -> B<'a> {
+        let full = !cx.config.context_menu.compact || pane.context_full;
+        B { cx, pane: pane.id, full, out: Vec::new(), bar: Vec::new(), more: Vec::new() }
     }
 
     fn sub(&self) -> B<'a> {
-        B { cx: self.cx, pane: self.pane, out: Vec::new() }
+        B { cx: self.cx, pane: self.pane, full: self.full, out: Vec::new(), bar: Vec::new(), more: Vec::new() }
     }
 
     fn push(&mut self, e: Entry) {
@@ -262,12 +350,40 @@ impl<'a> B<'a> {
         Some(Run::Cmd(Cmd::PaneAction(self.pane, a)))
     }
 
-    /// An action row with its chord, unless `[context_menu] hide` lists the action.
+    /// An action row with its chord, unless `[context_menu] hide` lists the action; an
+    /// `extended` one goes to "More" in a compact menu.
     fn action(&mut self, icon: impl Into<MenuIcon>, label: impl Into<String>, a: Action) {
+        debug_assert!(MENU_ACTIONS.contains(&a), "{a:?} is missing from MENU_ACTIONS");
         if is_hidden(self.cx.config, &a) {
             return;
         }
-        self.plain_action(icon, label, a);
+        let more = !self.full && is_extended(self.cx.config, &a);
+        let chord = chord_label(self.cx.keymap, &a);
+        let row = item(icon.into(), label, chord, true, self.run(a));
+        if more { self.more.push(row) } else { self.out.push(row) }
+    }
+
+    /// [`Self::action`] as a quick bar button (`[context_menu] quick_bar`), else a row.
+    fn bar_action(&mut self, icon: impl Into<MenuIcon>, label: impl Into<String>, a: Action) {
+        if !self.cx.config.context_menu.quick_bar {
+            return self.action(icon, label, a);
+        }
+        debug_assert!(MENU_ACTIONS.contains(&a), "{a:?} is missing from MENU_ACTIONS");
+        if is_hidden(self.cx.config, &a) {
+            return;
+        }
+        let chord = chord_label(self.cx.keymap, &a);
+        let run = self.run(a);
+        self.bar_item(plain(icon.into(), label, chord, true, run));
+    }
+
+    /// A quick bar button, else a row.
+    fn bar_item(&mut self, it: Item) {
+        if self.cx.config.context_menu.quick_bar {
+            self.bar.push(it);
+        } else {
+            self.out.push(Entry::Item(it));
+        }
     }
 
     /// An action row with its chord (never hidden).
@@ -286,6 +402,61 @@ impl<'a> B<'a> {
     fn submenu(&mut self, kind: SubmenuKind, icon: impl Into<MenuIcon>, label: impl Into<String>, items: Vec<Entry>) {
         self.out.push(Entry::Submenu(Submenu { kind, icon: icon.into(), label: label.into(), items }));
     }
+
+    /// The rows of `s` as a submenu (`[context_menu] grouped`, two rows or more), else
+    /// inline.
+    fn group(&mut self, kind: SubmenuKind, icon: impl Into<MenuIcon>, label: impl Into<String>, s: B<'a>) {
+        self.more.extend(s.more);
+        let rows = s.out.iter().filter(|e| !matches!(e, Entry::Separator)).count();
+        if rows > 1 && self.cx.config.context_menu.grouped {
+            self.submenu(kind, icon, label, s.out);
+        } else {
+            self.out.extend(s.out);
+        }
+    }
+
+    /// The rows a compact menu left out, as "More" here.
+    fn more_here(&mut self) {
+        if self.more.is_empty() {
+            return;
+        }
+        let more = std::mem::take(&mut self.more);
+        self.sep();
+        self.submenu(SubmenuKind::More, MenuIcon::DotsThree, tr!("app-ctx-more"), more);
+    }
+
+    /// The quick bar, then the rows (separators tidied).
+    fn finish(mut self) -> Vec<Entry> {
+        self.more_here();
+        let mut out = Vec::new();
+        if !self.bar.is_empty() {
+            out.push(Entry::Strip(StripKind::QuickBar, self.bar));
+        }
+        out.extend(self.out);
+        tidy(out)
+    }
+}
+
+/// `entries` without leading, trailing or repeated separators and empty submenus (also
+/// inside submenus).
+fn tidy(entries: Vec<Entry>) -> Vec<Entry> {
+    let mut out: Vec<Entry> = Vec::with_capacity(entries.len());
+    for e in entries {
+        match e {
+            Entry::Separator if matches!(out.last(), None | Some(Entry::Separator)) => {}
+            Entry::Submenu(mut s) => {
+                s.items = tidy(s.items);
+                if !s.items.is_empty() {
+                    out.push(Entry::Submenu(s));
+                }
+            }
+            e => out.push(e),
+        }
+    }
+    if matches!(out.last(), Some(Entry::Separator)) {
+        out.pop();
+    }
+    out
 }
 
 /// The context menu of `pane`: items (when it targets a non-empty selection) or
@@ -302,26 +473,22 @@ fn versions_supported() -> bool {
     cfg!(any(windows, target_os = "linux", target_os = "macos"))
 }
 
-/// The menu of the selected items.
+/// The menu of the selected items: quick bar; open; rows for the file's type
+/// (`contextual_first`); edit; copy as / send to / terminal; tags, colour, AI, tools,
+/// commands; "More" (compact); properties.
 pub fn items_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     use IconId as I;
-    let mut b = B::new(cx, pane.id);
+    let cm = &cx.config.context_menu;
+    let mut b = B::new(cx, pane);
     let sel = pane.selected_entries();
     let single = sel.len() == 1;
     let all_dirs = sel.iter().all(|e| e.is_dir_like());
     let first = sel.first().map(|e| (e.path.clone(), e.is_dir_like()));
+    let single_dir = single && all_dirs;
+    let single_file = single && !all_dirs;
+    let in_dir = matches!(pane.location, Location::Dir(_));
 
     b.action(if all_dirs { I::FolderOpen } else { I::ArrowSquareOut }, tr!("app-ctx-open"), Action::Open);
-    if single
-        && cx.can_elevate
-        && matches!(pane.location, Location::Dir(_))
-        && let Some(e) = sel.first()
-        && !e.is_dir_like()
-        && crate::ops::window::is_elevatable(&e.path, e.mode)
-    {
-        let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
-        b.action(I::ShieldCheck, label, Action::RunElevated);
-    }
     if all_dirs {
         b.action(I::Browsers, tr!("app-ctx-open-in-new-tab"), Action::OpenInNewTab);
         if single && let Some((path, _)) = &first {
@@ -338,99 +505,160 @@ pub fn items_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     {
         b.push(Entry::OpenWith(path.clone()));
     }
-    if single && let Some((_, false)) = &first {
+    if single_file {
         b.action(I::NotePencil, tr!("app-ctx-edit-in-soyuz"), Action::OpenInEditor);
     }
+    if cm.contextual_first {
+        b.sep();
+        contextual_entries(&mut b, pane, &sel);
+    }
+
     b.sep();
-    b.action(I::Scissors, tr!("app-ctx-cut"), Action::Cut);
-    b.action(I::Copy, tr!("app-ctx-copy"), Action::Copy);
+    b.bar_action(I::Scissors, tr!("app-ctx-cut"), Action::Cut);
+    b.bar_action(I::Copy, tr!("app-ctx-copy"), Action::Copy);
     if single
         && cx.has_clip
         && let Some((path, true)) = &first
     {
-        b.push(cmd_item(
-            I::Clipboard,
-            tr!("app-ctx-paste-into-folder"),
-            Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone())),
-        ));
+        let run = Some(Run::Cmd(Cmd::FileOp(crate::ops::fileops::FileOpCmd::PasteInto(path.clone()))));
+        b.bar_item(plain(I::Clipboard.into(), tr!("app-ctx-paste-into-folder"), None, true, run));
     }
-    if single && cx.config.sync.previous_versions && versions_supported() && matches!(pane.location, Location::Dir(_)) {
+    if single && cx.config.sync.previous_versions && versions_supported() && in_dir {
         b.action(I::ClockCounterClockwise, tr!("app-ctx-previous-versions"), Action::PreviousVersions);
     }
-    if cx.dual {
-        b.action(I::CopySimple, tr!("app-ctx-copy-to-other-pane"), Action::CopyToOtherPane);
-        b.action(I::ArrowBendDownRight, tr!("app-ctx-move-to-other-pane"), Action::MoveToOtherPane);
-    }
-    b.action(I::PencilSimple, tr!("app-ctx-rename"), Action::Rename);
-    b.action(I::CopySimple, tr!("app-ctx-duplicate"), Action::Duplicate);
+    b.bar_action(I::PencilSimple, tr!("app-ctx-rename"), Action::Rename);
+    b.bar_action(I::CopySimple, tr!("app-ctx-duplicate"), Action::Duplicate);
     b.action(I::Link, tr!("app-ctx-create-link"), Action::NewSymlink);
-    b.action(I::Trash, tr!("app-ctx-move-to-trash"), Action::Delete);
+    b.bar_action(I::Trash, tr!("app-ctx-move-to-trash"), Action::Delete);
     b.action(I::XCircle, tr!("app-ctx-delete-permanently"), Action::DeletePermanent);
+
     b.sep();
-    b.action(
+    let mut s = b.sub();
+    s.action(
         I::ClipboardText,
         if single { tr!("app-ctx-copy-path") } else { tr!("app-ctx-copy-paths") },
         Action::CopyPath,
     );
-    b.action(I::TextAa, if single { tr!("app-ctx-copy-name") } else { tr!("app-ctx-copy-names") }, Action::CopyName);
+    s.action(I::TextAa, if single { tr!("app-ctx-copy-name") } else { tr!("app-ctx-copy-names") }, Action::CopyName);
+    b.group(SubmenuKind::CopyAs, I::ClipboardText, tr!("app-ctx-copy-as"), s);
+    let paths: Vec<PathBuf> = sel.iter().map(|e| e.path.clone()).collect();
+    let mut s = b.sub();
+    if cx.dual {
+        s.action(I::CopySimple, tr!("app-ctx-copy-to-other-pane"), Action::CopyToOtherPane);
+        s.action(I::ArrowBendDownRight, tr!("app-ctx-move-to-other-pane"), Action::MoveToOtherPane);
+    }
+    s.push(item(
+        MenuIcon::TrayArrowDown,
+        tr!("tools-menu-add-to-shelf"),
+        None,
+        true,
+        Some(Run::Tool(ToolCmd::ShelfAdd(paths.clone()))),
+    ));
+    if !matches!(pane.location, Location::Remote(_)) {
+        s.action(I::QrCode, tr!("tools-menu-quick-share"), Action::QuickShare);
+    }
+    if single_dir && let Some((path, _)) = &first {
+        s.push(cmd_item(I::Star, tr!("app-ctx-add-to-favorites"), Cmd::AddFavorite(path.clone())));
+    }
+    b.group(SubmenuKind::SendTo, I::ArrowBendUpRight, tr!("app-ctx-send-to"), s);
+    if single_dir && let Some((path, _)) = &first {
+        let mut s = b.sub();
+        s.action(I::TerminalWindow, tr!("app-ctx-open-terminal-here"), Action::OpenInTerminal);
+        s.push(cmd_item(I::ArrowSquareOut, tr!("app-ctx-open-external-terminal"), Cmd::TerminalAt(path.clone())));
+        b.group(SubmenuKind::Terminal, I::TerminalWindow, tr!("app-ctx-terminal"), s);
+    }
     if single {
         b.action(I::ArrowSquareUpRight, tr!("app-ctx-reveal-in-system"), Action::RevealInSystem);
     }
-    if single && let Some((path, true)) = &first {
-        b.action(I::TerminalWindow, tr!("app-ctx-open-terminal-here"), Action::OpenInTerminal);
-        b.push(cmd_item(I::ArrowSquareOut, tr!("app-ctx-open-external-terminal"), Cmd::TerminalAt(path.clone())));
-        b.push(cmd_item(I::Star, tr!("app-ctx-add-to-favorites"), Cmd::AddFavorite(path.clone())));
+    if matches!(pane.location, Location::Recent) {
+        b.push(item(
+            I::ClockCounterClockwise.into(),
+            tr!("tools-menu-remove-from-recent"),
+            None,
+            true,
+            Some(Run::Tool(ToolCmd::ForgetRecent(paths.clone()))),
+        ));
     }
-    let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
-    let one_pdf = single && sel.first().is_some_and(|e| !e.is_dir_like() && crate::models::archive::is_pdf(&e.path));
-    archive_entries(&mut b, &pane.location, any_archive, !sel.is_empty(), one_pdf);
-    media_entries(&mut b, &pane.location, &sel);
-    let sel_paths: Vec<(PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
-    tool_item_entries(&mut b, &pane.location, &sel_paths);
-    ai_entries(&mut b, true, single && all_dirs);
-    if all_dirs && matches!(pane.location, Location::Dir(_)) {
-        let dirs: Vec<PathBuf> = sel_paths.iter().map(|(p, _)| p.clone()).collect();
-        if !dirs.is_empty() {
-            b.push(Entry::FolderColor(dirs));
-        }
+    if !cm.contextual_first {
+        contextual_entries(&mut b, pane, &sel);
     }
-    if all_dirs {
-        b.action(I::ChartPie, tr!("app-ctx-folder-sizes"), Action::FolderSize);
+    if in_dir {
+        b.bare_action(MenuIcon::Package, tr!("views-archive-compress-menu"), Action::CreateArchive);
     }
-    let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
-    command_entries(&mut b, &kinds);
-    let paths: Vec<PathBuf> = sel_paths.iter().map(|(p, _)| p.clone()).collect();
-    script_entries(&mut b, &kinds, pane.location.as_fs_path().map(|p| p.to_path_buf()), &paths);
+
     b.sep();
-    let single_file = single && first.as_ref().is_some_and(|(_, dir)| !dir);
-    properties_entries(&mut b, sel.len() > 1, single_file);
-    b.action(I::Info, tr!("app-ctx-properties"), Action::Properties);
-    b.out
+    tag_entries(&mut b, &paths);
+    if all_dirs && in_dir {
+        b.push(Entry::FolderColor(paths.clone()));
+    }
+    ai_entries(&mut b, true, single_dir);
+    let sel_paths: Vec<(PathBuf, bool)> = sel.iter().map(|e| (e.path.clone(), e.is_dir_like())).collect();
+    tool_item_entries(&mut b, &sel_paths);
+    let kinds = crate::commands::kinds_for(&pane.location, !all_dirs, sel.iter().any(|e| e.is_dir_like()), false);
+    command_and_script_entries(&mut b, &kinds, pane.location.as_fs_path().map(|p| p.to_path_buf()), &paths);
+    b.more_here();
+    b.sep();
+    b.bar_action(I::Info, tr!("app-ctx-properties"), Action::Properties);
+    b.finish()
 }
 
-/// The menu of the folder background.
+/// The rows for the selection's type: run as administrator (one program), extract (any
+/// archive) or the rows of a browsed archive, PDF password, media tools, join parts.
+fn contextual_entries(b: &mut B<'_>, pane: &Pane, sel: &[&soyuz_core::EntryInfo]) {
+    use IconId as I;
+    let file = match sel {
+        [e] if !e.is_dir_like() => Some(*e),
+        _ => None,
+    };
+    if let Some(e) = file
+        && b.cx.can_elevate
+        && matches!(pane.location, Location::Dir(_))
+        && crate::ops::window::is_elevatable(&e.path, e.mode)
+    {
+        let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
+        b.action(I::ShieldCheck, label, Action::RunElevated);
+    }
+    let any_archive = sel.iter().any(|e| !e.is_dir_like() && crate::services::archive::is_browsable(&e.path));
+    let one_pdf = file.is_some_and(|e| crate::models::archive::is_pdf(&e.path));
+    archive_entries(b, &pane.location, any_archive, !sel.is_empty(), one_pdf);
+    media_entries(b, &pane.location, sel);
+    if let Some(e) = file
+        && crate::models::tools::is_part(&e.path)
+    {
+        b.plain_action(MenuIcon::ArrowsMerge, tr!("tools-menu-join-parts"), Action::JoinFiles);
+    }
+}
+
+/// The menu of the folder background: quick bar; view / sort / group; paste and new
+/// items; terminal, reveal, copy path, favourites, AI; tools; toggles; commands; "More"
+/// (compact); properties.
 pub fn background_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     use IconId as I;
-    let mut b = B::new(cx, pane.id);
+    let mut b = B::new(cx, pane);
     b.submenu(SubmenuKind::View, I::SquaresFour, tr!("app-ctx-view"), view_mode_entries(cx.keymap, pane));
     b.submenu(SubmenuKind::SortBy, I::SortAscending, tr!("app-ctx-sort-by"), sort_entries(pane));
     b.submenu(SubmenuKind::GroupBy, I::Rows, tr!("app-ctx-group-by"), group_entries(pane));
     b.sep();
-    b.action(I::ArrowClockwise, tr!("app-ctx-refresh"), Action::Refresh);
+    b.bar_action(I::ArrowClockwise, tr!("app-ctx-refresh"), Action::Refresh);
     if cx.has_clip {
-        b.action(I::Clipboard, tr!("app-ctx-paste"), Action::Paste);
-        b.action(I::Link, tr!("app-ctx-paste-as-link"), Action::PasteAsLink);
-        b.action(I::SealCheck, tr!("app-ctx-paste-and-verify"), Action::PasteAndVerify);
-    } else {
-        b.push(item(I::Clipboard.into(), tr!("app-ctx-paste"), chord_label(cx.keymap, &Action::Paste), false, None));
+        b.bar_action(I::Clipboard, tr!("app-ctx-paste"), Action::Paste);
+        let mut s = b.sub();
+        s.action(I::Link, tr!("app-ctx-paste-as-link"), Action::PasteAsLink);
+        s.action(I::SealCheck, tr!("app-ctx-paste-and-verify"), Action::PasteAndVerify);
+        b.group(SubmenuKind::PasteSpecial, I::Clipboard, tr!("app-ctx-paste-special"), s);
+    } else if !is_hidden(cx.config, &Action::Paste) {
+        let chord = chord_label(cx.keymap, &Action::Paste);
+        b.bar_item(plain(I::Clipboard.into(), tr!("app-ctx-paste"), chord, false, None));
     }
-    b.action(I::FolderPlus, tr!("app-ctx-new-folder"), Action::NewFolder);
-    b.action(I::FilePlus, tr!("app-ctx-new-file"), Action::NewFile);
+    b.bar_action(I::FolderPlus, tr!("app-ctx-new-folder"), Action::NewFolder);
+    b.bar_action(I::FilePlus, tr!("app-ctx-new-file"), Action::NewFile);
     b.action(I::Link, tr!("app-ctx-new-link"), Action::NewSymlink);
     b.sep();
     if let Location::Dir(dir) = &pane.location {
-        b.action(I::TerminalWindow, tr!("app-ctx-open-terminal-here"), Action::OpenTerminalHere);
-        b.push(cmd_item(I::ArrowSquareOut, tr!("app-ctx-open-external-terminal"), Cmd::TerminalAt(dir.clone())));
+        let mut s = b.sub();
+        s.action(I::TerminalWindow, tr!("app-ctx-open-terminal-here"), Action::OpenTerminalHere);
+        s.push(cmd_item(I::ArrowSquareOut, tr!("app-ctx-open-external-terminal"), Cmd::TerminalAt(dir.clone())));
+        b.group(SubmenuKind::Terminal, I::TerminalWindow, tr!("app-ctx-terminal"), s);
         b.action(I::ArrowSquareUpRight, tr!("app-ctx-reveal-in-system"), Action::RevealInSystem);
         b.action(I::ClipboardText, tr!("app-ctx-copy-folder-path"), Action::CopyPath);
         b.push(cmd_item(I::Star, tr!("app-ctx-add-to-favorites"), Cmd::AddFavorite(dir.clone())));
@@ -446,13 +674,17 @@ pub fn background_menu(cx: &MenuCtx<'_>, pane: &Pane) -> Vec<Entry> {
     b.push(check(cx.show_hidden, tr!("app-ctx-show-hidden"), chord_label(cx.keymap, &Action::ToggleHidden), hidden));
     let boxes = b.run(Action::ToggleCheckboxes);
     b.push(check(cx.checkbox_mode, tr!("app-ctx-item-checkboxes"), None, boxes));
-    b.action(I::SelectionAll, tr!("app-ctx-select-all"), Action::SelectAll);
-    b.action(I::ChartPie, tr!("app-ctx-folder-sizes"), Action::FolderSize);
-    command_entries(&mut b, &[CommandContext::Background]);
-    script_entries(&mut b, &[CommandContext::Background], pane.location.as_fs_path().map(|p| p.to_path_buf()), &[]);
+    b.bar_action(I::SelectionAll, tr!("app-ctx-select-all"), Action::SelectAll);
+    command_and_script_entries(
+        &mut b,
+        &[CommandContext::Background],
+        pane.location.as_fs_path().map(|p| p.to_path_buf()),
+        &[],
+    );
+    b.more_here();
     b.sep();
-    b.action(I::Info, tr!("app-ctx-properties"), Action::Properties);
-    b.out
+    b.bar_action(I::Info, tr!("app-ctx-properties"), Action::Properties);
+    b.finish()
 }
 
 /// The view modes: icon, action (menus, toolbar, status bar switcher).
@@ -524,8 +756,8 @@ pub fn group_entries(pane: &Pane) -> Vec<Entry> {
         .collect()
 }
 
-/// Archive rows: extract / compress (items), or extract / edit inside a browsed archive;
-/// "PDF password…" for one PDF.
+/// Archive rows: extract (any archive selected), or extract / edit inside a browsed
+/// archive; "PDF password…" for one PDF.
 fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_selection: bool, one_pdf: bool) {
     use IconId as I;
     match location {
@@ -548,7 +780,6 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
         }
         _ => {
             if any_archive {
-                b.sep();
                 let mut s = b.sub();
                 s.bare_action(I::ArrowLineDown, tr!("views-archive-extract-here"), Action::ExtractHere);
                 s.bare_action(I::FolderSimple, tr!("views-archive-extract-to-folder"), Action::ExtractToFolder);
@@ -556,9 +787,6 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
                 s.sep();
                 s.bare_action(MenuIcon::CheckCircle, tr!("views-archive-test"), Action::TestArchive);
                 b.submenu(SubmenuKind::Extract, I::FileZip, tr!("views-archive-extract"), s.out);
-            }
-            if has_selection && matches!(location, Location::Dir(_)) {
-                b.bare_action(MenuIcon::Package, tr!("views-archive-compress-menu"), Action::CreateArchive);
             }
             if one_pdf {
                 b.bare_action(I::LockSimple, tr!("views-archive-pdf-password-menu"), Action::PdfPassword);
@@ -570,7 +798,8 @@ fn archive_entries(b: &mut B<'_>, location: &Location, any_archive: bool, has_se
 /// Media tool rows (Phase V) when every selected item is a video or audio file in a
 /// folder and `[media] tools` is on: Convert and Extract audio for any number of files,
 /// Trim and Save frame for one; Extract audio and Save frame only for videos. The rows
-/// are disabled with a hint while the FFmpeg libraries are not loaded.
+/// are disabled with a hint while the FFmpeg libraries are not loaded; a Media submenu
+/// when grouped.
 fn media_entries(b: &mut B<'_>, location: &Location, sel: &[&soyuz_core::EntryInfo]) {
     use crate::models::media_tools::{is_media_ext, is_video_ext};
     use IconId as I;
@@ -585,17 +814,15 @@ fn media_entries(b: &mut B<'_>, location: &Location, sel: &[&soyuz_core::EntryIn
     let video = exts.iter().all(|x| is_video_ext(x));
     let single = sel.len() == 1;
     let loaded = crate::services::media::runtime().is_some();
-    b.sep();
+    let mut s = b.sub();
     let mut row = |icon: IconId, a: Action| {
         let label = crate::palette::catalog::title(&a);
         if loaded {
-            b.plain_action(icon, label, a);
+            s.plain_action(icon, label, a);
         } else {
-            let mut e = item(icon.into(), label, chord_label(b.cx.keymap, &a), false, None);
-            if let Entry::Item(i) = &mut e {
-                i.tip = Some(tr!("dialogs-media-no-runtime"));
-            }
-            b.push(e);
+            let mut it = plain(icon.into(), label, chord_label(s.cx.keymap, &a), false, None);
+            it.tip = Some(tr!("dialogs-media-no-runtime"));
+            s.push(Entry::Item(it));
         }
     };
     row(I::FilmStrip, Action::MediaConvert);
@@ -608,106 +835,110 @@ fn media_entries(b: &mut B<'_>, location: &Location, sel: &[&soyuz_core::EntryIn
             row(I::Image, Action::MediaSaveFrame);
         }
     }
+    b.group(SubmenuKind::Media, I::FilmStrip, tr!("app-ctx-media"), s);
 }
 
-/// Tool rows of the items menu: tags, shelf, disk usage, duplicates, compare, split / join.
-fn tool_item_entries(b: &mut B<'_>, location: &Location, sel: &[(PathBuf, bool)]) {
+/// Colour tags of `paths`: one row of dots (`[context_menu] inline_tags`) or a Tags
+/// submenu, each with a check mark when every path has the tag, then "Clear tags".
+fn tag_entries(b: &mut B<'_>, paths: &[PathBuf]) {
     use crate::services::tags::{self, TAG_COUNT};
+    if paths.is_empty() {
+        return;
+    }
+    let masks: Vec<u8> = paths.iter().map(|p| tags::tags_of(p)).collect();
+    let mut row: Vec<Item> = (0..TAG_COUNT as u8)
+        .map(|t| {
+            let all = masks.iter().all(|m| m & (1 << t) != 0);
+            plain(
+                MenuIcon::Tag { tag: t, checked: all },
+                tags::name(t),
+                chord_label(b.cx.keymap, &Action::AddTag(t + 1)),
+                true,
+                Some(Run::Tool(ToolCmd::ToggleTag { paths: paths.to_vec(), tag: t })),
+            )
+        })
+        .collect();
+    let any = masks.iter().any(|m| *m != 0);
+    let clear = plain(
+        IconId::XCircle.into(),
+        tr!("tools-tags-clear"),
+        None,
+        any,
+        Some(Run::Tool(ToolCmd::ClearTags(paths.to_vec()))),
+    );
+    if b.cx.config.context_menu.inline_tags {
+        row.push(clear);
+        b.push(Entry::Strip(StripKind::Tags, row));
+    } else {
+        let mut s: Vec<Entry> = row.into_iter().map(Entry::Item).collect();
+        s.push(Entry::Separator);
+        s.push(Entry::Item(clear));
+        b.submenu(SubmenuKind::Tags, IconId::Tag, tr!("tools-tags-menu"), s);
+    }
+}
+
+/// The Tools rows of the items menu (a Tools submenu when grouped): folder sizes, disk
+/// usage, duplicates, compare, split, batch rename, attributes, checksums.
+fn tool_item_entries(b: &mut B<'_>, sel: &[(PathBuf, bool)]) {
     use IconId as I;
     if sel.is_empty() {
         return;
     }
-    let paths: Vec<PathBuf> = sel.iter().map(|(p, _)| p.clone()).collect();
-    b.sep();
-    if matches!(location, Location::Recent) {
-        b.push(item(
-            I::ClockCounterClockwise.into(),
-            tr!("tools-menu-remove-from-recent"),
-            None,
-            true,
-            Some(Run::Tool(ToolCmd::ForgetRecent(paths.clone()))),
-        ));
-    }
-    let masks: Vec<u8> = paths.iter().map(|p| tags::tags_of(p)).collect();
-    let mut s = Vec::new();
-    for t in 0..TAG_COUNT as u8 {
-        let all = masks.iter().all(|m| m & (1 << t) != 0);
-        s.push(item(
-            MenuIcon::Tag { tag: t, checked: all },
-            tags::name(t),
-            chord_label(b.cx.keymap, &Action::AddTag(t + 1)),
-            true,
-            Some(Run::Tool(ToolCmd::ToggleTag { paths: paths.clone(), tag: t })),
-        ));
-    }
-    s.push(Entry::Separator);
-    let any = masks.iter().any(|m| *m != 0);
-    s.push(item(
-        I::XCircle.into(),
-        tr!("tools-tags-clear"),
-        None,
-        any,
-        Some(Run::Tool(ToolCmd::ClearTags(paths.clone()))),
-    ));
-    b.submenu(SubmenuKind::Tags, I::Tag, tr!("tools-tags-menu"), s);
-    b.push(item(
-        MenuIcon::TrayArrowDown,
-        tr!("tools-menu-add-to-shelf"),
-        None,
-        true,
-        Some(Run::Tool(ToolCmd::ShelfAdd(paths.clone()))),
-    ));
-    if !matches!(location, Location::Remote(_)) {
-        b.action(I::QrCode, tr!("tools-menu-quick-share"), Action::QuickShare);
-    }
     let dirs = sel.iter().filter(|(_, d)| *d).count();
-    if dirs == 1 && sel.len() == 1 {
-        b.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
+    let all_dirs = dirs == sel.len();
+    let mut s = b.sub();
+    if all_dirs {
+        s.action(I::ChartPie, tr!("app-ctx-folder-sizes"), Action::FolderSize);
     }
-    if dirs > 0 && dirs == sel.len() {
-        b.plain_action(MenuIcon::Files, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
+    if dirs == 1 && sel.len() == 1 {
+        s.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
+    }
+    if all_dirs {
+        s.plain_action(MenuIcon::Files, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
     }
     if dirs == 2 && sel.len() == 2 {
-        b.plain_action(I::GitDiff, tr!("tools-menu-compare-folders"), Action::CompareFolders);
-        b.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-compare-treemap"), Action::CompareTreemap);
+        s.plain_action(I::GitDiff, tr!("tools-menu-compare-folders"), Action::CompareFolders);
+        s.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-compare-treemap"), Action::CompareTreemap);
     }
-    if let [(p, false)] = sel {
-        if crate::models::tools::is_part(p) {
-            b.plain_action(MenuIcon::ArrowsMerge, tr!("tools-menu-join-parts"), Action::JoinFiles);
-        } else {
-            b.plain_action(MenuIcon::ArrowsSplit, tr!("tools-menu-split-file"), Action::SplitFile);
-        }
+    if let [(p, false)] = sel
+        && !crate::models::tools::is_part(p)
+    {
+        s.plain_action(MenuIcon::ArrowsSplit, tr!("tools-menu-split-file"), Action::SplitFile);
     }
+    properties_entries(&mut s, sel.len() > 1, matches!(sel, [(_, false)]));
+    b.group(SubmenuKind::Tools, I::PuzzlePiece, tr!("app-ctx-tools"), s);
 }
 
-/// Tool rows of the background menu.
+/// Tool rows of the background menu (a Tools submenu when grouped).
 fn tool_background_entries(b: &mut B<'_>, location: &Location, dual: bool) {
     use IconId as I;
+    let mut s = b.sub();
     match location {
         Location::Dir(_) => {
-            b.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
-            b.plain_action(MenuIcon::Files, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
-            b.plain_action(
+            s.plain_action(MenuIcon::ChartPieSlice, tr!("tools-menu-analyze-disk-usage"), Action::DiskUsageTreemap);
+            s.plain_action(MenuIcon::Files, tr!("tools-menu-find-duplicates"), Action::FindDuplicates);
+            s.plain_action(
                 I::GitDiff,
                 if dual { tr!("tools-menu-compare-other-pane") } else { tr!("tools-menu-compare-folders-dialog") },
                 Action::CompareFolders,
             );
             if dual {
-                b.plain_action(
+                s.plain_action(
                     MenuIcon::ChartPieSlice,
                     tr!("tools-menu-compare-treemap-other-pane"),
                     Action::CompareTreemap,
                 );
             }
-            b.sep();
         }
         Location::Recent => {
             let pane = b.pane;
             b.push(item(I::Broom.into(), tr!("tools-menu-clear-recent"), None, true, Some(Run::ClearRecent(pane))));
-            b.sep();
         }
         _ => {}
     }
+    s.action(I::ChartPie, tr!("app-ctx-folder-sizes"), Action::FolderSize);
+    b.group(SubmenuKind::Tools, I::PuzzlePiece, tr!("app-ctx-tools"), s);
+    b.sep();
 }
 
 /// The AI assistant submenu.
@@ -726,6 +957,25 @@ fn ai_entries(b: &mut B<'_>, items: bool, single_dir: bool) {
     s.sep();
     s.plain_action(I::MagnifyingGlass, tr!("ai-menu-smart-search"), Action::AiSmartSearch);
     b.submenu(SubmenuKind::Ai, I::Sparkle, tr!("ai-menu-assistant"), s.out);
+}
+
+/// User-defined commands (`[[custom_commands]]`) and script actions for `kinds`: a
+/// Commands submenu when there are more than `[context_menu] collapse_commands`.
+fn command_and_script_entries(b: &mut B<'_>, kinds: &[CommandContext], dir: Option<PathBuf>, selected: &[PathBuf]) {
+    let mut s = b.sub();
+    command_entries(&mut s, kinds);
+    script_entries(&mut s, kinds, dir, selected);
+    let n = s.out.iter().filter(|e| matches!(e, Entry::Item(_))).count();
+    if n == 0 {
+        return;
+    }
+    b.sep();
+    let limit = b.cx.config.context_menu.collapse_commands as usize;
+    if limit > 0 && n > limit {
+        b.submenu(SubmenuKind::Commands, IconId::Lightning, tr!("app-ctx-commands"), s.out);
+    } else {
+        b.out.extend(s.out);
+    }
 }
 
 /// User-defined commands (`[[custom_commands]]`) for `kinds`.
@@ -1200,8 +1450,60 @@ mod tests {
                 Entry::Caption(c) => format!("# {c}"),
                 Entry::OpenWith(_) => "open with".into(),
                 Entry::FolderColor(_) => "folder color".into(),
+                Entry::Strip(_, items) => {
+                    format!("[{}]", items.iter().map(|i| i.label.as_str()).collect::<Vec<_>>().join("|"))
+                }
             })
             .collect()
+    }
+
+    /// Every label, submenus and strips included.
+    fn all_labels(entries: &[Entry]) -> Vec<String> {
+        let mut out = Vec::new();
+        for e in entries {
+            match e {
+                Entry::Item(i) => out.push(i.label.clone()),
+                Entry::Submenu(s) => {
+                    out.push(format!("{} >", s.label));
+                    out.extend(all_labels(&s.items));
+                }
+                Entry::Strip(_, items) => out.extend(items.iter().map(|i| i.label.clone())),
+                _ => {}
+            }
+        }
+        out
+    }
+
+    /// The layout of before the tidy-up: no bar, no submenus, everything inline.
+    fn flat(config: &mut Config) {
+        let cm = &mut config.context_menu;
+        cm.quick_bar = false;
+        cm.grouped = false;
+        cm.compact = false;
+        cm.inline_tags = false;
+        cm.collapse_commands = 0;
+    }
+
+    /// A pane in the temp dir listing `names` (a trailing `/`: a folder), `selected`
+    /// selected, its menu on the items.
+    fn pane_with(config: &Config, names: &[&str], selected: &[&str]) -> Pane {
+        let dir = std::env::temp_dir();
+        let mut pane = Pane::new(Location::Dir(dir.clone()), ViewState::from_config(config));
+        let entries = names
+            .iter()
+            .map(|n| {
+                let kind = if n.ends_with('/') { soyuz_core::EntryKind::Dir } else { soyuz_core::EntryKind::File };
+                let mut e = soyuz_core::EntryInfo::minimal(dir.join(n.trim_end_matches('/')), kind);
+                e.mode = Some(0o755);
+                e
+            })
+            .collect();
+        pane.set_entries_ordered(entries);
+        for n in selected {
+            pane.selection.insert(n.trim_end_matches('/').into());
+        }
+        pane.context = ContextTarget::Items;
+        pane
     }
 
     fn ctx<'a>(config: &'a Config, km: &'a Keymap, has_clip: bool) -> MenuCtx<'a> {
@@ -1219,6 +1521,7 @@ mod tests {
     #[test]
     fn background_menu_follows_the_clipboard_and_hide() {
         let mut config = Config::default();
+        flat(&mut config);
         let km = Keymap::default();
         let pane = Pane::new(Location::Dir(std::env::temp_dir()), ViewState::from_config(&config));
         let without = background_menu(&ctx(&config, &km, false), &pane);
@@ -1246,12 +1549,7 @@ mod tests {
     fn run_as_admin_follows_the_selection_and_frontend() {
         let config = Config::default();
         let km = Keymap::default();
-        let dir = std::env::temp_dir();
-        let mut pane = Pane::new(Location::Dir(dir.clone()), ViewState::from_config(&config));
-        let mut setup = soyuz_core::EntryInfo::minimal(dir.join("setup.exe"), soyuz_core::EntryKind::File);
-        setup.mode = Some(0o755);
-        let notes = soyuz_core::EntryInfo::minimal(dir.join("notes.txt"), soyuz_core::EntryKind::File);
-        pane.set_entries_ordered(vec![setup, notes]);
+        let mut pane = pane_with(&config, &["setup.exe", "notes.txt"], &[]);
         let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
         let shows = |pane: &Pane, can_elevate: bool| {
             let cx = MenuCtx { can_elevate, ..ctx(&config, &km, false) };
@@ -1264,6 +1562,176 @@ mod tests {
         assert!(!shows(&pane, true), "not for documents");
         pane.selection.insert("setup.exe".into());
         assert!(!shows(&pane, true), "one program at a time");
+    }
+
+    #[test]
+    fn quick_bar_takes_the_common_rows() {
+        let mut config = Config::default();
+        let km = Keymap::default();
+        let pane = pane_with(&config, &["a.txt"], &["a.txt"]);
+        let menu = items_menu(&ctx(&config, &km, false), &pane);
+        let Some(Entry::Strip(StripKind::QuickBar, bar)) = menu.first() else { panic!("{:?}", labels(&menu)) };
+        let bar: Vec<&str> = bar.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            bar,
+            [
+                tr!("app-ctx-cut"),
+                tr!("app-ctx-copy"),
+                tr!("app-ctx-rename"),
+                tr!("app-ctx-duplicate"),
+                tr!("app-ctx-move-to-trash"),
+                tr!("app-ctx-properties")
+            ]
+        );
+        let rows = labels(&menu[1..]);
+        assert!(!rows.iter().any(|l| l == tr!("app-ctx-cut") || l == tr!("app-ctx-properties")), "{rows:?}");
+        // Hidden actions leave the bar too; without the bar they are rows again.
+        config.context_menu.hide = vec!["cut".into()];
+        let menu = items_menu(&ctx(&config, &km, false), &pane);
+        assert!(!all_labels(&menu).iter().any(|l| l == tr!("app-ctx-cut")));
+        config.context_menu.quick_bar = false;
+        let menu = items_menu(&ctx(&config, &km, false), &pane);
+        assert!(!matches!(menu.first(), Some(Entry::Strip(..))));
+        assert!(labels(&menu).iter().any(|l| l == tr!("app-ctx-properties")));
+        // The background bar: a disabled Paste without a clipboard.
+        let config = Config::default();
+        let mut bg = pane_with(&config, &["a.txt"], &[]);
+        bg.context = ContextTarget::Background;
+        let menu = background_menu(&ctx(&config, &km, false), &bg);
+        let Some(Entry::Strip(StripKind::QuickBar, bar)) = menu.first() else { panic!("{:?}", labels(&menu)) };
+        let paste = bar.iter().find(|i| i.label == tr!("app-ctx-paste")).expect("paste button");
+        assert!(!paste.enabled && paste.run.is_none());
+    }
+
+    #[test]
+    fn grouped_and_flat_menus_offer_the_same_rows() {
+        let km = Keymap::default();
+        let mut grouped = Config::default();
+        grouped.context_menu.compact = false;
+        let mut flat_cfg = grouped.clone();
+        flat_cfg.context_menu.grouped = false;
+        let cases: [(&[&str], &[&str]); 3] =
+            [(&["a.txt"], &["a.txt"]), (&["d/"], &["d/"]), (&["d/", "e/"], &["d/", "e/"])];
+        for (names, sel) in cases {
+            let pane = pane_with(&grouped, names, sel);
+            let g = items_menu(&MenuCtx { dual: true, ..ctx(&grouped, &km, true) }, &pane);
+            let f = items_menu(&MenuCtx { dual: true, ..ctx(&flat_cfg, &km, true) }, &pane);
+            let rows = |v: Vec<String>| {
+                let mut v: Vec<String> = v.into_iter().filter(|l| !l.ends_with(" >")).collect();
+                v.sort();
+                v
+            };
+            let (gl, fl) = (all_labels(&g), all_labels(&f));
+            let submenus = |l: &[String]| l.iter().filter(|l| l.ends_with(" >")).count();
+            assert!(submenus(&gl) > submenus(&fl), "{gl:?}");
+            assert_eq!(rows(gl), rows(fl));
+            assert!(labels(&g).len() < labels(&f).len());
+        }
+        let pane = pane_with(&grouped, &["a.txt"], &["a.txt"]);
+        let g = labels(&items_menu(&ctx(&grouped, &km, false), &pane));
+        assert!(g.contains(&format!("{} >", tr!("app-ctx-copy-as"))), "{g:?}");
+        assert!(g.contains(&format!("{} >", tr!("app-ctx-tools"))), "{g:?}");
+    }
+
+    #[test]
+    fn compact_menus_move_extended_rows_to_more() {
+        let config = Config::default();
+        let km = Keymap::default();
+        let mut pane = pane_with(&config, &["a.txt"], &["a.txt"]);
+        let more = format!("{} >", tr!("app-ctx-more"));
+        let compact = items_menu(&ctx(&config, &km, false), &pane);
+        let top = labels(&compact);
+        assert!(!top.iter().any(|l| l == tr!("app-ctx-delete-permanently")), "{top:?}");
+        let m = compact
+            .iter()
+            .find_map(|e| match e {
+                Entry::Submenu(s) if s.kind == SubmenuKind::More => Some(s),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("{top:?}"));
+        let inside = labels(&m.items);
+        assert!(inside.iter().any(|l| l == tr!("app-ctx-delete-permanently")));
+        assert!(inside.iter().any(|l| l == tr!("app-ctx-reveal-in-system")));
+        // The bar holds Properties, so "More" ends the menu.
+        assert_eq!(top.last(), Some(&more));
+        // Shift+right-click: everything inline, no "More".
+        pane.context_full = true;
+        let full = labels(&items_menu(&ctx(&config, &km, false), &pane));
+        assert!(full.iter().any(|l| l == tr!("app-ctx-delete-permanently")));
+        assert!(!full.contains(&more));
+    }
+
+    #[test]
+    fn contextual_rows_come_right_after_open() {
+        let mut config = Config::default();
+        let km = Keymap::default();
+        let pane = pane_with(&config, &["setup.exe"], &["setup.exe"]);
+        let label = if cfg!(windows) { tr!("app-ctx-run-as-admin") } else { tr!("app-ctx-run-as-root") };
+        let at = |config: &Config| {
+            let l = labels(&items_menu(&ctx(config, &km, false), &pane));
+            l.iter().position(|s| s == label).unwrap_or_else(|| panic!("{l:?}"))
+        };
+        let first = at(&config);
+        config.context_menu.contextual_first = false;
+        assert!(first <= 5, "after the bar, Open, Open with, Edit in Soyuz");
+        assert!(at(&config) > first);
+    }
+
+    #[test]
+    fn tags_inline_or_submenu() {
+        let mut config = Config::default();
+        let km = Keymap::default();
+        let pane = pane_with(&config, &["a.txt"], &["a.txt"]);
+        let menu = items_menu(&ctx(&config, &km, false), &pane);
+        let tags = menu
+            .iter()
+            .find_map(|e| match e {
+                Entry::Strip(StripKind::Tags, items) => Some(items),
+                _ => None,
+            })
+            .expect("tag strip");
+        assert_eq!(tags.len(), crate::services::tags::TAG_COUNT + 1);
+        assert!(tags.last().is_some_and(|i| !i.enabled), "nothing to clear");
+        config.context_menu.inline_tags = false;
+        let menu = items_menu(&ctx(&config, &km, false), &pane);
+        assert!(!menu.iter().any(|e| matches!(e, Entry::Strip(StripKind::Tags, _))));
+        assert!(menu.iter().any(|e| matches!(e, Entry::Submenu(s) if s.kind == SubmenuKind::Tags)));
+    }
+
+    fn check_tidy(menu: &[Entry]) {
+        assert!(!matches!(menu.first(), Some(Entry::Separator)));
+        assert!(!matches!(menu.last(), Some(Entry::Separator)));
+        for w in menu.windows(2) {
+            assert!(!matches!(w, [Entry::Separator, Entry::Separator]));
+        }
+        for e in menu {
+            if let Entry::Submenu(s) = e {
+                assert!(!s.items.is_empty());
+                check_tidy(&s.items);
+            }
+        }
+    }
+
+    #[test]
+    fn separators_are_tidy() {
+        let km = Keymap::default();
+        let mut flat_cfg = Config::default();
+        flat(&mut flat_cfg);
+        let cases: [(&[&str], &[&str]); 3] = [(&["a.txt"], &["a.txt"]), (&["d/"], &["d/"]), (&["a.txt"], &[])];
+        for config in [Config::default(), flat_cfg] {
+            for (names, sel) in cases {
+                let pane = pane_with(&config, names, sel);
+                check_tidy(&pane_menu(&ctx(&config, &km, true), &pane));
+            }
+        }
+    }
+
+    #[test]
+    fn config_warnings_name_the_key() {
+        let mut cm = soyuz_core::config::ContextMenu::default();
+        assert!(config_warnings(&cm).is_empty(), "the default extended names parse");
+        cm.extended.push("nope".into());
+        assert_eq!(config_warnings(&cm), vec!["[context_menu] extended: unknown action 'nope'".to_string()]);
     }
 
     #[test]

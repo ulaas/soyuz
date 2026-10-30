@@ -232,5 +232,6 @@ fn empty(
     }
     let mut child = ui.new_child(UiBuilder::new().max_rect(rect));
     EmptyState { glyph, glyph_color: color, title, subtitle, hints }.show(&mut child);
+    context_menu::note_open(ui, &bg, pane);
     crate::ui::native::popup::context_menu(&bg, |ui| context_menu::pane_menu(ui, pane, v));
 }

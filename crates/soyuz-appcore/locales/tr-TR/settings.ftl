@@ -254,11 +254,27 @@ settings-views-portal-empty = Henüz sabitlenmiş klasör yok. Klasörleri kenar
 settings-views-portal-unpin = Kaldır
 settings-views-portal-up = Yukarı taşı
 settings-views-portal-down = Aşağı taşı
-settings-views-toolbar = Araç çubuğu ve bağlam menüsü
+settings-views-toolbar = Araç çubuğu
 settings-views-toolbar-items = Araç çubuğu öğeleri
 settings-views-toolbar-items-desc = Eylem adları (ör. back, up, new_tab) ile | separator, spacer, breadcrumb, filter, view_menu, sort_menu, activity. Her satıra bir tane.
-settings-views-ctx-hide = Gizli bağlam menüsü girişleri
-settings-views-ctx-hide-desc = Sağ tıklama menülerinden gizlenecek eylem adları. Her satıra bir tane.
+settings-views-ctx = Bağlam menüsü
+settings-views-ctx-quick-bar = Hızlı işlemler çubuğu
+settings-views-ctx-quick-bar-desc = Sağ tık menüsünün üstünde bir sıra simge düğmesi: kes, kopyala, yapıştır, yeniden adlandır, çoğalt, çöpe taşı ve özellikler (klasör arka planında yeni klasör, yeni dosya, yenile ve tümünü seç). Bu işlemler ayrıca satır olarak yinelenmez.
+settings-views-ctx-grouped = İlgili girdileri grupla
+settings-views-ctx-grouped-desc = İlgili girdiler alt menülere girer: Farklı kopyala, Gönder, Terminal, Araçlar, Özel yapıştır ve Medya. Kapalı: tüm girdiler tek bir listede.
+settings-views-ctx-compact = Kısa menü
+settings-views-ctx-compact-desc = Aşağıda "Yalnızca tam menüde" olarak ayarlanan girdiler sondaki Diğer alt menüsüne girer; Shift+sağ tık onları yerinde gösterir. Kapalı: her zaman tam menü.
+settings-views-ctx-contextual = Dosya türüne ait girdiler önce
+settings-views-ctx-contextual-desc = Seçilene ait girdiler (programlar için Yönetici olarak çalıştır, arşivler için Çıkar, medya araçları, PDF parolası, Parçaları birleştir) Aç'ın hemen ardından gelir.
+settings-views-ctx-inline-tags = Renk etiketleri nokta sırası olarak
+settings-views-ctx-inline-tags-desc = Menüdeki renkli bir noktaya tek tıkla seçimi etiketleyin ya da etiketi kaldırın. Kapalı: Etiketler alt menüsü.
+settings-views-ctx-collapse = Komutları şu sayıdan sonra grupla
+settings-views-ctx-collapse-desc = Özel komutlar ve betik eylemleri bu sayıdan fazlaysa Komutlar alt menüsüne girer. 0: hiçbir zaman.
+settings-views-ctx-rows = Girdiler
+settings-views-ctx-rows-desc = Her eylemin sağ tık menülerinde nerede göründüğü. Araçlar, yapay zekâ, medya, sağlama toplamları, sık kullanılanlar ve raf girdileri her zaman görünür.
+settings-views-ctx-show-always = Her zaman
+settings-views-ctx-show-full = Yalnızca tam menüde
+settings-views-ctx-show-never = Hiçbir zaman
 
 ## Behaviour page
 

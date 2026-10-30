@@ -203,7 +203,7 @@ pub fn apply_live_settings(ctx: &egui::Context, c: &Config) {
     crate::ui::views::set_display_options(c.general.show_extensions, c.appearance.icon_style);
     crate::ui::views::icon_pack::apply(ctx, &c.appearance.icon_pack);
     crate::ui::native::set_enabled(c.appearance.native_dialogs);
-    for w in crate::ui::context_menu::set_hidden(&c.context_menu.hide) {
+    for w in crate::ui::context_menu::set_hidden(&c.context_menu) {
         log::warn!("{w}");
     }
     crate::ui::looks::apply_settings(c);

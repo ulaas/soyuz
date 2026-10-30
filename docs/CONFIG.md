@@ -277,6 +277,13 @@ Editable toolbar: action names plus `"|"` (separator), `"spacer"`, `"breadcrumb"
 |---|---|---|---|
 | `hide` | array of strings | `[]` | Action names to hide. |
 | `order` | array of strings | `[]` | Optional explicit order; unknown names ignored. |
+| `quick_bar` | boolean | `true` | A row of icon buttons at the top (cut, copy, paste, rename, duplicate, trash, properties; new folder / file, refresh, select all on the background); those actions then don't repeat as rows. |
+| `grouped` | boolean | `true` | Related rows go into submenus (Copy as, Send to, Terminal, Tools, Paste special, Media); off = every row in one list. |
+| `compact` | boolean | `true` | The actions in `extended` only show in the full menu: Shift+right-click, or "Show all" at the end of the menu; off = always the full menu. |
+| `extended` | array of strings | `["delete_permanent", "new_symlink", "previous_versions", "reveal_in_system"]` | Action names shown only in the full menu (`compact`). |
+| `contextual_first` | boolean | `true` | Rows for the selected file's type (run as administrator, extract, media tools, PDF password, join parts) come right after Open; off = further down. |
+| `inline_tags` | boolean | `true` | Colour tags are one row of dots in the menu; off = a Tags submenu. |
+| `collapse_commands` | integer | `3` | Custom commands and script actions go into a Commands submenu when there are more than this many (0 = never). |
 
 ## `[sidebar]`
 

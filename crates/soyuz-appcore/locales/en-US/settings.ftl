@@ -260,11 +260,27 @@ settings-views-portal-empty = No pinned folders yet. Drag folders onto Portal in
 settings-views-portal-unpin = Unpin
 settings-views-portal-up = Move up
 settings-views-portal-down = Move down
-settings-views-toolbar = Toolbar & context menu
+settings-views-toolbar = Toolbar
 settings-views-toolbar-items = Toolbar items
 settings-views-toolbar-items-desc = Action names (e.g. back, up, new_tab), plus | separator, spacer, breadcrumb, filter, view_menu, sort_menu, activity. One per line.
-settings-views-ctx-hide = Hidden context-menu entries
-settings-views-ctx-hide-desc = Action names to hide from right-click menus. One per line.
+settings-views-ctx = Context menu
+settings-views-ctx-quick-bar = Quick actions bar
+settings-views-ctx-quick-bar-desc = A row of icon buttons at the top of the right-click menu: cut, copy, paste, rename, duplicate, move to trash and properties (new folder, new file, refresh and select all on a folder's background). Those actions then don't repeat as rows.
+settings-views-ctx-grouped = Group related entries
+settings-views-ctx-grouped-desc = Related entries go into submenus: Copy as, Send to, Terminal, Tools, Paste special and Media. Off: every entry in one list.
+settings-views-ctx-compact = Compact menu
+settings-views-ctx-compact-desc = Entries set to "Only in the full menu" below go into a More submenu at the end; Shift+right-click shows them in place. Off: always the full menu.
+settings-views-ctx-contextual = Entries for the file type first
+settings-views-ctx-contextual-desc = Entries for what is selected (Run as administrator for programs, Extract for archives, media tools, PDF password, Join parts) come right after Open.
+settings-views-ctx-inline-tags = Colour tags as a row of dots
+settings-views-ctx-inline-tags-desc = Tag or untag the selection with one click on a coloured dot in the menu. Off: a Tags submenu.
+settings-views-ctx-collapse = Group commands after
+settings-views-ctx-collapse-desc = Custom commands and script actions go into a Commands submenu when there are more than this many. 0: never.
+settings-views-ctx-rows = Entries
+settings-views-ctx-rows-desc = Where each action shows in the right-click menus. Entries for tools, AI, media, checksums, favourites and the shelf always show.
+settings-views-ctx-show-always = Always
+settings-views-ctx-show-full = Only in the full menu
+settings-views-ctx-show-never = Never
 
 ## Behaviour page
 

@@ -121,6 +121,20 @@ mode (status bar or palette) adds tick boxes for mouse and touch users.
 | `Space` | Quick Look; arrows move to the next item while it is open |
 | `Enter` / `Shift+Enter` | open with the default app / choose the app (*Open with…*) |
 
+**The right-click menu.** A row of icon buttons on top does the common things: cut, copy,
+paste, rename, duplicate, move to trash and properties (on a folder's background: refresh,
+paste, new folder, new file, select all and properties). Hover a button for its name and
+shortcut. Entries for what you clicked come right after *Open*: *Run as administrator* for
+a program, *Extract* for an archive, the media tools, *PDF password*, *Join parts*. Related
+entries sit in submenus (*Copy as*, *Send to*, *Terminal*, *Tools*, *Paste special*,
+*Media*). Colour tags are one row of dots: click one to tag or untag the selection. Rarely
+used entries (*Delete permanently*, *Create link*, *Previous versions*, *Reveal in system
+file manager*) are under *More* at the end; **Shift+right-click** shows them in place. All
+of it is configurable in *Settings → Views & layout → Context menu* (`[context_menu]`): turn the bar,
+the submenus, the compact menu, the type entries first or the tag dots off, group custom
+commands into *Commands*, and choose per action whether it shows always, only in the full
+menu, or never.
+
 **Pasting a picture.** With a picture on the clipboard (a screenshot, or an image copied
 in a browser or an editor), `Ctrl+V` in a folder saves it there as a PNG file named
 *Pasted image 2026-10-16 143012.png* and selects the name so you can type a better one.

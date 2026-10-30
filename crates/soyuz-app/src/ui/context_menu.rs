@@ -4,21 +4,36 @@
 //! them. Every action entry dispatches through `Cmd::PaneAction`, so menus, keys and
 //! toolbar behave identically.
 
-use egui::Ui;
+use egui::{Align2, CornerRadius, Response, Sense, Stroke, Ui, vec2};
 use soyuz_core::ViewMode;
 use soyuz_core::config::Keymap;
 
 use crate::cmd::Cmd;
-use crate::models::context_menu::{self as catalogue, Entry, ItemStyle, MenuCtx, MenuIcon, SubmenuKind};
+use crate::models::context_menu::{
+    self as catalogue, Entry, Item, ItemStyle, MenuCtx, MenuIcon, StripKind, SubmenuKind,
+};
 use crate::state::pane::Pane;
 use crate::theme::icons::ph;
+use crate::theme::tokens::radius;
+use crate::theme::{icons, palette};
 use crate::ui::views::ViewCtx;
 use crate::ui::widgets::{menu_caption, menu_check, menu_item, menu_separator, submenu};
 
-/// Check `[context_menu] hide` (startup and every config change); returns warnings for
-/// unknown names. The catalogue reads the list from the config when it builds a menu.
-pub fn set_hidden(names: &[String]) -> Vec<String> {
-    catalogue::hide_warnings(names)
+/// Check `[context_menu] hide` and `extended` (startup and every config change); returns
+/// warnings for unknown names. The catalogue reads the lists from the config when it
+/// builds a menu.
+pub fn set_hidden(cm: &soyuz_core::config::ContextMenu) -> Vec<String> {
+    catalogue::config_warnings(cm)
+}
+
+/// Call where a pane's context menu opens (`resp` is what it opens on): a
+/// Shift+right-click opens the full menu (`[context_menu] extended` rows inline). The
+/// modifiers are read here, in the window that got the click: once the menu has its own
+/// native window, its input no longer sees them.
+pub fn note_open(ui: &Ui, resp: &Response, pane: &mut Pane) {
+    if resp.secondary_clicked() {
+        pane.context_full = ui.input(|i| i.modifiers.shift);
+    }
 }
 
 /// The Phosphor glyph of a catalogue icon (`None`: no icon).
@@ -86,6 +101,11 @@ pub fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
                         SubmenuKind::GroupBy | SubmenuKind::Tags => ui.set_width(200.0),
                         SubmenuKind::Ai => ui.set_width(230.0),
                         SubmenuKind::Checksum => ui.set_min_width(200.0),
+                        SubmenuKind::CopyAs | SubmenuKind::Terminal | SubmenuKind::PasteSpecial => ui.set_width(220.0),
+                        SubmenuKind::SendTo | SubmenuKind::Tools | SubmenuKind::Media | SubmenuKind::More => {
+                            ui.set_width(240.0)
+                        }
+                        SubmenuKind::Commands => ui.set_min_width(220.0),
                         SubmenuKind::TabGroups | SubmenuKind::Windows => {}
                     }
                     draw_entries(ui, s.items, cmds);
@@ -93,7 +113,75 @@ pub fn draw_entries(ui: &mut Ui, entries: Vec<Entry>, cmds: &mut Vec<Cmd>) {
             }
             Entry::OpenWith(path) => open_with_menu(ui, cmds, path),
             Entry::FolderColor(dirs) => crate::ui::looks::folder_color_menu(ui, &dirs),
+            Entry::Strip(kind, items) => strip(ui, kind, items, cmds),
         }
+    }
+}
+
+/// A row of icon buttons (the quick bar) or tag dots, side by side; an activated one
+/// runs and closes the menu. Arrow keys / Tab reach each button (egui focus).
+fn strip(ui: &mut Ui, kind: StripKind, items: Vec<Item>, cmds: &mut Vec<Cmd>) {
+    let p = palette(ui.ctx());
+    let size = match kind {
+        StripKind::QuickBar => vec2(32.0, 30.0),
+        StripKind::Tags => vec2(22.0, 26.0),
+    };
+    if kind == StripKind::Tags {
+        menu_separator(ui);
+    }
+    ui.horizontal(|ui| {
+        ui.add_space(if kind == StripKind::Tags { 6.0 } else { 4.0 });
+        ui.spacing_mut().item_spacing.x = 2.0;
+        for it in items {
+            // Disabled buttons are announced as disabled.
+            let resp = ui.add_enabled_ui(it.enabled, |ui| ui.allocate_exact_size(size, Sense::click()).1).inner;
+            let r = resp.rect;
+            let hot = it.enabled && (resp.hovered() || resp.has_focus());
+            match it.icon {
+                MenuIcon::Tag { tag, checked } => {
+                    let c = p.tags[tag as usize % p.tags.len()];
+                    ui.painter().circle_filled(r.center(), 7.5, c);
+                    if checked {
+                        ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(2.0, c));
+                    } else if hot {
+                        ui.painter().circle_stroke(r.center(), 10.0, Stroke::new(1.0, p.border_strong));
+                    }
+                    crate::ui::a11y::toggle(&resp, &it.label, checked);
+                }
+                icon => {
+                    if hot {
+                        ui.painter().rect_filled(r, CornerRadius::same(radius::ROW), p.accent_subtle);
+                    }
+                    let color = if !it.enabled {
+                        p.text_tertiary
+                    } else if hot {
+                        p.accent
+                    } else {
+                        p.text_secondary
+                    };
+                    let size = if kind == StripKind::Tags { 14.0 } else { 16.0 };
+                    let g = glyph(icon).unwrap_or(ph::DOTS_THREE);
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, g, icons::font(size), color);
+                    crate::ui::a11y::button(&resp, &it.label);
+                }
+            }
+            if resp.has_focus() {
+                crate::ui::widgets::focus_ring(ui, r);
+            }
+            let tip = match &it.chord {
+                Some(c) => format!("{}  {c}", it.label),
+                None => it.label.clone(),
+            };
+            if resp.on_hover_text(tip).clicked() {
+                if let Some(r) = it.run {
+                    catalogue::run(r, cmds);
+                }
+                ui.close();
+            }
+        }
+    });
+    if kind == StripKind::QuickBar {
+        menu_separator(ui);
     }
 }
 

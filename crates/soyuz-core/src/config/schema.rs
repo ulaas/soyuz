@@ -416,13 +416,33 @@ pub struct Toolbar {
     pub items: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ContextMenu {
     /// Action names to hide.
     pub hide: Vec<String>,
     /// Optional explicit order; unknown names ignored.
     pub order: Vec<String>,
+    /// A row of icon buttons at the top (cut, copy, paste, rename, duplicate, trash,
+    /// properties; new folder / file, refresh, select all on the background); those
+    /// actions then don't repeat as rows.
+    pub quick_bar: bool,
+    /// Related rows go into submenus (Copy as, Send to, Terminal, Tools, Paste special,
+    /// Media); off = every row in one list.
+    pub grouped: bool,
+    /// The actions in `extended` only show in the full menu: Shift+right-click, or
+    /// "Show all" at the end of the menu; off = always the full menu.
+    pub compact: bool,
+    /// Action names shown only in the full menu (`compact`).
+    pub extended: Vec<String>,
+    /// Rows for the selected file's type (run as administrator, extract, media tools,
+    /// PDF password, join parts) come right after Open; off = further down.
+    pub contextual_first: bool,
+    /// Colour tags are one row of dots in the menu; off = a Tags submenu.
+    pub inline_tags: bool,
+    /// Custom commands and script actions go into a Commands submenu when there are more
+    /// than this many (0 = never).
+    pub collapse_commands: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Serialize, Deserialize)]

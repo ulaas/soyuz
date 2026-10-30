@@ -512,6 +512,7 @@ fn body(
         header(ui, &p, vis, pane, v, &g.cols, origin.x);
     }
 
+    context_menu::note_open(ui, &bg, pane);
     crate::ui::native::popup::context_menu(&bg, |ui| context_menu::pane_menu(ui, pane, v));
 }
 

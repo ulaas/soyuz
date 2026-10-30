@@ -176,6 +176,50 @@ fn shift_f10_copy_path(data: PathBuf) {
 }
 
 #[test]
+fn tui_grouped_compact_menu() {
+    if let Run::Child(data) = common::relaunch(module_path!(), "tui_grouped_compact_menu", two_files) {
+        grouped_compact_menu(data);
+    }
+}
+
+/// The default `[context_menu]` layout in a list: submenus and "More", but no quick bar
+/// (its actions stay rows) and tags as a submenu.
+fn grouped_compact_menu(data: PathBuf) {
+    let mut c = config(TuiOsc52::Never);
+    c.context_menu = Default::default();
+    let mut app = app(c, &data);
+    let mut seen = Vec::new();
+    let mut phase = 0;
+    drive(&mut app, |a| match phase {
+        0 if at(a, &data) && labels(a) == ["a.txt", "b.txt"] => {
+            phase = 1;
+            Some(key(KeyCode::Down))
+        }
+        1 if cursor(a).as_deref() == Some("a.txt") => {
+            phase = 2;
+            Some(key_mods(KeyCode::F(10), KeyModifiers::SHIFT))
+        }
+        2 if menu_open(a) => {
+            seen = menu_labels(a);
+            phase = 3;
+            Some(key(KeyCode::Esc))
+        }
+        3 if !menu_open(a) => {
+            phase = 4;
+            Some(ctrl('q'))
+        }
+        _ => None,
+    });
+    for want in [tr!("app-ctx-copy-as"), tr!("app-ctx-more"), tr!("app-ctx-cut"), tr!("tools-tags-menu")] {
+        assert!(seen.iter().any(|l| l == want), "no {want:?} in {seen:?}");
+    }
+    for gone in [tr!("app-ctx-copy-path"), tr!("app-ctx-delete-permanently")] {
+        assert!(!seen.iter().any(|l| l == gone), "{gone:?} should be in a submenu: {seen:?}");
+    }
+    common::ok();
+}
+
+#[test]
 fn tui_right_click_menus_and_esc() {
     if let Run::Child(data) = common::relaunch(module_path!(), "tui_right_click_menus_and_esc", two_files) {
         right_click_menus(data);

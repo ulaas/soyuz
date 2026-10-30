@@ -131,6 +131,13 @@ items = ["back", "forward", "up", "|", "breadcrumb", "spacer", "filter", "view_m
 [context_menu]
 hide = []                        # action names to hide
 order = []                       # optional explicit order; unknown names ignored
+quick_bar = true                 # icon buttons on top: cut, copy, paste, rename, duplicate, trash, properties
+grouped = true                   # Copy as / Send to / Terminal / Tools / Paste special / Media submenus; off = one long list
+compact = true                   # `extended` actions only on Shift+right-click (or "Show all"); off = always everything
+extended = ["delete_permanent", "new_symlink", "previous_versions", "reveal_in_system"]
+contextual_first = true          # rows for the file's type (run as administrator, extract, media, ...) right after Open
+inline_tags = true               # colour tags as one row of dots; off = a Tags submenu
+collapse_commands = 3            # custom commands + script actions go into Commands when more than this (0 = never)
 
 [sidebar]
 sections = ["favorites", "devices", "portal", "tags", "trash", "network", "cloud", "smart"]   # "trash" = Other; "tree" = disk tree section (mode = "both")

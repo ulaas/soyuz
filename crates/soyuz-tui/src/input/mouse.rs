@@ -278,7 +278,8 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
                 None => {}
             }
             if button == MouseButton::Right {
-                super::menu::open_for(app, pane, ContextTarget::Items, (m.column, m.row));
+                let full = m.modifiers.contains(crossterm::event::KeyModifiers::SHIFT);
+                super::menu::open_for(app, pane, ContextTarget::Items, (m.column, m.row), full);
             }
         }
         (HitTarget::PaneHeader { pane, vis_version, group }, MouseButton::Left) => {
@@ -302,7 +303,8 @@ fn press(app: &mut App, m: &MouseEvent, button: MouseButton, now: Instant) {
             app.core.cmds.push(Cmd::FocusPane(pane));
             if button == MouseButton::Right {
                 let target = if p.selection.is_empty() { ContextTarget::Background } else { ContextTarget::Items };
-                super::menu::open_for(app, pane, target, (m.column, m.row));
+                let full = m.modifiers.contains(crossterm::event::KeyModifiers::SHIFT);
+                super::menu::open_for(app, pane, target, (m.column, m.row), full);
             }
         }
         (HitTarget::PaneColumn { pane, column }, MouseButton::Left) => {
