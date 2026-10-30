@@ -161,7 +161,7 @@ rusqlite = { version = "0.40.2", default-features = false, features = ["bundled"
 
 # --- localization: Project Fluent, pure Rust ---
 fluent-bundle = "0.16.0"
-fluent-langneg = "0.13.1"
+fluent-langneg = "0.14.2"
 intl-memoizer = "0.5.3"
 unic-langid = "0.9.6"
 
