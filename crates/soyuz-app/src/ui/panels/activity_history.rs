@@ -44,9 +44,11 @@ fn button_width(ui: &Ui, label: &str, min: f32) -> f32 {
 }
 
 pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
-    let entries: Vec<HistoryEntry> = app.core.fileops.jobs.history().iter().rev().cloned().collect();
+    // Borrowed, not cloned: an entry carries every path its job touched (tens of
+    // thousands for a big delete), and this runs every frame while the tab is open.
+    let history: &[HistoryEntry] = app.core.fileops.jobs.history();
     let now = std::time::SystemTime::now();
-    if entries.is_empty() {
+    if history.is_empty() {
         let r = ui.available_rect_before_wrap();
         let c = r.center() - vec2(0.0, 12.0);
         ui.painter().text(
@@ -77,9 +79,10 @@ pub fn show(ui: &mut Ui, app: &mut SoyuzApp, p: &Palette) {
     ScrollArea::vertical().id_salt("soyuz.activity.history").auto_shrink([false, false]).show_rows(
         ui,
         50.0,
-        entries.len(),
+        history.len(),
         |ui, range| {
-            for e in &entries[range] {
+            // Newest first.
+            for e in range.map(|i| &history[history.len() - 1 - i]) {
                 let h = &HistoryRow::new(e, now);
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 50.0), Sense::hover());
                 let row = r.shrink2(vec2(0.0, 2.0));

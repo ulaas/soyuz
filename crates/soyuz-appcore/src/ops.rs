@@ -6,6 +6,7 @@ pub mod fileops;
 mod refresh_tests;
 pub mod window;
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -755,9 +756,10 @@ pub fn refresh_affected(app: &mut AppCore, paths: &[std::path::PathBuf]) {
     if dirs.is_empty() {
         return;
     }
-    let mut ids = panes_showing(&app.ws, &dirs);
+    let keys = dir_keys(&dirs);
+    let mut ids = panes_showing(&app.ws, &keys);
     for w in &app.workspaces.windows {
-        ids.extend(panes_showing(&w.ws, &dirs));
+        ids.extend(panes_showing(&w.ws, &keys));
     }
     for id in ids {
         crate::models::windows::with_pane_window(app, id, move |app| {
@@ -768,14 +770,19 @@ pub fn refresh_affected(app: &mut AppCore, paths: &[std::path::PathBuf]) {
     }
 }
 
-/// Started panes of `ws` that show one of `dirs`.
-pub(crate) fn panes_showing(ws: &Workspace, dirs: &[std::path::PathBuf]) -> Vec<PaneId> {
+/// Started panes of `ws` that show one of the directories in `keys` ([`dir_keys`]).
+pub(crate) fn panes_showing(ws: &Workspace, keys: &HashSet<String>) -> Vec<PaneId> {
     ws.tabs
         .iter()
         .flat_map(|t| t.panes.iter())
-        .filter(|p| p.generation > 0 && p.location.as_fs_path().is_some_and(|d| dirs.iter().any(|x| same_dir(x, d))))
+        .filter(|p| p.generation > 0 && p.location.as_fs_path().is_some_and(|d| keys.contains(&dir_key(d))))
         .map(|p| p.id)
         .collect()
+}
+
+/// Lookup keys ([`dir_key`]) of `dirs`.
+pub(crate) fn dir_keys(dirs: &[std::path::PathBuf]) -> HashSet<String> {
+    dirs.iter().map(|d| dir_key(d)).collect()
 }
 
 /// Relist a directory pane after a job changed it (right after the running listing, if
@@ -792,15 +799,21 @@ pub(crate) fn relist_for_job(pane: &mut Pane, services: &mut Services) {
 }
 
 /// Directories whose listing a change to `paths` can affect: each path itself (a
-/// destination folder) and its parent.
+/// destination folder) and its parent, in first-seen order without duplicates.
+///
+/// Runs on the UI thread when a job finishes, and a job can touch tens of thousands of
+/// paths (deleting 10 000 folders hands over each one, twice: job sources and history
+/// entry), so this is linear: one key per candidate and a hash set, never a scan of what
+/// was collected so far.
 pub fn affected_dirs(paths: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut seen: HashSet<String> = HashSet::new();
     let mut out: Vec<std::path::PathBuf> = Vec::new();
     for p in paths {
         if p.as_os_str().is_empty() || crate::services::remote::is_remote_path(p) {
             continue;
         }
         for d in std::iter::once(p.as_path()).chain(p.parent()) {
-            if !d.as_os_str().is_empty() && !out.iter().any(|x| same_dir(x, d)) {
+            if !d.as_os_str().is_empty() && seen.insert(dir_key(d)) {
                 out.push(d.to_path_buf());
             }
         }
@@ -808,14 +821,18 @@ pub fn affected_dirs(paths: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
     out
 }
 
+/// Comparison key of a directory: no trailing separator, case-folded on Windows / macOS
+/// volumes.
+fn dir_key(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    let s = s.trim_end_matches(['/', '\\']);
+    if cfg!(any(windows, target_os = "macos")) { s.to_lowercase() } else { s.to_string() }
+}
+
 /// Same directory, ignoring a trailing separator (and case on Windows / macOS volumes).
+#[cfg(test)]
 fn same_dir(a: &Path, b: &Path) -> bool {
-    let norm = |p: &Path| {
-        let s = p.to_string_lossy();
-        let s = s.trim_end_matches(['/', '\\']);
-        if cfg!(any(windows, target_os = "macos")) { s.to_lowercase() } else { s.to_string() }
-    };
-    a == b || norm(a) == norm(b)
+    a == b || dir_key(a) == dir_key(b)
 }
 
 fn coming_soon(app: &mut AppCore, action: &Action) {

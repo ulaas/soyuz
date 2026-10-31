@@ -10,7 +10,8 @@ use soyuz_core::Location;
 use soyuz_jobs::{EngineConfig, JobEngine, JobEvent, JobKind, JobSpec};
 
 use super::{
-    affected_dirs, pane_listing, panes_showing, refresh_pane, relist_for_job, same_dir, start_listing, watch_pane,
+    affected_dirs, dir_keys, pane_listing, panes_showing, refresh_pane, relist_for_job, same_dir, start_listing,
+    watch_pane,
 };
 use crate::services::Services;
 use crate::services::jobs::AffectedPaths;
@@ -241,7 +242,7 @@ fn job_completion_relists_panes_showing_affected_folders() {
         JobKind::Copy { sources: vec![src.join("report.txt")], dest_dir: dst.clone(), rename_to: None },
     );
     let dirs = affected_dirs(&changed);
-    let ids = panes_showing(&ws, &dirs);
+    let ids = panes_showing(&ws, &dir_keys(&dirs));
     assert!(ids.contains(&pd_id) && ids.contains(&ps_id), "{dirs:?}");
     assert!(!ids.contains(&po_id));
     for t in &mut ws.tabs {
@@ -315,4 +316,25 @@ fn affected_dirs_cover_paths_and_parents() {
         assert!(same_dir(Path::new(r"C:\Data\Dst"), Path::new(r"c:\data\dst\")));
     }
     assert!(!same_dir(Path::new("/data/dst"), Path::new("/data/dst2")));
+}
+
+/// Deleting 10 000 folders froze the UI at the end of the job: the relist of affected
+/// panes deduplicated the ~30 000 touched paths (sources, then the same sources again from
+/// the history entry) with a quadratic scan. It runs on the UI thread, so it must stay
+/// linear: well under a frame budget's worth of seconds even in a debug build.
+#[test]
+fn affected_dirs_of_a_huge_job_is_fast() {
+    let root = if cfg!(windows) { PathBuf::from(r"C:\Temp\Big") } else { PathBuf::from("/tmp/big") };
+    let sources: Vec<PathBuf> = (0..10_000).map(|i| root.join(format!("folder {i:05}"))).collect();
+    // Job roots, the history entry's job roots again, and one record per item.
+    let mut paths = sources.clone();
+    paths.extend(sources.iter().cloned());
+    paths.extend(sources.iter().map(|s| s.join("inner")));
+    let started = Instant::now();
+    let dirs = affected_dirs(&paths);
+    let keys = dir_keys(&dirs);
+    let elapsed = started.elapsed();
+    assert_eq!(dirs.len(), 20_001, "each folder, each `inner`, and the shared parent once");
+    assert!(keys.contains(&super::dir_key(&root)));
+    assert!(elapsed < Duration::from_secs(1), "took {elapsed:?}");
 }
